@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Wire EDM G-Code Viewer - Interactive visualization and measurement tools for Wire EDM machining">
+    <title>Wire EDM G-Code Viewer</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <!-- Stylesheets in dependency order: theme → main → components -->
+    <link rel="stylesheet" href="/src/styles/theme.css">
+    <link rel="stylesheet" href="/src/styles/main.css">
+    <link rel="stylesheet" href="/src/styles/components.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Application content will be dynamically created by main.js -->
+        <div id="loading">
+            <p>Loading Wire EDM G-Code Viewer...</p>
+        </div>
+    </div>
+    
+    <!-- Main application module -->
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

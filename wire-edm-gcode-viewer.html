@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wire EDM G-Code Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .header {
+            background-color: #2a2a2a;
+            padding: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .controls {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+        .file-input-wrapper input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+        .file-input-label {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .file-input-label:hover {
+            background-color: #45a049;
+        }
+        .info-panel {
+            background-color: #333;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background-color: #0a0a0a;
+        }
+        canvas {
+            cursor: crosshair;
+            display: block;
+        }
+        .sidebar {
+            width: 300px;
+            background-color: #2a2a2a;
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.3);
+        }
+        .coordinates-display {
+            background-color: #333;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .coordinate-item {
+            margin: 5px 0;
+            font-family: monospace;
+        }
+        .clicked-points {
+            background-color: #333;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .point-list {
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .point-item {
+            padding: 5px;
+            margin: 2px 0;
+            background-color: #404040;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .delete-point {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 2px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        .zoom-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        button {
+            background-color: #555;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #666;
+        }
+        .zoom-display {
+            font-family: monospace;
+            background-color: #333;
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+        .path-info {
+            background-color: #333;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .status-message {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 5px;
+            display: none;
+            z-index: 1000;
+        }
+        h3 {
+            margin-top: 0;
+            color: #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="controls">
+            <div class="file-input-wrapper">
+                <input type="file" id="fileInput" accept=".gcode,.nc,.txt">
+                <label for="fileInput" class="file-input-label">Load G-Code File</label>
+            </div>
+            <div class="zoom-controls">
+                <button onclick="zoomIn()">Zoom +</button>
+                <button onclick="zoomOut()">Zoom -</button>
+                <button onclick="fitToScreen()">Fit to Screen</button>
+                <span class="zoom-display">Zoom: <span id="zoomLevel">100%</span></span>
+            </div>
+            <button onclick="clearClickedPoints()">Clear Points</button>
+            <button onclick="exportPoints()">Export Points</button>
+        </div>
+    </div>
+    
+    <div class="main-container">
+        <div class="canvas-container" id="canvasContainer">
+            <canvas id="canvas"></canvas>
+        </div>
+        
+        <div class="sidebar">
+            <div class="coordinates-display">
+                <h3>Current Position</h3>
+                <div class="coordinate-item">Mouse X: <span id="mouseX">0.000</span> mm</div>
+                <div class="coordinate-item">Mouse Y: <span id="mouseY">0.000</span> mm</div>
+                <div class="coordinate-item">Grid Snap: <span id="gridSnap">OFF</span></div>
+            </div>
+            
+            <div class="clicked-points">
+                <h3>Clicked Points</h3>
+                <div class="point-list" id="pointList"></div>
+            </div>
+            
+            <div class="path-info">
+                <h3>Path Information</h3>
+                <div id="pathInfo">No G-Code loaded</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="status-message" id="statusMessage"></div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const canvasContainer = document.getElementById('canvasContainer');
+        
+        let gcodePath = [];
+        let clickedPoints = [];
+        let zoom = 1;
+        let offsetX = 0;
+        let offsetY = 0;
+        let isDragging = false;
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let gridSnap = false;
+        let gridSize = 1; // 1mm grid
+        
+        // Initialize canvas
+        function resizeCanvas() {
+            canvas.width = canvasContainer.clientWidth;
+            canvas.height = canvasContainer.clientHeight;
+            
+            // Initialize zoom and offset if not set
+            if (zoom === undefined || isNaN(zoom)) {
+                zoom = 1;
+            }
+            if (offsetX === undefined || isNaN(offsetX)) {
+                offsetX = canvas.width / 2;
+            }
+            if (offsetY === undefined || isNaN(offsetY)) {
+                offsetY = canvas.height / 2;
+            }
+            
+            redraw();
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        // G-Code parser
+        function parseGCode(gcodeText) {
+            const lines = gcodeText.split('\n');
+            const path = [];
+            let currentX = 0;
+            let currentY = 0;
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+            
+            lines.forEach(line => {
+                line = line.trim().toUpperCase();
+                if (line.startsWith(';') || line === '') return;
+                
+                // Remove comments
+                const commentIndex = line.indexOf(';');
+                if (commentIndex > -1) {
+                    line = line.substring(0, commentIndex).trim();
+                }
+                
+                // Parse G0 and G1 commands (linear moves)
+                if (line.startsWith('G0') || line.startsWith('G1')) {
+                    const xMatch = line.match(/X(-?\d+\.?\d*)/);
+                    const yMatch = line.match(/Y(-?\d+\.?\d*)/);
+                    
+                    if (xMatch) currentX = parseFloat(xMatch[1]);
+                    if (yMatch) currentY = parseFloat(yMatch[1]);
+                    
+                    path.push({
+                        type: line.startsWith('G0') ? 'rapid' : 'cut',
+                        x: currentX,
+                        y: currentY
+                    });
+                    
+                    minX = Math.min(minX, currentX);
+                    maxX = Math.max(maxX, currentX);
+                    minY = Math.min(minY, currentY);
+                    maxY = Math.max(maxY, currentY);
+                }
+                
+                // Parse G2 and G3 commands (arc moves)
+                if (line.startsWith('G2') || line.startsWith('G3')) {
+                    const xMatch = line.match(/X(-?\d+\.?\d*)/);
+                    const yMatch = line.match(/Y(-?\d+\.?\d*)/);
+                    const iMatch = line.match(/I(-?\d+\.?\d*)/);
+                    const jMatch = line.match(/J(-?\d+\.?\d*)/);
+                    
+                    const endX = xMatch ? parseFloat(xMatch[1]) : currentX;
+                    const endY = yMatch ? parseFloat(yMatch[1]) : currentY;
+                    const i = iMatch ? parseFloat(iMatch[1]) : 0;
+                    const j = jMatch ? parseFloat(jMatch[1]) : 0;
+                    
+                    path.push({
+                        type: 'arc',
+                        startX: currentX,
+                        startY: currentY,
+                        endX: endX,
+                        endY: endY,
+                        centerX: currentX + i,
+                        centerY: currentY + j,
+                        clockwise: line.startsWith('G2')
+                    });
+                    
+                    currentX = endX;
+                    currentY = endY;
+                    
+                    minX = Math.min(minX, currentX, currentX + i);
+                    maxX = Math.max(maxX, currentX, currentX + i);
+                    minY = Math.min(minY, currentY, currentY + j);
+                    maxY = Math.max(maxY, currentY, currentY + j);
+                }
+            });
+            
+            // Update path info
+            const pathInfo = document.getElementById('pathInfo');
+            pathInfo.innerHTML = `
+                <div>Total moves: ${path.length}</div>
+                <div>Bounds X: ${minX.toFixed(3)} to ${maxX.toFixed(3)} mm</div>
+                <div>Bounds Y: ${minY.toFixed(3)} to ${maxY.toFixed(3)} mm</div>
+                <div>Width: ${(maxX - minX).toFixed(3)} mm</div>
+                <div>Height: ${(maxY - minY).toFixed(3)} mm</div>
+            `;
+            
+            return { path, bounds: { minX, maxX, minY, maxY } };
+        }
+        
+        // Drawing functions
+        function drawGrid() {
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 0.5;
+            
+            const startX = Math.floor((-offsetX) / (gridSize * zoom)) * gridSize;
+            const endX = Math.ceil((-offsetX + canvas.width) / zoom) / gridSize * gridSize;
+            const startY = Math.floor((-offsetY) / (gridSize * zoom)) * gridSize;
+            const endY = Math.ceil((-offsetY + canvas.height) / zoom) / gridSize * gridSize;
+            
+            // Draw vertical lines
+            for (let x = startX; x <= endX; x += gridSize) {
+                const screenX = x * zoom + offsetX;
+                ctx.beginPath();
+                ctx.moveTo(screenX, 0);
+                ctx.lineTo(screenX, canvas.height);
+                ctx.stroke();
+            }
+            
+            // Draw horizontal lines
+            for (let y = startY; y <= endY; y += gridSize) {
+                const screenY = canvas.height - (y * zoom + offsetY);
+                ctx.beginPath();
+                ctx.moveTo(0, screenY);
+                ctx.lineTo(canvas.width, screenY);
+                ctx.stroke();
+            }
+            
+            // Draw axes
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 2;
+            
+            // X axis
+            const yAxis = canvas.height - offsetY;
+            if (yAxis >= 0 && yAxis <= canvas.height) {
+                ctx.beginPath();
+                ctx.moveTo(0, yAxis);
+                ctx.lineTo(canvas.width, yAxis);
+                ctx.stroke();
+            }
+            
+            // Y axis
+            const xAxis = offsetX;
+            if (xAxis >= 0 && xAxis <= canvas.width) {
+                ctx.beginPath();
+                ctx.moveTo(xAxis, 0);
+                ctx.lineTo(xAxis, canvas.height);
+                ctx.stroke();
+            }
+            
+            // Draw axis labels
+            ctx.fillStyle = '#888';
+            ctx.font = '12px Arial';
+            
+            // X axis labels
+            for (let x = startX; x <= endX; x += gridSize * 10) {
+                const screenX = x * zoom + offsetX;
+                if (screenX >= 0 && screenX <= canvas.width) {
+                    ctx.fillText(x.toString(), screenX + 2, canvas.height - offsetY + 15);
+                }
+            }
+            
+            // Y axis labels
+            for (let y = startY; y <= endY; y += gridSize * 10) {
+                const screenY = canvas.height - (y * zoom + offsetY);
+                if (screenY >= 0 && screenY <= canvas.height) {
+                    ctx.fillText(y.toString(), offsetX + 5, screenY - 2);
+                }
+            }
+        }
+        
+        function drawPath() {
+            if (gcodePath.length === 0) return;
+            
+            gcodePath.forEach((move, index) => {
+                if (index === 0) return;
+                
+                const prevMove = gcodePath[index - 1];
+                
+                if (move.type === 'rapid') {
+                    ctx.strokeStyle = '#ffff00';
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([5, 5]);
+                } else if (move.type === 'cut') {
+                    ctx.strokeStyle = '#00ff00';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([]);
+                }
+                
+                ctx.beginPath();
+                ctx.moveTo(
+                    prevMove.x * zoom + offsetX,
+                    canvas.height - (prevMove.y * zoom + offsetY)
+                );
+                ctx.lineTo(
+                    move.x * zoom + offsetX,
+                    canvas.height - (move.y * zoom + offsetY)
+                );
+                ctx.stroke();
+                
+                if (move.type === 'arc') {
+                    ctx.strokeStyle = '#00ff00';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([]);
+                    
+                    const radius = Math.sqrt(
+                        Math.pow(move.startX - move.centerX, 2) + 
+                        Math.pow(move.startY - move.centerY, 2)
+                    );
+                    
+                    const startAngle = Math.atan2(
+                        move.startY - move.centerY,
+                        move.startX - move.centerX
+                    );
+                    const endAngle = Math.atan2(
+                        move.endY - move.centerY,
+                        move.endX - move.centerX
+                    );
+                    
+                    ctx.beginPath();
+                    ctx.arc(
+                        move.centerX * zoom + offsetX,
+                        canvas.height - (move.centerY * zoom + offsetY),
+                        radius * zoom,
+                        -startAngle,
+                        -endAngle,
+                        move.clockwise
+                    );
+                    ctx.stroke();
+                }
+            });
+            
+            // Draw start point
+            if (gcodePath.length > 0) {
+                const start = gcodePath[0];
+                ctx.fillStyle = '#ff0000';
+                ctx.beginPath();
+                ctx.arc(
+                    start.x * zoom + offsetX,
+                    canvas.height - (start.y * zoom + offsetY),
+                    5, 0, Math.PI * 2
+                );
+                ctx.fill();
+                
+                ctx.fillStyle = '#ff0000';
+                ctx.font = 'bold 14px Arial';
+                ctx.fillText('START', start.x * zoom + offsetX + 10, canvas.height - (start.y * zoom + offsetY) - 10);
+            }
+            
+            // Draw end point
+            if (gcodePath.length > 1) {
+                const end = gcodePath[gcodePath.length - 1];
+                ctx.fillStyle = '#0000ff';
+                ctx.beginPath();
+                ctx.arc(
+                    end.x * zoom + offsetX,
+                    canvas.height - (end.y * zoom + offsetY),
+                    5, 0, Math.PI * 2
+                );
+                ctx.fill();
+                
+                ctx.fillStyle = '#0000ff';
+                ctx.font = 'bold 14px Arial';
+                ctx.fillText('END', end.x * zoom + offsetX + 10, canvas.height - (end.y * zoom + offsetY) - 10);
+            }
+        }
+        
+        function drawClickedPoints() {
+            clickedPoints.forEach((point, index) => {
+                ctx.fillStyle = '#ff00ff';
+                ctx.beginPath();
+                ctx.arc(
+                    point.x * zoom + offsetX,
+                    canvas.height - (point.y * zoom + offsetY),
+                    4, 0, Math.PI * 2
+                );
+                ctx.fill();
+                
+                ctx.fillStyle = '#ff00ff';
+                ctx.font = '12px Arial';
+                ctx.fillText(
+                    `P${index + 1}`,
+                    point.x * zoom + offsetX + 5,
+                    canvas.height - (point.y * zoom + offsetY) - 5
+                );
+            });
+        }
+        
+        function redraw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
+            drawPath();
+            drawClickedPoints();
+        }
+        
+        // Mouse event handlers
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const worldX = (x - offsetX) / zoom;
+            const worldY = (canvas.height - y - offsetY) / zoom;
+            
+            if (!isNaN(worldX) && !isNaN(worldY) && isFinite(worldX) && isFinite(worldY)) {
+                document.getElementById('mouseX').textContent = worldX.toFixed(3);
+                document.getElementById('mouseY').textContent = worldY.toFixed(3);
+            }
+            
+            if (isDragging) {
+                offsetX = x - dragStartX;
+                offsetY = y - dragStartY;
+                redraw();
+            }
+        });
+        
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 1 || (e.button === 0 && e.shiftKey)) { // Middle button or Shift+Left
+                isDragging = true;
+                const rect = canvas.getBoundingClientRect();
+                dragStartX = e.clientX - rect.left - offsetX;
+                dragStartY = e.clientY - rect.top - offsetY;
+                canvas.style.cursor = 'move';
+                e.preventDefault();
+            }
+        });
+        
+        canvas.addEventListener('mouseup', (e) => {
+            if (isDragging) {
+                isDragging = false;
+                canvas.style.cursor = 'crosshair';
+            }
+        });
+        
+        canvas.addEventListener('click', (e) => {
+            if (e.shiftKey) return; // Don't register click when panning
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            let worldX = (x - offsetX) / zoom;
+            let worldY = (canvas.height - y - offsetY) / zoom;
+            
+            // Check for valid coordinates
+            if (isNaN(worldX) || isNaN(worldY) || !isFinite(worldX) || !isFinite(worldY)) {
+                return;
+            }
+            
+            // Grid snap
+            if (gridSnap) {
+                worldX = Math.round(worldX / gridSize) * gridSize;
+                worldY = Math.round(worldY / gridSize) * gridSize;
+            }
+            
+            const point = { x: worldX, y: worldY };
+            clickedPoints.push(point);
+            updatePointList();
+            redraw();
+        });
+        
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const worldX = (x - offsetX) / zoom;
+            const worldY = (y - offsetY) / zoom;
+            
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            zoom *= delta;
+            zoom = Math.max(0.1, Math.min(10, zoom));
+            
+            offsetX = x - worldX * zoom;
+            offsetY = y - worldY * zoom;
+            
+            document.getElementById('zoomLevel').textContent = Math.round(zoom * 100) + '%';
+            redraw();
+        });
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'g' || e.key === 'G') {
+                gridSnap = !gridSnap;
+                document.getElementById('gridSnap').textContent = gridSnap ? 'ON' : 'OFF';
+                document.getElementById('gridSnap').style.color = gridSnap ? '#00ff00' : '#ff0000';
+            }
+        });
+        
+        // File handling
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const gcodeText = e.target.result;
+                const result = parseGCode(gcodeText);
+                gcodePath = result.path;
+                
+                // Auto fit to screen after loading
+                fitToScreen();
+                
+                showStatus('G-Code loaded successfully!');
+            };
+            reader.readAsText(file);
+        });
+        
+        // UI functions
+        function updatePointList() {
+            const list = document.getElementById('pointList');
+            list.innerHTML = '';
+            
+            clickedPoints.forEach((point, index) => {
+                const item = document.createElement('div');
+                item.className = 'point-item';
+                item.innerHTML = `
+                    <span>P${index + 1}: X${point.x.toFixed(3)}, Y${point.y.toFixed(3)}</span>
+                    <button class="delete-point" onclick="deletePoint(${index})">×</button>
+                `;
+                list.appendChild(item);
+            });
+        }
+        
+        function deletePoint(index) {
+            clickedPoints.splice(index, 1);
+            updatePointList();
+            redraw();
+        }
+        
+        function clearClickedPoints() {
+            clickedPoints = [];
+            updatePointList();
+            redraw();
+        }
+        
+        function exportPoints() {
+            if (clickedPoints.length === 0) {
+                showStatus('No points to export!', '#f44336');
+                return;
+            }
+            
+            let gcodeOutput = '; Exported points from Wire EDM G-Code Viewer\n';
+            gcodeOutput += '; Generated on ' + new Date().toLocaleString() + '\n\n';
+            
+            clickedPoints.forEach((point, index) => {
+                gcodeOutput += `; Point ${index + 1}\n`;
+                gcodeOutput += `G0 X${point.x.toFixed(3)} Y${point.y.toFixed(3)}\n`;
+            });
+            
+            const blob = new Blob([gcodeOutput], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'wire_path_points.gcode';
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            showStatus('Points exported successfully!');
+        }
+        
+        function zoomIn() {
+            zoom *= 1.2;
+            zoom = Math.min(10, zoom);
+            document.getElementById('zoomLevel').textContent = Math.round(zoom * 100) + '%';
+            redraw();
+        }
+        
+        function zoomOut() {
+            zoom *= 0.8;
+            zoom = Math.max(0.1, zoom);
+            document.getElementById('zoomLevel').textContent = Math.round(zoom * 100) + '%';
+            redraw();
+        }
+        
+        function fitToScreen() {
+            if (gcodePath.length === 0) return;
+            
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+            
+            gcodePath.forEach(move => {
+                if (move.x !== undefined && move.y !== undefined) {
+                    minX = Math.min(minX, move.x);
+                    maxX = Math.max(maxX, move.x);
+                    minY = Math.min(minY, move.y);
+                    maxY = Math.max(maxY, move.y);
+                }
+                // Handle arc moves
+                if (move.type === 'arc') {
+                    minX = Math.min(minX, move.startX, move.endX, move.centerX);
+                    maxX = Math.max(maxX, move.startX, move.endX, move.centerX);
+                    minY = Math.min(minY, move.startY, move.endY, move.centerY);
+                    maxY = Math.max(maxY, move.startY, move.endY, move.centerY);
+                }
+            });
+            
+            // Check if we have valid bounds
+            if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
+                console.error('Invalid bounds calculated');
+                return;
+            }
+            
+            const width = maxX - minX;
+            const height = maxY - minY;
+            
+            // Handle zero width/height
+            if (width === 0 || height === 0) {
+                zoom = 1;
+                offsetX = canvas.width / 2;
+                offsetY = canvas.height / 2;
+            } else {
+                const centerX = (minX + maxX) / 2;
+                const centerY = (minY + maxY) / 2;
+                
+                const padding = 50;
+                const scaleX = (canvas.width - 2 * padding) / width;
+                const scaleY = (canvas.height - 2 * padding) / height;
+                zoom = Math.min(scaleX, scaleY);
+                
+                // Limit zoom to reasonable values
+                zoom = Math.max(0.1, Math.min(10, zoom));
+                
+                offsetX = canvas.width / 2 - centerX * zoom;
+                offsetY = canvas.height / 2 + centerY * zoom;
+            }
+            
+            document.getElementById('zoomLevel').textContent = Math.round(zoom * 100) + '%';
+            redraw();
+        }
+        
+        function showStatus(message, color = '#4CAF50') {
+            const status = document.getElementById('statusMessage');
+            status.textContent = message;
+            status.style.backgroundColor = color;
+            status.style.display = 'block';
+            
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 3000);
+        }
+        
+        // Initial draw
+        redraw();
+    </script>
+</body>
+</html>

@@ -1,0 +1,148 @@
+/**
+ * Theme Variables and CSS Custom Properties
+ * Wire EDM G-Code Viewer - Dark Theme
+ * 
+ * This file defines the complete design system using CSS custom properties.
+ * All colors, spacing, typography, and component tokens are centralized here.
+ * This enables easy theming, maintenance, and consistency across components.
+ */
+
+:root {
+  /* Color Palette */
+  --color-bg-primary: #1a1a1a;
+  --color-bg-secondary: #2a2a2a;
+  --color-bg-tertiary: #333;
+  --color-bg-dark: #0a0a0a;
+  --color-bg-input: #404040;
+  
+  /* Text Colors */
+  --color-text-primary: #e0e0e0;
+  --color-text-secondary: #ccc;
+  --color-text-accent: #4CAF50;
+  --color-text-white: white;
+  
+  /* Accent Colors */
+  --color-accent-primary: #4CAF50;
+  --color-accent-hover: #45a049;
+  --color-accent-secondary: #555;
+  --color-accent-hover-secondary: #666;
+  
+  /* Status Colors */
+  --color-success: #4CAF50;
+  --color-error: #f44336;
+  --color-warning: #ff9800;
+  --color-info: #2196F3;
+  
+  /* Path Colors */
+  --color-path-rapid: #ffff00;    /* Yellow for G0 rapid moves */
+  --color-path-cutting: #00ff00;  /* Green for G1 cutting moves */
+  --color-path-start: #ff0000;    /* Red for start point */
+  --color-path-end: #0000ff;      /* Blue for end point */
+  --color-point-clicked: #ff00ff; /* Magenta for clicked points */
+  
+  /* Grid Colors */
+  --color-grid-minor: rgba(255, 255, 255, 0.1);
+  --color-grid-major: rgba(255, 255, 255, 0.2);
+  --color-grid-axis: rgba(255, 255, 255, 0.4);
+  
+  /* Typography */
+  --font-family-primary: Arial, sans-serif;
+  --font-family-mono: monospace;
+  --font-size-base: 14px;
+  --font-size-small: 12px;
+  --font-size-large: 16px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
+  --line-height-base: 1.4;
+  --line-height-tight: 1.2;
+  
+  /* Spacing */
+  --spacing-xs: 2px;
+  --spacing-sm: 5px;
+  --spacing-md: 10px;
+  --spacing-lg: 15px;
+  --spacing-xl: 20px;
+  --spacing-xxl: 30px;
+  
+  /* Border Radius */
+  --border-radius-sm: 3px;
+  --border-radius-md: 5px;
+  --border-radius-lg: 8px;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 2px 5px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.4);
+  --shadow-inset: inset -2px 0 5px rgba(0, 0, 0, 0.3);
+  
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.3s ease;
+  --transition-slow: 0.5s ease;
+  
+  /* Z-Index Scale */
+  --z-index-base: 1;
+  --z-index-elevated: 10;
+  --z-index-modal: 100;
+  --z-index-overlay: 500;
+  --z-index-toast: 1000;
+  
+  /* Layout Dimensions */
+  --sidebar-width: 380px;
+  --sidebar-width-mobile: 100%;
+  --header-height: auto;
+  --canvas-bg: var(--color-bg-dark);
+  
+  /* Button Styling */
+  --button-padding: 8px 15px;
+  --button-padding-small: 2px 8px;
+  --button-border-radius: var(--border-radius-md);
+  --button-transition: background-color var(--transition-normal);
+  
+  /* Form Elements */
+  --input-padding: var(--spacing-md) var(--spacing-lg);
+  --input-border-radius: var(--border-radius-md);
+  --input-transition: all var(--transition-normal);
+  
+  /* Breakpoints for Responsive Design */
+  --breakpoint-mobile: 480px;
+  --breakpoint-tablet: 768px;
+  --breakpoint-desktop: 1024px;
+  --breakpoint-large: 1200px;
+}
+
+/* Theme Variants (for future extensibility) */
+@media (prefers-color-scheme: light) {
+  /* Light theme could be added here in the future */
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+  :root {
+    --color-text-primary: #ffffff;
+    --color-bg-primary: #000000;
+    --color-bg-secondary: #1a1a1a;
+    --shadow-md: 0 2px 5px rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-fast: 0s;
+    --transition-normal: 0s;
+    --transition-slow: 0s;
+  }
+}
+
+/* Print Styles */
+@media print {
+  :root {
+    --color-bg-primary: white;
+    --color-bg-secondary: #f5f5f5;
+    --color-text-primary: black;
+    --color-text-secondary: #333;
+    --shadow-md: none;
+  }
+}

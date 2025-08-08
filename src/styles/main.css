@@ -1,0 +1,298 @@
+/**
+ * Main Stylesheet - Global Styles and Layout
+ * Wire EDM G-Code Viewer
+ */
+
+/* Global Styles */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family-primary);
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Main Application Layout */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+}
+
+.wire-edm-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+#loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: var(--font-size-large);
+  color: var(--color-text-secondary);
+}
+
+/* Main Container Layout */
+.main-container {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0; /* Allow flex items to shrink */
+}
+
+/* Sidebar Container (aside element) */
+#sidebar-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  width: var(--sidebar-width);
+  background-color: var(--color-bg-secondary);
+  padding: var(--spacing-md);
+  box-shadow: var(--shadow-inset);
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  margin: 0 0 var(--spacing-md) 0;
+  color: var(--color-text-accent);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-tight);
+}
+
+h3 {
+  margin-top: 0;
+  font-size: var(--font-size-base);
+}
+
+p {
+  margin: 0 0 var(--spacing-md) 0;
+}
+
+/* Generic Button Styles */
+button {
+  background-color: var(--color-accent-secondary);
+  color: var(--color-text-white);
+  border: none;
+  padding: var(--button-padding);
+  border-radius: var(--button-border-radius);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  transition: var(--button-transition);
+  line-height: 1;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button:hover:not(:disabled) {
+  background-color: var(--color-accent-hover-secondary);
+}
+
+button:focus {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* Primary Button Variant */
+.button-primary {
+  background-color: var(--color-accent-primary);
+}
+
+.button-primary:hover:not(:disabled) {
+  background-color: var(--color-accent-hover);
+}
+
+/* Small Button Variant */
+.button-small {
+  padding: var(--button-padding-small);
+  font-size: var(--font-size-small);
+}
+
+/* Danger Button Variant */
+.button-danger {
+  background-color: var(--color-error);
+}
+
+.button-danger:hover:not(:disabled) {
+  background-color: #d32f2f;
+}
+
+/* Form Elements */
+input[type="file"] {
+  position: absolute;
+  left: -9999px;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+label {
+  display: inline-block;
+  cursor: pointer;
+  font-weight: var(--font-weight-normal);
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+  border-radius: var(--border-radius-sm);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-accent-secondary);
+  border-radius: var(--border-radius-sm);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent-hover-secondary);
+}
+
+/* Firefox scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-accent-secondary) var(--color-bg-secondary);
+}
+
+/* Focus and Selection */
+:focus {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+}
+
+::selection {
+  background-color: var(--color-accent-primary);
+  color: var(--color-text-white);
+}
+
+/* Utility Classes */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+
+.text-center {
+  text-align: center;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Loading States */
+.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 2px solid var(--color-accent-primary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error States */
+.error {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+/* Success States */
+.success {
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+/* Print Styles */
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+  
+  .no-print,
+  button,
+  .header {
+    display: none !important;
+  }
+  
+  .main-container {
+    flex-direction: column;
+  }
+  
+  .canvas-container {
+    width: 100% !important;
+  }
+  
+  .sidebar {
+    width: 100% !important;
+    box-shadow: none;
+    border-top: 1px solid #ccc;
+    margin-top: var(--spacing-md);
+  }
+}
