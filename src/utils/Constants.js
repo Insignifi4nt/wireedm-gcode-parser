@@ -87,7 +87,7 @@ export const MARKERS = {
 
 // File Handling Configuration
 export const FILE = {
-  SUPPORTED_EXTENSIONS: ['.gcode', '.nc', '.txt'],
+  SUPPORTED_EXTENSIONS: ['.gcode', '.nc', '.txt', '.iso'],
   MIME_TYPES: ['text/plain', 'application/octet-stream'],
   MAX_FILE_SIZE: 50 * 1024 * 1024, // 50MB limit
   ENCODING: 'utf-8'
@@ -200,6 +200,10 @@ export const EXPORT = {
     MIME_TYPE: 'text/plain',
     HEADER_COMMENT: '; Exported points from Wire EDM G-Code Viewer',
     DATE_FORMAT: 'YYYY-MM-DD HH:mm:ss'
+  },
+  ISO: {
+    EXTENSION: '.iso',
+    MIME_TYPE: 'text/plain'
   }
 };
 

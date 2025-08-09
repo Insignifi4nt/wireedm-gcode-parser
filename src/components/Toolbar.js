@@ -134,7 +134,7 @@ export class Toolbar {
   _renderFileInput() {
     return `
       <div class="file-input-wrapper">
-        <input type="file" id="fileInput" accept=".gcode,.nc,.txt" data-toolbar="file-input">
+        <input type="file" id="fileInput" accept=".gcode,.nc,.txt,.iso" data-toolbar="file-input">
         <label for="fileInput" class="file-input-label" data-toolbar="file-input-label" title="Load G-Code files (.gcode, .nc, .txt) or drag and drop files here">
           Load G-Code File
         </label>
@@ -162,8 +162,9 @@ export class Toolbar {
   _renderUtilityButtons() {
     return `
       <button data-toolbar="clear-points" type="button" title="Clear all measurement points">Clear Points</button>
-      <button data-toolbar="export-points" type="button" title="Export clicked points as G-Code file">Export Points</button>
+      <button data-toolbar="export-points" type="button" title="Export clicked points as ISO file (.iso)">Export ISO</button>
       <button data-toolbar="toggle-gcode-drawer" type="button" title="Show/Hide G-Code preview drawer">G-Code Drawer</button>
+      <button data-toolbar="normalize-to-iso" type="button" title="Normalize current drawer content to .iso (no points needed)">Normalize to ISO</button>
     `;
   }
 
@@ -212,6 +213,27 @@ export class Toolbar {
     if (drawerBtn) {
       drawerBtn.addEventListener('click', () => {
         this.eventBus.emit('drawer:toggle');
+      });
+    }
+
+    // Normalize to ISO button
+    const normalizeBtn = this.container.querySelector('[data-toolbar="normalize-to-iso"]');
+    if (normalizeBtn) {
+      normalizeBtn.addEventListener('click', async () => {
+        try {
+          // Get current drawer text if available
+          const app = window.wireEDMViewer;
+          const drawer = app?.gcodeDrawer;
+          const text = drawer?.getText?.() || this.fileHandler?.loadedData?.content || '';
+          const { normalizeToISO } = await import('../utils/IsoNormalizer.js');
+          const normalized = normalizeToISO(text);
+          // Offer download as .iso without requiring points
+          const filename = `normalized_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.iso`;
+          this.fileHandler._downloadFile(normalized, filename, 'text/plain');
+          this.eventBus.emit('status:show', { message: 'Normalized to ISO', type: 'success' }, { skipValidation: true });
+        } catch (e) {
+          console.error('Normalize to ISO failed:', e);
+        }
       });
     }
 
@@ -308,7 +330,7 @@ export class Toolbar {
     // Request current points from the system
     this.eventBus.emit(EVENT_TYPES.EXPORT_START, {
       source: 'toolbar',
-      format: 'gcode'
+      format: 'iso'
     });
   }
 

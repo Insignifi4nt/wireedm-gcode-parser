@@ -14,6 +14,7 @@ import { GCodeParser } from '../core/GCodeParser.js';
 import { StatusMessage } from '../components/StatusMessage.js';
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { GCODE, FILE, EXPORT, PERFORMANCE } from './Constants.js';
+import { normalizeToISO, buildISOFromPoints } from './IsoNormalizer.js';
 
 export class FileHandler {
   /**
@@ -57,6 +58,9 @@ export class FileHandler {
   _bindMethods() {
     this.loadFile = this.loadFile.bind(this);
     this.exportPoints = this.exportPoints.bind(this);
+    this.exportISOFromPoints = this.exportISOFromPoints.bind(this);
+    this.normalizeContentToISO = this.normalizeContentToISO.bind(this);
+    this.exportNormalizedISOFromText = this.exportNormalizedISOFromText.bind(this);
     this.validateFile = this.validateFile.bind(this);
   }
 
@@ -230,6 +234,98 @@ export class FileHandler {
     } catch (error) {
       this.statusMessage?.error(`Export failed: ${error.message}`);
       // Normalize to EXPORT_ERROR
+      this.eventBus.emit(EVENT_TYPES.EXPORT_ERROR, { error });
+      return false;
+    }
+  }
+
+  /**
+   * Export clicked points as ISO (.iso) program following PinZ15New-style structure
+   * @param {Array} points - Array of point objects with x, y coordinates
+   * @param {Object} options
+   * @param {string} [options.filename]
+   * @param {number} [options.startN]
+   * @param {number} [options.step]
+   * @param {number} [options.precision]
+   * @param {number|null} [options.feed]
+   * @returns {boolean}
+   */
+  exportISOFromPoints(points, options = {}) {
+    if (!points || points.length === 0) {
+      this.statusMessage?.warning('No points to export!');
+      return false;
+    }
+
+    try {
+      const program = buildISOFromPoints(points, {
+        startN: options.startN ?? 10,
+        step: options.step ?? 10,
+        precision: options.precision ?? GCODE.DEFAULT_PRECISION,
+        feed: options.feed ?? 1000,
+        crlf: true
+      });
+
+      const filename = options.filename || 'program.iso';
+      const success = this._downloadFile(program, filename, EXPORT.ISO.MIME_TYPE);
+      if (success) {
+        this.statusMessage?.success(`ISO exported successfully (${points.length} points)`);
+        this.eventBus.emit(EVENT_TYPES.EXPORT_SUCCESS, {
+          pointCount: points.length,
+          filename,
+          format: 'iso',
+          points
+        });
+        return true;
+      }
+      return false;
+    } catch (error) {
+      this.statusMessage?.error(`ISO export failed: ${error.message}`);
+      this.eventBus.emit(EVENT_TYPES.EXPORT_ERROR, { error });
+      return false;
+    }
+  }
+
+  /**
+   * Normalize arbitrary input text (gcode/txt/iso) to ISO program string
+   * in-memory for consistent display / reparse in drawer if needed.
+   * @param {string} content
+   * @param {Object} options
+   * @returns {string}
+   */
+  normalizeContentToISO(content, options = {}) {
+    return normalizeToISO(content, options);
+  }
+
+  /**
+   * Export current text (drawer or loaded) normalized to ISO
+   * @param {string} text - Source text to normalize and export
+   * @param {Object} options
+   * @param {string} [options.filename]
+   * @returns {boolean}
+   */
+  exportNormalizedISOFromText(text, options = {}) {
+    try {
+      const content = normalizeToISO(text || '', {
+        startN: options.startN ?? 10,
+        step: options.step ?? 10,
+        addPercent: true,
+        ensureM02: true,
+        crlf: true,
+        stripSemicolon: true
+      });
+      const filename = options.filename || 'program.iso';
+      const success = this._downloadFile(content, filename, EXPORT.ISO.MIME_TYPE);
+      if (success) {
+        this.statusMessage?.success('ISO exported successfully');
+        this.eventBus.emit(EVENT_TYPES.EXPORT_SUCCESS, {
+          filename,
+          format: 'iso'
+        });
+        return true;
+      }
+      return false;
+    } catch (error) {
+      this.statusMessage?.error(`ISO export failed: ${error.message}`);
       this.eventBus.emit(EVENT_TYPES.EXPORT_ERROR, { error });
       return false;
     }

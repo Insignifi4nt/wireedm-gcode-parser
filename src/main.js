@@ -252,7 +252,7 @@ class WireEDMViewer {
     });
     
     // Handle successful file load with parsed data
-    this.eventBus.on(EVENT_TYPES.FILE_LOAD_SUCCESS, (data) => {
+    this.eventBus.on(EVENT_TYPES.FILE_LOAD_SUCCESS, async (data) => {
       try {
         // Store the parsed result (data.path, data.bounds, etc. are already parsed by FileHandler)
         this.currentGCode = {
@@ -270,12 +270,24 @@ class WireEDMViewer {
         // Update canvas display
         this.canvas.redraw();
 
-        // Provide raw file content and parsed mapping to drawer
+        // Provide stripped file content (for clean editing) and parsed mapping to drawer
         if (this.gcodeDrawer && this.toolbar?.fileHandler?.loadedData) {
-          this.gcodeDrawer.setContent({
-            text: this.toolbar.fileHandler.loadedData.content,
-            mapping: data.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
-          });
+          const raw = this.toolbar.fileHandler.loadedData.content;
+          try {
+            // Lazy import to avoid circular deps
+            const { stripForEditing } = await import('./utils/IsoNormalizer.js');
+            const stripped = stripForEditing(raw);
+            this.gcodeDrawer.setContent({
+              text: stripped,
+              mapping: data.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
+            });
+          } catch (_e) {
+            // Fallback to raw text
+            this.gcodeDrawer.setContent({
+              text: raw,
+              mapping: data.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
+            });
+          }
         }
         
         // Show success message
@@ -348,7 +360,7 @@ class WireEDMViewer {
     });
 
     // Drawer content edits -> reparse and rebuild mapping and canvas path
-    this.eventBus.on('drawer:content:changed', ({ text }) => {
+    this.eventBus.on('drawer:content:changed', async ({ text }) => {
       try {
         // Reuse parser to keep mapping intact
         const result = this.parser.parse(text);
@@ -535,20 +547,52 @@ class WireEDMViewer {
   setupExportWorkflow() {
     // Handle export requests
     this.eventBus.on(EVENT_TYPES.EXPORT_START, (data) => {
-      if (this.clickedPoints.length === 0) {
-        this.statusMessage.show('No points to export', 'warning');
+      const fmt = (data && typeof data.format === 'string') ? data.format.toLowerCase() : 'iso';
+
+      if (fmt === 'iso') {
+        // New behavior: Export the ENTIRE drawer text (including any inserted moves)
+        // normalized to ISO, not just clicked points.
+        const drawerText = this.gcodeDrawer?.getText?.();
+        if (!drawerText || drawerText.trim() === '') {
+          this.statusMessage.show('Nothing to export. Load a file or add content.', 'warning');
+          return;
+        }
+        const ok = this.toolbar?.fileHandler?.exportNormalizedISOFromText(drawerText, {
+          filename: `program_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.iso`
+        });
+        if (!ok) {
+          this.statusMessage.show('ISO export failed', 'error');
+        }
         return;
       }
 
-      // Create export data
-      const exportData = {
-        points: this.clickedPoints,
-        format: data.format || 'csv',
-        timestamp: new Date().toISOString()
-      };
+      if (fmt === 'csv') {
+        // Fallback CSV of clicked points only
+        if (this.clickedPoints.length === 0) {
+          this.statusMessage.show('No points to export', 'warning');
+          return;
+        }
+        const exportData = {
+          points: this.clickedPoints,
+          format: 'csv',
+          timestamp: new Date().toISOString()
+        };
+        this._exportPointsAsCSV(exportData);
+        return;
+      }
 
-      // Simple CSV export
-      this._exportPointsAsCSV(exportData);
+      // Unknown format -> default ISO behavior
+      const drawerText = this.gcodeDrawer?.getText?.();
+      if (!drawerText || drawerText.trim() === '') {
+        this.statusMessage.show('Nothing to export. Load a file or add content.', 'warning');
+        return;
+      }
+      const ok = this.toolbar?.fileHandler?.exportNormalizedISOFromText(drawerText, {
+        filename: `program_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.iso`
+      });
+      if (!ok) {
+        this.statusMessage.show('Export failed', 'error');
+      }
     });
   }
 

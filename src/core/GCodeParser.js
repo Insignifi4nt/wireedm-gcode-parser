@@ -36,7 +36,8 @@ export class GCodeParser {
   static REGEX = {
     COORDINATE: /([XYZ])(-?\d+\.?\d*)/g,
     ARC_CENTER: /([IJ])(-?\d+\.?\d*)/g,
-    COMMENT: /[;(].*$/
+    COMMENT: /[;(].*$/,
+    LEADING_BLOCK_NUMBER: /^N\d+\s+/i
   };
 
   /**
@@ -143,6 +144,9 @@ export class GCodeParser {
 
     // Remove inline comments
     line = this._removeInlineComments(line);
+
+    // Drop leading block numbers (e.g., N10 ) for uniform parsing
+    line = line.replace(GCodeParser.REGEX.LEADING_BLOCK_NUMBER, '');
     
     if (line === '') {
       return;

@@ -29,7 +29,7 @@ export class GCodeDrawer {
       <div class="gcode-drawer-header">
         <strong>G-Code</strong>
         <div>
-          <button class="gcode-insert-btn" data-action="insert-points" title="Insert clicked points at selected line">Insert Points Here</button>
+          <button class="gcode-insert-btn" data-action="insert-points" title="Insert clicked points at selected line">Insert G0 Moves Here</button>
           <button class="gcode-insert-btn" data-action="close">Close</button>
         </div>
       </div>
@@ -130,7 +130,7 @@ export class GCodeDrawer {
     const gcodeText = this.getText();
     const insertAfterLine = this.selectedLine || 1;
     const lines = gcodeText.split(/\r?\n/);
-    const gcodeForPoints = points.map((p, idx) => `; Inserted P${idx + 1}\nG0 X${p.x.toFixed(3)} Y${p.y.toFixed(3)}`).join('\n');
+    const gcodeForPoints = points.map((p, idx) => `; inserted G0 P${idx + 1}\nG0 X${p.x.toFixed(3)} Y${p.y.toFixed(3)}`).join('\n');
     const before = lines.slice(0, insertAfterLine).join('\n');
     const after = lines.slice(insertAfterLine).join('\n');
     const newText = `${before}\n${gcodeForPoints}\n${after}`.replace(/\n\n\n/g, '\n\n');
