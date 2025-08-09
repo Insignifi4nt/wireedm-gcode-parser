@@ -46,6 +46,8 @@ export class Canvas {
     // Data to render
     this.gcodePath = [];
     this.clickedPoints = [];
+    this.hoverHighlight = null; // {type: 'point'|'segment', index, color}
+    this.persistentHighlights = new Set(); // store indices of selected points/segments
     this.gridEnabled = this.options.showGrid;
     this.gridSize = this.options.gridSize;
 
@@ -508,6 +510,15 @@ export class Canvas {
       } else {
         this._renderLinearMove(prevMove, move);
       }
+      // Highlight hovered/selected endpoints
+      const shouldHighlight = this.persistentHighlights.has(index) || (this.hoverHighlight && this.hoverHighlight.type === 'point' && this.hoverHighlight.index === index);
+      if (shouldHighlight) {
+        const hx = move.type === 'arc' ? move.endX : move.x;
+        const hy = move.type === 'arc' ? move.endY : move.y;
+        if (hx !== undefined && hy !== undefined) {
+          this._renderMarker({ x: hx, y: hy }, { ...MARKERS.CLICKED_POINT, COLOR: '#ffa500', RADIUS: 2, FONT: 'bold 6px Arial', LABEL: `L${move.line || index}` });
+        }
+      }
     });
   }
 
@@ -754,6 +765,32 @@ export class Canvas {
     }
 
     this.clickedPoints.push({ ...point });
+    this.redraw();
+  }
+
+  /**
+   * Set hovered gcode point index to highlight
+   * @param {number|null} index - index in gcodePath to highlight (endpoint of move)
+   */
+  setHoverHighlight(index) {
+    if (typeof index === 'number') {
+      this.hoverHighlight = { type: 'point', index };
+    } else {
+      this.hoverHighlight = null;
+    }
+    this.redraw();
+  }
+
+  /**
+   * Toggle persistent highlight for a gcode point index
+   * @param {number} index
+   */
+  togglePersistentHighlight(index) {
+    if (this.persistentHighlights.has(index)) {
+      this.persistentHighlights.delete(index);
+    } else {
+      this.persistentHighlights.add(index);
+    }
     this.redraw();
   }
 

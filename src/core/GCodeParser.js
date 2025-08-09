@@ -228,7 +228,8 @@ export class GCodeParser {
     const pathPoint = {
       type: moveType,
       x: this.currentPosition.x,
-      y: this.currentPosition.y
+      y: this.currentPosition.y,
+      line: lineNumber
     };
 
     // Add to path and update bounds
@@ -276,7 +277,8 @@ export class GCodeParser {
       endY: endY,
       centerX: centerX,
       centerY: centerY,
-      clockwise: clockwise
+      clockwise: clockwise,
+      line: lineNumber
     };
 
     // Add to path

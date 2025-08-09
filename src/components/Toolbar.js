@@ -163,6 +163,7 @@ export class Toolbar {
     return `
       <button data-toolbar="clear-points" type="button" title="Clear all measurement points">Clear Points</button>
       <button data-toolbar="export-points" type="button" title="Export clicked points as G-Code file">Export Points</button>
+      <button data-toolbar="toggle-gcode-drawer" type="button" title="Show/Hide G-Code preview drawer">G-Code Drawer</button>
     `;
   }
 
@@ -206,6 +207,12 @@ export class Toolbar {
     }
     if (this.elements.exportPointsButton) {
       this.elements.exportPointsButton.addEventListener('click', this._handleExportPoints);
+    }
+    const drawerBtn = this.container.querySelector('[data-toolbar="toggle-gcode-drawer"]');
+    if (drawerBtn) {
+      drawerBtn.addEventListener('click', () => {
+        this.eventBus.emit('drawer:toggle');
+      });
     }
 
     // Drag and drop support

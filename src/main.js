@@ -14,6 +14,7 @@ import { EventIntegration } from './core/EventIntegration.js';
 import { Canvas } from './components/Canvas.js';
 import { Toolbar } from './components/Toolbar.js';
 import { Sidebar } from './components/Sidebar.js';
+import { GCodeDrawer } from './components/GCodeDrawer.js';
 import { StatusMessage } from './components/StatusMessage.js';
 
 // Utility imports
@@ -39,6 +40,7 @@ class WireEDMViewer {
     this.canvas = null;
     this.toolbar = null;
     this.sidebar = null;
+    this.gcodeDrawer = null;
     this.statusMessage = null;
     
     // DOM elements
@@ -187,6 +189,9 @@ class WireEDMViewer {
         showPoints: true,
         showPathInfo: true
       });
+
+      // Initialize GCode Drawer (collapsible panel)
+      this.gcodeDrawer = new GCodeDrawer(document.body, { anchor: 'right' });
       
       // Initialize StatusMessage component
       const statusContainer = document.getElementById('status-container');
@@ -232,6 +237,9 @@ class WireEDMViewer {
     
     // Export workflow
     this.setupExportWorkflow();
+
+    // Drawer workflow
+    this.setupDrawerWorkflow();
   }
 
   /**
@@ -261,6 +269,14 @@ class WireEDMViewer {
         
         // Update canvas display
         this.canvas.redraw();
+
+        // Provide raw file content and parsed mapping to drawer
+        if (this.gcodeDrawer && this.toolbar?.fileHandler?.loadedData) {
+          this.gcodeDrawer.setContent({
+            text: this.toolbar.fileHandler.loadedData.content,
+            mapping: data.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
+          });
+        }
         
         // Show success message
         this.statusMessage.show(`G-Code loaded: ${data.file.name}`, 'success');
@@ -305,6 +321,48 @@ class WireEDMViewer {
     // Handle canvas resize
     this.eventBus.on(EVENT_TYPES.UI_RESIZE, () => {
       this.canvas._handleResize();
+    });
+  }
+
+  /**
+   * Wire interactions between drawer and canvas
+   */
+  setupDrawerWorkflow() {
+    if (!this.gcodeDrawer) return;
+    // Hover line -> highlight point
+    this.eventBus.on('drawer:line:hover', ({ index }) => {
+      this.canvas.setHoverHighlight(index);
+    });
+    // Leave
+    this.eventBus.on('drawer:line:leave', () => {
+      this.canvas.setHoverHighlight(null);
+    });
+    // Click line -> toggle persistent highlight
+    this.eventBus.on('drawer:line:click', ({ index }) => {
+      this.canvas.togglePersistentHighlight(index);
+    });
+    // Insert clicked measurement points into drawer text
+    this.eventBus.on('drawer:insert:points', ({ atIndex, points }) => {
+      if (!points || points.length === 0) return;
+      this.gcodeDrawer.insertPointsAt(atIndex, points);
+    });
+
+    // Drawer content edits -> reparse and rebuild mapping and canvas path
+    this.eventBus.on('drawer:content:changed', ({ text }) => {
+      try {
+        // Reuse parser to keep mapping intact
+        const result = this.parser.parse(text);
+        this.currentGCode = { path: result.path, bounds: result.bounds, stats: result.stats };
+        this.canvas.setGCodePath(result.path);
+        this.canvas.redraw();
+        // Rebuild mapping in drawer so hover/click keeps working
+        this.gcodeDrawer.setContent({
+          text,
+          mapping: result.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
+        });
+      } catch (e) {
+        console.error('Re-parse failed:', e);
+      }
     });
   }
 
