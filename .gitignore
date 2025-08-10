@@ -58,3 +58,6 @@ temp/
 
 # Keep coordination files for multi-agent development
 !coordination/
+
+codebase_memory_visualization.html
+memory_server.py

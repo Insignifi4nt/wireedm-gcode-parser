@@ -1,121 +1,106 @@
-# Wire EDM G-Code Viewer
+# Wire EDM G‑Code Viewer
 
-A modular Wire EDM G-Code Viewer application with interactive visualization and measurement tools.
+Interactive, modular viewer for Wire EDM G‑Code. Load `.gcode`, `.nc`, `.txt`, or `.iso`, visualize toolpaths (G0/G1/G2/G3), inspect bounds, add measurement points, edit G‑code in a drawer, and export normalized ISO programs.
 
-## Development Status
+## Quick start
 
-**Current Phase**: Phase 2 (Core Components) - 2/3 complete  
-**Progress**: 5/12 agents completed  
-**Next Agent**: B3 (Event Management System)
-
-### Completed Components
-- ✅ **A1**: Foundation Setup (package.json, Vite config, folder structure)
-- ✅ **A2**: Core Architecture (Constants, MathUtils, EventManager design)
-- ✅ **A3**: G-Code Parser (Complete parsing system with G0/G1/G2/G3 support)
-- ✅ **B1**: Viewport Management (Coordinate transforms, zoom, pan)
-- ✅ **B2**: Canvas Rendering (Grid, G-code paths, markers, points)
-
-### Ready to Start
-- 🔄 **B3**: Event Management System (Mouse/keyboard events, event delegation)
-
-## Testing the Current Build
-
-### Prerequisites
 ```bash
-# Install Node.js dependencies
+# Requirements: Node >= 16
 npm install
-```
+npm run dev   # opens http://localhost:3000
 
-### Development Server
-```bash
-# Start the development server
-npm run dev
-```
-Opens at http://localhost:3000
-
-### Building for Production
-```bash
-# Build the application
+# Build & preview
 npm run build
-
-# Preview the build
 npm run preview
 ```
 
-## File Structure
+- Main entry: `index.html` → `src/main.js`
+- Legacy single‑file demo (no build needed): `wire-edm-gcode-viewer.html`
+
+## What you can do
+
+- Load and parse G‑code (linear G0/G1 and arcs G2/G3 with I/J)
+- Viewport controls: fit, zoom, pan; high‑DPI aware transforms
+- Grid display with major/minor lines; toggle visibility
+- Click to add measurement points; manage from sidebar
+- G‑Code Drawer: view/edit text, hover/click to highlight path, insert clicked points as G0 moves
+- Export
+  - Normalize any G‑code/ISO text to Fanuc‑style ISO (`%`, monotonically increasing N‑numbers, trailing M02, CRLF)
+  - Export clicked points as ISO program (PinZ15New‑style header) or plain G‑code rapids
+
+## Using the app
+
+1. Load a file
+   - Toolbar “Load G‑Code File” or drag‑and‑drop onto the button
+   - Supported: `.gcode`, `.nc`, `.txt`, `.iso` (≤ 50 MB)
+2. Navigate the view
+   - Mouse wheel zoom, Shift+Left‑drag or Middle button to pan
+   - Use “Fit to Screen” to center and scale content
+3. Inspect
+   - Sidebar shows live mouse XY, grid state, clicked points, path stats/bounds
+   - Drawer button opens the G‑code drawer; hover/click lines to highlight; “Insert G0 Moves Here” to add points at a line
+4. Export
+   - Toolbar “Export ISO” exports the current drawer text normalized to `.iso`
+   - “Normalize to ISO” creates a normalized `.iso` from current drawer (or loaded) text without needing points
+
+## Shortcuts
+
+- Ctrl+= / Ctrl++: Zoom in
+- Ctrl+-: Zoom out
+- Ctrl+0: Reset zoom
+- F: Fit to screen
+- Arrow keys: Pan
+- G: Toggle grid visibility
+- Ctrl+C: Clear all points
+
+## Supported G‑code details
+
+- Commands: G0/G1 linear moves, G2/G3 circular arcs with I/J center offsets
+- Coordinates: X/Y (Z parsed but not visualized)
+- Comments: `;` and `()` are handled and stripped during parsing/normalization
+- Block numbers: Leading `N…` accepted; parser removes for uniform handling; normalizer regenerates
+
+## Architecture (high level)
+
+- Core
+  - `GCodeParser`: Parses text → `{ path, bounds, stats }`
+  - `Viewport`: Zoom/pan, coordinate transforms, fit‑to‑bounds
+  - Event system (`EventBus`, `EVENT_TYPES`) for decoupled communication
+- Components
+  - `Canvas`: Grid + path rendering + highlights
+  - `Toolbar`: File I/O, zoom/fit, drawer/normalization actions
+  - `Sidebar`: Coordinates, grid state, points, path info
+  - `GCodeDrawer`: Collapsible editor with line ↔ path highlighting and point insertion
+  - `StatusMessage`: Non‑blocking toasts for progress/feedback
+- Utils
+  - `IsoNormalizer`: `%`, N‑numbers, trailing `M02`, CRLF; strip semicolon comments; build ISO from point lists
+  - `FileHandler`: Load/validate files, parse via `GCodeParser`, export helpers
+  - `Constants`/`MathUtils`: Rendering, precision, bounds/arc math, transforms
+
+## Project structure
+
 ```
-wire-edm-viewer/
-├── index.html              # Main entry point
-├── package.json            # Dependencies & scripts
-├── vite.config.js          # Build configuration
-├── src/
-│   ├── main.js             # Application bootstrap (not yet created)
-│   ├── core/
-│   │   ├── GCodeParser.js  # ✅ G-code parsing logic
-│   │   ├── Viewport.js     # ✅ Pan/zoom/coordinate transforms
-│   │   └── EventManager.js # ✅ Event architecture (needs implementation)
-│   ├── components/
-│   │   └── Canvas.js       # ✅ Canvas rendering engine
-│   ├── utils/
-│   │   ├── Constants.js    # ✅ App constants
-│   │   └── MathUtils.js    # ✅ Coordinate calculations
-│   ├── templates/          # ✅ Development templates
-│   ├── standards/          # ✅ Coding standards
-│   └── styles/             # (not yet created)
-└── coordination/           # Multi-agent coordination files
-    ├── currentPlan.md      # Detailed task breakdown
-    ├── agentStatus.md      # Current assignments
-    ├── comm.md            # Communication log
-    └── completed.md       # Task completion tracking
+WireEDM_app/
+  index.html
+  wire-edm-gcode-viewer.html   # legacy single-file demo
+  src/
+    main.js                    # app bootstrap and orchestration
+    core/                      # parser, viewport, event integration
+    components/                # canvas, toolbar, sidebar, drawer, status
+    utils/                     # constants, file handler, ISO normalizer, math
+    styles/                    # theme + layout
 ```
 
-## Features Implemented So Far
+## Scripts
 
-### Core Parsing (A3)
-- G0/G1 linear moves with coordinate extraction
-- G2/G3 arc moves with I/J parameter handling
-- Bounds calculation and error handling
-- Comment processing and validation
+- `npm run dev`: Start Vite dev server (port 3000)
+- `npm run build`: Production build to `dist/`
+- `npm run preview`: Preview built app (port 4173)
 
-### Viewport System (B1)
-- Screen-to-world coordinate transformation
-- Mouse coordinate conversion with grid snapping
-- Zoom functionality (0.1x to 10x range)
-- Pan/drag viewport manipulation
-- Fit-to-bounds functionality
+## Browser support
 
-### Canvas Rendering (B2)
-- Grid rendering with major/minor lines and axis labels
-- G-code path visualization:
-  - Yellow dashed lines for rapid moves (G0)
-  - Green solid lines for cutting moves (G1)
-  - Arc move support (G2/G3)
-- Start/end point markers (red/blue circles)
-- Measurement point visualization
-- High-DPI display support
+Modern evergreen browsers. Builds target ES2015; IE11 is not supported.
 
-## Original Functionality Status
+## License
 
-The modular version preserves ALL functionality from the original `wire-edm-gcode-viewer.html`:
-- ✅ G-Code file loading and parsing
-- ✅ Interactive canvas with pan/zoom
-- ✅ Grid display and snapping
-- ✅ Measurement point clicking
-- ✅ Coordinate transformations
-- ⏳ Event handling (B3 in progress)
-- ⏳ UI components (Phase 3)
-- ⏳ File operations (Phase 4)
-
-## Next Steps
-
-1. **Complete B3** (Event Management) - Mouse/keyboard events, shortcuts
-2. **Phase 3** - UI Components (C1: Toolbar, C2: Sidebar, C3: Status)
-3. **Phase 4** - Integration (D1: File ops, D2: CSS, D3: Assembly)
-
-## Multi-Agent Development
-
-This project uses a coordinated multi-agent development system. See `coordination/` directory for:
-- Task assignments and dependencies
-- Agent communication logs
-- Completion tracking
-- Development protocol
+MIT

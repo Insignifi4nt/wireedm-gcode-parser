@@ -264,7 +264,7 @@ class WireEDMViewer {
         // Update canvas with new path
         this.canvas.setGCodePath(data.path);
         
-        // Fit viewport to new content (restored with coordinate fix)
+        // Fit viewport to new content and establish dynamic zoom limits
         this.canvas.viewport.fitToBounds(data.bounds);
         
         // Update canvas display

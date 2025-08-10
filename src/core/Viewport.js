@@ -23,6 +23,9 @@ export class Viewport {
     // Grid snapping state
     this.gridSnapEnabled = false;
     this.gridSnapSize = 1;
+    // Dynamic zoom limits (initialized to global fallbacks)
+    this.minZoom = VIEWPORT.MIN_ZOOM;
+    this.maxZoom = VIEWPORT.MAX_ZOOM;
     this.reset();
   }
 
@@ -57,6 +60,9 @@ export class Viewport {
     this.isDragging = false;
     this.dragStartX = 0;
     this.dragStartY = 0;
+    // Reset dynamic zoom limits to global fallbacks
+    this.minZoom = VIEWPORT.MIN_ZOOM;
+    this.maxZoom = VIEWPORT.MAX_ZOOM;
   }
 
   /**
@@ -107,7 +113,10 @@ export class Viewport {
    * @returns {number} Clamped zoom value
    */
   clampZoom(zoom) {
-    return Math.max(VIEWPORT.MIN_ZOOM, Math.min(VIEWPORT.MAX_ZOOM, zoom));
+    // Use dynamic per-instance range if available
+    const minZ = this.minZoom ?? VIEWPORT.MIN_ZOOM;
+    const maxZ = this.maxZoom ?? VIEWPORT.MAX_ZOOM;
+    return Math.max(minZ, Math.min(maxZ, zoom));
   }
 
   /**
@@ -465,7 +474,16 @@ export class Viewport {
     
     const scaleX = (canvasWidth - 2 * padding) / width;
     const scaleY = (canvasHeight - 2 * padding) / height;
-    this.zoom = this.clampZoom(Math.min(scaleX, scaleY));
+    const fitScale = Math.min(scaleX, scaleY);
+
+    // Establish dynamic zoom limits around the fit scale
+    const minFactor = VIEWPORT.DYNAMIC_RANGE?.MIN_FACTOR ?? 1 / 1000;
+    const maxFactor = VIEWPORT.DYNAMIC_RANGE?.MAX_FACTOR ?? 1000;
+    this.minZoom = Math.max(VIEWPORT.MIN_ZOOM, fitScale * minFactor);
+    this.maxZoom = Math.min(VIEWPORT.MAX_ZOOM, fitScale * maxFactor);
+
+    // Set zoom to fit within new limits
+    this.zoom = this.clampZoom(fitScale);
     
     // Center the content
     const centerX = (minX + maxX) / 2;

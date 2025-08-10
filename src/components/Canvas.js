@@ -404,13 +404,15 @@ export class Canvas {
   _drawGridLines(gridLines, major = false) {
     const { vertical, horizontal } = gridLines;
 
-    // Set line style - simplified without complex scaling
+    // Set line style (screen-space stroke widths for consistent appearance)
+    const pxScale = this.devicePixelRatio || 1;
+    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
     if (major) {
       this.ctx.strokeStyle = GRID.COLORS.MAJOR;
-      this.ctx.lineWidth = GRID.LINE_WIDTH.MAJOR;
+      this.ctx.lineWidth = cssToWorld(GRID.LINE_WIDTH.MAJOR);
     } else {
       this.ctx.strokeStyle = GRID.COLORS.MINOR;
-      this.ctx.lineWidth = GRID.LINE_WIDTH.MINOR;
+      this.ctx.lineWidth = cssToWorld(GRID.LINE_WIDTH.MINOR);
     }
 
     this.ctx.setLineDash([]);
@@ -516,7 +518,10 @@ export class Canvas {
         const hx = move.type === 'arc' ? move.endX : move.x;
         const hy = move.type === 'arc' ? move.endY : move.y;
         if (hx !== undefined && hy !== undefined) {
-          this._renderMarker({ x: hx, y: hy }, { ...MARKERS.CLICKED_POINT, COLOR: '#ffa500', RADIUS: 2, FONT: 'bold 6px Arial', LABEL: `L${move.line || index}` });
+          this._renderMarker(
+            { x: hx, y: hy },
+            { ...MARKERS.CLICKED_POINT, COLOR: '#ffa500', RADIUS_PX: 3, FONT: 'bold 10px Arial', LABEL: `L${move.line || index}` }
+          );
         }
       }
     });
@@ -534,13 +539,20 @@ export class Canvas {
 
     // Set style based on move type
     const style = to.type === 'rapid' ? PATH_STYLES.RAPID : PATH_STYLES.CUT;
-    
+
+    // Screen-space styling: keep strokes constant in CSS pixels regardless of zoom
+    // Convert desired CSS pixel widths to world units by dividing by zoom
+    const pxScale = this.devicePixelRatio || 1;
+    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
+
     this.ctx.strokeStyle = style.COLOR;
-    // Use fixed line width for now - no complex scaling
-    this.ctx.lineWidth = style.LINE_WIDTH;
-    
-    // Use fixed dash pattern
-    this.ctx.setLineDash(style.LINE_DASH);
+    this.ctx.lineWidth = cssToWorld(style.LINE_WIDTH_PX ?? 1);
+    const dashPx = style.LINE_DASH_PX ?? [];
+    if (Array.isArray(dashPx) && dashPx.length > 0) {
+      this.ctx.setLineDash(dashPx.map(cssToWorld));
+    } else {
+      this.ctx.setLineDash([]);
+    }
 
     // Draw line
     this.ctx.beginPath();
@@ -558,11 +570,13 @@ export class Canvas {
       return;
     }
 
-    // Set arc style
+    // Set arc style (screen-space)
+    const pxScale = this.devicePixelRatio || 1;
+    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
     this.ctx.strokeStyle = PATH_STYLES.ARC.COLOR;
-    // Use fixed line width for now
-    this.ctx.lineWidth = PATH_STYLES.ARC.LINE_WIDTH;
-    this.ctx.setLineDash([]);
+    this.ctx.lineWidth = cssToWorld(PATH_STYLES.ARC.LINE_WIDTH_PX ?? 1);
+    const dashPx = PATH_STYLES.ARC.LINE_DASH_PX ?? [];
+    this.ctx.setLineDash(Array.isArray(dashPx) ? dashPx.map(cssToWorld) : []);
 
     // Calculate arc parameters
     const radius = Math.sqrt(
@@ -650,8 +664,10 @@ export class Canvas {
    * @param {Object} config - Marker configuration
    */
   _renderMarker(point, config) {
-    // Use fixed sizes for now - no complex scaling
-    const scaledRadius = config.RADIUS;
+    // Screen-space marker radius and offsets so points remain visible at any zoom
+    const pxScale = this.devicePixelRatio || 1;
+    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
+    const scaledRadius = cssToWorld(config.RADIUS_PX ?? 3);
     const scaledOffsetX = config.OFFSET.X;
     const scaledOffsetY = config.OFFSET.Y;
 
@@ -662,23 +678,25 @@ export class Canvas {
     this.ctx.fill();
 
     // Draw label with text-safe transform to prevent mirroring
-    this.ctx.save();
-    this._applyTextTransform();
-    
-    // Convert world coordinates to screen coordinates for text
-    const screenCoords = this.viewport.worldToScreen(point.x, point.y);
-    
-    this.ctx.fillStyle = config.COLOR;
-    this.ctx.font = config.FONT;
-    this.ctx.textAlign = 'left';
-    this.ctx.textBaseline = 'top';
-    this.ctx.fillText(
-      config.LABEL,
-      screenCoords.x + scaledOffsetX,
-      screenCoords.y + scaledOffsetY
-    );
-    
-    this.ctx.restore();
+    if (config.LABEL) {
+      this.ctx.save();
+      this._applyTextTransform();
+
+      // Convert world coordinates to screen coordinates for text
+      const screenCoords = this.viewport.worldToScreen(point.x, point.y);
+
+      this.ctx.fillStyle = config.COLOR;
+      this.ctx.font = config.FONT || '10px Arial';
+      this.ctx.textAlign = 'left';
+      this.ctx.textBaseline = 'top';
+      this.ctx.fillText(
+        config.LABEL,
+        screenCoords.x + scaledOffsetX,
+        screenCoords.y + scaledOffsetY
+      );
+
+      this.ctx.restore();
+    }
   }
 
   /**
