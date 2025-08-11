@@ -418,7 +418,8 @@ export class Viewport {
   startDrag(screenX, screenY) {
     this.isDragging = true;
     this.dragStartX = screenX - this.offsetX;
-    this.dragStartY = screenY - this.offsetY;
+    // Invert vertical drag so drag direction matches expected canvas behavior
+    this.dragStartY = screenY + this.offsetY;
     this.canvas.style.cursor = CANVAS.CURSOR_DRAG;
   }
 
@@ -431,7 +432,8 @@ export class Viewport {
     if (!this.isDragging) return;
     
     this.offsetX = screenX - this.dragStartX;
-    this.offsetY = screenY - this.dragStartY;
+    // Use inverted vertical delta to correct Y drag direction
+    this.offsetY = this.dragStartY - screenY;
   }
 
   /**
