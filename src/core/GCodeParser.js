@@ -131,6 +131,9 @@ export class GCodeParser {
     // Clean and normalize line
     line = line.trim().toUpperCase();
     
+    // Normalize zero-padded motion codes (e.g., G01 -> G1, G02 -> G2, G00 -> G0)
+    line = this._normalizeMotionCodes(line);
+
     // Skip empty lines
     if (line === '') {
       return;
@@ -163,6 +166,21 @@ export class GCodeParser {
       // Unknown command - issue warning
       this._addWarning(`Unknown G-Code command: ${line}`, lineNumber);
     }
+  }
+
+  /**
+   * Normalize motion codes to canonical form without leading zeros
+   * Converts G00/G01/G02/G03 (and variants like G0001) to G0/G1/G2/G3
+   * @param {string} line - Line to normalize
+   * @returns {string} Normalized line
+   * @private
+   */
+  _normalizeMotionCodes(line) {
+    // Replace any occurrence of G followed by one or more zeros and then a single digit 0-3
+    // with the canonical G<digit>. This avoids misclassification from startsWith checks.
+    // Match G followed by one or more zeros and then a single digit 0-3,
+    // not followed by another digit (so 'G01X' matches, but 'G010' won't)
+    return line.replace(/\bG0+([0-3])(?!\d)/g, 'G$1');
   }
 
   /**

@@ -282,11 +282,21 @@ class WireEDMViewer {
               mapping: data.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
             });
           } catch (_e) {
-            // Fallback to raw text
-            this.gcodeDrawer.setContent({
-              text: raw,
-              mapping: data.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
-            });
+            // Fallback to raw text, but still canonicalize motion codes (G01 -> G1)
+            try {
+              const { canonicalizeMotionCodes } = await import('./utils/IsoNormalizer.js');
+              const canonical = canonicalizeMotionCodes(raw);
+              this.gcodeDrawer.setContent({
+                text: canonical,
+                mapping: data.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
+              });
+            } catch (_e2) {
+              // Ultimate fallback: raw text
+              this.gcodeDrawer.setContent({
+                text: raw,
+                mapping: data.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
+              });
+            }
           }
         }
         
@@ -362,14 +372,18 @@ class WireEDMViewer {
     // Drawer content edits -> reparse and rebuild mapping and canvas path
     this.eventBus.on('drawer:content:changed', async ({ text }) => {
       try {
+        // Normalize drawer text to canonical motion codes for consistency (G01 -> G1, etc.)
+        const { canonicalizeMotionCodes } = await import('./utils/IsoNormalizer.js');
+        const normalizedText = canonicalizeMotionCodes(text || '');
+
         // Reuse parser to keep mapping intact
-        const result = this.parser.parse(text);
+        const result = this.parser.parse(normalizedText);
         this.currentGCode = { path: result.path, bounds: result.bounds, stats: result.stats };
         this.canvas.setGCodePath(result.path);
         this.canvas.redraw();
         // Rebuild mapping in drawer so hover/click keeps working
         this.gcodeDrawer.setContent({
-          text,
+          text: normalizedText,
           mapping: result.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
         });
       } catch (e) {

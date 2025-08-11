@@ -68,6 +68,9 @@ export function normalizeToISO(inputText, options = {}) {
     // Collapse internal whitespace
     s = s.replace(/\s+/g, ' ').trim();
 
+    // Canonicalize motion codes (e.g., G01 -> G1)
+    s = canonicalizeMotionCodes(s);
+
     // If already has an N-number at start, keep as-is; otherwise prepend one
     if (/^N\d+\b/i.test(s)) {
       outLines.push(s);
@@ -179,6 +182,8 @@ export function stripForEditing(inputText) {
     if (t === '%') continue;
     // Remove leading block numbers
     t = t.replace(/^N\d+\s+/i, '');
+    // Canonicalize motion codes (e.g., G01 -> G1)
+    t = canonicalizeMotionCodes(t);
     // Skip trailing M02 only if it's the last non-empty content
     // We'll collect now; a later pass will drop final sole M02.
     out.push(t);
@@ -194,10 +199,23 @@ export function stripForEditing(inputText) {
   return out.join('\n');
 }
 
+/**
+ * Canonicalize motion codes by removing leading zeros from G0..G3
+ * Examples: G00 -> G0, G01 -> G1, G02 -> G2, G03 -> G3
+ * Case-insensitive, word-boundary safe, and avoids touching numbers that continue with digits
+ * @param {string} text
+ * @returns {string}
+ */
+export function canonicalizeMotionCodes(text) {
+  if (typeof text !== 'string') return '' + text;
+  return text.replace(/\bG0+([0-3])(?!\d)/gi, 'G$1');
+}
+
 export default {
   normalizeToISO,
   buildISOFromPoints,
-  stripForEditing
+  stripForEditing,
+  canonicalizeMotionCodes
 };
 
 
