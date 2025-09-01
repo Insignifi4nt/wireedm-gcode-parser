@@ -61,3 +61,6 @@ temp/
 
 codebase_memory_visualization.html
 memory_server.py
+
+# Test files
+/testing_gcode_files/
