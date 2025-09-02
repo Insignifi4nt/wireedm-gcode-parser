@@ -381,10 +381,11 @@ class WireEDMViewer {
         this.currentGCode = { path: result.path, bounds: result.bounds, stats: result.stats };
         this.canvas.setGCodePath(result.path);
         this.canvas.redraw();
-        // Rebuild mapping in drawer so hover/click keeps working
+        // Rebuild mapping in drawer so hover/click keeps working (preserve undo/redo history)
         this.gcodeDrawer.setContent({
           text: normalizedText,
-          mapping: result.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
+          mapping: result.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p })),
+          preserveHistory: true
         });
       } catch (e) {
         console.error('Re-parse failed:', e);
@@ -448,6 +449,14 @@ class WireEDMViewer {
         pointCount: this.clickedPoints.length,
         points: this.clickedPoints
       });
+    });
+    
+    // Handle request for clicked points (from components that need them)
+    this.eventBus.on(EVENT_TYPES.POINT_GET_CLICKED, () => {
+      // Respond with current clicked points
+      this.eventBus.emit(EVENT_TYPES.POINT_CLICKED_RESPONSE, {
+        points: [...this.clickedPoints] // Send a copy to prevent modification
+      }, { skipValidation: true });
     });
   }
 

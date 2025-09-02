@@ -52,6 +52,8 @@ export const EVENT_TYPES = {
   POINT_CLEAR_ALL: 'point:clear:all',
   POINT_SELECT: 'point:select',
   POINT_DESELECT: 'point:deselect',
+  POINT_GET_CLICKED: 'point:get:clicked',
+  POINT_CLICKED_RESPONSE: 'point:clicked:response',
   
   // Grid System
   GRID_SNAP_TOGGLE: 'grid:snap:toggle',
