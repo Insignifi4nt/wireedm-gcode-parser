@@ -69,6 +69,9 @@ export class GCodeParser {
     this.bounds = BoundsUtils.createEmptyBounds();
     this.errors = [];
     this.warnings = [];
+    // Modal state for I/J interpretation (false => relative I/J; true => absolute center coords)
+    // Many Siemens-style posts use G60 to switch I/J to absolute center coordinates
+    this.ijAbsolute = false;
     this.stats = {
       totalLines: 0,
       processedLines: 0,
@@ -157,14 +160,34 @@ export class GCodeParser {
 
     this.stats.processedLines++;
 
+    // Handle modal commands that affect interpretation (no geometry change)
+    // G60 => I/J absolute center coordinates (Siemens-style)
+    // Also honor G90.1 (absolute I/J) and G91.1 (incremental I/J) if present
+    let handledMode = false;
+    if (/\bG60\b/.test(line)) {
+      this.ijAbsolute = true;
+      handledMode = true;
+    }
+    if (/\bG90\.1\b/.test(line)) {
+      this.ijAbsolute = true;
+      handledMode = true;
+    }
+    if (/\bG91\.1\b/.test(line)) {
+      this.ijAbsolute = false;
+      handledMode = true;
+    }
+
     // Parse G-Code commands
     if (this._isLinearMove(line)) {
       this._parseLinearMove(line, lineNumber);
     } else if (this._isArcMove(line)) {
       this._parseArcMove(line, lineNumber);
     } else {
-      // Unknown command - issue warning
-      this._addWarning(`Unknown G-Code command: ${line}`, lineNumber);
+      // If we handled a modal code (e.g., G60) and no motion present, don't warn
+      if (!handledMode) {
+        // Unknown command - issue warning
+        this._addWarning(`Unknown G-Code command: ${line}`, lineNumber);
+      }
     }
   }
 
@@ -281,8 +304,26 @@ export class GCodeParser {
     const endY = coordinates.y !== undefined ? coordinates.y : this.currentPosition.y;
 
     // Calculate center position
-    const centerX = startX + (arcCenter.i || 0);
-    const centerY = startY + (arcCenter.j || 0);
+    let centerX, centerY;
+    if (this.ijAbsolute) {
+      // Absolute I/J are absolute CENTER coordinates (e.g., Siemens G60)
+      if (arcCenter.i === undefined || arcCenter.j === undefined) {
+        // Missing absolute center parameters – fall back to relative interpretation with warning
+        this._addWarning(
+          `Line ${lineNumber}: Arc center missing I or J in absolute I/J mode; falling back to relative I/J.`,
+          lineNumber
+        );
+        centerX = startX + (arcCenter.i || 0);
+        centerY = startY + (arcCenter.j || 0);
+      } else {
+        centerX = arcCenter.i;
+        centerY = arcCenter.j;
+      }
+    } else {
+      // Default: I/J are offsets from start
+      centerX = startX + (arcCenter.i || 0);
+      centerY = startY + (arcCenter.j || 0);
+    }
 
     // Validate all coordinates
     if (!ValidationUtils.isValidCoordinate(endX) || !ValidationUtils.isValidCoordinate(endY) ||

@@ -3,7 +3,7 @@
  * Handles all canvas drawing operations including grid, G-code paths, and measurement points
  */
 
-import { CANVAS, GRID, PATH_STYLES, MARKERS, COORDINATES } from '../utils/Constants.js';
+import { CANVAS, GRID, PATH_STYLES, MARKERS, COORDINATES, DEBUG } from '../utils/Constants.js';
 import { Viewport } from '../core/Viewport.js';
 import { GridUtils, ValidationUtils, PrecisionUtils, CoordinateTransform } from '../utils/MathUtils.js';
 
@@ -503,14 +503,20 @@ export class Canvas {
     if (this.gcodePath.length === 0) return;
 
     this.gcodePath.forEach((move, index) => {
-      if (index === 0) return; // Skip first move (no previous point)
+      if (index === 0) return; // Skip first move (no previous endpoint)
 
       const prevMove = this.gcodePath[index - 1];
-      
+
       if (move.type === 'arc') {
+        // Arc move carries its own start/end; draw directly
         this._renderArcMove(move);
       } else {
-        this._renderLinearMove(prevMove, move);
+        // For linear moves, compute the start point from the previous segment's endpoint
+        const from = this._getMoveEndPoint(prevMove);
+        const to = { x: move.x, y: move.y };
+        if (from && ValidationUtils.isValidPoint(from) && ValidationUtils.isValidPoint(to)) {
+          this._renderLinearMove(from, to);
+        }
       }
       // Highlight hovered/selected endpoints
       const shouldHighlight = this.persistentHighlights.has(index) || (this.hoverHighlight && this.hoverHighlight.type === 'point' && this.hoverHighlight.index === index);
@@ -525,6 +531,27 @@ export class Canvas {
         }
       }
     });
+  }
+
+  /**
+   * Get the endpoint of a move as a point {x, y}
+   * - For linear moves (rapid/cut): returns {x, y}
+   * - For arcs: returns {endX, endY}
+   * - Otherwise: null
+   */
+  _getMoveEndPoint(move) {
+    if (!move) return null;
+    if (move.type === 'arc') {
+      if (ValidationUtils.isValidCoordinate(move.endX) && ValidationUtils.isValidCoordinate(move.endY)) {
+        return { x: move.endX, y: move.endY };
+      }
+      return null;
+    }
+    // Linear point
+    if (ValidationUtils.isValidCoordinate(move.x) && ValidationUtils.isValidCoordinate(move.y)) {
+      return { x: move.x, y: move.y };
+    }
+    return null;
   }
 
   /**
@@ -589,10 +616,19 @@ export class Canvas {
       move.startX - move.centerX
     );
 
-    const endAngle = Math.atan2(
+    const rawEndAngle = Math.atan2(
       move.endY - move.centerY,
       move.endX - move.centerX
     );
+
+    // Normalize end angle so path follows requested direction and length
+    let delta = rawEndAngle - startAngle;
+    if (move.clockwise) {
+      if (delta >= 0) delta -= 2 * Math.PI; // ensure clockwise delta is negative
+    } else {
+      if (delta <= 0) delta += 2 * Math.PI; // ensure counterclockwise delta is positive
+    }
+    const endAngle = startAngle + delta;
 
     // Draw arc (note: Y-axis flip handled by viewport transform)
     this.ctx.beginPath();
@@ -602,9 +638,31 @@ export class Canvas {
       radius,
       startAngle,
       endAngle,
-      !move.clockwise // Canvas arc direction is inverted from G-code
+      move.clockwise // Y-axis is flipped in the transform, so invert desired world direction
     );
     this.ctx.stroke();
+
+    // Optional debug overlay for arc geometry
+    if (DEBUG && DEBUG.SHOW_ARC_GEOMETRY) {
+      this.ctx.save();
+      // Center marker
+      this.ctx.fillStyle = '#ff8800';
+      this.ctx.beginPath();
+      this.ctx.arc(move.centerX, move.centerY, cssToWorld(2.5), 0, Math.PI * 2);
+      this.ctx.fill();
+
+      // Radial lines to start and end
+      this.ctx.strokeStyle = '#ffaa00';
+      this.ctx.lineWidth = cssToWorld(0.8);
+      this.ctx.setLineDash([cssToWorld(3), cssToWorld(2)]);
+      this.ctx.beginPath();
+      this.ctx.moveTo(move.centerX, move.centerY);
+      this.ctx.lineTo(move.startX, move.startY);
+      this.ctx.moveTo(move.centerX, move.centerY);
+      this.ctx.lineTo(move.endX, move.endY);
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
   }
 
   /**
