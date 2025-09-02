@@ -9,7 +9,7 @@ import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 export class GCodeDrawer {
   constructor(mountTarget = document.body, options = {}) {
     this.eventBus = EventBus.getInstance();
-    this.options = { anchor: 'right', ...options };
+    this.options = { anchor: 'right', debug: false, ...options };
     this.container = document.createElement('div');
     this.container.className = 'gcode-drawer';
     this.headerEl = null;
@@ -17,6 +17,7 @@ export class GCodeDrawer {
     this.footerEl = null;
     this.lines = []; // [{num, text, indexMapping}]
     this.lineIndexToPathIndex = new Map(); // source line -> path index
+    this.pathIndexToLineIndex = new Map(); // path index -> source line
     this.selectedLines = new Set(); // Set of selected line numbers
     this.lastClickedLine = null; // For shift-click range selection
     this._debounceTimer = null;
@@ -27,8 +28,21 @@ export class GCodeDrawer {
     this.redoStack = []; // Command history for redo
     this.maxHistorySize = 50; // Limit history size
     mountTarget.appendChild(this.container);
+    this._applyAnchorClass();
     this._render();
     this._bindGlobalEvents();
+  }
+
+  _applyAnchorClass() {
+    const anchor = (this.options.anchor === 'left') ? 'left' : 'right';
+    this.container.classList.remove('gcode-drawer--left', 'gcode-drawer--right');
+    this.container.classList.add(`gcode-drawer--${anchor}`);
+  }
+
+  _debug(...args) {
+    if (this.options.debug) {
+      console.log('[GCodeDrawer]', ...args);
+    }
   }
 
   _render() {
@@ -104,6 +118,7 @@ export class GCodeDrawer {
     this.bodyEl.innerHTML = '';
     this.lines = [];
     this.lineIndexToPathIndex.clear();
+    this.pathIndexToLineIndex.clear();
     this.selectedLines.clear();
     this.lastClickedLine = null;
     this.linesWithChanges.clear();
@@ -127,9 +142,12 @@ export class GCodeDrawer {
     });
     // Build line->path index map (use first point with matching line)
     mapping?.forEach(m => {
-      if (m.line) {
+      if (typeof m?.line === 'number' && typeof m?.index === 'number') {
         if (!this.lineIndexToPathIndex.has(m.line)) {
           this.lineIndexToPathIndex.set(m.line, m.index);
+        }
+        if (!this.pathIndexToLineIndex.has(m.index)) {
+          this.pathIndexToLineIndex.set(m.index, m.line);
         }
       }
     });
@@ -251,7 +269,7 @@ export class GCodeDrawer {
   _updateLineCount() {
     const lineCountEl = this.container.querySelector('.gcode-line-count');
     if (lineCountEl) {
-      const count = this.lines.length;
+      const count = this.bodyEl ? this.bodyEl.querySelectorAll('.gcode-line').length : this.lines.length;
       lineCountEl.textContent = `${count} line${count !== 1 ? 's' : ''}`;
     }
   }
@@ -295,7 +313,7 @@ export class GCodeDrawer {
   
   // Undo/Redo functionality
   _pushCommand(command) {
-    console.log('GCodeDrawer: Pushing command to undo stack:', command.type, 'Stack size before:', this.undoStack.length);
+    this._debug('Pushing command to undo stack:', command.type, 'Stack size before:', this.undoStack.length);
     
     // Add command to undo stack
     this.undoStack.push(command);
@@ -308,15 +326,20 @@ export class GCodeDrawer {
       this.undoStack.shift();
     }
     
-    console.log('GCodeDrawer: Command pushed, new stack size:', this.undoStack.length);
+    this._debug('Command pushed, new stack size:', this.undoStack.length);
     this._updateUndoRedoButtons();
   }
   
   _undo() {
     if (this.undoStack.length === 0) return;
-    
+    // Cancel any pending debounced content change to avoid racing updates
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
+
     const command = this.undoStack.pop();
-    console.log('GCodeDrawer: Executing undo for command:', command.type);
+    this._debug('Executing undo for command:', command.type);
     command.undo();
     this.redoStack.push(command);
     
@@ -336,9 +359,14 @@ export class GCodeDrawer {
   
   _redo() {
     if (this.redoStack.length === 0) return;
-    
+    // Cancel any pending debounced content change to avoid racing updates
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
+
     const command = this.redoStack.pop();
-    console.log('GCodeDrawer: Executing redo for command:', command.type);
+    this._debug('Executing redo for command:', command.type);
     command.execute();
     this.undoStack.push(command);
     
@@ -360,13 +388,13 @@ export class GCodeDrawer {
     const undoBtn = this.container.querySelector('[data-action="undo"]');
     const redoBtn = this.container.querySelector('[data-action="redo"]');
     
-    console.log('GCodeDrawer: Updating undo/redo buttons. Undo stack:', this.undoStack.length, 'Redo stack:', this.redoStack.length);
+    this._debug('Updating undo/redo buttons. Undo stack:', this.undoStack.length, 'Redo stack:', this.redoStack.length);
     
     if (undoBtn) {
       const wasDisabled = undoBtn.disabled;
       undoBtn.disabled = this.undoStack.length === 0;
       if (wasDisabled !== undoBtn.disabled) {
-        console.log('GCodeDrawer: Undo button', undoBtn.disabled ? 'disabled' : 'enabled');
+        this._debug('Undo button', undoBtn.disabled ? 'disabled' : 'enabled');
       }
       undoBtn.title = this.undoStack.length > 0 
         ? `Undo (Ctrl+Z) - ${this.undoStack.length} action${this.undoStack.length !== 1 ? 's' : ''}` 
@@ -377,7 +405,7 @@ export class GCodeDrawer {
       const wasDisabled = redoBtn.disabled;
       redoBtn.disabled = this.redoStack.length === 0;
       if (wasDisabled !== redoBtn.disabled) {
-        console.log('GCodeDrawer: Redo button', redoBtn.disabled ? 'disabled' : 'enabled');
+        this._debug('Redo button', redoBtn.disabled ? 'disabled' : 'enabled');
       }
       redoBtn.title = this.redoStack.length > 0 
         ? `Redo (Ctrl+Y) - ${this.redoStack.length} action${this.redoStack.length !== 1 ? 's' : ''}` 
@@ -418,6 +446,60 @@ export class GCodeDrawer {
     };
   }
   
+  _createInsertCommand(insertAfterLine, insertedLines) {
+    // insertAfterLine: number (line number after which to insert), 0 inserts at top
+    // insertedLines: array of strings (each a line to insert)
+    const startLine = insertAfterLine + 1; // first inserted line number at time of execute
+
+    const doInsert = () => {
+      // Build fragment with new lines and insert at target index
+      const fragment = document.createDocumentFragment();
+      insertedLines.forEach((text, i) => {
+        const div = this._createLineElement(startLine + i, text);
+        fragment.appendChild(div);
+      });
+
+      const all = Array.from(this.bodyEl.querySelectorAll('.gcode-line'));
+      const target = all[insertAfterLine] || null; // insert before the element currently at this index (append if null)
+      if (target) {
+        this.bodyEl.insertBefore(fragment, target);
+      } else {
+        this.bodyEl.appendChild(fragment);
+      }
+
+      // Renumber and update UI
+      this._renumberLines();
+      this._updateLineCount();
+
+      // Select the newly inserted range
+      this.selectedLines.clear();
+      for (let n = 0; n < insertedLines.length; n++) {
+        this.selectedLines.add(startLine + n);
+      }
+      this._updateSelectionVisuals();
+    };
+
+    const doRemove = () => {
+      // Remove the exact range that was inserted
+      for (let n = insertedLines.length - 1; n >= 0; n--) {
+        const lineEl = this.bodyEl.querySelector(`.gcode-line[data-line="${startLine + n}"]`);
+        if (lineEl) lineEl.remove();
+      }
+      this._renumberLines();
+      this._updateLineCount();
+      this.selectedLines.clear();
+      this._updateSelectionVisuals();
+    };
+
+    return {
+      type: 'insert',
+      startLine,
+      lineCount: insertedLines.length,
+      execute: () => doInsert(),
+      undo: () => doRemove()
+    };
+  }
+  
   _createMoveCommand(fromIndices, direction) {
     // Store original line positions
     const originalLines = [...fromIndices];
@@ -428,13 +510,13 @@ export class GCodeDrawer {
       direction: direction,
       execute: () => {
         // For redo operations, restore selection and move
-        console.log('GCodeDrawer: Move command execute, restoring selection to lines:', originalLines.map(n => n + direction));
+        this._debug('Move command execute, restoring selection to lines:', originalLines.map(n => n + direction));
         this._restoreSelection(originalLines.map(lineNum => lineNum + direction));
         this._moveSelectedLinesInternal(direction);
       },
       undo: () => {
         // For undo operations, restore selection to moved positions and move back
-        console.log('GCodeDrawer: Move command undo, restoring selection to lines:', originalLines.map(n => n + direction));
+        this._debug('Move command undo, restoring selection to lines:', originalLines.map(n => n + direction));
         this._restoreSelection(originalLines.map(lineNum => lineNum + direction));
         this._moveSelectedLinesInternal(-direction);
         // After undo, restore original selection
@@ -475,16 +557,39 @@ export class GCodeDrawer {
   }
 
   insertPointsAt(atIndex, points) {
-    // If the line is not mapped to a path index, append at current selected line position in text
+    // Insert generated G-code for points after a resolved line:
+    // Priority: path index -> source line; fallback to first selected; fallback to line 1.
+    if (!Array.isArray(points) || points.length === 0) return;
+
     const gcodeText = this.getText();
-    const firstSelected = this.selectedLines.size > 0 ? Math.min(...this.selectedLines) : null;
-    const insertAfterLine = firstSelected || 1;
-    const lines = gcodeText.split(/\r?\n/);
-    const gcodeForPoints = points.map((p, idx) => `; inserted G0 P${idx + 1}\nG0 X${p.x.toFixed(3)} Y${p.y.toFixed(3)}`).join('\n');
-    const before = lines.slice(0, insertAfterLine).join('\n');
-    const after = lines.slice(insertAfterLine).join('\n');
-    const newText = `${before}\n${gcodeForPoints}\n${after}`.replace(/\n\n\n/g, '\n\n');
-    this._emitContentChanged(newText);
+    let insertAfterLine = null;
+
+    if (typeof atIndex === 'number' && this.pathIndexToLineIndex.has(atIndex)) {
+      insertAfterLine = this.pathIndexToLineIndex.get(atIndex);
+    }
+
+    if (insertAfterLine == null) {
+      insertAfterLine = this.selectedLines.size > 0 ? Math.min(...this.selectedLines) : 1;
+    }
+
+    const gcodeLines = points.flatMap((p, idx) => [
+      `; inserted G0 P${idx + 1}`,
+      `G0 X${p.x.toFixed(3)} Y${p.y.toFixed(3)}`
+    ]);
+
+    // Create and push undoable insert command
+    const insertCommand = this._createInsertCommand(insertAfterLine, gcodeLines);
+    this._pushCommand(insertCommand);
+
+    // Execute insertion immediately
+    insertCommand.execute();
+
+    // Emit updated content so main app can reparse, then restore selection
+    const movedSelection = Array.from(this.selectedLines);
+    this._emitContentChanged(this.getText());
+    setTimeout(() => {
+      this._restoreSelection(movedSelection);
+    }, 0);
   }
 
   getText() {
@@ -527,8 +632,9 @@ export class GCodeDrawer {
     if (force) {
       fire();
     } else {
-      // Reduced debounce timeout from 300ms to 100ms for better responsiveness
-      this._debounceTimer = setTimeout(fire, 100);
+      // Increased debounce timeout to 3000ms to allow uninterrupted editing
+      // Short debounce times (100ms) disrupt editing by constantly refreshing the drawer
+      this._debounceTimer = setTimeout(fire, 3000);
     }
   }
 
@@ -536,6 +642,12 @@ export class GCodeDrawer {
     const lineEl = this.bodyEl.querySelector(`.gcode-line[data-line="${lineNum}"]`);
     if (!lineEl) return;
     
+    // Cancel any pending debounced content change to avoid racing updates
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
+
     // Capture state for undo
     const allLines = Array.from(this.bodyEl.querySelectorAll('.gcode-line'));
     const linesData = [{
@@ -564,6 +676,11 @@ export class GCodeDrawer {
   }
 
   _onKeyDown(e) {
+    // If typing inside a line editor, let the browser handle undo/redo and edits
+    if (e.target && (e.target.isContentEditable || e.target.closest?.('.gcode-line-text'))) {
+      return;
+    }
+
     // Handle keyboard shortcuts
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
       switch (e.key.toLowerCase()) {
@@ -592,11 +709,25 @@ export class GCodeDrawer {
         this._onBulkDelete();
       }
     }
+
+    // Escape clears selection
+    if (e.key === 'Escape') {
+      if (this.selectedLines.size > 0) {
+        this.selectedLines.clear();
+        this._updateSelectionVisuals();
+      }
+    }
   }
 
   _onBulkDelete() {
     if (this.selectedLines.size === 0) return;
     
+    // Cancel any pending debounced content change to avoid racing updates
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
+
     // Show confirmation for bulk delete (>3 lines)
     const count = this.selectedLines.size;
     if (count > 3) {
@@ -637,6 +768,12 @@ export class GCodeDrawer {
   _moveSelectedLines(direction) {
     if (this.selectedLines.size === 0) return;
     
+    // Cancel any pending debounced content change to avoid racing updates
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
+
     const sortedSelection = Array.from(this.selectedLines).sort((a, b) => a - b);
     
     // Create and push move command
@@ -792,7 +929,7 @@ export class GCodeDrawer {
           const originalText = this.editingOriginalText.get(lineNum);
           
           if (originalText !== undefined && originalText !== currentText) {
-            console.log('GCodeDrawer: Text changed on line', lineNum, 'from:', originalText, 'to:', currentText);
+            this._debug('Text changed on line', lineNum, 'from:', originalText, 'to:', currentText);
             // Create and push edit command for undo/redo
             const editCommand = this._createEditCommand(lineNum, originalText, currentText);
             this._pushCommand(editCommand);
@@ -914,12 +1051,7 @@ export class GCodeDrawer {
     // Sanitize the entire content before emitting
     const sanitized = this._sanitizeInput(text);
     this.eventBus.emit('drawer:content:changed', { text: sanitized }, { skipValidation: true });
-    
-    // Clear change indicators after emitting changes
-    this._clearChangeIndicators();
   }
 }
 
 export default GCodeDrawer;
-
-
