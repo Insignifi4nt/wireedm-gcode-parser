@@ -8,6 +8,7 @@
 // Core imports
 import { EventBus, EVENT_TYPES } from './core/EventManager.js';
 import { buildAppDOM, initAppComponents } from './core/ComponentInitializer.js';
+import { attachEventWiring } from './core/EventWiring.js';
 
 /**
  * Wire EDM G-Code Viewer Application
@@ -64,11 +65,8 @@ class WireEDMViewer {
       // Initialize components
       await this.initializeComponents();
       
-      // Wire up component communication
-      await this.wireComponentCommunication();
-      
-      // Set up global event listeners
-      this.setupGlobalEventListeners();
+      // Wire up cross-component communication via centralized module (PR3)
+      this._detachWiring = attachEventWiring(this);
       
       // Hide loading indicator
       this.hideLoadingIndicator();
@@ -132,405 +130,42 @@ class WireEDMViewer {
   /**
    * Wire up component communication through EventBus
    */
-  async wireComponentCommunication() {
-    // File loading workflow
-    this.setupFileLoadingWorkflow();
-    
-    // Canvas interaction workflow
-    this.setupCanvasInteractionWorkflow();
-    
-    // Point management workflow
-    this.setupPointManagementWorkflow();
-    
-    // Viewport control workflow
-    this.setupViewportControlWorkflow();
-    
-    // Status message workflow
-    this.setupStatusMessageWorkflow();
-    
-    // Export workflow
-    this.setupExportWorkflow();
-
-    // Drawer workflow
-    this.setupDrawerWorkflow();
-  }
+  async wireComponentCommunication() {}
 
   /**
    * Set up file loading workflow
    */
-  setupFileLoadingWorkflow() {
-    // Handle file load start - just show loading message
-    this.eventBus.on(EVENT_TYPES.FILE_LOAD_START, (data) => {
-      this.statusMessage.show('Loading G-Code file...', 'info');
-    });
-    
-    // Handle successful file load with parsed data
-    this.eventBus.on(EVENT_TYPES.FILE_LOAD_SUCCESS, async (data) => {
-      try {
-        // Store the parsed result (data.path, data.bounds, etc. are already parsed by FileHandler)
-        this.currentGCode = {
-          path: data.path,
-          bounds: data.bounds,
-          stats: data.stats
-        };
-        
-        // Update canvas with new path
-        this.canvas.setGCodePath(data.path);
-        
-        // Fit viewport to new content and establish dynamic zoom limits
-        this.canvas.viewport.fitToBounds(data.bounds);
-        
-        // Update canvas display
-        this.canvas.redraw();
-
-        // Provide stripped file content (for clean editing) and parsed mapping to drawer
-        if (this.gcodeDrawer && this.toolbar?.fileHandler?.loadedData) {
-          const raw = this.toolbar.fileHandler.loadedData.content;
-          try {
-            // Lazy import to avoid circular deps
-            const { stripForEditing } = await import('./utils/IsoNormalizer.js');
-            const stripped = stripForEditing(raw);
-            this.gcodeDrawer.setContent({
-              text: stripped,
-              mapping: data.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
-            });
-          } catch (_e) {
-            // Fallback to raw text, but still canonicalize motion codes (G01 -> G1)
-            try {
-              const { canonicalizeMotionCodes } = await import('./utils/IsoNormalizer.js');
-              const canonical = canonicalizeMotionCodes(raw);
-              this.gcodeDrawer.setContent({
-                text: canonical,
-                mapping: data.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
-              });
-            } catch (_e2) {
-              // Ultimate fallback: raw text
-              this.gcodeDrawer.setContent({
-                text: raw,
-                mapping: data.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p }))
-              });
-            }
-          }
-        }
-        
-        // Show success message
-        this.statusMessage.show(`G-Code loaded: ${data.file.name}`, 'success');
-        
-      } catch (error) {
-        console.error('File display failed:', error);
-        this.statusMessage.show(`Failed to display file: ${error.message}`, 'error');
-      }
-    });
-    
-    // Handle file load errors
-    this.eventBus.on(EVENT_TYPES.FILE_LOAD_ERROR, (data) => {
-      console.error('File loading failed:', data.error);
-      this.statusMessage.show(`Failed to load file: ${data.error.message || data.error}`, 'error');
-    });
-  }
+  setupFileLoadingWorkflow() {}
 
   /**
    * Set up canvas interaction workflow
    */
-  setupCanvasInteractionWorkflow() {
-    // Handle mouse clicks on canvas
-    this.eventBus.on(EVENT_TYPES.MOUSE_CLICK, (data) => {
-      console.log('MOUSE_CLICK event received:', data);
-      if (data.target === 'canvas') {
-        console.log('Adding measurement point at:', data.worldX, data.worldY);
-        
-        // Use the world coordinates from the event data directly (more accurate)
-        this.addMeasurementPoint(data.worldX, data.worldY);
-      }
-    });
-    
-    // Handle viewport changes
-    this.eventBus.on(EVENT_TYPES.VIEWPORT_ZOOM_CHANGE, () => {
-      this.canvas.redraw();
-    });
-    
-    this.eventBus.on(EVENT_TYPES.VIEWPORT_PAN_CHANGE, () => {
-      this.canvas.redraw();
-    });
-    
-    // Handle canvas resize
-    this.eventBus.on(EVENT_TYPES.UI_RESIZE, () => {
-      this.canvas._handleResize();
-    });
-  }
+  setupCanvasInteractionWorkflow() {}
 
   /**
    * Wire interactions between drawer and canvas
    */
-  setupDrawerWorkflow() {
-    if (!this.gcodeDrawer) return;
-    // Hover line -> highlight point
-    this.eventBus.on('drawer:line:hover', ({ index }) => {
-      this.canvas.setHoverHighlight(index);
-    });
-    // Leave
-    this.eventBus.on('drawer:line:leave', () => {
-      this.canvas.setHoverHighlight(null);
-    });
-    // Click line -> toggle persistent highlight
-    this.eventBus.on('drawer:line:click', ({ index }) => {
-      this.canvas.togglePersistentHighlight(index);
-    });
-    // Insert clicked measurement points into drawer text
-    this.eventBus.on('drawer:insert:points', ({ atIndex, points }) => {
-      if (!points || points.length === 0) return;
-      this.gcodeDrawer.insertPointsAt(atIndex, points);
-    });
-
-    // Drawer content edits -> reparse and rebuild mapping and canvas path
-    this.eventBus.on('drawer:content:changed', async ({ text }) => {
-      try {
-        // Normalize drawer text to canonical motion codes for consistency (G01 -> G1, etc.)
-        const { canonicalizeMotionCodes } = await import('./utils/IsoNormalizer.js');
-        const normalizedText = canonicalizeMotionCodes(text || '');
-
-        // Reuse parser to keep mapping intact
-        const result = this.parser.parse(normalizedText);
-        this.currentGCode = { path: result.path, bounds: result.bounds, stats: result.stats };
-        this.canvas.setGCodePath(result.path);
-        this.canvas.redraw();
-        // Rebuild mapping in drawer so hover/click keeps working (preserve undo/redo history)
-        this.gcodeDrawer.setContent({
-          text: normalizedText,
-          mapping: result.path.map((p, idx) => ({ index: idx, line: p.line || null, point: p })),
-          preserveHistory: true
-        });
-      } catch (e) {
-        console.error('Re-parse failed:', e);
-      }
-    });
-  }
+  setupDrawerWorkflow() {}
 
   /**
    * Set up point management workflow
    */
-  setupPointManagementWorkflow() {
-    // Handle point addition
-    this.eventBus.on(EVENT_TYPES.POINT_ADD, (data) => {
-      console.log('POINT_ADD event received:', data);
-      const newPoint = {
-        id: data.id || Date.now(),
-        x: data.x,
-        y: data.y,
-        index: this.clickedPoints.length
-      };
-      this.clickedPoints.push(newPoint);
-      console.log('Added point, total points:', this.clickedPoints.length);
-      
-      this.canvas.setClickedPoints(this.clickedPoints);
-      this.canvas.redraw();
-      
-      // Emit point count change for other components
-      this.eventBus.emit(EVENT_TYPES.POINT_UPDATE, {
-        pointCount: this.clickedPoints.length,
-        points: this.clickedPoints
-      });
-    });
-    
-    // Handle point deletion
-    this.eventBus.on(EVENT_TYPES.POINT_DELETE, (data) => {
-      this.clickedPoints = this.clickedPoints.filter(point => point.id !== data.id);
-      
-      // Re-index remaining points
-      this.clickedPoints.forEach((point, index) => {
-        point.index = index;
-      });
-      
-      this.canvas.setClickedPoints(this.clickedPoints);
-      this.canvas.redraw();
-      
-      // Emit point count change for other components
-      this.eventBus.emit(EVENT_TYPES.POINT_UPDATE, {
-        pointCount: this.clickedPoints.length,
-        points: this.clickedPoints
-      });
-    });
-    
-    // Handle clear all points
-    this.eventBus.on(EVENT_TYPES.POINT_CLEAR_ALL, () => {
-      this.clickedPoints = [];
-      this.canvas.setClickedPoints(this.clickedPoints);
-      this.canvas.redraw();
-      
-      // Emit point count change for other components
-      this.eventBus.emit(EVENT_TYPES.POINT_UPDATE, {
-        pointCount: this.clickedPoints.length,
-        points: this.clickedPoints
-      });
-    });
-    
-    // Handle request for clicked points (from components that need them)
-    this.eventBus.on(EVENT_TYPES.POINT_GET_CLICKED, () => {
-      // Respond with current clicked points
-      this.eventBus.emit(EVENT_TYPES.POINT_CLICKED_RESPONSE, {
-        points: [...this.clickedPoints] // Send a copy to prevent modification
-      }, { skipValidation: true });
-    });
-  }
+  setupPointManagementWorkflow() {}
 
   /**
    * Set up viewport control workflow
    */
-  setupViewportControlWorkflow() {
-    // Handle zoom controls
-    this.eventBus.on(EVENT_TYPES.VIEWPORT_ZOOM_CHANGE, (data) => {
-      // Command-style payload: { type: 'in' | 'out' }
-      if (data && typeof data.type === 'string') {
-        if (data.type === 'in') {
-          this.canvas.viewport.zoomIn();
-        } else if (data.type === 'out') {
-          this.canvas.viewport.zoomOut();
-        }
-        this.canvas.redraw();
-
-        // Re-emit stateful viewport change for UI sync
-        const state = {
-          ...this.canvas.viewport.getState(),
-          canvasWidth: this.canvas.canvas.width,
-          canvasHeight: this.canvas.canvas.height
-        };
-        this.eventBus.emit(EVENT_TYPES.VIEWPORT_ZOOM_CHANGE, state);
-        return;
-      }
-
-      // Stateful payloads trigger redraw only
-      this.canvas.redraw();
-    });
-    
-    // Handle fit to screen
-    this.eventBus.on(EVENT_TYPES.VIEWPORT_FIT_TO_SCREEN, () => {
-      if (this.currentGCode) {
-        this.canvas.viewport.fitToBounds(this.currentGCode.bounds);
-        this.canvas.redraw();
-
-        // Emit stateful viewport change for UI sync
-        const state = {
-          ...this.canvas.viewport.getState(),
-          canvasWidth: this.canvas.canvas.width,
-          canvasHeight: this.canvas.canvas.height
-        };
-        this.eventBus.emit(EVENT_TYPES.VIEWPORT_ZOOM_CHANGE, state);
-      }
-    });
-    
-    // Handle viewport reset
-    this.eventBus.on(EVENT_TYPES.VIEWPORT_RESET, () => {
-      this.canvas.viewport.reset();
-      this.canvas.redraw();
-
-      // Emit stateful viewport change for UI sync
-      const state = {
-        ...this.canvas.viewport.getState(),
-        canvasWidth: this.canvas.canvas.width,
-        canvasHeight: this.canvas.canvas.height
-      };
-      this.eventBus.emit(EVENT_TYPES.VIEWPORT_ZOOM_CHANGE, state);
-    });
-    
-    // Handle grid snap toggle
-    this.eventBus.on(EVENT_TYPES.GRID_SNAP_TOGGLE, (data) => {
-      const hasPayload = data && typeof data.enabled === 'boolean';
-      if (hasPayload) {
-        this.gridSnapEnabled = data.enabled;
-      } else {
-        this.gridSnapEnabled = !this.gridSnapEnabled;
-        // Announce new state so subscribers like Sidebar update correctly
-        this.eventBus.emit(
-          EVENT_TYPES.GRID_SNAP_TOGGLE,
-          { enabled: this.gridSnapEnabled },
-          { skipValidation: true }
-        );
-      }
-
-      this.canvas.viewport.setGridSnap(this.gridSnapEnabled, this.canvas.gridSize);
-      if (!hasPayload) {
-        this.statusMessage.show(
-          `Grid snap ${this.gridSnapEnabled ? 'enabled' : 'disabled'}`,
-          'info'
-        );
-      }
-    });
-
-    // Handle grid visibility toggle
-    this.eventBus.on(EVENT_TYPES.GRID_VISIBILITY_TOGGLE, () => {
-      const currentGridState = this.canvas.gridEnabled;
-      this.canvas.setGridEnabled(!currentGridState);
-      this.statusMessage.show(
-        `Grid ${!currentGridState ? 'enabled' : 'disabled'}`,
-        'info'
-      );
-    });
-  }
+  setupViewportControlWorkflow() {}
 
   /**
    * Set up status message workflow
    */
-  setupStatusMessageWorkflow() {
-    // Handle status show requests
-    this.eventBus.on(EVENT_TYPES.STATUS_SHOW, (data) => {
-      this.statusMessage.show(data.message, data.type, data.options);
-    });
-  }
+  setupStatusMessageWorkflow() {}
 
   /**
    * Set up export workflow
    */
-  setupExportWorkflow() {
-    // Handle export requests
-    this.eventBus.on(EVENT_TYPES.EXPORT_START, (data) => {
-      const fmt = (data && typeof data.format === 'string') ? data.format.toLowerCase() : 'iso';
-
-      if (fmt === 'iso') {
-        // New behavior: Export the ENTIRE drawer text (including any inserted moves)
-        // normalized to ISO, not just clicked points.
-        const drawerText = this.gcodeDrawer?.getText?.();
-        if (!drawerText || drawerText.trim() === '') {
-          this.statusMessage.show('Nothing to export. Load a file or add content.', 'warning');
-          return;
-        }
-        const ok = this.toolbar?.fileHandler?.exportNormalizedISOFromText(drawerText, {
-          filename: `program_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.iso`
-        });
-        if (!ok) {
-          this.statusMessage.show('ISO export failed', 'error');
-        }
-        return;
-      }
-
-      if (fmt === 'csv') {
-        // Fallback CSV of clicked points only
-        if (this.clickedPoints.length === 0) {
-          this.statusMessage.show('No points to export', 'warning');
-          return;
-        }
-        const exportData = {
-          points: this.clickedPoints,
-          format: 'csv',
-          timestamp: new Date().toISOString()
-        };
-        this._exportPointsAsCSV(exportData);
-        return;
-      }
-
-      // Unknown format -> default ISO behavior
-      const drawerText = this.gcodeDrawer?.getText?.();
-      if (!drawerText || drawerText.trim() === '') {
-        this.statusMessage.show('Nothing to export. Load a file or add content.', 'warning');
-        return;
-      }
-      const ok = this.toolbar?.fileHandler?.exportNormalizedISOFromText(drawerText, {
-        filename: `program_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.iso`
-      });
-      if (!ok) {
-        this.statusMessage.show('Export failed', 'error');
-      }
-    });
-  }
+  setupExportWorkflow() {}
 
   /**
    * Export points as CSV file
@@ -566,18 +201,7 @@ class WireEDMViewer {
   /**
    * Set up global event listeners
    */
-  setupGlobalEventListeners() {
-    // Window resize
-    window.addEventListener('resize', () => {
-      this.eventBus.emit(EVENT_TYPES.UI_RESIZE, {
-        width: window.innerWidth,
-        height: window.innerHeight
-      });
-    });
-    
-    // Initialize event integration
-    this.eventIntegration.init();
-  }
+  setupGlobalEventListeners() {}
 
   /**
    * Add a measurement point
@@ -621,6 +245,11 @@ class WireEDMViewer {
     if (this.isDestroyed) return;
     
     try {
+      // Detach event wiring
+      if (this._detachWiring) {
+        try { this._detachWiring(); } catch (_) {}
+        this._detachWiring = null;
+      }
       // Clean up event integration
       if (this.eventIntegration) {
         this.eventIntegration.destroy();
