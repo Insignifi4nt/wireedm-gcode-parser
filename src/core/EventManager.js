@@ -19,6 +19,7 @@ import { EVENT_DATA_SCHEMAS } from './events/EventSchemas.js';
 export { EVENT_DATA_SCHEMAS };
 import { EventValidator } from './events/EventValidator.js';
 export { EventValidator };
+import * as EmitControls from './events/EmitControls.js';
 
 /**
  * EventManager - Centralized Event Management Implementation
@@ -521,37 +522,8 @@ export class EventUtils {
    * @returns {Function} Throttled function
    */
   static throttle(emitFunction, delay) {
-    if (typeof emitFunction !== 'function') {
-      throw new Error('First argument must be a function');
-    }
-    
-    if (typeof delay !== 'number' || delay < 0) {
-      throw new Error('Delay must be a non-negative number');
-    }
-    
-    let isThrottled = false;
-    let lastArgs = null;
-    
-    return function throttledFunction(...args) {
-      if (!isThrottled) {
-        // Execute immediately
-        emitFunction.apply(this, args);
-        isThrottled = true;
-        
-        setTimeout(() => {
-          isThrottled = false;
-          
-          // Execute with latest args if there were subsequent calls
-          if (lastArgs) {
-            emitFunction.apply(this, lastArgs);
-            lastArgs = null;
-          }
-        }, delay);
-      } else {
-        // Store latest args
-        lastArgs = args;
-      }
-    };
+    // Delegate to EmitControls for maintainability
+    return EmitControls.throttle(emitFunction, delay);
   }
 
   /**
@@ -561,28 +533,7 @@ export class EventUtils {
    * @returns {Function} Debounced function
    */
   static debounce(emitFunction, delay) {
-    if (typeof emitFunction !== 'function') {
-      throw new Error('First argument must be a function');
-    }
-    
-    if (typeof delay !== 'number' || delay < 0) {
-      throw new Error('Delay must be a non-negative number');
-    }
-    
-    let timeoutId = null;
-    
-    return function debouncedFunction(...args) {
-      // Clear existing timeout
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      
-      // Set new timeout
-      timeoutId = setTimeout(() => {
-        emitFunction.apply(this, args);
-        timeoutId = null;
-      }, delay);
-    };
+    return EmitControls.debounce(emitFunction, delay);
   }
 
   /**
@@ -593,29 +544,7 @@ export class EventUtils {
    * @returns {Function} Rate-limited function
    */
   static rateLimit(emitFunction, maxCalls, period) {
-    if (typeof emitFunction !== 'function') {
-      throw new Error('First argument must be a function');
-    }
-    
-    const calls = [];
-    
-    return function rateLimitedFunction(...args) {
-      const now = Date.now();
-      
-      // Remove old calls outside the period
-      while (calls.length > 0 && calls[0] <= now - period) {
-        calls.shift();
-      }
-      
-      // Check if we're under the limit
-      if (calls.length < maxCalls) {
-        calls.push(now);
-        return emitFunction.apply(this, args);
-      }
-      
-      // Rate limit exceeded - could emit a warning event here
-      console.debug(`Rate limit exceeded: ${maxCalls} calls per ${period}ms`);
-    };
+    return EmitControls.rateLimit(emitFunction, maxCalls, period);
   }
 
   /**
@@ -626,34 +555,12 @@ export class EventUtils {
    * @returns {Function} Deduplicated function
    */
   static deduplicate(emitFunction, threshold = 50, keyExtractor = null) {
-    if (typeof emitFunction !== 'function') {
-      throw new Error('First argument must be a function');
-    }
-    
-    const lastCalls = new Map();
-    
-    return function deduplicatedFunction(...args) {
-      const now = Date.now();
-      const key = keyExtractor ? keyExtractor(...args) : JSON.stringify(args);
-      const lastCall = lastCalls.get(key);
-      
-      if (!lastCall || now - lastCall > threshold) {
-        lastCalls.set(key, now);
-        
-        // Clean up old entries periodically
-        if (lastCalls.size > 100) {
-          for (const [k, time] of lastCalls.entries()) {
-            if (now - time > threshold * 2) {
-              lastCalls.delete(k);
-            }
-          }
-        }
-        
-        return emitFunction.apply(this, args);
-      }
-    };
+    return EmitControls.deduplicate(emitFunction, threshold, keyExtractor);
   }
 }
+
+// Also re-export EmitControls helpers for future direct usage, while keeping EventUtils API intact
+export * as EmitControls from './events/EmitControls.js';
 
 /**
  * IMPLEMENTATION GUIDELINES FOR AGENT B3:
