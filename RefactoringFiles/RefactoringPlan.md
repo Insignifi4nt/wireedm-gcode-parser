@@ -4,6 +4,8 @@ This is the master index for refactors. See per-file folders under `RefactoringF
 
 Navigation
 - GCodeDrawer: `RefactoringFiles/GCodeDrawer/00-scope.md` and `RefactoringFiles/GCodeDrawer/PRs/`
+- Canvas: `RefactoringFiles/Canvas/00-scope.md` and `RefactoringFiles/Canvas/PRs/`
+- EventManager: `RefactoringFiles/EventManager/00-scope.md` and `RefactoringFiles/EventManager/PRs/`
 
 ## Progress
 - PR1 (GCodeDrawer): Extract sanitization helpers to `src/utils/Sanitize.js` — completed. Build passes; event contracts unchanged.
