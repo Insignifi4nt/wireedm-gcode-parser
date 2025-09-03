@@ -6,6 +6,7 @@
 
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { sanitizeText, sanitizeContentEditable } from '../utils/Sanitize.js';
+import { UndoRedoSystem } from './drawer/UndoRedoSystem.js';
 
 export class GCodeDrawer {
   constructor(mountTarget = document.body, options = {}) {
@@ -25,9 +26,8 @@ export class GCodeDrawer {
     this.linesWithChanges = new Set(); // Track lines with unsaved changes
     this.currentlyEditingLine = null; // Track currently focused line
     this.editingOriginalText = new Map(); // Track original text when editing starts
-    this.undoStack = []; // Command history for undo
-    this.redoStack = []; // Command history for redo
     this.maxHistorySize = 50; // Limit history size
+    this.undoSystem = new UndoRedoSystem({ max: this.maxHistorySize, onChange: () => this._updateUndoRedoButtons() });
     mountTarget.appendChild(this.container);
     this._applyAnchorClass();
     this._render();
@@ -129,10 +129,9 @@ export class GCodeDrawer {
     // Only clear undo/redo history if preserveHistory is false
     if (!preserveHistory) {
       console.log('GCodeDrawer: Clearing undo/redo history');
-      this.undoStack = [];
-      this.redoStack = [];
+      this.undoSystem.clear();
     } else {
-      console.log('GCodeDrawer: Preserving undo/redo history, stack sizes:', this.undoStack.length, this.redoStack.length);
+      console.log('GCodeDrawer: Preserving undo/redo history, stack sizes:', this.undoSystem.getUndoCount(), this.undoSystem.getRedoCount());
     }
     const rawLines = (text || '').split(/\r?\n/);
     rawLines.forEach((t, i) => {
@@ -313,38 +312,17 @@ export class GCodeDrawer {
   }
   
   // Undo/Redo functionality
-  _pushCommand(command) {
-    this._debug('Pushing command to undo stack:', command.type, 'Stack size before:', this.undoStack.length);
-    
-    // Add command to undo stack
-    this.undoStack.push(command);
-    
-    // Clear redo stack when new command is added
-    this.redoStack = [];
-    
-    // Limit history size
-    if (this.undoStack.length > this.maxHistorySize) {
-      this.undoStack.shift();
-    }
-    
-    this._debug('Command pushed, new stack size:', this.undoStack.length);
-    this._updateUndoRedoButtons();
-  }
-  
   _undo() {
-    if (this.undoStack.length === 0) return;
+    if (!this.undoSystem.canUndo()) return;
     // Cancel any pending debounced content change to avoid racing updates
     if (this._debounceTimer) {
       clearTimeout(this._debounceTimer);
       this._debounceTimer = null;
     }
 
-    const command = this.undoStack.pop();
-    this._debug('Executing undo for command:', command.type);
-    command.undo();
-    this.redoStack.push(command);
-    
-    this._updateUndoRedoButtons();
+    const command = this.undoSystem.undo();
+    if (!command) return;
+    this._debug('Executed undo for command:', command.type);
     
     // For move commands, preserve selection after content change
     if (command.type === 'move') {
@@ -359,19 +337,16 @@ export class GCodeDrawer {
   }
   
   _redo() {
-    if (this.redoStack.length === 0) return;
+    if (!this.undoSystem.canRedo()) return;
     // Cancel any pending debounced content change to avoid racing updates
     if (this._debounceTimer) {
       clearTimeout(this._debounceTimer);
       this._debounceTimer = null;
     }
 
-    const command = this.redoStack.pop();
-    this._debug('Executing redo for command:', command.type);
-    command.execute();
-    this.undoStack.push(command);
-    
-    this._updateUndoRedoButtons();
+    const command = this.undoSystem.redo();
+    if (!command) return;
+    this._debug('Executed redo for command:', command.type);
     
     // For move commands, preserve selection after content change
     if (command.type === 'move') {
@@ -389,27 +364,29 @@ export class GCodeDrawer {
     const undoBtn = this.container.querySelector('[data-action="undo"]');
     const redoBtn = this.container.querySelector('[data-action="redo"]');
     
-    this._debug('Updating undo/redo buttons. Undo stack:', this.undoStack.length, 'Redo stack:', this.redoStack.length);
+    this._debug('Updating undo/redo buttons. Undo stack:', this.undoSystem.getUndoCount(), 'Redo stack:', this.undoSystem.getRedoCount());
     
     if (undoBtn) {
       const wasDisabled = undoBtn.disabled;
-      undoBtn.disabled = this.undoStack.length === 0;
+      undoBtn.disabled = !this.undoSystem.canUndo();
       if (wasDisabled !== undoBtn.disabled) {
         this._debug('Undo button', undoBtn.disabled ? 'disabled' : 'enabled');
       }
-      undoBtn.title = this.undoStack.length > 0 
-        ? `Undo (Ctrl+Z) - ${this.undoStack.length} action${this.undoStack.length !== 1 ? 's' : ''}` 
+      const undoCount = this.undoSystem.getUndoCount();
+      undoBtn.title = undoCount > 0 
+        ? `Undo (Ctrl+Z) - ${undoCount} action${undoCount !== 1 ? 's' : ''}` 
         : 'Undo (Ctrl+Z)';
     }
     
     if (redoBtn) {
       const wasDisabled = redoBtn.disabled;
-      redoBtn.disabled = this.redoStack.length === 0;
+      redoBtn.disabled = !this.undoSystem.canRedo();
       if (wasDisabled !== redoBtn.disabled) {
         this._debug('Redo button', redoBtn.disabled ? 'disabled' : 'enabled');
       }
-      redoBtn.title = this.redoStack.length > 0 
-        ? `Redo (Ctrl+Y) - ${this.redoStack.length} action${this.redoStack.length !== 1 ? 's' : ''}` 
+      const redoCount = this.undoSystem.getRedoCount();
+      redoBtn.title = redoCount > 0 
+        ? `Redo (Ctrl+Y) - ${redoCount} action${redoCount !== 1 ? 's' : ''}` 
         : 'Redo (Ctrl+Y)';
     }
   }
@@ -580,7 +557,7 @@ export class GCodeDrawer {
 
     // Create and push undoable insert command
     const insertCommand = this._createInsertCommand(insertAfterLine, gcodeLines);
-    this._pushCommand(insertCommand);
+    this.undoSystem.push(insertCommand);
 
     // Execute insertion immediately
     insertCommand.execute();
@@ -659,7 +636,7 @@ export class GCodeDrawer {
     
     // Create and push delete command
     const deleteCommand = this._createDeleteCommand([lineNum], linesData);
-    this._pushCommand(deleteCommand);
+    this.undoSystem.push(deleteCommand);
     
     // Execute delete
     deleteCommand.execute();
@@ -750,7 +727,7 @@ export class GCodeDrawer {
     
     // Create and push delete command
     const deleteCommand = this._createDeleteCommand(sortedLines, linesData);
-    this._pushCommand(deleteCommand);
+    this.undoSystem.push(deleteCommand);
     
     // Execute delete
     deleteCommand.execute();
@@ -779,7 +756,7 @@ export class GCodeDrawer {
     
     // Create and push move command
     const moveCommand = this._createMoveCommand(sortedSelection, direction);
-    this._pushCommand(moveCommand);
+    this.undoSystem.push(moveCommand);
     
     // Execute initial move (selection is already correct)
     this._moveSelectedLinesInternal(direction);
@@ -933,7 +910,7 @@ export class GCodeDrawer {
             this._debug('Text changed on line', lineNum, 'from:', originalText, 'to:', currentText);
             // Create and push edit command for undo/redo
             const editCommand = this._createEditCommand(lineNum, originalText, currentText);
-            this._pushCommand(editCommand);
+            this.undoSystem.push(editCommand);
           }
           
           // Clean up tracking

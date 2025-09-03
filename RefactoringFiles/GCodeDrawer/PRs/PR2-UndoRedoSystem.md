@@ -19,9 +19,9 @@ Undo/redo is a distinct concern. Moving it enables simpler editor/selection code
 - No event changes.
 
 ## Acceptance Criteria
-- Undo/redo sequences identical to current behavior, including selection preservation for move.
-- History limit respected (default 50).
-- Buttons reflect stack state accurately.
+- Undo/redo sequences identical to current behavior, including selection preservation for move. ✅
+- History limit respected (default 50). ✅
+- Buttons reflect stack state accurately. ✅
 
 ## Test Plan
 - Create edit/delete/insert/move, then undo/redo through the stack.
@@ -30,3 +30,14 @@ Undo/redo is a distinct concern. Moving it enables simpler editor/selection code
 ## Risks & Mitigations
 - Divergence in stack state vs. UI: derive UI state from `canUndo/canRedo` only.
 
+## Implementation Notes (Completed)
+- Added `src/components/drawer/UndoRedoSystem.js` with API: `push`, `undo`, `redo`, `canUndo`, `canRedo`, `clear`, `setMax`, counts, and `onChange`.
+- Updated `src/components/GCodeDrawer.js`:
+  - Instantiate `UndoRedoSystem` with `max=50` and subscribe `onChange` to `_updateUndoRedoButtons`.
+  - Replaced internal stacks with `undoSystem`; removed `_pushCommand`.
+  - `_undo`/`_redo` delegate to `undoSystem.undo()/redo()` and preserve existing debounce cancel + content-changed emission + selection restore for move.
+  - `setContent` now clears/preserves via `undoSystem.clear()` and logs counts via `getUndoCount()/getRedoCount()`.
+
+## Verification
+- `npm run build` succeeds.
+- Manual checks: buttons enable/disable accurately as commands are pushed/undone/redone; behavior matches previous flow.
