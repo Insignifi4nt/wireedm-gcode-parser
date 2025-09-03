@@ -1,0 +1,79 @@
+Next Refactor Session Prompt — Continue With Canvas.js
+
+Context
+- Repo: WireEDM_app (Vite app). Entry: index.html → src/main.js.
+- Branch to use: refactor (current working branch with GCodeDrawer PR1–PR5 completed).
+- Build: npm run build; Dev: npm run dev.
+- Coding style: src/standards/CodingStandards.md (ES modules, semicolons, 2-space indent, named exports).
+- Commit style: single descriptive commit per PR using multiple -m paragraphs (as documented in AGENTS.md). Do not push; I’ll push.
+
+What’s Done (GCodeDrawer)
+- Extracted and integrated:
+  - utils/Sanitize.js (sanitizeText, sanitizeContentEditable)
+  - components/drawer/UndoRedoSystem.js
+  - components/drawer/MultiSelectHandler.js
+  - components/drawer/DrawerToolbar.js
+  - components/drawer/GCodeEditor.js
+- GCodeDrawer is now an orchestrator; duplicate logic removed; events and public API unchanged; build passes.
+
+Goal (Next File)
+- Start refactoring src/components/Canvas.js (~970 lines) per RefactoringFiles/RefactoringPlan.md.
+- Preserve behavior and event/public API used by src/main.js; minimize surface changes; keep Canvas API stable.
+
+First Step (Critical)
+- Re-evaluate and, if needed, adjust the Canvas refactor plan before implementing:
+  - Verify current Canvas.js structure and responsibilities.
+  - Confirm actual public usages in src/main.js and elsewhere.
+  - Update RefactoringFiles/Canvas/* (scope/PRs) if the plan should change, then proceed.
+
+Research First
+1) Skim src/components/Canvas.js to map concerns: grid rendering, path rendering/highlights, clicked points + markers, DPI/resize, viewport transforms.
+2) Confirm how Canvas is used in src/main.js: hover/click highlights, setClickedPoints, redraw on pan/zoom, resize handling. Keep these entrypoints unchanged:
+   - setGCodePath(path)
+   - setClickedPoints(points), clearClickedPoints(), addClickedPoint(point)
+   - setHoverHighlight(index), togglePersistentHighlight(index)
+   - redraw(), _handleResize(), fitToContent(), getViewportState(), getViewport(), setHighDPIEnabled(), getHighDPIStatus()
+3) Check src/standards/CodingStandards.md for structure and security notes.
+
+Implementation Plan (Canvas)
+- Create RefactoringFiles/Canvas/00-scope.md and RefactoringFiles/Canvas/PRs/*.md mirroring GCodeDrawer’s format (scope, PR breakdown, acceptance criteria, test plan).
+- PR1: Extract CanvasGrid
+  - Add components/canvas/CanvasGrid.js exposing drawGrid(ctx, viewport, opts) and drawGridLabels(ctx, viewport, opts).
+  - Move _renderGrid, _drawGridLines, _drawGridLabels; preserve visual output; keep current transforms.
+  - In Canvas.js, replace internal calls with CanvasGrid.*; remove old private grid methods.
+  - Validation: npm run build; manual check grid visibility, labels, zoom thresholds.
+- PR2: Extract PathHighlights
+  - Add components/canvas/PathHighlights.js with renderPath(ctx, path, styles), renderStartEnd(ctx, path, styles), manage hover/persistent highlights.
+  - Move _renderGCodePath, _renderStartEndPoints, highlight drawing; keep setHoverHighlight/togglePersistentHighlight API in Canvas delegating to module.
+  - Validation: hover line and click highlight flows via main.js continue to work.
+- PR3: Extract MarkerRenderer
+  - Add components/canvas/MarkerRenderer.js with renderClickedPoints(ctx, points, viewport, opts) and renderMarker.
+  - Move _renderClickedPoints and _renderMarker.
+- PR4: Extract CanvasRenderer (core pipeline helpers)
+  - Add components/canvas/CanvasRenderer.js with clearCanvas, applyTransform, applyTextTransform, performRender orchestration hooks.
+  - Canvas.js delegates _performRender steps to module while keeping public API, resize, viewport, and throttling in Canvas.
+- PR5: Cleanup
+  - Remove duplicate/obsolete private methods from Canvas.js; ensure Canvas acts as orchestrator only.
+  - Update docs under RefactoringFiles/Canvas; mark PRs completed.
+
+Constraints
+- Keep public API used by main.js stable (see Research First list).
+- No changes to EventBus usage outside Canvas (main.js wiring must keep working).
+- No CSS/DOM changes (Canvas remains a pure canvas renderer).
+
+Validation
+- Build: npm run build passes after each PR.
+- Manual checks: grid visibility/labels; render of G-code path (including start/end); hover and persistent highlights; clicked points and labels; zoom/pan correctness; resize behavior and DPI toggle.
+- Performance: no regressions; redraw throttling respected.
+
+Commits
+- Use a single commit per PR with multi-paragraph message, for example:
+  - git add -A && git commit \
+    -m "refactor(Canvas): PR1 extract CanvasGrid and delegate grid rendering" \
+    -m "- Add components/canvas/CanvasGrid.js; move grid lines + labels; preserve transforms and thresholds.\n- Update Canvas.js to import and call CanvasGrid; remove old private grid methods.\n- Behavior unchanged; build passes." \
+    -m "Docs:\n- Add RefactoringFiles/Canvas/PRs/PR1-CanvasGrid.md; update scope and plan progress." \
+    -m "Refs: RefactoringFiles/Canvas/PRs/PR1-CanvasGrid.md"
+
+Notes
+- If a method is shared by multiple modules (e.g., text-safe transform), consider colocating it in CanvasRenderer or a small utils/canvas helper to avoid duplication.
+- Keep diffs minimal; avoid renaming public methods referenced by main.js.
