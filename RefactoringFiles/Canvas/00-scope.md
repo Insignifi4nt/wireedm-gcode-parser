@@ -27,8 +27,10 @@
 4. PR4: Extract `CanvasRenderer` (clear/transform/render helpers) and delegate.
 5. PR5: Cleanup duplicate methods; Canvas becomes an orchestrator.
 
+## Progress
+- PR1 completed: Grid lines and labels extracted to `components/canvas/CanvasGrid.js`; `Canvas.js` now delegates grid rendering.
+
 ## Acceptance Criteria
 - Parity: grid, path, start/end markers, hover/persistent highlight, clicked points/labels render identically.
 - Resize/DPI: coordinate math and DPI behavior unchanged; redraw throttling intact.
 - Public API unchanged; `npm run build` passes; no new console errors.
-

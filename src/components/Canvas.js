@@ -3,9 +3,10 @@
  * Handles all canvas drawing operations including grid, G-code paths, and measurement points
  */
 
-import { CANVAS, GRID, PATH_STYLES, MARKERS, COORDINATES, DEBUG } from '../utils/Constants.js';
+import { CANVAS, GRID, PATH_STYLES, MARKERS, DEBUG } from '../utils/Constants.js';
 import { Viewport } from '../core/Viewport.js';
-import { GridUtils, ValidationUtils, PrecisionUtils, CoordinateTransform } from '../utils/MathUtils.js';
+import { ValidationUtils } from '../utils/MathUtils.js';
+import { drawGrid } from './canvas/CanvasGrid.js';
 
 /**
  * Canvas rendering component for G-code visualization
@@ -298,7 +299,12 @@ export class Canvas {
 
       // Render components in order
       if (this.gridEnabled) {
-        this._renderGrid();
+        drawGrid(this.ctx, this.viewport, {
+          gridSize: this.gridSize,
+          displayWidth: this.displayWidth,
+          displayHeight: this.displayHeight,
+          devicePixelRatio: this.devicePixelRatio
+        });
       }
 
       if (this.gcodePath.length > 0) {
@@ -366,135 +372,7 @@ export class Canvas {
     this.ctx.clearRect(0, 0, this.physicalWidth, this.physicalHeight);
   }
 
-  /**
-   * Render grid lines and labels (simplified for cleaner look)
-   */
-  _renderGrid() {
-    const viewport = this.viewport.getState();
-    
-    // Calculate visible grid lines
-    const gridLines = GridUtils.calculateGridLines(
-      viewport.zoom,
-      viewport.offsetX,
-      viewport.offsetY,
-      this.displayWidth,
-      this.displayHeight,
-      this.gridSize
-    );
-
-    // Only draw minor grid lines if zoomed in enough
-    if (viewport.zoom > 0.5) {
-      this._drawGridLines(gridLines, false);
-    }
-
-    // Always draw major grid lines (axes)
-    this._drawGridLines(gridLines, true);
-
-    // Draw grid labels only if zoomed in enough
-    if (viewport.zoom > 0.3) {
-      this._drawGridLabels(gridLines);
-    }
-  }
-
-  /**
-   * Draw grid lines
-   * @param {Object} gridLines - Grid line coordinates
-   * @param {boolean} major - Whether to draw major lines (axes)
-   */
-  _drawGridLines(gridLines, major = false) {
-    const { vertical, horizontal } = gridLines;
-
-    // Set line style (screen-space stroke widths for consistent appearance)
-    const pxScale = this.devicePixelRatio || 1;
-    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
-    if (major) {
-      this.ctx.strokeStyle = GRID.COLORS.MAJOR;
-      this.ctx.lineWidth = cssToWorld(GRID.LINE_WIDTH.MAJOR);
-    } else {
-      this.ctx.strokeStyle = GRID.COLORS.MINOR;
-      this.ctx.lineWidth = cssToWorld(GRID.LINE_WIDTH.MINOR);
-    }
-
-    this.ctx.setLineDash([]);
-
-    // Draw vertical lines
-    vertical.forEach(x => {
-      if (!major || x === 0) { // Only draw axis for major lines
-        if (major && x !== 0) return;
-        
-        this.ctx.beginPath();
-        this.ctx.moveTo(x, -10000); // Large range to cover viewport
-        this.ctx.lineTo(x, 10000);
-        this.ctx.stroke();
-      }
-    });
-
-    // Draw horizontal lines
-    horizontal.forEach(y => {
-      if (!major || y === 0) { // Only draw axis for major lines
-        if (major && y !== 0) return;
-        
-        this.ctx.beginPath();
-        this.ctx.moveTo(-10000, y);
-        this.ctx.lineTo(10000, y);
-        this.ctx.stroke();
-      }
-    });
-  }
-
-  /**
-   * Draw grid labels (simplified to reduce crowding)
-   * @param {Object} gridLines - Grid line coordinates
-   */
-  _drawGridLabels(gridLines) {
-    const { vertical, horizontal } = gridLines;
-    const majorInterval = GRID.MAJOR_LINES_INTERVAL;
-    
-    // Much larger interval for labels to reduce crowding
-    const labelInterval = majorInterval * 4; // Show labels every 80 units instead of 20
-
-    // Save current transform and apply text-safe transform
-    this.ctx.save();
-    this._applyTextTransform();
-
-    this.ctx.fillStyle = GRID.COLORS.LABELS;
-    // Smaller font size
-    this.ctx.font = '9px Arial';
-    this.ctx.textAlign = 'left';
-    this.ctx.textBaseline = 'top';
-
-    // Convert coordinates for text rendering (compensate for different coordinate system)
-    const viewport = this.viewport.getState();
-
-    // Draw X-axis labels (only at larger intervals)
-    vertical.forEach(x => {
-      if (x % labelInterval === 0 && x !== 0) {
-        // Convert world coordinates to screen coordinates for text
-        const screenCoords = this.viewport.worldToScreen(x, 0);
-        this.ctx.fillText(
-          PrecisionUtils.format(x, COORDINATES.PRECISION),
-          screenCoords.x + 2,
-          this.logicalHeight - 15 // Position at bottom of screen
-        );
-      }
-    });
-
-    // Draw Y-axis labels (only at larger intervals)
-    horizontal.forEach(y => {
-      if (y % labelInterval === 0 && y !== 0) {
-        // Convert world coordinates to screen coordinates for text
-        const screenCoords = this.viewport.worldToScreen(0, y);
-        this.ctx.fillText(
-          PrecisionUtils.format(y, COORDINATES.PRECISION),
-          5,
-          screenCoords.y - 2
-        );
-      }
-    });
-
-    // Restore transform
-    this.ctx.restore();
-  }
+  
 
   /**
    * Render G-code path segments
