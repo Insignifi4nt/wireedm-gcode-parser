@@ -29,9 +29,7 @@ export class GCodeDrawer {
     this.selection = new MultiSelectHandler();
     this.lastClickedLine = null; // For shift-click range selection
     this._debounceTimer = null;
-    this.linesWithChanges = new Set(); // Track lines with unsaved changes
-    this.currentlyEditingLine = null; // Track currently focused line
-    this.editingOriginalText = new Map(); // Track original text when editing starts
+    // Editing state is managed by GCodeEditor
     this.maxHistorySize = 50; // Limit history size
     this.undoSystem = new UndoRedoSystem({ max: this.maxHistorySize, onChange: () => this._updateUndoRedoButtons() });
     mountTarget.appendChild(this.container);
@@ -125,9 +123,7 @@ export class GCodeDrawer {
     this.selection.clear();
     this.selectedLines = this.selection.getSelection();
     this.lastClickedLine = null;
-    this.linesWithChanges.clear();
-    this.currentlyEditingLine = null;
-    this.editingOriginalText.clear();
+    // Editor manages its own editing state
     
     // Only clear undo/redo history if preserveHistory is false
     if (!preserveHistory) {
@@ -208,21 +204,9 @@ export class GCodeDrawer {
   }
 
   _updateSelectionVisuals() {
-    // Clear all selected states
-    this.bodyEl.querySelectorAll('.gcode-line.selected').forEach(el => el.classList.remove('selected'));
-    
-    // Apply selected state to selected lines
-    this.selectedLines.forEach(lineNum => {
-      const lineEl = this.bodyEl.querySelector(`.gcode-line[data-line="${lineNum}"]`);
-      if (lineEl) {
-        lineEl.classList.add('selected');
-      }
-    });
-    
+    if (this.editor) this.editor.updateSelectionClasses(this.selectedLines);
     const count = this.selectedLines.size;
     const hasSelection = count > 0;
-    
-    // Delegate to toolbar for visibility and enablement
     if (this.toolbar) this.toolbar.updateSelectionUI(hasSelection, count);
   }
   
@@ -244,42 +228,7 @@ export class GCodeDrawer {
     if (this.toolbar) this.toolbar.updateLineCount(count);
   }
   
-  _markLineAsChanged(lineNum) {
-    this.linesWithChanges.add(lineNum);
-    const lineEl = this.bodyEl.querySelector(`.gcode-line[data-line="${lineNum}"]`);
-    if (lineEl) {
-      lineEl.classList.add('has-changes');
-    }
-  }
-  
-  _setCurrentlyEditing(lineNum) {
-    // Remove editing class from previous line
-    if (this.currentlyEditingLine !== null) {
-      const prevLineEl = this.bodyEl.querySelector(`.gcode-line[data-line="${this.currentlyEditingLine}"]`);
-      if (prevLineEl) {
-        prevLineEl.classList.remove('editing');
-      }
-    }
-    
-    // Set new editing line
-    this.currentlyEditingLine = lineNum;
-    
-    // Add editing class to current line
-    if (lineNum !== null) {
-      const lineEl = this.bodyEl.querySelector(`.gcode-line[data-line="${lineNum}"]`);
-      if (lineEl) {
-        lineEl.classList.add('editing');
-      }
-    }
-  }
-  
-  _clearChangeIndicators() {
-    // Clear all change indicators when content is saved
-    this.linesWithChanges.clear();
-    this.bodyEl.querySelectorAll('.gcode-line.has-changes').forEach(el => {
-      el.classList.remove('has-changes');
-    });
-  }
+  // Editing state visuals are handled by GCodeEditor
   
   // Undo/Redo functionality
   _undo() {
@@ -537,14 +486,7 @@ export class GCodeDrawer {
     this._emitContentChanged(this.getText());
   }
 
-  _renumberLines() {
-    this.bodyEl.querySelectorAll('.gcode-line').forEach((el, idx) => {
-      const newNum = idx + 1;
-      el.dataset.line = String(newNum);
-      const numEl = el.querySelector('.gcode-line-num');
-      if (numEl) numEl.textContent = String(newNum);
-    });
-  }
+  // Line renumbering is handled by GCodeEditor
 
   _moveSelectedLines(direction) {
     if (this.selectedLines.size === 0) return;

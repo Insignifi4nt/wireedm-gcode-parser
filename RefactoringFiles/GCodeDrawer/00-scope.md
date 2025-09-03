@@ -36,7 +36,7 @@
 
 ## Acceptance Criteria
 - No behavioral regressions in hover/click, selection, move, delete, insert points, keyboard shortcuts, and undo/redo.
-- `GCodeDrawer.js` reduced to orchestration (≤ ~250 lines). Achieved: editor/toolbar/undo/selection extracted; duplicate logic removed.
+- `GCodeDrawer.js` reduced to orchestration. Current size ~529 lines after extraction; further optional splits (e.g., input/keyboard handler, mapping helper) can reduce more.
 - `npm run build` passes; no new console errors in `npm run dev`.
 - Event contracts unchanged; public API remains stable.
 

@@ -31,6 +31,15 @@ export class GCodeEditor {
     this.editingOriginalText = new Map();
   }
 
+  updateSelectionClasses(selected) {
+    const set = selected instanceof Set ? selected : new Set(selected || []);
+    this.bodyEl.querySelectorAll('.gcode-line').forEach(el => el.classList.remove('selected'));
+    set.forEach(lineNum => {
+      const lineEl = this.bodyEl.querySelector(`.gcode-line[data-line="${lineNum}"]`);
+      if (lineEl) lineEl.classList.add('selected');
+    });
+  }
+
   // Public API
   setLines(lines) {
     this.bodyEl.innerHTML = '';
@@ -319,4 +328,3 @@ export class GCodeEditor {
 }
 
 export default GCodeEditor;
-
