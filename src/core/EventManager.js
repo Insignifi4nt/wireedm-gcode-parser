@@ -19,6 +19,8 @@ import { EVENT_DATA_SCHEMAS } from './events/EventSchemas.js';
 export { EVENT_DATA_SCHEMAS };
 import { EventValidator } from './events/EventValidator.js';
 export { EventValidator };
+import { DOMDelegation } from './events/DOMDelegation.js';
+export { DOMDelegation };
 import * as EmitControls from './events/EmitControls.js';
 
 /**
@@ -37,16 +39,18 @@ export class EventManager {
   constructor() {
     this.listeners = new Map(); // event -> Set of listeners
     this.onceListeners = new Map(); // event -> Set of one-time listeners
-    this.delegatedListeners = new Map(); // selector -> Map of event handlers
     this.isDestroyed = false;
     this._history = new EventHistory(100); // For debugging
+    this._domDelegation = new DOMDelegation(document, (type, data) => {
+      // Preserve previous behavior: skip validation for delegated emissions
+      this.emit(type, data, { skipValidation: true });
+    });
     
     // Performance tracking
     this.listenerCount = 0;
     this.eventCount = 0;
     
-    // Bind methods for consistent context
-    this._handleDelegatedEvent = this._handleDelegatedEvent.bind(this);
+    // Bind methods for consistent context (none required for delegation now)
   }
 
   /**
@@ -183,46 +187,7 @@ export class EventManager {
    */
   delegate(selector, domEventType, customEventType, dataExtractor) {
     this._validateEventType(customEventType);
-    
-    if (typeof selector !== 'string') {
-      throw new Error('Selector must be a string');
-    }
-    
-    if (typeof domEventType !== 'string') {
-      throw new Error('DOM event type must be a string');
-    }
-    
-    if (typeof dataExtractor !== 'function') {
-      throw new Error('Data extractor must be a function');
-    }
-    
-    const delegationKey = `${selector}:${domEventType}`;
-    
-    if (!this.delegatedListeners.has(delegationKey)) {
-      this.delegatedListeners.set(delegationKey, new Map());
-      
-      // Add DOM event listener
-      document.addEventListener(domEventType, (event) => {
-        this._handleDelegatedEvent(event, selector, delegationKey);
-      }, true); // Use capture phase
-    }
-    
-    // Store the custom event mapping
-    this.delegatedListeners.get(delegationKey).set(customEventType, dataExtractor);
-    
-    // Return cleanup function
-    return () => {
-      const handlers = this.delegatedListeners.get(delegationKey);
-      if (handlers) {
-        handlers.delete(customEventType);
-        
-        // If no more handlers, remove the delegation
-        if (handlers.size === 0) {
-          this.delegatedListeners.delete(delegationKey);
-          // Note: DOM listener cleanup would require more complex tracking
-        }
-      }
-    };
+    return this._domDelegation.add(selector, domEventType, customEventType, dataExtractor);
   }
 
   /**
@@ -276,7 +241,7 @@ export class EventManager {
     this.removeAllListeners();
     
     // Clear delegated listeners
-    this.delegatedListeners.clear();
+    this._domDelegation.clear();
     
     // Clear history
     this._history.clear();
@@ -307,7 +272,7 @@ export class EventManager {
         regular: this.listeners.size,
         once: this.onceListeners.size
       },
-      delegations: this.delegatedListeners.size,
+      delegations: this._domDelegation.size(),
       historySize: this._history.getEvents().length,
       isDestroyed: this.isDestroyed
     };
@@ -355,26 +320,7 @@ export class EventManager {
     }
   }
 
-  /**
-   * Handle delegated DOM events
-   * @private
-   */
-  _handleDelegatedEvent(event, selector, delegationKey) {
-    const target = event.target.closest(selector);
-    if (!target) return;
-    
-    const handlers = this.delegatedListeners.get(delegationKey);
-    if (!handlers) return;
-    
-    handlers.forEach((dataExtractor, customEventType) => {
-      try {
-        const eventData = dataExtractor(event, target);
-        this.emit(customEventType, eventData, { skipValidation: true });
-      } catch (error) {
-        console.error(`EventManager: Error in delegated event handler:`, error);
-      }
-    });
-  }
+  // Delegation is handled by DOMDelegation helper
 
   /**
    * Record event in history for debugging
