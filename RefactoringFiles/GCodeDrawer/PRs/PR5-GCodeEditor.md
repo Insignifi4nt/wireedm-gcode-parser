@@ -28,6 +28,7 @@ This is the bulk of the component. Extracting it leaves `GCodeDrawer.js` as a th
 - Added `src/components/drawer/GCodeEditor.js` with line DOM, event binding, and command creation.
 - Updated `src/components/GCodeDrawer.js` to instantiate the editor, delegate line rendering and command creation, and keep orchestration responsibilities.
 - Toolbar (PR4), UndoRedoSystem (PR2), and MultiSelectHandler (PR3) remain integrated; events and API unchanged.
+- Cleanup: Removed legacy editor helpers from `GCodeDrawer` (`_create*Command`, `_createLineElement`, `_bindLineEvents`, `_rebindLineEvents`, `_moveSelectedLinesInternal`).
 
 ## Verification
 - `npm run build` succeeds locally.

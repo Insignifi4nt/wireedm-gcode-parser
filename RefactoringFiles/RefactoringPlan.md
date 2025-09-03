@@ -26,6 +26,7 @@ Navigation
 - `components/drawer/DrawerToolbar.js` - Toolbar and controls
 - `components/drawer/MultiSelectHandler.js` - Line selection logic
 - `components/drawer/UndoRedoSystem.js` - Undo/redo functionality
+Status: Completed. GCodeDrawer acts as an orchestrator; duplicate editor logic removed.
 
 ### Canvas.js (970 lines)
 **Split into:**
