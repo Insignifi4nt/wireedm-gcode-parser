@@ -8,6 +8,8 @@ import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { sanitizeText, sanitizeContentEditable } from '../utils/Sanitize.js';
 import { UndoRedoSystem } from './drawer/UndoRedoSystem.js';
 import { MultiSelectHandler } from './drawer/MultiSelectHandler.js';
+import { DrawerToolbar } from './drawer/DrawerToolbar.js';
+import { GCodeEditor } from './drawer/GCodeEditor.js';
 
 export class GCodeDrawer {
   constructor(mountTarget = document.body, options = {}) {
@@ -18,6 +20,8 @@ export class GCodeDrawer {
     this.headerEl = null;
     this.bodyEl = null;
     this.footerEl = null;
+    this.toolbar = null;
+    this.editor = null;
     this.lines = []; // [{num, text, indexMapping}]
     this.lineIndexToPathIndex = new Map(); // source line -> path index
     this.pathIndexToLineIndex = new Map(); // path index -> source line
@@ -80,6 +84,25 @@ export class GCodeDrawer {
     
     // Add keyboard event handling
     this.bodyEl.addEventListener('keydown', (e) => this._onKeyDown(e));
+
+    // Initialize editor for line DOM and editing behaviors
+    this.editor = new GCodeEditor(this.bodyEl, {
+      undoSystem: this.undoSystem,
+      onLineEdited: (force) => this._onLineEdited(force),
+      onHover: (lineNum) => this._onHover(lineNum),
+      onLeave: (lineNum) => this._onLeave(lineNum),
+      onClick: (lineNum, element, event) => this._onClick(lineNum, element, event),
+      onDeleteLine: (lineNum) => this._onDelete(lineNum),
+      onBulkDelete: () => this._onBulkDelete(),
+      getSelection: () => this.selectedLines,
+      applySelection: (sel) => {
+        const next = sel instanceof Set ? sel : new Set(sel || []);
+        this.selection.setSelection(next);
+        this.selectedLines = this.selection.getSelection();
+        this._updateSelectionVisuals();
+      },
+      updateLineCount: () => this._updateLineCount()
+    });
   }
 
   _bindGlobalEvents() {
@@ -114,12 +137,8 @@ export class GCodeDrawer {
       console.log('GCodeDrawer: Preserving undo/redo history, stack sizes:', this.undoSystem.getUndoCount(), this.undoSystem.getRedoCount());
     }
     const rawLines = (text || '').split(/\r?\n/);
-    rawLines.forEach((t, i) => {
-      const lineNum = i + 1;
-      const div = this._createLineElement(lineNum, t);
-      this.bodyEl.appendChild(div);
-      this.lines.push({ num: lineNum, text: t });
-    });
+    this.editor.setLines(rawLines);
+    this.lines = rawLines.map((t, i) => ({ num: i + 1, text: t }));
     // Build line->path index map (use first point with matching line)
     mapping?.forEach(m => {
       if (typeof m?.line === 'number' && typeof m?.index === 'number') {
@@ -485,7 +504,7 @@ export class GCodeDrawer {
     ]);
 
     // Create and push undoable insert command
-    const insertCommand = this._createInsertCommand(insertAfterLine, gcodeLines);
+    const insertCommand = this.editor.createInsertCommand(insertAfterLine, gcodeLines);
     this.undoSystem.push(insertCommand);
 
     // Execute insertion immediately
@@ -564,7 +583,7 @@ export class GCodeDrawer {
     }];
     
     // Create and push delete command
-    const deleteCommand = this._createDeleteCommand([lineNum], linesData);
+    const deleteCommand = this.editor.createDeleteCommand([lineNum], linesData);
     this.undoSystem.push(deleteCommand);
     
     // Execute delete
@@ -659,7 +678,7 @@ export class GCodeDrawer {
     });
     
     // Create and push delete command
-    const deleteCommand = this._createDeleteCommand(sortedLines, linesData);
+    const deleteCommand = this.editor.createDeleteCommand(sortedLines, linesData);
     this.undoSystem.push(deleteCommand);
     
     // Execute delete
@@ -688,11 +707,11 @@ export class GCodeDrawer {
     const sortedSelection = Array.from(this.selectedLines).sort((a, b) => a - b);
     
     // Create and push move command
-    const moveCommand = this._createMoveCommand(sortedSelection, direction);
+    const moveCommand = this.editor.createMoveCommand(sortedSelection, direction);
     this.undoSystem.push(moveCommand);
     
     // Execute initial move (selection is already correct)
-    this._moveSelectedLinesInternal(direction);
+    this.editor._moveSelectedLinesInternal(direction);
     
     // Store the moved selection to restore after setContent clears it
     const movedSelection = Array.from(this.selectedLines);

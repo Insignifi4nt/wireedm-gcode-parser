@@ -24,10 +24,18 @@ This is the bulk of the component. Extracting it leaves `GCodeDrawer.js` as a th
 - Feature parity across: hover/click highlights, edits, sanitize, debounce, selection, move/delete/insert, undo/redo, keyboard shortcuts.
 - Selection preservation after re-parse continues to work.
 
+## Implementation Notes (Completed)
+- Added `src/components/drawer/GCodeEditor.js` with line DOM, event binding, and command creation.
+- Updated `src/components/GCodeDrawer.js` to instantiate the editor, delegate line rendering and command creation, and keep orchestration responsibilities.
+- Toolbar (PR4), UndoRedoSystem (PR2), and MultiSelectHandler (PR3) remain integrated; events and API unchanged.
+
+## Verification
+- `npm run build` succeeds locally.
+- Manual checks confirm parity for edit/paste sanitize, undo/redo, move/delete/insert, hover/click, and debounced content emission.
+
 ## Test Plan
 - Repeat manual flows end-to-end with a sample G-code file.
 - Verify `drawer:content:changed` triggers parse and `setContent` with `preserveHistory: true`.
 
 ## Risks & Mitigations
 - Rebinding listeners: keep a single binding path inside editor; avoid duplicate handlers.
-

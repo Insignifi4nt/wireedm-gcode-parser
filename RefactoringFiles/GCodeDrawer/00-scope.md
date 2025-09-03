@@ -32,7 +32,7 @@
 2. [x] PR2: Introduce `UndoRedoSystem` and migrate stack logic. (completed)
 3. [x] PR3: Extract `MultiSelectHandler` and migrate selection operations. (completed)
 4. [x] PR4: Extract `DrawerToolbar` and wire callbacks. (completed)
-5. [ ] PR5: Extract `GCodeEditor` and finish orchestration cleanup.
+5. [x] PR5: Extract `GCodeEditor` and finish orchestration cleanup. (completed)
 
 ## Acceptance Criteria
 - No behavioral regressions in hover/click, selection, move, delete, insert points, keyboard shortcuts, and undo/redo.

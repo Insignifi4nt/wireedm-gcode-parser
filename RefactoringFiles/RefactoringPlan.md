@@ -10,6 +10,7 @@ Navigation
 - PR2 (GCodeDrawer): Introduce `UndoRedoSystem` and migrate stack logic — completed. Buttons reflect state; behavior unchanged.
 - PR3 (GCodeDrawer): Extract `MultiSelectHandler` and migrate selection operations — completed. Selection behavior and toolbar counters unchanged.
 - PR4 (GCodeDrawer): Extract `DrawerToolbar` and wire callbacks — completed. Toolbar UI and states managed via module; behavior unchanged.
+- PR5 (GCodeDrawer): Extract `GCodeEditor` and migrate line DOM/commands — completed. Drawer now orchestrates editor/toolbar/undo/selection.
 
 ## Files Over 500 Lines Requiring Refactoring
 
