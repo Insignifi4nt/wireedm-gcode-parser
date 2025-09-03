@@ -9,6 +9,7 @@ import { ValidationUtils } from '../utils/MathUtils.js';
 import { drawGrid } from './canvas/CanvasGrid.js';
 import { renderPath as renderGCodePath, renderStartEnd as renderStartEndPoints } from './canvas/PathHighlights.js';
 import { renderClickedPoints, renderMarker as drawMarker } from './canvas/MarkerRenderer.js';
+import { clearCanvas, applyWorldTransform } from './canvas/CanvasRenderer.js';
 
 /**
  * Canvas rendering component for G-code visualization
@@ -291,13 +292,13 @@ export class Canvas {
   _performRender() {
     try {
       // Clear canvas
-      this._clearCanvas();
+      clearCanvas(this.ctx, this.physicalWidth, this.physicalHeight);
 
       // Save context state
       this.ctx.save();
 
-      // Apply simple viewport transformation (no complex scaling for now)
-      this._applySimpleTransform();
+      // Apply world-space transform (DPI-aware, Y-axis flipped)
+      applyWorldTransform(this.ctx, this.viewport, this.devicePixelRatio);
 
       // Render components in order
       if (this.gridEnabled) {
@@ -333,53 +334,7 @@ export class Canvas {
     }
   }
 
-  /**
-   * Apply viewport transformation (Phase 2A - DPI aware)
-   */
-  _applySimpleTransform() {
-    const viewport = this.viewport.getState();
-    
-    // Reset transform first
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    
-    // Re-apply DPI scaling if in high-DPI mode (context was reset)
-    if (this.enableHighDPI && this.devicePixelRatio > 1) {
-      this.ctx.scale(this.devicePixelRatio, this.devicePixelRatio);
-    }
-    
-    // Apply viewport transformation using viewport display height (consistent with coordinate conversion)
-    // This must match the height reference used in coordinate conversion
-    this.ctx.translate(viewport.offsetX, this.viewport.displayHeight - viewport.offsetY);
-    this.ctx.scale(viewport.zoom, -viewport.zoom); // Flip Y axis for CNC coordinates
-  }
-
-  /**
-   * Apply text-safe viewport transformation (without Y-axis flip)
-   */
-  _applyTextTransform() {
-    const viewport = this.viewport.getState();
-    
-    // Reset transform first
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    
-    // Re-apply DPI scaling if in high-DPI mode (context was reset)
-    if (this.enableHighDPI && this.devicePixelRatio > 1) {
-      this.ctx.scale(this.devicePixelRatio, this.devicePixelRatio);
-    }
-    
-    // Apply viewport transformation without Y-axis flip for text
-    this.ctx.translate(viewport.offsetX, viewport.offsetY);
-    this.ctx.scale(viewport.zoom, viewport.zoom); // No Y-axis flip for text
-  }
-
-  /**
-   * Clear the entire canvas (Phase 2A - DPI aware)
-   */
-  _clearCanvas() {
-    // Clear entire physical canvas buffer
-    // Note: clearRect is not affected by current transform, so we use physical dimensions
-    this.ctx.clearRect(0, 0, this.physicalWidth, this.physicalHeight);
-  }
+  
 
   
 
