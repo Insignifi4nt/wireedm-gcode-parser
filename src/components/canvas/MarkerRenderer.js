@@ -4,6 +4,7 @@
  */
 
 import { MARKERS } from '../../utils/Constants.js';
+import { applyTextTransform } from './CanvasRenderer.js';
 
 /**
  * Render a point marker with optional label.
@@ -29,7 +30,7 @@ export function renderMarker(ctx, viewport, point, config, devicePixelRatio = 1)
 
   if (config.LABEL) {
     ctx.save();
-    _applyTextTransform(ctx, viewport, devicePixelRatio || 1);
+    applyTextTransform(ctx, viewport, devicePixelRatio || 1);
     const screen = viewport.worldToScreen(point.x, point.y);
     ctx.fillStyle = config.COLOR;
     ctx.font = config.FONT || '10px Arial';
@@ -57,14 +58,4 @@ export function renderClickedPoints(ctx, viewport, points, opts = {}) {
   });
 }
 
-// Internal: apply text-safe transform (no Y flip), DPI aware
-function _applyTextTransform(ctx, viewport, devicePixelRatio) {
-  const state = viewport.getState();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (devicePixelRatio > 1) {
-    ctx.scale(devicePixelRatio, devicePixelRatio);
-  }
-  ctx.translate(state.offsetX, state.offsetY);
-  ctx.scale(state.zoom, state.zoom);
-}
-
+// (text transform moved to CanvasRenderer.applyTextTransform)

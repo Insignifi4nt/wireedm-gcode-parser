@@ -5,6 +5,7 @@
 
 import { GRID, COORDINATES } from '../../utils/Constants.js';
 import { GridUtils, PrecisionUtils } from '../../utils/MathUtils.js';
+import { applyTextTransform } from './CanvasRenderer.js';
 
 /**
  * Draw the grid (minor/major lines and optional labels)
@@ -65,7 +66,7 @@ export function drawGridLabels(ctx, viewport, gridLines, opts = {}) {
 
   // Save current transform and apply text-safe transform (no Y flip)
   ctx.save();
-  _applyTextTransform(ctx, viewport, opts.devicePixelRatio || 1);
+  applyTextTransform(ctx, viewport, opts.devicePixelRatio || 1);
 
   ctx.fillStyle = GRID.COLORS.LABELS;
   ctx.font = '9px Arial';
@@ -137,14 +138,4 @@ function _drawGridLines(ctx, viewport, gridLines, major, devicePixelRatio) {
   });
 }
 
-// Internal: apply text-safe transform (no Y flip), DPI aware
-function _applyTextTransform(ctx, viewport, devicePixelRatio) {
-  const state = viewport.getState();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (devicePixelRatio > 1) {
-    ctx.scale(devicePixelRatio, devicePixelRatio);
-  }
-  ctx.translate(state.offsetX, state.offsetY);
-  ctx.scale(state.zoom, state.zoom);
-}
-
+// (text transform moved to CanvasRenderer.applyTextTransform)

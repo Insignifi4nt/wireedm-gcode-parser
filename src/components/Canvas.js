@@ -3,7 +3,7 @@
  * Handles all canvas drawing operations including grid, G-code paths, and measurement points
  */
 
-import { CANVAS, GRID, PATH_STYLES, MARKERS, DEBUG } from '../utils/Constants.js';
+import { CANVAS, GRID } from '../utils/Constants.js';
 import { Viewport } from '../core/Viewport.js';
 import { ValidationUtils } from '../utils/MathUtils.js';
 import { drawGrid } from './canvas/CanvasGrid.js';

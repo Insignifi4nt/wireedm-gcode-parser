@@ -1,5 +1,7 @@
 # PR5: Canvas Cleanup
 
+Status: Completed
+
 ## Summary
 Remove duplicate/obsolete private methods from `Canvas.js` after delegation and ensure it acts as an orchestrator.
 
@@ -12,4 +14,3 @@ Remove duplicate/obsolete private methods from `Canvas.js` after delegation and 
 
 ## Verification
 - Run through grid/path/marker/resize/DPI flows.
-
