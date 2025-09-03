@@ -7,19 +7,7 @@
 
 // Core imports
 import { EventBus, EVENT_TYPES } from './core/EventManager.js';
-import { buildAppDOM } from './core/ComponentInitializer.js';
-import { GCodeParser } from './core/GCodeParser.js';
-import { EventIntegration } from './core/EventIntegration.js';
-
-// Component imports
-import { Canvas } from './components/Canvas.js';
-import { Toolbar } from './components/Toolbar.js';
-import { Sidebar } from './components/Sidebar.js';
-import { GCodeDrawer } from './components/GCodeDrawer.js';
-import { StatusMessage } from './components/StatusMessage.js';
-
-// Utility imports
-import { CANVAS, GRID } from './utils/Constants.js';
+import { buildAppDOM, initAppComponents } from './core/ComponentInitializer.js';
 
 /**
  * Wire EDM G-Code Viewer Application
@@ -109,9 +97,6 @@ class WireEDMViewer {
   async initializeCore() {
     // Initialize EventBus singleton
     this.eventBus = EventBus.getInstance();
-    
-    // Create G-Code parser
-    this.parser = new GCodeParser();
   }
 
   /**
@@ -130,55 +115,14 @@ class WireEDMViewer {
    */
   async initializeComponents() {
     try {
-      // Initialize Canvas component
-      this.canvas = new Canvas(this.canvasElement, {
-        showGrid: true,
-        gridSize: GRID.SIZE,
-        enableHighDPI: false // Temporarily disabled for debugging
-      });
-      
-      // Initialize the canvas
-      await this.canvas.init();
-      
-      // Initialize Toolbar component
-      const toolbarContainer = document.getElementById('toolbar-container');
-      this.toolbar = new Toolbar(toolbarContainer, {
-        enableFileInput: true,
-        enableZoomControls: true,
-        enableUtilityButtons: true
-      });
-      
-      // Initialize the toolbar
-      this.toolbar.init();
-      
-      // Initialize Sidebar component
-      const sidebarContainer = document.getElementById('sidebar-container');
-      this.sidebar = new Sidebar(sidebarContainer, {
-        showCoordinates: true,
-        showPoints: true,
-        showPathInfo: true
-      });
-
-      // Initialize GCode Drawer (collapsible panel)
-      this.gcodeDrawer = new GCodeDrawer(document.body, { anchor: 'right' });
-      
-      // Initialize StatusMessage component
-      const statusContainer = document.getElementById('status-container');
-      this.statusMessage = new StatusMessage({
-        container: statusContainer,
-        position: 'top-right',
-        maxMessages: 3,
-        defaultDuration: 3000
-      });
-      
-      // Initialize Event Integration system
-      this.eventIntegration = new EventIntegration(this.canvasElement, this.canvas.viewport, {
-        enableMouse: true,
-        enableKeyboard: true,
-        enableTouch: true,
-        enableDelegation: true
-      });
-      
+      const components = await initAppComponents(this.domRefs);
+      this.canvas = components.canvas;
+      this.toolbar = components.toolbar;
+      this.sidebar = components.sidebar;
+      this.gcodeDrawer = components.gcodeDrawer;
+      this.statusMessage = components.statusMessage;
+      this.eventIntegration = components.eventIntegration;
+      this.parser = components.parser;
     } catch (error) {
       console.error('Component initialization failed:', error);
       throw new Error(`Component initialization failed: ${error.message}`);

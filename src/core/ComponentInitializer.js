@@ -1,10 +1,13 @@
 /**
  * ComponentInitializer
- * Builds the application DOM structure (PR1 scope).
+ * PR1: Builds the application DOM structure.
+ * PR2: Initializes core UI components via initAppComponents.
  * Extracted from src/main.js to keep entrypoint slim and focused.
  *
  * Exports:
  * - buildAppDOM(): creates header/main/sidebar/canvas/status DOM and returns refs
+ * - initAppComponents(domRefs): instantiates Canvas, Toolbar, Sidebar, GCodeDrawer,
+ *   StatusMessage, EventIntegration, and GCodeParser, returning component instances
  */
 
 /**
@@ -61,9 +64,82 @@ export function buildAppDOM() {
   return domRefs;
 }
 
+// PR2 imports (kept here to avoid import churn in main.js)
+import { Canvas } from '../components/Canvas.js';
+import { Toolbar } from '../components/Toolbar.js';
+import { Sidebar } from '../components/Sidebar.js';
+import { GCodeDrawer } from '../components/GCodeDrawer.js';
+import { StatusMessage } from '../components/StatusMessage.js';
+import { EventIntegration } from './EventIntegration.js';
+import { GCodeParser } from './GCodeParser.js';
+import { GRID } from '../utils/Constants.js';
+
 /**
  * Initialize core UI components with provided DOM references.
  * @param {Object} domRefs - DOM references from buildAppDOM
  * @returns {Promise<Object>} components
  */
-export default { buildAppDOM };
+export async function initAppComponents(domRefs) {
+  if (!domRefs || !domRefs.canvasElement) {
+    throw new Error('initAppComponents requires valid domRefs');
+  }
+
+  const { canvasElement, toolbarContainer, sidebarContainer, statusContainer } = domRefs;
+
+  // Initialize Canvas
+  const canvas = new Canvas(canvasElement, {
+    showGrid: true,
+    gridSize: GRID.SIZE,
+    enableHighDPI: false
+  });
+  await canvas.init();
+
+  // Initialize Toolbar
+  const toolbar = new Toolbar(toolbarContainer, {
+    enableFileInput: true,
+    enableZoomControls: true,
+    enableUtilityButtons: true
+  });
+  toolbar.init();
+
+  // Initialize Sidebar
+  const sidebar = new Sidebar(sidebarContainer, {
+    showCoordinates: true,
+    showPoints: true,
+    showPathInfo: true
+  });
+
+  // Initialize GCode Drawer (collapsible panel)
+  const gcodeDrawer = new GCodeDrawer(document.body, { anchor: 'right' });
+
+  // Initialize StatusMessage
+  const statusMessage = new StatusMessage({
+    container: statusContainer,
+    position: 'top-right',
+    maxMessages: 3,
+    defaultDuration: 3000
+  });
+
+  // Initialize Event Integration (do not call init() here; main controls lifecycle)
+  const eventIntegration = new EventIntegration(canvasElement, canvas.viewport, {
+    enableMouse: true,
+    enableKeyboard: true,
+    enableTouch: true,
+    enableDelegation: true
+  });
+
+  // Create parser instance
+  const parser = new GCodeParser();
+
+  return {
+    canvas,
+    toolbar,
+    sidebar,
+    gcodeDrawer,
+    statusMessage,
+    eventIntegration,
+    parser
+  };
+}
+
+export default { buildAppDOM, initAppComponents };
