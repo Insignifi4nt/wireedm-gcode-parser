@@ -50,59 +50,36 @@ export class GCodeDrawer {
 
   _render() {
     this.container.innerHTML = `
-      <div class="gcode-drawer-header">
-        <div class="gcode-drawer-title">
-          <strong>G-Code</strong>
-          <span class="gcode-line-count">0 lines</span>
-        </div>
-        <div class="gcode-drawer-actions">
-          <button class="gcode-action-btn" data-action="undo" title="Undo (Ctrl+Z)" disabled>↶</button>
-          <button class="gcode-action-btn" data-action="redo" title="Redo (Ctrl+Y)" disabled>↷</button>
-          <button class="gcode-action-btn" data-action="close" title="Close drawer">×</button>
-        </div>
-      </div>
-      <div class="gcode-context-toolbar" style="display: none;">
-        <div class="gcode-selection-info">
-          <span class="gcode-selection-counter"></span>
-        </div>
-        <div class="gcode-selection-actions">
-          <button class="gcode-toolbar-btn" data-action="move-up" title="Move selected lines up" disabled>↑</button>
-          <button class="gcode-toolbar-btn" data-action="move-down" title="Move selected lines down" disabled>↓</button>
-          <button class="gcode-toolbar-btn" data-action="insert-points" title="Insert clicked points">+ Points</button>
-          <button class="gcode-toolbar-btn" data-action="delete-selected" title="Delete selected lines">🗑</button>
-        </div>
-      </div>
       <div class="gcode-drawer-body" tabindex="0"></div>
       <div class="gcode-drawer-footer">
         <div class="gcode-help-text">Hover to preview • Click to select • Ctrl+click for multi-select</div>
       </div>
     `;
+    // Render toolbars via DrawerToolbar
+    this.toolbar = new DrawerToolbar(this.container, {
+      onClose: () => this.toggle(false),
+      onUndo: () => this._undo(),
+      onRedo: () => this._redo(),
+      onMoveUp: () => this._moveSelectedLines(-1),
+      onMoveDown: () => this._moveSelectedLines(1),
+      onInsertPoints: async () => {
+        try {
+          const firstSelected = this.selectedLines.size > 0 ? Math.min(...this.selectedLines) : null;
+          const atIndex = firstSelected != null ? (this.lineIndexToPathIndex.get(firstSelected) ?? null) : null;
+          const points = await this._getClickedPointsFromApp();
+          this.eventBus.emit('drawer:insert:points', { atIndex, points }, { skipValidation: true });
+        } catch (error) {
+          console.error('Error inserting points:', error);
+        }
+      },
+      onDeleteSelected: () => this._onBulkDelete()
+    });
     this.headerEl = this.container.querySelector('.gcode-drawer-header');
     this.bodyEl = this.container.querySelector('.gcode-drawer-body');
     this.footerEl = this.container.querySelector('.gcode-drawer-footer');
     
     // Add keyboard event handling
     this.bodyEl.addEventListener('keydown', (e) => this._onKeyDown(e));
-
-    // Header events
-    this.container.querySelector('[data-action="close"]').addEventListener('click', () => this.toggle(false));
-    this.container.querySelector('[data-action="undo"]').addEventListener('click', () => this._undo());
-    this.container.querySelector('[data-action="redo"]').addEventListener('click', () => this._redo());
-    
-    // Context toolbar events
-    this.container.querySelector('[data-action="move-up"]').addEventListener('click', () => this._moveSelectedLines(-1));
-    this.container.querySelector('[data-action="move-down"]').addEventListener('click', () => this._moveSelectedLines(1));
-    this.container.querySelector('[data-action="insert-points"]').addEventListener('click', async () => {
-      try {
-        const firstSelected = this.selectedLines.size > 0 ? Math.min(...this.selectedLines) : null;
-        const atIndex = firstSelected != null ? (this.lineIndexToPathIndex.get(firstSelected) ?? null) : null;
-        const points = await this._getClickedPointsFromApp();
-        this.eventBus.emit('drawer:insert:points', { atIndex, points }, { skipValidation: true });
-      } catch (error) {
-        console.error('Error inserting points:', error);
-      }
-    });
-    this.container.querySelector('[data-action="delete-selected"]').addEventListener('click', () => this._onBulkDelete());
   }
 
   _bindGlobalEvents() {
@@ -226,28 +203,8 @@ export class GCodeDrawer {
     const count = this.selectedLines.size;
     const hasSelection = count > 0;
     
-    // Show/hide context toolbar based on selection
-    const contextToolbar = this.container.querySelector('.gcode-context-toolbar');
-    if (contextToolbar) {
-      contextToolbar.style.display = hasSelection ? 'flex' : 'none';
-    }
-    
-    // Update selection counter
-    const selectionCounter = this.container.querySelector('.gcode-selection-counter');
-    if (selectionCounter && hasSelection) {
-      selectionCounter.textContent = `${count} line${count !== 1 ? 's' : ''} selected`;
-    }
-    
-    // Enable/disable toolbar controls based on selection  
-    const moveUpBtn = this.container.querySelector('[data-action="move-up"]');
-    const moveDownBtn = this.container.querySelector('[data-action="move-down"]');
-    const deleteBtn = this.container.querySelector('[data-action="delete-selected"]');
-    const insertBtn = this.container.querySelector('[data-action="insert-points"]');
-    
-    if (moveUpBtn) moveUpBtn.disabled = !hasSelection;
-    if (moveDownBtn) moveDownBtn.disabled = !hasSelection;
-    if (deleteBtn) deleteBtn.disabled = !hasSelection;
-    if (insertBtn) insertBtn.disabled = !hasSelection;
+    // Delegate to toolbar for visibility and enablement
+    if (this.toolbar) this.toolbar.updateSelectionUI(hasSelection, count);
   }
   
   _restoreSelection(lineNumbers) {
@@ -264,11 +221,8 @@ export class GCodeDrawer {
   }
   
   _updateLineCount() {
-    const lineCountEl = this.container.querySelector('.gcode-line-count');
-    if (lineCountEl) {
-      const count = this.bodyEl ? this.bodyEl.querySelectorAll('.gcode-line').length : this.lines.length;
-      lineCountEl.textContent = `${count} line${count !== 1 ? 's' : ''}`;
-    }
+    const count = this.bodyEl ? this.bodyEl.querySelectorAll('.gcode-line').length : this.lines.length;
+    if (this.toolbar) this.toolbar.updateLineCount(count);
   }
   
   _markLineAsChanged(lineNum) {
@@ -358,34 +312,10 @@ export class GCodeDrawer {
   }
   
   _updateUndoRedoButtons() {
-    const undoBtn = this.container.querySelector('[data-action="undo"]');
-    const redoBtn = this.container.querySelector('[data-action="redo"]');
-    
-    this._debug('Updating undo/redo buttons. Undo stack:', this.undoSystem.getUndoCount(), 'Redo stack:', this.undoSystem.getRedoCount());
-    
-    if (undoBtn) {
-      const wasDisabled = undoBtn.disabled;
-      undoBtn.disabled = !this.undoSystem.canUndo();
-      if (wasDisabled !== undoBtn.disabled) {
-        this._debug('Undo button', undoBtn.disabled ? 'disabled' : 'enabled');
-      }
-      const undoCount = this.undoSystem.getUndoCount();
-      undoBtn.title = undoCount > 0 
-        ? `Undo (Ctrl+Z) - ${undoCount} action${undoCount !== 1 ? 's' : ''}` 
-        : 'Undo (Ctrl+Z)';
-    }
-    
-    if (redoBtn) {
-      const wasDisabled = redoBtn.disabled;
-      redoBtn.disabled = !this.undoSystem.canRedo();
-      if (wasDisabled !== redoBtn.disabled) {
-        this._debug('Redo button', redoBtn.disabled ? 'disabled' : 'enabled');
-      }
-      const redoCount = this.undoSystem.getRedoCount();
-      redoBtn.title = redoCount > 0 
-        ? `Redo (Ctrl+Y) - ${redoCount} action${redoCount !== 1 ? 's' : ''}` 
-        : 'Redo (Ctrl+Y)';
-    }
+    const undoCount = this.undoSystem.getUndoCount();
+    const redoCount = this.undoSystem.getRedoCount();
+    this._debug('Updating undo/redo buttons. Undo stack:', undoCount, 'Redo stack:', redoCount);
+    if (this.toolbar) this.toolbar.setUndoRedoState(undoCount, redoCount);
   }
   
   // Command classes for undo/redo

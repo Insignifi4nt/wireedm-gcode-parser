@@ -9,6 +9,7 @@ Navigation
 - PR1 (GCodeDrawer): Extract sanitization helpers to `src/utils/Sanitize.js` — completed. Build passes; event contracts unchanged.
 - PR2 (GCodeDrawer): Introduce `UndoRedoSystem` and migrate stack logic — completed. Buttons reflect state; behavior unchanged.
 - PR3 (GCodeDrawer): Extract `MultiSelectHandler` and migrate selection operations — completed. Selection behavior and toolbar counters unchanged.
+- PR4 (GCodeDrawer): Extract `DrawerToolbar` and wire callbacks — completed. Toolbar UI and states managed via module; behavior unchanged.
 
 ## Files Over 500 Lines Requiring Refactoring
 
