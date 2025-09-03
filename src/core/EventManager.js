@@ -27,6 +27,8 @@ import * as EmitControls from './events/EmitControls.js';
  * Implements the Observer pattern for loose coupling between components.
  * Provides event delegation, throttling, validation, and debugging support.
  */
+import { EventHistory } from './events/EventHistory.js';
+
 export class EventManager {
   /**
    * Constructor
@@ -37,8 +39,7 @@ export class EventManager {
     this.onceListeners = new Map(); // event -> Set of one-time listeners
     this.delegatedListeners = new Map(); // selector -> Map of event handlers
     this.isDestroyed = false;
-    this.eventHistory = []; // For debugging
-    this.maxHistorySize = 100;
+    this._history = new EventHistory(100); // For debugging
     
     // Performance tracking
     this.listenerCount = 0;
@@ -278,7 +279,7 @@ export class EventManager {
     this.delegatedListeners.clear();
     
     // Clear history
-    this.eventHistory.length = 0;
+    this._history.clear();
     
     // Mark as destroyed
     this.isDestroyed = true;
@@ -291,7 +292,7 @@ export class EventManager {
    * @returns {Array} Array of recent events
    */
   getEventHistory() {
-    return [...this.eventHistory];
+    return this._history.getEvents();
   }
 
   /**
@@ -307,7 +308,7 @@ export class EventManager {
         once: this.onceListeners.size
       },
       delegations: this.delegatedListeners.size,
-      historySize: this.eventHistory.length,
+      historySize: this._history.getEvents().length,
       isDestroyed: this.isDestroyed
     };
   }
@@ -380,17 +381,7 @@ export class EventManager {
    * @private
    */
   _recordEvent(eventType, eventData) {
-    this.eventHistory.push({
-      type: eventType,
-      data: eventData,
-      timestamp: Date.now(),
-      listeners: this.getListeners(eventType).length
-    });
-    
-    // Maintain history size limit
-    if (this.eventHistory.length > this.maxHistorySize) {
-      this.eventHistory.shift();
-    }
+    this._history.record(eventType, eventData, this.getListeners(eventType).length);
   }
 
   /**
