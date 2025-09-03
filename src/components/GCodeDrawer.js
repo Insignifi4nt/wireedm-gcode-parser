@@ -5,6 +5,7 @@
  */
 
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
+import { sanitizeText, sanitizeContentEditable } from '../utils/Sanitize.js';
 
 export class GCodeDrawer {
   constructor(mountTarget = document.body, options = {}) {
@@ -911,7 +912,7 @@ export class GCodeDrawer {
       const txtEl = lineElement.querySelector('.gcode-line-text');
       if (txtEl) {
         txtEl.addEventListener('input', (e) => {
-          this._sanitizeContentEditableInput(e.target);
+          sanitizeContentEditable(e.target);
           this._markLineAsChanged(lineNum);
           this._onLineEdited();
         });
@@ -922,7 +923,7 @@ export class GCodeDrawer {
           this._setCurrentlyEditing(lineNum);
         });
         txtEl.addEventListener('blur', (e) => {
-          this._sanitizeContentEditableInput(e.target);
+          sanitizeContentEditable(e.target);
           
           // Check if text actually changed and create undo command
           const currentText = e.target.textContent || '';
@@ -944,7 +945,7 @@ export class GCodeDrawer {
           // Prevent pasting HTML content
           e.preventDefault();
           const paste = (e.clipboardData || window.clipboardData).getData('text/plain');
-          const sanitized = this._sanitizeInput(paste);
+          const sanitized = sanitizeText(paste);
           document.execCommand('insertText', false, sanitized);
           this._markLineAsChanged(lineNum);
         });
@@ -987,69 +988,9 @@ export class GCodeDrawer {
     }
   }
 
-  _sanitizeInput(input) {
-    // Remove HTML tags and decode entities for security
-    if (!input || typeof input !== 'string') return '';
-    
-    // Create a temporary div to decode HTML entities and strip tags
-    const tempDiv = document.createElement('div');
-    tempDiv.textContent = input; // This automatically escapes HTML
-    let sanitized = tempDiv.innerHTML; // Get the escaped version
-    
-    // Decode common HTML entities back to plain text
-    const entityMap = {
-      '&lt;': '<',
-      '&gt;': '>',
-      '&amp;': '&',
-      '&quot;': '"',
-      '&#x27;': "'",
-      '&#x2F;': '/'
-    };
-    
-    sanitized = sanitized.replace(/&(lt|gt|amp|quot|#x27|#x2F);/g, (match, entity) => {
-      return entityMap[`&${entity};`] || match;
-    });
-    
-    // Remove any remaining HTML-like content and control characters
-    sanitized = sanitized
-      .replace(/<[^>]*>/g, '') // Remove any HTML tags
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control chars except tab, newline
-      .trim();
-    
-    return sanitized;
-  }
-
-  _sanitizeContentEditableInput(element) {
-    if (!element) return;
-    
-    const originalText = element.textContent || '';
-    const sanitized = this._sanitizeInput(originalText);
-    
-    // Only update if content changed to avoid cursor jumping
-    if (originalText !== sanitized) {
-      const selection = window.getSelection();
-      const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
-      const cursorOffset = range ? range.startOffset : 0;
-      
-      element.textContent = sanitized;
-      
-      // Restore cursor position if possible
-      try {
-        if (range && sanitized.length >= cursorOffset) {
-          range.setStart(element.childNodes[0] || element, Math.min(cursorOffset, sanitized.length));
-          range.collapse(true);
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
-      } catch (e) {
-        // Cursor restoration failed, not critical
-      }
-    }
-  }
-
   _emitContentChanged(text) {
     // Sanitize the entire content before emitting
-    const sanitized = this._sanitizeInput(text);
+    const sanitized = sanitizeText(text);
     this.eventBus.emit('drawer:content:changed', { text: sanitized }, { skipValidation: true });
   }
 }
