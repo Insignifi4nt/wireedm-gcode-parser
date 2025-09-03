@@ -7,6 +7,7 @@
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { sanitizeText, sanitizeContentEditable } from '../utils/Sanitize.js';
 import { UndoRedoSystem } from './drawer/UndoRedoSystem.js';
+import { MultiSelectHandler } from './drawer/MultiSelectHandler.js';
 
 export class GCodeDrawer {
   constructor(mountTarget = document.body, options = {}) {
@@ -20,7 +21,8 @@ export class GCodeDrawer {
     this.lines = []; // [{num, text, indexMapping}]
     this.lineIndexToPathIndex = new Map(); // source line -> path index
     this.pathIndexToLineIndex = new Map(); // path index -> source line
-    this.selectedLines = new Set(); // Set of selected line numbers
+    this.selectedLines = new Set(); // Set of selected line numbers (mirrors selection handler)
+    this.selection = new MultiSelectHandler();
     this.lastClickedLine = null; // For shift-click range selection
     this._debounceTimer = null;
     this.linesWithChanges = new Set(); // Track lines with unsaved changes
@@ -120,7 +122,8 @@ export class GCodeDrawer {
     this.lines = [];
     this.lineIndexToPathIndex.clear();
     this.pathIndexToLineIndex.clear();
-    this.selectedLines.clear();
+    this.selection.clear();
+    this.selectedLines = this.selection.getSelection();
     this.lastClickedLine = null;
     this.linesWithChanges.clear();
     this.currentlyEditingLine = null;
@@ -194,23 +197,18 @@ export class GCodeDrawer {
   }
 
   _selectSingle(lineNum, element) {
-    this.selectedLines.clear();
-    this.selectedLines.add(lineNum);
+    this.selection.selectSingle(lineNum);
+    this.selectedLines = this.selection.getSelection();
   }
 
   _toggleSelection(lineNum, element) {
-    if (this.selectedLines.has(lineNum)) {
-      this.selectedLines.delete(lineNum);
-    } else {
-      this.selectedLines.add(lineNum);
-    }
+    this.selection.setSelection(this.selectedLines).toggle(lineNum);
+    this.selectedLines = this.selection.getSelection();
   }
 
   _selectRange(startLine, endLine) {
-    this.selectedLines.clear();
-    for (let i = startLine; i <= endLine; i++) {
-      this.selectedLines.add(i);
-    }
+    this.selection.selectRange(startLine, endLine);
+    this.selectedLines = this.selection.getSelection();
   }
 
   _updateSelectionVisuals() {
@@ -255,14 +253,13 @@ export class GCodeDrawer {
   _restoreSelection(lineNumbers) {
     // Helper method to restore selection to specific line numbers
     console.log('GCodeDrawer: Restoring selection to lines:', lineNumbers);
-    this.selectedLines.clear();
+    const valid = [];
     lineNumbers.forEach(lineNum => {
-      // Only add valid line numbers that exist in the current DOM
       const lineEl = this.bodyEl.querySelector(`.gcode-line[data-line="${lineNum}"]`);
-      if (lineEl) {
-        this.selectedLines.add(lineNum);
-      }
+      if (lineEl) valid.push(lineNum);
     });
+    this.selection.setSelection(valid);
+    this.selectedLines = this.selection.getSelection();
     this._updateSelectionVisuals();
   }
   
@@ -401,7 +398,8 @@ export class GCodeDrawer {
           const lineEl = this.bodyEl.querySelector(`.gcode-line[data-line="${lineNum}"]`);
           if (lineEl) lineEl.remove();
         });
-        this.selectedLines.clear();
+        this.selection.clear();
+        this.selectedLines = this.selection.getSelection();
         this._renumberLines();
         this._updateLineCount();
         this._updateSelectionVisuals();
@@ -450,10 +448,10 @@ export class GCodeDrawer {
       this._updateLineCount();
 
       // Select the newly inserted range
-      this.selectedLines.clear();
-      for (let n = 0; n < insertedLines.length; n++) {
-        this.selectedLines.add(startLine + n);
-      }
+      const sel = [];
+      for (let n = 0; n < insertedLines.length; n++) sel.push(startLine + n);
+      this.selection.setSelection(sel);
+      this.selectedLines = this.selection.getSelection();
       this._updateSelectionVisuals();
     };
 
@@ -465,7 +463,8 @@ export class GCodeDrawer {
       }
       this._renumberLines();
       this._updateLineCount();
-      this.selectedLines.clear();
+      this.selection.clear();
+      this.selectedLines = this.selection.getSelection();
       this._updateSelectionVisuals();
     };
 
@@ -645,7 +644,10 @@ export class GCodeDrawer {
     this.lines = this.lines.filter(line => line.num !== lineNum);
     
     // Remove from selection if it was selected
-    this.selectedLines.delete(lineNum);
+    const nextSel = new Set(this.selectedLines);
+    nextSel.delete(lineNum);
+    this.selection.setSelection(nextSel);
+    this.selectedLines = this.selection.getSelection();
     if (this.lastClickedLine === lineNum) {
       this.lastClickedLine = null;
     }
@@ -691,7 +693,8 @@ export class GCodeDrawer {
     // Escape clears selection
     if (e.key === 'Escape') {
       if (this.selectedLines.size > 0) {
-        this.selectedLines.clear();
+        this.selection.clear();
+        this.selectedLines = this.selection.getSelection();
         this._updateSelectionVisuals();
       }
     }
@@ -829,10 +832,9 @@ export class GCodeDrawer {
       }
       
       // Update selection to new positions
-      this.selectedLines.clear();
-      sortedSelection.forEach(lineNum => {
-        this.selectedLines.add(lineNum + direction);
-      });
+      const newSel = sortedSelection.map(lineNum => lineNum + direction);
+      this.selection.setSelection(newSel);
+      this.selectedLines = this.selection.getSelection();
       
       // Update UI state efficiently
       this._renumberLines();

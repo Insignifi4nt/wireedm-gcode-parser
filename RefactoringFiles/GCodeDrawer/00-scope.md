@@ -30,7 +30,7 @@
 ## PR Sequence
 1. [x] PR1: Extract sanitization helpers to `utils/Sanitize.js` and wire in. (completed)
 2. [x] PR2: Introduce `UndoRedoSystem` and migrate stack logic. (completed)
-3. [ ] PR3: Extract `MultiSelectHandler` and migrate selection operations.
+3. [x] PR3: Extract `MultiSelectHandler` and migrate selection operations. (completed)
 4. [ ] PR4: Extract `DrawerToolbar` and wire callbacks.
 5. [ ] PR5: Extract `GCodeEditor` and finish orchestration cleanup.
 

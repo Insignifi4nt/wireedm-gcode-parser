@@ -35,8 +35,20 @@
   - Linked issues, migration notes if APIs or files moved.
   - Check that `npm run build` passes and no console errors in `npm run dev`.
 
+### Commit Message Formatting (CLI)
+- Subject: `type(scope): summary` (≤72 chars), imperative mood. Include PR label when applicable (e.g., `PR1`, `PR2`).
+- Body: short paragraphs with bullet points for changes; separate paragraphs for docs/refs.
+- Use multiple `-m` flags to create paragraphs so rendering is clean in Git/GitHub:
+  - Example:
+    - bash -lc 'git add -A && git commit \
+      -m "refactor(GCodeDrawer,utils): PR1 extract sanitization helpers to utils/Sanitize.js" \
+      -m "- Add src/utils/Sanitize.js with sanitizeText and sanitizeContentEditable (caret-preserving), extracted from private methods.\n- Update src/components/GCodeDrawer.js to import helpers for input/blur/paste and emit paths; remove old private methods.\n- Preserve behavior and contracts: drawer:* events unchanged; 3s debounce and caret behavior intact; public API stable.\n- Build: npm run build passes locally." \
+      -m "Docs:\n- Update RefactoringFiles to mark PR1 completed; add implementation notes and verification steps in PR1-Sanitize." \
+      -m "Refs: RefactoringFiles/GCodeDrawer/PRs/PR1-Sanitize.md"'
+- Prefer ASCII bullets (`- `) and avoid tabs to keep consistent rendering across tools.
+- Keep one logical change per commit; follow-up commits for docs or cleanup are welcome.
+
 ## Security & Configuration Tips
 - Input handling: validate file size/types via `FileHandler` and keep parsing strict where possible.
 - Do not include large binaries in the repo; place repro files under `IssuesPictures/` if needed.
 - Keep Node up to date (>= 16). Avoid introducing dependencies without clear value.
-
