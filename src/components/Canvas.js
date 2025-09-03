@@ -7,6 +7,7 @@ import { CANVAS, GRID, PATH_STYLES, MARKERS, DEBUG } from '../utils/Constants.js
 import { Viewport } from '../core/Viewport.js';
 import { ValidationUtils } from '../utils/MathUtils.js';
 import { drawGrid } from './canvas/CanvasGrid.js';
+import { renderPath as renderGCodePath, renderStartEnd as renderStartEndPoints } from './canvas/PathHighlights.js';
 
 /**
  * Canvas rendering component for G-code visualization
@@ -308,8 +309,15 @@ export class Canvas {
       }
 
       if (this.gcodePath.length > 0) {
-        this._renderGCodePath();
-        this._renderStartEndPoints();
+        renderGCodePath(this.ctx, this.viewport, this.gcodePath, {
+          devicePixelRatio: this.devicePixelRatio,
+          hoverHighlight: this.hoverHighlight,
+          persistentHighlights: this.persistentHighlights,
+          markerRenderer: (point, config) => this._renderMarker(point, config)
+        });
+        renderStartEndPoints(this.ctx, this.viewport, this.gcodePath, {
+          markerRenderer: (point, config) => this._renderMarker(point, config)
+        });
       }
 
       if (this.clickedPoints.length > 0) {
@@ -374,210 +382,7 @@ export class Canvas {
 
   
 
-  /**
-   * Render G-code path segments
-   */
-  _renderGCodePath() {
-    if (this.gcodePath.length === 0) return;
-
-    this.gcodePath.forEach((move, index) => {
-      if (index === 0) return; // Skip first move (no previous endpoint)
-
-      const prevMove = this.gcodePath[index - 1];
-
-      if (move.type === 'arc') {
-        // Arc move carries its own start/end; draw directly
-        this._renderArcMove(move);
-      } else {
-        // For linear moves, compute the start point from the previous segment's endpoint
-        const from = this._getMoveEndPoint(prevMove);
-        const to = { x: move.x, y: move.y };
-        if (from && ValidationUtils.isValidPoint(from) && ValidationUtils.isValidPoint(to)) {
-          this._renderLinearMove(from, to);
-        }
-      }
-      // Highlight hovered/selected endpoints
-      const shouldHighlight = this.persistentHighlights.has(index) || (this.hoverHighlight && this.hoverHighlight.type === 'point' && this.hoverHighlight.index === index);
-      if (shouldHighlight) {
-        const hx = move.type === 'arc' ? move.endX : move.x;
-        const hy = move.type === 'arc' ? move.endY : move.y;
-        if (hx !== undefined && hy !== undefined) {
-          this._renderMarker(
-            { x: hx, y: hy },
-            { ...MARKERS.CLICKED_POINT, COLOR: '#ffa500', RADIUS_PX: 3, FONT: 'bold 10px Arial', LABEL: `L${move.line || index}` }
-          );
-        }
-      }
-    });
-  }
-
-  /**
-   * Get the endpoint of a move as a point {x, y}
-   * - For linear moves (rapid/cut): returns {x, y}
-   * - For arcs: returns {endX, endY}
-   * - Otherwise: null
-   */
-  _getMoveEndPoint(move) {
-    if (!move) return null;
-    if (move.type === 'arc') {
-      if (ValidationUtils.isValidCoordinate(move.endX) && ValidationUtils.isValidCoordinate(move.endY)) {
-        return { x: move.endX, y: move.endY };
-      }
-      return null;
-    }
-    // Linear point
-    if (ValidationUtils.isValidCoordinate(move.x) && ValidationUtils.isValidCoordinate(move.y)) {
-      return { x: move.x, y: move.y };
-    }
-    return null;
-  }
-
-  /**
-   * Render linear move (G0/G1)
-   * @param {Object} from - Starting point
-   * @param {Object} to - Ending point
-   */
-  _renderLinearMove(from, to) {
-    if (!ValidationUtils.isValidPoint(from) || !ValidationUtils.isValidPoint(to)) {
-      return;
-    }
-
-    // Set style based on move type
-    const style = to.type === 'rapid' ? PATH_STYLES.RAPID : PATH_STYLES.CUT;
-
-    // Screen-space styling: keep strokes constant in CSS pixels regardless of zoom
-    // Convert desired CSS pixel widths to world units by dividing by zoom
-    const pxScale = this.devicePixelRatio || 1;
-    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
-
-    this.ctx.strokeStyle = style.COLOR;
-    this.ctx.lineWidth = cssToWorld(style.LINE_WIDTH_PX ?? 1);
-    const dashPx = style.LINE_DASH_PX ?? [];
-    if (Array.isArray(dashPx) && dashPx.length > 0) {
-      this.ctx.setLineDash(dashPx.map(cssToWorld));
-    } else {
-      this.ctx.setLineDash([]);
-    }
-
-    // Draw line
-    this.ctx.beginPath();
-    this.ctx.moveTo(from.x, from.y);
-    this.ctx.lineTo(to.x, to.y);
-    this.ctx.stroke();
-  }
-
-  /**
-   * Render arc move (G2/G3)
-   * @param {Object} move - Arc move data
-   */
-  _renderArcMove(move) {
-    if (!this._isValidArcMove(move)) {
-      return;
-    }
-
-    // Set arc style (screen-space)
-    const pxScale = this.devicePixelRatio || 1;
-    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
-    this.ctx.strokeStyle = PATH_STYLES.ARC.COLOR;
-    this.ctx.lineWidth = cssToWorld(PATH_STYLES.ARC.LINE_WIDTH_PX ?? 1);
-    const dashPx = PATH_STYLES.ARC.LINE_DASH_PX ?? [];
-    this.ctx.setLineDash(Array.isArray(dashPx) ? dashPx.map(cssToWorld) : []);
-
-    // Calculate arc parameters
-    const radius = Math.sqrt(
-      Math.pow(move.startX - move.centerX, 2) + 
-      Math.pow(move.startY - move.centerY, 2)
-    );
-
-    const startAngle = Math.atan2(
-      move.startY - move.centerY,
-      move.startX - move.centerX
-    );
-
-    const rawEndAngle = Math.atan2(
-      move.endY - move.centerY,
-      move.endX - move.centerX
-    );
-
-    // Normalize end angle so path follows requested direction and length
-    let delta = rawEndAngle - startAngle;
-    if (move.clockwise) {
-      if (delta >= 0) delta -= 2 * Math.PI; // ensure clockwise delta is negative
-    } else {
-      if (delta <= 0) delta += 2 * Math.PI; // ensure counterclockwise delta is positive
-    }
-    const endAngle = startAngle + delta;
-
-    // Draw arc (note: Y-axis flip handled by viewport transform)
-    this.ctx.beginPath();
-    this.ctx.arc(
-      move.centerX,
-      move.centerY,
-      radius,
-      startAngle,
-      endAngle,
-      move.clockwise // Y-axis is flipped in the transform, so invert desired world direction
-    );
-    this.ctx.stroke();
-
-    // Optional debug overlay for arc geometry
-    if (DEBUG && DEBUG.SHOW_ARC_GEOMETRY) {
-      this.ctx.save();
-      // Center marker
-      this.ctx.fillStyle = '#ff8800';
-      this.ctx.beginPath();
-      this.ctx.arc(move.centerX, move.centerY, cssToWorld(2.5), 0, Math.PI * 2);
-      this.ctx.fill();
-
-      // Radial lines to start and end
-      this.ctx.strokeStyle = '#ffaa00';
-      this.ctx.lineWidth = cssToWorld(0.8);
-      this.ctx.setLineDash([cssToWorld(3), cssToWorld(2)]);
-      this.ctx.beginPath();
-      this.ctx.moveTo(move.centerX, move.centerY);
-      this.ctx.lineTo(move.startX, move.startY);
-      this.ctx.moveTo(move.centerX, move.centerY);
-      this.ctx.lineTo(move.endX, move.endY);
-      this.ctx.stroke();
-      this.ctx.restore();
-    }
-  }
-
-  /**
-   * Validate arc move data
-   * @param {Object} move - Arc move to validate
-   * @returns {boolean} Whether arc move is valid
-   */
-  _isValidArcMove(move) {
-    return move &&
-           ValidationUtils.isValidCoordinate(move.startX) &&
-           ValidationUtils.isValidCoordinate(move.startY) &&
-           ValidationUtils.isValidCoordinate(move.endX) &&
-           ValidationUtils.isValidCoordinate(move.endY) &&
-           ValidationUtils.isValidCoordinate(move.centerX) &&
-           ValidationUtils.isValidCoordinate(move.centerY);
-  }
-
-  /**
-   * Render start and end point markers
-   */
-  _renderStartEndPoints() {
-    if (this.gcodePath.length === 0) return;
-
-    // Draw start point
-    const startPoint = this.gcodePath[0];
-    if (ValidationUtils.isValidPoint(startPoint)) {
-      this._renderMarker(startPoint, MARKERS.START_POINT);
-    }
-
-    // Draw end point
-    if (this.gcodePath.length > 1) {
-      const endPoint = this.gcodePath[this.gcodePath.length - 1];
-      if (ValidationUtils.isValidPoint(endPoint)) {
-        this._renderMarker(endPoint, MARKERS.END_POINT);
-      }
-    }
-  }
+  
 
   /**
    * Render clicked measurement points
