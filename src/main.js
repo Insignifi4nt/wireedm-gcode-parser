@@ -7,6 +7,7 @@
 
 // Core imports
 import { EventBus, EVENT_TYPES } from './core/EventManager.js';
+import { buildAppDOM } from './core/ComponentInitializer.js';
 import { GCodeParser } from './core/GCodeParser.js';
 import { EventIntegration } from './core/EventIntegration.js';
 
@@ -18,7 +19,6 @@ import { GCodeDrawer } from './components/GCodeDrawer.js';
 import { StatusMessage } from './components/StatusMessage.js';
 
 // Utility imports
-import { FileHandler } from './utils/FileHandler.js';
 import { CANVAS, GRID } from './utils/Constants.js';
 
 /**
@@ -118,42 +118,11 @@ class WireEDMViewer {
    * Create DOM structure for the application
    */
   async createDOMStructure() {
-    // Get app container
-    this.appContainer = document.getElementById('app');
-    if (!this.appContainer) {
-      throw new Error('App container element not found');
-    }
-    
-    // Clear existing content
-    this.appContainer.innerHTML = '';
-    
-    // Create main application layout
-    const appLayout = document.createElement('div');
-    appLayout.className = 'wire-edm-viewer';
-    appLayout.innerHTML = `
-      <header class="header">
-        <div id="toolbar-container" class="controls"></div>
-      </header>
-      
-      <main class="main-container">
-        <div class="canvas-container">
-          <canvas id="main-canvas" class="main-canvas"></canvas>
-          <div id="canvas-overlay" class="canvas-overlay"></div>
-        </div>
-        
-        <aside id="sidebar-container" class="sidebar"></aside>
-      </main>
-      
-      <div id="status-container" class="status-container"></div>
-    `;
-    
-    this.appContainer.appendChild(appLayout);
-    
-    // Get canvas element reference
-    this.canvasElement = document.getElementById('main-canvas');
-    if (!this.canvasElement) {
-      throw new Error('Canvas element not found');
-    }
+    // Delegate to ComponentInitializer (PR1)
+    const domRefs = buildAppDOM();
+    this.domRefs = domRefs;
+    this.appContainer = domRefs.appContainer;
+    this.canvasElement = domRefs.canvasElement;
   }
 
   /**

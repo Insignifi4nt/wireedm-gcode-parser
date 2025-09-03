@@ -1,63 +1,74 @@
-Next Refactor Session Prompt — Continue With EventManager.js
+Next Refactor Session Prompt — Start main.js Split (AppOrchestrator, ComponentInitializer, EventWiring)
 
 Context
 - Repo: WireEDM_app (Vite app). Entry: index.html → src/main.js.
-- Branch to use: refactor (current working branch with GCodeDrawer PR1–PR5 and Canvas PR1–PR5 completed).
-- Build: npm run build; Dev: npm run dev.
-- Coding style: src/standards/CodingStandards.md (ES modules, semicolons, 2-space indent, named exports).
-- Commit style: single descriptive commit per PR using multiple -m paragraphs (as documented in AGENTS.md). Do not push; I’ll push.
+- Branch: refactor (current working branch with GCodeDrawer PR1–PR5, Canvas PR1–PR5, and EventManager PR0–PR9 completed).
+- Build: `npm run build`; Dev: `npm run dev`.
+- Coding style: `src/standards/CodingStandards.md` (ES modules, semicolons, 2‑space indent, named exports).
+- Commit style: single descriptive commit per PR using multiple `-m` paragraphs (see AGENTS.md). Do not push; I’ll push.
 
 What’s Done (So Far)
-- GCodeDrawer refactor complete (PR1–PR5); drawer now orchestrates Editor/Toolbar/Undo/Selection.
-- Canvas refactor complete (PR1–PR5); Canvas delegates to CanvasGrid, PathHighlights, MarkerRenderer, CanvasRenderer.
+- GCodeDrawer refactor complete; drawer orchestrates Editor/Toolbar/Undo/Selection.
+- Canvas refactor complete; Canvas composes CanvasGrid, PathHighlights, MarkerRenderer, CanvasRenderer.
+- EventManager split into `core/events/*` with compatibility re‑exports (`EventBus`, `EVENT_TYPES`, `EventValidator`, `EmitControls`, `EventHistory`, `DOMDelegation`). Build validated.
 
 Goal (Next File)
-- Start refactoring src/core/EventManager.js (~1,060 lines) per RefactoringFiles/RefactoringPlan.md.
-- Preserve behavior and public API used across the app (EventBus singleton, EVENT_TYPES enum, delegated helpers/utilities). Minimize surface changes; keep imports stable.
-- Use as many PRs as needed for a clean split (not limited to five) to truly improve maintainability and testability.
+- Refactor `src/main.js` (~774 lines in plan) into smaller, focused modules without behavior changes:
+  - `src/core/AppOrchestrator.js`: overall app lifecycle, orchestration, high‑level state.
+  - `src/core/ComponentInitializer.js`: DOM building, component creation, basic wiring.
+  - `src/core/EventWiring.js`: cross‑component EventBus subscriptions/emitters and global window listeners.
+- Keep entrypoint `src/main.js` minimal (bootstrap only) and preserve public behavior and UI.
 
-First Step (Critical)
-- Re-evaluate and, if needed, adjust the EventManager refactor plan before implementing:
-  - Verify current EventManager.js structure and responsibilities (EventBus, EVENT_TYPES, validation, delegation utilities).
-  - Confirm actual imports/usages in src/main.js and all components (Toolbar, Sidebar, Drawer, StatusMessage, EventIntegration, Mouse/Touch/Keyboard handlers).
-  - Update RefactoringFiles/EventManager/* (scope/PRs) if the plan should change, then proceed.
+First Steps (Critical)
+- Re‑evaluate the `main.js` split plan before implementing:
+  - Map responsibilities in current `main.js` (DOM structure creation, component instantiation, EventBus wiring, file load/parse, viewport updates, status handling, resize).
+  - Identify implicit couplings with `Canvas`, `Toolbar`, `Sidebar`, `GCodeDrawer`, `StatusMessage`, `EventIntegration`, `FileHandler`, `GCodeParser`.
+  - Confirm all EventBus event types used and emitted (ensure alignment with `EVENT_TYPES`).
+  - Decide exact API surfaces for `AppOrchestrator`, `ComponentInitializer`, and `EventWiring` to avoid circular deps.
+  - Draft/update docs under `RefactoringFiles/main/` (scope + PR notes) if the plan changes.
 
-Research First
-1) Skim src/core/EventManager.js to map concerns: singleton EventBus, event type registry (EVENT_TYPES), validation/schema helpers, DOM delegation helpers, error handling, logging.
-2) Confirm how it’s used in the codebase: imports of { EventBus, EVENT_TYPES, EventUtils } in core/components/utils; check for default export and any legacy usages.
-3) Check src/standards/CodingStandards.md for import grouping and naming conventions (named exports preferred; keep public API stable during split).
+Research Checklist
+1) Skim `src/main.js` to annotate sections: initialization, DOM build, component init, event wiring, file operations, viewport controls, status flows.
+2) Verify how `EventIntegration` plugs into mouse/touch/keyboard handlers and ensure its lifecycle is preserved.
+3) Audit selectors and element IDs used during DOM creation (keep names stable for CSS/queries).
+4) Review `Toolbar`, `Sidebar`, `GCodeDrawer`, `StatusMessage` constructors and their EventBus expectations.
+5) Confirm no default import of `EventManager` is used; keep named imports stable.
 
-Implementation Plan (EventManager)
-- Create/maintain RefactoringFiles/EventManager/00-scope.md and PR docs.
-- PR0: Scaffold events directory and optional barrel.
-- PR1: Extract EventTypes (constants).
-- PR2: Extract EventSchemas (payload schemas).
-- PR3: Extract EventValidator (validation logic using types + schemas).
-- PR4: Extract EventBus (singleton + wrappers).
-- PR5: Extract DOMDelegation (delegate + handler).
-- PR6: Extract EmitControls (debounce, rateLimit, deduplicate).
-- PR7: Extract EventHistory (history + metrics).
-- PR8: Bridge layer: re-export `{ EventBus, EVENT_TYPES, EventSchemas, EventValidator, DOMDelegation, EmitControls, EventHistory }` from EventManager.
-- PR9: Cleanup: remove duplicates; keep compatibility re-exports. Optionally, deprecate default export for later removal.
-
-Constraints
-- Keep public API stable during the transition; avoid breaking imports in main.js and components. Prefer re-exports from EventManager as a compatibility layer.
-- No renaming of event types or semantics.
-- No behavior changes to listener lifetime, emit semantics, or validation toggles.
-
-Validation
-- Build: npm run build passes after each PR.
-- Manual checks: load file; drawer hover/click highlighting; add/delete/clear points; zoom/pan via controls and wheel; status messages; export flows.
-- Performance: no regressions in event throughput; no duplicate listeners.
-
-Commits
-- Use a single commit per PR with multi-paragraph message, for example:
-  - git add -A && git commit \
-    -m "refactor(EventManager): PR1 extract EventBus and re-export for compatibility" \
-    -m "- Add core/events/EventBus.js; move singleton + on/off/emit.\n- Update src/core/EventManager.js to re-export EventBus for minimal surface change.\n- Behavior unchanged; build passes." \
-    -m "Docs:\n- Add RefactoringFiles/EventManager/PRs/PR1-EventBus.md; update scope and plan progress." \
-    -m "Refs: RefactoringFiles/EventManager/PRs/PR1-EventBus.md"
+Implementation Plan (main.js)
+- PR0: Scaffold `src/core/AppOrchestrator.js`, `src/core/ComponentInitializer.js`, `src/core/EventWiring.js` with skeleton exports and JSDoc.
+- PR1: Extract DOM construction from `main.js` into `ComponentInitializer` (returns references to key nodes).
+- PR2: Move component instantiation (Canvas, Toolbar, Sidebar, GCodeDrawer, StatusMessage, EventIntegration, Parser) into `ComponentInitializer` with a clean return object.
+- PR3: Extract EventBus subscriptions/emitters into `EventWiring` (wire viewport, points, file load/parse, status, export, resize, grid snap/visibility, toolbar actions). Ensure unsubscribe/cleanup hooks are exposed.
+- PR4: Create `AppOrchestrator` to orchestrate initialization order, hold app‑level state, call `ComponentInitializer` and `EventWiring`, and emit lifecycle events (APP_INIT/APP_READY/APP_DESTROY).
+- PR5: Slim `src/main.js` to a minimal bootstrap that instantiates `AppOrchestrator` and calls `init()`.
+- PR6: Extract any ad‑hoc helpers from `main.js` into appropriate utils if present (e.g., status/error helpers) without altering behavior.
+- PR7: Add cleanup/destroy path that disposes event wiring, handlers, and components deterministically.
+- PR8: Documentation: add `RefactoringFiles/main/00-scope.md` and `PRs/*` describing the splits, contracts, and validation.
+- PR9+: Follow‑ups as needed to improve cohesion without changing behavior (unify resize handling, reduce duplicated UI notifications, etc.).
 
 Notes
-- Keep diffs minimal; start with re-exports to avoid import churn, then progressively migrate direct imports when safe.
-- Be cautious with default export of EventManager; preserve until the codebase is fully migrated to named imports.
+- No need to limit the number of PRs — use as many as needed for clean code and a successful refactor.
+- Keep CSS classes/IDs and event type semantics unchanged to avoid UI/behavior regressions.
+- Prefer named exports for new modules. Keep interfaces small and explicit.
+- Avoid import churn for other components; only `main.js` should change its imports significantly.
+
+Constraints
+- Behavior parity: listener lifetimes, emit semantics, validation toggles, and UI flows remain identical.
+- Stability: keep DOM structure (IDs/classes) and component contracts intact.
+- Compatibility: `index.html` continues to load `src/main.js` as the app entry; no change to public surface.
+
+Validation
+- Build: `npm run build` after each PR; ensure it passes.
+- Manual smoke: load file; drawer hover/click; add/delete/clear points; zoom/pan via controls and wheel; status messages; export flows; keyboard shortcuts; resize behavior.
+- Performance: no duplicate listeners; no regressions in event throughput or initial load.
+
+Commits
+- One commit per PR with multi‑paragraph message:
+  - git add -A && git commit \
+    -m "refactor(main): PR1 extract DOM build to ComponentInitializer" \
+    -m "- Add src/core/ComponentInitializer.js building header/main/sidebar/canvas; return DOM refs.\n+- Move DOM creation logic from src/main.js; preserve IDs/classes and layout.\n+- Behavior unchanged; build passes." \
+    -m "Docs:\n- Add RefactoringFiles/main/PRs/PR1-ComponentInitializer.md with scope and verification steps." \
+    -m "Refs: RefactoringFiles/main/PRs/PR1-ComponentInitializer.md"
+
+Deliverable for first session
+- Create scaffolds for the three modules (PR0), then perform PR1–PR2 extraction into `ComponentInitializer`. Keep `main.js` functional and building between steps.
