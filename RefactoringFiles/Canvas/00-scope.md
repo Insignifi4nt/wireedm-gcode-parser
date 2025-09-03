@@ -30,6 +30,7 @@
 ## Progress
 - PR1 completed: Grid lines and labels extracted to `components/canvas/CanvasGrid.js`; `Canvas.js` now delegates grid rendering.
 - PR2 completed: Path + highlights extracted to `components/canvas/PathHighlights.js`; `Canvas.js` delegates path and start/end rendering.
+- PR3 completed: Marker rendering extracted to `components/canvas/MarkerRenderer.js`; `Canvas.js` delegates clicked points and markers.
 
 ## Acceptance Criteria
 - Parity: grid, path, start/end markers, hover/persistent highlight, clicked points/labels render identically.

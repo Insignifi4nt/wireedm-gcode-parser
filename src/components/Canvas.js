@@ -8,6 +8,7 @@ import { Viewport } from '../core/Viewport.js';
 import { ValidationUtils } from '../utils/MathUtils.js';
 import { drawGrid } from './canvas/CanvasGrid.js';
 import { renderPath as renderGCodePath, renderStartEnd as renderStartEndPoints } from './canvas/PathHighlights.js';
+import { renderClickedPoints, renderMarker as drawMarker } from './canvas/MarkerRenderer.js';
 
 /**
  * Canvas rendering component for G-code visualization
@@ -313,15 +314,15 @@ export class Canvas {
           devicePixelRatio: this.devicePixelRatio,
           hoverHighlight: this.hoverHighlight,
           persistentHighlights: this.persistentHighlights,
-          markerRenderer: (point, config) => this._renderMarker(point, config)
+          markerRenderer: (point, config) => drawMarker(this.ctx, this.viewport, point, config, this.devicePixelRatio)
         });
         renderStartEndPoints(this.ctx, this.viewport, this.gcodePath, {
-          markerRenderer: (point, config) => this._renderMarker(point, config)
+          markerRenderer: (point, config) => drawMarker(this.ctx, this.viewport, point, config, this.devicePixelRatio)
         });
       }
 
       if (this.clickedPoints.length > 0) {
-        this._renderClickedPoints();
+        renderClickedPoints(this.ctx, this.viewport, this.clickedPoints, { devicePixelRatio: this.devicePixelRatio });
       }
 
       // Restore context state
@@ -387,58 +388,7 @@ export class Canvas {
   /**
    * Render clicked measurement points
    */
-  _renderClickedPoints() {
-    this.clickedPoints.forEach((point, index) => {
-      if (ValidationUtils.isValidPoint(point)) {
-        const config = {
-          ...MARKERS.CLICKED_POINT,
-          LABEL: `P${index + 1}`
-        };
-        this._renderMarker(point, config);
-      }
-    });
-  }
-
-  /**
-   * Render a point marker with label
-   * @param {Object} point - Point coordinates {x, y}
-   * @param {Object} config - Marker configuration
-   */
-  _renderMarker(point, config) {
-    // Screen-space marker radius and offsets so points remain visible at any zoom
-    const pxScale = this.devicePixelRatio || 1;
-    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
-    const scaledRadius = cssToWorld(config.RADIUS_PX ?? 3);
-    const scaledOffsetX = config.OFFSET.X;
-    const scaledOffsetY = config.OFFSET.Y;
-
-    // Draw circle (this uses the flipped coordinate system)
-    this.ctx.fillStyle = config.COLOR;
-    this.ctx.beginPath();
-    this.ctx.arc(point.x, point.y, scaledRadius, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    // Draw label with text-safe transform to prevent mirroring
-    if (config.LABEL) {
-      this.ctx.save();
-      this._applyTextTransform();
-
-      // Convert world coordinates to screen coordinates for text
-      const screenCoords = this.viewport.worldToScreen(point.x, point.y);
-
-      this.ctx.fillStyle = config.COLOR;
-      this.ctx.font = config.FONT || '10px Arial';
-      this.ctx.textAlign = 'left';
-      this.ctx.textBaseline = 'top';
-      this.ctx.fillText(
-        config.LABEL,
-        screenCoords.x + scaledOffsetX,
-        screenCoords.y + scaledOffsetY
-      );
-
-      this.ctx.restore();
-    }
-  }
+  
 
   /**
    * Fit canvas view to show all G-code content

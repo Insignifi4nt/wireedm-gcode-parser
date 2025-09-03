@@ -1,5 +1,7 @@
 # PR3: Extract MarkerRenderer
 
+Status: Completed
+
 ## Summary
 Move clicked points and marker label rendering from `Canvas.js` into `components/canvas/MarkerRenderer.js`.
 
@@ -8,13 +10,13 @@ Point markers are independent of path/grid; extracting clarifies responsibilitie
 
 ## Scope
 - In: Add `MarkerRenderer.js` with:
-  - `renderClickedPoints(ctx, points, viewport, opts)`
-  - `renderMarker(ctx, worldPoint, viewport, opts)`
+  - `renderClickedPoints(ctx, viewport, points, opts)`
+  - `renderMarker(ctx, viewport, worldPoint, config, devicePixelRatio)`
 - Out: Keep points state on Canvas; rendering only.
 
 ## Changes
-- Move `_renderClickedPoints` and `_renderMarker` logic.
-- `Canvas.js` calls MarkerRenderer from `_performRender`.
+- Added: `src/components/canvas/MarkerRenderer.js` with marker and clicked point rendering.
+- Updated: `Canvas.js` delegates clicked points and marker drawing; removed old private methods.
 
 ## API / Events
 - No public API changes.
@@ -24,4 +26,3 @@ Point markers are independent of path/grid; extracting clarifies responsibilitie
 
 ## Test Plan
 - Add/remove/clear points and verify visuals.
-
