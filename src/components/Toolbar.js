@@ -7,6 +7,7 @@ import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { VIEWPORT } from '../utils/Constants.js';
 import { FileHandler } from '../utils/FileHandler.js';
 import { FileControls } from './toolbar/FileControls.js';
+import { ViewControls } from './toolbar/ViewControls.js';
 
 /**
  * Toolbar class manages the header toolbar with file and view controls
@@ -37,6 +38,7 @@ export class Toolbar {
     this.fileHandler = new FileHandler();
     // Submodules
     this.fileControls = null;
+    this.viewControls = null;
     
     // Component state
     this.state = {
@@ -196,16 +198,14 @@ export class Toolbar {
     );
     this.fileControls.init();
 
-    // Zoom controls
-    if (this.elements.zoomInButton) {
-      this.elements.zoomInButton.addEventListener('click', this._handleZoomIn);
-    }
-    if (this.elements.zoomOutButton) {
-      this.elements.zoomOutButton.addEventListener('click', this._handleZoomOut);
-    }
-    if (this.elements.fitToScreenButton) {
-      this.elements.fitToScreenButton.addEventListener('click', this._handleFitToScreen);
-    }
+    // View controls delegated to ViewControls
+    this.viewControls = new ViewControls({
+      zoomInButton: this.elements.zoomInButton,
+      zoomOutButton: this.elements.zoomOutButton,
+      fitToScreenButton: this.elements.fitToScreenButton,
+      zoomDisplay: this.elements.zoomDisplay
+    });
+    this.viewControls.init();
 
     // Utility buttons
     if (this.elements.clearPointsButton) {
@@ -249,8 +249,7 @@ export class Toolbar {
    * Subscribe to application events
    */
   _subscribeToEvents() {
-    // Viewport zoom changes
-    this.eventBus.on(EVENT_TYPES.VIEWPORT_ZOOM_CHANGE, this._onZoomChange);
+    // Viewport zoom display handled by ViewControls
     
     // Point management changes
     this.eventBus.on(EVENT_TYPES.POINT_UPDATE, this._onPointsChange);
@@ -596,6 +595,10 @@ export class Toolbar {
     if (this.fileControls) {
       this.fileControls.destroy();
       this.fileControls = null;
+    }
+    if (this.viewControls) {
+      this.viewControls.destroy();
+      this.viewControls = null;
     }
     
     // Reset state
