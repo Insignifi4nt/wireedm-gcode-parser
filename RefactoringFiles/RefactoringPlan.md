@@ -19,7 +19,8 @@ Navigation
  - Toolbar PR2: Extract ViewControls — completed.
  - Toolbar PR3: Extract ActionControls — completed.
  - Toolbar PR4: Orchestration cleanup — completed.
- - Toolbar PR5: Cleanup — completed.
+- Toolbar PR5: Cleanup — completed.
+ - StatusMessage PR0–PR3: Completed. NotificationStyles + MessageQueue + ToastManager extracted; StatusMessage orchestrates.
 
 ## Files Over 500 Lines Requiring Refactoring
 

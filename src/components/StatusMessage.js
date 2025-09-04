@@ -14,6 +14,7 @@ import { STATUS, ANIMATION, THEME } from '../utils/Constants.js';
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { applyContainerStyles, applyMessageStyles, buildMessageContent, escapeHtml } from './notifications/NotificationStyles.js';
 import { MessageQueue } from './notifications/MessageQueue.js';
+import { ToastManager } from './notifications/ToastManager.js';
 
 export class StatusMessage {
   /**
@@ -32,6 +33,7 @@ export class StatusMessage {
     
     // Message queue manager (initialized in init)
     this.queue = null;
+    this.toastManager = null;
     this.messageIdCounter = 0;
     
     // DOM elements
@@ -58,7 +60,9 @@ export class StatusMessage {
       ANIMATION,
       STATUS
     });
-    this.bindEvents();
+    // Wire EventBus via ToastManager
+    this.toastManager = new ToastManager(this);
+    this.toastManager.init();
     
     console.debug('StatusMessage component initialized');
   }
@@ -310,8 +314,8 @@ export class StatusMessage {
     this.hideAll();
     
     // Clean up event listeners
-    this.eventCleanup.forEach(cleanup => cleanup());
-    this.eventCleanup.length = 0;
+    try { this.toastManager?.destroy(); } catch (_) {}
+    try { this.queue?.destroy(); } catch (_) {}
     
     // Remove DOM elements
     if (this.messageContainer && this.messageContainer.parentNode) {
@@ -320,8 +324,6 @@ export class StatusMessage {
     
     // Clear references
     this.messageContainer = null;
-    this.activeMessages.clear();
-    this.messageQueue.length = 0;
     
     console.debug('StatusMessage component destroyed');
   }
