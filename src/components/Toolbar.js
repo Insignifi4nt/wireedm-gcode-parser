@@ -8,6 +8,7 @@ import { VIEWPORT } from '../utils/Constants.js';
 import { FileHandler } from '../utils/FileHandler.js';
 import { FileControls } from './toolbar/FileControls.js';
 import { ViewControls } from './toolbar/ViewControls.js';
+import { ActionControls } from './toolbar/ActionControls.js';
 
 /**
  * Toolbar class manages the header toolbar with file and view controls
@@ -39,6 +40,7 @@ export class Toolbar {
     // Submodules
     this.fileControls = null;
     this.viewControls = null;
+    this.actionControls = null;
     
     // Component state
     this.state = {
@@ -185,6 +187,8 @@ export class Toolbar {
     this.elements.zoomDisplay = this.container.querySelector('[data-toolbar="zoom-level"]');
     this.elements.clearPointsButton = this.container.querySelector('[data-toolbar="clear-points"]');
     this.elements.exportPointsButton = this.container.querySelector('[data-toolbar="export-points"]');
+    this.elements.drawerToggleButton = this.container.querySelector('[data-toolbar="toggle-gcode-drawer"]');
+    this.elements.normalizeButton = this.container.querySelector('[data-toolbar="normalize-to-iso"]');
   }
 
   /**
@@ -207,40 +211,24 @@ export class Toolbar {
     });
     this.viewControls.init();
 
-    // Utility buttons
-    if (this.elements.clearPointsButton) {
-      this.elements.clearPointsButton.addEventListener('click', this._handleClearPoints);
-    }
-    if (this.elements.exportPointsButton) {
-      this.elements.exportPointsButton.addEventListener('click', this._handleExportPoints);
-    }
-    const drawerBtn = this.container.querySelector('[data-toolbar="toggle-gcode-drawer"]');
-    if (drawerBtn) {
-      drawerBtn.addEventListener('click', () => {
-        this.eventBus.emit('drawer:toggle');
-      });
-    }
-
-    // Normalize to ISO button
-    const normalizeBtn = this.container.querySelector('[data-toolbar="normalize-to-iso"]');
-    if (normalizeBtn) {
-      normalizeBtn.addEventListener('click', async () => {
-        try {
-          // Get current drawer text if available
+    // Utility buttons delegated to ActionControls
+    this.actionControls = new ActionControls(
+      {
+        clearPointsButton: this.elements.clearPointsButton,
+        exportPointsButton: this.elements.exportPointsButton,
+        drawerToggleButton: this.elements.drawerToggleButton,
+        normalizeButton: this.elements.normalizeButton
+      },
+      {
+        getTextForNormalization: () => {
           const app = window.wireEDMViewer;
           const drawer = app?.gcodeDrawer;
-          const text = drawer?.getText?.() || this.fileHandler?.loadedData?.content || '';
-          const { normalizeToISO } = await import('../utils/IsoNormalizer.js');
-          const normalized = normalizeToISO(text);
-          // Offer download as .iso without requiring points
-          const filename = `normalized_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.iso`;
-          this.fileHandler._downloadFile(normalized, filename, 'text/plain');
-          this.eventBus.emit('status:show', { message: 'Normalized to ISO', type: 'success' }, { skipValidation: true });
-        } catch (e) {
-          console.error('Normalize to ISO failed:', e);
-        }
-      });
-    }
+          return drawer?.getText?.() || this.fileHandler?.loadedData?.content || '';
+        },
+        exportNormalizedISOFromText: (text, options) => this.fileHandler?.exportNormalizedISOFromText?.(text, options)
+      }
+    );
+    this.actionControls.init();
 
     // Drag and drop support handled by FileControls
   }
@@ -599,6 +587,10 @@ export class Toolbar {
     if (this.viewControls) {
       this.viewControls.destroy();
       this.viewControls = null;
+    }
+    if (this.actionControls) {
+      this.actionControls.destroy();
+      this.actionControls = null;
     }
     
     // Reset state
