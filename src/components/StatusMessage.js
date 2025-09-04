@@ -12,6 +12,8 @@
 
 import { STATUS, ANIMATION, THEME } from '../utils/Constants.js';
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
+import { applyContainerStyles, applyMessageStyles, buildMessageContent, escapeHtml } from './notifications/NotificationStyles.js';
+import { MessageQueue } from './notifications/MessageQueue.js';
 
 export class StatusMessage {
   /**
@@ -28,9 +30,8 @@ export class StatusMessage {
     this.defaultDuration = options.defaultDuration || STATUS.DURATION;
     this.maxMessages = options.maxMessages || 5;
     
-    // Message queue and tracking
-    this.messageQueue = [];
-    this.activeMessages = new Map();
+    // Message queue manager (initialized in init)
+    this.queue = null;
     this.messageIdCounter = 0;
     
     // DOM elements
@@ -50,6 +51,13 @@ export class StatusMessage {
    */
   init() {
     this.createMessageContainer();
+    // Initialize queue manager
+    this.queue = new MessageQueue({
+      container: this.messageContainer,
+      maxMessages: this.maxMessages,
+      ANIMATION,
+      STATUS
+    });
     this.bindEvents();
     
     console.debug('StatusMessage component initialized');
@@ -64,7 +72,7 @@ export class StatusMessage {
     this.messageContainer.className = 'status-message-container';
     
     // Apply positioning styles
-    this.applyContainerStyles();
+    applyContainerStyles(this.messageContainer, this.position, STATUS, ANIMATION);
     
     this.container.appendChild(this.messageContainer);
   }
@@ -72,47 +80,7 @@ export class StatusMessage {
   /**
    * Apply container positioning styles
    */
-  applyContainerStyles() {
-    const styles = {
-      position: 'fixed',
-      zIndex: '1000',
-      pointerEvents: 'none',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '10px',
-      maxWidth: '400px',
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '14px'
-    };
-    
-    // Position-specific styles
-    switch (this.position) {
-      case 'top-right':
-        styles.top = STATUS.POSITION.TOP;
-        styles.right = STATUS.POSITION.RIGHT;
-        styles.alignItems = 'flex-end';
-        break;
-      case 'top-left':
-        styles.top = STATUS.POSITION.TOP;
-        styles.left = STATUS.POSITION.LEFT;
-        styles.alignItems = 'flex-start';
-        break;
-      case 'bottom-right':
-        styles.bottom = STATUS.POSITION.BOTTOM;
-        styles.right = STATUS.POSITION.RIGHT;
-        styles.alignItems = 'flex-end';
-        styles.flexDirection = 'column-reverse';
-        break;
-      case 'bottom-left':
-        styles.bottom = STATUS.POSITION.BOTTOM;
-        styles.left = STATUS.POSITION.LEFT;
-        styles.alignItems = 'flex-start';
-        styles.flexDirection = 'column-reverse';
-        break;
-    }
-    
-    Object.assign(this.messageContainer.style, styles);
-  }
+  // Styles moved to NotificationStyles (applyContainerStyles)
 
   /**
    * Bind event listeners
@@ -171,11 +139,8 @@ export class StatusMessage {
       progress: null
     };
     
-    // Add to queue
-    this.messageQueue.push(messageData);
-    
-    // Process queue
-    this.processQueue();
+    // Enqueue via queue manager
+    this.queue.enqueue(messageData);
     
     return messageId;
   }
@@ -192,26 +157,8 @@ export class StatusMessage {
       return;
     }
     
-    const messageData = this.activeMessages.get(messageId);
-    if (!messageData) {
-      console.warn(`StatusMessage: Message '${messageId}' not found for update`);
-      return;
-    }
-    
-    // Update message text
-    if (newMessage && typeof newMessage === 'string') {
-      messageData.message = newMessage;
-      const textElement = messageData.element.querySelector('.status-message-text');
-      if (textElement) {
-        textElement.textContent = newMessage;
-      }
-    }
-    
-    // Update progress
-    if (progress !== null && typeof progress === 'number') {
-      messageData.progress = Math.max(0, Math.min(100, progress));
-      this.updateProgress(messageData);
-    }
+    // Delegate to queue manager
+    this.queue.update(messageId, newMessage, progress);
   }
 
   /**
@@ -224,267 +171,65 @@ export class StatusMessage {
       return;
     }
     
-    const messageData = this.activeMessages.get(messageId);
-    if (!messageData) {
-      return; // Message already hidden or doesn't exist
-    }
-    
-    this.hideMessage(messageData);
+    this.queue.hide(messageId);
   }
 
   /**
    * Hide all messages
    */
   hideAll() {
-    // Clear all timeouts
-    this.activeMessages.forEach(messageData => {
-      if (messageData.timeoutId) {
-        clearTimeout(messageData.timeoutId);
-      }
-    });
-    
-    // Clear all messages
-    this.activeMessages.clear();
-    this.messageQueue.length = 0;
-    
-    // Clear DOM
-    if (this.messageContainer) {
-      this.messageContainer.innerHTML = '';
-    }
-    
-    this.isAnimating = false;
+    this.queue.hideAll();
   }
 
   /**
    * Process the message queue
    */
-  processQueue() {
-    // Check if we can display more messages
-    if (this.activeMessages.size >= this.maxMessages || this.messageQueue.length === 0) {
-      return;
-    }
-    
-    // Get next message from queue
-    const messageData = this.messageQueue.shift();
-    
-    // Create DOM element
-    this.createMessageElement(messageData);
-    
-    // Add to active messages
-    this.activeMessages.set(messageData.id, messageData);
-    
-    // Set up auto-dismiss timer
-    if (!messageData.persistent && messageData.duration > 0) {
-      messageData.timeoutId = setTimeout(() => {
-        this.hide(messageData.id);
-      }, messageData.duration);
-    }
-    
-    // Process more messages if possible
-    setTimeout(() => this.processQueue(), 100);
-  }
+  // Queue processing moved to MessageQueue
 
   /**
    * Create DOM element for a message
    * @param {Object} messageData - Message data object
    */
-  createMessageElement(messageData) {
-    const messageElement = document.createElement('div');
-    messageElement.className = `status-message status-message-${messageData.type}`;
-    messageElement.setAttribute('data-message-id', messageData.id);
-    
-    // Apply base styles
-    this.applyMessageStyles(messageElement, messageData.type);
-    
-    // Create message content
-    const contentHtml = this.createMessageContent(messageData);
-    messageElement.innerHTML = contentHtml;
-    
-    // Add click handler for dismissal
-    messageElement.addEventListener('click', () => {
-      this.hide(messageData.id);
-    });
-    
-    // Store element reference
-    messageData.element = messageElement;
-    
-    // Add to container with animation
-    this.messageContainer.appendChild(messageElement);
-    
-    // Trigger entrance animation
-    this.animateIn(messageElement);
-  }
+  // Element creation moved to MessageQueue
 
   /**
    * Create message content HTML
    * @param {Object} messageData - Message data object
    * @returns {string} HTML content
    */
-  createMessageContent(messageData) {
-    let html = `
-      <div class="status-message-content">
-        <div class="status-message-text">${this.escapeHtml(messageData.message)}</div>
-    `;
-    
-    // Add progress bar if needed
-    if (messageData.progress !== null) {
-      html += `
-        <div class="status-message-progress">
-          <div class="status-message-progress-bar" style="width: ${messageData.progress}%"></div>
-        </div>
-      `;
-    }
-    
-    // Add dismiss button for persistent messages
-    if (messageData.persistent) {
-      html += `
-        <button class="status-message-dismiss" type="button" aria-label="Dismiss">×</button>
-      `;
-    }
-    
-    html += '</div>';
-    
-    return html;
-  }
+  // Content builder moved to NotificationStyles
 
   /**
    * Apply styling to message element
    * @param {HTMLElement} element - Message element
    * @param {string} type - Message type
    */
-  applyMessageStyles(element, type) {
-    const baseStyles = {
-      display: 'flex',
-      alignItems: 'center',
-      padding: '15px 20px',
-      borderRadius: '5px',
-      color: 'white',
-      cursor: 'pointer',
-      pointerEvents: 'auto',
-      boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-      transition: `all ${ANIMATION.NORMAL}ms ${ANIMATION.EASE}`,
-      transform: 'translateX(100%)',
-      opacity: '0',
-      marginBottom: '10px',
-      maxWidth: '100%',
-      wordWrap: 'break-word',
-      position: 'relative'
-    };
-    
-    // Type-specific colors
-    const typeColors = {
-      success: STATUS.COLORS.SUCCESS,
-      error: STATUS.COLORS.ERROR,
-      warning: STATUS.COLORS.WARNING,
-      info: STATUS.COLORS.INFO
-    };
-    
-    baseStyles.backgroundColor = typeColors[type] || STATUS.COLORS.INFO;
-    
-    Object.assign(element.style, baseStyles);
-    
-    // Add hover effect
-    element.addEventListener('mouseenter', () => {
-      element.style.transform = 'translateX(0) scale(1.02)';
-    });
-    
-    element.addEventListener('mouseleave', () => {
-      element.style.transform = 'translateX(0) scale(1)';
-    });
-  }
+  // Message style application moved to NotificationStyles
 
   /**
    * Update progress bar for a message
    * @param {Object} messageData - Message data object
    */
-  updateProgress(messageData) {
-    if (!messageData.element) return;
-    
-    const progressBar = messageData.element.querySelector('.status-message-progress-bar');
-    if (!progressBar) {
-      // Create progress bar if it doesn't exist
-      const progressContainer = document.createElement('div');
-      progressContainer.className = 'status-message-progress';
-      progressContainer.style.cssText = `
-        width: 100%;
-        height: 4px;
-        background-color: rgba(255,255,255,0.3);
-        border-radius: 2px;
-        margin-top: 8px;
-        overflow: hidden;
-      `;
-      
-      const progressBarElement = document.createElement('div');
-      progressBarElement.className = 'status-message-progress-bar';
-      progressBarElement.style.cssText = `
-        height: 100%;
-        background-color: rgba(255,255,255,0.8);
-        border-radius: 2px;
-        transition: width ${ANIMATION.FAST}ms ease;
-        width: ${messageData.progress}%;
-      `;
-      
-      progressContainer.appendChild(progressBarElement);
-      messageData.element.querySelector('.status-message-content').appendChild(progressContainer);
-    } else {
-      // Update existing progress bar
-      progressBar.style.width = `${messageData.progress}%`;
-    }
-  }
+  updateProgress(messageData) { /* moved to MessageQueue */ }
 
   /**
    * Animate message entrance
    * @param {HTMLElement} element - Message element
    */
-  animateIn(element) {
-    // Force reflow
-    element.offsetHeight;
-    
-    // Animate in
-    element.style.transform = 'translateX(0)';
-    element.style.opacity = '1';
-  }
+  animateIn(element) { /* moved to MessageQueue */ }
 
   /**
    * Animate message exit and remove
    * @param {Object} messageData - Message data object
    */
-  hideMessage(messageData) {
-    if (!messageData.element) return;
-    
-    // Clear timeout
-    if (messageData.timeoutId) {
-      clearTimeout(messageData.timeoutId);
-    }
-    
-    // Animate out
-    messageData.element.style.transform = 'translateX(100%)';
-    messageData.element.style.opacity = '0';
-    
-    // Remove from DOM after animation
-    setTimeout(() => {
-      if (messageData.element && messageData.element.parentNode) {
-        messageData.element.parentNode.removeChild(messageData.element);
-      }
-      
-      // Remove from active messages
-      this.activeMessages.delete(messageData.id);
-      
-      // Process queue
-      this.processQueue();
-    }, ANIMATION.NORMAL);
-  }
+  hideMessage(messageData) { /* moved to MessageQueue */ }
 
   /**
    * Escape HTML characters
    * @param {string} text - Text to escape
    * @returns {string} Escaped text
    */
-  escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
+  // escapeHtml moved to NotificationStyles
 
   /**
    * Convenience methods for different message types

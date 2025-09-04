@@ -6,6 +6,8 @@ Navigation
 - GCodeDrawer: `RefactoringFiles/GCodeDrawer/00-scope.md` and `RefactoringFiles/GCodeDrawer/PRs/`
 - Canvas: `RefactoringFiles/Canvas/00-scope.md` and `RefactoringFiles/Canvas/PRs/`
 - EventManager: `RefactoringFiles/EventManager/00-scope.md` and `RefactoringFiles/EventManager/PRs/`
+ - Toolbar: `RefactoringFiles/Toolbar/00-scope.md` and `RefactoringFiles/Toolbar/PRs/`
+ - StatusMessage: `RefactoringFiles/StatusMessage/00-scope.md` and `RefactoringFiles/StatusMessage/PRs/`
 
 ## Progress
 - GCodeDrawer PR1–PR5: Completed. Drawer orchestrates Editor/Toolbar/Undo/Selection. Build passes.
@@ -16,7 +18,8 @@ Navigation
  - Toolbar PR1: Extract FileControls — completed.
  - Toolbar PR2: Extract ViewControls — completed.
  - Toolbar PR3: Extract ActionControls — completed.
- - Toolbar PR4: Orchestration cleanup — completed. PR5 cleanup pending.
+ - Toolbar PR4: Orchestration cleanup — completed.
+ - Toolbar PR5: Cleanup — completed.
 
 ## Files Over 500 Lines Requiring Refactoring
 
@@ -52,6 +55,7 @@ Status: Completed. GCodeDrawer acts as an orchestrator; duplicate editor logic r
 - `components/toolbar/FileControls.js` - File I/O controls
 - `components/toolbar/ViewControls.js` - Zoom/pan controls
 - `components/toolbar/ActionControls.js` - Action buttons
+Status: Completed. Toolbar orchestrates FileControls/ViewControls/ActionControls; behavior unchanged.
 
 ### StatusMessage.js (584 lines)
 **Split into:**
@@ -71,6 +75,6 @@ Status: Completed. GCodeDrawer acts as an orchestrator; duplicate editor logic r
 - `utils/geometry/BoundsCalculations.js` - Bounds utilities
 
 ## Priority Order
-1. Completed: GCodeDrawer, Canvas, EventManager, main.js
-2. Next: Toolbar (UI organization)
-3. Then: StatusMessage, TouchEventHandler, MathUtils
+1. Completed: GCodeDrawer, Canvas, EventManager, main.js, Toolbar
+2. Next: StatusMessage (notifications split)
+3. Then: TouchEventHandler, MathUtils
