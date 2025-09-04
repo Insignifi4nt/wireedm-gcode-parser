@@ -12,6 +12,8 @@ Navigation
 - Canvas PR1–PR5: Completed. Canvas composes CanvasGrid, PathHighlights, MarkerRenderer, CanvasRenderer.
 - EventManager PR0–PR9: Completed. Split into `core/events/*` with compatibility re-exports.
 - main.js PR0–PR7: Completed. Split into AppOrchestrator, ComponentInitializer, EventWiring; `src/main.js` is a slim bootstrap. PR8 cleanup/docs done.
+ - Toolbar PR0: Scaffold submodules — completed.
+ - Toolbar PR1: Extract FileControls — completed.
 
 ## Files Over 500 Lines Requiring Refactoring
 

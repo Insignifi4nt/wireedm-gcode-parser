@@ -6,6 +6,7 @@
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { VIEWPORT } from '../utils/Constants.js';
 import { FileHandler } from '../utils/FileHandler.js';
+import { FileControls } from './toolbar/FileControls.js';
 
 /**
  * Toolbar class manages the header toolbar with file and view controls
@@ -34,6 +35,8 @@ export class Toolbar {
     
     // File handler for file operations
     this.fileHandler = new FileHandler();
+    // Submodules
+    this.fileControls = null;
     
     // Component state
     this.state = {
@@ -186,10 +189,12 @@ export class Toolbar {
    * Set up event listeners for toolbar interactions
    */
   _setupEventListeners() {
-    // File input
-    if (this.elements.fileInput) {
-      this.elements.fileInput.addEventListener('change', this._handleFileInput);
-    }
+    // File input + drag/drop delegated to FileControls
+    this.fileControls = new FileControls(
+      { fileInput: this.elements.fileInput, fileInputLabel: this.elements.fileInputLabel },
+      { onChooseFile: (file) => this._loadFile(file) }
+    );
+    this.fileControls.init();
 
     // Zoom controls
     if (this.elements.zoomInButton) {
@@ -237,12 +242,7 @@ export class Toolbar {
       });
     }
 
-    // Drag and drop support
-    if (this.elements.fileInputLabel) {
-      this.elements.fileInputLabel.addEventListener('dragover', this._handleDragOver);
-      this.elements.fileInputLabel.addEventListener('dragleave', this._handleDragLeave);
-      this.elements.fileInputLabel.addEventListener('drop', this._handleDrop);
-    }
+    // Drag and drop support handled by FileControls
   }
 
   /**
@@ -592,6 +592,10 @@ export class Toolbar {
     if (this.fileHandler) {
       this.fileHandler.destroy();
       this.fileHandler = null;
+    }
+    if (this.fileControls) {
+      this.fileControls.destroy();
+      this.fileControls = null;
     }
     
     // Reset state
