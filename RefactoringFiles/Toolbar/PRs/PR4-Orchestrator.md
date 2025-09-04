@@ -1,6 +1,6 @@
 # PR4: Toolbar Orchestration Cleanup
 
-Status: Planned
+Status: Completed
 
 ## Summary
 Slim `Toolbar.js` to instantiate and delegate to FileControls, ViewControls, and ActionControls; centralize state updates after actions.
@@ -18,3 +18,10 @@ Keep Toolbar focused on composition and state, not on detailed handlers.
 ## Test Plan
 - Full smoke across toolbar flows; inspect listener counts before/after destroy.
 
+Implementation Notes
+- `Toolbar.js` now composes `FileControls`, `ViewControls`, and `ActionControls` and delegates bindings to them in `_setupEventListeners()`.
+- Centralized cleanup: `destroy()` calls each submodule’s `destroy()` and clears references; event subscriptions retained only for FILE_*, POINT_UPDATE, and EXPORT_SUCCESS state updates.
+- Public API unchanged; DOM hooks unchanged.
+
+Verification
+- Smoke tests confirm no duplicate listeners and clean destroy behavior; state updates and labels continue to work.

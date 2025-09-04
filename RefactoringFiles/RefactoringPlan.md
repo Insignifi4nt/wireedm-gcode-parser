@@ -14,6 +14,9 @@ Navigation
 - main.js PR0–PR7: Completed. Split into AppOrchestrator, ComponentInitializer, EventWiring; `src/main.js` is a slim bootstrap. PR8 cleanup/docs done.
  - Toolbar PR0: Scaffold submodules — completed.
  - Toolbar PR1: Extract FileControls — completed.
+ - Toolbar PR2: Extract ViewControls — completed.
+ - Toolbar PR3: Extract ActionControls — completed.
+ - Toolbar PR4: Orchestration cleanup — completed. PR5 cleanup pending.
 
 ## Files Over 500 Lines Requiring Refactoring
 
