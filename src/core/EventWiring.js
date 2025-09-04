@@ -86,9 +86,7 @@ export function attachEventWiring(app) {
     }
   });
 
-  on(EVENT_TYPES.VIEWPORT_ZOOM_CHANGE, () => {
-    app.canvas?.redraw();
-  });
+  // Viewport zoom handling is consolidated later; avoid duplicate handlers
   on(EVENT_TYPES.VIEWPORT_PAN_CHANGE, () => {
     app.canvas?.redraw();
   });

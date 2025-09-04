@@ -1,5 +1,7 @@
 # PR3: Extract Core Event Wiring
 
+Status: Completed
+
 ## Summary
 Move core EventBus subscriptions into `EventWiring.wireAll(context, state)`: file load workflow, canvas click → add point, and point management (add/delete/clear/get-clicked).
 
@@ -19,3 +21,9 @@ Centralize cross-component communication; provide a single cleanup function to r
 - Load file: canvas path updates; success/error messages; mapping passed to drawer.
 - Click canvas: adds points; `POINT_UPDATE` fires with correct counts.
 
+Implementation Notes
+- Completed in commit 65f241b (centralize event wiring in `src/core/EventWiring.js`).
+- File workflow, canvas click → add point, and point add/delete/clear/get-clicked are wired with cleanup collection and a single detach function.
+
+Verification
+- Manual runs verified FILE_* and POINT_* flows; cleanup unsubscribes all handlers.

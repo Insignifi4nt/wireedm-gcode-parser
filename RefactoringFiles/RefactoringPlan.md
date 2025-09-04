@@ -8,11 +8,10 @@ Navigation
 - EventManager: `RefactoringFiles/EventManager/00-scope.md` and `RefactoringFiles/EventManager/PRs/`
 
 ## Progress
-- PR1 (GCodeDrawer): Extract sanitization helpers to `src/utils/Sanitize.js` — completed. Build passes; event contracts unchanged.
-- PR2 (GCodeDrawer): Introduce `UndoRedoSystem` and migrate stack logic — completed. Buttons reflect state; behavior unchanged.
-- PR3 (GCodeDrawer): Extract `MultiSelectHandler` and migrate selection operations — completed. Selection behavior and toolbar counters unchanged.
-- PR4 (GCodeDrawer): Extract `DrawerToolbar` and wire callbacks — completed. Toolbar UI and states managed via module; behavior unchanged.
-- PR5 (GCodeDrawer): Extract `GCodeEditor` and migrate line DOM/commands — completed. Drawer now orchestrates editor/toolbar/undo/selection.
+- GCodeDrawer PR1–PR5: Completed. Drawer orchestrates Editor/Toolbar/Undo/Selection. Build passes.
+- Canvas PR1–PR5: Completed. Canvas composes CanvasGrid, PathHighlights, MarkerRenderer, CanvasRenderer.
+- EventManager PR0–PR9: Completed. Split into `core/events/*` with compatibility re-exports.
+- main.js PR0–PR7: Completed. Split into AppOrchestrator, ComponentInitializer, EventWiring; `src/main.js` is a slim bootstrap. PR8 cleanup/docs done.
 
 ## Files Over 500 Lines Requiring Refactoring
 
@@ -67,8 +66,6 @@ Status: Completed. GCodeDrawer acts as an orchestrator; duplicate editor logic r
 - `utils/geometry/BoundsCalculations.js` - Bounds utilities
 
 ## Priority Order
-1. GCodeDrawer (most complex UI component)
-2. Canvas (core rendering system)
-3. EventManager (foundational system)
-4. main.js (orchestration cleanup)
-5. Toolbar (UI organization)
+1. Completed: GCodeDrawer, Canvas, EventManager, main.js
+2. Next: Toolbar (UI organization)
+3. Then: StatusMessage, TouchEventHandler, MathUtils

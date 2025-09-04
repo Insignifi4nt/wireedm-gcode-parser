@@ -1,5 +1,7 @@
 # main.js Refactor Scope
 
+Status: Completed (PR0–PR8)
+
 ## Goals
 - Split `src/main.js` into smaller, cohesive modules without changing behavior.
 - Improve readability, testability, and lifecycle clarity while preserving public behavior and DOM structure.
@@ -34,6 +36,10 @@
 - Behavior parity across file load, hover/click, points add/delete/clear, zoom/pan, status, export, resize, and drawer edit → reparse.
 - `npm run build` passes after each PR; no duplicate listeners; performance unchanged.
 
+Final Verification
+- Confirmed parity for FILE_* workflows, drawer highlights/edits, viewport zoom/pan/reset/fit, status messages, export flows, resize.
+- Verified single-source zoom handling and no duplicate listeners (PR8 cleanup).
+- `destroy()` detaches integrations, unsubscribes EventBus, and clears DOM.
+
 ## Validation
 - Manual smoke after each PR (as above). Keep `APP_READY` timing and payload unchanged.
-
