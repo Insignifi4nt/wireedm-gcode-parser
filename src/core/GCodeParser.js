@@ -69,6 +69,10 @@ export class GCodeParser {
     this.bounds = BoundsUtils.createEmptyBounds();
     this.errors = [];
     this.warnings = [];
+    // Track G92 handling (header-origin)
+    this.g92Applied = false;
+    this.g92Line = null;
+    this.g92AssumedZero = false;
     // Modal state for I/J interpretation (false => relative I/J; true => absolute center coords)
     // Many Siemens-style posts use G60 to switch I/J to absolute center coordinates
     this.ijAbsolute = false;
@@ -159,6 +163,17 @@ export class GCodeParser {
     }
 
     this.stats.processedLines++;
+
+    // Handle G92 exclusively (must be alone on its line)
+    // G92 sets current position without motion and establishes start point if first.
+    if (/\bG92\b/.test(line)) {
+      this._parseG92(line, lineNumber);
+      // Warn and ignore any additional motion codes present on the same line
+      if (this._isLinearMove(line) || this._isArcMove(line)) {
+        this._addWarning(`Line ${lineNumber}: G92 must be alone on its line; ignoring additional commands.`, lineNumber);
+      }
+      return;
+    }
 
     // Handle modal commands that affect interpretation (no geometry change)
     // G60 => I/J absolute center coordinates (Siemens-style)
@@ -359,6 +374,78 @@ export class GCodeParser {
     this.bounds.maxY = Math.max(this.bounds.maxY, arcBounds.maxY);
 
     this.stats.arcMoves++;
+  }
+
+  /**
+   * Parse G92 (Set Current Position) command.
+   * Treats the first encountered G92 before any motion as the path start origin.
+   * If provided without coordinates, assumes X0 Y0 and records a normalization warning.
+   * @param {string} line
+   * @param {number} lineNumber
+   * @private
+   */
+  _parseG92(line, lineNumber) {
+    // Extract any coordinates present on the line
+    const coords = this._extractCoordinates(line);
+
+    // Determine target coordinates
+    let targetX = this.currentPosition.x;
+    let targetY = this.currentPosition.y;
+
+    const hasX = typeof coords.x === 'number' && isFinite(coords.x);
+    const hasY = typeof coords.y === 'number' && isFinite(coords.y);
+
+    if (!hasX && !hasY) {
+      // Plain G92 → assume X0 Y0 per app semantics
+      targetX = 0;
+      targetY = 0;
+      this.g92AssumedZero = true;
+      this._addWarning(`Line ${lineNumber}: G92 without coordinates; assuming X0 Y0 for start position.`, lineNumber);
+    } else {
+      if (hasX) targetX = coords.x;
+      if (hasY) targetY = coords.y;
+    }
+
+    // Validate
+    if (!ValidationUtils.isValidCoordinate(targetX) || !ValidationUtils.isValidCoordinate(targetY)) {
+      this._addWarning(`Line ${lineNumber}: Invalid G92 coordinates; ignoring.`, lineNumber);
+      return;
+    }
+
+    // Update current position immediately
+    this.currentPosition.x = targetX;
+    this.currentPosition.y = targetY;
+
+    // If no motion parsed yet, treat this as explicit start point for the path
+    if (this.path.length === 0) {
+      if (!this.g92Applied) {
+        this.path.push({
+          type: 'position',
+          x: targetX,
+          y: targetY,
+          line: lineNumber,
+          meta: { source: 'G92' }
+        });
+        this.g92Applied = true;
+        this.g92Line = lineNumber;
+      } else {
+        // If already applied and still no motion, update the initial position
+        const first = this.path[0];
+        if (first && first.type === 'position') {
+          first.x = targetX;
+          first.y = targetY;
+          first.line = lineNumber;
+        }
+        this.g92Line = lineNumber;
+      }
+
+      // Update bounds with this start position
+      this.bounds = BoundsUtils.updateBounds(this.bounds, targetX, targetY);
+      return;
+    }
+
+    // If G92 occurs after motion, update internal position but warn (viewer does not rebase prior points)
+    this._addWarning(`Line ${lineNumber}: G92 after motion not fully supported; updated reference position for subsequent moves only.`, lineNumber);
   }
 
   /**

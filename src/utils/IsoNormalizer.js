@@ -165,6 +165,8 @@ export function buildISOFromPoints(points, options = {}) {
  * @param {string} inputText
  * @returns {string}
  */
+import { GCODE } from './Constants.js';
+
 export function stripForEditing(inputText) {
   if (typeof inputText !== 'string') return '';
   const lines = inputText.split(/\r?\n/);
@@ -184,6 +186,17 @@ export function stripForEditing(inputText) {
     t = t.replace(/^N\d+\s+/i, '');
     // Canonicalize motion codes (e.g., G01 -> G1)
     t = canonicalizeMotionCodes(t);
+    // If a bare G92 appears (without X or Y), make it explicit as G92 X0 Y0
+    // so the drawer shows concrete start coordinates matching parser semantics.
+    if (/\bG92\b/i.test(t)) {
+      const hasX = /\bX-?\d+(?:\.\d+)?\b/i.test(t);
+      const hasY = /\bY-?\d+(?:\.\d+)?\b/i.test(t);
+      if (!hasX && !hasY) {
+        const zero = (0).toFixed(GCODE.DEFAULT_PRECISION);
+        // Append with a single space to preserve minimal formatting impact
+        t = `${t} X${zero} Y${zero}`.trim();
+      }
+    }
     // Skip trailing M02 only if it's the last non-empty content
     // We'll collect now; a later pass will drop final sole M02.
     out.push(t);
@@ -217,5 +230,4 @@ export default {
   stripForEditing,
   canonicalizeMotionCodes
 };
-
 
