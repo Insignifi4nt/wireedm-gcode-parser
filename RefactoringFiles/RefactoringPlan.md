@@ -70,13 +70,14 @@ Status: Completed. Toolbar orchestrates FileControls/ViewControls/ActionControls
 - `core/input/TouchInteractions.js` - Touch event mapping
 **Status**: Completed. TouchEventHandler orchestrates TouchGestures/TouchInteractions; 537 → 267 lines (50% reduction).
 
-### MathUtils.js (531 lines)
+### MathUtils.js (532 lines)
 **Split into:**
 - `utils/geometry/ArcCalculations.js` - Arc math
 - `utils/geometry/CoordinateTransforms.js` - Coordinate utilities
 - `utils/geometry/BoundsCalculations.js` - Bounds utilities
+**Status**: Completed. MathUtils orchestrates three geometry modules; 532 → 34 lines (94% reduction).
 
 ## Priority Order
-1. Completed: GCodeDrawer, Canvas, EventManager, main.js, Toolbar, StatusMessage, TouchEventHandler
-2. Next: MathUtils (geometry utilities split)
-3. Then: Other 500+ line files as needed
+1. Completed: GCodeDrawer, Canvas, EventManager, main.js, Toolbar, StatusMessage, TouchEventHandler, MathUtils
+2. All major 500+ line refactors are now complete
+3. Future: Other files as needed based on ongoing development requirements
