@@ -3,9 +3,13 @@
  * Handles all canvas drawing operations including grid, G-code paths, and measurement points
  */
 
-import { CANVAS, GRID, PATH_STYLES, MARKERS, COORDINATES } from '../utils/Constants.js';
+import { CANVAS, GRID } from '../utils/Constants.js';
 import { Viewport } from '../core/Viewport.js';
-import { GridUtils, ValidationUtils, PrecisionUtils, CoordinateTransform } from '../utils/MathUtils.js';
+import { ValidationUtils } from '../utils/MathUtils.js';
+import { drawGrid } from './canvas/CanvasGrid.js';
+import { renderPath as renderGCodePath, renderStartEnd as renderStartEndPoints } from './canvas/PathHighlights.js';
+import { renderClickedPoints, renderMarker as drawMarker } from './canvas/MarkerRenderer.js';
+import { clearCanvas, applyWorldTransform } from './canvas/CanvasRenderer.js';
 
 /**
  * Canvas rendering component for G-code visualization
@@ -288,26 +292,38 @@ export class Canvas {
   _performRender() {
     try {
       // Clear canvas
-      this._clearCanvas();
+      clearCanvas(this.ctx, this.physicalWidth, this.physicalHeight);
 
       // Save context state
       this.ctx.save();
 
-      // Apply simple viewport transformation (no complex scaling for now)
-      this._applySimpleTransform();
+      // Apply world-space transform (DPI-aware, Y-axis flipped)
+      applyWorldTransform(this.ctx, this.viewport, this.devicePixelRatio);
 
       // Render components in order
       if (this.gridEnabled) {
-        this._renderGrid();
+        drawGrid(this.ctx, this.viewport, {
+          gridSize: this.gridSize,
+          displayWidth: this.displayWidth,
+          displayHeight: this.displayHeight,
+          devicePixelRatio: this.devicePixelRatio
+        });
       }
 
       if (this.gcodePath.length > 0) {
-        this._renderGCodePath();
-        this._renderStartEndPoints();
+        renderGCodePath(this.ctx, this.viewport, this.gcodePath, {
+          devicePixelRatio: this.devicePixelRatio,
+          hoverHighlight: this.hoverHighlight,
+          persistentHighlights: this.persistentHighlights,
+          markerRenderer: (point, config) => drawMarker(this.ctx, this.viewport, point, config, this.devicePixelRatio)
+        });
+        renderStartEndPoints(this.ctx, this.viewport, this.gcodePath, {
+          markerRenderer: (point, config) => drawMarker(this.ctx, this.viewport, point, config, this.devicePixelRatio)
+        });
       }
 
       if (this.clickedPoints.length > 0) {
-        this._renderClickedPoints();
+        renderClickedPoints(this.ctx, this.viewport, this.clickedPoints, { devicePixelRatio: this.devicePixelRatio });
       }
 
       // Restore context state
@@ -318,386 +334,16 @@ export class Canvas {
     }
   }
 
-  /**
-   * Apply viewport transformation (Phase 2A - DPI aware)
-   */
-  _applySimpleTransform() {
-    const viewport = this.viewport.getState();
-    
-    // Reset transform first
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    
-    // Re-apply DPI scaling if in high-DPI mode (context was reset)
-    if (this.enableHighDPI && this.devicePixelRatio > 1) {
-      this.ctx.scale(this.devicePixelRatio, this.devicePixelRatio);
-    }
-    
-    // Apply viewport transformation using viewport display height (consistent with coordinate conversion)
-    // This must match the height reference used in coordinate conversion
-    this.ctx.translate(viewport.offsetX, this.viewport.displayHeight - viewport.offsetY);
-    this.ctx.scale(viewport.zoom, -viewport.zoom); // Flip Y axis for CNC coordinates
-  }
+  
 
-  /**
-   * Apply text-safe viewport transformation (without Y-axis flip)
-   */
-  _applyTextTransform() {
-    const viewport = this.viewport.getState();
-    
-    // Reset transform first
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    
-    // Re-apply DPI scaling if in high-DPI mode (context was reset)
-    if (this.enableHighDPI && this.devicePixelRatio > 1) {
-      this.ctx.scale(this.devicePixelRatio, this.devicePixelRatio);
-    }
-    
-    // Apply viewport transformation without Y-axis flip for text
-    this.ctx.translate(viewport.offsetX, viewport.offsetY);
-    this.ctx.scale(viewport.zoom, viewport.zoom); // No Y-axis flip for text
-  }
+  
 
-  /**
-   * Clear the entire canvas (Phase 2A - DPI aware)
-   */
-  _clearCanvas() {
-    // Clear entire physical canvas buffer
-    // Note: clearRect is not affected by current transform, so we use physical dimensions
-    this.ctx.clearRect(0, 0, this.physicalWidth, this.physicalHeight);
-  }
-
-  /**
-   * Render grid lines and labels (simplified for cleaner look)
-   */
-  _renderGrid() {
-    const viewport = this.viewport.getState();
-    
-    // Calculate visible grid lines
-    const gridLines = GridUtils.calculateGridLines(
-      viewport.zoom,
-      viewport.offsetX,
-      viewport.offsetY,
-      this.displayWidth,
-      this.displayHeight,
-      this.gridSize
-    );
-
-    // Only draw minor grid lines if zoomed in enough
-    if (viewport.zoom > 0.5) {
-      this._drawGridLines(gridLines, false);
-    }
-
-    // Always draw major grid lines (axes)
-    this._drawGridLines(gridLines, true);
-
-    // Draw grid labels only if zoomed in enough
-    if (viewport.zoom > 0.3) {
-      this._drawGridLabels(gridLines);
-    }
-  }
-
-  /**
-   * Draw grid lines
-   * @param {Object} gridLines - Grid line coordinates
-   * @param {boolean} major - Whether to draw major lines (axes)
-   */
-  _drawGridLines(gridLines, major = false) {
-    const { vertical, horizontal } = gridLines;
-
-    // Set line style (screen-space stroke widths for consistent appearance)
-    const pxScale = this.devicePixelRatio || 1;
-    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
-    if (major) {
-      this.ctx.strokeStyle = GRID.COLORS.MAJOR;
-      this.ctx.lineWidth = cssToWorld(GRID.LINE_WIDTH.MAJOR);
-    } else {
-      this.ctx.strokeStyle = GRID.COLORS.MINOR;
-      this.ctx.lineWidth = cssToWorld(GRID.LINE_WIDTH.MINOR);
-    }
-
-    this.ctx.setLineDash([]);
-
-    // Draw vertical lines
-    vertical.forEach(x => {
-      if (!major || x === 0) { // Only draw axis for major lines
-        if (major && x !== 0) return;
-        
-        this.ctx.beginPath();
-        this.ctx.moveTo(x, -10000); // Large range to cover viewport
-        this.ctx.lineTo(x, 10000);
-        this.ctx.stroke();
-      }
-    });
-
-    // Draw horizontal lines
-    horizontal.forEach(y => {
-      if (!major || y === 0) { // Only draw axis for major lines
-        if (major && y !== 0) return;
-        
-        this.ctx.beginPath();
-        this.ctx.moveTo(-10000, y);
-        this.ctx.lineTo(10000, y);
-        this.ctx.stroke();
-      }
-    });
-  }
-
-  /**
-   * Draw grid labels (simplified to reduce crowding)
-   * @param {Object} gridLines - Grid line coordinates
-   */
-  _drawGridLabels(gridLines) {
-    const { vertical, horizontal } = gridLines;
-    const majorInterval = GRID.MAJOR_LINES_INTERVAL;
-    
-    // Much larger interval for labels to reduce crowding
-    const labelInterval = majorInterval * 4; // Show labels every 80 units instead of 20
-
-    // Save current transform and apply text-safe transform
-    this.ctx.save();
-    this._applyTextTransform();
-
-    this.ctx.fillStyle = GRID.COLORS.LABELS;
-    // Smaller font size
-    this.ctx.font = '9px Arial';
-    this.ctx.textAlign = 'left';
-    this.ctx.textBaseline = 'top';
-
-    // Convert coordinates for text rendering (compensate for different coordinate system)
-    const viewport = this.viewport.getState();
-
-    // Draw X-axis labels (only at larger intervals)
-    vertical.forEach(x => {
-      if (x % labelInterval === 0 && x !== 0) {
-        // Convert world coordinates to screen coordinates for text
-        const screenCoords = this.viewport.worldToScreen(x, 0);
-        this.ctx.fillText(
-          PrecisionUtils.format(x, COORDINATES.PRECISION),
-          screenCoords.x + 2,
-          this.logicalHeight - 15 // Position at bottom of screen
-        );
-      }
-    });
-
-    // Draw Y-axis labels (only at larger intervals)
-    horizontal.forEach(y => {
-      if (y % labelInterval === 0 && y !== 0) {
-        // Convert world coordinates to screen coordinates for text
-        const screenCoords = this.viewport.worldToScreen(0, y);
-        this.ctx.fillText(
-          PrecisionUtils.format(y, COORDINATES.PRECISION),
-          5,
-          screenCoords.y - 2
-        );
-      }
-    });
-
-    // Restore transform
-    this.ctx.restore();
-  }
-
-  /**
-   * Render G-code path segments
-   */
-  _renderGCodePath() {
-    if (this.gcodePath.length === 0) return;
-
-    this.gcodePath.forEach((move, index) => {
-      if (index === 0) return; // Skip first move (no previous point)
-
-      const prevMove = this.gcodePath[index - 1];
-      
-      if (move.type === 'arc') {
-        this._renderArcMove(move);
-      } else {
-        this._renderLinearMove(prevMove, move);
-      }
-      // Highlight hovered/selected endpoints
-      const shouldHighlight = this.persistentHighlights.has(index) || (this.hoverHighlight && this.hoverHighlight.type === 'point' && this.hoverHighlight.index === index);
-      if (shouldHighlight) {
-        const hx = move.type === 'arc' ? move.endX : move.x;
-        const hy = move.type === 'arc' ? move.endY : move.y;
-        if (hx !== undefined && hy !== undefined) {
-          this._renderMarker(
-            { x: hx, y: hy },
-            { ...MARKERS.CLICKED_POINT, COLOR: '#ffa500', RADIUS_PX: 3, FONT: 'bold 10px Arial', LABEL: `L${move.line || index}` }
-          );
-        }
-      }
-    });
-  }
-
-  /**
-   * Render linear move (G0/G1)
-   * @param {Object} from - Starting point
-   * @param {Object} to - Ending point
-   */
-  _renderLinearMove(from, to) {
-    if (!ValidationUtils.isValidPoint(from) || !ValidationUtils.isValidPoint(to)) {
-      return;
-    }
-
-    // Set style based on move type
-    const style = to.type === 'rapid' ? PATH_STYLES.RAPID : PATH_STYLES.CUT;
-
-    // Screen-space styling: keep strokes constant in CSS pixels regardless of zoom
-    // Convert desired CSS pixel widths to world units by dividing by zoom
-    const pxScale = this.devicePixelRatio || 1;
-    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
-
-    this.ctx.strokeStyle = style.COLOR;
-    this.ctx.lineWidth = cssToWorld(style.LINE_WIDTH_PX ?? 1);
-    const dashPx = style.LINE_DASH_PX ?? [];
-    if (Array.isArray(dashPx) && dashPx.length > 0) {
-      this.ctx.setLineDash(dashPx.map(cssToWorld));
-    } else {
-      this.ctx.setLineDash([]);
-    }
-
-    // Draw line
-    this.ctx.beginPath();
-    this.ctx.moveTo(from.x, from.y);
-    this.ctx.lineTo(to.x, to.y);
-    this.ctx.stroke();
-  }
-
-  /**
-   * Render arc move (G2/G3)
-   * @param {Object} move - Arc move data
-   */
-  _renderArcMove(move) {
-    if (!this._isValidArcMove(move)) {
-      return;
-    }
-
-    // Set arc style (screen-space)
-    const pxScale = this.devicePixelRatio || 1;
-    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
-    this.ctx.strokeStyle = PATH_STYLES.ARC.COLOR;
-    this.ctx.lineWidth = cssToWorld(PATH_STYLES.ARC.LINE_WIDTH_PX ?? 1);
-    const dashPx = PATH_STYLES.ARC.LINE_DASH_PX ?? [];
-    this.ctx.setLineDash(Array.isArray(dashPx) ? dashPx.map(cssToWorld) : []);
-
-    // Calculate arc parameters
-    const radius = Math.sqrt(
-      Math.pow(move.startX - move.centerX, 2) + 
-      Math.pow(move.startY - move.centerY, 2)
-    );
-
-    const startAngle = Math.atan2(
-      move.startY - move.centerY,
-      move.startX - move.centerX
-    );
-
-    const endAngle = Math.atan2(
-      move.endY - move.centerY,
-      move.endX - move.centerX
-    );
-
-    // Draw arc (note: Y-axis flip handled by viewport transform)
-    this.ctx.beginPath();
-    this.ctx.arc(
-      move.centerX,
-      move.centerY,
-      radius,
-      startAngle,
-      endAngle,
-      !move.clockwise // Canvas arc direction is inverted from G-code
-    );
-    this.ctx.stroke();
-  }
-
-  /**
-   * Validate arc move data
-   * @param {Object} move - Arc move to validate
-   * @returns {boolean} Whether arc move is valid
-   */
-  _isValidArcMove(move) {
-    return move &&
-           ValidationUtils.isValidCoordinate(move.startX) &&
-           ValidationUtils.isValidCoordinate(move.startY) &&
-           ValidationUtils.isValidCoordinate(move.endX) &&
-           ValidationUtils.isValidCoordinate(move.endY) &&
-           ValidationUtils.isValidCoordinate(move.centerX) &&
-           ValidationUtils.isValidCoordinate(move.centerY);
-  }
-
-  /**
-   * Render start and end point markers
-   */
-  _renderStartEndPoints() {
-    if (this.gcodePath.length === 0) return;
-
-    // Draw start point
-    const startPoint = this.gcodePath[0];
-    if (ValidationUtils.isValidPoint(startPoint)) {
-      this._renderMarker(startPoint, MARKERS.START_POINT);
-    }
-
-    // Draw end point
-    if (this.gcodePath.length > 1) {
-      const endPoint = this.gcodePath[this.gcodePath.length - 1];
-      if (ValidationUtils.isValidPoint(endPoint)) {
-        this._renderMarker(endPoint, MARKERS.END_POINT);
-      }
-    }
-  }
+  
 
   /**
    * Render clicked measurement points
    */
-  _renderClickedPoints() {
-    this.clickedPoints.forEach((point, index) => {
-      if (ValidationUtils.isValidPoint(point)) {
-        const config = {
-          ...MARKERS.CLICKED_POINT,
-          LABEL: `P${index + 1}`
-        };
-        this._renderMarker(point, config);
-      }
-    });
-  }
-
-  /**
-   * Render a point marker with label
-   * @param {Object} point - Point coordinates {x, y}
-   * @param {Object} config - Marker configuration
-   */
-  _renderMarker(point, config) {
-    // Screen-space marker radius and offsets so points remain visible at any zoom
-    const pxScale = this.devicePixelRatio || 1;
-    const cssToWorld = (valuePx) => (valuePx * pxScale) / this.viewport.zoom;
-    const scaledRadius = cssToWorld(config.RADIUS_PX ?? 3);
-    const scaledOffsetX = config.OFFSET.X;
-    const scaledOffsetY = config.OFFSET.Y;
-
-    // Draw circle (this uses the flipped coordinate system)
-    this.ctx.fillStyle = config.COLOR;
-    this.ctx.beginPath();
-    this.ctx.arc(point.x, point.y, scaledRadius, 0, Math.PI * 2);
-    this.ctx.fill();
-
-    // Draw label with text-safe transform to prevent mirroring
-    if (config.LABEL) {
-      this.ctx.save();
-      this._applyTextTransform();
-
-      // Convert world coordinates to screen coordinates for text
-      const screenCoords = this.viewport.worldToScreen(point.x, point.y);
-
-      this.ctx.fillStyle = config.COLOR;
-      this.ctx.font = config.FONT || '10px Arial';
-      this.ctx.textAlign = 'left';
-      this.ctx.textBaseline = 'top';
-      this.ctx.fillText(
-        config.LABEL,
-        screenCoords.x + scaledOffsetX,
-        screenCoords.y + scaledOffsetY
-      );
-
-      this.ctx.restore();
-    }
-  }
+  
 
   /**
    * Fit canvas view to show all G-code content

@@ -12,167 +12,16 @@
  * - Event delegation for dynamic elements
  */
 
-/**
- * Event Types Constants
- * Centralized definition of all application events
- */
-export const EVENT_TYPES = {
-  // File Operations
-  FILE_LOAD_START: 'file:load:start',
-  FILE_LOAD_SUCCESS: 'file:load:success',
-  FILE_LOAD_ERROR: 'file:load:error',
-  FILE_LOAD_PROGRESS: 'file:load:progress',
-  FILE_CLEARED: 'file:cleared',
-  
-  // G-Code Parsing
-  GCODE_PARSE_START: 'gcode:parse:start',
-  GCODE_PARSE_SUCCESS: 'gcode:parse:success',
-  GCODE_PARSE_ERROR: 'gcode:parse:error',
-  GCODE_PARSE_PROGRESS: 'gcode:parse:progress',
-  
-  // Viewport Changes
-  VIEWPORT_ZOOM_CHANGE: 'viewport:zoom:change',
-  VIEWPORT_PAN_CHANGE: 'viewport:pan:change',
-  VIEWPORT_RESET: 'viewport:reset',
-  VIEWPORT_FIT_TO_SCREEN: 'viewport:fit:screen',
-  
-  // Mouse Events
-  MOUSE_MOVE: 'mouse:move',
-  MOUSE_CLICK: 'mouse:click',
-  MOUSE_DOWN: 'mouse:down',
-  MOUSE_UP: 'mouse:up',
-  MOUSE_WHEEL: 'mouse:wheel',
-  MOUSE_ENTER_CANVAS: 'mouse:enter:canvas',
-  MOUSE_LEAVE_CANVAS: 'mouse:leave:canvas',
-  
-  // Point Management
-  POINT_ADD: 'point:add',
-  POINT_DELETE: 'point:delete',
-  POINT_UPDATE: 'point:update',
-  POINT_CLEAR_ALL: 'point:clear:all',
-  POINT_SELECT: 'point:select',
-  POINT_DESELECT: 'point:deselect',
-  
-  // Grid System
-  GRID_SNAP_TOGGLE: 'grid:snap:toggle',
-  GRID_SIZE_CHANGE: 'grid:size:change',
-  GRID_VISIBILITY_TOGGLE: 'grid:visibility:toggle',
-  
-  // UI State Changes
-  UI_TOOLBAR_TOGGLE: 'ui:toolbar:toggle',
-  UI_SIDEBAR_TOGGLE: 'ui:sidebar:toggle',
-  UI_THEME_CHANGE: 'ui:theme:change',
-  UI_RESIZE: 'ui:resize',
-  
-  // Keyboard Events
-  KEY_DOWN: 'key:down',
-  KEY_UP: 'key:up',
-  KEY_SHORTCUT: 'key:shortcut',
-  
-  // Export Operations
-  EXPORT_START: 'export:start',
-  EXPORT_SUCCESS: 'export:success',
-  EXPORT_ERROR: 'export:error',
-  
-  // Status Messages
-  STATUS_SHOW: 'status:show',
-  STATUS_HIDE: 'status:hide',
-  STATUS_UPDATE: 'status:update',
-  
-  // Canvas Rendering
-  CANVAS_REDRAW: 'canvas:redraw',
-  CANVAS_CLEAR: 'canvas:clear',
-  CANVAS_RESIZE: 'canvas:resize',
-  
-  // Application Lifecycle
-  APP_INIT: 'app:init',
-  APP_READY: 'app:ready',
-  APP_DESTROY: 'app:destroy'
-};
+import { EVENT_TYPES } from './events/EventTypes.js';
+export { EVENT_TYPES };
 
-/**
- * Event Data Structures
- * Type definitions for event payloads
- */
-export const EVENT_DATA_SCHEMAS = {
-  // Mouse event data
-  MOUSE: {
-    screenX: 'number',     // Screen coordinates (pixels)
-    screenY: 'number',
-    worldX: 'number',      // World coordinates (mm)
-    worldY: 'number',
-    button: 'number',      // Mouse button (0=left, 1=middle, 2=right)
-    ctrlKey: 'boolean',    // Modifier keys
-    shiftKey: 'boolean',
-    altKey: 'boolean',
-    originalEvent: 'Event' // Original DOM event
-  },
-  
-  // Viewport change data
-  VIEWPORT: {
-    zoom: 'number',        // Current zoom level
-    offsetX: 'number',     // Viewport offset X
-    offsetY: 'number',     // Viewport offset Y
-    bounds: 'Object',      // Visible bounds {minX, maxX, minY, maxY}
-    canvasWidth: 'number', // Canvas dimensions
-    canvasHeight: 'number'
-  },
-  
-  // Point data
-  POINT: {
-    id: 'string',          // Unique point identifier
-    x: 'number',           // World coordinates
-    y: 'number',
-    index: 'number',       // Point index in array
-    metadata: 'Object'     // Additional point data
-  },
-  
-  // File operation data
-  FILE: {
-    name: 'string',        // File name
-    size: 'number',        // File size in bytes
-    type: 'string',        // MIME type
-    content: 'string',     // File content (for small files)
-    progress: 'number'     // Progress percentage (0-100)
-  },
-  
-  // G-Code parse data
-  GCODE: {
-    path: 'Array',         // Parsed path data
-    bounds: 'Object',      // Path bounds {minX, maxX, minY, maxY}
-    moveCount: 'number',   // Number of moves
-    rapidCount: 'number',  // Number of rapid moves
-    cutCount: 'number',    // Number of cutting moves
-    arcCount: 'number'     // Number of arc moves
-  },
-  
-  // Keyboard event data
-  KEYBOARD: {
-    key: 'string',         // Key name
-    code: 'string',        // Key code
-    ctrlKey: 'boolean',    // Modifier keys
-    shiftKey: 'boolean',
-    altKey: 'boolean',
-    metaKey: 'boolean',
-    originalEvent: 'KeyboardEvent'
-  },
-  
-  // Status message data
-  STATUS: {
-    message: 'string',     // Message text
-    type: 'string',        // 'success', 'error', 'warning', 'info'
-    duration: 'number',    // Display duration in ms
-    persistent: 'boolean'  // Whether message stays until manually dismissed
-  },
-  
-  // Error data
-  ERROR: {
-    message: 'string',     // Error message
-    error: 'Error',        // Error object
-    context: 'string',     // Context where error occurred
-    stack: 'string'        // Stack trace
-  }
-};
+import { EVENT_DATA_SCHEMAS } from './events/EventSchemas.js';
+export { EVENT_DATA_SCHEMAS };
+import { EventValidator } from './events/EventValidator.js';
+export { EventValidator };
+import { DOMDelegation } from './events/DOMDelegation.js';
+export { DOMDelegation };
+import * as EmitControls from './events/EmitControls.js';
 
 /**
  * EventManager - Centralized Event Management Implementation
@@ -180,6 +29,8 @@ export const EVENT_DATA_SCHEMAS = {
  * Implements the Observer pattern for loose coupling between components.
  * Provides event delegation, throttling, validation, and debugging support.
  */
+import { EventHistory } from './events/EventHistory.js';
+
 export class EventManager {
   /**
    * Constructor
@@ -188,17 +39,18 @@ export class EventManager {
   constructor() {
     this.listeners = new Map(); // event -> Set of listeners
     this.onceListeners = new Map(); // event -> Set of one-time listeners
-    this.delegatedListeners = new Map(); // selector -> Map of event handlers
     this.isDestroyed = false;
-    this.eventHistory = []; // For debugging
-    this.maxHistorySize = 100;
+    this._history = new EventHistory(100); // For debugging
+    this._domDelegation = new DOMDelegation(document, (type, data) => {
+      // Preserve previous behavior: skip validation for delegated emissions
+      this.emit(type, data, { skipValidation: true });
+    });
     
     // Performance tracking
     this.listenerCount = 0;
     this.eventCount = 0;
     
-    // Bind methods for consistent context
-    this._handleDelegatedEvent = this._handleDelegatedEvent.bind(this);
+    // Bind methods for consistent context (none required for delegation now)
   }
 
   /**
@@ -335,46 +187,7 @@ export class EventManager {
    */
   delegate(selector, domEventType, customEventType, dataExtractor) {
     this._validateEventType(customEventType);
-    
-    if (typeof selector !== 'string') {
-      throw new Error('Selector must be a string');
-    }
-    
-    if (typeof domEventType !== 'string') {
-      throw new Error('DOM event type must be a string');
-    }
-    
-    if (typeof dataExtractor !== 'function') {
-      throw new Error('Data extractor must be a function');
-    }
-    
-    const delegationKey = `${selector}:${domEventType}`;
-    
-    if (!this.delegatedListeners.has(delegationKey)) {
-      this.delegatedListeners.set(delegationKey, new Map());
-      
-      // Add DOM event listener
-      document.addEventListener(domEventType, (event) => {
-        this._handleDelegatedEvent(event, selector, delegationKey);
-      }, true); // Use capture phase
-    }
-    
-    // Store the custom event mapping
-    this.delegatedListeners.get(delegationKey).set(customEventType, dataExtractor);
-    
-    // Return cleanup function
-    return () => {
-      const handlers = this.delegatedListeners.get(delegationKey);
-      if (handlers) {
-        handlers.delete(customEventType);
-        
-        // If no more handlers, remove the delegation
-        if (handlers.size === 0) {
-          this.delegatedListeners.delete(delegationKey);
-          // Note: DOM listener cleanup would require more complex tracking
-        }
-      }
-    };
+    return this._domDelegation.add(selector, domEventType, customEventType, dataExtractor);
   }
 
   /**
@@ -428,10 +241,10 @@ export class EventManager {
     this.removeAllListeners();
     
     // Clear delegated listeners
-    this.delegatedListeners.clear();
+    this._domDelegation.clear();
     
     // Clear history
-    this.eventHistory.length = 0;
+    this._history.clear();
     
     // Mark as destroyed
     this.isDestroyed = true;
@@ -444,7 +257,7 @@ export class EventManager {
    * @returns {Array} Array of recent events
    */
   getEventHistory() {
-    return [...this.eventHistory];
+    return this._history.getEvents();
   }
 
   /**
@@ -459,8 +272,8 @@ export class EventManager {
         regular: this.listeners.size,
         once: this.onceListeners.size
       },
-      delegations: this.delegatedListeners.size,
-      historySize: this.eventHistory.length,
+      delegations: this._domDelegation.size(),
+      historySize: this._history.getEvents().length,
       isDestroyed: this.isDestroyed
     };
   }
@@ -507,43 +320,14 @@ export class EventManager {
     }
   }
 
-  /**
-   * Handle delegated DOM events
-   * @private
-   */
-  _handleDelegatedEvent(event, selector, delegationKey) {
-    const target = event.target.closest(selector);
-    if (!target) return;
-    
-    const handlers = this.delegatedListeners.get(delegationKey);
-    if (!handlers) return;
-    
-    handlers.forEach((dataExtractor, customEventType) => {
-      try {
-        const eventData = dataExtractor(event, target);
-        this.emit(customEventType, eventData, { skipValidation: true });
-      } catch (error) {
-        console.error(`EventManager: Error in delegated event handler:`, error);
-      }
-    });
-  }
+  // Delegation is handled by DOMDelegation helper
 
   /**
    * Record event in history for debugging
    * @private
    */
   _recordEvent(eventType, eventData) {
-    this.eventHistory.push({
-      type: eventType,
-      data: eventData,
-      timestamp: Date.now(),
-      listeners: this.getListeners(eventType).length
-    });
-    
-    // Maintain history size limit
-    if (this.eventHistory.length > this.maxHistorySize) {
-      this.eventHistory.shift();
-    }
+    this._history.record(eventType, eventData, this.getListeners(eventType).length);
   }
 
   /**
@@ -583,216 +367,10 @@ export class EventManager {
  * Event Validator Utility
  * Validates event data against schemas
  */
-export class EventValidator {
-  /**
-   * Validate event data against schema
-   * @param {string} eventType - Event type
-   * @param {*} eventData - Event data to validate
-   * @returns {Object} Validation result {valid: boolean, errors: Array}
-   */
-  static validate(eventType, eventData) {
-    const schema = EventValidator.getSchema(eventType);
-    
-    if (!schema) {
-      // No schema defined, consider valid
-      return { valid: true, errors: [] };
-    }
-    
-    const errors = [];
-    
-    // Null/undefined check
-    if (eventData === null || eventData === undefined) {
-      if (schema.required !== false) {
-        errors.push(`Event data is required for ${eventType}`);
-      }
-      return { valid: errors.length === 0, errors };
-    }
-    
-    // Type validation
-    for (const [field, expectedType] of Object.entries(schema)) {
-      if (field === 'required') continue;
-      
-      const value = eventData[field];
-      const actualType = typeof value;
-      
-      // Skip validation for undefined optional fields
-      if (value === undefined) continue;
-      
-      // Special type checks
-      if (expectedType === 'Array' && !Array.isArray(value)) {
-        errors.push(`Field '${field}' must be an array, got ${actualType}`);
-      } else if (expectedType === 'Object' && (typeof value !== 'object' || value === null || Array.isArray(value))) {
-        // Debug logging for bounds validation issue
-        if (field === 'bounds') {
-          console.debug(`Bounds validation failed:`, {
-            field: field,
-            expectedType: expectedType,
-            actualType: typeof value,
-            isNull: value === null,
-            isArray: Array.isArray(value),
-            value: value
-          });
-        }
-        errors.push(`Field '${field}' must be an object, got ${Array.isArray(value) ? 'array' : typeof value}`);
-      } else if (expectedType === 'Event') {
-        // For Event validation, accept both native Event instances and event-like objects
-        // This handles cases where events are wrapped, transformed, or synthetic
-        if (!(value instanceof Event) && 
-            !(typeof value === 'object' && value !== null && 
-              (value.type !== undefined || value.target !== undefined || value.currentTarget !== undefined ||
-               value.clientX !== undefined || value.clientY !== undefined || value.button !== undefined ||
-               typeof value.preventDefault === 'function' || typeof value.stopPropagation === 'function'))) {
-          errors.push(`Field '${field}' must be of type Event, got ${typeof value}`);
-        }
-      } else if (expectedType === 'KeyboardEvent') {
-        // For KeyboardEvent validation, accept both native KeyboardEvent instances and event-like objects
-        // This handles cases where events are wrapped, transformed, or synthetic
-        if (!(value instanceof KeyboardEvent) && 
-            !(typeof value === 'object' && value !== null && 
-              (value.type !== undefined || value.target !== undefined || value.currentTarget !== undefined ||
-               value.key !== undefined || value.code !== undefined || value.keyCode !== undefined ||
-               typeof value.preventDefault === 'function' || typeof value.stopPropagation === 'function'))) {
-          errors.push(`Field '${field}' must be a KeyboardEvent object`);
-        }
-      } else if (expectedType === 'Error' && !(value instanceof Error)) {
-        errors.push(`Field '${field}' must be an Error object`);
-      } else if (typeof expectedType === 'string' && actualType !== expectedType) {
-        errors.push(`Field '${field}' must be of type ${expectedType}, got ${actualType}`);
-      }
-      
-      // Number validation
-      if (expectedType === 'number' && !isFinite(value)) {
-        errors.push(`Field '${field}' must be a finite number`);
-      }
-    }
-    
-    return { valid: errors.length === 0, errors };
-  }
+// EventValidator moved to ./events/EventValidator.js and re-exported above
 
-  /**
-   * Get schema for event type
-   * @param {string} eventType - Event type
-   * @returns {Object|null} Schema object or null if not found
-   */
-  static getSchema(eventType) {
-    // Map event types to their schemas
-    const schemaMap = {
-      // Mouse events
-      [EVENT_TYPES.MOUSE_MOVE]: EVENT_DATA_SCHEMAS.MOUSE,
-      [EVENT_TYPES.MOUSE_CLICK]: EVENT_DATA_SCHEMAS.MOUSE,
-      [EVENT_TYPES.MOUSE_DOWN]: EVENT_DATA_SCHEMAS.MOUSE,
-      [EVENT_TYPES.MOUSE_UP]: EVENT_DATA_SCHEMAS.MOUSE,
-      [EVENT_TYPES.MOUSE_WHEEL]: EVENT_DATA_SCHEMAS.MOUSE,
-      [EVENT_TYPES.MOUSE_ENTER_CANVAS]: EVENT_DATA_SCHEMAS.MOUSE,
-      [EVENT_TYPES.MOUSE_LEAVE_CANVAS]: EVENT_DATA_SCHEMAS.MOUSE,
-      
-      // Viewport events
-      [EVENT_TYPES.VIEWPORT_ZOOM_CHANGE]: EVENT_DATA_SCHEMAS.VIEWPORT,
-      [EVENT_TYPES.VIEWPORT_PAN_CHANGE]: EVENT_DATA_SCHEMAS.VIEWPORT,
-      [EVENT_TYPES.VIEWPORT_RESET]: EVENT_DATA_SCHEMAS.VIEWPORT,
-      [EVENT_TYPES.VIEWPORT_FIT_TO_SCREEN]: EVENT_DATA_SCHEMAS.VIEWPORT,
-      
-      // Point events
-      [EVENT_TYPES.POINT_ADD]: EVENT_DATA_SCHEMAS.POINT,
-      [EVENT_TYPES.POINT_DELETE]: EVENT_DATA_SCHEMAS.POINT,
-      [EVENT_TYPES.POINT_UPDATE]: EVENT_DATA_SCHEMAS.POINT,
-      [EVENT_TYPES.POINT_SELECT]: EVENT_DATA_SCHEMAS.POINT,
-      [EVENT_TYPES.POINT_DESELECT]: EVENT_DATA_SCHEMAS.POINT,
-      
-      // File events
-      [EVENT_TYPES.FILE_LOAD_START]: EVENT_DATA_SCHEMAS.FILE,
-      [EVENT_TYPES.FILE_LOAD_SUCCESS]: EVENT_DATA_SCHEMAS.FILE,
-      [EVENT_TYPES.FILE_LOAD_ERROR]: EVENT_DATA_SCHEMAS.ERROR,
-      [EVENT_TYPES.FILE_LOAD_PROGRESS]: EVENT_DATA_SCHEMAS.FILE,
-      
-      // G-Code events
-      [EVENT_TYPES.GCODE_PARSE_START]: { required: false },
-      [EVENT_TYPES.GCODE_PARSE_SUCCESS]: EVENT_DATA_SCHEMAS.GCODE,
-      [EVENT_TYPES.GCODE_PARSE_ERROR]: EVENT_DATA_SCHEMAS.ERROR,
-      [EVENT_TYPES.GCODE_PARSE_PROGRESS]: { progress: 'number' },
-      
-      // Keyboard events
-      [EVENT_TYPES.KEY_DOWN]: EVENT_DATA_SCHEMAS.KEYBOARD,
-      [EVENT_TYPES.KEY_UP]: EVENT_DATA_SCHEMAS.KEYBOARD,
-      [EVENT_TYPES.KEY_SHORTCUT]: EVENT_DATA_SCHEMAS.KEYBOARD,
-      
-      // Status events
-      [EVENT_TYPES.STATUS_SHOW]: EVENT_DATA_SCHEMAS.STATUS,
-      [EVENT_TYPES.STATUS_HIDE]: { required: false },
-      [EVENT_TYPES.STATUS_UPDATE]: EVENT_DATA_SCHEMAS.STATUS,
-      
-      // Canvas events
-      [EVENT_TYPES.CANVAS_REDRAW]: { required: false },
-      [EVENT_TYPES.CANVAS_CLEAR]: { required: false },
-      [EVENT_TYPES.CANVAS_RESIZE]: { width: 'number', height: 'number' }
-    };
-    
-    return schemaMap[eventType] || null;
-  }
-}
-
-/**
- * Event Bus Singleton
- * Global event bus instance for the application
- */
-let eventBusInstance = null;
-
-export class EventBus {
-  /**
-   * Get singleton instance
-   * @returns {EventManager} Singleton instance
-   */
-  static getInstance() {
-    if (!eventBusInstance) {
-      eventBusInstance = new EventManager();
-    }
-    return eventBusInstance;
-  }
-
-  /**
-   * Initialize the event bus with specific implementation
-   * @param {EventManager} implementation - Concrete implementation
-   */
-  static setImplementation(implementation) {
-    if (eventBusInstance && typeof eventBusInstance.destroy === 'function') {
-      eventBusInstance.destroy();
-    }
-    eventBusInstance = implementation;
-  }
-
-  /**
-   * Reset singleton (mainly for testing)
-   */
-  static reset() {
-    if (eventBusInstance && typeof eventBusInstance.destroy === 'function') {
-      eventBusInstance.destroy();
-    }
-    eventBusInstance = null;
-  }
-  
-  /**
-   * Quick access methods for common operations
-   */
-  static on(eventType, callback, options) {
-    return EventBus.getInstance().on(eventType, callback, options);
-  }
-  
-  static once(eventType, callback) {
-    return EventBus.getInstance().once(eventType, callback);
-  }
-  
-  static off(eventType, callback) {
-    return EventBus.getInstance().off(eventType, callback);
-  }
-  
-  static emit(eventType, eventData, options) {
-    return EventBus.getInstance().emit(eventType, eventData, options);
-  }
-  
-  static delegate(selector, domEventType, customEventType, dataExtractor) {
-    return EventBus.getInstance().delegate(selector, domEventType, customEventType, dataExtractor);
-  }
-}
+// EventBus moved to ./events/EventBus.js
+export { EventBus } from './events/EventBus.js';
 
 /**
  * Event Utilities
@@ -881,37 +459,8 @@ export class EventUtils {
    * @returns {Function} Throttled function
    */
   static throttle(emitFunction, delay) {
-    if (typeof emitFunction !== 'function') {
-      throw new Error('First argument must be a function');
-    }
-    
-    if (typeof delay !== 'number' || delay < 0) {
-      throw new Error('Delay must be a non-negative number');
-    }
-    
-    let isThrottled = false;
-    let lastArgs = null;
-    
-    return function throttledFunction(...args) {
-      if (!isThrottled) {
-        // Execute immediately
-        emitFunction.apply(this, args);
-        isThrottled = true;
-        
-        setTimeout(() => {
-          isThrottled = false;
-          
-          // Execute with latest args if there were subsequent calls
-          if (lastArgs) {
-            emitFunction.apply(this, lastArgs);
-            lastArgs = null;
-          }
-        }, delay);
-      } else {
-        // Store latest args
-        lastArgs = args;
-      }
-    };
+    // Delegate to EmitControls for maintainability
+    return EmitControls.throttle(emitFunction, delay);
   }
 
   /**
@@ -921,28 +470,7 @@ export class EventUtils {
    * @returns {Function} Debounced function
    */
   static debounce(emitFunction, delay) {
-    if (typeof emitFunction !== 'function') {
-      throw new Error('First argument must be a function');
-    }
-    
-    if (typeof delay !== 'number' || delay < 0) {
-      throw new Error('Delay must be a non-negative number');
-    }
-    
-    let timeoutId = null;
-    
-    return function debouncedFunction(...args) {
-      // Clear existing timeout
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      
-      // Set new timeout
-      timeoutId = setTimeout(() => {
-        emitFunction.apply(this, args);
-        timeoutId = null;
-      }, delay);
-    };
+    return EmitControls.debounce(emitFunction, delay);
   }
 
   /**
@@ -953,29 +481,7 @@ export class EventUtils {
    * @returns {Function} Rate-limited function
    */
   static rateLimit(emitFunction, maxCalls, period) {
-    if (typeof emitFunction !== 'function') {
-      throw new Error('First argument must be a function');
-    }
-    
-    const calls = [];
-    
-    return function rateLimitedFunction(...args) {
-      const now = Date.now();
-      
-      // Remove old calls outside the period
-      while (calls.length > 0 && calls[0] <= now - period) {
-        calls.shift();
-      }
-      
-      // Check if we're under the limit
-      if (calls.length < maxCalls) {
-        calls.push(now);
-        return emitFunction.apply(this, args);
-      }
-      
-      // Rate limit exceeded - could emit a warning event here
-      console.debug(`Rate limit exceeded: ${maxCalls} calls per ${period}ms`);
-    };
+    return EmitControls.rateLimit(emitFunction, maxCalls, period);
   }
 
   /**
@@ -986,34 +492,12 @@ export class EventUtils {
    * @returns {Function} Deduplicated function
    */
   static deduplicate(emitFunction, threshold = 50, keyExtractor = null) {
-    if (typeof emitFunction !== 'function') {
-      throw new Error('First argument must be a function');
-    }
-    
-    const lastCalls = new Map();
-    
-    return function deduplicatedFunction(...args) {
-      const now = Date.now();
-      const key = keyExtractor ? keyExtractor(...args) : JSON.stringify(args);
-      const lastCall = lastCalls.get(key);
-      
-      if (!lastCall || now - lastCall > threshold) {
-        lastCalls.set(key, now);
-        
-        // Clean up old entries periodically
-        if (lastCalls.size > 100) {
-          for (const [k, time] of lastCalls.entries()) {
-            if (now - time > threshold * 2) {
-              lastCalls.delete(k);
-            }
-          }
-        }
-        
-        return emitFunction.apply(this, args);
-      }
-    };
+    return EmitControls.deduplicate(emitFunction, threshold, keyExtractor);
   }
 }
+
+// Also re-export EmitControls helpers for future direct usage, while keeping EventUtils API intact
+export * as EmitControls from './events/EmitControls.js';
 
 /**
  * IMPLEMENTATION GUIDELINES FOR AGENT B3:

@@ -6,6 +6,9 @@
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { VIEWPORT } from '../utils/Constants.js';
 import { FileHandler } from '../utils/FileHandler.js';
+import { FileControls } from './toolbar/FileControls.js';
+import { ViewControls } from './toolbar/ViewControls.js';
+import { ActionControls } from './toolbar/ActionControls.js';
 
 /**
  * Toolbar class manages the header toolbar with file and view controls
@@ -34,6 +37,10 @@ export class Toolbar {
     
     // File handler for file operations
     this.fileHandler = new FileHandler();
+    // Submodules
+    this.fileControls = null;
+    this.viewControls = null;
+    this.actionControls = null;
     
     // Component state
     this.state = {
@@ -67,16 +74,6 @@ export class Toolbar {
    * Bind methods to maintain context
    */
   _bindMethods() {
-    this._handleFileInput = this._handleFileInput.bind(this);
-    this._handleZoomIn = this._handleZoomIn.bind(this);
-    this._handleZoomOut = this._handleZoomOut.bind(this);
-    this._handleFitToScreen = this._handleFitToScreen.bind(this);
-    this._handleClearPoints = this._handleClearPoints.bind(this);
-    this._handleExportPoints = this._handleExportPoints.bind(this);
-    this._handleDragOver = this._handleDragOver.bind(this);
-    this._handleDragLeave = this._handleDragLeave.bind(this);
-    this._handleDrop = this._handleDrop.bind(this);
-    this._onZoomChange = this._onZoomChange.bind(this);
     this._onPointsChange = this._onPointsChange.bind(this);
     this._onFileLoadStart = this._onFileLoadStart.bind(this);
     this._onFileLoadSuccess = this._onFileLoadSuccess.bind(this);
@@ -180,77 +177,57 @@ export class Toolbar {
     this.elements.zoomDisplay = this.container.querySelector('[data-toolbar="zoom-level"]');
     this.elements.clearPointsButton = this.container.querySelector('[data-toolbar="clear-points"]');
     this.elements.exportPointsButton = this.container.querySelector('[data-toolbar="export-points"]');
+    this.elements.drawerToggleButton = this.container.querySelector('[data-toolbar="toggle-gcode-drawer"]');
+    this.elements.normalizeButton = this.container.querySelector('[data-toolbar="normalize-to-iso"]');
   }
 
   /**
    * Set up event listeners for toolbar interactions
    */
   _setupEventListeners() {
-    // File input
-    if (this.elements.fileInput) {
-      this.elements.fileInput.addEventListener('change', this._handleFileInput);
-    }
+    // File input + drag/drop delegated to FileControls
+    this.fileControls = new FileControls(
+      { fileInput: this.elements.fileInput, fileInputLabel: this.elements.fileInputLabel },
+      { onChooseFile: (file) => this._loadFile(file) }
+    );
+    this.fileControls.init();
 
-    // Zoom controls
-    if (this.elements.zoomInButton) {
-      this.elements.zoomInButton.addEventListener('click', this._handleZoomIn);
-    }
-    if (this.elements.zoomOutButton) {
-      this.elements.zoomOutButton.addEventListener('click', this._handleZoomOut);
-    }
-    if (this.elements.fitToScreenButton) {
-      this.elements.fitToScreenButton.addEventListener('click', this._handleFitToScreen);
-    }
+    // View controls delegated to ViewControls
+    this.viewControls = new ViewControls({
+      zoomInButton: this.elements.zoomInButton,
+      zoomOutButton: this.elements.zoomOutButton,
+      fitToScreenButton: this.elements.fitToScreenButton,
+      zoomDisplay: this.elements.zoomDisplay
+    });
+    this.viewControls.init();
 
-    // Utility buttons
-    if (this.elements.clearPointsButton) {
-      this.elements.clearPointsButton.addEventListener('click', this._handleClearPoints);
-    }
-    if (this.elements.exportPointsButton) {
-      this.elements.exportPointsButton.addEventListener('click', this._handleExportPoints);
-    }
-    const drawerBtn = this.container.querySelector('[data-toolbar="toggle-gcode-drawer"]');
-    if (drawerBtn) {
-      drawerBtn.addEventListener('click', () => {
-        this.eventBus.emit('drawer:toggle');
-      });
-    }
-
-    // Normalize to ISO button
-    const normalizeBtn = this.container.querySelector('[data-toolbar="normalize-to-iso"]');
-    if (normalizeBtn) {
-      normalizeBtn.addEventListener('click', async () => {
-        try {
-          // Get current drawer text if available
+    // Utility buttons delegated to ActionControls
+    this.actionControls = new ActionControls(
+      {
+        clearPointsButton: this.elements.clearPointsButton,
+        exportPointsButton: this.elements.exportPointsButton,
+        drawerToggleButton: this.elements.drawerToggleButton,
+        normalizeButton: this.elements.normalizeButton
+      },
+      {
+        getTextForNormalization: () => {
           const app = window.wireEDMViewer;
           const drawer = app?.gcodeDrawer;
-          const text = drawer?.getText?.() || this.fileHandler?.loadedData?.content || '';
-          const { normalizeToISO } = await import('../utils/IsoNormalizer.js');
-          const normalized = normalizeToISO(text);
-          // Offer download as .iso without requiring points
-          const filename = `normalized_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.iso`;
-          this.fileHandler._downloadFile(normalized, filename, 'text/plain');
-          this.eventBus.emit('status:show', { message: 'Normalized to ISO', type: 'success' }, { skipValidation: true });
-        } catch (e) {
-          console.error('Normalize to ISO failed:', e);
-        }
-      });
-    }
+          return drawer?.getText?.() || this.fileHandler?.loadedData?.content || '';
+        },
+        exportNormalizedISOFromText: (text, options) => this.fileHandler?.exportNormalizedISOFromText?.(text, options)
+      }
+    );
+    this.actionControls.init();
 
-    // Drag and drop support
-    if (this.elements.fileInputLabel) {
-      this.elements.fileInputLabel.addEventListener('dragover', this._handleDragOver);
-      this.elements.fileInputLabel.addEventListener('dragleave', this._handleDragLeave);
-      this.elements.fileInputLabel.addEventListener('drop', this._handleDrop);
-    }
+    // Drag and drop support handled by FileControls
   }
 
   /**
    * Subscribe to application events
    */
   _subscribeToEvents() {
-    // Viewport zoom changes
-    this.eventBus.on(EVENT_TYPES.VIEWPORT_ZOOM_CHANGE, this._onZoomChange);
+    // Viewport zoom display handled by ViewControls
     
     // Point management changes
     this.eventBus.on(EVENT_TYPES.POINT_UPDATE, this._onPointsChange);
@@ -264,75 +241,7 @@ export class Toolbar {
     this.eventBus.on(EVENT_TYPES.EXPORT_SUCCESS, this._onPointsExportResponse);
   }
 
-  /**
-   * Handle file input change
-   * @param {Event} event - File input change event
-   */
-  _handleFileInput(event) {
-    const file = event.target.files[0];
-    if (file) {
-      this._loadFile(file);
-    }
-  }
-
-  /**
-   * Handle zoom in button click
-   */
-  _handleZoomIn() {
-    this.eventBus.emit(
-      EVENT_TYPES.VIEWPORT_ZOOM_CHANGE,
-      {
-        type: 'in',
-        source: 'toolbar',
-        step: VIEWPORT.ZOOM_STEP
-      },
-      { skipValidation: true }
-    );
-  }
-
-  /**
-   * Handle zoom out button click
-   */
-  _handleZoomOut() {
-    this.eventBus.emit(
-      EVENT_TYPES.VIEWPORT_ZOOM_CHANGE,
-      {
-        type: 'out',
-        source: 'toolbar',
-        step: VIEWPORT.ZOOM_STEP
-      },
-      { skipValidation: true }
-    );
-  }
-
-  /**
-   * Handle fit to screen button click
-   */
-  _handleFitToScreen() {
-    this.eventBus.emit(EVENT_TYPES.VIEWPORT_FIT_TO_SCREEN, {
-      source: 'toolbar'
-    });
-  }
-
-  /**
-   * Handle clear points button click
-   */
-  _handleClearPoints() {
-    this.eventBus.emit(EVENT_TYPES.POINT_CLEAR_ALL, {
-      source: 'toolbar'
-    });
-  }
-
-  /**
-   * Handle export points button click
-   */
-  _handleExportPoints() {
-    // Request current points from the system
-    this.eventBus.emit(EVENT_TYPES.EXPORT_START, {
-      source: 'toolbar',
-      format: 'iso'
-    });
-  }
+  
 
   /**
    * Handle export points with data
@@ -352,49 +261,7 @@ export class Toolbar {
     }
   }
 
-  /**
-   * Handle drag over event
-   * @param {DragEvent} event - Drag over event
-   */
-  _handleDragOver(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    if (this.elements.fileInputLabel) {
-      this.elements.fileInputLabel.classList.add('drag-over');
-    }
-  }
-
-  /**
-   * Handle drag leave event
-   * @param {DragEvent} event - Drag leave event
-   */
-  _handleDragLeave(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    if (this.elements.fileInputLabel) {
-      this.elements.fileInputLabel.classList.remove('drag-over');
-    }
-  }
-
-  /**
-   * Handle drop event
-   * @param {DragEvent} event - Drop event
-   */
-  _handleDrop(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    if (this.elements.fileInputLabel) {
-      this.elements.fileInputLabel.classList.remove('drag-over');
-    }
-    
-    const files = event.dataTransfer.files;
-    if (files.length > 0) {
-      this._loadFile(files[0]);
-    }
-  }
+  
 
   /**
    * Load a file
@@ -430,17 +297,7 @@ export class Toolbar {
     }
   }
 
-  /**
-   * Handle zoom change event
-   * @param {Object} data - Zoom change data
-   */
-  _onZoomChange(data) {
-    // Handle both command-style and stateful payloads
-    if (data && typeof data.zoom === 'number') {
-      this.state.zoomLevel = data.zoom;
-      this._updateZoomDisplay();
-    }
-  }
+  
 
   /**
    * Handle points change event
@@ -495,15 +352,7 @@ export class Toolbar {
     this._updateButtonStates();
   }
 
-  /**
-   * Update zoom display
-   */
-  _updateZoomDisplay() {
-    if (this.elements.zoomDisplay) {
-      const percentage = Math.round(this.state.zoomLevel * 100);
-      this.elements.zoomDisplay.textContent = `${percentage}%`;
-    }
-  }
+  
 
   /**
    * Update file input label text
@@ -578,7 +427,6 @@ export class Toolbar {
     if (this.isDestroyed) return;
 
     // Unsubscribe from events
-    this.eventBus.off(EVENT_TYPES.VIEWPORT_ZOOM_CHANGE, this._onZoomChange);
     this.eventBus.off(EVENT_TYPES.POINT_UPDATE, this._onPointsChange);
     this.eventBus.off(EVENT_TYPES.FILE_LOAD_START, this._onFileLoadStart);
     this.eventBus.off(EVENT_TYPES.FILE_LOAD_SUCCESS, this._onFileLoadSuccess);
@@ -592,6 +440,18 @@ export class Toolbar {
     if (this.fileHandler) {
       this.fileHandler.destroy();
       this.fileHandler = null;
+    }
+    if (this.fileControls) {
+      this.fileControls.destroy();
+      this.fileControls = null;
+    }
+    if (this.viewControls) {
+      this.viewControls.destroy();
+      this.viewControls = null;
+    }
+    if (this.actionControls) {
+      this.actionControls.destroy();
+      this.actionControls = null;
     }
     
     // Reset state

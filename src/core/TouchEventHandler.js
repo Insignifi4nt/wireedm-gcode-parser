@@ -1,14 +1,16 @@
 /**
  * Touch Event Handler for Wire EDM G-Code Viewer
  * Handles touch interactions for mobile devices
+ * Orchestrates TouchGestures and TouchInteractions modules
  */
 
-import { EventBus, EVENT_TYPES, EventUtils } from './EventManager.js';
-import { CANVAS } from '../utils/Constants.js';
+import { EventBus } from './EventManager.js';
+import { TouchGestures } from './input/TouchGestures.js';
+import { TouchInteractions } from './input/TouchInteractions.js';
 
 /**
  * TouchEventHandler class manages touch interactions
- * Provides mobile-friendly touch gestures for pan, zoom, and tap
+ * Orchestrates gesture recognition and interaction handling
  */
 export class TouchEventHandler {
   /**
@@ -29,22 +31,7 @@ export class TouchEventHandler {
     this.viewport = viewport;
     this.eventBus = EventBus.getInstance();
     
-    // Touch state tracking
-    this.touches = new Map();
-    this.lastTouchTime = 0;
-    this.touchThrottleDelay = 16; // ~60fps
-    
-    // Gesture recognition
-    this.gestureState = {
-      type: null, // 'pan', 'zoom', 'tap'
-      startTime: 0,
-      lastDistance: 0,
-      lastCenter: { x: 0, y: 0 },
-      tapCount: 0,
-      tapTimeout: null
-    };
-    
-    // Configuration
+    // Configuration (shared between modules)
     this.config = {
       tapThreshold: 10, // pixels
       tapTimeout: 300, // milliseconds
@@ -53,6 +40,15 @@ export class TouchEventHandler {
       pinchThreshold: 50, // pixels
       preventContextMenu: true
     };
+    
+    // Initialize gesture recognition module
+    this.touchGestures = new TouchGestures(this.config);
+    
+    // Initialize interaction handling module
+    this.touchInteractions = new TouchInteractions(this.viewport, this.eventBus);
+    
+    // Long press timeout tracking
+    this._currentLongPressTimeout = null;
     
     // Bind methods
     this._bindMethods();
@@ -106,86 +102,12 @@ export class TouchEventHandler {
     event.preventDefault();
     
     const touches = Array.from(event.touches);
-    const touchCount = touches.length;
     
-    // Update touch tracking
-    touches.forEach(touch => {
-      this.touches.set(touch.identifier, {
-        id: touch.identifier,
-        startX: touch.clientX,
-        startY: touch.clientY,
-        currentX: touch.clientX,
-        currentY: touch.clientY,
-        startTime: Date.now()
-      });
-    });
-
-    // Determine gesture type
-    if (touchCount === 1) {
-      this._handleSingleTouchStart(touches[0]);
-    } else if (touchCount === 2) {
-      this._handlePinchStart(touches[0], touches[1]);
-    } else {
-      // More than 2 touches - ignore for now
-      this._resetGestureState();
-    }
-  }
-
-  /**
-   * Handle single touch start (tap/pan)
-   * @param {Touch} touch - Touch object
-   */
-  _handleSingleTouchStart(touch) {
-    const touchData = this._createTouchEventData(touch);
+    // Use TouchGestures for gesture detection
+    const gestureInfo = this.touchGestures.detectGestureStart(touches);
     
-    // Check for double tap
-    const now = Date.now();
-    const timeSinceLastTouch = now - this.lastTouchTime;
-    
-    if (timeSinceLastTouch < this.config.doubleTapTimeout) {
-      this.gestureState.tapCount++;
-    } else {
-      this.gestureState.tapCount = 1;
-    }
-    
-    this.lastTouchTime = now;
-    
-    // Set up gesture state
-    this.gestureState.type = 'potential-tap';
-    this.gestureState.startTime = now;
-    this.gestureState.lastCenter = { x: touch.clientX, y: touch.clientY };
-    
-    // Set up long press detection
-    if (this.gestureState.tapTimeout) {
-      clearTimeout(this.gestureState.tapTimeout);
-    }
-    
-    this.gestureState.tapTimeout = setTimeout(() => {
-      if (this.gestureState.type === 'potential-tap') {
-        this._handleLongPress(touchData);
-      }
-    }, this.config.longPressTimeout);
-  }
-
-  /**
-   * Handle pinch start (zoom gesture)
-   * @param {Touch} touch1 - First touch
-   * @param {Touch} touch2 - Second touch
-   */
-  _handlePinchStart(touch1, touch2) {
-    const distance = this._calculateTouchDistance(touch1, touch2);
-    const center = this._calculateTouchCenter(touch1, touch2);
-    
-    this.gestureState.type = 'zoom';
-    this.gestureState.startTime = Date.now();
-    this.gestureState.lastDistance = distance;
-    this.gestureState.lastCenter = center;
-    
-    // Clear any pending tap timeout
-    if (this.gestureState.tapTimeout) {
-      clearTimeout(this.gestureState.tapTimeout);
-      this.gestureState.tapTimeout = null;
-    }
+    // Handle long press setup for potential taps
+    this._setupLongPressDetection(gestureInfo, touches[0]);
   }
 
   /**
@@ -197,111 +119,14 @@ export class TouchEventHandler {
 
     event.preventDefault();
     
-    // Throttle touch move events
-    const now = Date.now();
-    if (now - this.lastTouchTime < this.touchThrottleDelay) {
-      return;
-    }
-    
     const touches = Array.from(event.touches);
-    const touchCount = touches.length;
     
-    // Update touch tracking
-    touches.forEach(touch => {
-      const trackedTouch = this.touches.get(touch.identifier);
-      if (trackedTouch) {
-        trackedTouch.currentX = touch.clientX;
-        trackedTouch.currentY = touch.clientY;
-      }
-    });
-
-    if (touchCount === 1) {
-      this._handleSingleTouchMove(touches[0]);
-    } else if (touchCount === 2) {
-      this._handlePinchMove(touches[0], touches[1]);
-    }
-  }
-
-  /**
-   * Handle single touch move (pan or tap detection)
-   * @param {Touch} touch - Touch object
-   */
-  _handleSingleTouchMove(touch) {
-    const trackedTouch = this.touches.get(touch.identifier);
-    if (!trackedTouch) return;
-
-    const deltaX = touch.clientX - trackedTouch.startX;
-    const deltaY = touch.clientY - trackedTouch.startY;
-    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-    // Check if touch has moved beyond tap threshold
-    if (distance > this.config.tapThreshold) {
-      // Convert to pan gesture
-      if (this.gestureState.type === 'potential-tap') {
-        this.gestureState.type = 'pan';
-        
-        // Clear tap timeout
-        if (this.gestureState.tapTimeout) {
-          clearTimeout(this.gestureState.tapTimeout);
-          this.gestureState.tapTimeout = null;
-        }
-      }
-      
-      // Handle pan
-      if (this.gestureState.type === 'pan') {
-        const panDeltaX = touch.clientX - this.gestureState.lastCenter.x;
-        const panDeltaY = touch.clientY - this.gestureState.lastCenter.y;
-        
-        this.viewport.pan(panDeltaX, panDeltaY);
-        
-        // Update last center
-        this.gestureState.lastCenter = { x: touch.clientX, y: touch.clientY };
-        
-        // Emit pan event
-        this.eventBus.emit(EVENT_TYPES.VIEWPORT_PAN_CHANGE, {
-          ...this.viewport.getState(),
-          canvasWidth: this.canvas.width,
-          canvasHeight: this.canvas.height,
-          gesture: 'touch-pan'
-        });
-      }
-    }
-  }
-
-  /**
-   * Handle pinch move (zoom gesture)
-   * @param {Touch} touch1 - First touch
-   * @param {Touch} touch2 - Second touch
-   */
-  _handlePinchMove(touch1, touch2) {
-    const distance = this._calculateTouchDistance(touch1, touch2);
-    const center = this._calculateTouchCenter(touch1, touch2);
+    // Use TouchGestures for gesture detection
+    const gestureInfo = this.touchGestures.detectGestureMove(touches);
     
-    if (this.gestureState.type === 'zoom') {
-      const distanceDelta = distance - this.gestureState.lastDistance;
-      
-      // Only process significant changes
-      if (Math.abs(distanceDelta) > this.config.pinchThreshold) {
-        // Convert center to canvas coordinates
-        const rect = this.canvas.getBoundingClientRect();
-        const canvasX = center.x - rect.left;
-        const canvasY = center.y - rect.top;
-        
-        // Apply zoom
-        const zoomDelta = distanceDelta > 0 ? 1 : -1;
-        this.viewport.zoomAtPoint(canvasX, canvasY, zoomDelta);
-        
-        // Update last distance
-        this.gestureState.lastDistance = distance;
-        
-        // Emit zoom event
-        this.eventBus.emit(EVENT_TYPES.VIEWPORT_ZOOM_CHANGE, {
-          ...this.viewport.getState(),
-          canvasWidth: this.canvas.width,
-          canvasHeight: this.canvas.height,
-          gesture: 'touch-zoom'
-        });
-      }
+    // Use TouchInteractions for gesture response
+    if (!gestureInfo.throttled && gestureInfo.type && gestureInfo.type !== 'unknown') {
+      this.touchInteractions.processGesture(gestureInfo, this.canvas);
     }
   }
 
@@ -317,76 +142,44 @@ export class TouchEventHandler {
     const changedTouches = Array.from(event.changedTouches);
     const remainingTouches = Array.from(event.touches);
     
-    // Remove ended touches from tracking
-    changedTouches.forEach(touch => {
-      this.touches.delete(touch.identifier);
-    });
-
-    // Handle gesture completion
-    if (remainingTouches.length === 0) {
-      this._handleGestureEnd(changedTouches[0]);
-    } else if (remainingTouches.length === 1 && this.gestureState.type === 'zoom') {
-      // Transition from zoom to pan
-      this._handleSingleTouchStart(remainingTouches[0]);
+    // Use TouchGestures for gesture completion
+    const gestureInfo = this.touchGestures.detectGestureEnd(changedTouches, remainingTouches);
+    
+    // Clear long press timeout if gesture completed
+    if (gestureInfo.completed && this._currentLongPressTimeout) {
+      clearTimeout(this._currentLongPressTimeout);
+      this._currentLongPressTimeout = null;
+    }
+    
+    // Use TouchInteractions for final gesture processing
+    if (gestureInfo.completed || gestureInfo.type === 'tap') {
+      this.touchInteractions.processGesture(gestureInfo, this.canvas, changedTouches[0]);
     }
   }
 
   /**
-   * Handle gesture end
-   * @param {Touch} lastTouch - Last touch that ended
+   * Set up long press detection for potential tap gestures
+   * @param {Object} gestureInfo - Gesture information from TouchGestures
+   * @param {Touch} touch - Original touch object
    */
-  _handleGestureEnd(lastTouch) {
-    const gestureType = this.gestureState.type;
-    
-    if (gestureType === 'potential-tap') {
-      // Process tap
-      this._handleTap(lastTouch);
-    } else if (gestureType === 'pan') {
-      // Pan ended - no specific action needed
-    } else if (gestureType === 'zoom') {
-      // Zoom ended - no specific action needed
+  _setupLongPressDetection(gestureInfo, touch) {
+    if (gestureInfo.type === 'potential-tap') {
+      // Clear any existing timeout
+      if (this._currentLongPressTimeout) {
+        clearTimeout(this._currentLongPressTimeout);
+      }
+      
+      // Set up long press timeout
+      this._currentLongPressTimeout = setTimeout(() => {
+        const currentGesture = this.touchGestures.getGestureState();
+        if (currentGesture.type === 'potential-tap') {
+          // Create touch data and handle long press
+          const touchData = this.touchInteractions.createTouchEventData(touch);
+          this.touchInteractions.handleLongPress(touchData);
+        }
+        this._currentLongPressTimeout = null;
+      }, this.config.longPressTimeout);
     }
-    
-    // Clear tap timeout
-    if (this.gestureState.tapTimeout) {
-      clearTimeout(this.gestureState.tapTimeout);
-      this.gestureState.tapTimeout = null;
-    }
-    
-    // Reset gesture state
-    this._resetGestureState();
-  }
-
-  /**
-   * Handle tap gesture
-   * @param {Touch} touch - Touch object
-   */
-  _handleTap(touch) {
-    const touchData = this._createTouchEventData(touch);
-    
-    if (this.gestureState.tapCount === 1) {
-      // Single tap
-      this.eventBus.emit(EVENT_TYPES.MOUSE_CLICK, touchData);
-    } else if (this.gestureState.tapCount === 2) {
-      // Double tap - fit to screen
-      this.eventBus.emit(EVENT_TYPES.VIEWPORT_FIT_TO_SCREEN, {
-        gesture: 'double-tap',
-        touch: touchData
-      });
-    }
-  }
-
-  /**
-   * Handle long press gesture
-   * @param {Object} touchData - Touch event data
-   */
-  _handleLongPress(touchData) {
-    // Long press - show context menu or special action
-    this.eventBus.emit(EVENT_TYPES.MOUSE_CLICK, {
-      ...touchData,
-      button: 2, // Right button equivalent
-      gesture: 'long-press'
-    });
   }
 
   /**
@@ -396,17 +189,14 @@ export class TouchEventHandler {
   _handleTouchCancel(event) {
     if (this.isDestroyed) return;
 
-    // Clear all touch tracking
-    this.touches.clear();
-    
-    // Clear tap timeout
-    if (this.gestureState.tapTimeout) {
-      clearTimeout(this.gestureState.tapTimeout);
-      this.gestureState.tapTimeout = null;
+    // Clear long press timeout
+    if (this._currentLongPressTimeout) {
+      clearTimeout(this._currentLongPressTimeout);
+      this._currentLongPressTimeout = null;
     }
     
-    // Reset gesture state
-    this._resetGestureState();
+    // Use TouchGestures for cleanup
+    this.touchGestures.handleTouchCancel();
   }
 
   /**
@@ -417,64 +207,6 @@ export class TouchEventHandler {
     event.preventDefault();
   }
 
-  /**
-   * Calculate distance between two touches
-   * @param {Touch} touch1 - First touch
-   * @param {Touch} touch2 - Second touch
-   * @returns {number} Distance in pixels
-   */
-  _calculateTouchDistance(touch1, touch2) {
-    const deltaX = touch1.clientX - touch2.clientX;
-    const deltaY = touch1.clientY - touch2.clientY;
-    return Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-  }
-
-  /**
-   * Calculate center point between two touches
-   * @param {Touch} touch1 - First touch
-   * @param {Touch} touch2 - Second touch
-   * @returns {Object} Center point {x, y}
-   */
-  _calculateTouchCenter(touch1, touch2) {
-    return {
-      x: (touch1.clientX + touch2.clientX) / 2,
-      y: (touch1.clientY + touch2.clientY) / 2
-    };
-  }
-
-  /**
-   * Create touch event data compatible with mouse events
-   * @param {Touch} touch - Touch object
-   * @returns {Object} Touch event data
-   */
-  _createTouchEventData(touch) {
-    // Create fake mouse event for compatibility
-    const fakeEvent = {
-      clientX: touch.clientX,
-      clientY: touch.clientY,
-      button: 0,
-      ctrlKey: false,
-      shiftKey: false,
-      altKey: false,
-      target: touch.target,
-      type: 'touch',
-      preventDefault: () => {},
-      stopPropagation: () => {}
-    };
-    
-    return EventUtils.createMouseEventData(fakeEvent, this.viewport);
-  }
-
-  /**
-   * Reset gesture state
-   */
-  _resetGestureState() {
-    this.gestureState.type = null;
-    this.gestureState.startTime = 0;
-    this.gestureState.lastDistance = 0;
-    this.gestureState.lastCenter = { x: 0, y: 0 };
-    // Don't reset tapCount - it's used for double tap detection
-  }
 
   /**
    * Get current touch state
@@ -482,9 +214,8 @@ export class TouchEventHandler {
    */
   getState() {
     return {
-      touchCount: this.touches.size,
-      gestureType: this.gestureState.type,
-      tapCount: this.gestureState.tapCount,
+      ...this.touchGestures.getTouchState(),
+      ...this.touchInteractions.getState(),
       isInitialized: this.isInitialized,
       isDestroyed: this.isDestroyed
     };
@@ -504,6 +235,7 @@ export class TouchEventHandler {
    */
   updateConfig(config) {
     this.config = { ...this.config, ...config };
+    this.touchGestures.updateConfig(config);
   }
 
   /**
@@ -522,15 +254,14 @@ export class TouchEventHandler {
       this.canvas.removeEventListener('contextmenu', this._handleContextMenu);
     }
 
-    // Clear timeouts
-    if (this.gestureState.tapTimeout) {
-      clearTimeout(this.gestureState.tapTimeout);
-      this.gestureState.tapTimeout = null;
+    // Clear long press timeout
+    if (this._currentLongPressTimeout) {
+      clearTimeout(this._currentLongPressTimeout);
+      this._currentLongPressTimeout = null;
     }
 
-    // Clear state
-    this.touches.clear();
-    this._resetGestureState();
+    // Use TouchGestures for cleanup
+    this.touchGestures.handleTouchCancel();
     
     this.isDestroyed = true;
   }

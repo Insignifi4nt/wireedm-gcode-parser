@@ -247,5 +247,7 @@ export const DEBUG = {
   ENABLED: false, // Set to true for development
   LOG_LEVEL: 'info', // 'debug', 'info', 'warn', 'error'
   SHOW_PERFORMANCE_METRICS: false,
-  SHOW_BOUNDS_DEBUG: false
+  SHOW_BOUNDS_DEBUG: true,
+  // When true, overlays arc centers and radial lines for debugging
+  SHOW_ARC_GEOMETRY: false
 };
