@@ -159,7 +159,8 @@ export class KeyboardHandler {
       description: 'Pan left',
       action: () => {
         if (this.viewport) {
-          this.viewport.pan(-VIEWPORT.PAN_STEP, 0);
+          // Left arrow should show content to the left - move viewport right
+          this.viewport.pan(VIEWPORT.PAN_STEP, 0);
           this.eventBus.emit(EVENT_TYPES.VIEWPORT_PAN_CHANGE, {
             ...this.viewport.getState(),
             canvasWidth: this.viewport.canvas.width,
@@ -173,7 +174,8 @@ export class KeyboardHandler {
       description: 'Pan right',
       action: () => {
         if (this.viewport) {
-          this.viewport.pan(VIEWPORT.PAN_STEP, 0);
+          // Right arrow should show content to the right - move viewport left
+          this.viewport.pan(-VIEWPORT.PAN_STEP, 0);
           this.eventBus.emit(EVENT_TYPES.VIEWPORT_PAN_CHANGE, {
             ...this.viewport.getState(),
             canvasWidth: this.viewport.canvas.width,

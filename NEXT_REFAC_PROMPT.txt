@@ -16,9 +16,10 @@ What's Done (So Far)
 - main.js: PR0–PR8 completed (ComponentInitializer DOM/init, EventWiring, AppOrchestrator, slim bootstrap, cleanup/docs).
 - Toolbar: PR0–PR5 completed (FileControls, ViewControls, ActionControls, orchestration, cleanup).
 - StatusMessage: PR0–PR5 completed (NotificationStyles, MessageQueue, ToastManager; StatusMessage as orchestrator). PR4 fixed broken getStats(), PR5 removed dead code/stubs.
+- TouchEventHandler: PR0–PR4 completed (TouchGestures gesture recognition, TouchInteractions viewport handling; TouchEventHandler as orchestrator). 537 → 267 lines (50% reduction).
 
 Next Session Objectives (Start Here)
-1) Review RefactoringFiles/RefactoringPlan.md and select the next refactor target based on "Priority Order". Next target: TouchEventHandler.js (536 lines), then MathUtils.
+1) Review RefactoringFiles/RefactoringPlan.md and select the next refactor target based on "Priority Order". Next target: MathUtils.js (531 lines) for geometry utilities split.
 2) Draft the plan for the chosen target BEFORE coding:
    - Add RefactoringFiles/<Target>/00-scope.md with goals, non‑goals, constraints, moduleization plan, PR sequence, acceptance criteria, and validation.
    - Add RefactoringFiles/<Target>/PRs/PR0-*.md (scaffold) and initial PRs with clear scope + verification steps (keep PRs small and behavior‑preserving).
