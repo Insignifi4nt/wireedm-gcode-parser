@@ -81,30 +81,7 @@ export class StatusMessage {
     this.container.appendChild(this.messageContainer);
   }
 
-  /**
-   * Apply container positioning styles
-   */
-  // Styles moved to NotificationStyles (applyContainerStyles)
 
-  /**
-   * Bind event listeners
-   */
-  bindEvents() {
-    // Listen for status events
-    const showCleanup = EventBus.on(EVENT_TYPES.STATUS_SHOW, (data) => {
-      this.show(data.message, data.type, data.duration, data.persistent);
-    });
-    
-    const hideCleanup = EventBus.on(EVENT_TYPES.STATUS_HIDE, () => {
-      this.hideAll();
-    });
-    
-    const updateCleanup = EventBus.on(EVENT_TYPES.STATUS_UPDATE, (data) => {
-      this.update(data.id, data.message, data.progress);
-    });
-    
-    this.eventCleanup.push(showCleanup, hideCleanup, updateCleanup);
-  }
 
   /**
    * Show a status message
@@ -186,56 +163,6 @@ export class StatusMessage {
   }
 
   /**
-   * Process the message queue
-   */
-  // Queue processing moved to MessageQueue
-
-  /**
-   * Create DOM element for a message
-   * @param {Object} messageData - Message data object
-   */
-  // Element creation moved to MessageQueue
-
-  /**
-   * Create message content HTML
-   * @param {Object} messageData - Message data object
-   * @returns {string} HTML content
-   */
-  // Content builder moved to NotificationStyles
-
-  /**
-   * Apply styling to message element
-   * @param {HTMLElement} element - Message element
-   * @param {string} type - Message type
-   */
-  // Message style application moved to NotificationStyles
-
-  /**
-   * Update progress bar for a message
-   * @param {Object} messageData - Message data object
-   */
-  updateProgress(messageData) { /* moved to MessageQueue */ }
-
-  /**
-   * Animate message entrance
-   * @param {HTMLElement} element - Message element
-   */
-  animateIn(element) { /* moved to MessageQueue */ }
-
-  /**
-   * Animate message exit and remove
-   * @param {Object} messageData - Message data object
-   */
-  hideMessage(messageData) { /* moved to MessageQueue */ }
-
-  /**
-   * Escape HTML characters
-   * @param {string} text - Text to escape
-   * @returns {string} Escaped text
-   */
-  // escapeHtml moved to NotificationStyles
-
-  /**
    * Convenience methods for different message types
    */
   
@@ -296,9 +223,9 @@ export class StatusMessage {
    * @returns {Object} Statistics object
    */
   getStats() {
+    const queueStats = this.queue?.getStats() || { activeMessages: 0, queuedMessages: 0 };
     return {
-      activeMessages: this.activeMessages.size,
-      queuedMessages: this.messageQueue.length,
+      ...queueStats,
       totalMessagesSent: this.messageIdCounter,
       maxMessages: this.maxMessages,
       defaultDuration: this.defaultDuration,

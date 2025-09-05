@@ -20,7 +20,7 @@ Navigation
  - Toolbar PR3: Extract ActionControls — completed.
  - Toolbar PR4: Orchestration cleanup — completed.
 - Toolbar PR5: Cleanup — completed.
- - StatusMessage PR0–PR3: Completed. NotificationStyles + MessageQueue + ToastManager extracted; StatusMessage orchestrates.
+ - StatusMessage PR0–PR5: Completed. NotificationStyles + MessageQueue + ToastManager extracted; StatusMessage orchestrates. PR4 fixed broken getStats(), PR5 removed dead code/stubs.
 
 ## Files Over 500 Lines Requiring Refactoring
 
@@ -76,6 +76,6 @@ Status: Completed. Toolbar orchestrates FileControls/ViewControls/ActionControls
 - `utils/geometry/BoundsCalculations.js` - Bounds utilities
 
 ## Priority Order
-1. Completed: GCodeDrawer, Canvas, EventManager, main.js, Toolbar
-2. Next: StatusMessage (notifications split)
-3. Then: TouchEventHandler, MathUtils
+1. Completed: GCodeDrawer, Canvas, EventManager, main.js, Toolbar, StatusMessage
+2. Next: TouchEventHandler (gesture recognition split)
+3. Then: MathUtils

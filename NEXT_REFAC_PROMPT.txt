@@ -1,68 +1,42 @@
-Next Refactor Session Prompt — Start Toolbar Split (FileControls, ViewControls, ActionControls)
+Next Refactor Session Prompt — Continue per RefactoringPlan
 
 Context
 - Repo: WireEDM_app (Vite app). Entry: index.html → src/main.js.
-- Branch: refactor (current working branch with GCodeDrawer PR1–PR5, Canvas PR1–PR5, EventManager PR0–PR9, and main PR0–PR8 completed).
-- Build: `npm run build`; Dev: `npm run dev`.
-- Coding style: `src/standards/CodingStandards.md` (ES modules, semicolons, 2‑space indent, named exports).
-- Commit style: single descriptive commit per PR using multiple `-m` paragraphs (see AGENTS.md). Do not push; I’ll push.
+- Branch: refactor (current working branch).
+- Scripts: npm run dev, npm run build, npm run preview. Node >= 16.
+- Coding style: src/standards/CodingStandards.md (ES modules, semicolons, 2‑space indent, named exports).
 
-What’s Done (So Far)
-- GCodeDrawer refactor complete; drawer orchestrates Editor/Toolbar/Undo/Selection.
-- Canvas refactor complete; Canvas composes CanvasGrid, PathHighlights, MarkerRenderer, CanvasRenderer.
-- EventManager split into `core/events/*` with compatibility re‑exports. Build validated.
-- main.js split complete; AppOrchestrator/ComponentInitializer/EventWiring in place; bootstrap slimmed; cleanup performed.
+Source of Truth
+- Read RefactoringFiles/RefactoringPlan.md for up‑to‑date status, priorities, and per‑file scope locations.
 
-Goal (Next File)
-- Refactor `src/components/Toolbar.js` (~619 lines in plan) into cohesive submodules:
-  - `components/toolbar/FileControls.js` — File I/O controls
-  - `components/toolbar/ViewControls.js` — Zoom/pan controls
-  - `components/toolbar/ActionControls.js` — Utility and export actions
+What's Done (So Far)
+- GCodeDrawer: PR1–PR5 completed (Sanitize, UndoRedoSystem, MultiSelectHandler, DrawerToolbar, GCodeEditor).
+- Canvas: PR1–PR5 completed (CanvasGrid, PathHighlights, MarkerRenderer, CanvasRenderer, cleanup).
+- EventManager: PR0–PR9 completed (EventTypes, Schemas, Validator, EventBus, DOMDelegation, EmitControls, EventHistory, bridge, cleanup).
+- main.js: PR0–PR8 completed (ComponentInitializer DOM/init, EventWiring, AppOrchestrator, slim bootstrap, cleanup/docs).
+- Toolbar: PR0–PR5 completed (FileControls, ViewControls, ActionControls, orchestration, cleanup).
+- StatusMessage: PR0–PR5 completed (NotificationStyles, MessageQueue, ToastManager; StatusMessage as orchestrator). PR4 fixed broken getStats(), PR5 removed dead code/stubs.
 
-First Steps (Critical)
-- Re‑evaluate Toolbar split plan and API boundaries:
-  - Map responsibilities currently in `Toolbar.js` across file I/O, viewport controls, and utility/export actions.
-  - Confirm EventBus events used/emit for FILE_*, VIEWPORT_*, GRID_*, EXPORT_*.
-  - Draft scopes under `RefactoringFiles/Toolbar/` (00-scope.md and PRs/PR1–PRn) mirroring the established style.
-
-Research Checklist
-1) Skim `src/main.js` to annotate sections: initialization, DOM build, component init, event wiring, file operations, viewport controls, status flows.
-2) Verify how `EventIntegration` plugs into mouse/touch/keyboard handlers and ensure its lifecycle is preserved.
-3) Audit selectors and element IDs used during DOM creation (keep names stable for CSS/queries).
-4) Review `Toolbar`, `Sidebar`, `GCodeDrawer`, `StatusMessage` constructors and their EventBus expectations.
-5) Confirm no default import of `EventManager` is used; keep named imports stable.
-
-Implementation Plan (Toolbar)
-- PR0: Scaffold `components/toolbar` submodules and wiring points.
-- PR1: Extract FileControls (file input, drag/drop hooks, validations) and delegate to FileHandler.
-- PR2: Extract ViewControls (zoom in/out/reset/fit) and align with `EVENT_TYPES.VIEWPORT_*`.
-- PR3: Extract ActionControls (clear points, export ISO/CSV) maintaining existing events and behavior.
-- PR4: Delegate state updates (enabled/disabled) from Toolbar to submodules; keep Toolbar as orchestrator.
-- PR5: Cleanup + docs; ensure public API and CSS hooks remain unchanged.
-
-Notes
-- No need to limit the number of PRs — use as many as needed for clean code and a successful refactor.
-- Keep CSS classes/IDs and event type semantics unchanged to avoid UI/behavior regressions.
-- Prefer named exports for new modules. Keep interfaces small and explicit.
-- Avoid import churn for other components; only `main.js` should change its imports significantly.
+Next Session Objectives (Start Here)
+1) Review RefactoringFiles/RefactoringPlan.md and select the next refactor target based on "Priority Order". Next target: TouchEventHandler.js (536 lines), then MathUtils.
+2) Draft the plan for the chosen target BEFORE coding:
+   - Add RefactoringFiles/<Target>/00-scope.md with goals, non‑goals, constraints, moduleization plan, PR sequence, acceptance criteria, and validation.
+   - Add RefactoringFiles/<Target>/PRs/PR0-*.md (scaffold) and initial PRs with clear scope + verification steps (keep PRs small and behavior‑preserving).
+3) Implement PR0 (scaffold stubs) and verify build.
+4) Implement PR1 extraction following the established pattern (small, focused, stable contracts), updating docs and plan as you go.
 
 Constraints
-- Behavior parity: listener lifetimes, emit semantics, validation toggles, and UI flows remain identical.
-- Stability: keep DOM structure (IDs/classes) and component contracts intact.
-- Compatibility: `index.html` continues to load `src/main.js` as the app entry; no change to public surface.
+- Preserve public APIs and event semantics; behavior parity is mandatory.
+- Keep DOM IDs/classes and visual output unchanged (no CSS or UX changes unless explicitly scoped in docs).
+- Avoid import churn outside the targeted module; favor re‑exports/compat layers if needed.
+
+Commit Style
+- One focused commit per PR with multi‑paragraph message (subject: type(scope): summary with PR label). Include brief bullets, docs references, and rationale. See AGENTS.md for formatting.
 
 Validation
-- Build: `npm run build` after each PR; ensure it passes.
-- Manual smoke: load file; drawer hover/click; add/delete/clear points; zoom/pan via controls and wheel; status messages; export flows; keyboard shortcuts; resize behavior.
-- Performance: no duplicate listeners; no regressions in event throughput or initial load.
+- Ensure npm run build passes after each PR.
+- Manual smoke per module: verify events, redraws, and state updates mirror pre‑refactor behavior; no duplicate listeners or regressions.
 
-Commits
-- One commit per PR with multi‑paragraph message:
-  - git add -A && git commit \
-    -m "refactor(main): PR1 extract DOM build to ComponentInitializer" \
-    -m "- Add src/core/ComponentInitializer.js building header/main/sidebar/canvas; return DOM refs.\n+- Move DOM creation logic from src/main.js; preserve IDs/classes and layout.\n+- Behavior unchanged; build passes." \
-    -m "Docs:\n- Add RefactoringFiles/main/PRs/PR1-ComponentInitializer.md with scope and verification steps." \
-    -m "Refs: RefactoringFiles/main/PRs/PR1-ComponentInitializer.md"
+Deliverable for First Step of Next Session
+- Produce the planning docs for the next file refactor (00‑scope.md and PRs/PR0… files). Confirm alignment with RefactoringPlan.md, then proceed to PR0/PR1 implementation.
 
-Deliverable for first session
-- Draft Toolbar scope and PR docs; extract FileControls (PR1) with behavior parity.
