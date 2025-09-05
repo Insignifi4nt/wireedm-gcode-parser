@@ -11,11 +11,43 @@
 
 ### 🔴 Critical Priority
 
+<!-- none currently -->
+
 ### 🟡 High Priority
+
+- [REFACTOR] Remove Global App Access Pattern ⏳
+  - Priority: 🟡 High
+  - Estimate: M
+  - File: `src/components/GCodeDrawer.js:149-153`
+  - Description: Replace `window.wireEDMViewer` access with event-driven data flow.
+  - Proposed: Add `app:get:clicked-points` request → `app:clicked-points:response`.
+
+- [FEATURE] Text Rendering System (grid/point labels) ⏳
+  - Priority: 🟡 High
+  - Estimate: L
+  - Files: `src/components/canvas/CanvasGrid.js`, `src/components/canvas/MarkerRenderer.js`, `src/components/Canvas.js`
+  - Description: Current grid label placement mixes a text-safe transform (no Y flip) with `worldToScreen` values that assume Y-flip, leading to misaligned labels. Rebuild label system to consistently place text along axes and markers with proper transforms.
+  - Acceptance:
+    - Grid axis labels render aligned to axes at expected intervals across zoom levels.
+    - Point marker labels (START/END/Pn) readable and not mirrored; placement rules defined for overlaps.
+    - No reliance on mismatched transform/coordinate spaces.
 
 ### 🟢 Medium Priority
 
+- [POLISH] Mouse Wheel Zoom behavior ⏳
+  - Priority: 🟢 Medium
+   - Estimate: M
+  - Files: `src/core/MouseEventHandler.js`, `src/core/Viewport.js`
+  - Description: Zoom is centered on screen as intended; refine acceleration, min/max clamp feel, and smoothing. Consider animated zoom or easing.
+  - Acceptance: Smooth, predictable zoom steps; clamped ranges feel natural; no jitter.
+
 ### 🔵 Low Priority
+
+- [UI] Button visual feedback improvements ⏳
+  - Priority: 🔵 Low
+  - Estimate: S
+  - Files: `src/styles/*.css`
+  - Description: Improve hover/active/disabled states for better affordance (not a bug).
 
 ## Refactoring & Technical Debt
 
@@ -54,9 +86,12 @@ _getClickedPointsFromApp() {
 ## Completed Tasks
 
 ### ✅ Done
-- Arc rendering fixes and G2/G3 coordinate normalization
-- Debug overlay system for arc geometry visualization
-- Parser improvements for IJ-absolute/relative modes
+- Arc rendering fixes and G2/G3 coordinate normalization; Debug overlay system for arc geometry visualization; Parser improvements for IJ-absolute/relative modes
+ - [BUG] Duplicate point delete emission — Fixed
+   - Resolution: Removed Sidebar direct `.delete-point-btn` listeners and rely on global `EventDelegator` capture for a single `POINT_DELETE` emission.
+   - Verified: Single click emits one `POINT_DELETE` and triggers one `POINT_UPDATE` cascade.
+   - Files: `src/components/Sidebar.js`, `src/core/EventDelegator.js`, `src/core/EventWiring.js`
+
 
 ---
 

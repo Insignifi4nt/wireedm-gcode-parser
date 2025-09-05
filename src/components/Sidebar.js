@@ -298,11 +298,6 @@ export class Sidebar {
     }).join('');
 
     this.pointListElement.innerHTML = pointsHTML;
-
-    // Add event listeners for delete buttons
-    this.pointListElement.querySelectorAll('.delete-point-btn').forEach(btn => {
-      btn.addEventListener('click', this.handleDeleteButtonClick.bind(this));
-    });
   }
 
   /**
@@ -353,22 +348,7 @@ export class Sidebar {
     `;
   }
 
-  /**
-   * Handle delete button clicks
-   * @param {Event} event - Click event
-   */
-  handleDeleteButtonClick(event) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const pointId = event.target.dataset.pointId;
-    if (!pointId) {
-      return;
-    }
-
-    const eventBus = EventBus.getInstance();
-    eventBus.emit(EVENT_TYPES.POINT_DELETE, { id: pointId });
-  }
+  
 
   /**
    * Re-index points after deletion
