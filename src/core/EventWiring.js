@@ -5,8 +5,9 @@
  */
 
 import { EventBus, EVENT_TYPES } from './EventManager.js';
+import { stripForEditing, canonicalizeMotionCodes } from '../utils/IsoNormalizer.js';
 
-// Utils imported dynamically where needed to avoid circular deps
+// Utils now statically imported for consistent bundling (avoid mixed static/dynamic)
 
 /**
  * Attach event wiring given the app context.
@@ -44,7 +45,6 @@ export function attachEventWiring(app) {
       if (app.gcodeDrawer && app.toolbar?.fileHandler?.loadedData) {
         const raw = app.toolbar.fileHandler.loadedData.content;
         try {
-          const { stripForEditing } = await import('../utils/IsoNormalizer.js');
           const stripped = stripForEditing(raw);
           app.gcodeDrawer.setContent({
             text: stripped,
@@ -52,7 +52,6 @@ export function attachEventWiring(app) {
           });
         } catch (_e) {
           try {
-            const { canonicalizeMotionCodes } = await import('../utils/IsoNormalizer.js');
             const canonical = canonicalizeMotionCodes(raw);
             app.gcodeDrawer.setContent({
               text: canonical,
@@ -112,7 +111,6 @@ export function attachEventWiring(app) {
 
     on('drawer:content:changed', async ({ text }) => {
       try {
-        const { canonicalizeMotionCodes } = await import('../utils/IsoNormalizer.js');
         const normalizedText = canonicalizeMotionCodes(text || '');
         const result = app.parser.parse(normalizedText);
         app.currentGCode = { path: result.path, bounds: result.bounds, stats: result.stats };

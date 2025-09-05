@@ -12,7 +12,6 @@ export default defineConfig({
         main: './index.html'
       }
     },
-    target: 'es2015',
     minify: 'terser'
   },
   server: {
@@ -29,7 +28,5 @@ export default defineConfig({
       targets: ['defaults', 'not IE 11']
     })
   ],
-  esbuild: {
-    target: 'es2015'
-  }
+  
 });

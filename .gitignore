@@ -64,3 +64,6 @@ memory_server.py
 
 # Test files
 /testing_gcode_files/
+
+# Claude
+/.claude/settings.local.json
