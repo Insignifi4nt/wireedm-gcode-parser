@@ -1,5 +1,6 @@
 {
   "name": "wire-edm-gcode-viewer",
+  "homepage": "https://insignifi4nt.github.io/wireedm-gcode-parser",
   "version": "1.0.0",
   "description": "A Wire EDM G-Code Viewer application with interactive visualization and measurement tools",
   "type": "module",
@@ -7,7 +8,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
   },
   "keywords": [
     "wire-edm",
@@ -24,5 +27,8 @@
   },
   "engines": {
     "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "gh-pages": "^6.3.0"
   }
 }
