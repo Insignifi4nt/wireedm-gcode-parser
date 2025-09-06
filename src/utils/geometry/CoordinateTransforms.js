@@ -1,6 +1,40 @@
 /**
  * Coordinate Transformations and Grid Utilities
  * Screen/world conversions, measurements, grid operations, precision utilities
+ * 
+ * COORDINATE SYSTEM ARCHITECTURE:
+ * 
+ * This module implements a dual coordinate system to handle different rendering contexts:
+ * 
+ * 1. WORLD COORDINATE SYSTEM (Y-axis flipped):
+ *    - Used for: G-code paths, geometry rendering, measurements
+ *    - Transform: translate(offsetX, canvasHeight - offsetY) + scale(zoom, -zoom)
+ *    - Functions: worldToScreen(), screenToWorld(), applyTransform()
+ *    - Y-axis is flipped to match CNC coordinate conventions
+ * 
+ * 2. TEXT COORDINATE SYSTEM (No Y-axis flip):
+ *    - Used for: Grid labels, point markers, text overlays  
+ *    - Transform: translate(offsetX, offsetY) + scale(zoom, zoom)
+ *    - Functions: worldToScreenTextSpace(), screenToWorldTextSpace()
+ *    - Y-axis is NOT flipped to prevent text from appearing upside-down
+ * 
+ * WHY DUAL SYSTEMS?
+ * - World system: Matches G-code coordinate conventions (Y+ = up)
+ * - Text system: Prevents text mirroring/inversion, ensures readability
+ * - Before this fix: Text used world coordinates but text transform -> misalignment
+ * - After this fix: Text uses dedicated text-space coordinates -> perfect alignment
+ * 
+ * IMPLEMENTATION STRATEGY A (CURRENTLY USED):
+ * - Text rendering uses identity transform + worldToScreen() coordinate conversion
+ * - Grid labels and point markers use viewport.worldToScreen() with screen-space positioning
+ * - No custom text transforms applied - text rendered at calculated screen pixel coordinates
+ * - Simple, reliable approach that avoids coordinate system confusion
+ * 
+ * USAGE GUIDELINES:
+ * - Use worldToScreen/screenToWorld for: paths, measurements, mouse interactions, text positioning
+ * - Use worldToScreenTextSpace/screenToWorldTextSpace for: utility functions, hit-testing
+ * - Text rendering: Use identity transform + worldToScreen() for coordinates (Strategy A)
+ * - Always match coordinate functions with their corresponding canvas transform
  */
 
 import { COORDINATES, VIEWPORT } from '../Constants.js';
@@ -85,6 +119,67 @@ export class CoordinateTransform {
     // Apply translation and scaling with Y-axis flip for CNC coordinates
     ctx.translate(offsetX, canvasHeight - offsetY);
     ctx.scale(zoom, -zoom);
+  }
+
+  /**
+   * Convert world coordinates to screen coordinates for text rendering
+   * (NO Y-axis flip - compatible with applyTextTransform)
+   * @param {number} worldX - World X coordinate
+   * @param {number} worldY - World Y coordinate
+   * @param {number} zoom - Current zoom level
+   * @param {number} offsetX - Viewport X offset
+   * @param {number} offsetY - Viewport Y offset
+   * @returns {Object} Screen coordinates {x, y}
+   */
+  static worldToScreenTextSpace(worldX, worldY, zoom, offsetX, offsetY) {
+    // Validate inputs to prevent coordinate errors
+    if (!isFinite(worldX) || !isFinite(worldY) || !isFinite(zoom) || zoom === 0) {
+      return { x: 0, y: 0 };
+    }
+    
+    // Text-space coordinate conversion (no Y-axis flip)
+    // Text transform: translate(offsetX, offsetY) + scale(zoom, zoom)
+    // So: screenX = worldX * zoom + offsetX
+    //     screenY = worldY * zoom + offsetY
+    const screenX = worldX * zoom + offsetX;
+    const screenY = worldY * zoom + offsetY;
+    
+    // Round to prevent sub-pixel positioning issues
+    return { 
+      x: Math.round(screenX * 100) / 100, // Round to 0.01 pixel precision
+      y: Math.round(screenY * 100) / 100
+    };
+  }
+
+  /**
+   * Convert screen coordinates to world coordinates for text rendering
+   * (NO Y-axis flip - compatible with applyTextTransform)
+   * @param {number} screenX - Screen X coordinate (pixels)
+   * @param {number} screenY - Screen Y coordinate (pixels)
+   * @param {number} zoom - Current zoom level
+   * @param {number} offsetX - Viewport X offset
+   * @param {number} offsetY - Viewport Y offset
+   * @returns {Object} World coordinates {x, y}
+   */
+  static screenToWorldTextSpace(screenX, screenY, zoom, offsetX, offsetY) {
+    // Validate inputs to prevent coordinate errors
+    if (!isFinite(screenX) || !isFinite(screenY) || !isFinite(zoom) || zoom === 0) {
+      return { x: 0, y: 0 };
+    }
+    
+    // Text-space coordinate conversion (no Y-axis flip)
+    // Text transform: translate(offsetX, offsetY) + scale(zoom, zoom)
+    // So: screenX = worldX * zoom + offsetX
+    //     screenY = worldY * zoom + offsetY
+    // Solving for world coordinates:
+    const worldX = (screenX - offsetX) / zoom;
+    const worldY = (screenY - offsetY) / zoom;
+    
+    // Apply precision rounding to prevent floating point drift
+    return { 
+      x: PrecisionUtils.round(worldX, COORDINATES.PRECISION), 
+      y: PrecisionUtils.round(worldY, COORDINATES.PRECISION)
+    };
   }
 }
 
@@ -186,9 +281,9 @@ export class GridUtils {
    */
   static calculateGridLines(zoom, offsetX, offsetY, canvasWidth, canvasHeight, gridSize) {
     const startX = Math.floor((-offsetX) / (gridSize * zoom)) * gridSize;
-    const endX = Math.ceil((-offsetX + canvasWidth) / zoom) / gridSize * gridSize;
+    const endX = Math.ceil((canvasWidth - offsetX) / (gridSize * zoom)) * gridSize;
     const startY = Math.floor((-offsetY) / (gridSize * zoom)) * gridSize;
-    const endY = Math.ceil((-offsetY + canvasHeight) / zoom) / gridSize * gridSize;
+    const endY = Math.ceil((canvasHeight - offsetY) / (gridSize * zoom)) * gridSize;
 
     const vertical = [];
     const horizontal = [];

@@ -5,7 +5,6 @@
 
 import { GRID, COORDINATES } from '../../utils/Constants.js';
 import { GridUtils, PrecisionUtils } from '../../utils/MathUtils.js';
-import { applyTextTransform } from './CanvasRenderer.js';
 
 /**
  * Draw the grid (minor/major lines and optional labels)
@@ -64,9 +63,17 @@ export function drawGridLabels(ctx, viewport, gridLines, opts = {}) {
   // Larger interval for labels to reduce crowding
   const labelInterval = majorInterval * 4;
 
-  // Save current transform and apply text-safe transform (no Y flip)
+  // Save current transform for grid labels (Strategy A: screen-space text rendering)
   ctx.save();
-  applyTextTransform(ctx, viewport, opts.devicePixelRatio || 1);
+
+  // Reset to identity transform for screen-space text rendering
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  
+  // Apply only DPI scaling if needed
+  const devicePixelRatio = opts.devicePixelRatio || 1;
+  if (devicePixelRatio > 1) {
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+  }
 
   ctx.fillStyle = GRID.COLORS.LABELS;
   ctx.font = '9px Arial';
@@ -74,6 +81,7 @@ export function drawGridLabels(ctx, viewport, gridLines, opts = {}) {
   ctx.textBaseline = 'top';
 
   // Draw X-axis labels (only at larger intervals)
+  // Use viewport.worldToScreen for consistent coordinate conversion
   vertical.forEach((x) => {
     if (x % labelInterval === 0 && x !== 0) {
       const screenCoords = viewport.worldToScreen(x, 0);
@@ -104,8 +112,8 @@ export function drawGridLabels(ctx, viewport, gridLines, opts = {}) {
 function _drawGridLines(ctx, viewport, gridLines, major, devicePixelRatio) {
   const { vertical, horizontal } = gridLines;
 
-  // Screen-space stroke widths for consistent appearance
-  const cssToWorld = (valuePx) => (valuePx * devicePixelRatio) / viewport.zoom;
+  // Screen-space stroke widths for consistent appearance  
+  const cssToWorld = (valuePx) => valuePx / (devicePixelRatio * viewport.zoom);
   if (major) {
     ctx.strokeStyle = GRID.COLORS.MAJOR;
     ctx.lineWidth = cssToWorld(GRID.LINE_WIDTH.MAJOR);
