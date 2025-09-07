@@ -4,7 +4,6 @@
  */
 
 import { MARKERS } from '../../utils/Constants.js';
-import { applyTextTransform } from './CanvasRenderer.js';
 
 /**
  * Render a point marker with optional label.
@@ -17,10 +16,8 @@ import { applyTextTransform } from './CanvasRenderer.js';
  * @param {number} devicePixelRatio
  */
 export function renderMarker(ctx, viewport, point, config, devicePixelRatio = 1) {
-  const cssToWorld = (px) => (px * (devicePixelRatio || 1)) / viewport.zoom;
+  const cssToWorld = (px) => px / ((devicePixelRatio || 1) * viewport.zoom);
   const scaledRadius = cssToWorld(config.RADIUS_PX ?? 3);
-  const scaledOffsetX = config.OFFSET?.X ?? 0;
-  const scaledOffsetY = config.OFFSET?.Y ?? 0;
 
   // Draw circle in world space (Y-axis flip handled by viewport transform)
   ctx.fillStyle = config.COLOR;
@@ -30,13 +27,27 @@ export function renderMarker(ctx, viewport, point, config, devicePixelRatio = 1)
 
   if (config.LABEL) {
     ctx.save();
-    applyTextTransform(ctx, viewport, devicePixelRatio || 1);
+    
+    // Strategy A: screen-space text rendering with identity transform
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    
+    // Apply only DPI scaling if needed
+    if (devicePixelRatio > 1) {
+      ctx.scale(devicePixelRatio, devicePixelRatio);
+    }
+    
+    // Use viewport.worldToScreen for consistent coordinate conversion (with Y-flip)
     const screen = viewport.worldToScreen(point.x, point.y);
+    
+    // Use pixel offsets for label placement in screen space
+    const pixelOffsetX = (config.OFFSET?.X ?? 0);
+    const pixelOffsetY = (config.OFFSET?.Y ?? 0);
+    
     ctx.fillStyle = config.COLOR;
     ctx.font = config.FONT || '10px Arial';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(config.LABEL, screen.x + scaledOffsetX, screen.y + scaledOffsetY);
+    ctx.fillText(config.LABEL, screen.x + pixelOffsetX, screen.y + pixelOffsetY);
     ctx.restore();
   }
 }

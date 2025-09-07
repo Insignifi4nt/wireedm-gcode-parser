@@ -15,24 +15,15 @@
 
 ### 🟡 High Priority
 
-- [REFACTOR] Remove Global App Access Pattern ⏳
+- [REFACTOR] Remove Toolbar Global Access ⏳
   - Priority: 🟡 High
-  - Estimate: M
-  - File: `src/components/GCodeDrawer.js:149-153`
-  - Description: Replace `window.wireEDMViewer` access with event-driven data flow.
-  - Proposed: Add `app:get:clicked-points` request → `app:clicked-points:response`.
-
-- [FEATURE] Text Rendering System (grid/point labels) ⏳
-  - Priority: 🟡 High
-  - Estimate: L
-  - Files: `src/components/canvas/CanvasGrid.js`, `src/components/canvas/MarkerRenderer.js`, `src/components/Canvas.js`
-  - Description: Current grid label placement mixes a text-safe transform (no Y flip) with `worldToScreen` values that assume Y-flip, leading to misaligned labels. Rebuild label system to consistently place text along axes and markers with proper transforms.
-  - Acceptance:
-    - Grid axis labels render aligned to axes at expected intervals across zoom levels.
-    - Point marker labels (START/END/Pn) readable and not mirrored; placement rules defined for overlaps.
-    - No reliance on mismatched transform/coordinate spaces.
+  - Estimate: S
+  - Files: `src/components/Toolbar.js:214`
+  - Description: Replace `window.wireEDMViewer` access for normalization text with an event-driven or injected dependency approach (e.g., pass drawer reference via constructor or use EventBus request/response).
+  - Acceptance: No direct `window.wireEDMViewer` usage in Toolbar; normalization still works when drawer is open or when only file content is present.
 
 ### 🟢 Medium Priority
+
 
 - [POLISH] Mouse Wheel Zoom behavior ⏳
   - Priority: 🟢 Medium
@@ -51,35 +42,20 @@
 
 ## Refactoring & Technical Debt
 
-### [REFACTOR] Remove Global App Access Pattern ⏳
+### [REFACTOR] Remove Global App Access Pattern ✅
 **Priority**: 🟡 High  
 **Category**: [REFACTOR]  
 **Estimate**: M  
-**File**: `src/components/GCodeDrawer.js:149-153`
+**File**: `src/components/GCodeDrawer.js`
 
-**Current Issue**:
-```javascript
-_getClickedPointsFromApp() {
-  // Peek global app instance for now; future: pass via event
-  const app = window.wireEDMViewer;
-  return app?.clickedPoints || [];
-}
-```
+**Resolution**:
+- Implemented event-driven retrieval of clicked points in `GCodeDrawer`.
+- Added/used event types: `point:get:clicked` → `point:clicked:response`.
+- Wired response in `src/core/EventWiring.js` to return a copy of `app.clickedPoints`.
 
-**Why This Needs Refactoring**:
-- Breaks component isolation by directly accessing global state
-- Creates tight coupling between GCodeDrawer and main app instance
-- Makes component harder to test and reuse
-- Violates the event-driven architecture pattern used elsewhere
-- Could cause runtime errors if `window.wireEDMViewer` is undefined
-
-**Proposed Solution**:
-1. Create new event type `app:get:clicked-points` 
-2. Replace global access with event-based communication
-3. Main app responds with `app:clicked-points:response` event
-4. Update GCodeDrawer to use async event pattern for data retrieval
-
-**Impact**: Improves component isolation, testability, and architectural consistency
+**Notes**:
+- Legacy global `window.wireEDMViewer` remains for backward compatibility, but `GCodeDrawer` no longer relies on it.
+- Follow-up tracked above: remove Toolbar’s remaining global usage for normalization text.
 
 ---
 
@@ -91,6 +67,15 @@ _getClickedPointsFromApp() {
    - Resolution: Removed Sidebar direct `.delete-point-btn` listeners and rely on global `EventDelegator` capture for a single `POINT_DELETE` emission.
    - Verified: Single click emits one `POINT_DELETE` and triggers one `POINT_UPDATE` cascade.
    - Files: `src/components/Sidebar.js`, `src/core/EventDelegator.js`, `src/core/EventWiring.js`
+ - [REFACTOR] Remove Global App Access Pattern — Completed
+   - Resolution: `GCodeDrawer` now requests clicked points via events; `EventWiring` responds with `POINT_CLICKED_RESPONSE`.
+   - Files: `src/components/GCodeDrawer.js`, `src/core/events/EventTypes.js`, `src/core/EventWiring.js`
+ - [BUG] Text Rendering System — Fixed coordinate mismatch for grid labels and point markers
+   - Resolution: Adopted Strategy A (screen-space text with `viewport.worldToScreen`); grid/marker labels now align perfectly at all zoom levels.
+   - Files: `src/components/canvas/CanvasGrid.js`, `src/components/canvas/MarkerRenderer.js`, `src/utils/geometry/CoordinateTransforms.js`
+ - [FEATURE] Dynamic Grid System — Implemented zoom-responsive grid density with adaptive spacing and infinite coordinate axes
+   - Resolution: Added logarithmic grid spacing algorithms, pixel-density visibility thresholds, and viewport-bounded infinite axes. Label precision adapts to spacing (coarser → fewer decimals).
+   - Files: `src/utils/Constants.js`, `src/utils/geometry/CoordinateTransforms.js`, `src/components/canvas/CanvasGrid.js`
 
 
 ---

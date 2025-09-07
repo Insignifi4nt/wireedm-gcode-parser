@@ -102,7 +102,7 @@ function _getMoveEndPoint(move) {
 function _renderLinearMove(ctx, viewport, from, to, devicePixelRatio) {
   if (!ValidationUtils.isValidPoint(from) || !ValidationUtils.isValidPoint(to)) return;
   const style = to.type === 'rapid' ? PATH_STYLES.RAPID : PATH_STYLES.CUT;
-  const cssToWorld = (px) => (px * devicePixelRatio) / viewport.zoom;
+  const cssToWorld = (px) => px / (devicePixelRatio * viewport.zoom);
   ctx.strokeStyle = style.COLOR;
   ctx.lineWidth = cssToWorld(style.LINE_WIDTH_PX ?? 1);
   const dashPx = style.LINE_DASH_PX ?? [];
@@ -115,7 +115,7 @@ function _renderLinearMove(ctx, viewport, from, to, devicePixelRatio) {
 
 function _renderArcMove(ctx, viewport, move, devicePixelRatio) {
   if (!_isValidArcMove(move)) return;
-  const cssToWorld = (px) => (px * devicePixelRatio) / viewport.zoom;
+  const cssToWorld = (px) => px / (devicePixelRatio * viewport.zoom);
   ctx.strokeStyle = PATH_STYLES.ARC.COLOR;
   ctx.lineWidth = cssToWorld(PATH_STYLES.ARC.LINE_WIDTH_PX ?? 1);
   const dashPx = PATH_STYLES.ARC.LINE_DASH_PX ?? [];

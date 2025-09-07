@@ -1,9 +1,43 @@
 /**
  * Coordinate Transformations and Grid Utilities
  * Screen/world conversions, measurements, grid operations, precision utilities
+ * 
+ * COORDINATE SYSTEM ARCHITECTURE:
+ * 
+ * This module implements a dual coordinate system to handle different rendering contexts:
+ * 
+ * 1. WORLD COORDINATE SYSTEM (Y-axis flipped):
+ *    - Used for: G-code paths, geometry rendering, measurements
+ *    - Transform: translate(offsetX, canvasHeight - offsetY) + scale(zoom, -zoom)
+ *    - Functions: worldToScreen(), screenToWorld(), applyTransform()
+ *    - Y-axis is flipped to match CNC coordinate conventions
+ * 
+ * 2. TEXT COORDINATE SYSTEM (No Y-axis flip):
+ *    - Used for: Grid labels, point markers, text overlays  
+ *    - Transform: translate(offsetX, offsetY) + scale(zoom, zoom)
+ *    - Functions: worldToScreenTextSpace(), screenToWorldTextSpace()
+ *    - Y-axis is NOT flipped to prevent text from appearing upside-down
+ * 
+ * WHY DUAL SYSTEMS?
+ * - World system: Matches G-code coordinate conventions (Y+ = up)
+ * - Text system: Prevents text mirroring/inversion, ensures readability
+ * - Before this fix: Text used world coordinates but text transform -> misalignment
+ * - After this fix: Text uses dedicated text-space coordinates -> perfect alignment
+ * 
+ * IMPLEMENTATION STRATEGY A (CURRENTLY USED):
+ * - Text rendering uses identity transform + worldToScreen() coordinate conversion
+ * - Grid labels and point markers use viewport.worldToScreen() with screen-space positioning
+ * - No custom text transforms applied - text rendered at calculated screen pixel coordinates
+ * - Simple, reliable approach that avoids coordinate system confusion
+ * 
+ * USAGE GUIDELINES:
+ * - Use worldToScreen/screenToWorld for: paths, measurements, mouse interactions, text positioning
+ * - Use worldToScreenTextSpace/screenToWorldTextSpace for: utility functions, hit-testing
+ * - Text rendering: Use identity transform + worldToScreen() for coordinates (Strategy A)
+ * - Always match coordinate functions with their corresponding canvas transform
  */
 
-import { COORDINATES, VIEWPORT } from '../Constants.js';
+import { COORDINATES, VIEWPORT, DYNAMIC_GRID } from '../Constants.js';
 
 /**
  * Coordinate transformation utilities
@@ -85,6 +119,67 @@ export class CoordinateTransform {
     // Apply translation and scaling with Y-axis flip for CNC coordinates
     ctx.translate(offsetX, canvasHeight - offsetY);
     ctx.scale(zoom, -zoom);
+  }
+
+  /**
+   * Convert world coordinates to screen coordinates for text rendering
+   * (NO Y-axis flip - compatible with applyTextTransform)
+   * @param {number} worldX - World X coordinate
+   * @param {number} worldY - World Y coordinate
+   * @param {number} zoom - Current zoom level
+   * @param {number} offsetX - Viewport X offset
+   * @param {number} offsetY - Viewport Y offset
+   * @returns {Object} Screen coordinates {x, y}
+   */
+  static worldToScreenTextSpace(worldX, worldY, zoom, offsetX, offsetY) {
+    // Validate inputs to prevent coordinate errors
+    if (!isFinite(worldX) || !isFinite(worldY) || !isFinite(zoom) || zoom === 0) {
+      return { x: 0, y: 0 };
+    }
+    
+    // Text-space coordinate conversion (no Y-axis flip)
+    // Text transform: translate(offsetX, offsetY) + scale(zoom, zoom)
+    // So: screenX = worldX * zoom + offsetX
+    //     screenY = worldY * zoom + offsetY
+    const screenX = worldX * zoom + offsetX;
+    const screenY = worldY * zoom + offsetY;
+    
+    // Round to prevent sub-pixel positioning issues
+    return { 
+      x: Math.round(screenX * 100) / 100, // Round to 0.01 pixel precision
+      y: Math.round(screenY * 100) / 100
+    };
+  }
+
+  /**
+   * Convert screen coordinates to world coordinates for text rendering
+   * (NO Y-axis flip - compatible with applyTextTransform)
+   * @param {number} screenX - Screen X coordinate (pixels)
+   * @param {number} screenY - Screen Y coordinate (pixels)
+   * @param {number} zoom - Current zoom level
+   * @param {number} offsetX - Viewport X offset
+   * @param {number} offsetY - Viewport Y offset
+   * @returns {Object} World coordinates {x, y}
+   */
+  static screenToWorldTextSpace(screenX, screenY, zoom, offsetX, offsetY) {
+    // Validate inputs to prevent coordinate errors
+    if (!isFinite(screenX) || !isFinite(screenY) || !isFinite(zoom) || zoom === 0) {
+      return { x: 0, y: 0 };
+    }
+    
+    // Text-space coordinate conversion (no Y-axis flip)
+    // Text transform: translate(offsetX, offsetY) + scale(zoom, zoom)
+    // So: screenX = worldX * zoom + offsetX
+    //     screenY = worldY * zoom + offsetY
+    // Solving for world coordinates:
+    const worldX = (screenX - offsetX) / zoom;
+    const worldY = (screenY - offsetY) / zoom;
+    
+    // Apply precision rounding to prevent floating point drift
+    return { 
+      x: PrecisionUtils.round(worldX, COORDINATES.PRECISION), 
+      y: PrecisionUtils.round(worldY, COORDINATES.PRECISION)
+    };
   }
 }
 
@@ -175,35 +270,93 @@ export class GridUtils {
   }
 
   /**
-   * Calculate grid lines for rendering
+   * Pick optimal grid spacing for given zoom level
+   * @param {number} zoom - Current zoom level
+   * @param {number} targetPx - Target spacing in pixels (default: DYNAMIC_GRID.TARGET_MINOR_PX)
+   * @returns {number} Optimal grid spacing in world units
+   */
+  static pickGridSpacing(zoom, targetPx = DYNAMIC_GRID.TARGET_MINOR_PX) {
+    const worldTarget = targetPx / zoom;
+    const pow = Math.pow(10, Math.floor(Math.log10(worldTarget)));
+    
+    // Find smallest step that satisfies s*pow >= worldTarget
+    for (const step of DYNAMIC_GRID.STEPS) {
+      const spacing = step * pow;
+      if (spacing >= worldTarget) {
+        return spacing;
+      }
+    }
+    
+    // Fallback: bump to next power of 10 when worldTarget > last step * pow
+    // Ensures proper 1-2-5 progression (e.g., 7 -> 10)
+    return 10 * pow;
+  }
+
+  /**
+   * Pick optimal label spacing based on minor spacing and zoom level
+   * @param {number} minorWorld - Minor grid spacing in world units
+   * @param {number} zoom - Current zoom level
+   * @param {number} targetPx - Target label spacing in pixels (default: DYNAMIC_GRID.TARGET_LABEL_PX)
+   * @returns {number} Optimal label spacing in world units
+   */
+  static pickLabelSpacing(minorWorld, zoom, targetPx = DYNAMIC_GRID.TARGET_LABEL_PX) {
+    const labelWorldTarget = targetPx / zoom;
+    const k = Math.ceil(labelWorldTarget / minorWorld);
+
+    // Snap k to the 1-2-5 progression at the appropriate power of 10
+    const pow = Math.pow(10, Math.floor(Math.log10(k)));
+    const multipliers = [1, 2, 5];
+    for (const mult of multipliers) {
+      const candidate = mult * pow;
+      if (candidate >= k) {
+        return candidate * minorWorld;
+      }
+    }
+    // If no multiplier was large enough, bump to next power of 10
+    return (10 * pow) * minorWorld;
+  }
+
+  /**
+   * Calculate grid lines for rendering using index-based iteration
    * @param {number} zoom - Current zoom level
    * @param {number} offsetX - Viewport X offset
    * @param {number} offsetY - Viewport Y offset
    * @param {number} canvasWidth - Canvas width
    * @param {number} canvasHeight - Canvas height
    * @param {number} gridSize - Grid size
-   * @returns {Object} Grid lines {vertical, horizontal}
+   * @returns {Object} Grid lines {vertical, horizontal, verticalIndices, horizontalIndices}
    */
   static calculateGridLines(zoom, offsetX, offsetY, canvasWidth, canvasHeight, gridSize) {
-    const startX = Math.floor((-offsetX) / (gridSize * zoom)) * gridSize;
-    const endX = Math.ceil((-offsetX + canvasWidth) / zoom) / gridSize * gridSize;
-    const startY = Math.floor((-offsetY) / (gridSize * zoom)) * gridSize;
-    const endY = Math.ceil((-offsetY + canvasHeight) / zoom) / gridSize * gridSize;
+    // Calculate world bounds
+    const worldStartX = -offsetX / zoom;
+    const worldEndX = (canvasWidth - offsetX) / zoom;
+    const worldStartY = -offsetY / zoom;
+    const worldEndY = (canvasHeight - offsetY) / zoom;
+
+    // Use index-based iteration to avoid floating point accumulation
+    const iStartX = Math.ceil(worldStartX / gridSize);
+    const iEndX = Math.floor(worldEndX / gridSize);
+    const iStartY = Math.ceil(worldStartY / gridSize);
+    const iEndY = Math.floor(worldEndY / gridSize);
 
     const vertical = [];
     const horizontal = [];
+    const verticalIndices = [];
+    const horizontalIndices = [];
 
     // Calculate vertical lines
-    for (let x = startX; x <= endX; x += gridSize) {
-      vertical.push(x);
+    for (let i = iStartX; i <= iEndX; i++) {
+      vertical.push(i * gridSize);
+      verticalIndices.push(i);
     }
 
     // Calculate horizontal lines
-    for (let y = startY; y <= endY; y += gridSize) {
-      horizontal.push(y);
+    for (let i = iStartY; i <= iEndY; i++) {
+      horizontal.push(i * gridSize);
+      horizontalIndices.push(i);
     }
 
-    return { vertical, horizontal };
+    return { vertical, horizontal, verticalIndices, horizontalIndices };
   }
 }
 

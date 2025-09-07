@@ -242,6 +242,17 @@ export const COORDINATES = {
   Y_AXIS_FLIPPED: true // Canvas Y-axis is flipped compared to CNC
 };
 
+// Dynamic Grid System Configuration
+export const DYNAMIC_GRID = {
+  STEPS: [1, 2, 5],
+  TARGET_MINOR_PX: 12,
+  MINOR_VISIBILITY_PX: 3,
+  TARGET_LABEL_PX: 80,
+  LABEL_VISIBILITY_PX: 50,
+  MAJOR_MULTIPLIERS: [5, 10], // optional for major grid beyond axes
+  HYSTERESIS: { GRID_PX: 0.5, LABEL_PX: 10 }
+};
+
 // Development and Debug Configuration
 export const DEBUG = {
   ENABLED: false, // Set to true for development
