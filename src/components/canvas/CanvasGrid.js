@@ -6,6 +6,10 @@
 import { GRID, COORDINATES, DYNAMIC_GRID } from '../../utils/Constants.js';
 import { GridUtils, PrecisionUtils } from '../../utils/MathUtils.js';
 
+// Persist visibility state to apply hysteresis and prevent flicker
+let lastShowMinor;
+let lastShowLabels;
+
 /**
  * Draw the grid (minor/major lines and optional labels)
  * Expects that the caller has already applied the correct world transform.
@@ -28,8 +32,33 @@ export function drawGrid(ctx, viewport, opts = {}) {
   // Calculate visibility based on pixel density (CSS pixels)
   const minorPx = minorSpacing * state.zoom;
   const labelPx = labelSpacing * state.zoom;
-  const showMinor = minorPx >= DYNAMIC_GRID.MINOR_VISIBILITY_PX;
-  const showLabels = labelPx >= DYNAMIC_GRID.LABEL_VISIBILITY_PX;
+  const gridH = (DYNAMIC_GRID.HYSTERESIS && DYNAMIC_GRID.HYSTERESIS.GRID_PX) || 0;
+  const labelH = (DYNAMIC_GRID.HYSTERESIS && DYNAMIC_GRID.HYSTERESIS.LABEL_PX) || 0;
+
+  // Apply hysteresis: widen the band to avoid flicker near thresholds
+  let showMinor;
+  if (typeof lastShowMinor === 'boolean') {
+    const thresh = DYNAMIC_GRID.MINOR_VISIBILITY_PX;
+    showMinor = lastShowMinor
+      ? minorPx >= (thresh - gridH)
+      : minorPx >= (thresh + gridH);
+  } else {
+    showMinor = minorPx >= DYNAMIC_GRID.MINOR_VISIBILITY_PX;
+  }
+
+  let showLabels;
+  if (typeof lastShowLabels === 'boolean') {
+    const thresh = DYNAMIC_GRID.LABEL_VISIBILITY_PX;
+    showLabels = lastShowLabels
+      ? labelPx >= (thresh - labelH)
+      : labelPx >= (thresh + labelH);
+  } else {
+    showLabels = labelPx >= DYNAMIC_GRID.LABEL_VISIBILITY_PX;
+  }
+
+  // Persist decisions for next frame
+  lastShowMinor = showMinor;
+  lastShowLabels = showLabels;
 
   // Calculate visible grid lines using dynamic spacing
   const gridLines = GridUtils.calculateGridLines(
