@@ -24,6 +24,10 @@ export class DrawerToolbar {
         <strong>G-Code</strong>
         <span class="gcode-line-count">0 lines</span>
       </div>
+      <div class="gcode-mode-toggle">
+        <button class="gcode-mode-btn gcode-mode-btn--select active" data-mode="select" title="Select mode - Click lines to select" aria-pressed="true">Select</button>
+        <button class="gcode-mode-btn gcode-mode-btn--edit" data-mode="edit" title="Edit mode - Click text to edit" aria-pressed="false">Edit</button>
+      </div>
       <div class="gcode-drawer-actions">
         <button class="gcode-action-btn" data-action="undo" title="Undo (Ctrl+Z)" disabled>↶</button>
         <button class="gcode-action-btn" data-action="redo" title="Redo (Ctrl+Y)" disabled>↷</button>
@@ -68,6 +72,10 @@ export class DrawerToolbar {
     on('[data-action="move-down"]', 'click', () => this.handlers.onMoveDown?.());
     on('[data-action="insert-points"]', 'click', () => this.handlers.onInsertPoints?.());
     on('[data-action="delete-selected"]', 'click', () => this.handlers.onDeleteSelected?.());
+    
+    // Mode toggle event binding
+    on('[data-mode="select"]', 'click', () => this.handlers.onModeToggle?.('select'));
+    on('[data-mode="edit"]', 'click', () => this.handlers.onModeToggle?.('edit'));
   }
 
   updateLineCount(count) {
@@ -113,7 +121,31 @@ export class DrawerToolbar {
     if (deleteBtn) deleteBtn.disabled = !hasSelection;
     if (insertBtn) insertBtn.disabled = !hasSelection;
   }
+
+  updateModeUI(editMode) {
+    const selectBtn = this.container.querySelector('[data-mode="select"]');
+    const editBtn = this.container.querySelector('[data-mode="edit"]');
+    const ctx = this.container.querySelector('.gcode-context-toolbar');
+    
+    if (selectBtn && editBtn) {
+      if (editMode) {
+        selectBtn.classList.remove('active');
+        editBtn.classList.add('active');
+        selectBtn.setAttribute('aria-pressed', 'false');
+        editBtn.setAttribute('aria-pressed', 'true');
+      } else {
+        selectBtn.classList.add('active');
+        editBtn.classList.remove('active');
+        selectBtn.setAttribute('aria-pressed', 'true');
+        editBtn.setAttribute('aria-pressed', 'false');
+      }
+    }
+
+    // Hide selection context toolbar in Edit mode (shown based on selection in Select mode)
+    if (ctx) {
+      if (editMode) ctx.style.display = 'none';
+    }
+  }
 }
 
 export default DrawerToolbar;
-

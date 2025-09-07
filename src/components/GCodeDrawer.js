@@ -32,6 +32,10 @@ export class GCodeDrawer {
     // Editing state is managed by GCodeEditor
     this.maxHistorySize = 50; // Limit history size
     this.undoSystem = new UndoRedoSystem({ max: this.maxHistorySize, onChange: () => this._updateUndoRedoButtons() });
+    // Mode toggle: false = Select mode (default, safer), true = Edit mode
+    this.editMode = localStorage.getItem('gcodeDrawerMode') === 'edit' || false;
+    // Preserve selection across content refreshes triggered by edits
+    this._pendingSelectionRestore = null;
     mountTarget.appendChild(this.container);
     this._applyAnchorClass();
     this._render();
@@ -74,7 +78,8 @@ export class GCodeDrawer {
           console.error('Error inserting points:', error);
         }
       },
-      onDeleteSelected: () => this._onBulkDelete()
+      onDeleteSelected: () => this._onBulkDelete(),
+      onModeToggle: (mode) => this._onModeToggle(mode)
     });
     this.headerEl = this.container.querySelector('.gcode-drawer-header');
     this.bodyEl = this.container.querySelector('.gcode-drawer-body');
@@ -86,6 +91,7 @@ export class GCodeDrawer {
     // Initialize editor for line DOM and editing behaviors
     this.editor = new GCodeEditor(this.bodyEl, {
       undoSystem: this.undoSystem,
+      editMode: this.editMode,
       onLineEdited: (force) => this._onLineEdited(force),
       onHover: (lineNum) => this._onHover(lineNum),
       onLeave: (lineNum) => this._onLeave(lineNum),
@@ -101,11 +107,34 @@ export class GCodeDrawer {
       },
       updateLineCount: () => this._updateLineCount()
     });
+
+    // Initialize toolbar mode UI
+    this.toolbar?.updateModeUI(this.editMode);
+
+    // Apply initial mode class and help text
+    this._applyModeClass();
+    this._updateHelpText();
   }
 
   _bindGlobalEvents() {
     // Toggle
     this.eventBus.on('drawer:toggle', () => this.toggle());
+  }
+
+  _applyModeClass() {
+    // Toggle container classes for mode-specific styling
+    this.container.classList.toggle('gcode-drawer--mode-edit', !!this.editMode);
+    this.container.classList.toggle('gcode-drawer--mode-select', !this.editMode);
+  }
+
+  _updateHelpText() {
+    const helpEl = this.container.querySelector('.gcode-help-text');
+    if (!helpEl) return;
+    if (this.editMode) {
+      helpEl.textContent = 'Edit mode: Click text to edit • Blur commits change • Undo/Redo while typing uses browser shortcuts';
+    } else {
+      helpEl.textContent = 'Select mode: Hover to preview • Click to select • Ctrl/Cmd+click for multi-select • Shift+click for range';
+    }
   }
 
   toggle(force) {
@@ -152,6 +181,13 @@ export class GCodeDrawer {
     
     // Initialize undo/redo buttons
     this._updateUndoRedoButtons();
+
+    // Restore selection if an edit-triggered refresh requested it
+    if (this._pendingSelectionRestore && (this._pendingSelectionRestore.size || this._pendingSelectionRestore.length)) {
+      const toRestore = Array.from(this._pendingSelectionRestore);
+      this._pendingSelectionRestore = null;
+      this._restoreSelection(toRestore);
+    }
   }
 
   _onHover(lineNum) {
@@ -251,6 +287,8 @@ export class GCodeDrawer {
         this._restoreSelection(movedSelection);
       }, 0);
     } else {
+      // Preserve selection across content refresh for non-move operations (e.g., edit)
+      this._pendingSelectionRestore = new Set(this.selectedLines);
       this._emitContentChanged(this.getText());
     }
   }
@@ -275,6 +313,8 @@ export class GCodeDrawer {
         this._restoreSelection(movedSelection);
       }, 0);
     } else {
+      // Preserve selection across content refresh for non-move operations (e.g., edit)
+      this._pendingSelectionRestore = new Set(this.selectedLines);
       this._emitContentChanged(this.getText());
     }
   }
@@ -356,10 +396,14 @@ export class GCodeDrawer {
     }
     const fire = () => this._emitContentChanged(this.getText());
     if (force) {
+      // Preserve current selection across the imminent content refresh
+      this._pendingSelectionRestore = new Set(this.selectedLines);
       fire();
     } else {
       // Increased debounce timeout to 3000ms to allow uninterrupted editing
       // Short debounce times (100ms) disrupt editing by constantly refreshing the drawer
+      // Preserve selection for the upcoming debounced refresh
+      this._pendingSelectionRestore = new Set(this.selectedLines);
       this._debounceTimer = setTimeout(fire, 3000);
     }
   }
@@ -518,6 +562,27 @@ export class GCodeDrawer {
     }, 0);
   }
   
+  _onModeToggle(mode) {
+    this.editMode = (mode === 'edit');
+    localStorage.setItem('gcodeDrawerMode', mode);
+    
+    // Update editor mode
+    this.editor?.setEditMode(this.editMode);
+    
+    // Update toolbar UI
+    this.toolbar?.updateModeUI(this.editMode);
+    // In select mode, reflect selection toolbar based on current selection
+    if (!this.editMode) {
+      const count = this.selectedLines.size;
+      this.toolbar?.updateSelectionUI(count > 0, count);
+    }
+
+    // Update container class and help text for mode-specific UX
+    this._applyModeClass();
+    this._updateHelpText();
+    
+    this._debug('Mode toggled to:', mode, 'editMode:', this.editMode);
+  }
 
   _emitContentChanged(text) {
     // Sanitize the entire content before emitting

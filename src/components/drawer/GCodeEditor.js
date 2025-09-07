@@ -8,6 +8,7 @@ import { sanitizeText, sanitizeContentEditable } from '../../utils/Sanitize.js';
 export class GCodeEditor {
   constructor(bodyEl, {
     undoSystem,
+    editMode = false, // boolean: false = Select mode, true = Edit mode
     onLineEdited, // function(force:boolean)
     onHover, onLeave, onClick, // functions(lineNum, ...)
     onDeleteLine, onBulkDelete, // functions
@@ -17,6 +18,7 @@ export class GCodeEditor {
   }) {
     this.bodyEl = bodyEl;
     this.undoSystem = undoSystem;
+    this.editMode = editMode;
     this.onLineEdited = onLineEdited;
     this.onHover = onHover;
     this.onLeave = onLeave;
@@ -72,6 +74,18 @@ export class GCodeEditor {
       parts.push(el.querySelector('.gcode-line-text').textContent || '');
     });
     return parts.join('\n');
+  }
+
+  setEditMode(enabled) {
+    this.editMode = enabled;
+    
+    // Update contentEditable on all existing text spans
+    this.bodyEl.querySelectorAll('.gcode-line-text').forEach(el => {
+      el.contentEditable = enabled;
+    });
+
+    // Rebind events to apply new mode conditionally
+    this.rebindLineEvents();
   }
 
   // Commands
@@ -250,7 +264,7 @@ export class GCodeEditor {
 
     const textSpan = document.createElement('span');
     textSpan.className = 'gcode-line-text';
-    textSpan.contentEditable = 'true';
+    textSpan.contentEditable = this.editMode;
     textSpan.textContent = textContent || '';
 
     const delBtn = document.createElement('button');
@@ -269,15 +283,23 @@ export class GCodeEditor {
 
   _bindLineEvents(lineElement, lineNum) {
     try {
+      // Hover events (always active)
       lineElement.addEventListener('mouseenter', () => this.onHover?.(lineNum));
       lineElement.addEventListener('mouseleave', () => this.onLeave?.(lineNum));
+      
+      // Click events for selection (only in Select mode)
       lineElement.addEventListener('click', (e) => {
         if (e.target && e.target.classList?.contains('gcode-del')) return;
+        
+        // In Edit mode, skip selection - let text editing handle clicks
+        if (this.editMode) return;
+        
         this.onClick?.(lineNum, lineElement, e);
       });
 
       const txtEl = lineElement.querySelector('.gcode-line-text');
-      if (txtEl) {
+      if (txtEl && this.editMode) {
+        // Editing events (only in Edit mode)
         txtEl.addEventListener('input', (e) => {
           sanitizeContentEditable(e.target);
           this._markLineAsChanged(lineNum);
