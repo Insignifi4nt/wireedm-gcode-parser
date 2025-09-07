@@ -111,6 +111,10 @@ export async function initAppComponents(domRefs) {
 
   // Initialize GCode Drawer (collapsible panel)
   const gcodeDrawer = new GCodeDrawer(document.body, { anchor: 'right' });
+  // Provide drawer reference to toolbar (dependency injection, no globals)
+  if (typeof toolbar.setGCodeDrawer === 'function') {
+    toolbar.setGCodeDrawer(gcodeDrawer);
+  }
 
   // Initialize StatusMessage
   const statusMessage = new StatusMessage({

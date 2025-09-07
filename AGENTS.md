@@ -1,5 +1,10 @@
 # Repository Guidelines
 
+## Working With `documentation/TODO.md`
+- Read the header and Notes first; do not load the entire file by default.
+- Focus on "## Active Tasks" (top of file) for current work.
+- "## Completed Tasks" are reverse‑chronological (newest at the top, oldest at the bottom) and begin near line 69; skip unless explicitly relevant.
+
 ## Project Structure & Module Organization
 - Root entry: `index.html` → `src/main.js` (Vite app). Legacy demo: `documentation/wire-edm-gcode-viewer.html`.
 - `src/core`: parsing, viewport, orchestration, and event integration.
@@ -24,6 +29,7 @@
 - `npm run dev`: start Vite dev server (http://localhost:3000).
 - `npm run build`: production build to `dist/`.
 - `npm run preview`: serve the built app (port 4173).
+- `npm run deploy`: deploy to GitHub Pages (runs build first).
 - Optional utility: `python edm_iso_tester.py` to run the ISO helper script (not part of Vite build).
 
 ## Coding Style & Naming Conventions
@@ -59,6 +65,11 @@
       -m "Refs: documentation/RefactoringFiles/GCodeDrawer/PRs/PR1-Sanitize.md"'
 - Prefer ASCII bullets (`- `) and avoid tabs to keep consistent rendering across tools.
 - Keep one logical change per commit; follow-up commits for docs or cleanup are welcome.
+
+## Key Patterns & Configuration
+- **Dynamic Grid**: `DYNAMIC_GRID` constant controls 1-2-5 progression with pixel-density thresholds and hysteresis.
+- **Drawer Modes**: Select/Edit mode toggle with localStorage persistence (`gcodeDrawerMode` key).
+- **Event System**: Use `EventManager` singleton; prefer EVENT_TYPES constants over hardcoded strings.
 
 ## Security & Configuration Tips
 - Input handling: validate file size/types via `FileHandler` and keep parsing strict where possible.

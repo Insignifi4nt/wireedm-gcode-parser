@@ -124,7 +124,7 @@ These features work perfectly together:
 ## 3. Parser Refactor Track (separate from current UI refactor)
 
 **Description:**
-- Decision: Keep parser out of the ongoing UI/Event/Canvas refactor. Do a focused parser pass after the current branch stabilizes.
+- Decision: Keep parser out of the ongoing UI/Event/Canvas refactor. Do a focused parser pass after the current branch stabilizes. (meanwhile refactor branch stabilized and completed its purpose. Has been merged into main)
 - Rationale: Parser is a stable, single-module API. Refactoring it now risks subtle geometry regressions and churn in Drawer/Canvas mapping.
 
 ### ✅ **Recommendation: IMPLEMENT (Lower Priority)**
@@ -208,9 +208,9 @@ These features work perfectly together:
 
 ---
 
-## Completed Ideas
+# Completed Ideas
 
-### 4. Edit/Select Mode Toggle in G-Code Drawer
+## 4. Edit/Select Mode Toggle in G-Code Drawer
 - Summary: Header toggle separates selecting lines and editing text; edit disables selection clicks, select disables editing.
 - Notes: Mode persisted via localStorage; selection preserved across edit-triggered refresh; accessibility and cursor/user-select polish added.
 - References: src/components/GCodeDrawer.js:36, 94, 112, 565 • src/components/drawer/GCodeEditor.js:11, 79, 267, 291 • src/components/drawer/DrawerToolbar.js:28, 77, 125 • src/styles/components.css:200, 208, 227, 383

@@ -10,7 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist -m \"deploy: $(git rev-parse --short HEAD)\""
   },
   "keywords": [
     "wire-edm",

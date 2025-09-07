@@ -35,6 +35,9 @@ export class Toolbar {
     // Event system
     this.eventBus = EventBus.getInstance();
     
+    // Optional injected dependency (set later by initializer if not provided)
+    this.gcodeDrawer = this.options.gcodeDrawer || null;
+    
     // File handler for file operations
     this.fileHandler = new FileHandler();
     // Submodules
@@ -211,9 +214,9 @@ export class Toolbar {
       },
       {
         getTextForNormalization: () => {
-          const app = window.wireEDMViewer;
-          const drawer = app?.gcodeDrawer;
-          return drawer?.getText?.() || this.fileHandler?.loadedData?.content || '';
+          const drawerText = this.gcodeDrawer?.getText?.();
+          if (drawerText && drawerText.trim() !== '') return drawerText;
+          return this.fileHandler?.loadedData?.content || '';
         },
         exportNormalizedISOFromText: (text, options) => this.fileHandler?.exportNormalizedISOFromText?.(text, options)
       }
@@ -221,6 +224,14 @@ export class Toolbar {
     this.actionControls.init();
 
     // Drag and drop support handled by FileControls
+  }
+
+  /**
+   * Inject or update the reference to the GCodeDrawer instance
+   * @param {Object} drawer - GCodeDrawer instance
+   */
+  setGCodeDrawer(drawer) {
+    this.gcodeDrawer = drawer || null;
   }
 
   /**
