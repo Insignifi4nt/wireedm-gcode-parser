@@ -22,19 +22,8 @@
   - Description: Replace `window.wireEDMViewer` access for normalization text with an event-driven or injected dependency approach (e.g., pass drawer reference via constructor or use EventBus request/response).
   - Acceptance: No direct `window.wireEDMViewer` usage in Toolbar; normalization still works when drawer is open or when only file content is present.
 
-- [FEATURE] Text Rendering System (grid/point labels) ✅
-  - Priority: 🟡 High
-  - Estimate: L
-  - Files: `src/components/canvas/CanvasGrid.js`, `src/components/canvas/MarkerRenderer.js`, `src/utils/geometry/CoordinateTransforms.js`
-  - Description: Fixed coordinate system mismatch between text transforms and coordinate calculations.
-  - Resolution: Implemented dual coordinate system helpers and adopted Strategy A for rendering.
-  - Strategy: A — screen-space text (identity transform + `viewport.worldToScreen` with DPR scaling)
-  - Acceptance: ✅ All criteria met
-    - Grid axis labels render perfectly aligned to axes at all zoom levels.
-    - Point marker labels (START/END/Pn) position correctly and remain readable.
-    - Clean separation between world coordinates (Y-flip) and text coordinates (no Y-flip).
-
 ### 🟢 Medium Priority
+
 
 - [POLISH] Mouse Wheel Zoom behavior ⏳
   - Priority: 🟢 Medium
@@ -81,6 +70,12 @@
  - [REFACTOR] Remove Global App Access Pattern — Completed
    - Resolution: `GCodeDrawer` now requests clicked points via events; `EventWiring` responds with `POINT_CLICKED_RESPONSE`.
    - Files: `src/components/GCodeDrawer.js`, `src/core/events/EventTypes.js`, `src/core/EventWiring.js`
+ - [BUG] Text Rendering System — Fixed coordinate mismatch for grid labels and point markers
+   - Resolution: Adopted Strategy A (screen-space text with `viewport.worldToScreen`); grid/marker labels now align perfectly at all zoom levels.
+   - Files: `src/components/canvas/CanvasGrid.js`, `src/components/canvas/MarkerRenderer.js`, `src/utils/geometry/CoordinateTransforms.js`
+ - [FEATURE] Dynamic Grid System — Implemented zoom-responsive grid density with adaptive spacing and infinite coordinate axes
+   - Resolution: Added logarithmic grid spacing algorithms, pixel-density visibility thresholds, and viewport-bounded infinite axes. Label precision adapts to spacing (coarser → fewer decimals).
+   - Files: `src/utils/Constants.js`, `src/utils/geometry/CoordinateTransforms.js`, `src/components/canvas/CanvasGrid.js`
 
 
 ---

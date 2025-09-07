@@ -37,7 +37,7 @@
  * - Always match coordinate functions with their corresponding canvas transform
  */
 
-import { COORDINATES, VIEWPORT } from '../Constants.js';
+import { COORDINATES, VIEWPORT, DYNAMIC_GRID } from '../Constants.js';
 
 /**
  * Coordinate transformation utilities
@@ -270,35 +270,102 @@ export class GridUtils {
   }
 
   /**
-   * Calculate grid lines for rendering
+   * Pick optimal grid spacing for given zoom level
+   * @param {number} zoom - Current zoom level
+   * @param {number} targetPx - Target spacing in pixels (default: DYNAMIC_GRID.TARGET_MINOR_PX)
+   * @returns {number} Optimal grid spacing in world units
+   */
+  static pickGridSpacing(zoom, targetPx = DYNAMIC_GRID.TARGET_MINOR_PX) {
+    const worldTarget = targetPx / zoom;
+    const pow = Math.pow(10, Math.floor(Math.log10(worldTarget)));
+    
+    // Find smallest step that satisfies s*pow >= worldTarget
+    for (const step of DYNAMIC_GRID.STEPS) {
+      const spacing = step * pow;
+      if (spacing >= worldTarget) {
+        return spacing;
+      }
+    }
+    
+    // Fallback: return largest step * pow
+    return DYNAMIC_GRID.STEPS[DYNAMIC_GRID.STEPS.length - 1] * pow;
+  }
+
+  /**
+   * Pick optimal label spacing based on minor spacing and zoom level
+   * @param {number} minorWorld - Minor grid spacing in world units
+   * @param {number} zoom - Current zoom level
+   * @param {number} targetPx - Target label spacing in pixels (default: DYNAMIC_GRID.TARGET_LABEL_PX)
+   * @returns {number} Optimal label spacing in world units
+   */
+  static pickLabelSpacing(minorWorld, zoom, targetPx = DYNAMIC_GRID.TARGET_LABEL_PX) {
+    const labelWorldTarget = targetPx / zoom;
+    const k = Math.ceil(labelWorldTarget / minorWorld);
+    
+    // Snap k to nearest value in powers of 10 times [1,2,5]
+    const logK = Math.log10(k);
+    const pow = Math.pow(10, Math.floor(logK));
+    
+    // Find best multiplier from [1,2,5] for this power of 10
+    const multipliers = [1, 2, 5];
+    let bestK = k;
+    for (const mult of multipliers) {
+      const candidate = mult * pow;
+      if (candidate >= k) {
+        bestK = candidate;
+        break;
+      }
+    }
+    
+    // If no multiplier worked, try next power of 10
+    if (bestK < k) {
+      bestK = pow * 10;
+    }
+    
+    return bestK * minorWorld;
+  }
+
+  /**
+   * Calculate grid lines for rendering using index-based iteration
    * @param {number} zoom - Current zoom level
    * @param {number} offsetX - Viewport X offset
    * @param {number} offsetY - Viewport Y offset
    * @param {number} canvasWidth - Canvas width
    * @param {number} canvasHeight - Canvas height
    * @param {number} gridSize - Grid size
-   * @returns {Object} Grid lines {vertical, horizontal}
+   * @returns {Object} Grid lines {vertical, horizontal, verticalIndices, horizontalIndices}
    */
   static calculateGridLines(zoom, offsetX, offsetY, canvasWidth, canvasHeight, gridSize) {
-    const startX = Math.floor((-offsetX) / (gridSize * zoom)) * gridSize;
-    const endX = Math.ceil((canvasWidth - offsetX) / (gridSize * zoom)) * gridSize;
-    const startY = Math.floor((-offsetY) / (gridSize * zoom)) * gridSize;
-    const endY = Math.ceil((canvasHeight - offsetY) / (gridSize * zoom)) * gridSize;
+    // Calculate world bounds
+    const worldStartX = -offsetX / zoom;
+    const worldEndX = (canvasWidth - offsetX) / zoom;
+    const worldStartY = -offsetY / zoom;
+    const worldEndY = (canvasHeight - offsetY) / zoom;
+
+    // Use index-based iteration to avoid floating point accumulation
+    const iStartX = Math.ceil(worldStartX / gridSize);
+    const iEndX = Math.floor(worldEndX / gridSize);
+    const iStartY = Math.ceil(worldStartY / gridSize);
+    const iEndY = Math.floor(worldEndY / gridSize);
 
     const vertical = [];
     const horizontal = [];
+    const verticalIndices = [];
+    const horizontalIndices = [];
 
     // Calculate vertical lines
-    for (let x = startX; x <= endX; x += gridSize) {
-      vertical.push(x);
+    for (let i = iStartX; i <= iEndX; i++) {
+      vertical.push(i * gridSize);
+      verticalIndices.push(i);
     }
 
     // Calculate horizontal lines
-    for (let y = startY; y <= endY; y += gridSize) {
-      horizontal.push(y);
+    for (let i = iStartY; i <= iEndY; i++) {
+      horizontal.push(i * gridSize);
+      horizontalIndices.push(i);
     }
 
-    return { vertical, horizontal };
+    return { vertical, horizontal, verticalIndices, horizontalIndices };
   }
 }
 
