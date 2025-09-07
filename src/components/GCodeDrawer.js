@@ -6,6 +6,7 @@
 
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { sanitizeText } from '../utils/Sanitize.js';
+import { rotateStartAtLine } from '../utils/GCodeRewriter.js';
 import { UndoRedoSystem } from './drawer/UndoRedoSystem.js';
 import { MultiSelectHandler } from './drawer/MultiSelectHandler.js';
 import { DrawerToolbar } from './drawer/DrawerToolbar.js';
@@ -66,6 +67,7 @@ export class GCodeDrawer {
       onClose: () => this.toggle(false),
       onUndo: () => this._undo(),
       onRedo: () => this._redo(),
+      onSetStartHere: () => this._setSelectedAsStart(),
       onMoveUp: () => this._moveSelectedLines(-1),
       onMoveDown: () => this._moveSelectedLines(1),
       onInsertPoints: async () => {
@@ -559,6 +561,54 @@ export class GCodeDrawer {
     // Restore selection after a brief delay (after setContent has been called)
     setTimeout(() => {
       this._restoreSelection(movedSelection);
+    }, 0);
+  }
+
+  _setSelectedAsStart() {
+    if (this.selectedLines.size === 0) return;
+    // Only operate in Select mode for clarity
+    if (this.editMode) {
+      // No-op in Edit mode to avoid confusion
+      return;
+    }
+
+    // Cancel any pending debounced content change to avoid racing updates
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
+
+    const firstSelected = Math.min(...this.selectedLines);
+    const oldText = this.getText();
+    const { text: rotatedText, newStartLine } = rotateStartAtLine(oldText, firstSelected, { ensureClosure: true });
+
+    // If nothing changed, bail
+    if (rotatedText === oldText) return;
+
+    const oldLines = oldText.split(/\r?\n/);
+    const newLines = rotatedText.split(/\r?\n/);
+
+    // Create and push replace command
+    const replaceCommand = {
+      type: 'replace',
+      execute: () => {
+        this.editor.setLines(newLines);
+        this._updateLineCount();
+      },
+      undo: () => {
+        this.editor.setLines(oldLines);
+        this._updateLineCount();
+      }
+    };
+    this.undoSystem.push(replaceCommand);
+
+    // Execute replacement immediately
+    replaceCommand.execute();
+
+    // Emit updated content so main app can reparse, then restore selection to new start
+    this._emitContentChanged(this.getText());
+    setTimeout(() => {
+      this._restoreSelection([newStartLine]);
     }, 0);
   }
   
