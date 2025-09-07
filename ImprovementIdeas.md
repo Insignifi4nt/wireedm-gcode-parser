@@ -1,5 +1,25 @@
 # Ideas for UX:
 
+## Overall Implementation Priority Recommendation:
+
+### **Phase 1: UX Improvements** (Immediate - High Value)
+- Completed: Idea #4 — Edit/Select mode toggle
+- Next: Ideas #1 & #2 — Segment selection + Path snapping  
+  - Timeline: ~1 week  
+  - Value: Transformative  
+  - Risk: Low
+
+### **Phase 2: Technical Foundation** (Future - Medium Value)
+- Idea #3 — Parser refactor  
+  - Timeline: 1–2 weeks  
+  - Value: Better maintainability
+
+### **Synergy Opportunities:**
+- Ideas #1 and #2 benefit from #4’s clear mode separation
+- Common utilities: geometric hit detection; shared modal UI state management
+
+**Total Estimated Remaining Time: 2–3 weeks**
+
 ## 1. Click G-Code Segments for Selection/Highlighting
 
 **Description:**
@@ -30,24 +50,11 @@ Being able to click gcode segments inside the canvas, and highlight them in the 
    - Drawer → Canvas: Already works via `drawer:line:hover` → `canvas.setHoverHighlight()`
    - **Perfect fit**: Existing highlight system just needs to be triggered by segment clicks
 
-### Technical Implementation:
-```javascript
-// In EventWiring.js - modify existing MOUSE_CLICK handler
-on(EVENT_TYPES.MOUSE_CLICK, (data) => {
-  if (data.target === 'canvas') {
-    if (app.segmentSelectionMode) {
-      // NEW: Find closest path segment and highlight it
-      const segmentIndex = findClosestSegment(data.worldX, data.worldY, app.currentGCode.path);
-      if (segmentIndex >= 0) {
-        app.canvas?.togglePersistentHighlight(segmentIndex);
-      }
-    } else {
-      // EXISTING: Add measurement point  
-      app.addMeasurementPoint?.(data.worldX, data.worldY);
-    }
-  }
-});
-```
+### References:
+- src/core/EventWiring.js — MOUSE_CLICK routing by interaction mode
+- src/components/canvas/PathHighlights.js — segment highlighting utilities
+- src/components/GCodeDrawer.js — drawer:line:click and hover integration
+- src/components/toolbar/ActionControls.js — add/select toggle wiring
 
 ### Integration Points:
 - ✅ Event system: Perfect fit with existing `EventBus` architecture
@@ -91,44 +98,10 @@ Being able to add points along an existing segment. Have some toggle that snaps 
    - Enable/disable snapping behavior
    - **UI Integration**: Natural extension of existing toolbar
 
-### Technical Implementation:
-```javascript
-// New utility function
-function projectPointToPath(clickX, clickY, gcodePath, snapTolerance) {
-  let closestPoint = null;
-  let minDistance = Infinity;
-  
-  for (const segment of gcodePath) {
-    const projected = projectPointToSegment(clickX, clickY, segment);
-    const distance = MeasurementUtils.calculateDistance(clickX, clickY, projected.x, projected.y);
-    
-    if (distance < snapTolerance && distance < minDistance) {
-      minDistance = distance;
-      closestPoint = projected;
-    }
-  }
-  
-  return closestPoint;
-}
-
-// Modify MOUSE_CLICK handler in EventWiring.js
-on(EVENT_TYPES.MOUSE_CLICK, (data) => {
-  if (data.target === 'canvas' && !app.segmentSelectionMode) {
-    let finalX = data.worldX;
-    let finalY = data.worldY;
-    
-    if (app.pathSnapEnabled) {
-      const snapped = projectPointToPath(data.worldX, data.worldY, app.currentGCode.path, SNAP_TOLERANCE);
-      if (snapped) {
-        finalX = snapped.x;
-        finalY = snapped.y;
-      }
-    }
-    
-    app.addMeasurementPoint?.(finalX, finalY);
-  }
-});
-```
+### References:
+- src/utils/geometry/CoordinateTransforms.js — coordinate helpers
+- src/utils/geometry/ArcCalculations.js — arc math helpers
+- src/core/EventWiring.js — pointer move/click integration for snapping
 
 ### Mathematical Foundation:
 - **Line Projection**: Standard point-to-line projection with parameter clamping
@@ -235,24 +208,9 @@ These features work perfectly together:
 
 ---
 
-## Overall Implementation Priority Recommendation:
+## Completed Ideas
 
-### **Phase 1: UX Improvements** (Immediate - High Value)
-1. **Implement Ideas #1 & #2 together** - Segment selection + Path snapping
-   - **Timeline**: 1 week
-   - **Value**: Transformative UX improvement
-   - **Risk**: Low - builds on existing architecture
-
-### **Phase 2: Technical Foundation** (Future - Medium Value)  
-2. **Implement Idea #3** - Parser refactor
-   - **Timeline**: 1-2 weeks
-   - **Value**: Better maintainability
-   - **Dependencies**: After UX features stabilize
-
-### **Synergy Opportunities:**
-The UX features (#1 & #2) can be implemented with shared utilities:
-- Common geometric hit detection functions
-- Shared modal UI state management
-- Combined toolbar controls for better UX
-
-**Total Estimated Implementation Time: 2-3 weeks for full feature set**
+### 4. Edit/Select Mode Toggle in G-Code Drawer
+- Summary: Header toggle separates selecting lines and editing text; edit disables selection clicks, select disables editing.
+- Notes: Mode persisted via localStorage; selection preserved across edit-triggered refresh; accessibility and cursor/user-select polish added.
+- References: src/components/GCodeDrawer.js:36, 94, 112, 565 • src/components/drawer/GCodeEditor.js:11, 79, 267, 291 • src/components/drawer/DrawerToolbar.js:28, 77, 125 • src/styles/components.css:200, 208, 227, 383
