@@ -4,8 +4,9 @@
  *
  * Current features:
  * - rotateStartAtLine: rotate the G-code body so a chosen motion line becomes the first
- *   body line, preserving header and (optional) trailing M02/footer. Optionally ensure
- *   the last motion before footer duplicates the chosen start line to keep a closed loop.
+ *   body line, preserving header. Ensures a closed loop by removing the old closer to the
+ *   original start, converting intermediate G0 to G1, and appending a minimal G1 close
+ *   to the new start if needed.
  */
 
 import { canonicalizeMotionCodes } from './IsoNormalizer.js';
@@ -27,17 +28,58 @@ function isMotionLine(raw) {
   return /^(G0|G1|G2|G3)\b/.test(cleaned);
 }
 
-function isM02Line(raw) {
-  if (!raw) return false;
-  return /\bM0?2\b/i.test(raw);
+// Extract XY (and their original string tokens) from a line
+function extractXY(raw) {
+  if (typeof raw !== 'string') return { x: null, y: null, xText: null, yText: null };
+  const noComment = stripInlineComments(raw);
+  // Accept integers, leading/trailing decimals, and optional scientific notation
+  const num = '[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[Ee][-+]?\\d+)?';
+  const mX = noComment.match(new RegExp('\\bX\\s*(' + num + ')', 'i'));
+  const mY = noComment.match(new RegExp('\\bY\\s*(' + num + ')', 'i'));
+  const xText = mX ? mX[1] : null;
+  const yText = mY ? mY[1] : null;
+  const x = xText != null ? parseFloat(xText) : null;
+  const y = yText != null ? parseFloat(yText) : null;
+  return { x, y, xText, yText };
 }
+
+// Compare two XY pairs with tolerance
+function xyEqual(a, b, eps = 1e-6) {
+  if (a == null || b == null) return false;
+  if (a.x == null || a.y == null || b.x == null || b.y == null) return false;
+  return Math.abs(a.x - b.x) <= eps && Math.abs(a.y - b.y) <= eps;
+}
+
+// Convert a G0 line to G1, preserving other content (comments handled separately)
+function convertG0ToG1(raw) {
+  if (typeof raw !== 'string') return raw;
+  // Separate inline comment to avoid replacing inside comments
+  const commentMatch = raw.match(/[;(].*$/);
+  const comment = commentMatch ? raw.slice(commentMatch.index) : '';
+  const head = commentMatch ? raw.slice(0, commentMatch.index) : raw;
+  // Canonicalize then replace leading G0 token (after optional N-number)
+  const canon = canonicalizeMotionCodes(head);
+  const replaced = canon.replace(/^(\s*(?:N\d+\s+)?)(G0)\b/i, (_, p1) => `${p1}G1`);
+  return replaced + comment;
+}
+
+// Generate minimal close move to XY (XY only, linear cut)
+function generateMinimalClose(xText, yText) {
+  const parts = ['G1'];
+  if (xText != null) parts.push(`X${xText}`);
+  if (yText != null) parts.push(`Y${yText}`);
+  return parts.join(' ');
+}
+
+// (No nearest motion fallback; selection must already be a motion line in body)
 
 /**
  * Rotate the G-code body so that the given 1-based line number becomes the first
  * body line after the header. Header is defined as all lines before the first
- * motion (G0/G1/G2/G3). Optionally keeps program end (M02) as footer if present.
- * If ensureClosure is true, the selected start line text is also appended right
- * before the footer when needed to keep the last motion equal to the chosen start.
+ * motion (G0/G1/G2/G3).
+ * If ensureClosure is true, ensures the final motion returns to the new start by
+ * removing the old closer to the original start, converting any intermediate G0 to G1,
+ * and appending a minimal G1 close (XY only) if needed.
  *
  * @param {string} text - Drawer/editor G-code text
  * @param {number} selectedLineNumber - 1-based line number from the drawer UI
@@ -56,18 +98,8 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
     return { text, newStartLine: 1 };
   }
 
-  // Extract footer M02 if present (last non-empty line)
-  let footer = [];
+  // Drawer text should not contain trailing M02; treat entire input as core
   let core = [...lines];
-  for (let i = core.length - 1; i >= 0; i--) {
-    const s = (core[i] || '').trim();
-    if (s === '') continue;
-    if (isM02Line(s)) {
-      footer = core.slice(i);
-      core = core.slice(0, i);
-    }
-    break;
-  }
 
   // Identify header (before first motion)
   let firstMotionIdx = -1; // 0-based index in core
@@ -90,41 +122,56 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
   let bodyStartIdx = Math.max(0, selectedIdx0 - firstMotionIdx);
   const selectedIsMotion = isMotionLine(core[selectedIdx0]);
   if (selectedIdx0 < firstMotionIdx || !selectedIsMotion) {
-    // find next motion in body
-    let found = -1;
-    for (let i = bodyStartIdx; i < body.length; i++) {
-      if (isMotionLine(body[i])) { found = i; break; }
-    }
-    if (found === -1) {
-      for (let i = bodyStartIdx; i >= 0; i--) {
-        if (isMotionLine(body[i])) { found = i; break; }
-      }
-    }
-    if (found === -1) {
-      // No motion in body (shouldn't happen due to firstMotionIdx), bail out
-      return { text, newStartLine: 1 };
-    }
-    bodyStartIdx = found;
+    // Strict behavior: selection must be a motion line within the body
+    return { text, newStartLine: header.length + 1 };
   }
 
   const chosenLineText = body[bodyStartIdx];
+  const chosenXY = extractXY(chosenLineText);
+  const originalFirstLine = body[0];
+  const originalStartXY = extractXY(originalFirstLine);
 
   // Rotate body so chosen line becomes first
   const rotatedBody = body.slice(bodyStartIdx).concat(body.slice(0, bodyStartIdx));
 
-  // Ensure closure: last non-empty (before footer) must match chosen
+  // After rotation, the old closer (which ended at original start) is immediately
+  // before the original first line. Remove that closer to avoid duplicate segment.
+  const idxOfOriginalFirst = (bodyStartIdx === 0) ? 0 : (body.length - bodyStartIdx);
+  if (idxOfOriginalFirst > 0 && idxOfOriginalFirst < rotatedBody.length) {
+    const prevIdx = idxOfOriginalFirst - 1;
+    const prevLine = rotatedBody[prevIdx];
+    // Remove only if it truly ends at the original start XY
+    const prevXY = extractXY(prevLine);
+    if (xyEqual(prevXY, originalStartXY)) {
+      rotatedBody.splice(prevIdx, 1);
+    }
+  }
+
+  // If the original first line is no longer at index 0, it became an intermediate move.
+  // If it was a G0, convert it to G1 to maintain continuous cutting.
+  const newIdxOfOriginalFirst = (bodyStartIdx === 0) ? 0 : (body.length - bodyStartIdx);
+  if (newIdxOfOriginalFirst > 0) {
+    const line = rotatedBody[newIdxOfOriginalFirst] || '';
+    const cleaned = canonicalizeMotionCodes(dropLeadingBlockNumber(stripInlineComments(line))).toUpperCase();
+    if (/^G0\b/.test(cleaned)) {
+      rotatedBody[newIdxOfOriginalFirst] = convertG0ToG1(line);
+    }
+  }
+
+  // Ensure closure to the new start: if the last motion XY != chosen XY, append minimal close
   if (ensureClosure) {
-    let lastNonEmptyIdx = rotatedBody.length - 1;
-    while (lastNonEmptyIdx >= 0 && (rotatedBody[lastNonEmptyIdx] || '').trim() === '') lastNonEmptyIdx--;
-    const lastLine = lastNonEmptyIdx >= 0 ? rotatedBody[lastNonEmptyIdx] : '';
-    const norm = (s) => canonicalizeMotionCodes((s || '').trim()).toUpperCase();
-    if (norm(lastLine) !== norm(chosenLineText)) {
-      rotatedBody.push(chosenLineText);
+    // Find last non-empty line index
+    let lastIdx = rotatedBody.length - 1;
+    while (lastIdx >= 0 && (rotatedBody[lastIdx] || '').trim() === '') lastIdx--;
+    const lastLine = lastIdx >= 0 ? rotatedBody[lastIdx] : '';
+    const lastXY = extractXY(lastLine);
+    if (!xyEqual(lastXY, chosenXY)) {
+      rotatedBody.push(generateMinimalClose(chosenXY.xText, chosenXY.yText));
     }
   }
 
   // Compose
-  const out = [...header, ...rotatedBody, ...footer];
+  const out = [...header, ...rotatedBody];
   // New start line index in the final text is header length + 1
   const newStartLine = header.length + 1;
   return { text: out.join('\n'), newStartLine };
@@ -133,4 +180,3 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
 export default {
   rotateStartAtLine
 };
-

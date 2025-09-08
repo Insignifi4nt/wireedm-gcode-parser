@@ -565,7 +565,14 @@ export class GCodeDrawer {
   }
 
   _setSelectedAsStart() {
-    if (this.selectedLines.size === 0) return;
+    // Require exactly one selected line
+    if (this.selectedLines.size !== 1) {
+      this.eventBus.emit(EVENT_TYPES.STATUS_SHOW, {
+        message: 'Select exactly one motion line in the body to set as start.',
+        type: 'warning'
+      });
+      return;
+    }
     // Only operate in Select mode for clarity
     if (this.editMode) {
       // No-op in Edit mode to avoid confusion
@@ -579,6 +586,29 @@ export class GCodeDrawer {
     }
 
     const firstSelected = Math.min(...this.selectedLines);
+
+    // Validate that selection is a motion line and lies within the body (after first motion)
+    const isMotionLine = (s) => {
+      const noComment = (s || '').replace(/[;(].*$/g, '').trim();
+      const noBlock = noComment.replace(/^N\d+\s+/i, '');
+      const canon = (noBlock || '').toUpperCase().replace(/\bG0+([0-3])(?!\d)/g, 'G$1');
+      return /^(G0|G1|G2|G3)\b/.test(canon);
+    };
+    // Determine header/body split
+    let firstMotionIdx = -1;
+    for (let i = 0; i < this.lines.length; i++) {
+      if (isMotionLine(this.lines[i]?.text || '')) { firstMotionIdx = i; break; }
+    }
+    const selectedIdx0 = firstSelected - 1;
+    const selectedText = this.lines[selectedIdx0]?.text || '';
+    const validSelection = firstMotionIdx >= 0 && selectedIdx0 >= firstMotionIdx && isMotionLine(selectedText);
+    if (!validSelection) {
+      this.eventBus.emit(EVENT_TYPES.STATUS_SHOW, {
+        message: 'Invalid selection: choose a motion line (G0/G1/G2/G3) within the body.',
+        type: 'warning'
+      });
+      return;
+    }
     const oldText = this.getText();
     const { text: rotatedText, newStartLine } = rotateStartAtLine(oldText, firstSelected, { ensureClosure: true });
 
