@@ -81,21 +81,7 @@ export class EventDelegator {
       });
     });
 
-    // File input changes
-    this.addDelegation('change', 'input[type="file"]', (event, element) => {
-      const files = Array.from(element.files || []);
-      
-      files.forEach(file => {
-        this.eventBus.emit(EVENT_TYPES.FILE_LOAD_START, {
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          file: file,
-          element: element,
-          event: event
-        });
-      });
-    });
+    // File input change is handled by Toolbar/FileControls to prevent duplicate emissions
 
     // Zoom control buttons
     this.addDelegation('click', '.zoom-in', (event, element) => {
@@ -190,7 +176,8 @@ export class EventDelegator {
     });
 
     // Drag and drop on canvas/file areas with enhanced feedback
-    this.addDelegation('dragover', '.file-drop-area, canvas, .file-input-label', (event, element) => {
+    // Note: file-input label drag/drop is handled by FileControls; avoid duplicate events here
+    this.addDelegation('dragover', '.file-drop-area, canvas', (event, element) => {
       event.preventDefault();
       event.dataTransfer.dropEffect = 'copy';
       
@@ -201,7 +188,7 @@ export class EventDelegator {
       this._showDragOverlay();
     });
 
-    this.addDelegation('dragleave', '.file-drop-area, canvas, .file-input-label', (event, element) => {
+    this.addDelegation('dragleave', '.file-drop-area, canvas', (event, element) => {
       event.preventDefault();
       
       // Only remove drag-over if we're actually leaving the element
@@ -210,7 +197,7 @@ export class EventDelegator {
       }
     });
 
-    this.addDelegation('drop', '.file-drop-area, canvas, .file-input-label', (event, element) => {
+    this.addDelegation('drop', '.file-drop-area, canvas', (event, element) => {
       event.preventDefault();
       element.classList.remove('drag-over');
       
