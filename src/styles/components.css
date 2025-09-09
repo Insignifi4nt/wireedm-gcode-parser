@@ -219,15 +219,21 @@ canvas:focus {
   text-align: center;
 }
 
-.gcode-mode-btn:hover:not(.active) {
+.gcode-mode-btn:hover:not(.active):not([aria-pressed='true']):not(:disabled) {
   background: var(--color-accent-hover-secondary);
   color: var(--color-text-primary);
 }
 
-.gcode-mode-btn.active {
+.gcode-mode-btn.active,
+.gcode-mode-btn[aria-pressed='true'] {
   background: var(--color-accent-primary);
   color: var(--color-text-white);
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.gcode-mode-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .gcode-action-btn {
@@ -249,6 +255,12 @@ canvas:focus {
 .gcode-action-btn:hover:not(:disabled) {
   background: rgba(255,255,255,0.1);
   border-color: rgba(255,255,255,0.2);
+}
+
+.gcode-action-btn:active:not(:disabled) {
+  background: rgba(255,255,255,0.2);
+  border-color: rgba(255,255,255,0.25);
+  box-shadow: var(--btn-active-shadow);
 }
 
 .gcode-action-btn:disabled {
@@ -301,6 +313,12 @@ canvas:focus {
 .gcode-toolbar-btn:hover:not(:disabled) {
   background: rgba(255,255,255,0.1);
   border-color: rgba(255,255,255,0.2);
+}
+
+.gcode-toolbar-btn:active:not(:disabled) {
+  background: rgba(255,255,255,0.2);
+  border-color: rgba(255,255,255,0.25);
+  box-shadow: var(--btn-active-shadow);
 }
 
 .gcode-toolbar-btn:disabled {
@@ -356,29 +374,6 @@ canvas:focus {
 .gcode-line-num { width: 48px; color: var(--color-text-secondary); text-align: right; }
 .gcode-line-text { color: var(--color-text-primary); flex: 1; }
 .gcode-line-text[contenteditable="true"] { outline: none; }
-.gcode-del { 
-  background: transparent; 
-  color: var(--color-text-secondary); 
-  border: none; 
-  cursor: pointer;
-  min-width: 20px;
-  min-height: 20px;
-  padding: 2px 4px;
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: var(--transition-fast);
-  font-size: 14px;
-  font-weight: bold;
-}
-
-.gcode-del:hover { 
-  color: var(--color-error);
-  background: rgba(220, 53, 69, 0.15);
-  border: 1px solid rgba(220, 53, 69, 0.3);
-  transform: scale(1.05);
-}
 
 /* Mode-specific UX polish */
 .gcode-drawer--mode-edit .gcode-line,
@@ -403,9 +398,7 @@ canvas:focus {
   display: none !important;
 }
 
-.gcode-del:active {
-  transform: scale(0.95);
-}
+/* per-line delete button removed; deletion is via toolbar or keyboard */
 
 .gcode-drawer-footer { 
   border-top: 1px solid rgba(255,255,255,0.1); 

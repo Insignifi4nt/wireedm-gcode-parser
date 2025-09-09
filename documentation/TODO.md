@@ -16,7 +16,7 @@
 
 ### 🔴 Critical Priority
 
-<!-- none currently -->
+Bug - Contine on current branch. the set new start behavior does not work well with G2/G3 files. Also, we need to create some clear separation between the "header"/start(config) commands, and the gcode body. Right now when setting new point, the header also gets moved.( i think it might be the parsing too, it doesnt clearly identify where the header stops. idk , needs further investigation). But, my point, is that we need to set up the gcode drawer folders or subfolders. and have the header clearly placed in one of them at the top. And than the body get split into folders for each closed contour there is, for better UX and management.
 
 ### 🟡 High Priority
 

@@ -267,15 +267,8 @@ export class GCodeEditor {
     textSpan.contentEditable = this.editMode;
     textSpan.textContent = textContent || '';
 
-    const delBtn = document.createElement('button');
-    delBtn.className = 'gcode-del';
-    delBtn.title = 'Delete line';
-    delBtn.setAttribute('aria-label', 'Delete line');
-    delBtn.textContent = '×';
-
     div.appendChild(lineNumSpan);
     div.appendChild(textSpan);
-    div.appendChild(delBtn);
 
     this._bindLineEvents(div, lineNum);
     return div;
@@ -289,8 +282,6 @@ export class GCodeEditor {
       
       // Click events for selection (only in Select mode)
       lineElement.addEventListener('click', (e) => {
-        if (e.target && e.target.classList?.contains('gcode-del')) return;
-        
         // In Edit mode, skip selection - let text editing handle clicks
         if (this.editMode) return;
         
@@ -331,18 +322,7 @@ export class GCodeEditor {
         });
       }
 
-      const delBtn = lineElement.querySelector('.gcode-del');
-      if (delBtn) {
-        delBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const sel = this.getSelection?.() || new Set();
-          if (sel.has(lineNum) && sel.size > 1) {
-            this.onBulkDelete?.();
-          } else {
-            this.onDeleteLine?.(lineNum);
-          }
-        });
-      }
+      // Per-line delete button removed in favor of selection + toolbar/keyboard delete
     } catch (error) {
       console.error('Error binding events for line', lineNum, ':', error);
     }

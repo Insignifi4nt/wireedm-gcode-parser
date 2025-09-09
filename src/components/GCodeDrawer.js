@@ -59,7 +59,7 @@ export class GCodeDrawer {
     this.container.innerHTML = `
       <div class="gcode-drawer-body" tabindex="0"></div>
       <div class="gcode-drawer-footer">
-        <div class="gcode-help-text">Hover to preview • Click to select • Ctrl+click for multi-select</div>
+        <div class="gcode-help-text">Hover to preview • Click to select • Ctrl+click for multi-select • Press Delete or use 🗑 to remove</div>
       </div>
     `;
     // Render toolbars via DrawerToolbar
