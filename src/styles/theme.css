@@ -24,8 +24,10 @@
   /* Accent Colors */
   --color-accent-primary: #4CAF50;
   --color-accent-hover: #45a049;
+  --color-accent-active: #3d8b40;
   --color-accent-secondary: #555;
   --color-accent-hover-secondary: #666;
+  --color-accent-active-secondary: #4a4a4a;
   
   /* Status Colors */
   --color-success: #4CAF50;
@@ -99,6 +101,8 @@
   --button-padding-small: 2px 8px;
   --button-border-radius: var(--border-radius-md);
   --button-transition: background-color var(--transition-normal);
+  --btn-ring: var(--color-accent-primary);
+  --btn-active-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
   
   /* Form Elements */
   --input-padding: var(--spacing-md) var(--spacing-lg);
