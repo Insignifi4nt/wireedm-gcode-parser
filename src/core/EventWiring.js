@@ -233,9 +233,8 @@ export function attachEventWiring(app) {
   });
 
   // --- Status message workflow ---
-  on(EVENT_TYPES.STATUS_SHOW, (data) => {
-    app.statusMessage?.show(data.message, data.type, data.options);
-  });
+  // ToastManager already listens to STATUS_* events and displays messages.
+  // Avoid duplicating toasts by not proxying STATUS_SHOW here.
 
   // --- Export workflow ---
   on(EVENT_TYPES.EXPORT_START, (data) => {

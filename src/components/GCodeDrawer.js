@@ -6,10 +6,42 @@
 
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { sanitizeText } from '../utils/Sanitize.js';
+import { rotateStartAtLine } from '../utils/GCodeRewriter.js';
 import { UndoRedoSystem } from './drawer/UndoRedoSystem.js';
 import { MultiSelectHandler } from './drawer/MultiSelectHandler.js';
 import { DrawerToolbar } from './drawer/DrawerToolbar.js';
 import { GCodeEditor } from './drawer/GCodeEditor.js';
+
+// Helper functions for organizing G-code into sections
+function isHeaderCommand(raw) {
+  if (!raw) return false;
+  const cleaned = raw.replace(/^N\d+\s+/i, '').replace(/[;(].*$/g, '').trim().toUpperCase();
+  if (cleaned === '') return false;
+  
+  // Program control and setup commands
+  if (/^%/.test(cleaned)) return true;
+  if (/^(G92|G60|G38|G50|G51|G52|G53|G54|G55|G56|G57|G58|G59)/.test(cleaned)) return true;
+  if (/^(G90|G91|G90\.1|G91\.1)/.test(cleaned)) return true;
+  if (/^(G40|G41|G42|G43|G44|G45|G46|G47|G48|G49)/.test(cleaned)) return true;
+  if (/^(G17|G18|G19)/.test(cleaned)) return true;
+  if (/^(G20|G21)/.test(cleaned)) return true;
+  if (/^(G94|G95|G96|G97|G98|G99)/.test(cleaned)) return true;
+  if (/^(M[0-9]|M1[0-9]|M2[0-9]|M3[0-9]|M[4-9][0-9]|M28|M30)/.test(cleaned) && !/^M02\b/.test(cleaned)) return true;
+  
+  return false;
+}
+
+function isMotionCommand(raw) {
+  if (!raw) return false;
+  const cleaned = raw.replace(/^N\d+\s+/i, '').replace(/[;(].*$/g, '').trim().toUpperCase().replace(/\bG0+([0-3])(?!\d)/g, 'G$1');
+  return /^(G0|G1|G2|G3)\b/.test(cleaned);
+}
+
+function isFooterCommand(raw) {
+  if (!raw) return false;
+  const cleaned = raw.replace(/^N\d+\s+/i, '').replace(/[;(].*$/g, '').trim().toUpperCase();
+  return /^(M02|M30)\b/.test(cleaned) || /^%$/.test(cleaned);
+}
 
 export class GCodeDrawer {
   constructor(mountTarget = document.body, options = {}) {
@@ -36,6 +68,12 @@ export class GCodeDrawer {
     this.editMode = localStorage.getItem('gcodeDrawerMode') === 'edit' || false;
     // Preserve selection across content refreshes triggered by edits
     this._pendingSelectionRestore = null;
+    // Folder collapse states
+    this.folderStates = {
+      header: localStorage.getItem('gcodeDrawer.folder.header') !== 'false', // expanded by default
+      body: true, // always expanded
+      footer: localStorage.getItem('gcodeDrawer.folder.footer') !== 'false' // expanded by default
+    };
     mountTarget.appendChild(this.container);
     this._applyAnchorClass();
     this._render();
@@ -54,11 +92,102 @@ export class GCodeDrawer {
     }
   }
 
+  // Organize lines into header, body, and footer sections
+  _organizeLinesIntoSections(lines) {
+    const sections = {
+      header: { lines: [], startLineNum: 1 },
+      body: { lines: [], startLineNum: 1 },
+      footer: { lines: [], startLineNum: 1 }
+    };
+    
+    let inBody = false;
+    let foundFirstMotion = false;
+    let currentLineNum = 1;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const text = lines[i];
+      const trimmedLine = (text || '').trim();
+      
+      // Handle empty lines and comments - they follow context
+      if (trimmedLine === '' || trimmedLine.startsWith(';') || trimmedLine.startsWith('(')) {
+        if (inBody && foundFirstMotion) {
+          sections.body.lines.push({ num: currentLineNum, text });
+        } else if (sections.footer.lines.length > 0) {
+          if (sections.footer.lines.length === 1) sections.footer.startLineNum = currentLineNum;
+          sections.footer.lines.push({ num: currentLineNum, text });
+        } else {
+          if (sections.header.lines.length === 0) sections.header.startLineNum = currentLineNum;
+          sections.header.lines.push({ num: currentLineNum, text });
+        }
+        currentLineNum++;
+        continue;
+      }
+      
+      // Check for footer commands first
+      if (isFooterCommand(text)) {
+        if (sections.footer.lines.length === 0) sections.footer.startLineNum = currentLineNum;
+        sections.footer.lines.push({ num: currentLineNum, text });
+        currentLineNum++;
+        continue;
+      }
+      
+      // Check for motion commands
+      if (isMotionCommand(text)) {
+        if (!foundFirstMotion) {
+          foundFirstMotion = true;
+          inBody = true;
+          sections.body.startLineNum = currentLineNum;
+        }
+        sections.body.lines.push({ num: currentLineNum, text });
+        currentLineNum++;
+        continue;
+      }
+      
+      // Check for explicit header commands
+      if (isHeaderCommand(text)) {
+        if (inBody && foundFirstMotion) {
+          // Unusual - setup command in middle of motion commands
+          sections.body.lines.push({ num: currentLineNum, text });
+        } else {
+          if (sections.header.lines.length === 0) sections.header.startLineNum = currentLineNum;
+          sections.header.lines.push({ num: currentLineNum, text });
+        }
+        currentLineNum++;
+        continue;
+      }
+      
+      // For other commands, use context
+      if (inBody && foundFirstMotion) {
+        sections.body.lines.push({ num: currentLineNum, text });
+      } else if (sections.footer.lines.length > 0) {
+        sections.footer.lines.push({ num: currentLineNum, text });
+      } else {
+        if (sections.header.lines.length === 0) sections.header.startLineNum = currentLineNum;
+        sections.header.lines.push({ num: currentLineNum, text });
+      }
+      currentLineNum++;
+    }
+    
+    return sections;
+  }
+
+  // Toggle folder expanded/collapsed state
+  _toggleFolder(folderName) {
+    if (folderName === 'body') return; // Body is always expanded
+    
+    this.folderStates[folderName] = !this.folderStates[folderName];
+    localStorage.setItem(`gcodeDrawer.folder.${folderName}`, this.folderStates[folderName].toString());
+    
+    // Re-render the drawer to reflect the new state
+    const rawLines = this.lines.map(l => l.text);
+    this.editor.setLines(rawLines);
+  }
+
   _render() {
     this.container.innerHTML = `
       <div class="gcode-drawer-body" tabindex="0"></div>
       <div class="gcode-drawer-footer">
-        <div class="gcode-help-text">Hover to preview • Click to select • Ctrl+click for multi-select</div>
+        <div class="gcode-help-text">Hover to preview • Click to select • Ctrl+click for multi-select • Press Delete or use 🗑 to remove</div>
       </div>
     `;
     // Render toolbars via DrawerToolbar
@@ -66,6 +195,7 @@ export class GCodeDrawer {
       onClose: () => this.toggle(false),
       onUndo: () => this._undo(),
       onRedo: () => this._redo(),
+      onSetStartHere: () => this._setSelectedAsStart(),
       onMoveUp: () => this._moveSelectedLines(-1),
       onMoveDown: () => this._moveSelectedLines(1),
       onInsertPoints: async () => {
@@ -559,6 +689,84 @@ export class GCodeDrawer {
     // Restore selection after a brief delay (after setContent has been called)
     setTimeout(() => {
       this._restoreSelection(movedSelection);
+    }, 0);
+  }
+
+  _setSelectedAsStart() {
+    // Require exactly one selected line
+    if (this.selectedLines.size !== 1) {
+      this.eventBus.emit(EVENT_TYPES.STATUS_SHOW, {
+        message: 'Select exactly one motion line in the body to set as start.',
+        type: 'warning'
+      });
+      return;
+    }
+    // Only operate in Select mode for clarity
+    if (this.editMode) {
+      // No-op in Edit mode to avoid confusion
+      return;
+    }
+
+    // Cancel any pending debounced content change to avoid racing updates
+    if (this._debounceTimer) {
+      clearTimeout(this._debounceTimer);
+      this._debounceTimer = null;
+    }
+
+    const firstSelected = Math.min(...this.selectedLines);
+
+    // Validate that selection is a motion line and lies within the body (after first motion)
+    const isMotionLine = (s) => {
+      const noComment = (s || '').replace(/[;(].*$/g, '').trim();
+      const noBlock = noComment.replace(/^N\d+\s+/i, '');
+      const canon = (noBlock || '').toUpperCase().replace(/\bG0+([0-3])(?!\d)/g, 'G$1');
+      return /^(G0|G1|G2|G3)\b/.test(canon);
+    };
+    // Determine header/body split
+    let firstMotionIdx = -1;
+    for (let i = 0; i < this.lines.length; i++) {
+      if (isMotionLine(this.lines[i]?.text || '')) { firstMotionIdx = i; break; }
+    }
+    const selectedIdx0 = firstSelected - 1;
+    const selectedText = this.lines[selectedIdx0]?.text || '';
+    const validSelection = firstMotionIdx >= 0 && selectedIdx0 >= firstMotionIdx && isMotionLine(selectedText);
+    if (!validSelection) {
+      this.eventBus.emit(EVENT_TYPES.STATUS_SHOW, {
+        message: 'Invalid selection: choose a motion line (G0/G1/G2/G3) within the body.',
+        type: 'warning'
+      });
+      return;
+    }
+    const oldText = this.getText();
+    const { text: rotatedText, newStartLine } = rotateStartAtLine(oldText, firstSelected, { ensureClosure: true });
+
+    // If nothing changed, bail
+    if (rotatedText === oldText) return;
+
+    const oldLines = oldText.split(/\r?\n/);
+    const newLines = rotatedText.split(/\r?\n/);
+
+    // Create and push replace command
+    const replaceCommand = {
+      type: 'replace',
+      execute: () => {
+        this.editor.setLines(newLines);
+        this._updateLineCount();
+      },
+      undo: () => {
+        this.editor.setLines(oldLines);
+        this._updateLineCount();
+      }
+    };
+    this.undoSystem.push(replaceCommand);
+
+    // Execute replacement immediately
+    replaceCommand.execute();
+
+    // Emit updated content so main app can reparse, then restore selection to new start
+    this._emitContentChanged(this.getText());
+    setTimeout(() => {
+      this._restoreSelection([newStartLine]);
     }, 0);
   }
   

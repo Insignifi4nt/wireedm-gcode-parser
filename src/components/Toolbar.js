@@ -283,6 +283,8 @@ export class Toolbar {
       // Update state
       this.state.currentFile = file;
       this.state.isFileLoading = true;
+      // Emit file load start for UI feedback
+      this.eventBus.emit(EVENT_TYPES.FILE_LOAD_START, { file });
       
       // Use FileHandler to load and parse the file
       const result = await this.fileHandler.loadFile(file);

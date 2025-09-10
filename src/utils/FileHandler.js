@@ -86,8 +86,7 @@ export class FileHandler {
         return null;
       }
 
-      // Emit file load start event (main.js will show loading status)
-      this.eventBus.emit(EVENT_TYPES.FILE_LOAD_START, { file });
+      // UI layer emits FILE_LOAD_START; avoid duplicate emissions here
 
       // Read file content
       const fileContent = await this._readFileContent(file);

@@ -44,6 +44,7 @@ export class DrawerToolbar {
         <span class="gcode-selection-counter"></span>
       </div>
       <div class="gcode-selection-actions">
+        <button class="gcode-toolbar-btn" data-action="set-start" title="Set selected line as new start" disabled>Start Here</button>
         <button class="gcode-toolbar-btn" data-action="move-up" title="Move selected lines up" disabled>↑</button>
         <button class="gcode-toolbar-btn" data-action="move-down" title="Move selected lines down" disabled>↓</button>
         <button class="gcode-toolbar-btn" data-action="insert-points" title="Insert clicked points">+ Points</button>
@@ -68,6 +69,7 @@ export class DrawerToolbar {
     on('[data-action="close"]', 'click', () => this.handlers.onClose?.());
     on('[data-action="undo"]', 'click', () => this.handlers.onUndo?.());
     on('[data-action="redo"]', 'click', () => this.handlers.onRedo?.());
+    on('[data-action="set-start"]', 'click', () => this.handlers.onSetStartHere?.());
     on('[data-action="move-up"]', 'click', () => this.handlers.onMoveUp?.());
     on('[data-action="move-down"]', 'click', () => this.handlers.onMoveDown?.());
     on('[data-action="insert-points"]', 'click', () => this.handlers.onInsertPoints?.());
@@ -115,11 +117,13 @@ export class DrawerToolbar {
     const moveDownBtn = this.container.querySelector('[data-action="move-down"]');
     const deleteBtn = this.container.querySelector('[data-action="delete-selected"]');
     const insertBtn = this.container.querySelector('[data-action="insert-points"]');
+    const setStartBtn = this.container.querySelector('[data-action="set-start"]');
 
     if (moveUpBtn) moveUpBtn.disabled = !hasSelection;
     if (moveDownBtn) moveDownBtn.disabled = !hasSelection;
     if (deleteBtn) deleteBtn.disabled = !hasSelection;
     if (insertBtn) insertBtn.disabled = !hasSelection;
+    if (setStartBtn) setStartBtn.disabled = !hasSelection;
   }
 
   updateModeUI(editMode) {
