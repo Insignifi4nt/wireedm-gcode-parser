@@ -3,6 +3,7 @@
 ## Notes
 - Review this file weekly to update priorities and status
 - Add time estimates to help with sprint planning
+- Completed Tasks, should be moved under Completed tasks section. Respecting the summarization convention. Brief and concice, like the others.
 - Completed Tasks section begins near line 69. Items are listed newest-to-oldest (top to bottom): latest completions are at the top, oldest at the bottom. Read the header/notes first; avoid scanning the entire file unless needed.
 
 ## Format Guidelines
@@ -34,11 +35,6 @@ Bug - Contine on current branch. the set new start behavior does not work well w
 
 ### 🔵 Low Priority
 
-- [UI] Button visual feedback improvements ⏳
-  - Priority: 🔵 Low
-  - Estimate: S
-  - Files: `src/styles/*.css`
-  - Description: Improve hover/active/disabled states for better affordance (not a bug).
 
 ## Refactoring & Technical Debt
 
@@ -68,6 +64,8 @@ Bug - Contine on current branch. the set new start behavior does not work well w
 ## Completed Tasks
 *Tasks should always be placed at the top of the list (as the list grows, enables us to find the latest, without scrolling or reading the whole file)*
 ### ✅ Done
+- [UI] Button visual feedback improvements — Enhanced hover/pressed/focus states with theme tokens; removed translateY animation 
+  - Commit (6a1a553)
 - [REFACTOR] Remove Toolbar Global Access — Completed
   - Resolution: Inject `gcodeDrawer` into `Toolbar` (no `window.wireEDMViewer`); normalization reads drawer text, falls back to loaded file.
   - Files: `src/components/Toolbar.js`, `src/core/ComponentInitializer.js`

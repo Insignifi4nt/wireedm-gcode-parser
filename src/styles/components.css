@@ -406,6 +406,64 @@ canvas:focus {
   justify-content: center;
 }
 
+/* G-Code Folder Styles */
+.gcode-folder {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.gcode-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background-color: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  transition: background-color var(--transition-normal);
+}
+
+.gcode-folder-header:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.gcode-folder-icon {
+  font-size: 10px;
+  transition: transform var(--transition-normal);
+}
+
+.gcode-folder-icon.collapsed {
+  transform: rotate(-90deg);
+}
+
+.gcode-folder-title {
+  font-weight: 500;
+  flex: 1;
+}
+
+.gcode-folder-count {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+
+.gcode-folder-content {
+  overflow: hidden;
+  transition: max-height var(--transition-normal);
+}
+
+.gcode-folder-content.collapsed {
+  max-height: 0;
+}
+
+.gcode-folder-content.expanded {
+  max-height: 2000px; /* Large enough for typical content */
+}
+
 .gcode-drawer-actions { 
   display: flex; 
   gap: 4px; 
