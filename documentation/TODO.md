@@ -17,7 +17,16 @@
 
 ### 🔴 Critical Priority
 
-Bug - Contine on current branch. the set new start behavior does not work well with G2/G3 files. Also, we need to create some clear separation between the "header"/start(config) commands, and the gcode body. Right now when setting new point, the header also gets moved.( i think it might be the parsing too, it doesnt clearly identify where the header stops. idk , needs further investigation). But, my point, is that we need to set up the gcode drawer folders or subfolders. and have the header clearly placed in one of them at the top. And than the body get split into folders for each closed contour there is, for better UX and management.
+[FEATURE] G-Code Drawer Folder Organization ⏳
+- Priority: 🔴 Critical
+- Category: [FEATURE]
+- Estimate: L
+- Files: `src/components/GCodeDrawer.js`, `src/components/drawer/GCodeEditor.js`, `src/styles/components.css`
+- Description: Implement collapsible folder structure in G-code drawer for better organization:
+  - **Header Folder**: Contains all configuration/setup commands (G90, M codes, etc.) at the top
+  - **Body Folders**: Split into separate folders for each closed contour/toolpath for improved UX
+  - **Footer Folder**: Contains program end commands (M30, etc.)
+- Acceptance: Collapsible folders with clear visual hierarchy; header separated from toolpath; each contour organized independently
 
 ### 🟡 High Priority
 
@@ -64,6 +73,10 @@ Bug - Contine on current branch. the set new start behavior does not work well w
 ## Completed Tasks
 *Tasks should always be placed at the top of the list (as the list grows, enables us to find the latest, without scrolling or reading the whole file)*
 ### ✅ Done
+- [BUG] Set Start Here G2/G3 Arc Handling & Header/Body Separation — Fixed critical issues with arc coordinate preservation and G-code structure organization
+  - Resolution: Implemented comprehensive arc coordinate transformation system; added header/footer identification functions; fixed I,J parameter preservation during rotation
+  - Files: `src/utils/GCodeRewriter.js`, `src/components/GCodeDrawer.js`
+  - Commit (356d2e9)
 - [UI] Button visual feedback improvements — Enhanced hover/pressed/focus states with theme tokens; removed translateY animation 
   - Commit (6a1a553)
 - [REFACTOR] Remove Toolbar Global Access — Completed

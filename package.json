@@ -10,7 +10,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist -m \"deploy: $(git rev-parse --short HEAD)\""
+    "deploy": "gh-pages -d dist -m \"deploy: $(git rev-parse --short HEAD)\"",
+    "test": "vitest"
   },
   "keywords": [
     "wire-edm",
@@ -23,7 +24,8 @@
   "license": "MIT",
   "devDependencies": {
     "@vitejs/plugin-legacy": "^7.2.1",
-    "vite": "^7.1.1"
+    "vite": "^7.1.1",
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=16.0.0"
