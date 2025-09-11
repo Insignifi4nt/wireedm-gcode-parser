@@ -47,24 +47,29 @@
 ## Commit & Pull Request Guidelines
 - Commits: imperative, present tense and scoped changes (e.g., "Add arc center absolute mode"). Reference issues (`#123`) when relevant.
 - Prefer small, focused commits; include rationale when behavior changes.
+- Commit message format: `type(scope): summary` (≤72 chars). Write the body from a file or heredoc so real newlines render correctly. Keep a short paragraph, bullets for changes, and separate "Docs:" and "Refs:" paragraphs when useful.
+  - Minimal example (heredoc):
+    - git commit -F - <<'MSG'
+      type(scope): concise subject line
+
+      Short summary paragraph.
+
+      - Bullet one
+      - Bullet two
+
+      Docs:
+      - Notes here
+
+      Refs:
+      - links or paths
+      MSG
 - Pull Requests should include:
   - Summary of changes and motivation, screenshots/GIFs for UI.
   - Linked issues, migration notes if APIs or files moved.
   - Check that `npm run build` passes and no console errors in `npm run dev`.
   - When applicable, link the relevant `documentation/RefactoringFiles/<Module>/PRs/PRx-*.md` and use `documentation/RefactoringFiles/templates/PR_Template.md`.
 
-### Commit Message Formatting (CLI)
-- Subject: `type(scope): summary` (≤72 chars), imperative mood. Include PR label when applicable (e.g., `PR1`, `PR2`).
-- Body: short paragraphs with bullet points for changes; separate paragraphs for docs/refs.
-- Use multiple `-m` flags to create paragraphs so rendering is clean in Git/GitHub:
-  - Example:
-    - bash -lc 'git add -A && git commit \
-      -m "refactor(GCodeDrawer,utils): PR1 extract sanitization helpers to utils/Sanitize.js" \
-      -m "- Add src/utils/Sanitize.js with sanitizeText and sanitizeContentEditable (caret-preserving), extracted from private methods.\n- Update src/components/GCodeDrawer.js to import helpers for input/blur/paste and emit paths; remove old private methods.\n- Preserve behavior and contracts: drawer:* events unchanged; 3s debounce and caret behavior intact; public API stable.\n- Build: npm run build passes locally." \
-      -m "Docs:\n- Update documentation/RefactoringFiles to mark PR1 completed; add implementation notes and verification steps in PR1-Sanitize." \
-      -m "Refs: documentation/RefactoringFiles/GCodeDrawer/PRs/PR1-Sanitize.md"'
-- Prefer ASCII bullets (`- `) and avoid tabs to keep consistent rendering across tools.
-- Keep one logical change per commit; follow-up commits for docs or cleanup are welcome.
+ 
 
 ## Key Patterns & Configuration
 - **Dynamic Grid**: `DYNAMIC_GRID` constant controls 1-2-5 progression with pixel-density thresholds and hysteresis.
