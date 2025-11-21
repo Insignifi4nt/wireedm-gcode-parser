@@ -37,5 +37,31 @@ describe('ContourDetector', () => {
     expect(approxEqual(c.startCoord.x, c.endCoord.x)).toBe(true);
     expect(approxEqual(c.startCoord.y, c.endCoord.y)).toBe(true);
   });
-});
 
+  it('detects a single-line full circle (G2/G3)', () => {
+    const lines = [
+      'G90',
+      'G0 X10 Y10',
+      'G2 I5' // Full circle, end point == start point
+    ];
+    const contours = ContourDetector.detectContours(lines);
+    expect(contours.length).toBe(1);
+    const c = contours[0];
+    // Check number of lines using indices
+    expect(c.endIndex - c.startIndex + 1).toBe(1);
+    expect(approxEqual(c.startCoord.x, c.endCoord.x)).toBe(true);
+  });
+
+  it('detects a two-line closed shape', () => {
+    const lines = [
+      'G90',
+      'G0 X0 Y0',
+      'G1 X10 Y0',
+      'G1 X0 Y0' // Back to start
+    ];
+    const contours = ContourDetector.detectContours(lines);
+    expect(contours.length).toBe(1);
+    const c = contours[0];
+    expect(c.endIndex - c.startIndex + 1).toBe(2);
+  });
+});

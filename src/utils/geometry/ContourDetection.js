@@ -25,17 +25,17 @@ export class ContourDetector {
     const { tolerance = ContourDetector.DEFAULT_TOLERANCE } = options;
     const contours = [];
     const tracker = new CoordinateTracker();
-    
+
     let contourStartIndex = -1;
     let contourStartPosition = null;
     let hasMotionInContour = false;
-    
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const motionData = ContourDetector._parseMotion(line);
-      
+
       if (!motionData) continue;
-      
+
       // Check if this is a cutting motion command (G1/G2/G3)
       if (ContourDetector._isMotionCommand(line)) {
         if (contourStartIndex === -1) {
@@ -46,13 +46,14 @@ export class ContourDetector {
         } else {
           hasMotionInContour = true;
         }
-        
+
         // Always update tracker position first
         tracker.processMotion(motionData);
-        
+
         // Then check for contour closure (after position update)
-        if (contourStartIndex !== -1 && i > contourStartIndex + 2 && 
-            ContourDetector._coordinatesEqual(tracker.currentPosition, contourStartPosition, tolerance)) {
+        // Allow single-line contours (e.g. full circles) or multi-line
+        if (contourStartIndex !== -1 && i >= contourStartIndex &&
+          ContourDetector._coordinatesEqual(tracker.currentPosition, contourStartPosition, tolerance)) {
           contours.push({
             startIndex: contourStartIndex,
             endIndex: i,
@@ -61,7 +62,7 @@ export class ContourDetector {
             length: ContourDetector._calculateContourLength(lines.slice(contourStartIndex, i + 1)),
             direction: ContourDetector._determineDirection(lines.slice(contourStartIndex, i + 1))
           });
-          
+
           // Reset for next contour
           contourStartIndex = -1;
           contourStartPosition = null;
@@ -75,7 +76,7 @@ export class ContourDetector {
           contourStartPosition = null;
           hasMotionInContour = false;
         }
-        
+
         // Update tracker position (G0 moves set position for potential future contours)
         tracker.processMotion(motionData);
       } else {
@@ -83,7 +84,7 @@ export class ContourDetector {
         tracker.processMotion(motionData);
       }
     }
-    
+
     return contours;
   }
 
@@ -95,20 +96,20 @@ export class ContourDetector {
    */
   static _parseMotion(line) {
     if (!line || typeof line !== 'string') return null;
-    
+
     const normalized = line.replace(/^N\d+\s+/i, '').trim().toUpperCase()
-                          .replace(/\bG0+([0-3])(?!\d)/g, 'G$1');
-    
+      .replace(/\bG0+([0-3])(?!\d)/g, 'G$1');
+
     // Recognize motions (G0–G3) and coordinate mode changes (G90/G91 and G90.1/G91.1)
     const motionMatch = normalized.match(/^(G(?:0|1|2|3|90(?:\.1)?|91(?:\.1)?))\b/);
     if (!motionMatch) return null;
-    
+
     const command = motionMatch[1];
     const xMatch = normalized.match(/X([-+]?\d*\.?\d+)/);
     const yMatch = normalized.match(/Y([-+]?\d*\.?\d+)/);
     const iMatch = normalized.match(/I([-+]?\d*\.?\d+)/);
     const jMatch = normalized.match(/J([-+]?\d*\.?\d+)/);
-    
+
     return {
       command,
       x: xMatch ? parseFloat(xMatch[1]) : null,
@@ -138,8 +139,8 @@ export class ContourDetector {
    * @private
    */
   static _coordinatesEqual(coord1, coord2, tolerance) {
-    return Math.abs(coord1.x - coord2.x) <= tolerance && 
-           Math.abs(coord1.y - coord2.y) <= tolerance;
+    return Math.abs(coord1.x - coord2.x) <= tolerance &&
+      Math.abs(coord1.y - coord2.y) <= tolerance;
   }
 
   /**
@@ -151,14 +152,14 @@ export class ContourDetector {
   static _calculateContourLength(contourLines) {
     const tracker = new CoordinateTracker();
     let totalLength = 0;
-    
+
     for (const line of contourLines) {
       const motionData = ContourDetector._parseMotion(line);
       if (!motionData) continue;
-      
+
       const prevPosition = { ...tracker.currentPosition };
       tracker.processMotion(motionData);
-      
+
       if (motionData.command === 'G0' || motionData.command === 'G1') {
         totalLength += MeasurementUtils.distance(
           prevPosition.x, prevPosition.y,
@@ -172,7 +173,7 @@ export class ContourDetector {
         ) * 1.2; // Rough arc approximation
       }
     }
-    
+
     return totalLength;
   }
 
@@ -186,15 +187,15 @@ export class ContourDetector {
     // Simplified direction detection - could be enhanced
     let cwCount = 0;
     let ccwCount = 0;
-    
+
     for (const line of contourLines) {
       const motionData = ContourDetector._parseMotion(line);
       if (!motionData) continue;
-      
+
       if (motionData.command === 'G2') cwCount++;
       if (motionData.command === 'G3') ccwCount++;
     }
-    
+
     if (cwCount > ccwCount) return 'CW';
     if (ccwCount > cwCount) return 'CCW';
     return 'UNKNOWN';
@@ -269,7 +270,7 @@ export class CoordinateTracker {
       if (motionData.x !== null) this.currentPosition.x += motionData.x;
       if (motionData.y !== null) this.currentPosition.y += motionData.y;
     }
-    
+
     // Note: I/J parameters could be used for more precise arc calculations
     // Integration with ArcUtils could enhance this further
   }

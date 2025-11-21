@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist -m \"deploy: $(git rev-parse --short HEAD)\"",
-    "test": "vitest"
+    "test": "vitest",
+    "connect": "bash scripts/connect-browser.sh"
   },
   "keywords": [
     "wire-edm",
