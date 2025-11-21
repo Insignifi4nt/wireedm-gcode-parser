@@ -212,7 +212,7 @@ export class GCodeDrawer {
       const contourLines = bodyLines.slice(contour.startIndex, contour.endIndex + 1);
       processedContours.push({
         id: contourId,
-        type: 'contour',
+        type: contour.type || 'contour', // 'toolpath-open' or 'toolpath-closed'
         lines: contourLines,
         startLineNum: contourLines[0].num,
         count: contourLines.length,
@@ -314,14 +314,23 @@ export class GCodeDrawer {
         const isExpanded = this.contourFolderStates[contour.id] !== false;
         let folderTitle, folderIcon, description;
 
-        if (contour.type === 'contour') {
-          folderTitle = `Contour ${contour.id.split('-')[1]}`;
+        if (contour.type === 'toolpath-closed') {
+          folderTitle = `Closed Path ${contour.id.split('-')[1]}`;
           folderIcon = '🔄';
           description = `${contour.count} lines • ${contour.length?.toFixed(2) || '?'} mm • ${contour.direction}`;
+        } else if (contour.type === 'toolpath-open') {
+          folderTitle = `Open Path ${contour.id.split('-')[1]}`;
+          folderIcon = '〰️';
+          description = `${contour.count} lines • ${contour.length?.toFixed(2) || '?'} mm`;
+        } else if (contour.type === 'contour') {
+          // Legacy fallback
+          folderTitle = `Contour ${contour.id.split('-')[1]}`;
+          folderIcon = '�';
+          description = `${contour.count} lines • ${contour.length?.toFixed(2) || '?'} mm`;
         } else {
-          folderTitle = `Commands ${contour.id.split('-')[1]}`;
-          folderIcon = '📝';
-          description = `${contour.count} loose commands`;
+          folderTitle = `Rapid / Setup ${contour.id.split('-')[1]}`;
+          folderIcon = '⚡';
+          description = `${contour.count} commands`;
         }
 
         folderHTML += this._renderFolder(

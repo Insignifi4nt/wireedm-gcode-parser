@@ -23,69 +23,84 @@ export class ContourDetector {
    */
   static detectContours(lines, options = {}) {
     const { tolerance = ContourDetector.DEFAULT_TOLERANCE } = options;
-    const contours = [];
+    const toolpaths = [];
     const tracker = new CoordinateTracker();
 
-    let contourStartIndex = -1;
-    let contourStartPosition = null;
-    let hasMotionInContour = false;
+    let currentToolpath = null;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const motionData = ContourDetector._parseMotion(line);
 
-      if (!motionData) continue;
+      // Always update tracker position
+      const prevPosition = { ...tracker.currentPosition };
+      if (motionData) {
+        tracker.processMotion(motionData);
+      }
 
       // Check if this is a cutting motion command (G1/G2/G3)
       if (ContourDetector._isMotionCommand(line)) {
-        if (contourStartIndex === -1) {
-          // Start new potential contour - record position BEFORE this move
-          contourStartPosition = { ...tracker.currentPosition };
-          contourStartIndex = i;
-          hasMotionInContour = true;
-        } else {
-          hasMotionInContour = true;
-        }
-
-        // Always update tracker position first
-        tracker.processMotion(motionData);
-
-        // Then check for contour closure (after position update)
-        // Allow single-line contours (e.g. full circles) or multi-line
-        if (contourStartIndex !== -1 && i >= contourStartIndex &&
-          ContourDetector._coordinatesEqual(tracker.currentPosition, contourStartPosition, tolerance)) {
-          contours.push({
-            startIndex: contourStartIndex,
+        if (!currentToolpath) {
+          // Start new toolpath
+          currentToolpath = {
+            startIndex: i,
             endIndex: i,
-            startCoord: { ...contourStartPosition },
+            startCoord: { ...prevPosition },
             endCoord: { ...tracker.currentPosition },
-            length: ContourDetector._calculateContourLength(lines.slice(contourStartIndex, i + 1)),
-            direction: ContourDetector._determineDirection(lines.slice(contourStartIndex, i + 1))
-          });
-
-          // Reset for next contour
-          contourStartIndex = -1;
-          contourStartPosition = null;
-          hasMotionInContour = false;
+            lines: [line],
+            type: 'toolpath' // Will be refined to open/closed later
+          };
+        } else {
+          // Extend current toolpath
+          currentToolpath.endIndex = i;
+          currentToolpath.endCoord = { ...tracker.currentPosition };
+          currentToolpath.lines.push(line);
         }
-      } else if (motionData.command === 'G0') {
-        // Rapid move - end current contour if it was open (but don't prevent future contours)
-        if (contourStartIndex !== -1 && hasMotionInContour) {
-          // End current open contour (not closed)
-          contourStartIndex = -1;
-          contourStartPosition = null;
-          hasMotionInContour = false;
+      } else if (motionData && motionData.command === 'G0') {
+        // Rapid move - ends the current toolpath
+        if (currentToolpath) {
+          toolpaths.push(ContourDetector._finalizeToolpath(currentToolpath, lines, tolerance));
+          currentToolpath = null;
         }
-
-        // Update tracker position (G0 moves set position for potential future contours)
-        tracker.processMotion(motionData);
       } else {
-        // Other commands (coordinate mode changes, etc.)
-        tracker.processMotion(motionData);
+        // Other commands (comments, M-codes, etc.) - if we are in a toolpath, do we break it?
+        // For now, let's say non-motion commands don't break a toolpath unless they are explicit stops.
+        // But usually, toolpaths are contiguous motions.
+        // If we encounter a non-motion line inside a toolpath (like a comment), we can include it?
+        // For simplicity, let's stick to: Toolpath = contiguous G1/G2/G3.
+        // So any non-G1/G2/G3 breaks it?
+        // Actually, comments often appear inside. Let's include them if they are not G0.
+        if (currentToolpath) {
+          currentToolpath.endIndex = i;
+          currentToolpath.lines.push(line);
+        }
       }
     }
 
-    return contours;
+    // Close any remaining toolpath
+    if (currentToolpath) {
+      toolpaths.push(ContourDetector._finalizeToolpath(currentToolpath, lines, tolerance));
+    }
+
+    return toolpaths;
+  }
+
+  static _finalizeToolpath(toolpath, allLines, tolerance) {
+    const isClosed = ContourDetector._coordinatesEqual(toolpath.startCoord, toolpath.endCoord, tolerance);
+
+    // Calculate length and direction
+    const slice = allLines.slice(toolpath.startIndex, toolpath.endIndex + 1);
+
+    return {
+      startIndex: toolpath.startIndex,
+      endIndex: toolpath.endIndex,
+      startCoord: toolpath.startCoord,
+      endCoord: toolpath.endCoord,
+      length: ContourDetector._calculateContourLength(slice),
+      direction: ContourDetector._determineDirection(slice),
+      type: isClosed ? 'toolpath-closed' : 'toolpath-open',
+      lines: toolpath.lines
+    };
   }
 
   /**

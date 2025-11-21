@@ -19,6 +19,7 @@ describe('ContourDetector', () => {
     expect(approxEqual(c.startCoord.x, c.endCoord.x)).toBe(true);
     expect(approxEqual(c.startCoord.y, c.endCoord.y)).toBe(true);
     expect(c.length).toBeGreaterThan(0);
+    expect(c.type).toBe('toolpath-closed');
   });
 
   it('handles relative mode (G91) and closes a square path', () => {
@@ -63,5 +64,35 @@ describe('ContourDetector', () => {
     expect(contours.length).toBe(1);
     const c = contours[0];
     expect(c.endIndex - c.startIndex + 1).toBe(2);
+    expect(c.type).toBe('toolpath-closed');
+  });
+
+  it('detects an open toolpath', () => {
+    const lines = [
+      'G90',
+      'G0 X0 Y0',
+      'G1 X10 Y0',
+      'G1 X20 Y0' // Ends here, not closed
+    ];
+    const contours = ContourDetector.detectContours(lines);
+    expect(contours.length).toBe(1);
+    const c = contours[0];
+    expect(c.type).toBe('toolpath-open');
+    expect(c.lines.length).toBe(2);
+  });
+
+  it('detects multiple toolpaths separated by rapids', () => {
+    const lines = [
+      'G90',
+      'G0 X0 Y0',
+      'G1 X10 Y0', // Path 1 (Open)
+      'G0 X20 Y20', // Rapid
+      'G1 X30 Y20', // Path 2 (Open)
+      'G1 X30 Y30'
+    ];
+    const contours = ContourDetector.detectContours(lines);
+    expect(contours.length).toBe(2);
+    expect(contours[0].type).toBe('toolpath-open');
+    expect(contours[1].type).toBe('toolpath-open');
   });
 });
