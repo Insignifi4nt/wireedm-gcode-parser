@@ -403,7 +403,7 @@ export class GCodeDrawer {
       <div class="gcode-folder" data-folder-id="${folderId}">
         <button class="gcode-folder-header" data-folder="${folderId}">
           <span class="gcode-folder-icon ${iconClass}">▼</span>
-          <span class="gcode-folder-title">${icon} ${title}</span>
+          <span class="gcode-folder-title" title="${title}">${icon} ${title}</span>
           <span class="gcode-folder-count">${description}</span>
           ${actions ? `
             <span class="gcode-folder-actions">
