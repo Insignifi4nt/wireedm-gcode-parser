@@ -277,7 +277,7 @@ export class GCodeDrawer {
   }
 
   // Render G-code with folder structure
-  _renderWithFolders() {
+  _renderWithFolders(clearMapping = false) {
     if (!this.lines || this.lines.length === 0) {
       this.bodyEl.innerHTML = '';
       return;
@@ -325,7 +325,7 @@ export class GCodeDrawer {
         } else if (contour.type === 'contour') {
           // Legacy fallback
           folderTitle = `Contour ${contour.id.split('-')[1]}`;
-          folderIcon = '�';
+          folderIcon = '🔄';
           description = `${contour.count} lines • ${contour.length?.toFixed(2) || '?'} mm`;
         } else {
           folderTitle = `Rapid / Setup ${contour.id.split('-')[1]}`;
@@ -386,8 +386,10 @@ export class GCodeDrawer {
     this.editor?.setEditMode(this.editMode);
 
     // Clear mapping to avoid stale highlights until re-parse
-    this.lineIndexToPathIndex.clear();
-    this.pathIndexToLineIndex.clear();
+    if (clearMapping) {
+      this.lineIndexToPathIndex.clear();
+      this.pathIndexToLineIndex.clear();
+    }
 
     // Update line count
     this._updateLineCount();
@@ -528,12 +530,12 @@ export class GCodeDrawer {
       selectionAfterUndo,
       execute: () => {
         this.lines = newLines;
-        this._renderWithFolders();
+        this._renderWithFolders(true);
         this._updateLineCount();
       },
       undo: () => {
         this.lines = oldLines.map((t, i) => ({ num: i + 1, text: t }));
-        this._renderWithFolders();
+        this._renderWithFolders(true);
         this._updateLineCount();
       }
     };
@@ -575,12 +577,12 @@ export class GCodeDrawer {
       selectionAfterUndo,
       execute: () => {
         this.lines = newLines;
-        this._renderWithFolders();
+        this._renderWithFolders(true);
         this._updateLineCount();
       },
       undo: () => {
         this.lines = oldLines.map((t, i) => ({ num: i + 1, text: t }));
-        this._renderWithFolders();
+        this._renderWithFolders(true);
         this._updateLineCount();
       }
     };
@@ -1171,12 +1173,12 @@ export class GCodeDrawer {
       type: 'replace',
       execute: () => {
         this.lines = newLines.map((t, i) => ({ num: i + 1, text: t }));
-        this._renderWithFolders();
+        this._renderWithFolders(true);
         this._updateLineCount();
       },
       undo: () => {
         this.lines = oldLines.map((t, i) => ({ num: i + 1, text: t }));
-        this._renderWithFolders();
+        this._renderWithFolders(true);
         this._updateLineCount();
       }
     };
