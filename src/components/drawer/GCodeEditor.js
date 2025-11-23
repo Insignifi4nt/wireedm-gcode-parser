@@ -78,7 +78,7 @@ export class GCodeEditor {
 
   setEditMode(enabled) {
     this.editMode = enabled;
-    
+
     // Update contentEditable on all existing text spans
     this.bodyEl.querySelectorAll('.gcode-line-text').forEach(el => {
       el.contentEditable = enabled;
@@ -106,7 +106,8 @@ export class GCodeEditor {
           const div = this._createLineElement(lineNum, text);
           const allLines = Array.from(this.bodyEl.querySelectorAll('.gcode-line'));
           if (originalIndex < allLines.length) {
-            this.bodyEl.insertBefore(div, allLines[originalIndex]);
+            const target = allLines[originalIndex];
+            target.parentNode.insertBefore(div, target);
           } else {
             this.bodyEl.appendChild(div);
           }
@@ -127,8 +128,18 @@ export class GCodeEditor {
       });
       const all = Array.from(this.bodyEl.querySelectorAll('.gcode-line'));
       const target = all[insertAfterLine] || null;
-      if (target) this.bodyEl.insertBefore(fragment, target);
-      else this.bodyEl.appendChild(fragment);
+      if (target) {
+        target.parentNode.insertBefore(fragment, target);
+      } else {
+        // If appending to end, check if we have folders
+        const lastLine = all[all.length - 1];
+        if (lastLine && lastLine.parentNode !== this.bodyEl) {
+          // Append to the last folder
+          lastLine.parentNode.appendChild(fragment);
+        } else {
+          this.bodyEl.appendChild(fragment);
+        }
+      }
       this._renumberLines();
       this.updateLineCount?.();
       const sel = [];
@@ -222,8 +233,17 @@ export class GCodeEditor {
         fragment.appendChild(newElement);
       });
       const targetElement = remainingLines[targetIndex];
-      if (targetElement) this.bodyEl.insertBefore(fragment, targetElement);
-      else this.bodyEl.appendChild(fragment);
+      if (targetElement) {
+        targetElement.parentNode.insertBefore(fragment, targetElement);
+      } else {
+        // Append to end
+        const lastLine = remainingLines[remainingLines.length - 1];
+        if (lastLine && lastLine.parentNode !== this.bodyEl) {
+          lastLine.parentNode.appendChild(fragment);
+        } else {
+          this.bodyEl.appendChild(fragment);
+        }
+      }
       const newSel = selected.map(n => n + direction);
       this.applySelection(newSel);
       this._renumberLines();
@@ -279,12 +299,12 @@ export class GCodeEditor {
       // Hover events (always active)
       lineElement.addEventListener('mouseenter', () => this.onHover?.(lineNum));
       lineElement.addEventListener('mouseleave', () => this.onLeave?.(lineNum));
-      
+
       // Click events for selection (only in Select mode)
       lineElement.addEventListener('click', (e) => {
         // In Edit mode, skip selection - let text editing handle clicks
         if (this.editMode) return;
-        
+
         this.onClick?.(lineNum, lineElement, e);
       });
 

@@ -6,42 +6,22 @@
 
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { sanitizeText } from '../utils/Sanitize.js';
-import { rotateStartAtLine } from '../utils/GCodeRewriter.js';
+import GCodeRewriter from '../utils/GCodeRewriter.js';
+import { ContourDetector } from '../utils/geometry/ContourDetection.js';
 import { UndoRedoSystem } from './drawer/UndoRedoSystem.js';
 import { MultiSelectHandler } from './drawer/MultiSelectHandler.js';
 import { DrawerToolbar } from './drawer/DrawerToolbar.js';
 import { GCodeEditor } from './drawer/GCodeEditor.js';
+import {
+  organizeGCodeStructure,
+  structureContours,
+  isHeaderCommand,
+  isMotionCommand,
+  isFooterCommand
+} from '../utils/GCodeStructure.js';
 
-// Helper functions for organizing G-code into sections
-function isHeaderCommand(raw) {
-  if (!raw) return false;
-  const cleaned = raw.replace(/^N\d+\s+/i, '').replace(/[;(].*$/g, '').trim().toUpperCase();
-  if (cleaned === '') return false;
-  
-  // Program control and setup commands
-  if (/^%/.test(cleaned)) return true;
-  if (/^(G92|G60|G38|G50|G51|G52|G53|G54|G55|G56|G57|G58|G59)/.test(cleaned)) return true;
-  if (/^(G90|G91|G90\.1|G91\.1)/.test(cleaned)) return true;
-  if (/^(G40|G41|G42|G43|G44|G45|G46|G47|G48|G49)/.test(cleaned)) return true;
-  if (/^(G17|G18|G19)/.test(cleaned)) return true;
-  if (/^(G20|G21)/.test(cleaned)) return true;
-  if (/^(G94|G95|G96|G97|G98|G99)/.test(cleaned)) return true;
-  if (/^(M[0-9]|M1[0-9]|M2[0-9]|M3[0-9]|M[4-9][0-9]|M28|M30)/.test(cleaned) && !/^M02\b/.test(cleaned)) return true;
-  
-  return false;
-}
-
-function isMotionCommand(raw) {
-  if (!raw) return false;
-  const cleaned = raw.replace(/^N\d+\s+/i, '').replace(/[;(].*$/g, '').trim().toUpperCase().replace(/\bG0+([0-3])(?!\d)/g, 'G$1');
-  return /^(G0|G1|G2|G3)\b/.test(cleaned);
-}
-
-function isFooterCommand(raw) {
-  if (!raw) return false;
-  const cleaned = raw.replace(/^N\d+\s+/i, '').replace(/[;(].*$/g, '').trim().toUpperCase();
-  return /^(M02|M30)\b/.test(cleaned) || /^%$/.test(cleaned);
-}
+// Re-export helpers for backward compatibility if needed, or just rely on imports
+export { isHeaderCommand, isMotionCommand, isFooterCommand };
 
 export class GCodeDrawer {
   constructor(mountTarget = document.body, options = {}) {
@@ -71,9 +51,10 @@ export class GCodeDrawer {
     // Folder collapse states
     this.folderStates = {
       header: localStorage.getItem('gcodeDrawer.folder.header') !== 'false', // expanded by default
-      body: true, // always expanded
+      body: true, // always expanded (legacy - now handled by contour folders)
       footer: localStorage.getItem('gcodeDrawer.folder.footer') !== 'false' // expanded by default
     };
+    this.contourFolderStates = {}; // Dynamic contour folder states
     mountTarget.appendChild(this.container);
     this._applyAnchorClass();
     this._render();
@@ -92,96 +73,362 @@ export class GCodeDrawer {
     }
   }
 
-  // Organize lines into header, body, and footer sections
+  // Organize lines into header, body with contours, and footer sections
   _organizeLinesIntoSections(lines) {
-    const sections = {
-      header: { lines: [], startLineNum: 1 },
-      body: { lines: [], startLineNum: 1 },
-      footer: { lines: [], startLineNum: 1 }
-    };
-    
-    let inBody = false;
-    let foundFirstMotion = false;
-    let currentLineNum = 1;
-    
-    for (let i = 0; i < lines.length; i++) {
-      const text = lines[i];
-      const trimmedLine = (text || '').trim();
-      
-      // Handle empty lines and comments - they follow context
-      if (trimmedLine === '' || trimmedLine.startsWith(';') || trimmedLine.startsWith('(')) {
-        if (inBody && foundFirstMotion) {
-          sections.body.lines.push({ num: currentLineNum, text });
-        } else if (sections.footer.lines.length > 0) {
-          if (sections.footer.lines.length === 1) sections.footer.startLineNum = currentLineNum;
-          sections.footer.lines.push({ num: currentLineNum, text });
-        } else {
-          if (sections.header.lines.length === 0) sections.header.startLineNum = currentLineNum;
-          sections.header.lines.push({ num: currentLineNum, text });
+    const sections = organizeGCodeStructure(lines);
+
+    // Initialize folder states for any detected contours
+    if (sections.body.contours) {
+      sections.body.contours.forEach(contour => {
+        if (!(contour.id in this.contourFolderStates)) {
+          const storedState = localStorage.getItem(`gcodeDrawer.contour.${contour.id}`);
+          this.contourFolderStates[contour.id] = storedState !== 'false'; // expanded by default
         }
-        currentLineNum++;
-        continue;
-      }
-      
-      // Check for footer commands first
-      if (isFooterCommand(text)) {
-        if (sections.footer.lines.length === 0) sections.footer.startLineNum = currentLineNum;
-        sections.footer.lines.push({ num: currentLineNum, text });
-        currentLineNum++;
-        continue;
-      }
-      
-      // Check for motion commands
-      if (isMotionCommand(text)) {
-        if (!foundFirstMotion) {
-          foundFirstMotion = true;
-          inBody = true;
-          sections.body.startLineNum = currentLineNum;
-        }
-        sections.body.lines.push({ num: currentLineNum, text });
-        currentLineNum++;
-        continue;
-      }
-      
-      // Check for explicit header commands
-      if (isHeaderCommand(text)) {
-        if (inBody && foundFirstMotion) {
-          // Unusual - setup command in middle of motion commands
-          sections.body.lines.push({ num: currentLineNum, text });
-        } else {
-          if (sections.header.lines.length === 0) sections.header.startLineNum = currentLineNum;
-          sections.header.lines.push({ num: currentLineNum, text });
-        }
-        currentLineNum++;
-        continue;
-      }
-      
-      // For other commands, use context
-      if (inBody && foundFirstMotion) {
-        sections.body.lines.push({ num: currentLineNum, text });
-      } else if (sections.footer.lines.length > 0) {
-        sections.footer.lines.push({ num: currentLineNum, text });
-      } else {
-        if (sections.header.lines.length === 0) sections.header.startLineNum = currentLineNum;
-        sections.header.lines.push({ num: currentLineNum, text });
-      }
-      currentLineNum++;
+      });
     }
-    
+
     return sections;
+  }
+
+  // Legacy method kept for compatibility if needed, but implementation delegated
+  _detectContours(bodyLines) {
+    return structureContours(bodyLines);
   }
 
   // Toggle folder expanded/collapsed state
   _toggleFolder(folderName) {
-    if (folderName === 'body') return; // Body is always expanded
-    
-    this.folderStates[folderName] = !this.folderStates[folderName];
-    localStorage.setItem(`gcodeDrawer.folder.${folderName}`, this.folderStates[folderName].toString());
-    
+    if (folderName === 'body') return; // Body is always expanded (legacy)
+
+    // Check if it's a contour folder
+    if (folderName.startsWith('contour-') || folderName.startsWith('loose-')) {
+      this.contourFolderStates[folderName] = !this.contourFolderStates[folderName];
+      localStorage.setItem(`gcodeDrawer.contour.${folderName}`, this.contourFolderStates[folderName].toString());
+    } else {
+      this.folderStates[folderName] = !this.folderStates[folderName];
+      localStorage.setItem(`gcodeDrawer.folder.${folderName}`, this.folderStates[folderName].toString());
+    }
+
     // Re-render the drawer to reflect the new state
-    const rawLines = this.lines.map(l => l.text);
-    this.editor.setLines(rawLines);
+    this._renderWithFolders();
   }
+
+  // Render G-code with folder structure
+  _renderWithFolders(clearMapping = false) {
+    if (!this.lines || this.lines.length === 0) {
+      this.bodyEl.innerHTML = '';
+      return;
+    }
+
+    const rawLines = this.lines.map(l => l.text);
+    const sections = this._organizeLinesIntoSections(rawLines);
+    // Cache sections for folder operations (move/delete)
+    this._lastSections = sections;
+
+    // Build HTML structure with folders
+    let folderHTML = '';
+
+    // Header folder
+    if (sections.header.lines.length > 0) {
+      const isExpanded = this.folderStates.header;
+      folderHTML += this._renderFolder(
+        'header',
+        'Header',
+        sections.header.lines,
+        isExpanded,
+        {
+          icon: '⚙️',
+          description: `${sections.header.lines.length} setup commands`
+        }
+      );
+    }
+
+    // Body folders (contours)
+    if (sections.body.contours && sections.body.contours.length > 0) {
+      const total = sections.body.contours.length;
+      for (let idx = 0; idx < total; idx++) {
+        const contour = sections.body.contours[idx];
+        const isExpanded = this.contourFolderStates[contour.id] !== false;
+        let folderTitle, folderIcon, description;
+
+        if (contour.type === 'toolpath-closed') {
+          folderTitle = `Closed Path ${contour.id.split('-')[1]}`;
+          folderIcon = '🔄';
+          description = `${contour.count} lines • ${contour.length?.toFixed(2) || '?'} mm • ${contour.direction}`;
+        } else if (contour.type === 'toolpath-open') {
+          folderTitle = `Open Path ${contour.id.split('-')[1]}`;
+          folderIcon = '〰️';
+          description = `${contour.count} lines • ${contour.length?.toFixed(2) || '?'} mm`;
+        } else if (contour.type === 'contour') {
+          // Legacy fallback
+          folderTitle = `Contour ${contour.id.split('-')[1]}`;
+          folderIcon = '🔄';
+          description = `${contour.count} lines • ${contour.length?.toFixed(2) || '?'} mm`;
+        } else {
+          folderTitle = `Rapid / Setup ${contour.id.split('-')[1]}`;
+          folderIcon = '⚡';
+          description = `${contour.count} commands`;
+        }
+
+        folderHTML += this._renderFolder(
+          contour.id,
+          folderTitle,
+          contour.lines,
+          isExpanded,
+          {
+            icon: folderIcon,
+            description: description,
+            actions: {
+              moveUp: idx > 0,
+              moveDown: idx < total - 1,
+              delete: true
+            }
+          }
+        );
+      }
+    } else if (sections.body.lines.length > 0) {
+      // Fallback: render body as single section if no contours detected
+      folderHTML += this._renderFolder(
+        'body-fallback',
+        'Body',
+        sections.body.lines,
+        true,
+        {
+          icon: '🔄',
+          description: `${sections.body.lines.length} motion commands`
+        }
+      );
+    }
+
+    // Footer folder
+    if (sections.footer.lines.length > 0) {
+      const isExpanded = this.folderStates.footer;
+      folderHTML += this._renderFolder(
+        'footer',
+        'Footer',
+        sections.footer.lines,
+        isExpanded,
+        {
+          icon: '🏁',
+          description: `${sections.footer.lines.length} end commands`
+        }
+      );
+    }
+
+    // Set the folder HTML directly in the body element
+    this.bodyEl.innerHTML = folderHTML;
+
+    // Bind folder events and rebind editor-managed line events/edit mode
+    this._bindFolderEvents();
+    this.editor?.setEditMode(this.editMode);
+
+    // Clear mapping to avoid stale highlights until re-parse
+    if (clearMapping) {
+      this.lineIndexToPathIndex.clear();
+      this.pathIndexToLineIndex.clear();
+    }
+
+    // Update line count
+    this._updateLineCount();
+  }
+
+  // Render individual folder
+  _renderFolder(folderId, title, lines, isExpanded, options = {}) {
+    const { icon = '📁', description = '', actions = null } = options;
+    const collapsedClass = isExpanded ? 'expanded' : 'collapsed';
+    const iconClass = isExpanded ? '' : 'collapsed';
+
+    let folderHTML = `
+      <div class="gcode-folder" data-folder-id="${folderId}">
+        <button class="gcode-folder-header" data-folder="${folderId}">
+          <span class="gcode-folder-icon ${iconClass}">▼</span>
+          <span class="gcode-folder-title" title="${title}">${icon} ${title}</span>
+          <span class="gcode-folder-count">${description}</span>
+          ${actions ? `
+            <span class="gcode-folder-actions">
+              <span class="gcode-folder-action" role="button" tabindex="0" data-action="move-up" data-folder="${folderId}" ${actions.moveUp ? '' : 'disabled'} title="Move folder up">▲</span>
+              <span class="gcode-folder-action" role="button" tabindex="0" data-action="move-down" data-folder="${folderId}" ${actions.moveDown ? '' : 'disabled'} title="Move folder down">▼</span>
+              <span class="gcode-folder-action" role="button" tabindex="0" data-action="delete" data-folder="${folderId}" title="Delete folder">🗑</span>
+            </span>
+          ` : ''}
+        </button>
+        <div class="gcode-folder-content ${collapsedClass}">
+    `;
+
+    // Add lines within the folder
+    for (const lineObj of lines) {
+      const lineText = sanitizeText(lineObj.text || '');
+      folderHTML += `
+        <div class="gcode-line" data-line="${lineObj.num}">
+          <span class="gcode-line-num">${lineObj.num}</span>
+          <span class="gcode-line-text">${lineText}</span>
+        </div>
+      `;
+    }
+
+    folderHTML += `
+        </div>
+      </div>
+    `;
+
+    return folderHTML;
+  }
+
+  // Bind folder header click events
+  _bindFolderEvents() {
+    this.bodyEl.querySelectorAll('.gcode-folder-header').forEach(header => {
+      header.addEventListener('click', (e) => {
+        e.preventDefault();
+        const folderId = header.getAttribute('data-folder');
+        if (folderId) {
+          this._toggleFolder(folderId);
+        }
+      });
+    });
+    // Bind action buttons inside headers
+    this.bodyEl.querySelectorAll('.gcode-folder-action').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (btn.hasAttribute('disabled')) return;
+        const folderId = btn.getAttribute('data-folder');
+        const action = btn.getAttribute('data-action');
+        if (!folderId || !action) return;
+        if (action === 'move-up') this._moveFolder(folderId, -1);
+        else if (action === 'move-down') this._moveFolder(folderId, 1);
+        else if (action === 'delete') this._deleteFolder(folderId);
+      });
+      btn.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        btn.click();
+      });
+    });
+  }
+
+  // Move a body folder (contour/loose) up or down by one position
+  _moveFolder(folderId, direction) {
+    const sections = this._lastSections;
+    if (!sections || !sections.body || !Array.isArray(sections.body.contours)) return;
+    const groups = sections.body.contours;
+    const idx = groups.findIndex(g => g.id === folderId);
+    if (idx < 0) return;
+    const targetIdx = idx + (direction < 0 ? -1 : 1);
+    if (targetIdx < 0 || targetIdx >= groups.length) return;
+
+    const current = groups[idx];
+    const neighbor = groups[targetIdx];
+    if (!current?.lines?.length || !neighbor?.lines?.length) return;
+
+    const startLine = current.lines[0].num;
+    const endLine = current.lines[current.lines.length - 1].num;
+    const neighborStart = neighbor.lines[0].num;
+
+    const startIdx0 = startLine - 1;
+    const endIdx0 = endLine - 1;
+    const len = endIdx0 - startIdx0 + 1;
+
+    const oldLines = this.lines.map(l => l.text);
+    const newLinesObjs = [...this.lines];
+    const extracted = newLinesObjs.splice(startIdx0, len);
+
+    let insertIdx0;
+    if (direction < 0) {
+      // Move up: insert before neighbor's start index
+      insertIdx0 = neighborStart - 1;
+    } else {
+      // Move down: insert after neighbor
+      // When we remove 'current' (which is before 'neighbor'), neighbor's index shifts by -len.
+      // We want to insert after neighbor, so at (neighborStart - len) + neighborLength
+      insertIdx0 = (neighborStart - 1) - len + neighbor.lines.length;
+    }
+    if (insertIdx0 < 0) insertIdx0 = 0;
+    newLinesObjs.splice(insertIdx0, 0, ...extracted);
+
+    // Re-number lines
+    const newLines = newLinesObjs.map((t, i) => ({ num: i + 1, text: t.text }));
+
+    // Calculate new selection range
+    const movedCount = len;
+    // Fix: Correctly calculate new start line for move down
+    const newStartLine = direction < 0
+      ? neighborStart
+      : (neighborStart - len + neighbor.lines.length);
+
+    const selectionAfterExecute = [];
+    for (let n = 0; n < movedCount; n++) selectionAfterExecute.push(newStartLine + n);
+
+    const selectionAfterUndo = [];
+    for (let n = 0; n < movedCount; n++) selectionAfterUndo.push(startLine + n);
+
+    const replaceCommand = {
+      type: 'move-folder',
+      selectionAfterExecute,
+      selectionAfterUndo,
+      execute: () => {
+        this.lines = newLines;
+        this._renderWithFolders(true);
+        this._updateLineCount();
+      },
+      undo: () => {
+        this.lines = oldLines.map((t, i) => ({ num: i + 1, text: t }));
+        this._renderWithFolders(true);
+        this._updateLineCount();
+      }
+    };
+    this.undoSystem.push(replaceCommand);
+    replaceCommand.execute();
+
+    // After replacing, emit content change and select the moved folder range
+    this._pendingSelectionRestore = new Set(selectionAfterExecute);
+    this._emitContentChanged(this.getText());
+  }
+
+  // Delete a body folder (contour/loose) and its lines
+  _deleteFolder(folderId) {
+    const sections = this._lastSections;
+    if (!sections || !sections.body || !Array.isArray(sections.body.contours)) return;
+    const groups = sections.body.contours;
+    const group = groups.find(g => g.id === folderId);
+    if (!group || !group.lines || group.lines.length === 0) return;
+
+    const startLine = group.lines[0].num;
+    const endLine = group.lines[group.lines.length - 1].num;
+
+    // Confirm deletion for larger groups
+    if (group.lines.length > 3) {
+      const ok = confirm(`Delete folder '${folderId}' with ${group.lines.length} lines? Use Ctrl+Z to undo.`);
+      if (!ok) return;
+    }
+
+    const oldLines = this.lines.map(l => l.text);
+    const newLines = this.lines.filter(l => l.num < startLine || l.num > endLine).map((l, i) => ({ num: i + 1, text: l.text }));
+
+    // Restore selection to the lines that were deleted (so they reappear selected)
+    const selectionAfterUndo = [];
+    for (let i = startLine; i <= endLine; i++) selectionAfterUndo.push(i);
+
+    const replaceCommand = {
+      type: 'delete-folder',
+      selectionAfterExecute: [], // Clear selection after delete
+      selectionAfterUndo,
+      execute: () => {
+        this.lines = newLines;
+        this._renderWithFolders(true);
+        this._updateLineCount();
+      },
+      undo: () => {
+        this.lines = oldLines.map((t, i) => ({ num: i + 1, text: t }));
+        this._renderWithFolders(true);
+        this._updateLineCount();
+      }
+    };
+    this.undoSystem.push(replaceCommand);
+    replaceCommand.execute();
+    this.selection.clear();
+    this.selectedLines = this.selection.getSelection();
+    this._emitContentChanged(this.getText());
+  }
+
 
   _render() {
     this.container.innerHTML = `
@@ -214,7 +461,7 @@ export class GCodeDrawer {
     this.headerEl = this.container.querySelector('.gcode-drawer-header');
     this.bodyEl = this.container.querySelector('.gcode-drawer-body');
     this.footerEl = this.container.querySelector('.gcode-drawer-footer');
-    
+
     // Add keyboard event handling
     this.bodyEl.addEventListener('keydown', (e) => this._onKeyDown(e));
 
@@ -283,7 +530,7 @@ export class GCodeDrawer {
     this.selectedLines = this.selection.getSelection();
     this.lastClickedLine = null;
     // Editor manages its own editing state
-    
+
     // Only clear undo/redo history if preserveHistory is false
     if (!preserveHistory) {
       console.log('GCodeDrawer: Clearing undo/redo history');
@@ -292,8 +539,10 @@ export class GCodeDrawer {
       console.log('GCodeDrawer: Preserving undo/redo history, stack sizes:', this.undoSystem.getUndoCount(), this.undoSystem.getRedoCount());
     }
     const rawLines = (text || '').split(/\r?\n/);
-    this.editor.setLines(rawLines);
     this.lines = rawLines.map((t, i) => ({ num: i + 1, text: t }));
+
+    // Render with folder structure instead of plain lines
+    this._renderWithFolders();
     // Build line->path index map (use first point with matching line)
     mapping?.forEach(m => {
       if (typeof m?.line === 'number' && typeof m?.index === 'number') {
@@ -305,10 +554,10 @@ export class GCodeDrawer {
         }
       }
     });
-    
+
     // Update line count display
     this._updateLineCount();
-    
+
     // Initialize undo/redo buttons
     this._updateUndoRedoButtons();
 
@@ -342,10 +591,10 @@ export class GCodeDrawer {
       // Single selection
       this._selectSingle(lineNum, element);
     }
-    
+
     this.lastClickedLine = lineNum;
     this._updateSelectionVisuals();
-    
+
     // Emit click event for first selected line (maintain compatibility)
     const firstSelected = Math.min(...this.selectedLines);
     const index = this.lineIndexToPathIndex.get(firstSelected);
@@ -370,12 +619,18 @@ export class GCodeDrawer {
   }
 
   _updateSelectionVisuals() {
-    if (this.editor) this.editor.updateSelectionClasses(this.selectedLines);
+    // Update selection classes for folder structure
+    this.bodyEl.querySelectorAll('.gcode-line').forEach(el => el.classList.remove('selected'));
+    this.selectedLines.forEach(lineNum => {
+      const lineEl = this.bodyEl.querySelector(`.gcode-line[data-line="${lineNum}"]`);
+      if (lineEl) lineEl.classList.add('selected');
+    });
+
     const count = this.selectedLines.size;
     const hasSelection = count > 0;
     if (this.toolbar) this.toolbar.updateSelectionUI(hasSelection, count);
   }
-  
+
   _restoreSelection(lineNumbers) {
     // Helper method to restore selection to specific line numbers
     console.log('GCodeDrawer: Restoring selection to lines:', lineNumbers);
@@ -388,14 +643,14 @@ export class GCodeDrawer {
     this.selectedLines = this.selection.getSelection();
     this._updateSelectionVisuals();
   }
-  
+
   _updateLineCount() {
     const count = this.bodyEl ? this.bodyEl.querySelectorAll('.gcode-line').length : this.lines.length;
     if (this.toolbar) this.toolbar.updateLineCount(count);
   }
-  
+
   // Editing state visuals are handled by GCodeEditor
-  
+
   // Undo/Redo functionality
   _undo() {
     if (!this.undoSystem.canUndo()) return;
@@ -408,21 +663,25 @@ export class GCodeDrawer {
     const command = this.undoSystem.undo();
     if (!command) return;
     this._debug('Executed undo for command:', command.type);
-    
-    // For move commands, preserve selection after content change
-    if (command.type === 'move') {
+
+    // Restore selection if command specifies it
+    if (command.selectionAfterUndo) {
+      this._pendingSelectionRestore = new Set(command.selectionAfterUndo);
+    } else if (command.type === 'move') {
+      // Legacy support for editor move commands if they don't have selectionAfterUndo
+      // (GCodeEditor commands might need similar updates, but for now we handle folder moves)
       const movedSelection = Array.from(this.selectedLines);
-      this._emitContentChanged(this.getText());
-      setTimeout(() => {
-        this._restoreSelection(movedSelection);
-      }, 0);
+      this._pendingSelectionRestore = new Set(movedSelection);
     } else {
-      // Preserve selection across content refresh for non-move operations (e.g., edit)
+      // Default: preserve current selection (often empty or irrelevant for undo)
+      // Actually, for generic undo, we might want to clear or restore previous.
+      // But existing logic was:
       this._pendingSelectionRestore = new Set(this.selectedLines);
-      this._emitContentChanged(this.getText());
     }
+
+    this._emitContentChanged(this.getText());
   }
-  
+
   _redo() {
     if (!this.undoSystem.canRedo()) return;
     // Cancel any pending debounced content change to avoid racing updates
@@ -434,28 +693,27 @@ export class GCodeDrawer {
     const command = this.undoSystem.redo();
     if (!command) return;
     this._debug('Executed redo for command:', command.type);
-    
-    // For move commands, preserve selection after content change
-    if (command.type === 'move') {
+
+    // Restore selection if command specifies it
+    if (command.selectionAfterExecute) {
+      this._pendingSelectionRestore = new Set(command.selectionAfterExecute);
+    } else if (command.type === 'move') {
       const movedSelection = Array.from(this.selectedLines);
-      this._emitContentChanged(this.getText());
-      setTimeout(() => {
-        this._restoreSelection(movedSelection);
-      }, 0);
+      this._pendingSelectionRestore = new Set(movedSelection);
     } else {
-      // Preserve selection across content refresh for non-move operations (e.g., edit)
       this._pendingSelectionRestore = new Set(this.selectedLines);
-      this._emitContentChanged(this.getText());
     }
+
+    this._emitContentChanged(this.getText());
   }
-  
+
   _updateUndoRedoButtons() {
     const undoCount = this.undoSystem.getUndoCount();
     const redoCount = this.undoSystem.getRedoCount();
     this._debug('Updating undo/redo buttons. Undo stack:', undoCount, 'Redo stack:', redoCount);
     if (this.toolbar) this.toolbar.setUndoRedoState(undoCount, redoCount);
   }
-  
+
 
   insertPointsAt(atIndex, points) {
     // Insert generated G-code for points after a resolved line:
@@ -505,12 +763,12 @@ export class GCodeDrawer {
         this.eventBus.off(EVENT_TYPES.POINT_CLICKED_RESPONSE, handleResponse);
         resolve(points || []);
       };
-      
+
       this.eventBus.on(EVENT_TYPES.POINT_CLICKED_RESPONSE, handleResponse);
-      
+
       // Request clicked points from main app
       this.eventBus.emit(EVENT_TYPES.POINT_GET_CLICKED, {}, { skipValidation: true });
-      
+
       // Add timeout to prevent hanging
       setTimeout(() => {
         this.eventBus.off(EVENT_TYPES.POINT_CLICKED_RESPONSE, handleResponse);
@@ -541,7 +799,7 @@ export class GCodeDrawer {
   _onDelete(lineNum) {
     const lineEl = this.bodyEl.querySelector(`.gcode-line[data-line="${lineNum}"]`);
     if (!lineEl) return;
-    
+
     // Cancel any pending debounced content change to avoid racing updates
     if (this._debounceTimer) {
       clearTimeout(this._debounceTimer);
@@ -555,17 +813,17 @@ export class GCodeDrawer {
       text: lineEl.querySelector('.gcode-line-text').textContent,
       originalIndex: allLines.indexOf(lineEl)
     }];
-    
+
     // Create and push delete command
     const deleteCommand = this.editor.createDeleteCommand([lineNum], linesData);
     this.undoSystem.push(deleteCommand);
-    
+
     // Execute delete
     deleteCommand.execute();
-    
+
     // Update internal lines array
     this.lines = this.lines.filter(line => line.num !== lineNum);
-    
+
     // Remove from selection if it was selected
     const nextSel = new Set(this.selectedLines);
     nextSel.delete(lineNum);
@@ -574,7 +832,7 @@ export class GCodeDrawer {
     if (this.lastClickedLine === lineNum) {
       this.lastClickedLine = null;
     }
-    
+
     this._emitContentChanged(this.getText());
   }
 
@@ -597,14 +855,14 @@ export class GCodeDrawer {
           return;
       }
     }
-    
+
     // Handle Ctrl+Shift+Z as alternative redo (common shortcut)
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z') {
       e.preventDefault();
       this._redo();
       return;
     }
-    
+
     // Handle delete actions
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (this.selectedLines.size > 0) {
@@ -625,7 +883,7 @@ export class GCodeDrawer {
 
   _onBulkDelete() {
     if (this.selectedLines.size === 0) return;
-    
+
     // Cancel any pending debounced content change to avoid racing updates
     if (this._debounceTimer) {
       clearTimeout(this._debounceTimer);
@@ -638,7 +896,7 @@ export class GCodeDrawer {
       const confirmed = confirm(`Delete ${count} selected lines? Use Ctrl+Z to undo if needed.`);
       if (!confirmed) return;
     }
-    
+
     // Capture current state for undo
     const sortedLines = Array.from(this.selectedLines).sort((a, b) => a - b);
     const linesData = sortedLines.map(lineNum => {
@@ -650,11 +908,11 @@ export class GCodeDrawer {
         originalIndex: allLines.indexOf(lineEl)
       };
     });
-    
+
     // Create and push delete command
     const deleteCommand = this.editor.createDeleteCommand(sortedLines, linesData);
     this.undoSystem.push(deleteCommand);
-    
+
     // Execute delete
     deleteCommand.execute();
     this._emitContentChanged(this.getText());
@@ -664,7 +922,7 @@ export class GCodeDrawer {
 
   _moveSelectedLines(direction) {
     if (this.selectedLines.size === 0) return;
-    
+
     // Cancel any pending debounced content change to avoid racing updates
     if (this._debounceTimer) {
       clearTimeout(this._debounceTimer);
@@ -672,20 +930,20 @@ export class GCodeDrawer {
     }
 
     const sortedSelection = Array.from(this.selectedLines).sort((a, b) => a - b);
-    
+
     // Create and push move command
     const moveCommand = this.editor.createMoveCommand(sortedSelection, direction);
     this.undoSystem.push(moveCommand);
-    
+
     // Execute initial move (selection is already correct)
     this.editor._moveSelectedLinesInternal(direction);
-    
+
     // Store the moved selection to restore after setContent clears it
     const movedSelection = Array.from(this.selectedLines);
-    
+
     // Emit content change (this will trigger main app to call setContent)
     this._emitContentChanged(this.getText());
-    
+
     // Restore selection after a brief delay (after setContent has been called)
     setTimeout(() => {
       this._restoreSelection(movedSelection);
@@ -738,23 +996,32 @@ export class GCodeDrawer {
       return;
     }
     const oldText = this.getText();
-    const { text: rotatedText, newStartLine } = rotateStartAtLine(oldText, firstSelected, { ensureClosure: true });
+    // Use new reorder logic
+    const result = GCodeRewriter.reorderAndRotateContours(
+      this.getText(),
+      firstSelected,
+      { ensureClosure: true }
+    );
+    const newText = result.text;
+    const newStartLine = result.newStartLine;
 
     // If nothing changed, bail
-    if (rotatedText === oldText) return;
+    if (newText === oldText) return;
 
     const oldLines = oldText.split(/\r?\n/);
-    const newLines = rotatedText.split(/\r?\n/);
+    const newLines = newText.split(/\r?\n/);
 
     // Create and push replace command
     const replaceCommand = {
       type: 'replace',
       execute: () => {
-        this.editor.setLines(newLines);
+        this.lines = newLines.map((t, i) => ({ num: i + 1, text: t }));
+        this._renderWithFolders(true);
         this._updateLineCount();
       },
       undo: () => {
-        this.editor.setLines(oldLines);
+        this.lines = oldLines.map((t, i) => ({ num: i + 1, text: t }));
+        this._renderWithFolders(true);
         this._updateLineCount();
       }
     };
@@ -769,14 +1036,14 @@ export class GCodeDrawer {
       this._restoreSelection([newStartLine]);
     }, 0);
   }
-  
+
   _onModeToggle(mode) {
     this.editMode = (mode === 'edit');
     localStorage.setItem('gcodeDrawerMode', mode);
-    
+
     // Update editor mode
     this.editor?.setEditMode(this.editMode);
-    
+
     // Update toolbar UI
     this.toolbar?.updateModeUI(this.editMode);
     // In select mode, reflect selection toolbar based on current selection
@@ -788,7 +1055,7 @@ export class GCodeDrawer {
     // Update container class and help text for mode-specific UX
     this._applyModeClass();
     this._updateHelpText();
-    
+
     this._debug('Mode toggled to:', mode, 'editMode:', this.editMode);
   }
 

@@ -10,6 +10,7 @@
  */
 
 import { canonicalizeMotionCodes } from './IsoNormalizer.js';
+import { ContourDetector } from './geometry/ContourDetection.js';
 
 function stripInlineComments(line) {
   if (typeof line !== 'string') return '';
@@ -32,10 +33,10 @@ function isMotionLine(raw) {
 function isHeaderCommand(raw) {
   if (!raw) return false;
   const cleaned = canonicalizeMotionCodes(dropLeadingBlockNumber(stripInlineComments(raw))).toUpperCase();
-  
+
   // Empty lines and comments should follow context (handled separately)
   if (cleaned.trim() === '') return false;
-  
+
   // Program control and setup commands that should stay in header
   if (/^%/.test(cleaned)) return true; // Program start/end
   if (/^[GM]\d+/.test(cleaned)) {
@@ -48,14 +49,14 @@ function isHeaderCommand(raw) {
     if (/^(G94|G95)/.test(cleaned)) return true; // Feed rate modes
     if (/^(G96|G97)/.test(cleaned)) return true; // Spindle control modes
     if (/^(G98|G99)/.test(cleaned)) return true; // Canned cycle modes
-    
+
     // M-codes that are setup commands
     if (/^(M[0-9]|M1[0-9]|M2[0-9]|M3[0-9]|M[4-9][0-9]|M28|M30)/.test(cleaned)) {
       // Exclude M02 as it's typically a program end
       if (!/^M02\b/.test(cleaned)) return true;
     }
   }
-  
+
   return false;
 }
 
@@ -63,12 +64,12 @@ function isHeaderCommand(raw) {
 function isFooterCommand(raw) {
   if (!raw) return false;
   const cleaned = canonicalizeMotionCodes(dropLeadingBlockNumber(stripInlineComments(raw))).toUpperCase();
-  
+
   // Program end commands
   if (/^M02\b/.test(cleaned)) return true; // Program end
   if (/^M30\b/.test(cleaned)) return true; // Program end with rewind
   if (/^%$/.test(cleaned)) return true; // Program end marker
-  
+
   return false;
 }
 
@@ -174,15 +175,15 @@ function formatNumber(num) {
 // Reconstruct arc command line with new I,J values
 function updateArcCommand(originalLine, newI, newJ) {
   if (!originalLine || newI == null || newJ == null) return originalLine;
-  
+
   // Separate comment from the command
   const commentMatch = originalLine.match(/[;(].*$/);
   const comment = commentMatch ? originalLine.slice(commentMatch.index) : '';
   const commandPart = commentMatch ? originalLine.slice(0, commentMatch.index) : originalLine;
-  
+
   // Replace I and J values in the command part
   let updatedCommand = commandPart;
-  
+
   // Replace I value
   const iPattern = /\bI\s*[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?/i;
   if (iPattern.test(updatedCommand)) {
@@ -191,7 +192,7 @@ function updateArcCommand(originalLine, newI, newJ) {
     // If no I value exists, add it (shouldn't happen with valid arcs, but be safe)
     updatedCommand += ` I${formatNumber(newI)}`;
   }
-  
+
   // Replace J value
   const jPattern = /\bJ\s*[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?/i;
   if (jPattern.test(updatedCommand)) {
@@ -200,7 +201,7 @@ function updateArcCommand(originalLine, newI, newJ) {
     // If no J value exists, add it
     updatedCommand += ` J${formatNumber(newJ)}`;
   }
-  
+
   return updatedCommand + comment;
 }
 
@@ -235,14 +236,14 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
   const header = [];
   const body = [];
   const footer = [];
-  
+
   let inBody = false;
   let foundFirstMotion = false;
-  
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmedLine = (line || '').trim();
-    
+
     // Skip empty lines and comments - they follow their context
     if (trimmedLine === '' || trimmedLine.startsWith(';') || trimmedLine.startsWith('(')) {
       if (inBody && foundFirstMotion) {
@@ -254,13 +255,13 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
       }
       continue;
     }
-    
+
     // Check for footer commands first
     if (isFooterCommand(line)) {
       footer.push(line);
       continue;
     }
-    
+
     // Check for motion commands
     if (isMotionLine(line)) {
       body.push(line);
@@ -270,7 +271,7 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
       }
       continue;
     }
-    
+
     // Check for explicit header commands
     if (isHeaderCommand(line)) {
       if (inBody && foundFirstMotion) {
@@ -282,7 +283,7 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
       }
       continue;
     }
-    
+
     // For other commands, use context
     if (inBody && foundFirstMotion) {
       body.push(line);
@@ -292,7 +293,7 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
       header.push(line);
     }
   }
-  
+
   if (body.length === 0) {
     // No motion detected; nothing to rotate
     return { text, newStartLine: 1 };
@@ -303,11 +304,11 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
   const totalLines = header.length + body.length + footer.length;
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   const selectedIdx0 = clamp((selectedLineNumber | 0) - 1, 0, totalLines - 1);
-  
+
   // Determine which section the selected line is in
   let bodyStartIdx = -1;
   let selectedIsMotion = false;
-  
+
   if (selectedIdx0 < header.length) {
     // Selection is in header - invalid
     return { text, newStartLine: header.length + 1 };
@@ -319,7 +320,7 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
     // Selection is in footer - invalid
     return { text, newStartLine: header.length + 1 };
   }
-  
+
   if (!selectedIsMotion) {
     // Strict behavior: selection must be a motion line within the body
     return { text, newStartLine: header.length + 1 };
@@ -333,11 +334,11 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
   // Before rotation: Process arc commands and store their absolute center coordinates
   const arcInfo = [];
   let currentPosition = { x: 0, y: 0 }; // Assume start at origin, will be updated by first move
-  
+
   for (let i = 0; i < body.length; i++) {
     const line = body[i];
     const xy = extractXY(line);
-    
+
     if (isArcLine(line)) {
       const ij = extractIJ(line);
       if (ij.i != null && ij.j != null) {
@@ -353,7 +354,7 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
         }
       }
     }
-    
+
     // Update current position if this line has XY coordinates
     if (xy.x != null) currentPosition.x = xy.x;
     if (xy.y != null) currentPosition.y = xy.y;
@@ -366,18 +367,18 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
   if (arcInfo.length > 0) {
     // Reset current position for rotated body
     currentPosition = { x: 0, y: 0 };
-    
+
     for (let i = 0; i < rotatedBody.length; i++) {
       const line = rotatedBody[i];
       const xy = extractXY(line);
-      
+
       if (isArcLine(line)) {
         // Find the corresponding arc info
         // Map the rotated index back to the original index
-        const originalIdx = i < (body.length - bodyStartIdx) ? 
-          i + bodyStartIdx : 
+        const originalIdx = i < (body.length - bodyStartIdx) ?
+          i + bodyStartIdx :
           i - (body.length - bodyStartIdx);
-          
+
         const info = arcInfo.find(arc => arc.originalIndex === originalIdx);
         if (info) {
           // Recalculate I,J offsets for the current position
@@ -387,7 +388,7 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
           }
         }
       }
-      
+
       // Update current position if this line has XY coordinates
       if (xy.x != null) currentPosition.x = xy.x;
       if (xy.y != null) currentPosition.y = xy.y;
@@ -437,6 +438,354 @@ export function rotateStartAtLine(text, selectedLineNumber, options = {}) {
   return { text: out.join('\n'), newStartLine };
 }
 
+/**
+ * Rotates a single closed loop of G-code lines so it starts at the given index.
+ * Handles arc (G2/G3) I/J updates and ensures closure.
+ * 
+ * @param {string[]} lines - Array of G-code lines for the loop
+ * @param {number} startIndex - 0-based index in lines to become the new start
+ * @param {Object} options
+ * @param {boolean} [options.ensureClosure=true]
+ * @param {Object} [options.startCoord] - Absolute coordinates at the start of the loop (required for accurate arc calcs)
+ * @returns {string[]} Rotated lines
+ */
+function rotateLoop(lines, startIndex, options = {}) {
+  const { ensureClosure = true, startCoord = { x: 0, y: 0 } } = options;
+
+  if (!lines || lines.length === 0) return [];
+  if (startIndex <= 0 || startIndex >= lines.length) return [...lines];
+
+  const chosenLineText = lines[startIndex];
+  const chosenXY = extractXY(chosenLineText);
+  const originalFirstLine = lines[0];
+  const originalStartXY = extractXY(originalFirstLine);
+
+  // Process arc commands and store their absolute center coordinates
+  const arcInfo = [];
+  let currentPosition = { ...startCoord };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const xy = extractXY(line);
+
+    if (isArcLine(line)) {
+      const ij = extractIJ(line);
+      if (ij.i != null && ij.j != null) {
+        const centerCoords = calculateAbsoluteArcCenter(currentPosition.x, currentPosition.y, ij.i, ij.j);
+        if (centerCoords) {
+          arcInfo.push({
+            originalIndex: i,
+            centerX: centerCoords.centerX,
+            centerY: centerCoords.centerY,
+            startX: currentPosition.x,
+            startY: currentPosition.y
+          });
+        }
+      }
+    }
+
+    if (xy.x != null) currentPosition.x = xy.x;
+    if (xy.y != null) currentPosition.y = xy.y;
+  }
+
+  // Rotate body
+  const rotatedBody = lines.slice(startIndex).concat(lines.slice(0, startIndex));
+
+  // Fix arc commands
+  if (arcInfo.length > 0) {
+    // For the rotated body, we need to know the start coordinate.
+    // The start coordinate of the new loop is the end coordinate of the segment *before* the new start.
+    // Which is the coordinate of the line at startIndex - 1 (in original array).
+    // Wait, the new start line is a move TO the start point.
+    // The "current position" before the first line of the rotated body executes depends on where we came from.
+    // But for arc calculations relative to the start of the line, we need the position *before* the line executes.
+
+    // In the original loop:
+    // Line 0 executes from startCoord.
+    // Line 1 executes from Line 0's end.
+    // ...
+    // Line k executes from Line k-1's end.
+
+    // In rotated loop:
+    // New Line 0 (Original Line k) executes from... where?
+    // It executes from the end of the previous contour (or start point).
+    // But we need to update I/J based on that new start position.
+
+    // Actually, extractXY gives the TARGET position.
+    // The I/J are offsets from the START position of the arc command.
+
+    // Let's trace positions in the rotated array.
+    // We need the coordinate where the loop *starts* (i.e. the point before the first line).
+    // That point is the end point of the line *before* the chosen line in the original sequence.
+
+    let loopStartPos = { ...startCoord };
+    // Walk original lines up to startIndex to find the coord before chosen line
+    for (let i = 0; i < startIndex; i++) {
+      const xy = extractXY(lines[i]);
+      if (xy.x != null) loopStartPos.x = xy.x;
+      if (xy.y != null) loopStartPos.y = xy.y;
+    }
+
+    currentPosition = { ...loopStartPos };
+
+    for (let i = 0; i < rotatedBody.length; i++) {
+      const line = rotatedBody[i];
+      const xy = extractXY(line);
+
+      if (isArcLine(line)) {
+        // Map back to original index
+        const originalIdx = i < (lines.length - startIndex) ?
+          i + startIndex :
+          i - (lines.length - startIndex);
+
+        const info = arcInfo.find(arc => arc.originalIndex === originalIdx);
+        if (info) {
+          const newIJ = calculateIJOffsets(currentPosition.x, currentPosition.y, info.centerX, info.centerY);
+          if (newIJ) {
+            rotatedBody[i] = updateArcCommand(line, newIJ.i, newIJ.j);
+          }
+        }
+      }
+
+      if (xy.x != null) currentPosition.x = xy.x;
+      if (xy.y != null) currentPosition.y = xy.y;
+    }
+  }
+
+  // Remove old closer if it exists (immediately before original first line)
+  // In rotated array, original first line is at index (lines.length - startIndex)
+  const idxOfOriginalFirst = lines.length - startIndex;
+  if (idxOfOriginalFirst > 0 && idxOfOriginalFirst < rotatedBody.length) {
+    const prevIdx = idxOfOriginalFirst - 1;
+    const prevLine = rotatedBody[prevIdx];
+    const prevXY = extractXY(prevLine);
+    if (xyEqual(prevXY, originalStartXY)) {
+      rotatedBody.splice(prevIdx, 1);
+    }
+  }
+
+  // Convert original first line to G1 if it was G0 (it's now internal)
+  // It is now at the index that was calculated before splicing? 
+  // If we spliced, indices shift.
+  // Let's recalculate or handle carefully.
+  // If we spliced at prevIdx (which is < idxOfOriginalFirst), then idxOfOriginalFirst decreases by 1.
+  let newIdxOfOriginalFirst = lines.length - startIndex;
+  // Check if we removed the line before it
+  // The line before it was at newIdxOfOriginalFirst - 1.
+  // If that was removed, the original first line is now at newIdxOfOriginalFirst - 1.
+
+  // Re-eval logic:
+  // The original first line is at `lines.length - startIndex`.
+  // The line before it is `lines.length - startIndex - 1`.
+  // If we remove that, the original first line shifts to `lines.length - startIndex - 1`.
+
+  // Let's check the condition again:
+  // if (idxOfOriginalFirst > 0 ... ) -> we checked prevIdx = idxOfOriginalFirst - 1.
+  // If we spliced, we shift.
+
+  // Actually, let's just find the line. It's the one that was originally at index 0.
+  // But lines are strings, might not be unique.
+  // Better to track indices?
+  // For now, let's stick to the index math.
+
+  // If we removed the closer:
+  if (idxOfOriginalFirst > 0 && idxOfOriginalFirst < rotatedBody.length + 1) { // +1 because we might have removed one
+    // Check if we actually removed it?
+    // The previous block executed the splice.
+    // If we did splice, the original first line is now at idxOfOriginalFirst - 1.
+    // How to know if we spliced? We can check the length or re-check the condition?
+    // Or just store a flag.
+  }
+
+  // Simplified: The original first line is the one that WAS at index 0.
+  // In rotated array, it WAS at `lines.length - startIndex`.
+  // If we removed the line before it, it IS at `lines.length - startIndex - 1`.
+
+  // Let's just look at the code in rotateStartAtLine and copy the logic, adapting for the splice.
+  // The original code:
+  // const newIdxOfOriginalFirst = (bodyStartIdx === 0) ? 0 : (body.length - bodyStartIdx);
+  // This didn't account for the splice! Wait, `rotateStartAtLine` implementation:
+  // It calculates `newIdxOfOriginalFirst` *after* the splice?
+  // No, it calculates it based on `bodyStartIdx`.
+  // But `rotatedBody` was modified in place by `splice`.
+  // So if `prevIdx < newIdxOfOriginalFirst`, then `newIdxOfOriginalFirst` should have been decremented?
+  // The original code might have a bug there, or it assumes the closer is not the line immediately before?
+  // The closer IS the line immediately before.
+  // So yes, the index shifts.
+
+  // Let's fix it here.
+  let currentIdxOfOriginalFirst = lines.length - startIndex;
+  const prevIdx = currentIdxOfOriginalFirst - 1;
+  let spliced = false;
+  if (prevIdx >= 0) {
+    const prevLine = rotatedBody[prevIdx]; // This is the line before original first
+    const prevXY = extractXY(prevLine);
+    if (xyEqual(prevXY, originalStartXY)) {
+      rotatedBody.splice(prevIdx, 1);
+      spliced = true;
+      currentIdxOfOriginalFirst--;
+    }
+  }
+
+  if (currentIdxOfOriginalFirst >= 0 && currentIdxOfOriginalFirst < rotatedBody.length) {
+    const line = rotatedBody[currentIdxOfOriginalFirst];
+    const cleaned = canonicalizeMotionCodes(dropLeadingBlockNumber(stripInlineComments(line))).toUpperCase();
+    if (/^G0\b/.test(cleaned)) {
+      rotatedBody[currentIdxOfOriginalFirst] = convertG0ToG1(line);
+    }
+  }
+
+  // Ensure closure
+  if (ensureClosure) {
+    let lastIdx = rotatedBody.length - 1;
+    while (lastIdx >= 0 && (rotatedBody[lastIdx] || '').trim() === '') lastIdx--;
+    const lastLine = lastIdx >= 0 ? rotatedBody[lastIdx] : '';
+    const lastXY = extractXY(lastLine);
+    if (!xyEqual(lastXY, chosenXY)) {
+      rotatedBody.push(generateMinimalClose(chosenXY.xText, chosenXY.yText));
+    }
+  }
+
+  return rotatedBody;
+}
+
+/**
+ * Reorders contours so the one containing selectedLineNumber is first,
+ * and rotates that contour to start at selectedLineNumber.
+ * Inserts G0 moves between contours to maintain valid path.
+ */
+export function reorderAndRotateContours(text, selectedLineNumber, options = {}) {
+  if (!text) return { text: '', newStartLine: 1 };
+
+  const lines = text.split(/\r?\n/);
+
+  // 1. Parse sections (Header, Body, Footer)
+  const header = [];
+  const body = [];
+  const footer = [];
+  let inBody = false;
+  let foundFirstMotion = false;
+
+  // Simple parsing (reuse logic from rotateStartAtLine or extract it)
+  // For brevity, duplicating the loop logic but pushing to arrays
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (isFooterCommand(line)) { footer.push(line); continue; }
+    if (isMotionLine(line)) {
+      if (!foundFirstMotion) { foundFirstMotion = true; inBody = true; }
+      body.push(line);
+      continue;
+    }
+    if (isHeaderCommand(line)) {
+      if (inBody && foundFirstMotion) body.push(line); else header.push(line);
+      continue;
+    }
+    // Contextual
+    if (inBody && foundFirstMotion) body.push(line);
+    else if (footer.length > 0) footer.push(line);
+    else header.push(line);
+  }
+
+  if (body.length === 0) return { text, newStartLine: 1 };
+
+  // 2. Detect Contours
+  // We need to map body lines back to original line numbers if we want to match selectedLineNumber?
+  // Or just use the text content?
+  // ContourDetector expects an array of strings.
+  // It returns contours with `startIndex` and `endIndex` relative to the input array.
+  const contours = ContourDetector.detectContours(body);
+
+  // 3. Find target contour
+  // We need to know which body line corresponds to selectedLineNumber.
+  // selectedLineNumber is 1-based index in the FULL file.
+  // We need to map it to an index in `body`.
+
+  // Let's count lines in header to find offset.
+  const headerLen = header.length;
+  const bodyIndex = (selectedLineNumber - 1) - headerLen;
+
+  if (bodyIndex < 0 || bodyIndex >= body.length) {
+    // Selection not in body
+    return { text, newStartLine: 1 };
+  }
+
+  const targetContourIdx = contours.findIndex(c =>
+    bodyIndex >= c.startIndex && bodyIndex <= c.endIndex
+  );
+
+  if (targetContourIdx === -1) {
+    // Selected line is in body but not part of a detected contour (e.g. rapid move between contours)
+    return { text, newStartLine: 1 };
+  }
+
+  const targetContour = contours[targetContourIdx];
+
+  // 4. Rotate Target Contour
+  // Calculate relative index within the contour
+  const relativeIndex = bodyIndex - targetContour.startIndex;
+
+  // Get the lines for this contour
+  const contourLines = body.slice(targetContour.startIndex, targetContour.endIndex + 1);
+
+  // We need the start coordinate of this contour for accurate arc rotation.
+  // ContourDetector gives us `startCoord`.
+  const rotatedContourLines = rotateLoop(contourLines, relativeIndex, {
+    ensureClosure: targetContour.type === 'toolpath-closed',
+    startCoord: targetContour.startCoord
+  });
+
+  // 5. Reorder Contours
+  // We want: Target, then (Target+1...End), then (0...Target-1)
+  // Wait, usually we want to keep the sequence but just cycle it?
+  // "The rest of the contours to follow" -> implies cycling.
+  // e.g. A, B, C, D. Select C. -> C, D, A, B.
+
+  const reorderedContours = [
+    ...contours.slice(targetContourIdx + 1),
+    ...contours.slice(0, targetContourIdx)
+  ];
+
+  // 6. Construct new body
+  const newBody = [];
+
+  // Add rotated target first
+  newBody.push(...rotatedContourLines);
+
+  // Track current position (end of target contour)
+  // The rotated contour ends at the selected point (because it's closed).
+  // Or if open, it ends at the end.
+  // We need to insert G0 to the start of the next contour.
+
+  let lastPos = extractXY(rotatedContourLines[rotatedContourLines.length - 1]);
+  // If last line doesn't have XY, we might need to track it better.
+  // But `rotateLoop` ensures closure if requested.
+
+  for (const contour of reorderedContours) {
+    // Get contour lines
+    const cLines = body.slice(contour.startIndex, contour.endIndex + 1);
+
+    // Determine start point of this contour
+    const startXY = contour.startCoord; // ContourDetector provides this
+
+    // Insert G0 if needed
+    if (!xyEqual(lastPos, startXY)) {
+      newBody.push(`G0 X${startXY.x.toFixed(4)} Y${startXY.y.toFixed(4)}`);
+    }
+
+    newBody.push(...cLines);
+
+    // Update lastPos
+    lastPos = contour.endCoord;
+  }
+
+  // 7. Reassemble
+  const out = [...header, ...newBody, ...footer];
+  const newStartLine = header.length + 1;
+
+  return { text: out.join('\n'), newStartLine };
+}
+
 export default {
-  rotateStartAtLine
+  rotateStartAtLine,
+  reorderAndRotateContours
 };

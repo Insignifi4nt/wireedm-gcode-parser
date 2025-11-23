@@ -29,5 +29,5 @@ export default defineConfig({
     })
   ],
   base: '/wireedm-gcode-parser/',
-  
+
 });

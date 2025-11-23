@@ -49,7 +49,7 @@ export function renderPath(ctx, viewport, gcodePath, opts = {}) {
       if (hx !== undefined && hy !== undefined) {
         markerRenderer(
           { x: hx, y: hy },
-          { ...MARKERS.CLICKED_POINT, COLOR: '#ffa500', RADIUS_PX: 3, FONT: 'bold 10px Arial', LABEL: `L${move.line || index}` }
+          { ...MARKERS.CLICKED_POINT, COLOR: '#ffa500', RADIUS_PX: 3, FONT: 'bold 13px Arial', LABEL: `L${move.line || index}` }
         );
       }
     }

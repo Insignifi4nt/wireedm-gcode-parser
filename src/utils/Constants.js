@@ -76,23 +76,23 @@ export const MARKERS = {
   START_POINT: {
     COLOR: '#ff0000', // Red for start point
     // Screen-space radius in CSS pixels
-    RADIUS_PX: 4,
+    RADIUS_PX: 5,
     LABEL: 'START',
     FONT: 'bold 10px Arial', // Smaller font
-    OFFSET: { X: 6, Y: -6 }
+    OFFSET: { X: 6, Y: -10 }
   },
   END_POINT: {
-    COLOR: '#0000ff', // Blue for end point
-    RADIUS_PX: 3,
+    COLOR: '#41cfcf', // Blue for end point
+    RADIUS_PX: 3.5,
     LABEL: 'END',
-    FONT: 'bold 4px Arial', // Even smaller font
+    FONT: 'bold 8px Arial', // Even smaller font
     OFFSET: { X: 5, Y: -5 }
   },
   CLICKED_POINT: {
     COLOR: '#ff00ff', // Magenta for user-clicked points
     RADIUS_PX: 3,
-    FONT: '4px Arial', // Smaller font
-    OFFSET: { X: 4, Y: -4 }
+    FONT: '10px Arial', // Smaller font
+    OFFSET: { X: 5, Y: -5 }
   }
 };
 
