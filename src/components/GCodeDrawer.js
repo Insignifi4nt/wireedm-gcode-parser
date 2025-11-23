@@ -6,43 +6,22 @@
 
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { sanitizeText } from '../utils/Sanitize.js';
-import { rotateStartAtLine } from '../utils/GCodeRewriter.js';
+import GCodeRewriter from '../utils/GCodeRewriter.js';
 import { ContourDetector } from '../utils/geometry/ContourDetection.js';
 import { UndoRedoSystem } from './drawer/UndoRedoSystem.js';
 import { MultiSelectHandler } from './drawer/MultiSelectHandler.js';
 import { DrawerToolbar } from './drawer/DrawerToolbar.js';
 import { GCodeEditor } from './drawer/GCodeEditor.js';
+import {
+  organizeGCodeStructure,
+  structureContours,
+  isHeaderCommand,
+  isMotionCommand,
+  isFooterCommand
+} from '../utils/GCodeStructure.js';
 
-// Helper functions for organizing G-code into sections
-function isHeaderCommand(raw) {
-  if (!raw) return false;
-  const cleaned = raw.replace(/^N\d+\s+/i, '').replace(/[;(].*$/g, '').trim().toUpperCase();
-  if (cleaned === '') return false;
-
-  // Program control and setup commands
-  if (/^%/.test(cleaned)) return true;
-  if (/^(G92|G60|G38|G50|G51|G52|G53|G54|G55|G56|G57|G58|G59)/.test(cleaned)) return true;
-  if (/^(G90|G91|G90\.1|G91\.1)/.test(cleaned)) return true;
-  if (/^(G40|G41|G42|G43|G44|G45|G46|G47|G48|G49)/.test(cleaned)) return true;
-  if (/^(G17|G18|G19)/.test(cleaned)) return true;
-  if (/^(G20|G21)/.test(cleaned)) return true;
-  if (/^(G94|G95|G96|G97|G98|G99)/.test(cleaned)) return true;
-  if (/^(M[0-9]|M1[0-9]|M2[0-9]|M3[0-9]|M[4-9][0-9]|M28|M30)/.test(cleaned) && !/^M02\b/.test(cleaned)) return true;
-
-  return false;
-}
-
-function isMotionCommand(raw) {
-  if (!raw) return false;
-  const cleaned = raw.replace(/^N\d+\s+/i, '').replace(/[;(].*$/g, '').trim().toUpperCase().replace(/\bG0+([0-3])(?!\d)/g, 'G$1');
-  return /^(G0|G1|G2|G3)\b/.test(cleaned);
-}
-
-function isFooterCommand(raw) {
-  if (!raw) return false;
-  const cleaned = raw.replace(/^N\d+\s+/i, '').replace(/[;(].*$/g, '').trim().toUpperCase();
-  return /^(M02|M30)\b/.test(cleaned) || /^%$/.test(cleaned);
-}
+// Re-export helpers for backward compatibility if needed, or just rely on imports
+export { isHeaderCommand, isMotionCommand, isFooterCommand };
 
 export class GCodeDrawer {
   constructor(mountTarget = document.body, options = {}) {
@@ -96,167 +75,24 @@ export class GCodeDrawer {
 
   // Organize lines into header, body with contours, and footer sections
   _organizeLinesIntoSections(lines) {
-    const sections = {
-      header: { lines: [], startLineNum: 1 },
-      body: { lines: [], startLineNum: 1 },
-      footer: { lines: [], startLineNum: 1 }
-    };
+    const sections = organizeGCodeStructure(lines);
 
-    let inBody = false;
-    let foundFirstMotion = false;
-    let currentLineNum = 1;
-
-    for (let i = 0; i < lines.length; i++) {
-      const text = lines[i];
-      const trimmedLine = (text || '').trim();
-
-      // Handle empty lines and comments - they follow context
-      if (trimmedLine === '' || trimmedLine.startsWith(';') || trimmedLine.startsWith('(')) {
-        if (inBody && foundFirstMotion) {
-          sections.body.lines.push({ num: currentLineNum, text });
-        } else if (sections.footer.lines.length > 0) {
-          if (sections.footer.lines.length === 1) sections.footer.startLineNum = currentLineNum;
-          sections.footer.lines.push({ num: currentLineNum, text });
-        } else {
-          if (sections.header.lines.length === 0) sections.header.startLineNum = currentLineNum;
-          sections.header.lines.push({ num: currentLineNum, text });
+    // Initialize folder states for any detected contours
+    if (sections.body.contours) {
+      sections.body.contours.forEach(contour => {
+        if (!(contour.id in this.contourFolderStates)) {
+          const storedState = localStorage.getItem(`gcodeDrawer.contour.${contour.id}`);
+          this.contourFolderStates[contour.id] = storedState !== 'false'; // expanded by default
         }
-        currentLineNum++;
-        continue;
-      }
-
-      // Check for footer commands first
-      if (isFooterCommand(text)) {
-        if (sections.footer.lines.length === 0) sections.footer.startLineNum = currentLineNum;
-        sections.footer.lines.push({ num: currentLineNum, text });
-        currentLineNum++;
-        continue;
-      }
-
-      // Check for motion commands
-      if (isMotionCommand(text)) {
-        if (!foundFirstMotion) {
-          foundFirstMotion = true;
-          inBody = true;
-          sections.body.startLineNum = currentLineNum;
-        }
-        sections.body.lines.push({ num: currentLineNum, text });
-        currentLineNum++;
-        continue;
-      }
-
-      // Check for explicit header commands
-      if (isHeaderCommand(text)) {
-        if (inBody && foundFirstMotion) {
-          // Unusual - setup command in middle of motion commands
-          sections.body.lines.push({ num: currentLineNum, text });
-        } else {
-          if (sections.header.lines.length === 0) sections.header.startLineNum = currentLineNum;
-          sections.header.lines.push({ num: currentLineNum, text });
-        }
-        currentLineNum++;
-        continue;
-      }
-
-      // For other commands, use context
-      if (inBody && foundFirstMotion) {
-        sections.body.lines.push({ num: currentLineNum, text });
-      } else if (sections.footer.lines.length > 0) {
-        sections.footer.lines.push({ num: currentLineNum, text });
-      } else {
-        if (sections.header.lines.length === 0) sections.header.startLineNum = currentLineNum;
-        sections.header.lines.push({ num: currentLineNum, text });
-      }
-      currentLineNum++;
-    }
-
-    // Detect contours within the body section
-    if (sections.body.lines.length > 0) {
-      sections.body.contours = this._detectContours(sections.body.lines);
+      });
     }
 
     return sections;
   }
 
-  // Detect closed contours within body lines
+  // Legacy method kept for compatibility if needed, but implementation delegated
   _detectContours(bodyLines) {
-    const lineTexts = bodyLines.map(l => l.text);
-    const contours = ContourDetector.detectContours(lineTexts);
-
-    // Convert absolute line indices to relative indices within body
-    const bodyStartLineNum = bodyLines.length > 0 ? bodyLines[0].num : 1;
-
-    // Process detected contours and create folder structure
-    const processedContours = [];
-    let lastEndIndex = -1;
-
-    for (let i = 0; i < contours.length; i++) {
-      const contour = contours[i];
-      const contourId = `contour-${i + 1}`;
-
-      // Add any lines between last contour and this one as "loose" commands
-      if (contour.startIndex > lastEndIndex + 1) {
-        const looseLines = bodyLines.slice(lastEndIndex + 1, contour.startIndex);
-        if (looseLines.length > 0) {
-          processedContours.push({
-            id: `loose-${processedContours.length}`,
-            type: 'loose',
-            lines: looseLines,
-            startLineNum: looseLines[0].num,
-            count: looseLines.length
-          });
-        }
-      }
-
-      // Add the contour folder
-      const contourLines = bodyLines.slice(contour.startIndex, contour.endIndex + 1);
-      processedContours.push({
-        id: contourId,
-        type: contour.type || 'contour', // 'toolpath-open' or 'toolpath-closed'
-        lines: contourLines,
-        startLineNum: contourLines[0].num,
-        count: contourLines.length,
-        length: contour.length,
-        direction: contour.direction,
-        startCoord: contour.startCoord,
-        endCoord: contour.endCoord
-      });
-
-      lastEndIndex = contour.endIndex;
-
-      // Initialize folder state for this contour (load from localStorage or default to expanded)
-      if (!(contourId in this.contourFolderStates)) {
-        const storedState = localStorage.getItem(`gcodeDrawer.contour.${contourId}`);
-        this.contourFolderStates[contourId] = storedState !== 'false'; // expanded by default
-      }
-    }
-
-    // Add any remaining lines after the last contour
-    if (lastEndIndex < bodyLines.length - 1) {
-      const remainingLines = bodyLines.slice(lastEndIndex + 1);
-      if (remainingLines.length > 0) {
-        processedContours.push({
-          id: `loose-${processedContours.length}`,
-          type: 'loose',
-          lines: remainingLines,
-          startLineNum: remainingLines[0].num,
-          count: remainingLines.length
-        });
-      }
-    }
-
-    // If no contours were detected, treat all body lines as loose
-    if (processedContours.length === 0 && bodyLines.length > 0) {
-      processedContours.push({
-        id: 'loose-0',
-        type: 'loose',
-        lines: bodyLines,
-        startLineNum: bodyLines[0].num,
-        count: bodyLines.length
-      });
-    }
-
-    return processedContours;
+    return structureContours(bodyLines);
   }
 
   // Toggle folder expanded/collapsed state
@@ -1160,13 +996,20 @@ export class GCodeDrawer {
       return;
     }
     const oldText = this.getText();
-    const { text: rotatedText, newStartLine } = rotateStartAtLine(oldText, firstSelected, { ensureClosure: true });
+    // Use new reorder logic
+    const result = GCodeRewriter.reorderAndRotateContours(
+      this.getText(),
+      firstSelected,
+      { ensureClosure: true }
+    );
+    const newText = result.text;
+    const newStartLine = result.newStartLine;
 
     // If nothing changed, bail
-    if (rotatedText === oldText) return;
+    if (newText === oldText) return;
 
     const oldLines = oldText.split(/\r?\n/);
-    const newLines = rotatedText.split(/\r?\n/);
+    const newLines = newText.split(/\r?\n/);
 
     // Create and push replace command
     const replaceCommand = {

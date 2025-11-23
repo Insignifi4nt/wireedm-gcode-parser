@@ -1,8 +1,13 @@
-import { ContourDetector } from './src/utils/geometry/ContourDetection.js';
+import { ContourDetector } from '../src/utils/geometry/ContourDetection.js';
 import { readFileSync, existsSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Read test file (CLI arg or fallback to repo sample)
-const filePath = process.argv[2] || 'testing_gcode_files/ArcTestFile2.txt';
+const defaultFile = path.join(__dirname, '../testing_gcode_files/ArcTestFile2.txt');
+const filePath = process.argv[2] || defaultFile;
 if (!existsSync(filePath)) {
   console.error(`Input file not found: ${filePath}\nUsage: node test_contour_detection.js <path-to-gcode>`);
   process.exit(1);
@@ -29,7 +34,7 @@ contours.forEach((contour, i) => {
 
 if (contours.length === 0) {
   console.log('No closed contours detected.');
-  
+
   // Debug: show some sample lines
   console.log('\nSample lines:');
   lines.slice(0, 10).forEach((line, i) => {

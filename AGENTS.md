@@ -17,7 +17,7 @@ This file contains all the information an agent needs to start working on the co
 
 ### Testing
 - **Run Tests**: `npm test` (if configured, currently Vitest/Playwright recommended)
-- **ISO Helper**: `python edm_iso_tester.py` (utility script)
+- **ISO Helper**: `python scripts/edm_iso_tester.py` (utility script)
 
 ## Project Structure
 
@@ -35,6 +35,8 @@ This file contains all the information an agent needs to start working on the co
 - **Utilities**: `src/utils/`
   - `MathUtils.js`, `Constants.js`, `FileHandler.js`.
 - **Styles**: `src/styles/` (`main.css`, `components.css`, `theme.css`).
+- **Scripts**: `scripts/` (Utility scripts like `edm_iso_tester.py`, `reproduce_issue.mjs`).
+- **Test Files**: `testing_gcode_files/` (Sample G-code files for testing).
 - **Documentation**: `documentation/`
   - `TODO.md`: Active tasks and priorities.
   - `templates/`: Templates for PRs and issues.

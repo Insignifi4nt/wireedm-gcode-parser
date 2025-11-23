@@ -461,7 +461,7 @@ canvas:focus {
 }
 
 .gcode-folder-content.expanded {
-  max-height: 2000px; /* Large enough for typical content */
+  max-height: none; /* Remove limit to ensure all lines are visible */
 }
 
 /* Folder actions (move/delete) */
