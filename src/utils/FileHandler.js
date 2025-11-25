@@ -15,6 +15,7 @@ import { StatusMessage } from '../components/StatusMessage.js';
 import { EventBus, EVENT_TYPES } from '../core/EventManager.js';
 import { GCODE, FILE, EXPORT, PERFORMANCE } from './Constants.js';
 import { normalizeToISO, buildISOFromPoints } from './IsoNormalizer.js';
+import { summarizeParseResult } from './GCodeStats.js';
 
 export class FileHandler {
   /**
@@ -93,6 +94,12 @@ export class FileHandler {
       
       // Parse G-code content
       const parseResult = this.gCodeParser.parse(fileContent);
+
+      // Broadcast parse stats so listeners (Sidebar, etc.) can update path info
+      const parsePayload = summarizeParseResult(parseResult);
+      if (parsePayload) {
+        this.eventBus.emit(EVENT_TYPES.GCODE_PARSE_SUCCESS, parsePayload);
+      }
       
       // Check if parsing resulted in errors (parser doesn't return success property)
       if (!parseResult || !parseResult.path || parseResult.path.length === 0) {

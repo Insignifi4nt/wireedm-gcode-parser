@@ -6,6 +6,7 @@
 
 import { EventBus, EVENT_TYPES } from './EventManager.js';
 import { stripForEditing, canonicalizeMotionCodes } from '../utils/IsoNormalizer.js';
+import { summarizeParseResult } from '../utils/GCodeStats.js';
 
 // Utils now statically imported for consistent bundling (avoid mixed static/dynamic)
 
@@ -113,6 +114,8 @@ export function attachEventWiring(app) {
       try {
         const normalizedText = canonicalizeMotionCodes(text || '');
         const result = app.parser.parse(normalizedText);
+        const parsePayload = summarizeParseResult(result);
+        if (parsePayload) bus.emit(EVENT_TYPES.GCODE_PARSE_SUCCESS, parsePayload);
         app.currentGCode = { path: result.path, bounds: result.bounds, stats: result.stats };
         app.canvas?.setGCodePath(result.path);
         app.canvas?.redraw();

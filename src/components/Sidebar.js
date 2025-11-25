@@ -214,13 +214,34 @@ export class Sidebar {
       return;
     }
 
+    const pathCounts = (() => {
+      if (!Array.isArray(eventData.path)) return { total: null, rapid: null, cut: null, arc: null };
+      let rapid = 0;
+      let cut = 0;
+      let arc = 0;
+      for (const segment of eventData.path) {
+        if (!segment || typeof segment.type !== 'string') continue;
+        if (segment.type === 'rapid') rapid++;
+        else if (segment.type === 'cut') cut++;
+        else if (segment.type === 'arc') arc++;
+      }
+      return { total: eventData.path.length, rapid, cut, arc };
+    })();
+
+    const totalMoves = eventData.moveCount ?? eventData.totalMoves ?? pathCounts.total ?? 0;
+    const rapidMoves = eventData.rapidCount ?? eventData.rapidMoves ?? pathCounts.rapid ?? 0;
+    const cuttingMoves = eventData.cutCount ?? eventData.cuttingMoves ?? pathCounts.cut ?? 0;
+    const arcMoves = eventData.arcCount ?? eventData.arcMoves ?? pathCounts.arc ?? 0;
+
     this.pathInfo = {
-      totalMoves: eventData.totalMoves || 0,
-      rapidMoves: eventData.rapidMoves || 0,
-      cuttingMoves: eventData.cuttingMoves || 0,
-      arcMoves: eventData.arcMoves || 0,
+      totalMoves,
+      rapidMoves,
+      cuttingMoves,
+      arcMoves,
       bounds: eventData.bounds || null,
-      parseTime: eventData.parseTime || 0
+      parseTime: eventData.parseTime || eventData.stats?.parseTime || 0,
+      fileName: this.pathInfo?.fileName,
+      fileSize: this.pathInfo?.fileSize
     };
 
     this.updatePathInfoDisplay();
