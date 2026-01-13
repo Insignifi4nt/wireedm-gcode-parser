@@ -922,14 +922,17 @@ export class GCodeDrawer {
 
   _moveSelectedLines(direction) {
     if (this.selectedLines.size === 0) return;
+    const lineCount = this.bodyEl.querySelectorAll('.gcode-line').length;
+    const sortedSelection = Array.from(this.selectedLines).sort((a, b) => a - b);
+    const atTopBoundary = direction < 0 && sortedSelection[0] <= 1;
+    const atBottomBoundary = direction > 0 && sortedSelection[sortedSelection.length - 1] >= lineCount;
+    if (atTopBoundary || atBottomBoundary) return;
 
     // Cancel any pending debounced content change to avoid racing updates
     if (this._debounceTimer) {
       clearTimeout(this._debounceTimer);
       this._debounceTimer = null;
     }
-
-    const sortedSelection = Array.from(this.selectedLines).sort((a, b) => a - b);
 
     // Create and push move command
     const moveCommand = this.editor.createMoveCommand(sortedSelection, direction);
@@ -940,6 +943,7 @@ export class GCodeDrawer {
 
     // Store the moved selection to restore after setContent clears it
     const movedSelection = Array.from(this.selectedLines);
+    this._pendingSelectionRestore = new Set(movedSelection);
 
     // Emit content change (this will trigger main app to call setContent)
     this._emitContentChanged(this.getText());

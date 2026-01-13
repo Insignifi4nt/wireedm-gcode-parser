@@ -1,0 +1,21 @@
+%
+G90
+G21
+(Square Shape)
+G0 X0 Y0
+G1 X10 Y0
+G1 X10 Y10
+G1 X0 Y10
+G1 X0 Y0
+
+(Small Circle Shape)
+G0 X20 Y20
+G2 I5
+
+(Triangle Shape)
+G0 X40 Y0
+G1 X50 Y0
+G1 X45 Y10
+G1 X40 Y0
+M30
+%

@@ -160,16 +160,22 @@ export class GCodeEditor {
 
   createMoveCommand(fromIndices, direction) {
     const originalLines = [...fromIndices];
+    const targetSelection = originalLines.map(n => n + direction);
     return {
       type: 'move',
       fromIndices: originalLines,
       direction,
+      selectionAfterExecute: targetSelection,
+      selectionAfterUndo: originalLines,
       execute: () => {
-        this.applySelection(originalLines.map(n => n + direction));
+        // Select the original lines before performing the move
+        this.applySelection(originalLines);
         this._moveSelectedLinesInternal(direction);
+        this.applySelection(targetSelection);
       },
       undo: () => {
-        this.applySelection(originalLines.map(n => n + direction));
+        // The moved lines currently live at the target selection; move them back
+        this.applySelection(targetSelection);
         this._moveSelectedLinesInternal(-direction);
         this.applySelection(originalLines);
       }
@@ -216,27 +222,43 @@ export class GCodeEditor {
       const lineCount = allLines.length;
       if (direction === -1 && selected[0] <= 1) return;
       if (direction === 1 && selected[selected.length - 1] >= lineCount) return;
-      const elementsToMove = selected.map(n => this.bodyEl.querySelector(`.gcode-line[data-line="${n}"]`)).filter(Boolean);
+
+      const elementsToMove = selected
+        .map(n => this.bodyEl.querySelector(`.gcode-line[data-line="${n}"]`))
+        .filter(Boolean);
       if (elementsToMove.length === 0) return;
-      const fragment = document.createDocumentFragment();
+
       const elementsData = elementsToMove.map(el => ({
         content: el.querySelector('.gcode-line-text').textContent,
-        lineNum: parseInt(el.dataset.line)
+        lineNum: parseInt(el.dataset.line, 10)
       }));
-      let targetIndex;
-      if (direction === -1) targetIndex = Math.max(0, selected[0] - 2);
-      else targetIndex = Math.min(lineCount - elementsToMove.length, selected[selected.length - 1]);
+
+      // Remove selected lines before inserting them at the new index
       elementsToMove.forEach(el => el.remove());
       const remainingLines = Array.from(this.bodyEl.querySelectorAll('.gcode-line'));
+
+      // Calculate insertion point after removal (one step up/down)
+      const selectionSize = selected.length;
+      const firstIdx = selected[0] - 1; // zero-based
+      const lastIdx = selected[selected.length - 1] - 1; // zero-based
+      let insertIndex;
+      if (direction < 0) {
+        insertIndex = Math.max(0, firstIdx - 1);
+      } else {
+        insertIndex = Math.min(remainingLines.length, lastIdx + 2 - selectionSize);
+      }
+
+      const fragment = document.createDocumentFragment();
       elementsData.forEach(data => {
         const newElement = this._createLineElement(data.lineNum + direction, data.content);
         fragment.appendChild(newElement);
       });
-      const targetElement = remainingLines[targetIndex];
+
+      const targetElement = remainingLines[insertIndex];
       if (targetElement) {
         targetElement.parentNode.insertBefore(fragment, targetElement);
       } else {
-        // Append to end
+        // Append to end, keeping folder parent if present
         const lastLine = remainingLines[remainingLines.length - 1];
         if (lastLine && lastLine.parentNode !== this.bodyEl) {
           lastLine.parentNode.appendChild(fragment);
@@ -244,6 +266,7 @@ export class GCodeEditor {
           this.bodyEl.appendChild(fragment);
         }
       }
+
       const newSel = selected.map(n => n + direction);
       this.applySelection(newSel);
       this._renumberLines();
