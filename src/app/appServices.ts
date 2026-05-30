@@ -25,7 +25,6 @@ import {
   type DownloadProgramFileInput
 } from '@/domain/post/downloadProgramFile';
 import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
-import { connectWorkbenchDirectory } from '@/domain/storage/connectWorkbenchDirectory';
 import {
   updateWorkbenchSettings,
   type UpdateWorkbenchSettingsInput
@@ -34,7 +33,6 @@ import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
 export interface AppServices {
   connectCachedWorkbench: () => Promise<ConnectedWorkbench>;
-  connectWorkbenchDirectory: () => Promise<ConnectedWorkbench>;
   importDxfProject: (
     workbench: ConnectedWorkbench,
     input: ImportDxfProjectInput
@@ -61,7 +59,6 @@ export interface AppServices {
 
 export const defaultAppServices: AppServices = {
   connectCachedWorkbench,
-  connectWorkbenchDirectory,
   importDxfProject,
   importExternalProgram,
   loadEditorProgram,

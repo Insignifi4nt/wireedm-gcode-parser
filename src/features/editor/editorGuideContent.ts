@@ -45,7 +45,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
   en: {
     title: 'Wire EDM Workbench Manual',
     overview:
-      'A practical guide for one-off cache work, folder workbenches, DXF conversion, editor inspection, measurement, pinning, cleanup, and final G-code export.',
+      'A practical guide for local storage work, DXF conversion, editor inspection, measurement, pinning, cleanup, and final G-code export.',
     closeLabel: 'Close guide',
     highlightLabel: 'Show me',
     languageLabel: 'Language',
@@ -54,10 +54,10 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '1. Workbench And Storage',
         steps: [
           {
-            text: 'You can use the app without granting folder access. In that mode, imported work is kept in browser cache until you export it or clear browser data.'
+            text: 'The app prepares local storage automatically. Imported work, templates, generated programs, and editor files are kept in the browser-managed workbench until you export them or clear browser data.'
           },
           {
-            text: 'Use a workbench folder when the browser supports folder permissions and you want templates, imports, generated programs, and editor files preserved on disk.'
+            text: 'Connect Local Storage refreshes that same automatic workbench; the browser does not ask you to select a folder.'
           },
           {
             text: 'Custom header/footer templates and output extension choices live in the active workbench. The extension changes the written file name, not the generated G-code text by itself.'
@@ -167,7 +167,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'export-iso'
           },
           {
-            text: 'Save Program writes the current draft back to the active browser cache or folder workbench entry.',
+            text: 'Save Program writes the current draft back to the active local storage workbench entry.',
             mock: { label: 'Save Program' },
             highlightTarget: 'save-program'
           }
@@ -178,7 +178,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
   ro: {
     title: 'Manual Wire EDM Workbench',
     overview:
-      'Ghid practic pentru lucru rapid in cache, workbench pe folder, conversie DXF, inspectie in editor, masurare, pinning, cleanup si export G-code final.',
+      'Ghid practic pentru lucru in local storage, conversie DXF, inspectie in editor, masurare, pinning, cleanup si export G-code final.',
     closeLabel: 'Inchide ghidul',
     highlightLabel: 'Arata-mi',
     languageLabel: 'Limba',
@@ -187,10 +187,10 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '1. Workbench si stocare',
         steps: [
           {
-            text: 'Aplicatia poate fi folosita fara acces la folder. In modul acesta, lucrarile importate raman in browser cache pana le exporti sau stergi datele browserului.'
+            text: 'Aplicatia pregateste local storage automat. Lucrarile importate, template-urile, programele generate si fisierele de editor raman in workbench-ul gestionat de browser pana le exporti sau stergi datele browserului.'
           },
           {
-            text: 'Foloseste un folder workbench cand browserul permite folder permissions si vrei ca templates, imports, programe generate si fisiere de editor sa ramana pe disk.'
+            text: 'Connect Local Storage reimprospateaza acelasi workbench automat; browserul nu cere sa alegi manual un folder.'
           },
           {
             text: 'Template-urile header/footer si extensia de output tin de workbench-ul activ. Extensia schimba numele fisierului, nu textul G-code generat.'
@@ -300,7 +300,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'export-iso'
           },
           {
-            text: 'Save Program scrie draftul inapoi in browser cache sau in folder workbench.',
+            text: 'Save Program scrie draftul inapoi in intrarea activa din local storage.',
             mock: { label: 'Save Program' },
             highlightTarget: 'save-program'
           }

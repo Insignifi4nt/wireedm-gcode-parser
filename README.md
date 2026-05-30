@@ -15,7 +15,7 @@ The previous vanilla JavaScript viewer/editor is preserved under `old_reference/
 
 - Client-only app, static-hostable.
 - Dashboard plus an initial contained editor view for program import/preview.
-- Browser-cache workbench by default, with optional folder persistence where the File System Access API is available.
+- Browser-managed local storage workbench by default, with no folder selection required.
 - Tested DXF import API for `LINE`, `ARC`, `CIRCLE`, and `LWPOLYLINE` entities, with library-backed SPLINE flattening fallback, generating G-code bodies without feeds.
 - Editor imports `.gcode`, `.nc`, `.iso`, and `.txt` files directly into the active workbench and previews parsed G0/G1/G2/G3 paths.
 - Persistent header/body/footer G-code output.

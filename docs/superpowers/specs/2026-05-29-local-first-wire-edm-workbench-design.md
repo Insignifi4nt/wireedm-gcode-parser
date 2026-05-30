@@ -2,14 +2,14 @@
 
 ## Goal
 
-Build a new client-only Wire EDM workbench while preserving the current vanilla JavaScript app as a reference implementation. The new app starts with a dashboard, a browser-cache workbench that works without folder permissions, and an optional folder persistence flow where supported. Additional modes are exposed only after their functionality exists.
+Build a new client-only Wire EDM workbench while preserving the current vanilla JavaScript app as a reference implementation. The new app starts with a dashboard and a browser-managed local storage workbench that works without folder permissions or manual folder selection. Additional modes are exposed only after their functionality exists.
 
 ## Product Shape
 
 The app opens to a dashboard with a cache-first workbench flow:
 
-- Initialize `workbench.json`, required folders, and persistent header/footer templates in browser cache.
-- Let the same workbench structure connect to a local directory through the browser File System Access API when available.
+- Initialize `workbench.json`, required folders, and persistent header/footer templates in browser-managed local storage.
+- Let the same workbench structure reconnect from browser-managed local storage automatically when the app opens or the user clicks Connect Local Storage.
 - Show only real state read from the active workbench. Do not show mock project rows or dead actions.
 
 DXF import now exists for the first supported entity set. Editor porting, verification, and export are later slices. Each slice should add a tested API layer first, then UI on top.
@@ -30,7 +30,7 @@ Header and footer are persistent user/project/machine templates. Body is generat
 
 ## Local Storage
 
-Projects use the same file layout whether stored in browser cache or a selected workbench folder:
+Projects use the same file layout in browser-managed local storage:
 
 ```text
 part-name.wedm/
@@ -48,7 +48,7 @@ part-name.wedm/
     session.json
 ```
 
-Browser cache/localStorage is the default fallback so one-off imports work in browsers without directory picker support. Browser File System Access is used for visible workbench folders where supported. OPFS/IndexedDB can be added as a stronger cache backend later.
+Local storage is the default so one-off imports work in browsers without directory picker support or folder prompts. OPFS/IndexedDB can be added as a stronger browser-managed backend later.
 
 ## Stack
 

@@ -4,9 +4,8 @@ import { Database, HardDrive, PanelLeftClose, PanelLeftOpen } from 'lucide-react
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
 interface AppShellProps {
-  workbenchStatus: 'initializing' | 'ready' | 'switching-folder' | 'error';
+  workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
   connectedWorkbench: ConnectedWorkbench | null;
-  directoryAccessAvailable: boolean;
   errorMessage: string | null;
   children: ReactNode;
 }
@@ -14,7 +13,6 @@ interface AppShellProps {
 export function AppShell({
   workbenchStatus,
   connectedWorkbench,
-  directoryAccessAvailable,
   errorMessage,
   children
 }: AppShellProps) {
@@ -24,7 +22,7 @@ export function AppShell({
     connectedWorkbench?.adapter.kind === 'directory'
       ? 'Directory'
       : connectedWorkbench?.adapter.kind === 'browser-cache'
-        ? 'Browser cache'
+        ? 'Local storage'
         : 'Memory';
   const projectCount = connectedWorkbench?.manifest.projects.length ?? 0;
 
@@ -50,7 +48,7 @@ export function AppShell({
         </div>
         <div className="ml-auto flex items-center gap-2">
           <span className="font-mono text-[10px] text-muted-foreground">
-            {directoryAccessAvailable ? 'Folder picker available' : 'Folder picker unavailable'}
+            Local storage auto-connected
           </span>
         </div>
       </header>
@@ -66,9 +64,15 @@ export function AppShell({
               <Database className="size-4 text-primary" />
               <div
                 className="rotate-180 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground [writing-mode:vertical-rl]"
-                title={isReady ? `${projectCount} project${projectCount === 1 ? '' : 's'}` : 'Preparing cache'}
+                title={
+                  isReady
+                    ? `${projectCount} project${projectCount === 1 ? '' : 's'}`
+                    : 'Preparing local storage'
+                }
               >
-                {isReady ? `${projectCount} ${projectCount === 1 ? 'project' : 'projects'}` : 'cache'}
+                {isReady
+                  ? `${projectCount} ${projectCount === 1 ? 'project' : 'projects'}`
+                  : 'storage'}
               </div>
             </div>
           ) : (
@@ -97,7 +101,7 @@ export function AppShell({
                   </dl>
                 ) : (
                   <p className="text-muted-foreground">
-                    Preparing the browser cache workbench. Folder access is optional.
+                    Preparing the local storage workbench.
                   </p>
                 )}
               </div>

@@ -15,7 +15,6 @@ export default function App({ services }: AppProps = {}) {
   return (
     <AppShell
       connectedWorkbench={app.connectedWorkbench}
-      directoryAccessAvailable={app.directoryAccessAvailable}
       errorMessage={app.errorMessage}
       workbenchStatus={app.workbenchStatus}
     >
@@ -37,7 +36,6 @@ export default function App({ services }: AppProps = {}) {
       ) : (
         <DashboardPage
           connectedWorkbench={app.connectedWorkbench}
-          directoryAccessAvailable={app.directoryAccessAvailable}
           importErrorMessage={app.importErrorMessage}
           importStatus={app.importStatus}
           latestImport={app.latestImport}

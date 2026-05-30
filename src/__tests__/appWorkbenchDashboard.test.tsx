@@ -29,16 +29,16 @@ describe('App dashboard and workbench shell', () => {
     cleanupAppTestContext(context);
   });
 
-  it('starts with a browser cache workbench when folder access is unavailable', async () => {
+  it('starts with a local storage workbench when folder access is unavailable', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
 
     const text = container.textContent || '';
 
-    expect(text).toContain('Browser cache');
+    expect(text).toContain('Local storage');
     expect(text).toContain('Import DXF');
-    expect(text).toContain('Folder picker unavailable');
+    expect(text).toContain('Connect Local Storage');
     expect(text).not.toContain('Connect the workbench folder first');
     expect(text).not.toContain('The next real feature');
   });
@@ -52,8 +52,11 @@ describe('App dashboard and workbench shell', () => {
     const text = container.textContent || '';
 
     expect(buttons.some((button) => button.textContent?.includes('Import DXF'))).toBe(true);
-    expect(buttons.some((button) => button.textContent?.includes('Use Workbench Folder'))).toBe(true);
-    expect(text).toContain('Browser cache');
+    expect(buttons.some((button) => button.textContent?.includes('Connect Local Storage'))).toBe(
+      true
+    );
+    expect(text).toContain('Local storage');
+    expect(text).not.toContain('Folder picker available');
     expect(text).not.toContain('flange-slot');
     expect(text).not.toContain('repair-job');
     expect(text).not.toContain('Verify');
@@ -167,14 +170,18 @@ describe('App dashboard and workbench shell', () => {
     expect(generatedProgram).not.toContain('G90 G21 G17 G40');
   });
 
-  it('clicking connect initializes the selected workbench folder and displays real manifest state', async () => {
+  it('clicking connect refreshes local storage without selecting a folder', async () => {
     const directory = new FakeDirectoryHandle('wire-jobs');
     window.showDirectoryPicker = vi.fn(async () => directory as unknown as FileSystemDirectoryHandle);
+    window.localStorage.setItem(
+      'wire-edm-workbench:file:templates/header.gcode',
+      'CUSTOM HEADER'
+    );
 
     await renderApp(context);
 
     const connectButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Use Workbench Folder')
+      button.textContent?.includes('Connect Local Storage')
     );
     expect(connectButton).not.toBeNull();
 
@@ -182,23 +189,15 @@ describe('App dashboard and workbench shell', () => {
       connectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(window.showDirectoryPicker).toHaveBeenCalledWith({
-      id: 'wire-edm-workbench',
-      mode: 'readwrite'
-    });
-    expect([...directory.directories].sort()).toEqual([
-      'editor',
-      'exports',
-      'generated',
-      'imports',
-      'machines',
-      'projects',
-      'templates'
-    ]);
-    expect(directory.files.has('workbench.json')).toBe(true);
-    expect(directory.files.get('templates/header.gcode')).toContain('G90 G21 G17 G40');
-    expect(directory.files.get('templates/footer.gcode')).toContain('M30');
-    expect(container.textContent).toContain('Directory workbench active');
-    expect(container.textContent).toContain('wire-jobs');
+    expect(window.showDirectoryPicker).not.toHaveBeenCalled();
+    expect(directory.files.size).toBe(0);
+    expect(window.localStorage.getItem('wire-edm-workbench:file:templates/header.gcode')).toBe(
+      'CUSTOM HEADER'
+    );
+    expect(window.localStorage.getItem('wire-edm-workbench:file:templates/footer.gcode')).toContain(
+      'M30'
+    );
+    expect(container.textContent).toContain('Local storage workbench active');
+    expect(container.textContent).toContain('Local storage connected');
   });
 });

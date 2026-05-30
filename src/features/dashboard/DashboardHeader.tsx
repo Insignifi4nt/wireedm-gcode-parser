@@ -1,15 +1,14 @@
 import { useRef, type ChangeEvent } from 'react';
-import { FileCode, FileUp, FolderOpen } from 'lucide-react';
+import { Database, FileCode, FileUp } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
 interface DashboardHeaderProps {
   connectedWorkbench: ConnectedWorkbench | null;
-  directoryAccessAvailable: boolean;
   importErrorMessage: string | null;
   importStatus: 'idle' | 'importing' | 'error';
-  workbenchStatus: 'initializing' | 'ready' | 'switching-folder' | 'error';
+  workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
   onConnectWorkbench: () => void;
   onImportDxfFile: (file: File) => void | Promise<void>;
   onOpenEditor: () => void;
@@ -17,7 +16,6 @@ interface DashboardHeaderProps {
 
 export function DashboardHeader({
   connectedWorkbench,
-  directoryAccessAvailable,
   importErrorMessage,
   importStatus,
   workbenchStatus,
@@ -27,12 +25,12 @@ export function DashboardHeader({
 }: DashboardHeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isPreparing = workbenchStatus === 'initializing';
-  const isSwitchingFolder = workbenchStatus === 'switching-folder';
+  const isConnectingStorage = workbenchStatus === 'connecting-storage';
   const isImporting = importStatus === 'importing';
   const storageLabel =
     connectedWorkbench?.adapter.kind === 'directory'
       ? 'Directory workbench active'
-      : 'Browser cache workbench active';
+      : 'Local storage workbench active';
 
   async function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
@@ -49,7 +47,7 @@ export function DashboardHeader({
         <div>
           <p className="font-mono text-[10px] uppercase text-muted-foreground">Dashboard</p>
           <h2 className="mt-1 font-mono text-base font-semibold">
-            {isPreparing ? 'Preparing browser cache workbench' : storageLabel}
+            {isPreparing ? 'Preparing local storage workbench' : storageLabel}
           </h2>
         </div>
 
@@ -79,16 +77,14 @@ export function DashboardHeader({
             <FileCode />
             Open Editor
           </Button>
-          {directoryAccessAvailable ? (
-            <Button disabled={isPreparing || isSwitchingFolder} onClick={onConnectWorkbench} variant="outline">
-              <FolderOpen />
-              {isSwitchingFolder ? 'Opening...' : 'Use Workbench Folder'}
-            </Button>
-          ) : (
-            <span className="font-mono text-[10px] text-muted-foreground">
-              Folder picker unavailable
-            </span>
-          )}
+          <Button
+            disabled={isPreparing || isConnectingStorage}
+            onClick={onConnectWorkbench}
+            variant="outline"
+          >
+            <Database />
+            {isConnectingStorage ? 'Connecting...' : 'Connect Local Storage'}
+          </Button>
         </div>
       </div>
 

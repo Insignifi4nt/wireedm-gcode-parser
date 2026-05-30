@@ -40,7 +40,7 @@ describe('connectCachedWorkbench', () => {
     });
 
     expect(workbench.adapter.kind).toBe('browser-cache');
-    expect(workbench.manifest.name).toBe('Browser cache');
+    expect(workbench.manifest.name).toBe('Local storage');
     expect(workbench.manifest.projects).toEqual([]);
     expect(storage.getItem('wire-edm-workbench:file:workbench.json')).toContain(
       '"schemaVersion": 1'

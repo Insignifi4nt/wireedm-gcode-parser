@@ -8,9 +8,8 @@ import { ProjectListPanel } from './ProjectListPanel';
 import { WorkbenchSettingsPanel } from './WorkbenchSettingsPanel';
 
 interface DashboardPageProps {
-  workbenchStatus: 'initializing' | 'ready' | 'switching-folder' | 'error';
+  workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
   connectedWorkbench: ConnectedWorkbench | null;
-  directoryAccessAvailable: boolean;
   importStatus: 'idle' | 'importing' | 'error';
   importErrorMessage: string | null;
   latestImport: ImportDxfProjectResult | null;
@@ -28,7 +27,6 @@ interface DashboardPageProps {
 export function DashboardPage({
   workbenchStatus,
   connectedWorkbench,
-  directoryAccessAvailable,
   importStatus,
   importErrorMessage,
   latestImport,
@@ -48,7 +46,6 @@ export function DashboardPage({
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)]">
       <DashboardHeader
         connectedWorkbench={connectedWorkbench}
-        directoryAccessAvailable={directoryAccessAvailable}
         importErrorMessage={importErrorMessage}
         importStatus={importStatus}
         onConnectWorkbench={onConnectWorkbench}

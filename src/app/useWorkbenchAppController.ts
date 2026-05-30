@@ -3,13 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StatusToast, StatusToastType } from '@/components/StatusToasts';
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
-import { supportsWorkbenchDirectoryAccess } from '@/domain/storage/fileSystemAccess';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
 import { defaultAppServices, type AppServices } from './appServices';
 
-export type WorkbenchStatus = 'initializing' | 'ready' | 'switching-folder' | 'error';
+export type WorkbenchStatus = 'initializing' | 'ready' | 'connecting-storage' | 'error';
 export type ImportStatus = 'idle' | 'importing' | 'error';
 export type SaveStatus = 'idle' | 'saving' | 'error';
 export type SettingsStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -18,7 +17,6 @@ export type ActiveView = 'dashboard' | 'editor';
 export interface WorkbenchAppController {
   activeView: ActiveView;
   connectedWorkbench: ConnectedWorkbench | null;
-  directoryAccessAvailable: boolean;
   editorImportErrorMessage: string | null;
   editorImportStatus: ImportStatus;
   editorSaveErrorMessage: string | null;
@@ -73,7 +71,6 @@ export function useWorkbenchAppController(
   const [loadedEditorProgram, setLoadedEditorProgram] = useState<LoadedEditorProgram | null>(null);
   const [statusToasts, setStatusToasts] = useState<StatusToast[]>([]);
   const statusToastCounter = useRef(0);
-  const directoryAccessAvailable = supportsWorkbenchDirectoryAccess();
 
   const dismissStatusToast = useCallback((id: string) => {
     setStatusToasts((current) => current.filter((toast) => toast.id !== id));
@@ -106,7 +103,7 @@ export function useWorkbenchAppController(
         if (!isActive) return;
         setWorkbenchStatus('error');
         setErrorMessage(
-          error instanceof Error ? error.message : 'Could not prepare browser cache workbench.'
+          error instanceof Error ? error.message : 'Could not prepare local storage workbench.'
         );
       });
 
@@ -116,26 +113,21 @@ export function useWorkbenchAppController(
   }, [appServices]);
 
   async function handleConnectWorkbench() {
-    if (!directoryAccessAvailable || workbenchStatus === 'switching-folder') return;
+    if (workbenchStatus === 'connecting-storage') return;
 
-    setWorkbenchStatus('switching-folder');
+    setWorkbenchStatus('connecting-storage');
     setErrorMessage(null);
 
     try {
-      const workbench = await appServices.connectWorkbenchDirectory();
+      const workbench = await appServices.connectCachedWorkbench();
       setConnectedWorkbench(workbench);
       setSettingsStatus('idle');
       setSettingsErrorMessage(null);
       setWorkbenchStatus('ready');
-      showStatusToast(`Workbench folder connected: ${workbench.manifest.name}`, 'success');
+      showStatusToast('Local storage connected.', 'success');
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        setWorkbenchStatus(connectedWorkbench ? 'ready' : 'initializing');
-        return;
-      }
-
       setWorkbenchStatus('error');
-      const message = error instanceof Error ? error.message : 'Could not connect workbench folder.';
+      const message = error instanceof Error ? error.message : 'Could not connect local storage.';
       setErrorMessage(message);
       showStatusToast(message, 'error');
     }
@@ -294,7 +286,6 @@ export function useWorkbenchAppController(
   return {
     activeView,
     connectedWorkbench,
-    directoryAccessAvailable,
     editorImportErrorMessage,
     editorImportStatus,
     editorSaveErrorMessage,

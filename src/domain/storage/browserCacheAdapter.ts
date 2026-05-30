@@ -18,7 +18,7 @@ export function createBrowserCacheAdapter(
   const directoriesKey = `${namespace}:directories`;
 
   return {
-    name: options.name ?? 'Browser cache',
+    name: options.name ?? 'Local storage',
     kind: 'browser-cache',
     ensureDirectory: async (path: string) => {
       const directories = readDirectories(storage, directoriesKey);

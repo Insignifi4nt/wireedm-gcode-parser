@@ -9,7 +9,7 @@ interface ConnectCachedWorkbenchOptions {
 export async function connectCachedWorkbench(options: ConnectCachedWorkbenchOptions = {}) {
   const storage = options.storage ?? getBrowserStorage();
   const adapter = createBrowserCacheAdapter(storage, {
-    name: 'Browser cache',
+    name: 'Local storage',
     namespace: 'wire-edm-workbench'
   });
 
