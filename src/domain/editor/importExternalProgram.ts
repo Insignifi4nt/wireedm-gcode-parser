@@ -4,7 +4,8 @@ import {
   type WorkbenchManifest
 } from '@/domain/storage/workbenchStorage';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
-import type { WorkbenchFileRef, WorkbenchProject } from '@/domain/workbench/types';
+import { baseNameFromFileName, uniqueProjectId } from '@/domain/workbench/projectNaming';
+import type { WorkbenchProject } from '@/domain/workbench/types';
 
 import { parseGCodeProgram } from './gcodeParser';
 import { stripForEditing } from './isoNormalizer';
@@ -48,7 +49,10 @@ export async function importExternalProgram(
   }
 
   const timestamp = (input.now ?? new Date()).toISOString();
-  const projectName = baseName(input.fileName);
+  const projectName = baseNameFromFileName(input.fileName, {
+    fallback: 'External Program',
+    stripExtension: /\.[a-z0-9]+$/i
+  });
   const initialProject = createWorkbenchProject({
     name: projectName,
     sourceKind: 'external-gcode',
@@ -76,12 +80,12 @@ export async function importExternalProgram(
 
   project.editor.activeFilePath = editorPath;
   project.source.files = [
-    createFileRef({
+    {
       name: `${project.id}.${extension}`,
       path: sourcePath,
       kind: 'external-gcode',
       createdAt: timestamp
-    })
+    }
   ];
 
   await workbench.adapter.ensureDirectory(projectDirectory);
@@ -125,30 +129,9 @@ export async function importExternalProgram(
   };
 }
 
-function createFileRef(file: WorkbenchFileRef): WorkbenchFileRef {
-  return file;
-}
-
 function editorExtension(fileName: string) {
   const extension = fileName.split('.').pop()?.toLowerCase();
   return SUPPORTED_EDITOR_EXTENSIONS.find((candidate) => candidate === extension) ?? null;
-}
-
-function baseName(fileName: string) {
-  const withoutPath = fileName.split(/[\\/]/).pop() || 'External Program';
-  return withoutPath.replace(/\.[a-z0-9]+$/i, '').trim() || 'External Program';
-}
-
-function uniqueProjectId(baseId: string, existingIds: string[]) {
-  const existing = new Set(existingIds);
-  if (!existing.has(baseId)) return baseId;
-
-  for (let suffix = 2; suffix < Number.MAX_SAFE_INTEGER; suffix++) {
-    const candidate = `${baseId}-${suffix}`;
-    if (!existing.has(candidate)) return candidate;
-  }
-
-  throw new Error('Could not create a unique project ID.');
 }
 
 function formatMegabytes(bytes: number) {

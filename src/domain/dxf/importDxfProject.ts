@@ -5,7 +5,8 @@ import {
   type WorkbenchManifest
 } from '@/domain/storage/workbenchStorage';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
-import type { WorkbenchFileRef, WorkbenchProject } from '@/domain/workbench/types';
+import { baseNameFromFileName, uniqueProjectId } from '@/domain/workbench/projectNaming';
+import type { WorkbenchProject } from '@/domain/workbench/types';
 
 import { dxfEntitiesToGcodeBody } from './dxfToGcode';
 import { parseDxf } from './parseDxf';
@@ -31,7 +32,10 @@ export async function importDxfProject(
   input: ImportDxfProjectInput
 ): Promise<ImportDxfProjectResult> {
   const timestamp = (input.now ?? new Date()).toISOString();
-  const projectName = baseName(input.fileName);
+  const projectName = baseNameFromFileName(input.fileName, {
+    fallback: 'DXF Import',
+    stripExtension: /\.dxf$/i
+  });
   const initialProject = createWorkbenchProject({
     name: projectName,
     sourceKind: 'dxf',
@@ -81,21 +85,21 @@ export async function importDxfProject(
   project.editor.activeFilePath = programPath;
   project.generated.body = generatedBody;
   project.source.files = [
-    createFileRef({
+    {
       name: `${project.id}.dxf`,
       path: sourcePath,
       kind: 'dxf',
       createdAt: timestamp
-    })
+    }
   ];
   project.generated.files = [
-    createFileRef({
+    {
       name: `${project.id}.body.gcode`,
       path: bodyPath,
       kind: 'generated',
       createdAt: timestamp
-    }),
-    createFileRef({
+    },
+    {
       name: `${project.id}.${normalizeOutputExtension(
         workbench.manifest.output.extension,
         workbench.manifest.output.customExtension
@@ -103,7 +107,7 @@ export async function importDxfProject(
       path: programPath,
       kind: 'generated',
       createdAt: timestamp
-    })
+    }
   ];
 
   await workbench.adapter.ensureDirectory(projectDirectory);
@@ -143,25 +147,4 @@ export async function importDxfProject(
     generatedBody,
     generatedProgram
   };
-}
-
-function createFileRef(file: WorkbenchFileRef): WorkbenchFileRef {
-  return file;
-}
-
-function baseName(fileName: string) {
-  const withoutPath = fileName.split(/[\\/]/).pop() || 'DXF Import';
-  return withoutPath.replace(/\.dxf$/i, '').trim() || 'DXF Import';
-}
-
-function uniqueProjectId(baseId: string, existingIds: string[]) {
-  const existing = new Set(existingIds);
-  if (!existing.has(baseId)) return baseId;
-
-  for (let suffix = 2; suffix < Number.MAX_SAFE_INTEGER; suffix++) {
-    const candidate = `${baseId}-${suffix}`;
-    if (!existing.has(candidate)) return candidate;
-  }
-
-  throw new Error('Could not create a unique project ID.');
 }
