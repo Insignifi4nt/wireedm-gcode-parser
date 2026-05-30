@@ -1,16 +1,21 @@
 import { createBrowserCacheAdapter } from './browserCacheAdapter';
 import { initializeWorkbenchDirectory } from './workbenchStorage';
 
+export const BROWSER_WORKBENCH_NAMESPACE = 'wire-edm-workbench';
+
 interface ConnectCachedWorkbenchOptions {
   storage?: Storage;
   now?: Date;
 }
 
 export async function connectCachedWorkbench(options: ConnectCachedWorkbenchOptions = {}) {
-  const storage = options.storage ?? getBrowserStorage();
-  const adapter = createBrowserCacheAdapter(storage, {
-    name: 'Local storage',
-    namespace: 'wire-edm-workbench'
+  const storageSource = options.storage
+    ? { storage: options.storage, persistent: true }
+    : getBrowserStorage();
+  const adapter = createBrowserCacheAdapter(storageSource.storage, {
+    kind: storageSource.persistent ? 'browser-cache' : 'memory',
+    name: storageSource.persistent ? 'Local storage' : 'Temporary storage',
+    namespace: BROWSER_WORKBENCH_NAMESPACE
   });
 
   return initializeWorkbenchDirectory(adapter, {
@@ -21,12 +26,18 @@ export async function connectCachedWorkbench(options: ConnectCachedWorkbenchOpti
 function getBrowserStorage() {
   try {
     const storage = window.localStorage;
-    const probeKey = 'wire-edm-workbench:storage-probe';
+    const probeKey = `${BROWSER_WORKBENCH_NAMESPACE}:storage-probe`;
     storage.setItem(probeKey, '1');
     storage.removeItem(probeKey);
-    return storage;
+    return {
+      persistent: true,
+      storage
+    };
   } catch {
-    return createVolatileStorage();
+    return {
+      persistent: false,
+      storage: createVolatileStorage()
+    };
   }
 }
 

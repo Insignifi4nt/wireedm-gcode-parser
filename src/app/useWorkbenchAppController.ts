@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StatusToast, StatusToastType } from '@/components/StatusToasts';
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
+import { supportsWorkbenchDirectoryAccess } from '@/domain/storage/fileSystemAccess';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
@@ -24,6 +25,8 @@ export interface WorkbenchAppController {
   errorMessage: string | null;
   importErrorMessage: string | null;
   importStatus: ImportStatus;
+  storageActionLabel: string | null;
+  storageWarningMessage: string | null;
   latestImport: ImportDxfProjectResult | null;
   loadedEditorProgram: LoadedEditorProgram | null;
   settingsErrorMessage: string | null;
@@ -66,6 +69,8 @@ export function useWorkbenchAppController(
   const [editorSaveErrorMessage, setEditorSaveErrorMessage] = useState<string | null>(null);
   const [settingsStatus, setSettingsStatus] = useState<SettingsStatus>('idle');
   const [settingsErrorMessage, setSettingsErrorMessage] = useState<string | null>(null);
+  const [storageActionLabel, setStorageActionLabel] = useState<string | null>(null);
+  const [storageWarningMessage, setStorageWarningMessage] = useState<string | null>(null);
   const [latestImport, setLatestImport] = useState<ImportDxfProjectResult | null>(null);
   const [activeView, setActiveView] = useState<ActiveView>('dashboard');
   const [loadedEditorProgram, setLoadedEditorProgram] = useState<LoadedEditorProgram | null>(null);
@@ -92,12 +97,31 @@ export function useWorkbenchAppController(
   useEffect(() => {
     let isActive = true;
 
-    appServices
-      .connectCachedWorkbench()
-      .then((workbench) => {
-        if (!isActive) return;
-        setConnectedWorkbench(workbench);
+    async function prepareWorkbench() {
+      const rememberedDirectory = await appServices.connectRememberedWorkbenchDirectory();
+      if (!isActive) return;
+
+      if (rememberedDirectory.status === 'connected') {
+        setConnectedWorkbench(rememberedDirectory.workbench);
         setWorkbenchStatus('ready');
+        setStorageActionLabel(null);
+        setStorageWarningMessage(null);
+        return;
+      }
+
+      const workbench = await appServices.connectCachedWorkbench();
+      if (!isActive) return;
+
+      setConnectedWorkbench(workbench);
+      setWorkbenchStatus('ready');
+      const warning = getStorageFallbackWarning(rememberedDirectory.status);
+      setStorageWarningMessage(warning.message);
+      setStorageActionLabel(warning.actionLabel);
+    }
+
+    prepareWorkbench()
+      .then(() => {
+        if (!isActive) return;
       })
       .catch((error: unknown) => {
         if (!isActive) return;
@@ -119,15 +143,22 @@ export function useWorkbenchAppController(
     setErrorMessage(null);
 
     try {
-      const workbench = await appServices.connectCachedWorkbench();
+      const workbench = await appServices.connectWorkbenchDirectory();
       setConnectedWorkbench(workbench);
       setSettingsStatus('idle');
       setSettingsErrorMessage(null);
+      setStorageActionLabel(null);
+      setStorageWarningMessage(null);
       setWorkbenchStatus('ready');
-      showStatusToast('Local storage connected.', 'success');
+      showStatusToast(`Workbench folder connected: ${workbench.manifest.name}`, 'success');
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setWorkbenchStatus(connectedWorkbench ? 'ready' : 'error');
+        return;
+      }
+
       setWorkbenchStatus('error');
-      const message = error instanceof Error ? error.message : 'Could not connect local storage.';
+      const message = error instanceof Error ? error.message : 'Could not connect workbench folder.';
       setErrorMessage(message);
       showStatusToast(message, 'error');
     }
@@ -293,6 +324,8 @@ export function useWorkbenchAppController(
     errorMessage,
     importErrorMessage,
     importStatus,
+    storageActionLabel,
+    storageWarningMessage,
     latestImport,
     loadedEditorProgram,
     settingsErrorMessage,
@@ -312,5 +345,35 @@ export function useWorkbenchAppController(
     handleSaveEditorProgram,
     handleSaveWorkbenchSettings,
     showStatusToast
+  };
+}
+
+function getStorageFallbackWarning(status: 'missing' | 'permission-needed' | 'unsupported' | 'error') {
+  if (status === 'unsupported' || !supportsWorkbenchDirectoryAccess()) {
+    return {
+      actionLabel: null,
+      message: 'This browser does not support choosing a workbench folder. Browser cache is active.'
+    };
+  }
+
+  if (status === 'permission-needed') {
+    return {
+      actionLabel: 'Reconnect Workbench Folder',
+      message:
+        'Workbench folder permission needs to be renewed. Browser cache is active until you reconnect.'
+    };
+  }
+
+  if (status === 'error') {
+    return {
+      actionLabel: 'Choose Workbench Folder',
+      message:
+        'Could not reconnect the remembered workbench folder. Browser cache is active until you choose a folder again.'
+    };
+  }
+
+  return {
+    actionLabel: 'Choose Workbench Folder',
+    message: 'Choose a workbench folder to store files on disk. Browser cache is active until then.'
   };
 }

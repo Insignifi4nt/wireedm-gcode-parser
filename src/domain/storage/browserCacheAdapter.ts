@@ -1,6 +1,7 @@
 import type { WorkbenchStorageAdapter } from './workbenchStorage';
 
 interface BrowserCacheAdapterOptions {
+  kind?: 'browser-cache' | 'memory';
   name?: string;
   namespace?: string;
 }
@@ -19,7 +20,7 @@ export function createBrowserCacheAdapter(
 
   return {
     name: options.name ?? 'Local storage',
-    kind: 'browser-cache',
+    kind: options.kind ?? 'browser-cache',
     ensureDirectory: async (path: string) => {
       const directories = readDirectories(storage, directoriesKey);
       if (!directories.includes(path)) {

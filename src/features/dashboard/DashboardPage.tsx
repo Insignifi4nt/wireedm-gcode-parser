@@ -15,7 +15,6 @@ interface DashboardPageProps {
   latestImport: ImportDxfProjectResult | null;
   settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
   settingsErrorMessage: string | null;
-  onConnectWorkbench: () => void;
   onDownloadLatestProgram: () => void;
   onOpenEditor: () => void;
   onOpenLatestImportInEditor: () => void;
@@ -32,7 +31,6 @@ export function DashboardPage({
   latestImport,
   settingsStatus,
   settingsErrorMessage,
-  onConnectWorkbench,
   onDownloadLatestProgram,
   onOpenEditor,
   onOpenLatestImportInEditor,
@@ -48,7 +46,6 @@ export function DashboardPage({
         connectedWorkbench={connectedWorkbench}
         importErrorMessage={importErrorMessage}
         importStatus={importStatus}
-        onConnectWorkbench={onConnectWorkbench}
         onImportDxfFile={onImportDxfFile}
         onOpenEditor={onOpenEditor}
         workbenchStatus={workbenchStatus}

@@ -16,6 +16,9 @@ export default function App({ services }: AppProps = {}) {
     <AppShell
       connectedWorkbench={app.connectedWorkbench}
       errorMessage={app.errorMessage}
+      onConnectWorkbench={app.handleConnectWorkbench}
+      storageActionLabel={app.storageActionLabel}
+      storageWarningMessage={app.storageWarningMessage}
       workbenchStatus={app.workbenchStatus}
     >
       <StatusToastList onDismiss={app.dismissStatusToast} toasts={app.statusToasts} />
@@ -39,7 +42,6 @@ export default function App({ services }: AppProps = {}) {
           importErrorMessage={app.importErrorMessage}
           importStatus={app.importStatus}
           latestImport={app.latestImport}
-          onConnectWorkbench={app.handleConnectWorkbench}
           onDownloadLatestProgram={app.handleDownloadLatestProgram}
           onImportDxfFile={app.handleImportDxfFile}
           onOpenEditor={app.handleOpenEditor}

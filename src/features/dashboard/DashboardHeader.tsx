@@ -1,5 +1,5 @@
 import { useRef, type ChangeEvent } from 'react';
-import { Database, FileCode, FileUp } from 'lucide-react';
+import { FileCode, FileUp } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
@@ -9,7 +9,6 @@ interface DashboardHeaderProps {
   importErrorMessage: string | null;
   importStatus: 'idle' | 'importing' | 'error';
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
-  onConnectWorkbench: () => void;
   onImportDxfFile: (file: File) => void | Promise<void>;
   onOpenEditor: () => void;
 }
@@ -19,18 +18,13 @@ export function DashboardHeader({
   importErrorMessage,
   importStatus,
   workbenchStatus,
-  onConnectWorkbench,
   onImportDxfFile,
   onOpenEditor
 }: DashboardHeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isPreparing = workbenchStatus === 'initializing';
-  const isConnectingStorage = workbenchStatus === 'connecting-storage';
   const isImporting = importStatus === 'importing';
-  const storageLabel =
-    connectedWorkbench?.adapter.kind === 'directory'
-      ? 'Directory workbench active'
-      : 'Local storage workbench active';
+  const storageLabel = getStorageLabel(connectedWorkbench, isPreparing);
 
   async function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
@@ -46,9 +40,7 @@ export function DashboardHeader({
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="font-mono text-[10px] uppercase text-muted-foreground">Dashboard</p>
-          <h2 className="mt-1 font-mono text-base font-semibold">
-            {isPreparing ? 'Preparing local storage workbench' : storageLabel}
-          </h2>
+          <h2 className="mt-1 font-mono text-base font-semibold">{storageLabel}</h2>
         </div>
 
         <div className="flex items-center gap-2">
@@ -77,14 +69,6 @@ export function DashboardHeader({
             <FileCode />
             Open Editor
           </Button>
-          <Button
-            disabled={isPreparing || isConnectingStorage}
-            onClick={onConnectWorkbench}
-            variant="outline"
-          >
-            <Database />
-            {isConnectingStorage ? 'Connecting...' : 'Connect Local Storage'}
-          </Button>
         </div>
       </div>
 
@@ -95,4 +79,12 @@ export function DashboardHeader({
       )}
     </section>
   );
+}
+
+function getStorageLabel(connectedWorkbench: ConnectedWorkbench | null, isPreparing: boolean) {
+  if (isPreparing) return 'Preparing local storage workbench';
+  if (!connectedWorkbench) return 'Storage not connected';
+  if (connectedWorkbench.adapter.kind === 'directory') return 'Workbench folder active';
+  if (connectedWorkbench.adapter.kind === 'memory') return 'Temporary storage workbench active';
+  return 'Browser cache workbench active';
 }

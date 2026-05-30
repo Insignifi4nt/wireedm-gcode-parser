@@ -1,12 +1,24 @@
 import { useState, type ReactNode } from 'react';
-import { Database, HardDrive, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import {
+  Database,
+  HardDrive,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings as SettingsIcon
+} from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+
+import { WorkbenchSettingsDialog } from './WorkbenchSettingsDialog';
 
 interface AppShellProps {
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
   connectedWorkbench: ConnectedWorkbench | null;
   errorMessage: string | null;
+  onConnectWorkbench: () => void | Promise<void>;
+  storageActionLabel: string | null;
+  storageWarningMessage: string | null;
   children: ReactNode;
 }
 
@@ -14,16 +26,32 @@ export function AppShell({
   workbenchStatus,
   connectedWorkbench,
   errorMessage,
+  onConnectWorkbench,
+  storageActionLabel,
+  storageWarningMessage,
   children
 }: AppShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const isReady = workbenchStatus === 'ready' && connectedWorkbench;
+  const isConnectingStorage =
+    workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage';
+  const isTemporaryStorage = isReady && connectedWorkbench.adapter.kind === 'memory';
   const activeStorageLabel =
     connectedWorkbench?.adapter.kind === 'directory'
-      ? 'Directory'
+      ? 'Workbench folder'
       : connectedWorkbench?.adapter.kind === 'browser-cache'
-        ? 'Local storage'
-        : 'Memory';
+        ? 'Browser cache'
+        : 'Temporary storage';
+  const storageStatusLabel = isTemporaryStorage
+    ? 'Temporary storage only'
+    : isReady
+      ? connectedWorkbench.adapter.kind === 'directory'
+        ? 'Workbench folder connected'
+        : storageActionLabel ?? `${activeStorageLabel} active`
+      : isConnectingStorage
+        ? 'Connecting Workbench Folder'
+        : 'Storage not connected';
   const projectCount = connectedWorkbench?.manifest.projects.length ?? 0;
 
   return (
@@ -47,9 +75,29 @@ export function AppShell({
           <span className="truncate">Wire EDM Workbench</span>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <span className="font-mono text-[10px] text-muted-foreground">
-            Local storage auto-connected
+          <span
+            aria-label={storageStatusLabel}
+            className={`inline-flex h-7 items-center gap-2 border px-2 font-mono text-[10px] ${
+              isTemporaryStorage
+                ? 'border-amber-500/50 bg-amber-500/10 text-amber-100'
+                : storageActionLabel || (!connectedWorkbench && !isConnectingStorage)
+                  ? 'border-destructive/60 bg-destructive/10 text-destructive'
+                  : 'border-border bg-background/60 text-muted-foreground'
+            }`}
+          >
+            <Database className="size-3.5" />
+            {storageStatusLabel}
           </span>
+          <Button
+            aria-label="Open settings"
+            onClick={() => setSettingsOpen(true)}
+            size="icon"
+            title="Settings"
+            type="button"
+            variant="outline"
+          >
+            <SettingsIcon />
+          </Button>
         </div>
       </header>
 
@@ -104,11 +152,21 @@ export function AppShell({
                     Preparing the local storage workbench.
                   </p>
                 )}
+                {isTemporaryStorage && (
+                  <p className="mt-3 border-t border-border pt-2 text-amber-100">
+                    Changes stay available only until this tab reloads.
+                  </p>
+                )}
               </div>
 
               {errorMessage && (
                 <p className="mt-3 border border-destructive bg-destructive/10 p-2 font-mono text-[10px] text-destructive">
                   {errorMessage}
+                </p>
+              )}
+              {storageWarningMessage && (
+                <p className="mt-3 border border-amber-500/50 bg-amber-500/10 p-2 font-mono text-[10px] text-amber-100">
+                  {storageWarningMessage}
                 </p>
               )}
 
@@ -123,6 +181,16 @@ export function AppShell({
 
         <main className="min-h-0 min-w-0 overflow-hidden">{children}</main>
       </div>
+      <WorkbenchSettingsDialog
+        connectedWorkbench={connectedWorkbench}
+        errorMessage={errorMessage}
+        onClose={() => setSettingsOpen(false)}
+        onConnectWorkbench={onConnectWorkbench}
+        open={settingsOpen}
+        storageActionLabel={storageActionLabel}
+        storageWarningMessage={storageWarningMessage}
+        workbenchStatus={workbenchStatus}
+      />
     </div>
   );
 }

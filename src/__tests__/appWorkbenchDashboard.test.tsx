@@ -1,15 +1,13 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+
 import {
-  FakeDirectoryHandle,
   cleanupAppTestContext,
   createAppTestContext,
-  dispatchTouchEvent,
   flushAsync,
-  parseSvgViewBox,
   renderApp,
-  setInputValue,
   setSelectValue,
   setTextAreaValue,
   simpleLineDxf,
@@ -29,18 +27,53 @@ describe('App dashboard and workbench shell', () => {
     cleanupAppTestContext(context);
   });
 
-  it('starts with a local storage workbench when folder access is unavailable', async () => {
+  it('starts with a browser cache fallback when folder access is unavailable', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
 
     const text = container.textContent || '';
 
-    expect(text).toContain('Local storage');
+    expect(text).toContain('Browser cache');
     expect(text).toContain('Import DXF');
-    expect(text).toContain('Connect Local Storage');
+    expect(text).toContain('Browser cache active');
+    expect(text).toContain('This browser does not support choosing a workbench folder.');
+    expect([...container.querySelectorAll('button')].some((button) =>
+      button.textContent?.includes('Choose Workbench Folder')
+    )).toBe(false);
+    expect(container.querySelector('button[aria-label="Open settings"]')).not.toBeNull();
     expect(text).not.toContain('Connect the workbench folder first');
     expect(text).not.toContain('The next real feature');
+  });
+
+  it('opens a settings modal with storage navigation and workbench location details', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const settingsButton = container.querySelector(
+      'button[aria-label="Open settings"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      settingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const dialog = container.querySelector(
+      '[role="dialog"][aria-label="Workbench settings"]'
+    );
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain('Storage');
+    expect(dialog?.querySelector('[aria-current="page"]')?.textContent).toContain('Storage');
+    expect(dialog?.textContent).toContain('Browser cache active');
+    expect(dialog?.textContent).toContain('Browser cache fallback');
+    expect(dialog?.textContent).toContain(
+      'Yes - kept as site data until browser or site data is cleared.'
+    );
+    expect(dialog?.textContent).toContain('Current site cache');
+    expect(dialog?.textContent).toContain('No chosen workbench folder is connected.');
+    expect(dialog?.textContent).toContain('wire-edm-workbench:*');
+    expect(dialog?.querySelector('button[aria-label="Choose Workbench Folder"]')).toBeNull();
   });
 
   it('renders real cache and import actions without fake dashboard rows or dead mode tabs', async () => {
@@ -52,10 +85,8 @@ describe('App dashboard and workbench shell', () => {
     const text = container.textContent || '';
 
     expect(buttons.some((button) => button.textContent?.includes('Import DXF'))).toBe(true);
-    expect(buttons.some((button) => button.textContent?.includes('Connect Local Storage'))).toBe(
-      true
-    );
-    expect(text).toContain('Local storage');
+    expect(buttons.some((button) => button.textContent?.includes('Choose Workbench Folder'))).toBe(false);
+    expect(text).toContain('Browser cache');
     expect(text).not.toContain('Folder picker available');
     expect(text).not.toContain('flange-slot');
     expect(text).not.toContain('repair-job');
@@ -170,34 +201,127 @@ describe('App dashboard and workbench shell', () => {
     expect(generatedProgram).not.toContain('G90 G21 G17 G40');
   });
 
-  it('clicking connect refreshes local storage without selecting a folder', async () => {
-    const directory = new FakeDirectoryHandle('wire-jobs');
-    window.showDirectoryPicker = vi.fn(async () => directory as unknown as FileSystemDirectoryHandle);
-    window.localStorage.setItem(
-      'wire-edm-workbench:file:templates/header.gcode',
-      'CUSTOM HEADER'
-    );
+  it('chooses a workbench folder from settings and displays folder details', async () => {
+    window.showDirectoryPicker = vi.fn();
+    const folderWorkbench = createDirectoryWorkbench('wire-jobs');
+    const connectWorkbenchDirectoryService = vi.fn(async () => folderWorkbench);
 
-    await renderApp(context);
+    await renderApp(context, {
+      connectRememberedWorkbenchDirectory: async () => ({ status: 'missing' }),
+      connectWorkbenchDirectory: connectWorkbenchDirectoryService
+    });
 
-    const connectButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Connect Local Storage')
+    const settingsButton = container.querySelector(
+      'button[aria-label="Open settings"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      settingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const dialog = container.querySelector(
+      '[role="dialog"][aria-label="Workbench settings"]'
     );
+    const connectButton = dialog?.querySelector(
+      'button[aria-label="Choose Workbench Folder"]'
+    ) as HTMLButtonElement | null;
     expect(connectButton).not.toBeNull();
+    expect(container.textContent).toContain('Browser cache is active until then.');
 
     await act(async () => {
       connectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
+    await flushAsync();
 
     expect(window.showDirectoryPicker).not.toHaveBeenCalled();
-    expect(directory.files.size).toBe(0);
-    expect(window.localStorage.getItem('wire-edm-workbench:file:templates/header.gcode')).toBe(
-      'CUSTOM HEADER'
+    expect(container.textContent).toContain('Workbench folder connected');
+    expect(container.textContent).toContain('Chosen workbench folder');
+    expect(container.textContent).toContain('Folder namewire-jobs');
+    expect(connectWorkbenchDirectoryService).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels unsupported persistent storage as temporary instead of connected local storage', async () => {
+    const temporaryWorkbench = createTemporaryWorkbench();
+
+    await renderApp(context, {
+      connectCachedWorkbench: async () => temporaryWorkbench
+    });
+
+    expect(container.textContent).toContain('Temporary storage only');
+    expect(container.textContent).toContain('Changes stay available only until this tab reloads.');
+    expect(container.textContent).not.toContain('Workbench folder connected');
+
+    const settingsButton = container.querySelector(
+      'button[aria-label="Open settings"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      settingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const dialog = container.querySelector(
+      '[role="dialog"][aria-label="Workbench settings"]'
     );
-    expect(window.localStorage.getItem('wire-edm-workbench:file:templates/footer.gcode')).toContain(
-      'M30'
-    );
-    expect(container.textContent).toContain('Local storage workbench active');
-    expect(container.textContent).toContain('Local storage connected');
+    expect(dialog?.textContent).toContain('Temporary memory');
+    expect(dialog?.textContent).toContain('No - current tab only.');
+    expect(dialog?.textContent).toContain('This workbench has no persistent storage location.');
   });
 });
+
+function createTemporaryWorkbench(): ConnectedWorkbench {
+  return {
+    adapter: {
+      name: 'Temporary storage',
+      kind: 'memory',
+      ensureDirectory: async () => undefined,
+      readText: async () => null,
+      writeText: async () => undefined
+    },
+    manifest: {
+      schemaVersion: 1,
+      name: 'Temporary storage',
+      createdAt: '2026-05-30T18:00:00.000Z',
+      updatedAt: '2026-05-30T18:00:00.000Z',
+      templates: {
+        headerPath: 'templates/header.gcode',
+        footerPath: 'templates/footer.gcode'
+      },
+      output: {
+        extension: 'iso',
+        lineEnding: 'crlf'
+      },
+      projects: []
+    },
+    header: '%',
+    footer: '%'
+  };
+}
+
+function createDirectoryWorkbench(name: string): ConnectedWorkbench {
+  return {
+    adapter: {
+      name,
+      kind: 'directory',
+      ensureDirectory: async () => undefined,
+      readText: async () => null,
+      writeText: async () => undefined
+    },
+    manifest: {
+      schemaVersion: 1,
+      name,
+      createdAt: '2026-05-30T18:00:00.000Z',
+      updatedAt: '2026-05-30T18:00:00.000Z',
+      templates: {
+        headerPath: 'templates/header.gcode',
+        footerPath: 'templates/footer.gcode'
+      },
+      output: {
+        extension: 'iso',
+        lineEnding: 'crlf'
+      },
+      projects: []
+    },
+    header: '%',
+    footer: '%'
+  };
+}

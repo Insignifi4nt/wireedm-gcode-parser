@@ -68,4 +68,29 @@ describe('connectCachedWorkbench', () => {
     expect(second.manifest.createdAt).toBe('2026-05-29T14:00:00.000Z');
     expect(second.manifest.updatedAt).toBe('2026-05-29T14:05:00.000Z');
   });
+
+  it('falls back to temporary memory storage when persistent local storage is unavailable', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('Blocked', 'SecurityError');
+      }
+    });
+
+    try {
+      const workbench = await connectCachedWorkbench({
+        now: new Date('2026-05-29T14:00:00.000Z')
+      });
+
+      expect(workbench.adapter.kind).toBe('memory');
+      expect(workbench.manifest.name).toBe('Temporary storage');
+      expect(workbench.header).toContain('G90 G21 G17 G40');
+      expect(workbench.footer).toContain('M30');
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(window, 'localStorage', descriptor);
+      }
+    }
+  });
 });

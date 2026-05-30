@@ -57,7 +57,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'The app prepares local storage automatically. Imported work, templates, generated programs, and editor files are kept in the browser-managed workbench until you export them or clear browser data.'
           },
           {
-            text: 'Connect Local Storage refreshes that same automatic workbench; the browser does not ask you to select a folder.'
+            text: 'Use a workbench folder for disk-visible storage. If the remembered folder needs permission again, Settings shows Reconnect Workbench Folder; otherwise it asks you to choose the folder.'
           },
           {
             text: 'Custom header/footer templates and output extension choices live in the active workbench. The extension changes the written file name, not the generated G-code text by itself.'
@@ -190,7 +190,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Aplicatia pregateste local storage automat. Lucrarile importate, template-urile, programele generate si fisierele de editor raman in workbench-ul gestionat de browser pana le exporti sau stergi datele browserului.'
           },
           {
-            text: 'Connect Local Storage reimprospateaza acelasi workbench automat; browserul nu cere sa alegi manual un folder.'
+            text: 'Foloseste un folder workbench pentru stocare vizibila pe disk. Daca folderul retinut cere permisiune din nou, Settings arata Reconnect Workbench Folder; altfel cere sa alegi folderul.'
           },
           {
             text: 'Template-urile header/footer si extensia de output tin de workbench-ul activ. Extensia schimba numele fisierului, nu textul G-code generat.'

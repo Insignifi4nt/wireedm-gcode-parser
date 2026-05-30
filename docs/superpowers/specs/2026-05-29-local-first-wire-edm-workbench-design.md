@@ -9,7 +9,8 @@ Build a new client-only Wire EDM workbench while preserving the current vanilla 
 The app opens to a dashboard with a cache-first workbench flow:
 
 - Initialize `workbench.json`, required folders, and persistent header/footer templates in browser-managed local storage.
-- Let the same workbench structure reconnect from browser-managed local storage automatically when the app opens or the user clicks Connect Local Storage.
+- Let the same workbench structure reconnect from browser-managed local storage automatically when the app opens.
+- Show a top-bar storage status and a settings entry point. Use a chosen workbench folder when available, remember the folder handle for reconnects, and keep browser cache as the fallback when folder access is missing or disconnected.
 - Show only real state read from the active workbench. Do not show mock project rows or dead actions.
 
 DXF import now exists for the first supported entity set. Editor porting, verification, and export are later slices. Each slice should add a tested API layer first, then UI on top.
@@ -48,7 +49,7 @@ part-name.wedm/
     session.json
 ```
 
-Local storage is the default so one-off imports work in browsers without directory picker support or folder prompts. OPFS/IndexedDB can be added as a stronger browser-managed backend later.
+A chosen workbench folder is the preferred storage target when the browser supports folder access. The app remembers the folder handle and can reconnect it after user approval. Browser cache remains the fallback so one-off imports work in browsers without directory picker support or while a folder needs reconnection. If persistent browser storage is unavailable, use a clearly labeled temporary workbench instead of implying persistence. OPFS/IndexedDB can be added as a stronger browser-managed backend later.
 
 ## Stack
 
