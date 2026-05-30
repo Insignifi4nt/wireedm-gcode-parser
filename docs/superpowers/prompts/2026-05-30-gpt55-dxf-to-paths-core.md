@@ -1,8 +1,8 @@
-# GPT-5.5-Pro Mission Brief: Invent The DXF-To-Path Intelligence Core
+# Mission Brief: Invent The DXF-To-Path Intelligence Core
 
-You are GPT-5.5-Pro working through the ChatGPT web app with GitHub connector access to the `WireEDM_app` repository.
+Approach this as a pioneer in computational geometry, CAM path planning, manufacturing intelligence, and local-first engineering tools.
 
-You are not being asked to behave like a terminal agent. You may not be able to clone, run, or verify the repo locally. Use the GitHub connector to read the repository, reason deeply, research freely, and create your own files/artifacts in your sandbox. Return whatever artifact form is most useful: design documents, algorithms, TypeScript modules, schemas, pseudocode, test corpora, or an archive-style file manifest with full file contents.
+The task is to invent the strongest possible DXF-to-path intelligence core for `WireEDM_app`. Use the GitHub connector to read the repository files directly. The repository tree is included at the end of this prompt so you can jump to known paths without relying on directory listing.
 
 This task is expensive and worth taking seriously. Do not optimize for a quick patch. Think for as long as needed. Design something that could become the foundation of a new class of CAD/CAM workbench, not merely a better converter.
 
@@ -202,3 +202,113 @@ Do not avoid advanced ideas just because they are not already in the app.
 At the same time, make the design intelligible. The result should be something humans can inspect, test, debug, and gradually integrate.
 
 The best answer is not the shortest answer. The best answer is the one that gives this project a genuinely powerful internal path intelligence layer.
+
+## Repository File Tree
+
+```text
+.cursorignore
+.gitignore
+.vscode/settings.json
+AGENTS.md
+README.md
+components.json
+docs/superpowers/plans/2026-05-29-workbench-scaffold.md
+docs/superpowers/prompts/2026-05-30-gpt55-dxf-to-paths-core.md
+docs/superpowers/specs/2026-05-29-local-first-wire-edm-workbench-design.md
+docs/superpowers/specs/2026-05-30-dxf-toolpath-planner-intent.md
+index.html
+package-lock.json
+package.json
+src/App.tsx
+src/__tests__/appDxfProjects.test.tsx
+src/__tests__/appTestHelpers.tsx
+src/__tests__/appWorkbenchDashboard.test.tsx
+src/__tests__/editorImportExport.test.tsx
+src/__tests__/editorLineDrawer.test.tsx
+src/__tests__/editorMeasurement.test.tsx
+src/__tests__/editorPreviewControls.test.tsx
+src/app/AppShell.tsx
+src/app/WorkbenchSettingsDialog.tsx
+src/app/appServices.ts
+src/app/useWorkbenchAppController.ts
+src/components/StatusToasts.tsx
+src/components/ui/button.tsx
+src/domain/dxf/__tests__/dxfToGcode.test.ts
+src/domain/dxf/__tests__/importDxfProject.test.ts
+src/domain/dxf/__tests__/parseDxf.test.ts
+src/domain/dxf/__tests__/parseDxfSplineFallback.test.ts
+src/domain/dxf/dxfToGcode.ts
+src/domain/dxf/importDxfProject.ts
+src/domain/dxf/parseDxf.ts
+src/domain/dxf/types.ts
+src/domain/editor/__tests__/gcodeLineOperations.test.ts
+src/domain/editor/__tests__/gcodeParser.test.ts
+src/domain/editor/__tests__/gcodeStructure.test.ts
+src/domain/editor/__tests__/importExternalProgram.test.ts
+src/domain/editor/__tests__/isoNormalizer.test.ts
+src/domain/editor/__tests__/loadEditorProgram.test.ts
+src/domain/editor/__tests__/measurementPoints.test.ts
+src/domain/editor/__tests__/openWorkbenchProject.test.ts
+src/domain/editor/__tests__/previewGeometry.test.ts
+src/domain/editor/__tests__/saveEditorProgram.test.ts
+src/domain/editor/gcodeLineOperations.ts
+src/domain/editor/gcodeParser.ts
+src/domain/editor/gcodeStructure.ts
+src/domain/editor/importExternalProgram.ts
+src/domain/editor/isoNormalizer.ts
+src/domain/editor/loadEditorProgram.ts
+src/domain/editor/measurementPoints.ts
+src/domain/editor/openWorkbenchProject.ts
+src/domain/editor/previewGeometry.ts
+src/domain/editor/saveEditorProgram.ts
+src/domain/editor/types.ts
+src/domain/post/__tests__/downloadProgramFile.test.ts
+src/domain/post/__tests__/gcodeTemplates.test.ts
+src/domain/post/downloadProgramFile.ts
+src/domain/post/gcodeTemplates.ts
+src/domain/storage/__tests__/browserCacheAdapter.test.ts
+src/domain/storage/__tests__/browserDirectoryAdapter.test.ts
+src/domain/storage/__tests__/connectCachedWorkbench.test.ts
+src/domain/storage/__tests__/connectWorkbenchDirectory.test.ts
+src/domain/storage/__tests__/updateWorkbenchSettings.test.ts
+src/domain/storage/__tests__/workbenchStorage.test.ts
+src/domain/storage/browserCacheAdapter.ts
+src/domain/storage/browserDirectoryAdapter.ts
+src/domain/storage/connectCachedWorkbench.ts
+src/domain/storage/connectWorkbenchDirectory.ts
+src/domain/storage/fileSystemAccess.ts
+src/domain/storage/updateWorkbenchSettings.ts
+src/domain/storage/workbenchStorage.ts
+src/domain/workbench/__tests__/defaultProject.test.ts
+src/domain/workbench/defaultProject.ts
+src/domain/workbench/projectNaming.ts
+src/domain/workbench/types.ts
+src/features/dashboard/DashboardHeader.tsx
+src/features/dashboard/DashboardPage.tsx
+src/features/dashboard/LatestDxfImportPanel.tsx
+src/features/dashboard/ProjectListPanel.tsx
+src/features/dashboard/WorkbenchSettingsPanel.tsx
+src/features/dashboard/dashboardSettings.ts
+src/features/editor/EditorCanvasPanel.tsx
+src/features/editor/EditorGuideDialog.tsx
+src/features/editor/EditorHeaderBar.tsx
+src/features/editor/EditorInspectorPanel.tsx
+src/features/editor/EditorPage.tsx
+src/features/editor/EditorPreview.tsx
+src/features/editor/EditorProgramLinesPanel.tsx
+src/features/editor/EditorProgramTextPanel.tsx
+src/features/editor/editorGuideContent.ts
+src/features/editor/editorGuideHighlight.ts
+src/features/editor/editorLineState.ts
+src/features/editor/editorPreviewHelpers.ts
+src/index.css
+src/lib/utils.ts
+src/main.tsx
+src/types/dxf.d.ts
+src/vite-env.d.ts
+tsconfig.app.json
+tsconfig.json
+tsconfig.node.json
+vite.config.ts
+vitest.config.ts
+```

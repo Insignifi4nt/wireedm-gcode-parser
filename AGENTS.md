@@ -4,8 +4,6 @@
 
 Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. The scaffold must stay API-first: add tested functionality before exposing UI controls for it. The root app must work without folder permissions by using a browser-cache workbench first, while keeping the File System Access folder flow as an optional persistence upgrade.
 
-The previous vanilla JavaScript app is preserved in `old_reference/current_app`. Treat it as the source of truth for existing editor behavior until features are ported.
-
 ## Commands
 
 - `npm run dev` - start Vite on port 3000
@@ -28,7 +26,6 @@ The previous vanilla JavaScript app is preserved in `old_reference/current_app`.
 - `src/components/ui/` - shadcn-compatible UI primitives
 - `src/domain/` - workbench, storage, and G-code output models
 - `src/features/` - feature UI; only Dashboard is active until backing functionality exists
-- `old_reference/current_app/` - preserved old app
 - `docs/superpowers/` - design and implementation planning notes
 
 ## Product Rules

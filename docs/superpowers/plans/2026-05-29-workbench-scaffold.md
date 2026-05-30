@@ -2,23 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Preserve the current vanilla JS app as a reference and create a new client-only React/TypeScript workbench shell with only real cache/folder workbench and DXF import behavior exposed.
+**Goal:** Create a new client-only React/TypeScript workbench shell with only real cache/folder workbench and DXF import behavior exposed.
 
-**Architecture:** Keep old code intact under `old_reference/current_app`. The root app becomes a static Vite React app with thin technical UI and typed workbench models for browser-cache-first storage, optional folder persistence, and header/body/footer G-code generation. UI controls are added only after the underlying API is implemented and tested.
+**Architecture:** The root app becomes a static Vite React app with thin technical UI and typed workbench models for browser-cache-first storage, optional folder persistence, and header/body/footer G-code generation. UI controls are added only after the underlying API is implemented and tested.
 
 **Tech Stack:** Vite, React, TypeScript, Tailwind CSS, shadcn/ui-compatible primitives, Vitest.
 
 ---
 
-### Task 1: Preserve Current App
+### Task 1: Prepare Root App Replacement
 
 **Files:**
-- Create: `old_reference/current_app/`
-- Move/copy: current `src/`, `index.html`, `documentation/`, `scripts/`, and old app package/config files into `old_reference/current_app/`
-
-- [ ] Move the current app source and supporting documentation into `old_reference/current_app`.
-- [ ] Copy the old `package.json`, `package-lock.json`, `vite.config.js`, `README.md`, and `AGENTS.md` into the reference folder before replacing root config.
-- [ ] Leave generated `dist/` out of the reference unless a later archival task explicitly needs it.
+- Review current root files before replacing root config.
+- Keep generated `dist/` out of tracked source unless a later archival task explicitly needs it.
 
 ### Task 2: Create New Root React App
 

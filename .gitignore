@@ -65,6 +65,9 @@ memory_server.py
 # Test files
 /testing_gcode_files/
 
+# Local reference archive
+old_reference/
+
 # Agent-local files
 /.claude/settings.local.json
 .superpowers/

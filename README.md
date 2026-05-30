@@ -2,8 +2,6 @@
 
 A local-first Wire EDM workbench for DXF import, clean IJ G-code generation, editing, verification, and export.
 
-The previous vanilla JavaScript viewer/editor is preserved under `old_reference/current_app` and should be treated as the behavioral reference when editor functionality is ported.
-
 ## Commands
 
 - `npm run dev` - start the Vite dev server
@@ -22,7 +20,3 @@ The previous vanilla JavaScript viewer/editor is preserved under `old_reference/
 - Persistent header/body/footer G-code output.
 - No feed generation by default; feeds are controlled on the machine.
 - Output extension is selectable: `.iso`, `.nc`, `.gcode`, or custom.
-
-## Reference App
-
-The old app lives in `old_reference/current_app`. Preserve its cleanup, preview, drawer, pinning, normalization, and export behavior when porting those capabilities.

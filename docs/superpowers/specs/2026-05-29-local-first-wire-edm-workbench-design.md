@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a new client-only Wire EDM workbench while preserving the current vanilla JavaScript app as a reference implementation. The new app starts with a dashboard and a browser-managed local storage workbench that works without folder permissions or manual folder selection. Additional modes are exposed only after their functionality exists.
+Build a new client-only Wire EDM workbench. The new app starts with a dashboard and a browser-managed local storage workbench that works without folder permissions or manual folder selection. Additional modes are exposed only after their functionality exists.
 
 ## Product Shape
 
@@ -17,7 +17,7 @@ DXF import now exists for the first supported entity set. Editor porting, verifi
 
 ## Preservation Rule
 
-The current app is preserved under `old_reference/current_app`. Its editor behavior, cleanup rules, normalization/export assumptions, canvas preview, drawer, selection, pins, and tailored machine output formatting must not be discarded. New code should port these behaviors deliberately instead of rewriting them from memory.
+Existing editor behavior, cleanup rules, normalization/export assumptions, canvas preview, drawer, selection, pins, and tailored machine output formatting must not be discarded. New code should port these behaviors deliberately instead of rewriting them from memory.
 
 ## V1 G-Code Output
 
@@ -59,7 +59,6 @@ Use Vite, React, TypeScript, Tailwind CSS, and shadcn/ui-compatible component co
 
 The first implementation only establishes the new shell and data boundaries:
 
-- Preserve the current app under `old_reference/current_app`.
 - Replace the root app with a React/TypeScript shell.
 - Add Dashboard only.
 - Add workbench project/template/output extension types.
