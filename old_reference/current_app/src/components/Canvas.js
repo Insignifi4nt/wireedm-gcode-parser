@@ -1,0 +1,591 @@
+/**
+ * Canvas Rendering Engine for Wire EDM G-Code Viewer
+ * Handles all canvas drawing operations including grid, G-code paths, and measurement points
+ */
+
+import { CANVAS, GRID } from '../utils/Constants.js';
+import { Viewport } from '../core/Viewport.js';
+import { ValidationUtils } from '../utils/MathUtils.js';
+import { drawGrid } from './canvas/CanvasGrid.js';
+import { renderPath as renderGCodePath, renderStartEnd as renderStartEndPoints } from './canvas/PathHighlights.js';
+import { renderClickedPoints, renderMarker as drawMarker } from './canvas/MarkerRenderer.js';
+import { clearCanvas, applyWorldTransform } from './canvas/CanvasRenderer.js';
+
+/**
+ * Canvas rendering component for G-code visualization
+ * Extracted from original HTML canvas rendering logic
+ */
+export class Canvas {
+  /**
+   * Create Canvas instance
+   * @param {HTMLCanvasElement} canvasElement - Canvas DOM element
+   * @param {Object} options - Configuration options
+   */
+  constructor(canvasElement, options = {}) {
+    // Validate required parameters
+    if (!canvasElement || !(canvasElement instanceof HTMLCanvasElement)) {
+      throw new Error('Canvas constructor requires a valid HTMLCanvasElement');
+    }
+
+    this.canvas = canvasElement;
+    this.ctx = canvasElement.getContext('2d');
+    this.options = { ...this._getDefaultOptions(), ...options };
+
+    // Initialize viewport
+    this.viewport = new Viewport(this.canvas);
+
+    // State management
+    this.isInitialized = false;
+    this.isDestroyed = false;
+    this.renderRequestId = null;
+
+    // High-DPI support properties (Phase 2A addition)
+    this.devicePixelRatio = 1;
+    this.enableHighDPI = this.options.enableHighDPI;
+    this.physicalWidth = 0;   // Actual canvas buffer size
+    this.physicalHeight = 0;  // Actual canvas buffer size  
+    this.logicalWidth = 0;    // Logical coordinate space size
+    this.logicalHeight = 0;   // Logical coordinate space size
+
+    // Data to render
+    this.gcodePath = [];
+    this.clickedPoints = [];
+    this.hoverHighlight = null; // {type: 'point'|'segment', index, color}
+    this.selectionHighlights = new Set();
+    this.pinnedHighlights = new Set();
+    this.persistentHighlights = this.pinnedHighlights; // Backward-compatible alias for pinned references.
+    this.gridEnabled = this.options.showGrid;
+    this.gridSize = this.options.gridSize;
+
+    // Bind methods
+    this._bindMethods();
+  }
+
+  /**
+   * Get default configuration options
+   * @returns {Object} Default options
+   */
+  _getDefaultOptions() {
+    return {
+      showGrid: true,
+      gridSize: GRID.SIZE,
+      enableHighDPI: false, // Disabled by default for safe testing (Phase 2A)
+      autoResize: true,
+      throttleRedraw: true
+    };
+  }
+
+  /**
+   * Bind methods to maintain context
+   */
+  _bindMethods() {
+    this.redraw = this.redraw.bind(this);
+    this._handleResize = this._handleResize.bind(this);
+  }
+
+  /**
+   * Initialize canvas and setup event listeners
+   */
+  async init() {
+    if (this.isInitialized) {
+      console.warn('Canvas already initialized');
+      return;
+    }
+
+    try {
+      // Setup canvas
+      this._setupCanvas();
+      
+      // Setup event listeners
+      this._setupEventListeners();
+      
+      // Initial render
+      this.redraw();
+      
+      this.isInitialized = true;
+    } catch (error) {
+      throw new Error(`Failed to initialize Canvas: ${error.message}`);
+    }
+  }
+
+  /**
+   * Setup canvas properties
+   */
+  _setupCanvas() {
+    // Set cursor
+    this.canvas.style.cursor = CANVAS.CURSOR_DEFAULT;
+
+    // Initial resize
+    this._resizeCanvas();
+  }
+
+  // High-DPI setup temporarily removed for debugging
+
+  /**
+   * Setup event listeners
+   */
+  _setupEventListeners() {
+    if (this.options.autoResize) {
+      window.addEventListener('resize', this._handleResize);
+    }
+  }
+
+  /**
+   * Handle window resize events
+   */
+  _handleResize() {
+    this._resizeCanvas();
+    this.redraw();
+  }
+
+  /**
+   * Resize canvas to fit container (Phase 2A - High-DPI aware)
+   */
+  _resizeCanvas() {
+    const container = this.canvas.parentElement;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    
+    // Logical dimensions (coordinate space - always same as container)
+    // Round to integers to prevent canvas buffer mismatch
+    this.logicalWidth = Math.round(rect.width);
+    this.logicalHeight = Math.round(rect.height);
+    
+    if (this.enableHighDPI) {
+      // High-DPI mode: Separate physical buffer from logical coordinates
+      this.devicePixelRatio = window.devicePixelRatio || 1;
+      
+      // Physical canvas buffer (scaled for device pixels)
+      // Round to integers to prevent canvas buffer mismatch
+      this.physicalWidth = Math.round(this.logicalWidth * this.devicePixelRatio);
+      this.physicalHeight = Math.round(this.logicalHeight * this.devicePixelRatio);
+      
+      // Set internal canvas size to physical pixels
+      this.canvas.width = this.physicalWidth;
+      this.canvas.height = this.physicalHeight;
+      
+      // Set CSS size to logical pixels (actual display size)
+      this.canvas.style.width = this.logicalWidth + 'px';
+      this.canvas.style.height = this.logicalHeight + 'px';
+      
+    } else {
+      // Standard mode (current working approach) 
+      this.devicePixelRatio = 1;
+      this.physicalWidth = this.logicalWidth;
+      this.physicalHeight = this.logicalHeight;
+      this.canvas.width = this.logicalWidth;
+      this.canvas.height = this.logicalHeight;
+      // CSS size is set automatically to match canvas dimensions
+    }
+    
+    // Always use logical dimensions for compatibility (displayWidth/Height)
+    this.displayWidth = this.logicalWidth;
+    this.displayHeight = this.logicalHeight;
+
+    // Configure canvas quality
+    this._configureCanvasQuality();
+
+    // CRITICAL: Set viewport dimensions to match canvas transformation
+    // This ensures coordinate conversion uses the SAME height as canvas transformation
+    this.viewport.displayWidth = this.logicalWidth;
+    this.viewport.displayHeight = this.logicalHeight;
+    
+    // Update viewport state after setting correct dimensions
+    this.viewport.onCanvasResize();
+    
+    // Validate dimension consistency
+    this._validateDimensionConsistency();
+  }
+
+  /**
+   * Configure canvas for basic rendering quality (Phase 2A - DPI aware)
+   */
+  _configureCanvasQuality() {
+    // Reset context transform first
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    
+    // Apply device pixel ratio scaling if in high-DPI mode
+    if (this.enableHighDPI && this.devicePixelRatio > 1) {
+      this.ctx.scale(this.devicePixelRatio, this.devicePixelRatio);
+    }
+    
+    // Basic quality settings
+    this.ctx.imageSmoothingEnabled = true;
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
+  }
+
+  /**
+   * Set G-code path data for rendering
+   * @param {Array} pathData - Array of path segments
+   */
+  setGCodePath(pathData) {
+    if (!Array.isArray(pathData)) {
+      throw new Error('Path data must be an array');
+    }
+
+    this.gcodePath = pathData;
+    this.redraw();
+  }
+
+  /**
+   * Set clicked measurement points for rendering
+   * @param {Array} points - Array of clicked points
+   */
+  setClickedPoints(points) {
+    if (!Array.isArray(points)) {
+      throw new Error('Points data must be an array');
+    }
+
+    this.clickedPoints = points;
+    this.redraw();
+  }
+
+  /**
+   * Toggle grid visibility
+   * @param {boolean} enabled - Whether to show grid
+   */
+  setGridEnabled(enabled) {
+    this.gridEnabled = !!enabled;
+    this.redraw();
+  }
+
+  /**
+   * Set grid size
+   * @param {number} size - Grid size in world units
+   */
+  setGridSize(size) {
+    if (!ValidationUtils.isValidCoordinate(size) || size <= 0) {
+      throw new Error('Grid size must be a positive number');
+    }
+
+    this.gridSize = size;
+    if (this.gridEnabled) {
+      this.redraw();
+    }
+  }
+
+  /**
+   * Main redraw method - renders all canvas content
+   */
+  redraw() {
+    if (this.isDestroyed) return;
+
+    // Throttle redraws if enabled
+    if (this.options.throttleRedraw) {
+      if (this.renderRequestId) {
+        return; // Already scheduled
+      }
+      
+      this.renderRequestId = requestAnimationFrame(() => {
+        this._performRender();
+        this.renderRequestId = null;
+      });
+    } else {
+      this._performRender();
+    }
+  }
+
+  /**
+   * Perform the actual rendering
+   */
+  _performRender() {
+    try {
+      // Clear canvas
+      clearCanvas(this.ctx, this.physicalWidth, this.physicalHeight);
+
+      // Save context state
+      this.ctx.save();
+
+      // Apply world-space transform (DPI-aware, Y-axis flipped)
+      applyWorldTransform(this.ctx, this.viewport, this.devicePixelRatio);
+
+      // Render components in order
+      if (this.gridEnabled) {
+        drawGrid(this.ctx, this.viewport, {
+          gridSize: this.gridSize,
+          displayWidth: this.displayWidth,
+          displayHeight: this.displayHeight,
+          devicePixelRatio: this.devicePixelRatio
+        });
+      }
+
+      if (this.gcodePath.length > 0) {
+        renderGCodePath(this.ctx, this.viewport, this.gcodePath, {
+          devicePixelRatio: this.devicePixelRatio,
+          drawHighlights: false,
+          markerRenderer: (point, config) => drawMarker(this.ctx, this.viewport, point, config, this.devicePixelRatio)
+        });
+        renderStartEndPoints(this.ctx, this.viewport, this.gcodePath, {
+          markerRenderer: (point, config) => drawMarker(this.ctx, this.viewport, point, config, this.devicePixelRatio)
+        });
+        renderGCodePath(this.ctx, this.viewport, this.gcodePath, {
+          devicePixelRatio: this.devicePixelRatio,
+          drawSegments: false,
+          hoverHighlight: this.hoverHighlight,
+          selectionHighlights: this.selectionHighlights,
+          pinnedHighlights: this.pinnedHighlights,
+          markerRenderer: (point, config) => drawMarker(this.ctx, this.viewport, point, config, this.devicePixelRatio)
+        });
+      }
+
+      if (this.clickedPoints.length > 0) {
+        renderClickedPoints(this.ctx, this.viewport, this.clickedPoints, { devicePixelRatio: this.devicePixelRatio });
+      }
+
+      // Restore context state
+      this.ctx.restore();
+
+    } catch (error) {
+      console.error('Error during canvas render:', error);
+    }
+  }
+
+  
+
+  
+
+  
+
+  /**
+   * Render clicked measurement points
+   */
+  
+
+  /**
+   * Fit canvas view to show all G-code content
+   */
+  fitToContent() {
+    if (this.gcodePath.length === 0) {
+      return;
+    }
+
+    // Calculate content bounds
+    const bounds = this._calculateContentBounds();
+    
+    if (bounds) {
+      this.viewport.fitToBounds(bounds);
+      this.redraw();
+    }
+  }
+
+  /**
+   * Calculate bounds of all content
+   * @returns {Object|null} Bounds {minX, maxX, minY, maxY} or null if no content
+   */
+  _calculateContentBounds() {
+    if (this.gcodePath.length === 0) return null;
+
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+
+    // Include G-code path bounds
+    this.gcodePath.forEach(point => {
+      if (ValidationUtils.isValidPoint(point)) {
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+      }
+    });
+
+    // Include clicked points bounds
+    this.clickedPoints.forEach(point => {
+      if (ValidationUtils.isValidPoint(point)) {
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+      }
+    });
+
+    return isFinite(minX) ? { minX, maxX, minY, maxY } : null;
+  }
+
+  /**
+   * Get current viewport state
+   * @returns {Object} Viewport state
+   */
+  getViewportState() {
+    return this.viewport.getState();
+  }
+
+  /**
+   * Get viewport instance for external manipulation
+   * @returns {Viewport} Viewport instance
+   */
+  getViewport() {
+    return this.viewport;
+  }
+
+  /**
+   * Clear all clicked points
+   */
+  clearClickedPoints() {
+    this.clickedPoints = [];
+    this.redraw();
+  }
+
+  /**
+   * Add a clicked point
+   * @param {Object} point - Point coordinates {x, y}
+   */
+  addClickedPoint(point) {
+    if (!ValidationUtils.isValidPoint(point)) {
+      throw new Error('Invalid point coordinates');
+    }
+
+    this.clickedPoints.push({ ...point });
+    this.redraw();
+  }
+
+  /**
+   * Set hovered gcode point index to highlight
+   * @param {number|null} index - index in gcodePath to highlight (endpoint of move)
+   */
+  setHoverHighlight(index) {
+    if (typeof index === 'number') {
+      this.hoverHighlight = { type: 'point', index };
+    } else {
+      this.hoverHighlight = null;
+    }
+    this.redraw();
+  }
+
+  /**
+   * Set selected gcode point indexes to highlight temporarily.
+   * @param {number[]} indices
+   */
+  setSelectionHighlights(indices = []) {
+    this.selectionHighlights = new Set((Array.isArray(indices) ? indices : []).filter(index => typeof index === 'number'));
+    this.redraw();
+  }
+
+  /**
+   * Set pinned gcode point indexes to highlight persistently.
+   * @param {number[]} indices
+   */
+  setPinnedHighlights(indices = []) {
+    this.pinnedHighlights = new Set((Array.isArray(indices) ? indices : []).filter(index => typeof index === 'number'));
+    this.persistentHighlights = this.pinnedHighlights;
+    this.redraw();
+  }
+
+  /**
+   * Toggle persistent highlight for a gcode point index.
+   * Kept for compatibility; pins are the persistent highlight model.
+   * @param {number} index
+   */
+  togglePersistentHighlight(index) {
+    const next = new Set(this.pinnedHighlights);
+    if (next.has(index)) next.delete(index);
+    else next.add(index);
+    this.setPinnedHighlights([...next]);
+  }
+
+  clearHighlights() {
+    this.hoverHighlight = null;
+    this.setSelectionHighlights([]);
+  }
+
+  clearPinnedHighlights() {
+    this.setPinnedHighlights([]);
+  }
+
+  /**
+   * Toggle high-DPI support on/off (Phase 2B)
+   * @param {boolean} enabled - Whether to enable high-DPI
+   */
+  setHighDPIEnabled(enabled) {
+    if (this.enableHighDPI !== enabled) {
+      this.enableHighDPI = enabled;
+      // Reconfigure canvas with new setting
+      this._resizeCanvas();
+      this.redraw();
+    }
+  }
+
+  /**
+   * Get current high-DPI status
+   * @returns {Object} High-DPI status information
+   */
+  getHighDPIStatus() {
+    return {
+      enabled: this.enableHighDPI,
+      devicePixelRatio: this.devicePixelRatio,
+      logicalSize: { width: this.logicalWidth, height: this.logicalHeight },
+      physicalSize: { width: this.physicalWidth, height: this.physicalHeight }
+    };
+  }
+
+  /**
+   * Validate dimension consistency between canvas and viewport
+   * Critical for coordinate accuracy
+   */
+  _validateDimensionConsistency() {
+    const issues = [];
+    
+    // Check if viewport dimensions match canvas transformation dimensions
+    if (this.viewport.displayWidth !== this.logicalWidth) {
+      issues.push(`Width mismatch: viewport.displayWidth=${this.viewport.displayWidth}, canvas.logicalWidth=${this.logicalWidth}`);
+    }
+    
+    if (this.viewport.displayHeight !== this.logicalHeight) {
+      issues.push(`Height mismatch: viewport.displayHeight=${this.viewport.displayHeight}, canvas.logicalHeight=${this.logicalHeight}`);
+    }
+    
+    // Check if canvas dimensions are consistent based on mode
+    if (this.enableHighDPI) {
+      // High-DPI mode: canvas buffer should match physical dimensions
+      if (this.canvas.width !== this.physicalWidth || this.canvas.height !== this.physicalHeight) {
+        issues.push(`Canvas buffer mismatch (High-DPI): canvas=${this.canvas.width}x${this.canvas.height}, physical=${this.physicalWidth}x${this.physicalHeight}`);
+      }
+    } else {
+      // Standard mode: canvas buffer should match logical dimensions
+      if (this.canvas.width !== this.logicalWidth || this.canvas.height !== this.logicalHeight) {
+        issues.push(`Canvas buffer mismatch (Standard): canvas=${this.canvas.width}x${this.canvas.height}, logical=${this.logicalWidth}x${this.logicalHeight}`);
+      }
+    }
+    
+    if (issues.length > 0) {
+      console.error('Canvas dimension consistency issues detected:');
+      issues.forEach(issue => console.error('- ' + issue));
+      console.error('This will cause coordinate accuracy problems!');
+      
+      // Add runtime validation for the specific height mismatch that causes coordinate offset
+      if (this.viewport.displayHeight !== this.logicalHeight) {
+        console.error('❌ CRITICAL: Height mismatch detected! This causes ~4mm coordinate offset after G-code loading.');
+        console.error('Canvas transformation uses this.logicalHeight:', this.logicalHeight);
+        console.error('Coordinate conversion uses viewport.displayHeight:', this.viewport.displayHeight);
+        console.error('These MUST match for accurate coordinates!');
+      }
+    }
+  }
+
+
+  /**
+   * Destroy canvas and cleanup resources
+   */
+  destroy() {
+    if (this.isDestroyed) return;
+
+    // Cancel any pending render
+    if (this.renderRequestId) {
+      cancelAnimationFrame(this.renderRequestId);
+      this.renderRequestId = null;
+    }
+
+    // Remove event listeners
+    if (this.options.autoResize) {
+      window.removeEventListener('resize', this._handleResize);
+    }
+
+    // Clear data
+    this.gcodePath = [];
+    this.clickedPoints = [];
+
+    // Mark as destroyed
+    this.isDestroyed = true;
+  }
+}
