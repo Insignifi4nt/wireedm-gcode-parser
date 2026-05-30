@@ -1,99 +1,48 @@
 # Agent Documentation
 
-This file contains all the information an agent needs to start working on the codebase, including project structure, architecture, guidelines, and workflows.
-
 ## Project Overview
 
-**Wire EDM G-Code Viewer** is an interactive, modular viewer for Wire EDM G-Code files. It supports visualization of toolpaths (G0/G1/G2/G3), measurement tools, G-code editing, and ISO program export.
+Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. The scaffold must stay API-first: add tested functionality before exposing UI controls for it. The root app must work without folder permissions by using a browser-cache workbench first, while keeping the File System Access folder flow as an optional persistence upgrade.
 
-## Quick Start & Commands
+The previous vanilla JavaScript app is preserved in `old_reference/current_app`. Treat it as the source of truth for existing editor behavior until features are ported.
 
-### Development
-- **Start Dev Server**: `npm run dev` (http://localhost:3000)
-- **Install Dependencies**: `npm install` (Node >= 16)
-- **Production Build**: `npm run build` (output to `dist/`)
-- **Preview Build**: `npm run preview` (port 4173)
-- **Deploy**: `npm run deploy` (deploys to GitHub Pages)
+## Commands
 
-### Testing
-- **Run Tests**: `npm test` (if configured, currently Vitest/Playwright recommended)
-- **ISO Helper**: `python scripts/edm_iso_tester.py` (utility script)
+- `npm run dev` - start Vite on port 3000
+- `npm test -- --run` - run tests once
+- `npm run build` - type-check and build
+- `npm run preview` - preview production build
 
-## Project Structure
+## Stack
 
-- **Entry Point**: `index.html` → `src/main.js`
-- **Core Logic**: `src/core/`
-  - `AppOrchestrator.js`: Lifecycle and init.
-  - `GCodeParser.js`: Parsing logic.
-  - `Viewport.js`: Zoom/pan/transform.
-  - `EventManager.js`: Event bus system.
-- **UI Components**: `src/components/`
-  - `Canvas.js`: Main rendering area.
-  - `Toolbar.js`: Top controls.
-  - `Sidebar.js`: Right-side info panel.
-  - `GCodeDrawer.js`: Bottom editor/viewer.
-- **Utilities**: `src/utils/`
-  - `MathUtils.js`, `Constants.js`, `FileHandler.js`.
-- **Styles**: `src/styles/` (`main.css`, `components.css`, `theme.css`).
-- **Scripts**: `scripts/` (Utility scripts like `edm_iso_tester.py`, `reproduce_issue.mjs`).
-- **Test Files**: `testing_gcode_files/` (Sample G-code files for testing).
-- **Documentation**: `documentation/`
-  - `TODO.md`: Active tasks and priorities.
-  - `templates/`: Templates for PRs and issues.
-  - `archive/`: Outdated or historical documentation (e.g., past refactors).
-  - `IssuesPictures/`: Images for issues/repro.
+- Vite
+- React
+- TypeScript
+- Tailwind CSS
+- shadcn/ui-compatible component structure
+- Vitest
 
-## Architecture Overview
+## Structure
 
-The application follows a modular **event-driven architecture**:
+- `src/app/` - shell and app-level composition
+- `src/components/ui/` - shadcn-compatible UI primitives
+- `src/domain/` - workbench, storage, and G-code output models
+- `src/features/` - feature UI; only Dashboard is active until backing functionality exists
+- `old_reference/current_app/` - preserved old app
+- `docs/superpowers/` - design and implementation planning notes
 
-1.  **Event System**: `EventManager.js` acts as a singleton EventBus. Components communicate via `EVENT_TYPES` (in `src/core/events/EventTypes.js`) rather than direct coupling.
-    - Flow: File Load → Parse → Event `PARSER_COMPLETED` → Canvas Redraw / Drawer Update.
-2.  **State Management**:
-    - `AppOrchestrator` holds high-level state.
-    - Components manage their own local state (e.g., `GCodeDrawer` edits).
-    - `UndoRedoSystem` manages history for edits.
-3.  **Rendering**:
-    - `CanvasRenderer` handles high-DPI rendering of paths.
-    - `CanvasGrid` provides a dynamic 1-2-5 zoom-responsive grid.
-    - `MarkerRenderer` draws points and measurements.
+## Product Rules
 
-## Working with `documentation/TODO.md`
+- Preserve the old editor behavior before replacing it.
+- Do not add mock project names, fake library rows, or buttons that only change screens.
+- DXF converted by this app is treated as clean internal geometry.
+- Browser-cache and one-off imports must stay supported even when directory picker APIs are unavailable.
+- External `.gcode`, `.nc`, `.iso`, and `.txt` files should keep the old cleanup/display pipeline when ported.
+- V1 output is header/body/footer G-code. Do not add feed generation by default.
+- Output extension is a file-writing choice; it should not change the generated program text by itself.
 
-- **Read First**: Check "## Active Tasks" at the top.
-- **Do Not Load All**: The file is large; read header/active sections first.
-- **Completed Tasks**: Listed reverse-chronologically at the bottom.
+## Style
 
-## Coding Standards
-
-- **Style**: ES modules, 2-space indent, semicolons, `const`/`let`.
-- **Naming**:
-  - Classes/Components: `PascalCase` (e.g., `GCodeParser`).
-  - Variables/Functions: `camelCase`.
-  - Constants: `SCREAMING_SNAKE_CASE`.
-  - Files: Match export name (usually `PascalCase` for classes).
-  - CSS: `kebab-case`.
-- **Security**: Validate inputs via `FileHandler`. No large binaries in repo.
-
-## Commit & Pull Request Guidelines
-
-- **Commits**: `type(scope): summary` (e.g., `feat(parser): add G4 support`).
-  - Imperative, present tense.
-  - Keep small and focused.
-- **Pull Requests**:
-  - Use `documentation/templates/PR_Template.md` if available.
-  - Link issues.
-  - Verify `npm run build` passes.
-
-## Supported G-Code Features
-
-- **Motion**: G0 (Rapid), G1 (Linear), G2/G3 (CW/CCW Arcs).
-- **Coordinates**: X, Y (Z parsed but ignored).
-- **Arc Centers**: I, J (supports Absolute G90.1 and Relative G91.1).
-- **Comments**: `;` and `()`.
-
-## UX & Configuration Notes
-
-- **Debounce**: Text editing uses ~3000ms debounce to prevent UI freezing.
-- **Grid**: `DYNAMIC_GRID` constant controls adaptive grid.
-- **Drawer Modes**: Select vs. Edit mode (persisted in localStorage).
+- Technical workbench UI: thin bars, small writing, dense but readable panels.
+- Keep files focused and typed.
+- Prefer explicit domain models over ad hoc strings for project files, output templates, and export formats.
