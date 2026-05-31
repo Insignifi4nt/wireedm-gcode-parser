@@ -65,6 +65,37 @@ describe('pathDocumentOperations', () => {
     ]);
   });
 
+  it('sets a closed operation start at a clicked point by splitting the containing arc segment', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 0, -5),
+      line(0, -5, 10, -5),
+      line(10, -5, 10, 0),
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 5, y: 0 },
+        radius: 5,
+        startAngle: 0,
+        endAngle: 180,
+        clockwise: false,
+        start: { x: 10, y: 0 },
+        end: { x: 0, y: 0 }
+      }
+    ]);
+
+    const edited = setClosedOperationStartNearPoint(document, document.plan.operations[0].id, {
+      x: 5,
+      y: 5
+    });
+    const body = pathPlanToGcodeBody(edited!.plan, edited!.segments);
+
+    expect(edited?.plan.operations[0].startPoint.x).toBeCloseTo(5, 6);
+    expect(edited?.plan.operations[0].startPoint.y).toBeCloseTo(5, 6);
+    expect(edited?.plan.operations[0].segmentRefs).toHaveLength(5);
+    expect(body.split('\n')[0]).toBe('G0 X5.000 Y5.000');
+    expect(body).toContain('G3 X0.000 Y0.000 I0.000 J-5.000');
+  });
+
   it('sets a circle start at the clicked point instead of the opposite split point', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
