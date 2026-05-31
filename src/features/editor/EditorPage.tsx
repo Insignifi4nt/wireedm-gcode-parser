@@ -194,7 +194,7 @@ export function EditorPage({
 
     return {
       body,
-      diagnostics: posted.diagnostics,
+      diagnostics: [...pathDocumentDraft.diagnostics, ...posted.diagnostics],
       fileName,
       machineName: machine.name,
       operationCount: pathDocumentDraft.plan.operations.length,

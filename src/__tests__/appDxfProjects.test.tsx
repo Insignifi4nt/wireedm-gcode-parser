@@ -980,6 +980,42 @@ describe('App DXF imports and project library', () => {
     });
   });
 
+  it('carries UPID path diagnostics into the export preview', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([simpleLineDxf()], 'export-diagnostics.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const exportDiagnostics = container.querySelector('[data-upid-export-diagnostics]');
+    const diagnosticRows = [...container.querySelectorAll('[data-upid-export-diagnostic-row]')];
+
+    expect(container.querySelector('[data-upid-export-stat="diagnostics"]')?.textContent).toBe('1');
+    expect(exportDiagnostics).not.toBeNull();
+    expect(diagnosticRows).toHaveLength(1);
+    expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-code')).toBe('open-chain');
+    expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-severity')).toBe('warning');
+    expect(diagnosticRows[0].textContent).toContain('open chain');
+    expect(container.querySelector('[data-upid-export-gcode]')?.textContent).toContain('G1 X10.000 Y0.000');
+  });
+
   it('highlights UPID navigator segments from canvas hover when hover assist is enabled', async () => {
     window.showDirectoryPicker = undefined;
 

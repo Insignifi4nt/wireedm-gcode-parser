@@ -86,7 +86,13 @@ export function EditorUpidExportPreview({
         {diagnostics.length > 0 && (
           <div className="max-h-20 overflow-auto border border-border bg-card/60" data-upid-export-diagnostics>
             {diagnostics.map((diagnostic) => (
-              <div className="border-b border-border px-2 py-1 last:border-b-0" key={diagnostic.id}>
+              <div
+                className="border-b border-border px-2 py-1 last:border-b-0"
+                data-upid-export-diagnostic-code={diagnostic.code}
+                data-upid-export-diagnostic-row
+                data-upid-export-diagnostic-severity={diagnostic.severity}
+                key={diagnostic.id}
+              >
                 <span className="mr-2 uppercase text-amber-200">{diagnostic.severity}</span>
                 <span>{diagnostic.message}</span>
               </div>
