@@ -26,7 +26,7 @@ class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
 }
 
 describe('loadEditorProgram', () => {
-  it('opens and parses the generated program from a DXF import project', async () => {
+  it('opens DXF import projects from UPID instead of parsing the generated program', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
       now: new Date('2026-05-29T10:00:00.000Z')
@@ -40,9 +40,62 @@ describe('loadEditorProgram', () => {
     const editorProgram = await loadEditorProgram(imported.workbench, imported.project);
 
     expect(editorProgram.filePath).toBe('generated/editor-source-2026-05-29.iso');
-    expect(editorProgram.text).toContain('G3 X20.000 Y10.000 I0.000 J10.000');
-    expect(editorProgram.parseResult.path).toHaveLength(3);
-    expect(editorProgram.parseResult.stats.arcMoves).toBe(1);
+    expect(editorProgram.text).toBe('');
+    expect(editorProgram.parseResult.path).toHaveLength(0);
+    expect(editorProgram.project?.upid?.document.plan.operations).toHaveLength(1);
+  });
+
+  it('opens UPID projects from the path document when the generated program file is unavailable', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'upid-native.dxf',
+      text: simpleArcDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    adapter.files.delete(imported.project.editor.activeFilePath!);
+
+    const editorProgram = await loadEditorProgram(imported.workbench, imported.project);
+
+    expect(editorProgram.filePath).toBe('generated/upid-native-2026-05-29.iso');
+    expect(editorProgram.text).toBe('');
+    expect(editorProgram.parseResult.path).toHaveLength(0);
+    expect(editorProgram.project?.upid?.document.plan.operations).toHaveLength(1);
+  });
+
+  it('does not synthesize an editor program for non-UPID projects with missing files', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const project = {
+      ...workbench.manifest.projects[0],
+      schemaVersion: 1 as const,
+      id: 'external-missing',
+      name: 'External Missing',
+      createdAt: '2026-05-29T11:00:00.000Z',
+      updatedAt: '2026-05-29T11:00:00.000Z',
+      source: {
+        kind: 'external-gcode' as const,
+        files: []
+      },
+      generated: {
+        body: '',
+        files: []
+      },
+      machine: workbench.activeMachineProfile,
+      editor: {
+        activeFilePath: 'editor/missing.iso',
+        pinnedLineNumbers: [],
+        sourceRequiresCleanup: true
+      }
+    };
+
+    await expect(loadEditorProgram(workbench, project)).rejects.toThrow(
+      'Editor program file not found: editor/missing.iso'
+    );
   });
 });
 

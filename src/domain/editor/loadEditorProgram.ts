@@ -1,4 +1,5 @@
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import { projectUpidDocument } from '@/domain/upid/projectUpid';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 
 import { parseGCodeProgram } from './gcodeParser';
@@ -16,6 +17,10 @@ export async function loadEditorProgram(
   project: WorkbenchProject
 ): Promise<LoadedEditorProgram> {
   const filePath = project.editor.activeFilePath ?? project.generated.files.at(-1)?.path;
+  if (projectUpidDocument(project)) {
+    return createUpidEditorProgram(project);
+  }
+
   if (!filePath) {
     throw new Error('Project does not reference a generated program for the editor.');
   }
@@ -29,6 +34,18 @@ export async function loadEditorProgram(
     filePath,
     text,
     parseResult: parseGCodeProgram(text),
+    project
+  };
+}
+
+function createUpidEditorProgram(project: WorkbenchProject): LoadedEditorProgram {
+  return {
+    filePath:
+      project.editor.activeFilePath ??
+      project.generated.files.at(-1)?.path ??
+      `generated/${project.id}.upid-pending`,
+    text: '',
+    parseResult: parseGCodeProgram(''),
     project
   };
 }
