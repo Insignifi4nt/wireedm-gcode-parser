@@ -19,10 +19,13 @@ import type { GCodeContourGroup } from '@/domain/editor/gcodeStructure';
 import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 
+import type { EditorGuideTarget } from './editorGuideContent';
+import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorLineRow } from './editorLineState';
 
 interface EditorPathPlanPanelProps {
   bodyGroups: GCodeContourGroup[];
+  guideHighlightTarget: EditorGuideTarget | null;
   hasUnsavedChanges: boolean;
   isGroupExpanded: (groupId: string) => boolean;
   isSaving: boolean;
@@ -54,6 +57,7 @@ interface EditorPathPlanPanelProps {
 
 export function EditorPathPlanPanel({
   bodyGroups,
+  guideHighlightTarget,
   hasUnsavedChanges,
   isGroupExpanded,
   isSaving,
@@ -208,8 +212,12 @@ export function EditorPathPlanPanel({
 
   return (
     <section
-      className="grid min-h-[320px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/70"
+      className={`grid min-h-[320px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/70 ${guideHighlightClass(
+        'program-lines',
+        guideHighlightTarget
+      )}`}
       data-editor-path-plan-panel
+      {...guideTargetProps('program-lines', guideHighlightTarget)}
     >
       <div className="grid min-w-0 gap-2 border-b border-border bg-card/80 px-2 py-2">
         <div className="flex min-w-0 items-center justify-between gap-2">

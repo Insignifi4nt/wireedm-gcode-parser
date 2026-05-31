@@ -363,6 +363,7 @@ describe('Editor preview controls and guide', () => {
     expect(container.querySelector('[data-editor-guide-overlay]')).not.toBeNull();
     expect(dialog?.textContent).toContain('Wire EDM Workbench Manual');
     expect(dialog?.textContent).toContain('Import Program');
+    expect(dialog?.textContent).toContain('Path Operations');
     expect(dialog?.textContent).toContain('Close or reopen Program Lines');
 
     const romanianToggle = dialog?.querySelector(

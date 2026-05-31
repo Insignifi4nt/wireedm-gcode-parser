@@ -741,6 +741,7 @@ export function EditorPage({
             {pathDocumentDraft ? (
               <EditorPathPlanPanel
                 bodyGroups={pathPostedBodyGroups}
+                guideHighlightTarget={guideHighlightTarget}
                 hasUnsavedChanges={hasUnsavedChanges}
                 isGroupExpanded={isGroupExpanded}
                 isSaving={isSaving}

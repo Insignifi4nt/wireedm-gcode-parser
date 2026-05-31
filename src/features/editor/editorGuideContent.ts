@@ -45,7 +45,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
   en: {
     title: 'Wire EDM Workbench Manual',
     overview:
-      'A practical guide for local storage work, DXF conversion, editor inspection, measurement, pinning, cleanup, and final G-code export.',
+      'A practical guide for local storage work, DXF path planning, editor inspection, measurement, pinning, cleanup, and final export.',
     closeLabel: 'Close guide',
     highlightLabel: 'Show me',
     languageLabel: 'Language',
@@ -60,7 +60,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Use a workbench folder for disk-visible storage. If the remembered folder needs permission again, Settings shows Reconnect Workbench Folder; otherwise it asks you to choose the folder.'
           },
           {
-            text: 'Custom header/footer templates and output extension choices live in the active workbench. The extension changes the written file name, not the generated G-code text by itself.'
+            text: 'Machine profile templates, work area limits, and output extension choices live in the active workbench. The extension changes the written file name, not the planned path.'
           }
         ]
       },
@@ -68,7 +68,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '2. Import Flows',
         steps: [
           {
-            text: 'From the dashboard, import a DXF to create a clean internal project and generated header/body/footer G-code.'
+            text: 'From the dashboard, import a DXF to create a clean internal path project. G-code is posted later from the active path plan and machine profile.'
           },
           {
             text: 'From the editor, click Import Program or drag in .gcode, .nc, .iso, or .txt files. External programs pass through the cleanup/display pipeline before preview and editing.',
@@ -76,7 +76,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'import-program'
           },
           {
-            text: 'DXF-generated programs can be opened from the library into the same editor. They are treated as app-generated clean geometry, while outside imports keep the old cleanup behavior.'
+            text: 'DXF projects open as editable Path Operations. External posted programs keep the old cleanup and Program Lines behavior.'
           }
         ]
       },
@@ -111,7 +111,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Delete individual points from the list, or use Clear Points to empty the list. Remaining points are reindexed automatically.'
           },
           {
-            text: 'Insert Points writes the current measurement list into the editor draft. Export CSV, Export G-code, and Export Point ISO write point-only files for outside use.'
+            text: 'Insert Points is for external posted programs. DXF path projects keep measurement and magnetized points on the canvas; Export CSV, Export G-code, and Export Point ISO write point-only files for outside use.'
           },
           {
             text: 'Ctrl/Cmd+C clears all measurement points when focus is not inside an input or the program editor.'
@@ -119,10 +119,14 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         ]
       },
       {
-        title: '5. Program Lines, Selection, And Pins',
+        title: '5. Path Operations Or Program Lines',
         steps: [
           {
-            text: 'Program Lines groups the draft into header, body contours, and footer. Collapse groups to keep large programs readable.',
+            text: 'DXF path projects show Path Operations for order, direction, start selection, tangent/perpendicular construction, pinned references, and posted-body inspection.',
+            highlightTarget: 'program-lines'
+          },
+          {
+            text: 'External posted programs show Program Lines, grouped into header, body contours, and footer. Collapse groups to keep large programs readable.',
             highlightTarget: 'program-lines'
           },
           {
@@ -154,7 +158,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editing And Export',
         steps: [
           {
-            text: 'Move selected rows up/down, delete selected rows, undo/redo draft changes, or use Start Here to rotate a compact closed contour around a chosen motion line.'
+            text: 'For DXF path projects, reorder operations, reverse direction, or set starts from the path surface. For external posted programs, move selected rows, delete rows, undo/redo draft changes, or use Start Here.'
           },
           {
             text: 'Normalize Draft rewrites the current editor text into the app ISO style without downloading a file.',
@@ -167,8 +171,8 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'export-iso'
           },
           {
-            text: 'Save Program writes the current draft back to the active local storage workbench entry.',
-            mock: { label: 'Save Program' },
+            text: 'Save Path Plan writes DXF path decisions back to the project. Save Program writes an external posted-program draft back to the active workbench entry.',
+            mock: { label: 'Save Path Plan' },
             highlightTarget: 'save-program'
           }
         ]
@@ -178,7 +182,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
   ro: {
     title: 'Manual Wire EDM Workbench',
     overview:
-      'Ghid practic pentru lucru in local storage, conversie DXF, inspectie in editor, masurare, pinning, cleanup si export G-code final.',
+      'Ghid practic pentru lucru in local storage, planificare DXF, inspectie in editor, masurare, pinning, cleanup si export final.',
     closeLabel: 'Inchide ghidul',
     highlightLabel: 'Arata-mi',
     languageLabel: 'Limba',
@@ -193,7 +197,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Foloseste un folder workbench pentru stocare vizibila pe disk. Daca folderul retinut cere permisiune din nou, Settings arata Reconnect Workbench Folder; altfel cere sa alegi folderul.'
           },
           {
-            text: 'Template-urile header/footer si extensia de output tin de workbench-ul activ. Extensia schimba numele fisierului, nu textul G-code generat.'
+            text: 'Template-urile din profilul de masina, limitele zonei de lucru si extensia de output tin de workbench-ul activ. Extensia schimba numele fisierului, nu path-ul planificat.'
           }
         ]
       },
@@ -201,7 +205,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '2. Flow-uri de import',
         steps: [
           {
-            text: 'Din dashboard, importa un DXF ca sa creezi un proiect intern curat si G-code formatat header/body/footer.'
+            text: 'Din dashboard, importa un DXF ca sa creezi un proiect intern de path. G-code-ul se posteaza mai tarziu din planul de path si profilul de masina activ.'
           },
           {
             text: 'Din editor, apasa Import Program sau trage fisiere .gcode, .nc, .iso ori .txt. Programele externe trec prin pipeline-ul de cleanup/display inainte de preview si editare.',
@@ -209,7 +213,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'import-program'
           },
           {
-            text: 'Programele generate din DXF se deschid din librarie in acelasi editor. Ele sunt tratate ca geometrie curata produsa de app, iar importurile externe pastreaza cleanup-ul vechi.'
+            text: 'Proiectele DXF se deschid ca Path Operations editabile. Programele externe postate pastreaza cleanup-ul vechi si Program Lines.'
           }
         ]
       },
@@ -244,7 +248,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Sterge puncte individual din lista sau foloseste Clear Points pentru lista goala. Punctele ramase se reindexeaza automat.'
           },
           {
-            text: 'Insert Points scrie lista curenta in draft. Export CSV, Export G-code si Export Point ISO scriu fisiere doar cu punctele pentru folosire externa.'
+            text: 'Insert Points este pentru programe externe postate. Proiectele DXF pastreaza punctele de masurare si punctele magnetizate pe canvas; Export CSV, Export G-code si Export Point ISO scriu fisiere doar cu punctele.'
           },
           {
             text: 'Ctrl/Cmd+C curata toate punctele de masurare cand focusul nu este intr-un input sau in editorul de program.'
@@ -252,10 +256,14 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         ]
       },
       {
-        title: '5. Linii, selectie si pin-uri',
+        title: '5. Path Operations sau Program Lines',
         steps: [
           {
-            text: 'Program Lines grupeaza draftul in header, body contours si footer. Inchide grupuri ca programele mari sa ramana usor de citit.',
+            text: 'Proiectele DXF arata Path Operations pentru ordine, directie, start, constructii tangent/perpendicular, repere pinned si inspectie posted-body.',
+            highlightTarget: 'program-lines'
+          },
+          {
+            text: 'Programele externe postate arata Program Lines, grupate in header, body contours si footer. Inchide grupuri ca programele mari sa ramana usor de citit.',
             highlightTarget: 'program-lines'
           },
           {
@@ -287,7 +295,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editare si export',
         steps: [
           {
-            text: 'Muta randuri selectate sus/jos, sterge randuri, undo/redo pentru draft sau Start Here ca sa rotesti un contur inchis compact in jurul unei linii motion.'
+            text: 'Pentru proiecte DXF, schimba ordinea operatiilor, inverseaza directia sau seteaza startul din suprafata de path. Pentru programe externe, muta randuri, sterge randuri, undo/redo sau Start Here.'
           },
           {
             text: 'Normalize Draft rescrie textul curent in stilul ISO al aplicatiei, fara download.',
@@ -300,8 +308,8 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'export-iso'
           },
           {
-            text: 'Save Program scrie draftul inapoi in intrarea activa din local storage.',
-            mock: { label: 'Save Program' },
+            text: 'Save Path Plan scrie deciziile DXF inapoi in proiect. Save Program scrie draftul unui program extern inapoi in workbench.',
+            mock: { label: 'Save Path Plan' },
             highlightTarget: 'save-program'
           }
         ]
