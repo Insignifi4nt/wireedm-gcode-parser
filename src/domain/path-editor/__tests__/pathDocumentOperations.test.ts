@@ -130,6 +130,29 @@ describe('pathDocumentOperations', () => {
     ]);
   });
 
+  it('refreshes active UPID topology after splitting a segment for a new start point', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const operation = document.plan.operations[0];
+    const replacedSegmentId = operation.segmentRefs[0].segmentId;
+
+    const edited = setClosedOperationStartNearPoint(document, operation.id, { x: 5, y: 0 });
+    const editedOperation = edited?.plan.operations[0];
+    const createdSegmentIds = editedOperation?.overrides?.start?.createdSegmentIds ?? [];
+    const clusterMembers = edited?.endpointClusters.flatMap((cluster) => cluster.members) ?? [];
+    const splitCluster = edited?.endpointClusters.find(
+      (cluster) => cluster.point.x === 5 && cluster.point.y === 0
+    );
+
+    expect(createdSegmentIds).toHaveLength(2);
+    expect(edited?.segments.map((segment) => segment.id)).not.toContain(replacedSegmentId);
+    expect(editedOperation?.segmentRefs.map((ref) => ref.segmentId)).toContain(createdSegmentIds[0]);
+    expect(editedOperation?.segmentRefs.map((ref) => ref.segmentId)).toContain(createdSegmentIds[1]);
+    expect(clusterMembers.map((member) => member.segmentId)).not.toContain(replacedSegmentId);
+    expect(splitCluster?.members.map((member) => member.segmentId).sort()).toEqual(
+      createdSegmentIds.slice().sort()
+    );
+  });
+
   it('sets a closed operation start at a clicked point by splitting the containing arc segment', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       line(0, 0, 0, -5),

@@ -1,4 +1,5 @@
 import { analyzeContours } from '@/domain/path-intel/contours';
+import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
 import {
   angleIsOnSweep,
   createArcSegment,
@@ -391,7 +392,7 @@ function splitOperationSegmentAtPoint(
   const splitSegments = splitSegment(segment, ref, nearest.point, document);
   if (!splitSegments) return null;
 
-  document.segments.push(...splitSegments);
+  replaceDocumentSegment(document, segment.id, splitSegments);
   const replacementRefs = splitSegments.map((splitSegment) => ({
     segmentId: splitSegment.id,
     reversed: false
@@ -456,6 +457,16 @@ function splitSegment(
   }
 
   return splitCircle(segment, ref, point, document);
+}
+
+function replaceDocumentSegment(document: PathPlanningDocument, segmentId: SegmentId, replacements: PathSegment[]) {
+  const index = document.segments.findIndex((segment) => segment.id === segmentId);
+  if (index < 0) {
+    document.segments.push(...replacements);
+    return;
+  }
+
+  document.segments.splice(index, 1, ...replacements);
 }
 
 function splitCircle(
@@ -636,6 +647,9 @@ function syncChainRefs(document: PathPlanningDocument, operation: PathOperation)
 }
 
 function refreshPlan(document: PathPlanningDocument) {
+  const clusterResult = clusterSegmentEndpoints(document.segments, document.options);
+  document.endpointClusters = clusterResult.clusters;
+
   const segmentsById = segmentMap(document.segments);
   let current = document.options.startPoint;
 
