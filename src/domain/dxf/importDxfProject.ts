@@ -9,7 +9,7 @@ import { baseNameFromFileName, uniqueProjectId } from '@/domain/workbench/projec
 import type { WorkbenchProject } from '@/domain/workbench/types';
 import { createProjectUpid } from '@/domain/upid/projectUpid';
 
-import { dxfEntitiesToPathPlanningDocument } from './dxfToGcode';
+import { dxfEntitiesToUpidDocument } from './dxfToUpid';
 import { parseDxf } from './parseDxf';
 import type { DxfParseResult } from './types';
 
@@ -64,7 +64,7 @@ export async function importDxfProject(
     throw new Error('DXF did not contain supported cut geometry.');
   }
 
-  const pathDocument = dxfEntitiesToPathPlanningDocument(parseResult.entities);
+  const pathDocument = dxfEntitiesToUpidDocument(parseResult.entities);
   if (pathDocument.segments.length === 0 || pathDocument.plan.operations.length === 0) {
     throw new Error('DXF did not contain valid cut geometry.');
   }

@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppRailProvider, type AppRailContent } from '@/app/AppRailContext';
-import { dxfEntitiesToPathPlanningDocument } from '@/domain/dxf/dxfToGcode';
+import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
 import { parseDxf } from '@/domain/dxf/parseDxf';
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
@@ -129,7 +129,7 @@ function projectWithUpid(pathDocument: PathPlanningDocument) {
 }
 
 function pathDocumentFromRectangle() {
-  return dxfEntitiesToPathPlanningDocument(parseDxf(rectangleDxf()).entities);
+  return dxfEntitiesToUpidDocument(parseDxf(rectangleDxf()).entities);
 }
 
 function rectangleDxf() {

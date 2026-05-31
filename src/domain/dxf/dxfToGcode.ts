@@ -4,14 +4,9 @@ import type {
   PathPlanningDocument,
   PathPlanningOptions
 } from '@/domain/path-intel/types';
-import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
+import { dxfEntitiesToUpidDocument } from './dxfToUpid';
 import type { DxfEntity } from './types';
-
-const DEFAULT_DXF_GCODE_OPTIONS: PathPlanningOptions = {
-  endpointTolerance: 0,
-  allowReverseOpenChains: false
-};
 
 export interface DxfToGcodeResult {
   body: string;
@@ -24,7 +19,7 @@ export function dxfEntitiesToGcode(
   entities: DxfEntity[],
   options: PathPlanningOptions = {}
 ): DxfToGcodeResult {
-  const document = dxfEntitiesToPathPlanningDocument(entities, options);
+  const document = dxfEntitiesToUpidDocument(entities, options);
   const post = postPathPlanToGcode(document.plan, document.segments, document.options);
 
   return {
@@ -37,14 +32,4 @@ export function dxfEntitiesToGcode(
 
 export function dxfEntitiesToGcodeBody(entities: DxfEntity[], options: PathPlanningOptions = {}) {
   return dxfEntitiesToGcode(entities, options).body;
-}
-
-export function dxfEntitiesToPathPlanningDocument(
-  entities: DxfEntity[],
-  options: PathPlanningOptions = {}
-) {
-  return createUpidFromDxfEntities(entities, {
-    ...DEFAULT_DXF_GCODE_OPTIONS,
-    ...options
-  });
 }
