@@ -29,7 +29,7 @@ describe('App DXF imports and project library', () => {
     cleanupAppTestContext(context);
   });
 
-  it('imports a DXF through the browser cache workbench and opens the generated program in the editor', async () => {
+  it('imports a DXF through the browser cache workbench and opens the UPID path project in the editor', async () => {
     window.showDirectoryPicker = undefined;
     const downloadGeneratedProgram = vi.fn();
     const dxfText = simpleLineDxf();
@@ -49,7 +49,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     expect(container.textContent).toContain('Editor');
-    expect(container.textContent).toContain('generated/part-');
+    expect(container.textContent).toContain('imports/part-');
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
     expect(container.querySelector('svg[aria-label="UPID path preview"]')?.getAttribute('data-preview-model')).toBe(
       'upid'
@@ -72,7 +72,9 @@ describe('App DXF imports and project library', () => {
     expect(project.source.kind).toBe('dxf');
     expect(project.upid.format).toBe('upid');
     expect(project.upid.document.plan.operations).toHaveLength(1);
-    expect(project.generated.body).toContain('G1 X10.000 Y0.000');
+    expect(project.generated.body).toBe('');
+    expect(project.generated.files).toEqual([]);
+    expect(window.localStorage.getItem(`wire-edm-workbench:file:generated/${project.id}.iso`)).toBeNull();
 
     const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Dashboard')
@@ -86,7 +88,8 @@ describe('App DXF imports and project library', () => {
 
     expect(container.textContent).toContain('part');
     expect(container.textContent).toContain('1 project');
-    expect(container.textContent).toContain('G1 X10.000 Y0.000');
+    expect(container.textContent).toContain('UPID on demand');
+    expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
 
     const downloadButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Download Program')
@@ -147,7 +150,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     expect(container.textContent).toContain('Editor');
-    expect(container.textContent).toContain('generated/library-open-');
+    expect(container.textContent).toContain('imports/library-open-');
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-row]')?.textContent).toContain(
       '0.000, 0.000 -> 10.000, 0.000'
@@ -1644,13 +1647,10 @@ describe('App DXF imports and project library', () => {
     const savedProject = JSON.parse(
       window.localStorage.getItem(`wire-edm-workbench:file:${manifest.projects[0].path}`) || '{}'
     );
-    const bodyFile = window.localStorage.getItem(
-      `wire-edm-workbench:file:generated/${savedProject.id}.body.gcode`
-    );
 
     expect(savedProject.pathPlanning.document.plan.operations[0].direction).toBe('reverse');
     expect(savedProject.generated.body).toContain('G1 X0.000 Y5.000');
-    expect(bodyFile).toContain('G1 X0.000 Y5.000');
+    expect(window.localStorage.getItem(`wire-edm-workbench:file:generated/${savedProject.id}.body.gcode`)).toBeNull();
 
     const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Dashboard')

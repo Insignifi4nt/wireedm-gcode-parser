@@ -4,9 +4,11 @@ import type { StatusToast, StatusToastType } from '@/components/StatusToasts';
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import { buildOutputFilename, composeGCodeProgram } from '@/domain/post/gcodeTemplates';
 import { supportsWorkbenchDirectoryAccess } from '@/domain/storage/fileSystemAccess';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import { postUpidToGcode } from '@/domain/upid/upidDocument';
 
 import { defaultAppServices, type AppServices } from './appServices';
 
@@ -218,10 +220,18 @@ export function useWorkbenchAppController(
   function handleDownloadLatestProgram() {
     if (!latestImport) return;
 
+    const machine = latestImport.project.machine;
+    const posted = postUpidToGcode(latestImport.pathDocument);
     appServices.downloadGeneratedProgram({
       fileName:
-        latestImport.project.generated.files.at(-1)?.name ?? `${latestImport.project.id}.gcode`,
-      text: latestImport.generatedProgram
+        latestImport.project.generated.files.at(-1)?.name ??
+        buildOutputFilename(latestImport.project.id, machine.output.extension, machine.output.customExtension),
+      text: composeGCodeProgram({
+        header: machine.templates.header,
+        body: posted.body,
+        footer: machine.templates.footer,
+        lineEnding: machine.output.lineEnding
+      })
     });
     showStatusToast('Generated program downloaded.', 'success');
   }
@@ -337,7 +347,7 @@ export function useWorkbenchAppController(
         workbench,
         project: editorProgram.project,
         generatedBody: editorProgram.project.generated.body,
-        generatedProgram: text,
+        generatedProgram: '',
         pathDocument,
         pathDiagnostics: pathDocument.diagnostics,
         postDiagnostics: editorProgram.project.pathPlanning.postDiagnostics

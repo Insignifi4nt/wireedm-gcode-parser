@@ -193,13 +193,16 @@ describe('App dashboard and workbench shell', () => {
       window.localStorage.getItem(`wire-edm-workbench:file:${importManifest.projects[0].path}`) ||
         '{}'
     );
-    const programPath = project.generated.files.at(-1).path;
-    const generatedProgram = window.localStorage.getItem(`wire-edm-workbench:file:${programPath}`);
-
-    expect(programPath).toMatch(/^generated\/custom-output-\d{4}-\d{2}-\d{2}\.nc$/);
-    expect(generatedProgram).toContain('%\nCUSTOM HEADER');
-    expect(generatedProgram).toContain('CUSTOM FOOTER\n%');
-    expect(generatedProgram).not.toContain('G90 G21 G17 G40');
+    expect(project.generated.files).toEqual([]);
+    expect(project.generated.body).toBe('');
+    expect(project.machine.templates).toEqual({
+      header: '%\nCUSTOM HEADER',
+      footer: 'CUSTOM FOOTER\n%'
+    });
+    expect(project.machine.output).toEqual({
+      extension: 'nc',
+      lineEnding: 'lf'
+    });
   });
 
   it('chooses a workbench folder from settings and displays folder details', async () => {

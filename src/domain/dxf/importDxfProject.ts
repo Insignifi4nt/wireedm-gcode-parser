@@ -1,4 +1,3 @@
-import { composeGCodeProgram, normalizeOutputExtension } from '@/domain/post/gcodeTemplates';
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   WORKBENCH_MANIFEST_FILE,
@@ -10,7 +9,7 @@ import { baseNameFromFileName, uniqueProjectId } from '@/domain/workbench/projec
 import type { WorkbenchProject } from '@/domain/workbench/types';
 import { createProjectUpid } from '@/domain/upid/projectUpid';
 
-import { dxfEntitiesToGcode } from './dxfToGcode';
+import { dxfEntitiesToPathPlanningDocument } from './dxfToGcode';
 import { parseDxf } from './parseDxf';
 import type { DxfParseResult } from './types';
 
@@ -65,36 +64,26 @@ export async function importDxfProject(
     throw new Error('DXF did not contain supported cut geometry.');
   }
 
-  const conversion = dxfEntitiesToGcode(parseResult.entities);
-  if (conversion.document.segments.length === 0 || conversion.document.plan.operations.length === 0) {
+  const pathDocument = dxfEntitiesToPathPlanningDocument(parseResult.entities);
+  if (pathDocument.segments.length === 0 || pathDocument.plan.operations.length === 0) {
     throw new Error('DXF did not contain valid cut geometry.');
   }
 
-  const generatedBody = conversion.body;
   const machineProfile = workbench.activeMachineProfile;
-  const generatedProgram = composeGCodeProgram({
-    header: machineProfile.templates.header,
-    body: generatedBody,
-    footer: machineProfile.templates.footer,
-    lineEnding: machineProfile.output.lineEnding
-  });
+  const generatedBody = '';
+  const generatedProgram = '';
+  const postDiagnostics: PathDiagnostic[] = [];
 
   const sourcePath = `imports/${project.id}.dxf`;
-  const bodyPath = `generated/${project.id}.body.gcode`;
-  const programPath = `generated/${project.id}.${normalizeOutputExtension(
-    machineProfile.output.extension,
-    machineProfile.output.customExtension
-  )}`;
   const projectDirectory = `projects/${project.id}`;
   const projectPath = `${projectDirectory}/project.json`;
 
   project.machine = { ...machineProfile };
-  project.editor.activeFilePath = programPath;
   project.generated.body = generatedBody;
-  project.upid = createProjectUpid(conversion.document, conversion.post.diagnostics);
+  project.upid = createProjectUpid(pathDocument, postDiagnostics);
   project.pathPlanning = {
-    document: conversion.document,
-    postDiagnostics: conversion.post.diagnostics
+    document: pathDocument,
+    postDiagnostics
   };
   project.source.files = [
     {
@@ -104,28 +93,9 @@ export async function importDxfProject(
       createdAt: timestamp
     }
   ];
-  project.generated.files = [
-    {
-      name: `${project.id}.body.gcode`,
-      path: bodyPath,
-      kind: 'generated',
-      createdAt: timestamp
-    },
-    {
-      name: `${project.id}.${normalizeOutputExtension(
-        machineProfile.output.extension,
-        machineProfile.output.customExtension
-      )}`,
-      path: programPath,
-      kind: 'generated',
-      createdAt: timestamp
-    }
-  ];
 
   await workbench.adapter.ensureDirectory(projectDirectory);
   await workbench.adapter.writeText(sourcePath, input.text);
-  await workbench.adapter.writeText(bodyPath, generatedBody);
-  await workbench.adapter.writeText(programPath, generatedProgram);
   await workbench.adapter.writeText(projectPath, JSON.stringify(project, null, 2));
 
   const updatedManifest: WorkbenchManifest = {
@@ -158,8 +128,8 @@ export async function importDxfProject(
     entityCount: parseResult.entities.length,
     generatedBody,
     generatedProgram,
-    pathDocument: conversion.document,
-    pathDiagnostics: conversion.document.diagnostics,
-    postDiagnostics: conversion.post.diagnostics
+    pathDocument,
+    pathDiagnostics: pathDocument.diagnostics,
+    postDiagnostics
   };
 }

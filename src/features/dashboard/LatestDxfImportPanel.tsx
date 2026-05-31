@@ -40,9 +40,9 @@ export function LatestDxfImportPanel({
               <dd>{allWarnings.length}</dd>
               <dt className="text-muted-foreground">Contours</dt>
               <dd>{latestImport.pathDocument.contours.length}</dd>
-              <dt className="text-muted-foreground">Program</dt>
+              <dt className="text-muted-foreground">Export</dt>
               <dd className="truncate">
-                {latestImport.project.generated.files.at(-1)?.path ?? 'generated'}
+                {latestImport.project.generated.files.at(-1)?.path ?? 'UPID on demand'}
               </dd>
             </dl>
             {allWarnings.length > 0 && (
@@ -59,9 +59,11 @@ export function LatestDxfImportPanel({
                 Download Program
               </Button>
             </div>
-            <pre className="max-h-[360px] overflow-auto border border-border bg-background/70 p-2 text-[10px] leading-5 text-foreground">
-              {latestImport.generatedBody}
-            </pre>
+            {latestImport.generatedBody && (
+              <pre className="max-h-[360px] overflow-auto border border-border bg-background/70 p-2 text-[10px] leading-5 text-foreground">
+                {latestImport.generatedBody}
+              </pre>
+            )}
           </div>
         ) : (
           <dl className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-2">

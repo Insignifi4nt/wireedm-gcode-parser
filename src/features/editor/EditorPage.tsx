@@ -211,7 +211,7 @@ export function EditorPage({
     const machine = program.project.machine;
     const fileName =
       program.project.generated.files.at(-1)?.name ??
-      buildOutputFilename(program.project.name, machine.output.extension, machine.output.customExtension);
+      buildOutputFilename(program.project.id, machine.output.extension, machine.output.customExtension);
 
     return {
       body,

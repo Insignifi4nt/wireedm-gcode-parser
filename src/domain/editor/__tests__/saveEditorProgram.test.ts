@@ -126,7 +126,7 @@ describe('saveEditorProgram', () => {
     });
 
     const saved = await saveEditorProgram(imported.workbench, {
-      filePath: imported.project.editor.activeFilePath!,
+      filePath: imported.project.source.files[0].path,
       now: new Date('2026-05-29T12:00:00.000Z'),
       pathDocument: editedDocument,
       project: imported.project,
@@ -138,7 +138,7 @@ describe('saveEditorProgram', () => {
     const savedProject = JSON.parse(adapter.files.get(projectPath) || '{}');
     const savedManifest = JSON.parse(adapter.files.get('workbench.json') || '{}');
 
-    expect(adapter.files.get(bodyPath)).toContain('G1 X0.000 Y5.000');
+    expect(adapter.files.has(bodyPath)).toBe(false);
     expect(savedProject.generated.body).toBe(body);
     expect(savedProject.upid.format).toBe('upid');
     expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
@@ -163,7 +163,7 @@ describe('saveEditorProgram', () => {
     expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.editorProgram.text).toBe('');
     expect(saved.editorProgram.parseResult.path).toHaveLength(0);
-    expect(adapter.files.get(imported.project.editor.activeFilePath!)).toBe(imported.generatedProgram);
+    expect(adapter.files.get(imported.project.source.files[0].path)).toBe(rectangleDxf());
     expect(savedManifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.workbench.manifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.editorProgram.project?.pathPlanning?.document.plan.operations[0].direction).toBe(
@@ -192,17 +192,19 @@ describe('saveEditorProgram', () => {
       reversedDocument!.segments,
       reversedDocument!.options
     );
+    const legacy = addLegacyGeneratedProgram(adapter, imported);
+
     const saved = await saveEditorProgram(imported.workbench, {
-      filePath: imported.project.editor.activeFilePath!,
+      filePath: legacy.programPath,
       now: new Date('2026-05-29T12:00:00.000Z'),
       pathDocument: reversedDocument,
-      project: imported.project,
+      project: legacy.project,
       text: imported.generatedProgram
     });
 
-    const activeProgramText = adapter.files.get(imported.project.editor.activeFilePath!);
+    const activeProgramText = adapter.files.get(legacy.programPath);
 
-    expect(activeProgramText).toBe(imported.generatedProgram);
+    expect(activeProgramText).toBe(legacy.programText);
     expect(saved.editorProgram.text).toBe('');
     expect(saved.editorProgram.parseResult.path).toHaveLength(0);
     expect(saved.editorProgram.project?.generated.body).toBe(expectedBody);
@@ -223,10 +225,8 @@ describe('saveEditorProgram', () => {
       imported.pathDocument.plan.operations[0].id
     );
     expect(reversedDocument).not.toBeNull();
-    adapter.files.delete(imported.project.editor.activeFilePath!);
-
     const saved = await saveEditorProgram(imported.workbench, {
-      filePath: imported.project.editor.activeFilePath!,
+      filePath: imported.project.source.files[0].path,
       now: new Date('2026-05-29T12:00:00.000Z'),
       pathDocument: reversedDocument,
       project: imported.project,
@@ -237,7 +237,7 @@ describe('saveEditorProgram', () => {
       adapter.files.get('projects/missing-generated-2026-05-29/project.json') || '{}'
     );
 
-    expect(adapter.files.has(imported.project.editor.activeFilePath!)).toBe(false);
+    expect([...adapter.files.keys()].some((path) => path.startsWith('generated/'))).toBe(false);
     expect(saved.editorProgram.text).toBe('');
     expect(saved.editorProgram.parseResult.path).toHaveLength(0);
     expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
@@ -254,13 +254,14 @@ describe('saveEditorProgram', () => {
       text: rectangleDxf(),
       now: new Date('2026-05-29T11:00:00.000Z')
     });
-    const text = `${imported.generatedProgram}\n(MANUAL EDIT)`;
+    const legacy = addLegacyGeneratedProgram(adapter, imported);
+    const text = `${legacy.programText}\n(MANUAL EDIT)`;
 
     const saved = await saveEditorProgram(imported.workbench, {
-      filePath: imported.project.editor.activeFilePath!,
+      filePath: legacy.programPath,
       now: new Date('2026-05-29T12:00:00.000Z'),
       pathDocument: null,
-      project: imported.project,
+      project: legacy.project,
       text
     });
 
@@ -286,13 +287,14 @@ describe('saveEditorProgram', () => {
       text: rectangleDxf(),
       now: new Date('2026-05-29T11:00:00.000Z')
     });
-    const text = imported.generatedProgram.replace('G90 G21 G17 G40', 'G90 G21 G17');
+    const legacy = addLegacyGeneratedProgram(adapter, imported);
+    const text = legacy.programText.replace('G90 G21 G17 G40', 'G90 G21 G17');
 
     await saveEditorProgram(imported.workbench, {
-      filePath: imported.project.editor.activeFilePath!,
+      filePath: legacy.programPath,
       now: new Date('2026-05-29T12:00:00.000Z'),
       pathDocument: null,
-      project: imported.project,
+      project: legacy.project,
       text
     });
 
@@ -336,6 +338,59 @@ function line(startX: number, startY: number, endX: number, endY: number): DxfEn
     layer: 'CUT',
     start: { x: startX, y: startY },
     end: { x: endX, y: endY }
+  };
+}
+
+function addLegacyGeneratedProgram(
+  adapter: MemoryWorkbenchAdapter,
+  imported: Awaited<ReturnType<typeof importDxfProject>>
+) {
+  const body = pathPlanToGcodeBody(
+    imported.pathDocument.plan,
+    imported.pathDocument.segments,
+    imported.pathDocument.options
+  );
+  const programText = composeGCodeProgram({
+    header: imported.project.machine.templates.header,
+    body,
+    footer: imported.project.machine.templates.footer,
+    lineEnding: imported.project.machine.output.lineEnding
+  });
+  const createdAt = imported.project.createdAt;
+  const bodyPath = `generated/${imported.project.id}.body.gcode`;
+  const programPath = `generated/${imported.project.id}.iso`;
+
+  adapter.files.set(bodyPath, body);
+  adapter.files.set(programPath, programText);
+
+  return {
+    body,
+    programPath,
+    programText,
+    project: {
+      ...imported.project,
+      editor: {
+        ...imported.project.editor,
+        activeFilePath: programPath
+      },
+      generated: {
+        body,
+        files: [
+          {
+            createdAt,
+            kind: 'generated' as const,
+            name: `${imported.project.id}.body.gcode`,
+            path: bodyPath
+          },
+          {
+            createdAt,
+            kind: 'generated' as const,
+            name: `${imported.project.id}.iso`,
+            path: programPath
+          }
+        ]
+      }
+    }
   };
 }
 

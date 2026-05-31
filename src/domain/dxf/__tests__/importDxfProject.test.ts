@@ -25,7 +25,7 @@ class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
 }
 
 describe('importDxfProject', () => {
-  it('imports a DXF into source, generated, project, and manifest files', async () => {
+  it('imports a DXF into source, UPID project, and manifest files without generated G-code artifacts', async () => {
     const adapter = new MemoryWorkbenchAdapter('Browser cache');
     const workbench = await initializeWorkbenchDirectory(adapter, {
       now: new Date('2026-05-29T10:00:00.000Z')
@@ -47,12 +47,9 @@ describe('importDxfProject', () => {
         sourceRequiresCleanup: false
       }
     });
-    expect(result.project.generated.body).toContain('G3 X20.000 Y10.000 I0.000 J10.000');
+    expect(result.project.generated.body).toBe('');
     expect(result.generatedBody).toBe(result.project.generated.body);
-    expect(result.generatedProgram).toContain('G90 G21 G17 G40');
-    expect(result.generatedProgram).toContain('G3 X20.000 Y10.000 I0.000 J10.000');
-    expect(result.generatedProgram).toContain('M30');
-    expect(result.generatedProgram).not.toMatch(/\bF\d/);
+    expect(result.generatedProgram).toBe('');
     expect(result.pathDocument.contours).toHaveLength(1);
     expect(result.pathDiagnostics.map((diagnostic) => diagnostic.code)).toEqual(['open-chain']);
     expect(result.postDiagnostics).toEqual([]);
@@ -63,12 +60,9 @@ describe('importDxfProject', () => {
     expect(result.project.pathPlanning?.postDiagnostics).toEqual([]);
 
     const projectPath = 'projects/top-slot-2026-05-29/project.json';
-    const bodyPath = 'generated/top-slot-2026-05-29.body.gcode';
-    const programPath = 'generated/top-slot-2026-05-29.iso';
 
     expect(adapter.files.get('imports/top-slot-2026-05-29.dxf')).toBe(simpleSlotDxf());
-    expect(adapter.files.get(bodyPath)).toBe(result.generatedBody);
-    expect(adapter.files.get(programPath)).toBe(result.generatedProgram);
+    expect([...adapter.files.keys()].some((path) => path.startsWith('generated/'))).toBe(false);
     expect(JSON.parse(adapter.files.get(projectPath) || '{}')).toEqual(result.project);
 
     const manifest = JSON.parse(adapter.files.get('workbench.json') || '{}');
@@ -131,9 +125,9 @@ describe('importDxfProject', () => {
         lengthMm: 20
       }
     });
-    expect(result.generatedProgram).toContain('%\nPROFILE HEADER');
-    expect(result.generatedProgram).toContain('PROFILE FOOTER\n%');
-    expect(result.project.generated.files.at(-1)?.name).toBe('profiled-2026-05-29.nc');
+    expect(result.generatedProgram).toBe('');
+    expect(result.project.generated.files).toEqual([]);
+    expect(result.project.editor.activeFilePath).toBeNull();
   });
 
   it('keeps same-name imports separate instead of replacing the earlier project', async () => {
@@ -177,7 +171,7 @@ describe('importDxfProject', () => {
     });
 
     expect(result.parseResult.warnings).toEqual(['Unsupported DXF entity: SPLINE']);
-    expect(result.generatedBody).toBe(['G0 X0.000 Y0.000', 'G1 X5.000 Y0.000'].join('\n'));
+    expect(result.generatedBody).toBe('');
     expect(result.entityCount).toBe(1);
   });
 

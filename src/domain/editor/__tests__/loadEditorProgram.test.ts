@@ -39,7 +39,7 @@ describe('loadEditorProgram', () => {
 
     const editorProgram = await loadEditorProgram(imported.workbench, imported.project);
 
-    expect(editorProgram.filePath).toBe('generated/editor-source-2026-05-29.iso');
+    expect(editorProgram.filePath).toBe('imports/editor-source-2026-05-29.dxf');
     expect(editorProgram.text).toBe('');
     expect(editorProgram.parseResult.path).toHaveLength(0);
     expect(editorProgram.project?.upid?.document.plan.operations).toHaveLength(1);
@@ -55,9 +55,15 @@ describe('loadEditorProgram', () => {
       text: simpleArcDxf(),
       now: new Date('2026-05-29T11:00:00.000Z')
     });
-    adapter.files.delete(imported.project.editor.activeFilePath!);
+    const legacyProject = {
+      ...imported.project,
+      editor: {
+        ...imported.project.editor,
+        activeFilePath: 'generated/upid-native-2026-05-29.iso'
+      }
+    };
 
-    const editorProgram = await loadEditorProgram(imported.workbench, imported.project);
+    const editorProgram = await loadEditorProgram(imported.workbench, legacyProject);
 
     expect(editorProgram.filePath).toBe('generated/upid-native-2026-05-29.iso');
     expect(editorProgram.text).toBe('');

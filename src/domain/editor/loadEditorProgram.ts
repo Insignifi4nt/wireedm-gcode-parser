@@ -43,7 +43,8 @@ function createUpidEditorProgram(project: WorkbenchProject): LoadedEditorProgram
     filePath:
       project.editor.activeFilePath ??
       project.generated.files.at(-1)?.path ??
-      `generated/${project.id}.upid-pending`,
+      project.source.files.at(-1)?.path ??
+      `projects/${project.id}/project.json`,
     text: '',
     parseResult: parseGCodeProgram(''),
     project
