@@ -70,27 +70,24 @@ export async function importDxfProject(
   }
 
   const generatedBody = conversion.body;
+  const machineProfile = workbench.activeMachineProfile;
   const generatedProgram = composeGCodeProgram({
-    header: workbench.header,
+    header: machineProfile.templates.header,
     body: generatedBody,
-    footer: workbench.footer,
-    lineEnding: workbench.manifest.output.lineEnding
+    footer: machineProfile.templates.footer,
+    lineEnding: machineProfile.output.lineEnding
   });
 
   const sourcePath = `imports/${project.id}.dxf`;
   const bodyPath = `generated/${project.id}.body.gcode`;
   const programPath = `generated/${project.id}.${normalizeOutputExtension(
-    workbench.manifest.output.extension,
-    workbench.manifest.output.customExtension
+    machineProfile.output.extension,
+    machineProfile.output.customExtension
   )}`;
   const projectDirectory = `projects/${project.id}`;
   const projectPath = `${projectDirectory}/project.json`;
 
-  project.machine.templates = {
-    header: workbench.header,
-    footer: workbench.footer
-  };
-  project.machine.output = workbench.manifest.output;
+  project.machine = { ...machineProfile };
   project.editor.activeFilePath = programPath;
   project.generated.body = generatedBody;
   project.pathPlanning = {
@@ -114,8 +111,8 @@ export async function importDxfProject(
     },
     {
       name: `${project.id}.${normalizeOutputExtension(
-        workbench.manifest.output.extension,
-        workbench.manifest.output.customExtension
+        machineProfile.output.extension,
+        machineProfile.output.customExtension
       )}`,
       path: programPath,
       kind: 'generated',

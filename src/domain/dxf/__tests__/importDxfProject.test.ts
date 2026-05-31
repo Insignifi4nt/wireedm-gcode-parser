@@ -81,6 +81,58 @@ describe('importDxfProject', () => {
     expect(result.workbench.manifest.projects).toHaveLength(1);
   });
 
+  it('uses the active machine profile templates, output, and work area on imported projects', async () => {
+    const adapter = new MemoryWorkbenchAdapter('Profiled');
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    workbench.activeMachineProfile = {
+      ...workbench.activeMachineProfile,
+      name: 'Shop Machine',
+      templates: {
+        header: '%\nPROFILE HEADER',
+        footer: 'PROFILE FOOTER\n%'
+      },
+      output: {
+        extension: 'nc',
+        lineEnding: 'lf'
+      },
+      workArea: {
+        widthMm: 30,
+        lengthMm: 20
+      }
+    };
+    workbench.header = workbench.activeMachineProfile.templates.header;
+    workbench.footer = workbench.activeMachineProfile.templates.footer;
+    workbench.manifest = {
+      ...workbench.manifest,
+      activeMachineProfileId: workbench.activeMachineProfile.id,
+      machineProfiles: [workbench.activeMachineProfile],
+      output: workbench.activeMachineProfile.output
+    };
+
+    const result = await importDxfProject(workbench, {
+      fileName: 'profiled.dxf',
+      text: simpleSlotDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+
+    expect(result.project.machine).toMatchObject({
+      name: 'Shop Machine',
+      output: {
+        extension: 'nc',
+        lineEnding: 'lf'
+      },
+      workArea: {
+        widthMm: 30,
+        lengthMm: 20
+      }
+    });
+    expect(result.generatedProgram).toContain('%\nPROFILE HEADER');
+    expect(result.generatedProgram).toContain('PROFILE FOOTER\n%');
+    expect(result.project.generated.files.at(-1)?.name).toBe('profiled-2026-05-29.nc');
+  });
+
   it('keeps same-name imports separate instead of replacing the earlier project', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     let workbench = await initializeWorkbenchDirectory(adapter, {

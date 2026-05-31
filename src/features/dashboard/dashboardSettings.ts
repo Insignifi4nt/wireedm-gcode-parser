@@ -7,7 +7,10 @@ export interface SettingsDraft {
   footer: string;
   header: string;
   lineEnding: 'lf' | 'crlf';
+  machineName: string;
   sourceKey: string;
+  workAreaLengthMm: string;
+  workAreaWidthMm: string;
 }
 
 export function settingsDraftFromWorkbench(workbench: ConnectedWorkbench | null): SettingsDraft {
@@ -18,11 +21,15 @@ export function settingsDraftFromWorkbench(workbench: ConnectedWorkbench | null)
       footer: '',
       header: '',
       lineEnding: 'crlf',
-      sourceKey: 'none'
+      machineName: '',
+      sourceKey: 'none',
+      workAreaLengthMm: '',
+      workAreaWidthMm: ''
     };
   }
 
   const output = workbench.manifest.output;
+  const profile = workbench.activeMachineProfile;
 
   return {
     customExtension: output.customExtension ?? '',
@@ -30,6 +37,7 @@ export function settingsDraftFromWorkbench(workbench: ConnectedWorkbench | null)
     footer: workbench.footer,
     header: workbench.header,
     lineEnding: output.lineEnding,
+    machineName: profile.name,
     sourceKey: [
       workbench.adapter.kind,
       workbench.manifest.updatedAt,
@@ -37,7 +45,12 @@ export function settingsDraftFromWorkbench(workbench: ConnectedWorkbench | null)
       workbench.footer,
       output.extension,
       output.customExtension ?? '',
-      output.lineEnding
-    ].join('\u0000')
+      output.lineEnding,
+      profile.name,
+      profile.workArea.widthMm ?? '',
+      profile.workArea.lengthMm ?? ''
+    ].join('\u0000'),
+    workAreaLengthMm: profile.workArea.lengthMm?.toString() ?? '',
+    workAreaWidthMm: profile.workArea.widthMm?.toString() ?? ''
   };
 }

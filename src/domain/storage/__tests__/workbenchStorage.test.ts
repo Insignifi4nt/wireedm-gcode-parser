@@ -42,6 +42,17 @@ describe('initializeWorkbenchDirectory', () => {
       name: 'machine-jobs',
       createdAt: '2026-05-29T12:00:00.000Z',
       updatedAt: '2026-05-29T12:00:00.000Z',
+      activeMachineProfileId: 'default-wire-machine',
+      machineProfiles: [
+        {
+          id: 'default-wire-machine',
+          name: 'Default Wire EDM',
+          workArea: {
+            widthMm: null,
+            lengthMm: null
+          }
+        }
+      ],
       projects: [],
       output: {
         extension: 'iso',
@@ -53,6 +64,7 @@ describe('initializeWorkbenchDirectory', () => {
       }
     });
     expect(JSON.parse(adapter.files.get('workbench.json') || '{}')).toEqual(result.manifest);
+    expect(result.activeMachineProfile.id).toBe('default-wire-machine');
   });
 
   it('preserves existing templates and projects when reconnecting a workbench folder', async () => {
@@ -94,6 +106,10 @@ describe('initializeWorkbenchDirectory', () => {
     expect(adapter.files.get('templates/footer.gcode')).toBe('CUSTOM FOOTER\n%');
     expect(result.header).toBe('%\nCUSTOM HEADER');
     expect(result.footer).toBe('CUSTOM FOOTER\n%');
+    expect(result.activeMachineProfile.templates.header).toBe('%\nCUSTOM HEADER');
+    expect(result.activeMachineProfile.templates.footer).toBe('CUSTOM FOOTER\n%');
+    expect(result.manifest.activeMachineProfileId).toBe('default-wire-machine');
+    expect(result.manifest.machineProfiles[0].output.extension).toBe('nc');
     expect(result.manifest.createdAt).toBe('2026-05-28T08:00:00.000Z');
     expect(result.manifest.updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(result.manifest.output.extension).toBe('nc');

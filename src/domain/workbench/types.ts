@@ -24,11 +24,17 @@ export interface OutputFormat {
   lineEnding: 'lf' | 'crlf';
 }
 
+export interface MachineWorkArea {
+  widthMm: number | null;
+  lengthMm: number | null;
+}
+
 export interface MachineProfile {
   id: string;
   name: string;
   templates: GCodeTemplateSet;
   output: OutputFormat;
+  workArea: MachineWorkArea;
   notes: string;
 }
 

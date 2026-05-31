@@ -1,10 +1,12 @@
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchProject } from '@/domain/workbench/types';
 
 import { parseGCodeProgram } from './gcodeParser';
 import type { LoadedEditorProgram } from './loadEditorProgram';
 
 export interface SaveEditorProgramInput {
   filePath: string;
+  project?: WorkbenchProject;
   text: string;
 }
 
@@ -22,6 +24,7 @@ export async function saveEditorProgram(
   return {
     filePath: input.filePath,
     text: input.text,
-    parseResult: parseGCodeProgram(input.text)
+    parseResult: parseGCodeProgram(input.text),
+    project: input.project
   };
 }

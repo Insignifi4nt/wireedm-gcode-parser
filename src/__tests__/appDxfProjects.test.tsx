@@ -140,4 +140,52 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).toContain('generated/library-open-');
     expect(container.textContent).toContain('G1 X10.000 Y0.000');
   });
+
+  it('warns in the editor when imported DXF geometry exceeds the active machine profile work area', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const maxWidthInput = container.querySelector(
+      'input[aria-label="Machine max width"]'
+    ) as HTMLInputElement | null;
+    const maxLengthInput = container.querySelector(
+      'input[aria-label="Machine max length"]'
+    ) as HTMLInputElement | null;
+
+    expect(maxWidthInput).not.toBeNull();
+    expect(maxLengthInput).not.toBeNull();
+
+    await act(async () => {
+      if (maxWidthInput) setInputValue(maxWidthInput, '5');
+      if (maxLengthInput) setInputValue(maxLengthInput, '5');
+    });
+
+    const saveSettingsButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Save Settings')
+    );
+
+    await act(async () => {
+      saveSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([simpleLineDxf()], 'oversized.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const machineWarning = container.querySelector('[data-editor-machine-fit="too-large"]');
+    expect(machineWarning).not.toBeNull();
+    expect(machineWarning?.closest('details')).toBeNull();
+    expect(machineWarning?.textContent).toContain(
+      'width 10.000 > 5.000 mm'
+    );
+  });
 });

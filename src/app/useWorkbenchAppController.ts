@@ -294,6 +294,7 @@ export function useWorkbenchAppController(
     try {
       const savedProgram = await appServices.saveEditorProgram(connectedWorkbench, {
         filePath: loadedEditorProgram.filePath,
+        project: loadedEditorProgram.project,
         text
       });
       setLoadedEditorProgram(savedProgram);

@@ -58,6 +58,17 @@ describe('updateWorkbenchSettings', () => {
     expect(updated.header).toBe('%\nCUSTOM HEADER');
     expect(updated.footer).toBe('CUSTOM FOOTER\n%');
     expect(updated.manifest.output.extension).toBe('nc');
+    expect(updated.activeMachineProfile).toMatchObject({
+      id: 'default-wire-machine',
+      templates: {
+        header: '%\nCUSTOM HEADER',
+        footer: 'CUSTOM FOOTER\n%'
+      },
+      output: {
+        extension: 'nc',
+        lineEnding: 'lf'
+      }
+    });
   });
 
   it('preserves existing values when only one setting changes', async () => {
@@ -81,6 +92,64 @@ describe('updateWorkbenchSettings', () => {
       extension: 'custom',
       customExtension: 'cut',
       lineEnding: 'crlf'
+    });
+  });
+
+  it('persists active machine profile work area limits', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+
+    const updated = await updateWorkbenchSettings(workbench, {
+      machineProfile: {
+        ...workbench.activeMachineProfile,
+        name: 'Charmilles Robofil 100',
+        workArea: {
+          widthMm: 250,
+          lengthMm: 160
+        }
+      },
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+
+    const manifest = JSON.parse(adapter.files.get(WORKBENCH_MANIFEST_FILE) || '{}');
+
+    expect(updated.activeMachineProfile).toMatchObject({
+      name: 'Charmilles Robofil 100',
+      workArea: {
+        widthMm: 250,
+        lengthMm: 160
+      }
+    });
+    expect(manifest.machineProfiles[0].workArea).toEqual({
+      widthMm: 250,
+      lengthMm: 160
+    });
+  });
+
+  it('merges output patches over active machine profile updates', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+
+    const updated = await updateWorkbenchSettings(workbench, {
+      machineProfile: {
+        ...workbench.activeMachineProfile,
+        name: 'Profile name only'
+      },
+      output: {
+        extension: 'nc',
+        lineEnding: 'lf'
+      },
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+
+    expect(updated.activeMachineProfile.name).toBe('Profile name only');
+    expect(updated.activeMachineProfile.output).toEqual({
+      extension: 'nc',
+      lineEnding: 'lf'
     });
   });
 });

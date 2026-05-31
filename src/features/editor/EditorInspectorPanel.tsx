@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import type { GCodeStructure } from '@/domain/editor/gcodeStructure';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
+import type { MachineFitResult } from '@/domain/machine/machineFit';
+import type { MachineProfile } from '@/domain/workbench/types';
 
 import type { EditorGuideTarget } from './editorGuideContent';
 import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
@@ -19,6 +21,8 @@ interface EditorInspectorPanelProps {
   gridSnapEnabled: boolean;
   guideHighlightTarget: EditorGuideTarget | null;
   isSaving: boolean;
+  machineFit: MachineFitResult | null;
+  machineProfile: MachineProfile | null;
   measurementPoints: MeasurementPoint[];
   pathCount: number;
   pointXDraft: string;
@@ -46,6 +50,8 @@ export function EditorInspectorPanel({
   gridSnapEnabled,
   guideHighlightTarget,
   isSaving,
+  machineFit,
+  machineProfile,
   measurementPoints,
   pathCount,
   pointXDraft,
@@ -184,6 +190,32 @@ export function EditorInspectorPanel({
           )}
       </details>
 
+      {machineProfile && (
+        <section className="mt-3 border-t border-border pt-3" data-editor-machine-section>
+          <h3 className="mb-2 text-[11px] font-semibold">Machine</h3>
+          <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+            <dt className="text-muted-foreground">Profile</dt>
+            <dd className="truncate" data-editor-machine="profile" title={machineProfile.name}>
+              {machineProfile.name}
+            </dd>
+            <dt className="text-muted-foreground">Max W</dt>
+            <dd data-editor-machine="max-width">{formatLimit(machineProfile.workArea?.widthMm ?? null)}</dd>
+            <dt className="text-muted-foreground">Max L</dt>
+            <dd data-editor-machine="max-length">{formatLimit(machineProfile.workArea?.lengthMm ?? null)}</dd>
+          </dl>
+          {machineFit?.status === 'too-large' && (
+            <div
+              className="mt-2 border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200"
+              data-editor-machine-fit="too-large"
+            >
+              {machineFit.issues
+                .map((issue) => `${issue.axis} ${issue.actualMm.toFixed(3)} > ${issue.limitMm.toFixed(3)} mm`)
+                .join('\n')}
+            </div>
+          )}
+        </section>
+      )}
+
       <section
         className={`mt-3 border-t border-border pt-3 ${guideHighlightClass(
           'measurement-points',
@@ -321,4 +353,8 @@ export function EditorInspectorPanel({
 
 function formatCursorCoordinate(value: number | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : '-';
+}
+
+function formatLimit(value: number | null) {
+  return typeof value === 'number' ? `${value.toFixed(3)} mm` : '-';
 }

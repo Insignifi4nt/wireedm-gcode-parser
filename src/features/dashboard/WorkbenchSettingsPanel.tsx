@@ -39,12 +39,33 @@ export function WorkbenchSettingsPanel({
   }, [latestSettingsDraft]);
 
   if (!connectedWorkbench) return null;
+  const activeWorkbench = connectedWorkbench;
 
   async function handleSettingsSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await onSaveWorkbenchSettings({
       header: activeSettingsDraft.header,
       footer: activeSettingsDraft.footer,
+      machineProfile: {
+        ...activeWorkbench.activeMachineProfile,
+        name: activeSettingsDraft.machineName,
+        templates: {
+          header: activeSettingsDraft.header,
+          footer: activeSettingsDraft.footer
+        },
+        output: {
+          extension: activeSettingsDraft.extension,
+          customExtension:
+            activeSettingsDraft.extension === 'custom'
+              ? activeSettingsDraft.customExtension
+              : undefined,
+          lineEnding: activeSettingsDraft.lineEnding
+        },
+        workArea: {
+          widthMm: numberOrNull(activeSettingsDraft.workAreaWidthMm),
+          lengthMm: numberOrNull(activeSettingsDraft.workAreaLengthMm)
+        }
+      },
       output: {
         extension: activeSettingsDraft.extension,
         customExtension:
@@ -70,6 +91,16 @@ export function WorkbenchSettingsPanel({
         </Button>
       </div>
       <div className="grid gap-2">
+        <label className="grid gap-1 text-muted-foreground">
+          Machine Profile
+          <input
+            aria-label="Machine profile name"
+            className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+            disabled={isSavingSettings}
+            onChange={(event) => updateSettingsDraft({ machineName: event.currentTarget.value })}
+            value={activeSettingsDraft.machineName}
+          />
+        </label>
         <label className="grid gap-1 text-muted-foreground">
           Header
           <textarea
@@ -144,6 +175,40 @@ export function WorkbenchSettingsPanel({
             />
           </label>
         )}
+        <div className="grid grid-cols-2 gap-2">
+          <label className="grid gap-1 text-muted-foreground">
+            Max Width mm
+            <input
+              aria-label="Machine max width"
+              className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+              disabled={isSavingSettings}
+              inputMode="decimal"
+              min="0"
+              onChange={(event) =>
+                updateSettingsDraft({ workAreaWidthMm: event.currentTarget.value })
+              }
+              placeholder="unset"
+              type="number"
+              value={activeSettingsDraft.workAreaWidthMm}
+            />
+          </label>
+          <label className="grid gap-1 text-muted-foreground">
+            Max Length mm
+            <input
+              aria-label="Machine max length"
+              className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+              disabled={isSavingSettings}
+              inputMode="decimal"
+              min="0"
+              onChange={(event) =>
+                updateSettingsDraft({ workAreaLengthMm: event.currentTarget.value })
+              }
+              placeholder="unset"
+              type="number"
+              value={activeSettingsDraft.workAreaLengthMm}
+            />
+          </label>
+        </div>
         {settingsStatus === 'saved' && (
           <p className="border border-emerald-500/50 bg-emerald-500/10 p-2 text-emerald-200">
             Settings saved
@@ -157,4 +222,10 @@ export function WorkbenchSettingsPanel({
       </div>
     </form>
   );
+}
+
+function numberOrNull(value: string) {
+  if (value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }

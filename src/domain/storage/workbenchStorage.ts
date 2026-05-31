@@ -2,7 +2,12 @@ import {
   DEFAULT_FOOTER_TEMPLATE,
   DEFAULT_HEADER_TEMPLATE
 } from '../workbench/defaultProject';
-import type { OutputExtension } from '../workbench/types';
+import {
+  activeMachineProfileFromList,
+  machineProfileFromLegacySettings,
+  normalizeMachineProfile
+} from '@/domain/machine/machineProfiles';
+import type { MachineProfile, OutputExtension } from '../workbench/types';
 
 export const WORKBENCH_MANIFEST_FILE = 'workbench.json';
 export const HEADER_TEMPLATE_PATH = 'templates/header.gcode';
@@ -47,12 +52,15 @@ export interface WorkbenchManifest {
     customExtension?: string;
     lineEnding: 'lf' | 'crlf';
   };
+  activeMachineProfileId: string;
+  machineProfiles: MachineProfile[];
   projects: WorkbenchProjectIndexEntry[];
 }
 
 export interface ConnectedWorkbench {
   adapter: WorkbenchStorageAdapter;
   manifest: WorkbenchManifest;
+  activeMachineProfile: MachineProfile;
   header: string;
   footer: string;
 }
@@ -82,6 +90,28 @@ export async function initializeWorkbenchDirectory(
     FOOTER_TEMPLATE_PATH,
     DEFAULT_FOOTER_TEMPLATE
   );
+  const output = {
+    extension: existingManifest?.output.extension || 'iso',
+    customExtension: existingManifest?.output.customExtension,
+    lineEnding: existingManifest?.output.lineEnding || 'crlf'
+  } satisfies WorkbenchManifest['output'];
+  const profiles =
+    existingManifest?.machineProfiles?.length
+      ? existingManifest.machineProfiles.map(normalizeMachineProfile)
+      : [
+          machineProfileFromLegacySettings({
+            header,
+            footer,
+            output
+          })
+        ];
+  const activeMachineProfile = activeMachineProfileFromList(
+    profiles,
+    existingManifest?.activeMachineProfileId
+  );
+  const machineProfiles = profiles.some((profile) => profile.id === activeMachineProfile.id)
+    ? profiles
+    : [activeMachineProfile, ...profiles];
 
   const manifest: WorkbenchManifest = {
     schemaVersion: 1,
@@ -92,21 +122,22 @@ export async function initializeWorkbenchDirectory(
       headerPath: HEADER_TEMPLATE_PATH,
       footerPath: FOOTER_TEMPLATE_PATH
     },
-    output: {
-      extension: existingManifest?.output.extension || 'iso',
-      customExtension: existingManifest?.output.customExtension,
-      lineEnding: existingManifest?.output.lineEnding || 'crlf'
-    },
+    output: activeMachineProfile.output,
+    activeMachineProfileId: activeMachineProfile.id,
+    machineProfiles,
     projects: existingManifest?.projects || []
   };
 
+  await adapter.writeText(HEADER_TEMPLATE_PATH, activeMachineProfile.templates.header);
+  await adapter.writeText(FOOTER_TEMPLATE_PATH, activeMachineProfile.templates.footer);
   await adapter.writeText(WORKBENCH_MANIFEST_FILE, JSON.stringify(manifest, null, 2));
 
   return {
     adapter,
     manifest,
-    header,
-    footer
+    activeMachineProfile,
+    header: activeMachineProfile.templates.header,
+    footer: activeMachineProfile.templates.footer
   };
 }
 

@@ -8,6 +8,7 @@ export interface LoadedEditorProgram {
   filePath: string;
   text: string;
   parseResult: GCodeParseResult;
+  project?: WorkbenchProject;
 }
 
 export async function loadEditorProgram(
@@ -27,6 +28,7 @@ export async function loadEditorProgram(
   return {
     filePath,
     text,
-    parseResult: parseGCodeProgram(text)
+    parseResult: parseGCodeProgram(text),
+    project
   };
 }

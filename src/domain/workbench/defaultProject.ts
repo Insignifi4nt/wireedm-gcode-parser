@@ -24,6 +24,10 @@ export function createDefaultMachineProfile(): MachineProfile {
       extension: 'iso',
       lineEnding: 'crlf'
     },
+    workArea: {
+      widthMm: null,
+      lengthMm: null
+    },
     notes: 'Personal default. Feeds are intentionally omitted because they are set on the machine.'
   };
 }

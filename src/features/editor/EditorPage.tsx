@@ -17,6 +17,7 @@ import {
 import { organizeGCodeStructure } from '@/domain/editor/gcodeStructure';
 import { normalizeToISO } from '@/domain/editor/isoNormalizer';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
+import { evaluateMachineFit } from '@/domain/machine/machineFit';
 import {
   exportMeasurementPointsAsCsv,
   exportMeasurementPointsAsGCode,
@@ -104,7 +105,8 @@ export function EditorPage({
         ? {
             filePath: program.filePath,
             text: draftText,
-            parseResult: parseGCodeProgram(draftText)
+            parseResult: parseGCodeProgram(draftText),
+            project: program.project
           }
         : null,
     [draftText, program]
@@ -114,6 +116,16 @@ export function EditorPage({
   const cuttingMoveCount = draftProgram?.parseResult.path.filter((point) => point.type === 'cut').length ?? 0;
   const arcMoveCount = draftProgram?.parseResult.path.filter((point) => point.type === 'arc').length ?? 0;
   const boundsText = draftProgram && pathCount > 0 ? formatBounds(draftProgram.parseResult.bounds) : '-';
+  const machineFit = useMemo(
+    () =>
+      program
+        ? evaluateMachineFit({
+            document: program.project?.pathPlanning?.document,
+            profile: program.project?.machine
+          })
+        : null,
+    [program]
+  );
   const editorFileName = program?.filePath.split('/').pop() ?? '-';
   const hasUnsavedChanges = Boolean(program && draftText !== program.text);
   const structure = useMemo(
@@ -565,6 +577,8 @@ export function EditorPage({
             guideHighlightTarget={guideHighlightTarget}
             isSaving={isSaving}
             measurementPoints={measurementPoints}
+            machineFit={machineFit}
+            machineProfile={program?.project?.machine ?? null}
             onAddMeasurementPoint={handleAddMeasurementPoint}
             onClearMeasurementPoints={() => setMeasurementPoints([])}
             onDeleteMeasurementPoint={(pointId) =>

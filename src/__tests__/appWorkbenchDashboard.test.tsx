@@ -2,6 +2,7 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 
 import {
   cleanupAppTestContext,
@@ -269,6 +270,8 @@ describe('App dashboard and workbench shell', () => {
 });
 
 function createTemporaryWorkbench(): ConnectedWorkbench {
+  const activeMachineProfile = createDefaultMachineProfile();
+
   return {
     adapter: {
       name: 'Temporary storage',
@@ -290,14 +293,19 @@ function createTemporaryWorkbench(): ConnectedWorkbench {
         extension: 'iso',
         lineEnding: 'crlf'
       },
+      activeMachineProfileId: activeMachineProfile.id,
+      machineProfiles: [activeMachineProfile],
       projects: []
     },
+    activeMachineProfile,
     header: '%',
     footer: '%'
   };
 }
 
 function createDirectoryWorkbench(name: string): ConnectedWorkbench {
+  const activeMachineProfile = createDefaultMachineProfile();
+
   return {
     adapter: {
       name,
@@ -319,8 +327,11 @@ function createDirectoryWorkbench(name: string): ConnectedWorkbench {
         extension: 'iso',
         lineEnding: 'crlf'
       },
+      activeMachineProfileId: activeMachineProfile.id,
+      machineProfiles: [activeMachineProfile],
       projects: []
     },
+    activeMachineProfile,
     header: '%',
     footer: '%'
   };
