@@ -1608,6 +1608,29 @@ describe('App DXF imports and project library', () => {
         ?.getAttribute('data-preview-hovered')
     ).toBe('true');
 
+    const targetButton = secondPointRow?.querySelector(
+      'button[aria-label="Select measurement point target P2"]'
+    ) as HTMLButtonElement | null;
+    expect(targetButton).not.toBeNull();
+
+    await act(async () => {
+      targetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(
+      container
+        .querySelector(`[data-upid-segment-row][data-upid-segment-id="${targetSegmentId}"]`)
+        ?.getAttribute('data-upid-selected')
+    ).toBe('true');
+    expect(
+      container
+        .querySelector(`path[data-preview-segment="${targetSegmentId}"]`)
+        ?.getAttribute('data-preview-selected')
+    ).toBe('true');
+    expect(container.querySelector('[data-upid-selected-segment]')?.textContent).toContain(
+      'Selected Segment'
+    );
+
     const secondPointHandle = container.querySelector(
       '[data-measurement-point-handle="2"]'
     ) as SVGCircleElement | null;

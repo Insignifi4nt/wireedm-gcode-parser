@@ -67,6 +67,7 @@ interface EditorInspectorPanelProps {
   onPointXDraftChange: (value: string) => void;
   onPointYDraftChange: (value: string) => void;
   onReversePathOperation: () => void;
+  onSelectPathElement?: (element: EditorPathElementRef) => void;
   onSelectPathOperation: (operationId: string) => void;
   onToggleGridSnap: () => void;
 }
@@ -108,6 +109,7 @@ export function EditorInspectorPanel({
   onPointXDraftChange,
   onPointYDraftChange,
   onReversePathOperation,
+  onSelectPathElement,
   onSelectPathOperation,
   onToggleGridSnap
 }: EditorInspectorPanelProps) {
@@ -588,18 +590,30 @@ export function EditorInspectorPanel({
                 <span className="text-sky-200">P{index + 1}</span>
                 <span className="text-muted-foreground">{point.x.toFixed(3)}</span>
                 <span className="text-muted-foreground">{point.y.toFixed(3)}</span>
-                <span
-                  className="text-[9px] uppercase text-muted-foreground"
-                  data-measurement-point-mode={index + 1}
-                >
-                  {point.pathSnap?.relation === 'nearest-fallback'
-                    ? 'Snap'
-                    : point.pathSnap?.mode === 'perpendicular'
-                    ? 'Perp'
-                    : point.pathSnap?.mode === 'tangent'
-                      ? 'Tan'
-                      : '-'}
-                </span>
+                {point.pathSnap ? (
+                  <button
+                    aria-label={`Select measurement point target P${index + 1}`}
+                    className="text-left text-[9px] uppercase text-muted-foreground outline-none hover:text-foreground"
+                    data-measurement-point-mode={index + 1}
+                    onClick={() =>
+                      onSelectPathElement?.({
+                        operationId: point.pathSnap?.operationId ?? null,
+                        segmentId: point.pathSnap?.segmentId ?? null
+                      })
+                    }
+                    title="Select constrained path segment"
+                    type="button"
+                  >
+                    {measurementPointModeLabel(point)}
+                  </button>
+                ) : (
+                  <span
+                    className="text-[9px] uppercase text-muted-foreground"
+                    data-measurement-point-mode={index + 1}
+                  >
+                    -
+                  </span>
+                )}
                 <button
                   aria-label={`Delete measurement point P${index + 1}`}
                   className="flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-destructive/10 hover:text-destructive"
@@ -676,6 +690,14 @@ function formatLimit(value: number | null) {
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
+}
+
+function measurementPointModeLabel(point: MeasurementPoint) {
+  if (!point.pathSnap) return '-';
+  if (point.pathSnap.relation === 'nearest-fallback') return 'Snap';
+  if (point.pathSnap.mode === 'perpendicular') return 'Perp';
+  if (point.pathSnap.mode === 'tangent') return 'Tan';
+  return '-';
 }
 
 function manualOverrideRows(overrides: PathPlanningDocument['plan']['operations'][number]['overrides']) {

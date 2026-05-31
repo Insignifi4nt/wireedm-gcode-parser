@@ -1067,6 +1067,7 @@ export function EditorPage({
             onPointXDraftChange={setPointXDraft}
             onPointYDraftChange={setPointYDraft}
             onReversePathOperation={handleReversePathOperation}
+            onSelectPathElement={handleSelectPathElement}
             onSelectPathOperation={handleSelectPathOperation}
             onToggleGridSnap={() => setGridSnapEnabled((current) => !current)}
             pathCount={pathCount}
