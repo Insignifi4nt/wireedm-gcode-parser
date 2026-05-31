@@ -1249,9 +1249,12 @@ describe('App DXF imports and project library', () => {
       );
     });
 
-    expect(container.querySelector('[data-upid-start-preview]')?.getAttribute('data-upid-start-relation')).toBe(
-      'existing-point'
-    );
+    const existingStartPreview = container.querySelector('[data-upid-start-preview]');
+    expect(existingStartPreview?.getAttribute('data-upid-start-relation')).toBe('existing-point');
+    const existingStartSegmentId = existingStartPreview?.getAttribute('data-upid-start-segment');
+    const existingStartPointRole = existingStartPreview?.getAttribute('data-upid-start-point-role');
+    expect(existingStartSegmentId).toBeTruthy();
+    expect(existingStartPointRole).toBeTruthy();
 
     const hoverToggle = container.querySelector(
       'input[aria-label="Toggle canvas hover assist"]'
@@ -1263,6 +1266,22 @@ describe('App DXF imports and project library', () => {
     await act(async () => {
       hoverToggle?.click();
     });
+
+    expect(
+      container
+        .querySelector(
+          `[data-upid-point-row][data-upid-segment-id="${existingStartSegmentId}"][data-upid-point-role="${existingStartPointRole}"]`
+        )
+        ?.getAttribute('data-upid-hovered')
+    ).toBe('true');
+    expect(
+      container
+        .querySelector(
+          `circle[data-preview-path-endpoint][data-preview-segment="${existingStartSegmentId}"][data-preview-point-role="${existingStartPointRole}"]`
+        )
+        ?.getAttribute('data-preview-hovered')
+    ).toBe('true');
+
     await act(async () => {
       snapToggle?.click();
     });
@@ -1275,9 +1294,20 @@ describe('App DXF imports and project library', () => {
       );
     });
 
-    expect(container.querySelector('[data-upid-start-preview]')?.getAttribute('data-upid-start-relation')).toBe(
-      'new-split-point'
-    );
+    const splitStartPreview = container.querySelector('[data-upid-start-preview]');
+    expect(splitStartPreview?.getAttribute('data-upid-start-relation')).toBe('new-split-point');
+    const splitStartSegmentId = splitStartPreview?.getAttribute('data-upid-start-segment');
+    expect(splitStartSegmentId).toBeTruthy();
+    expect(
+      container
+        .querySelector(`[data-upid-segment-row][data-upid-segment-id="${splitStartSegmentId}"]`)
+        ?.getAttribute('data-upid-hovered')
+    ).toBe('true');
+    expect(
+      container
+        .querySelector(`path[data-preview-segment="${splitStartSegmentId}"]`)
+        ?.getAttribute('data-preview-hovered')
+    ).toBe('true');
   });
 
   it('edits imported DXF path direction through path controls instead of line text surgery', async () => {

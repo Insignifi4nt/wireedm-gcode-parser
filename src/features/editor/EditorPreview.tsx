@@ -81,8 +81,11 @@ export interface EditorConstructionPreview {
 }
 
 export interface EditorStartPreview {
+  operationId: string;
   point: { x: number; y: number };
+  pointRole?: 'start' | 'end' | null;
   relation: 'existing-point' | 'new-split-point';
+  segmentId: string;
 }
 
 export function EditorPreview({
@@ -903,8 +906,11 @@ export function EditorPreview({
           )}
           {startPreview && (
             <g
+              data-upid-start-operation={startPreview.operationId}
+              data-upid-start-point-role={startPreview.pointRole ?? undefined}
               data-upid-start-preview
               data-upid-start-relation={startPreview.relation}
+              data-upid-start-segment={startPreview.segmentId}
               pointerEvents="none"
             >
               <circle

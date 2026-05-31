@@ -35,6 +35,7 @@ import {
 import {
   orientedSegmentEnd,
   orientedSegmentStart,
+  pointsEqual,
   requiredSegment,
   segmentMap
 } from '@/domain/path-intel/segments';
@@ -246,8 +247,11 @@ export function EditorPage({
     if (!preview) return null;
 
     return {
+      operationId: preview.operationId,
       point: preview.point,
-      relation: preview.relation
+      pointRole: startPreviewPointRole(pathDocumentDraft, preview),
+      relation: preview.relation,
+      segmentId: preview.segmentId
     };
   }, [
     pathClickMode,
@@ -268,7 +272,19 @@ export function EditorPage({
         : null,
     [constructionPreview, pathHoverAssistEnabled]
   );
-  const activeHoveredPathElement = constructionHoveredPathElement ?? hoveredPathElement;
+  const startHoveredPathElement = useMemo<EditorPathElementRef | null>(
+    () =>
+      startPreview && pathHoverAssistEnabled
+        ? {
+            operationId: startPreview.operationId,
+            pointRole: startPreview.pointRole ?? undefined,
+            segmentId: startPreview.segmentId
+          }
+        : null,
+    [pathHoverAssistEnabled, startPreview]
+  );
+  const activeHoveredPathElement =
+    constructionHoveredPathElement ?? startHoveredPathElement ?? hoveredPathElement;
   const structure = useMemo(
     () => (draftProgram ? organizeGCodeStructure(draftProgram.text.split(/\r?\n/)) : null),
     [draftProgram]
@@ -1121,6 +1137,28 @@ function pathElementPoint(document: PathPlanningDocument, element: EditorPathEle
 
   const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
   return element.pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref);
+}
+
+function startPreviewPointRole(
+  document: PathPlanningDocument,
+  preview: {
+    operationId: string;
+    point: { x: number; y: number };
+    segmentId: string;
+  }
+): 'start' | 'end' | null {
+  const operation = document.plan.operations.find((candidate) => candidate.id === preview.operationId);
+  const ref = operation?.segmentRefs.find((candidate) => candidate.segmentId === preview.segmentId);
+  if (!ref) return null;
+
+  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
+  if (pointsEqual(preview.point, orientedSegmentStart(segment, ref), document.options.coincidenceEpsilon)) {
+    return 'start';
+  }
+  if (pointsEqual(preview.point, orientedSegmentEnd(segment, ref), document.options.coincidenceEpsilon)) {
+    return 'end';
+  }
+  return null;
 }
 
 function nextMeasurementPointId(currentLength: number) {
