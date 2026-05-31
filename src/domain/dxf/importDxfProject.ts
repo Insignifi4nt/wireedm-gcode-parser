@@ -61,7 +61,11 @@ export async function importDxfProject(
     throw new Error('DXF did not contain supported cut geometry.');
   }
 
-  const pathDocument = dxfEntitiesToUpidDocument(parseResult.entities);
+  const pathDocument = dxfEntitiesToUpidDocument(parseResult.entities, {}, {
+    fileName: input.fileName,
+    importedAt: timestamp,
+    projectId: project.id
+  });
   if (pathDocument.segments.length === 0 || pathDocument.plan.operations.length === 0) {
     throw new Error('DXF did not contain valid cut geometry.');
   }

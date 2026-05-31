@@ -28,6 +28,12 @@ export interface PathPlanningOptions {
   approximationMaxAngleRadians?: number;
 }
 
+export interface PathPlanningSourceMetadata {
+  fileName?: string;
+  importedAt?: string;
+  projectId?: string;
+}
+
 export type ResolvedPathPlanningOptions = Required<PathPlanningOptions>;
 
 export const DEFAULT_PATH_PLANNING_OPTIONS: ResolvedPathPlanningOptions = {
@@ -268,7 +274,7 @@ export interface PathPlanningDocument {
   source: {
     kind: 'dxf-entities';
     entityCount: number;
-  };
+  } & PathPlanningSourceMetadata;
   options: ResolvedPathPlanningOptions;
   segments: PathSegment[];
   endpointClusters: EndpointCluster[];

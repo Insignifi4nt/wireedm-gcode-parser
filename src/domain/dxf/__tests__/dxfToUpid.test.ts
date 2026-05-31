@@ -24,4 +24,29 @@ describe('dxfEntitiesToUpidDocument', () => {
     expect(document.plan.operations).toHaveLength(1);
     expect(document.options.endpointTolerance).toBe(0);
   });
+
+  it('records source file identity when creating a UPID document from DXF import data', () => {
+    const document = dxfEntitiesToUpidDocument([line(0, 0, 10, 0)], {}, {
+      fileName: 'bracket.dxf',
+      importedAt: '2026-05-31T12:00:00.000Z',
+      projectId: 'bracket-2026-05-31'
+    });
+
+    expect(document.source).toMatchObject({
+      entityCount: 1,
+      fileName: 'bracket.dxf',
+      importedAt: '2026-05-31T12:00:00.000Z',
+      kind: 'dxf-entities',
+      projectId: 'bracket-2026-05-31'
+    });
+  });
 });
+
+function line(startX: number, startY: number, endX: number, endY: number): DxfEntity {
+  return {
+    type: 'line',
+    layer: 'CUT',
+    start: { x: startX, y: startY },
+    end: { x: endX, y: endY }
+  };
+}

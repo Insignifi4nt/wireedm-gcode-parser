@@ -17,6 +17,7 @@ import type {
   PathDiagnostic,
   PathPlanningDocument,
   PathPlanningOptions,
+  PathPlanningSourceMetadata,
   PathSegment,
   SegmentBuildResult,
   SegmentSourceRef
@@ -24,7 +25,8 @@ import type {
 
 export function createPathPlanningDocumentFromDxfEntities(
   entities: DxfEntity[],
-  options: PathPlanningOptions = {}
+  options: PathPlanningOptions = {},
+  sourceMetadata: PathPlanningSourceMetadata = {}
 ): PathPlanningDocument {
   const resolved = resolvePathPlanningOptions(options);
   const segmentBuild = pathSegmentsFromDxfEntities(entities, resolved);
@@ -42,7 +44,8 @@ export function createPathPlanningDocumentFromDxfEntities(
     schemaVersion: 1,
     source: {
       kind: 'dxf-entities',
-      entityCount: entities.length
+      entityCount: entities.length,
+      ...sourceMetadata
     },
     options: resolved,
     segments: segmentBuild.segments,

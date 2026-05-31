@@ -1,4 +1,4 @@
-import type { PathPlanningOptions } from '@/domain/path-intel/types';
+import type { PathPlanningOptions, PathPlanningSourceMetadata } from '@/domain/path-intel/types';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
 import type { DxfEntity } from './types';
@@ -10,10 +10,15 @@ export const DEFAULT_DXF_UPID_OPTIONS: PathPlanningOptions = {
 
 export function dxfEntitiesToUpidDocument(
   entities: DxfEntity[],
-  options: PathPlanningOptions = {}
+  options: PathPlanningOptions = {},
+  sourceMetadata: PathPlanningSourceMetadata = {}
 ) {
-  return createUpidFromDxfEntities(entities, {
-    ...DEFAULT_DXF_UPID_OPTIONS,
-    ...options
-  });
+  return createUpidFromDxfEntities(
+    entities,
+    {
+      ...DEFAULT_DXF_UPID_OPTIONS,
+      ...options
+    },
+    sourceMetadata
+  );
 }

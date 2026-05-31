@@ -56,6 +56,11 @@ describe('importDxfProject', () => {
     expect(result.project.upid?.format).toBe('upid');
     expect(result.project.upid?.document).toBe(result.pathDocument);
     expect('postDiagnostics' in (result.project.upid ?? {})).toBe(false);
+    expect(result.project.upid?.document.source).toMatchObject({
+      fileName: 'Top Slot.dxf',
+      importedAt: '2026-05-29T11:00:00.000Z',
+      projectId: 'top-slot-2026-05-29'
+    });
 
     const projectPath = 'projects/top-slot-2026-05-29/project.json';
 
