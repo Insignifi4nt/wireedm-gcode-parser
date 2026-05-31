@@ -2,7 +2,7 @@ import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 
-import { EditorPreview, type EditorConstructionPreview } from './EditorPreview';
+import { EditorPreview, type EditorConstructionPreview, type EditorStartPreview } from './EditorPreview';
 import type { EditorGuideTarget } from './editorGuideContent';
 import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
@@ -10,6 +10,7 @@ import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 interface EditorCanvasPanelProps {
   draftProgram: LoadedEditorProgram | null;
   constructionPreview?: EditorConstructionPreview | null;
+  startPreview?: EditorStartPreview | null;
   gridSnapEnabled: boolean;
   guideHighlightTarget: EditorGuideTarget | null;
   guideOpen: boolean;
@@ -31,6 +32,7 @@ interface EditorCanvasPanelProps {
 export function EditorCanvasPanel({
   draftProgram,
   constructionPreview,
+  startPreview,
   gridSnapEnabled,
   guideHighlightTarget,
   guideOpen,
@@ -67,6 +69,7 @@ export function EditorCanvasPanel({
           hoveredLine={hoveredLine}
           hoveredPathElement={hoveredPathElement}
           constructionPreview={constructionPreview}
+          startPreview={startPreview}
           keyboardShortcutsEnabled={!guideOpen}
           measurementPoints={measurementPoints}
           onCursorPointChange={onCursorPointChange}

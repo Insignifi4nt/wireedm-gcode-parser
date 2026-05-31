@@ -51,6 +51,14 @@ export interface MagnetizedPathPoint extends NearestPathPoint {
   tangent: Point2;
 }
 
+export interface PathStartPreview {
+  operationId: string;
+  point: Point2;
+  relation: 'existing-point' | 'new-split-point';
+  segmentId: SegmentId;
+  segmentIndex: number;
+}
+
 export function movePathOperation(
   document: PathPlanningDocument,
   operationId: string,
@@ -152,7 +160,53 @@ export function setClosedOperationStartAtExistingPointNearPoint(
   const endpoint = nearestExistingOperationEndpoint(document, operation, point);
   if (!endpoint) return null;
 
-  return setClosedOperationStartNearPoint(document, operationId, endpoint);
+  return setClosedOperationStartNearPoint(document, operationId, endpoint.point);
+}
+
+export function previewClosedOperationStartNearPoint(
+  document: PathPlanningDocument,
+  operationId: string,
+  point: Point2,
+  allowSegmentSplit: boolean
+): PathStartPreview | null {
+  const operation = document.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation || !operation.closed) return null;
+
+  if (!allowSegmentSplit) {
+    const endpoint = nearestExistingOperationEndpoint(document, operation, point);
+    return endpoint
+      ? {
+          operationId,
+          point: endpoint.point,
+          relation: 'existing-point',
+          segmentId: endpoint.segmentId,
+          segmentIndex: endpoint.segmentIndex
+        }
+      : null;
+  }
+
+  const nearest = nearestPointOnOperation(document, operationId, point);
+  if (!nearest) return null;
+
+  const ref = operation.segmentRefs[nearest.segmentIndex];
+  if (!ref) return null;
+
+  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
+  const start = orientedSegmentStart(segment, ref);
+  const end = orientedSegmentEnd(segment, ref);
+  const relation =
+    pointsEqual(nearest.point, start, document.options.coincidenceEpsilon) ||
+    pointsEqual(nearest.point, end, document.options.coincidenceEpsilon)
+      ? 'existing-point'
+      : 'new-split-point';
+
+  return {
+    operationId,
+    point: nearest.point,
+    relation,
+    segmentId: nearest.segmentId,
+    segmentIndex: nearest.segmentIndex
+  };
 }
 
 export function nearestPointOnOperation(
@@ -288,20 +342,25 @@ function nearestExistingOperationEndpoint(
   point: Point2
 ) {
   const segmentsById = segmentMap(document.segments);
-  let nearest: { distance: number; point: Point2 } | null = null;
+  let nearest: { distance: number; point: Point2; segmentId: SegmentId; segmentIndex: number } | null = null;
 
-  for (const ref of operation.segmentRefs) {
+  for (const [segmentIndex, ref] of operation.segmentRefs.entries()) {
     const segment = requiredSegment(segmentsById, ref.segmentId);
     const candidates = [orientedSegmentStart(segment, ref), orientedSegmentEnd(segment, ref)];
     for (const candidate of candidates) {
       const candidateDistance = distance(point, candidate);
       if (!nearest || candidateDistance < nearest.distance) {
-        nearest = { distance: candidateDistance, point: candidate };
+        nearest = {
+          distance: candidateDistance,
+          point: candidate,
+          segmentId: ref.segmentId,
+          segmentIndex
+        };
       }
     }
   }
 
-  return nearest?.point ?? null;
+  return nearest ?? null;
 }
 
 function splitOperationSegmentAtPoint(

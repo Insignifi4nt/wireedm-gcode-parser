@@ -8,6 +8,7 @@ import {
   constructMagnetizedPoint,
   magnetizePointToPath,
   movePathOperation,
+  previewClosedOperationStartNearPoint,
   reversePathOperation,
   setPathOperationClassification,
   setClosedOperationStartNearPoint,
@@ -70,6 +71,27 @@ describe('pathDocumentOperations', () => {
       kind: 'manual'
     });
     expect(edited?.contours[0].classification).toBe('hole');
+  });
+
+  it('previews existing start points until split points are allowed', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const operation = document.plan.operations[0];
+
+    const existing = previewClosedOperationStartNearPoint(document, operation.id, { x: 9, y: 0.35 }, false);
+    const split = previewClosedOperationStartNearPoint(document, operation.id, { x: 9, y: 0.35 }, true);
+
+    expect(existing).toMatchObject({
+      operationId: operation.id,
+      point: { x: 10, y: 0 },
+      relation: 'existing-point'
+    });
+    expect(split).toMatchObject({
+      operationId: operation.id,
+      point: { x: 9, y: 0 },
+      relation: 'new-split-point',
+      segmentId: operation.segmentRefs[0].segmentId,
+      segmentIndex: 0
+    });
   });
 
   it('reverses a closed operation while keeping one continuous cut', () => {

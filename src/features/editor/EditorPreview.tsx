@@ -52,6 +52,7 @@ import {
 
 interface EditorPreviewProps {
   constructionPreview?: EditorConstructionPreview | null;
+  startPreview?: EditorStartPreview | null;
   program: LoadedEditorProgram | null;
   hoveredLine: number | null;
   hoveredPathElement?: EditorPathElementRef | null;
@@ -76,8 +77,14 @@ export interface EditorConstructionPreview {
   targetPoint: { x: number; y: number };
 }
 
+export interface EditorStartPreview {
+  point: { x: number; y: number };
+  relation: 'existing-point' | 'new-split-point';
+}
+
 export function EditorPreview({
   constructionPreview,
+  startPreview,
   program,
   hoveredLine,
   hoveredPathElement,
@@ -821,6 +828,52 @@ export function EditorPreview({
                 y={flipY - constructionPreview.targetPoint.y}
               >
                 {constructionPreview.mode === 'perpendicular' ? 'PERP' : 'TAN'}
+              </text>
+            </g>
+          )}
+          {startPreview && (
+            <g
+              data-upid-start-preview
+              data-upid-start-relation={startPreview.relation}
+              pointerEvents="none"
+            >
+              <circle
+                cx={startPreview.point.x}
+                cy={flipY - startPreview.point.y}
+                data-upid-start-preview-point
+                fill={startPreview.relation === 'existing-point' ? '#f59e0b' : '#22d3ee'}
+                fillOpacity="0.92"
+                r={markerRadius * 1.15}
+                stroke="#020617"
+                strokeWidth={markerRadius * 0.34}
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle
+                cx={startPreview.point.x}
+                cy={flipY - startPreview.point.y}
+                fill="none"
+                r={markerRadius * 1.95}
+                stroke={startPreview.relation === 'existing-point' ? '#fbbf24' : '#67e8f9'}
+                strokeDasharray={startPreview.relation === 'existing-point' ? undefined : '0.38 0.26'}
+                strokeOpacity="0.78"
+                strokeWidth={markerRadius * 0.24}
+                vectorEffect="non-scaling-stroke"
+              />
+              <text
+                data-upid-start-preview-label
+                dx={markerRadius * 1.45}
+                dy={-markerRadius * 1.1}
+                fill={startPreview.relation === 'existing-point' ? '#fde68a' : '#a5f3fc'}
+                fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                fontSize={measurementLabelFontSize}
+                fontWeight="700"
+                paintOrder="stroke"
+                stroke="#020617"
+                strokeWidth={measurementLabelFontSize * 0.22}
+                x={startPreview.point.x}
+                y={flipY - startPreview.point.y}
+              >
+                {startPreview.relation === 'existing-point' ? 'START' : 'SPLIT START'}
               </text>
             </g>
           )}

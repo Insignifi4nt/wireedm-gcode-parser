@@ -23,6 +23,7 @@ import { evaluateMachineFit } from '@/domain/machine/machineFit';
 import {
   constructMagnetizedPoint,
   movePathOperation,
+  previewClosedOperationStartNearPoint,
   reversePathOperation,
   setClosedOperationStartAtExistingPointNearPoint,
   setClosedOperationStartNearPoint,
@@ -214,6 +215,35 @@ export function EditorPage({
       targetPoint: magnetized.point
     };
   }, [measurementPoints, pathClickMode, pathDocumentDraft, pathMagneticSnapEnabled, previewCursorPoint]);
+  const startPreview = useMemo(() => {
+    if (
+      !pathDocumentDraft ||
+      !selectedPathOperationId ||
+      !previewCursorPoint ||
+      pathClickMode !== 'set-start'
+    ) {
+      return null;
+    }
+
+    const preview = previewClosedOperationStartNearPoint(
+      pathDocumentDraft,
+      selectedPathOperationId,
+      previewCursorPoint,
+      pathMagneticSnapEnabled
+    );
+    if (!preview) return null;
+
+    return {
+      point: preview.point,
+      relation: preview.relation
+    };
+  }, [
+    pathClickMode,
+    pathDocumentDraft,
+    pathMagneticSnapEnabled,
+    previewCursorPoint,
+    selectedPathOperationId
+  ]);
   const editorFileName = program?.filePath.split('/').pop() ?? '-';
   const hasUnsavedChanges = Boolean(program && draftText !== program.text);
   const structure = useMemo(
@@ -877,6 +907,7 @@ export function EditorPage({
           pinnedLines={pinnedLines}
           selectedPathElement={selectedPathElement}
           selectedLines={selectedLines}
+          startPreview={startPreview}
         />
 
         <aside

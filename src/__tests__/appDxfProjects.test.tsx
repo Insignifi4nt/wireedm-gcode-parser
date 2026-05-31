@@ -826,6 +826,88 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelectorAll('[data-upid-segment-row]')).toHaveLength(5);
   });
 
+  it('previews whether Start will use an existing point or create a split point', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'start-preview.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const preview = container.querySelector(
+      'svg[aria-label="G-code path preview"]'
+    ) as SVGSVGElement | null;
+    expect(preview).not.toBeNull();
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      value: () => ({
+        left: 10,
+        top: 20,
+        width: 120,
+        height: 120,
+        right: 130,
+        bottom: 140,
+        x: 10,
+        y: 20,
+        toJSON: () => ({})
+      }),
+      configurable: true
+    });
+
+    const startButton = container.querySelector(
+      'button[aria-label="Set path start from canvas"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('mousemove', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 9, y: 0.35 })
+        })
+      );
+    });
+
+    expect(container.querySelector('[data-upid-start-preview]')?.getAttribute('data-upid-start-relation')).toBe(
+      'existing-point'
+    );
+
+    const hoverToggle = container.querySelector(
+      'input[aria-label="Toggle canvas hover assist"]'
+    ) as HTMLInputElement | null;
+    const snapToggle = container.querySelector(
+      'input[aria-label="Toggle magnetic non-existing point snap"]'
+    ) as HTMLInputElement | null;
+
+    await act(async () => {
+      hoverToggle?.click();
+    });
+    await act(async () => {
+      snapToggle?.click();
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('mousemove', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 9, y: 0.35 })
+        })
+      );
+    });
+
+    expect(container.querySelector('[data-upid-start-preview]')?.getAttribute('data-upid-start-relation')).toBe(
+      'new-split-point'
+    );
+  });
+
   it('edits imported DXF path direction through path controls instead of line text surgery', async () => {
     window.showDirectoryPicker = undefined;
     const downloadGeneratedProgram = vi.fn();
