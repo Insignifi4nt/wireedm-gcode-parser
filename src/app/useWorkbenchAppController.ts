@@ -351,8 +351,7 @@ export function useWorkbenchAppController(
         generatedBody: '',
         generatedProgram: '',
         pathDocument,
-        pathDiagnostics: pathDocument.diagnostics,
-        postDiagnostics: editorProgram.project.upid.postDiagnostics
+        pathDiagnostics: pathDocument.diagnostics
       };
     });
   }

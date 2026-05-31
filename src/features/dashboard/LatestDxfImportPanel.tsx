@@ -17,10 +17,7 @@ export function LatestDxfImportPanel({
   onDownloadLatestProgram,
   onOpenLatestImportInEditor
 }: LatestDxfImportPanelProps) {
-  const pathMessages =
-    latestImport?.pathDiagnostics
-      .concat(latestImport.postDiagnostics)
-      .map((diagnostic) => diagnostic.message) ?? [];
+  const pathMessages = latestImport?.pathDiagnostics.map((diagnostic) => diagnostic.message) ?? [];
   const allWarnings = latestImport ? [...latestImport.parseResult.warnings, ...pathMessages] : [];
 
   return (

@@ -28,7 +28,6 @@ export interface ImportDxfProjectResult {
   generatedProgram: string;
   pathDocument: PathPlanningDocument;
   pathDiagnostics: PathDiagnostic[];
-  postDiagnostics: PathDiagnostic[];
 }
 
 export async function importDxfProject(
@@ -72,7 +71,6 @@ export async function importDxfProject(
   const machineProfile = workbench.activeMachineProfile;
   const generatedBody = '';
   const generatedProgram = '';
-  const postDiagnostics: PathDiagnostic[] = [];
 
   const sourcePath = `imports/${project.id}.dxf`;
   const projectDirectory = `projects/${project.id}`;
@@ -80,7 +78,7 @@ export async function importDxfProject(
 
   project.machine = { ...machineProfile };
   project.generated.body = generatedBody;
-  project.upid = createProjectUpid(pathDocument, postDiagnostics);
+  project.upid = createProjectUpid(pathDocument);
   project.source.files = [
     {
       name: `${project.id}.dxf`,
@@ -125,7 +123,6 @@ export async function importDxfProject(
     generatedBody,
     generatedProgram,
     pathDocument,
-    pathDiagnostics: pathDocument.diagnostics,
-    postDiagnostics
+    pathDiagnostics: pathDocument.diagnostics
   };
 }

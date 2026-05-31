@@ -261,7 +261,7 @@ describe('saveEditorProgram', () => {
         (diagnostic: { code: string }) => diagnostic.code === 'endpoint-cluster-snap'
       )
     ).toBe(true);
-    expect(savedProject.upid.postDiagnostics).toEqual([]);
+    expect('postDiagnostics' in savedProject.upid).toBe(false);
   });
 
   it('clears UPID state when manual text edits are saved without a path document', async () => {
