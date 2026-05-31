@@ -155,6 +155,34 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
   });
 
+  it('surfaces UPID path diagnostics in the Project Rail navigator', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([simpleLineDxf()], 'open-diagnostic.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const diagnostics = container.querySelector('[data-upid-diagnostics]');
+    const diagnosticRows = [...container.querySelectorAll('[data-upid-diagnostic-row]')];
+
+    expect(diagnostics).not.toBeNull();
+    expect(diagnostics?.textContent).toContain('Path Diagnostics');
+    expect(diagnostics?.textContent).toContain('1 issue');
+    expect(diagnosticRows).toHaveLength(1);
+    expect(diagnosticRows[0].getAttribute('data-upid-diagnostic-code')).toBe('open-chain');
+    expect(diagnosticRows[0].getAttribute('data-upid-diagnostic-severity')).toBe('warning');
+    expect(diagnosticRows[0].textContent).toContain('open chain');
+  });
+
   it('opens persisted UPID-only projects without the legacy path planning payload', async () => {
     window.showDirectoryPicker = undefined;
 

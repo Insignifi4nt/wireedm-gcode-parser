@@ -23,6 +23,7 @@ import type {
   ContourClassification,
   OrientedSegmentRef,
   PathContour,
+  PathDiagnostic,
   PathOperation,
   PathPlanningDocument,
   PathSegment
@@ -295,6 +296,21 @@ export function EditorPathNavigatorPanel({
           </label>
         </section>
 
+        {pathDocument.diagnostics.length > 0 && (
+          <section className="shrink-0 border-b border-border py-2" data-upid-diagnostics>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-[9px] uppercase text-muted-foreground">Path Diagnostics</span>
+              <span className="text-[9px] text-amber-200">
+                {pathDocument.diagnostics.length}{' '}
+                {pathDocument.diagnostics.length === 1 ? 'issue' : 'issues'}
+              </span>
+            </div>
+            <div className="max-h-24 overflow-auto border border-border bg-background/35">
+              {pathDocument.diagnostics.map(renderDiagnosticRow)}
+            </div>
+          </section>
+        )}
+
         <section className="shrink-0 border-b border-border py-2" data-upid-cut-sequence>
           <div className="mb-2 text-[9px] uppercase text-muted-foreground">Cut Sequence</div>
           <div className="max-h-32 overflow-auto border border-border bg-background/35" data-upid-cut-sequence-list>
@@ -332,6 +348,26 @@ export function EditorPathNavigatorPanel({
           )}
         </section>
       </section>
+    </div>
+  );
+}
+
+function renderDiagnosticRow(diagnostic: PathDiagnostic) {
+  return (
+    <div
+      className="border-b border-border px-2 py-1.5 last:border-b-0"
+      data-upid-diagnostic-code={diagnostic.code}
+      data-upid-diagnostic-row
+      data-upid-diagnostic-severity={diagnostic.severity}
+      key={diagnostic.id}
+    >
+      <div className="mb-1 flex items-center justify-between gap-2 text-[8px] uppercase">
+        <span className={diagnostic.severity === 'error' ? 'text-destructive' : 'text-amber-200'}>
+          {diagnostic.severity}
+        </span>
+        <span className="truncate text-muted-foreground">{diagnostic.code}</span>
+      </div>
+      <p className="text-[9px] leading-4 text-muted-foreground">{diagnostic.message}</p>
     </div>
   );
 }
