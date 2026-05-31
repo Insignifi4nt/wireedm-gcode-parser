@@ -848,14 +848,8 @@ export function EditorPage({
   ) {
     if (!program?.project) return;
 
-    const body = postUpidToGcode(nextDocument).body;
     replaceDraftText(
-      composeGCodeProgram({
-        header: program.project.machine.templates.header,
-        body,
-        footer: program.project.machine.templates.footer,
-        lineEnding: program.project.machine.output.lineEnding
-      }),
+      '',
       {
         pathDocument: nextDocument,
         selectedPathElement: Object.hasOwn(options, 'selectedPathElement')
