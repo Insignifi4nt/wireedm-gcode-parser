@@ -234,6 +234,36 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).not.toContain('Footer');
   });
 
+  it('uses UPID-selected geometry details in the Inspector Rail for DXF projects', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'selected-geometry.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const inspector = container.querySelector('[data-editor-inspector-rail]');
+    const selectedGeometry = container.querySelector('[data-upid-selected-geometry]');
+    expect(inspector).not.toBeNull();
+    expect(selectedGeometry).not.toBeNull();
+    expect(selectedGeometry?.textContent).toContain('Selected Geometry');
+    expect(selectedGeometry?.textContent).toContain('closed contour');
+    expect(selectedGeometry?.textContent).toContain('4 segments');
+    expect(container.querySelector('[data-upid-stat="operations"]')?.textContent).toBe('1');
+    expect(container.querySelector('[data-upid-stat="segments"]')?.textContent).toBe('4');
+    expect(inspector?.textContent).not.toContain('Warnings');
+    expect(inspector?.textContent).not.toContain('Errors');
+    expect(inspector?.textContent).not.toContain('Lines');
+  });
+
   it('posts UPID to G-code only inside the explicit export preview', async () => {
     window.showDirectoryPicker = undefined;
     const downloadGeneratedProgram = vi.fn();

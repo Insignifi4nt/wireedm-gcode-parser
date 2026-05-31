@@ -142,9 +142,33 @@ export function EditorInspectorPanel({
           Statistics
         </summary>
         <section className="mt-2">
-          <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Program</h3>
-          {draftProgram ? (
+          {pathDocument ? (
+            <>
+              <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">UPID</h3>
+              <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+                <dt className="text-muted-foreground">Operations</dt>
+                <dd data-upid-stat="operations">{pathDocument.plan.operations.length}</dd>
+                <dt className="text-muted-foreground">Contours</dt>
+                <dd data-upid-stat="contours">{pathDocument.contours.length}</dd>
+                <dt className="text-muted-foreground">Segments</dt>
+                <dd data-upid-stat="segments">{pathDocument.segments.length}</dd>
+                <dt className="text-muted-foreground">Cut Length</dt>
+                <dd data-upid-stat="cut-length">{pathDocument.plan.metrics.totalCutLength.toFixed(3)}</dd>
+                <dt className="text-muted-foreground">Rapid</dt>
+                <dd data-upid-stat="rapid-length">{pathDocument.plan.metrics.totalRapidLength.toFixed(3)}</dd>
+                <dt className="text-muted-foreground">Bounds</dt>
+                <dd data-editor-stat="bounds">{boundsText}</dd>
+                <dt className="text-muted-foreground">File</dt>
+                <dd className="truncate" data-editor-stat="file" title={program?.filePath}>
+                  {editorFileName}
+                </dd>
+              </dl>
+            </>
+          ) : draftProgram ? (
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+              <dt className="col-span-2 mb-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                Program
+              </dt>
               <dt className="text-muted-foreground">Path</dt>
               <dd>
                 <span data-editor-stat="total-moves">{pathCount}</span>{' '}
@@ -178,7 +202,34 @@ export function EditorInspectorPanel({
           )}
         </section>
 
-        {structure && (
+        {pathDocument && selectedPathOperation && (
+          <section className="mt-3 border-t border-border pt-3" data-upid-selected-geometry>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Geometry</h3>
+            <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+              <dt className="text-muted-foreground">Contour</dt>
+              <dd data-upid-selected="classification">{selectedPathOperation.classification}</dd>
+              <dt className="text-muted-foreground">Kind</dt>
+              <dd data-upid-selected="kind">
+                {selectedPathOperation.closed ? 'closed contour' : 'open chain'}
+              </dd>
+              <dt className="text-muted-foreground">Direction</dt>
+              <dd data-upid-selected="direction">{selectedPathOperation.direction}</dd>
+              <dt className="text-muted-foreground">Segments</dt>
+              <dd data-upid-selected="segments">
+                {selectedPathOperation.segmentRefs.length}{' '}
+                {selectedPathOperation.segmentRefs.length === 1 ? 'segment' : 'segments'}
+              </dd>
+              <dt className="text-muted-foreground">Cut</dt>
+              <dd data-upid-selected="cut-length">{selectedPathOperation.metrics.cutLength.toFixed(3)}</dd>
+              <dt className="text-muted-foreground">Start</dt>
+              <dd data-upid-selected="start">{formatPoint(selectedPathOperation.startPoint)}</dd>
+              <dt className="text-muted-foreground">End</dt>
+              <dd data-upid-selected="end">{formatPoint(selectedPathOperation.endPoint)}</dd>
+            </dl>
+          </section>
+        )}
+
+        {!pathDocument && structure && (
           <section className="mt-3 border-t border-border pt-3">
             <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Structure</h3>
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
@@ -194,7 +245,7 @@ export function EditorInspectorPanel({
           </section>
         )}
 
-        {draftProgram &&
+        {!pathDocument && draftProgram &&
           (draftProgram.parseResult.errors.length > 0 ||
             draftProgram.parseResult.warnings.length > 0) && (
             <section className="mt-3 border-t border-border pt-3">
@@ -509,4 +560,8 @@ function formatCursorCoordinate(value: number | undefined) {
 
 function formatLimit(value: number | null) {
   return typeof value === 'number' ? `${value.toFixed(3)} mm` : '-';
+}
+
+function formatPoint(point: { x: number; y: number }) {
+  return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
 }
