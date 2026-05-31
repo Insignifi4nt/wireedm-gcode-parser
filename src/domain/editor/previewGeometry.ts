@@ -44,6 +44,7 @@ export interface EditorPreviewPath {
   operationId?: OperationId;
   segmentId?: SegmentId;
   source?: 'gcode' | 'path-document';
+  travelRole?: 'rapid-in';
 }
 
 export interface EditorPreviewViewBox {
@@ -145,7 +146,7 @@ export function buildEditorPathDocumentPreviewGeometry(
 
   for (const operation of document.plan.operations) {
     bounds = mergeBounds(bounds, pathBounds(operation.segmentRefs, segmentsById));
-    const rapidStart = currentPoint ?? operation.startPoint;
+    const rapidStart = currentPoint ?? document.options.startPoint;
     if (!currentPoint || !pathPointsEqual(currentPoint, operation.startPoint, document.options.coincidenceEpsilon)) {
       paths.push({
         type: 'rapid',
@@ -154,7 +155,8 @@ export function buildEditorPathDocumentPreviewGeometry(
         end: operation.startPoint,
         line: options.lineHints?.[pathIndex++] ?? 0,
         operationId: operation.id,
-        source: 'path-document'
+        source: 'path-document',
+        travelRole: 'rapid-in'
       });
     }
 

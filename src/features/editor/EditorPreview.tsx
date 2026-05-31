@@ -674,6 +674,7 @@ export function EditorPreview({
                 data-preview-selected={pathElementSelected ? 'true' : undefined}
                 data-preview-segment={path.segmentId}
                 data-preview-source={path.source}
+                data-preview-travel={path.travelRole}
                 data-type={path.type}
                 fill="none"
                 key={`${path.type}-${path.line}-${index}`}
@@ -682,14 +683,16 @@ export function EditorPreview({
                   event.stopPropagation();
                   onPathElementClick({
                     operationId: path.operationId,
-                    segmentId: path.segmentId ?? null
+                    segmentId: path.segmentId ?? null,
+                    travelRole: path.travelRole ?? null
                   });
                 }}
                 onMouseEnter={() => {
                   if (path.source !== 'path-document' || !path.operationId) return;
                   onPathElementHover?.({
                     operationId: path.operationId,
-                    segmentId: path.segmentId ?? null
+                    segmentId: path.segmentId ?? null,
+                    travelRole: path.travelRole ?? null
                   });
                 }}
                 onMouseLeave={() => onPathElementHover?.(null)}
@@ -979,11 +982,13 @@ export function EditorPreview({
 }
 
 function pathElementMatches(
-  path: { operationId?: string; segmentId?: string },
+  path: { operationId?: string; segmentId?: string; travelRole?: 'rapid-in' },
   element: EditorPathElementRef | null | undefined
 ) {
   if (!element?.operationId || path.operationId !== element.operationId) return false;
   if (element.pointRole) return false;
+  if (element.travelRole) return path.travelRole === element.travelRole;
+  if (path.travelRole) return false;
   if (!path.segmentId) return false;
   return element.segmentId ? path.segmentId === element.segmentId : true;
 }

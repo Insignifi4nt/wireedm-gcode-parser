@@ -485,6 +485,67 @@ describe('App DXF imports and project library', () => {
     );
   });
 
+  it('connects UPID rapid travel links between the canvas and Cut Sequence rows', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([nestedContourDxf()], 'rapid-travel-links.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const hoverToggle = container.querySelector(
+      'input[aria-label="Toggle canvas hover assist"]'
+    ) as HTMLInputElement | null;
+    await act(async () => {
+      hoverToggle?.click();
+    });
+
+    const cutSequenceRow = container.querySelector(
+      '[data-upid-cut-sequence-row]'
+    ) as HTMLElement | null;
+    const operationId = cutSequenceRow?.getAttribute('data-upid-operation-id');
+    expect(operationId).toBeTruthy();
+
+    const rapidControl = cutSequenceRow?.querySelector(
+      '[data-upid-cut-sequence-rapid-control]'
+    ) as HTMLElement | null;
+    expect(rapidControl).not.toBeNull();
+
+    const rapidPath = container.querySelector(
+      `svg[aria-label="G-code path preview"] path[data-type="rapid"][data-preview-travel="rapid-in"][data-preview-operation="${operationId}"]`
+    );
+    expect(rapidPath).not.toBeNull();
+    expect(rapidPath?.getAttribute('d')).toBe('M 0 0 L 10 7');
+
+    await act(async () => {
+      rapidPath?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    expect(cutSequenceRow?.getAttribute('data-upid-hovered')).toBe('true');
+    expect(rapidControl?.getAttribute('data-upid-hovered')).toBe('true');
+
+    await act(async () => {
+      rapidPath?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    });
+
+    await act(async () => {
+      rapidPath?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(cutSequenceRow?.getAttribute('data-upid-selected')).toBe('true');
+    expect(rapidControl?.getAttribute('data-upid-selected')).toBe('true');
+    expect(rapidPath?.getAttribute('data-preview-selected')).toBe('true');
+    expect(rapidPath?.getAttribute('data-highlight')).toBe('selected');
+  });
+
   it('highlights selected UPID contours and segments on the canvas and in the inspector', async () => {
     window.showDirectoryPicker = undefined;
 

@@ -1086,7 +1086,8 @@ function normalizePathElementSelection(
 
   if (
     element?.operationId === operation.id &&
-    (!element.segmentId ||
+    (element.travelRole === 'rapid-in' ||
+      !element.segmentId ||
       operation.segmentRefs.some((candidate) => candidate.segmentId === element.segmentId))
   ) {
     return element;

@@ -32,6 +32,7 @@ export interface EditorPathElementRef {
   operationId: string | null;
   pointRole?: 'start' | 'end' | null;
   segmentId: string | null;
+  travelRole?: 'rapid-in' | null;
 }
 
 const iconButtonClass =
@@ -372,10 +373,23 @@ function renderCutSequenceRow({
 }) {
   const selected = selectedPathElement?.operationId === operation.id;
   const hovered = hoveredPathElement?.operationId === operation.id;
+  const rapidSelected =
+    selectedPathElement?.operationId === operation.id && selectedPathElement.travelRole === 'rapid-in';
+  const rapidHovered =
+    hoveredPathElement?.operationId === operation.id && hoveredPathElement.travelRole === 'rapid-in';
   const manualDecisions = manualDecisionKinds(operation);
   const cutLength = operation.metrics.cutLength.toFixed(3);
   const rapidInLength = operation.metrics.rapidInLength.toFixed(3);
+  const rapidElement: EditorPathElementRef = {
+    operationId: operation.id,
+    segmentId: null,
+    travelRole: 'rapid-in'
+  };
   const selectOperation = () => onSelectPathElement({ operationId: operation.id, segmentId: null });
+  const selectRapid = (event: MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+    onSelectPathElement(rapidElement);
+  };
   const moveOperation = (event: MouseEvent<HTMLButtonElement>, direction: -1 | 1) => {
     event.stopPropagation();
     selectOperation();
@@ -384,7 +398,7 @@ function renderCutSequenceRow({
 
   return (
     <div
-      className={`grid w-full grid-cols-[minmax(0,1fr)_20px] items-center border-b border-border last:border-b-0 hover:bg-accent ${
+      className={`grid w-full grid-cols-[minmax(0,1fr)_68px_20px] items-center border-b border-border last:border-b-0 hover:bg-accent ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/10 text-cyan-100' : ''
       }`}
       data-upid-cut-sequence-controls
@@ -403,7 +417,7 @@ function renderCutSequenceRow({
     >
       <button
         aria-pressed={selected}
-        className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)_68px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent"
+        className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent"
         data-upid-cut-sequence-select
         onClick={selectOperation}
         type="button"
@@ -419,13 +433,29 @@ function renderCutSequenceRow({
           </span>
           {renderManualDecisionBadges(manualDecisions)}
         </span>
-        <span
-          className="grid self-center px-1 text-right text-[8px] leading-tight text-muted-foreground"
-          data-upid-cut-sequence-metrics
-        >
-          <span data-upid-cut-sequence-cut-value={cutLength}>Cut {cutLength}</span>
-          <span data-upid-cut-sequence-rapid-value={rapidInLength}>Rapid {rapidInLength}</span>
-        </span>
+      </button>
+      <button
+        aria-label="Select rapid travel for cut sequence operation"
+        aria-pressed={rapidSelected}
+        className={`grid h-full content-center px-1 text-right text-[8px] leading-tight outline-none hover:bg-accent ${
+          rapidSelected
+            ? 'bg-sky-500/15 text-sky-100'
+            : rapidHovered
+              ? 'bg-cyan-500/15 text-cyan-100'
+              : 'text-muted-foreground'
+        }`}
+        data-upid-cut-sequence-metrics
+        data-upid-cut-sequence-rapid-control
+        data-upid-hovered={rapidHovered ? 'true' : undefined}
+        data-upid-selected={rapidSelected ? 'true' : undefined}
+        onClick={selectRapid}
+        onMouseEnter={() => onHoverPathElement(rapidElement)}
+        onMouseLeave={() => onHoverPathElement(null)}
+        title="Rapid travel into this operation"
+        type="button"
+      >
+        <span data-upid-cut-sequence-cut-value={cutLength}>Cut {cutLength}</span>
+        <span data-upid-cut-sequence-rapid-value={rapidInLength}>Rapid {rapidInLength}</span>
       </button>
       <span className="grid grid-rows-2 self-stretch border-l border-border">
         <button
