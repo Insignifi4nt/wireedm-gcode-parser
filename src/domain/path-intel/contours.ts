@@ -43,6 +43,7 @@ export function analyzeContours(
     if (!chain.closed) {
       return {
         id,
+        label: contourLabel(index),
         chainId: chain.id,
         closed: false,
         classification: 'open-chain',
@@ -101,6 +102,7 @@ export function analyzeContours(
 
     return {
       id,
+      label: contourLabel(index),
       chainId: chain.id,
       closed: true,
       classification,
@@ -121,6 +123,10 @@ export function analyzeContours(
   assignContainment(contours, resolved.coincidenceEpsilon);
 
   return { contours, diagnostics };
+}
+
+function contourLabel(index: number) {
+  return `Contour ${index + 1}`;
 }
 
 function assignContainment(contours: PathContour[], epsilon: number) {

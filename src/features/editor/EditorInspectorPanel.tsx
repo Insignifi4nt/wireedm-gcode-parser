@@ -234,6 +234,8 @@ export function EditorInspectorPanel({
           <section className="mt-3 border-t border-border pt-3" data-upid-selected-geometry>
             <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Geometry</h3>
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+              <dt className="text-muted-foreground">Element</dt>
+              <dd data-upid-selected="label">{selectedPathOperation.label ?? selectedPathOperation.id}</dd>
               <dt className="text-muted-foreground">Contour</dt>
               <dd data-upid-selected="classification">{selectedPathOperation.classification}</dd>
               <dt className="text-muted-foreground">Kind</dt>
@@ -431,7 +433,7 @@ export function EditorInspectorPanel({
             >
               {pathDocument.plan.operations.map((operation) => (
                 <option key={operation.id} value={operation.id}>
-                  {operation.orderIndex + 1} {operation.classification}
+                  {operation.orderIndex + 1} {operation.label ?? operation.id}
                 </option>
               ))}
             </select>

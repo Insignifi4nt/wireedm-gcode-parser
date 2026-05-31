@@ -569,6 +569,11 @@ describe('App DXF imports and project library', () => {
 
     const contourRows = [...container.querySelectorAll('[data-upid-contour-row]')];
     expect(contourRows).toHaveLength(3);
+    expect(contourRows.map((row) => row.getAttribute('data-upid-contour-label'))).toEqual([
+      'Contour 1',
+      'Contour 2',
+      'Contour 3'
+    ]);
     expect(contourRows.map((row) => row.getAttribute('data-upid-contour-role'))).toEqual([
       'exterior',
       'hole',
@@ -596,6 +601,11 @@ describe('App DXF imports and project library', () => {
     expect(cutSequence).not.toBeNull();
     expect(cutSequence?.textContent).toContain('Cut Sequence');
     expect(cutSequenceRows).toHaveLength(3);
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-label'))).toEqual([
+      'Contour 3',
+      'Contour 2',
+      'Contour 1'
+    ]);
     expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-role'))).toEqual([
       'island',
       'hole',

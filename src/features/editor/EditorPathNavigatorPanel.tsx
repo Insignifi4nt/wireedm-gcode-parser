@@ -495,6 +495,7 @@ function renderCutSequenceRow({
   const manualDecisions = manualDecisionKinds(operation);
   const cutLength = operation.metrics.cutLength.toFixed(3);
   const rapidInLength = operation.metrics.rapidInLength.toFixed(3);
+  const label = operationLabel(operation);
   const rapidElement: EditorPathElementRef = {
     operationId: operation.id,
     segmentId: null,
@@ -519,6 +520,7 @@ function renderCutSequenceRow({
       data-upid-cut-sequence-controls
       data-upid-cut-sequence-cut={cutLength}
       data-upid-cut-sequence-index={operation.orderIndex}
+      data-upid-cut-sequence-label={label}
       data-upid-cut-sequence-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
       data-upid-cut-sequence-rapid={rapidInLength}
       data-upid-cut-sequence-role={operation.classification}
@@ -539,9 +541,10 @@ function renderCutSequenceRow({
       >
         <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
         <span className="min-w-0">
-          <span className="block truncate text-[10px] uppercase">{operation.classification}</span>
+          <span className="block truncate text-[10px]">{label}</span>
           <span className="block truncate text-[9px] text-muted-foreground">
-            {operation.closed ? 'closed contour' : 'open chain'} / {operation.direction}
+            {operation.classification} / {operation.closed ? 'closed contour' : 'open chain'} /{' '}
+            {operation.direction}
           </span>
           <span className="block truncate text-[9px] text-muted-foreground">
             {formatContourNest(contour)}
@@ -624,6 +627,7 @@ function renderContourTreeNode({
   const { contour, operation } = node;
   const nested = treeDepth > 0;
   const manualDecisions = manualDecisionKinds(operation);
+  const label = contourLabel(contour);
 
   return (
     <details
@@ -651,6 +655,7 @@ function renderContourTreeNode({
           }`}
           data-upid-contour-children={contour.childIds.length}
           data-upid-contour-depth={contour.containmentDepth}
+          data-upid-contour-label={label}
           data-upid-contour-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
           data-upid-contour-parent={contour.parentId ?? undefined}
           data-upid-contour-role={contour.classification}
@@ -671,9 +676,10 @@ function renderContourTreeNode({
         >
           <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
           <span className="min-w-0">
-            <span className="block truncate text-[10px] uppercase">{operation.classification}</span>
+            <span className="block truncate text-[10px]">{label}</span>
             <span className="block truncate text-[9px] text-muted-foreground">
-              {operation.closed ? 'closed contour' : 'open chain'} / {operation.direction}
+              {operation.classification} / {operation.closed ? 'closed contour' : 'open chain'} /{' '}
+              {operation.direction}
             </span>
             <span className="block truncate text-[9px] text-muted-foreground">
               {formatContourNest(contour)}
@@ -910,6 +916,14 @@ function formatPoint(point: { x: number; y: number }) {
 function formatContourNest(contour: PathContour | undefined) {
   if (!contour) return 'depth 0 / children 0';
   return `depth ${contour.containmentDepth} / children ${contour.childIds.length}`;
+}
+
+function contourLabel(contour: PathContour) {
+  return contour.label ?? contour.id;
+}
+
+function operationLabel(operation: PathOperation) {
+  return operation.label ?? operation.id;
 }
 
 function manualDecisionKinds(operation: PathOperation): ManualDecisionKind[] {

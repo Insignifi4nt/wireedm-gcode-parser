@@ -65,6 +65,19 @@ describe('path-intel DXF planning', () => {
     expect(countRapids(body)).toBe(2);
   });
 
+  it('assigns stable contour labels that flow into planned operations', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(0, 0, 20, 20), ...rectangleLines(5, 5, 10, 10)],
+      { endpointTolerance: DEFAULT_TOLERANCE }
+    );
+
+    expect(document.contours.map((contour) => contour.label)).toEqual(['Contour 1', 'Contour 2']);
+    expect(document.plan.operations.map((operation) => operation.label)).toEqual([
+      'Contour 2',
+      'Contour 1'
+    ]);
+  });
+
   it('uses rapids only between disconnected contours', () => {
     const document = createPathPlanningDocumentFromDxfEntities(
       [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)],
