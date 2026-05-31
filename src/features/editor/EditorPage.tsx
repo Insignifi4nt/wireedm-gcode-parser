@@ -40,7 +40,7 @@ import {
 } from '@/domain/path-intel/segments';
 import type { ContourClassification, PathPlanningDocument } from '@/domain/path-intel/types';
 import { projectUpidDocument } from '@/domain/upid/projectUpid';
-import { postUpidToGcodeBody } from '@/domain/upid/upidDocument';
+import { postUpidToGcode } from '@/domain/upid/upidDocument';
 import {
   exportMeasurementPointsAsCsv,
   exportMeasurementPointsAsGCode,
@@ -175,7 +175,8 @@ export function EditorPage({
   const upidExport = useMemo(() => {
     if (!pathDocumentDraft || !program?.project) return null;
 
-    const body = postUpidToGcodeBody(pathDocumentDraft);
+    const posted = postUpidToGcode(pathDocumentDraft);
+    const body = posted.body;
     const machine = program.project.machine;
     const fileName =
       program.project.generated.files.at(-1)?.name ??
@@ -183,14 +184,17 @@ export function EditorPage({
 
     return {
       body,
+      diagnostics: posted.diagnostics,
       fileName,
       machineName: machine.name,
+      operationCount: pathDocumentDraft.plan.operations.length,
       programText: composeGCodeProgram({
         header: machine.templates.header,
         body,
         footer: machine.templates.footer,
         lineEnding: machine.output.lineEnding
-      })
+      }),
+      postMetrics: posted.metrics
     };
   }, [pathDocumentDraft, program?.project]);
   const constructionPreview = useMemo(() => {
@@ -729,7 +733,7 @@ export function EditorPage({
   ) {
     if (!program?.project) return;
 
-    const body = postUpidToGcodeBody(nextDocument);
+    const body = postUpidToGcode(nextDocument).body;
     replaceDraftText(
       composeGCodeProgram({
         header: program.project.machine.templates.header,
@@ -1053,9 +1057,12 @@ export function EditorPage({
       {exportPreviewOpen && upidExport && (
         <EditorUpidExportPreview
           fileName={upidExport.fileName}
+          diagnostics={upidExport.diagnostics}
           machineName={upidExport.machineName}
           onClose={() => setExportPreviewOpen(false)}
           onDownload={() => onDownloadEditorFile(upidExport.fileName, upidExport.programText)}
+          operationCount={upidExport.operationCount}
+          postMetrics={upidExport.postMetrics}
           programText={upidExport.programText}
         />
       )}

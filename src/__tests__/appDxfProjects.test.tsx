@@ -712,10 +712,16 @@ describe('App DXF imports and project library', () => {
     });
 
     const exportPreview = container.querySelector('[data-upid-export-preview]');
+    const exportSummary = container.querySelector('[data-upid-export-summary]');
     const exportCode = container.querySelector('[data-upid-export-gcode]');
     expect(exportPreview).not.toBeNull();
     expect(exportPreview?.textContent).toContain('UPID Export Preview');
     expect(exportPreview?.textContent).toContain('Default Wire EDM');
+    expect(exportSummary).not.toBeNull();
+    expect(container.querySelector('[data-upid-export-stat="operations"]')?.textContent).toBe('1');
+    expect(container.querySelector('[data-upid-export-stat="rapid"]')?.textContent).toBe('1');
+    expect(container.querySelector('[data-upid-export-stat="cut"]')?.textContent).toBe('4');
+    expect(container.querySelector('[data-upid-export-stat="diagnostics"]')?.textContent).toBe('0');
     expect(exportCode?.textContent).toContain('G90 G21 G17 G40');
     expect(exportCode?.textContent).toContain('G1 X10.000 Y0.000');
     expect(exportCode?.textContent).toContain('M30');
