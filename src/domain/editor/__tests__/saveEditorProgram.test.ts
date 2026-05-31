@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { importDxfProject } from '@/domain/dxf/importDxfProject';
+import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
 import type { DxfEntity } from '@/domain/dxf/types';
 import {
   reversePathOperation,
@@ -231,6 +232,38 @@ describe('saveEditorProgram', () => {
     expect(savedProject.generated).toEqual({ body: '', files: [] });
   });
 
+  it('does not persist export-time post diagnostics while saving a UPID path document', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'healed-save.dxf',
+      text: rectangleDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const healedDocument = dxfEntitiesToUpidDocument(gappedRectangle(0.004), {
+      endpointTolerance: 0.01
+    });
+
+    await saveEditorProgram(imported.workbench, {
+      filePath: imported.project.source.files[0].path,
+      now: new Date('2026-05-29T12:00:00.000Z'),
+      pathDocument: healedDocument,
+      project: imported.project,
+      text: ''
+    });
+
+    const savedProject = JSON.parse(adapter.files.get('projects/healed-save-2026-05-29/project.json') || '{}');
+
+    expect(
+      savedProject.upid.document.diagnostics.some(
+        (diagnostic: { code: string }) => diagnostic.code === 'endpoint-cluster-snap'
+      )
+    ).toBe(true);
+    expect(savedProject.upid.postDiagnostics).toEqual([]);
+  });
+
   it('clears UPID state when manual text edits are saved without a path document', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
@@ -314,6 +347,15 @@ function rectangleLines(minX: number, minY: number, maxX: number, maxY: number):
     line(maxX, minY, maxX, maxY),
     line(maxX, maxY, minX, maxY),
     line(minX, maxY, minX, minY)
+  ];
+}
+
+function gappedRectangle(gap: number): DxfEntity[] {
+  return [
+    line(0, 0, 10, 0),
+    line(10 + gap, 0, 10, 5),
+    line(10, 5, 0, 5),
+    line(0, 5, 0, 0)
   ];
 }
 

@@ -5,7 +5,6 @@ import {
 } from '@/domain/storage/workbenchStorage';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { withProjectUpid, withoutProjectUpid } from '@/domain/upid/projectUpid';
-import { postUpidToGcode } from '@/domain/upid/upidDocument';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 
 import { parseGCodeProgram } from './gcodeParser';
@@ -84,7 +83,6 @@ async function saveProjectPathState(
   };
 
   if (input.pathDocument) {
-    const post = postUpidToGcode(input.pathDocument);
     nextProject = withProjectUpid(
       {
         ...nextProject,
@@ -97,8 +95,7 @@ async function saveProjectPathState(
           files: []
         }
       },
-      input.pathDocument,
-      post.diagnostics
+      input.pathDocument
     );
   } else {
     const bodyFile = nextProject.generated.files.find((file) => file.path.endsWith('.body.gcode'));
