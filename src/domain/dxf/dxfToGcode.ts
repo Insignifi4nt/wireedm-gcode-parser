@@ -1,10 +1,10 @@
-import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import { postPathPlanToGcode, type GcodePostResult } from '@/domain/path-intel/postGcode';
 import type {
   PathDiagnostic,
   PathPlanningDocument,
   PathPlanningOptions
 } from '@/domain/path-intel/types';
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
 import type { DxfEntity } from './types';
 
@@ -43,7 +43,7 @@ export function dxfEntitiesToPathPlanningDocument(
   entities: DxfEntity[],
   options: PathPlanningOptions = {}
 ) {
-  return createPathPlanningDocumentFromDxfEntities(entities, {
+  return createUpidFromDxfEntities(entities, {
     ...DEFAULT_DXF_GCODE_OPTIONS,
     ...options
   });

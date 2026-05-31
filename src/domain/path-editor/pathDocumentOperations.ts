@@ -99,6 +99,20 @@ export function setClosedOperationStartNearPoint(
   return next;
 }
 
+export function setClosedOperationStartAtExistingPointNearPoint(
+  document: PathPlanningDocument,
+  operationId: string,
+  point: Point2
+) {
+  const operation = document.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation || !operation.closed) return null;
+
+  const endpoint = nearestExistingOperationEndpoint(document, operation, point);
+  if (!endpoint) return null;
+
+  return setClosedOperationStartNearPoint(document, operationId, endpoint);
+}
+
 export function nearestPointOnOperation(
   document: PathPlanningDocument,
   operationId: string,
@@ -224,6 +238,28 @@ function nearestPointOnDocument(document: PathPlanningDocument, point: Point2) {
   }
 
   return nearest;
+}
+
+function nearestExistingOperationEndpoint(
+  document: PathPlanningDocument,
+  operation: PathOperation,
+  point: Point2
+) {
+  const segmentsById = segmentMap(document.segments);
+  let nearest: { distance: number; point: Point2 } | null = null;
+
+  for (const ref of operation.segmentRefs) {
+    const segment = requiredSegment(segmentsById, ref.segmentId);
+    const candidates = [orientedSegmentStart(segment, ref), orientedSegmentEnd(segment, ref)];
+    for (const candidate of candidates) {
+      const candidateDistance = distance(point, candidate);
+      if (!nearest || candidateDistance < nearest.distance) {
+        nearest = { distance: candidateDistance, point: candidate };
+      }
+    }
+  }
+
+  return nearest?.point ?? null;
 }
 
 function splitOperationSegmentAtPoint(

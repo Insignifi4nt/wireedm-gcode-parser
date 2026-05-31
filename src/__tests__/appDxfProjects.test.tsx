@@ -50,7 +50,11 @@ describe('App DXF imports and project library', () => {
 
     expect(container.textContent).toContain('Editor');
     expect(container.textContent).toContain('generated/part-');
-    expect(container.textContent).toContain('G1 X10.000 Y0.000');
+    expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-segment-row]')?.textContent).toContain(
+      '0.000, 0.000 -> 10.000, 0.000'
+    );
+    expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
     expect(container.textContent).toContain('2 path items');
 
     const rawManifest = window.localStorage.getItem('wire-edm-workbench:file:workbench.json');
@@ -138,7 +142,11 @@ describe('App DXF imports and project library', () => {
 
     expect(container.textContent).toContain('Editor');
     expect(container.textContent).toContain('generated/library-open-');
-    expect(container.textContent).toContain('G1 X10.000 Y0.000');
+    expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-segment-row]')?.textContent).toContain(
+      '0.000, 0.000 -> 10.000, 0.000'
+    );
+    expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
   });
 
   it('warns in the editor when imported DXF geometry exceeds the active machine profile work area', async () => {
@@ -205,17 +213,233 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    expect(container.querySelector('[data-editor-path-plan-panel]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-project-rail]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-contour-tree]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-contour-row]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-segment-stack]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-segment-row]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-path-plan-panel]')).toBeNull();
+    expect(container.querySelector('[data-editor-posted-body-preview]')).toBeNull();
     expect(container.querySelector('[data-editor-code-section="lines"]')).toBeNull();
     expect(container.querySelector('[data-editor-code-section="text"]')).toBeNull();
     expect(container.querySelector('[data-editor-structure="header"]')).toBeNull();
     expect(container.querySelector('[data-editor-structure="footer"]')).toBeNull();
-    expect(container.textContent).toContain('Path Operations');
-    expect(container.textContent).toContain('Posted Body');
+    expect(container.textContent).toContain('UPID Path Navigator');
+    expect(container.textContent).toContain('Contour Tree');
+    expect(container.textContent).not.toContain('Posted Body');
     expect(container.textContent).not.toContain('Program Lines');
     expect(container.textContent).not.toContain('Program Text');
     expect(container.textContent).not.toContain('Header');
     expect(container.textContent).not.toContain('Footer');
+  });
+
+  it('highlights UPID navigator segments from canvas hover when hover assist is enabled', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'hover-assist.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const hoverToggle = container.querySelector(
+      'input[aria-label="Toggle canvas hover assist"]'
+    ) as HTMLInputElement | null;
+    expect(hoverToggle).not.toBeNull();
+
+    await act(async () => {
+      hoverToggle?.click();
+    });
+
+    const segmentRow = container.querySelector('[data-upid-segment-row]') as HTMLElement | null;
+    const segmentId = segmentRow?.getAttribute('data-upid-segment-id');
+    expect(segmentId).toBeTruthy();
+
+    const previewSegment = container.querySelector(
+      `svg[aria-label="G-code path preview"] path[data-preview-segment="${segmentId}"]`
+    );
+    expect(previewSegment).not.toBeNull();
+    expect(segmentRow?.getAttribute('data-upid-hovered')).not.toBe('true');
+
+    await act(async () => {
+      previewSegment?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    expect(segmentRow?.getAttribute('data-upid-hovered')).toBe('true');
+
+    await act(async () => {
+      previewSegment?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    });
+
+    expect(segmentRow?.getAttribute('data-upid-hovered')).not.toBe('true');
+  });
+
+  it('shows a magnetic construction preview while hovering with perpendicular mode active', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'magnetic-preview.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const preview = container.querySelector(
+      'svg[aria-label="G-code path preview"]'
+    ) as SVGSVGElement | null;
+    expect(preview).not.toBeNull();
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      value: () => ({
+        left: 10,
+        top: 20,
+        width: 120,
+        height: 120,
+        right: 130,
+        bottom: 140,
+        x: 10,
+        y: 20,
+        toJSON: () => ({})
+      }),
+      configurable: true
+    });
+
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 2 })
+        })
+      );
+    });
+
+    const hoverToggle = container.querySelector(
+      'input[aria-label="Toggle canvas hover assist"]'
+    ) as HTMLInputElement | null;
+    const snapToggle = container.querySelector(
+      'input[aria-label="Toggle magnetic non-existing point snap"]'
+    ) as HTMLInputElement | null;
+    const perpendicularButton = container.querySelector(
+      'button[aria-label="Magnetize latest point perpendicular"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      hoverToggle?.click();
+    });
+    await act(async () => {
+      snapToggle?.click();
+    });
+    await act(async () => {
+      perpendicularButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('mousemove', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 5 })
+        })
+      );
+    });
+
+    const constructionPreview = container.querySelector('[data-upid-construction-preview]');
+    expect(constructionPreview).not.toBeNull();
+    expect(constructionPreview?.getAttribute('data-upid-construction-mode')).toBe('perpendicular');
+  });
+
+  it('uses existing contour points for Start Here until magnetic snap is enabled', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'start-existing-first.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const preview = container.querySelector(
+      'svg[aria-label="G-code path preview"]'
+    ) as SVGSVGElement | null;
+    expect(preview).not.toBeNull();
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      value: () => ({
+        left: 10,
+        top: 20,
+        width: 120,
+        height: 120,
+        right: 130,
+        bottom: 140,
+        x: 10,
+        y: 20,
+        toJSON: () => ({})
+      }),
+      configurable: true
+    });
+
+    const startButton = container.querySelector(
+      'button[aria-label="Set path start from canvas"]'
+    ) as HTMLButtonElement | null;
+
+    expect(container.querySelectorAll('[data-upid-segment-row]')).toHaveLength(4);
+
+    await act(async () => {
+      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 5 })
+        })
+      );
+    });
+
+    expect(container.querySelectorAll('[data-upid-segment-row]')).toHaveLength(4);
+
+    const hoverToggle = container.querySelector(
+      'input[aria-label="Toggle canvas hover assist"]'
+    ) as HTMLInputElement | null;
+    const snapToggle = container.querySelector(
+      'input[aria-label="Toggle magnetic non-existing point snap"]'
+    ) as HTMLInputElement | null;
+
+    await act(async () => {
+      hoverToggle?.click();
+    });
+    await act(async () => {
+      snapToggle?.click();
+    });
+    await act(async () => {
+      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 5 })
+        })
+      );
+    });
+
+    expect(container.querySelectorAll('[data-upid-segment-row]')).toHaveLength(5);
   });
 
   it('edits imported DXF path direction through path controls instead of line text surgery', async () => {
@@ -245,17 +469,14 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const postedBodyPreview = container.querySelector('[data-editor-posted-body-preview]');
-    expect(postedBodyPreview?.textContent).toContain('G0 X0.000 Y0.000');
-    expect(postedBodyPreview?.textContent).toContain('G1 X0.000 Y5.000');
-    expect(postedBodyPreview?.textContent).toContain('G1 X10.000 Y5.000');
-    expect(postedBodyPreview?.textContent).not.toContain('G40');
+    expect(container.querySelector('[data-editor-posted-body-preview]')).toBeNull();
+    expect(container.querySelector('[data-upid-contour-row]')?.textContent).toContain('reverse');
     expect(container.querySelector('textarea[aria-label="Program editor"]')).toBeNull();
     expect(container.textContent).toContain('Unsaved');
 
-    const saveButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Save Path Plan')
-    );
+    const saveButton = container.querySelector(
+      'button[aria-label="Save Path Plan"]'
+    ) as HTMLButtonElement | null;
 
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -317,10 +538,8 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const reopenedPostedBodyPreview = container.querySelector('[data-editor-posted-body-preview]');
-    expect(reopenedPostedBodyPreview?.textContent).toContain('G0 X0.000 Y0.000');
-    expect(reopenedPostedBodyPreview?.textContent).toContain('G1 X10.000 Y0.000');
-    expect(reopenedPostedBodyPreview?.textContent).toContain('G1 X10.000 Y5.000');
+    expect(container.querySelector('[data-editor-posted-body-preview]')).toBeNull();
+    expect(container.querySelector('[data-upid-contour-row]')?.textContent).toContain('forward');
   });
 
   it('keeps manual G-code text editing out of active DXF path plans', async () => {
@@ -340,7 +559,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     expect(container.querySelector('button[aria-label="Reverse path operation"]')).not.toBeNull();
-    expect(container.querySelector('[data-editor-path-plan-panel]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
     expect(container.querySelector('[data-editor-code-section="text"]')).toBeNull();
     expect(container.querySelector('textarea[aria-label="Program editor"]')).toBeNull();
     expect(container.textContent).not.toContain('Program Text');
@@ -387,23 +606,17 @@ describe('App DXF imports and project library', () => {
     ) as HTMLButtonElement | undefined;
     expect(insertPointsButton?.disabled).toBe(true);
 
-    const postedBodyRow = container.querySelector('[data-editor-line="5"]') as HTMLButtonElement | null;
-    expect(postedBodyRow).not.toBeNull();
-
-    await act(async () => {
-      postedBodyRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
     });
     await flushAsync();
 
-    expect(container.querySelector('[data-editor-path-plan-panel]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="Reverse path operation"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-code-section="text"]')).toBeNull();
   });
 
-  it('keeps posted body line rows aligned with preview line hints when profile headers contain blanks', async () => {
+  it('keeps DXF editor geometry path-native when profile headers contain blanks', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
@@ -437,11 +650,10 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    expect(container.querySelector('[data-editor-posted-body-row="4"]')).not.toBeNull();
-    expect(container.querySelector('[data-editor-posted-body-row="3"]')).toBeNull();
-    expect(
-      container.querySelector('svg[aria-label="G-code path preview"] path[data-line="4"]')
-    ).not.toBeNull();
+    expect(container.querySelector('[data-editor-posted-body-row]')).toBeNull();
+    expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
+    expect(container.querySelector('[data-preview-source="path-document"]')).not.toBeNull();
+    expect(container.textContent).not.toContain('G90');
   });
 
   it('creates and slides path-constrained measurement points from contour magnetize', async () => {

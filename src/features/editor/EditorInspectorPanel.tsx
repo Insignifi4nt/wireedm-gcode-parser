@@ -31,6 +31,7 @@ interface EditorInspectorPanelProps {
   editorFileName: string;
   gridSnapEnabled: boolean;
   guideHighlightTarget: EditorGuideTarget | null;
+  fullHeight?: boolean;
   isSaving: boolean;
   machineFit: MachineFitResult | null;
   machineProfile: MachineProfile | null;
@@ -69,6 +70,7 @@ export function EditorInspectorPanel({
   editorFileName,
   gridSnapEnabled,
   guideHighlightTarget,
+  fullHeight = false,
   isSaving,
   machineFit,
   machineProfile,
@@ -105,7 +107,7 @@ export function EditorInspectorPanel({
 
   return (
     <div
-      className="max-h-[42vh] overflow-y-auto border-t border-border p-2"
+      className={`${fullHeight ? 'h-full min-h-0' : 'max-h-[42vh] border-t border-border'} overflow-y-auto p-2`}
       data-editor-inspector-summary
     >
       <section>

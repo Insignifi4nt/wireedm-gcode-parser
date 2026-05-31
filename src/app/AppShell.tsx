@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
+import { AppRailProvider, type AppRailContent } from './AppRailContext';
 import { WorkbenchSettingsDialog } from './WorkbenchSettingsDialog';
 
 interface AppShellProps {
@@ -32,6 +33,7 @@ export function AppShell({
   children
 }: AppShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [railContent, setRailContent] = useState<AppRailContent | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isReady = workbenchStatus === 'ready' && connectedWorkbench;
   const isConnectingStorage =
@@ -107,79 +109,83 @@ export function AppShell({
         }`}
       >
         <aside className="min-w-0 overflow-hidden border-r border-border bg-card/95">
-          {sidebarCollapsed ? (
-            <div className="flex h-full flex-col items-center gap-3 py-3">
-              <Database className="size-4 text-primary" />
-              <div
-                className="rotate-180 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground [writing-mode:vertical-rl]"
-                title={
-                  isReady
-                    ? `${projectCount} project${projectCount === 1 ? '' : 's'}`
-                    : 'Preparing local storage'
-                }
-              >
-                {isReady
-                  ? `${projectCount} ${projectCount === 1 ? 'project' : 'projects'}`
-                  : 'storage'}
-              </div>
-            </div>
-          ) : (
-            <div className="p-3">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <p className="font-mono text-[10px] uppercase text-muted-foreground">Local Storage</p>
-                  <h1 className="mt-1 font-mono text-sm font-semibold">Workbench</h1>
+          {sidebarCollapsed
+            ? railContent?.collapsed ?? (
+                <div className="flex h-full flex-col items-center gap-3 py-3">
+                  <Database className="size-4 text-primary" />
+                  <div
+                    className="rotate-180 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground [writing-mode:vertical-rl]"
+                    title={
+                      isReady
+                        ? `${projectCount} project${projectCount === 1 ? '' : 's'}`
+                        : 'Preparing local storage'
+                    }
+                  >
+                    {isReady
+                      ? `${projectCount} ${projectCount === 1 ? 'project' : 'projects'}`
+                      : 'storage'}
+                  </div>
                 </div>
-                <Database className="size-4 text-primary" />
-              </div>
+              )
+            : railContent?.expanded ?? (
+                <div className="p-3">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div>
+                      <p className="font-mono text-[10px] uppercase text-muted-foreground">Local Storage</p>
+                      <h1 className="mt-1 font-mono text-sm font-semibold">Workbench</h1>
+                    </div>
+                    <Database className="size-4 text-primary" />
+                  </div>
 
-              <div className="border border-border bg-background/50 p-2 font-mono text-[11px]">
-                {isReady ? (
-                  <dl className="grid grid-cols-[76px_minmax(0,1fr)] gap-y-2">
-                    <dt className="text-muted-foreground">Storage</dt>
-                    <dd className="truncate text-foreground">{activeStorageLabel}</dd>
-                    <dt className="text-muted-foreground">Name</dt>
-                    <dd className="truncate text-foreground">{connectedWorkbench.manifest.name}</dd>
-                    <dt className="text-muted-foreground">Projects</dt>
-                    <dd>
-                      {projectCount} {projectCount === 1 ? 'project' : 'projects'}
-                    </dd>
-                    <dt className="text-muted-foreground">Output</dt>
-                    <dd>.{connectedWorkbench.manifest.output.extension}</dd>
-                  </dl>
-                ) : (
-                  <p className="text-muted-foreground">
-                    Preparing the local storage workbench.
-                  </p>
-                )}
-                {isTemporaryStorage && (
-                  <p className="mt-3 border-t border-border pt-2 text-amber-100">
-                    Changes stay available only until this tab reloads.
-                  </p>
-                )}
-              </div>
+                  <div className="border border-border bg-background/50 p-2 font-mono text-[11px]">
+                    {isReady ? (
+                      <dl className="grid grid-cols-[76px_minmax(0,1fr)] gap-y-2">
+                        <dt className="text-muted-foreground">Storage</dt>
+                        <dd className="truncate text-foreground">{activeStorageLabel}</dd>
+                        <dt className="text-muted-foreground">Name</dt>
+                        <dd className="truncate text-foreground">{connectedWorkbench.manifest.name}</dd>
+                        <dt className="text-muted-foreground">Projects</dt>
+                        <dd>
+                          {projectCount} {projectCount === 1 ? 'project' : 'projects'}
+                        </dd>
+                        <dt className="text-muted-foreground">Output</dt>
+                        <dd>.{connectedWorkbench.manifest.output.extension}</dd>
+                      </dl>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        Preparing the local storage workbench.
+                      </p>
+                    )}
+                    {isTemporaryStorage && (
+                      <p className="mt-3 border-t border-border pt-2 text-amber-100">
+                        Changes stay available only until this tab reloads.
+                      </p>
+                    )}
+                  </div>
 
-              {errorMessage && (
-                <p className="mt-3 border border-destructive bg-destructive/10 p-2 font-mono text-[10px] text-destructive">
-                  {errorMessage}
-                </p>
+                  {errorMessage && (
+                    <p className="mt-3 border border-destructive bg-destructive/10 p-2 font-mono text-[10px] text-destructive">
+                      {errorMessage}
+                    </p>
+                  )}
+                  {storageWarningMessage && (
+                    <p className="mt-3 border border-amber-500/50 bg-amber-500/10 p-2 font-mono text-[10px] text-amber-100">
+                      {storageWarningMessage}
+                    </p>
+                  )}
+
+                  <div className="mt-5 border-t border-border pt-3 font-mono text-[10px] text-muted-foreground">
+                    <p>Cache-first projects</p>
+                    <p className="mt-1">Machine-profile export</p>
+                    <p className="mt-1">No feeds in generated defaults</p>
+                  </div>
+                </div>
               )}
-              {storageWarningMessage && (
-                <p className="mt-3 border border-amber-500/50 bg-amber-500/10 p-2 font-mono text-[10px] text-amber-100">
-                  {storageWarningMessage}
-                </p>
-              )}
-
-              <div className="mt-5 border-t border-border pt-3 font-mono text-[10px] text-muted-foreground">
-                <p>Cache-first projects</p>
-                <p className="mt-1">Machine-profile export</p>
-                <p className="mt-1">No feeds in generated defaults</p>
-              </div>
-            </div>
-          )}
         </aside>
 
-        <main className="min-h-0 min-w-0 overflow-hidden">{children}</main>
+        <AppRailProvider value={{ setRailContent }}>
+          <main className="min-h-0 min-w-0 overflow-hidden">{children}</main>
+        </AppRailProvider>
       </div>
       <WorkbenchSettingsDialog
         connectedWorkbench={connectedWorkbench}

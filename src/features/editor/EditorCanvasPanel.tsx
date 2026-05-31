@@ -2,16 +2,19 @@ import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 
-import { EditorPreview } from './EditorPreview';
+import { EditorPreview, type EditorConstructionPreview } from './EditorPreview';
 import type { EditorGuideTarget } from './editorGuideContent';
 import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
+import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 interface EditorCanvasPanelProps {
   draftProgram: LoadedEditorProgram | null;
+  constructionPreview?: EditorConstructionPreview | null;
   gridSnapEnabled: boolean;
   guideHighlightTarget: EditorGuideTarget | null;
   guideOpen: boolean;
   hoveredLine: number | null;
+  hoveredPathElement?: EditorPathElementRef | null;
   measurementPoints: MeasurementPoint[];
   pathDocument?: PathPlanningDocument | null;
   pathCount: number;
@@ -20,15 +23,18 @@ interface EditorCanvasPanelProps {
   onAddMeasurementPoint: (x: number, y: number) => void;
   onCursorPointChange: (point: { x: number; y: number } | null) => void;
   onMeasurementPointMove?: (pointId: string, point: { x: number; y: number }) => void;
+  onPathElementHover?: (element: EditorPathElementRef | null) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
 }
 
 export function EditorCanvasPanel({
   draftProgram,
+  constructionPreview,
   gridSnapEnabled,
   guideHighlightTarget,
   guideOpen,
   hoveredLine,
+  hoveredPathElement,
   measurementPoints,
   pathDocument,
   pathCount,
@@ -37,6 +43,7 @@ export function EditorCanvasPanel({
   onAddMeasurementPoint,
   onCursorPointChange,
   onMeasurementPointMove,
+  onPathElementHover,
   onPreviewPointClick
 }: EditorCanvasPanelProps) {
   return (
@@ -56,10 +63,13 @@ export function EditorCanvasPanel({
       >
         <EditorPreview
           hoveredLine={hoveredLine}
+          hoveredPathElement={hoveredPathElement}
+          constructionPreview={constructionPreview}
           keyboardShortcutsEnabled={!guideOpen}
           measurementPoints={measurementPoints}
           onCursorPointChange={onCursorPointChange}
           onMeasurementPointMove={onMeasurementPointMove}
+          onPathElementHover={onPathElementHover}
           onPreviewPointClick={onPreviewPointClick ?? ((point) => onAddMeasurementPoint(point.x, point.y))}
           pathDocument={pathDocument}
           pinnedLines={pinnedLines}

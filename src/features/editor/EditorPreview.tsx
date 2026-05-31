@@ -13,6 +13,7 @@ import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
+import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
 import {
   buildEditorPathDocumentPreviewGeometry,
   buildEditorPreviewGeometry,
@@ -20,6 +21,7 @@ import {
 } from '@/domain/editor/previewGeometry';
 import type { EditorPreviewViewBox } from '@/domain/editor/previewGeometry';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 import {
   MAX_PREVIEW_ZOOM,
   MIN_PREVIEW_ZOOM,
@@ -49,12 +51,15 @@ import {
 } from './editorPreviewHelpers';
 
 interface EditorPreviewProps {
+  constructionPreview?: EditorConstructionPreview | null;
   program: LoadedEditorProgram | null;
   hoveredLine: number | null;
+  hoveredPathElement?: EditorPathElementRef | null;
   keyboardShortcutsEnabled?: boolean;
   measurementPoints: MeasurementPoint[];
   onCursorPointChange?: (point: { x: number; y: number } | null) => void;
   onMeasurementPointMove?: (pointId: string, point: { x: number; y: number }) => void;
+  onPathElementHover?: (element: EditorPathElementRef | null) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
   pathDocument?: PathPlanningDocument | null;
   pinnedLines: number[];
@@ -63,13 +68,23 @@ interface EditorPreviewProps {
   snapGridSize?: number;
 }
 
+export interface EditorConstructionPreview {
+  mode: MagnetizeMode;
+  relation: 'perpendicular' | 'tangent' | 'nearest-fallback';
+  sourcePoint: { x: number; y: number };
+  targetPoint: { x: number; y: number };
+}
+
 export function EditorPreview({
+  constructionPreview,
   program,
   hoveredLine,
+  hoveredPathElement,
   keyboardShortcutsEnabled = true,
   measurementPoints,
   onCursorPointChange,
   onMeasurementPointMove,
+  onPathElementHover,
   onPreviewPointClick,
   pathDocument,
   pinnedLines,
@@ -624,7 +639,8 @@ export function EditorPreview({
         )}
         <g transform={`matrix(1 0 0 -1 0 ${flipY})`}>
           {preview.paths.map((path, index) => {
-            const highlight = highlightForLine(path.line, {
+            const pathElementHovered = pathElementMatches(path, hoveredPathElement);
+            const highlight = pathElementHovered ? 'hover' : highlightForLine(path.line, {
               hoveredLine,
               pinned,
               selected
@@ -637,12 +653,21 @@ export function EditorPreview({
                 data-highlight={highlight}
                 data-line={path.line}
                 data-pinned={isPinned ? 'true' : undefined}
+                data-preview-hovered={pathElementHovered ? 'true' : undefined}
                 data-preview-operation={path.operationId}
                 data-preview-segment={path.segmentId}
                 data-preview-source={path.source}
                 data-type={path.type}
                 fill="none"
                 key={`${path.type}-${path.line}-${index}`}
+                onMouseEnter={() => {
+                  if (path.source !== 'path-document' || !path.operationId) return;
+                  onPathElementHover?.({
+                    operationId: path.operationId,
+                    segmentId: path.segmentId ?? null
+                  });
+                }}
+                onMouseLeave={() => onPathElementHover?.(null)}
                 stroke={strokeForPath(path.type, highlight, isPinned)}
                 strokeDasharray={path.type === 'rapid' ? '0.4 0.4' : undefined}
                 strokeLinecap="round"
@@ -654,7 +679,7 @@ export function EditorPreview({
         </g>
         <g>
           {preview.paths.map((path) => {
-            const highlight = highlightForLine(path.line, {
+            const highlight = pathElementMatches(path, hoveredPathElement) ? 'hover' : highlightForLine(path.line, {
               hoveredLine,
               pinned,
               selected
@@ -739,6 +764,54 @@ export function EditorPreview({
               </g>
             );
           })}
+          {constructionPreview && (
+            <g
+              data-upid-construction-mode={constructionPreview.mode}
+              data-upid-construction-preview
+              data-upid-construction-relation={constructionPreview.relation}
+              pointerEvents="none"
+            >
+              <line
+                data-upid-construction-line
+                stroke="#22d3ee"
+                strokeDasharray="0.45 0.28"
+                strokeOpacity="0.88"
+                strokeWidth={markerRadius * 0.42}
+                vectorEffect="non-scaling-stroke"
+                x1={constructionPreview.sourcePoint.x}
+                x2={constructionPreview.targetPoint.x}
+                y1={flipY - constructionPreview.sourcePoint.y}
+                y2={flipY - constructionPreview.targetPoint.y}
+              />
+              <circle
+                cx={constructionPreview.targetPoint.x}
+                cy={flipY - constructionPreview.targetPoint.y}
+                data-upid-construction-point
+                fill="#22d3ee"
+                fillOpacity="0.92"
+                r={markerRadius * 1.05}
+                stroke="#020617"
+                strokeWidth={markerRadius * 0.3}
+                vectorEffect="non-scaling-stroke"
+              />
+              <text
+                data-upid-construction-label
+                dx={markerRadius * 1.35}
+                dy={-markerRadius}
+                fill="#a5f3fc"
+                fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                fontSize={measurementLabelFontSize}
+                fontWeight="700"
+                paintOrder="stroke"
+                stroke="#020617"
+                strokeWidth={measurementLabelFontSize * 0.22}
+                x={constructionPreview.targetPoint.x}
+                y={flipY - constructionPreview.targetPoint.y}
+              >
+                {constructionPreview.mode === 'perpendicular' ? 'PERP' : 'TAN'}
+              </text>
+            </g>
+          )}
           {measurementPoints.map((point, index) => {
             const svgY = flipY - point.y;
 
@@ -775,4 +848,12 @@ export function EditorPreview({
       </svg>
     </div>
   );
+}
+
+function pathElementMatches(
+  path: { operationId?: string; segmentId?: string },
+  element: EditorPathElementRef | null | undefined
+) {
+  if (!element?.operationId || path.operationId !== element.operationId) return false;
+  return element.segmentId ? path.segmentId === element.segmentId : true;
 }

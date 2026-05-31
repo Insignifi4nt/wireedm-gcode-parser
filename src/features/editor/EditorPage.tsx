@@ -7,6 +7,7 @@ import {
   type MouseEvent
 } from 'react';
 
+import { useAppRail } from '@/app/AppRailContext';
 import { composeGCodeProgram } from '@/domain/post/gcodeTemplates';
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 import {
@@ -15,7 +16,7 @@ import {
   moveSelectedLines,
   setStartAtLine
 } from '@/domain/editor/gcodeLineOperations';
-import { organizeGCodeStructure, structureContours } from '@/domain/editor/gcodeStructure';
+import { organizeGCodeStructure } from '@/domain/editor/gcodeStructure';
 import { normalizeToISO } from '@/domain/editor/isoNormalizer';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { evaluateMachineFit } from '@/domain/machine/machineFit';
@@ -23,6 +24,7 @@ import {
   constructMagnetizedPoint,
   movePathOperation,
   reversePathOperation,
+  setClosedOperationStartAtExistingPointNearPoint,
   setClosedOperationStartNearPoint,
   slideMagnetizedPointOnSegment,
   type MagnetizedPathPoint,
@@ -43,7 +45,11 @@ import { EditorCanvasPanel } from './EditorCanvasPanel';
 import { EditorGuideDialog } from './EditorGuideDialog';
 import { EditorHeaderBar } from './EditorHeaderBar';
 import { EditorInspectorPanel } from './EditorInspectorPanel';
-import { EditorPathPlanPanel } from './EditorPathPlanPanel';
+import {
+  EditorPathNavigatorPanel,
+  EditorPathNavigatorRailCollapsed,
+  type EditorPathElementRef
+} from './EditorPathNavigatorPanel';
 import { EditorProgramLinesPanel } from './EditorProgramLinesPanel';
 import { EditorProgramTextPanel } from './EditorProgramTextPanel';
 import type { EditorGuideLanguage, EditorGuideTarget } from './editorGuideContent';
@@ -99,6 +105,7 @@ export function EditorPage({
   onSaveProgramText,
   onStatusMessage
 }: EditorPageProps) {
+  const { setRailContent } = useAppRail();
   const [draftText, setDraftText] = useState(program?.text ?? '');
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
   const lastClickedLineRef = useRef<number | null>(null);
@@ -115,6 +122,9 @@ export function EditorPage({
   const [lineMode, setLineMode] = useState<'select' | 'edit'>(readStoredLineMode);
   const [pathClickMode, setPathClickMode] = useState<'set-start' | MagnetizeMode | null>(null);
   const [pathDocumentDraft, setPathDocumentDraft] = useState<PathPlanningDocument | null>(null);
+  const [hoveredPathElement, setHoveredPathElement] = useState<EditorPathElementRef | null>(null);
+  const [pathHoverAssistEnabled, setPathHoverAssistEnabled] = useState(false);
+  const [pathMagneticSnapEnabled, setPathMagneticSnapEnabled] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
@@ -149,6 +159,34 @@ export function EditorPage({
         : null,
     [pathDocumentDraft, program]
   );
+  const constructionPreview = useMemo(() => {
+    if (
+      !pathDocumentDraft ||
+      !pathMagneticSnapEnabled ||
+      !previewCursorPoint ||
+      (pathClickMode !== 'perpendicular' && pathClickMode !== 'tangent')
+    ) {
+      return null;
+    }
+
+    const sourcePoint = measurementPoints.at(-1);
+    if (!sourcePoint) return null;
+
+    const magnetized = constructMagnetizedPoint(
+      pathDocumentDraft,
+      sourcePoint,
+      previewCursorPoint,
+      pathClickMode
+    );
+    if (!magnetized) return null;
+
+    return {
+      mode: pathClickMode,
+      relation: magnetized.relation,
+      sourcePoint,
+      targetPoint: magnetized.point
+    };
+  }, [measurementPoints, pathClickMode, pathDocumentDraft, pathMagneticSnapEnabled, previewCursorPoint]);
   const editorFileName = program?.filePath.split('/').pop() ?? '-';
   const hasUnsavedChanges = Boolean(program && draftText !== program.text);
   const structure = useMemo(
@@ -158,25 +196,48 @@ export function EditorPage({
   const lineRows = useMemo(() => (structure ? flattenStructureLines(structure) : []), [structure]);
   const bodyGroups = structure?.body.contours ?? [];
   const isPathProject = Boolean(pathDocumentDraft);
-  const pathPostedBodyRows = useMemo(() => {
-    if (!pathDocumentDraft || !program?.project) return [];
-
-    const body = pathPlanToGcodeBody(
-      pathDocumentDraft.plan,
-      pathDocumentDraft.segments,
-      pathDocumentDraft.options
-    );
-    const headerLineCount = splitTrimmedLines(program.project.machine.templates.header).length;
-
-    return splitTrimmedLines(body).map((text, index) => ({
-      num: headerLineCount + index + 1,
-      section: 'body' as const,
-      text
-    }));
-  }, [pathDocumentDraft, program?.project]);
-  const pathPostedBodyGroups = useMemo(
-    () => (pathPostedBodyRows.length > 0 ? structureContours(pathPostedBodyRows) : []),
-    [pathPostedBodyRows]
+  const editorRailContent = useMemo(
+    () =>
+      pathDocumentDraft
+        ? {
+            collapsed: <EditorPathNavigatorRailCollapsed />,
+            expanded: (
+              <EditorPathNavigatorPanel
+                hasUnsavedChanges={hasUnsavedChanges}
+                hoveredPathElement={hoveredPathElement}
+                hoverAssistEnabled={pathHoverAssistEnabled}
+                isSaving={isSaving}
+                magneticSnapEnabled={pathMagneticSnapEnabled}
+                onActivatePathClickMode={setPathClickMode}
+                onMovePathOperation={handleMovePathOperation}
+                onRedoDraft={handleRedoDraft}
+                onReversePathOperation={handleReversePathOperation}
+                onSaveClick={handleSaveClick}
+                onSelectPathOperation={setSelectedPathOperationId}
+                onToggleHoverAssist={handleTogglePathHoverAssist}
+                onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
+                onUndoDraft={handleUndoDraft}
+                pathClickMode={pathClickMode}
+                pathDocument={pathDocumentDraft}
+                redoAvailable={redoStack.length > 0}
+                selectedPathOperationId={selectedPathOperationId}
+                undoAvailable={undoStack.length > 0}
+              />
+            )
+          }
+        : null,
+    [
+      hasUnsavedChanges,
+      isSaving,
+      pathClickMode,
+      pathDocumentDraft,
+      hoveredPathElement,
+      pathHoverAssistEnabled,
+      pathMagneticSnapEnabled,
+      redoStack.length,
+      selectedPathOperationId,
+      undoStack.length
+    ]
   );
 
   useEffect(() => {
@@ -185,11 +246,17 @@ export function EditorPage({
     const nextPathDocument = pathDocument ? structuredClone(pathDocument) : null;
     setPathDocumentDraft(nextPathDocument);
     setSelectedPathOperationId(nextPathDocument?.plan.operations[0]?.id ?? null);
+    setHoveredPathElement(null);
     setPathClickMode(null);
     setRedoStack([]);
     setUndoStack([]);
     clearTransientLineState();
   }, [program?.filePath]);
+
+  useEffect(() => {
+    setRailContent(editorRailContent);
+    return () => setRailContent(null);
+  }, [editorRailContent, setRailContent]);
 
   function setLastClickedLine(lineNumber: number | null) {
     lastClickedLineRef.current = lineNumber;
@@ -296,6 +363,16 @@ export function EditorPage({
 
   function handleTogglePin(lineNumber: number) {
     setPinnedLines((current) => toggleLine(current, lineNumber));
+  }
+
+  function handleTogglePathHoverAssist() {
+    setPathHoverAssistEnabled((current) => {
+      if (current) {
+        setHoveredPathElement(null);
+        setPathMagneticSnapEnabled(false);
+      }
+      return !current;
+    });
   }
 
   function isGroupExpanded(groupId: string) {
@@ -468,7 +545,9 @@ export function EditorPage({
     }
 
     if (pathClickMode === 'set-start') {
-      const edited = setClosedOperationStartNearPoint(pathDocumentDraft, selectedPathOperationId, point);
+      const edited = pathMagneticSnapEnabled
+        ? setClosedOperationStartNearPoint(pathDocumentDraft, selectedPathOperationId, point)
+        : setClosedOperationStartAtExistingPointNearPoint(pathDocumentDraft, selectedPathOperationId, point);
       if (!edited) {
         onStatusMessage?.('Choose a closed path operation before setting the start.', 'warning');
         setPathClickMode(null);
@@ -714,15 +793,18 @@ export function EditorPage({
 
       <section className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)] gap-2 overflow-hidden p-2 lg:grid-cols-[minmax(0,1fr)_420px] lg:grid-rows-[minmax(0,1fr)]">
         <EditorCanvasPanel
+          constructionPreview={constructionPreview}
           draftProgram={draftProgram}
           gridSnapEnabled={gridSnapEnabled}
           guideHighlightTarget={guideHighlightTarget}
           guideOpen={guideOpen}
           hoveredLine={hoveredLine}
+          hoveredPathElement={hoveredPathElement}
           measurementPoints={measurementPoints}
           onAddMeasurementPoint={addMeasurementPoint}
           onCursorPointChange={setPreviewCursorPoint}
           onMeasurementPointMove={handleMeasurementPointMove}
+          onPathElementHover={pathHoverAssistEnabled ? setHoveredPathElement : undefined}
           onPreviewPointClick={handlePreviewPointClick}
           pathDocument={pathDocumentDraft}
           pathCount={pathCount}
@@ -731,87 +813,56 @@ export function EditorPage({
         />
 
         <aside
-          className="grid min-h-0 overflow-hidden border border-border bg-card/95 font-mono text-[10px] lg:grid-rows-[minmax(0,1fr)_auto]"
+          className={`min-h-0 overflow-hidden border border-border bg-card/95 font-mono text-[10px] ${
+            isPathProject ? '' : 'grid lg:grid-rows-[minmax(0,1fr)_auto]'
+          }`}
           data-editor-inspector-panel
+          data-editor-inspector-rail
         >
-          <div
-            className="grid min-h-0 gap-2 overflow-hidden p-2 lg:grid-rows-[minmax(260px,1fr)_auto]"
-            data-editor-side-code-panel
-          >
-            {pathDocumentDraft ? (
-              <EditorPathPlanPanel
-                bodyGroups={pathPostedBodyGroups}
+          {!pathDocumentDraft && (
+            <div
+              className="grid min-h-0 gap-2 overflow-hidden p-2 lg:grid-rows-[minmax(260px,1fr)_auto]"
+              data-editor-side-code-panel
+            >
+              <EditorProgramLinesPanel
+                bodyGroups={bodyGroups}
+                draftText={draftText}
                 guideHighlightTarget={guideHighlightTarget}
                 hasUnsavedChanges={hasUnsavedChanges}
                 isGroupExpanded={isGroupExpanded}
                 isSaving={isSaving}
-                lineRows={pathPostedBodyRows}
-                onActivatePathClickMode={setPathClickMode}
+                lineMode={lineMode}
+                lineRows={lineRows}
                 onClearPins={() => setPinnedLines([])}
                 onClearSelectedLines={clearSelectedLines}
-                onExportPostedISO={handleExportNormalizedISO}
+                onDeleteGroup={handleDeleteGroup}
+                onDeleteSelectedLines={handleDeleteSelectedLines}
+                onExportNormalizedISO={handleExportNormalizedISO}
                 onHoverLineChange={setHoveredLine}
                 onLineClick={handleLineClick}
-                onMovePathOperation={handleMovePathOperation}
+                onLineEditCommit={handleLineEditCommit}
+                onMoveGroup={handleMoveGroup}
+                onMoveSelectedLines={handleMoveSelectedLines}
+                onNormalizeDraft={handleNormalizeDraft}
                 onRedoDraft={handleRedoDraft}
-                onReversePathOperation={handleReversePathOperation}
                 onSaveClick={handleSaveClick}
-                onSelectPathOperation={setSelectedPathOperationId}
+                onSetLineMode={handleSetLineMode}
+                onSetStartHere={handleSetStartHere}
                 onToggleGroup={handleToggleGroup}
-                onToggleOutputPreviewOpen={() => setProgramLinesOpen((current) => !current)}
                 onTogglePin={handleTogglePin}
+                onToggleProgramLinesOpen={() => setProgramLinesOpen((current) => !current)}
                 onUndoDraft={handleUndoDraft}
-                outputPreviewOpen={programLinesOpen}
-                pathClickMode={pathClickMode}
-                pathDocument={pathDocumentDraft}
                 pinnedLines={pinnedLines}
+                program={program}
+                programLinesOpen={programLinesOpen}
                 redoAvailable={redoStack.length > 0}
                 selectedLines={selectedLines}
-                selectedPathOperationId={selectedPathOperationId}
+                structure={structure}
                 undoAvailable={undoStack.length > 0}
               />
-            ) : (
-              <>
-                <EditorProgramLinesPanel
-                  bodyGroups={bodyGroups}
-                  draftText={draftText}
-                  guideHighlightTarget={guideHighlightTarget}
-                  hasUnsavedChanges={hasUnsavedChanges}
-                  isGroupExpanded={isGroupExpanded}
-                  isSaving={isSaving}
-                  lineMode={lineMode}
-                  lineRows={lineRows}
-                  onClearPins={() => setPinnedLines([])}
-                  onClearSelectedLines={clearSelectedLines}
-                  onDeleteGroup={handleDeleteGroup}
-                  onDeleteSelectedLines={handleDeleteSelectedLines}
-                  onExportNormalizedISO={handleExportNormalizedISO}
-                  onHoverLineChange={setHoveredLine}
-                  onLineClick={handleLineClick}
-                  onLineEditCommit={handleLineEditCommit}
-                  onMoveGroup={handleMoveGroup}
-                  onMoveSelectedLines={handleMoveSelectedLines}
-                  onNormalizeDraft={handleNormalizeDraft}
-                  onRedoDraft={handleRedoDraft}
-                  onSaveClick={handleSaveClick}
-                  onSetLineMode={handleSetLineMode}
-                  onSetStartHere={handleSetStartHere}
-                  onToggleGroup={handleToggleGroup}
-                  onTogglePin={handleTogglePin}
-                  onToggleProgramLinesOpen={() => setProgramLinesOpen((current) => !current)}
-                  onUndoDraft={handleUndoDraft}
-                  pinnedLines={pinnedLines}
-                  program={program}
-                  programLinesOpen={programLinesOpen}
-                  redoAvailable={redoStack.length > 0}
-                  selectedLines={selectedLines}
-                  structure={structure}
-                  undoAvailable={undoStack.length > 0}
-                />
-                {renderProgramTextPanel()}
-              </>
-            )}
-          </div>
+              {renderProgramTextPanel()}
+            </div>
+          )}
           <EditorInspectorPanel
             arcMoveCount={arcMoveCount}
             boundsText={boundsText}
@@ -819,6 +870,7 @@ export function EditorPage({
             canInsertMeasurementPoints={!isPathProject}
             draftProgram={draftProgram}
             editorFileName={editorFileName}
+            fullHeight={isPathProject}
             gridSnapEnabled={gridSnapEnabled}
             guideHighlightTarget={guideHighlightTarget}
             isSaving={isSaving}
@@ -861,11 +913,6 @@ export function EditorPage({
 
 function clonePathDocument(document: PathPlanningDocument | null) {
   return document ? structuredClone(document) : null;
-}
-
-function splitTrimmedLines(text: string) {
-  const trimmed = text.trim();
-  return trimmed ? trimmed.split(/\r?\n/) : [];
 }
 
 function nextMeasurementPointId(currentLength: number) {
