@@ -9,6 +9,7 @@ import {
   magnetizePointToPath,
   movePathOperation,
   reversePathOperation,
+  setPathOperationClassification,
   setClosedOperationStartNearPoint,
   slideMagnetizedPointOnSegment
 } from '../pathDocumentOperations';
@@ -55,6 +56,20 @@ describe('pathDocumentOperations', () => {
     expect(started?.plan.operations[1].overrides?.start?.kind).toBe('manual');
     expect(started?.plan.operations[1].overrides?.start?.point).toEqual({ x: 2.5, y: 0 });
     expect(started?.plan.operations[1].overrides?.start?.createdSegmentIds).toHaveLength(2);
+  });
+
+  it('records a manual contour role correction on the operation and contour', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const operation = document.plan.operations[0];
+
+    const edited = setPathOperationClassification(document, operation.id, 'hole');
+
+    expect(edited?.plan.operations[0].classification).toBe('hole');
+    expect(edited?.plan.operations[0].overrides?.classification).toEqual({
+      classification: 'hole',
+      kind: 'manual'
+    });
+    expect(edited?.contours[0].classification).toBe('hole');
   });
 
   it('reverses a closed operation while keeping one continuous cut', () => {

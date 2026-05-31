@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { importDxfProject } from '@/domain/dxf/importDxfProject';
 import type { DxfEntity } from '@/domain/dxf/types';
-import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperations';
+import {
+  reversePathOperation,
+  setPathOperationClassification
+} from '@/domain/path-editor/pathDocumentOperations';
 import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
 import { composeGCodeProgram } from '@/domain/post/gcodeTemplates';
 import {
@@ -104,10 +107,16 @@ describe('saveEditorProgram', () => {
       imported.pathDocument.plan.operations[0].id
     );
     expect(reversedDocument).not.toBeNull();
+    const editedDocument = setPathOperationClassification(
+      reversedDocument!,
+      reversedDocument!.plan.operations[0].id,
+      'hole'
+    );
+    expect(editedDocument).not.toBeNull();
     const body = pathPlanToGcodeBody(
-      reversedDocument!.plan,
-      reversedDocument!.segments,
-      reversedDocument!.options
+      editedDocument!.plan,
+      editedDocument!.segments,
+      editedDocument!.options
     );
     const text = composeGCodeProgram({
       header: imported.project.machine.templates.header,
@@ -119,7 +128,7 @@ describe('saveEditorProgram', () => {
     const saved = await saveEditorProgram(imported.workbench, {
       filePath: imported.project.editor.activeFilePath!,
       now: new Date('2026-05-29T12:00:00.000Z'),
-      pathDocument: reversedDocument,
+      pathDocument: editedDocument,
       project: imported.project,
       text
     });
@@ -137,9 +146,18 @@ describe('saveEditorProgram', () => {
       direction: 'reverse',
       kind: 'manual'
     });
+    expect(savedProject.upid.document.plan.operations[0].classification).toBe('hole');
+    expect(savedProject.upid.document.plan.operations[0].overrides.classification).toEqual({
+      classification: 'hole',
+      kind: 'manual'
+    });
     expect(savedProject.pathPlanning.document.plan.operations[0].direction).toBe('reverse');
     expect(savedProject.pathPlanning.document.plan.operations[0].overrides.direction).toEqual({
       direction: 'reverse',
+      kind: 'manual'
+    });
+    expect(savedProject.pathPlanning.document.plan.operations[0].overrides.classification).toEqual({
+      classification: 'hole',
       kind: 'manual'
     });
     expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');

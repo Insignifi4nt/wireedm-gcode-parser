@@ -26,11 +26,12 @@ import {
   reversePathOperation,
   setClosedOperationStartAtExistingPointNearPoint,
   setClosedOperationStartNearPoint,
+  setPathOperationClassification,
   slideMagnetizedPointOnSegment,
   type MagnetizedPathPoint,
   type MagnetizeMode
 } from '@/domain/path-editor/pathDocumentOperations';
-import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import type { ContourClassification, PathPlanningDocument } from '@/domain/path-intel/types';
 import { projectUpidDocument } from '@/domain/upid/projectUpid';
 import { postUpidToGcodeBody } from '@/domain/upid/upidDocument';
 import {
@@ -241,6 +242,7 @@ export function EditorPage({
                 onReversePathOperation={handleReversePathOperation}
                 onSaveClick={handleSaveClick}
                 onSelectPathElement={handleSelectPathElement}
+                onSetPathOperationClassification={handleSetPathOperationClassification}
                 onToggleHoverAssist={handleTogglePathHoverAssist}
                 onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
                 onUndoDraft={handleUndoDraft}
@@ -648,6 +650,12 @@ export function EditorPage({
   function handleReversePathOperation() {
     if (!pathDocumentDraft || !selectedPathOperationId || isSaving) return;
     const edited = reversePathOperation(pathDocumentDraft, selectedPathOperationId);
+    if (edited) applyPathDocumentEdit(edited);
+  }
+
+  function handleSetPathOperationClassification(classification: ContourClassification) {
+    if (!pathDocumentDraft || !selectedPathOperationId || isSaving) return;
+    const edited = setPathOperationClassification(pathDocumentDraft, selectedPathOperationId, classification);
     if (edited) applyPathDocumentEdit(edited);
   }
 

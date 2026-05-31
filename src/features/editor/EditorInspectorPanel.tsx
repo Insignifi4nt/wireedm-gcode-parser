@@ -638,6 +638,13 @@ function manualOverrideRows(overrides: PathPlanningDocument['plan']['operations'
       value: `Manual position ${overrides.order.orderIndex + 1}`
     });
   }
+  if (overrides.classification) {
+    rows.push({
+      kind: 'classification',
+      label: 'Role',
+      value: overrides.classification.classification
+    });
+  }
   if (overrides.direction) {
     rows.push({
       kind: 'direction',

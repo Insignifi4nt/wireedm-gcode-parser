@@ -363,6 +363,40 @@ describe('App DXF imports and project library', () => {
     expect(selectedGeometry?.textContent).toContain('1');
   });
 
+  it('lets the user manually correct the selected UPID contour role', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'role-correction.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const roleSelect = container.querySelector(
+      'select[aria-label="Contour role"]'
+    ) as HTMLSelectElement | null;
+    expect(roleSelect).not.toBeNull();
+
+    await act(async () => {
+      if (roleSelect) setSelectValue(roleSelect, 'hole');
+    });
+
+    expect(roleSelect?.value).toBe('hole');
+    expect(container.querySelector('[data-upid-contour-row]')?.getAttribute('data-upid-contour-role')).toBe(
+      'hole'
+    );
+    expect(container.querySelector('[data-upid-selected="classification"]')?.textContent).toBe('hole');
+    expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain('Role');
+    expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain('hole');
+  });
+
   it('highlights selected UPID contours and segments on the canvas and in the inspector', async () => {
     window.showDirectoryPicker = undefined;
 

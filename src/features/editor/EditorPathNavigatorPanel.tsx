@@ -18,6 +18,7 @@ import {
   segmentMap
 } from '@/domain/path-intel/segments';
 import type {
+  ContourClassification,
   OrientedSegmentRef,
   PathContour,
   PathOperation,
@@ -38,6 +39,7 @@ const modeButtonClass =
   'flex h-6 items-center justify-center gap-1 border border-border px-1 text-[10px] text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40';
 const activeModeButtonClass =
   'flex h-6 items-center justify-center gap-1 border border-primary bg-primary px-1 text-[10px] text-primary-foreground outline-none transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40';
+const CONTOUR_ROLE_OPTIONS: ContourClassification[] = ['exterior', 'hole', 'island', 'ambiguous'];
 
 interface EditorPathNavigatorPanelProps {
   hasUnsavedChanges: boolean;
@@ -58,6 +60,7 @@ interface EditorPathNavigatorPanelProps {
   onReversePathOperation: () => void;
   onSaveClick: () => void | Promise<void>;
   onSelectPathElement: (element: EditorPathElementRef) => void;
+  onSetPathOperationClassification: (classification: ContourClassification) => void;
   onToggleHoverAssist: () => void;
   onToggleMagneticSnap: () => void;
   onUndoDraft: () => void;
@@ -82,6 +85,7 @@ export function EditorPathNavigatorPanel({
   onReversePathOperation,
   onSaveClick,
   onSelectPathElement,
+  onSetPathOperationClassification,
   onToggleHoverAssist,
   onToggleMagneticSnap,
   onUndoDraft
@@ -191,6 +195,24 @@ export function EditorPathNavigatorPanel({
             <FileText className="size-3" />
             Export Preview
           </button>
+          <label className="mt-2 grid gap-1 text-[9px] uppercase text-muted-foreground">
+            Contour Role
+            <select
+              aria-label="Contour role"
+              className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!selectedOperation || !selectedOperation.closed || isSaving}
+              onChange={(event) =>
+                onSetPathOperationClassification(event.currentTarget.value as ContourClassification)
+              }
+              value={selectedOperation?.classification ?? ''}
+            >
+              {CONTOUR_ROLE_OPTIONS.map((classification) => (
+                <option key={classification} value={classification}>
+                  {classification}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="mt-1 grid grid-cols-3 gap-1">
             <button
               aria-label="Set path start from canvas"

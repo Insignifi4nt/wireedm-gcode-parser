@@ -21,6 +21,7 @@ import {
 import type {
   ArcPathSegment,
   CirclePathSegment,
+  ContourClassification,
   OperationPlan,
   OrientedSegmentRef,
   PathChain,
@@ -64,6 +65,31 @@ export function movePathOperation(
   next.plan.operations.splice(targetIndex, 0, operation);
   refreshPlan(next);
   recordManualOrderOverrides(next);
+  return next;
+}
+
+export function setPathOperationClassification(
+  document: PathPlanningDocument,
+  operationId: string,
+  classification: ContourClassification
+) {
+  const next = cloneDocument(document);
+  const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation) return null;
+  if (!operation.closed && classification !== 'open-chain') return null;
+
+  operation.classification = classification;
+  operation.overrides = {
+    ...operation.overrides,
+    classification: {
+      kind: 'manual',
+      classification
+    }
+  };
+
+  const contour = next.contours.find((candidate) => candidate.id === operation.contourId);
+  if (contour) contour.classification = classification;
+
   return next;
 }
 

@@ -202,6 +202,11 @@ export interface ManualDirectionOverride {
   direction: 'forward' | 'reverse';
 }
 
+export interface ManualClassificationOverride {
+  kind: 'manual';
+  classification: ContourClassification;
+}
+
 export interface ManualStartOverride {
   kind: 'manual';
   point: Point2;
@@ -209,6 +214,7 @@ export interface ManualStartOverride {
 }
 
 export interface PathOperationOverrides {
+  classification?: ManualClassificationOverride;
   order?: ManualOrderOverride;
   direction?: ManualDirectionOverride;
   start?: ManualStartOverride;

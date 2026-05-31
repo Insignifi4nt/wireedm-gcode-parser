@@ -122,7 +122,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator Or Program Lines',
         steps: [
           {
-            text: 'DXF path projects use the UPID Path Navigator for contour order, direction, start selection, segment inspection, hover assist, and tangent/perpendicular construction.',
+            text: 'DXF path projects use the UPID Path Navigator for contour order, contour role correction, direction, start selection, segment inspection, hover assist, and tangent/perpendicular construction.',
             highlightTarget: 'program-lines'
           },
           {
@@ -158,7 +158,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editing And Export',
         steps: [
           {
-            text: 'For DXF path projects, reorder operations, reverse direction, or set starts from the path surface. Manual UPID decisions are recorded in the selected geometry inspector. For external posted programs, move selected rows, delete rows, undo/redo draft changes, or use Start Here.'
+            text: 'For DXF path projects, reorder operations, correct contour roles, reverse direction, or set starts from the path surface. Manual UPID decisions are recorded in the selected geometry inspector. For external posted programs, move selected rows, delete rows, undo/redo draft changes, or use Start Here.'
           },
           {
             text: 'Normalize Draft rewrites the current editor text into the app ISO style without downloading a file.',
@@ -259,7 +259,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator sau Program Lines',
         steps: [
           {
-            text: 'Proiectele DXF folosesc UPID Path Navigator pentru ordinea contururilor, directie, start, inspectie segmente, hover assist si constructii tangent/perpendicular.',
+            text: 'Proiectele DXF folosesc UPID Path Navigator pentru ordinea contururilor, corectarea rolului de contur, directie, start, inspectie segmente, hover assist si constructii tangent/perpendicular.',
             highlightTarget: 'program-lines'
           },
           {
@@ -295,7 +295,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editare si export',
         steps: [
           {
-            text: 'Pentru proiecte DXF, schimba ordinea operatiilor, inverseaza directia sau seteaza startul din suprafata de path. Deciziile manuale UPID sunt inregistrate in inspectorul geometriei selectate. Pentru programe externe, muta randuri, sterge randuri, undo/redo sau Start Here.'
+            text: 'Pentru proiecte DXF, schimba ordinea operatiilor, corecteaza rolul conturului, inverseaza directia sau seteaza startul din suprafata de path. Deciziile manuale UPID sunt inregistrate in inspectorul geometriei selectate. Pentru programe externe, muta randuri, sterge randuri, undo/redo sau Start Here.'
           },
           {
             text: 'Normalize Draft rescrie textul curent in stilul ISO al aplicatiei, fara download.',

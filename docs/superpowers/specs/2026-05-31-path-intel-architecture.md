@@ -47,10 +47,10 @@ path model. During the transition, saves also mirror the same document into lega
 editor reads prefer `project.upid` and fall back to the legacy path-planning payload only when a
 stored project predates the UPID field.
 
-Manual path edits are stored as operation-level UPID overrides. Reordering operations, reversing a
-cut direction, or choosing a start point changes the executable plan and records the user decision
-beside that operation. This keeps the automatic planner output, manual edits, and future AI/user
-review surfaces from collapsing into an unexplained final sequence.
+Manual path edits are stored as operation-level UPID overrides. Reordering operations, correcting a
+contour role, reversing a cut direction, or choosing a start point changes the executable plan and
+records the user decision beside that operation. This keeps the automatic planner output, manual
+edits, and future AI/user review surfaces from collapsing into an unexplained final sequence.
 
 ## Current Code Map
 
@@ -63,7 +63,7 @@ review surfaces from collapsing into an unexplained final sequence.
 - `src/domain/path-intel/contours.ts` classifies closed and open chains.
 - `src/domain/path-intel/planOperations.ts` chooses operation order, contour starts, and direction.
 - `src/domain/path-intel/postGcode.ts` emits body G-code from the operation plan.
-- `src/domain/path-editor/pathDocumentOperations.ts` edits UPID operations for manual order,
+- `src/domain/path-editor/pathDocumentOperations.ts` edits UPID operations for manual order, role,
   direction, start, split, and construction workflows while recording override metadata.
 - `src/domain/upid/upidDocument.ts` names the current internal document as the Universal Path
   Intelligence Document boundary and exposes the post/export adapter.
@@ -74,8 +74,8 @@ review surfaces from collapsing into an unexplained final sequence.
 - `src/features/editor/EditorPathNavigatorPanel.tsx` is the DXF path-project rail surface for
   operation selection, nested contour/segment inspection, ordering, direction, start selection,
   construction-point modes, hover assist, magnetic snap, saving, and opening export preview. It
-  exposes contour role and containment depth from the UPID contour tree so holes, islands, and
-  exteriors are visible before export.
+  exposes and can correct contour role and containment depth from the UPID contour tree so holes,
+  islands, and exteriors are visible before export.
 - `src/features/editor/EditorUpidExportPreview.tsx` is the explicit post boundary for inspecting and
   downloading machine-profile G-code.
 - `src/features/editor/EditorProgramLinesPanel.tsx` remains the legacy posted-program surface for
