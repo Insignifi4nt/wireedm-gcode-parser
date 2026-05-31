@@ -13,8 +13,13 @@ import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
-import { buildEditorPreviewGeometry, fitViewBoxToViewportAspect } from '@/domain/editor/previewGeometry';
+import {
+  buildEditorPathDocumentPreviewGeometry,
+  buildEditorPreviewGeometry,
+  fitViewBoxToViewportAspect
+} from '@/domain/editor/previewGeometry';
 import type { EditorPreviewViewBox } from '@/domain/editor/previewGeometry';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   MAX_PREVIEW_ZOOM,
   MIN_PREVIEW_ZOOM,
@@ -51,6 +56,7 @@ interface EditorPreviewProps {
   onCursorPointChange?: (point: { x: number; y: number } | null) => void;
   onMeasurementPointMove?: (pointId: string, point: { x: number; y: number }) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
+  pathDocument?: PathPlanningDocument | null;
   pinnedLines: number[];
   selectedLines: number[];
   snapToGrid?: boolean;
@@ -65,14 +71,25 @@ export function EditorPreview({
   onCursorPointChange,
   onMeasurementPointMove,
   onPreviewPointClick,
+  pathDocument,
   pinnedLines,
   selectedLines,
   snapGridSize = PREVIEW_GRID_SIZE,
   snapToGrid = false
 }: EditorPreviewProps) {
   const preview = useMemo(
-    () => (program ? buildEditorPreviewGeometry(program.parseResult, { padding: 1 }) : null),
-    [program]
+    () =>
+      pathDocument
+        ? buildEditorPathDocumentPreviewGeometry(pathDocument, {
+            lineHints: program?.parseResult.path
+              .filter((point) => point.type !== 'position')
+              .map((point) => point.line),
+            padding: 1
+          })
+        : program
+          ? buildEditorPreviewGeometry(program.parseResult, { padding: 1 })
+          : null,
+    [pathDocument, program]
   );
   const selected = useMemo(() => new Set(selectedLines), [selectedLines]);
   const pinned = useMemo(() => new Set(pinnedLines), [pinnedLines]);
@@ -620,6 +637,9 @@ export function EditorPreview({
                 data-highlight={highlight}
                 data-line={path.line}
                 data-pinned={isPinned ? 'true' : undefined}
+                data-preview-operation={path.operationId}
+                data-preview-segment={path.segmentId}
+                data-preview-source={path.source}
                 data-type={path.type}
                 fill="none"
                 key={`${path.type}-${path.line}-${index}`}

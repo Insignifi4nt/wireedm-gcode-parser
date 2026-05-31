@@ -1,5 +1,6 @@
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 
 import { EditorPreview } from './EditorPreview';
 import type { EditorGuideTarget } from './editorGuideContent';
@@ -12,6 +13,7 @@ interface EditorCanvasPanelProps {
   guideOpen: boolean;
   hoveredLine: number | null;
   measurementPoints: MeasurementPoint[];
+  pathDocument?: PathPlanningDocument | null;
   pathCount: number;
   pinnedLines: number[];
   selectedLines: number[];
@@ -28,6 +30,7 @@ export function EditorCanvasPanel({
   guideOpen,
   hoveredLine,
   measurementPoints,
+  pathDocument,
   pathCount,
   pinnedLines,
   selectedLines,
@@ -58,6 +61,7 @@ export function EditorCanvasPanel({
           onCursorPointChange={onCursorPointChange}
           onMeasurementPointMove={onMeasurementPointMove}
           onPreviewPointClick={onPreviewPointClick ?? ((point) => onAddMeasurementPoint(point.x, point.y))}
+          pathDocument={pathDocument}
           pinnedLines={pinnedLines}
           program={draftProgram}
           snapToGrid={gridSnapEnabled}

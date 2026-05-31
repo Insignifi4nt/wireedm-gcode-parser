@@ -699,6 +699,7 @@ export function EditorPage({
           onCursorPointChange={setPreviewCursorPoint}
           onMeasurementPointMove={handleMeasurementPointMove}
           onPreviewPointClick={handlePreviewPointClick}
+          pathDocument={pathDocumentDraft}
           pathCount={pathCount}
           pinnedLines={pinnedLines}
           selectedLines={selectedLines}

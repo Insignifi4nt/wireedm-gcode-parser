@@ -495,6 +495,26 @@ describe('App DXF imports and project library', () => {
 
     expect(container.querySelector('[data-measurement-point-mode="1"]')?.textContent).toBe('Snap');
   });
+
+  it('renders imported DXF previews from the internal path document', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'path-preview-source.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-preview-source="path-document"]')).not.toBeNull();
+    expect(container.querySelector('[data-preview-source="gcode"]')).toBeNull();
+  });
 });
 
 function rectangleDxf() {

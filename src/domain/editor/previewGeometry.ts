@@ -4,6 +4,30 @@ import type {
   GCodeParseResult,
   GCodePathPoint
 } from './types';
+import {
+  boundsAreFinite,
+  emptyBounds,
+  mergeBounds,
+  orientedArcClockwise,
+  orientedCircleClockwise,
+  orientedSegmentEnd,
+  orientedSegmentStart,
+  pathBounds,
+  pointsEqual as pathPointsEqual,
+  requiredSegment,
+  segmentMap
+} from '@/domain/path-intel/segments';
+import type {
+  ArcPathSegment,
+  Bounds2,
+  CirclePathSegment,
+  OperationId,
+  OrientedSegmentRef,
+  PathPlanningDocument,
+  PathSegment,
+  Point2,
+  SegmentId
+} from '@/domain/path-intel/types';
 
 export interface EditorPreviewPath {
   type: 'rapid' | 'cut' | 'arc';
@@ -13,6 +37,9 @@ export interface EditorPreviewPath {
     y: number;
   };
   line: number;
+  operationId?: OperationId;
+  segmentId?: SegmentId;
+  source?: 'gcode' | 'path-document';
 }
 
 export interface EditorPreviewViewBox {
@@ -39,6 +66,11 @@ interface BuildEditorPreviewGeometryOptions {
   padding?: number;
 }
 
+interface BuildEditorPathDocumentPreviewGeometryOptions {
+  lineHints?: number[];
+  padding?: number;
+}
+
 export function buildEditorPreviewGeometry(
   parseResult: GCodeParseResult,
   options: BuildEditorPreviewGeometryOptions = {}
@@ -62,7 +94,8 @@ export function buildEditorPreviewGeometry(
           x: point.x,
           y: point.y
         },
-        line: point.line
+        line: point.line,
+        source: 'gcode'
       });
       currentPoint = { x: point.x, y: point.y };
       continue;
@@ -76,7 +109,8 @@ export function buildEditorPreviewGeometry(
           x: point.endX,
           y: point.endY
         },
-        line: point.line
+        line: point.line,
+        source: 'gcode'
       });
       currentPoint = { x: point.endX, y: point.endY };
     }
@@ -85,6 +119,56 @@ export function buildEditorPreviewGeometry(
   return {
     markers: previewMarkers(parseResult.path),
     viewBox: paddedViewBox(parseResult.bounds, padding),
+    paths
+  };
+}
+
+export function buildEditorPathDocumentPreviewGeometry(
+  document: PathPlanningDocument,
+  options: BuildEditorPathDocumentPreviewGeometryOptions = {}
+): EditorPreviewGeometry {
+  const padding = options.padding ?? 1;
+  const segmentsById = segmentMap(document.segments);
+  const paths: EditorPreviewPath[] = [];
+  let bounds = emptyBounds();
+  let currentPoint: Point2 | null = null;
+  let pathIndex = 0;
+
+  for (const operation of document.plan.operations) {
+    bounds = mergeBounds(bounds, pathBounds(operation.segmentRefs, segmentsById));
+    const rapidStart = currentPoint ?? operation.startPoint;
+    if (!currentPoint || !pathPointsEqual(currentPoint, operation.startPoint, document.options.coincidenceEpsilon)) {
+      paths.push({
+        type: 'rapid',
+        d: linePath(rapidStart, operation.startPoint),
+        end: operation.startPoint,
+        line: options.lineHints?.[pathIndex++] ?? 0,
+        operationId: operation.id,
+        source: 'path-document'
+      });
+    }
+
+    for (const ref of operation.segmentRefs) {
+      const segment = requiredSegment(segmentsById, ref.segmentId);
+      for (const segmentPath of pathDocumentSegmentPaths(segment, ref)) {
+        paths.push({
+          type: segmentPath.type,
+          d: segmentPath.d,
+          end: segmentPath.end,
+          line: options.lineHints?.[pathIndex++] ?? 0,
+          operationId: operation.id,
+          segmentId: ref.segmentId,
+          source: 'path-document'
+        });
+      }
+    }
+
+    currentPoint = operation.endPoint;
+  }
+
+  return {
+    markers: pathDocumentPreviewMarkers(document),
+    viewBox: paddedBoundsViewBox(bounds, padding),
     paths
   };
 }
@@ -221,6 +305,121 @@ function paddedViewBox(bounds: GCodeBounds, padding: number): EditorPreviewViewB
     width: Math.max(width + padding * 2, padding * 2),
     height: Math.max(height + padding * 2, padding * 2)
   };
+}
+
+function paddedBoundsViewBox(bounds: Bounds2, padding: number): EditorPreviewViewBox {
+  if (!boundsAreFinite(bounds)) {
+    return {
+      minX: -padding,
+      minY: -padding,
+      width: padding * 2,
+      height: padding * 2
+    };
+  }
+
+  const width = Math.max(bounds.maxX - bounds.minX, 0);
+  const height = Math.max(bounds.maxY - bounds.minY, 0);
+
+  return {
+    minX: bounds.minX - padding,
+    minY: bounds.minY - padding,
+    width: Math.max(width + padding * 2, padding * 2),
+    height: Math.max(height + padding * 2, padding * 2)
+  };
+}
+
+function pathDocumentPreviewMarkers(document: PathPlanningDocument): EditorPreviewMarker[] {
+  const firstOperation = document.plan.operations[0];
+  if (!firstOperation) return [];
+
+  const markers: EditorPreviewMarker[] = [
+    {
+      type: 'start',
+      x: firstOperation.startPoint.x,
+      y: firstOperation.startPoint.y,
+      label: 'START'
+    }
+  ];
+  const lastOperation = document.plan.operations.at(-1);
+  if (lastOperation) {
+    markers.push({
+      type: 'end',
+      x: lastOperation.endPoint.x,
+      y: lastOperation.endPoint.y,
+      label: 'END'
+    });
+  }
+
+  return markers;
+}
+
+function pathDocumentSegmentPaths(segment: PathSegment, ref: OrientedSegmentRef) {
+  if (segment.kind === 'line') {
+    const end = orientedSegmentEnd(segment, ref);
+    return [
+      {
+        type: 'cut' as const,
+        d: linePath(orientedSegmentStart(segment, ref), end),
+        end
+      }
+    ];
+  }
+
+  if (segment.kind === 'circle') return circlePaths(segment, ref);
+
+  const end = orientedSegmentEnd(segment, ref);
+  return [
+    {
+      type: 'arc' as const,
+      d: pathDocumentArcPath(segment, ref),
+      end
+    }
+  ];
+}
+
+function linePath(start: Point2, end: Point2) {
+  return `M ${format(start.x)} ${format(start.y)} L ${format(end.x)} ${format(end.y)}`;
+}
+
+function pathDocumentArcPath(segment: ArcPathSegment, ref: OrientedSegmentRef) {
+  const start = orientedSegmentStart(segment, ref);
+  const end = orientedSegmentEnd(segment, ref);
+  const sweep = ref.reversed ? -segment.sweepRadians : segment.sweepRadians;
+  const largeArcFlag = Math.abs(sweep) > Math.PI ? 1 : 0;
+  const sweepFlag = orientedArcClockwise(segment, ref) ? 0 : 1;
+
+  return [
+    `M ${format(start.x)} ${format(start.y)}`,
+    `A ${format(segment.radius)} ${format(segment.radius)} 0 ${largeArcFlag} ${sweepFlag} ${format(end.x)} ${format(end.y)}`
+  ].join(' ');
+}
+
+function circlePaths(segment: CirclePathSegment, ref: OrientedSegmentRef) {
+  const start = segment.preferredStart;
+  const opposite = {
+    x: segment.center.x - (start.x - segment.center.x),
+    y: segment.center.y - (start.y - segment.center.y)
+  };
+  const sweepFlag = orientedCircleClockwise(segment, ref) ? 0 : 1;
+
+  return [
+    {
+      type: 'arc' as const,
+      d: [
+        `M ${format(start.x)} ${format(start.y)}`,
+        `A ${format(segment.radius)} ${format(segment.radius)} 0 1 ${sweepFlag} ${format(opposite.x)} ${format(opposite.y)}`
+      ].join(' '),
+      end: opposite
+    },
+    {
+      type: 'arc' as const,
+      d: [
+        `M ${format(opposite.x)} ${format(opposite.y)}`,
+        `A ${format(segment.radius)} ${format(segment.radius)} 0 1 ${sweepFlag} ${format(start.x)} ${format(start.y)}`
+      ].join(' '),
+      end: start
+    }
+  ];
 }
 
 function normalizeAngle(angle: number) {
