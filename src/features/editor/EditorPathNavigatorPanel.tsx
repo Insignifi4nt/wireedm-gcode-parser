@@ -496,6 +496,7 @@ function renderCutSequenceRow({
   const cutLength = operation.metrics.cutLength.toFixed(3);
   const rapidInLength = operation.metrics.rapidInLength.toFixed(3);
   const label = operationLabel(operation);
+  const sourceEntityCount = sourceEntityCountForOperation(operation);
   const rapidElement: EditorPathElementRef = {
     operationId: operation.id,
     segmentId: null,
@@ -525,6 +526,7 @@ function renderCutSequenceRow({
       data-upid-cut-sequence-rapid={rapidInLength}
       data-upid-cut-sequence-role={operation.classification}
       data-upid-cut-sequence-row
+      data-upid-cut-sequence-source-entities={sourceEntityCount}
       data-upid-hovered={hovered ? 'true' : undefined}
       data-upid-operation-id={operation.id}
       data-upid-selected={selected ? 'true' : undefined}
@@ -628,6 +630,7 @@ function renderContourTreeNode({
   const nested = treeDepth > 0;
   const manualDecisions = manualDecisionKinds(operation);
   const label = contourLabel(contour);
+  const sourceEntityCount = sourceEntityCountForContour(contour);
 
   return (
     <details
@@ -660,6 +663,7 @@ function renderContourTreeNode({
           data-upid-contour-parent={contour.parentId ?? undefined}
           data-upid-contour-role={contour.classification}
           data-upid-contour-row
+          data-upid-contour-source-entities={sourceEntityCount}
           data-upid-operation-id={operation.id}
           data-upid-selected={
             selectedPathElement?.operationId === operation.id && !selectedPathElement.segmentId
@@ -924,6 +928,14 @@ function contourLabel(contour: PathContour) {
 
 function operationLabel(operation: PathOperation) {
   return operation.label ?? operation.id;
+}
+
+function sourceEntityCountForContour(contour: PathContour) {
+  return contour.provenance.sourceEntityIndices.length;
+}
+
+function sourceEntityCountForOperation(operation: PathOperation) {
+  return operation.provenance.sourceEntityIndices.length;
 }
 
 function manualDecisionKinds(operation: PathOperation): ManualDecisionKind[] {

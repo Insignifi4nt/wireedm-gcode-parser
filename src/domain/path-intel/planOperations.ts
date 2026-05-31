@@ -75,6 +75,7 @@ export function planOperations(input: PlanOperationsInput): OperationPlan {
     operations.push({
       id: `op_${String(operations.length + 1).padStart(4, '0')}`,
       label: selected.contour.label,
+      provenance: selected.contour.provenance,
       orderIndex: operations.length,
       contourId: selected.contour.id,
       chainId: selected.chain.id,

@@ -75,6 +75,13 @@ export interface SegmentSourceRef {
   note?: string;
 }
 
+export interface PathElementProvenance {
+  sourceEntityIndices: number[];
+  sourceEntityTypes: string[];
+  layers: Array<string | null>;
+  exact: boolean;
+}
+
 export interface BasePathSegment {
   id: SegmentId;
   source: SegmentSourceRef;
@@ -166,6 +173,7 @@ export type ContourOrientation = 'ccw' | 'cw' | 'degenerate';
 export interface PathContour {
   id: ContourId;
   label: string;
+  provenance: PathElementProvenance;
   chainId: ChainId;
   closed: boolean;
   classification: ContourClassification;
@@ -224,6 +232,7 @@ export interface PathOperationOverrides {
 export interface PathOperation {
   id: OperationId;
   label: string;
+  provenance: PathElementProvenance;
   orderIndex: number;
   contourId: ContourId;
   chainId: ChainId;

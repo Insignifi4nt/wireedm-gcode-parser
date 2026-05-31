@@ -20,7 +20,7 @@ describe('UPID document boundary', () => {
     expect(postUpidToGcodeBody(document)).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
   });
 
-  it('reads first-class UPID before falling back to legacy path planning documents', () => {
+  it('reads the first-class UPID document from a project', () => {
     const document = createUpidFromDxfEntities([
       {
         type: 'line',
@@ -29,25 +29,9 @@ describe('UPID document boundary', () => {
         end: { x: 4, y: 0 }
       }
     ]);
-    const legacyDocument = createUpidFromDxfEntities([
-      {
-        type: 'line',
-        layer: 'CUT',
-        start: { x: 0, y: 0 },
-        end: { x: 2, y: 0 }
-      }
-    ]);
 
     expect(projectUpidDocument(withProjectUpid(baseProject(), document))).toBe(document);
-    expect(
-      projectUpidDocument({
-        ...baseProject(),
-        pathPlanning: {
-          document: legacyDocument,
-          postDiagnostics: []
-        }
-      })
-    ).toBe(legacyDocument);
+    expect(projectUpidDocument(baseProject())).toBeNull();
   });
 });
 

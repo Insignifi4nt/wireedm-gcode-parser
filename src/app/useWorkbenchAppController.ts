@@ -342,7 +342,7 @@ export function useWorkbenchAppController(
   ) {
     setLatestImport((current) => {
       if (!current || current.project.id !== editorProgram.project?.id) return current;
-      if (!pathDocument || !editorProgram.project.pathPlanning) return null;
+      if (!pathDocument || !editorProgram.project.upid) return null;
 
       return {
         ...current,
@@ -352,7 +352,7 @@ export function useWorkbenchAppController(
         generatedProgram: '',
         pathDocument,
         pathDiagnostics: pathDocument.diagnostics,
-        postDiagnostics: editorProgram.project.pathPlanning.postDiagnostics
+        postDiagnostics: editorProgram.project.upid.postDiagnostics
       };
     });
   }

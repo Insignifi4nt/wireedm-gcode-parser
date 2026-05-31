@@ -1,4 +1,4 @@
-import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
+import type { PathDiagnostic } from '@/domain/path-intel/types';
 import type { UniversalPathIntelligenceDocument } from '@/domain/upid/upidDocument';
 
 export const OUTPUT_EXTENSIONS = ['iso', 'nc', 'gcode'] as const;
@@ -67,10 +67,6 @@ export interface WorkbenchProject {
     files: WorkbenchFileRef[];
   };
   upid?: WorkbenchUpidState;
-  pathPlanning?: {
-    document: PathPlanningDocument;
-    postDiagnostics: PathDiagnostic[];
-  };
   machine: MachineProfile;
   editor: EditorSessionState;
 }

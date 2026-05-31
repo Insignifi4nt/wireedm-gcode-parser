@@ -132,6 +132,9 @@ export function EditorInspectorPanel({
   const selectedPathOverrideRows = selectedPathOperation
     ? manualOverrideRows(selectedPathOperation.overrides)
     : [];
+  const selectedPathSource = selectedPathOperation
+    ? sourceSummaryRows(selectedPathOperation)
+    : null;
 
   return (
     <div
@@ -255,6 +258,12 @@ export function EditorInspectorPanel({
                 {selectedPathOperation.segmentRefs.length}{' '}
                 {selectedPathOperation.segmentRefs.length === 1 ? 'segment' : 'segments'}
               </dd>
+              <dt className="text-muted-foreground">Source</dt>
+              <dd data-upid-selected="source-entities">{selectedPathSource?.entities ?? '0 entities'}</dd>
+              <dt className="text-muted-foreground">Layers</dt>
+              <dd data-upid-selected="source-layers">{selectedPathSource?.layers ?? '-'}</dd>
+              <dt className="text-muted-foreground">Exact</dt>
+              <dd data-upid-selected="source-exact">{selectedPathSource?.exact ?? '-'}</dd>
               <dt className="text-muted-foreground">Cut</dt>
               <dd data-upid-selected="cut-length">{selectedPathOperation.metrics.cutLength.toFixed(3)}</dd>
               <dt className="text-muted-foreground">Start</dt>
@@ -749,6 +758,17 @@ function manualOverrideRows(overrides: PathPlanningDocument['plan']['operations'
   }
 
   return rows;
+}
+
+function sourceSummaryRows(operation: NonNullable<PathPlanningDocument['plan']['operations'][number]>) {
+  const provenance = operation.provenance;
+  const entityCount = provenance.sourceEntityIndices.length;
+
+  return {
+    entities: `${entityCount} ${entityCount === 1 ? 'entity' : 'entities'}`,
+    exact: provenance.exact ? 'exact' : 'mixed',
+    layers: provenance.layers.length > 0 ? provenance.layers.map((layer) => layer ?? '-').join(', ') : '-'
+  };
 }
 
 function readSelectedPathSegment(

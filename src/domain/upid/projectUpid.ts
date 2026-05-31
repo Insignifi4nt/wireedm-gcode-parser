@@ -16,11 +16,11 @@ export function createProjectUpid(
 }
 
 export function projectUpidDocument(project: WorkbenchProject | null | undefined) {
-  return project?.upid?.document ?? project?.pathPlanning?.document ?? null;
+  return project?.upid?.document ?? null;
 }
 
 export function projectUpidPostDiagnostics(project: WorkbenchProject | null | undefined) {
-  return project?.upid?.postDiagnostics ?? project?.pathPlanning?.postDiagnostics ?? [];
+  return project?.upid?.postDiagnostics ?? [];
 }
 
 export function withProjectUpid(
@@ -30,17 +30,12 @@ export function withProjectUpid(
 ): WorkbenchProject {
   return {
     ...project,
-    upid: createProjectUpid(document, postDiagnostics),
-    pathPlanning: {
-      document,
-      postDiagnostics
-    }
+    upid: createProjectUpid(document, postDiagnostics)
   };
 }
 
 export function withoutProjectUpid(project: WorkbenchProject): WorkbenchProject {
   const nextProject: WorkbenchProject = { ...project };
   delete nextProject.upid;
-  delete nextProject.pathPlanning;
   return nextProject;
 }

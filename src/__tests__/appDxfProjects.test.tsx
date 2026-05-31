@@ -267,7 +267,7 @@ describe('App DXF imports and project library', () => {
     );
   });
 
-  it('opens persisted UPID-only projects without the legacy path planning payload', async () => {
+  it('opens persisted UPID projects from the first-class path document', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
@@ -289,8 +289,8 @@ describe('App DXF imports and project library', () => {
     const projectPath = manifest.projects[0].path;
     const storageKey = `wire-edm-workbench:file:${projectPath}`;
     const storedProject = JSON.parse(window.localStorage.getItem(storageKey) || '{}');
-    delete storedProject.pathPlanning;
-    window.localStorage.setItem(storageKey, JSON.stringify(storedProject));
+    expect(storedProject.upid?.format).toBe('upid');
+    expect(storedProject.pathPlanning).toBeUndefined();
 
     const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Dashboard')
@@ -574,6 +574,11 @@ describe('App DXF imports and project library', () => {
       'Contour 2',
       'Contour 3'
     ]);
+    expect(contourRows.map((row) => row.getAttribute('data-upid-contour-source-entities'))).toEqual([
+      '1',
+      '1',
+      '1'
+    ]);
     expect(contourRows.map((row) => row.getAttribute('data-upid-contour-role'))).toEqual([
       'exterior',
       'hole',
@@ -605,6 +610,11 @@ describe('App DXF imports and project library', () => {
       'Contour 3',
       'Contour 2',
       'Contour 1'
+    ]);
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-source-entities'))).toEqual([
+      '1',
+      '1',
+      '1'
     ]);
     expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-role'))).toEqual([
       'island',
@@ -645,6 +655,9 @@ describe('App DXF imports and project library', () => {
     expect(selectedGeometry?.textContent).toContain('depth 1');
     expect(selectedGeometry?.textContent).toContain('Children');
     expect(selectedGeometry?.textContent).toContain('1');
+    expect(container.querySelector('[data-upid-selected="source-entities"]')?.textContent).toBe('1 entity');
+    expect(container.querySelector('[data-upid-selected="source-layers"]')?.textContent).toBe('-');
+    expect(container.querySelector('[data-upid-selected="source-exact"]')?.textContent).toBe('exact');
   });
 
   it('lets the user manually correct the selected UPID contour role', async () => {
@@ -730,7 +743,7 @@ describe('App DXF imports and project library', () => {
     );
 
     expect(savedProject.upid.document.plan.operations[0].classification).toBe('hole');
-    expect(savedProject.pathPlanning.document.plan.operations[0].classification).toBe('hole');
+    expect(savedProject.pathPlanning).toBeUndefined();
 
     const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Dashboard')
@@ -1728,7 +1741,8 @@ describe('App DXF imports and project library', () => {
       window.localStorage.getItem(`wire-edm-workbench:file:${manifest.projects[0].path}`) || '{}'
     );
 
-    expect(savedProject.pathPlanning.document.plan.operations[0].direction).toBe('reverse');
+    expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
+    expect(savedProject.pathPlanning).toBeUndefined();
     expect(savedProject.generated).toEqual({ body: '', files: [] });
     expect(savedProject.editor.activeFilePath).toBeNull();
     expect(window.localStorage.getItem(`wire-edm-workbench:file:generated/${savedProject.id}.body.gcode`)).toBeNull();
@@ -1802,7 +1816,7 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).not.toContain('Program Text');
   });
 
-  it('does not let legacy line-edit commands clear an active DXF path plan', async () => {
+  it('does not let text line-edit commands clear an active DXF path plan', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);

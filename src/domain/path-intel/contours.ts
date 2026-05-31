@@ -17,6 +17,7 @@ import type {
   PathChain,
   PathContour,
   PathDiagnostic,
+  PathElementProvenance,
   PathPlanningOptions,
   PathSegment,
   Point2
@@ -39,11 +40,13 @@ export function analyzeContours(
       ? pathBounds(chain.segmentRefs, segmentsById)
       : boundsFromPolygon(approximatePolygon);
     const diagnosticIds = [...chain.diagnosticIds];
+    const provenance = summarizePathProvenance(chain.segmentRefs.map((ref) => segmentsById.get(ref.segmentId)));
 
     if (!chain.closed) {
       return {
         id,
         label: contourLabel(index),
+        provenance,
         chainId: chain.id,
         closed: false,
         classification: 'open-chain',
@@ -103,6 +106,7 @@ export function analyzeContours(
     return {
       id,
       label: contourLabel(index),
+      provenance,
       chainId: chain.id,
       closed: true,
       classification,
@@ -127,6 +131,39 @@ export function analyzeContours(
 
 function contourLabel(index: number) {
   return `Contour ${index + 1}`;
+}
+
+function summarizePathProvenance(segments: Array<PathSegment | undefined>): PathElementProvenance {
+  const entityIndices = new Set<number>();
+  const entityTypes = new Set<string>();
+  const layers = new Set<string | null>();
+  let exact = true;
+
+  for (const segment of segments) {
+    if (!segment) {
+      exact = false;
+      continue;
+    }
+
+    entityIndices.add(segment.source.sourceEntityIndex);
+    entityTypes.add(segment.source.sourceEntityType);
+    layers.add(segment.source.layer);
+    exact = exact && segment.source.exact;
+  }
+
+  return {
+    sourceEntityIndices: [...entityIndices].sort((first, second) => first - second),
+    sourceEntityTypes: [...entityTypes].sort(),
+    layers: [...layers].sort(compareNullableText),
+    exact
+  };
+}
+
+function compareNullableText(first: string | null, second: string | null) {
+  if (first === second) return 0;
+  if (first === null) return 1;
+  if (second === null) return -1;
+  return first.localeCompare(second);
 }
 
 function assignContainment(contours: PathContour[], epsilon: number) {

@@ -78,6 +78,45 @@ describe('path-intel DXF planning', () => {
     ]);
   });
 
+  it('summarizes source provenance on contours and planned operations', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [
+        closedPolylineEntity('OUTER', [
+          { x: 0, y: 0 },
+          { x: 20, y: 0 },
+          { x: 20, y: 20 },
+          { x: 0, y: 20 }
+        ]),
+        closedPolylineEntity('INNER', [
+          { x: 5, y: 5 },
+          { x: 15, y: 5 },
+          { x: 15, y: 15 },
+          { x: 5, y: 15 }
+        ])
+      ],
+      { endpointTolerance: DEFAULT_TOLERANCE }
+    );
+
+    expect(document.contours.map((contour) => contour.provenance)).toEqual([
+      {
+        exact: true,
+        layers: ['OUTER'],
+        sourceEntityIndices: [0],
+        sourceEntityTypes: ['lwpolyline']
+      },
+      {
+        exact: true,
+        layers: ['INNER'],
+        sourceEntityIndices: [1],
+        sourceEntityTypes: ['lwpolyline']
+      }
+    ]);
+    expect(document.plan.operations.map((operation) => operation.provenance)).toEqual([
+      document.contours[1].provenance,
+      document.contours[0].provenance
+    ]);
+  });
+
   it('uses rapids only between disconnected contours', () => {
     const document = createPathPlanningDocumentFromDxfEntities(
       [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)],
@@ -214,6 +253,15 @@ function rectangleLines(minX: number, minY: number, maxX: number, maxY: number):
     line(maxX, maxY, minX, maxY),
     line(minX, maxY, minX, minY)
   ];
+}
+
+function closedPolylineEntity(layer: string, vertices: Array<{ x: number; y: number }>): DxfEntity {
+  return {
+    type: 'lwpolyline',
+    layer,
+    closed: true,
+    vertices: vertices.map((vertex) => ({ ...vertex, bulge: 0 }))
+  };
 }
 
 function line(startX: number, startY: number, endX: number, endY: number): DxfEntity {

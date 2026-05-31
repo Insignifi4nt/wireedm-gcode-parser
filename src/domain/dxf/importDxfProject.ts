@@ -81,10 +81,6 @@ export async function importDxfProject(
   project.machine = { ...machineProfile };
   project.generated.body = generatedBody;
   project.upid = createProjectUpid(pathDocument, postDiagnostics);
-  project.pathPlanning = {
-    document: pathDocument,
-    postDiagnostics
-  };
   project.source.files = [
     {
       name: `${project.id}.dxf`,

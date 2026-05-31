@@ -56,8 +56,6 @@ describe('importDxfProject', () => {
     expect(result.project.upid?.format).toBe('upid');
     expect(result.project.upid?.document).toBe(result.pathDocument);
     expect(result.project.upid?.postDiagnostics).toEqual([]);
-    expect(result.project.pathPlanning?.document).toBe(result.pathDocument);
-    expect(result.project.pathPlanning?.postDiagnostics).toEqual([]);
 
     const projectPath = 'projects/top-slot-2026-05-29/project.json';
 

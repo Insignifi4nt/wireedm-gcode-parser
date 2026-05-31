@@ -152,15 +152,7 @@ describe('saveEditorProgram', () => {
       classification: 'hole',
       kind: 'manual'
     });
-    expect(savedProject.pathPlanning.document.plan.operations[0].direction).toBe('reverse');
-    expect(savedProject.pathPlanning.document.plan.operations[0].overrides.direction).toEqual({
-      direction: 'reverse',
-      kind: 'manual'
-    });
-    expect(savedProject.pathPlanning.document.plan.operations[0].overrides.classification).toEqual({
-      classification: 'hole',
-      kind: 'manual'
-    });
+    expect(savedProject.pathPlanning).toBeUndefined();
     expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.editorProgram.text).toBe('');
     expect(saved.editorProgram.parseResult.path).toHaveLength(0);
@@ -168,9 +160,7 @@ describe('saveEditorProgram', () => {
     expect(adapter.files.get(imported.project.source.files[0].path)).toBe(rectangleDxf());
     expect(savedManifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.workbench.manifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
-    expect(saved.editorProgram.project?.pathPlanning?.document.plan.operations[0].direction).toBe(
-      'reverse'
-    );
+    expect('pathPlanning' in (saved.editorProgram.project ?? {})).toBe(false);
     expect(saved.editorProgram.project?.upid?.document.plan.operations[0].direction).toBe('reverse');
   });
 
@@ -241,7 +231,7 @@ describe('saveEditorProgram', () => {
     expect(savedProject.generated).toEqual({ body: '', files: [] });
   });
 
-  it('clears stale path planning when manual text edits are saved without a path document', async () => {
+  it('clears UPID state when manual text edits are saved without a path document', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
       now: new Date('2026-05-29T10:00:00.000Z')
@@ -265,9 +255,7 @@ describe('saveEditorProgram', () => {
     const projectPath = 'projects/manual-edit-2026-05-29/project.json';
     const savedProject = JSON.parse(adapter.files.get(projectPath) || '{}');
 
-    expect(savedProject.pathPlanning).toBeUndefined();
     expect(savedProject.upid).toBeUndefined();
-    expect(saved.editorProgram.project?.pathPlanning).toBeUndefined();
     expect(saved.editorProgram.project?.upid).toBeUndefined();
     expect(savedProject.generated.body).toContain('G1 X10.000 Y0.000');
     expect(savedProject.generated.body).not.toContain('G40');
