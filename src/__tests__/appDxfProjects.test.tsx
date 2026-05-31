@@ -51,6 +51,10 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).toContain('Editor');
     expect(container.textContent).toContain('generated/part-');
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
+    expect(container.querySelector('svg[aria-label="UPID path preview"]')?.getAttribute('data-preview-model')).toBe(
+      'upid'
+    );
+    expect(container.querySelector('svg[aria-label="G-code path preview"]')).toBeNull();
     expect(container.querySelector('[data-upid-segment-row]')?.textContent).toContain(
       '0.000, 0.000 -> 10.000, 0.000'
     );
@@ -593,7 +597,7 @@ describe('App DXF imports and project library', () => {
     expect(rapidControl).not.toBeNull();
 
     const rapidPath = container.querySelector(
-      `svg[aria-label="G-code path preview"] path[data-type="rapid"][data-preview-travel="rapid-in"][data-preview-operation="${operationId}"]`
+      `svg[aria-label="UPID path preview"] path[data-type="rapid"][data-preview-travel="rapid-in"][data-preview-operation="${operationId}"]`
     );
     expect(rapidPath).not.toBeNull();
     expect(rapidPath?.getAttribute('d')).toBe('M 0 0 L 10 7');
@@ -713,7 +717,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     const preview = container.querySelector(
-      'svg[aria-label="G-code path preview"]'
+      'svg[aria-label="UPID path preview"]'
     ) as SVGSVGElement | null;
     expect(preview).not.toBeNull();
     Object.defineProperty(preview, 'getBoundingClientRect', {
@@ -736,7 +740,7 @@ describe('App DXF imports and project library', () => {
     expect(segmentId).toBeTruthy();
 
     const previewSegment = container.querySelector(
-      `svg[aria-label="G-code path preview"] path[data-preview-segment="${segmentId}"]`
+      `svg[aria-label="UPID path preview"] path[data-preview-segment="${segmentId}"]`
     );
     expect(previewSegment).not.toBeNull();
 
@@ -796,7 +800,7 @@ describe('App DXF imports and project library', () => {
     ).not.toBeNull();
 
     const preview = container.querySelector(
-      'svg[aria-label="G-code path preview"]'
+      'svg[aria-label="UPID path preview"]'
     ) as SVGSVGElement | null;
     expect(preview).not.toBeNull();
     Object.defineProperty(preview, 'getBoundingClientRect', {
@@ -935,7 +939,7 @@ describe('App DXF imports and project library', () => {
     expect(segmentId).toBeTruthy();
 
     const previewSegment = container.querySelector(
-      `svg[aria-label="G-code path preview"] path[data-preview-segment="${segmentId}"]`
+      `svg[aria-label="UPID path preview"] path[data-preview-segment="${segmentId}"]`
     );
     expect(previewSegment).not.toBeNull();
     expect(segmentRow?.getAttribute('data-upid-hovered')).not.toBe('true');
@@ -986,7 +990,7 @@ describe('App DXF imports and project library', () => {
     expect(segmentId).toBeTruthy();
 
     const endpointHandle = container.querySelector(
-      `svg[aria-label="G-code path preview"] circle[data-preview-path-endpoint][data-preview-point-role="end"][data-preview-segment="${segmentId}"]`
+      `svg[aria-label="UPID path preview"] circle[data-preview-path-endpoint][data-preview-point-role="end"][data-preview-segment="${segmentId}"]`
     );
     expect(endpointHandle).not.toBeNull();
 
@@ -1007,7 +1011,7 @@ describe('App DXF imports and project library', () => {
     });
 
     const hoveredEndpointHandle = container.querySelector(
-      `svg[aria-label="G-code path preview"] circle[data-preview-path-endpoint][data-preview-point-role="end"][data-preview-segment="${segmentId}"]`
+      `svg[aria-label="UPID path preview"] circle[data-preview-path-endpoint][data-preview-point-role="end"][data-preview-segment="${segmentId}"]`
     );
     expect(hoveredEndpointHandle?.getAttribute('data-preview-hovered')).toBe('true');
 
@@ -1016,7 +1020,7 @@ describe('App DXF imports and project library', () => {
     });
 
     const selectedEndpointHandle = container.querySelector(
-      `svg[aria-label="G-code path preview"] circle[data-preview-path-endpoint][data-preview-point-role="end"][data-preview-segment="${segmentId}"]`
+      `svg[aria-label="UPID path preview"] circle[data-preview-path-endpoint][data-preview-point-role="end"][data-preview-segment="${segmentId}"]`
     );
 
     expect(endpointRow?.getAttribute('data-upid-selected')).toBe('true');
@@ -1090,7 +1094,7 @@ describe('App DXF imports and project library', () => {
     expect(segmentId).toBeTruthy();
 
     const previewSegment = container.querySelector(
-      `svg[aria-label="G-code path preview"] path[data-preview-segment="${segmentId}"]`
+      `svg[aria-label="UPID path preview"] path[data-preview-segment="${segmentId}"]`
     );
     expect(previewSegment).not.toBeNull();
     expect(previewSegment?.getAttribute('data-preview-hovered')).not.toBe('true');
@@ -1126,7 +1130,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     const preview = container.querySelector(
-      'svg[aria-label="G-code path preview"]'
+      'svg[aria-label="UPID path preview"]'
     ) as SVGSVGElement | null;
     expect(preview).not.toBeNull();
     Object.defineProperty(preview, 'getBoundingClientRect', {
@@ -1215,7 +1219,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     const preview = container.querySelector(
-      'svg[aria-label="G-code path preview"]'
+      'svg[aria-label="UPID path preview"]'
     ) as SVGSVGElement | null;
     expect(preview).not.toBeNull();
     Object.defineProperty(preview, 'getBoundingClientRect', {
@@ -1298,7 +1302,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     const preview = container.querySelector(
-      'svg[aria-label="G-code path preview"]'
+      'svg[aria-label="UPID path preview"]'
     ) as SVGSVGElement | null;
     expect(preview).not.toBeNull();
     Object.defineProperty(preview, 'getBoundingClientRect', {
@@ -1624,7 +1628,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     const preview = container.querySelector(
-      'svg[aria-label="G-code path preview"]'
+      'svg[aria-label="UPID path preview"]'
     ) as SVGSVGElement | null;
     expect(preview).not.toBeNull();
     Object.defineProperty(preview, 'getBoundingClientRect', {
@@ -1762,7 +1766,7 @@ describe('App DXF imports and project library', () => {
       'button[aria-label="Magnetize latest point tangent"]'
     ) as HTMLButtonElement | null;
     const preview = container.querySelector(
-      'svg[aria-label="G-code path preview"]'
+      'svg[aria-label="UPID path preview"]'
     ) as SVGSVGElement | null;
     Object.defineProperty(preview, 'getBoundingClientRect', {
       value: () => ({

@@ -53,6 +53,7 @@ import {
 interface EditorPreviewProps {
   constructionPreview?: EditorConstructionPreview | null;
   startPreview?: EditorStartPreview | null;
+  previewLabel?: string;
   program: LoadedEditorProgram | null;
   hoveredLine: number | null;
   hoveredPathElement?: EditorPathElementRef | null;
@@ -102,6 +103,7 @@ export function EditorPreview({
   onPathElementHover,
   onPreviewPointClick,
   pathDocument,
+  previewLabel = 'G-code path preview',
   pinnedLines,
   selectedPathElement,
   selectedLines,
@@ -567,7 +569,8 @@ export function EditorPreview({
       </div>
       <svg
         ref={setPreviewSvg}
-        aria-label="G-code path preview"
+        aria-label={previewLabel}
+        data-preview-model={pathDocument ? 'upid' : 'gcode'}
         className="h-full min-h-0 w-full"
         onContextMenu={(event) => event.preventDefault()}
         onClick={handlePreviewClick}

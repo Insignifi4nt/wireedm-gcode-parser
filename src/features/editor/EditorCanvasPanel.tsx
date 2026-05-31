@@ -81,6 +81,7 @@ export function EditorCanvasPanel({
           onPreviewPointClick={onPreviewPointClick ?? ((point) => onAddMeasurementPoint(point.x, point.y))}
           pathDocument={pathDocument}
           pinnedLines={pinnedLines}
+          previewLabel={pathDocument ? 'UPID path preview' : 'G-code path preview'}
           program={draftProgram}
           selectedPathElement={selectedPathElement}
           snapToGrid={gridSnapEnabled}
