@@ -57,14 +57,8 @@ export function EditorCanvasPanel({
       className="flex min-h-0 min-w-0 flex-col overflow-hidden border border-border bg-[#0e1317]"
       data-editor-canvas-panel
     >
-      <div className="flex h-7 shrink-0 items-center justify-between border-b border-border bg-card/70 px-2">
-        <h3 className="font-mono text-[11px] font-semibold">Preview</h3>
-        <span className="font-mono text-[9px] text-muted-foreground">
-          {pathCount} {pathCount === 1 ? 'path item' : 'path items'}
-        </span>
-      </div>
       <div
-        className={`min-h-0 flex-1 p-1.5 ${guideHighlightClass('preview', guideHighlightTarget)}`}
+        className={`min-h-0 flex-1 ${guideHighlightClass('preview', guideHighlightTarget)}`}
         {...guideTargetProps('preview', guideHighlightTarget)}
       >
         <EditorPreview
@@ -80,6 +74,7 @@ export function EditorCanvasPanel({
           onPathElementHover={onPathElementHover}
           onPreviewPointClick={onPreviewPointClick ?? ((point) => onAddMeasurementPoint(point.x, point.y))}
           pathDocument={pathDocument}
+          pathCount={pathCount}
           pinnedLines={pinnedLines}
           previewLabel={pathDocument ? 'UPID path preview' : 'G-code path preview'}
           program={draftProgram}

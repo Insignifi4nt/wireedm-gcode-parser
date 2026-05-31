@@ -39,14 +39,23 @@ export function EditorHeaderBar({
   }
 
   return (
-    <section className="flex min-h-10 flex-wrap items-center gap-2 border-b border-border bg-background/90 px-2 py-1">
-      <div className="min-w-[220px] flex-1">
+    <div className="mr-3 flex min-w-0 flex-1 items-center gap-2">
+      <Button
+        className="h-7 shrink-0 px-2 text-[10px]"
+        onClick={onBackToDashboard}
+        size="sm"
+        variant="outline"
+      >
+        <ArrowLeft />
+        Dashboard
+      </Button>
+      <div className="min-w-0 flex-1">
         <p className="font-mono text-[9px] uppercase text-muted-foreground">Editor</p>
         <h2 className="truncate font-mono text-[12px] font-semibold" title={filePath}>
           {filePath ?? 'Import or open a G-code program'}
         </h2>
       </div>
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
+      <div className="flex min-w-0 shrink-0 items-center justify-end gap-1">
         <input
           ref={fileInputRef}
           accept=".gcode,.nc,.iso,.txt,text/plain"
@@ -80,18 +89,9 @@ export function EditorHeaderBar({
           <CircleHelp />
           Controls
         </Button>
-        <Button
-          className="h-7 px-2 text-[10px]"
-          onClick={onBackToDashboard}
-          size="sm"
-          variant="outline"
-        >
-          <ArrowLeft />
-          Dashboard
-        </Button>
       </div>
       {(importErrorMessage || saveErrorMessage) && (
-        <div className="basis-full space-y-1">
+        <div className="absolute left-10 right-3 top-10 z-50 space-y-1">
           {importErrorMessage && (
             <p className="border border-destructive bg-destructive/10 px-2 py-1 font-mono text-[10px] text-destructive">
               {importErrorMessage}
@@ -104,6 +104,6 @@ export function EditorHeaderBar({
           )}
         </div>
       )}
-    </section>
+    </div>
   );
 }

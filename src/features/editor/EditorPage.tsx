@@ -3,9 +3,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type DragEvent,
-  type MouseEvent
+  type MouseEvent,
+  type PointerEvent
 } from 'react';
+import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 import { useAppRail } from '@/app/AppRailContext';
 import { buildOutputFilename, composeGCodeProgram } from '@/domain/post/gcodeTemplates';
@@ -121,7 +124,7 @@ export function EditorPage({
   onSaveProgramText,
   onStatusMessage
 }: EditorPageProps) {
-  const { setRailContent } = useAppRail();
+  const { setHeaderContent, setRailContent } = useAppRail();
   const [draftText, setDraftText] = useState(program?.text ?? '');
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
   const lastClickedLineRef = useRef<number | null>(null);
@@ -146,6 +149,8 @@ export function EditorPage({
   const [selectedPathElement, setSelectedPathElement] = useState<EditorPathElementRef | null>(null);
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
+  const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
+  const [rightRailWidth, setRightRailWidth] = useState(420);
   const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
   const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
   const savedPathDocument = useMemo(() => projectUpidDocument(program?.project), [program?.project]);
@@ -373,15 +378,37 @@ export function EditorPage({
       undoStack.length
     ]
   );
+  const editorHeaderContent = useMemo(
+    () => (
+      <EditorHeaderBar
+        filePath={program?.filePath}
+        guideHighlightTarget={guideHighlightTarget}
+        importErrorMessage={importErrorMessage}
+        isImporting={isImporting}
+        onBackToDashboard={onBackToDashboard}
+        onImportProgramFile={onImportProgramFile}
+        onOpenGuide={() => setGuideOpen(true)}
+        saveErrorMessage={saveErrorMessage}
+      />
+    ),
+    [
+      guideHighlightTarget,
+      importErrorMessage,
+      isImporting,
+      onBackToDashboard,
+      onImportProgramFile,
+      program?.filePath,
+      saveErrorMessage
+    ]
+  );
 
   useEffect(() => {
     setDraftText(program?.text ?? '');
     const pathDocument = projectUpidDocument(program?.project);
     const nextPathDocument = pathDocument ? structuredClone(pathDocument) : null;
-    const nextOperationId = nextPathDocument?.plan.operations[0]?.id ?? null;
     setPathDocumentDraft(nextPathDocument);
-    setSelectedPathOperationId(nextOperationId);
-    setSelectedPathElement(nextOperationId ? { operationId: nextOperationId, segmentId: null } : null);
+    setSelectedPathOperationId(null);
+    setSelectedPathElement(null);
     setHoveredPathElement(null);
     setExportPreviewOpen(false);
     setPathClickMode(null);
@@ -394,6 +421,11 @@ export function EditorPage({
     setRailContent(editorRailContent);
     return () => setRailContent(null);
   }, [editorRailContent, setRailContent]);
+
+  useEffect(() => {
+    setHeaderContent(editorHeaderContent);
+    return () => setHeaderContent(null);
+  }, [editorHeaderContent, setHeaderContent]);
 
   function setLastClickedLine(lineNumber: number | null) {
     lastClickedLineRef.current = lineNumber;
@@ -422,6 +454,9 @@ export function EditorPage({
         setHoveredLine(null);
         setLastClickedLine(null);
         setSelectedLines([]);
+        setSelectedPathElement(null);
+        setSelectedPathOperationId(null);
+        setPathClickMode(null);
         return;
       }
 
@@ -467,6 +502,25 @@ export function EditorPage({
     if (!file || isImporting) return;
 
     await onImportProgramFile(file);
+  }
+
+  function handleRightRailResizeStart(event: PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = rightRailWidth;
+
+    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+      const nextWidth = Math.min(560, Math.max(280, startWidth - (moveEvent.clientX - startX)));
+      setRightRailWidth(nextWidth);
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
   }
 
   async function handleSaveClick() {
@@ -984,18 +1038,14 @@ export function EditorPage({
         onLanguageChange={handleGuideLanguageChange}
         open={guideOpen}
       />
-      <EditorHeaderBar
-        filePath={program?.filePath}
-        guideHighlightTarget={guideHighlightTarget}
-        importErrorMessage={importErrorMessage}
-        isImporting={isImporting}
-        onBackToDashboard={onBackToDashboard}
-        onImportProgramFile={onImportProgramFile}
-        onOpenGuide={() => setGuideOpen(true)}
-        saveErrorMessage={saveErrorMessage}
-      />
-
-      <section className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)] gap-2 overflow-hidden p-2 lg:grid-cols-[minmax(0,1fr)_420px] lg:grid-rows-[minmax(0,1fr)]">
+      <section
+        className={`grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)] gap-y-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)] ${
+          rightRailCollapsed
+            ? 'lg:grid-cols-[minmax(0,1fr)_42px]'
+            : 'lg:grid-cols-[minmax(0,1fr)_4px_var(--editor-inspector-width)]'
+        }`}
+        style={{ '--editor-inspector-width': `${rightRailWidth}px` } as CSSProperties}
+      >
         <EditorCanvasPanel
           constructionPreview={constructionPreview}
           draftProgram={draftProgram}
@@ -1019,13 +1069,54 @@ export function EditorPage({
           startPreview={startPreview}
         />
 
-        <aside
-          className={`min-h-0 overflow-hidden border border-border bg-card/95 font-mono text-[10px] ${
-            isPathProject ? '' : 'grid lg:grid-rows-[minmax(0,1fr)_auto]'
-          }`}
-          data-editor-inspector-panel
-          data-editor-inspector-rail
-        >
+        {rightRailCollapsed ? (
+          <div
+            className="hidden min-h-0 border border-border bg-card/95 lg:flex lg:flex-col lg:items-center lg:gap-3 lg:py-2"
+            data-editor-inspector-collapsed
+          >
+            <button
+              aria-label="Expand right bar"
+              className="flex size-7 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+              onClick={() => setRightRailCollapsed(false)}
+              title="Expand right bar"
+              type="button"
+            >
+              <PanelRightOpen className="size-3.5" />
+            </button>
+            <div className="rotate-180 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground [writing-mode:vertical-rl]">
+              Inspector
+            </div>
+          </div>
+        ) : (
+          <>
+            <div
+              aria-label="Resize right bar"
+              className="hidden cursor-col-resize bg-border/30 transition hover:bg-primary/40 lg:block"
+              data-editor-inspector-resizer
+              onPointerDown={handleRightRailResizeStart}
+              role="separator"
+            />
+            <aside
+              className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/95 font-mono text-[10px]"
+              data-editor-inspector-panel
+              data-editor-inspector-rail
+            >
+              <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-1">
+                <button
+                  aria-label="Collapse right bar"
+                  className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+                  onClick={() => setRightRailCollapsed(true)}
+                  title="Collapse right bar"
+                  type="button"
+                >
+                  <PanelRightClose className="size-3.5" />
+                </button>
+              </div>
+              <div
+                className={`min-h-0 overflow-hidden ${
+                  isPathProject ? '' : 'grid lg:grid-rows-[minmax(0,1fr)_auto]'
+                }`}
+              >
           {!pathDocumentDraft && (
             <div
               className="grid min-h-0 gap-2 overflow-hidden p-2 lg:grid-rows-[minmax(260px,1fr)_auto]"
@@ -1115,7 +1206,10 @@ export function EditorPage({
             showPathOperations={!isPathProject}
             structure={isPathProject ? null : structure}
           />
-        </aside>
+              </div>
+            </aside>
+          </>
+        )}
       </section>
       {exportPreviewOpen && upidExport && (
         <EditorUpidExportPreview

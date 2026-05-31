@@ -65,6 +65,7 @@ interface EditorPreviewProps {
   onPathElementHover?: (element: EditorPathElementRef | null) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
   pathDocument?: PathPlanningDocument | null;
+  pathCount?: number;
   pinnedLines: number[];
   selectedPathElement?: EditorPathElementRef | null;
   selectedLines: number[];
@@ -103,6 +104,7 @@ export function EditorPreview({
   onPathElementHover,
   onPreviewPointClick,
   pathDocument,
+  pathCount,
   previewLabel = 'G-code path preview',
   pinnedLines,
   selectedPathElement,
@@ -523,44 +525,57 @@ export function EditorPreview({
   }
 
   return (
-    <div className="grid h-full min-h-[220px] grid-rows-[auto_minmax(0,1fr)] border border-border bg-background/70">
-      <div className="flex h-7 items-center justify-end gap-1 border-b border-border bg-card/70 px-2 font-mono text-[10px] text-muted-foreground">
-        <Button
-          aria-label="Zoom preview out"
-          disabled={zoom <= MIN_PREVIEW_ZOOM}
-          onClick={() => setZoom((current) => clampZoom(current / PREVIEW_ZOOM_STEP))}
-          size="icon"
-          title="Zoom out"
-          type="button"
-          variant="ghost"
-        >
-          <ZoomOut />
-        </Button>
-        <span className="min-w-10 text-center" title="Preview zoom">
-          {zoomPercent}%
-        </span>
-        <Button
-          aria-label="Zoom preview in"
-          disabled={zoom >= MAX_PREVIEW_ZOOM}
-          onClick={() => setZoom((current) => clampZoom(current * PREVIEW_ZOOM_STEP))}
-          size="icon"
-          title="Zoom in"
-          type="button"
-          variant="ghost"
-        >
-          <ZoomIn />
-        </Button>
-        <Button
-          aria-label="Fit preview to screen"
-          disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
-          onClick={handleFitPreview}
-          size="icon"
-          title="Fit to screen"
-          type="button"
-          variant="ghost"
-        >
-          <Maximize2 />
-        </Button>
+    <div className="grid h-full min-h-[220px] grid-rows-[auto_minmax(0,1fr)] bg-background/70">
+      <div
+        className="flex h-7 items-center justify-between gap-2 border-b border-border bg-card/70 px-2 font-mono text-[10px] text-muted-foreground"
+        data-editor-preview-header
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <h3 className="font-mono text-[11px] font-semibold text-foreground">Preview</h3>
+          {typeof pathCount === 'number' && (
+            <span>
+              {pathCount} {pathCount === 1 ? 'path item' : 'path items'}
+            </span>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center justify-end gap-1">
+          <Button
+            aria-label="Zoom preview out"
+            disabled={zoom <= MIN_PREVIEW_ZOOM}
+            onClick={() => setZoom((current) => clampZoom(current / PREVIEW_ZOOM_STEP))}
+            size="icon"
+            title="Zoom out"
+            type="button"
+            variant="ghost"
+          >
+            <ZoomOut />
+          </Button>
+          <span className="min-w-10 text-center" title="Preview zoom">
+            {zoomPercent}%
+          </span>
+          <Button
+            aria-label="Zoom preview in"
+            disabled={zoom >= MAX_PREVIEW_ZOOM}
+            onClick={() => setZoom((current) => clampZoom(current * PREVIEW_ZOOM_STEP))}
+            size="icon"
+            title="Zoom in"
+            type="button"
+            variant="ghost"
+          >
+            <ZoomIn />
+          </Button>
+          <Button
+            aria-label="Fit preview to screen"
+            disabled={zoom === 1 && pan.x === 0 && pan.y === 0}
+            onClick={handleFitPreview}
+            size="icon"
+            title="Fit to screen"
+            type="button"
+            variant="ghost"
+          >
+            <Maximize2 />
+          </Button>
+        </div>
       </div>
       <svg
         ref={setPreviewSvg}

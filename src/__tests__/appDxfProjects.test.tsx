@@ -476,6 +476,11 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
+    const contourRow = container.querySelector('[data-upid-contour-row]') as HTMLElement | null;
+    await act(async () => {
+      contourRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
     const inspector = container.querySelector('[data-editor-inspector-rail]');
     const selectedGeometry = container.querySelector('[data-upid-selected-geometry]');
     expect(inspector).not.toBeNull();
@@ -488,6 +493,62 @@ describe('App DXF imports and project library', () => {
     expect(inspector?.textContent).not.toContain('Warnings');
     expect(inspector?.textContent).not.toContain('Errors');
     expect(inspector?.textContent).not.toContain('Lines');
+  });
+
+  it('opens DXF path projects without selecting the first cut sequence', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'unselected-path.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-cut-sequence-row][data-upid-selected="true"]')).toBeNull();
+    expect(container.querySelector('[data-upid-contour-row][data-upid-selected="true"]')).toBeNull();
+    expect(container.querySelector('[data-preview-selected="true"]')).toBeNull();
+    expect(container.querySelector('[data-upid-selected-geometry]')).toBeNull();
+  });
+
+  it('clears UPID path selection with Escape', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'escape-clears-path.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const contourRow = container.querySelector('[data-upid-contour-row]') as HTMLElement | null;
+    await act(async () => {
+      contourRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(contourRow?.getAttribute('data-upid-selected')).toBe('true');
+    expect(container.querySelector('[data-preview-selected="true"]')).not.toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-upid-cut-sequence-row][data-upid-selected="true"]')).toBeNull();
+    expect(container.querySelector('[data-upid-contour-row][data-upid-selected="true"]')).toBeNull();
+    expect(container.querySelector('[data-preview-selected="true"]')).toBeNull();
+    expect(container.querySelector('[data-upid-selected-geometry]')).toBeNull();
   });
 
   it('shows nested UPID contour roles and containment in the navigator and inspector', async () => {
@@ -591,6 +652,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     const roleSelect = container.querySelector(
       'select[aria-label="Contour role"]'
@@ -625,6 +687,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     const roleSelect = container.querySelector(
       'select[aria-label="Contour role"]'
@@ -676,6 +739,7 @@ describe('App DXF imports and project library', () => {
       openLatestButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     expect(container.querySelector('select[aria-label="Contour role"]')).toHaveProperty('value', 'hole');
     expect(container.querySelector('[data-upid-contour-row]')?.getAttribute('data-upid-contour-role')).toBe(
@@ -882,6 +946,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
       'svg[aria-label="UPID path preview"]'
@@ -941,6 +1006,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     const reverseButton = container.querySelector(
       'button[aria-label="Reverse path operation"]'
@@ -1331,6 +1397,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
       'svg[aria-label="UPID path preview"]'
@@ -1420,6 +1487,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
       'svg[aria-label="UPID path preview"]'
@@ -1503,6 +1571,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
       'svg[aria-label="UPID path preview"]'
@@ -1616,6 +1685,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     const reverseButton = container.querySelector(
       'button[aria-label="Reverse path operation"]'
@@ -1682,6 +1752,7 @@ describe('App DXF imports and project library', () => {
       openLatestButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     const reopenedReverseButton = container.querySelector(
       'button[aria-label="Reverse path operation"]'
@@ -1826,6 +1897,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
       'svg[aria-label="UPID path preview"]'
@@ -1961,6 +2033,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await selectFirstCutSequence(container);
 
     const tangentButton = container.querySelector(
       'button[aria-label="Magnetize latest point tangent"]'
@@ -2095,6 +2168,16 @@ function closedPolylineDxf(points: Array<{ x: number; y: number }>) {
     '1',
     ...points.flatMap((point) => ['10', String(point.x), '20', String(point.y)])
   ];
+}
+
+async function selectFirstCutSequence(container: HTMLElement) {
+  const firstCutSequence = container.querySelector(
+    '[data-upid-cut-sequence-select]'
+  ) as HTMLButtonElement | null;
+
+  await act(async () => {
+    firstCutSequence?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
 }
 
 function worldClientPoint(preview: SVGSVGElement, point: { x: number; y: number }) {

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type PointerEvent, type ReactNode } from 'react';
 import {
   Database,
   HardDrive,
@@ -32,7 +32,9 @@ export function AppShell({
   storageWarningMessage,
   children
 }: AppShellProps) {
+  const [headerContent, setHeaderContent] = useState<ReactNode | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(220);
   const [railContent, setRailContent] = useState<AppRailContent | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isReady = workbenchStatus === 'ready' && connectedWorkbench;
@@ -56,13 +58,35 @@ export function AppShell({
         : 'Storage not connected';
   const projectCount = connectedWorkbench?.manifest.projects.length ?? 0;
 
+  function handleSidebarResizeStart(event: PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+
+    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+      const nextWidth = Math.min(380, Math.max(160, startWidth + moveEvent.clientX - startX));
+      setSidebarWidth(nextWidth);
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+  }
+
   return (
     <div
       className="flex h-screen flex-col overflow-hidden bg-background text-foreground"
       data-app-shell
       data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'}
     >
-      <header className="flex h-9 shrink-0 items-center border-b border-border bg-[#11171b]/95 px-2">
+      <header
+        className="flex h-9 shrink-0 items-center border-b border-border bg-[#11171b]/95 px-2"
+        data-app-header
+      >
         <button
           aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}
           className="mr-2 flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
@@ -72,10 +96,12 @@ export function AppShell({
         >
           {sidebarCollapsed ? <PanelLeftOpen className="size-3.5" /> : <PanelLeftClose className="size-3.5" />}
         </button>
-        <div className="mr-4 flex min-w-0 items-center gap-2 font-mono text-xs font-semibold text-foreground">
-          <HardDrive className="size-4 text-primary" />
-          <span className="truncate">Wire EDM Workbench</span>
-        </div>
+        {headerContent ?? (
+          <div className="mr-4 flex min-w-0 items-center gap-2 font-mono text-xs font-semibold text-foreground">
+            <HardDrive className="size-4 text-primary" />
+            <span className="truncate">Wire EDM Workbench</span>
+          </div>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <span
             aria-label={storageStatusLabel}
@@ -104,11 +130,12 @@ export function AppShell({
       </header>
 
       <div
-        className={`grid min-h-0 flex-1 transition-[grid-template-columns] ${
-          sidebarCollapsed ? 'grid-cols-[42px_minmax(0,1fr)]' : 'grid-cols-[220px_minmax(0,1fr)]'
-        }`}
+        className="grid min-h-0 flex-1 transition-[grid-template-columns]"
+        style={{
+          gridTemplateColumns: sidebarCollapsed ? '42px minmax(0, 1fr)' : `${sidebarWidth}px 4px minmax(0, 1fr)`
+        }}
       >
-        <aside className="min-w-0 overflow-hidden border-r border-border bg-card/95">
+        <aside className="min-w-0 overflow-hidden border-r border-border bg-card/95" data-app-rail>
           {sidebarCollapsed
             ? railContent?.collapsed ?? (
                 <div className="flex h-full flex-col items-center gap-3 py-3">
@@ -182,8 +209,17 @@ export function AppShell({
                 </div>
               )}
         </aside>
+        {!sidebarCollapsed && (
+          <div
+            aria-label="Resize project rail"
+            className="cursor-col-resize border-r border-border bg-border/30 transition hover:bg-primary/40"
+            data-app-rail-resizer
+            onPointerDown={handleSidebarResizeStart}
+            role="separator"
+          />
+        )}
 
-        <AppRailProvider value={{ setRailContent }}>
+        <AppRailProvider value={{ setHeaderContent, setRailContent }}>
           <main className="min-h-0 min-w-0 overflow-hidden">{children}</main>
         </AppRailProvider>
       </div>

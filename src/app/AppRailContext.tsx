@@ -6,6 +6,7 @@ export interface AppRailContent {
 }
 
 interface AppRailContextValue {
+  setHeaderContent: Dispatch<SetStateAction<ReactNode | null>>;
   setRailContent: Dispatch<SetStateAction<AppRailContent | null>>;
 }
 
