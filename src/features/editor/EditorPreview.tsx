@@ -113,12 +113,7 @@ export function EditorPreview({
   const preview = useMemo(
     () =>
       pathDocument
-        ? buildEditorPathDocumentPreviewGeometry(pathDocument, {
-            lineHints: program?.parseResult.path
-              .filter((point) => point.type !== 'position')
-              .map((point) => point.line),
-            padding: 1
-          })
+        ? buildEditorPathDocumentPreviewGeometry(pathDocument, { padding: 1 })
         : program
           ? buildEditorPreviewGeometry(program.parseResult, { padding: 1 })
           : null,

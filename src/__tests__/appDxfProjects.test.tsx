@@ -317,6 +317,61 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
   });
 
+  it('uses UPID geometry for editor path stats instead of stale generated G-code', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'upid-stats.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const manifest = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const projectPath = manifest.projects[0].path;
+    const project = JSON.parse(
+      window.localStorage.getItem(`wire-edm-workbench:file:${projectPath}`) || '{}'
+    );
+    const activeProgramPath = project.editor.activeFilePath;
+    window.localStorage.setItem(
+      `wire-edm-workbench:file:${activeProgramPath}`,
+      'G0 X0 Y0\nG1 X1 Y0\nM30'
+    );
+
+    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Dashboard')
+    );
+
+    await act(async () => {
+      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const libraryOpenButton = container.querySelector(
+      `button[aria-label="Open project ${manifest.projects[0].id} in editor"]`
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      libraryOpenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-canvas-panel]')?.textContent).toContain('5 path items');
+    expect(container.querySelector('[data-editor-stat="bounds"]')?.textContent).toBe(
+      'X0.000..10.000 Y0.000..5.000'
+    );
+    expect(container.querySelector('[data-upid-stat="segments"]')?.textContent).toBe('4');
+    expect(container.textContent).not.toContain('G1 X1 Y0');
+  });
+
   it('warns in the editor when imported DXF geometry exceeds the active machine profile work area', async () => {
     window.showDirectoryPicker = undefined;
 

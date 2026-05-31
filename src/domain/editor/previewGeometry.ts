@@ -153,7 +153,7 @@ export function buildEditorPathDocumentPreviewGeometry(
         d: linePath(rapidStart, operation.startPoint),
         start: rapidStart,
         end: operation.startPoint,
-        line: options.lineHints?.[pathIndex++] ?? 0,
+        line: pathLineNumber(options.lineHints, pathIndex++),
         operationId: operation.id,
         source: 'path-document',
         travelRole: 'rapid-in'
@@ -168,7 +168,7 @@ export function buildEditorPathDocumentPreviewGeometry(
           d: segmentPath.d,
           start: segmentPath.start,
           end: segmentPath.end,
-          line: options.lineHints?.[pathIndex++] ?? 0,
+          line: pathLineNumber(options.lineHints, pathIndex++),
           operationId: operation.id,
           segmentId: ref.segmentId,
           source: 'path-document'
@@ -364,6 +364,10 @@ function pathDocumentPreviewMarkers(document: PathPlanningDocument): EditorPrevi
   }
 
   return markers;
+}
+
+function pathLineNumber(lineHints: number[] | undefined, pathIndex: number) {
+  return lineHints?.[pathIndex] ?? pathIndex + 1;
 }
 
 function pathDocumentSegmentPaths(segment: PathSegment, ref: OrientedSegmentRef) {

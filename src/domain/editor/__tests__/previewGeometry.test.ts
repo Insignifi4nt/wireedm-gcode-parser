@@ -168,6 +168,22 @@ describe('buildEditorPreviewGeometry', () => {
     expect(preview.paths[2].segmentId).toBe(document.plan.operations[0].segmentRefs[0].segmentId);
   });
 
+  it('uses stable synthetic line ids when path document preview has stale line hints', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 10, 0),
+      line(10, 0, 10, 5),
+      line(10, 5, 0, 5),
+      line(0, 5, 0, 0)
+    ]);
+
+    const preview = buildEditorPathDocumentPreviewGeometry(document, {
+      lineHints: [9],
+      padding: 1
+    });
+
+    expect(preview.paths.map((path) => path.line)).toEqual([9, 2, 3, 4, 5]);
+  });
+
   it('expands the fit viewBox to the rendered viewport aspect instead of letterboxing the SVG', () => {
     expect(
       fitViewBoxToViewportAspect(

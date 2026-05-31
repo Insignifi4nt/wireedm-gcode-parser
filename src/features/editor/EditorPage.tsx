@@ -33,13 +33,17 @@ import {
   type MagnetizeMode
 } from '@/domain/path-editor/pathDocumentOperations';
 import {
+  boundsAreFinite,
+  emptyBounds,
+  mergeBounds,
   orientedSegmentEnd,
   orientedSegmentStart,
+  pathBounds,
   pointsEqual,
   requiredSegment,
   segmentMap
 } from '@/domain/path-intel/segments';
-import type { ContourClassification, PathPlanningDocument } from '@/domain/path-intel/types';
+import type { Bounds2, ContourClassification, PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 import { projectUpidDocument } from '@/domain/upid/projectUpid';
 import { postUpidToGcode } from '@/domain/upid/upidDocument';
 import {
@@ -167,11 +171,28 @@ export function EditorPage({
         : null,
     [draftText, program]
   );
-  const pathCount = draftProgram?.parseResult.path.length ?? 0;
-  const rapidMoveCount = draftProgram?.parseResult.path.filter((point) => point.type === 'rapid').length ?? 0;
-  const cuttingMoveCount = draftProgram?.parseResult.path.filter((point) => point.type === 'cut').length ?? 0;
-  const arcMoveCount = draftProgram?.parseResult.path.filter((point) => point.type === 'arc').length ?? 0;
-  const boundsText = draftProgram && pathCount > 0 ? formatBounds(draftProgram.parseResult.bounds) : '-';
+  const pathDocumentStats = useMemo(
+    () => (pathDocumentDraft ? summarizePathDocumentForEditor(pathDocumentDraft) : null),
+    [pathDocumentDraft]
+  );
+  const pathCount = pathDocumentStats?.pathCount ?? draftProgram?.parseResult.path.length ?? 0;
+  const rapidMoveCount =
+    pathDocumentStats?.rapidMoveCount ??
+    draftProgram?.parseResult.path.filter((point) => point.type === 'rapid').length ??
+    0;
+  const cuttingMoveCount =
+    pathDocumentStats?.cuttingMoveCount ??
+    draftProgram?.parseResult.path.filter((point) => point.type === 'cut').length ??
+    0;
+  const arcMoveCount =
+    pathDocumentStats?.arcMoveCount ??
+    draftProgram?.parseResult.path.filter((point) => point.type === 'arc').length ??
+    0;
+  const boundsText = pathDocumentStats
+    ? formatBounds(pathDocumentStats.bounds)
+    : draftProgram && pathCount > 0
+      ? formatBounds(draftProgram.parseResult.bounds)
+      : '-';
   const machineFit = useMemo(
     () =>
       program
@@ -1176,6 +1197,62 @@ function startPreviewPointRole(
     return 'end';
   }
   return null;
+}
+
+function summarizePathDocumentForEditor(document: PathPlanningDocument) {
+  const segmentsById = segmentMap(document.segments);
+  let bounds = emptyBounds();
+  let currentPoint: Point2 | null = null;
+  let rapidMoveCount = 0;
+  let cuttingMoveCount = 0;
+  let arcMoveCount = 0;
+
+  for (const operation of document.plan.operations) {
+    if (operation.segmentRefs.length === 0) continue;
+
+    const operationBounds = pathBounds(operation.segmentRefs, segmentsById);
+    if (boundsAreFinite(operationBounds)) {
+      bounds = mergeBounds(bounds, operationBounds);
+    }
+
+    if (!currentPoint || !pointsEqual(currentPoint, operation.startPoint, document.options.coincidenceEpsilon)) {
+      rapidMoveCount += 1;
+    }
+
+    for (const ref of operation.segmentRefs) {
+      const segment = requiredSegment(segmentsById, ref.segmentId);
+      if (segment.kind === 'line') {
+        cuttingMoveCount += 1;
+      } else if (segment.kind === 'circle') {
+        arcMoveCount += 2;
+      } else {
+        arcMoveCount += 1;
+      }
+    }
+
+    currentPoint = operation.endPoint;
+  }
+
+  if (!boundsAreFinite(bounds)) {
+    bounds = emptyDisplayBounds();
+  }
+
+  return {
+    arcMoveCount,
+    bounds,
+    cuttingMoveCount,
+    pathCount: rapidMoveCount + cuttingMoveCount + arcMoveCount,
+    rapidMoveCount
+  };
+}
+
+function emptyDisplayBounds(): Bounds2 {
+  return {
+    minX: Number.NaN,
+    minY: Number.NaN,
+    maxX: Number.NaN,
+    maxY: Number.NaN
+  };
 }
 
 function nextMeasurementPointId(currentLength: number) {
