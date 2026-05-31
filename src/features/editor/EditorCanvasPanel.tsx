@@ -25,6 +25,7 @@ interface EditorCanvasPanelProps {
   onAddMeasurementPoint: (x: number, y: number) => void;
   onCursorPointChange: (point: { x: number; y: number } | null) => void;
   onMeasurementPointMove?: (pointId: string, point: { x: number; y: number }) => void;
+  onPathElementClick?: (element: EditorPathElementRef) => void;
   onPathElementHover?: (element: EditorPathElementRef | null) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
 }
@@ -47,6 +48,7 @@ export function EditorCanvasPanel({
   onAddMeasurementPoint,
   onCursorPointChange,
   onMeasurementPointMove,
+  onPathElementClick,
   onPathElementHover,
   onPreviewPointClick
 }: EditorCanvasPanelProps) {
@@ -74,6 +76,7 @@ export function EditorCanvasPanel({
           measurementPoints={measurementPoints}
           onCursorPointChange={onCursorPointChange}
           onMeasurementPointMove={onMeasurementPointMove}
+          onPathElementClick={onPathElementClick}
           onPathElementHover={onPathElementHover}
           onPreviewPointClick={onPreviewPointClick ?? ((point) => onAddMeasurementPoint(point.x, point.y))}
           pathDocument={pathDocument}

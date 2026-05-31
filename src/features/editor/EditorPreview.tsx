@@ -60,6 +60,7 @@ interface EditorPreviewProps {
   measurementPoints: MeasurementPoint[];
   onCursorPointChange?: (point: { x: number; y: number } | null) => void;
   onMeasurementPointMove?: (pointId: string, point: { x: number; y: number }) => void;
+  onPathElementClick?: (element: EditorPathElementRef) => void;
   onPathElementHover?: (element: EditorPathElementRef | null) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
   pathDocument?: PathPlanningDocument | null;
@@ -92,6 +93,7 @@ export function EditorPreview({
   measurementPoints,
   onCursorPointChange,
   onMeasurementPointMove,
+  onPathElementClick,
   onPathElementHover,
   onPreviewPointClick,
   pathDocument,
@@ -675,6 +677,14 @@ export function EditorPreview({
                 data-type={path.type}
                 fill="none"
                 key={`${path.type}-${path.line}-${index}`}
+                onClick={(event) => {
+                  if (path.source !== 'path-document' || !path.operationId || !onPathElementClick) return;
+                  event.stopPropagation();
+                  onPathElementClick({
+                    operationId: path.operationId,
+                    segmentId: path.segmentId ?? null
+                  });
+                }}
                 onMouseEnter={() => {
                   if (path.source !== 'path-document' || !path.operationId) return;
                   onPathElementHover?.({

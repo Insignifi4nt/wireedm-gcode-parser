@@ -454,6 +454,65 @@ describe('App DXF imports and project library', () => {
     expect(selectedSegment?.textContent).toContain('line');
   });
 
+  it('selects UPID segment geometry from a canvas click', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'canvas-select.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const preview = container.querySelector(
+      'svg[aria-label="G-code path preview"]'
+    ) as SVGSVGElement | null;
+    expect(preview).not.toBeNull();
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      value: () => ({
+        left: 10,
+        top: 20,
+        width: 120,
+        height: 120,
+        right: 130,
+        bottom: 140,
+        x: 10,
+        y: 20,
+        toJSON: () => ({})
+      }),
+      configurable: true
+    });
+
+    const segmentRow = container.querySelector('[data-upid-segment-row]') as HTMLElement | null;
+    const segmentId = segmentRow?.getAttribute('data-upid-segment-id');
+    expect(segmentId).toBeTruthy();
+
+    const previewSegment = container.querySelector(
+      `svg[aria-label="G-code path preview"] path[data-preview-segment="${segmentId}"]`
+    );
+    expect(previewSegment).not.toBeNull();
+
+    await act(async () => {
+      previewSegment?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 0 })
+        })
+      );
+    });
+
+    expect(segmentRow?.getAttribute('data-upid-selected')).toBe('true');
+    expect(previewSegment?.getAttribute('data-preview-selected')).toBe('true');
+    expect(container.querySelector('[data-upid-selected-segment]')?.textContent).toContain('Selected Segment');
+    expect(container.querySelectorAll('[data-measurement-point]')).toHaveLength(0);
+  });
+
   it('shows manual UPID decisions in the selected geometry inspector', async () => {
     window.showDirectoryPicker = undefined;
 

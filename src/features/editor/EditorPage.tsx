@@ -900,6 +900,7 @@ export function EditorPage({
           onAddMeasurementPoint={addMeasurementPoint}
           onCursorPointChange={setPreviewCursorPoint}
           onMeasurementPointMove={handleMeasurementPointMove}
+          onPathElementClick={!pathClickMode ? handleSelectPathElement : undefined}
           onPathElementHover={pathHoverAssistEnabled ? setHoveredPathElement : undefined}
           onPreviewPointClick={handlePreviewPointClick}
           pathDocument={pathDocumentDraft}
