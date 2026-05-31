@@ -703,6 +703,59 @@ export function EditorPreview({
           })}
         </g>
         <g>
+          {preview.paths.map((path, index) => {
+            if (path.source !== 'path-document' || !path.operationId || !path.segmentId) return null;
+
+            return (['start', 'end'] as const).map((role) => {
+              const point = role === 'start' ? path.start : path.end;
+              const highlight = pathEndpointMatches(path, role, selectedPathElement)
+                ? 'selected'
+                : pathEndpointMatches(path, role, hoveredPathElement)
+                  ? 'hover'
+                  : undefined;
+              const color = highlight ? highlightColor(highlight) : '#67e8f9';
+              const svgY = flipY - point.y;
+
+              return (
+                <circle
+                  className={onPathElementClick ? 'cursor-pointer' : undefined}
+                  cx={point.x}
+                  cy={svgY}
+                  data-preview-hovered={highlight === 'hover' ? 'true' : undefined}
+                  data-preview-operation={path.operationId}
+                  data-preview-path-endpoint
+                  data-preview-point-role={role}
+                  data-preview-selected={highlight === 'selected' ? 'true' : undefined}
+                  data-preview-segment={path.segmentId}
+                  fill={highlight ? color : '#0f172a'}
+                  fillOpacity={highlight ? '0.95' : '0.78'}
+                  key={`endpoint-${path.operationId}-${path.segmentId}-${index}-${role}`}
+                  onClick={(event) => {
+                    if (!onPathElementClick) return;
+                    event.stopPropagation();
+                    onPathElementClick({
+                      operationId: path.operationId ?? null,
+                      pointRole: role,
+                      segmentId: path.segmentId ?? null
+                    });
+                  }}
+                  onMouseEnter={() => {
+                    onPathElementHover?.({
+                      operationId: path.operationId ?? null,
+                      pointRole: role,
+                      segmentId: path.segmentId ?? null
+                    });
+                  }}
+                  onMouseLeave={() => onPathElementHover?.(null)}
+                  r={highlight ? highlightedPointRadius * 0.78 : highlightedPointRadius * 0.52}
+                  stroke={color}
+                  strokeOpacity={highlight ? '0.95' : '0.58'}
+                  strokeWidth={highlightedPointRadius * 0.18}
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            });
+          })}
           {preview.paths.map((path) => {
             const highlight = pathElementMatches(path, hoveredPathElement)
               ? 'hover'
@@ -930,6 +983,21 @@ function pathElementMatches(
   element: EditorPathElementRef | null | undefined
 ) {
   if (!element?.operationId || path.operationId !== element.operationId) return false;
+  if (element.pointRole) return false;
   if (!path.segmentId) return false;
   return element.segmentId ? path.segmentId === element.segmentId : true;
+}
+
+function pathEndpointMatches(
+  path: { operationId?: string; segmentId?: string },
+  role: 'start' | 'end',
+  element: EditorPathElementRef | null | undefined
+) {
+  return Boolean(
+    element?.operationId &&
+      path.operationId === element.operationId &&
+      path.segmentId &&
+      element.segmentId === path.segmentId &&
+      element.pointRole === role
+  );
 }

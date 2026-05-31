@@ -29,6 +29,7 @@ import type {
 
 export interface EditorPathElementRef {
   operationId: string | null;
+  pointRole?: 'start' | 'end' | null;
   segmentId: string | null;
 }
 
@@ -587,36 +588,122 @@ function renderSegmentRow(
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
   const hovered =
-    hoveredPathElement?.operationId === operation.id && hoveredPathElement.segmentId === segment.id;
+    hoveredPathElement?.operationId === operation.id &&
+    hoveredPathElement.segmentId === segment.id &&
+    !hoveredPathElement.pointRole;
   const selected =
-    selectedPathElement?.operationId === operation.id && selectedPathElement.segmentId === segment.id;
+    selectedPathElement?.operationId === operation.id &&
+    selectedPathElement.segmentId === segment.id &&
+    !selectedPathElement.pointRole;
+
+  return (
+    <div data-upid-segment-group key={`${operation.id}-${segment.id}-${index}`}>
+      <button
+        aria-pressed={selected}
+        className={`grid w-full grid-cols-[26px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[9px] text-muted-foreground outline-none hover:bg-accent ${
+          selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
+        }`}
+        data-upid-hovered={hovered ? 'true' : undefined}
+        data-upid-operation-id={operation.id}
+        data-upid-selected={selected ? 'true' : undefined}
+        data-upid-segment-index={index}
+        data-upid-segment-row
+        data-upid-segment-id={segment.id}
+        onClick={() => onSelectPathElement({ operationId: operation.id, segmentId: segment.id })}
+        onMouseEnter={() => onHoverPathElement({ operationId: operation.id, segmentId: segment.id })}
+        onMouseLeave={() => onHoverPathElement(null)}
+        type="button"
+      >
+        <span>{index + 1}</span>
+        <span className="min-w-0">
+          <span className="block truncate uppercase text-foreground">{segment.kind}</span>
+          <span className="block truncate">
+            {formatPoint(start)}
+            {' -> '}
+            {formatPoint(end)}
+          </span>
+        </span>
+      </button>
+      <div className="border-t border-border/70 bg-background/35" data-upid-point-stack>
+        {renderPointRow({
+          index,
+          onHoverPathElement,
+          onSelectPathElement,
+          operation,
+          point: start,
+          role: 'start',
+          segment,
+          hoveredPathElement,
+          selectedPathElement
+        })}
+        {renderPointRow({
+          index,
+          onHoverPathElement,
+          onSelectPathElement,
+          operation,
+          point: end,
+          role: 'end',
+          segment,
+          hoveredPathElement,
+          selectedPathElement
+        })}
+      </div>
+    </div>
+  );
+}
+
+function renderPointRow({
+  hoveredPathElement,
+  index,
+  onHoverPathElement,
+  onSelectPathElement,
+  operation,
+  point,
+  role,
+  segment,
+  selectedPathElement
+}: {
+  hoveredPathElement: EditorPathElementRef | null;
+  index: number;
+  onHoverPathElement: (element: EditorPathElementRef | null) => void;
+  onSelectPathElement: (element: EditorPathElementRef) => void;
+  operation: PathOperation;
+  point: { x: number; y: number };
+  role: 'start' | 'end';
+  segment: PathSegment;
+  selectedPathElement: EditorPathElementRef | null;
+}) {
+  const element = { operationId: operation.id, segmentId: segment.id, pointRole: role };
+  const hovered =
+    hoveredPathElement?.operationId === operation.id &&
+    hoveredPathElement.segmentId === segment.id &&
+    hoveredPathElement.pointRole === role;
+  const selected =
+    selectedPathElement?.operationId === operation.id &&
+    selectedPathElement.segmentId === segment.id &&
+    selectedPathElement.pointRole === role;
 
   return (
     <button
       aria-pressed={selected}
-      className={`grid w-full grid-cols-[26px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[9px] text-muted-foreground outline-none hover:bg-accent ${
+      className={`grid w-full grid-cols-[38px_minmax(0,1fr)] gap-1 px-1.5 py-0.5 pl-5 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-hovered={hovered ? 'true' : undefined}
       data-upid-operation-id={operation.id}
       data-upid-selected={selected ? 'true' : undefined}
       data-upid-segment-index={index}
-      data-upid-segment-row
       data-upid-segment-id={segment.id}
-      key={`${operation.id}-${segment.id}-${index}`}
-      onClick={() => onSelectPathElement({ operationId: operation.id, segmentId: segment.id })}
-      onMouseEnter={() => onHoverPathElement({ operationId: operation.id, segmentId: segment.id })}
+      data-upid-point-role={role}
+      data-upid-point-row
+      onClick={() => onSelectPathElement(element)}
+      onMouseEnter={() => onHoverPathElement(element)}
       onMouseLeave={() => onHoverPathElement(null)}
       type="button"
     >
-      <span>{index + 1}</span>
+      <span className="uppercase">{role}</span>
       <span className="min-w-0">
-        <span className="block truncate uppercase text-foreground">{segment.kind}</span>
-        <span className="block truncate">
-          {formatPoint(start)}
-          {' -> '}
-          {formatPoint(end)}
-        </span>
+        <span className="block truncate">{formatPoint(point)}</span>
       </span>
     </button>
   );

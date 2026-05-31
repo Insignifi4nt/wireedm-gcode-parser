@@ -32,6 +32,10 @@ import type {
 export interface EditorPreviewPath {
   type: 'rapid' | 'cut' | 'arc';
   d: string;
+  start: {
+    x: number;
+    y: number;
+  };
   end: {
     x: number;
     y: number;
@@ -90,6 +94,7 @@ export function buildEditorPreviewGeometry(
       paths.push({
         type: point.type,
         d: `M ${format(start.x)} ${format(start.y)} L ${format(point.x)} ${format(point.y)}`,
+        start,
         end: {
           x: point.x,
           y: point.y
@@ -105,6 +110,10 @@ export function buildEditorPreviewGeometry(
       paths.push({
         type: 'arc',
         d: arcPath(point),
+        start: {
+          x: point.startX,
+          y: point.startY
+        },
         end: {
           x: point.endX,
           y: point.endY
@@ -141,6 +150,7 @@ export function buildEditorPathDocumentPreviewGeometry(
       paths.push({
         type: 'rapid',
         d: linePath(rapidStart, operation.startPoint),
+        start: rapidStart,
         end: operation.startPoint,
         line: options.lineHints?.[pathIndex++] ?? 0,
         operationId: operation.id,
@@ -154,6 +164,7 @@ export function buildEditorPathDocumentPreviewGeometry(
         paths.push({
           type: segmentPath.type,
           d: segmentPath.d,
+          start: segmentPath.start,
           end: segmentPath.end,
           line: options.lineHints?.[pathIndex++] ?? 0,
           operationId: operation.id,
@@ -355,11 +366,13 @@ function pathDocumentPreviewMarkers(document: PathPlanningDocument): EditorPrevi
 
 function pathDocumentSegmentPaths(segment: PathSegment, ref: OrientedSegmentRef) {
   if (segment.kind === 'line') {
+    const start = orientedSegmentStart(segment, ref);
     const end = orientedSegmentEnd(segment, ref);
     return [
       {
         type: 'cut' as const,
-        d: linePath(orientedSegmentStart(segment, ref), end),
+        d: linePath(start, end),
+        start,
         end
       }
     ];
@@ -372,6 +385,7 @@ function pathDocumentSegmentPaths(segment: PathSegment, ref: OrientedSegmentRef)
     {
       type: 'arc' as const,
       d: pathDocumentArcPath(segment, ref),
+      start: orientedSegmentStart(segment, ref),
       end
     }
   ];
@@ -409,6 +423,7 @@ function circlePaths(segment: CirclePathSegment, ref: OrientedSegmentRef) {
         `M ${format(start.x)} ${format(start.y)}`,
         `A ${format(segment.radius)} ${format(segment.radius)} 0 1 ${sweepFlag} ${format(opposite.x)} ${format(opposite.y)}`
       ].join(' '),
+      start,
       end: opposite
     },
     {
@@ -417,6 +432,7 @@ function circlePaths(segment: CirclePathSegment, ref: OrientedSegmentRef) {
         `M ${format(opposite.x)} ${format(opposite.y)}`,
         `A ${format(segment.radius)} ${format(segment.radius)} 0 1 ${sweepFlag} ${format(start.x)} ${format(start.y)}`
       ].join(' '),
+      start: opposite,
       end: start
     }
   ];

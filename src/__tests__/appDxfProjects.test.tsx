@@ -782,6 +782,78 @@ describe('App DXF imports and project library', () => {
     expect(segmentRow?.getAttribute('data-upid-hovered')).not.toBe('true');
   });
 
+  it('highlights and selects UPID endpoint points between the canvas and Project Rail', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'endpoint-hover.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const hoverToggle = container.querySelector(
+      'input[aria-label="Toggle canvas hover assist"]'
+    ) as HTMLInputElement | null;
+    await act(async () => {
+      hoverToggle?.click();
+    });
+
+    const pointRows = [...container.querySelectorAll('[data-upid-point-row]')];
+    expect(pointRows).toHaveLength(8);
+
+    const endpointRow = pointRows.find(
+      (row) => row.getAttribute('data-upid-point-role') === 'end'
+    ) as HTMLElement | undefined;
+    const segmentId = endpointRow?.getAttribute('data-upid-segment-id');
+    expect(segmentId).toBeTruthy();
+
+    const endpointHandle = container.querySelector(
+      `svg[aria-label="G-code path preview"] circle[data-preview-path-endpoint][data-preview-point-role="end"][data-preview-segment="${segmentId}"]`
+    );
+    expect(endpointHandle).not.toBeNull();
+
+    await act(async () => {
+      endpointHandle?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    expect(endpointRow?.getAttribute('data-upid-hovered')).toBe('true');
+
+    await act(async () => {
+      endpointHandle?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    });
+
+    expect(endpointRow?.getAttribute('data-upid-hovered')).not.toBe('true');
+
+    await act(async () => {
+      endpointRow?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    const hoveredEndpointHandle = container.querySelector(
+      `svg[aria-label="G-code path preview"] circle[data-preview-path-endpoint][data-preview-point-role="end"][data-preview-segment="${segmentId}"]`
+    );
+    expect(hoveredEndpointHandle?.getAttribute('data-preview-hovered')).toBe('true');
+
+    await act(async () => {
+      hoveredEndpointHandle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const selectedEndpointHandle = container.querySelector(
+      `svg[aria-label="G-code path preview"] circle[data-preview-path-endpoint][data-preview-point-role="end"][data-preview-segment="${segmentId}"]`
+    );
+
+    expect(endpointRow?.getAttribute('data-upid-selected')).toBe('true');
+    expect(selectedEndpointHandle?.getAttribute('data-preview-selected')).toBe('true');
+    expect(container.querySelector('[data-upid-selected-point]')?.textContent).toContain('Selected Point');
+    expect(container.querySelector('[data-upid-selected-point-role]')?.textContent).toBe('end');
+  });
+
   it('highlights canvas geometry from UPID navigator row hover', async () => {
     window.showDirectoryPicker = undefined;
 

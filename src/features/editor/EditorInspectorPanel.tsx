@@ -118,6 +118,9 @@ export function EditorInspectorPanel({
   const selectedPathSegment = selectedPathOperation
     ? readSelectedPathSegment(pathDocument, selectedPathOperation, selectedPathElement)
     : null;
+  const selectedPathPoint = selectedPathOperation
+    ? readSelectedPathPoint(pathDocument, selectedPathOperation, selectedPathElement)
+    : null;
   const selectedPathOverrideRows = selectedPathOperation
     ? manualOverrideRows(selectedPathOperation.overrides)
     : [];
@@ -286,6 +289,20 @@ export function EditorInspectorPanel({
               <dd>{formatPoint(selectedPathSegment.start)}</dd>
               <dt className="text-muted-foreground">End</dt>
               <dd>{formatPoint(selectedPathSegment.end)}</dd>
+            </dl>
+          </section>
+        )}
+
+        {selectedPathPoint && (
+          <section className="mt-3 border-t border-border pt-3" data-upid-selected-point>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Point</h3>
+            <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+              <dt className="text-muted-foreground">Role</dt>
+              <dd data-upid-selected-point-role>{selectedPathPoint.role}</dd>
+              <dt className="text-muted-foreground">Segment</dt>
+              <dd>{selectedPathPoint.segmentKind}</dd>
+              <dt className="text-muted-foreground">Point</dt>
+              <dd data-upid-selected-point-coordinate>{formatPoint(selectedPathPoint.point)}</dd>
             </dl>
           </section>
         )}
@@ -686,5 +703,32 @@ function readSelectedPathSegment(
     length: segment.length,
     reversed: ref.reversed,
     start: orientedSegmentStart(segment, ref)
+  };
+}
+
+function readSelectedPathPoint(
+  document: PathPlanningDocument | null,
+  operation: NonNullable<PathPlanningDocument['plan']['operations'][number]>,
+  element: EditorPathElementRef | null
+) {
+  if (
+    !document ||
+    !element?.segmentId ||
+    !element.pointRole ||
+    element.operationId !== operation.id
+  ) {
+    return null;
+  }
+
+  const ref = operation.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
+  if (!ref) return null;
+
+  const segment = segmentMap(document.segments).get(ref.segmentId);
+  if (!segment) return null;
+
+  return {
+    point: element.pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref),
+    role: element.pointRole,
+    segmentKind: segment.kind
   };
 }

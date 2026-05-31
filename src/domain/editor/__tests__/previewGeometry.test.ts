@@ -29,6 +29,10 @@ describe('buildEditorPreviewGeometry', () => {
       {
         type: 'rapid',
         d: 'M 0 0 L 0 0',
+        start: {
+          x: 0,
+          y: 0
+        },
         end: {
           x: 0,
           y: 0
@@ -39,6 +43,10 @@ describe('buildEditorPreviewGeometry', () => {
       {
         type: 'cut',
         d: 'M 0 0 L 10 0',
+        start: {
+          x: 0,
+          y: 0
+        },
         end: {
           x: 10,
           y: 0
@@ -49,6 +57,10 @@ describe('buildEditorPreviewGeometry', () => {
       {
         type: 'arc',
         d: 'M 10 0 A 10 10 0 0 1 20 10',
+        start: {
+          x: 10,
+          y: 0
+        },
         end: {
           x: 20,
           y: 10
