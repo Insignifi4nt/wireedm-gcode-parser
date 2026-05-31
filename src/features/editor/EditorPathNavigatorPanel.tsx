@@ -17,7 +17,13 @@ import {
   requiredSegment,
   segmentMap
 } from '@/domain/path-intel/segments';
-import type { OrientedSegmentRef, PathOperation, PathPlanningDocument, PathSegment } from '@/domain/path-intel/types';
+import type {
+  OrientedSegmentRef,
+  PathContour,
+  PathOperation,
+  PathPlanningDocument,
+  PathSegment
+} from '@/domain/path-intel/types';
 
 export interface EditorPathElementRef {
   operationId: string | null;
@@ -81,6 +87,7 @@ export function EditorPathNavigatorPanel({
   onUndoDraft
 }: EditorPathNavigatorPanelProps) {
   const segmentsById = segmentMap(pathDocument.segments);
+  const contoursById = new Map(pathDocument.contours.map((contour) => [contour.id, contour]));
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
     (operation) => operation.id === selectedPathOperationId
   );
@@ -248,65 +255,76 @@ export function EditorPathNavigatorPanel({
 
         <section className="min-h-0 flex-1 overflow-auto py-2" data-upid-contour-tree>
           <div className="mb-2 text-[9px] uppercase text-muted-foreground">Contour Tree</div>
-          {pathDocument.plan.operations.map((operation) => (
-            <details
-              className="mb-1 border border-border bg-background/45"
-              data-upid-hovered={hoveredPathElement?.operationId === operation.id ? 'true' : undefined}
-              data-upid-contour-group={operation.id}
-              data-upid-selected={selectedPathElement?.operationId === operation.id ? 'true' : undefined}
-              key={operation.id}
-              open
-            >
-              <summary className="list-none">
-                <button
-                  aria-pressed={operation.id === selectedPathOperationId}
-                  className={`grid w-full grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent ${
-                    operation.id === selectedPathOperationId
-                      ? 'bg-sky-500/15 text-sky-100'
-                      : hoveredPathElement?.operationId === operation.id
-                        ? 'bg-cyan-500/10 text-cyan-100'
-                        : ''
-                  }`}
-                  data-upid-contour-row
-                  data-upid-operation-id={operation.id}
-                  data-upid-selected={
-                    selectedPathElement?.operationId === operation.id && !selectedPathElement.segmentId
-                      ? 'true'
-                      : undefined
-                  }
-                  onClick={(event) => {
-                    event.preventDefault();
-                    onSelectPathElement({ operationId: operation.id, segmentId: null });
-                  }}
-                  type="button"
-                >
-                  <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-[10px] uppercase">{operation.classification}</span>
-                    <span className="block truncate text-[9px] text-muted-foreground">
-                      {operation.closed ? 'closed contour' : 'open chain'} / {operation.direction}
+          {pathDocument.plan.operations.map((operation) => {
+            const contour = contoursById.get(operation.contourId);
+
+            return (
+              <details
+                className="mb-1 border border-border bg-background/45"
+                data-upid-hovered={hoveredPathElement?.operationId === operation.id ? 'true' : undefined}
+                data-upid-contour-group={operation.id}
+                data-upid-selected={selectedPathElement?.operationId === operation.id ? 'true' : undefined}
+                key={operation.id}
+                open
+              >
+                <summary className="list-none">
+                  <button
+                    aria-pressed={operation.id === selectedPathOperationId}
+                    className={`grid w-full grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent ${
+                      operation.id === selectedPathOperationId
+                        ? 'bg-sky-500/15 text-sky-100'
+                        : hoveredPathElement?.operationId === operation.id
+                          ? 'bg-cyan-500/10 text-cyan-100'
+                          : ''
+                    }`}
+                    data-upid-contour-children={contour?.childIds.length ?? 0}
+                    data-upid-contour-depth={contour?.containmentDepth ?? 0}
+                    data-upid-contour-parent={contour?.parentId ?? undefined}
+                    data-upid-contour-role={contour?.classification ?? operation.classification}
+                    data-upid-contour-row
+                    data-upid-operation-id={operation.id}
+                    data-upid-selected={
+                      selectedPathElement?.operationId === operation.id && !selectedPathElement.segmentId
+                        ? 'true'
+                        : undefined
+                    }
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onSelectPathElement({ operationId: operation.id, segmentId: null });
+                    }}
+                    type="button"
+                  >
+                    <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[10px] uppercase">{operation.classification}</span>
+                      <span className="block truncate text-[9px] text-muted-foreground">
+                        {operation.closed ? 'closed contour' : 'open chain'} / {operation.direction}
+                      </span>
+                      <span className="block truncate text-[9px] text-muted-foreground">
+                        {formatContourNest(contour)}
+                      </span>
                     </span>
-                  </span>
-                  <span className="text-right text-[9px] text-muted-foreground">
-                    {operation.metrics.cutLength.toFixed(3)}
-                  </span>
-                </button>
-              </summary>
-              <div className="border-t border-border bg-card/35 py-1" data-upid-segment-stack>
-                {operation.segmentRefs.map((ref, index) =>
-                  renderSegmentRow(
-                    operation,
-                    ref,
-                    index,
-                    requiredSegment(segmentsById, ref.segmentId),
-                    hoveredPathElement,
-                    selectedPathElement,
-                    onSelectPathElement
-                  )
-                )}
-              </div>
-            </details>
-          ))}
+                    <span className="text-right text-[9px] text-muted-foreground">
+                      {operation.metrics.cutLength.toFixed(3)}
+                    </span>
+                  </button>
+                </summary>
+                <div className="border-t border-border bg-card/35 py-1" data-upid-segment-stack>
+                  {operation.segmentRefs.map((ref, index) =>
+                    renderSegmentRow(
+                      operation,
+                      ref,
+                      index,
+                      requiredSegment(segmentsById, ref.segmentId),
+                      hoveredPathElement,
+                      selectedPathElement,
+                      onSelectPathElement
+                    )
+                  )}
+                </div>
+              </details>
+            );
+          })}
         </section>
       </section>
     </div>
@@ -374,4 +392,9 @@ function renderSegmentRow(
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
+}
+
+function formatContourNest(contour: PathContour | undefined) {
+  if (!contour) return 'depth 0 / children 0';
+  return `depth ${contour.containmentDepth} / children ${contour.childIds.length}`;
 }

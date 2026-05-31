@@ -112,6 +112,9 @@ export function EditorInspectorPanel({
     pathDocument?.plan.operations.findIndex((operation) => operation.id === selectedPathOperationId) ?? -1;
   const selectedPathOperation =
     selectedPathOperationIndex >= 0 ? pathDocument?.plan.operations[selectedPathOperationIndex] : null;
+  const selectedPathContour = selectedPathOperation
+    ? pathDocument?.contours.find((contour) => contour.id === selectedPathOperation.contourId) ?? null
+    : null;
   const selectedPathSegment = selectedPathOperation
     ? readSelectedPathSegment(pathDocument, selectedPathOperation, selectedPathElement)
     : null;
@@ -228,6 +231,12 @@ export function EditorInspectorPanel({
               </dd>
               <dt className="text-muted-foreground">Direction</dt>
               <dd data-upid-selected="direction">{selectedPathOperation.direction}</dd>
+              <dt className="text-muted-foreground">Nest</dt>
+              <dd data-upid-selected="nest">
+                depth {selectedPathContour?.containmentDepth ?? 0}
+              </dd>
+              <dt className="text-muted-foreground">Children</dt>
+              <dd data-upid-selected="children">{selectedPathContour?.childIds.length ?? 0}</dd>
               <dt className="text-muted-foreground">Segments</dt>
               <dd data-upid-selected="segments">
                 {selectedPathOperation.segmentRefs.length}{' '}

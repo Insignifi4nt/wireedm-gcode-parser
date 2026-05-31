@@ -73,7 +73,9 @@ review surfaces from collapsing into an unexplained final sequence.
   UPID/path-intel.
 - `src/features/editor/EditorPathNavigatorPanel.tsx` is the DXF path-project rail surface for
   operation selection, nested contour/segment inspection, ordering, direction, start selection,
-  construction-point modes, hover assist, magnetic snap, saving, and opening export preview.
+  construction-point modes, hover assist, magnetic snap, saving, and opening export preview. It
+  exposes contour role and containment depth from the UPID contour tree so holes, islands, and
+  exteriors are visible before export.
 - `src/features/editor/EditorUpidExportPreview.tsx` is the explicit post boundary for inspecting and
   downloading machine-profile G-code.
 - `src/features/editor/EditorProgramLinesPanel.tsx` remains the legacy posted-program surface for

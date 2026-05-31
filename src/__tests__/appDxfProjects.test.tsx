@@ -319,6 +319,50 @@ describe('App DXF imports and project library', () => {
     expect(inspector?.textContent).not.toContain('Lines');
   });
 
+  it('shows nested UPID contour roles and containment in the navigator and inspector', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([nestedContourDxf()], 'nested-contours.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const contourRows = [...container.querySelectorAll('[data-upid-contour-row]')];
+    expect(contourRows).toHaveLength(3);
+    expect(contourRows.map((row) => row.getAttribute('data-upid-contour-role'))).toEqual([
+      'island',
+      'hole',
+      'exterior'
+    ]);
+    expect(contourRows.map((row) => row.getAttribute('data-upid-contour-depth'))).toEqual([
+      '2',
+      '1',
+      '0'
+    ]);
+    expect(contourRows[0].textContent).toContain('depth 2');
+    expect(contourRows[1].textContent).toContain('depth 1');
+    expect(contourRows[2].textContent).toContain('depth 0');
+
+    await act(async () => {
+      contourRows[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const selectedGeometry = container.querySelector('[data-upid-selected-geometry]');
+    expect(selectedGeometry?.textContent).toContain('hole');
+    expect(selectedGeometry?.textContent).toContain('Nest');
+    expect(selectedGeometry?.textContent).toContain('depth 1');
+    expect(selectedGeometry?.textContent).toContain('Children');
+    expect(selectedGeometry?.textContent).toContain('1');
+  });
+
   it('highlights selected UPID contours and segments on the canvas and in the inspector', async () => {
     window.showDirectoryPicker = undefined;
 
@@ -1123,6 +1167,49 @@ function rectangleDxf() {
     '0',
     'EOF'
   ].join('\n');
+}
+
+function nestedContourDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    ...closedPolylineDxf([
+      { x: 0, y: 0 },
+      { x: 30, y: 0 },
+      { x: 30, y: 20 },
+      { x: 0, y: 20 }
+    ]),
+    ...closedPolylineDxf([
+      { x: 5, y: 5 },
+      { x: 25, y: 5 },
+      { x: 25, y: 15 },
+      { x: 5, y: 15 }
+    ]),
+    ...closedPolylineDxf([
+      { x: 10, y: 7 },
+      { x: 15, y: 7 },
+      { x: 15, y: 12 },
+      { x: 10, y: 12 }
+    ]),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function closedPolylineDxf(points: Array<{ x: number; y: number }>) {
+  return [
+    '0',
+    'LWPOLYLINE',
+    '90',
+    String(points.length),
+    '70',
+    '1',
+    ...points.flatMap((point) => ['10', String(point.x), '20', String(point.y)])
+  ];
 }
 
 function worldClientPoint(preview: SVGSVGElement, point: { x: number; y: number }) {
