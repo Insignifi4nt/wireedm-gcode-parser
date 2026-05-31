@@ -359,6 +359,25 @@ describe('App DXF imports and project library', () => {
     expect(contourGroups[1].parentElement?.closest('[data-upid-contour-group]')).toBe(contourGroups[0]);
     expect(contourGroups[2].parentElement?.closest('[data-upid-contour-group]')).toBe(contourGroups[1]);
 
+    const cutSequence = container.querySelector('[data-upid-cut-sequence]');
+    const cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
+    expect(cutSequence).not.toBeNull();
+    expect(cutSequence?.textContent).toContain('Cut Sequence');
+    expect(cutSequenceRows).toHaveLength(3);
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-role'))).toEqual([
+      'island',
+      'hole',
+      'exterior'
+    ]);
+
+    await act(async () => {
+      cutSequenceRows[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(cutSequenceRows[0].getAttribute('data-upid-selected')).toBe('true');
+    expect(container.querySelector('[data-upid-selected="classification"]')?.textContent).toBe('island');
+    expect(container.querySelector('[data-upid-selected="nest"]')?.textContent).toContain('depth 2');
+
     await act(async () => {
       contourRows[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });

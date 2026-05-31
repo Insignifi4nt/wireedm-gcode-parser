@@ -99,6 +99,7 @@ export function EditorPathNavigatorPanel({
   onUndoDraft
 }: EditorPathNavigatorPanelProps) {
   const segmentsById = segmentMap(pathDocument.segments);
+  const contoursById = new Map(pathDocument.contours.map((contour) => [contour.id, contour]));
   const operationsByContourId = new Map(
     pathDocument.plan.operations.map((operation) => [operation.contourId, operation])
   );
@@ -286,6 +287,22 @@ export function EditorPathNavigatorPanel({
           </label>
         </section>
 
+        <section className="shrink-0 border-b border-border py-2" data-upid-cut-sequence>
+          <div className="mb-2 text-[9px] uppercase text-muted-foreground">Cut Sequence</div>
+          <div className="max-h-32 overflow-auto border border-border bg-background/35" data-upid-cut-sequence-list>
+            {pathDocument.plan.operations.map((operation) =>
+              renderCutSequenceRow({
+                contour: contoursById.get(operation.contourId),
+                hoveredPathElement,
+                onHoverPathElement,
+                onSelectPathElement,
+                operation,
+                selectedPathElement
+              })
+            )}
+          </div>
+        </section>
+
         <section className="min-h-0 flex-1 overflow-auto py-2" data-upid-contour-tree>
           <div className="mb-2 text-[9px] uppercase text-muted-foreground">Contour Tree</div>
           {contourTree.map((node) =>
@@ -317,6 +334,59 @@ export function EditorPathNavigatorRailCollapsed() {
         UPID
       </div>
     </div>
+  );
+}
+
+function renderCutSequenceRow({
+  contour,
+  hoveredPathElement,
+  onHoverPathElement,
+  onSelectPathElement,
+  operation,
+  selectedPathElement
+}: {
+  contour: PathContour | undefined;
+  hoveredPathElement: EditorPathElementRef | null;
+  onHoverPathElement: (element: EditorPathElementRef | null) => void;
+  onSelectPathElement: (element: EditorPathElementRef) => void;
+  operation: PathOperation;
+  selectedPathElement: EditorPathElementRef | null;
+}) {
+  const selected = selectedPathElement?.operationId === operation.id;
+  const hovered = hoveredPathElement?.operationId === operation.id;
+
+  return (
+    <button
+      aria-pressed={selected}
+      className={`grid w-full grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 border-b border-border px-1.5 py-1.5 text-left last:border-b-0 outline-none hover:bg-accent ${
+        selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/10 text-cyan-100' : ''
+      }`}
+      data-upid-cut-sequence-index={operation.orderIndex}
+      data-upid-cut-sequence-role={operation.classification}
+      data-upid-cut-sequence-row
+      data-upid-hovered={hovered ? 'true' : undefined}
+      data-upid-operation-id={operation.id}
+      data-upid-selected={selected ? 'true' : undefined}
+      key={`cut-sequence-${operation.id}`}
+      onClick={() => onSelectPathElement({ operationId: operation.id, segmentId: null })}
+      onMouseEnter={() => onHoverPathElement({ operationId: operation.id, segmentId: null })}
+      onMouseLeave={() => onHoverPathElement(null)}
+      type="button"
+    >
+      <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-[10px] uppercase">{operation.classification}</span>
+        <span className="block truncate text-[9px] text-muted-foreground">
+          {operation.closed ? 'closed contour' : 'open chain'} / {operation.direction}
+        </span>
+        <span className="block truncate text-[9px] text-muted-foreground">
+          {formatContourNest(contour)}
+        </span>
+      </span>
+      <span className="text-right text-[9px] text-muted-foreground">
+        {operation.metrics.cutLength.toFixed(3)}
+      </span>
+    </button>
   );
 }
 
