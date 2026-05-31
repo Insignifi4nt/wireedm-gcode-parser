@@ -234,6 +234,58 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).not.toContain('Footer');
   });
 
+  it('posts UPID to G-code only inside the explicit export preview', async () => {
+    window.showDirectoryPicker = undefined;
+    const downloadGeneratedProgram = vi.fn();
+
+    await renderApp(context, { downloadGeneratedProgram });
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'export-preview.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-export-preview]')).toBeNull();
+    expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
+
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement | null;
+    expect(openPreviewButton).not.toBeNull();
+
+    await act(async () => {
+      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const exportPreview = container.querySelector('[data-upid-export-preview]');
+    const exportCode = container.querySelector('[data-upid-export-gcode]');
+    expect(exportPreview).not.toBeNull();
+    expect(exportPreview?.textContent).toContain('UPID Export Preview');
+    expect(exportPreview?.textContent).toContain('Default Wire EDM');
+    expect(exportCode?.textContent).toContain('G90 G21 G17 G40');
+    expect(exportCode?.textContent).toContain('G1 X10.000 Y0.000');
+    expect(exportCode?.textContent).toContain('M30');
+
+    const downloadButton = container.querySelector(
+      'button[aria-label="Download UPID export program"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      downloadButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(downloadGeneratedProgram).toHaveBeenCalledWith({
+      fileName: expect.stringMatching(/^export-preview-\d{4}-\d{2}-\d{2}\.iso$/),
+      text: expect.stringContaining('G1 X10.000 Y0.000')
+    });
+  });
+
   it('highlights UPID navigator segments from canvas hover when hover assist is enabled', async () => {
     window.showDirectoryPicker = undefined;
 

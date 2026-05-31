@@ -26,16 +26,16 @@ machine profiles. Plain G-code is too lossy to be that source of truth.
 
 ## Why The Editor Is Path-First
 
-Imported DXF projects now open as path plans, not as editable G-code programs. The editor can still
-show a posted body preview because users need to inspect the eventual machine motion, but the
-editable decisions are operation order, direction, start choice, construction points, and path
-diagnostics.
+Imported DXF projects now open as UPID/path plans, not as editable G-code programs. The editor can
+still post the current UPID through the active machine profile, but that happens in an explicit
+Export Preview. The normal editing surface stays focused on operation order, direction, start
+choice, construction points, contour/segment inspection, and path diagnostics.
 
 That distinction matters because header and footer templates belong to the active machine profile.
-They are applied when the current path plan is posted or exported; they should not become visible
-working geometry or something the user edits while choosing contours. Showing them in the path editor
-would make machine setup look like part geometry and would pull the workflow back toward line-based
-G-code surgery.
+They are applied when the current UPID is posted or exported; they should not become visible working
+geometry or something the user edits while choosing contours. Showing them in the path editor would
+make machine setup look like part geometry and would pull the workflow back toward line-based G-code
+surgery.
 
 Legacy external `.gcode`, `.nc`, `.iso`, and `.txt` imports still use the line drawer and text editor
 because those files are already posted programs. DXF-origin projects keep the richer source model as
@@ -52,11 +52,15 @@ long as the path document is present.
 - `src/domain/path-intel/contours.ts` classifies closed and open chains.
 - `src/domain/path-intel/planOperations.ts` chooses operation order, contour starts, and direction.
 - `src/domain/path-intel/postGcode.ts` emits body G-code from the operation plan.
+- `src/domain/upid/upidDocument.ts` names the current internal document as the Universal Path
+  Intelligence Document boundary and exposes the post/export adapter.
 - `src/domain/dxf/dxfToGcode.ts` keeps the existing DXF-to-G-code API while routing it through
-  path-intel.
-- `src/features/editor/EditorPathPlanPanel.tsx` is the DXF path-project surface for operation
-  selection, ordering, direction, start selection, construction-point modes, saving, and posted body
-  inspection.
+  UPID/path-intel.
+- `src/features/editor/EditorPathNavigatorPanel.tsx` is the DXF path-project rail surface for
+  operation selection, nested contour/segment inspection, ordering, direction, start selection,
+  construction-point modes, hover assist, magnetic snap, saving, and opening export preview.
+- `src/features/editor/EditorUpidExportPreview.tsx` is the explicit post boundary for inspecting and
+  downloading machine-profile G-code.
 - `src/features/editor/EditorProgramLinesPanel.tsx` remains the legacy posted-program surface for
   external G-code-style imports.
 

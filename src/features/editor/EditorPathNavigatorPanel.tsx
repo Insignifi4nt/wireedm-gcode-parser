@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ArrowUp,
+  FileText,
   Magnet,
   MousePointer2,
   Redo2,
@@ -45,6 +46,7 @@ interface EditorPathNavigatorPanelProps {
   undoAvailable: boolean;
   onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
   onMovePathOperation: (direction: -1 | 1) => void;
+  onOpenExportPreview: () => void;
   onRedoDraft: () => void;
   onReversePathOperation: () => void;
   onSaveClick: () => void | Promise<void>;
@@ -67,6 +69,7 @@ export function EditorPathNavigatorPanel({
   undoAvailable,
   onActivatePathClickMode,
   onMovePathOperation,
+  onOpenExportPreview,
   onRedoDraft,
   onReversePathOperation,
   onSaveClick,
@@ -169,6 +172,16 @@ export function EditorPathNavigatorPanel({
               Save
             </button>
           </div>
+          <button
+            aria-label="Open UPID export preview"
+            className={`mt-1 w-full ${textButtonClass}`}
+            disabled={isSaving}
+            onClick={onOpenExportPreview}
+            type="button"
+          >
+            <FileText className="size-3" />
+            Export Preview
+          </button>
           <div className="mt-1 grid grid-cols-3 gap-1">
             <button
               aria-label="Set path start from canvas"

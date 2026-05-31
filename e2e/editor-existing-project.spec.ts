@@ -26,6 +26,7 @@ test('opens the latest seeded workbench project in the editor', async ({ page })
 
   await expect(page.getByRole('heading', { name: activeFilePath })).toBeVisible();
   await expect(page.getByText(/UPID Path Navigator/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: /open upid export preview/i })).toBeVisible();
 });
 
 function findWorkbenchFolder() {

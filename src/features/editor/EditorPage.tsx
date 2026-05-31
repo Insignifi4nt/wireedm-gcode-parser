@@ -8,7 +8,7 @@ import {
 } from 'react';
 
 import { useAppRail } from '@/app/AppRailContext';
-import { composeGCodeProgram } from '@/domain/post/gcodeTemplates';
+import { buildOutputFilename, composeGCodeProgram } from '@/domain/post/gcodeTemplates';
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 import {
   deleteBodyGroup,
@@ -30,8 +30,8 @@ import {
   type MagnetizedPathPoint,
   type MagnetizeMode
 } from '@/domain/path-editor/pathDocumentOperations';
-import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import { postUpidToGcodeBody } from '@/domain/upid/upidDocument';
 import {
   exportMeasurementPointsAsCsv,
   exportMeasurementPointsAsGCode,
@@ -52,6 +52,7 @@ import {
 } from './EditorPathNavigatorPanel';
 import { EditorProgramLinesPanel } from './EditorProgramLinesPanel';
 import { EditorProgramTextPanel } from './EditorProgramTextPanel';
+import { EditorUpidExportPreview } from './EditorUpidExportPreview';
 import type { EditorGuideLanguage, EditorGuideTarget } from './editorGuideContent';
 import {
   confirmBulkLineDelete,
@@ -123,6 +124,7 @@ export function EditorPage({
   const [pathClickMode, setPathClickMode] = useState<'set-start' | MagnetizeMode | null>(null);
   const [pathDocumentDraft, setPathDocumentDraft] = useState<PathPlanningDocument | null>(null);
   const [hoveredPathElement, setHoveredPathElement] = useState<EditorPathElementRef | null>(null);
+  const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
   const [pathHoverAssistEnabled, setPathHoverAssistEnabled] = useState(false);
   const [pathMagneticSnapEnabled, setPathMagneticSnapEnabled] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -159,6 +161,27 @@ export function EditorPage({
         : null,
     [pathDocumentDraft, program]
   );
+  const upidExport = useMemo(() => {
+    if (!pathDocumentDraft || !program?.project) return null;
+
+    const body = postUpidToGcodeBody(pathDocumentDraft);
+    const machine = program.project.machine;
+    const fileName =
+      program.project.generated.files.at(-1)?.name ??
+      buildOutputFilename(program.project.name, machine.output.extension, machine.output.customExtension);
+
+    return {
+      body,
+      fileName,
+      machineName: machine.name,
+      programText: composeGCodeProgram({
+        header: machine.templates.header,
+        body,
+        footer: machine.templates.footer,
+        lineEnding: machine.output.lineEnding
+      })
+    };
+  }, [pathDocumentDraft, program?.project]);
   const constructionPreview = useMemo(() => {
     if (
       !pathDocumentDraft ||
@@ -210,6 +233,7 @@ export function EditorPage({
                 magneticSnapEnabled={pathMagneticSnapEnabled}
                 onActivatePathClickMode={setPathClickMode}
                 onMovePathOperation={handleMovePathOperation}
+                onOpenExportPreview={() => setExportPreviewOpen(true)}
                 onRedoDraft={handleRedoDraft}
                 onReversePathOperation={handleReversePathOperation}
                 onSaveClick={handleSaveClick}
@@ -247,6 +271,7 @@ export function EditorPage({
     setPathDocumentDraft(nextPathDocument);
     setSelectedPathOperationId(nextPathDocument?.plan.operations[0]?.id ?? null);
     setHoveredPathElement(null);
+    setExportPreviewOpen(false);
     setPathClickMode(null);
     setRedoStack([]);
     setUndoStack([]);
@@ -613,7 +638,7 @@ export function EditorPage({
   function applyPathDocumentEdit(nextDocument: PathPlanningDocument) {
     if (!program?.project) return;
 
-    const body = pathPlanToGcodeBody(nextDocument.plan, nextDocument.segments, nextDocument.options);
+    const body = postUpidToGcodeBody(nextDocument);
     replaceDraftText(
       composeGCodeProgram({
         header: program.project.machine.templates.header,
@@ -767,7 +792,7 @@ export function EditorPage({
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col overflow-hidden"
+      className="relative flex h-full min-h-0 flex-col overflow-hidden"
       data-editor-drop-zone="true"
       data-editor-layout="canvas-first"
       onDragOver={handleEditorDragOver}
@@ -907,6 +932,15 @@ export function EditorPage({
           />
         </aside>
       </section>
+      {exportPreviewOpen && upidExport && (
+        <EditorUpidExportPreview
+          fileName={upidExport.fileName}
+          machineName={upidExport.machineName}
+          onClose={() => setExportPreviewOpen(false)}
+          onDownload={() => onDownloadEditorFile(upidExport.fileName, upidExport.programText)}
+          programText={upidExport.programText}
+        />
+      )}
     </div>
   );
 }
