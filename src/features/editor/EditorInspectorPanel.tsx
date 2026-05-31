@@ -18,6 +18,7 @@ import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations'
 import {
   orientedSegmentEnd,
   orientedSegmentStart,
+  distance,
   segmentMap
 } from '@/domain/path-intel/segments';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
@@ -120,6 +121,9 @@ export function EditorInspectorPanel({
     : null;
   const selectedPathPoint = selectedPathOperation
     ? readSelectedPathPoint(pathDocument, selectedPathOperation, selectedPathElement)
+    : null;
+  const selectedPathTravel = selectedPathOperation
+    ? readSelectedPathTravel(pathDocument, selectedPathOperationIndex, selectedPathElement)
     : null;
   const selectedPathOverrideRows = selectedPathOperation
     ? manualOverrideRows(selectedPathOperation.overrides)
@@ -270,6 +274,22 @@ export function EditorInspectorPanel({
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {selectedPathTravel && (
+          <section className="mt-3 border-t border-border pt-3" data-upid-selected-travel>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Travel</h3>
+            <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+              <dt className="text-muted-foreground">Kind</dt>
+              <dd data-upid-selected-travel="kind">rapid-in</dd>
+              <dt className="text-muted-foreground">Length</dt>
+              <dd data-upid-selected-travel="length">{selectedPathTravel.length.toFixed(3)}</dd>
+              <dt className="text-muted-foreground">Start</dt>
+              <dd data-upid-selected-travel="start">{formatPoint(selectedPathTravel.start)}</dd>
+              <dt className="text-muted-foreground">End</dt>
+              <dd data-upid-selected-travel="end">{formatPoint(selectedPathTravel.end)}</dd>
+            </dl>
           </section>
         )}
 
@@ -730,5 +750,26 @@ function readSelectedPathPoint(
     point: element.pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref),
     role: element.pointRole,
     segmentKind: segment.kind
+  };
+}
+
+function readSelectedPathTravel(
+  document: PathPlanningDocument | null,
+  operationIndex: number,
+  element: EditorPathElementRef | null
+) {
+  if (!document || element?.travelRole !== 'rapid-in' || operationIndex < 0) return null;
+
+  const operation = document.plan.operations[operationIndex];
+  if (!operation || element.operationId !== operation.id) return null;
+
+  const previousOperation = operationIndex > 0 ? document.plan.operations[operationIndex - 1] : null;
+  const start = previousOperation?.endPoint ?? document.options.startPoint;
+  const end = operation.startPoint;
+
+  return {
+    end,
+    length: distance(start, end),
+    start
   };
 }

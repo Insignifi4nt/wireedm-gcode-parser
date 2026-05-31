@@ -544,6 +544,16 @@ describe('App DXF imports and project library', () => {
     expect(rapidControl?.getAttribute('data-upid-selected')).toBe('true');
     expect(rapidPath?.getAttribute('data-preview-selected')).toBe('true');
     expect(rapidPath?.getAttribute('data-highlight')).toBe('selected');
+    expect(container.querySelector('[data-upid-selected-travel]')?.textContent).toContain(
+      'Selected Travel'
+    );
+    expect(container.querySelector('[data-upid-selected-travel="start"]')?.textContent).toBe(
+      '0.000, 0.000'
+    );
+    expect(container.querySelector('[data-upid-selected-travel="end"]')?.textContent).toBe(
+      '10.000, 7.000'
+    );
+    expect(container.querySelector('[data-upid-selected-travel="length"]')?.textContent).toBe('12.207');
   });
 
   it('highlights selected UPID contours and segments on the canvas and in the inspector', async () => {
