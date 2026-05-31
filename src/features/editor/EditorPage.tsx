@@ -32,6 +32,12 @@ import {
   type MagnetizedPathPoint,
   type MagnetizeMode
 } from '@/domain/path-editor/pathDocumentOperations';
+import {
+  orientedSegmentEnd,
+  orientedSegmentStart,
+  requiredSegment,
+  segmentMap
+} from '@/domain/path-intel/segments';
 import type { ContourClassification, PathPlanningDocument } from '@/domain/path-intel/types';
 import { projectUpidDocument } from '@/domain/upid/projectUpid';
 import { postUpidToGcodeBody } from '@/domain/upid/upidDocument';
@@ -274,6 +280,7 @@ export function EditorPage({
                 onSaveClick={handleSaveClick}
                 onSelectPathElement={handleSelectPathElement}
                 onSetPathOperationClassification={handleSetPathOperationClassification}
+                onSetPathStartFromElement={handleSetPathStartFromElement}
                 onToggleHoverAssist={handleTogglePathHoverAssist}
                 onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
                 onUndoDraft={handleUndoDraft}
@@ -644,6 +651,29 @@ export function EditorPage({
     setPathClickMode(null);
   }
 
+  function handleSetPathStartFromElement(element: EditorPathElementRef) {
+    if (!pathDocumentDraft || !element.operationId || !element.segmentId || !element.pointRole || isSaving) {
+      return;
+    }
+
+    const point = pathElementPoint(pathDocumentDraft, element);
+    if (!point) return;
+
+    const edited = setClosedOperationStartAtExistingPointNearPoint(
+      pathDocumentDraft,
+      element.operationId,
+      point
+    );
+    if (!edited) return;
+
+    applyPathDocumentEdit(edited, {
+      selectedPathElement: element,
+      selectedPathOperationId: element.operationId
+    });
+    setPathClickMode(null);
+    onStatusMessage?.('Path start updated.', 'success');
+  }
+
   function handleMeasurementPointMove(pointId: string, point: { x: number; y: number }) {
     setMeasurementPoints((current) =>
       current.map((measurementPoint) => {
@@ -692,7 +722,10 @@ export function EditorPage({
 
   function applyPathDocumentEdit(
     nextDocument: PathPlanningDocument,
-    options: { selectedPathOperationId?: string | null } = {}
+    options: {
+      selectedPathElement?: EditorPathElementRef | null;
+      selectedPathOperationId?: string | null;
+    } = {}
   ) {
     if (!program?.project) return;
 
@@ -706,6 +739,9 @@ export function EditorPage({
       }),
       {
         pathDocument: nextDocument,
+        selectedPathElement: Object.hasOwn(options, 'selectedPathElement')
+          ? options.selectedPathElement
+          : selectedPathElement,
         selectedPathOperationId: options.selectedPathOperationId ?? selectedPathOperationId
       }
     );
@@ -754,6 +790,7 @@ export function EditorPage({
     nextText: string,
     options: {
       pathDocument?: PathPlanningDocument | null;
+      selectedPathElement?: EditorPathElementRef | null;
       selectedPathOperationId?: string | null;
     } = {}
   ) {
@@ -766,8 +803,11 @@ export function EditorPage({
     const nextSelectedPathOperationId = nextPathDocument
       ? options.selectedPathOperationId ?? selectedPathOperationId
       : null;
+    const candidateSelectedPathElement = Object.hasOwn(options, 'selectedPathElement')
+      ? options.selectedPathElement ?? null
+      : selectedPathElement;
     const nextSelectedPathElement = nextPathDocument
-      ? normalizePathElementSelection(nextPathDocument, nextSelectedPathOperationId, selectedPathElement)
+      ? normalizePathElementSelection(nextPathDocument, nextSelectedPathOperationId, candidateSelectedPathElement)
       : null;
 
     setUndoStack((current) => [...current, currentDraftSnapshot()]);
@@ -1049,6 +1089,17 @@ function normalizePathElementSelection(
     operationId: operation.id,
     segmentId: null
   };
+}
+
+function pathElementPoint(document: PathPlanningDocument, element: EditorPathElementRef) {
+  if (!element.operationId || !element.segmentId || !element.pointRole) return null;
+
+  const operation = document.plan.operations.find((candidate) => candidate.id === element.operationId);
+  const ref = operation?.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
+  if (!ref) return null;
+
+  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
+  return element.pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref);
 }
 
 function nextMeasurementPointId(currentLength: number) {

@@ -854,6 +854,50 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-selected-point-role]')?.textContent).toBe('end');
   });
 
+  it('sets the UPID contour start directly from a nested endpoint point row', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'endpoint-start.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const targetPointRow = [...container.querySelectorAll('[data-upid-point-row]')].find((row) =>
+      row.textContent?.includes('10.000, 0.000')
+    ) as HTMLElement | undefined;
+    expect(targetPointRow).toBeDefined();
+
+    const setStartButton = targetPointRow?.querySelector(
+      'button[aria-label="Set path start to this point"]'
+    ) as HTMLButtonElement | null;
+    expect(setStartButton).not.toBeNull();
+
+    await act(async () => {
+      setStartButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-upid-selected="start"]')?.textContent).toBe('10.000, 0.000');
+    expect(container.querySelectorAll('[data-upid-segment-row]')).toHaveLength(4);
+    expect(container.querySelectorAll('[data-upid-point-row]')).toHaveLength(8);
+    expect(
+      container.querySelector(
+        '[data-upid-cut-sequence-row][data-upid-selected="true"] [data-upid-manual-decision="start"]'
+      )
+    ).not.toBeNull();
+    expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain('Start');
+    expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain(
+      '10.000, 0.000'
+    );
+  });
+
   it('highlights canvas geometry from UPID navigator row hover', async () => {
     window.showDirectoryPicker = undefined;
 

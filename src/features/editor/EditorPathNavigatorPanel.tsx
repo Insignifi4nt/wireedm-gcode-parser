@@ -2,6 +2,7 @@ import {
   ArrowDown,
   ArrowUp,
   FileText,
+  Flag,
   Magnet,
   MousePointer2,
   Redo2,
@@ -64,6 +65,7 @@ interface EditorPathNavigatorPanelProps {
   onSaveClick: () => void | Promise<void>;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onSetPathOperationClassification: (classification: ContourClassification) => void;
+  onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   onToggleHoverAssist: () => void;
   onToggleMagneticSnap: () => void;
   onUndoDraft: () => void;
@@ -98,6 +100,7 @@ export function EditorPathNavigatorPanel({
   onSaveClick,
   onSelectPathElement,
   onSetPathOperationClassification,
+  onSetPathStartFromElement,
   onToggleHoverAssist,
   onToggleMagneticSnap,
   onUndoDraft
@@ -318,6 +321,8 @@ export function EditorPathNavigatorPanel({
               node,
               onHoverPathElement,
               onSelectPathElement,
+              onSetPathStartFromElement,
+              isSaving,
               selectedPathElement,
               selectedPathOperationId,
               segmentsById,
@@ -442,18 +447,22 @@ function renderCutSequenceRow({
 
 function renderContourTreeNode({
   hoveredPathElement,
+  isSaving,
   node,
   onHoverPathElement,
   onSelectPathElement,
+  onSetPathStartFromElement,
   selectedPathElement,
   selectedPathOperationId,
   segmentsById,
   treeDepth
 }: {
   hoveredPathElement: EditorPathElementRef | null;
+  isSaving: boolean;
   node: ContourTreeNode;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
+  onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
   segmentsById: ReturnType<typeof segmentMap>;
@@ -533,7 +542,9 @@ function renderContourTreeNode({
             hoveredPathElement,
             selectedPathElement,
             onHoverPathElement,
-            onSelectPathElement
+            onSelectPathElement,
+            onSetPathStartFromElement,
+            isSaving
           )
         )}
       </div>
@@ -542,9 +553,11 @@ function renderContourTreeNode({
           {node.children.map((child) =>
             renderContourTreeNode({
               hoveredPathElement,
+              isSaving,
               node: child,
               onHoverPathElement,
               onSelectPathElement,
+              onSetPathStartFromElement,
               selectedPathElement,
               selectedPathOperationId,
               segmentsById,
@@ -583,7 +596,9 @@ function renderSegmentRow(
   hoveredPathElement: EditorPathElementRef | null,
   selectedPathElement: EditorPathElementRef | null,
   onHoverPathElement: (element: EditorPathElementRef | null) => void,
-  onSelectPathElement: (element: EditorPathElementRef) => void
+  onSelectPathElement: (element: EditorPathElementRef) => void,
+  onSetPathStartFromElement: (element: EditorPathElementRef) => void,
+  isSaving: boolean
 ) {
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
@@ -634,6 +649,8 @@ function renderSegmentRow(
           role: 'start',
           segment,
           hoveredPathElement,
+          isSaving,
+          onSetPathStartFromElement,
           selectedPathElement
         })}
         {renderPointRow({
@@ -645,6 +662,8 @@ function renderSegmentRow(
           role: 'end',
           segment,
           hoveredPathElement,
+          isSaving,
+          onSetPathStartFromElement,
           selectedPathElement
         })}
       </div>
@@ -655,8 +674,10 @@ function renderSegmentRow(
 function renderPointRow({
   hoveredPathElement,
   index,
+  isSaving,
   onHoverPathElement,
   onSelectPathElement,
+  onSetPathStartFromElement,
   operation,
   point,
   role,
@@ -665,15 +686,17 @@ function renderPointRow({
 }: {
   hoveredPathElement: EditorPathElementRef | null;
   index: number;
+  isSaving: boolean;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
+  onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   operation: PathOperation;
   point: { x: number; y: number };
   role: 'start' | 'end';
   segment: PathSegment;
   selectedPathElement: EditorPathElementRef | null;
 }) {
-  const element = { operationId: operation.id, segmentId: segment.id, pointRole: role };
+  const element: EditorPathElementRef = { operationId: operation.id, segmentId: segment.id, pointRole: role };
   const hovered =
     hoveredPathElement?.operationId === operation.id &&
     hoveredPathElement.segmentId === segment.id &&
@@ -684,9 +707,8 @@ function renderPointRow({
     selectedPathElement.pointRole === role;
 
   return (
-    <button
-      aria-pressed={selected}
-      className={`grid w-full grid-cols-[38px_minmax(0,1fr)] gap-1 px-1.5 py-0.5 pl-5 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent ${
+    <div
+      className={`grid w-full grid-cols-[38px_minmax(0,1fr)_20px] gap-1 px-1.5 py-0.5 pl-5 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-hovered={hovered ? 'true' : undefined}
@@ -696,16 +718,35 @@ function renderPointRow({
       data-upid-segment-id={segment.id}
       data-upid-point-role={role}
       data-upid-point-row
-      onClick={() => onSelectPathElement(element)}
       onMouseEnter={() => onHoverPathElement(element)}
       onMouseLeave={() => onHoverPathElement(null)}
-      type="button"
     >
-      <span className="uppercase">{role}</span>
-      <span className="min-w-0">
-        <span className="block truncate">{formatPoint(point)}</span>
-      </span>
-    </button>
+      <button
+        aria-pressed={selected}
+        className="col-span-2 grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-1 text-left outline-none"
+        onClick={() => onSelectPathElement(element)}
+        type="button"
+      >
+        <span className="uppercase">{role}</span>
+        <span className="min-w-0">
+          <span className="block truncate">{formatPoint(point)}</span>
+        </span>
+      </button>
+      <button
+        aria-label="Set path start to this point"
+        className="flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+        disabled={!operation.closed || isSaving}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelectPathElement(element);
+          onSetPathStartFromElement(element);
+        }}
+        title="Set start to this point"
+        type="button"
+      >
+        <Flag className="size-3" />
+      </button>
+    </div>
   );
 }
 
