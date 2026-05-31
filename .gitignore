@@ -52,6 +52,10 @@ pids
 coverage/
 .nyc_output
 
+# Playwright output
+playwright-report/
+test-results/
+
 # Temporary directories
 tmp/
 temp/
@@ -68,6 +72,10 @@ memory_server.py
 # Local reference archive
 old_reference/
 
+# External model artifacts
+ChatGPT-Pro/
+
 # Agent-local files
 /.claude/settings.local.json
+.playwright-cli/
 .superpowers/

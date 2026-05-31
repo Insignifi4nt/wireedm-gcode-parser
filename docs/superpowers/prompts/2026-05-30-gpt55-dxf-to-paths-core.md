@@ -2,7 +2,7 @@
 
 Approach this as a pioneer in computational geometry, CAM path planning, manufacturing intelligence, and local-first engineering tools.
 
-The task is to invent the strongest possible DXF-to-path intelligence core for `WireEDM_app`. Use the GitHub connector to read the repository files directly. The repository tree is included at the end of this prompt so you can jump to known paths without relying on directory listing.
+The task is to invent the strongest possible DXF-to-path intelligence core for `wireedm-gcode-parser` repo. Use the GitHub connector to read the repository files directly. The repository tree is included at the end of this prompt so you can jump to known paths without relying on directory listing.
 
 This task is expensive and worth taking seriously. Do not optimize for a quick patch. Think for as long as needed. Design something that could become the foundation of a new class of CAD/CAM workbench, not merely a better converter.
 
