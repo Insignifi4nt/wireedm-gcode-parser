@@ -144,6 +144,15 @@ export function EditorPage({
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
   const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
   const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
+  const savedPathDocument = useMemo(() => projectUpidDocument(program?.project), [program?.project]);
+  const savedPathDocumentSignature = useMemo(
+    () => pathDocumentSignature(savedPathDocument),
+    [savedPathDocument]
+  );
+  const draftPathDocumentSignature = useMemo(
+    () => pathDocumentSignature(pathDocumentDraft),
+    [pathDocumentDraft]
+  );
   const isImporting = importStatus === 'importing';
   const isSaving = saveStatus === 'saving';
   const draftProgram = useMemo<LoadedEditorProgram | null>(
@@ -261,7 +270,9 @@ export function EditorPage({
     selectedPathOperationId
   ]);
   const editorFileName = program?.filePath.split('/').pop() ?? '-';
-  const hasUnsavedChanges = Boolean(program && draftText !== program.text);
+  const hasUnsavedChanges = Boolean(
+    program && (draftText !== program.text || draftPathDocumentSignature !== savedPathDocumentSignature)
+  );
   const constructionHoveredPathElement = useMemo<EditorPathElementRef | null>(
     () =>
       constructionPreview && pathHoverAssistEnabled
@@ -1103,6 +1114,10 @@ export function EditorPage({
 
 function clonePathDocument(document: PathPlanningDocument | null) {
   return document ? structuredClone(document) : null;
+}
+
+function pathDocumentSignature(document: PathPlanningDocument | null) {
+  return document ? JSON.stringify(document) : '';
 }
 
 function normalizePathElementSelection(

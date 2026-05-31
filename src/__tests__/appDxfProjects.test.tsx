@@ -439,6 +439,79 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain('hole');
   });
 
+  it('saves manual UPID role corrections even when posted G-code is unchanged', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'role-save.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const roleSelect = container.querySelector(
+      'select[aria-label="Contour role"]'
+    ) as HTMLSelectElement | null;
+    const saveButton = container.querySelector(
+      'button[aria-label="Save Path Plan"]'
+    ) as HTMLButtonElement | null;
+    expect(roleSelect).not.toBeNull();
+    expect(saveButton).not.toBeNull();
+    expect(saveButton?.disabled).toBe(true);
+
+    await act(async () => {
+      if (roleSelect) setSelectValue(roleSelect, 'hole');
+    });
+    await flushAsync();
+
+    expect(container.textContent).toContain('Unsaved');
+    expect(saveButton?.disabled).toBe(false);
+
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const manifest = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const savedProject = JSON.parse(
+      window.localStorage.getItem(`wire-edm-workbench:file:${manifest.projects[0].path}`) || '{}'
+    );
+
+    expect(savedProject.upid.document.plan.operations[0].classification).toBe('hole');
+    expect(savedProject.pathPlanning.document.plan.operations[0].classification).toBe('hole');
+
+    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Dashboard')
+    );
+
+    await act(async () => {
+      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const openLatestButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Open in Editor')
+    );
+
+    await act(async () => {
+      openLatestButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('select[aria-label="Contour role"]')).toHaveProperty('value', 'hole');
+    expect(container.querySelector('[data-upid-contour-row]')?.getAttribute('data-upid-contour-role')).toBe(
+      'hole'
+    );
+  });
+
   it('reorders UPID cut sequence directly from Project Rail rows', async () => {
     window.showDirectoryPicker = undefined;
 
