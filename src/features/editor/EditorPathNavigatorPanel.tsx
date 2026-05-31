@@ -67,6 +67,12 @@ interface EditorPathNavigatorPanelProps {
   onUndoDraft: () => void;
 }
 
+interface ContourTreeNode {
+  children: ContourTreeNode[];
+  contour: PathContour;
+  operation: PathOperation;
+}
+
 export function EditorPathNavigatorPanel({
   hasUnsavedChanges,
   hoveredPathElement,
@@ -93,7 +99,10 @@ export function EditorPathNavigatorPanel({
   onUndoDraft
 }: EditorPathNavigatorPanelProps) {
   const segmentsById = segmentMap(pathDocument.segments);
-  const contoursById = new Map(pathDocument.contours.map((contour) => [contour.id, contour]));
+  const operationsByContourId = new Map(
+    pathDocument.plan.operations.map((operation) => [operation.contourId, operation])
+  );
+  const contourTree = buildContourTree(pathDocument.contours, operationsByContourId);
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
     (operation) => operation.id === selectedPathOperationId
   );
@@ -279,79 +288,18 @@ export function EditorPathNavigatorPanel({
 
         <section className="min-h-0 flex-1 overflow-auto py-2" data-upid-contour-tree>
           <div className="mb-2 text-[9px] uppercase text-muted-foreground">Contour Tree</div>
-          {pathDocument.plan.operations.map((operation) => {
-            const contour = contoursById.get(operation.contourId);
-
-            return (
-              <details
-                className="mb-1 border border-border bg-background/45"
-                data-upid-hovered={hoveredPathElement?.operationId === operation.id ? 'true' : undefined}
-                data-upid-contour-group={operation.id}
-                data-upid-selected={selectedPathElement?.operationId === operation.id ? 'true' : undefined}
-                key={operation.id}
-                open
-              >
-                <summary className="list-none">
-                  <button
-                    aria-pressed={operation.id === selectedPathOperationId}
-                    className={`grid w-full grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent ${
-                      operation.id === selectedPathOperationId
-                        ? 'bg-sky-500/15 text-sky-100'
-                        : hoveredPathElement?.operationId === operation.id
-                          ? 'bg-cyan-500/10 text-cyan-100'
-                          : ''
-                    }`}
-                    data-upid-contour-children={contour?.childIds.length ?? 0}
-                    data-upid-contour-depth={contour?.containmentDepth ?? 0}
-                    data-upid-contour-parent={contour?.parentId ?? undefined}
-                    data-upid-contour-role={contour?.classification ?? operation.classification}
-                    data-upid-contour-row
-                    data-upid-operation-id={operation.id}
-                    data-upid-selected={
-                      selectedPathElement?.operationId === operation.id && !selectedPathElement.segmentId
-                        ? 'true'
-                        : undefined
-                    }
-                    onClick={(event) => {
-                      event.preventDefault();
-                      onSelectPathElement({ operationId: operation.id, segmentId: null });
-                    }}
-                    onMouseEnter={() => onHoverPathElement({ operationId: operation.id, segmentId: null })}
-                    onMouseLeave={() => onHoverPathElement(null)}
-                    type="button"
-                  >
-                    <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-[10px] uppercase">{operation.classification}</span>
-                      <span className="block truncate text-[9px] text-muted-foreground">
-                        {operation.closed ? 'closed contour' : 'open chain'} / {operation.direction}
-                      </span>
-                      <span className="block truncate text-[9px] text-muted-foreground">
-                        {formatContourNest(contour)}
-                      </span>
-                    </span>
-                    <span className="text-right text-[9px] text-muted-foreground">
-                      {operation.metrics.cutLength.toFixed(3)}
-                    </span>
-                  </button>
-                </summary>
-                <div className="border-t border-border bg-card/35 py-1" data-upid-segment-stack>
-                  {operation.segmentRefs.map((ref, index) =>
-                    renderSegmentRow(
-                      operation,
-                      ref,
-                      index,
-                      requiredSegment(segmentsById, ref.segmentId),
-                      hoveredPathElement,
-                      selectedPathElement,
-                      onHoverPathElement,
-                      onSelectPathElement
-                    )
-                  )}
-                </div>
-              </details>
-            );
-          })}
+          {contourTree.map((node) =>
+            renderContourTreeNode({
+              hoveredPathElement,
+              node,
+              onHoverPathElement,
+              onSelectPathElement,
+              selectedPathElement,
+              selectedPathOperationId,
+              segmentsById,
+              treeDepth: 0
+            })
+          )}
         </section>
       </section>
     </div>
@@ -369,6 +317,120 @@ export function EditorPathNavigatorRailCollapsed() {
         UPID
       </div>
     </div>
+  );
+}
+
+function renderContourTreeNode({
+  hoveredPathElement,
+  node,
+  onHoverPathElement,
+  onSelectPathElement,
+  selectedPathElement,
+  selectedPathOperationId,
+  segmentsById,
+  treeDepth
+}: {
+  hoveredPathElement: EditorPathElementRef | null;
+  node: ContourTreeNode;
+  onHoverPathElement: (element: EditorPathElementRef | null) => void;
+  onSelectPathElement: (element: EditorPathElementRef) => void;
+  selectedPathElement: EditorPathElementRef | null;
+  selectedPathOperationId: string | null;
+  segmentsById: ReturnType<typeof segmentMap>;
+  treeDepth: number;
+}) {
+  const { contour, operation } = node;
+  const nested = treeDepth > 0;
+
+  return (
+    <details
+      className={
+        nested
+          ? 'ml-3 border-l border-border/80 bg-background/20 pl-2'
+          : 'mb-1 border border-border bg-background/45'
+      }
+      data-upid-hovered={hoveredPathElement?.operationId === operation.id ? 'true' : undefined}
+      data-upid-contour-group={operation.id}
+      data-upid-selected={selectedPathElement?.operationId === operation.id ? 'true' : undefined}
+      data-upid-tree-depth={treeDepth}
+      key={operation.id}
+      open
+    >
+      <summary className="list-none">
+        <button
+          aria-pressed={operation.id === selectedPathOperationId}
+          className={`grid w-full grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent ${
+            operation.id === selectedPathOperationId
+              ? 'bg-sky-500/15 text-sky-100'
+              : hoveredPathElement?.operationId === operation.id
+                ? 'bg-cyan-500/10 text-cyan-100'
+                : ''
+          }`}
+          data-upid-contour-children={contour.childIds.length}
+          data-upid-contour-depth={contour.containmentDepth}
+          data-upid-contour-parent={contour.parentId ?? undefined}
+          data-upid-contour-role={contour.classification}
+          data-upid-contour-row
+          data-upid-operation-id={operation.id}
+          data-upid-selected={
+            selectedPathElement?.operationId === operation.id && !selectedPathElement.segmentId
+              ? 'true'
+              : undefined
+          }
+          onClick={(event) => {
+            event.preventDefault();
+            onSelectPathElement({ operationId: operation.id, segmentId: null });
+          }}
+          onMouseEnter={() => onHoverPathElement({ operationId: operation.id, segmentId: null })}
+          onMouseLeave={() => onHoverPathElement(null)}
+          type="button"
+        >
+          <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
+          <span className="min-w-0">
+            <span className="block truncate text-[10px] uppercase">{operation.classification}</span>
+            <span className="block truncate text-[9px] text-muted-foreground">
+              {operation.closed ? 'closed contour' : 'open chain'} / {operation.direction}
+            </span>
+            <span className="block truncate text-[9px] text-muted-foreground">
+              {formatContourNest(contour)}
+            </span>
+          </span>
+          <span className="text-right text-[9px] text-muted-foreground">
+            {operation.metrics.cutLength.toFixed(3)}
+          </span>
+        </button>
+      </summary>
+      <div className="border-t border-border bg-card/35 py-1" data-upid-segment-stack>
+        {operation.segmentRefs.map((ref, index) =>
+          renderSegmentRow(
+            operation,
+            ref,
+            index,
+            requiredSegment(segmentsById, ref.segmentId),
+            hoveredPathElement,
+            selectedPathElement,
+            onHoverPathElement,
+            onSelectPathElement
+          )
+        )}
+      </div>
+      {node.children.length > 0 && (
+        <div className="py-1" data-upid-contour-children-list>
+          {node.children.map((child) =>
+            renderContourTreeNode({
+              hoveredPathElement,
+              node: child,
+              onHoverPathElement,
+              onSelectPathElement,
+              selectedPathElement,
+              selectedPathOperationId,
+              segmentsById,
+              treeDepth: treeDepth + 1
+            })
+          )}
+        </div>
+      )}
+    </details>
   );
 }
 
@@ -427,4 +489,42 @@ function formatPoint(point: { x: number; y: number }) {
 function formatContourNest(contour: PathContour | undefined) {
   if (!contour) return 'depth 0 / children 0';
   return `depth ${contour.containmentDepth} / children ${contour.childIds.length}`;
+}
+
+function buildContourTree(
+  contours: PathContour[],
+  operationsByContourId: Map<string, PathOperation>
+): ContourTreeNode[] {
+  const contoursById = new Map(contours.map((contour) => [contour.id, contour]));
+  const visited = new Set<string>();
+
+  function buildNode(contour: PathContour): ContourTreeNode | null {
+    if (visited.has(contour.id)) return null;
+    const operation = operationsByContourId.get(contour.id);
+    if (!operation) return null;
+
+    visited.add(contour.id);
+    return {
+      children: contour.childIds
+        .map((childId) => contoursById.get(childId))
+        .filter((child): child is PathContour => Boolean(child))
+        .map((child) => buildNode(child))
+        .filter((child): child is ContourTreeNode => Boolean(child)),
+      contour,
+      operation
+    };
+  }
+
+  const roots = contours.filter((contour) => {
+    if (!operationsByContourId.has(contour.id)) return false;
+    return !contour.parentId || !contoursById.has(contour.parentId) || !operationsByContourId.has(contour.parentId);
+  });
+  const rootNodes = roots.map((contour) => buildNode(contour)).filter((node): node is ContourTreeNode => Boolean(node));
+
+  const orphanNodes = contours
+    .filter((contour) => operationsByContourId.has(contour.id) && !visited.has(contour.id))
+    .map((contour) => buildNode(contour))
+    .filter((node): node is ContourTreeNode => Boolean(node));
+
+  return [...rootNodes, ...orphanNodes];
 }

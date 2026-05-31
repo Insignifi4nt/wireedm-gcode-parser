@@ -338,18 +338,26 @@ describe('App DXF imports and project library', () => {
     const contourRows = [...container.querySelectorAll('[data-upid-contour-row]')];
     expect(contourRows).toHaveLength(3);
     expect(contourRows.map((row) => row.getAttribute('data-upid-contour-role'))).toEqual([
-      'island',
+      'exterior',
       'hole',
-      'exterior'
+      'island'
     ]);
     expect(contourRows.map((row) => row.getAttribute('data-upid-contour-depth'))).toEqual([
-      '2',
+      '0',
       '1',
-      '0'
+      '2'
     ]);
-    expect(contourRows[0].textContent).toContain('depth 2');
+    expect(contourRows[0].textContent).toContain('depth 0');
     expect(contourRows[1].textContent).toContain('depth 1');
-    expect(contourRows[2].textContent).toContain('depth 0');
+    expect(contourRows[2].textContent).toContain('depth 2');
+    const contourGroups = [...container.querySelectorAll('[data-upid-contour-group]')];
+    expect(contourGroups.map((group) => group.getAttribute('data-upid-tree-depth'))).toEqual([
+      '0',
+      '1',
+      '2'
+    ]);
+    expect(contourGroups[1].parentElement?.closest('[data-upid-contour-group]')).toBe(contourGroups[0]);
+    expect(contourGroups[2].parentElement?.closest('[data-upid-contour-group]')).toBe(contourGroups[1]);
 
     await act(async () => {
       contourRows[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
