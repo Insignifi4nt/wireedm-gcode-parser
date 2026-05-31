@@ -220,7 +220,9 @@ export function EditorPage({
 
     return {
       mode: pathClickMode,
+      operationId: magnetized.operationId,
       relation: magnetized.relation,
+      segmentId: magnetized.segmentId,
       sourcePoint,
       targetPoint: magnetized.point
     };
@@ -256,6 +258,17 @@ export function EditorPage({
   ]);
   const editorFileName = program?.filePath.split('/').pop() ?? '-';
   const hasUnsavedChanges = Boolean(program && draftText !== program.text);
+  const constructionHoveredPathElement = useMemo<EditorPathElementRef | null>(
+    () =>
+      constructionPreview && pathHoverAssistEnabled
+        ? {
+            operationId: constructionPreview.operationId,
+            segmentId: constructionPreview.segmentId
+          }
+        : null,
+    [constructionPreview, pathHoverAssistEnabled]
+  );
+  const activeHoveredPathElement = constructionHoveredPathElement ?? hoveredPathElement;
   const structure = useMemo(
     () => (draftProgram ? organizeGCodeStructure(draftProgram.text.split(/\r?\n/)) : null),
     [draftProgram]
@@ -271,7 +284,7 @@ export function EditorPage({
             expanded: (
               <EditorPathNavigatorPanel
                 hasUnsavedChanges={hasUnsavedChanges}
-                hoveredPathElement={hoveredPathElement}
+                hoveredPathElement={activeHoveredPathElement}
                 hoverAssistEnabled={pathHoverAssistEnabled}
                 isSaving={isSaving}
                 magneticSnapEnabled={pathMagneticSnapEnabled}
@@ -303,7 +316,7 @@ export function EditorPage({
       isSaving,
       pathClickMode,
       pathDocumentDraft,
-      hoveredPathElement,
+      activeHoveredPathElement,
       pathHoverAssistEnabled,
       pathMagneticSnapEnabled,
       redoStack.length,
@@ -942,7 +955,7 @@ export function EditorPage({
           guideHighlightTarget={guideHighlightTarget}
           guideOpen={guideOpen}
           hoveredLine={hoveredLine}
-          hoveredPathElement={hoveredPathElement}
+          hoveredPathElement={activeHoveredPathElement}
           measurementPoints={measurementPoints}
           onAddMeasurementPoint={addMeasurementPoint}
           onCursorPointChange={setPreviewCursorPoint}

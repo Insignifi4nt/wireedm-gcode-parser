@@ -73,7 +73,9 @@ interface EditorPreviewProps {
 
 export interface EditorConstructionPreview {
   mode: MagnetizeMode;
+  operationId: string;
   relation: 'perpendicular' | 'tangent' | 'nearest-fallback';
+  segmentId: string;
   sourcePoint: { x: number; y: number };
   targetPoint: { x: number; y: number };
 }
@@ -852,8 +854,10 @@ export function EditorPreview({
           {constructionPreview && (
             <g
               data-upid-construction-mode={constructionPreview.mode}
+              data-upid-construction-operation={constructionPreview.operationId}
               data-upid-construction-preview
               data-upid-construction-relation={constructionPreview.relation}
+              data-upid-construction-segment={constructionPreview.segmentId}
               pointerEvents="none"
             >
               <line

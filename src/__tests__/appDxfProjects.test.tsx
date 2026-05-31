@@ -1101,6 +1101,18 @@ describe('App DXF imports and project library', () => {
     const constructionPreview = container.querySelector('[data-upid-construction-preview]');
     expect(constructionPreview).not.toBeNull();
     expect(constructionPreview?.getAttribute('data-upid-construction-mode')).toBe('perpendicular');
+    const constructionSegmentId = constructionPreview?.getAttribute('data-upid-construction-segment');
+    expect(constructionSegmentId).toBeTruthy();
+    expect(
+      container
+        .querySelector(`[data-upid-segment-row][data-upid-segment-id="${constructionSegmentId}"]`)
+        ?.getAttribute('data-upid-hovered')
+    ).toBe('true');
+    expect(
+      container
+        .querySelector(`path[data-preview-segment="${constructionSegmentId}"]`)
+        ?.getAttribute('data-preview-hovered')
+    ).toBe('true');
   });
 
   it('uses existing contour points for Start Here until magnetic snap is enabled', async () => {
