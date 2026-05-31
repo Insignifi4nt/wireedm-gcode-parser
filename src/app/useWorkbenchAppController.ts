@@ -223,9 +223,11 @@ export function useWorkbenchAppController(
     const machine = latestImport.project.machine;
     const posted = postUpidToGcode(latestImport.pathDocument);
     appServices.downloadGeneratedProgram({
-      fileName:
-        latestImport.project.generated.files.at(-1)?.name ??
-        buildOutputFilename(latestImport.project.id, machine.output.extension, machine.output.customExtension),
+      fileName: buildOutputFilename(
+        latestImport.project.id,
+        machine.output.extension,
+        machine.output.customExtension
+      ),
       text: composeGCodeProgram({
         header: machine.templates.header,
         body: posted.body,
@@ -346,7 +348,7 @@ export function useWorkbenchAppController(
         ...current,
         workbench,
         project: editorProgram.project,
-        generatedBody: editorProgram.project.generated.body,
+        generatedBody: '',
         generatedProgram: '',
         pathDocument,
         pathDiagnostics: pathDocument.diagnostics,

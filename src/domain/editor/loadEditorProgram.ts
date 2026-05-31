@@ -16,11 +16,11 @@ export async function loadEditorProgram(
   workbench: ConnectedWorkbench,
   project: WorkbenchProject
 ): Promise<LoadedEditorProgram> {
-  const filePath = project.editor.activeFilePath ?? project.generated.files.at(-1)?.path;
   if (projectUpidDocument(project)) {
     return createUpidEditorProgram(project);
   }
 
+  const filePath = project.editor.activeFilePath ?? project.generated.files.at(-1)?.path;
   if (!filePath) {
     throw new Error('Project does not reference a generated program for the editor.');
   }
@@ -40,11 +40,7 @@ export async function loadEditorProgram(
 
 function createUpidEditorProgram(project: WorkbenchProject): LoadedEditorProgram {
   return {
-    filePath:
-      project.editor.activeFilePath ??
-      project.generated.files.at(-1)?.path ??
-      project.source.files.at(-1)?.path ??
-      `projects/${project.id}/project.json`,
+    filePath: project.source.files.at(-1)?.path ?? `projects/${project.id}/project.json`,
     text: '',
     parseResult: parseGCodeProgram(''),
     project

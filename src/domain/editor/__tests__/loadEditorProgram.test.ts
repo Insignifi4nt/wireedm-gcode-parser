@@ -45,7 +45,7 @@ describe('loadEditorProgram', () => {
     expect(editorProgram.project?.upid?.document.plan.operations).toHaveLength(1);
   });
 
-  it('opens UPID projects from the path document when the generated program file is unavailable', async () => {
+  it('opens UPID projects from the source path even if stale generated refs exist', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
       now: new Date('2026-05-29T10:00:00.000Z')
@@ -55,17 +55,28 @@ describe('loadEditorProgram', () => {
       text: simpleArcDxf(),
       now: new Date('2026-05-29T11:00:00.000Z')
     });
-    const legacyProject = {
+    const staleRefProject = {
       ...imported.project,
       editor: {
         ...imported.project.editor,
         activeFilePath: 'generated/upid-native-2026-05-29.iso'
+      },
+      generated: {
+        body: 'G1 X999.000 Y999.000',
+        files: [
+          {
+            createdAt: imported.project.createdAt,
+            kind: 'generated' as const,
+            name: 'upid-native-2026-05-29.iso',
+            path: 'generated/upid-native-2026-05-29.iso'
+          }
+        ]
       }
     };
 
-    const editorProgram = await loadEditorProgram(imported.workbench, legacyProject);
+    const editorProgram = await loadEditorProgram(imported.workbench, staleRefProject);
 
-    expect(editorProgram.filePath).toBe('generated/upid-native-2026-05-29.iso');
+    expect(editorProgram.filePath).toBe('imports/upid-native-2026-05-29.dxf');
     expect(editorProgram.text).toBe('');
     expect(editorProgram.parseResult.path).toHaveLength(0);
     expect(editorProgram.project?.upid?.document.plan.operations).toHaveLength(1);

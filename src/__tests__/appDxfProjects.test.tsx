@@ -1719,7 +1719,8 @@ describe('App DXF imports and project library', () => {
     );
 
     expect(savedProject.pathPlanning.document.plan.operations[0].direction).toBe('reverse');
-    expect(savedProject.generated.body).toContain('G1 X0.000 Y5.000');
+    expect(savedProject.generated).toEqual({ body: '', files: [] });
+    expect(savedProject.editor.activeFilePath).toBeNull();
     expect(window.localStorage.getItem(`wire-edm-workbench:file:generated/${savedProject.id}.body.gcode`)).toBeNull();
 
     const dashboardButton = [...container.querySelectorAll('button')].find((button) =>

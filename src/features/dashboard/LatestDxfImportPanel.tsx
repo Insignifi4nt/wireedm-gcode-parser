@@ -42,7 +42,7 @@ export function LatestDxfImportPanel({
               <dd>{latestImport.pathDocument.contours.length}</dd>
               <dt className="text-muted-foreground">Export</dt>
               <dd className="truncate">
-                {latestImport.project.generated.files.at(-1)?.path ?? 'UPID on demand'}
+                UPID on demand
               </dd>
             </dl>
             {allWarnings.length > 0 && (

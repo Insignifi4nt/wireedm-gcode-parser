@@ -214,9 +214,11 @@ export function EditorPage({
     const posted = postUpidToGcode(pathDocumentDraft);
     const body = posted.body;
     const machine = program.project.machine;
-    const fileName =
-      program.project.generated.files.at(-1)?.name ??
-      buildOutputFilename(program.project.id, machine.output.extension, machine.output.customExtension);
+    const fileName = buildOutputFilename(
+      program.project.id,
+      machine.output.extension,
+      machine.output.customExtension
+    );
 
     return {
       body,

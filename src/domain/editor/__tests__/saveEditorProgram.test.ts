@@ -92,7 +92,7 @@ describe('saveEditorProgram', () => {
     expect(adapter.files.has('imports/missing.nc')).toBe(false);
   });
 
-  it('persists edited path documents, regenerated bodies, and project metadata', async () => {
+  it('persists edited path documents and project metadata without generated body state', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
       now: new Date('2026-05-29T10:00:00.000Z')
@@ -139,7 +139,8 @@ describe('saveEditorProgram', () => {
     const savedManifest = JSON.parse(adapter.files.get('workbench.json') || '{}');
 
     expect(adapter.files.has(bodyPath)).toBe(false);
-    expect(savedProject.generated.body).toBe(body);
+    expect(savedProject.generated).toEqual({ body: '', files: [] });
+    expect(savedProject.editor.activeFilePath).toBeNull();
     expect(savedProject.upid.format).toBe('upid');
     expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
     expect(savedProject.upid.document.plan.operations[0].overrides.direction).toEqual({
@@ -163,6 +164,7 @@ describe('saveEditorProgram', () => {
     expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.editorProgram.text).toBe('');
     expect(saved.editorProgram.parseResult.path).toHaveLength(0);
+    expect(saved.editorProgram.filePath).toBe(imported.project.source.files[0].path);
     expect(adapter.files.get(imported.project.source.files[0].path)).toBe(rectangleDxf());
     expect(savedManifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.workbench.manifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
@@ -172,7 +174,7 @@ describe('saveEditorProgram', () => {
     expect(saved.editorProgram.project?.upid?.document.plan.operations[0].direction).toBe('reverse');
   });
 
-  it('persists UPID state from path geometry without rewriting the active editor program', async () => {
+  it('clears stale generated artifact metadata when saving UPID geometry', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
       now: new Date('2026-05-29T10:00:00.000Z')
@@ -187,27 +189,22 @@ describe('saveEditorProgram', () => {
       imported.pathDocument.plan.operations[0].id
     );
     expect(reversedDocument).not.toBeNull();
-    const expectedBody = pathPlanToGcodeBody(
-      reversedDocument!.plan,
-      reversedDocument!.segments,
-      reversedDocument!.options
-    );
-    const legacy = addLegacyGeneratedProgram(adapter, imported);
+    const postedArtifacts = addPostedProgramArtifacts(adapter, imported);
 
     const saved = await saveEditorProgram(imported.workbench, {
-      filePath: legacy.programPath,
+      filePath: postedArtifacts.programPath,
       now: new Date('2026-05-29T12:00:00.000Z'),
       pathDocument: reversedDocument,
-      project: legacy.project,
+      project: postedArtifacts.project,
       text: imported.generatedProgram
     });
 
-    const activeProgramText = adapter.files.get(legacy.programPath);
-
-    expect(activeProgramText).toBe(legacy.programText);
+    expect(adapter.files.get(postedArtifacts.programPath)).toBe(postedArtifacts.programText);
+    expect(saved.editorProgram.filePath).toBe(imported.project.source.files[0].path);
     expect(saved.editorProgram.text).toBe('');
     expect(saved.editorProgram.parseResult.path).toHaveLength(0);
-    expect(saved.editorProgram.project?.generated.body).toBe(expectedBody);
+    expect(saved.editorProgram.project?.editor.activeFilePath).toBeNull();
+    expect(saved.editorProgram.project?.generated).toEqual({ body: '', files: [] });
   });
 
   it('saves UPID path edits even when no generated editor program file exists', async () => {
@@ -241,7 +238,7 @@ describe('saveEditorProgram', () => {
     expect(saved.editorProgram.text).toBe('');
     expect(saved.editorProgram.parseResult.path).toHaveLength(0);
     expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
-    expect(savedProject.generated.body).toContain('G1 X0.000 Y5.000');
+    expect(savedProject.generated).toEqual({ body: '', files: [] });
   });
 
   it('clears stale path planning when manual text edits are saved without a path document', async () => {
@@ -254,14 +251,14 @@ describe('saveEditorProgram', () => {
       text: rectangleDxf(),
       now: new Date('2026-05-29T11:00:00.000Z')
     });
-    const legacy = addLegacyGeneratedProgram(adapter, imported);
-    const text = `${legacy.programText}\n(MANUAL EDIT)`;
+    const postedArtifacts = addPostedProgramArtifacts(adapter, imported);
+    const text = `${postedArtifacts.programText}\n(MANUAL EDIT)`;
 
     const saved = await saveEditorProgram(imported.workbench, {
-      filePath: legacy.programPath,
+      filePath: postedArtifacts.programPath,
       now: new Date('2026-05-29T12:00:00.000Z'),
       pathDocument: null,
-      project: legacy.project,
+      project: postedArtifacts.project,
       text
     });
 
@@ -287,14 +284,14 @@ describe('saveEditorProgram', () => {
       text: rectangleDxf(),
       now: new Date('2026-05-29T11:00:00.000Z')
     });
-    const legacy = addLegacyGeneratedProgram(adapter, imported);
-    const text = legacy.programText.replace('G90 G21 G17 G40', 'G90 G21 G17');
+    const postedArtifacts = addPostedProgramArtifacts(adapter, imported);
+    const text = postedArtifacts.programText.replace('G90 G21 G17 G40', 'G90 G21 G17');
 
     await saveEditorProgram(imported.workbench, {
-      filePath: legacy.programPath,
+      filePath: postedArtifacts.programPath,
       now: new Date('2026-05-29T12:00:00.000Z'),
       pathDocument: null,
-      project: legacy.project,
+      project: postedArtifacts.project,
       text
     });
 
@@ -341,7 +338,7 @@ function line(startX: number, startY: number, endX: number, endY: number): DxfEn
   };
 }
 
-function addLegacyGeneratedProgram(
+function addPostedProgramArtifacts(
   adapter: MemoryWorkbenchAdapter,
   imported: Awaited<ReturnType<typeof importDxfProject>>
 ) {

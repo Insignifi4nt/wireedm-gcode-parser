@@ -47,11 +47,14 @@ export async function saveEditorProgram(
   });
   const updatedWorkbench = projectSave?.workbench ?? workbench;
   const updatedProject = projectSave?.project ?? input.project;
+  const editorFilePath = savesPathDocument
+    ? sourceEditorFilePath(updatedProject, input.filePath)
+    : input.filePath;
 
   return {
     workbench: updatedWorkbench,
     editorProgram: {
-      filePath: input.filePath,
+      filePath: editorFilePath,
       text: textToSave,
       parseResult: parseGCodeProgram(textToSave),
       project: updatedProject
@@ -80,16 +83,26 @@ async function saveProjectPathState(
     }
   };
 
-  const bodyFile = nextProject.generated.files.find((file) => file.path.endsWith('.body.gcode'));
-
   if (input.pathDocument) {
     const post = postUpidToGcode(input.pathDocument);
-    nextProject.generated.body = post.body;
-    nextProject = withProjectUpid(nextProject, input.pathDocument, post.diagnostics);
-    if (bodyFile) {
-      await workbench.adapter.writeText(bodyFile.path, post.body);
-    }
+    nextProject = withProjectUpid(
+      {
+        ...nextProject,
+        editor: {
+          ...nextProject.editor,
+          activeFilePath: null
+        },
+        generated: {
+          body: '',
+          files: []
+        }
+      },
+      input.pathDocument,
+      post.diagnostics
+    );
   } else {
+    const bodyFile = nextProject.generated.files.find((file) => file.path.endsWith('.body.gcode'));
+
     nextProject = withoutProjectUpid(nextProject);
     if (bodyFile) {
       await workbench.adapter.writeText(bodyFile.path, nextProject.generated.body);
@@ -125,6 +138,10 @@ async function saveProjectPathState(
       manifest: updatedManifest
     }
   };
+}
+
+function sourceEditorFilePath(project: WorkbenchProject | undefined, fallback: string) {
+  return project?.source.files.at(-1)?.path ?? fallback;
 }
 
 function bodyTextFromProgram(text: string, project: WorkbenchProject) {
