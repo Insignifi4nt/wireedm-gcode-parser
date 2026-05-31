@@ -370,8 +370,12 @@ describe('App DXF imports and project library', () => {
       'exterior'
     ]);
 
+    const firstCutSequenceSelect = cutSequenceRows[0].querySelector(
+      '[data-upid-cut-sequence-select]'
+    );
+
     await act(async () => {
-      cutSequenceRows[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      firstCutSequenceSelect?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(cutSequenceRows[0].getAttribute('data-upid-selected')).toBe('true');
@@ -422,6 +426,52 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-selected="classification"]')?.textContent).toBe('hole');
     expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain('Role');
     expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain('hole');
+  });
+
+  it('reorders UPID cut sequence directly from Project Rail rows', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([nestedContourDxf()], 'cut-sequence-reorder.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    let cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-role'))).toEqual([
+      'island',
+      'hole',
+      'exterior'
+    ]);
+
+    const moveDownButton = cutSequenceRows[0].querySelector(
+      'button[aria-label="Move cut sequence operation down"]'
+    ) as HTMLButtonElement | null;
+    expect(moveDownButton).not.toBeNull();
+
+    await act(async () => {
+      moveDownButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-role'))).toEqual([
+      'hole',
+      'island',
+      'exterior'
+    ]);
+    expect(cutSequenceRows[1].getAttribute('data-upid-selected')).toBe('true');
+    expect(cutSequenceRows[1].querySelector('[data-upid-manual-decision="order"]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain('Order');
+    expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain(
+      'Manual position 2'
+    );
   });
 
   it('highlights selected UPID contours and segments on the canvas and in the inspector', async () => {

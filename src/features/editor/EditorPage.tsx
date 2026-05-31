@@ -672,10 +672,10 @@ export function EditorPage({
     );
   }
 
-  function handleMovePathOperation(direction: -1 | 1) {
-    if (!pathDocumentDraft || !selectedPathOperationId || isSaving) return;
-    const edited = movePathOperation(pathDocumentDraft, selectedPathOperationId, direction);
-    if (edited) applyPathDocumentEdit(edited);
+  function handleMovePathOperation(direction: -1 | 1, operationId = selectedPathOperationId ?? undefined) {
+    if (!pathDocumentDraft || !operationId || isSaving) return;
+    const edited = movePathOperation(pathDocumentDraft, operationId, direction);
+    if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
 
   function handleReversePathOperation() {
@@ -690,7 +690,10 @@ export function EditorPage({
     if (edited) applyPathDocumentEdit(edited);
   }
 
-  function applyPathDocumentEdit(nextDocument: PathPlanningDocument) {
+  function applyPathDocumentEdit(
+    nextDocument: PathPlanningDocument,
+    options: { selectedPathOperationId?: string | null } = {}
+  ) {
     if (!program?.project) return;
 
     const body = postUpidToGcodeBody(nextDocument);
@@ -703,7 +706,7 @@ export function EditorPage({
       }),
       {
         pathDocument: nextDocument,
-        selectedPathOperationId
+        selectedPathOperationId: options.selectedPathOperationId ?? selectedPathOperationId
       }
     );
   }

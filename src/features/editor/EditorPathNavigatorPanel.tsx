@@ -9,6 +9,7 @@ import {
   Save,
   Undo2
 } from 'lucide-react';
+import type { MouseEvent } from 'react';
 
 import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
 import {
@@ -54,7 +55,7 @@ interface EditorPathNavigatorPanelProps {
   selectedPathOperationId: string | null;
   undoAvailable: boolean;
   onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
-  onMovePathOperation: (direction: -1 | 1) => void;
+  onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
   onOpenExportPreview: () => void;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onRedoDraft: () => void;
@@ -296,9 +297,12 @@ export function EditorPathNavigatorPanel({
               renderCutSequenceRow({
                 contour: contoursById.get(operation.contourId),
                 hoveredPathElement,
+                isSaving,
                 onHoverPathElement,
+                onMovePathOperation,
                 onSelectPathElement,
                 operation,
+                operationCount: pathDocument.plan.operations.length,
                 selectedPathElement
               })
             )}
@@ -342,28 +346,40 @@ export function EditorPathNavigatorRailCollapsed() {
 function renderCutSequenceRow({
   contour,
   hoveredPathElement,
+  isSaving,
   onHoverPathElement,
+  onMovePathOperation,
   onSelectPathElement,
   operation,
+  operationCount,
   selectedPathElement
 }: {
   contour: PathContour | undefined;
   hoveredPathElement: EditorPathElementRef | null;
+  isSaving: boolean;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
+  onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   operation: PathOperation;
+  operationCount: number;
   selectedPathElement: EditorPathElementRef | null;
 }) {
   const selected = selectedPathElement?.operationId === operation.id;
   const hovered = hoveredPathElement?.operationId === operation.id;
   const manualDecisions = manualDecisionKinds(operation);
+  const selectOperation = () => onSelectPathElement({ operationId: operation.id, segmentId: null });
+  const moveOperation = (event: MouseEvent<HTMLButtonElement>, direction: -1 | 1) => {
+    event.stopPropagation();
+    selectOperation();
+    onMovePathOperation(direction, operation.id);
+  };
 
   return (
-    <button
-      aria-pressed={selected}
-      className={`grid w-full grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 border-b border-border px-1.5 py-1.5 text-left last:border-b-0 outline-none hover:bg-accent ${
+    <div
+      className={`grid w-full grid-cols-[minmax(0,1fr)_20px] items-center border-b border-border last:border-b-0 hover:bg-accent ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/10 text-cyan-100' : ''
       }`}
+      data-upid-cut-sequence-controls
       data-upid-cut-sequence-index={operation.orderIndex}
       data-upid-cut-sequence-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
       data-upid-cut-sequence-role={operation.classification}
@@ -372,26 +388,54 @@ function renderCutSequenceRow({
       data-upid-operation-id={operation.id}
       data-upid-selected={selected ? 'true' : undefined}
       key={`cut-sequence-${operation.id}`}
-      onClick={() => onSelectPathElement({ operationId: operation.id, segmentId: null })}
       onMouseEnter={() => onHoverPathElement({ operationId: operation.id, segmentId: null })}
       onMouseLeave={() => onHoverPathElement(null)}
-      type="button"
     >
-      <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
-      <span className="min-w-0">
-        <span className="block truncate text-[10px] uppercase">{operation.classification}</span>
-        <span className="block truncate text-[9px] text-muted-foreground">
-          {operation.closed ? 'closed contour' : 'open chain'} / {operation.direction}
+      <button
+        aria-pressed={selected}
+        className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent"
+        data-upid-cut-sequence-select
+        onClick={selectOperation}
+        type="button"
+      >
+        <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
+        <span className="min-w-0">
+          <span className="block truncate text-[10px] uppercase">{operation.classification}</span>
+          <span className="block truncate text-[9px] text-muted-foreground">
+            {operation.closed ? 'closed contour' : 'open chain'} / {operation.direction}
+          </span>
+          <span className="block truncate text-[9px] text-muted-foreground">
+            {formatContourNest(contour)}
+          </span>
+          {renderManualDecisionBadges(manualDecisions)}
         </span>
-        <span className="block truncate text-[9px] text-muted-foreground">
-          {formatContourNest(contour)}
+        <span className="self-center px-1 text-right text-[9px] text-muted-foreground">
+          {operation.metrics.cutLength.toFixed(3)}
         </span>
-        {renderManualDecisionBadges(manualDecisions)}
+      </button>
+      <span className="grid grid-rows-2 self-stretch border-l border-border">
+        <button
+          aria-label="Move cut sequence operation up"
+          className="flex items-center justify-center text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={operation.orderIndex <= 0 || isSaving}
+          onClick={(event) => moveOperation(event, -1)}
+          title="Move cut operation up"
+          type="button"
+        >
+          <ArrowUp className="size-3" />
+        </button>
+        <button
+          aria-label="Move cut sequence operation down"
+          className="flex items-center justify-center border-t border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={operation.orderIndex >= operationCount - 1 || isSaving}
+          onClick={(event) => moveOperation(event, 1)}
+          title="Move cut operation down"
+          type="button"
+        >
+          <ArrowDown className="size-3" />
+        </button>
       </span>
-      <span className="text-right text-[9px] text-muted-foreground">
-        {operation.metrics.cutLength.toFixed(3)}
-      </span>
-    </button>
+    </div>
   );
 }
 
