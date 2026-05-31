@@ -5,10 +5,12 @@ import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/f
 import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
 
 import {
+  constructMagnetizedPoint,
   magnetizePointToPath,
   movePathOperation,
   reversePathOperation,
-  setClosedOperationStartNearPoint
+  setClosedOperationStartNearPoint,
+  slideMagnetizedPointOnSegment
 } from '../pathDocumentOperations';
 
 describe('pathDocumentOperations', () => {
@@ -87,6 +89,109 @@ describe('pathDocumentOperations', () => {
       point: { x: 5, y: 5 },
       tangent: { x: -1, y: 0 }
     });
+  });
+
+  it('constructs a real tangent point on circular geometry from a source point', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+    ]);
+
+    const result = constructMagnetizedPoint(
+      document,
+      { x: 10, y: 0 },
+      { x: 0, y: 5 },
+      'tangent'
+    );
+
+    expect(result?.relation).toBe('tangent');
+    expect(result?.point.x).toBeCloseTo(2.5, 6);
+    expect(result?.point.y).toBeCloseTo(4.330127, 6);
+    expect(result?.mode).toBe('tangent');
+  });
+
+  it('slides a constrained point only along its stored segment', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      ...rectangleLines(0, 0, 10, 5),
+      ...rectangleLines(20, 0, 30, 5)
+    ]);
+    const construction = constructMagnetizedPoint(
+      document,
+      { x: 5, y: 2 },
+      { x: 5, y: 5 },
+      'perpendicular'
+    );
+    expect(construction).not.toBeNull();
+
+    const slid = slideMagnetizedPointOnSegment(
+      document,
+      {
+        mode: construction!.mode,
+        operationId: construction!.operationId,
+        relation: construction!.relation,
+        segmentId: construction!.segmentId,
+        sourcePoint: construction!.sourcePoint
+      },
+      { x: 25, y: 5 }
+    );
+
+    expect(slid?.operationId).toBe(construction?.operationId);
+    expect(slid?.segmentId).toBe(construction?.segmentId);
+    expect(slid?.point.x).toBe(10);
+    expect(slid?.point.y).toBe(5);
+  });
+
+  it('slides tangent fallback points as nearest snaps instead of freezing them', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const fallback = constructMagnetizedPoint(document, { x: 5, y: 5 }, { x: 5, y: 5 }, 'tangent');
+    expect(fallback?.relation).toBe('nearest-fallback');
+
+    const slid = slideMagnetizedPointOnSegment(
+      document,
+      {
+        mode: fallback!.mode,
+        operationId: fallback!.operationId,
+        relation: fallback!.relation,
+        segmentId: fallback!.segmentId,
+        sourcePoint: fallback!.sourcePoint
+      },
+      { x: 8, y: 5 }
+    );
+
+    expect(slid?.relation).toBe('nearest-fallback');
+    expect(slid?.point).toEqual({ x: 8, y: 5 });
+  });
+
+  it('creates tangent fallback points near the clicked contour hint', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+
+    const fallback = constructMagnetizedPoint(document, { x: 5, y: 2 }, { x: 8, y: 5 }, 'tangent');
+
+    expect(fallback?.relation).toBe('nearest-fallback');
+    expect(fallback?.point).toEqual({ x: 8, y: 5 });
+  });
+
+  it('keeps old snapped points draggable after a path edit splits their stored segment', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const construction = constructMagnetizedPoint(document, { x: 5, y: 2 }, { x: 5, y: 5 }, 'perpendicular');
+    const edited = setClosedOperationStartNearPoint(document, document.plan.operations[0].id, {
+      x: 7,
+      y: 5
+    });
+
+    const slid = slideMagnetizedPointOnSegment(
+      edited!,
+      {
+        mode: construction!.mode,
+        operationId: construction!.operationId,
+        relation: construction!.relation,
+        segmentId: construction!.segmentId,
+        sourcePoint: construction!.sourcePoint
+      },
+      { x: 8, y: 5 }
+    );
+
+    expect(slid?.point).toEqual({ x: 8, y: 5 });
+    expect(slid?.segmentId).not.toBe(construction?.segmentId);
   });
 
   it('refreshes contour orientation metadata after reversing an operation', () => {

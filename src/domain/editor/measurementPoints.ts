@@ -2,8 +2,27 @@ import { buildISOFromPoints, type BuildISOFromPointsOptions } from './isoNormali
 
 export interface MeasurementPoint {
   id: string;
+  pathSnap?: MeasurementPointPathSnap;
   x: number;
   y: number;
+}
+
+export type MeasurementPointSnapMode = 'perpendicular' | 'tangent';
+
+export interface MeasurementPointPathSnap {
+  kind: 'path-construction';
+  mode: MeasurementPointSnapMode;
+  operationId: string;
+  relation: 'perpendicular' | 'tangent' | 'nearest-fallback';
+  segmentId: string;
+  sourcePoint: {
+    x: number;
+    y: number;
+  };
+  tangent: {
+    x: number;
+    y: number;
+  };
 }
 
 export interface InsertMeasurementPointsOptions {

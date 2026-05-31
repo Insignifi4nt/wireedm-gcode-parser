@@ -348,6 +348,153 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).toContain('Manifest');
     expect(container.textContent).not.toContain('Download Program');
   });
+
+  it('creates and slides path-constrained measurement points from contour magnetize', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'magnetize-path.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const preview = container.querySelector(
+      'svg[aria-label="G-code path preview"]'
+    ) as SVGSVGElement | null;
+    expect(preview).not.toBeNull();
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      value: () => ({
+        left: 10,
+        top: 20,
+        width: 120,
+        height: 120,
+        right: 130,
+        bottom: 140,
+        x: 10,
+        y: 20,
+        toJSON: () => ({})
+      }),
+      configurable: true
+    });
+
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 2 })
+        })
+      );
+    });
+    expect(container.querySelector('[data-measurement-point-row="1"]')?.textContent).toContain(
+      '2.000'
+    );
+
+    const perpendicularButton = container.querySelector(
+      'button[aria-label="Magnetize latest point perpendicular"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      perpendicularButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 5 })
+        })
+      );
+    });
+
+    const secondPointRow = container.querySelector('[data-measurement-point-row="2"]');
+    expect(secondPointRow?.textContent).toContain('5.000');
+    expect(container.querySelector('[data-measurement-point-mode="2"]')?.textContent).toBe('Perp');
+
+    const secondPointHandle = container.querySelector(
+      '[data-measurement-point-handle="2"]'
+    ) as SVGCircleElement | null;
+
+    await act(async () => {
+      secondPointHandle?.dispatchEvent(
+        new MouseEvent('mousedown', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 5 })
+        })
+      );
+      preview?.dispatchEvent(
+        new MouseEvent('mousemove', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 8, y: 5 })
+        })
+      );
+      preview?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-measurement-point-row="2"]')?.textContent).toContain(
+      '8.000'
+    );
+    expect(container.querySelector('[data-measurement-point-row="2"]')?.textContent).toContain(
+      '5.000'
+    );
+  });
+
+  it('labels tangent fallback honestly when tangent construction is impossible', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'tangent-fallback.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const tangentButton = container.querySelector(
+      'button[aria-label="Magnetize latest point tangent"]'
+    ) as HTMLButtonElement | null;
+    const preview = container.querySelector(
+      'svg[aria-label="G-code path preview"]'
+    ) as SVGSVGElement | null;
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      value: () => ({
+        left: 10,
+        top: 20,
+        width: 120,
+        height: 120,
+        right: 130,
+        bottom: 140,
+        x: 10,
+        y: 20,
+        toJSON: () => ({})
+      }),
+      configurable: true
+    });
+
+    await act(async () => {
+      tangentButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 5 })
+        })
+      );
+    });
+
+    expect(container.querySelector('[data-measurement-point-mode="1"]')?.textContent).toBe('Snap');
+  });
 });
 
 function rectangleDxf() {
@@ -383,4 +530,20 @@ function rectangleDxf() {
     '0',
     'EOF'
   ].join('\n');
+}
+
+function worldClientPoint(preview: SVGSVGElement, point: { x: number; y: number }) {
+  const viewBox = parseSvgViewBox(preview.getAttribute('viewBox') || '0 0 1 1');
+  const rect = preview.getBoundingClientRect();
+  const scale = Math.min(rect.width / viewBox.width, rect.height / viewBox.height);
+  const renderedWidth = viewBox.width * scale;
+  const renderedHeight = viewBox.height * scale;
+  const offsetX = (rect.width - renderedWidth) / 2;
+  const offsetY = (rect.height - renderedHeight) / 2;
+  const flipY = 5;
+
+  return {
+    clientX: rect.left + offsetX + (point.x - viewBox.minX) * scale,
+    clientY: rect.top + offsetY + (flipY - point.y - viewBox.minY) * scale
+  };
 }

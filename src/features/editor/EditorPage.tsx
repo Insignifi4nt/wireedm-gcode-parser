@@ -20,10 +20,12 @@ import { normalizeToISO } from '@/domain/editor/isoNormalizer';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { evaluateMachineFit } from '@/domain/machine/machineFit';
 import {
-  magnetizePointToPath,
+  constructMagnetizedPoint,
   movePathOperation,
   reversePathOperation,
   setClosedOperationStartNearPoint,
+  slideMagnetizedPointOnSegment,
+  type MagnetizedPathPoint,
   type MagnetizeMode
 } from '@/domain/path-editor/pathDocumentOperations';
 import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
@@ -33,7 +35,8 @@ import {
   exportMeasurementPointsAsGCode,
   exportMeasurementPointsAsISO,
   insertMeasurementPointsIntoText,
-  type MeasurementPoint
+  type MeasurementPoint,
+  type MeasurementPointPathSnap
 } from '@/domain/editor/measurementPoints';
 
 import { EditorCanvasPanel } from './EditorCanvasPanel';
@@ -413,9 +416,21 @@ export function EditorPage({
     setMeasurementPoints((current) => [
       ...current,
       {
-        id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${current.length}`,
+        id: nextMeasurementPointId(current.length),
         x,
         y
+      }
+    ]);
+  }
+
+  function addPathConstructionPoint(magnetized: MagnetizedPathPoint) {
+    setMeasurementPoints((current) => [
+      ...current,
+      {
+        id: nextMeasurementPointId(current.length),
+        pathSnap: pathSnapFromMagnetized(magnetized),
+        x: magnetized.point.x,
+        y: magnetized.point.y
       }
     ]);
   }
@@ -439,30 +454,43 @@ export function EditorPage({
       return;
     }
 
-    const magnetized = magnetizePointToPath(pathDocumentDraft, point, pathClickMode);
+    const sourcePoint = measurementPoints.at(-1) ?? point;
+    const magnetized = constructMagnetizedPoint(pathDocumentDraft, sourcePoint, point, pathClickMode);
     if (!magnetized) {
       setPathClickMode(null);
       return;
     }
 
-    setMeasurementPoints((current) => {
-      if (current.length === 0) {
-        return [
-          {
-            id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-magnetized`,
-            x: magnetized.point.x,
-            y: magnetized.point.y
-          }
-        ];
-      }
-
-      return current.map((measurementPoint, index) =>
-        index === current.length - 1
-          ? { ...measurementPoint, x: magnetized.point.x, y: magnetized.point.y }
-          : measurementPoint
-      );
-    });
+    addPathConstructionPoint(magnetized);
     setPathClickMode(null);
+  }
+
+  function handleMeasurementPointMove(pointId: string, point: { x: number; y: number }) {
+    setMeasurementPoints((current) =>
+      current.map((measurementPoint) => {
+        if (measurementPoint.id !== pointId) return measurementPoint;
+        if (!measurementPoint.pathSnap || !pathDocumentDraft) {
+          return { ...measurementPoint, x: point.x, y: point.y };
+        }
+
+        const magnetized = slideMagnetizedPointOnSegment(
+          pathDocumentDraft,
+          measurementPoint.pathSnap,
+          point
+        );
+        if (!magnetized) return measurementPoint;
+
+        return {
+          ...measurementPoint,
+          pathSnap: {
+            ...pathSnapFromMagnetized(magnetized),
+            sourcePoint: measurementPoint.pathSnap.sourcePoint
+          },
+          x: magnetized.point.x,
+          y: magnetized.point.y
+        };
+      })
+    );
   }
 
   function handleMovePathOperation(direction: -1 | 1) {
@@ -669,6 +697,7 @@ export function EditorPage({
           measurementPoints={measurementPoints}
           onAddMeasurementPoint={addMeasurementPoint}
           onCursorPointChange={setPreviewCursorPoint}
+          onMeasurementPointMove={handleMeasurementPointMove}
           onPreviewPointClick={handlePreviewPointClick}
           pathCount={pathCount}
           pinnedLines={pinnedLines}
@@ -772,4 +801,20 @@ function sectionText(structure: GCodeStructure, section: 'header' | 'footer') {
 
 function clonePathDocument(document: PathPlanningDocument | null) {
   return document ? structuredClone(document) : null;
+}
+
+function nextMeasurementPointId(currentLength: number) {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${currentLength}`;
+}
+
+function pathSnapFromMagnetized(magnetized: MagnetizedPathPoint): MeasurementPointPathSnap {
+  return {
+    kind: 'path-construction',
+    mode: magnetized.mode,
+    operationId: magnetized.operationId,
+    relation: magnetized.relation,
+    segmentId: magnetized.segmentId,
+    sourcePoint: magnetized.sourcePoint,
+    tangent: magnetized.tangent
+  };
 }

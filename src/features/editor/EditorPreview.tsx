@@ -49,6 +49,7 @@ interface EditorPreviewProps {
   keyboardShortcutsEnabled?: boolean;
   measurementPoints: MeasurementPoint[];
   onCursorPointChange?: (point: { x: number; y: number } | null) => void;
+  onMeasurementPointMove?: (pointId: string, point: { x: number; y: number }) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
   pinnedLines: number[];
   selectedLines: number[];
@@ -62,6 +63,7 @@ export function EditorPreview({
   keyboardShortcutsEnabled = true,
   measurementPoints,
   onCursorPointChange,
+  onMeasurementPointMove,
   onPreviewPointClick,
   pinnedLines,
   selectedLines,
@@ -78,8 +80,10 @@ export function EditorPreview({
   const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 });
   const dragStateRef = useRef<PreviewDragState | null>(null);
   const lastTapRef = useRef<PreviewLastTapState | null>(null);
+  const pointDragStateRef = useRef<{ pointId: string } | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const suppressClickRef = useRef(false);
   const touchTapRef = useRef<PreviewTouchTapState | null>(null);
 
   const fittedViewBox = preview
@@ -242,6 +246,10 @@ export function EditorPreview({
   const zoomPercent = Math.round(zoom * 100);
 
   function handlePreviewClick(event: MouseEvent<SVGSVGElement>) {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
     if (!onPreviewPointClick || event.shiftKey || dragStateRef.current) return;
 
     const point = previewEventToWorldPoint(event, activeViewBox, flipY, {
@@ -273,6 +281,21 @@ export function EditorPreview({
   }
 
   function handlePreviewMouseMove(event: MouseEvent<SVGSVGElement>) {
+    const pointDragState = pointDragStateRef.current;
+    if (pointDragState) {
+      event.preventDefault();
+      suppressClickRef.current = true;
+      const point = previewEventToWorldPoint(event, activeViewBox, flipY, {
+        gridSize: snapGridSize,
+        snapToGrid
+      });
+      if (point) {
+        onMeasurementPointMove?.(pointDragState.pointId, point);
+        onCursorPointChange?.(point);
+      }
+      return;
+    }
+
     const activeDragState = dragStateRef.current;
     if (!activeDragState) {
       onCursorPointChange?.(
@@ -307,11 +330,13 @@ export function EditorPreview({
   }
 
   function handlePreviewMouseUp() {
+    pointDragStateRef.current = null;
     dragStateRef.current = null;
   }
 
   function handlePreviewMouseLeave() {
     onCursorPointChange?.(null);
+    suppressClickRef.current = false;
     handlePreviewMouseUp();
   }
 
@@ -441,6 +466,15 @@ export function EditorPreview({
     setZoom(1);
     setPan({ x: 0, y: 0 });
     dragStateRef.current = null;
+  }
+
+  function handleMeasurementPointMouseDown(pointId: string, event: MouseEvent<SVGCircleElement>) {
+    if (event.button !== 0 || !onMeasurementPointMove) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    pointDragStateRef.current = { pointId };
+    suppressClickRef.current = true;
   }
 
   return (
@@ -693,7 +727,10 @@ export function EditorPreview({
                 <circle
                   cx={point.x}
                   cy={svgY}
+                  className={onMeasurementPointMove ? 'cursor-grab active:cursor-grabbing' : undefined}
+                  data-measurement-point-handle={index + 1}
                   fill="#38bdf8"
+                  onMouseDown={(event) => handleMeasurementPointMouseDown(point.id, event)}
                   r={markerRadius}
                   stroke="#020617"
                   strokeWidth={markerRadius * 0.35}

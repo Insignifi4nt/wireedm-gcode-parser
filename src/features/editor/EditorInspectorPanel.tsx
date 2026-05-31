@@ -319,7 +319,7 @@ export function EditorInspectorPanel({
               <MousePointer2 />
             </Button>
           </div>
-          <div className="mt-2 grid grid-cols-1 gap-1.5">
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
             <Button
               aria-label="Magnetize latest point perpendicular"
               aria-pressed={pathClickMode === 'perpendicular'}
@@ -333,6 +333,18 @@ export function EditorInspectorPanel({
             >
               <Magnet />
               Perp
+            </Button>
+            <Button
+              aria-label="Magnetize latest point tangent"
+              aria-pressed={pathClickMode === 'tangent'}
+              className="h-6 px-2 text-[10px]"
+              onClick={() => onActivatePathClickMode(pathClickMode === 'tangent' ? null : 'tangent')}
+              size="sm"
+              type="button"
+              variant={pathClickMode === 'tangent' ? 'default' : 'outline'}
+            >
+              <Magnet />
+              Tangent
             </Button>
           </div>
         </section>
@@ -400,13 +412,25 @@ export function EditorInspectorPanel({
           <div className="mt-2 max-h-24 overflow-auto border border-border bg-background/50">
             {measurementPoints.map((point, index) => (
               <div
-                className="grid grid-cols-[30px_1fr_1fr_22px] items-center gap-1.5 border-b border-border px-1.5 py-1 last:border-b-0"
+                className="grid grid-cols-[30px_1fr_1fr_36px_22px] items-center gap-1.5 border-b border-border px-1.5 py-1 last:border-b-0"
                 data-measurement-point-row={index + 1}
                 key={point.id}
               >
                 <span className="text-sky-200">P{index + 1}</span>
                 <span className="text-muted-foreground">{point.x.toFixed(3)}</span>
                 <span className="text-muted-foreground">{point.y.toFixed(3)}</span>
+                <span
+                  className="text-[9px] uppercase text-muted-foreground"
+                  data-measurement-point-mode={index + 1}
+                >
+                  {point.pathSnap?.relation === 'nearest-fallback'
+                    ? 'Snap'
+                    : point.pathSnap?.mode === 'perpendicular'
+                    ? 'Perp'
+                    : point.pathSnap?.mode === 'tangent'
+                      ? 'Tan'
+                      : '-'}
+                </span>
                 <button
                   aria-label={`Delete measurement point P${index + 1}`}
                   className="flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-destructive/10 hover:text-destructive"

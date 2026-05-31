@@ -45,6 +45,7 @@ export type MagnetizeMode = 'perpendicular' | 'tangent';
 
 export interface MagnetizedPathPoint extends NearestPathPoint {
   mode: MagnetizeMode;
+  relation: 'perpendicular' | 'tangent' | 'nearest-fallback';
   sourcePoint: Point2;
   tangent: Point2;
 }
@@ -130,17 +131,86 @@ export function magnetizePointToPath(
   point: Point2,
   mode: MagnetizeMode
 ): MagnetizedPathPoint | null {
-  const nearest = nearestPointOnDocument(document, point);
-  if (!nearest) return null;
+  return constructMagnetizedPoint(document, point, point, mode);
+}
 
-  const operation = document.plan.operations.find((candidate) => candidate.id === nearest.operationId);
-  if (!operation?.segmentRefs[nearest.segmentIndex]) return null;
+export function constructMagnetizedPoint(
+  document: PathPlanningDocument,
+  sourcePoint: Point2,
+  contourHintPoint: Point2,
+  mode: MagnetizeMode
+): MagnetizedPathPoint | null {
+  const hint = nearestPointOnDocument(document, contourHintPoint);
+  if (!hint) return null;
+
+  const operation = document.plan.operations.find((candidate) => candidate.id === hint.operationId);
+  const ref = operation?.segmentRefs[hint.segmentIndex];
+  if (!ref) return null;
+
+  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
+  const candidate =
+    mode === 'tangent'
+      ? tangentPointOnSegment(segment, ref, sourcePoint, contourHintPoint)
+      : {
+          ...nearestPointOnSegment(segment, ref, sourcePoint),
+          relation: 'perpendicular' as const
+        };
+  if (!candidate) return null;
 
   return {
-    ...nearest,
+    ...hint,
+    distance: distance(sourcePoint, candidate.point),
     mode,
-    sourcePoint: point,
-    tangent: nearest.tangent
+    point: candidate.point,
+    relation: candidate.relation,
+    sourcePoint,
+    tangent: candidate.tangent,
+    t: candidate.t
+  };
+}
+
+export function slideMagnetizedPointOnSegment(
+  document: PathPlanningDocument,
+  snap: {
+    mode: MagnetizeMode;
+    operationId: string;
+    relation: MagnetizedPathPoint['relation'];
+    segmentId: SegmentId;
+    sourcePoint: Point2;
+  },
+  contourHintPoint: Point2
+): MagnetizedPathPoint | null {
+  const operation = document.plan.operations.find((candidate) => candidate.id === snap.operationId);
+  if (!operation) return null;
+
+  const storedSegmentIndex = operation.segmentRefs.findIndex((ref) => ref.segmentId === snap.segmentId);
+  const fallbackNearest =
+    storedSegmentIndex >= 0 ? null : nearestPointOnOperation(document, operation.id, contourHintPoint);
+  const segmentIndex = storedSegmentIndex >= 0 ? storedSegmentIndex : fallbackNearest?.segmentIndex ?? -1;
+  const ref = segmentIndex >= 0 ? operation.segmentRefs[segmentIndex] : null;
+  if (!ref) return null;
+
+  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
+  const candidate =
+    snap.mode === 'tangent' && snap.relation === 'tangent'
+      ? tangentPointOnSegment(segment, ref, snap.sourcePoint, contourHintPoint)
+      : {
+          ...nearestPointOnSegment(segment, ref, contourHintPoint),
+          relation: snap.relation === 'nearest-fallback' ? ('nearest-fallback' as const) : ('perpendicular' as const)
+        };
+  if (!candidate) return null;
+
+  return {
+    distance: distance(snap.sourcePoint, candidate.point),
+    mode: snap.mode,
+    operationId: operation.id,
+    point: candidate.point,
+    relation: candidate.relation,
+    segmentId: ref.segmentId,
+    segmentIndex,
+    sourcePoint: snap.sourcePoint,
+    tangent: candidate.tangent,
+    t: candidate.t
   };
 }
 
@@ -340,6 +410,79 @@ function nearestPointOnArc(segment: ArcPathSegment, ref: OrientedSegmentRef, poi
   return startDistance <= endDistance
     ? { distance: startDistance, point: start, tangent: circleTangent(startAngle, clockwise), t: 0 }
     : { distance: endDistance, point: end, tangent: circleTangent(endAngle, clockwise), t: 1 };
+}
+
+function tangentPointOnSegment(
+  segment: PathSegment,
+  ref: OrientedSegmentRef,
+  sourcePoint: Point2,
+  contourHintPoint: Point2
+) {
+  if (segment.kind === 'line') {
+    return {
+      ...nearestPointOnSegment(segment, ref, contourHintPoint),
+      relation: 'nearest-fallback' as const
+    };
+  }
+
+  const clockwise = segment.kind === 'circle' ? ref.reversed : orientedArcClockwise(segment, ref);
+  const centerToSource = {
+    x: sourcePoint.x - segment.center.x,
+    y: sourcePoint.y - segment.center.y
+  };
+  const sourceDistance = Math.hypot(centerToSource.x, centerToSource.y);
+
+  if (sourceDistance <= segment.radius + 1e-9) {
+    return {
+      ...nearestPointOnSegment(segment, ref, contourHintPoint),
+      relation: 'nearest-fallback' as const
+    };
+  }
+
+  const baseAngle = Math.atan2(centerToSource.y, centerToSource.x);
+  const tangentOffset = Math.acos(segment.radius / sourceDistance);
+  const candidates = [baseAngle + tangentOffset, baseAngle - tangentOffset]
+    .filter((angle) => tangentAngleIsValid(segment, ref, angle))
+    .map((angle) => {
+      const point = pointOnCircle(segment.center, segment.radius, angle);
+      return {
+        distance: distance(sourcePoint, point),
+        hintDistance: distance(contourHintPoint, point),
+        point,
+        tangent: circleTangent(angle, clockwise),
+        t: tangentParameter(segment, ref, angle),
+        relation: 'tangent' as const
+      };
+    });
+
+  return candidates.sort((first, second) => first.hintDistance - second.hintDistance)[0] ?? {
+    ...nearestPointOnSegment(segment, ref, contourHintPoint),
+    relation: 'nearest-fallback' as const
+  };
+}
+
+function tangentAngleIsValid(segment: ArcPathSegment | CirclePathSegment, ref: OrientedSegmentRef, angle: number) {
+  if (segment.kind === 'circle') return true;
+
+  const start = orientedSegmentStart(segment, ref);
+  const end = orientedSegmentEnd(segment, ref);
+  const startAngle = Math.atan2(start.y - segment.center.y, start.x - segment.center.x);
+  const endAngle = Math.atan2(end.y - segment.center.y, end.x - segment.center.x);
+  const sweep = signedSweep(startAngle, endAngle, orientedArcClockwise(segment, ref));
+  return angleIsOnSweep(angle, startAngle, sweep);
+}
+
+function tangentParameter(segment: ArcPathSegment | CirclePathSegment, ref: OrientedSegmentRef, angle: number) {
+  if (segment.kind === 'circle') return 0;
+
+  const start = orientedSegmentStart(segment, ref);
+  const end = orientedSegmentEnd(segment, ref);
+  const startAngle = Math.atan2(start.y - segment.center.y, start.x - segment.center.x);
+  const endAngle = Math.atan2(end.y - segment.center.y, end.x - segment.center.x);
+  const clockwise = orientedArcClockwise(segment, ref);
+  const sweep = signedSweep(startAngle, endAngle, clockwise);
+
+  return Math.abs(signedSweep(startAngle, angle, clockwise) / sweep);
 }
 
 function syncChainRefs(document: PathPlanningDocument, operation: PathOperation) {
