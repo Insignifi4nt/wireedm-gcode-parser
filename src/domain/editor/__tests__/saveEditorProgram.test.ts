@@ -133,7 +133,15 @@ describe('saveEditorProgram', () => {
     expect(savedProject.generated.body).toBe(body);
     expect(savedProject.upid.format).toBe('upid');
     expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
+    expect(savedProject.upid.document.plan.operations[0].overrides.direction).toEqual({
+      direction: 'reverse',
+      kind: 'manual'
+    });
     expect(savedProject.pathPlanning.document.plan.operations[0].direction).toBe('reverse');
+    expect(savedProject.pathPlanning.document.plan.operations[0].overrides.direction).toEqual({
+      direction: 'reverse',
+      kind: 'manual'
+    });
     expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.editorProgram.text.split(/\r?\n/).filter(Boolean).slice(-3)).toEqual([
       'G40',

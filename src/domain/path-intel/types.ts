@@ -192,6 +192,28 @@ export interface PathOperationMetrics {
   segmentCount: number;
 }
 
+export interface ManualOrderOverride {
+  kind: 'manual';
+  orderIndex: number;
+}
+
+export interface ManualDirectionOverride {
+  kind: 'manual';
+  direction: 'forward' | 'reverse';
+}
+
+export interface ManualStartOverride {
+  kind: 'manual';
+  point: Point2;
+  createdSegmentIds: SegmentId[];
+}
+
+export interface PathOperationOverrides {
+  order?: ManualOrderOverride;
+  direction?: ManualDirectionOverride;
+  start?: ManualStartOverride;
+}
+
 export interface PathOperation {
   id: OperationId;
   orderIndex: number;
@@ -204,6 +226,7 @@ export interface PathOperation {
   endPoint: Point2;
   direction: 'forward' | 'reverse';
   metrics: PathOperationMetrics;
+  overrides?: PathOperationOverrides;
 }
 
 export interface OperationPlanMetrics {

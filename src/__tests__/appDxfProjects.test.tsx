@@ -376,6 +376,78 @@ describe('App DXF imports and project library', () => {
     expect(selectedSegment?.textContent).toContain('line');
   });
 
+  it('shows manual UPID decisions in the selected geometry inspector', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'manual-decisions.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const reverseButton = container.querySelector(
+      'button[aria-label="Reverse path operation"]'
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      reverseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain(
+      'Direction'
+    );
+    expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain(
+      'reverse'
+    );
+
+    const preview = container.querySelector(
+      'svg[aria-label="G-code path preview"]'
+    ) as SVGSVGElement | null;
+    expect(preview).not.toBeNull();
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      value: () => ({
+        left: 10,
+        top: 20,
+        width: 120,
+        height: 120,
+        right: 130,
+        bottom: 140,
+        x: 10,
+        y: 20,
+        toJSON: () => ({})
+      }),
+      configurable: true
+    });
+
+    const startButton = container.querySelector(
+      'button[aria-label="Set path start from canvas"]'
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 10, y: 0 })
+        })
+      );
+    });
+
+    expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain(
+      'Start'
+    );
+    expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain(
+      '10.000, 0.000'
+    );
+  });
+
   it('posts UPID to G-code only inside the explicit export preview', async () => {
     window.showDirectoryPicker = undefined;
     const downloadGeneratedProgram = vi.fn();

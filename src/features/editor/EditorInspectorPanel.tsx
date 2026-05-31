@@ -115,6 +115,9 @@ export function EditorInspectorPanel({
   const selectedPathSegment = selectedPathOperation
     ? readSelectedPathSegment(pathDocument, selectedPathOperation, selectedPathElement)
     : null;
+  const selectedPathOverrideRows = selectedPathOperation
+    ? manualOverrideRows(selectedPathOperation.overrides)
+    : [];
 
   return (
     <div
@@ -237,6 +240,24 @@ export function EditorInspectorPanel({
               <dt className="text-muted-foreground">End</dt>
               <dd data-upid-selected="end">{formatPoint(selectedPathOperation.endPoint)}</dd>
             </dl>
+          </section>
+        )}
+
+        {selectedPathOverrideRows.length > 0 && (
+          <section className="mt-3 border-t border-border pt-3" data-upid-selected-overrides>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Manual Decisions</h3>
+            <div className="grid gap-1">
+              {selectedPathOverrideRows.map((row) => (
+                <div
+                  className="grid grid-cols-[78px_minmax(0,1fr)] gap-1.5"
+                  data-upid-manual-override={row.kind}
+                  key={row.kind}
+                >
+                  <span className="text-muted-foreground">{row.label}</span>
+                  <span>{row.value}</span>
+                </div>
+              ))}
+            </div>
           </section>
         )}
 
@@ -595,6 +616,38 @@ function formatLimit(value: number | null) {
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
+}
+
+function manualOverrideRows(overrides: PathPlanningDocument['plan']['operations'][number]['overrides']) {
+  if (!overrides) return [];
+
+  const rows: Array<{ kind: string; label: string; value: string }> = [];
+  if (overrides.order) {
+    rows.push({
+      kind: 'order',
+      label: 'Order',
+      value: `Manual position ${overrides.order.orderIndex + 1}`
+    });
+  }
+  if (overrides.direction) {
+    rows.push({
+      kind: 'direction',
+      label: 'Direction',
+      value: overrides.direction.direction
+    });
+  }
+  if (overrides.start) {
+    rows.push({
+      kind: 'start',
+      label: 'Start',
+      value:
+        overrides.start.createdSegmentIds.length > 0
+          ? `${formatPoint(overrides.start.point)} / split ${overrides.start.createdSegmentIds.length}`
+          : formatPoint(overrides.start.point)
+    });
+  }
+
+  return rows;
 }
 
 function readSelectedPathSegment(

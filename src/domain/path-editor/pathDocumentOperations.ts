@@ -63,6 +63,7 @@ export function movePathOperation(
   const [operation] = next.plan.operations.splice(index, 1);
   next.plan.operations.splice(targetIndex, 0, operation);
   refreshPlan(next);
+  recordManualOrderOverrides(next);
   return next;
 }
 
@@ -73,6 +74,13 @@ export function reversePathOperation(document: PathPlanningDocument, operationId
 
   operation.segmentRefs = reversePathRefs(operation.segmentRefs);
   operation.direction = operation.direction === 'forward' ? 'reverse' : 'forward';
+  operation.overrides = {
+    ...operation.overrides,
+    direction: {
+      kind: 'manual',
+      direction: operation.direction
+    }
+  };
   syncChainRefs(next, operation);
   refreshPlan(next);
   return next;
@@ -94,6 +102,14 @@ export function setClosedOperationStartNearPoint(
   const refs = split?.refs ?? operation.segmentRefs;
   const startIndex = split?.startIndex ?? nearest.segmentIndex;
   operation.segmentRefs = rotatePathRefs(refs, startIndex);
+  operation.overrides = {
+    ...operation.overrides,
+    start: {
+      kind: 'manual',
+      point: { ...nearest.point },
+      createdSegmentIds: split?.createdSegmentIds ?? []
+    }
+  };
   syncChainRefs(next, operation);
   refreshPlan(next);
   return next;
@@ -303,7 +319,8 @@ function splitOperationSegmentAtPoint(
 
   return {
     refs,
-    startIndex: segment.kind === 'circle' ? nearest.segmentIndex : nearest.segmentIndex + 1
+    startIndex: segment.kind === 'circle' ? nearest.segmentIndex : nearest.segmentIndex + 1,
+    createdSegmentIds: splitSegments.map((splitSegment) => splitSegment.id)
   };
 }
 
@@ -565,6 +582,18 @@ function planMetrics(plan: OperationPlan) {
     totalCutLength: plan.operations.reduce((total, operation) => total + operation.metrics.cutLength, 0),
     totalRapidLength: plan.operations.reduce((total, operation) => total + operation.metrics.rapidInLength, 0)
   };
+}
+
+function recordManualOrderOverrides(document: PathPlanningDocument) {
+  document.plan.operations.forEach((operation) => {
+    operation.overrides = {
+      ...operation.overrides,
+      order: {
+        kind: 'manual',
+        orderIndex: operation.orderIndex
+      }
+    };
+  });
 }
 
 function nextEditSegmentIds(document: PathPlanningDocument, count: number) {

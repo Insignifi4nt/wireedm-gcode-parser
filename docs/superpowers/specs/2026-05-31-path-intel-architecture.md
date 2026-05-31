@@ -47,10 +47,15 @@ path model. During the transition, saves also mirror the same document into lega
 editor reads prefer `project.upid` and fall back to the legacy path-planning payload only when a
 stored project predates the UPID field.
 
+Manual path edits are stored as operation-level UPID overrides. Reordering operations, reversing a
+cut direction, or choosing a start point changes the executable plan and records the user decision
+beside that operation. This keeps the automatic planner output, manual edits, and future AI/user
+review surfaces from collapsing into an unexplained final sequence.
+
 ## Current Code Map
 
 - `src/domain/path-intel/types.ts` defines the path document, segments, clusters, chains, contours,
-  operations, metrics, and diagnostics.
+  operations, metrics, diagnostics, and manual operation overrides.
 - `src/domain/path-intel/fromDxfEntities.ts` converts parsed DXF entities into the path document.
 - `src/domain/path-intel/endpointClusters.ts` performs conservative endpoint clustering and records
   tolerance-based snaps.
@@ -58,6 +63,8 @@ stored project predates the UPID field.
 - `src/domain/path-intel/contours.ts` classifies closed and open chains.
 - `src/domain/path-intel/planOperations.ts` chooses operation order, contour starts, and direction.
 - `src/domain/path-intel/postGcode.ts` emits body G-code from the operation plan.
+- `src/domain/path-editor/pathDocumentOperations.ts` edits UPID operations for manual order,
+  direction, start, split, and construction workflows while recording override metadata.
 - `src/domain/upid/upidDocument.ts` names the current internal document as the Universal Path
   Intelligence Document boundary and exposes the post/export adapter.
 - `src/domain/upid/projectUpid.ts` reads, writes, and clears the first-class project UPID state

@@ -76,7 +76,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'import-program'
           },
           {
-            text: 'DXF projects open as editable Path Operations. External posted programs keep the old cleanup and Program Lines behavior.'
+            text: 'DXF projects open in the UPID Path Navigator. External posted programs keep the old cleanup and Program Lines behavior.'
           }
         ]
       },
@@ -119,10 +119,10 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         ]
       },
       {
-        title: '5. Path Operations Or Program Lines',
+        title: '5. UPID Path Navigator Or Program Lines',
         steps: [
           {
-            text: 'DXF path projects show Path Operations for order, direction, start selection, tangent/perpendicular construction, pinned references, and posted-body inspection.',
+            text: 'DXF path projects use the UPID Path Navigator for contour order, direction, start selection, segment inspection, hover assist, and tangent/perpendicular construction.',
             highlightTarget: 'program-lines'
           },
           {
@@ -158,7 +158,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editing And Export',
         steps: [
           {
-            text: 'For DXF path projects, reorder operations, reverse direction, or set starts from the path surface. For external posted programs, move selected rows, delete rows, undo/redo draft changes, or use Start Here.'
+            text: 'For DXF path projects, reorder operations, reverse direction, or set starts from the path surface. Manual UPID decisions are recorded in the selected geometry inspector. For external posted programs, move selected rows, delete rows, undo/redo draft changes, or use Start Here.'
           },
           {
             text: 'Normalize Draft rewrites the current editor text into the app ISO style without downloading a file.',
@@ -213,7 +213,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'import-program'
           },
           {
-            text: 'Proiectele DXF se deschid ca Path Operations editabile. Programele externe postate pastreaza cleanup-ul vechi si Program Lines.'
+            text: 'Proiectele DXF se deschid in UPID Path Navigator. Programele externe postate pastreaza cleanup-ul vechi si Program Lines.'
           }
         ]
       },
@@ -256,10 +256,10 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         ]
       },
       {
-        title: '5. Path Operations sau Program Lines',
+        title: '5. UPID Path Navigator sau Program Lines',
         steps: [
           {
-            text: 'Proiectele DXF arata Path Operations pentru ordine, directie, start, constructii tangent/perpendicular, repere pinned si inspectie posted-body.',
+            text: 'Proiectele DXF folosesc UPID Path Navigator pentru ordinea contururilor, directie, start, inspectie segmente, hover assist si constructii tangent/perpendicular.',
             highlightTarget: 'program-lines'
           },
           {
@@ -295,7 +295,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editare si export',
         steps: [
           {
-            text: 'Pentru proiecte DXF, schimba ordinea operatiilor, inverseaza directia sau seteaza startul din suprafata de path. Pentru programe externe, muta randuri, sterge randuri, undo/redo sau Start Here.'
+            text: 'Pentru proiecte DXF, schimba ordinea operatiilor, inverseaza directia sau seteaza startul din suprafata de path. Deciziile manuale UPID sunt inregistrate in inspectorul geometriei selectate. Pentru programe externe, muta randuri, sterge randuri, undo/redo sau Start Here.'
           },
           {
             text: 'Normalize Draft rescrie textul curent in stilul ISO al aplicatiei, fara download.',

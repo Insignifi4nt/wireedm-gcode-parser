@@ -29,6 +29,34 @@ describe('pathDocumentOperations', () => {
     expect(pathPlanToGcodeBody(moved!.plan, moved!.segments).split('\n')[0]).toBe('G0 X20.000 Y0.000');
   });
 
+  it('records manual UPID decisions when users reorder, reverse, or choose a start', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)]
+    );
+    const [first, second] = document.plan.operations;
+
+    const moved = movePathOperation(document, second.id, -1);
+    expect(moved?.plan.operations[0].overrides?.order).toEqual({
+      kind: 'manual',
+      orderIndex: 0
+    });
+    expect(moved?.plan.operations[1].overrides?.order).toEqual({
+      kind: 'manual',
+      orderIndex: 1
+    });
+
+    const reversed = reversePathOperation(moved!, first.id);
+    expect(reversed?.plan.operations[1].overrides?.direction).toEqual({
+      direction: 'reverse',
+      kind: 'manual'
+    });
+
+    const started = setClosedOperationStartNearPoint(reversed!, first.id, { x: 2.5, y: 0 });
+    expect(started?.plan.operations[1].overrides?.start?.kind).toBe('manual');
+    expect(started?.plan.operations[1].overrides?.start?.point).toEqual({ x: 2.5, y: 0 });
+    expect(started?.plan.operations[1].overrides?.start?.createdSegmentIds).toHaveLength(2);
+  });
+
   it('reverses a closed operation while keeping one continuous cut', () => {
     const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
     const operation = document.plan.operations[0];
