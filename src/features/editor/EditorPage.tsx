@@ -236,6 +236,7 @@ export function EditorPage({
                 isSaving={isSaving}
                 magneticSnapEnabled={pathMagneticSnapEnabled}
                 onActivatePathClickMode={setPathClickMode}
+                onHoverPathElement={setHoveredPathElement}
                 onMovePathOperation={handleMovePathOperation}
                 onOpenExportPreview={() => setExportPreviewOpen(true)}
                 onRedoDraft={handleRedoDraft}

@@ -56,6 +56,7 @@ interface EditorPathNavigatorPanelProps {
   onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
   onMovePathOperation: (direction: -1 | 1) => void;
   onOpenExportPreview: () => void;
+  onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onRedoDraft: () => void;
   onReversePathOperation: () => void;
   onSaveClick: () => void | Promise<void>;
@@ -81,6 +82,7 @@ export function EditorPathNavigatorPanel({
   onActivatePathClickMode,
   onMovePathOperation,
   onOpenExportPreview,
+  onHoverPathElement,
   onRedoDraft,
   onReversePathOperation,
   onSaveClick,
@@ -314,6 +316,8 @@ export function EditorPathNavigatorPanel({
                       event.preventDefault();
                       onSelectPathElement({ operationId: operation.id, segmentId: null });
                     }}
+                    onMouseEnter={() => onHoverPathElement({ operationId: operation.id, segmentId: null })}
+                    onMouseLeave={() => onHoverPathElement(null)}
                     type="button"
                   >
                     <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
@@ -340,6 +344,7 @@ export function EditorPathNavigatorPanel({
                       requiredSegment(segmentsById, ref.segmentId),
                       hoveredPathElement,
                       selectedPathElement,
+                      onHoverPathElement,
                       onSelectPathElement
                     )
                   )}
@@ -374,6 +379,7 @@ function renderSegmentRow(
   segment: PathSegment,
   hoveredPathElement: EditorPathElementRef | null,
   selectedPathElement: EditorPathElementRef | null,
+  onHoverPathElement: (element: EditorPathElementRef | null) => void,
   onSelectPathElement: (element: EditorPathElementRef) => void
 ) {
   const start = orientedSegmentStart(segment, ref);
@@ -397,6 +403,8 @@ function renderSegmentRow(
       data-upid-segment-id={segment.id}
       key={`${operation.id}-${segment.id}-${index}`}
       onClick={() => onSelectPathElement({ operationId: operation.id, segmentId: segment.id })}
+      onMouseEnter={() => onHoverPathElement({ operationId: operation.id, segmentId: segment.id })}
+      onMouseLeave={() => onHoverPathElement(null)}
       type="button"
     >
       <span>{index + 1}</span>

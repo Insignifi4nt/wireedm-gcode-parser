@@ -626,6 +626,46 @@ describe('App DXF imports and project library', () => {
     expect(segmentRow?.getAttribute('data-upid-hovered')).not.toBe('true');
   });
 
+  it('highlights canvas geometry from UPID navigator row hover', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'navigator-hover.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const segmentRow = container.querySelector('[data-upid-segment-row]') as HTMLElement | null;
+    const segmentId = segmentRow?.getAttribute('data-upid-segment-id');
+    expect(segmentId).toBeTruthy();
+
+    const previewSegment = container.querySelector(
+      `svg[aria-label="G-code path preview"] path[data-preview-segment="${segmentId}"]`
+    );
+    expect(previewSegment).not.toBeNull();
+    expect(previewSegment?.getAttribute('data-preview-hovered')).not.toBe('true');
+
+    await act(async () => {
+      segmentRow?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    expect(previewSegment?.getAttribute('data-preview-hovered')).toBe('true');
+    expect(previewSegment?.getAttribute('data-highlight')).toBe('hover');
+
+    await act(async () => {
+      segmentRow?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    });
+
+    expect(previewSegment?.getAttribute('data-preview-hovered')).not.toBe('true');
+  });
+
   it('shows a magnetic construction preview while hovering with perpendicular mode active', async () => {
     window.showDirectoryPicker = undefined;
 
