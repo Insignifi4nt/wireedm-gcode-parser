@@ -569,6 +569,16 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain(
       'reverse'
     );
+    expect(
+      container.querySelector(
+        '[data-upid-cut-sequence-row][data-upid-selected="true"] [data-upid-manual-decision="direction"]'
+      )
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-upid-contour-row][data-upid-selected="true"] [data-upid-manual-decision="direction"]'
+      )
+    ).not.toBeNull();
 
     const preview = container.querySelector(
       'svg[aria-label="G-code path preview"]'
@@ -610,6 +620,16 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain(
       '10.000, 0.000'
     );
+    expect(
+      container.querySelector(
+        '[data-upid-cut-sequence-row][data-upid-selected="true"] [data-upid-manual-decision="start"]'
+      )
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-upid-contour-row][data-upid-selected="true"] [data-upid-manual-decision="start"]'
+      )
+    ).not.toBeNull();
   });
 
   it('posts UPID to G-code only inside the explicit export preview', async () => {

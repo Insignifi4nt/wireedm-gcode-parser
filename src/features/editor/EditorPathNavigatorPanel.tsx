@@ -73,6 +73,8 @@ interface ContourTreeNode {
   operation: PathOperation;
 }
 
+type ManualDecisionKind = 'order' | 'role' | 'direction' | 'start';
+
 export function EditorPathNavigatorPanel({
   hasUnsavedChanges,
   hoveredPathElement,
@@ -354,6 +356,7 @@ function renderCutSequenceRow({
 }) {
   const selected = selectedPathElement?.operationId === operation.id;
   const hovered = hoveredPathElement?.operationId === operation.id;
+  const manualDecisions = manualDecisionKinds(operation);
 
   return (
     <button
@@ -362,6 +365,7 @@ function renderCutSequenceRow({
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/10 text-cyan-100' : ''
       }`}
       data-upid-cut-sequence-index={operation.orderIndex}
+      data-upid-cut-sequence-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
       data-upid-cut-sequence-role={operation.classification}
       data-upid-cut-sequence-row
       data-upid-hovered={hovered ? 'true' : undefined}
@@ -382,6 +386,7 @@ function renderCutSequenceRow({
         <span className="block truncate text-[9px] text-muted-foreground">
           {formatContourNest(contour)}
         </span>
+        {renderManualDecisionBadges(manualDecisions)}
       </span>
       <span className="text-right text-[9px] text-muted-foreground">
         {operation.metrics.cutLength.toFixed(3)}
@@ -411,6 +416,7 @@ function renderContourTreeNode({
 }) {
   const { contour, operation } = node;
   const nested = treeDepth > 0;
+  const manualDecisions = manualDecisionKinds(operation);
 
   return (
     <details
@@ -438,6 +444,7 @@ function renderContourTreeNode({
           }`}
           data-upid-contour-children={contour.childIds.length}
           data-upid-contour-depth={contour.containmentDepth}
+          data-upid-contour-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
           data-upid-contour-parent={contour.parentId ?? undefined}
           data-upid-contour-role={contour.classification}
           data-upid-contour-row
@@ -464,6 +471,7 @@ function renderContourTreeNode({
             <span className="block truncate text-[9px] text-muted-foreground">
               {formatContourNest(contour)}
             </span>
+            {renderManualDecisionBadges(manualDecisions)}
           </span>
           <span className="text-right text-[9px] text-muted-foreground">
             {operation.metrics.cutLength.toFixed(3)}
@@ -501,6 +509,24 @@ function renderContourTreeNode({
         </div>
       )}
     </details>
+  );
+}
+
+function renderManualDecisionBadges(decisions: ManualDecisionKind[]) {
+  if (decisions.length === 0) return null;
+
+  return (
+    <span className="mt-1 flex flex-wrap gap-1" data-upid-manual-decision-list>
+      {decisions.map((decision) => (
+        <span
+          className="border border-amber-400/40 bg-amber-400/10 px-1 text-[8px] uppercase text-amber-200"
+          data-upid-manual-decision={decision}
+          key={decision}
+        >
+          {decision}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -559,6 +585,18 @@ function formatPoint(point: { x: number; y: number }) {
 function formatContourNest(contour: PathContour | undefined) {
   if (!contour) return 'depth 0 / children 0';
   return `depth ${contour.containmentDepth} / children ${contour.childIds.length}`;
+}
+
+function manualDecisionKinds(operation: PathOperation): ManualDecisionKind[] {
+  const overrides = operation.overrides;
+  if (!overrides) return [];
+
+  const decisions: ManualDecisionKind[] = [];
+  if (overrides.order) decisions.push('order');
+  if (overrides.classification) decisions.push('role');
+  if (overrides.direction) decisions.push('direction');
+  if (overrides.start) decisions.push('start');
+  return decisions;
 }
 
 function buildContourTree(
