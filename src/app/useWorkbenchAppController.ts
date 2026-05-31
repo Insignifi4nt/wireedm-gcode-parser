@@ -348,8 +348,6 @@ export function useWorkbenchAppController(
         ...current,
         workbench,
         project: editorProgram.project,
-        generatedBody: '',
-        generatedProgram: '',
         pathDocument,
         pathDiagnostics: pathDocument.diagnostics
       };

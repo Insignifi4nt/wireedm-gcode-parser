@@ -56,11 +56,6 @@ export function LatestDxfImportPanel({
                 Download Program
               </Button>
             </div>
-            {latestImport.generatedBody && (
-              <pre className="max-h-[360px] overflow-auto border border-border bg-background/70 p-2 text-[10px] leading-5 text-foreground">
-                {latestImport.generatedBody}
-              </pre>
-            )}
           </div>
         ) : (
           <dl className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-2">

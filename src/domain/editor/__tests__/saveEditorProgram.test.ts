@@ -187,7 +187,7 @@ describe('saveEditorProgram', () => {
       now: new Date('2026-05-29T12:00:00.000Z'),
       pathDocument: reversedDocument,
       project: postedArtifacts.project,
-      text: imported.generatedProgram
+      text: ''
     });
 
     expect(adapter.files.get(postedArtifacts.programPath)).toBe(postedArtifacts.programText);

@@ -48,8 +48,8 @@ describe('importDxfProject', () => {
       }
     });
     expect(result.project.generated.body).toBe('');
-    expect(result.generatedBody).toBe(result.project.generated.body);
-    expect(result.generatedProgram).toBe('');
+    expect('generatedBody' in result).toBe(false);
+    expect('generatedProgram' in result).toBe(false);
     expect(result.pathDocument.contours).toHaveLength(1);
     expect(result.pathDiagnostics.map((diagnostic) => diagnostic.code)).toEqual(['open-chain']);
     expect('postDiagnostics' in result).toBe(false);
@@ -123,7 +123,7 @@ describe('importDxfProject', () => {
         lengthMm: 20
       }
     });
-    expect(result.generatedProgram).toBe('');
+    expect('generatedProgram' in result).toBe(false);
     expect(result.project.generated.files).toEqual([]);
     expect(result.project.editor.activeFilePath).toBeNull();
   });
@@ -169,7 +169,7 @@ describe('importDxfProject', () => {
     });
 
     expect(result.parseResult.warnings).toEqual(['Unsupported DXF entity: SPLINE']);
-    expect(result.generatedBody).toBe('');
+    expect('generatedBody' in result).toBe(false);
     expect(result.entityCount).toBe(1);
   });
 
