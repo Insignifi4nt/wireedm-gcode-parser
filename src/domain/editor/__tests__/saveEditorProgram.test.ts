@@ -174,6 +174,50 @@ describe('saveEditorProgram', () => {
     expect(saved.editorProgram.project?.upid?.document.plan.operations[0].direction).toBe('reverse');
   });
 
+  it('posts the active editor program from UPID even when the supplied text is stale', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'stale-text.dxf',
+      text: rectangleDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const reversedDocument = reversePathOperation(
+      imported.pathDocument,
+      imported.pathDocument.plan.operations[0].id
+    );
+    expect(reversedDocument).not.toBeNull();
+    const expectedBody = pathPlanToGcodeBody(
+      reversedDocument!.plan,
+      reversedDocument!.segments,
+      reversedDocument!.options
+    );
+    const expectedProgram = composeGCodeProgram({
+      header: imported.project.machine.templates.header,
+      body: expectedBody,
+      footer: imported.project.machine.templates.footer,
+      lineEnding: imported.project.machine.output.lineEnding
+    });
+    expect(expectedProgram).not.toBe(imported.generatedProgram);
+
+    const saved = await saveEditorProgram(imported.workbench, {
+      filePath: imported.project.editor.activeFilePath!,
+      now: new Date('2026-05-29T12:00:00.000Z'),
+      pathDocument: reversedDocument,
+      project: imported.project,
+      text: imported.generatedProgram
+    });
+
+    const activeProgramText = adapter.files.get(imported.project.editor.activeFilePath!);
+
+    expect(activeProgramText).toBe(expectedProgram);
+    expect(saved.editorProgram.text).toBe(activeProgramText);
+    expect(saved.editorProgram.parseResult.path.some((point) => point.line > 0)).toBe(true);
+    expect(saved.editorProgram.project?.generated.body).toBe(expectedBody);
+  });
+
   it('clears stale path planning when manual text edits are saved without a path document', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {

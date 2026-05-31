@@ -4,6 +4,7 @@ import {
   type WorkbenchManifest
 } from '@/domain/storage/workbenchStorage';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import { composeGCodeProgram } from '@/domain/post/gcodeTemplates';
 import { withProjectUpid, withoutProjectUpid } from '@/domain/upid/projectUpid';
 import { postUpidToGcode } from '@/domain/upid/upidDocument';
 import type { WorkbenchProject } from '@/domain/workbench/types';
@@ -34,9 +35,13 @@ export async function saveEditorProgram(
     throw new Error(`Editor program file not found: ${input.filePath}`);
   }
 
-  await workbench.adapter.writeText(input.filePath, input.text);
+  const textToSave = textForEditorProgramSave(input);
+  await workbench.adapter.writeText(input.filePath, textToSave);
 
-  const projectSave = await saveProjectPathState(workbench, input);
+  const projectSave = await saveProjectPathState(workbench, {
+    ...input,
+    text: textToSave
+  });
   const updatedWorkbench = projectSave?.workbench ?? workbench;
   const updatedProject = projectSave?.project ?? input.project;
 
@@ -44,11 +49,23 @@ export async function saveEditorProgram(
     workbench: updatedWorkbench,
     editorProgram: {
       filePath: input.filePath,
-      text: input.text,
-      parseResult: parseGCodeProgram(input.text),
+      text: textToSave,
+      parseResult: parseGCodeProgram(textToSave),
       project: updatedProject
     }
   };
+}
+
+function textForEditorProgramSave(input: SaveEditorProgramInput) {
+  if (!input.pathDocument || !input.project) return input.text;
+
+  const post = postUpidToGcode(input.pathDocument);
+  return composeGCodeProgram({
+    header: input.project.machine.templates.header,
+    body: post.body,
+    footer: input.project.machine.templates.footer,
+    lineEnding: input.project.machine.output.lineEnding
+  });
 }
 
 async function saveProjectPathState(
