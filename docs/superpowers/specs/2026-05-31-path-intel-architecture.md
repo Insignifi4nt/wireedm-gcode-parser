@@ -24,6 +24,23 @@ machine profiles. Plain G-code is too lossy to be that source of truth.
 - The internal plan is the future editor contract. G-code remains an output artifact, not the data
   structure the workbench has to edit.
 
+## Why The Editor Is Path-First
+
+Imported DXF projects now open as path plans, not as editable G-code programs. The editor can still
+show a posted body preview because users need to inspect the eventual machine motion, but the
+editable decisions are operation order, direction, start choice, construction points, and path
+diagnostics.
+
+That distinction matters because header and footer templates belong to the active machine profile.
+They are applied when the current path plan is posted or exported; they should not become visible
+working geometry or something the user edits while choosing contours. Showing them in the path editor
+would make machine setup look like part geometry and would pull the workflow back toward line-based
+G-code surgery.
+
+Legacy external `.gcode`, `.nc`, `.iso`, and `.txt` imports still use the line drawer and text editor
+because those files are already posted programs. DXF-origin projects keep the richer source model as
+long as the path document is present.
+
 ## Current Code Map
 
 - `src/domain/path-intel/types.ts` defines the path document, segments, clusters, chains, contours,
@@ -37,12 +54,19 @@ machine profiles. Plain G-code is too lossy to be that source of truth.
 - `src/domain/path-intel/postGcode.ts` emits body G-code from the operation plan.
 - `src/domain/dxf/dxfToGcode.ts` keeps the existing DXF-to-G-code API while routing it through
   path-intel.
+- `src/features/editor/EditorPathPlanPanel.tsx` is the DXF path-project surface for operation
+  selection, ordering, direction, start selection, construction-point modes, saving, and posted body
+  inspection.
+- `src/features/editor/EditorProgramLinesPanel.tsx` remains the legacy posted-program surface for
+  external G-code-style imports.
 
 ## What This Enables Next
 
-- Store the path document on DXF import and use it as the editor surface.
-- Let users reorder contours and reverse operation direction without reparsing G-code.
-- Add start-point edits by splitting or rotating path geometry.
-- Attach machine profiles at export time instead of baking machine assumptions into import.
+- Add richer operation/feature inspectors without parsing G-code comments or line numbers.
+- Add user locks for contour order, direction, role, and start point while preserving import
+  provenance.
+- Add lead-in/lead-out suggestions as path decisions before posting, not as manual text snippets.
+- Keep machine profile templates attached to the final post/export boundary instead of baking
+  machine assumptions into import.
 - Keep future optimization modes modular: nearest travel, stability-first, manual order locks,
   profile-aware bounds, and eventually stronger search or learned route selection.

@@ -15,7 +15,7 @@ import {
   moveSelectedLines,
   setStartAtLine
 } from '@/domain/editor/gcodeLineOperations';
-import { organizeGCodeStructure, type GCodeStructure } from '@/domain/editor/gcodeStructure';
+import { organizeGCodeStructure, structureContours } from '@/domain/editor/gcodeStructure';
 import { normalizeToISO } from '@/domain/editor/isoNormalizer';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { evaluateMachineFit } from '@/domain/machine/machineFit';
@@ -43,6 +43,7 @@ import { EditorCanvasPanel } from './EditorCanvasPanel';
 import { EditorGuideDialog } from './EditorGuideDialog';
 import { EditorHeaderBar } from './EditorHeaderBar';
 import { EditorInspectorPanel } from './EditorInspectorPanel';
+import { EditorPathPlanPanel } from './EditorPathPlanPanel';
 import { EditorProgramLinesPanel } from './EditorProgramLinesPanel';
 import { EditorProgramTextPanel } from './EditorProgramTextPanel';
 import type { EditorGuideLanguage, EditorGuideTarget } from './editorGuideContent';
@@ -156,6 +157,27 @@ export function EditorPage({
   );
   const lineRows = useMemo(() => (structure ? flattenStructureLines(structure) : []), [structure]);
   const bodyGroups = structure?.body.contours ?? [];
+  const isPathProject = Boolean(pathDocumentDraft);
+  const pathPostedBodyRows = useMemo(() => {
+    if (!pathDocumentDraft || !program?.project) return [];
+
+    const body = pathPlanToGcodeBody(
+      pathDocumentDraft.plan,
+      pathDocumentDraft.segments,
+      pathDocumentDraft.options
+    );
+    const headerLineCount = splitTrimmedLines(program.project.machine.templates.header).length;
+
+    return splitTrimmedLines(body).map((text, index) => ({
+      num: headerLineCount + index + 1,
+      section: 'body' as const,
+      text
+    }));
+  }, [pathDocumentDraft, program?.project]);
+  const pathPostedBodyGroups = useMemo(
+    () => (pathPostedBodyRows.length > 0 ? structureContours(pathPostedBodyRows) : []),
+    [pathPostedBodyRows]
+  );
 
   useEffect(() => {
     setDraftText(program?.text ?? '');
@@ -223,13 +245,17 @@ export function EditorPage({
         setMeasurementPoints([]);
       } else if ((event.key === 'Delete' || event.key === 'Backspace') && selectedLines.length > 0) {
         event.preventDefault();
-        handleDeleteSelectedLines();
+        if (pathDocumentDraft) {
+          clearSelectedLines();
+        } else {
+          handleDeleteSelectedLines();
+        }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [draftText, isSaving, measurementPoints.length, program, redoStack, selectedLines, undoStack]);
+  }, [draftText, isSaving, measurementPoints.length, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
 
   async function handleEditorDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -283,7 +309,7 @@ export function EditorPage({
   }
 
   function handleDeleteSelectedLines() {
-    if (!program || selectedLines.length === 0 || isSaving) return;
+    if (!program || pathDocumentDraft || selectedLines.length === 0 || isSaving) return;
     if (selectedLines.length > 3 && !confirmBulkLineDelete(selectedLines.length)) return;
 
     const linesToDelete = new Set(selectedLines);
@@ -300,7 +326,7 @@ export function EditorPage({
   }
 
   function handleMoveSelectedLines(direction: -1 | 1) {
-    if (!program || selectedLines.length === 0 || isSaving) return;
+    if (!program || pathDocumentDraft || selectedLines.length === 0 || isSaving) return;
 
     const result = moveSelectedLines(draftText, selectedLines, direction);
     if (!result) return;
@@ -509,10 +535,9 @@ export function EditorPage({
     if (!program?.project) return;
 
     const body = pathPlanToGcodeBody(nextDocument.plan, nextDocument.segments, nextDocument.options);
-    const currentStructure = organizeGCodeStructure(draftText.split(/\r?\n/));
     replaceDraftText(
       composeGCodeProgram({
-        header: sectionText(currentStructure, 'header') || program.project.machine.templates.header,
+        header: program.project.machine.templates.header,
         body,
         footer: program.project.machine.templates.footer,
         lineEnding: program.project.machine.output.lineEnding
@@ -525,7 +550,7 @@ export function EditorPage({
   }
 
   function handleInsertMeasurementPoints() {
-    if (!program || measurementPoints.length === 0 || isSaving) return;
+    if (!program || pathDocumentDraft || measurementPoints.length === 0 || isSaving) return;
 
     const result = insertMeasurementPointsIntoText(draftText, measurementPoints, {
       insertAfterLine: selectedLines.length > 0 ? Math.min(...selectedLines) : undefined
@@ -713,48 +738,84 @@ export function EditorPage({
             className="grid min-h-0 gap-2 overflow-hidden p-2 lg:grid-rows-[minmax(260px,1fr)_auto]"
             data-editor-side-code-panel
           >
-            <EditorProgramLinesPanel
-              bodyGroups={bodyGroups}
-              draftText={draftText}
-              guideHighlightTarget={guideHighlightTarget}
-              hasUnsavedChanges={hasUnsavedChanges}
-              isGroupExpanded={isGroupExpanded}
-              isSaving={isSaving}
-              lineMode={lineMode}
-              lineRows={lineRows}
-              onClearPins={() => setPinnedLines([])}
-              onClearSelectedLines={clearSelectedLines}
-              onDeleteGroup={handleDeleteGroup}
-              onDeleteSelectedLines={handleDeleteSelectedLines}
-              onExportNormalizedISO={handleExportNormalizedISO}
-              onHoverLineChange={setHoveredLine}
-              onLineClick={handleLineClick}
-              onLineEditCommit={handleLineEditCommit}
-              onMoveGroup={handleMoveGroup}
-              onMoveSelectedLines={handleMoveSelectedLines}
-              onNormalizeDraft={handleNormalizeDraft}
-              onRedoDraft={handleRedoDraft}
-              onSaveClick={handleSaveClick}
-              onSetLineMode={handleSetLineMode}
-              onSetStartHere={handleSetStartHere}
-              onToggleGroup={handleToggleGroup}
-              onTogglePin={handleTogglePin}
-              onToggleProgramLinesOpen={() => setProgramLinesOpen((current) => !current)}
-              onUndoDraft={handleUndoDraft}
-              pinnedLines={pinnedLines}
-              program={program}
-              programLinesOpen={programLinesOpen}
-              redoAvailable={redoStack.length > 0}
-              selectedLines={selectedLines}
-              structure={structure}
-              undoAvailable={undoStack.length > 0}
-            />
-            {renderProgramTextPanel()}
+            {pathDocumentDraft ? (
+              <EditorPathPlanPanel
+                bodyGroups={pathPostedBodyGroups}
+                hasUnsavedChanges={hasUnsavedChanges}
+                isGroupExpanded={isGroupExpanded}
+                isSaving={isSaving}
+                lineRows={pathPostedBodyRows}
+                onActivatePathClickMode={setPathClickMode}
+                onClearPins={() => setPinnedLines([])}
+                onClearSelectedLines={clearSelectedLines}
+                onExportPostedISO={handleExportNormalizedISO}
+                onHoverLineChange={setHoveredLine}
+                onLineClick={handleLineClick}
+                onMovePathOperation={handleMovePathOperation}
+                onRedoDraft={handleRedoDraft}
+                onReversePathOperation={handleReversePathOperation}
+                onSaveClick={handleSaveClick}
+                onSelectPathOperation={setSelectedPathOperationId}
+                onToggleGroup={handleToggleGroup}
+                onToggleOutputPreviewOpen={() => setProgramLinesOpen((current) => !current)}
+                onTogglePin={handleTogglePin}
+                onUndoDraft={handleUndoDraft}
+                outputPreviewOpen={programLinesOpen}
+                pathClickMode={pathClickMode}
+                pathDocument={pathDocumentDraft}
+                pinnedLines={pinnedLines}
+                redoAvailable={redoStack.length > 0}
+                selectedLines={selectedLines}
+                selectedPathOperationId={selectedPathOperationId}
+                undoAvailable={undoStack.length > 0}
+              />
+            ) : (
+              <>
+                <EditorProgramLinesPanel
+                  bodyGroups={bodyGroups}
+                  draftText={draftText}
+                  guideHighlightTarget={guideHighlightTarget}
+                  hasUnsavedChanges={hasUnsavedChanges}
+                  isGroupExpanded={isGroupExpanded}
+                  isSaving={isSaving}
+                  lineMode={lineMode}
+                  lineRows={lineRows}
+                  onClearPins={() => setPinnedLines([])}
+                  onClearSelectedLines={clearSelectedLines}
+                  onDeleteGroup={handleDeleteGroup}
+                  onDeleteSelectedLines={handleDeleteSelectedLines}
+                  onExportNormalizedISO={handleExportNormalizedISO}
+                  onHoverLineChange={setHoveredLine}
+                  onLineClick={handleLineClick}
+                  onLineEditCommit={handleLineEditCommit}
+                  onMoveGroup={handleMoveGroup}
+                  onMoveSelectedLines={handleMoveSelectedLines}
+                  onNormalizeDraft={handleNormalizeDraft}
+                  onRedoDraft={handleRedoDraft}
+                  onSaveClick={handleSaveClick}
+                  onSetLineMode={handleSetLineMode}
+                  onSetStartHere={handleSetStartHere}
+                  onToggleGroup={handleToggleGroup}
+                  onTogglePin={handleTogglePin}
+                  onToggleProgramLinesOpen={() => setProgramLinesOpen((current) => !current)}
+                  onUndoDraft={handleUndoDraft}
+                  pinnedLines={pinnedLines}
+                  program={program}
+                  programLinesOpen={programLinesOpen}
+                  redoAvailable={redoStack.length > 0}
+                  selectedLines={selectedLines}
+                  structure={structure}
+                  undoAvailable={undoStack.length > 0}
+                />
+                {renderProgramTextPanel()}
+              </>
+            )}
           </div>
           <EditorInspectorPanel
             arcMoveCount={arcMoveCount}
             boundsText={boundsText}
             cuttingMoveCount={cuttingMoveCount}
+            canInsertMeasurementPoints={!isPathProject}
             draftProgram={draftProgram}
             editorFileName={editorFileName}
             gridSnapEnabled={gridSnapEnabled}
@@ -788,7 +849,8 @@ export function EditorPage({
             program={program}
             rapidMoveCount={rapidMoveCount}
             selectedPathOperationId={selectedPathOperationId}
-            structure={structure}
+            showPathOperations={!isPathProject}
+            structure={isPathProject ? null : structure}
           />
         </aside>
       </section>
@@ -796,12 +858,13 @@ export function EditorPage({
   );
 }
 
-function sectionText(structure: GCodeStructure, section: 'header' | 'footer') {
-  return structure[section].lines.map((line) => line.text).join('\n');
-}
-
 function clonePathDocument(document: PathPlanningDocument | null) {
   return document ? structuredClone(document) : null;
+}
+
+function splitTrimmedLines(text: string) {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\r?\n/) : [];
 }
 
 function nextMeasurementPointId(currentLength: number) {

@@ -67,10 +67,8 @@ export function LatestDxfImportPanel({
           <dl className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-2">
             <dt className="text-muted-foreground">Manifest</dt>
             <dd>workbench.json</dd>
-            <dt className="text-muted-foreground">Header</dt>
-            <dd>templates/header.gcode</dd>
-            <dt className="text-muted-foreground">Footer</dt>
-            <dd>templates/footer.gcode</dd>
+            <dt className="text-muted-foreground">Profiles</dt>
+            <dd>Active machine profile</dd>
             <dt className="text-muted-foreground">Folders</dt>
             <dd>imports, generated, exports, templates, machines, editor, projects</dd>
             <dt className="text-muted-foreground">Feeds</dt>

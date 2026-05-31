@@ -44,7 +44,9 @@ interface EditorInspectorPanelProps {
   program: LoadedEditorProgram | null;
   rapidMoveCount: number;
   selectedPathOperationId: string | null;
+  showPathOperations?: boolean;
   structure: GCodeStructure | null;
+  canInsertMeasurementPoints?: boolean;
   onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
   onAddMeasurementPoint: () => void;
   onClearMeasurementPoints: () => void;
@@ -80,7 +82,9 @@ export function EditorInspectorPanel({
   program,
   rapidMoveCount,
   selectedPathOperationId,
+  showPathOperations = true,
   structure,
+  canInsertMeasurementPoints = true,
   onActivatePathClickMode,
   onAddMeasurementPoint,
   onClearMeasurementPoints,
@@ -246,7 +250,7 @@ export function EditorInspectorPanel({
         </section>
       )}
 
-      {pathDocument && pathDocument.plan.operations.length > 0 && (
+      {showPathOperations && pathDocument && pathDocument.plan.operations.length > 0 && (
         <section className="mt-3 border-t border-border pt-3" data-editor-path-operations>
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-[11px] font-semibold">Path</h3>
@@ -447,7 +451,7 @@ export function EditorInspectorPanel({
         <div className="mt-2 grid grid-cols-1 gap-1.5">
           <Button
             className="h-6 px-2 text-[10px]"
-            disabled={!program || measurementPoints.length === 0 || isSaving}
+            disabled={!canInsertMeasurementPoints || !program || measurementPoints.length === 0 || isSaving}
             onClick={onInsertMeasurementPoints}
             size="sm"
             type="button"

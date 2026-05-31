@@ -189,6 +189,35 @@ describe('App DXF imports and project library', () => {
     );
   });
 
+  it('opens imported DXF projects into a path-first editor surface without header or footer drawers', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'path-surface.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-path-plan-panel]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-code-section="lines"]')).toBeNull();
+    expect(container.querySelector('[data-editor-code-section="text"]')).toBeNull();
+    expect(container.querySelector('[data-editor-structure="header"]')).toBeNull();
+    expect(container.querySelector('[data-editor-structure="footer"]')).toBeNull();
+    expect(container.textContent).toContain('Path Operations');
+    expect(container.textContent).toContain('Posted Body');
+    expect(container.textContent).not.toContain('Program Lines');
+    expect(container.textContent).not.toContain('Program Text');
+    expect(container.textContent).not.toContain('Header');
+    expect(container.textContent).not.toContain('Footer');
+  });
+
   it('edits imported DXF path direction through path controls instead of line text surgery', async () => {
     window.showDirectoryPicker = undefined;
     const downloadGeneratedProgram = vi.fn();
@@ -216,17 +245,16 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const programEditor = container.querySelector(
-      'textarea[aria-label="Program editor"]'
-    ) as HTMLTextAreaElement | null;
-    expect(programEditor?.value).toContain(
-      ['G0 X0.000 Y0.000', 'G1 X0.000 Y5.000', 'G1 X10.000 Y5.000'].join('\n')
-    );
-    expect(programEditor?.value.split(/\r?\n/).filter(Boolean).slice(-3)).toEqual(['G40', 'M30', '%']);
+    const postedBodyPreview = container.querySelector('[data-editor-posted-body-preview]');
+    expect(postedBodyPreview?.textContent).toContain('G0 X0.000 Y0.000');
+    expect(postedBodyPreview?.textContent).toContain('G1 X0.000 Y5.000');
+    expect(postedBodyPreview?.textContent).toContain('G1 X10.000 Y5.000');
+    expect(postedBodyPreview?.textContent).not.toContain('G40');
+    expect(container.querySelector('textarea[aria-label="Program editor"]')).toBeNull();
     expect(container.textContent).toContain('Unsaved');
 
     const saveButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Save Program')
+      button.textContent?.includes('Save Path Plan')
     );
 
     await act(async () => {
@@ -289,15 +317,13 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const reopenedProgramEditor = container.querySelector(
-      'textarea[aria-label="Program editor"]'
-    ) as HTMLTextAreaElement | null;
-    expect(reopenedProgramEditor?.value).toContain(
-      ['G0 X0.000 Y0.000', 'G1 X10.000 Y0.000', 'G1 X10.000 Y5.000'].join('\n')
-    );
+    const reopenedPostedBodyPreview = container.querySelector('[data-editor-posted-body-preview]');
+    expect(reopenedPostedBodyPreview?.textContent).toContain('G0 X0.000 Y0.000');
+    expect(reopenedPostedBodyPreview?.textContent).toContain('G1 X10.000 Y0.000');
+    expect(reopenedPostedBodyPreview?.textContent).toContain('G1 X10.000 Y5.000');
   });
 
-  it('disables structured DXF path controls after manual program text edits', async () => {
+  it('keeps manual G-code text editing out of active DXF path plans', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
@@ -314,39 +340,108 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     expect(container.querySelector('button[aria-label="Reverse path operation"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-path-plan-panel]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-code-section="text"]')).toBeNull();
+    expect(container.querySelector('textarea[aria-label="Program editor"]')).toBeNull();
+    expect(container.textContent).not.toContain('Program Text');
+  });
 
-    const programEditor = container.querySelector(
-      'textarea[aria-label="Program editor"]'
+  it('does not let legacy line-edit commands clear an active DXF path plan', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'path-edit-guard.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const pointXInput = container.querySelector(
+      'input[aria-label="Measurement point X"]'
+    ) as HTMLInputElement | null;
+    const pointYInput = container.querySelector(
+      'input[aria-label="Measurement point Y"]'
+    ) as HTMLInputElement | null;
+
+    await act(async () => {
+      if (pointXInput) setInputValue(pointXInput, '2');
+      if (pointYInput) setInputValue(pointYInput, '3');
+    });
+
+    const addPointButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Add Point')
+    );
+
+    await act(async () => {
+      addPointButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const insertPointsButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Insert Points')
+    ) as HTMLButtonElement | undefined;
+    expect(insertPointsButton?.disabled).toBe(true);
+
+    const postedBodyRow = container.querySelector('[data-editor-line="5"]') as HTMLButtonElement | null;
+    expect(postedBodyRow).not.toBeNull();
+
+    await act(async () => {
+      postedBodyRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-path-plan-panel]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Reverse path operation"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-code-section="text"]')).toBeNull();
+  });
+
+  it('keeps posted body line rows aligned with preview line hints when profile headers contain blanks', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const headerEditor = container.querySelector(
+      'textarea[aria-label="Header template"]'
     ) as HTMLTextAreaElement | null;
-    expect(programEditor).not.toBeNull();
+    expect(headerEditor).not.toBeNull();
 
     await act(async () => {
-      if (programEditor) setTextAreaValue(programEditor, `${programEditor.value}\n(MANUAL EDIT)`);
+      if (headerEditor) setTextAreaValue(headerEditor, '%\n\nG90');
     });
-    await flushAsync();
 
-    expect(container.querySelector('button[aria-label="Reverse path operation"]')).toBeNull();
-
-    const saveButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Save Program')
+    const saveSettingsButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Save Settings')
     );
 
     await act(async () => {
-      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      saveSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushAsync();
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
-    );
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'blank-header-lines.dxf')],
+      configurable: true
+    });
 
     await act(async () => {
-      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
 
-    expect(container.textContent).toContain('Manifest');
-    expect(container.textContent).not.toContain('Download Program');
+    expect(container.querySelector('[data-editor-posted-body-row="4"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-posted-body-row="3"]')).toBeNull();
+    expect(
+      container.querySelector('svg[aria-label="G-code path preview"] path[data-line="4"]')
+    ).not.toBeNull();
   });
 
   it('creates and slides path-constrained measurement points from contour magnetize', async () => {

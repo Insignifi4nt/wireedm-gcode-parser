@@ -172,7 +172,7 @@ export function AppShell({
 
               <div className="mt-5 border-t border-border pt-3 font-mono text-[10px] text-muted-foreground">
                 <p>Cache-first projects</p>
-                <p className="mt-1">Header / body / footer output</p>
+                <p className="mt-1">Machine-profile export</p>
                 <p className="mt-1">No feeds in generated defaults</p>
               </div>
             </div>
