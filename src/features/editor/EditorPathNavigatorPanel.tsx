@@ -42,6 +42,7 @@ interface EditorPathNavigatorPanelProps {
   pathClickMode: 'set-start' | MagnetizeMode | null;
   pathDocument: PathPlanningDocument;
   redoAvailable: boolean;
+  selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
   undoAvailable: boolean;
   onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
@@ -50,7 +51,7 @@ interface EditorPathNavigatorPanelProps {
   onRedoDraft: () => void;
   onReversePathOperation: () => void;
   onSaveClick: () => void | Promise<void>;
-  onSelectPathOperation: (operationId: string) => void;
+  onSelectPathElement: (element: EditorPathElementRef) => void;
   onToggleHoverAssist: () => void;
   onToggleMagneticSnap: () => void;
   onUndoDraft: () => void;
@@ -65,6 +66,7 @@ export function EditorPathNavigatorPanel({
   pathClickMode,
   pathDocument,
   redoAvailable,
+  selectedPathElement,
   selectedPathOperationId,
   undoAvailable,
   onActivatePathClickMode,
@@ -73,7 +75,7 @@ export function EditorPathNavigatorPanel({
   onRedoDraft,
   onReversePathOperation,
   onSaveClick,
-  onSelectPathOperation,
+  onSelectPathElement,
   onToggleHoverAssist,
   onToggleMagneticSnap,
   onUndoDraft
@@ -251,6 +253,7 @@ export function EditorPathNavigatorPanel({
               className="mb-1 border border-border bg-background/45"
               data-upid-hovered={hoveredPathElement?.operationId === operation.id ? 'true' : undefined}
               data-upid-contour-group={operation.id}
+              data-upid-selected={selectedPathElement?.operationId === operation.id ? 'true' : undefined}
               key={operation.id}
               open
             >
@@ -266,9 +269,14 @@ export function EditorPathNavigatorPanel({
                   }`}
                   data-upid-contour-row
                   data-upid-operation-id={operation.id}
+                  data-upid-selected={
+                    selectedPathElement?.operationId === operation.id && !selectedPathElement.segmentId
+                      ? 'true'
+                      : undefined
+                  }
                   onClick={(event) => {
                     event.preventDefault();
-                    onSelectPathOperation(operation.id);
+                    onSelectPathElement({ operationId: operation.id, segmentId: null });
                   }}
                   type="button"
                 >
@@ -291,7 +299,9 @@ export function EditorPathNavigatorPanel({
                     ref,
                     index,
                     requiredSegment(segmentsById, ref.segmentId),
-                    hoveredPathElement
+                    hoveredPathElement,
+                    selectedPathElement,
+                    onSelectPathElement
                   )
                 )}
               </div>
@@ -322,24 +332,32 @@ function renderSegmentRow(
   ref: OrientedSegmentRef,
   index: number,
   segment: PathSegment,
-  hoveredPathElement: EditorPathElementRef | null
+  hoveredPathElement: EditorPathElementRef | null,
+  selectedPathElement: EditorPathElementRef | null,
+  onSelectPathElement: (element: EditorPathElementRef) => void
 ) {
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
   const hovered =
     hoveredPathElement?.operationId === operation.id && hoveredPathElement.segmentId === segment.id;
+  const selected =
+    selectedPathElement?.operationId === operation.id && selectedPathElement.segmentId === segment.id;
 
   return (
-    <div
-      className={`grid grid-cols-[26px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-[9px] text-muted-foreground ${
-        hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
+    <button
+      aria-pressed={selected}
+      className={`grid w-full grid-cols-[26px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[9px] text-muted-foreground outline-none hover:bg-accent ${
+        selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-hovered={hovered ? 'true' : undefined}
       data-upid-operation-id={operation.id}
+      data-upid-selected={selected ? 'true' : undefined}
       data-upid-segment-index={index}
       data-upid-segment-row
       data-upid-segment-id={segment.id}
       key={`${operation.id}-${segment.id}-${index}`}
+      onClick={() => onSelectPathElement({ operationId: operation.id, segmentId: segment.id })}
+      type="button"
     >
       <span>{index + 1}</span>
       <span className="min-w-0">
@@ -350,7 +368,7 @@ function renderSegmentRow(
           {formatPoint(end)}
         </span>
       </span>
-    </div>
+    </button>
   );
 }
 

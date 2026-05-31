@@ -15,11 +15,17 @@ import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { MachineFitResult } from '@/domain/machine/machineFit';
 import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
+import {
+  orientedSegmentEnd,
+  orientedSegmentStart,
+  segmentMap
+} from '@/domain/path-intel/segments';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import type { MachineProfile } from '@/domain/workbench/types';
 
 import type { EditorGuideTarget } from './editorGuideContent';
 import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
+import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 type MeasurementExportFormat = 'csv' | 'gcode' | 'iso';
 
@@ -44,6 +50,7 @@ interface EditorInspectorPanelProps {
   previewCursorPoint: { x: number; y: number } | null;
   program: LoadedEditorProgram | null;
   rapidMoveCount: number;
+  selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
   showPathOperations?: boolean;
   structure: GCodeStructure | null;
@@ -83,6 +90,7 @@ export function EditorInspectorPanel({
   previewCursorPoint,
   program,
   rapidMoveCount,
+  selectedPathElement,
   selectedPathOperationId,
   showPathOperations = true,
   structure,
@@ -104,6 +112,9 @@ export function EditorInspectorPanel({
     pathDocument?.plan.operations.findIndex((operation) => operation.id === selectedPathOperationId) ?? -1;
   const selectedPathOperation =
     selectedPathOperationIndex >= 0 ? pathDocument?.plan.operations[selectedPathOperationIndex] : null;
+  const selectedPathSegment = selectedPathOperation
+    ? readSelectedPathSegment(pathDocument, selectedPathOperation, selectedPathElement)
+    : null;
 
   return (
     <div
@@ -225,6 +236,26 @@ export function EditorInspectorPanel({
               <dd data-upid-selected="start">{formatPoint(selectedPathOperation.startPoint)}</dd>
               <dt className="text-muted-foreground">End</dt>
               <dd data-upid-selected="end">{formatPoint(selectedPathOperation.endPoint)}</dd>
+            </dl>
+          </section>
+        )}
+
+        {selectedPathSegment && (
+          <section className="mt-3 border-t border-border pt-3" data-upid-selected-segment>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Segment</h3>
+            <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+              <dt className="text-muted-foreground">Type</dt>
+              <dd data-upid-selected-segment-kind>{selectedPathSegment.kind}</dd>
+              <dt className="text-muted-foreground">Direction</dt>
+              <dd>{selectedPathSegment.reversed ? 'reversed' : 'forward'}</dd>
+              <dt className="text-muted-foreground">Layer</dt>
+              <dd>{selectedPathSegment.layer ?? '-'}</dd>
+              <dt className="text-muted-foreground">Length</dt>
+              <dd>{selectedPathSegment.length.toFixed(3)}</dd>
+              <dt className="text-muted-foreground">Start</dt>
+              <dd>{formatPoint(selectedPathSegment.start)}</dd>
+              <dt className="text-muted-foreground">End</dt>
+              <dd>{formatPoint(selectedPathSegment.end)}</dd>
             </dl>
           </section>
         )}
@@ -564,4 +595,27 @@ function formatLimit(value: number | null) {
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
+}
+
+function readSelectedPathSegment(
+  document: PathPlanningDocument | null,
+  operation: NonNullable<PathPlanningDocument['plan']['operations'][number]>,
+  element: EditorPathElementRef | null
+) {
+  if (!document || !element?.segmentId || element.operationId !== operation.id) return null;
+
+  const ref = operation.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
+  if (!ref) return null;
+
+  const segment = segmentMap(document.segments).get(ref.segmentId);
+  if (!segment) return null;
+
+  return {
+    end: orientedSegmentEnd(segment, ref),
+    kind: segment.kind,
+    layer: segment.layer,
+    length: segment.length,
+    reversed: ref.reversed,
+    start: orientedSegmentStart(segment, ref)
+  };
 }

@@ -63,6 +63,7 @@ interface EditorPreviewProps {
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
   pathDocument?: PathPlanningDocument | null;
   pinnedLines: number[];
+  selectedPathElement?: EditorPathElementRef | null;
   selectedLines: number[];
   snapToGrid?: boolean;
   snapGridSize?: number;
@@ -88,6 +89,7 @@ export function EditorPreview({
   onPreviewPointClick,
   pathDocument,
   pinnedLines,
+  selectedPathElement,
   selectedLines,
   snapGridSize = PREVIEW_GRID_SIZE,
   snapToGrid = false
@@ -640,11 +642,16 @@ export function EditorPreview({
         <g transform={`matrix(1 0 0 -1 0 ${flipY})`}>
           {preview.paths.map((path, index) => {
             const pathElementHovered = pathElementMatches(path, hoveredPathElement);
-            const highlight = pathElementHovered ? 'hover' : highlightForLine(path.line, {
-              hoveredLine,
-              pinned,
-              selected
-            });
+            const pathElementSelected = pathElementMatches(path, selectedPathElement);
+            const highlight = pathElementHovered
+              ? 'hover'
+              : pathElementSelected
+                ? 'selected'
+                : highlightForLine(path.line, {
+                    hoveredLine,
+                    pinned,
+                    selected
+                  });
             const isPinned = pinned.has(path.line);
 
             return (
@@ -655,6 +662,7 @@ export function EditorPreview({
                 data-pinned={isPinned ? 'true' : undefined}
                 data-preview-hovered={pathElementHovered ? 'true' : undefined}
                 data-preview-operation={path.operationId}
+                data-preview-selected={pathElementSelected ? 'true' : undefined}
                 data-preview-segment={path.segmentId}
                 data-preview-source={path.source}
                 data-type={path.type}
@@ -679,11 +687,15 @@ export function EditorPreview({
         </g>
         <g>
           {preview.paths.map((path) => {
-            const highlight = pathElementMatches(path, hoveredPathElement) ? 'hover' : highlightForLine(path.line, {
-              hoveredLine,
-              pinned,
-              selected
-            });
+            const highlight = pathElementMatches(path, hoveredPathElement)
+              ? 'hover'
+              : pathElementMatches(path, selectedPathElement)
+                ? 'selected'
+                : highlightForLine(path.line, {
+                    hoveredLine,
+                    pinned,
+                    selected
+                  });
             if (!highlight) return null;
 
             const svgY = flipY - path.end.y;
@@ -855,5 +867,6 @@ function pathElementMatches(
   element: EditorPathElementRef | null | undefined
 ) {
   if (!element?.operationId || path.operationId !== element.operationId) return false;
+  if (!path.segmentId) return false;
   return element.segmentId ? path.segmentId === element.segmentId : true;
 }

@@ -319,6 +319,63 @@ describe('App DXF imports and project library', () => {
     expect(inspector?.textContent).not.toContain('Lines');
   });
 
+  it('highlights selected UPID contours and segments on the canvas and in the inspector', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'selected-highlight.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const contourRow = container.querySelector('[data-upid-contour-row]') as HTMLElement | null;
+    const operationId = contourRow?.getAttribute('data-upid-operation-id');
+    expect(operationId).toBeTruthy();
+
+    await act(async () => {
+      contourRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const selectedOperationPaths = container.querySelectorAll(
+      `path[data-preview-operation="${operationId}"][data-preview-selected="true"]`
+    );
+    expect(selectedOperationPaths).toHaveLength(4);
+
+    const segmentRows = container.querySelectorAll('[data-upid-segment-row]');
+    const segmentRow = segmentRows[1] as HTMLElement | undefined;
+    const segmentId = segmentRow?.getAttribute('data-upid-segment-id');
+    expect(segmentId).toBeTruthy();
+
+    await act(async () => {
+      segmentRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(segmentRow?.getAttribute('data-upid-selected')).toBe('true');
+
+    const selectedSegmentPath = container.querySelector(
+      `path[data-preview-segment="${segmentId}"]`
+    );
+    expect(selectedSegmentPath?.getAttribute('data-preview-selected')).toBe('true');
+    expect(selectedSegmentPath?.getAttribute('data-highlight')).toBe('selected');
+    expect(
+      container.querySelectorAll(
+        `path[data-preview-operation="${operationId}"][data-preview-selected="true"]`
+      )
+    ).toHaveLength(1);
+
+    const selectedSegment = container.querySelector('[data-upid-selected-segment]');
+    expect(selectedSegment).not.toBeNull();
+    expect(selectedSegment?.textContent).toContain('Selected Segment');
+    expect(selectedSegment?.textContent).toContain('line');
+  });
+
   it('posts UPID to G-code only inside the explicit export preview', async () => {
     window.showDirectoryPicker = undefined;
     const downloadGeneratedProgram = vi.fn();

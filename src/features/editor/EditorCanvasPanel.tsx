@@ -19,6 +19,7 @@ interface EditorCanvasPanelProps {
   pathDocument?: PathPlanningDocument | null;
   pathCount: number;
   pinnedLines: number[];
+  selectedPathElement?: EditorPathElementRef | null;
   selectedLines: number[];
   onAddMeasurementPoint: (x: number, y: number) => void;
   onCursorPointChange: (point: { x: number; y: number } | null) => void;
@@ -39,6 +40,7 @@ export function EditorCanvasPanel({
   pathDocument,
   pathCount,
   pinnedLines,
+  selectedPathElement,
   selectedLines,
   onAddMeasurementPoint,
   onCursorPointChange,
@@ -74,6 +76,7 @@ export function EditorCanvasPanel({
           pathDocument={pathDocument}
           pinnedLines={pinnedLines}
           program={draftProgram}
+          selectedPathElement={selectedPathElement}
           snapToGrid={gridSnapEnabled}
           selectedLines={selectedLines}
         />

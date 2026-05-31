@@ -86,6 +86,7 @@ interface EditorPageProps {
 
 interface EditorDraftSnapshot {
   pathDocument: PathPlanningDocument | null;
+  selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
   text: string;
 }
@@ -129,6 +130,7 @@ export function EditorPage({
   const [pathHoverAssistEnabled, setPathHoverAssistEnabled] = useState(false);
   const [pathMagneticSnapEnabled, setPathMagneticSnapEnabled] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [selectedPathElement, setSelectedPathElement] = useState<EditorPathElementRef | null>(null);
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
   const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
@@ -238,13 +240,14 @@ export function EditorPage({
                 onRedoDraft={handleRedoDraft}
                 onReversePathOperation={handleReversePathOperation}
                 onSaveClick={handleSaveClick}
-                onSelectPathOperation={setSelectedPathOperationId}
+                onSelectPathElement={handleSelectPathElement}
                 onToggleHoverAssist={handleTogglePathHoverAssist}
                 onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
                 onUndoDraft={handleUndoDraft}
                 pathClickMode={pathClickMode}
                 pathDocument={pathDocumentDraft}
                 redoAvailable={redoStack.length > 0}
+                selectedPathElement={selectedPathElement}
                 selectedPathOperationId={selectedPathOperationId}
                 undoAvailable={undoStack.length > 0}
               />
@@ -260,6 +263,7 @@ export function EditorPage({
       pathHoverAssistEnabled,
       pathMagneticSnapEnabled,
       redoStack.length,
+      selectedPathElement,
       selectedPathOperationId,
       undoStack.length
     ]
@@ -269,8 +273,10 @@ export function EditorPage({
     setDraftText(program?.text ?? '');
     const pathDocument = projectUpidDocument(program?.project);
     const nextPathDocument = pathDocument ? structuredClone(pathDocument) : null;
+    const nextOperationId = nextPathDocument?.plan.operations[0]?.id ?? null;
     setPathDocumentDraft(nextPathDocument);
-    setSelectedPathOperationId(nextPathDocument?.plan.operations[0]?.id ?? null);
+    setSelectedPathOperationId(nextOperationId);
+    setSelectedPathElement(nextOperationId ? { operationId: nextOperationId, segmentId: null } : null);
     setHoveredPathElement(null);
     setExportPreviewOpen(false);
     setPathClickMode(null);
@@ -399,6 +405,15 @@ export function EditorPage({
       }
       return !current;
     });
+  }
+
+  function handleSelectPathElement(element: EditorPathElementRef) {
+    setSelectedPathOperationId(element.operationId);
+    setSelectedPathElement(element);
+  }
+
+  function handleSelectPathOperation(operationId: string) {
+    handleSelectPathElement({ operationId, segmentId: null });
   }
 
   function isGroupExpanded(groupId: string) {
@@ -709,12 +724,16 @@ export function EditorPage({
     const nextSelectedPathOperationId = nextPathDocument
       ? options.selectedPathOperationId ?? selectedPathOperationId
       : null;
+    const nextSelectedPathElement = nextPathDocument
+      ? normalizePathElementSelection(nextPathDocument, nextSelectedPathOperationId, selectedPathElement)
+      : null;
 
     setUndoStack((current) => [...current, currentDraftSnapshot()]);
     setRedoStack([]);
     setDraftText(nextText);
     setPathDocumentDraft(nextPathDocument);
     setSelectedPathOperationId(nextSelectedPathOperationId);
+    setSelectedPathElement(nextSelectedPathElement);
     if (!nextPathDocument) setPathClickMode(null);
   }
 
@@ -747,6 +766,7 @@ export function EditorPage({
     setDraftText(nextText);
     setPathDocumentDraft(null);
     setSelectedPathOperationId(null);
+    setSelectedPathElement(null);
     setPathClickMode(null);
   }
 
@@ -754,6 +774,7 @@ export function EditorPage({
     return {
       text: draftText,
       pathDocument: clonePathDocument(pathDocumentDraft),
+      selectedPathElement,
       selectedPathOperationId
     };
   }
@@ -762,7 +783,17 @@ export function EditorPage({
     const restoredPathDocument = clonePathDocument(snapshot.pathDocument);
     setDraftText(snapshot.text);
     setPathDocumentDraft(restoredPathDocument);
-    setSelectedPathOperationId(restoredPathDocument ? snapshot.selectedPathOperationId : null);
+    const restoredOperationId = restoredPathDocument ? snapshot.selectedPathOperationId : null;
+    setSelectedPathOperationId(restoredOperationId);
+    setSelectedPathElement(
+      restoredPathDocument
+        ? normalizePathElementSelection(
+            restoredPathDocument,
+            restoredOperationId,
+            snapshot.selectedPathElement
+          )
+        : null
+    );
     setPathClickMode(null);
   }
 
@@ -835,6 +866,7 @@ export function EditorPage({
           pathDocument={pathDocumentDraft}
           pathCount={pathCount}
           pinnedLines={pinnedLines}
+          selectedPathElement={selectedPathElement}
           selectedLines={selectedLines}
         />
 
@@ -917,7 +949,7 @@ export function EditorPage({
             onPointXDraftChange={setPointXDraft}
             onPointYDraftChange={setPointYDraft}
             onReversePathOperation={handleReversePathOperation}
-            onSelectPathOperation={setSelectedPathOperationId}
+            onSelectPathOperation={handleSelectPathOperation}
             onToggleGridSnap={() => setGridSnapEnabled((current) => !current)}
             pathCount={pathCount}
             pathClickMode={pathClickMode}
@@ -927,6 +959,7 @@ export function EditorPage({
             previewCursorPoint={previewCursorPoint}
             program={program}
             rapidMoveCount={rapidMoveCount}
+            selectedPathElement={selectedPathElement}
             selectedPathOperationId={selectedPathOperationId}
             showPathOperations={!isPathProject}
             structure={isPathProject ? null : structure}
@@ -948,6 +981,30 @@ export function EditorPage({
 
 function clonePathDocument(document: PathPlanningDocument | null) {
   return document ? structuredClone(document) : null;
+}
+
+function normalizePathElementSelection(
+  document: PathPlanningDocument,
+  operationId: string | null,
+  element: EditorPathElementRef | null
+): EditorPathElementRef | null {
+  const fallbackOperation = document.plan.operations[0] ?? null;
+  const operation =
+    document.plan.operations.find((candidate) => candidate.id === operationId) ?? fallbackOperation;
+  if (!operation) return null;
+
+  if (
+    element?.operationId === operation.id &&
+    (!element.segmentId ||
+      operation.segmentRefs.some((candidate) => candidate.segmentId === element.segmentId))
+  ) {
+    return element;
+  }
+
+  return {
+    operationId: operation.id,
+    segmentId: null
+  };
 }
 
 function nextMeasurementPointId(currentLength: number) {
