@@ -142,6 +142,7 @@ describe('pathDocumentOperations', () => {
     const splitCluster = edited?.endpointClusters.find(
       (cluster) => cluster.point.x === 5 && cluster.point.y === 0
     );
+    const editedChain = edited?.chains.find((chain) => chain.id === editedOperation?.chainId);
 
     expect(createdSegmentIds).toHaveLength(2);
     expect(edited?.segments.map((segment) => segment.id)).not.toContain(replacedSegmentId);
@@ -151,6 +152,9 @@ describe('pathDocumentOperations', () => {
     expect(splitCluster?.members.map((member) => member.segmentId).sort()).toEqual(
       createdSegmentIds.slice().sort()
     );
+    expect(editedChain?.startClusterId).toBe(splitCluster?.id);
+    expect(editedChain?.endClusterId).toBe(splitCluster?.id);
+    expect(editedChain?.metrics.gapLength).toBe(0);
   });
 
   it('sets a closed operation start at a clicked point by splitting the containing arc segment', () => {

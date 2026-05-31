@@ -5,6 +5,7 @@ import {
   createArcSegment,
   createLineSegment,
   distance,
+  endpointKey,
   orientedArcClockwise,
   orientedSegmentEnd,
   orientedSegmentStart,
@@ -23,6 +24,8 @@ import type {
   ArcPathSegment,
   CirclePathSegment,
   ContourClassification,
+  EndpointClusterId,
+  EndpointSide,
   OperationPlan,
   OrientedSegmentRef,
   PathChain,
@@ -639,11 +642,6 @@ function syncChainRefs(document: PathPlanningDocument, operation: PathOperation)
   if (!chain) return;
 
   chain.segmentRefs = operation.segmentRefs.map((ref) => ({ ...ref }));
-  chain.metrics = {
-    ...chain.metrics,
-    segmentCount: chain.segmentRefs.length,
-    cutLength: pathCutLength(chain.segmentRefs, segmentMap(document.segments))
-  };
 }
 
 function refreshPlan(document: PathPlanningDocument) {
@@ -651,6 +649,8 @@ function refreshPlan(document: PathPlanningDocument) {
   document.endpointClusters = clusterResult.clusters;
 
   const segmentsById = segmentMap(document.segments);
+  document.chains.forEach((chain) => refreshChainTopology(chain, segmentsById, clusterResult.endpointToCluster));
+
   let current = document.options.startPoint;
 
   document.plan.operations.forEach((operation, index) => {
@@ -673,6 +673,66 @@ function refreshPlan(document: PathPlanningDocument) {
     const refreshed = contourResult.contours.find((candidate) => candidate.id === contour.id);
     return refreshed ?? contour;
   });
+}
+
+function refreshChainTopology(
+  chain: PathChain,
+  segmentsById: Map<SegmentId, PathSegment>,
+  endpointToCluster: Record<string, EndpointClusterId>
+) {
+  const startClusterId = chainEndpointClusterId(chain.segmentRefs, 'start', segmentsById, endpointToCluster);
+  chain.startClusterId = startClusterId;
+  chain.endClusterId = chain.closed
+    ? startClusterId
+    : chainEndpointClusterId(chain.segmentRefs, 'end', segmentsById, endpointToCluster);
+  chain.metrics = {
+    segmentCount: chain.segmentRefs.length,
+    cutLength: pathCutLength(chain.segmentRefs, segmentsById),
+    gapLength: pathGapLength(chain.segmentRefs, segmentsById, chain.closed)
+  };
+}
+
+function chainEndpointClusterId(
+  refs: OrientedSegmentRef[],
+  endpoint: EndpointSide,
+  segmentsById: Map<SegmentId, PathSegment>,
+  endpointToCluster: Record<string, EndpointClusterId>
+) {
+  const ref = endpoint === 'start' ? refs[0] : refs[refs.length - 1];
+  if (!ref) return null;
+
+  const segment = requiredSegment(segmentsById, ref.segmentId);
+  if (segment.kind === 'circle') return null;
+
+  const side = orientedEndpointSide(ref, endpoint);
+  return endpointToCluster[endpointKey(ref.segmentId, side)] ?? null;
+}
+
+function orientedEndpointSide(ref: OrientedSegmentRef, endpoint: EndpointSide): EndpointSide {
+  if (endpoint === 'start') return ref.reversed ? 'end' : 'start';
+  return ref.reversed ? 'start' : 'end';
+}
+
+function pathGapLength(
+  refs: OrientedSegmentRef[],
+  segmentsById: Map<SegmentId, PathSegment>,
+  closed: boolean
+) {
+  let gapLength = 0;
+
+  for (let index = 0; index < refs.length - 1; index++) {
+    const current = requiredSegment(segmentsById, refs[index].segmentId);
+    const next = requiredSegment(segmentsById, refs[index + 1].segmentId);
+    gapLength += distance(orientedSegmentEnd(current, refs[index]), orientedSegmentStart(next, refs[index + 1]));
+  }
+
+  if (closed && refs.length > 1) {
+    const last = requiredSegment(segmentsById, refs[refs.length - 1].segmentId);
+    const first = requiredSegment(segmentsById, refs[0].segmentId);
+    gapLength += distance(orientedSegmentEnd(last, refs[refs.length - 1]), orientedSegmentStart(first, refs[0]));
+  }
+
+  return gapLength;
 }
 
 function planMetrics(plan: OperationPlan) {
