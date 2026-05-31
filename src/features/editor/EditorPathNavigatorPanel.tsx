@@ -311,7 +311,9 @@ export function EditorPathNavigatorPanel({
                   diagnostic,
                   hoveredPathElement,
                   onHoverPathElement,
-                  pathDocument
+                  onSelectPathElement,
+                  pathDocument,
+                  selectedPathElement
                 })
               )}
             </div>
@@ -363,26 +365,36 @@ function renderDiagnosticRow({
   diagnostic,
   hoveredPathElement,
   onHoverPathElement,
-  pathDocument
+  onSelectPathElement,
+  pathDocument,
+  selectedPathElement
 }: {
   diagnostic: PathDiagnostic;
   hoveredPathElement: EditorPathElementRef | null;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
+  onSelectPathElement: (element: EditorPathElementRef) => void;
   pathDocument: PathPlanningDocument;
+  selectedPathElement: EditorPathElementRef | null;
 }) {
   const hoverElement = diagnosticPathElement(pathDocument, diagnostic);
   const hovered = pathElementRefsMatch(hoverElement, hoveredPathElement);
+  const selected = pathElementRefsMatch(hoverElement, selectedPathElement);
 
   return (
-    <div
-      className={`border-b border-border px-2 py-1.5 last:border-b-0 ${
-        hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
+    <button
+      className={`w-full border-b border-border px-2 py-1.5 text-left outline-none last:border-b-0 hover:bg-accent disabled:cursor-default ${
+        selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-diagnostic-code={diagnostic.code}
       data-upid-hovered={hovered ? 'true' : undefined}
       data-upid-diagnostic-row
       data-upid-diagnostic-severity={diagnostic.severity}
+      data-upid-selected={selected ? 'true' : undefined}
+      disabled={!hoverElement}
       key={diagnostic.id}
+      onClick={() => {
+        if (hoverElement) onSelectPathElement(hoverElement);
+      }}
       onMouseEnter={() => {
         if (hoverElement) onHoverPathElement(hoverElement);
       }}
@@ -397,7 +409,7 @@ function renderDiagnosticRow({
         <span className="truncate text-muted-foreground">{diagnostic.code}</span>
       </div>
       <p className="text-[9px] leading-4 text-muted-foreground">{diagnostic.message}</p>
-    </div>
+    </button>
   );
 }
 
