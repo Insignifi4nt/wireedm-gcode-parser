@@ -373,6 +373,8 @@ function renderCutSequenceRow({
   const selected = selectedPathElement?.operationId === operation.id;
   const hovered = hoveredPathElement?.operationId === operation.id;
   const manualDecisions = manualDecisionKinds(operation);
+  const cutLength = operation.metrics.cutLength.toFixed(3);
+  const rapidInLength = operation.metrics.rapidInLength.toFixed(3);
   const selectOperation = () => onSelectPathElement({ operationId: operation.id, segmentId: null });
   const moveOperation = (event: MouseEvent<HTMLButtonElement>, direction: -1 | 1) => {
     event.stopPropagation();
@@ -386,8 +388,10 @@ function renderCutSequenceRow({
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/10 text-cyan-100' : ''
       }`}
       data-upid-cut-sequence-controls
+      data-upid-cut-sequence-cut={cutLength}
       data-upid-cut-sequence-index={operation.orderIndex}
       data-upid-cut-sequence-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
+      data-upid-cut-sequence-rapid={rapidInLength}
       data-upid-cut-sequence-role={operation.classification}
       data-upid-cut-sequence-row
       data-upid-hovered={hovered ? 'true' : undefined}
@@ -399,7 +403,7 @@ function renderCutSequenceRow({
     >
       <button
         aria-pressed={selected}
-        className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent"
+        className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)_68px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent"
         data-upid-cut-sequence-select
         onClick={selectOperation}
         type="button"
@@ -415,8 +419,12 @@ function renderCutSequenceRow({
           </span>
           {renderManualDecisionBadges(manualDecisions)}
         </span>
-        <span className="self-center px-1 text-right text-[9px] text-muted-foreground">
-          {operation.metrics.cutLength.toFixed(3)}
+        <span
+          className="grid self-center px-1 text-right text-[8px] leading-tight text-muted-foreground"
+          data-upid-cut-sequence-metrics
+        >
+          <span data-upid-cut-sequence-cut-value={cutLength}>Cut {cutLength}</span>
+          <span data-upid-cut-sequence-rapid-value={rapidInLength}>Rapid {rapidInLength}</span>
         </span>
       </button>
       <span className="grid grid-rows-2 self-stretch border-l border-border">

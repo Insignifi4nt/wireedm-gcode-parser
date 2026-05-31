@@ -369,6 +369,17 @@ describe('App DXF imports and project library', () => {
       'hole',
       'exterior'
     ]);
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-rapid'))).toEqual([
+      '12.207',
+      '5.385',
+      '7.071'
+    ]);
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-cut'))).toEqual([
+      '20.000',
+      '60.000',
+      '100.000'
+    ]);
+    expect(cutSequenceRows[0].textContent).toContain('Rapid');
 
     const firstCutSequenceSelect = cutSequenceRows[0].querySelector(
       '[data-upid-cut-sequence-select]'
