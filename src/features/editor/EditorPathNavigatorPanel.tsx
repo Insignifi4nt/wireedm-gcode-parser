@@ -306,7 +306,14 @@ export function EditorPathNavigatorPanel({
               </span>
             </div>
             <div className="max-h-24 overflow-auto border border-border bg-background/35">
-              {pathDocument.diagnostics.map(renderDiagnosticRow)}
+              {pathDocument.diagnostics.map((diagnostic) =>
+                renderDiagnosticRow({
+                  diagnostic,
+                  hoveredPathElement,
+                  onHoverPathElement,
+                  pathDocument
+                })
+              )}
             </div>
           </section>
         )}
@@ -352,14 +359,36 @@ export function EditorPathNavigatorPanel({
   );
 }
 
-function renderDiagnosticRow(diagnostic: PathDiagnostic) {
+function renderDiagnosticRow({
+  diagnostic,
+  hoveredPathElement,
+  onHoverPathElement,
+  pathDocument
+}: {
+  diagnostic: PathDiagnostic;
+  hoveredPathElement: EditorPathElementRef | null;
+  onHoverPathElement: (element: EditorPathElementRef | null) => void;
+  pathDocument: PathPlanningDocument;
+}) {
+  const hoverElement = diagnosticPathElement(pathDocument, diagnostic);
+  const hovered = pathElementRefsMatch(hoverElement, hoveredPathElement);
+
   return (
     <div
-      className="border-b border-border px-2 py-1.5 last:border-b-0"
+      className={`border-b border-border px-2 py-1.5 last:border-b-0 ${
+        hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
+      }`}
       data-upid-diagnostic-code={diagnostic.code}
+      data-upid-hovered={hovered ? 'true' : undefined}
       data-upid-diagnostic-row
       data-upid-diagnostic-severity={diagnostic.severity}
       key={diagnostic.id}
+      onMouseEnter={() => {
+        if (hoverElement) onHoverPathElement(hoverElement);
+      }}
+      onMouseLeave={() => {
+        if (hoverElement) onHoverPathElement(null);
+      }}
     >
       <div className="mb-1 flex items-center justify-between gap-2 text-[8px] uppercase">
         <span className={diagnostic.severity === 'error' ? 'text-destructive' : 'text-amber-200'}>
@@ -370,6 +399,44 @@ function renderDiagnosticRow(diagnostic: PathDiagnostic) {
       <p className="text-[9px] leading-4 text-muted-foreground">{diagnostic.message}</p>
     </div>
   );
+}
+
+function diagnosticPathElement(
+  pathDocument: PathPlanningDocument,
+  diagnostic: PathDiagnostic
+): EditorPathElementRef | null {
+  const relatedSegmentIds = diagnostic.relatedSegmentIds ?? [];
+  for (const segmentId of relatedSegmentIds) {
+    const operation = pathDocument.plan.operations.find((candidate) =>
+      candidate.segmentRefs.some((ref) => ref.segmentId === segmentId)
+    );
+    if (operation) return { operationId: operation.id, segmentId };
+  }
+
+  const relatedContourIds = diagnostic.relatedContourIds ?? [];
+  for (const contourId of relatedContourIds) {
+    const operation = pathDocument.plan.operations.find((candidate) => candidate.contourId === contourId);
+    if (operation) return { operationId: operation.id, segmentId: null };
+  }
+
+  const relatedChainIds = diagnostic.relatedChainIds ?? [];
+  for (const chainId of relatedChainIds) {
+    const operation = pathDocument.plan.operations.find((candidate) => candidate.chainId === chainId);
+    if (operation) return { operationId: operation.id, segmentId: null };
+  }
+
+  return null;
+}
+
+function pathElementRefsMatch(
+  expected: EditorPathElementRef | null,
+  actual: EditorPathElementRef | null
+) {
+  if (!expected?.operationId || expected.operationId !== actual?.operationId) return false;
+  if (expected.segmentId !== undefined && expected.segmentId !== actual.segmentId) return false;
+  if (expected.pointRole !== undefined && expected.pointRole !== actual.pointRole) return false;
+  if (expected.travelRole !== undefined && expected.travelRole !== actual.travelRole) return false;
+  return true;
 }
 
 export function EditorPathNavigatorRailCollapsed() {
