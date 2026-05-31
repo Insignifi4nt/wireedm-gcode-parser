@@ -611,6 +611,16 @@ describe('App DXF imports and project library', () => {
     expect(selectedSegment).not.toBeNull();
     expect(selectedSegment?.textContent).toContain('Selected Segment');
     expect(selectedSegment?.textContent).toContain('line');
+    expect(container.querySelector('[data-upid-selected-segment-source="type"]')?.textContent).toBe(
+      'lwpolyline'
+    );
+    expect(container.querySelector('[data-upid-selected-segment-source="entity"]')?.textContent).toBe(
+      '0'
+    );
+    expect(container.querySelector('[data-upid-selected-segment-source="sub"]')?.textContent).toBe('1');
+    expect(container.querySelector('[data-upid-selected-segment-source="exact"]')?.textContent).toBe(
+      'exact'
+    );
   });
 
   it('selects UPID segment geometry from a canvas click', async () => {

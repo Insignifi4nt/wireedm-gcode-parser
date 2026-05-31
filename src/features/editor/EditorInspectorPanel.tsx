@@ -313,6 +313,16 @@ export function EditorInspectorPanel({
               <dd>{formatPoint(selectedPathSegment.start)}</dd>
               <dt className="text-muted-foreground">End</dt>
               <dd>{formatPoint(selectedPathSegment.end)}</dd>
+              <dt className="text-muted-foreground">Source</dt>
+              <dd data-upid-selected-segment-source="type">{selectedPathSegment.source.type}</dd>
+              <dt className="text-muted-foreground">Entity</dt>
+              <dd data-upid-selected-segment-source="entity">{selectedPathSegment.source.entityIndex}</dd>
+              <dt className="text-muted-foreground">Part</dt>
+              <dd data-upid-selected-segment-source="sub">{selectedPathSegment.source.subIndex ?? '-'}</dd>
+              <dt className="text-muted-foreground">Exact</dt>
+              <dd data-upid-selected-segment-source="exact">
+                {selectedPathSegment.source.exact ? 'exact' : 'approximated'}
+              </dd>
             </dl>
           </section>
         )}
@@ -758,6 +768,12 @@ function readSelectedPathSegment(
     layer: segment.layer,
     length: segment.length,
     reversed: ref.reversed,
+    source: {
+      entityIndex: segment.source.sourceEntityIndex,
+      exact: segment.source.exact,
+      subIndex: segment.source.sourceSubIndex,
+      type: segment.source.sourceEntityType
+    },
     start: orientedSegmentStart(segment, ref)
   };
 }
