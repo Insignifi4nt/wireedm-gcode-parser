@@ -7,6 +7,7 @@ import {
   type MouseEvent
 } from 'react';
 
+import { composeGCodeProgram } from '@/domain/post/gcodeTemplates';
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 import {
   deleteBodyGroup,
@@ -14,10 +15,19 @@ import {
   moveSelectedLines,
   setStartAtLine
 } from '@/domain/editor/gcodeLineOperations';
-import { organizeGCodeStructure } from '@/domain/editor/gcodeStructure';
+import { organizeGCodeStructure, type GCodeStructure } from '@/domain/editor/gcodeStructure';
 import { normalizeToISO } from '@/domain/editor/isoNormalizer';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { evaluateMachineFit } from '@/domain/machine/machineFit';
+import {
+  magnetizePointToPath,
+  movePathOperation,
+  reversePathOperation,
+  setClosedOperationStartNearPoint,
+  type MagnetizeMode
+} from '@/domain/path-editor/pathDocumentOperations';
+import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   exportMeasurementPointsAsCsv,
   exportMeasurementPointsAsGCode,
@@ -58,8 +68,14 @@ interface EditorPageProps {
   onBackToDashboard: () => void;
   onDownloadEditorFile: (fileName: string, text: string) => void;
   onImportProgramFile: (file: File) => void | Promise<void>;
-  onSaveProgramText: (text: string) => void | Promise<void>;
+  onSaveProgramText: (text: string, pathDocument?: PathPlanningDocument | null) => void | Promise<void>;
   onStatusMessage?: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void;
+}
+
+interface EditorDraftSnapshot {
+  pathDocument: PathPlanningDocument | null;
+  selectedPathOperationId: string | null;
+  text: string;
 }
 
 function handleEditorDragOver(event: DragEvent<HTMLDivElement>) {
@@ -93,10 +109,13 @@ export function EditorPage({
   const [pointXDraft, setPointXDraft] = useState('');
   const [pointYDraft, setPointYDraft] = useState('');
   const [lineMode, setLineMode] = useState<'select' | 'edit'>(readStoredLineMode);
+  const [pathClickMode, setPathClickMode] = useState<'set-start' | MagnetizeMode | null>(null);
+  const [pathDocumentDraft, setPathDocumentDraft] = useState<PathPlanningDocument | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
-  const [redoStack, setRedoStack] = useState<string[]>([]);
-  const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
+  const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
   const isImporting = importStatus === 'importing';
   const isSaving = saveStatus === 'saving';
   const draftProgram = useMemo<LoadedEditorProgram | null>(
@@ -120,11 +139,11 @@ export function EditorPage({
     () =>
       program
         ? evaluateMachineFit({
-            document: program.project?.pathPlanning?.document,
+            document: pathDocumentDraft,
             profile: program.project?.machine
           })
         : null,
-    [program]
+    [pathDocumentDraft, program]
   );
   const editorFileName = program?.filePath.split('/').pop() ?? '-';
   const hasUnsavedChanges = Boolean(program && draftText !== program.text);
@@ -134,6 +153,18 @@ export function EditorPage({
   );
   const lineRows = useMemo(() => (structure ? flattenStructureLines(structure) : []), [structure]);
   const bodyGroups = structure?.body.contours ?? [];
+
+  useEffect(() => {
+    setDraftText(program?.text ?? '');
+    const pathDocument = program?.project?.pathPlanning?.document ?? null;
+    const nextPathDocument = pathDocument ? structuredClone(pathDocument) : null;
+    setPathDocumentDraft(nextPathDocument);
+    setSelectedPathOperationId(nextPathDocument?.plan.operations[0]?.id ?? null);
+    setPathClickMode(null);
+    setRedoStack([]);
+    setUndoStack([]);
+    clearTransientLineState();
+  }, [program?.filePath]);
 
   function setLastClickedLine(lineNumber: number | null) {
     lastClickedLineRef.current = lineNumber;
@@ -207,7 +238,7 @@ export function EditorPage({
 
   async function handleSaveClick() {
     if (!program || !hasUnsavedChanges || isSaving) return;
-    await onSaveProgramText(draftText);
+    await onSaveProgramText(draftText, pathDocumentDraft);
   }
 
   function handleNormalizeDraft() {
@@ -389,6 +420,82 @@ export function EditorPage({
     ]);
   }
 
+  function handlePreviewPointClick(point: { x: number; y: number }) {
+    if (!pathClickMode || !pathDocumentDraft || !selectedPathOperationId) {
+      addMeasurementPoint(point.x, point.y);
+      return;
+    }
+
+    if (pathClickMode === 'set-start') {
+      const edited = setClosedOperationStartNearPoint(pathDocumentDraft, selectedPathOperationId, point);
+      if (!edited) {
+        onStatusMessage?.('Choose a closed path operation before setting the start.', 'warning');
+        setPathClickMode(null);
+        return;
+      }
+      applyPathDocumentEdit(edited);
+      setPathClickMode(null);
+      onStatusMessage?.('Path start updated.', 'success');
+      return;
+    }
+
+    const magnetized = magnetizePointToPath(pathDocumentDraft, point, pathClickMode);
+    if (!magnetized) {
+      setPathClickMode(null);
+      return;
+    }
+
+    setMeasurementPoints((current) => {
+      if (current.length === 0) {
+        return [
+          {
+            id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-magnetized`,
+            x: magnetized.point.x,
+            y: magnetized.point.y
+          }
+        ];
+      }
+
+      return current.map((measurementPoint, index) =>
+        index === current.length - 1
+          ? { ...measurementPoint, x: magnetized.point.x, y: magnetized.point.y }
+          : measurementPoint
+      );
+    });
+    setPathClickMode(null);
+  }
+
+  function handleMovePathOperation(direction: -1 | 1) {
+    if (!pathDocumentDraft || !selectedPathOperationId || isSaving) return;
+    const edited = movePathOperation(pathDocumentDraft, selectedPathOperationId, direction);
+    if (edited) applyPathDocumentEdit(edited);
+  }
+
+  function handleReversePathOperation() {
+    if (!pathDocumentDraft || !selectedPathOperationId || isSaving) return;
+    const edited = reversePathOperation(pathDocumentDraft, selectedPathOperationId);
+    if (edited) applyPathDocumentEdit(edited);
+  }
+
+  function applyPathDocumentEdit(nextDocument: PathPlanningDocument) {
+    if (!program?.project) return;
+
+    const body = pathPlanToGcodeBody(nextDocument.plan, nextDocument.segments, nextDocument.options);
+    const currentStructure = organizeGCodeStructure(draftText.split(/\r?\n/));
+    replaceDraftText(
+      composeGCodeProgram({
+        header: sectionText(currentStructure, 'header') || program.project.machine.templates.header,
+        body,
+        footer: program.project.machine.templates.footer,
+        lineEnding: program.project.machine.output.lineEnding
+      }),
+      {
+        pathDocument: nextDocument,
+        selectedPathOperationId
+      }
+    );
+  }
+
   function handleInsertMeasurementPoints() {
     if (!program || measurementPoints.length === 0 || isSaving) return;
 
@@ -428,31 +535,77 @@ export function EditorPage({
     );
   }
 
-  function replaceDraftText(nextText: string) {
-    if (nextText === draftText) return;
-    setUndoStack((current) => [...current, draftText]);
+  function replaceDraftText(
+    nextText: string,
+    options: {
+      pathDocument?: PathPlanningDocument | null;
+      selectedPathOperationId?: string | null;
+    } = {}
+  ) {
+    const hasPathDocumentOption = Object.hasOwn(options, 'pathDocument');
+    if (nextText === draftText && !hasPathDocumentOption) return;
+
+    const nextPathDocument = hasPathDocumentOption
+      ? clonePathDocument(options.pathDocument ?? null)
+      : null;
+    const nextSelectedPathOperationId = nextPathDocument
+      ? options.selectedPathOperationId ?? selectedPathOperationId
+      : null;
+
+    setUndoStack((current) => [...current, currentDraftSnapshot()]);
     setRedoStack([]);
     setDraftText(nextText);
+    setPathDocumentDraft(nextPathDocument);
+    setSelectedPathOperationId(nextSelectedPathOperationId);
+    if (!nextPathDocument) setPathClickMode(null);
   }
 
   function handleUndoDraft() {
-    const previousText = undoStack.at(-1);
-    if (previousText === undefined) return;
+    const previous = undoStack.at(-1);
+    if (previous === undefined) return;
 
     setUndoStack((current) => current.slice(0, -1));
-    setRedoStack((current) => [draftText, ...current]);
-    setDraftText(previousText);
+    setRedoStack((current) => [currentDraftSnapshot(), ...current]);
+    restoreDraftSnapshot(previous);
     clearTransientLineState();
   }
 
   function handleRedoDraft() {
-    const nextText = redoStack[0];
-    if (nextText === undefined) return;
+    const next = redoStack[0];
+    if (next === undefined) return;
 
     setRedoStack((current) => current.slice(1));
-    setUndoStack((current) => [...current, draftText]);
-    setDraftText(nextText);
+    setUndoStack((current) => [...current, currentDraftSnapshot()]);
+    restoreDraftSnapshot(next);
     clearTransientLineState();
+  }
+
+  function handleDraftTextChange(nextText: string) {
+    if (nextText === draftText) return;
+    if (pathDocumentDraft) {
+      setUndoStack((current) => [...current, currentDraftSnapshot()]);
+      setRedoStack([]);
+    }
+    setDraftText(nextText);
+    setPathDocumentDraft(null);
+    setSelectedPathOperationId(null);
+    setPathClickMode(null);
+  }
+
+  function currentDraftSnapshot(): EditorDraftSnapshot {
+    return {
+      text: draftText,
+      pathDocument: clonePathDocument(pathDocumentDraft),
+      selectedPathOperationId
+    };
+  }
+
+  function restoreDraftSnapshot(snapshot: EditorDraftSnapshot) {
+    const restoredPathDocument = clonePathDocument(snapshot.pathDocument);
+    setDraftText(snapshot.text);
+    setPathDocumentDraft(restoredPathDocument);
+    setSelectedPathOperationId(restoredPathDocument ? snapshot.selectedPathOperationId : null);
+    setPathClickMode(null);
   }
 
   function clearTransientLineState() {
@@ -474,7 +627,7 @@ export function EditorPage({
         draftText={draftText}
         hasUnsavedChanges={hasUnsavedChanges}
         isSaving={isSaving}
-        onDraftTextChange={setDraftText}
+        onDraftTextChange={handleDraftTextChange}
         program={program}
       />
     );
@@ -516,6 +669,7 @@ export function EditorPage({
           measurementPoints={measurementPoints}
           onAddMeasurementPoint={addMeasurementPoint}
           onCursorPointChange={setPreviewCursorPoint}
+          onPreviewPointClick={handlePreviewPointClick}
           pathCount={pathCount}
           pinnedLines={pinnedLines}
           selectedLines={selectedLines}
@@ -579,6 +733,7 @@ export function EditorPage({
             measurementPoints={measurementPoints}
             machineFit={machineFit}
             machineProfile={program?.project?.machine ?? null}
+            onActivatePathClickMode={setPathClickMode}
             onAddMeasurementPoint={handleAddMeasurementPoint}
             onClearMeasurementPoints={() => setMeasurementPoints([])}
             onDeleteMeasurementPoint={(pointId) =>
@@ -588,19 +743,33 @@ export function EditorPage({
             }
             onExportMeasurementPoints={handleExportMeasurementPoints}
             onInsertMeasurementPoints={handleInsertMeasurementPoints}
+            onMovePathOperation={handleMovePathOperation}
             onPointXDraftChange={setPointXDraft}
             onPointYDraftChange={setPointYDraft}
+            onReversePathOperation={handleReversePathOperation}
+            onSelectPathOperation={setSelectedPathOperationId}
             onToggleGridSnap={() => setGridSnapEnabled((current) => !current)}
             pathCount={pathCount}
+            pathClickMode={pathClickMode}
+            pathDocument={pathDocumentDraft}
             pointXDraft={pointXDraft}
             pointYDraft={pointYDraft}
             previewCursorPoint={previewCursorPoint}
             program={program}
             rapidMoveCount={rapidMoveCount}
+            selectedPathOperationId={selectedPathOperationId}
             structure={structure}
           />
         </aside>
       </section>
     </div>
   );
+}
+
+function sectionText(structure: GCodeStructure, section: 'header' | 'footer') {
+  return structure[section].lines.map((line) => line.text).join('\n');
+}
+
+function clonePathDocument(document: PathPlanningDocument | null) {
+  return document ? structuredClone(document) : null;
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { importDxfProject } from '@/domain/dxf/importDxfProject';
+import type { DxfEntity } from '@/domain/dxf/types';
+import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperations';
+import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
+import { composeGCodeProgram } from '@/domain/post/gcodeTemplates';
 import {
   initializeWorkbenchDirectory,
   type WorkbenchStorageAdapter
@@ -55,13 +60,13 @@ describe('saveEditorProgram', () => {
     });
 
     expect(adapter.files.get(imported.editorProgram.filePath)).toBe(updatedText);
-    expect(saved).toMatchObject({
+    expect(saved.editorProgram).toMatchObject({
       filePath: imported.editorProgram.filePath,
       text: updatedText
     });
-    expect(saved.parseResult.stats.linearMoves).toBe(2);
-    expect(saved.parseResult.stats.arcMoves).toBe(1);
-    expect(saved.parseResult.path.at(1)).toMatchObject({
+    expect(saved.editorProgram.parseResult.stats.linearMoves).toBe(2);
+    expect(saved.editorProgram.parseResult.stats.arcMoves).toBe(1);
+    expect(saved.editorProgram.parseResult.path.at(1)).toMatchObject({
       type: 'cut',
       x: 12,
       y: 4,
@@ -83,4 +88,171 @@ describe('saveEditorProgram', () => {
     ).rejects.toThrow('Editor program file not found: imports/missing.nc');
     expect(adapter.files.has('imports/missing.nc')).toBe(false);
   });
+
+  it('persists edited path documents, regenerated bodies, and project metadata', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'rectangle.dxf',
+      text: rectangleDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const reversedDocument = reversePathOperation(
+      imported.pathDocument,
+      imported.pathDocument.plan.operations[0].id
+    );
+    expect(reversedDocument).not.toBeNull();
+    const body = pathPlanToGcodeBody(
+      reversedDocument!.plan,
+      reversedDocument!.segments,
+      reversedDocument!.options
+    );
+    const text = composeGCodeProgram({
+      header: imported.project.machine.templates.header,
+      body,
+      footer: imported.project.machine.templates.footer,
+      lineEnding: imported.project.machine.output.lineEnding
+    });
+
+    const saved = await saveEditorProgram(imported.workbench, {
+      filePath: imported.project.editor.activeFilePath!,
+      now: new Date('2026-05-29T12:00:00.000Z'),
+      pathDocument: reversedDocument,
+      project: imported.project,
+      text
+    });
+
+    const projectPath = 'projects/rectangle-2026-05-29/project.json';
+    const bodyPath = 'generated/rectangle-2026-05-29.body.gcode';
+    const savedProject = JSON.parse(adapter.files.get(projectPath) || '{}');
+    const savedManifest = JSON.parse(adapter.files.get('workbench.json') || '{}');
+
+    expect(adapter.files.get(bodyPath)).toContain('G1 X0.000 Y5.000');
+    expect(savedProject.generated.body).toBe(body);
+    expect(savedProject.pathPlanning.document.plan.operations[0].direction).toBe('reverse');
+    expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');
+    expect(saved.editorProgram.text.split(/\r?\n/).filter(Boolean).slice(-3)).toEqual([
+      'G40',
+      'M30',
+      '%'
+    ]);
+    expect(savedManifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
+    expect(saved.workbench.manifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
+    expect(saved.editorProgram.project?.pathPlanning?.document.plan.operations[0].direction).toBe(
+      'reverse'
+    );
+  });
+
+  it('clears stale path planning when manual text edits are saved without a path document', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'manual-edit.dxf',
+      text: rectangleDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const text = `${imported.generatedProgram}\n(MANUAL EDIT)`;
+
+    const saved = await saveEditorProgram(imported.workbench, {
+      filePath: imported.project.editor.activeFilePath!,
+      now: new Date('2026-05-29T12:00:00.000Z'),
+      pathDocument: null,
+      project: imported.project,
+      text
+    });
+
+    const projectPath = 'projects/manual-edit-2026-05-29/project.json';
+    const savedProject = JSON.parse(adapter.files.get(projectPath) || '{}');
+
+    expect(savedProject.pathPlanning).toBeUndefined();
+    expect(saved.editorProgram.project?.pathPlanning).toBeUndefined();
+    expect(savedProject.generated.body).toContain('G1 X10.000 Y0.000');
+    expect(savedProject.generated.body).not.toContain('G40');
+    expect(savedProject.generated.body).not.toContain('MANUAL EDIT');
+  });
+
+  it('does not persist changed header lines into the generated body artifact', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'header-edit.dxf',
+      text: rectangleDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const text = imported.generatedProgram.replace('G90 G21 G17 G40', 'G90 G21 G17');
+
+    await saveEditorProgram(imported.workbench, {
+      filePath: imported.project.editor.activeFilePath!,
+      now: new Date('2026-05-29T12:00:00.000Z'),
+      pathDocument: null,
+      project: imported.project,
+      text
+    });
+
+    const projectPath = 'projects/header-edit-2026-05-29/project.json';
+    const savedProject = JSON.parse(adapter.files.get(projectPath) || '{}');
+
+    expect(savedProject.generated.body).toContain('G0 X0.000 Y0.000');
+    expect(savedProject.generated.body).not.toContain('%');
+    expect(savedProject.generated.body).not.toContain('G90 G21 G17');
+    expect(savedProject.generated.body).not.toContain('G54');
+    expect(savedProject.generated.body).not.toContain('G40');
+  });
 });
+
+function rectangleDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    ...rectangleLines(0, 0, 10, 5).flatMap(lineEntityToDxf),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function rectangleLines(minX: number, minY: number, maxX: number, maxY: number): DxfEntity[] {
+  return [
+    line(minX, minY, maxX, minY),
+    line(maxX, minY, maxX, maxY),
+    line(maxX, maxY, minX, maxY),
+    line(minX, maxY, minX, minY)
+  ];
+}
+
+function line(startX: number, startY: number, endX: number, endY: number): DxfEntity {
+  return {
+    type: 'line',
+    layer: 'CUT',
+    start: { x: startX, y: startY },
+    end: { x: endX, y: endY }
+  };
+}
+
+function lineEntityToDxf(entity: DxfEntity) {
+  if (entity.type !== 'line') return [];
+
+  return [
+    '0',
+    'LINE',
+    '8',
+    entity.layer ?? 'CUT',
+    '10',
+    String(entity.start.x),
+    '20',
+    String(entity.start.y),
+    '11',
+    String(entity.end.x),
+    '21',
+    String(entity.end.y)
+  ];
+}

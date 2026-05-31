@@ -9,8 +9,7 @@ import {
   type ImportExternalProgramResult
 } from '@/domain/editor/importExternalProgram';
 import {
-  loadEditorProgram,
-  type LoadedEditorProgram
+  loadEditorProgram
 } from '@/domain/editor/loadEditorProgram';
 import {
   openWorkbenchProject,
@@ -18,7 +17,8 @@ import {
 } from '@/domain/editor/openWorkbenchProject';
 import {
   saveEditorProgram,
-  type SaveEditorProgramInput
+  type SaveEditorProgramInput,
+  type SaveEditorProgramResult
 } from '@/domain/editor/saveEditorProgram';
 import {
   downloadProgramFile,
@@ -55,7 +55,7 @@ export interface AppServices {
   saveEditorProgram: (
     workbench: ConnectedWorkbench,
     input: SaveEditorProgramInput
-  ) => Promise<LoadedEditorProgram>;
+  ) => Promise<SaveEditorProgramResult>;
   updateWorkbenchSettings: (
     workbench: ConnectedWorkbench,
     input: UpdateWorkbenchSettingsInput

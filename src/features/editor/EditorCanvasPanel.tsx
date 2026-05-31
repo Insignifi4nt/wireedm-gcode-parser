@@ -17,6 +17,7 @@ interface EditorCanvasPanelProps {
   selectedLines: number[];
   onAddMeasurementPoint: (x: number, y: number) => void;
   onCursorPointChange: (point: { x: number; y: number } | null) => void;
+  onPreviewPointClick?: (point: { x: number; y: number }) => void;
 }
 
 export function EditorCanvasPanel({
@@ -30,7 +31,8 @@ export function EditorCanvasPanel({
   pinnedLines,
   selectedLines,
   onAddMeasurementPoint,
-  onCursorPointChange
+  onCursorPointChange,
+  onPreviewPointClick
 }: EditorCanvasPanelProps) {
   return (
     <section
@@ -52,7 +54,7 @@ export function EditorCanvasPanel({
           keyboardShortcutsEnabled={!guideOpen}
           measurementPoints={measurementPoints}
           onCursorPointChange={onCursorPointChange}
-          onPreviewPointClick={(point) => onAddMeasurementPoint(point.x, point.y)}
+          onPreviewPointClick={onPreviewPointClick ?? ((point) => onAddMeasurementPoint(point.x, point.y))}
           pinnedLines={pinnedLines}
           program={draftProgram}
           snapToGrid={gridSnapEnabled}

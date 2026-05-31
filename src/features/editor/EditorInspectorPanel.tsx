@@ -1,10 +1,21 @@
-import { ArrowRightFromLine, Download, Magnet, Trash2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowRightFromLine,
+  ArrowUp,
+  Download,
+  Magnet,
+  MousePointer2,
+  RefreshCw,
+  Trash2
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { GCodeStructure } from '@/domain/editor/gcodeStructure';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { MachineFitResult } from '@/domain/machine/machineFit';
+import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import type { MachineProfile } from '@/domain/workbench/types';
 
 import type { EditorGuideTarget } from './editorGuideContent';
@@ -25,19 +36,26 @@ interface EditorInspectorPanelProps {
   machineProfile: MachineProfile | null;
   measurementPoints: MeasurementPoint[];
   pathCount: number;
+  pathClickMode: 'set-start' | MagnetizeMode | null;
+  pathDocument: PathPlanningDocument | null;
   pointXDraft: string;
   pointYDraft: string;
   previewCursorPoint: { x: number; y: number } | null;
   program: LoadedEditorProgram | null;
   rapidMoveCount: number;
+  selectedPathOperationId: string | null;
   structure: GCodeStructure | null;
+  onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
   onAddMeasurementPoint: () => void;
   onClearMeasurementPoints: () => void;
   onDeleteMeasurementPoint: (pointId: string) => void;
   onExportMeasurementPoints: (format: MeasurementExportFormat) => void;
   onInsertMeasurementPoints: () => void;
+  onMovePathOperation: (direction: -1 | 1) => void;
   onPointXDraftChange: (value: string) => void;
   onPointYDraftChange: (value: string) => void;
+  onReversePathOperation: () => void;
+  onSelectPathOperation: (operationId: string) => void;
   onToggleGridSnap: () => void;
 }
 
@@ -54,21 +72,33 @@ export function EditorInspectorPanel({
   machineProfile,
   measurementPoints,
   pathCount,
+  pathClickMode,
+  pathDocument,
   pointXDraft,
   pointYDraft,
   previewCursorPoint,
   program,
   rapidMoveCount,
+  selectedPathOperationId,
   structure,
+  onActivatePathClickMode,
   onAddMeasurementPoint,
   onClearMeasurementPoints,
   onDeleteMeasurementPoint,
   onExportMeasurementPoints,
   onInsertMeasurementPoints,
+  onMovePathOperation,
   onPointXDraftChange,
   onPointYDraftChange,
+  onReversePathOperation,
+  onSelectPathOperation,
   onToggleGridSnap
 }: EditorInspectorPanelProps) {
+  const selectedPathOperationIndex =
+    pathDocument?.plan.operations.findIndex((operation) => operation.id === selectedPathOperationId) ?? -1;
+  const selectedPathOperation =
+    selectedPathOperationIndex >= 0 ? pathDocument?.plan.operations[selectedPathOperationIndex] : null;
+
   return (
     <div
       className="max-h-[42vh] overflow-y-auto border-t border-border p-2"
@@ -213,6 +243,98 @@ export function EditorInspectorPanel({
                 .join('\n')}
             </div>
           )}
+        </section>
+      )}
+
+      {pathDocument && pathDocument.plan.operations.length > 0 && (
+        <section className="mt-3 border-t border-border pt-3" data-editor-path-operations>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-[11px] font-semibold">Path</h3>
+            <span className="text-[10px] text-muted-foreground">{pathDocument.plan.operations.length}</span>
+          </div>
+          <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+            Operation
+            <select
+              aria-label="Path operation"
+              className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary"
+              onChange={(event) => onSelectPathOperation(event.currentTarget.value)}
+              value={selectedPathOperationId ?? ''}
+            >
+              {pathDocument.plan.operations.map((operation) => (
+                <option key={operation.id} value={operation.id}>
+                  {operation.orderIndex + 1} {operation.classification}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="mt-2 grid grid-cols-4 gap-1.5">
+            <Button
+              aria-label="Move path operation up"
+              className="h-6 px-2 text-[10px]"
+              disabled={selectedPathOperationIndex <= 0}
+              onClick={() => onMovePathOperation(-1)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <ArrowUp />
+            </Button>
+            <Button
+              aria-label="Move path operation down"
+              className="h-6 px-2 text-[10px]"
+              disabled={
+                selectedPathOperationIndex < 0 ||
+                selectedPathOperationIndex >= pathDocument.plan.operations.length - 1
+              }
+              onClick={() => onMovePathOperation(1)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <ArrowDown />
+            </Button>
+            <Button
+              aria-label="Reverse path operation"
+              className="h-6 px-2 text-[10px]"
+              disabled={!selectedPathOperation}
+              onClick={onReversePathOperation}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <RefreshCw />
+            </Button>
+            <Button
+              aria-label="Set path start from canvas"
+              aria-pressed={pathClickMode === 'set-start'}
+              className="h-6 px-2 text-[10px]"
+              disabled={!selectedPathOperation?.closed}
+              onClick={() =>
+                onActivatePathClickMode(pathClickMode === 'set-start' ? null : 'set-start')
+              }
+              size="sm"
+              type="button"
+              variant={pathClickMode === 'set-start' ? 'default' : 'outline'}
+            >
+              <MousePointer2 />
+            </Button>
+          </div>
+          <div className="mt-2 grid grid-cols-1 gap-1.5">
+            <Button
+              aria-label="Magnetize latest point perpendicular"
+              aria-pressed={pathClickMode === 'perpendicular'}
+              className="h-6 px-2 text-[10px]"
+              onClick={() =>
+                onActivatePathClickMode(pathClickMode === 'perpendicular' ? null : 'perpendicular')
+              }
+              size="sm"
+              type="button"
+              variant={pathClickMode === 'perpendicular' ? 'default' : 'outline'}
+            >
+              <Magnet />
+              Perp
+            </Button>
+          </div>
         </section>
       )}
 

@@ -188,4 +188,199 @@ describe('App DXF imports and project library', () => {
       'width 10.000 > 5.000 mm'
     );
   });
+
+  it('edits imported DXF path direction through path controls instead of line text surgery', async () => {
+    window.showDirectoryPicker = undefined;
+    const downloadGeneratedProgram = vi.fn();
+
+    await renderApp(context, { downloadGeneratedProgram });
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'rectangle.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const reverseButton = container.querySelector(
+      'button[aria-label="Reverse path operation"]'
+    ) as HTMLButtonElement | null;
+    expect(reverseButton).not.toBeNull();
+
+    await act(async () => {
+      reverseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const programEditor = container.querySelector(
+      'textarea[aria-label="Program editor"]'
+    ) as HTMLTextAreaElement | null;
+    expect(programEditor?.value).toContain(
+      ['G0 X0.000 Y0.000', 'G1 X0.000 Y5.000', 'G1 X10.000 Y5.000'].join('\n')
+    );
+    expect(programEditor?.value.split(/\r?\n/).filter(Boolean).slice(-3)).toEqual(['G40', 'M30', '%']);
+    expect(container.textContent).toContain('Unsaved');
+
+    const saveButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Save Program')
+    );
+
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const manifest = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const savedProject = JSON.parse(
+      window.localStorage.getItem(`wire-edm-workbench:file:${manifest.projects[0].path}`) || '{}'
+    );
+    const bodyFile = window.localStorage.getItem(
+      `wire-edm-workbench:file:generated/${savedProject.id}.body.gcode`
+    );
+
+    expect(savedProject.pathPlanning.document.plan.operations[0].direction).toBe('reverse');
+    expect(savedProject.generated.body).toContain('G1 X0.000 Y5.000');
+    expect(bodyFile).toContain('G1 X0.000 Y5.000');
+
+    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Dashboard')
+    );
+
+    await act(async () => {
+      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const downloadButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Download Program')
+    );
+
+    await act(async () => {
+      downloadButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(downloadGeneratedProgram).toHaveBeenCalledWith({
+      fileName: expect.stringMatching(/^rectangle-\d{4}-\d{2}-\d{2}\.iso$/),
+      text: expect.stringContaining('G1 X0.000 Y5.000')
+    });
+
+    const openLatestButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Open in Editor')
+    );
+
+    await act(async () => {
+      openLatestButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const reopenedReverseButton = container.querySelector(
+      'button[aria-label="Reverse path operation"]'
+    ) as HTMLButtonElement | null;
+    expect(reopenedReverseButton).not.toBeNull();
+
+    await act(async () => {
+      reopenedReverseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const reopenedProgramEditor = container.querySelector(
+      'textarea[aria-label="Program editor"]'
+    ) as HTMLTextAreaElement | null;
+    expect(reopenedProgramEditor?.value).toContain(
+      ['G0 X0.000 Y0.000', 'G1 X10.000 Y0.000', 'G1 X10.000 Y5.000'].join('\n')
+    );
+  });
+
+  it('disables structured DXF path controls after manual program text edits', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'manual-path-edit.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('button[aria-label="Reverse path operation"]')).not.toBeNull();
+
+    const programEditor = container.querySelector(
+      'textarea[aria-label="Program editor"]'
+    ) as HTMLTextAreaElement | null;
+    expect(programEditor).not.toBeNull();
+
+    await act(async () => {
+      if (programEditor) setTextAreaValue(programEditor, `${programEditor.value}\n(MANUAL EDIT)`);
+    });
+    await flushAsync();
+
+    expect(container.querySelector('button[aria-label="Reverse path operation"]')).toBeNull();
+
+    const saveButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Save Program')
+    );
+
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Dashboard')
+    );
+
+    await act(async () => {
+      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.textContent).toContain('Manifest');
+    expect(container.textContent).not.toContain('Download Program');
+  });
 });
+
+function rectangleDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'LWPOLYLINE',
+    '90',
+    '4',
+    '70',
+    '1',
+    '10',
+    '0',
+    '20',
+    '0',
+    '10',
+    '10',
+    '20',
+    '0',
+    '10',
+    '10',
+    '20',
+    '5',
+    '10',
+    '0',
+    '20',
+    '5',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StatusToast, StatusToastType } from '@/components/StatusToasts';
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { supportsWorkbenchDirectoryAccess } from '@/domain/storage/fileSystemAccess';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
@@ -43,7 +44,10 @@ export interface WorkbenchAppController {
   handleOpenEditor: () => void;
   handleOpenLatestImportInEditor: () => Promise<void>;
   handleOpenWorkbenchProject: (projectPath: string) => Promise<void>;
-  handleSaveEditorProgram: (text: string) => Promise<void>;
+  handleSaveEditorProgram: (
+    text: string,
+    pathDocument?: PathPlanningDocument | null
+  ) => Promise<void>;
   handleSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => Promise<void>;
   showStatusToast: (message: string, type?: StatusToastType) => void;
 }
@@ -285,19 +289,22 @@ export function useWorkbenchAppController(
     }
   }
 
-  async function handleSaveEditorProgram(text: string) {
+  async function handleSaveEditorProgram(text: string, pathDocument?: PathPlanningDocument | null) {
     if (!connectedWorkbench || !loadedEditorProgram || editorSaveStatus === 'saving') return;
 
     setEditorSaveStatus('saving');
     setEditorSaveErrorMessage(null);
 
     try {
-      const savedProgram = await appServices.saveEditorProgram(connectedWorkbench, {
+      const result = await appServices.saveEditorProgram(connectedWorkbench, {
         filePath: loadedEditorProgram.filePath,
+        pathDocument,
         project: loadedEditorProgram.project,
         text
       });
-      setLoadedEditorProgram(savedProgram);
+      setConnectedWorkbench(result.workbench);
+      setLoadedEditorProgram(result.editorProgram);
+      refreshLatestImportAfterSave(result.workbench, result.editorProgram, text, pathDocument);
       setEditorSaveStatus('idle');
       showStatusToast('Program saved.', 'success');
     } catch (error) {
@@ -313,6 +320,29 @@ export function useWorkbenchAppController(
     setEditorSaveErrorMessage(null);
     setEditorImportStatus('idle');
     setEditorImportErrorMessage(null);
+  }
+
+  function refreshLatestImportAfterSave(
+    workbench: ConnectedWorkbench,
+    editorProgram: LoadedEditorProgram,
+    text: string,
+    pathDocument: PathPlanningDocument | null | undefined
+  ) {
+    setLatestImport((current) => {
+      if (!current || current.project.id !== editorProgram.project?.id) return current;
+      if (!pathDocument || !editorProgram.project.pathPlanning) return null;
+
+      return {
+        ...current,
+        workbench,
+        project: editorProgram.project,
+        generatedBody: editorProgram.project.generated.body,
+        generatedProgram: text,
+        pathDocument,
+        pathDiagnostics: pathDocument.diagnostics,
+        postDiagnostics: editorProgram.project.pathPlanning.postDiagnostics
+      };
+    });
   }
 
   return {
