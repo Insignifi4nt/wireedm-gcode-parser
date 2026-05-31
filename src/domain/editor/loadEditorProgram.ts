@@ -20,9 +20,9 @@ export async function loadEditorProgram(
     return createUpidEditorProgram(project);
   }
 
-  const filePath = project.editor.activeFilePath ?? project.generated.files.at(-1)?.path;
+  const filePath = project.editor.activeFilePath;
   if (!filePath) {
-    throw new Error('Project does not reference a generated program for the editor.');
+    throw new Error('Project does not reference an editor program.');
   }
 
   const text = await workbench.adapter.readText(filePath);
