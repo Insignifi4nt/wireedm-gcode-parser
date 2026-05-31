@@ -42,7 +42,6 @@ export default function App({ services }: AppProps = {}) {
           importErrorMessage={app.importErrorMessage}
           importStatus={app.importStatus}
           latestImport={app.latestImport}
-          onDownloadLatestProgram={app.handleDownloadLatestProgram}
           onImportDxfFile={app.handleImportDxfFile}
           onOpenEditor={app.handleOpenEditor}
           onOpenLatestImportInEditor={app.handleOpenLatestImportInEditor}

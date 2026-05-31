@@ -94,17 +94,8 @@ describe('App DXF imports and project library', () => {
     const downloadButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Download Program')
     );
-    expect(downloadButton).not.toBeNull();
-
-    await act(async () => {
-      downloadButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(downloadGeneratedProgram).toHaveBeenCalledWith({
-      fileName: expect.stringMatching(/^part-\d{4}-\d{2}-\d{2}\.iso$/),
-      text: expect.stringContaining('G1 X10.000 Y0.000')
-    });
-
+    expect(downloadButton).toBeUndefined();
+    expect(downloadGeneratedProgram).not.toHaveBeenCalled();
     expect(container.textContent).toContain('Open in Editor');
   });
 
@@ -1747,18 +1738,20 @@ describe('App DXF imports and project library', () => {
     expect(savedProject.editor.activeFilePath).toBeNull();
     expect(window.localStorage.getItem(`wire-edm-workbench:file:generated/${savedProject.id}.body.gcode`)).toBeNull();
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
-    );
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement | null;
 
     await act(async () => {
-      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    await flushAsync();
 
-    const downloadButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Download Program')
+    expect(container.querySelector('[data-upid-export-gcode]')?.textContent).toContain(
+      'G1 X0.000 Y5.000'
     );
+    const downloadButton = container.querySelector(
+      'button[aria-label="Download UPID export program"]'
+    ) as HTMLButtonElement | null;
 
     await act(async () => {
       downloadButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -1768,6 +1761,29 @@ describe('App DXF imports and project library', () => {
       fileName: expect.stringMatching(/^rectangle-\d{4}-\d{2}-\d{2}\.iso$/),
       text: expect.stringContaining('G1 X0.000 Y5.000')
     });
+
+    const closePreviewButton = container.querySelector(
+      'button[aria-label="Close UPID export preview"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      closePreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Dashboard')
+    );
+
+    await act(async () => {
+      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const dashboardDownloadButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Download Program')
+    );
+    expect(dashboardDownloadButton).toBeUndefined();
+    expect(downloadGeneratedProgram).toHaveBeenCalledTimes(1);
 
     const openLatestButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Open in Editor')

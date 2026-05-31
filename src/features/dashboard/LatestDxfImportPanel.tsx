@@ -1,4 +1,3 @@
-import { Download } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -7,14 +6,12 @@ import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 interface LatestDxfImportPanelProps {
   children?: ReactNode;
   latestImport: ImportDxfProjectResult | null;
-  onDownloadLatestProgram: () => void;
   onOpenLatestImportInEditor: () => void;
 }
 
 export function LatestDxfImportPanel({
   children,
   latestImport,
-  onDownloadLatestProgram,
   onOpenLatestImportInEditor
 }: LatestDxfImportPanelProps) {
   const pathMessages = latestImport?.pathDiagnostics.map((diagnostic) => diagnostic.message) ?? [];
@@ -50,10 +47,6 @@ export function LatestDxfImportPanel({
             <div className="flex flex-wrap gap-2">
               <Button onClick={onOpenLatestImportInEditor} variant="default">
                 Open in Editor
-              </Button>
-              <Button onClick={onDownloadLatestProgram} variant="outline">
-                <Download />
-                Download Program
               </Button>
             </div>
           </div>

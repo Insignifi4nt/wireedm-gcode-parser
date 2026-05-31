@@ -4,11 +4,9 @@ import type { StatusToast, StatusToastType } from '@/components/StatusToasts';
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
-import { buildOutputFilename, composeGCodeProgram } from '@/domain/post/gcodeTemplates';
 import { supportsWorkbenchDirectoryAccess } from '@/domain/storage/fileSystemAccess';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
-import { postUpidToGcode } from '@/domain/upid/upidDocument';
 
 import { defaultAppServices, type AppServices } from './appServices';
 
@@ -40,7 +38,6 @@ export interface WorkbenchAppController {
   handleBackToDashboard: () => void;
   handleConnectWorkbench: () => Promise<void>;
   handleDownloadEditorFile: (fileName: string, text: string) => void;
-  handleDownloadLatestProgram: () => void;
   handleImportDxfFile: (file: File) => Promise<void>;
   handleImportExternalProgram: (file: File) => Promise<void>;
   handleOpenEditor: () => void;
@@ -217,27 +214,6 @@ export function useWorkbenchAppController(
     }
   }
 
-  function handleDownloadLatestProgram() {
-    if (!latestImport) return;
-
-    const machine = latestImport.project.machine;
-    const posted = postUpidToGcode(latestImport.pathDocument);
-    appServices.downloadGeneratedProgram({
-      fileName: buildOutputFilename(
-        latestImport.project.id,
-        machine.output.extension,
-        machine.output.customExtension
-      ),
-      text: composeGCodeProgram({
-        header: machine.templates.header,
-        body: posted.body,
-        footer: machine.templates.footer,
-        lineEnding: machine.output.lineEnding
-      })
-    });
-    showStatusToast('Generated program downloaded.', 'success');
-  }
-
   function handleDownloadEditorFile(fileName: string, text: string) {
     appServices.downloadGeneratedProgram({ fileName, text });
     showStatusToast(`Downloaded ${fileName}.`, 'success');
@@ -254,7 +230,7 @@ export function useWorkbenchAppController(
     setEditorSaveStatus('idle');
     setEditorSaveErrorMessage(null);
     setActiveView('editor');
-    showStatusToast('Generated program opened in editor.', 'success');
+    showStatusToast('Path project opened in editor.', 'success');
   }
 
   async function handleOpenWorkbenchProject(projectPath: string) {
@@ -376,7 +352,6 @@ export function useWorkbenchAppController(
     handleBackToDashboard: () => setActiveView('dashboard'),
     handleConnectWorkbench,
     handleDownloadEditorFile,
-    handleDownloadLatestProgram,
     handleImportDxfFile,
     handleImportExternalProgram,
     handleOpenEditor: () => setActiveView('editor'),
