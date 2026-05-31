@@ -161,11 +161,9 @@ describe('saveEditorProgram', () => {
       kind: 'manual'
     });
     expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');
-    expect(saved.editorProgram.text.split(/\r?\n/).filter(Boolean).slice(-3)).toEqual([
-      'G40',
-      'M30',
-      '%'
-    ]);
+    expect(saved.editorProgram.text).toBe('');
+    expect(saved.editorProgram.parseResult.path).toHaveLength(0);
+    expect(adapter.files.get(imported.project.editor.activeFilePath!)).toBe(imported.generatedProgram);
     expect(savedManifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.workbench.manifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.editorProgram.project?.pathPlanning?.document.plan.operations[0].direction).toBe(
@@ -174,7 +172,7 @@ describe('saveEditorProgram', () => {
     expect(saved.editorProgram.project?.upid?.document.plan.operations[0].direction).toBe('reverse');
   });
 
-  it('posts the active editor program from UPID even when the supplied text is stale', async () => {
+  it('persists UPID state from path geometry without rewriting the active editor program', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
       now: new Date('2026-05-29T10:00:00.000Z')
@@ -194,14 +192,6 @@ describe('saveEditorProgram', () => {
       reversedDocument!.segments,
       reversedDocument!.options
     );
-    const expectedProgram = composeGCodeProgram({
-      header: imported.project.machine.templates.header,
-      body: expectedBody,
-      footer: imported.project.machine.templates.footer,
-      lineEnding: imported.project.machine.output.lineEnding
-    });
-    expect(expectedProgram).not.toBe(imported.generatedProgram);
-
     const saved = await saveEditorProgram(imported.workbench, {
       filePath: imported.project.editor.activeFilePath!,
       now: new Date('2026-05-29T12:00:00.000Z'),
@@ -212,10 +202,46 @@ describe('saveEditorProgram', () => {
 
     const activeProgramText = adapter.files.get(imported.project.editor.activeFilePath!);
 
-    expect(activeProgramText).toBe(expectedProgram);
-    expect(saved.editorProgram.text).toBe(activeProgramText);
-    expect(saved.editorProgram.parseResult.path.some((point) => point.line > 0)).toBe(true);
+    expect(activeProgramText).toBe(imported.generatedProgram);
+    expect(saved.editorProgram.text).toBe('');
+    expect(saved.editorProgram.parseResult.path).toHaveLength(0);
     expect(saved.editorProgram.project?.generated.body).toBe(expectedBody);
+  });
+
+  it('saves UPID path edits even when no generated editor program file exists', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'missing-generated.dxf',
+      text: rectangleDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const reversedDocument = reversePathOperation(
+      imported.pathDocument,
+      imported.pathDocument.plan.operations[0].id
+    );
+    expect(reversedDocument).not.toBeNull();
+    adapter.files.delete(imported.project.editor.activeFilePath!);
+
+    const saved = await saveEditorProgram(imported.workbench, {
+      filePath: imported.project.editor.activeFilePath!,
+      now: new Date('2026-05-29T12:00:00.000Z'),
+      pathDocument: reversedDocument,
+      project: imported.project,
+      text: ''
+    });
+
+    const savedProject = JSON.parse(
+      adapter.files.get('projects/missing-generated-2026-05-29/project.json') || '{}'
+    );
+
+    expect(adapter.files.has(imported.project.editor.activeFilePath!)).toBe(false);
+    expect(saved.editorProgram.text).toBe('');
+    expect(saved.editorProgram.parseResult.path).toHaveLength(0);
+    expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
+    expect(savedProject.generated.body).toContain('G1 X0.000 Y5.000');
   });
 
   it('clears stale path planning when manual text edits are saved without a path document', async () => {

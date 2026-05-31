@@ -4,7 +4,6 @@ import {
   type WorkbenchManifest
 } from '@/domain/storage/workbenchStorage';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
-import { composeGCodeProgram } from '@/domain/post/gcodeTemplates';
 import { withProjectUpid, withoutProjectUpid } from '@/domain/upid/projectUpid';
 import { postUpidToGcode } from '@/domain/upid/upidDocument';
 import type { WorkbenchProject } from '@/domain/workbench/types';
@@ -30,13 +29,17 @@ export async function saveEditorProgram(
   workbench: ConnectedWorkbench,
   input: SaveEditorProgramInput
 ): Promise<SaveEditorProgramResult> {
-  const existingText = await workbench.adapter.readText(input.filePath);
-  if (existingText === null) {
-    throw new Error(`Editor program file not found: ${input.filePath}`);
-  }
+  const savesPathDocument = Boolean(input.project && input.pathDocument);
+  const textToSave = savesPathDocument ? '' : input.text;
 
-  const textToSave = textForEditorProgramSave(input);
-  await workbench.adapter.writeText(input.filePath, textToSave);
+  if (!savesPathDocument) {
+    const existingText = await workbench.adapter.readText(input.filePath);
+    if (existingText === null) {
+      throw new Error(`Editor program file not found: ${input.filePath}`);
+    }
+
+    await workbench.adapter.writeText(input.filePath, textToSave);
+  }
 
   const projectSave = await saveProjectPathState(workbench, {
     ...input,
@@ -54,18 +57,6 @@ export async function saveEditorProgram(
       project: updatedProject
     }
   };
-}
-
-function textForEditorProgramSave(input: SaveEditorProgramInput) {
-  if (!input.pathDocument || !input.project) return input.text;
-
-  const post = postUpidToGcode(input.pathDocument);
-  return composeGCodeProgram({
-    header: input.project.machine.templates.header,
-    body: post.body,
-    footer: input.project.machine.templates.footer,
-    lineEnding: input.project.machine.output.lineEnding
-  });
 }
 
 async function saveProjectPathState(
