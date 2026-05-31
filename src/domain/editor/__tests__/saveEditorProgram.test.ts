@@ -131,6 +131,8 @@ describe('saveEditorProgram', () => {
 
     expect(adapter.files.get(bodyPath)).toContain('G1 X0.000 Y5.000');
     expect(savedProject.generated.body).toBe(body);
+    expect(savedProject.upid.format).toBe('upid');
+    expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
     expect(savedProject.pathPlanning.document.plan.operations[0].direction).toBe('reverse');
     expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.editorProgram.text.split(/\r?\n/).filter(Boolean).slice(-3)).toEqual([
@@ -143,6 +145,7 @@ describe('saveEditorProgram', () => {
     expect(saved.editorProgram.project?.pathPlanning?.document.plan.operations[0].direction).toBe(
       'reverse'
     );
+    expect(saved.editorProgram.project?.upid?.document.plan.operations[0].direction).toBe('reverse');
   });
 
   it('clears stale path planning when manual text edits are saved without a path document', async () => {
@@ -169,7 +172,9 @@ describe('saveEditorProgram', () => {
     const savedProject = JSON.parse(adapter.files.get(projectPath) || '{}');
 
     expect(savedProject.pathPlanning).toBeUndefined();
+    expect(savedProject.upid).toBeUndefined();
     expect(saved.editorProgram.project?.pathPlanning).toBeUndefined();
+    expect(saved.editorProgram.project?.upid).toBeUndefined();
     expect(savedProject.generated.body).toContain('G1 X10.000 Y0.000');
     expect(savedProject.generated.body).not.toContain('G40');
     expect(savedProject.generated.body).not.toContain('MANUAL EDIT');

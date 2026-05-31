@@ -1,4 +1,5 @@
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
+import type { UniversalPathIntelligenceDocument } from '@/domain/upid/upidDocument';
 
 export const OUTPUT_EXTENSIONS = ['iso', 'nc', 'gcode'] as const;
 
@@ -44,6 +45,13 @@ export interface EditorSessionState {
   pinnedLineNumbers: number[];
 }
 
+export interface WorkbenchUpidState {
+  format: 'upid';
+  schemaVersion: 1;
+  document: UniversalPathIntelligenceDocument;
+  postDiagnostics: PathDiagnostic[];
+}
+
 export interface WorkbenchProject {
   schemaVersion: 1;
   id: string;
@@ -58,6 +66,7 @@ export interface WorkbenchProject {
     body: string;
     files: WorkbenchFileRef[];
   };
+  upid?: WorkbenchUpidState;
   pathPlanning?: {
     document: PathPlanningDocument;
     postDiagnostics: PathDiagnostic[];

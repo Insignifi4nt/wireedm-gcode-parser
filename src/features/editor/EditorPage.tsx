@@ -31,6 +31,7 @@ import {
   type MagnetizeMode
 } from '@/domain/path-editor/pathDocumentOperations';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import { projectUpidDocument } from '@/domain/upid/projectUpid';
 import { postUpidToGcodeBody } from '@/domain/upid/upidDocument';
 import {
   exportMeasurementPointsAsCsv,
@@ -266,7 +267,7 @@ export function EditorPage({
 
   useEffect(() => {
     setDraftText(program?.text ?? '');
-    const pathDocument = program?.project?.pathPlanning?.document ?? null;
+    const pathDocument = projectUpidDocument(program?.project);
     const nextPathDocument = pathDocument ? structuredClone(pathDocument) : null;
     setPathDocumentDraft(nextPathDocument);
     setSelectedPathOperationId(nextPathDocument?.plan.operations[0]?.id ?? null);

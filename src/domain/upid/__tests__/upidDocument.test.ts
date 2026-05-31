@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { projectUpidDocument, withProjectUpid } from '../projectUpid';
 import { createUpidFromDxfEntities, postUpidToGcodeBody } from '../upidDocument';
 
 describe('UPID document boundary', () => {
@@ -18,4 +19,74 @@ describe('UPID document boundary', () => {
     expect(document.plan.operations).toHaveLength(1);
     expect(postUpidToGcodeBody(document)).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
   });
+
+  it('reads first-class UPID before falling back to legacy path planning documents', () => {
+    const document = createUpidFromDxfEntities([
+      {
+        type: 'line',
+        layer: 'CUT',
+        start: { x: 0, y: 0 },
+        end: { x: 4, y: 0 }
+      }
+    ]);
+    const legacyDocument = createUpidFromDxfEntities([
+      {
+        type: 'line',
+        layer: 'CUT',
+        start: { x: 0, y: 0 },
+        end: { x: 2, y: 0 }
+      }
+    ]);
+
+    expect(projectUpidDocument(withProjectUpid(baseProject(), document))).toBe(document);
+    expect(
+      projectUpidDocument({
+        ...baseProject(),
+        pathPlanning: {
+          document: legacyDocument,
+          postDiagnostics: []
+        }
+      })
+    ).toBe(legacyDocument);
+  });
 });
+
+function baseProject() {
+  return {
+    schemaVersion: 1 as const,
+    id: 'upid-project',
+    name: 'UPID Project',
+    createdAt: '2026-05-31T00:00:00.000Z',
+    updatedAt: '2026-05-31T00:00:00.000Z',
+    source: {
+      kind: 'dxf' as const,
+      files: []
+    },
+    generated: {
+      body: '',
+      files: []
+    },
+    machine: {
+      id: 'machine',
+      name: 'Machine',
+      templates: {
+        header: '',
+        footer: ''
+      },
+      output: {
+        extension: 'iso' as const,
+        lineEnding: 'crlf' as const
+      },
+      workArea: {
+        widthMm: null,
+        lengthMm: null
+      },
+      notes: ''
+    },
+    editor: {
+      activeFilePath: null,
+      pinnedLineNumbers: [],
+      sourceRequiresCleanup: false
+    }
+  };
+}

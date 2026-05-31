@@ -66,6 +66,8 @@ describe('App DXF imports and project library', () => {
 
     expect(manifest.projects).toHaveLength(1);
     expect(project.source.kind).toBe('dxf');
+    expect(project.upid.format).toBe('upid');
+    expect(project.upid.document.plan.operations).toHaveLength(1);
     expect(project.generated.body).toContain('G1 X10.000 Y0.000');
 
     const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
@@ -143,6 +145,59 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).toContain('Editor');
     expect(container.textContent).toContain('generated/library-open-');
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-segment-row]')?.textContent).toContain(
+      '0.000, 0.000 -> 10.000, 0.000'
+    );
+    expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
+  });
+
+  it('opens persisted UPID-only projects without the legacy path planning payload', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([simpleLineDxf()], 'upid-only.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const manifest = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const projectPath = manifest.projects[0].path;
+    const storageKey = `wire-edm-workbench:file:${projectPath}`;
+    const storedProject = JSON.parse(window.localStorage.getItem(storageKey) || '{}');
+    delete storedProject.pathPlanning;
+    window.localStorage.setItem(storageKey, JSON.stringify(storedProject));
+
+    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Dashboard')
+    );
+
+    await act(async () => {
+      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const projectId = manifest.projects[0].id;
+    const libraryOpenButton = container.querySelector(
+      `button[aria-label="Open project ${projectId} in editor"]`
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      libraryOpenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.textContent).toContain('Editor');
+    expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
+    expect(container.querySelector('[data-preview-source="path-document"]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-row]')?.textContent).toContain(
       '0.000, 0.000 -> 10.000, 0.000'
     );

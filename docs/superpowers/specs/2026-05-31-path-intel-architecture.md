@@ -41,6 +41,12 @@ Legacy external `.gcode`, `.nc`, `.iso`, and `.txt` imports still use the line d
 because those files are already posted programs. DXF-origin projects keep the richer source model as
 long as the path document is present.
 
+DXF-origin project storage now treats `project.upid.document` as the first-class persisted internal
+path model. During the transition, saves also mirror the same document into legacy
+`project.pathPlanning.document` so older app code and already-saved projects remain readable. New
+editor reads prefer `project.upid` and fall back to the legacy path-planning payload only when a
+stored project predates the UPID field.
+
 ## Current Code Map
 
 - `src/domain/path-intel/types.ts` defines the path document, segments, clusters, chains, contours,
@@ -54,6 +60,8 @@ long as the path document is present.
 - `src/domain/path-intel/postGcode.ts` emits body G-code from the operation plan.
 - `src/domain/upid/upidDocument.ts` names the current internal document as the Universal Path
   Intelligence Document boundary and exposes the post/export adapter.
+- `src/domain/upid/projectUpid.ts` reads, writes, and clears the first-class project UPID state
+  while preserving legacy `pathPlanning` compatibility during migration.
 - `src/domain/dxf/dxfToGcode.ts` keeps the existing DXF-to-G-code API while routing it through
   UPID/path-intel.
 - `src/features/editor/EditorPathNavigatorPanel.tsx` is the DXF path-project rail surface for

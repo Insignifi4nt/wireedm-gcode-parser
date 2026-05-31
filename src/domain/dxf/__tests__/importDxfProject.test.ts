@@ -56,6 +56,9 @@ describe('importDxfProject', () => {
     expect(result.pathDocument.contours).toHaveLength(1);
     expect(result.pathDiagnostics.map((diagnostic) => diagnostic.code)).toEqual(['open-chain']);
     expect(result.postDiagnostics).toEqual([]);
+    expect(result.project.upid?.format).toBe('upid');
+    expect(result.project.upid?.document).toBe(result.pathDocument);
+    expect(result.project.upid?.postDiagnostics).toEqual([]);
     expect(result.project.pathPlanning?.document).toBe(result.pathDocument);
     expect(result.project.pathPlanning?.postDiagnostics).toEqual([]);
 

@@ -8,6 +8,7 @@ import {
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import { baseNameFromFileName, uniqueProjectId } from '@/domain/workbench/projectNaming';
 import type { WorkbenchProject } from '@/domain/workbench/types';
+import { createProjectUpid } from '@/domain/upid/projectUpid';
 
 import { dxfEntitiesToGcode } from './dxfToGcode';
 import { parseDxf } from './parseDxf';
@@ -90,6 +91,7 @@ export async function importDxfProject(
   project.machine = { ...machineProfile };
   project.editor.activeFilePath = programPath;
   project.generated.body = generatedBody;
+  project.upid = createProjectUpid(conversion.document, conversion.post.diagnostics);
   project.pathPlanning = {
     document: conversion.document,
     postDiagnostics: conversion.post.diagnostics

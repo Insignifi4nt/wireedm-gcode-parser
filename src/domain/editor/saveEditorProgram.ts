@@ -3,8 +3,9 @@ import {
   WORKBENCH_MANIFEST_FILE,
   type WorkbenchManifest
 } from '@/domain/storage/workbenchStorage';
-import { postPathPlanToGcode } from '@/domain/path-intel/postGcode';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import { withProjectUpid, withoutProjectUpid } from '@/domain/upid/projectUpid';
+import { postUpidToGcode } from '@/domain/upid/upidDocument';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 
 import { parseGCodeProgram } from './gcodeParser';
@@ -62,7 +63,7 @@ async function saveProjectPathState(
     throw new Error(`Project index entry not found: ${input.project.id}`);
   }
 
-  const nextProject: WorkbenchProject = {
+  let nextProject: WorkbenchProject = {
     ...input.project,
     updatedAt: timestamp,
     generated: {
@@ -74,21 +75,14 @@ async function saveProjectPathState(
   const bodyFile = nextProject.generated.files.find((file) => file.path.endsWith('.body.gcode'));
 
   if (input.pathDocument) {
-    const post = postPathPlanToGcode(
-      input.pathDocument.plan,
-      input.pathDocument.segments,
-      input.pathDocument.options
-    );
+    const post = postUpidToGcode(input.pathDocument);
     nextProject.generated.body = post.body;
-    nextProject.pathPlanning = {
-      document: input.pathDocument,
-      postDiagnostics: post.diagnostics
-    };
+    nextProject = withProjectUpid(nextProject, input.pathDocument, post.diagnostics);
     if (bodyFile) {
       await workbench.adapter.writeText(bodyFile.path, post.body);
     }
   } else {
-    delete nextProject.pathPlanning;
+    nextProject = withoutProjectUpid(nextProject);
     if (bodyFile) {
       await workbench.adapter.writeText(bodyFile.path, nextProject.generated.body);
     }
