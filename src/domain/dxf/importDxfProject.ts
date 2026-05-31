@@ -1,4 +1,5 @@
 import { composeGCodeProgram, normalizeOutputExtension } from '@/domain/post/gcodeTemplates';
+import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   WORKBENCH_MANIFEST_FILE,
   type ConnectedWorkbench,
@@ -8,7 +9,7 @@ import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import { baseNameFromFileName, uniqueProjectId } from '@/domain/workbench/projectNaming';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 
-import { dxfEntitiesToGcodeBody } from './dxfToGcode';
+import { dxfEntitiesToGcode } from './dxfToGcode';
 import { parseDxf } from './parseDxf';
 import type { DxfParseResult } from './types';
 
@@ -25,6 +26,9 @@ export interface ImportDxfProjectResult {
   entityCount: number;
   generatedBody: string;
   generatedProgram: string;
+  pathDocument: PathPlanningDocument;
+  pathDiagnostics: PathDiagnostic[];
+  postDiagnostics: PathDiagnostic[];
 }
 
 export async function importDxfProject(
@@ -60,7 +64,12 @@ export async function importDxfProject(
     throw new Error('DXF did not contain supported cut geometry.');
   }
 
-  const generatedBody = dxfEntitiesToGcodeBody(parseResult.entities);
+  const conversion = dxfEntitiesToGcode(parseResult.entities);
+  if (conversion.document.segments.length === 0 || conversion.document.plan.operations.length === 0) {
+    throw new Error('DXF did not contain valid cut geometry.');
+  }
+
+  const generatedBody = conversion.body;
   const generatedProgram = composeGCodeProgram({
     header: workbench.header,
     body: generatedBody,
@@ -84,6 +93,10 @@ export async function importDxfProject(
   project.machine.output = workbench.manifest.output;
   project.editor.activeFilePath = programPath;
   project.generated.body = generatedBody;
+  project.pathPlanning = {
+    document: conversion.document,
+    postDiagnostics: conversion.post.diagnostics
+  };
   project.source.files = [
     {
       name: `${project.id}.dxf`,
@@ -145,6 +158,9 @@ export async function importDxfProject(
     parseResult,
     entityCount: parseResult.entities.length,
     generatedBody,
-    generatedProgram
+    generatedProgram,
+    pathDocument: conversion.document,
+    pathDiagnostics: conversion.document.diagnostics,
+    postDiagnostics: conversion.post.diagnostics
   };
 }

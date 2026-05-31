@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { dxfEntitiesToGcodeBody } from '../dxfToGcode';
+import { dxfEntitiesToGcode, dxfEntitiesToGcodeBody } from '../dxfToGcode';
 import type { DxfEntity } from '../types';
 
 describe('dxfEntitiesToGcodeBody', () => {
@@ -92,4 +92,48 @@ describe('dxfEntitiesToGcodeBody', () => {
       ].join('\n')
     );
   });
+
+  it('preserves open-chain direction by default', () => {
+    expect(dxfEntitiesToGcodeBody([line(10, 0, 0, 0)])).toBe(
+      ['G0 X10.000 Y0.000', 'G1 X0.000 Y0.000'].join('\n')
+    );
+  });
+
+  it('returns path and post diagnostics when tolerance healing is requested', () => {
+    const result = dxfEntitiesToGcode(gappedRectangle(0.004), {
+      endpointTolerance: 0.01
+    });
+
+    expect(result.body).toBe(
+      [
+        'G0 X0.000 Y0.000',
+        'G1 X10.000 Y0.000',
+        'G1 X10.004 Y0.000',
+        'G1 X10.000 Y5.000',
+        'G1 X0.000 Y5.000',
+        'G1 X0.000 Y0.000'
+      ].join('\n')
+    );
+    expect(result.document.options.endpointTolerance).toBe(0.01);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === 'endpoint-cluster-snap')).toBe(true);
+    expect(result.diagnostics.some((diagnostic) => diagnostic.code === 'post-bridged-gap')).toBe(true);
+  });
 });
+
+function gappedRectangle(gap: number): DxfEntity[] {
+  return [
+    line(0, 0, 10, 0),
+    line(10 + gap, 0, 10, 5),
+    line(10, 5, 0, 5),
+    line(0, 5, 0, 0)
+  ];
+}
+
+function line(startX: number, startY: number, endX: number, endY: number): DxfEntity {
+  return {
+    type: 'line',
+    layer: 'CUT',
+    start: { x: startX, y: startY },
+    end: { x: endX, y: endY }
+  };
+}

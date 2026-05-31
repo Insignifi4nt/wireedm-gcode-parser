@@ -53,6 +53,11 @@ describe('importDxfProject', () => {
     expect(result.generatedProgram).toContain('G3 X20.000 Y10.000 I0.000 J10.000');
     expect(result.generatedProgram).toContain('M30');
     expect(result.generatedProgram).not.toMatch(/\bF\d/);
+    expect(result.pathDocument.contours).toHaveLength(1);
+    expect(result.pathDiagnostics.map((diagnostic) => diagnostic.code)).toEqual(['open-chain']);
+    expect(result.postDiagnostics).toEqual([]);
+    expect(result.project.pathPlanning?.document).toBe(result.pathDocument);
+    expect(result.project.pathPlanning?.postDiagnostics).toEqual([]);
 
     const projectPath = 'projects/top-slot-2026-05-29/project.json';
     const bodyPath = 'generated/top-slot-2026-05-29.body.gcode';
@@ -139,6 +144,25 @@ describe('importDxfProject', () => {
     const manifest = JSON.parse(adapter.files.get('workbench.json') || '{}');
     expect(manifest.projects).toEqual([]);
   });
+
+  it('rejects DXF files when all supported entities are filtered out as invalid geometry', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+
+    await expect(
+      importDxfProject(workbench, {
+        fileName: 'invalid.dxf',
+        text: zeroLengthLineDxf(),
+        now: new Date('2026-05-29T11:00:00.000Z')
+      })
+    ).rejects.toThrow('DXF did not contain valid cut geometry.');
+
+    expect(adapter.files.has('imports/invalid.dxf')).toBe(false);
+    const manifest = JSON.parse(adapter.files.get('workbench.json') || '{}');
+    expect(manifest.projects).toEqual([]);
+  });
 });
 
 function simpleSlotDxf() {
@@ -217,6 +241,31 @@ function emptyDxf() {
     'SPLINE',
     '8',
     'CAD-ONLY',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function zeroLengthLineDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'LINE',
+    '8',
+    'CUT',
+    '10',
+    '4',
+    '20',
+    '7',
+    '11',
+    '4',
+    '21',
+    '7',
     '0',
     'ENDSEC',
     '0',

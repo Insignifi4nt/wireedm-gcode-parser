@@ -17,6 +17,12 @@ export function LatestDxfImportPanel({
   onDownloadLatestProgram,
   onOpenLatestImportInEditor
 }: LatestDxfImportPanelProps) {
+  const pathMessages =
+    latestImport?.pathDiagnostics
+      .concat(latestImport.postDiagnostics)
+      .map((diagnostic) => diagnostic.message) ?? [];
+  const allWarnings = latestImport ? [...latestImport.parseResult.warnings, ...pathMessages] : [];
+
   return (
     <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-border bg-card">
       <div className="h-8 border-b border-border px-3 py-2">
@@ -31,15 +37,17 @@ export function LatestDxfImportPanel({
               <dt className="text-muted-foreground">Entities</dt>
               <dd>{latestImport.entityCount}</dd>
               <dt className="text-muted-foreground">Warnings</dt>
-              <dd>{latestImport.parseResult.warnings.length}</dd>
+              <dd>{allWarnings.length}</dd>
+              <dt className="text-muted-foreground">Contours</dt>
+              <dd>{latestImport.pathDocument.contours.length}</dd>
               <dt className="text-muted-foreground">Program</dt>
               <dd className="truncate">
                 {latestImport.project.generated.files.at(-1)?.path ?? 'generated'}
               </dd>
             </dl>
-            {latestImport.parseResult.warnings.length > 0 && (
+            {allWarnings.length > 0 && (
               <div className="border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200">
-                {latestImport.parseResult.warnings.join('\n')}
+                {allWarnings.join('\n')}
               </div>
             )}
             <div className="flex flex-wrap gap-2">

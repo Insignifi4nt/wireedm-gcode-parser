@@ -1,3 +1,5 @@
+import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
+
 export const OUTPUT_EXTENSIONS = ['iso', 'nc', 'gcode'] as const;
 
 export type OutputExtension = (typeof OUTPUT_EXTENSIONS)[number] | 'custom';
@@ -49,6 +51,10 @@ export interface WorkbenchProject {
   generated: {
     body: string;
     files: WorkbenchFileRef[];
+  };
+  pathPlanning?: {
+    document: PathPlanningDocument;
+    postDiagnostics: PathDiagnostic[];
   };
   machine: MachineProfile;
   editor: EditorSessionState;

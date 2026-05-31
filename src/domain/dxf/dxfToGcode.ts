@@ -1,111 +1,50 @@
-import type { DxfEntity, DxfLwPolylineVertex, DxfPoint } from './types';
+import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
+import { postPathPlanToGcode, type GcodePostResult } from '@/domain/path-intel/postGcode';
+import type {
+  PathDiagnostic,
+  PathPlanningDocument,
+  PathPlanningOptions
+} from '@/domain/path-intel/types';
 
-const POSITION_EPSILON = 1e-6;
+import type { DxfEntity } from './types';
 
-export function dxfEntitiesToGcodeBody(entities: DxfEntity[]) {
-  const lines: string[] = [];
-  let currentPosition: DxfPoint | null = null;
+const DEFAULT_DXF_GCODE_OPTIONS: PathPlanningOptions = {
+  endpointTolerance: 0,
+  allowReverseOpenChains: false
+};
 
-  for (const entity of entities) {
-    if (entity.type === 'line') {
-      currentPosition = addRapidIfNeeded(lines, currentPosition, entity.start);
-      lines.push(`G1 ${xy(entity.end)}`);
-      currentPosition = entity.end;
-    } else if (entity.type === 'arc') {
-      currentPosition = addRapidIfNeeded(lines, currentPosition, entity.start);
-      lines.push(`G3 ${xy(entity.end)} ${ij(entity.center, entity.start)}`);
-      currentPosition = entity.end;
-    } else if (entity.type === 'circle') {
-      const start = { x: entity.center.x + entity.radius, y: entity.center.y };
-      const opposite = { x: entity.center.x - entity.radius, y: entity.center.y };
-      currentPosition = addRapidIfNeeded(lines, currentPosition, start);
-      lines.push(`G3 ${xy(opposite)} ${ij(entity.center, start)}`);
-      lines.push(`G3 ${xy(start)} ${ij(entity.center, opposite)}`);
-      currentPosition = start;
-    } else if (entity.type === 'lwpolyline') {
-      currentPosition = addPolyline(lines, currentPosition, entity.vertices, entity.closed);
-    }
-  }
-
-  return lines.join('\n');
+export interface DxfToGcodeResult {
+  body: string;
+  document: PathPlanningDocument;
+  post: GcodePostResult;
+  diagnostics: PathDiagnostic[];
 }
 
-function addPolyline(
-  lines: string[],
-  currentPosition: DxfPoint | null,
-  vertices: DxfLwPolylineVertex[],
-  closed: boolean
-) {
-  if (vertices.length === 0) return currentPosition;
-
-  let position = addRapidIfNeeded(lines, currentPosition, vertices[0]);
-  const segmentCount = closed ? vertices.length : vertices.length - 1;
-
-  for (let index = 0; index < segmentCount; index++) {
-    const start = vertices[index];
-    const end = vertices[(index + 1) % vertices.length];
-    if (Math.abs(start.bulge) <= POSITION_EPSILON) {
-      lines.push(`G1 ${xy(end)}`);
-    } else {
-      const center = centerFromBulge(start, end, start.bulge);
-      const command = start.bulge > 0 ? 'G3' : 'G2';
-      lines.push(`${command} ${xy(end)} ${ij(center, start)}`);
-    }
-    position = end;
-  }
-
-  return position;
-}
-
-function addRapidIfNeeded(
-  lines: string[],
-  currentPosition: DxfPoint | null,
-  target: DxfPoint
-) {
-  if (!pointsEqual(currentPosition, target)) {
-    lines.push(`G0 ${xy(target)}`);
-  }
-  return target;
-}
-
-function centerFromBulge(start: DxfLwPolylineVertex, end: DxfPoint, bulge: number) {
-  const chord = distance(start, end);
-  const includedAngle = 4 * Math.atan(Math.abs(bulge));
-  const apothem = chord / (2 * Math.tan(includedAngle / 2));
-  const unit = {
-    x: (end.x - start.x) / chord,
-    y: (end.y - start.y) / chord
-  };
-  const leftNormal = { x: -unit.y, y: unit.x };
-  const midpoint = {
-    x: (start.x + end.x) / 2,
-    y: (start.y + end.y) / 2
-  };
-  const sign = Math.sign(bulge);
+export function dxfEntitiesToGcode(
+  entities: DxfEntity[],
+  options: PathPlanningOptions = {}
+): DxfToGcodeResult {
+  const document = dxfEntitiesToPathPlanningDocument(entities, options);
+  const post = postPathPlanToGcode(document.plan, document.segments, document.options);
 
   return {
-    x: midpoint.x + sign * leftNormal.x * apothem,
-    y: midpoint.y + sign * leftNormal.y * apothem
+    body: post.body,
+    document,
+    post,
+    diagnostics: [...document.diagnostics, ...post.diagnostics]
   };
 }
 
-function pointsEqual(a: DxfPoint | null, b: DxfPoint) {
-  if (!a) return false;
-  return Math.abs(a.x - b.x) <= POSITION_EPSILON && Math.abs(a.y - b.y) <= POSITION_EPSILON;
+export function dxfEntitiesToGcodeBody(entities: DxfEntity[], options: PathPlanningOptions = {}) {
+  return dxfEntitiesToGcode(entities, options).body;
 }
 
-function distance(a: DxfPoint, b: DxfPoint) {
-  return Math.hypot(b.x - a.x, b.y - a.y);
-}
-
-function xy(point: DxfPoint) {
-  return `X${formatNumber(point.x)} Y${formatNumber(point.y)}`;
-}
-
-function ij(center: DxfPoint, start: DxfPoint) {
-  return `I${formatNumber(center.x - start.x)} J${formatNumber(center.y - start.y)}`;
-}
-
-function formatNumber(value: number) {
-  return value.toFixed(3);
+export function dxfEntitiesToPathPlanningDocument(
+  entities: DxfEntity[],
+  options: PathPlanningOptions = {}
+) {
+  return createPathPlanningDocumentFromDxfEntities(entities, {
+    ...DEFAULT_DXF_GCODE_OPTIONS,
+    ...options
+  });
 }
