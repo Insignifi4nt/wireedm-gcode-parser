@@ -61,6 +61,7 @@ interface EditorInspectorPanelProps {
   onClearMeasurementPoints: () => void;
   onDeleteMeasurementPoint: (pointId: string) => void;
   onExportMeasurementPoints: (format: MeasurementExportFormat) => void;
+  onHoverPathElement?: (element: EditorPathElementRef | null) => void;
   onInsertMeasurementPoints: () => void;
   onMovePathOperation: (direction: -1 | 1) => void;
   onPointXDraftChange: (value: string) => void;
@@ -101,6 +102,7 @@ export function EditorInspectorPanel({
   onClearMeasurementPoints,
   onDeleteMeasurementPoint,
   onExportMeasurementPoints,
+  onHoverPathElement,
   onInsertMeasurementPoints,
   onMovePathOperation,
   onPointXDraftChange,
@@ -568,7 +570,19 @@ export function EditorInspectorPanel({
             {measurementPoints.map((point, index) => (
               <div
                 className="grid grid-cols-[30px_1fr_1fr_36px_22px] items-center gap-1.5 border-b border-border px-1.5 py-1 last:border-b-0"
+                data-measurement-point-operation={point.pathSnap?.operationId}
                 data-measurement-point-row={index + 1}
+                data-measurement-point-segment={point.pathSnap?.segmentId}
+                onMouseEnter={() => {
+                  if (!point.pathSnap) return;
+                  onHoverPathElement?.({
+                    operationId: point.pathSnap.operationId,
+                    segmentId: point.pathSnap.segmentId
+                  });
+                }}
+                onMouseLeave={() => {
+                  if (point.pathSnap) onHoverPathElement?.(null);
+                }}
                 key={point.id}
               >
                 <span className="text-sky-200">P{index + 1}</span>

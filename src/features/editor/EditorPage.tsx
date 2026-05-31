@@ -1061,6 +1061,7 @@ export function EditorPage({
               )
             }
             onExportMeasurementPoints={handleExportMeasurementPoints}
+            onHoverPathElement={setHoveredPathElement}
             onInsertMeasurementPoints={handleInsertMeasurementPoints}
             onMovePathOperation={handleMovePathOperation}
             onPointXDraftChange={setPointXDraft}

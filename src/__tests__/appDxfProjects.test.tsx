@@ -1587,9 +1587,26 @@ describe('App DXF imports and project library', () => {
       );
     });
 
-    const secondPointRow = container.querySelector('[data-measurement-point-row="2"]');
+    const secondPointRow = container.querySelector('[data-measurement-point-row="2"]') as HTMLElement | null;
     expect(secondPointRow?.textContent).toContain('5.000');
     expect(container.querySelector('[data-measurement-point-mode="2"]')?.textContent).toBe('Perp');
+    const targetSegmentId = secondPointRow?.getAttribute('data-measurement-point-segment');
+    expect(targetSegmentId).toBeTruthy();
+
+    await act(async () => {
+      secondPointRow?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    expect(
+      container
+        .querySelector(`[data-upid-segment-row][data-upid-segment-id="${targetSegmentId}"]`)
+        ?.getAttribute('data-upid-hovered')
+    ).toBe('true');
+    expect(
+      container
+        .querySelector(`path[data-preview-segment="${targetSegmentId}"]`)
+        ?.getAttribute('data-preview-hovered')
+    ).toBe('true');
 
     const secondPointHandle = container.querySelector(
       '[data-measurement-point-handle="2"]'
