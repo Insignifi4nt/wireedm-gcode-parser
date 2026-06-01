@@ -465,7 +465,7 @@ function splitOperationSegmentAtPoint(
     };
   }
 
-  const splitSegments = splitSegment(segment, ref, nearest.point, document);
+  const splitSegments = splitSegment(segment, ref, nearest.point, document, operation.id);
   if (!splitSegments) return null;
 
   replaceDocumentSegment(document, segment.id, splitSegments);
@@ -490,12 +490,10 @@ function splitSegment(
   segment: PathSegment,
   ref: OrientedSegmentRef,
   point: Point2,
-  document: PathPlanningDocument
+  document: PathPlanningDocument,
+  operationId: string
 ): PathSegment[] | null {
-  const source = {
-    ...segment.source,
-    note: segment.source.note ? `${segment.source.note}; user split` : 'user split'
-  };
+  const source = splitSegmentSource(segment, point, operationId, 'user split');
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
 
@@ -532,7 +530,25 @@ function splitSegment(
     ];
   }
 
-  return splitCircle(segment, ref, point, document);
+  return splitCircle(segment, ref, point, document, operationId);
+}
+
+function splitSegmentSource(
+  segment: PathSegment,
+  point: Point2,
+  operationId: string,
+  note: string
+): PathSegment['source'] {
+  return {
+    ...segment.source,
+    edit: {
+      kind: 'manual-start-split',
+      operationId,
+      parentSegmentId: segment.id,
+      point: { ...point }
+    },
+    note: segment.source.note ? `${segment.source.note}; ${note}` : note
+  };
 }
 
 function replaceDocumentSegment(document: PathPlanningDocument, segmentId: SegmentId, replacements: PathSegment[]) {
@@ -549,15 +565,13 @@ function splitCircle(
   segment: CirclePathSegment,
   ref: OrientedSegmentRef,
   point: Point2,
-  document: PathPlanningDocument
+  document: PathPlanningDocument,
+  operationId: string
 ): PathSegment[] {
   const clockwise = ref.reversed;
   const startAngle = Math.atan2(point.y - segment.center.y, point.x - segment.center.x);
   const middle = pointOnCircle(segment.center, segment.radius, startAngle + (clockwise ? -Math.PI : Math.PI));
-  const source = {
-    ...segment.source,
-    note: segment.source.note ? `${segment.source.note}; user split circle` : 'user split circle'
-  };
+  const source = splitSegmentSource(segment, point, operationId, 'user split circle');
   const [firstId, secondId] = nextEditSegmentIds(document, 2);
 
   return [

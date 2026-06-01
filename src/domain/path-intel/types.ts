@@ -79,6 +79,13 @@ export interface PathDiagnostic {
   details?: Record<string, unknown>;
 }
 
+export interface SegmentEditProvenance {
+  kind: 'manual-start-split';
+  operationId: OperationId;
+  parentSegmentId: SegmentId;
+  point: Point2;
+}
+
 export interface SegmentSourceRef {
   sourceEntityIndex: number;
   sourceEntityHandle?: string;
@@ -87,6 +94,7 @@ export interface SegmentSourceRef {
   layer: string | null;
   exact: boolean;
   dxf?: DxfEntitySource;
+  edit?: SegmentEditProvenance;
   note?: string;
 }
 

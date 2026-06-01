@@ -6,6 +6,7 @@ import { AppRailProvider, type AppRailContent } from '@/app/AppRailContext';
 import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
 import { parseDxf } from '@/domain/dxf/parseDxf';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
+import { setClosedOperationStartNearPoint } from '@/domain/path-editor/pathDocumentOperations';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { withProjectUpid } from '@/domain/upid/projectUpid';
@@ -428,6 +429,47 @@ describe('EditorPage UPID draft boundary', () => {
         .querySelector(`[data-upid-segment-row][data-upid-segment-id="${segmentId}"]`)
         ?.getAttribute('data-upid-selected')
     ).toBe('true');
+  });
+
+  it('shows structured split provenance for edited UPID segments in the inspector', async () => {
+    const baseDocument = pathDocumentFromRectangle();
+    const editedDocument = setClosedOperationStartNearPoint(
+      baseDocument,
+      baseDocument.plan.operations[0].id,
+      { x: 5, y: 0 }
+    );
+    const createdSegmentId = editedDocument?.plan.operations[0].overrides?.start?.createdSegmentIds?.[0];
+    const splitEdit = editedDocument?.segments.find((segment) => segment.id === createdSegmentId)?.source.edit;
+    const project = projectWithUpid(editedDocument!);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(createdSegmentId).toBeTruthy();
+    expect(splitEdit).toMatchObject({
+      kind: 'manual-start-split',
+      parentSegmentId: expect.any(String),
+      point: { x: 5, y: 0 }
+    });
+
+    await clickElement(`[data-upid-segment-row][data-upid-segment-id="${createdSegmentId}"]`);
+
+    expect(container.querySelector('[data-upid-selected-segment-source-edit-kind]')?.textContent).toBe(
+      'manual-start-split'
+    );
+    expect(container.querySelector('[data-upid-selected-segment-source-edit-parent]')?.textContent).toBe(
+      splitEdit?.parentSegmentId
+    );
+    expect(container.querySelector('[data-upid-selected-segment-source-edit-point]')?.textContent).toBe(
+      '5.000, 0.000'
+    );
   });
 
   it('temporarily reveals collapsed contour groups while canvas hover assist targets geometry', async () => {

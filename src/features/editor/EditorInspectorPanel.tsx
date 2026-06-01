@@ -682,6 +682,22 @@ export function EditorInspectorPanel({
               <dd data-upid-selected-segment-source="exact">
                 {selectedPathSegment.source.exact ? 'exact' : 'approximated'}
               </dd>
+              {selectedPathSegment.source.edit && (
+                <>
+                  <dt className="text-muted-foreground">Edit</dt>
+                  <dd data-upid-selected-segment-source-edit-kind>
+                    {selectedPathSegment.source.edit.kind}
+                  </dd>
+                  <dt className="text-muted-foreground">Parent</dt>
+                  <dd data-upid-selected-segment-source-edit-parent>
+                    {selectedPathSegment.source.edit.parentSegmentId}
+                  </dd>
+                  <dt className="text-muted-foreground">Split At</dt>
+                  <dd data-upid-selected-segment-source-edit-point>
+                    {formatPoint(selectedPathSegment.source.edit.point)}
+                  </dd>
+                </>
+              )}
               {selectedPathSegment.source.block && (
                 <>
                   <dt className="text-muted-foreground">Block</dt>

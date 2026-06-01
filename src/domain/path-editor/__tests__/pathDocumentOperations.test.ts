@@ -310,6 +310,25 @@ describe('pathDocumentOperations', () => {
     expect(editedChain?.metrics.gapLength).toBe(0);
   });
 
+  it('records structured edit provenance on segments created by a manual start split', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const operation = document.plan.operations[0];
+    const replacedSegmentId = operation.segmentRefs[0].segmentId;
+
+    const edited = setClosedOperationStartNearPoint(document, operation.id, { x: 5, y: 0 });
+    const createdSegmentIds = edited?.plan.operations[0].overrides?.start?.createdSegmentIds ?? [];
+
+    expect(createdSegmentIds).toHaveLength(2);
+    for (const segmentId of createdSegmentIds) {
+      expect(edited?.segments.find((segment) => segment.id === segmentId)?.source.edit).toEqual({
+        kind: 'manual-start-split',
+        operationId: operation.id,
+        parentSegmentId: replacedSegmentId,
+        point: { x: 5, y: 0 }
+      });
+    }
+  });
+
   it('sets a closed operation start at a clicked point by splitting the containing arc segment', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       line(0, 0, 0, -5),

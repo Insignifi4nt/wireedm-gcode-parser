@@ -109,6 +109,7 @@ export interface UpidSelectedPathSegment {
   reversed: boolean;
   source: {
     block: string | null;
+    edit: PathSegment['source']['edit'] | null;
     entityIndex: number;
     exact: boolean;
     handle: string | null;
@@ -308,6 +309,7 @@ export function readUpidSelectedPathSegment(
     reversed: ref.reversed,
     source: {
       block: segment.source.dxf?.blockName ?? null,
+      edit: segment.source.edit ?? null,
       entityIndex: segment.source.sourceEntityIndex,
       exact: segment.source.exact,
       handle: segment.source.sourceEntityHandle ?? null,
