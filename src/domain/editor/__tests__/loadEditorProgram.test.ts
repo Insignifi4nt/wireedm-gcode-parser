@@ -133,6 +133,35 @@ describe('loadEditorProgram', () => {
       'Unsupported UPID project schema version: 2.'
     );
   });
+
+  it('rejects UPID project documents attached to a different workbench project id', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'wrong-project.dxf',
+      text: simpleArcDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const project = {
+      ...imported.project,
+      upid: {
+        ...imported.project.upid!,
+        document: {
+          ...imported.project.upid!.document,
+          source: {
+            ...imported.project.upid!.document.source,
+            projectId: 'other-project'
+          }
+        }
+      }
+    };
+
+    await expect(loadEditorProgram(imported.workbench, project)).rejects.toThrow(
+      'UPID document project mismatch: other-project cannot be used by wrong-project-2026-05-29.'
+    );
+  });
 });
 
 function simpleArcDxf() {

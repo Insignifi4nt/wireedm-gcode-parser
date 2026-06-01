@@ -11,6 +11,9 @@ interface ProjectUpidCandidate {
   schemaVersion?: unknown;
   document?: {
     schemaVersion?: unknown;
+    source?: {
+      projectId?: unknown;
+    };
   };
 }
 
@@ -23,7 +26,11 @@ export function createProjectUpid(document: UniversalPathIntelligenceDocument): 
 }
 
 export function projectUpidDocument(project: WorkbenchProject | null | undefined) {
-  const upid = project?.upid as ProjectUpidCandidate | undefined;
+  if (!project) {
+    return null;
+  }
+
+  const upid = project.upid as ProjectUpidCandidate | undefined;
   if (!upid) {
     return null;
   }
@@ -39,6 +46,13 @@ export function projectUpidDocument(project: WorkbenchProject | null | undefined
   if (upid.document?.schemaVersion !== UPID_DOCUMENT_SCHEMA_VERSION) {
     throw new Error(
       `Unsupported UPID document schema version: ${String(upid.document?.schemaVersion)}.`
+    );
+  }
+
+  const documentProjectId = upid.document.source?.projectId;
+  if (typeof documentProjectId === 'string' && documentProjectId !== project.id) {
+    throw new Error(
+      `UPID document project mismatch: ${documentProjectId} cannot be used by ${project.id}.`
     );
   }
 

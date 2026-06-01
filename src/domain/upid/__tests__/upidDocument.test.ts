@@ -388,17 +388,20 @@ describe('UPID document boundary', () => {
   });
 
   it('reads the first-class UPID document from a project', () => {
-    const document = createUpidFromDxfEntities([
-      {
-        type: 'line',
-        layer: 'CUT',
-        start: { x: 0, y: 0 },
-        end: { x: 4, y: 0 }
-      }
-    ]);
+    const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
 
     expect(projectUpidDocument(withProjectUpid(baseProject(), document))).toBe(document);
     expect(projectUpidDocument(baseProject())).toBeNull();
+  });
+
+  it('rejects UPID documents attached to a different workbench project id', () => {
+    const document = createUpidFromDxfEntities([line(0, 0, 4, 0)], {}, {
+      projectId: 'other-project'
+    });
+
+    expect(() => projectUpidDocument(withProjectUpid(baseProject(), document))).toThrow(
+      'UPID document project mismatch: other-project cannot be used by upid-project.'
+    );
   });
 
   it('rejects unsupported UPID project and document schema versions', () => {
