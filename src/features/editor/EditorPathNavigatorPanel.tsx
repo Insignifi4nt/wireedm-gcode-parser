@@ -33,7 +33,8 @@ import type {
   OperationOrderStrategy,
   OrientedSegmentRef,
   PathPlanningDocument,
-  PathSegment
+  PathSegment,
+  Point2
 } from '@/domain/path-intel/types';
 import {
   createUpidProjectRail,
@@ -93,6 +94,9 @@ interface EditorPathNavigatorPanelProps {
     children: ReactNode,
     options?: { fill?: boolean }
   ) => ReactNode;
+  latestMeasurementPoint: Point2 | null;
+  pathTargetXDraft: string;
+  pathTargetYDraft: string;
   pathTranslateXDraft: string;
   pathTranslateYDraft: string;
   redoAvailable: boolean;
@@ -102,12 +106,15 @@ interface EditorPathNavigatorPanelProps {
   onExpandedPathElementIdsChange: Dispatch<SetStateAction<Record<string, boolean>>>;
   onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
+  onMoveSelectedSegmentCenter: (targetCenter: Point2) => void;
   onOpenExportPreview: () => void;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onRedoDraft: () => void;
   onReversePathOperation: () => void;
   onSaveClick: () => void | Promise<void>;
   onSelectPathElement: (element: EditorPathElementRef) => void;
+  onPathTargetXDraftChange: (value: string) => void;
+  onPathTargetYDraftChange: (value: string) => void;
   onPathTranslateXDraftChange: (value: string) => void;
   onPathTranslateYDraftChange: (value: string) => void;
   onSetPathOperationClassification: (classification: ContourClassification) => void;
@@ -128,6 +135,7 @@ export function EditorPathNavigatorPanel({
   pathClickMode,
   pathDocument,
   expandedPathElementIds,
+  latestMeasurementPoint,
   renderWorkspacePanel = (_id, _title, children) => children,
   redoAvailable,
   selectedPathElement,
@@ -136,12 +144,15 @@ export function EditorPathNavigatorPanel({
   onExpandedPathElementIdsChange,
   onActivatePathClickMode,
   onMovePathOperation,
+  onMoveSelectedSegmentCenter,
   onOpenExportPreview,
   onHoverPathElement,
   onRedoDraft,
   onReversePathOperation,
   onSaveClick,
   onSelectPathElement,
+  onPathTargetXDraftChange,
+  onPathTargetYDraftChange,
   onPathTranslateXDraftChange,
   onPathTranslateYDraftChange,
   onSetPathOperationClassification,
@@ -151,6 +162,8 @@ export function EditorPathNavigatorPanel({
   onToggleHoverAssist,
   onToggleMagneticSnap,
   onUndoDraft,
+  pathTargetXDraft,
+  pathTargetYDraft,
   pathTranslateXDraft,
   pathTranslateYDraft
 }: EditorPathNavigatorPanelProps) {
@@ -172,8 +185,13 @@ export function EditorPathNavigatorPanel({
     selectedOperation && selectedPathElement?.segmentId
       ? selectedOperation.segmentRefs.findIndex((ref) => ref.segmentId === selectedPathElement.segmentId)
       : -1;
+  const selectedSegment =
+    selectedPathElement?.segmentId ? segmentsById.get(selectedPathElement.segmentId) ?? null : null;
+  const selectedSegmentCenter = selectedSegment && selectedSegment.kind !== 'line' ? selectedSegment.center : null;
   const translateX = Number(pathTranslateXDraft);
   const translateY = Number(pathTranslateYDraft);
+  const targetX = Number(pathTargetXDraft);
+  const targetY = Number(pathTargetYDraft);
   const translateTargetLabel = selectedPathElement?.segmentId
     ? `Segment ${selectedSegmentIndex >= 0 ? selectedSegmentIndex + 1 : ''}`.trim()
     : selectedOperation
@@ -186,6 +204,12 @@ export function EditorPathNavigatorPanel({
     Number.isFinite(translateX) &&
     Number.isFinite(translateY) &&
     (translateX !== 0 || translateY !== 0) &&
+    !isSaving;
+  const canMoveSelectedSegmentCenter =
+    Boolean(selectedSegmentCenter) &&
+    Number.isFinite(targetX) &&
+    Number.isFinite(targetY) &&
+    (!selectedSegmentCenter || targetX !== selectedSegmentCenter.x || targetY !== selectedSegmentCenter.y) &&
     !isSaving;
   const hoverRevealedPathElementIds = new Set(
     hoveredPathElement ? upidPathElementAncestorIds(pathDocument, hoveredPathElement) : []
@@ -551,6 +575,72 @@ export function EditorPathNavigatorPanel({
             <Move className="size-3" />
             Apply Translation
           </button>
+          <div
+            className="mt-3 border-t border-border pt-2"
+            data-upid-transform-center
+            data-upid-transform-center-enabled={selectedSegmentCenter ? 'true' : 'false'}
+          >
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[9px] uppercase text-muted-foreground">Center Target</span>
+              <span className="truncate text-[9px] text-muted-foreground" data-upid-transform-center-current>
+                {selectedSegmentCenter ? formatPoint(selectedSegmentCenter) : '-'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+                X
+                <input
+                  aria-label="Center target X"
+                  className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  data-upid-transform-center-x
+                  disabled={!selectedSegmentCenter || isSaving}
+                  inputMode="decimal"
+                  onChange={(event) => onPathTargetXDraftChange(event.currentTarget.value)}
+                  type="number"
+                  value={pathTargetXDraft}
+                />
+              </label>
+              <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+                Y
+                <input
+                  aria-label="Center target Y"
+                  className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  data-upid-transform-center-y
+                  disabled={!selectedSegmentCenter || isSaving}
+                  inputMode="decimal"
+                  onChange={(event) => onPathTargetYDraftChange(event.currentTarget.value)}
+                  type="number"
+                  value={pathTargetYDraft}
+                />
+              </label>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-1">
+              <button
+                aria-label="Use latest measurement point as center target"
+                className={textButtonClass}
+                data-upid-transform-center-use-latest
+                disabled={!selectedSegmentCenter || !latestMeasurementPoint || isSaving}
+                onClick={() => {
+                  if (!latestMeasurementPoint) return;
+                  onPathTargetXDraftChange(formatNumber(latestMeasurementPoint.x));
+                  onPathTargetYDraftChange(formatNumber(latestMeasurementPoint.y));
+                }}
+                type="button"
+              >
+                Latest Point
+              </button>
+              <button
+                aria-label="Move selected arc center to target"
+                className={textButtonClass}
+                data-upid-transform-center-apply
+                disabled={!canMoveSelectedSegmentCenter}
+                onClick={() => onMoveSelectedSegmentCenter({ x: targetX, y: targetY })}
+                type="button"
+              >
+                Move Center
+              </button>
+            </div>
+          </div>
         </section>
         ))}
 

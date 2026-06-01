@@ -189,6 +189,20 @@ export function translatePathSegment(
   return translatePathSegments(document, [segmentId], delta);
 }
 
+export function movePathSegmentCenterTo(
+  document: PathPlanningDocument,
+  segmentId: SegmentId,
+  targetCenter: Point2
+) {
+  const segment = document.segments.find((candidate) => candidate.id === segmentId);
+  if (!segment || segment.kind === 'line') return null;
+
+  return translatePathSegment(document, segmentId, {
+    x: targetCenter.x - segment.center.x,
+    y: targetCenter.y - segment.center.y
+  });
+}
+
 export function reversePathOperation(document: PathPlanningDocument, operationId: string) {
   const next = cloneDocument(document);
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);

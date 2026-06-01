@@ -108,6 +108,36 @@ test('editor translates selected path geometry through the Transform panel', asy
   await expect(page.locator('[data-upid-selected-segment="true"]')).toContainText('15.000, -3.000');
 });
 
+test('editor moves a selected arc center to the latest measurement point', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'arc-center-transform.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(arcDxf())
+    });
+
+  await showPanels(page, ['path-transform', 'contour-tree', 'measurement']);
+  await page.getByLabel('Measurement point X').fill('12');
+  await page.getByLabel('Measurement point Y').fill('-8');
+  await page.getByRole('button', { name: 'Add Point' }).click();
+
+  await page.locator('[data-upid-segment-row]').first().click();
+  await expect(page.locator('[data-upid-transform-center-current]')).toHaveText('0.000, 0.000');
+
+  await hidePanels(page, ['contour-tree']);
+  await page.locator('[data-upid-transform-center-use-latest]').click();
+  await expect(page.locator('[data-upid-transform-center-x]')).toHaveValue('12.000');
+  await expect(page.locator('[data-upid-transform-center-y]')).toHaveValue('-8.000');
+
+  await page.locator('[data-upid-transform-center-apply]').click();
+
+  await expect(page.locator('[data-upid-transform-center-current]')).toHaveText('12.000, -8.000');
+});
+
 async function hidePanels(page: import('@playwright/test').Page, panelIds: string[]) {
   await setPanelVisibility(page, panelIds, false);
 }
@@ -189,6 +219,32 @@ CUT
 0
 20
 10
+0
+ENDSEC
+0
+EOF
+`;
+}
+
+function arcDxf() {
+  return `0
+SECTION
+2
+ENTITIES
+0
+ARC
+8
+CUT
+10
+0
+20
+0
+40
+5
+50
+0
+51
+90
 0
 ENDSEC
 0

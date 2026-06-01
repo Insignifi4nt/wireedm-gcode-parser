@@ -15,6 +15,7 @@ import {
   setClosedOperationStartAtExistingPointNearPoint,
   setClosedOperationStartNearPoint,
   setPathOperationOrderStrategy,
+  movePathSegmentCenterTo,
   slideMagnetizedPointOnSegment,
   translatePathElement,
   translatePathSegment
@@ -326,6 +327,41 @@ describe('pathDocumentOperations', () => {
       start: { x: 5, y: 0 },
       end: { x: 0, y: 5 }
     });
+  });
+
+  it('moves an arc segment center to an exact target coordinate', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 5,
+        startAngle: 0,
+        endAngle: 90,
+        clockwise: false,
+        start: { x: 5, y: 0 },
+        end: { x: 0, y: 5 }
+      }
+    ]);
+    const segmentId = document.segments[0].id;
+
+    const moved = movePathSegmentCenterTo(document, segmentId, { x: 12, y: -8 });
+    const movedSegment = moved?.segments[0];
+
+    expect(movedSegment).toMatchObject({
+      kind: 'arc',
+      center: { x: 12, y: -8 },
+      start: { x: 17, y: -8 },
+      end: { x: 12, y: -3 },
+      radius: 5
+    });
+    expect(movedSegment?.length).toBeCloseTo(document.segments[0].length, 6);
+  });
+
+  it('does not move a line segment center because lines have no circle center', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+
+    expect(movePathSegmentCenterTo(document, document.segments[0].id, { x: 20, y: 20 })).toBeNull();
   });
 
   it('records a manual contour role correction on the operation and contour', () => {

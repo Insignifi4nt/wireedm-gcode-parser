@@ -27,6 +27,7 @@ import { evaluateMachineFit } from '@/domain/machine/machineFit';
 import {
   constructMagnetizedPoint,
   movePathOperation,
+  movePathSegmentCenterTo,
   previewClosedOperationStartNearPoint,
   setClosedOperationStartAtSegmentEndpoint,
   reversePathOperation,
@@ -263,6 +264,8 @@ export function EditorPage({
   const [pointYDraft, setPointYDraft] = useState('');
   const [pathTranslateXDraft, setPathTranslateXDraft] = useState('0');
   const [pathTranslateYDraft, setPathTranslateYDraft] = useState('0');
+  const [pathTargetXDraft, setPathTargetXDraft] = useState('');
+  const [pathTargetYDraft, setPathTargetYDraft] = useState('');
   const [lineMode, setLineMode] = useState<'select' | 'edit'>(readStoredLineMode);
   const [pathClickMode, setPathClickMode] = useState<'set-start' | MagnetizeMode | null>(null);
   const [hoveredPathElement, setHoveredPathElement] = useState<EditorPathElementRef | null>(null);
@@ -562,6 +565,16 @@ export function EditorPage({
     setHeaderContent(editorHeaderContent);
     return () => setHeaderContent(null);
   }, [editorHeaderContent, setHeaderContent]);
+
+  useEffect(() => {
+    if (!pathDocumentDraft || !selectedPathElement?.segmentId) return;
+
+    const segment = pathDocumentDraft.segments.find((candidate) => candidate.id === selectedPathElement.segmentId);
+    if (!segment || segment.kind === 'line') return;
+
+    setPathTargetXDraft(formatCoordinateDraft(segment.center.x));
+    setPathTargetYDraft(formatCoordinateDraft(segment.center.y));
+  }, [pathDocumentDraft, selectedPathElement?.segmentId]);
 
   function setLastClickedLine(lineNumber: number | null) {
     lastClickedLineRef.current = lineNumber;
@@ -1018,6 +1031,18 @@ export function EditorPage({
     }
   }
 
+  function handleMoveSelectedSegmentCenter(targetCenter: { x: number; y: number }) {
+    if (!pathDocumentDraft || !selectedPathElement?.segmentId || isSaving) return;
+
+    const edited = movePathSegmentCenterTo(pathDocumentDraft, selectedPathElement.segmentId, targetCenter);
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId
+      });
+    }
+  }
+
   function applyPathDocumentEdit(
     nextDocument: PathPlanningDocument,
     options: {
@@ -1280,16 +1305,20 @@ export function EditorPage({
         hoveredPathElement={activeHoveredPathElement}
         hoverAssistEnabled={pathHoverAssistEnabled}
         isSaving={isSaving}
+        latestMeasurementPoint={measurementPoints.at(-1) ?? null}
         magneticSnapEnabled={pathMagneticSnapEnabled}
         onActivatePathClickMode={setPathClickMode}
         onExpandedPathElementIdsChange={setExpandedPathElementIds}
         onHoverPathElement={setHoveredPathElement}
+        onMoveSelectedSegmentCenter={handleMoveSelectedSegmentCenter}
         onMovePathOperation={handleMovePathOperation}
         onOpenExportPreview={() => setExportPreviewOpen(true)}
         onRedoDraft={handleRedoDraft}
         onReversePathOperation={handleReversePathOperation}
         onSaveClick={handleSaveClick}
         onSelectPathElement={handleSelectPathElement}
+        onPathTargetXDraftChange={setPathTargetXDraft}
+        onPathTargetYDraftChange={setPathTargetYDraft}
         onSetPathOperationClassification={handleSetPathOperationClassification}
         onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
         onSetPathStartFromElement={handleSetPathStartFromElement}
@@ -1299,6 +1328,8 @@ export function EditorPage({
         onUndoDraft={handleUndoDraft}
         pathClickMode={pathClickMode}
         pathDocument={pathDocument}
+        pathTargetXDraft={pathTargetXDraft}
+        pathTargetYDraft={pathTargetYDraft}
         pathTranslateXDraft={pathTranslateXDraft}
         pathTranslateYDraft={pathTranslateYDraft}
         redoAvailable={redoStack.length > 0}
@@ -1701,4 +1732,8 @@ export function EditorPage({
 
 function nextMeasurementPointId(currentLength: number) {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${currentLength}`;
+}
+
+function formatCoordinateDraft(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(3);
 }
