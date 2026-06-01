@@ -22,8 +22,8 @@ machine profiles. Plain G-code is too lossy to be that source of truth.
   cuts first; the G-code post should only turn the chosen operation plan into machine text.
 - Repairs must be visible. Endpoint tolerance snaps and posted gap bridges are diagnostics, not
   silent edits, so the app can later show uncertain geometry to the user.
-- Exact geometry should stay exact where possible. Arcs and circles remain first-class path
-  segments until posting, instead of being flattened early.
+- Exact geometry should stay exact where possible. Arcs, circles, LWPOLYLINE bulges, and classic
+  POLYLINE bulges remain first-class path segments until posting, instead of being flattened early.
 - The internal plan is the future editor contract. G-code remains an output artifact, not the data
   structure the workbench has to edit.
 

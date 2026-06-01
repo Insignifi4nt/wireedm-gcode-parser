@@ -10,7 +10,9 @@ import type {
   DxfLwPolylineEntity,
   DxfLwPolylineVertex,
   DxfParseResult,
-  DxfPoint
+  DxfPoint,
+  DxfPolylineEntity,
+  DxfPolylineVertex
 } from './types';
 
 interface DxfPair {
@@ -287,6 +289,7 @@ function parseEntity(entityType: string, pairs: DxfPair[]): DxfEntity | null {
   if (entityType === 'ARC') return parseArc(pairs);
   if (entityType === 'CIRCLE') return parseCircle(pairs);
   if (entityType === 'LWPOLYLINE') return parseLwPolyline(pairs);
+  if (entityType === 'POLYLINE') return parseClassicPolyline(pairs);
   return null;
 }
 
@@ -372,6 +375,50 @@ function parseLwPolyline(pairs: DxfPair[]): DxfLwPolylineEntity | null {
     layer,
     closed: (flags & 1) === 1,
     vertices
+  };
+}
+
+function parseClassicPolyline(pairs: DxfPair[]): DxfPolylineEntity | null {
+  const firstVertexIndex = pairs.findIndex(
+    (pair) => pair.code === 0 && pair.value.toUpperCase() === 'VERTEX'
+  );
+  const headerPairs = firstVertexIndex >= 0 ? pairs.slice(0, firstVertexIndex) : pairs;
+  const layer = stringValue(headerPairs, 8);
+  const flags = numberValue(headerPairs, 70) ?? 0;
+  const vertices: DxfPolylineVertex[] = [];
+
+  for (let index = 0; index < pairs.length; index++) {
+    const pair = pairs[index];
+    if (pair.code !== 0) continue;
+
+    const entityType = pair.value.toUpperCase();
+    if (entityType === 'SEQEND') break;
+    if (entityType !== 'VERTEX') continue;
+
+    const nextIndex = findNextEntityStart(pairs, index + 1);
+    const vertexPairs = pairs.slice(index + 1, nextIndex);
+    const vertex = classicPolylineVertex(vertexPairs);
+    if (vertex) vertices.push(vertex);
+    index = nextIndex - 1;
+  }
+
+  if (vertices.length === 0) return null;
+
+  return {
+    type: 'polyline',
+    layer,
+    closed: (flags & 1) === 1,
+    vertices
+  };
+}
+
+function classicPolylineVertex(pairs: DxfPair[]): DxfPolylineVertex | null {
+  const point = pointFromCodes(pairs, 10, 20);
+  if (!point) return null;
+
+  return {
+    ...point,
+    bulge: numberValue(pairs, 42) ?? 0
   };
 }
 
@@ -540,6 +587,30 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
   }
 
   if (entity.type === 'lwpolyline') {
+    if (
+      transform.uniformScale == null &&
+      entity.vertices.some((vertex) => Math.abs(vertex.bulge) > 1e-12)
+    ) {
+      return skippedTransformedEntity(entity.type, 'non-uniform INSERT scale would turn a bulge arc into an ellipse');
+    }
+
+    const bulgeSign = transform.determinant < 0 ? -1 : 1;
+    return {
+      entity: withInsertedSource(
+        {
+          ...entity,
+          layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+          vertices: entity.vertices.map((vertex) => ({
+            ...transformPoint(vertex, transform),
+            bulge: vertex.bulge * bulgeSign
+          }))
+        },
+        transform.source
+      )
+    };
+  }
+
+  if (entity.type === 'polyline') {
     if (
       transform.uniformScale == null &&
       entity.vertices.some((vertex) => Math.abs(vertex.bulge) > 1e-12)

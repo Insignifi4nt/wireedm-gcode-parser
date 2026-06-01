@@ -76,7 +76,7 @@ export interface PathDiagnostic {
 
 export interface SegmentSourceRef {
   sourceEntityIndex: number;
-  sourceEntityType: 'line' | 'arc' | 'circle' | 'lwpolyline' | string;
+  sourceEntityType: 'line' | 'arc' | 'circle' | 'lwpolyline' | 'polyline' | string;
   sourceSubIndex?: number;
   layer: string | null;
   exact: boolean;

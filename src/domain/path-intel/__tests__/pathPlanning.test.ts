@@ -201,6 +201,32 @@ describe('path-intel DXF planning', () => {
     expect(body).not.toContain('G1 X10.000 Y10.000');
   });
 
+  it('preserves a classic POLYLINE bulge arc as G2/G3 instead of flattening it to G1', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [
+        {
+          type: 'polyline',
+          layer: 'PROFILE',
+          closed: false,
+          vertices: [
+            { x: 0, y: 0, bulge: 0 },
+            { x: 10, y: 0, bulge: 0.41421356237309503 },
+            { x: 10, y: 10, bulge: 0 }
+          ]
+        }
+      ],
+      { endpointTolerance: DEFAULT_TOLERANCE }
+    );
+    const body = pathPlanToGcodeBody(document.plan, document.segments, {
+      endpointTolerance: DEFAULT_TOLERANCE
+    });
+
+    expect(document.segments.map((segment) => segment.kind)).toEqual(['line', 'arc']);
+    expect(document.segments[1].source.sourceEntityType).toBe('polyline');
+    expect(body).toContain('G3 X10.000 Y10.000 I-5.000 J5.000');
+    expect(body).not.toContain('G1 X10.000 Y10.000');
+  });
+
   it('joins one unique near endpoint pair under tolerance with an explicit repair diagnostic', () => {
     const document = createPathPlanningDocumentFromDxfEntities(gappedRectangle(0.004), {
       endpointTolerance: DEFAULT_TOLERANCE

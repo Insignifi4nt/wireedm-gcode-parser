@@ -27,28 +27,23 @@ describe('parseDxf spline fallback', () => {
     expect(result.unsupportedEntities).toEqual(['SPLINE']);
   });
 
-  it('flattens classic POLYLINE geometry without reporting child VERTEX records as unsupported', () => {
+  it('parses classic POLYLINE geometry exactly without reporting child VERTEX records as unsupported', () => {
     const result = parseDxf(classicPolylineDxf());
 
     expect(result.entities).toEqual([
       {
-        type: 'line',
-        layer: null,
-        start: { x: 0, y: 0 },
-        end: { x: 10, y: 0 }
-      },
-      {
-        type: 'line',
-        layer: null,
-        start: { x: 10, y: 0 },
-        end: { x: 10, y: 5 }
+        type: 'polyline',
+        layer: 'CUT',
+        closed: true,
+        vertices: [
+          { x: 0, y: 0, bulge: 0.41421356237309503 },
+          { x: 10, y: 0, bulge: 0 },
+          { x: 10, y: 5, bulge: 0 }
+        ]
       }
     ]);
-    expect(result.unsupportedEntities).toEqual(['POLYLINE']);
-    expect(result.warnings).toEqual([
-      'Unsupported DXF entity: POLYLINE',
-      'Flattened DXF POLYLINE geometry into line segments.'
-    ]);
+    expect(result.unsupportedEntities).toEqual([]);
+    expect(result.warnings).toEqual([]);
   });
 });
 
@@ -173,7 +168,7 @@ function classicPolylineDxf() {
     '66',
     '1',
     '70',
-    '0',
+    '1',
     '0',
     'VERTEX',
     '8',
@@ -184,6 +179,8 @@ function classicPolylineDxf() {
     '0',
     '30',
     '0',
+    '42',
+    '0.41421356237309503',
     '0',
     'VERTEX',
     '8',

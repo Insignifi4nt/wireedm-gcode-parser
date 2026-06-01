@@ -57,6 +57,10 @@ export interface DxfLwPolylineVertex extends DxfPoint {
   bulge: number;
 }
 
+export interface DxfPolylineVertex extends DxfPoint {
+  bulge: number;
+}
+
 export interface DxfLwPolylineEntity {
   type: 'lwpolyline';
   layer: string | null;
@@ -65,11 +69,20 @@ export interface DxfLwPolylineEntity {
   vertices: DxfLwPolylineVertex[];
 }
 
+export interface DxfPolylineEntity {
+  type: 'polyline';
+  layer: string | null;
+  source?: DxfEntitySource;
+  closed: boolean;
+  vertices: DxfPolylineVertex[];
+}
+
 export type DxfEntity =
   | DxfLineEntity
   | DxfArcEntity
   | DxfCircleEntity
-  | DxfLwPolylineEntity;
+  | DxfLwPolylineEntity
+  | DxfPolylineEntity;
 
 export interface DxfParseResult {
   entities: DxfEntity[];

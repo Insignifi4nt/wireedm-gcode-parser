@@ -1,4 +1,4 @@
-import type { DxfEntity, DxfLwPolylineVertex, DxfPoint } from '@/domain/dxf/types';
+import type { DxfEntity, DxfLwPolylineVertex, DxfPoint, DxfPolylineVertex } from '@/domain/dxf/types';
 
 import { buildChains } from './chains';
 import { analyzeContours } from './contours';
@@ -161,10 +161,27 @@ export function pathSegmentsFromDxfEntities(
     }
 
     if (entity.type === 'lwpolyline') {
-      const polylineSegments = segmentsFromLwPolyline(entity.vertices, entity.closed, {
+      const polylineSegments = segmentsFromPolyline(entity.vertices, entity.closed, {
         nextId,
         sourceEntityIndex,
         sourceEntityType: entity.type,
+        sourceLabel: 'LWPOLYLINE',
+        layer: entity.layer,
+        source: entity.source,
+        epsilon: resolved.coincidenceEpsilon,
+        diagnosticBase: diagnostics.length
+      });
+
+      diagnostics.push(...polylineSegments.diagnostics);
+      segments.push(...polylineSegments.segments);
+    }
+
+    if (entity.type === 'polyline') {
+      const polylineSegments = segmentsFromPolyline(entity.vertices, entity.closed, {
+        nextId,
+        sourceEntityIndex,
+        sourceEntityType: entity.type,
+        sourceLabel: 'POLYLINE',
         layer: entity.layer,
         source: entity.source,
         epsilon: resolved.coincidenceEpsilon,
@@ -182,15 +199,16 @@ export function pathSegmentsFromDxfEntities(
 interface LwPolylineBuildOptions {
   nextId: () => string;
   sourceEntityIndex: number;
-  sourceEntityType: 'lwpolyline';
+  sourceEntityType: 'lwpolyline' | 'polyline';
+  sourceLabel: 'LWPOLYLINE' | 'POLYLINE';
   layer: string | null;
   source?: DxfEntity['source'];
   epsilon: number;
   diagnosticBase: number;
 }
 
-function segmentsFromLwPolyline(
-  vertices: DxfLwPolylineVertex[],
+function segmentsFromPolyline(
+  vertices: Array<DxfLwPolylineVertex | DxfPolylineVertex>,
   closed: boolean,
   options: LwPolylineBuildOptions
 ): SegmentBuildResult {
@@ -205,7 +223,7 @@ function segmentsFromLwPolyline(
       id: nextDiagnosticId(),
       severity: 'warning',
       code: 'invalid-polyline',
-      message: `Skipped LWPOLYLINE at DXF entity index ${options.sourceEntityIndex}; it has fewer than 2 vertices.`,
+      message: `Skipped ${options.sourceLabel} at DXF entity index ${options.sourceEntityIndex}; it has fewer than 2 vertices.`,
       details: { sourceEntityIndex: options.sourceEntityIndex, vertexCount: vertices.length }
     });
     return { segments, diagnostics };
@@ -230,7 +248,7 @@ function segmentsFromLwPolyline(
         id: nextDiagnosticId(),
         severity: 'warning',
         code: 'zero-length-segment',
-        message: `Skipped zero-length LWPOLYLINE segment ${index} at DXF entity index ${options.sourceEntityIndex}.`,
+        message: `Skipped zero-length ${options.sourceLabel} segment ${index} at DXF entity index ${options.sourceEntityIndex}.`,
         details: { sourceEntityIndex: options.sourceEntityIndex, sourceSubIndex: index }
       });
       continue;
@@ -254,7 +272,7 @@ function segmentsFromLwPolyline(
         id: nextDiagnosticId(),
         severity: 'warning',
         code: 'invalid-arc',
-        message: `Skipped invalid LWPOLYLINE bulge arc ${index} at DXF entity index ${options.sourceEntityIndex}.`,
+        message: `Skipped invalid ${options.sourceLabel} bulge arc ${index} at DXF entity index ${options.sourceEntityIndex}.`,
         details: { sourceEntityIndex: options.sourceEntityIndex, sourceSubIndex: index, bulge: start.bulge }
       });
       continue;
