@@ -985,6 +985,31 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain(
       'Manual position 2'
     );
+    expect(container.querySelector('[data-upid-order-strategy]')?.getAttribute('data-upid-manual-order-active')).toBe(
+      'true'
+    );
+    expect(container.querySelector('[data-upid-order-strategy-status]')?.textContent).toContain('Manual order');
+
+    const reapplyButton = container.querySelector(
+      'button[aria-label="Reapply planning order strategy"]'
+    ) as HTMLButtonElement | null;
+    expect(reapplyButton).not.toBeNull();
+
+    await act(async () => {
+      reapplyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-role'))).toEqual([
+      'island',
+      'hole',
+      'exterior'
+    ]);
+    expect(container.querySelector('[data-upid-order-strategy-status]')?.textContent).not.toContain(
+      'Manual order'
+    );
+    expect(container.querySelector('[data-upid-manual-decision="order"]')).toBeNull();
   });
 
   it('connects UPID rapid travel links between the canvas and Cut Sequence rows', async () => {

@@ -59,6 +59,38 @@ describe('pathDocumentOperations', () => {
     expect(sourceOrdered?.plan.operations.some((operation) => operation.overrides?.order)).toBe(false);
   });
 
+  it('reapplies the current strategy to clear manual order overrides', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(0, 0, 30, 20), ...rectangleLines(5, 5, 25, 15), ...rectangleLines(10, 7, 15, 12)]
+    );
+    expect(document.plan.operations.map((operation) => operation.classification)).toEqual([
+      'island',
+      'hole',
+      'exterior'
+    ]);
+
+    const manuallyMoved = movePathOperation(document, document.plan.operations[0].id, 1);
+    expect(manuallyMoved?.plan.operations.map((operation) => operation.classification)).toEqual([
+      'hole',
+      'island',
+      'exterior'
+    ]);
+    expect(manuallyMoved?.plan.operations.some((operation) => operation.overrides?.order)).toBe(true);
+
+    const replanned = setPathOperationOrderStrategy(
+      manuallyMoved!,
+      manuallyMoved!.options.operationOrderStrategy
+    );
+
+    expect(replanned?.plan.operations.map((operation) => operation.classification)).toEqual([
+      'island',
+      'hole',
+      'exterior'
+    ]);
+    expect(replanned?.plan.operations.some((operation) => operation.overrides?.order)).toBe(false);
+    expect(replanned?.options.operationOrderStrategy).toBe('inside-out-nearest');
+  });
+
   it('keeps non-order manual decisions when applying an automatic strategy preference', () => {
     const document = createPathPlanningDocumentFromDxfEntities(
       [...rectangleLines(40, 0, 50, 5), ...rectangleLines(0, 0, 5, 5)]

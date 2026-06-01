@@ -92,7 +92,9 @@ export function setPathOperationOrderStrategy(
   document: PathPlanningDocument,
   strategy: OperationOrderStrategy
 ) {
-  if (document.options.operationOrderStrategy === strategy) return null;
+  if (document.options.operationOrderStrategy === strategy && !hasManualOrderOverrides(document)) {
+    return null;
+  }
 
   const next = cloneDocument(document);
   const previousOperationsByContourId = new Map(
@@ -841,6 +843,10 @@ function manualClassifications(document: PathPlanningDocument) {
         operation.overrides!.classification!.classification
       ])
   );
+}
+
+function hasManualOrderOverrides(document: PathPlanningDocument) {
+  return document.plan.operations.some((operation) => operation.overrides?.order);
 }
 
 function restoreManualOperationState(

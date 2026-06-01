@@ -133,6 +133,7 @@ export function EditorPathNavigatorPanel({
   );
   const selectedOperation =
     selectedOperationIndex >= 0 ? pathDocument.plan.operations[selectedOperationIndex] : null;
+  const manualOrderActive = cutSequenceElements.some((pathElement) => pathElement.overrides?.order);
 
   return (
     <div
@@ -231,7 +232,11 @@ export function EditorPathNavigatorPanel({
             <FileText className="size-3" />
             Export Preview
           </button>
-          <label className="mt-2 grid gap-1 text-[9px] uppercase text-muted-foreground" data-upid-order-strategy>
+          <label
+            className="mt-2 grid gap-1 text-[9px] uppercase text-muted-foreground"
+            data-upid-manual-order-active={manualOrderActive ? 'true' : undefined}
+            data-upid-order-strategy
+          >
             Planning Mode
             <select
               aria-label="Planning order strategy"
@@ -248,7 +253,19 @@ export function EditorPathNavigatorPanel({
                 </option>
               ))}
             </select>
+            <span className="normal-case text-[9px] text-muted-foreground" data-upid-order-strategy-status>
+              {manualOrderActive ? 'Manual order overrides active' : 'Automatic order active'}
+            </span>
           </label>
+          <button
+            aria-label="Reapply planning order strategy"
+            className={`mt-1 w-full ${textButtonClass}`}
+            disabled={!manualOrderActive || isSaving}
+            onClick={() => onSetPathOperationOrderStrategy(pathDocument.options.operationOrderStrategy)}
+            type="button"
+          >
+            Reapply Planning Mode
+          </button>
           <label className="mt-2 grid gap-1 text-[9px] uppercase text-muted-foreground">
             Contour Role
             <select
