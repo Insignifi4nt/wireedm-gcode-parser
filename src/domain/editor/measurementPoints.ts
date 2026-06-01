@@ -1,4 +1,5 @@
 import { buildISOFromPoints, type BuildISOFromPointsOptions } from './isoNormalizer';
+import type { MagnetizedPathPoint } from '@/domain/path-editor/pathDocumentOperations';
 
 export interface MeasurementPoint {
   id: string;
@@ -38,6 +39,26 @@ export interface InsertMeasurementPointsResult {
 export interface ExportMeasurementPointsGCodeOptions {
   includeHeader?: boolean;
   now?: Date;
+}
+
+export interface CreateMeasurementPointPathSnapOptions {
+  sourcePoint?: MeasurementPointPathSnap['sourcePoint'];
+}
+
+export function createMeasurementPointPathSnapFromMagnetized(
+  magnetized: MagnetizedPathPoint,
+  options: CreateMeasurementPointPathSnapOptions = {}
+): MeasurementPointPathSnap {
+  return {
+    kind: 'path-construction',
+    mode: magnetized.mode,
+    operationId: magnetized.operationId,
+    pathElementId: magnetized.pathElementId,
+    relation: magnetized.relation,
+    segmentId: magnetized.segmentId,
+    sourcePoint: options.sourcePoint ?? magnetized.sourcePoint,
+    tangent: magnetized.tangent
+  };
 }
 
 export function insertMeasurementPointsIntoText(

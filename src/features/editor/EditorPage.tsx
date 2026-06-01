@@ -51,12 +51,12 @@ import {
 } from '@/domain/upid/projectRail';
 import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 import {
+  createMeasurementPointPathSnapFromMagnetized,
   exportMeasurementPointsAsCsv,
   exportMeasurementPointsAsGCode,
   exportMeasurementPointsAsISO,
   insertMeasurementPointsIntoText,
-  type MeasurementPoint,
-  type MeasurementPointPathSnap
+  type MeasurementPoint
 } from '@/domain/editor/measurementPoints';
 
 import { EditorCanvasPanel } from './EditorCanvasPanel';
@@ -748,7 +748,7 @@ export function EditorPage({
       ...current,
       {
         id: nextMeasurementPointId(current.length),
-        pathSnap: pathSnapFromMagnetized(magnetized),
+        pathSnap: createMeasurementPointPathSnapFromMagnetized(magnetized),
         x: magnetized.point.x,
         y: magnetized.point.y
       }
@@ -827,10 +827,9 @@ export function EditorPage({
 
         return {
           ...measurementPoint,
-          pathSnap: {
-            ...pathSnapFromMagnetized(magnetized),
+          pathSnap: createMeasurementPointPathSnapFromMagnetized(magnetized, {
             sourcePoint: measurementPoint.pathSnap.sourcePoint
-          },
+          }),
           x: magnetized.point.x,
           y: magnetized.point.y
         };
@@ -1255,17 +1254,4 @@ function pathDocumentSignature(document: PathPlanningDocument | null) {
 
 function nextMeasurementPointId(currentLength: number) {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${currentLength}`;
-}
-
-function pathSnapFromMagnetized(magnetized: MagnetizedPathPoint): MeasurementPointPathSnap {
-  return {
-    kind: 'path-construction',
-    mode: magnetized.mode,
-    operationId: magnetized.operationId,
-    pathElementId: magnetized.pathElementId,
-    relation: magnetized.relation,
-    segmentId: magnetized.segmentId,
-    sourcePoint: magnetized.sourcePoint,
-    tangent: magnetized.tangent
-  };
 }

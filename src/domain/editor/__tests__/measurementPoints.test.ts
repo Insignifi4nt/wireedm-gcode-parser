@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createMeasurementPointPathSnapFromMagnetized,
   exportMeasurementPointsAsCsv,
   exportMeasurementPointsAsGCode,
   exportMeasurementPointsAsISO,
@@ -60,5 +61,54 @@ describe('measurementPoints', () => {
     expect(exportMeasurementPointsAsISO(points, { feed: 850 })).toContain(
       'N70 G1 X-3.457 Y4.200 F850'
     );
+  });
+
+  it('creates persisted path snaps from magnetized UPID construction points', () => {
+    const snap = createMeasurementPointPathSnapFromMagnetized({
+      distance: 4,
+      mode: 'perpendicular',
+      operationId: 'op_0001',
+      pathElementId: 'contour_0001',
+      point: { x: 10, y: 5 },
+      relation: 'perpendicular',
+      segmentId: 'seg_0002',
+      segmentIndex: 1,
+      sourcePoint: { x: 10, y: 0 },
+      tangent: { x: 1, y: 0 },
+      t: 0.5
+    });
+
+    expect(snap).toEqual({
+      kind: 'path-construction',
+      mode: 'perpendicular',
+      operationId: 'op_0001',
+      pathElementId: 'contour_0001',
+      relation: 'perpendicular',
+      segmentId: 'seg_0002',
+      sourcePoint: { x: 10, y: 0 },
+      tangent: { x: 1, y: 0 }
+    });
+    const movedSnap = createMeasurementPointPathSnapFromMagnetized(
+      {
+        distance: 2,
+        mode: 'tangent',
+        operationId: 'op_0001',
+        pathElementId: 'contour_0001',
+        point: { x: 12, y: 7 },
+        relation: 'tangent',
+        segmentId: 'seg_0003',
+        segmentIndex: 2,
+        sourcePoint: { x: 12, y: 2 },
+        tangent: { x: 0, y: 1 },
+        t: 0.25
+      },
+      { sourcePoint: snap.sourcePoint }
+    );
+
+    expect(movedSnap).toMatchObject({
+      mode: 'tangent',
+      segmentId: 'seg_0003',
+      sourcePoint: { x: 10, y: 0 }
+    });
   });
 });
