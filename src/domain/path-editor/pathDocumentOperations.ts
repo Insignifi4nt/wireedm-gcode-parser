@@ -2,6 +2,7 @@ import { analyzeContours } from '@/domain/path-intel/contours';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
 import { buildPathElements } from '@/domain/path-intel/pathElements';
 import { buildContourDisplayNames } from '@/domain/path-intel/pathNaming';
+import { planOperations } from '@/domain/path-intel/planOperations';
 import {
   angleIsOnSweep,
   createArcSegment,
@@ -30,6 +31,7 @@ import type {
   EndpointSide,
   OperationPlan,
   OrientedSegmentRef,
+  OperationOrderStrategy,
   PathChain,
   PathElementId,
   PathOperation,
@@ -83,6 +85,38 @@ export function movePathOperation(
   refreshPlan(next);
   recordManualOrderOverrides(next);
   refreshPathElements(next);
+  return next;
+}
+
+export function setPathOperationOrderStrategy(
+  document: PathPlanningDocument,
+  strategy: OperationOrderStrategy
+) {
+  if (document.options.operationOrderStrategy === strategy) return null;
+
+  const next = cloneDocument(document);
+  const previousOperationsByContourId = new Map(
+    next.plan.operations.map((operation) => [operation.contourId, operation])
+  );
+  next.options = {
+    ...next.options,
+    operationOrderStrategy: strategy
+  };
+
+  const replanned = planOperations({
+    chains: next.chains,
+    contours: next.contours,
+    segments: next.segments,
+    options: next.options
+  });
+
+  next.plan = {
+    ...replanned,
+    operations: replanned.operations.map((operation) =>
+      restoreManualOperationState(operation, previousOperationsByContourId.get(operation.contourId))
+    )
+  };
+  refreshPlan(next);
   return next;
 }
 
@@ -706,9 +740,12 @@ function refreshPlan(document: PathPlanningDocument) {
 
   document.plan.metrics = planMetrics(document.plan);
   const contourResult = analyzeContours(document.chains, document.segments, document.options);
+  const manualClassificationsByContourId = manualClassifications(document);
   document.contours = document.contours.map((contour) => {
     const refreshed = contourResult.contours.find((candidate) => candidate.id === contour.id);
-    return refreshed ?? contour;
+    const nextContour = refreshed ?? contour;
+    const classification = manualClassificationsByContourId.get(contour.id);
+    return classification ? { ...nextContour, classification } : nextContour;
   });
   refreshOperationDisplayNames(document);
   refreshPathElements(document);
@@ -793,6 +830,56 @@ function planMetrics(plan: OperationPlan) {
     totalCutLength: plan.operations.reduce((total, operation) => total + operation.metrics.cutLength, 0),
     totalRapidLength: plan.operations.reduce((total, operation) => total + operation.metrics.rapidInLength, 0)
   };
+}
+
+function manualClassifications(document: PathPlanningDocument) {
+  return new Map(
+    document.plan.operations
+      .filter((operation) => operation.overrides?.classification)
+      .map((operation) => [
+        operation.contourId,
+        operation.overrides!.classification!.classification
+      ])
+  );
+}
+
+function restoreManualOperationState(
+  operation: PathOperation,
+  previous: PathOperation | undefined
+): PathOperation {
+  if (!previous) return operation;
+
+  const preservedOverrides = manualOverridesWithoutOrder(previous.overrides);
+  const restored: PathOperation = {
+    ...operation,
+    id: previous.id,
+    ...(preservedOverrides ? { overrides: preservedOverrides } : {})
+  };
+
+  if (preservedOverrides?.classification) {
+    restored.classification = preservedOverrides.classification.classification;
+  }
+
+  if (preservedOverrides?.direction || preservedOverrides?.start) {
+    restored.segmentRefs = previous.segmentRefs.map((ref) => ({ ...ref }));
+    restored.startPoint = { ...previous.startPoint };
+    restored.endPoint = { ...previous.endPoint };
+    restored.direction = previous.direction;
+  }
+
+  return restored;
+}
+
+function manualOverridesWithoutOrder(overrides: PathOperation['overrides']) {
+  if (!overrides) return undefined;
+
+  const preserved = {
+    ...(overrides.classification ? { classification: overrides.classification } : {}),
+    ...(overrides.direction ? { direction: overrides.direction } : {}),
+    ...(overrides.start ? { start: overrides.start } : {})
+  };
+
+  return Object.keys(preserved).length > 0 ? preserved : undefined;
 }
 
 function recordManualOrderOverrides(document: PathPlanningDocument) {

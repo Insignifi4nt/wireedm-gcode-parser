@@ -12,6 +12,7 @@ import {
   reversePathOperation,
   setPathOperationClassification,
   setClosedOperationStartNearPoint,
+  setPathOperationOrderStrategy,
   slideMagnetizedPointOnSegment
 } from '../pathDocumentOperations';
 
@@ -29,6 +30,76 @@ describe('pathDocumentOperations', () => {
       first.contourId
     ]);
     expect(pathPlanToGcodeBody(moved!.plan, moved!.segments).split('\n')[0]).toBe('G0 X20.000 Y0.000');
+  });
+
+  it('replans operation order from a UPID strategy preference', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(40, 0, 50, 5), ...rectangleLines(0, 0, 5, 5)]
+    );
+
+    expect(document.plan.operations.map((operation) => operation.contourId)).toEqual([
+      'contour_0002',
+      'contour_0001'
+    ]);
+
+    const sourceOrdered = setPathOperationOrderStrategy(document, 'source-order');
+
+    expect(sourceOrdered?.options.operationOrderStrategy).toBe('source-order');
+    expect(sourceOrdered?.plan.operations.map((operation) => operation.contourId)).toEqual([
+      'contour_0001',
+      'contour_0002'
+    ]);
+    expect(sourceOrdered?.plan.operations[0]).toMatchObject({
+      orderIndex: 0,
+      startPoint: { x: 40, y: 0 }
+    });
+    expect(sourceOrdered?.pathElements.find((element) => element.contourId === 'contour_0001')).toMatchObject({
+      orderIndex: 0
+    });
+    expect(sourceOrdered?.plan.operations.some((operation) => operation.overrides?.order)).toBe(false);
+  });
+
+  it('keeps non-order manual decisions when applying an automatic strategy preference', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(40, 0, 50, 5), ...rectangleLines(0, 0, 5, 5)]
+    );
+    const farOperation = document.plan.operations.find((operation) => operation.contourId === 'contour_0001');
+    expect(farOperation).not.toBeUndefined();
+
+    const reversed = reversePathOperation(document, farOperation!.id);
+    const classified = setPathOperationClassification(reversed!, farOperation!.id, 'hole');
+    const manuallyOrdered = movePathOperation(classified!, farOperation!.id, -1);
+    expect(manuallyOrdered?.plan.operations[0].overrides?.order).toEqual({
+      kind: 'manual',
+      orderIndex: 0
+    });
+
+    const sourceOrdered = setPathOperationOrderStrategy(manuallyOrdered!, 'source-order');
+    const editedOperation = sourceOrdered?.plan.operations[0];
+
+    expect(editedOperation).toMatchObject({
+      classification: 'hole',
+      contourId: 'contour_0001',
+      direction: 'reverse',
+      id: farOperation!.id,
+      orderIndex: 0
+    });
+    expect(editedOperation?.overrides?.order).toBeUndefined();
+    expect(editedOperation?.overrides?.classification).toEqual({
+      classification: 'hole',
+      kind: 'manual'
+    });
+    expect(editedOperation?.overrides?.direction).toEqual({
+      direction: 'reverse',
+      kind: 'manual'
+    });
+    expect(sourceOrdered?.pathElements.find((element) => element.contourId === 'contour_0001')).toMatchObject({
+      classification: 'hole',
+      direction: 'reverse',
+      displayName: 'Hole 1',
+      operationId: farOperation!.id,
+      orderIndex: 0
+    });
   });
 
   it('records manual UPID decisions when users reorder, reverse, or choose a start', () => {
