@@ -242,6 +242,25 @@ describe('saveEditorProgram', () => {
     expect('generated' in savedProject).toBe(false);
   });
 
+  it('rejects UPID path saves that are not attached to a workbench project', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const document = dxfEntitiesToUpidDocument(rectangleLines(0, 0, 10, 5));
+
+    await expect(
+      saveEditorProgram(workbench, {
+        filePath: 'projects/loose-upid/project.json',
+        model: 'upid-document',
+        now: new Date('2026-05-29T12:00:00.000Z'),
+        pathDocument: document
+      })
+    ).rejects.toThrow('UPID path saves require a workbench project.');
+
+    expect(adapter.files.has('projects/loose-upid/project.json')).toBe(false);
+  });
+
   it('does not persist export-time post diagnostics while saving a UPID path document', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {

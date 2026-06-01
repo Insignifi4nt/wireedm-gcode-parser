@@ -53,6 +53,10 @@ export async function saveEditorProgram(
     throw new Error('Editor save model is required.');
   }
 
+  if (input.model === 'upid-document' && !input.project) {
+    throw new Error('UPID path saves require a workbench project.');
+  }
+
   const projectPathDocument = input.project ? projectUpidDocument(input.project) : null;
   if (input.project?.source.kind === 'dxf' && !projectPathDocument) {
     throw new Error('DXF projects must contain a UPID document.');
