@@ -133,6 +133,42 @@ describe('UPID document boundary', () => {
     });
   });
 
+  it('summarizes UPID export planning and diagnostics in the export artifact', () => {
+    const document = createUpidFromDxfEntities(
+      [
+        line(0, 0, 10, 0),
+        line(10.004, 0, 10, 5),
+        line(10, 5, 0, 5),
+        line(0, 5, 0, 0)
+      ],
+      {
+        endpointTolerance: 0.01,
+        operationOrderStrategy: 'nearest'
+      }
+    );
+
+    const exportProgram = composeUpidGCodeExport(document, {
+      header: '',
+      footer: '',
+      lineEnding: 'lf'
+    });
+
+    expect(exportProgram.planning).toEqual({
+      manualOrderCount: 0,
+      operationOrderStrategy: 'nearest'
+    });
+    expect(exportProgram.summary).toEqual({
+      diagnosticCount: exportProgram.diagnostics.length,
+      manualOrderCount: 0,
+      operationCount: 1,
+      operationOrderStrategy: 'nearest',
+      postDiagnosticCount: exportProgram.post.diagnostics.length
+    });
+    expect(exportProgram.diagnostics.map((diagnostic) => diagnostic.code)).toContain('endpoint-cluster-snap');
+    expect(exportProgram.diagnostics.map((diagnostic) => diagnostic.code)).toContain('post-bridged-gap');
+    expect(exportProgram.diagnostics).toEqual([...document.diagnostics, ...exportProgram.post.diagnostics]);
+  });
+
   it('posts line, arc, and circle geometry only from the UPID export boundary', () => {
     const document = createUpidFromDxfEntities([
       {
@@ -222,5 +258,14 @@ function baseProject() {
       activeFilePath: null,
       pinnedLineNumbers: []
     }
+  };
+}
+
+function line(startX: number, startY: number, endX: number, endY: number) {
+  return {
+    type: 'line' as const,
+    layer: 'CUT',
+    start: { x: startX, y: startY },
+    end: { x: endX, y: endY }
   };
 }

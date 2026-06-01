@@ -13,6 +13,8 @@ import {
   type GCodeProgramComposition
 } from '@/domain/post/gcodeTemplates';
 import type {
+  OperationOrderStrategy,
+  PathDiagnostic,
   PathPlanningDocument,
   PathPlanningOptions,
   PathPlanningSourceMetadata
@@ -30,9 +32,23 @@ export interface ComposeUpidGCodeExportInput {
 
 export interface UpidGCodeExport {
   body: string;
+  diagnostics: PathDiagnostic[];
+  planning: UpidGCodeExportPlanning;
   post: ReturnType<typeof postUpidToGcode>;
   program: GCodeProgramComposition;
   programOperations: UpidGCodeProgramOperation[];
+  summary: UpidGCodeExportSummary;
+}
+
+export interface UpidGCodeExportPlanning {
+  manualOrderCount: number;
+  operationOrderStrategy: OperationOrderStrategy;
+}
+
+export interface UpidGCodeExportSummary extends UpidGCodeExportPlanning {
+  diagnosticCount: number;
+  operationCount: number;
+  postDiagnosticCount: number;
 }
 
 export interface UpidGCodeProgramMove extends GcodePostedMove {
@@ -68,6 +84,8 @@ export function composeUpidGCodeExport(
 ): UpidGCodeExport {
   const post = postUpidToGcode(document);
   const body = post.body;
+  const diagnostics = [...document.diagnostics, ...post.diagnostics];
+  const planning = summarizeExportPlanning(document);
   const program = composeGCodeProgramWithLineMap({
     header: input.header,
     body,
@@ -77,9 +95,24 @@ export function composeUpidGCodeExport(
 
   return {
     body,
+    diagnostics,
+    planning,
     post,
     program,
-    programOperations: mapProgramOperations(post.operations, program)
+    programOperations: mapProgramOperations(post.operations, program),
+    summary: {
+      ...planning,
+      diagnosticCount: diagnostics.length,
+      operationCount: document.plan.operations.length,
+      postDiagnosticCount: post.diagnostics.length
+    }
+  };
+}
+
+function summarizeExportPlanning(document: UniversalPathIntelligenceDocument): UpidGCodeExportPlanning {
+  return {
+    manualOrderCount: document.plan.operations.filter((operation) => operation.overrides?.order).length,
+    operationOrderStrategy: document.options.operationOrderStrategy
   };
 }
 

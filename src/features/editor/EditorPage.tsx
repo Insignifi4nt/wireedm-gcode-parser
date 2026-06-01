@@ -226,9 +226,6 @@ export function EditorPage({
       machine.output.extension,
       machine.output.customExtension
     );
-    const manualOrderCount = pathDocumentDraft.plan.operations.filter(
-      (operation) => operation.overrides?.order
-    ).length;
     const exportProgram = composeUpidGCodeExport(pathDocumentDraft, {
       header: machine.templates.header,
       footer: machine.templates.footer,
@@ -237,14 +234,11 @@ export function EditorPage({
 
     return {
       body: exportProgram.body,
-      diagnostics: [...pathDocumentDraft.diagnostics, ...exportProgram.post.diagnostics],
+      diagnostics: exportProgram.diagnostics,
       fileName,
       machineName: machine.name,
-      operationCount: pathDocumentDraft.plan.operations.length,
-      planning: {
-        manualOrderCount,
-        operationOrderStrategy: pathDocumentDraft.options.operationOrderStrategy
-      },
+      operationCount: exportProgram.summary.operationCount,
+      planning: exportProgram.planning,
       programLines: exportProgram.program.lines,
       programText: exportProgram.program.text,
       postMetrics: exportProgram.post.metrics,
