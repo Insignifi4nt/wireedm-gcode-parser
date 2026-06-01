@@ -1372,6 +1372,85 @@ describe('App DXF imports and project library', () => {
     });
   });
 
+  it('summarizes UPID planning decisions in the export preview', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([nestedContourDxf()], 'export-planning.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    let cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
+    const moveDownButton = cutSequenceRows[0].querySelector(
+      'button[aria-label="Move cut sequence operation down"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      moveDownButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
+    expect(cutSequenceRows[1].querySelector('[data-upid-manual-decision="order"]')).not.toBeNull();
+
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-upid-export-stat="planning-mode"]')?.textContent).toBe(
+      'Inside/out nearest'
+    );
+    const manualOrderStat = container.querySelector('[data-upid-export-stat="manual-order"]');
+    expect(manualOrderStat?.textContent).toBe('3 operations');
+    expect(
+      manualOrderStat?.parentElement?.getAttribute('data-upid-export-manual-order-active')
+    ).toBe('true');
+  });
+
+  it('shows automatic UPID planning state in the export preview before manual edits', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'export-automatic-planning.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-upid-export-stat="planning-mode"]')?.textContent).toBe(
+      'Inside/out nearest'
+    );
+    expect(container.querySelector('[data-upid-export-stat="manual-order"]')?.textContent).toBe(
+      'Automatic'
+    );
+  });
+
   it('carries UPID path diagnostics into the export preview', async () => {
     window.showDirectoryPicker = undefined;
 

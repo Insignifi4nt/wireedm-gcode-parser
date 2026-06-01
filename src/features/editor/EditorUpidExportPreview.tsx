@@ -1,12 +1,16 @@
 import { Download, X } from 'lucide-react';
 
-import type { PathDiagnostic } from '@/domain/path-intel/types';
+import type { OperationOrderStrategy, PathDiagnostic } from '@/domain/path-intel/types';
 
 interface EditorUpidExportPreviewProps {
   diagnostics: PathDiagnostic[];
   fileName: string;
   machineName: string;
   operationCount: number;
+  planning: {
+    manualOrderCount: number;
+    operationOrderStrategy: OperationOrderStrategy;
+  };
   postMetrics: {
     cutMoveCount: number;
     rapidCount: number;
@@ -21,6 +25,7 @@ export function EditorUpidExportPreview({
   fileName,
   machineName,
   operationCount,
+  planning,
   postMetrics,
   programText,
   onClose,
@@ -65,22 +70,35 @@ export function EditorUpidExportPreview({
         className="grid gap-2 border-b border-border bg-background/55 px-2 py-2"
         data-upid-export-summary
       >
-        <dl className="grid grid-cols-4 gap-1">
-          <div className="border border-border bg-card/60 px-2 py-1">
+        <dl className="grid grid-cols-2 gap-1 md:grid-cols-6">
+          <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
             <dt className="text-[8px] uppercase text-muted-foreground">Operations</dt>
             <dd data-upid-export-stat="operations">{operationCount}</dd>
           </div>
-          <div className="border border-border bg-card/60 px-2 py-1">
+          <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
             <dt className="text-[8px] uppercase text-muted-foreground">Rapid</dt>
             <dd data-upid-export-stat="rapid">{postMetrics.rapidCount}</dd>
           </div>
-          <div className="border border-border bg-card/60 px-2 py-1">
+          <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
             <dt className="text-[8px] uppercase text-muted-foreground">Cut</dt>
             <dd data-upid-export-stat="cut">{postMetrics.cutMoveCount}</dd>
           </div>
-          <div className="border border-border bg-card/60 px-2 py-1">
+          <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
             <dt className="text-[8px] uppercase text-muted-foreground">Diagnostics</dt>
             <dd data-upid-export-stat="diagnostics">{diagnostics.length}</dd>
+          </div>
+          <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
+            <dt className="text-[8px] uppercase text-muted-foreground">Planning</dt>
+            <dd className="truncate" data-upid-export-stat="planning-mode">
+              {formatOperationOrderStrategy(planning.operationOrderStrategy)}
+            </dd>
+          </div>
+          <div
+            className="min-w-0 border border-border bg-card/60 px-2 py-1"
+            data-upid-export-manual-order-active={planning.manualOrderCount > 0 ? 'true' : undefined}
+          >
+            <dt className="text-[8px] uppercase text-muted-foreground">Manual Order</dt>
+            <dd data-upid-export-stat="manual-order">{formatManualOrderCount(planning.manualOrderCount)}</dd>
           </div>
         </dl>
         {diagnostics.length > 0 && (
@@ -108,4 +126,15 @@ export function EditorUpidExportPreview({
       </pre>
     </section>
   );
+}
+
+function formatOperationOrderStrategy(strategy: OperationOrderStrategy) {
+  if (strategy === 'source-order') return 'Source order';
+  if (strategy === 'nearest') return 'Nearest travel';
+  return 'Inside/out nearest';
+}
+
+function formatManualOrderCount(count: number) {
+  if (count <= 0) return 'Automatic';
+  return `${count} ${count === 1 ? 'operation' : 'operations'}`;
 }

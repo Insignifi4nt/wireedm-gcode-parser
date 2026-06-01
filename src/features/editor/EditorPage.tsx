@@ -228,6 +228,9 @@ export function EditorPage({
       machine.output.extension,
       machine.output.customExtension
     );
+    const manualOrderCount = pathDocumentDraft.plan.operations.filter(
+      (operation) => operation.overrides?.order
+    ).length;
 
     return {
       body,
@@ -235,6 +238,10 @@ export function EditorPage({
       fileName,
       machineName: machine.name,
       operationCount: pathDocumentDraft.plan.operations.length,
+      planning: {
+        manualOrderCount,
+        operationOrderStrategy: pathDocumentDraft.options.operationOrderStrategy
+      },
       programText: composeGCodeProgram({
         header: machine.templates.header,
         body,
@@ -1238,6 +1245,7 @@ export function EditorPage({
           onClose={() => setExportPreviewOpen(false)}
           onDownload={() => onDownloadEditorFile(upidExport.fileName, upidExport.programText)}
           operationCount={upidExport.operationCount}
+          planning={upidExport.planning}
           postMetrics={upidExport.postMetrics}
           programText={upidExport.programText}
         />
