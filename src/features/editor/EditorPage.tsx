@@ -1181,7 +1181,6 @@ export function EditorPage({
             measurementPoints={measurementPoints}
             machineFit={machineFit}
             machineProfile={program?.project?.machine ?? null}
-            onActivatePathClickMode={setPathClickMode}
             onAddMeasurementPoint={handleAddMeasurementPoint}
             onClearMeasurementPoints={() => setMeasurementPoints([])}
             onDeleteMeasurementPoint={(pointId) =>
@@ -1192,15 +1191,11 @@ export function EditorPage({
             onExportMeasurementPoints={handleExportMeasurementPoints}
             onHoverPathElement={setHoveredPathElement}
             onInsertMeasurementPoints={handleInsertMeasurementPoints}
-            onMovePathOperation={handleMovePathOperation}
             onPointXDraftChange={setPointXDraft}
             onPointYDraftChange={setPointYDraft}
-            onReversePathOperation={handleReversePathOperation}
             onSelectPathElement={handleSelectPathElement}
-            onSelectPathOperation={handleSelectPathOperation}
             onToggleGridSnap={() => setGridSnapEnabled((current) => !current)}
             pathCount={pathCount}
-            pathClickMode={pathClickMode}
             pathDocument={pathDocumentDraft}
             pointXDraft={pointXDraft}
             pointYDraft={pointYDraft}
@@ -1209,7 +1204,6 @@ export function EditorPage({
             rapidMoveCount={rapidMoveCount}
             selectedPathElement={selectedPathElement}
             selectedPathOperationId={selectedPathOperationId}
-            showPathOperations={!isPathProject}
             structure={isPathProject ? null : structure}
           />
               </div>
