@@ -1275,6 +1275,8 @@ export function EditorPage({
           machineName={upidExport.machineName}
           onClose={() => setExportPreviewOpen(false)}
           onDownload={() => onDownloadEditorFile(upidExport.fileName, upidExport.programText)}
+          onHoverPathElement={setHoveredPathElement}
+          onSelectPathElement={handleSelectPathElement}
           operationCount={upidExport.operationCount}
           planning={upidExport.planning}
           postMetrics={upidExport.postMetrics}

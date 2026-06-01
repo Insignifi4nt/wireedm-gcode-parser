@@ -3,6 +3,7 @@ import { Download, X } from 'lucide-react';
 import type { GCodeProgramLineMap } from '@/domain/post/gcodeTemplates';
 import type { UpidGCodeProgramOperation } from '@/domain/upid/upidDocument';
 import type { OperationOrderStrategy, PathDiagnostic } from '@/domain/path-intel/types';
+import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 interface EditorUpidExportPreviewProps {
   diagnostics: PathDiagnostic[];
@@ -21,6 +22,8 @@ interface EditorUpidExportPreviewProps {
   programLines: GCodeProgramLineMap[];
   onClose: () => void;
   onDownload: () => void;
+  onHoverPathElement?: (element: EditorPathElementRef | null) => void;
+  onSelectPathElement?: (element: EditorPathElementRef) => void;
 }
 
 export function EditorUpidExportPreview({
@@ -33,7 +36,9 @@ export function EditorUpidExportPreview({
   postedOperations,
   programLines,
   onClose,
-  onDownload
+  onDownload,
+  onHoverPathElement,
+  onSelectPathElement
 }: EditorUpidExportPreviewProps) {
   return (
     <section
@@ -150,32 +155,51 @@ export function EditorUpidExportPreview({
                     </span>
                   </div>
                   <div className="border-t border-border/70 bg-background/35" data-upid-export-move-stack>
-                    {operation.moves.map((move) => (
-                      <div
-                        className="grid grid-cols-[2.5rem_2rem_minmax(0,1fr)_8rem] items-center gap-2 border-b border-border/70 px-2 py-1 last:border-b-0"
-                        data-upid-export-move-command={move.command}
-                        data-upid-export-move-body-line={move.bodyLineIndex + 1}
-                        data-upid-export-move-kind={move.kind}
-                        data-upid-export-move-line={move.programLineNumber}
-                        data-upid-export-move-path-element={move.pathElementId ?? undefined}
-                        data-upid-export-move-reason={move.reason}
-                        data-upid-export-move-row
-                        data-upid-export-move-segment={move.segmentId ?? undefined}
-                        data-upid-export-move-segment-index={move.segmentIndex ?? undefined}
-                        data-upid-export-move-segment-ordinal={move.segmentOrdinal ?? undefined}
-                        key={`${operation.operationId}-${move.bodyLineIndex}`}
-                      >
-                        <span className="text-muted-foreground">{move.programLineNumber}</span>
-                        <span className={move.kind === 'rapid' ? 'uppercase text-sky-200' : 'uppercase text-green-200'}>
-                          {move.command}
-                        </span>
-                        <span className="min-w-0 truncate text-foreground">{move.text}</span>
-                        <span className="truncate text-right text-[8px] uppercase text-muted-foreground">
-                          {move.segmentOrdinal ? `S${move.segmentOrdinal} / ` : ''}
-                          {move.reason}
-                        </span>
-                      </div>
-                    ))}
+                    {operation.moves.map((move) => {
+                      const traceRef = upidMoveTraceRef(move);
+
+                      return (
+                        <button
+                          className="grid grid-cols-[2.5rem_2rem_minmax(0,1fr)_8rem] items-center gap-2 border-b border-border/70 px-2 py-1 last:border-b-0"
+                          data-upid-export-move-command={move.command}
+                          data-upid-export-move-body-line={move.bodyLineIndex + 1}
+                          data-upid-export-move-kind={move.kind}
+                          data-upid-export-move-line={move.programLineNumber}
+                          data-upid-export-move-path-element={move.pathElementId ?? undefined}
+                          data-upid-export-move-reason={move.reason}
+                          data-upid-export-move-row
+                          data-upid-export-move-segment={move.segmentId ?? undefined}
+                          data-upid-export-move-segment-index={move.segmentIndex ?? undefined}
+                          data-upid-export-move-segment-ordinal={move.segmentOrdinal ?? undefined}
+                          disabled={!traceRef}
+                          key={`${operation.operationId}-${move.bodyLineIndex}`}
+                          onClick={() => {
+                            if (traceRef) onSelectPathElement?.(traceRef);
+                          }}
+                          onMouseEnter={() => {
+                            if (traceRef) onHoverPathElement?.(traceRef);
+                          }}
+                          onMouseLeave={() => {
+                            if (traceRef) onHoverPathElement?.(null);
+                          }}
+                          type="button"
+                        >
+                          <span className="text-muted-foreground">{move.programLineNumber}</span>
+                          <span
+                            className={
+                              move.kind === 'rapid' ? 'uppercase text-sky-200' : 'uppercase text-green-200'
+                            }
+                          >
+                            {move.command}
+                          </span>
+                          <span className="min-w-0 truncate text-foreground">{move.text}</span>
+                          <span className="truncate text-right text-[8px] uppercase text-muted-foreground">
+                            {move.segmentOrdinal ? `S${move.segmentOrdinal} / ` : ''}
+                            {move.reason}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -217,4 +241,17 @@ function formatManualOrderCount(count: number) {
 
 function formatBodyLineRange(operation: Pick<UpidGCodeProgramOperation, 'bodyLineEnd' | 'bodyLineStart'>) {
   return `${operation.bodyLineStart + 1}-${operation.bodyLineEnd + 1}`;
+}
+
+function upidMoveTraceRef(
+  move: UpidGCodeProgramOperation['moves'][number]
+): EditorPathElementRef | null {
+  if (!move.operationId || !move.pathElementId) return null;
+
+  return {
+    operationId: move.operationId,
+    pathElementId: move.pathElementId,
+    segmentId: move.segmentId,
+    travelRole: move.kind === 'rapid' && move.reason === 'operation-start' ? 'rapid-in' : undefined
+  };
 }

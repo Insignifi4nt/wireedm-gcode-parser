@@ -1389,6 +1389,30 @@ describe('App DXF imports and project library', () => {
     expect(exportMoveRows[1].textContent).toContain('segment-cut');
     expect(exportMoveRows[1].textContent).toContain('S1');
     expect(exportMoveRows[1].textContent).toContain('G1 X10.000 Y0.000');
+    const tracedSegmentId = exportMoveRows[1].getAttribute('data-upid-export-move-segment');
+
+    await act(async () => {
+      exportMoveRows[1].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    expect(
+      container
+        .querySelector(`[data-upid-segment-row][data-upid-segment-id="${tracedSegmentId}"]`)
+        ?.getAttribute('data-upid-hovered')
+    ).toBe('true');
+
+    await act(async () => {
+      exportMoveRows[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(
+      container
+        .querySelector(`[data-upid-segment-row][data-upid-segment-id="${tracedSegmentId}"]`)
+        ?.getAttribute('data-upid-selected')
+    ).toBe('true');
+    expect(container.querySelector('[data-upid-selected-segment]')?.getAttribute('data-upid-selected-segment-id')).toBe(
+      tracedSegmentId
+    );
     const programLineRows = [...container.querySelectorAll('[data-upid-export-program-line-row]')];
     expect(programLineRows).toHaveLength(11);
     expect(programLineRows[0].getAttribute('data-upid-export-program-section')).toBe('header');
