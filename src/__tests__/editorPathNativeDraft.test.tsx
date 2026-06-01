@@ -255,6 +255,37 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected="tree-lineage"]')?.textContent).toBe('Exterior 1');
   });
 
+  it('selects child contours from the inspector path tree context', async () => {
+    const pathDocument = pathDocumentFromNestedRectangles();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('button[aria-label="Select Exterior 1"]');
+
+    expect(container.querySelector('[data-upid-selected-tree-context]')?.getAttribute('data-upid-path-element-id')).toBe(
+      'contour_0001'
+    );
+
+    await clickElement('button[aria-label="Select child Hole 1"]');
+
+    expect(container.querySelector('[data-upid-selected-tree-context]')?.getAttribute('data-upid-path-element-id')).toBe(
+      'contour_0002'
+    );
+    expect(container.querySelector('[data-upid-selected="label"]')?.textContent).toBe('Hole 1');
+    expect(container.querySelector('[data-upid-selected="tree-lineage"]')?.textContent).toBe(
+      'Exterior 1 / Hole 1'
+    );
+  });
+
   it('reveals collapsed contour groups when selecting path geometry on canvas', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);

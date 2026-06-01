@@ -373,6 +373,39 @@ export function EditorInspectorPanel({
                   <dd data-upid-selected="tree-total-segments">
                     {selectedPathTreeNode.treeMetrics.totalSegmentCount}
                   </dd>
+                  {selectedPathTreeNode.children.length > 0 && (
+                    <>
+                      <dt className="text-muted-foreground">Child Paths</dt>
+                      <dd className="flex min-w-0 flex-wrap gap-1" data-upid-selected="tree-children">
+                        {selectedPathTreeNode.children.map((child) => (
+                          <button
+                            aria-label={`Select child ${child.element.displayName}`}
+                            className="text-left text-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                            data-upid-child-path-element={child.element.id}
+                            key={child.element.id}
+                            onClick={() =>
+                              onSelectPathElement?.({
+                                operationId: child.element.operationId,
+                                pathElementId: child.element.id,
+                                segmentId: null
+                              })
+                            }
+                            onMouseEnter={() =>
+                              onHoverPathElement?.({
+                                operationId: child.element.operationId,
+                                pathElementId: child.element.id,
+                                segmentId: null
+                              })
+                            }
+                            onMouseLeave={() => onHoverPathElement?.(null)}
+                            type="button"
+                          >
+                            {child.element.displayName}
+                          </button>
+                        ))}
+                      </dd>
+                    </>
+                  )}
                 </dl>
               </section>
             )}
