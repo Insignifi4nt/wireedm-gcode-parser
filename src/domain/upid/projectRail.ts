@@ -60,6 +60,8 @@ export interface UpidProjectRail {
   operationElements: UpidOperationPathElement[];
   summary: {
     contourCount: number;
+    manualDecisionCount: number;
+    manualDecisionCounts: Record<UpidManualDecisionKind, number>;
     operationCount: number;
     rootCount: number;
   };
@@ -155,6 +157,7 @@ export function createUpidProjectRail(document: PathPlanningDocument): UpidProje
   const operationElements = document.pathElements.filter(isUpidOperationPathElement);
   const cutSequenceElements = [...operationElements].sort((first, second) => first.orderIndex - second.orderIndex);
   const contourTree = buildUpidPathElementTree(operationElements, document.rootPathElementIds);
+  const manualDecisionCounts = summarizeUpidManualDecisionCounts(operationElements);
 
   return {
     contourTree,
@@ -163,10 +166,31 @@ export function createUpidProjectRail(document: PathPlanningDocument): UpidProje
     operationElements,
     summary: {
       contourCount: document.contours.length,
+      manualDecisionCount: Object.values(manualDecisionCounts).reduce((total, count) => total + count, 0),
+      manualDecisionCounts,
       operationCount: document.plan.operations.length,
       rootCount: contourTree.length
     }
   };
+}
+
+function summarizeUpidManualDecisionCounts(
+  elements: UpidOperationPathElement[]
+): Record<UpidManualDecisionKind, number> {
+  const counts: Record<UpidManualDecisionKind, number> = {
+    direction: 0,
+    order: 0,
+    role: 0,
+    start: 0
+  };
+
+  for (const element of elements) {
+    for (const decision of upidManualDecisionKinds(element)) {
+      counts[decision] += 1;
+    }
+  }
+
+  return counts;
 }
 
 export function isUpidOperationPathElement(element: PathElement): element is UpidOperationPathElement {

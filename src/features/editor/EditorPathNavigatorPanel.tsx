@@ -184,6 +184,22 @@ export function EditorPathNavigatorPanel({
           <p className="mt-1 text-[9px] text-muted-foreground">
             {projectRail.summary.operationCount} operations / {projectRail.summary.contourCount} contours
           </p>
+          <p
+            className="mt-1 text-[9px] text-muted-foreground"
+            data-upid-path-manual-decision-count={projectRail.summary.manualDecisionCount}
+            data-upid-path-manual-decision-direction={projectRail.summary.manualDecisionCounts.direction}
+            data-upid-path-manual-decision-order={projectRail.summary.manualDecisionCounts.order}
+            data-upid-path-manual-decision-role={projectRail.summary.manualDecisionCounts.role}
+            data-upid-path-manual-decision-start={projectRail.summary.manualDecisionCounts.start}
+            data-upid-path-manual-decisions
+          >
+            {formatPathManualDecisionCount(projectRail.summary.manualDecisionCount)}
+            {projectRail.summary.manualDecisionCount > 0 && (
+              <span className="block truncate">
+                {formatPathManualDecisionBreakdown(projectRail.summary.manualDecisionCounts)}
+              </span>
+            )}
+          </p>
         </div>
 
         <div className="shrink-0 border-b border-border py-2" data-upid-path-action-bar>
@@ -898,6 +914,17 @@ function formatTreeMetrics(metrics: UpidProjectRailTreeNode['treeMetrics']) {
 
   const descendantLabel = metrics.descendantCount === 1 ? 'nested contour' : 'nested contours';
   return `${metrics.directSegmentCount} ${segmentLabel} / ${metrics.descendantCount} ${descendantLabel} / ${metrics.totalSegmentCount} total`;
+}
+
+function formatPathManualDecisionCount(count: number) {
+  if (count <= 0) return 'Automatic path plan';
+  return `${count} manual ${count === 1 ? 'decision' : 'decisions'}`;
+}
+
+function formatPathManualDecisionBreakdown(
+  counts: Record<UpidManualDecisionKind, number>
+) {
+  return `order ${counts.order} / role ${counts.role} / direction ${counts.direction} / start ${counts.start}`;
 }
 
 function renderSegmentRow(

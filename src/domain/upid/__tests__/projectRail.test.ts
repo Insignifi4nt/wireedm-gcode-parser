@@ -44,6 +44,13 @@ describe('UPID project rail projection', () => {
 
     expect(rail.summary).toEqual({
       contourCount: 2,
+      manualDecisionCount: 0,
+      manualDecisionCounts: {
+        direction: 0,
+        order: 0,
+        role: 0,
+        start: 0
+      },
       operationCount: 2,
       rootCount: 1
     });
@@ -274,6 +281,13 @@ describe('UPID project rail projection', () => {
     );
 
     expect(rail.manualOrderActive).toBe(true);
+    expect(rail.summary.manualDecisionCount).toBe(3);
+    expect(rail.summary.manualDecisionCounts).toEqual({
+      direction: 1,
+      order: 2,
+      role: 0,
+      start: 0
+    });
     expect(rail.cutSequenceElements.map((element) => upidManualDecisionKinds(element))).toEqual([
       ['order'],
       ['order', 'direction']

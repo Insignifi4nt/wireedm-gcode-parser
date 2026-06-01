@@ -1312,6 +1312,13 @@ describe('App DXF imports and project library', () => {
         '[data-upid-contour-row][data-upid-selected="true"] [data-upid-manual-decision="start"]'
       )
     ).not.toBeNull();
+    const manualDecisionSummary = container.querySelector('[data-upid-path-manual-decisions]');
+    expect(manualDecisionSummary?.getAttribute('data-upid-path-manual-decision-count')).toBe('2');
+    expect(manualDecisionSummary?.getAttribute('data-upid-path-manual-decision-direction')).toBe('1');
+    expect(manualDecisionSummary?.getAttribute('data-upid-path-manual-decision-start')).toBe('1');
+    expect(manualDecisionSummary?.textContent).toContain('2 manual decisions');
+    expect(manualDecisionSummary?.textContent).toContain('direction 1');
+    expect(manualDecisionSummary?.textContent).toContain('start 1');
   });
 
   it('posts UPID to G-code only inside the explicit export preview', async () => {
