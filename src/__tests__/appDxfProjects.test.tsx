@@ -1508,6 +1508,9 @@ describe('App DXF imports and project library', () => {
     const constructionPreview = container.querySelector('[data-upid-construction-preview]');
     expect(constructionPreview).not.toBeNull();
     expect(constructionPreview?.getAttribute('data-upid-construction-mode')).toBe('perpendicular');
+    expect(constructionPreview?.getAttribute('data-upid-construction-path-element-id')).toBe(
+      'contour_0001'
+    );
     const constructionSegmentId = constructionPreview?.getAttribute('data-upid-construction-segment');
     expect(constructionSegmentId).toBeTruthy();
     expect(
@@ -1660,6 +1663,7 @@ describe('App DXF imports and project library', () => {
 
     const existingStartPreview = container.querySelector('[data-upid-start-preview]');
     expect(existingStartPreview?.getAttribute('data-upid-start-relation')).toBe('existing-point');
+    expect(existingStartPreview?.getAttribute('data-upid-start-path-element-id')).toBe('contour_0001');
     const existingStartSegmentId = existingStartPreview?.getAttribute('data-upid-start-segment');
     const existingStartPointRole = existingStartPreview?.getAttribute('data-upid-start-point-role');
     expect(existingStartSegmentId).toBeTruthy();
@@ -1705,6 +1709,7 @@ describe('App DXF imports and project library', () => {
 
     const splitStartPreview = container.querySelector('[data-upid-start-preview]');
     expect(splitStartPreview?.getAttribute('data-upid-start-relation')).toBe('new-split-point');
+    expect(splitStartPreview?.getAttribute('data-upid-start-path-element-id')).toBe('contour_0001');
     const splitStartSegmentId = splitStartPreview?.getAttribute('data-upid-start-segment');
     expect(splitStartSegmentId).toBeTruthy();
     expect(

@@ -259,6 +259,7 @@ export function EditorPage({
     return {
       mode: pathClickMode,
       operationId: magnetized.operationId,
+      pathElementId: magnetized.pathElementId,
       relation: magnetized.relation,
       segmentId: magnetized.segmentId,
       sourcePoint,
@@ -285,6 +286,7 @@ export function EditorPage({
 
     return {
       operationId: preview.operationId,
+      pathElementId: preview.pathElementId,
       point: preview.point,
       pointRole: startPreviewPointRole(pathDocumentDraft, preview),
       relation: preview.relation,
@@ -306,6 +308,7 @@ export function EditorPage({
       constructionPreview && pathHoverAssistEnabled
         ? {
             operationId: constructionPreview.operationId,
+            pathElementId: constructionPreview.pathElementId,
             segmentId: constructionPreview.segmentId
           }
         : null,
@@ -316,6 +319,7 @@ export function EditorPage({
       startPreview && pathHoverAssistEnabled
         ? {
             operationId: startPreview.operationId,
+            pathElementId: startPreview.pathElementId,
             pointRole: startPreview.pointRole ?? undefined,
             segmentId: startPreview.segmentId
           }
@@ -1367,6 +1371,7 @@ function pathSnapFromMagnetized(magnetized: MagnetizedPathPoint): MeasurementPoi
     kind: 'path-construction',
     mode: magnetized.mode,
     operationId: magnetized.operationId,
+    pathElementId: magnetized.pathElementId,
     relation: magnetized.relation,
     segmentId: magnetized.segmentId,
     sourcePoint: magnetized.sourcePoint,

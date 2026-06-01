@@ -76,6 +76,7 @@ interface EditorPreviewProps {
 export interface EditorConstructionPreview {
   mode: MagnetizeMode;
   operationId: string;
+  pathElementId?: string | null;
   relation: 'perpendicular' | 'tangent' | 'nearest-fallback';
   segmentId: string;
   sourcePoint: { x: number; y: number };
@@ -84,6 +85,7 @@ export interface EditorConstructionPreview {
 
 export interface EditorStartPreview {
   operationId: string;
+  pathElementId?: string | null;
   point: { x: number; y: number };
   pointRole?: 'start' | 'end' | null;
   relation: 'existing-point' | 'new-split-point';
@@ -877,6 +879,7 @@ export function EditorPreview({
             <g
               data-upid-construction-mode={constructionPreview.mode}
               data-upid-construction-operation={constructionPreview.operationId}
+              data-upid-construction-path-element-id={constructionPreview.pathElementId}
               data-upid-construction-preview
               data-upid-construction-relation={constructionPreview.relation}
               data-upid-construction-segment={constructionPreview.segmentId}
@@ -926,6 +929,7 @@ export function EditorPreview({
           {startPreview && (
             <g
               data-upid-start-operation={startPreview.operationId}
+              data-upid-start-path-element-id={startPreview.pathElementId}
               data-upid-start-point-role={startPreview.pointRole ?? undefined}
               data-upid-start-preview
               data-upid-start-relation={startPreview.relation}

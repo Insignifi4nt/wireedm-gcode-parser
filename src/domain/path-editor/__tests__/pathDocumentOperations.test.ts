@@ -128,11 +128,13 @@ describe('pathDocumentOperations', () => {
 
     expect(existing).toMatchObject({
       operationId: operation.id,
+      pathElementId: document.pathElements[0].id,
       point: { x: 10, y: 0 },
       relation: 'existing-point'
     });
     expect(split).toMatchObject({
       operationId: operation.id,
+      pathElementId: document.pathElements[0].id,
       point: { x: 9, y: 0 },
       relation: 'new-split-point',
       segmentId: operation.segmentRefs[0].segmentId,
@@ -255,6 +257,7 @@ describe('pathDocumentOperations', () => {
 
     expect(result).toMatchObject({
       mode: 'perpendicular',
+      pathElementId: document.pathElements[0].id,
       point: { x: 5, y: 5 },
       tangent: { x: -1, y: 0 }
     });
@@ -276,6 +279,7 @@ describe('pathDocumentOperations', () => {
     expect(result?.point.x).toBeCloseTo(2.5, 6);
     expect(result?.point.y).toBeCloseTo(4.330127, 6);
     expect(result?.mode).toBe('tangent');
+    expect(result?.pathElementId).toBe(document.pathElements[0].id);
   });
 
   it('slides a constrained point only along its stored segment', () => {
@@ -304,6 +308,7 @@ describe('pathDocumentOperations', () => {
     );
 
     expect(slid?.operationId).toBe(construction?.operationId);
+    expect(slid?.pathElementId).toBe(construction?.pathElementId);
     expect(slid?.segmentId).toBe(construction?.segmentId);
     expect(slid?.point.x).toBe(10);
     expect(slid?.point.y).toBe(5);

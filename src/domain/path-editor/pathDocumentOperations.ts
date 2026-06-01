@@ -30,6 +30,7 @@ import type {
   OperationPlan,
   OrientedSegmentRef,
   PathChain,
+  PathElementId,
   PathOperation,
   PathPlanningDocument,
   PathSegment,
@@ -40,6 +41,7 @@ import type {
 export interface NearestPathPoint {
   distance: number;
   operationId: string;
+  pathElementId: PathElementId | null;
   point: Point2;
   segmentId: SegmentId;
   segmentIndex: number;
@@ -58,6 +60,7 @@ export interface MagnetizedPathPoint extends NearestPathPoint {
 
 export interface PathStartPreview {
   operationId: string;
+  pathElementId: PathElementId | null;
   point: Point2;
   relation: 'existing-point' | 'new-split-point';
   segmentId: SegmentId;
@@ -184,6 +187,7 @@ export function previewClosedOperationStartNearPoint(
     return endpoint
       ? {
           operationId,
+          pathElementId: endpoint.pathElementId,
           point: endpoint.point,
           relation: 'existing-point',
           segmentId: endpoint.segmentId,
@@ -209,6 +213,7 @@ export function previewClosedOperationStartNearPoint(
 
   return {
     operationId,
+    pathElementId: nearest.pathElementId,
     point: nearest.point,
     relation,
     segmentId: nearest.segmentId,
@@ -225,6 +230,7 @@ export function nearestPointOnOperation(
   if (!operation) return null;
 
   const segmentsById = segmentMap(document.segments);
+  const pathElementId = pathElementIdForOperation(document, operationId);
   let nearest: NearestPathPoint | null = null;
 
   operation.segmentRefs.forEach((ref, segmentIndex) => {
@@ -234,6 +240,7 @@ export function nearestPointOnOperation(
     const item: NearestPathPoint = {
       ...candidate,
       operationId,
+      pathElementId,
       segmentId: ref.segmentId,
       segmentIndex
     };
@@ -321,6 +328,7 @@ export function slideMagnetizedPointOnSegment(
     distance: distance(snap.sourcePoint, candidate.point),
     mode: snap.mode,
     operationId: operation.id,
+    pathElementId: pathElementIdForOperation(document, operation.id),
     point: candidate.point,
     relation: candidate.relation,
     segmentId: ref.segmentId,
@@ -349,7 +357,14 @@ function nearestExistingOperationEndpoint(
   point: Point2
 ) {
   const segmentsById = segmentMap(document.segments);
-  let nearest: { distance: number; point: Point2; segmentId: SegmentId; segmentIndex: number } | null = null;
+  const pathElementId = pathElementIdForOperation(document, operation.id);
+  let nearest: {
+    distance: number;
+    pathElementId: PathElementId | null;
+    point: Point2;
+    segmentId: SegmentId;
+    segmentIndex: number;
+  } | null = null;
 
   for (const [segmentIndex, ref] of operation.segmentRefs.entries()) {
     const segment = requiredSegment(segmentsById, ref.segmentId);
@@ -359,6 +374,7 @@ function nearestExistingOperationEndpoint(
       if (!nearest || candidateDistance < nearest.distance) {
         nearest = {
           distance: candidateDistance,
+          pathElementId,
           point: candidate,
           segmentId: ref.segmentId,
           segmentIndex
@@ -368,6 +384,10 @@ function nearestExistingOperationEndpoint(
   }
 
   return nearest ?? null;
+}
+
+function pathElementIdForOperation(document: PathPlanningDocument, operationId: string) {
+  return document.pathElements.find((element) => element.operationId === operationId)?.id ?? null;
 }
 
 function splitOperationSegmentAtPoint(
