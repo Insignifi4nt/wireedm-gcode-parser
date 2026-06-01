@@ -58,6 +58,7 @@ describe('saveEditorProgram', () => {
 
     const saved = await saveEditorProgram(imported.workbench, {
       filePath: imported.editorProgram.filePath,
+      model: 'gcode-text',
       text: updatedText
     });
 
@@ -92,7 +93,7 @@ describe('saveEditorProgram', () => {
 
     const saved = await saveEditorProgram(imported.workbench, {
       filePath: imported.editorProgram.filePath,
-      pathDocument: undefined,
+      model: 'gcode-text',
       project: imported.project,
       text: updatedText
     });
@@ -115,10 +116,30 @@ describe('saveEditorProgram', () => {
     await expect(
       saveEditorProgram(workbench, {
         filePath: 'imports/missing.nc',
+        model: 'gcode-text',
         text: 'G0 X0 Y0'
       })
     ).rejects.toThrow('Editor program file not found: imports/missing.nc');
     expect(adapter.files.has('imports/missing.nc')).toBe(false);
+  });
+
+  it('rejects unmodeled editor save payloads', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importExternalProgram(workbench, {
+      fileName: 'unmodeled.nc',
+      text: 'G0 X0 Y0',
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+
+    await expect(
+      saveEditorProgram(imported.workbench, {
+        filePath: imported.editorProgram.filePath,
+        text: 'G1 X1 Y0'
+      } as never)
+    ).rejects.toThrow('Editor save model is required.');
   });
 
   it('persists edited path documents and project metadata without generated body state', async () => {
@@ -145,10 +166,10 @@ describe('saveEditorProgram', () => {
 
     const saved = await saveEditorProgram(imported.workbench, {
       filePath: imported.project.source.files[0].path,
+      model: 'upid-document',
       now: new Date('2026-05-29T12:00:00.000Z'),
-      pathDocument: editedDocument,
-      project: imported.project,
-      text: ''
+      pathDocument: editedDocument!,
+      project: imported.project
     });
 
     const projectPath = 'projects/rectangle-2026-05-29/project.json';
@@ -201,10 +222,10 @@ describe('saveEditorProgram', () => {
     expect(reversedDocument).not.toBeNull();
     const saved = await saveEditorProgram(imported.workbench, {
       filePath: imported.project.source.files[0].path,
+      model: 'upid-document',
       now: new Date('2026-05-29T12:00:00.000Z'),
-      pathDocument: reversedDocument,
-      project: imported.project,
-      text: ''
+      pathDocument: reversedDocument!,
+      project: imported.project
     });
 
     const savedProject = JSON.parse(
@@ -237,10 +258,10 @@ describe('saveEditorProgram', () => {
 
     await saveEditorProgram(imported.workbench, {
       filePath: imported.project.source.files[0].path,
+      model: 'upid-document',
       now: new Date('2026-05-29T12:00:00.000Z'),
       pathDocument: healedDocument,
-      project: imported.project,
-      text: ''
+      project: imported.project
     });
 
     const savedProject = JSON.parse(adapter.files.get('projects/healed-save-2026-05-29/project.json') || '{}');
@@ -268,8 +289,8 @@ describe('saveEditorProgram', () => {
     await expect(
       saveEditorProgram(imported.workbench, {
         filePath: imported.project.source.files[0].path,
+        model: 'gcode-text',
         now: new Date('2026-05-29T12:00:00.000Z'),
-        pathDocument: null,
         project: imported.project,
         text
       })

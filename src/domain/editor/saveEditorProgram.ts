@@ -14,12 +14,24 @@ import { upidEditorDocumentPath } from './editorProjectPaths';
 import { parseGCodeProgram } from './gcodeParser';
 import type { LoadedEditorProgram } from './loadEditorProgram';
 
-export interface SaveEditorProgramInput {
+interface SaveEditorProgramBaseInput {
   filePath: string;
   now?: Date;
-  pathDocument?: PathPlanningDocument | null;
   project?: WorkbenchProject;
+}
+
+export type SaveEditorProgramInput = SaveGCodeEditorProgramInput | SaveUpidEditorProgramInput;
+
+export interface SaveGCodeEditorProgramInput extends SaveEditorProgramBaseInput {
+  model: 'gcode-text';
+  pathDocument?: never;
   text: string;
+}
+
+export interface SaveUpidEditorProgramInput extends SaveEditorProgramBaseInput {
+  model: 'upid-document';
+  pathDocument: PathPlanningDocument;
+  text?: never;
 }
 
 export interface SaveEditorProgramResult {
@@ -31,12 +43,16 @@ export async function saveEditorProgram(
   workbench: ConnectedWorkbench,
   input: SaveEditorProgramInput
 ): Promise<SaveEditorProgramResult> {
-  if (input.project && projectUpidDocument(input.project) && !input.pathDocument) {
+  if (!isSaveEditorProgramModel(input)) {
+    throw new Error('Editor save model is required.');
+  }
+
+  if (input.project && projectUpidDocument(input.project) && input.model !== 'upid-document') {
     throw new Error('UPID path projects must be saved with a path document.');
   }
 
-  const savesPathDocument = Boolean(input.project && input.pathDocument);
-  const textToSave = savesPathDocument ? '' : input.text;
+  const savesPathDocument = input.model === 'upid-document';
+  const textToSave = input.model === 'gcode-text' ? input.text : '';
 
   if (!savesPathDocument) {
     const existingText = await workbench.adapter.readText(input.filePath);
@@ -55,7 +71,7 @@ export async function saveEditorProgram(
       ? upidEditorDocumentPath(updatedWorkbench, updatedProject)
       : input.filePath;
   const editorProgram: LoadedEditorProgram =
-    savesPathDocument && input.pathDocument
+    input.model === 'upid-document'
       ? {
           filePath: editorFilePath,
           model: 'upid-document',
@@ -80,9 +96,9 @@ export async function saveEditorProgram(
 
 async function saveProjectPathState(
   workbench: ConnectedWorkbench,
-  input: SaveEditorProgramInput
+  input: SaveUpidEditorProgramInput
 ) {
-  if (!input.project || !input.pathDocument) return null;
+  if (!input.project) return null;
 
   const timestamp = (input.now ?? new Date()).toISOString();
   const projectEntry = workbench.manifest.projects.find((entry) => entry.id === input.project?.id);
@@ -135,4 +151,8 @@ async function saveProjectPathState(
       manifest: updatedManifest
     }
   };
+}
+
+function isSaveEditorProgramModel(input: SaveEditorProgramInput) {
+  return input.model === 'gcode-text' || input.model === 'upid-document';
 }

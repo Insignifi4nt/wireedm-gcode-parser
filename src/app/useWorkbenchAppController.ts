@@ -286,13 +286,20 @@ export function useWorkbenchAppController(
     try {
       const result = await appServices.saveEditorProgram(connectedWorkbench, {
         filePath: loadedEditorProgram.filePath,
-        pathDocument,
+        ...(pathDocument
+          ? {
+              model: 'upid-document' as const,
+              pathDocument
+            }
+          : {
+              model: 'gcode-text' as const,
+              text
+            }),
         project: loadedEditorProgram.project,
-        text
       });
       setConnectedWorkbench(result.workbench);
       setLoadedEditorProgram(result.editorProgram);
-      refreshLatestImportAfterSave(result.workbench, result.editorProgram, text, pathDocument);
+      refreshLatestImportAfterSave(result.workbench, result.editorProgram, pathDocument);
       setEditorSaveStatus('idle');
       showStatusToast('Program saved.', 'success');
     } catch (error) {
@@ -313,7 +320,6 @@ export function useWorkbenchAppController(
   function refreshLatestImportAfterSave(
     workbench: ConnectedWorkbench,
     editorProgram: LoadedEditorProgram,
-    text: string,
     pathDocument: PathPlanningDocument | null | undefined
   ) {
     setLatestImport((current) => {
