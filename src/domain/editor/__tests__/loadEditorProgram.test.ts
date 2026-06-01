@@ -110,6 +110,29 @@ describe('loadEditorProgram', () => {
       'DXF projects must contain a UPID document.'
     );
   });
+
+  it('rejects unsupported UPID project schema versions instead of loading stale path state', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'future-upid.dxf',
+      text: simpleArcDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const project = {
+      ...imported.project,
+      upid: {
+        ...imported.project.upid!,
+        schemaVersion: 2
+      }
+    } as unknown as typeof imported.project;
+
+    await expect(loadEditorProgram(imported.workbench, project)).rejects.toThrow(
+      'Unsupported UPID project schema version: 2.'
+    );
+  });
 });
 
 function simpleArcDxf() {

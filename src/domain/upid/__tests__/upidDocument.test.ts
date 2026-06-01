@@ -379,6 +379,35 @@ describe('UPID document boundary', () => {
     expect(projectUpidDocument(withProjectUpid(baseProject(), document))).toBe(document);
     expect(projectUpidDocument(baseProject())).toBeNull();
   });
+
+  it('rejects unsupported UPID project and document schema versions', () => {
+    const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
+    const project = withProjectUpid(baseProject(), document);
+    const unsupportedProjectSchema = {
+      ...project,
+      upid: {
+        ...project.upid!,
+        schemaVersion: 2
+      }
+    } as unknown as typeof project;
+    const unsupportedDocumentSchema = {
+      ...project,
+      upid: {
+        ...project.upid!,
+        document: {
+          ...project.upid!.document,
+          schemaVersion: 2
+        }
+      }
+    } as unknown as typeof project;
+
+    expect(() => projectUpidDocument(unsupportedProjectSchema)).toThrow(
+      'Unsupported UPID project schema version: 2.'
+    );
+    expect(() => projectUpidDocument(unsupportedDocumentSchema)).toThrow(
+      'Unsupported UPID document schema version: 2.'
+    );
+  });
 });
 
 function baseProject() {
