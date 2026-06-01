@@ -305,6 +305,13 @@ test('editor moves a selected contour center to a precise coordinate', async ({ 
     });
 
   await showPanels(page, ['path-transform', 'contour-tree', 'statistics']);
+  await expect(page.locator('[data-upid-transform-document-center]')).toHaveText('5.000, 5.000');
+  await expect(page.locator('[data-upid-transform-origin-offset]')).toHaveText('-5.000, -5.000');
+  await expect(page.locator('[data-upid-transform-document-placement-help]')).toContainText(
+    'center to X0 Y0'
+  );
+  const transformBox = await page.locator('[data-editor-workspace-panel="path-transform"]').boundingBox();
+  expect(transformBox?.height).toBeGreaterThanOrEqual(400);
   await page.locator('[data-upid-contour-row]').first().click();
   await hidePanels(page, ['contour-tree']);
 
@@ -318,6 +325,7 @@ test('editor moves a selected contour center to a precise coordinate', async ({ 
 
   await expect(page.locator('[data-upid-selected="start"]')).toHaveText('-5.000, -5.000');
   await expect(page.locator('[data-upid-transform-selection-center-current]')).toHaveText('0.000, 0.000');
+  await expect(page.locator('[data-upid-transform-document-center]')).toHaveText('0.000, 0.000');
 });
 
 test('editor moves a selected arc center to the latest measurement point', async ({ page }) => {

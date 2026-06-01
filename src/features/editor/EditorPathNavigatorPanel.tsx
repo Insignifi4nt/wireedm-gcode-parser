@@ -29,6 +29,7 @@ import {
   segmentMap
 } from '@/domain/path-intel/segments';
 import type {
+  Bounds2,
   ContourClassification,
   OperationOrderStrategy,
   OrientedSegmentRef,
@@ -58,7 +59,11 @@ import {
   type UpidProjectRail,
   type UpidProjectRailTreeNode
 } from '@/domain/upid/projectRail';
-import { readPathSelectionBoundsCenter } from './pathSelectionGeometry';
+import {
+  readPathDocumentBounds,
+  readPathDocumentBoundsCenter,
+  readPathSelectionBoundsCenter
+} from './pathSelectionGeometry';
 
 export type EditorPathElementRef = UpidPathElementRef;
 
@@ -202,6 +207,9 @@ export function EditorPathNavigatorPanel({
   const selectedSegment =
     selectedPathElement?.segmentId ? segmentsById.get(selectedPathElement.segmentId) ?? null : null;
   const selectedSegmentCenter = selectedSegment && selectedSegment.kind !== 'line' ? selectedSegment.center : null;
+  const documentBounds = readPathDocumentBounds(pathDocument);
+  const documentCenter = readPathDocumentBoundsCenter(pathDocument);
+  const documentOriginOffset = documentCenter ? { x: -documentCenter.x, y: -documentCenter.y } : null;
   const selectedGeometryCenter = readPathSelectionBoundsCenter(
     pathDocument,
     selectedPathElement,
@@ -560,6 +568,45 @@ export function EditorPathNavigatorPanel({
             <span className="truncate text-[9px] text-muted-foreground" data-upid-transform-target>
               {translateTargetLabel}
             </span>
+          </div>
+          <div
+            className="mb-3 border border-border bg-background/35 p-2"
+            data-upid-transform-document-placement
+          >
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[9px] uppercase text-muted-foreground">Document Placement</span>
+              <span className="text-[8px] uppercase text-muted-foreground">Origin Check</span>
+            </div>
+            <dl className="grid gap-1 font-mono text-[9px]">
+              <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
+                <dt className="uppercase text-muted-foreground">Bounds</dt>
+                <dd
+                  className="truncate text-foreground"
+                  data-upid-transform-document-bounds
+                  title={documentBounds ? formatBounds(documentBounds) : 'No drawable bounds'}
+                >
+                  {documentBounds ? formatBounds(documentBounds) : '-'}
+                </dd>
+              </div>
+              <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
+                <dt className="uppercase text-muted-foreground">Center</dt>
+                <dd className="truncate text-foreground" data-upid-transform-document-center>
+                  {documentCenter ? formatPoint(documentCenter) : '-'}
+                </dd>
+              </div>
+              <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
+                <dt className="uppercase text-muted-foreground">To Origin</dt>
+                <dd className="truncate text-foreground" data-upid-transform-origin-offset>
+                  {documentOriginOffset ? formatPoint(documentOriginOffset) : '-'}
+                </dd>
+              </div>
+            </dl>
+            <p
+              className="mt-2 text-[9px] leading-4 text-muted-foreground"
+              data-upid-transform-document-placement-help
+            >
+              Select a contour, then use Origin and Move Center to translate its center to X0 Y0.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
@@ -2149,6 +2196,10 @@ function renderPointRow({
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
+}
+
+function formatBounds(bounds: Bounds2) {
+  return `X ${formatNumber(bounds.minX)}..${formatNumber(bounds.maxX)} Y ${formatNumber(bounds.minY)}..${formatNumber(bounds.maxY)}`;
 }
 
 function formatSegmentGeometrySummary(geometry: UpidSelectedPathSegmentGeometry) {

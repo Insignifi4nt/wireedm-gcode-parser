@@ -193,7 +193,7 @@ const INSPECTOR_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
 const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFloatingPanelGeometry> = {
   'path-summary': { x: 250, y: 74, width: 300, height: 220 },
   'path-actions': { x: 274, y: 104, width: 320, height: 430 },
-  'path-transform': { x: 298, y: 134, width: 320, height: 220 },
+  'path-transform': { x: 298, y: 134, width: 340, height: 430 },
   'path-hover-assist': { x: 322, y: 164, width: 300, height: 190 },
   'endpoint-topology': { x: 812, y: 84, width: 360, height: 300 },
   'path-diagnostics': { x: 370, y: 224, width: 360, height: 260 },

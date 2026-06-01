@@ -15,6 +15,20 @@ export function readPathSelectionBoundsCenter(
   };
 }
 
+export function readPathDocumentBounds(document: PathPlanningDocument): Bounds2 | null {
+  return mergeSegmentBounds(document.segments);
+}
+
+export function readPathDocumentBoundsCenter(document: PathPlanningDocument): Point2 | null {
+  const bounds = readPathDocumentBounds(document);
+  if (!bounds || !boundsAreFinite(bounds)) return null;
+
+  return {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2
+  };
+}
+
 function readPathSelectionBounds(
   document: PathPlanningDocument,
   selectedPathElement: UpidPathElementRef | null,

@@ -21,7 +21,7 @@ export function StatusToastList({ onDismiss, toasts }: StatusToastListProps) {
   return (
     <div
       aria-live="polite"
-      className="fixed right-3 top-12 z-[60] grid w-[min(360px,calc(100vw-24px))] gap-2"
+      className="fixed right-3 top-12 z-20 grid w-[min(360px,calc(100vw-24px))] gap-2"
       data-status-toast-container
     >
       {toasts.map((toast) => (
