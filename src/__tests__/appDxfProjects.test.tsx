@@ -1806,8 +1806,17 @@ describe('App DXF imports and project library', () => {
     expect(exportDiagnostics).not.toBeNull();
     expect(diagnosticRows).toHaveLength(1);
     expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-code')).toBe('open-chain');
+    expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-related-clusters')).toBe('2');
+    expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-related-segments')).toBe('1');
     expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-severity')).toBe('warning');
     expect(diagnosticRows[0].textContent).toContain('open chain');
+
+    const affectedRefs = [
+      ...diagnosticRows[0].querySelectorAll('[data-upid-export-diagnostic-ref]')
+    ] as HTMLElement[];
+    expect(affectedRefs).toHaveLength(2);
+    expect(affectedRefs[0].getAttribute('data-upid-export-diagnostic-ref-point-role')).toBe('start');
+    expect(affectedRefs[1].getAttribute('data-upid-export-diagnostic-ref-point-role')).toBe('end');
 
     const tracedPathElementId = diagnosticRows[0].getAttribute('data-upid-export-diagnostic-path-element');
     const tracedSegmentId = diagnosticRows[0].getAttribute('data-upid-export-diagnostic-segment');

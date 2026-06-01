@@ -1,7 +1,10 @@
 import { Download, X } from 'lucide-react';
 
 import type { GCodeProgramLineMap } from '@/domain/post/gcodeTemplates';
-import { upidPathElementRefForDiagnostic } from '@/domain/upid/projectRail';
+import {
+  projectUpidPathDiagnostic,
+  type UpidSelectedPathDiagnostic
+} from '@/domain/upid/projectRail';
 import type {
   UpidGCodeExportDocumentTrace,
   UpidGCodeProgramManualDecisionKind,
@@ -55,6 +58,9 @@ export function EditorUpidExportPreview({
     postedOperations.flatMap((operation) =>
       operation.moves.map((move) => [move.programLineNumber, move] as const)
     )
+  );
+  const projectedDiagnostics = diagnostics.map((diagnostic) =>
+    projectUpidPathDiagnostic(pathDocument, diagnostic)
   );
 
   return (
@@ -163,38 +169,15 @@ export function EditorUpidExportPreview({
             </dd>
           </div>
         </dl>
-        {diagnostics.length > 0 && (
+        {projectedDiagnostics.length > 0 && (
           <div className="max-h-20 overflow-auto border border-border bg-card/60" data-upid-export-diagnostics>
-            {diagnostics.map((diagnostic) => {
-              const traceRef = upidDiagnosticTraceRef(pathDocument, diagnostic);
-
-              return (
-                <button
-                  className="w-full border-b border-border px-2 py-1 text-left outline-none last:border-b-0 hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
-                  data-upid-export-diagnostic-code={diagnostic.code}
-                  data-upid-export-diagnostic-operation={traceRef?.operationId ?? undefined}
-                  data-upid-export-diagnostic-path-element={traceRef?.pathElementId ?? undefined}
-                  data-upid-export-diagnostic-row
-                  data-upid-export-diagnostic-segment={traceRef?.segmentId ?? undefined}
-                  data-upid-export-diagnostic-severity={diagnostic.severity}
-                  disabled={!traceRef}
-                  key={diagnostic.id}
-                  onClick={() => {
-                    if (traceRef) onSelectPathElement?.(traceRef);
-                  }}
-                  onMouseEnter={() => {
-                    if (traceRef) onHoverPathElement?.(traceRef);
-                  }}
-                  onMouseLeave={() => {
-                    if (traceRef) onHoverPathElement?.(null);
-                  }}
-                  type="button"
-                >
-                  <span className="mr-2 uppercase text-amber-200">{diagnostic.severity}</span>
-                  <span>{diagnostic.message}</span>
-                </button>
-              );
-            })}
+            {projectedDiagnostics.map((diagnostic) =>
+              renderExportDiagnosticRow({
+                diagnostic,
+                onHoverPathElement,
+                onSelectPathElement
+              })
+            )}
           </div>
         )}
         {postedOperations.length > 0 && (
@@ -390,8 +373,107 @@ function formatManualDecisionBreakdown(counts: Record<UpidGCodeProgramManualDeci
   return `order ${counts.order} / role ${counts.role} / direction ${counts.direction} / start ${counts.start}`;
 }
 
+function renderExportDiagnosticRow({
+  diagnostic,
+  onHoverPathElement,
+  onSelectPathElement
+}: {
+  diagnostic: UpidSelectedPathDiagnostic;
+  onHoverPathElement?: (element: EditorPathElementRef | null) => void;
+  onSelectPathElement?: (element: EditorPathElementRef) => void;
+}) {
+  const traceRef = diagnostic.selectRef;
+  const selectDiagnostic = () => {
+    if (traceRef) onSelectPathElement?.(traceRef);
+  };
+
+  return (
+    <div
+      aria-disabled={traceRef ? undefined : true}
+      className="grid w-full gap-0.5 border-b border-border px-2 py-1 text-left outline-none last:border-b-0 hover:bg-accent"
+      data-upid-export-diagnostic-code={diagnostic.code}
+      data-upid-export-diagnostic-id={diagnostic.id}
+      data-upid-export-diagnostic-operation={traceRef?.operationId ?? undefined}
+      data-upid-export-diagnostic-path-element={traceRef?.pathElementId ?? undefined}
+      data-upid-export-diagnostic-related-clusters={diagnostic.relatedClusterCount}
+      data-upid-export-diagnostic-related-segments={diagnostic.relatedSegmentCount}
+      data-upid-export-diagnostic-row
+      data-upid-export-diagnostic-segment={traceRef?.segmentId ?? undefined}
+      data-upid-export-diagnostic-severity={diagnostic.severity}
+      key={diagnostic.id}
+      onClick={selectDiagnostic}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') selectDiagnostic();
+      }}
+      onMouseEnter={() => {
+        if (traceRef) onHoverPathElement?.(traceRef);
+      }}
+      onMouseLeave={() => {
+        if (traceRef) onHoverPathElement?.(null);
+      }}
+      role={traceRef ? 'button' : undefined}
+      tabIndex={traceRef ? 0 : undefined}
+    >
+      <span className="flex min-w-0 items-center justify-between gap-2">
+        <span className="uppercase text-amber-200">{diagnostic.severity}</span>
+        <span className="truncate text-muted-foreground">{diagnostic.code}</span>
+      </span>
+      <span className="line-clamp-2 text-[9px] leading-4 text-muted-foreground">
+        {diagnostic.message}
+      </span>
+      <span className="text-[8px] text-muted-foreground">
+        segments {diagnostic.relatedSegmentCount} / clusters {diagnostic.relatedClusterCount}
+      </span>
+      {diagnostic.metrics.length > 0 && (
+        <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
+          {diagnostic.metrics.map((metric) => (
+            <span
+              className="border border-border bg-background/60 px-1 text-[8px] text-muted-foreground"
+              data-upid-export-diagnostic-metric={metric.key}
+              key={metric.key}
+            >
+              {metric.label} {formatNumber(metric.value)}
+            </span>
+          ))}
+        </span>
+      )}
+      {diagnostic.relatedRefs.length > 0 && (
+        <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
+          {diagnostic.relatedRefs.map((ref, index) => (
+            <button
+              aria-label={`Select export diagnostic affected geometry ${index + 1}`}
+              className="border border-border bg-background/60 px-1 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+              data-upid-export-diagnostic-ref
+              data-upid-export-diagnostic-ref-index={index}
+              data-upid-export-diagnostic-ref-operation={ref.operationId ?? undefined}
+              data-upid-export-diagnostic-ref-path-element={ref.pathElementId ?? undefined}
+              data-upid-export-diagnostic-ref-point-role={ref.pointRole ?? undefined}
+              data-upid-export-diagnostic-ref-segment={ref.segmentId ?? undefined}
+              data-upid-export-diagnostic-ref-travel={ref.travelRole ?? undefined}
+              key={`${ref.operationId ?? ''}-${ref.pathElementId ?? ''}-${ref.segmentId ?? ''}-${ref.pointRole ?? ''}-${index}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelectPathElement?.(ref);
+              }}
+              onMouseEnter={() => onHoverPathElement?.(ref)}
+              onMouseLeave={() => onHoverPathElement?.(null)}
+              type="button"
+            >
+              {index + 1} {ref.segmentId ?? ref.pathElementId ?? ref.operationId ?? 'ref'}
+            </button>
+          ))}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function formatBodyLineRange(operation: Pick<UpidGCodeProgramOperation, 'bodyLineEnd' | 'bodyLineStart'>) {
   return `${operation.bodyLineStart + 1}-${operation.bodyLineEnd + 1}`;
+}
+
+function formatNumber(value: number) {
+  return value.toFixed(3);
 }
 
 function formatManualStart(start: NonNullable<UpidGCodeProgramOperation['manualStart']>) {
@@ -435,11 +517,4 @@ function upidMoveTraceRef(
     segmentId: move.segmentId,
     travelRole: move.kind === 'rapid' && move.reason === 'operation-start' ? 'rapid-in' : undefined
   };
-}
-
-function upidDiagnosticTraceRef(
-  pathDocument: PathPlanningDocument,
-  diagnostic: PathDiagnostic
-): EditorPathElementRef | null {
-  return upidPathElementRefForDiagnostic(pathDocument, diagnostic);
 }

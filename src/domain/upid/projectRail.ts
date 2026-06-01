@@ -414,13 +414,13 @@ export function readUpidPathElementDiagnostics(
 ): UpidSelectedPathDiagnostic[] {
   return document.diagnostics
     .filter((diagnostic) => upidDiagnosticAffectsPathElement(document, elementRef, diagnostic))
-    .map((diagnostic) => readUpidPathDiagnostic(document, diagnostic));
+    .map((diagnostic) => projectUpidPathDiagnostic(document, diagnostic));
 }
 
 export function readUpidPathDiagnostics(
   document: PathPlanningDocument
 ): UpidSelectedPathDiagnostic[] {
-  return document.diagnostics.map((diagnostic) => readUpidPathDiagnostic(document, diagnostic));
+  return document.diagnostics.map((diagnostic) => projectUpidPathDiagnostic(document, diagnostic));
 }
 
 export function summarizeUpidDiagnosticsForPathElementRef(
@@ -434,7 +434,7 @@ export function summarizeUpidDiagnosticsForPathElementRef(
   );
 }
 
-function readUpidPathDiagnostic(
+export function projectUpidPathDiagnostic(
   document: PathPlanningDocument,
   diagnostic: PathDiagnostic
 ): UpidSelectedPathDiagnostic {
