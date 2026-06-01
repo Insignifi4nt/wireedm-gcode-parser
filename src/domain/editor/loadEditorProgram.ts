@@ -32,6 +32,10 @@ export async function loadEditorProgram(
   workbench: ConnectedWorkbench,
   project: WorkbenchProject
 ): Promise<LoadedEditorProgram> {
+  if (project.source.kind !== 'dxf' && project.upid) {
+    throw new Error('External G-code projects cannot contain UPID path state.');
+  }
+
   const pathDocument = projectUpidDocument(project);
   if (pathDocument) {
     return createUpidEditorProgram(workbench, project, pathDocument);
