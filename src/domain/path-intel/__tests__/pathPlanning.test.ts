@@ -161,6 +161,40 @@ describe('path-intel DXF planning', () => {
     ]);
   });
 
+  it('summarizes DXF block and insert lineage on contours and path elements', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      rectangleLines(0, 0, 10, 5).map((entity) => ({
+        ...entity,
+        source: {
+          blockName: 'PROFILE',
+          insertChain: [
+            {
+              blockName: 'PROFILE',
+              column: 0,
+              row: 0,
+              layer: 'CUT',
+              transform: {
+                insertion: { x: 100, y: 200 },
+                rotationDegrees: 90,
+                scaleX: 1,
+                scaleY: 1
+              }
+            }
+          ]
+        }
+      })),
+      { endpointTolerance: DEFAULT_TOLERANCE }
+    );
+
+    expect(document.contours[0].provenance.dxf).toEqual({
+      blockNames: ['PROFILE'],
+      insertBlockNames: ['PROFILE'],
+      insertedSegmentCount: 4
+    });
+    expect(document.pathElements[0].provenance.dxf).toEqual(document.contours[0].provenance.dxf);
+    expect(document.plan.operations[0].provenance.dxf).toEqual(document.contours[0].provenance.dxf);
+  });
+
   it('uses rapids only between disconnected contours', () => {
     const document = createPathPlanningDocumentFromDxfEntities(
       [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)],

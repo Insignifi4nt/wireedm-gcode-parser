@@ -67,6 +67,9 @@ edits, and future AI/user review surfaces from collapsing into an unexplained fi
 - `src/domain/path-intel/planOperations.ts` chooses operation order, contour starts, and direction.
 - `src/domain/path-intel/pathElements.ts` assembles navigator-ready root/nested path elements from
   contours and operations without making UI code stitch the model together ad hoc.
+- Contour and path-element provenance now summarizes DXF source hierarchy, including BLOCK names
+  and inserted segment counts, so the editor can inspect where a found contour came from without
+  walking every segment.
 - `src/domain/path-intel/postGcode.ts` emits body G-code from the operation plan.
 - `src/domain/path-editor/pathDocumentOperations.ts` edits UPID operations for manual order, role,
   direction, start, split, and construction workflows while recording override metadata and keeping

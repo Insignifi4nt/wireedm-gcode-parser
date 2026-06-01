@@ -277,6 +277,18 @@ export function EditorInspectorPanel({
               <dd data-upid-selected="source-layers">{selectedPathSource?.layers ?? '-'}</dd>
               <dt className="text-muted-foreground">Exact</dt>
               <dd data-upid-selected="source-exact">{selectedPathSource?.exact ?? '-'}</dd>
+              {selectedPathSource?.blocks && (
+                <>
+                  <dt className="text-muted-foreground">Blocks</dt>
+                  <dd data-upid-selected="source-blocks">{selectedPathSource.blocks}</dd>
+                </>
+              )}
+              {selectedPathSource?.inserts && (
+                <>
+                  <dt className="text-muted-foreground">Inserts</dt>
+                  <dd data-upid-selected="source-inserts">{selectedPathSource.inserts}</dd>
+                </>
+              )}
               <dt className="text-muted-foreground">Cut</dt>
               <dd data-upid-selected="cut-length">{selectedPathElementModel.metrics.cutLength.toFixed(3)}</dd>
               <dt className="text-muted-foreground">Start</dt>
@@ -776,10 +788,21 @@ function manualOverrideRows(overrides: PathElement['overrides']) {
 function sourceSummaryRows(element: PathElement) {
   const provenance = element.provenance;
   const entityCount = provenance.sourceEntityIndices.length;
+  const insertedSegmentCount = provenance.dxf?.insertedSegmentCount ?? 0;
 
   return {
+    blocks:
+      provenance.dxf && provenance.dxf.blockNames.length > 0
+        ? provenance.dxf.blockNames.join(', ')
+        : null,
     entities: `${entityCount} ${entityCount === 1 ? 'entity' : 'entities'}`,
     exact: provenance.exact ? 'exact' : 'mixed',
+    inserts:
+      provenance.dxf && provenance.dxf.insertBlockNames.length > 0
+        ? `${provenance.dxf.insertBlockNames.join(', ')} / ${insertedSegmentCount} ${
+            insertedSegmentCount === 1 ? 'segment' : 'segments'
+          }`
+        : null,
     layers: provenance.layers.length > 0 ? provenance.layers.map((layer) => layer ?? '-').join(', ') : '-'
   };
 }

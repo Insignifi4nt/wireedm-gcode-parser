@@ -695,6 +695,29 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-selected="source-exact"]')?.textContent).toBe('exact');
   });
 
+  it('shows DXF block and insert lineage for selected UPID contours', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([insertedBlockRectangleDxf()], 'inserted-profile.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await selectFirstCutSequence(container);
+
+    expect(container.querySelector('[data-upid-selected="source-blocks"]')?.textContent).toBe('PROFILE');
+    expect(container.querySelector('[data-upid-selected="source-inserts"]')?.textContent).toBe(
+      'PROFILE / 4 segments'
+    );
+  });
+
   it('lets the user manually correct the selected UPID contour role', async () => {
     window.showDirectoryPicker = undefined;
 
@@ -2217,6 +2240,47 @@ function rectangleDxf() {
     '0',
     '20',
     '5',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function insertedBlockRectangleDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'BLOCKS',
+    '0',
+    'BLOCK',
+    '2',
+    'PROFILE',
+    ...closedPolylineDxf([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 5 },
+      { x: 0, y: 5 }
+    ]),
+    '0',
+    'ENDBLK',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'INSERT',
+    '8',
+    'CUT',
+    '2',
+    'PROFILE',
+    '10',
+    '100',
+    '20',
+    '200',
     '0',
     'ENDSEC',
     '0',

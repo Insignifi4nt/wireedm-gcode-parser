@@ -89,6 +89,13 @@ export interface PathElementProvenance {
   sourceEntityTypes: string[];
   layers: Array<string | null>;
   exact: boolean;
+  dxf?: PathElementDxfProvenance;
+}
+
+export interface PathElementDxfProvenance {
+  blockNames: string[];
+  insertBlockNames: string[];
+  insertedSegmentCount: number;
 }
 
 export interface BasePathSegment {

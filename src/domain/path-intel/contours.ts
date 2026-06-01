@@ -136,8 +136,11 @@ function contourLabel(index: number) {
 function summarizePathProvenance(segments: Array<PathSegment | undefined>): PathElementProvenance {
   const entityIndices = new Set<number>();
   const entityTypes = new Set<string>();
+  const dxfBlockNames = new Set<string>();
+  const dxfInsertBlockNames = new Set<string>();
   const layers = new Set<string | null>();
   let exact = true;
+  let insertedSegmentCount = 0;
 
   for (const segment of segments) {
     if (!segment) {
@@ -148,14 +151,33 @@ function summarizePathProvenance(segments: Array<PathSegment | undefined>): Path
     entityIndices.add(segment.source.sourceEntityIndex);
     entityTypes.add(segment.source.sourceEntityType);
     layers.add(segment.source.layer);
+    if (segment.source.dxf?.blockName) {
+      dxfBlockNames.add(segment.source.dxf.blockName);
+    }
+    if ((segment.source.dxf?.insertChain.length ?? 0) > 0) {
+      insertedSegmentCount += 1;
+      for (const insert of segment.source.dxf?.insertChain ?? []) {
+        dxfInsertBlockNames.add(insert.blockName);
+      }
+    }
     exact = exact && segment.source.exact;
   }
+
+  const dxf =
+    dxfBlockNames.size > 0 || dxfInsertBlockNames.size > 0 || insertedSegmentCount > 0
+      ? {
+          blockNames: [...dxfBlockNames].sort(),
+          insertBlockNames: [...dxfInsertBlockNames].sort(),
+          insertedSegmentCount
+        }
+      : undefined;
 
   return {
     sourceEntityIndices: [...entityIndices].sort((first, second) => first - second),
     sourceEntityTypes: [...entityTypes].sort(),
     layers: [...layers].sort(compareNullableText),
-    exact
+    exact,
+    ...(dxf ? { dxf } : {})
   };
 }
 
