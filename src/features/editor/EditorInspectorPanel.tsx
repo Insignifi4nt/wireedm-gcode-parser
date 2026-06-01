@@ -733,6 +733,40 @@ export function EditorInspectorPanel({
               <dd>{selectedPathPoint.segmentKind}</dd>
               <dt className="text-muted-foreground">Point</dt>
               <dd data-upid-selected-point-coordinate>{formatPoint(selectedPathPoint.point)}</dd>
+              {selectedPathPoint.endpointCluster && (
+                <>
+                  <dt className="text-muted-foreground">Cluster</dt>
+                  <dd data-upid-selected-point-cluster>{selectedPathPoint.endpointCluster.id}</dd>
+                  <dt className="text-muted-foreground">Method</dt>
+                  <dd data-upid-selected-point-cluster-method>
+                    {selectedPathPoint.endpointCluster.method}
+                  </dd>
+                  <dt className="text-muted-foreground">Members</dt>
+                  <dd data-upid-selected-point-cluster-members>
+                    {selectedPathPoint.endpointCluster.memberCount}
+                  </dd>
+                  <dt className="text-muted-foreground">Raw Side</dt>
+                  <dd data-upid-selected-point-cluster-side>
+                    {selectedPathPoint.endpointCluster.rawEndpointSide}
+                  </dd>
+                  <dt className="text-muted-foreground">Cluster Pt</dt>
+                  <dd data-upid-selected-point-cluster-point>
+                    {formatPoint(selectedPathPoint.endpointCluster.point)}
+                  </dd>
+                  <dt className="text-muted-foreground">Radius</dt>
+                  <dd data-upid-selected-point-cluster-radius>
+                    {formatNumber(selectedPathPoint.endpointCluster.radius)}
+                  </dd>
+                  <dt className="text-muted-foreground">Gap</dt>
+                  <dd data-upid-selected-point-cluster-gap>
+                    {formatNumber(selectedPathPoint.endpointCluster.maxPairDistance)}
+                  </dd>
+                  <dt className="text-muted-foreground">Tolerance</dt>
+                  <dd data-upid-selected-point-cluster-tolerance>
+                    {formatNumber(selectedPathPoint.endpointCluster.toleranceUsed)}
+                  </dd>
+                </>
+              )}
             </dl>
           </section>
         )}

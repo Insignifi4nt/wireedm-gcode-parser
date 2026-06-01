@@ -1,5 +1,6 @@
 import type {
   Bounds2,
+  EndpointSide,
   ManualStartOverride,
   OrientedSegmentRef,
   PathElementPointRole,
@@ -17,6 +18,7 @@ import {
   boundsAreFinite,
   distance,
   emptyBounds,
+  endpointKey,
   mergeBounds,
   orientedArcClockwise,
   orientedCircleClockwise,
@@ -167,9 +169,21 @@ export type UpidSelectedPathSegmentGeometry =
     };
 
 export interface UpidSelectedPathPoint {
+  endpointCluster: UpidSelectedEndpointCluster | null;
   point: Point2;
   role: Extract<PathElementPointRole, 'start' | 'end'>;
   segmentKind: string;
+}
+
+export interface UpidSelectedEndpointCluster {
+  id: string;
+  maxPairDistance: number;
+  memberCount: number;
+  method: 'exact' | 'within-tolerance';
+  point: Point2;
+  radius: number;
+  rawEndpointSide: EndpointSide;
+  toleranceUsed: number;
 }
 
 export interface UpidManualOverrideRow {
@@ -444,10 +458,44 @@ export function readUpidSelectedPathPoint(
   if (!segment) return null;
 
   return {
+    endpointCluster: readUpidSelectedEndpointCluster(document, ref, element.pointRole),
     point: element.pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref),
     role: element.pointRole,
     segmentKind: segment.kind
   };
+}
+
+function readUpidSelectedEndpointCluster(
+  document: PathPlanningDocument,
+  ref: OrientedSegmentRef,
+  pointRole: Extract<PathElementPointRole, 'start' | 'end'>
+): UpidSelectedEndpointCluster | null {
+  const rawEndpointSide = orientedEndpointSide(ref, pointRole);
+  const clusterKey = endpointKey(ref.segmentId, rawEndpointSide);
+  const cluster = document.endpointClusters.find((candidate) =>
+    candidate.members.some((member) => endpointKey(member.segmentId, member.side) === clusterKey)
+  );
+
+  if (!cluster) return null;
+
+  return {
+    id: cluster.id,
+    maxPairDistance: cluster.maxPairDistance,
+    memberCount: cluster.members.length,
+    method: cluster.method,
+    point: { ...cluster.point },
+    radius: cluster.radius,
+    rawEndpointSide,
+    toleranceUsed: cluster.toleranceUsed
+  };
+}
+
+function orientedEndpointSide(
+  ref: OrientedSegmentRef,
+  pointRole: Extract<PathElementPointRole, 'start' | 'end'>
+): EndpointSide {
+  if (pointRole === 'start') return ref.reversed ? 'end' : 'start';
+  return ref.reversed ? 'start' : 'end';
 }
 
 export function readUpidManualOverrideRows(overrides: PathElement['overrides']): UpidManualOverrideRow[] {

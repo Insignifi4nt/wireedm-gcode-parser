@@ -464,6 +464,39 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
+  it('shows endpoint cluster snap metadata in the selected point inspector', async () => {
+    const pathDocument = pathDocumentFromGappedRectangle();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const snappedEndpointRow = [...container.querySelectorAll('[data-upid-point-row]')].find(
+      (row) => row.getAttribute('data-upid-point-role') === 'end' && row.textContent?.includes('10.000, 0.000')
+    ) as HTMLElement | undefined;
+    expect(snappedEndpointRow).not.toBeUndefined();
+
+    await act(async () => {
+      snappedEndpointRow?.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-selected-point-cluster]')?.textContent).toMatch(/^ec_/);
+    expect(container.querySelector('[data-upid-selected-point-cluster-method]')?.textContent).toBe(
+      'within-tolerance'
+    );
+    expect(container.querySelector('[data-upid-selected-point-cluster-members]')?.textContent).toBe('2');
+    expect(container.querySelector('[data-upid-selected-point-cluster-radius]')?.textContent).toBe('0.002');
+    expect(container.querySelector('[data-upid-selected-point-cluster-gap]')?.textContent).toBe('0.004');
+  });
+
   it('shows curve geometry metadata in path navigator segment rows', async () => {
     const pathDocument = pathDocumentFromArc();
     const project = projectWithUpid(pathDocument);
@@ -705,6 +738,12 @@ function pathDocumentFromRectangle() {
   return dxfEntitiesToUpidDocument(parseDxf(rectangleDxf()).entities);
 }
 
+function pathDocumentFromGappedRectangle() {
+  return dxfEntitiesToUpidDocument(parseDxf(gappedRectangleDxf()).entities, {
+    endpointTolerance: 0.01
+  });
+}
+
 function pathDocumentFromArc() {
   return dxfEntitiesToUpidDocument(parseDxf(arcDxf()).entities);
 }
@@ -779,6 +818,23 @@ function arcDxf() {
   ].join('\n');
 }
 
+function gappedRectangleDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    ...lineDxf(0, 0, 10, 0),
+    ...lineDxf(10.004, 0, 10, 5),
+    ...lineDxf(10, 5, 0, 5),
+    ...lineDxf(0, 5, 0, 0),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
 function nestedRectangleDxf() {
   return [
     '0',
@@ -833,6 +889,23 @@ function closedLwPolylineDxf(minX: number, minY: number, maxX: number, maxY: num
     String(minX),
     '20',
     String(maxY)
+  ];
+}
+
+function lineDxf(startX: number, startY: number, endX: number, endY: number) {
+  return [
+    '0',
+    'LINE',
+    '8',
+    'CUT',
+    '10',
+    String(startX),
+    '20',
+    String(startY),
+    '11',
+    String(endX),
+    '21',
+    String(endY)
   ];
 }
 

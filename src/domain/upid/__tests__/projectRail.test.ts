@@ -386,6 +386,37 @@ describe('UPID project rail projection', () => {
     expect(readUpidPathElementPointByRole(pathElement, 'end')?.point).toEqual({ x: 0, y: 0 });
   });
 
+  it('resolves selected endpoint cluster metadata for snapped path points', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(gappedRectangle(0.004), {
+      endpointTolerance: 0.01
+    });
+    const operation = document.plan.operations[0];
+    const firstSegmentRef = operation.segmentRefs[0];
+    const pathElement = readUpidOperationPathElement(document, operation.id, null);
+
+    const selectedPoint = readUpidSelectedPathPoint(document, pathElement!, {
+      operationId: operation.id,
+      pathElementId: pathElement!.id,
+      pointRole: 'end',
+      segmentId: firstSegmentRef.segmentId
+    });
+
+    expect(selectedPoint).toMatchObject({
+      point: { x: 10, y: 0 },
+      role: 'end',
+      endpointCluster: {
+        rawEndpointSide: 'end',
+        method: 'within-tolerance',
+        memberCount: 2,
+        toleranceUsed: 0.01
+      }
+    });
+    expect(selectedPoint?.endpointCluster?.id).toMatch(/^ec_/);
+    expectPointClose(selectedPoint?.endpointCluster?.point, { x: 10.002, y: 0 });
+    expect(selectedPoint?.endpointCluster?.radius).toBeCloseTo(0.002);
+    expect(selectedPoint?.endpointCluster?.maxPairDistance).toBeCloseTo(0.004);
+  });
+
   it('classifies start previews and rapid travel with shared UPID selection helpers', () => {
     const document = createPathPlanningDocumentFromDxfEntities(
       [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)]
@@ -514,7 +545,14 @@ describe('UPID project rail projection', () => {
       },
       start: { x: 0, y: 0 }
     });
-    expect(readUpidSelectedPathPoint(document, pathElement!, { ...elementRef, pointRole: 'end' })).toEqual({
+    expect(readUpidSelectedPathPoint(document, pathElement!, { ...elementRef, pointRole: 'end' })).toMatchObject({
+      endpointCluster: {
+        maxPairDistance: 0,
+        memberCount: 1,
+        method: 'exact',
+        radius: 0,
+        rawEndpointSide: 'end'
+      },
       point: { x: 10, y: 0 },
       role: 'end',
       segmentKind: 'line'
