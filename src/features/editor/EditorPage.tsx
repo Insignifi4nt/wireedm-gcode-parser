@@ -303,7 +303,16 @@ export function EditorPage({
     previewCursorPoint,
     selectedPathOperationId
   ]);
-  const editorFileName = program?.filePath.split('/').pop() ?? '-';
+  const editorHeaderEyebrow = program?.model === 'upid-document' ? 'UPID Editor' : 'Editor';
+  const editorHeaderTitle =
+    program?.model === 'upid-document'
+      ? `${program.project?.name ?? 'Path Project'} / UPID Project`
+      : program?.filePath;
+  const editorHeaderTooltip = program?.model === 'upid-document' ? program.filePath : undefined;
+  const editorFileName =
+    program?.model === 'upid-document'
+      ? 'UPID Project'
+      : program?.filePath.split('/').pop() ?? '-';
   const hasUnsavedChanges = Boolean(
     program && (draftText !== program.text || draftPathDocumentSignature !== savedPathDocumentSignature)
   );
@@ -392,6 +401,7 @@ export function EditorPage({
   const editorHeaderContent = useMemo(
     () => (
       <EditorHeaderBar
+        eyebrow={editorHeaderEyebrow}
         filePath={program?.filePath}
         guideHighlightTarget={guideHighlightTarget}
         importErrorMessage={importErrorMessage}
@@ -400,9 +410,14 @@ export function EditorPage({
         onImportProgramFile={onImportProgramFile}
         onOpenGuide={() => setGuideOpen(true)}
         saveErrorMessage={saveErrorMessage}
+        title={editorHeaderTitle}
+        titleTooltip={editorHeaderTooltip}
       />
     ),
     [
+      editorHeaderEyebrow,
+      editorHeaderTitle,
+      editorHeaderTooltip,
       guideHighlightTarget,
       importErrorMessage,
       isImporting,

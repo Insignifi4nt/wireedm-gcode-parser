@@ -7,27 +7,34 @@ import type { EditorGuideTarget } from './editorGuideContent';
 import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 
 interface EditorHeaderBarProps {
+  eyebrow?: string;
   filePath: string | undefined;
   guideHighlightTarget: EditorGuideTarget | null;
   importErrorMessage: string | null;
   isImporting: boolean;
   saveErrorMessage: string | null;
+  title?: string;
+  titleTooltip?: string;
   onBackToDashboard: () => void;
   onImportProgramFile: (file: File) => void | Promise<void>;
   onOpenGuide: () => void;
 }
 
 export function EditorHeaderBar({
+  eyebrow = 'Editor',
   filePath,
   guideHighlightTarget,
   importErrorMessage,
   isImporting,
   saveErrorMessage,
+  title,
+  titleTooltip,
   onBackToDashboard,
   onImportProgramFile,
   onOpenGuide
 }: EditorHeaderBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const heading = title ?? filePath ?? 'Import or open a G-code program';
 
   async function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
@@ -50,9 +57,9 @@ export function EditorHeaderBar({
         Dashboard
       </Button>
       <div className="min-w-0 flex-1">
-        <p className="font-mono text-[9px] uppercase text-muted-foreground">Editor</p>
-        <h2 className="truncate font-mono text-[12px] font-semibold" title={filePath}>
-          {filePath ?? 'Import or open a G-code program'}
+        <p className="font-mono text-[9px] uppercase text-muted-foreground">{eyebrow}</p>
+        <h2 className="truncate font-mono text-[12px] font-semibold" title={titleTooltip ?? filePath}>
+          {heading}
         </h2>
       </div>
       <div className="flex min-w-0 shrink-0 items-center justify-end gap-1">

@@ -78,7 +78,9 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     expect(container.textContent).toContain('Editor');
-    expect(container.textContent).toContain('imports/part-');
+    expect(container.textContent).toContain('part / UPID Project');
+    expect(container.textContent).not.toContain('imports/part-');
+    expect(container.textContent).not.toContain('project.json');
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
     expect(container.querySelector('svg[aria-label="UPID path preview"]')?.getAttribute('data-preview-model')).toBe(
       'upid'
