@@ -132,77 +132,92 @@ export function EditorUpidExportPreview({
               Posted Operations
             </div>
             <div className="max-h-28 overflow-auto">
-              {postedOperations.map((operation) => (
-                <div className="border-b border-border last:border-b-0" key={operation.operationId}>
-                  <div
-                    className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1"
-                    data-upid-export-operation-body-lines={formatBodyLineRange(operation)}
-                    data-upid-export-operation-id={operation.operationId}
-                    data-upid-export-operation-lines={operation.programLineRange}
-                    data-upid-export-operation-path-element={operation.pathElementId ?? undefined}
-                    data-upid-export-operation-row
-                    data-upid-export-operation-role={operation.classification}
-                  >
-                    <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-foreground">{operation.displayName}</span>
-                      <span className="block truncate text-[8px] text-muted-foreground">
-                        {operation.direction} / lines {operation.programLineRange}
-                      </span>
-                    </span>
-                    <span className="text-right text-[8px] uppercase text-muted-foreground">
-                      {operation.cutMoveCount} cut / {operation.rapidCount} rapid
-                    </span>
-                  </div>
-                  <div className="border-t border-border/70 bg-background/35" data-upid-export-move-stack>
-                    {operation.moves.map((move) => {
-                      const traceRef = upidMoveTraceRef(move);
+              {postedOperations.map((operation) => {
+                const traceRef = upidOperationTraceRef(operation);
 
-                      return (
-                        <button
-                          className="grid grid-cols-[2.5rem_2rem_minmax(0,1fr)_8rem] items-center gap-2 border-b border-border/70 px-2 py-1 last:border-b-0"
-                          data-upid-export-move-command={move.command}
-                          data-upid-export-move-body-line={move.bodyLineIndex + 1}
-                          data-upid-export-move-kind={move.kind}
-                          data-upid-export-move-line={move.programLineNumber}
-                          data-upid-export-move-path-element={move.pathElementId ?? undefined}
-                          data-upid-export-move-reason={move.reason}
-                          data-upid-export-move-row
-                          data-upid-export-move-segment={move.segmentId ?? undefined}
-                          data-upid-export-move-segment-index={move.segmentIndex ?? undefined}
-                          data-upid-export-move-segment-ordinal={move.segmentOrdinal ?? undefined}
-                          disabled={!traceRef}
-                          key={`${operation.operationId}-${move.bodyLineIndex}`}
-                          onClick={() => {
-                            if (traceRef) onSelectPathElement?.(traceRef);
-                          }}
-                          onMouseEnter={() => {
-                            if (traceRef) onHoverPathElement?.(traceRef);
-                          }}
-                          onMouseLeave={() => {
-                            if (traceRef) onHoverPathElement?.(null);
-                          }}
-                          type="button"
-                        >
-                          <span className="text-muted-foreground">{move.programLineNumber}</span>
-                          <span
-                            className={
-                              move.kind === 'rapid' ? 'uppercase text-sky-200' : 'uppercase text-green-200'
-                            }
+                return (
+                  <div className="border-b border-border last:border-b-0" key={operation.operationId}>
+                    <button
+                      className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1"
+                      data-upid-export-operation-body-lines={formatBodyLineRange(operation)}
+                      data-upid-export-operation-id={operation.operationId}
+                      data-upid-export-operation-lines={operation.programLineRange}
+                      data-upid-export-operation-path-element={operation.pathElementId ?? undefined}
+                      data-upid-export-operation-row
+                      data-upid-export-operation-role={operation.classification}
+                      disabled={!traceRef}
+                      onClick={() => {
+                        if (traceRef) onSelectPathElement?.(traceRef);
+                      }}
+                      onMouseEnter={() => {
+                        if (traceRef) onHoverPathElement?.(traceRef);
+                      }}
+                      onMouseLeave={() => {
+                        if (traceRef) onHoverPathElement?.(null);
+                      }}
+                      type="button"
+                    >
+                      <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-foreground">{operation.displayName}</span>
+                        <span className="block truncate text-[8px] text-muted-foreground">
+                          {operation.direction} / lines {operation.programLineRange}
+                        </span>
+                      </span>
+                      <span className="text-right text-[8px] uppercase text-muted-foreground">
+                        {operation.cutMoveCount} cut / {operation.rapidCount} rapid
+                      </span>
+                    </button>
+                    <div className="border-t border-border/70 bg-background/35" data-upid-export-move-stack>
+                      {operation.moves.map((move) => {
+                        const traceRef = upidMoveTraceRef(move);
+
+                        return (
+                          <button
+                            className="grid grid-cols-[2.5rem_2rem_minmax(0,1fr)_8rem] items-center gap-2 border-b border-border/70 px-2 py-1 last:border-b-0"
+                            data-upid-export-move-command={move.command}
+                            data-upid-export-move-body-line={move.bodyLineIndex + 1}
+                            data-upid-export-move-kind={move.kind}
+                            data-upid-export-move-line={move.programLineNumber}
+                            data-upid-export-move-path-element={move.pathElementId ?? undefined}
+                            data-upid-export-move-reason={move.reason}
+                            data-upid-export-move-row
+                            data-upid-export-move-segment={move.segmentId ?? undefined}
+                            data-upid-export-move-segment-index={move.segmentIndex ?? undefined}
+                            data-upid-export-move-segment-ordinal={move.segmentOrdinal ?? undefined}
+                            disabled={!traceRef}
+                            key={`${operation.operationId}-${move.bodyLineIndex}`}
+                            onClick={() => {
+                              if (traceRef) onSelectPathElement?.(traceRef);
+                            }}
+                            onMouseEnter={() => {
+                              if (traceRef) onHoverPathElement?.(traceRef);
+                            }}
+                            onMouseLeave={() => {
+                              if (traceRef) onHoverPathElement?.(null);
+                            }}
+                            type="button"
                           >
-                            {move.command}
-                          </span>
-                          <span className="min-w-0 truncate text-foreground">{move.text}</span>
-                          <span className="truncate text-right text-[8px] uppercase text-muted-foreground">
-                            {move.segmentOrdinal ? `S${move.segmentOrdinal} / ` : ''}
-                            {move.reason}
-                          </span>
-                        </button>
-                      );
-                    })}
+                            <span className="text-muted-foreground">{move.programLineNumber}</span>
+                            <span
+                              className={
+                                move.kind === 'rapid' ? 'uppercase text-sky-200' : 'uppercase text-green-200'
+                              }
+                            >
+                              {move.command}
+                            </span>
+                            <span className="min-w-0 truncate text-foreground">{move.text}</span>
+                            <span className="truncate text-right text-[8px] uppercase text-muted-foreground">
+                              {move.segmentOrdinal ? `S${move.segmentOrdinal} / ` : ''}
+                              {move.reason}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
@@ -241,6 +256,16 @@ function formatManualOrderCount(count: number) {
 
 function formatBodyLineRange(operation: Pick<UpidGCodeProgramOperation, 'bodyLineEnd' | 'bodyLineStart'>) {
   return `${operation.bodyLineStart + 1}-${operation.bodyLineEnd + 1}`;
+}
+
+function upidOperationTraceRef(operation: UpidGCodeProgramOperation): EditorPathElementRef | null {
+  if (!operation.operationId || !operation.pathElementId) return null;
+
+  return {
+    operationId: operation.operationId,
+    pathElementId: operation.pathElementId,
+    segmentId: null
+  };
 }
 
 function upidMoveTraceRef(

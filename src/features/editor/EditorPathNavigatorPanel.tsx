@@ -782,6 +782,7 @@ function renderContourTreeNode({
             data-upid-contour-total-segments={node.treeMetrics.totalSegmentCount}
             data-upid-contour-descendants={node.treeMetrics.descendantCount}
             data-upid-contour-source-entities={sourceEntityCount}
+            data-upid-hovered={hoveredPathElement?.operationId === element.operationId ? 'true' : undefined}
             data-upid-operation-id={element.operationId}
             data-upid-path-element-id={element.id}
             data-upid-selected={

@@ -1365,6 +1365,28 @@ describe('App DXF imports and project library', () => {
     expect(exportOperationRows[0].textContent).toContain('Exterior 1');
     expect(exportOperationRows[0].textContent).toContain('4 cut');
     expect(exportOperationRows[0].textContent).toContain('1 rapid');
+    const tracedPathElementId = exportOperationRows[0].getAttribute('data-upid-export-operation-path-element');
+
+    await act(async () => {
+      exportOperationRows[0].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    expect(
+      container
+        .querySelector(`[data-upid-contour-row][data-upid-path-element-id="${tracedPathElementId}"]`)
+        ?.getAttribute('data-upid-hovered')
+    ).toBe('true');
+
+    await act(async () => {
+      exportOperationRows[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(
+      container
+        .querySelector(`[data-upid-contour-row][data-upid-path-element-id="${tracedPathElementId}"]`)
+        ?.getAttribute('data-upid-selected')
+    ).toBe('true');
+    expect(container.querySelector('[data-upid-selected="label"]')?.textContent).toBe('Exterior 1');
     const exportMoveRows = [...container.querySelectorAll('[data-upid-export-move-row]')];
     expect(exportMoveRows).toHaveLength(5);
     expect(exportMoveRows[0].getAttribute('data-upid-export-move-kind')).toBe('rapid');
