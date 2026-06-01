@@ -52,7 +52,14 @@ describe('UPID project rail projection', () => {
         start: 0
       },
       operationCount: 2,
-      rootCount: 1
+      rootCount: 1,
+      topology: {
+        ambiguousEndpointClusterCount: 0,
+        endpointClusterCount: document.endpointClusters.length,
+        maxEndpointSnapGap: 0,
+        snappedEndpointClusterCount: 0,
+        snappedEndpointCount: 0
+      }
     });
     expect(rail.manualOrderActive).toBe(false);
     expect(rail.cutSequenceElements.map((element) => element.displayName)).toEqual([
@@ -88,6 +95,22 @@ describe('UPID project rail projection', () => {
       })
     ).toEqual(['contour_0001']);
     expect(rail.operationElements.map(upidPathElementSourceEntityCount)).toEqual([4, 4]);
+  });
+
+  it('summarizes endpoint topology for the project rail', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(gappedRectangle(0.004), {
+      endpointTolerance: 0.01
+    });
+
+    const rail = createUpidProjectRail(document);
+
+    expect(rail.summary.topology).toMatchObject({
+      ambiguousEndpointClusterCount: 0,
+      endpointClusterCount: document.endpointClusters.length,
+      snappedEndpointClusterCount: 1,
+      snappedEndpointCount: 2
+    });
+    expect(rail.summary.topology.maxEndpointSnapGap).toBeCloseTo(0.004);
   });
 
   it('resolves selected path refs back to path tree nodes with subtree metrics', () => {

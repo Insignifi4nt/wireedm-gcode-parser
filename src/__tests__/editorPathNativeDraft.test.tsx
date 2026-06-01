@@ -520,6 +520,31 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
+  it('shows endpoint topology summary in the path navigator header', async () => {
+    const pathDocument = pathDocumentFromGappedRectangle();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const topologySummary = container.querySelector('[data-upid-topology-summary]') as HTMLElement | null;
+
+    expect(topologySummary).not.toBeNull();
+    expect(topologySummary?.getAttribute('data-upid-topology-clusters')).toBe('4');
+    expect(topologySummary?.getAttribute('data-upid-topology-snapped')).toBe('1');
+    expect(topologySummary?.getAttribute('data-upid-topology-snapped-endpoints')).toBe('2');
+    expect(topologySummary?.getAttribute('data-upid-topology-ambiguous')).toBe('0');
+    expect(topologySummary?.getAttribute('data-upid-topology-max-gap')).toBe('0.004');
+    expect(topologySummary?.textContent).toContain('Topology: 4 clusters / snapped 1 / max gap 0.004');
+  });
+
   it('shows curve geometry metadata in path navigator segment rows', async () => {
     const pathDocument = pathDocumentFromArc();
     const project = projectWithUpid(pathDocument);

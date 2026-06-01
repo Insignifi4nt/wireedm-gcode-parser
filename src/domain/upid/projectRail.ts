@@ -75,7 +75,16 @@ export interface UpidProjectRail {
     manualDecisionCounts: Record<UpidManualDecisionKind, number>;
     operationCount: number;
     rootCount: number;
+    topology: UpidEndpointTopologySummary;
   };
+}
+
+export interface UpidEndpointTopologySummary {
+  ambiguousEndpointClusterCount: number;
+  endpointClusterCount: number;
+  maxEndpointSnapGap: number;
+  snappedEndpointClusterCount: number;
+  snappedEndpointCount: number;
 }
 
 export interface UpidPathElementTreeContext {
@@ -238,8 +247,29 @@ export function createUpidProjectRail(document: PathPlanningDocument): UpidProje
       manualDecisionCount: manualDecisionSummary.count,
       manualDecisionCounts: manualDecisionSummary.counts,
       operationCount: document.plan.operations.length,
-      rootCount: contourTree.length
+      rootCount: contourTree.length,
+      topology: summarizeUpidEndpointTopology(document)
     }
+  };
+}
+
+function summarizeUpidEndpointTopology(document: PathPlanningDocument): UpidEndpointTopologySummary {
+  const snappedClusters = document.endpointClusters.filter((cluster) => cluster.method === 'within-tolerance');
+
+  return {
+    ambiguousEndpointClusterCount: document.diagnostics.filter(
+      (diagnostic) => diagnostic.code === 'ambiguous-endpoint-cluster'
+    ).length,
+    endpointClusterCount: document.endpointClusters.length,
+    maxEndpointSnapGap: snappedClusters.reduce(
+      (maxGap, cluster) => Math.max(maxGap, cluster.maxPairDistance),
+      0
+    ),
+    snappedEndpointClusterCount: snappedClusters.length,
+    snappedEndpointCount: snappedClusters.reduce(
+      (count, cluster) => count + cluster.members.length,
+      0
+    )
   };
 }
 

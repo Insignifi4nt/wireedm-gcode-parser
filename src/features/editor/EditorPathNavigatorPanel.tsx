@@ -124,6 +124,7 @@ export function EditorPathNavigatorPanel({
   const segmentsById = segmentMap(pathDocument.segments);
   const projectRail = createUpidProjectRail(pathDocument);
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
+  const endpointTopology = projectRail.summary.topology;
   const pathTreeElementIds = projectRail.operationElements.map((element) => element.id);
   const [expandedPathElementIds, setExpandedPathElementIds] = useState<Record<string, boolean>>({});
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
@@ -190,6 +191,22 @@ export function EditorPathNavigatorPanel({
           <h2 className="mt-1 text-sm font-semibold">UPID Path Navigator</h2>
           <p className="mt-1 text-[9px] text-muted-foreground">
             {projectRail.summary.operationCount} operations / {projectRail.summary.contourCount} contours
+          </p>
+          <p
+            className="mt-1 truncate text-[9px] text-muted-foreground"
+            data-upid-topology-ambiguous={endpointTopology.ambiguousEndpointClusterCount}
+            data-upid-topology-clusters={endpointTopology.endpointClusterCount}
+            data-upid-topology-max-gap={endpointTopology.maxEndpointSnapGap.toFixed(3)}
+            data-upid-topology-snapped={endpointTopology.snappedEndpointClusterCount}
+            data-upid-topology-snapped-endpoints={endpointTopology.snappedEndpointCount}
+            data-upid-topology-summary
+          >
+            Topology: {endpointTopology.endpointClusterCount} clusters / snapped{' '}
+            {endpointTopology.snappedEndpointClusterCount} / max gap{' '}
+            {endpointTopology.maxEndpointSnapGap.toFixed(3)}
+            {endpointTopology.ambiguousEndpointClusterCount > 0 && (
+              <> / ambiguous {endpointTopology.ambiguousEndpointClusterCount}</>
+            )}
           </p>
           <p
             className="mt-1 text-[9px] text-muted-foreground"
