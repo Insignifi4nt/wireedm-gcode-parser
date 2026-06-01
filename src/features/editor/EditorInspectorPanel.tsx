@@ -246,6 +246,18 @@ export function EditorInspectorPanel({
               </dd>
               <dt className="text-muted-foreground">Direction</dt>
               <dd data-upid-selected="direction">{selectedPathElementModel.direction}</dd>
+              <dt className="text-muted-foreground">Planning</dt>
+              <dd data-upid-selected="planning-mode">
+                {formatOperationOrderStrategy(pathDocument.options.operationOrderStrategy)}
+              </dd>
+              <dt className="text-muted-foreground">Sequence</dt>
+              <dd data-upid-selected="sequence">
+                {selectedPathElementModel.orderIndex + 1} / {pathDocument.plan.operations.length}
+              </dd>
+              <dt className="text-muted-foreground">Order</dt>
+              <dd data-upid-selected="order-source">
+                {selectedPathElementModel.overrides?.order ? 'Manual order' : 'Automatic order'}
+              </dd>
               <dt className="text-muted-foreground">Nest</dt>
               <dd data-upid-selected="nest">
                 depth {selectedPathElementModel.containmentDepth}
@@ -642,6 +654,12 @@ function formatLimit(value: number | null) {
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
+}
+
+function formatOperationOrderStrategy(strategy: PathPlanningDocument['options']['operationOrderStrategy']) {
+  if (strategy === 'source-order') return 'Source order';
+  if (strategy === 'nearest') return 'Nearest travel';
+  return 'Inside/out nearest';
 }
 
 function measurementPointModeLabel(point: MeasurementPoint) {

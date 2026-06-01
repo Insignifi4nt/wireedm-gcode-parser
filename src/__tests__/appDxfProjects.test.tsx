@@ -985,6 +985,11 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain(
       'Manual position 2'
     );
+    expect(container.querySelector('[data-upid-selected="planning-mode"]')?.textContent).toBe(
+      'Inside/out nearest'
+    );
+    expect(container.querySelector('[data-upid-selected="order-source"]')?.textContent).toBe('Manual order');
+    expect(container.querySelector('[data-upid-selected="sequence"]')?.textContent).toBe('2 / 3');
     expect(container.querySelector('[data-upid-order-strategy]')?.getAttribute('data-upid-manual-order-active')).toBe(
       'true'
     );
