@@ -1830,6 +1830,74 @@ describe('App DXF imports and project library', () => {
     expect(overrides?.textContent).toContain(`source ${targetSegmentId}`);
   });
 
+  it('preserves exact endpoint provenance when setting start from a canvas endpoint handle', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'endpoint-start-handle.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await selectFirstCutSequence(container);
+
+    const preview = container.querySelector(
+      'svg[aria-label="UPID path preview"]'
+    ) as SVGSVGElement | null;
+    expect(preview).not.toBeNull();
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      value: () => ({
+        left: 10,
+        top: 20,
+        width: 120,
+        height: 120,
+        right: 130,
+        bottom: 140,
+        x: 10,
+        y: 20,
+        toJSON: () => ({})
+      }),
+      configurable: true
+    });
+
+    const targetPointRow = container.querySelector(
+      '[data-upid-point-row][data-upid-segment-index="1"][data-upid-point-role="start"]'
+    ) as HTMLElement | null;
+    const targetSegmentId = targetPointRow?.getAttribute('data-upid-segment-id');
+    expect(targetSegmentId).toBeTruthy();
+
+    const endpointHandle = container.querySelector(
+      `svg[aria-label="UPID path preview"] circle[data-preview-path-endpoint][data-preview-point-role="start"][data-preview-segment="${targetSegmentId}"]`
+    );
+    expect(endpointHandle).not.toBeNull();
+
+    const startButton = container.querySelector(
+      'button[aria-label="Set path start from canvas"]'
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      endpointHandle?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 10, y: 0 })
+        })
+      );
+    });
+
+    const overrides = container.querySelector('[data-upid-selected-overrides]');
+    expect(container.querySelector('[data-upid-selected="start"]')?.textContent).toBe('10.000, 0.000');
+    expect(overrides?.textContent).toContain('existing start');
+    expect(overrides?.textContent).toContain(`source ${targetSegmentId}`);
+  });
+
   it('highlights canvas geometry from UPID navigator row hover', async () => {
     window.showDirectoryPicker = undefined;
 

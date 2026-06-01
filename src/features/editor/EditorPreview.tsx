@@ -61,6 +61,7 @@ interface EditorPreviewProps {
   measurementPoints: MeasurementPoint[];
   onCursorPointChange?: (point: { x: number; y: number } | null) => void;
   onMeasurementPointMove?: (pointId: string, point: { x: number; y: number }) => void;
+  onPathEndpointClick?: (element: EditorPathElementRef) => void;
   onPathElementClick?: (element: EditorPathElementRef) => void;
   onPathElementHover?: (element: EditorPathElementRef | null) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
@@ -102,6 +103,7 @@ export function EditorPreview({
   measurementPoints,
   onCursorPointChange,
   onMeasurementPointMove,
+  onPathEndpointClick,
   onPathElementClick,
   onPathElementHover,
   onPreviewPointClick,
@@ -744,7 +746,7 @@ export function EditorPreview({
 
               return (
                 <circle
-                  className={onPathElementClick ? 'cursor-pointer' : undefined}
+                  className={onPathElementClick || onPathEndpointClick ? 'cursor-pointer' : undefined}
                   cx={point.x}
                   cy={svgY}
                   data-preview-hovered={highlight === 'hover' ? 'true' : undefined}
@@ -758,14 +760,20 @@ export function EditorPreview({
                   fillOpacity={highlight ? '0.95' : '0.78'}
                   key={`endpoint-${path.operationId}-${path.segmentId}-${index}-${role}`}
                   onClick={(event) => {
-                    if (!onPathElementClick) return;
-                    event.stopPropagation();
-                    onPathElementClick({
+                    const element = {
                       operationId: path.operationId ?? null,
                       pathElementId: path.pathElementId ?? null,
                       pointRole: role,
                       segmentId: path.segmentId ?? null
-                    });
+                    };
+                    if (onPathEndpointClick) {
+                      event.stopPropagation();
+                      onPathEndpointClick(element);
+                      return;
+                    }
+                    if (!onPathElementClick) return;
+                    event.stopPropagation();
+                    onPathElementClick(element);
                   }}
                   onMouseEnter={() => {
                     onPathElementHover?.({
