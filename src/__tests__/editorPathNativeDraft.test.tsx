@@ -149,6 +149,42 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-segment-stack]')).not.toBeNull();
   });
 
+  it('collapses and expands the whole contour tree from named controls', async () => {
+    const pathDocument = pathDocumentFromNestedRectangles();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-path-tree-controls]')).not.toBeNull();
+    expectContourExpanded('contour_0001', true);
+    expectContourExpanded('contour_0002', true);
+
+    await clickElement('button[aria-label="Collapse entire contour tree"]');
+
+    expectContourExpanded('contour_0001', false);
+    expect(container.querySelector('[data-upid-contour-group="contour_0002"]')).toBeNull();
+    expect(container.querySelector('[data-upid-segment-stack]')).toBeNull();
+
+    await clickElement('button[aria-label="Expand Exterior 1"]');
+
+    expectContourExpanded('contour_0001', true);
+    expectContourExpanded('contour_0002', false);
+
+    await clickElement('button[aria-label="Expand entire contour tree"]');
+
+    expectContourExpanded('contour_0001', true);
+    expectContourExpanded('contour_0002', true);
+    expect(container.querySelectorAll('[data-upid-segment-stack]')).toHaveLength(2);
+  });
+
   it('reveals collapsed contour groups when selecting path geometry on canvas', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
@@ -243,6 +279,14 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
   }
+
+  function expectContourExpanded(pathElementId: string, expanded: boolean) {
+    expect(
+      container
+        .querySelector(`[data-upid-contour-group="${pathElementId}"]`)
+        ?.getAttribute('data-upid-expanded')
+    ).toBe(expanded ? 'true' : 'false');
+  }
 });
 
 function EditorPageHarness({
@@ -305,6 +349,10 @@ function pathDocumentFromRectangle() {
   return dxfEntitiesToUpidDocument(parseDxf(rectangleDxf()).entities);
 }
 
+function pathDocumentFromNestedRectangles() {
+  return dxfEntitiesToUpidDocument(parseDxf(nestedRectangleDxf()).entities);
+}
+
 function rectangleDxf() {
   return [
     '0',
@@ -338,6 +386,48 @@ function rectangleDxf() {
     '0',
     'EOF'
   ].join('\n');
+}
+
+function nestedRectangleDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    ...closedLwPolylineDxf(0, 0, 20, 20),
+    ...closedLwPolylineDxf(5, 5, 10, 10),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function closedLwPolylineDxf(minX: number, minY: number, maxX: number, maxY: number) {
+  return [
+    '0',
+    'LWPOLYLINE',
+    '90',
+    '4',
+    '70',
+    '1',
+    '10',
+    String(minX),
+    '20',
+    String(minY),
+    '10',
+    String(maxX),
+    '20',
+    String(minY),
+    '10',
+    String(maxX),
+    '20',
+    String(maxY),
+    '10',
+    String(minX),
+    '20',
+    String(maxY)
+  ];
 }
 
 async function flushAsync() {

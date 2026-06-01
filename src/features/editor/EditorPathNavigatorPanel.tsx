@@ -121,6 +121,7 @@ export function EditorPathNavigatorPanel({
   const segmentsById = segmentMap(pathDocument.segments);
   const projectRail = createUpidProjectRail(pathDocument);
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
+  const pathTreeElementIds = projectRail.operationElements.map((element) => element.id);
   const [expandedPathElementIds, setExpandedPathElementIds] = useState<Record<string, boolean>>({});
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
     (operation) => operation.id === selectedPathOperationId
@@ -137,6 +138,17 @@ export function EditorPathNavigatorPanel({
       ...current,
       [pathElementId]: !(current[pathElementId] ?? true)
     }));
+  };
+  const setPathTreeExpanded = (expanded: boolean) => {
+    setExpandedPathElementIds((current) => {
+      const next = { ...current };
+
+      for (const pathElementId of pathTreeElementIds) {
+        next[pathElementId] = expanded;
+      }
+
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -414,7 +426,32 @@ export function EditorPathNavigatorPanel({
         </section>
 
         <section className="min-h-0 flex-1 overflow-auto py-2" data-upid-contour-tree>
-          <div className="mb-2 text-[9px] uppercase text-muted-foreground">Contour Tree</div>
+          <div className="mb-2 grid gap-1" data-upid-path-tree-controls>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[9px] uppercase text-muted-foreground">Contour Tree</span>
+              <span className="text-[9px] text-muted-foreground">{projectRail.summary.rootCount} roots</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                aria-label="Expand entire contour tree"
+                className={textButtonClass}
+                disabled={pathTreeElementIds.length === 0 || isSaving}
+                onClick={() => setPathTreeExpanded(true)}
+                type="button"
+              >
+                Expand All
+              </button>
+              <button
+                aria-label="Collapse entire contour tree"
+                className={textButtonClass}
+                disabled={pathTreeElementIds.length === 0 || isSaving}
+                onClick={() => setPathTreeExpanded(false)}
+                type="button"
+              >
+                Collapse All
+              </button>
+            </div>
+          </div>
           {contourTree.map((node) =>
             renderContourTreeNode({
               hoveredPathElement,
