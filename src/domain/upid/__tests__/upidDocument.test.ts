@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import {
+  reversePathOperation,
+  setClosedOperationStartNearPoint
+} from '@/domain/path-editor/pathDocumentOperations';
+
 import { projectUpidDocument, withProjectUpid } from '../projectUpid';
 import {
   composeUpidGCodeExport,
@@ -172,6 +177,31 @@ describe('UPID document boundary', () => {
       segmentId: secondSegmentId,
       segmentIndex: 1,
       segmentOrdinal: 2
+    });
+  });
+
+  it('carries UPID manual decision and edit metadata onto posted export operations', () => {
+    const document = createUpidFromDxfEntities([
+      line(0, 0, 10, 0),
+      line(10, 0, 10, 5),
+      line(10, 5, 0, 5),
+      line(0, 5, 0, 0)
+    ]);
+    const operationId = document.plan.operations[0].id;
+    const reversed = reversePathOperation(document, operationId);
+    const started = setClosedOperationStartNearPoint(reversed!, operationId, { x: 5, y: 0 });
+
+    const exportProgram = composeUpidGCodeExport(started!, {
+      header: '',
+      footer: '',
+      lineEnding: 'lf'
+    });
+
+    expect(exportProgram.programOperations[0]).toMatchObject({
+      editEventCount: 1,
+      editedSegmentCount: 2,
+      manualDecisionKinds: ['direction', 'start'],
+      operationId
     });
   });
 

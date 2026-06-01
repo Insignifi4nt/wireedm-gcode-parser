@@ -60,12 +60,17 @@ export interface UpidGCodeProgramMove extends GcodePostedMove {
 }
 
 export interface UpidGCodeProgramOperation extends Omit<GcodePostedOperation, 'moves'> {
+  editEventCount: number;
+  editedSegmentCount: number;
+  manualDecisionKinds: UpidGCodeProgramManualDecisionKind[];
   moves: UpidGCodeProgramMove[];
   pathElementId: string | null;
   programLineEnd: number;
   programLineRange: string;
   programLineStart: number;
 }
+
+export type UpidGCodeProgramManualDecisionKind = 'order' | 'role' | 'direction' | 'start';
 
 export function createUpidFromDxfEntities(
   entities: DxfEntity[],
@@ -138,6 +143,9 @@ function mapProgramOperations(
 
     return {
       ...operation,
+      editEventCount: pathElement?.provenance.edit?.events.length ?? 0,
+      editedSegmentCount: pathElement?.provenance.edit?.derivedSegmentIds.length ?? 0,
+      manualDecisionKinds: upidGCodeProgramManualDecisionKinds(pathElement),
       moves: operation.moves.map((move) =>
         mapProgramMoveTrace(move, pathElement, programLineForBodyLine(bodySection, move.bodyLineIndex))
       ),
@@ -170,4 +178,18 @@ function mapProgramMoveTrace(
     segmentIndex: segmentIndex >= 0 ? segmentIndex : null,
     segmentOrdinal: segmentIndex >= 0 ? segmentIndex + 1 : null
   };
+}
+
+function upidGCodeProgramManualDecisionKinds(
+  pathElement: PathElement | null
+): UpidGCodeProgramManualDecisionKind[] {
+  const overrides = pathElement?.overrides;
+  if (!overrides) return [];
+
+  const decisions: UpidGCodeProgramManualDecisionKind[] = [];
+  if (overrides.order) decisions.push('order');
+  if (overrides.classification) decisions.push('role');
+  if (overrides.direction) decisions.push('direction');
+  if (overrides.start) decisions.push('start');
+  return decisions;
 }

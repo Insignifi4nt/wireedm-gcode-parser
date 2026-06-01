@@ -167,8 +167,16 @@ export function EditorUpidExportPreview({
                     <button
                       className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1"
                       data-upid-export-operation-body-lines={formatBodyLineRange(operation)}
+                      data-upid-export-operation-edited-segments={
+                        operation.editedSegmentCount > 0 ? operation.editedSegmentCount : undefined
+                      }
                       data-upid-export-operation-id={operation.operationId}
                       data-upid-export-operation-lines={operation.programLineRange}
+                      data-upid-export-operation-manual={
+                        operation.manualDecisionKinds.length > 0
+                          ? operation.manualDecisionKinds.join(' ')
+                          : undefined
+                      }
                       data-upid-export-operation-path-element={operation.pathElementId ?? undefined}
                       data-upid-export-operation-row
                       data-upid-export-operation-role={operation.classification}
@@ -190,6 +198,11 @@ export function EditorUpidExportPreview({
                         <span className="block truncate text-[8px] text-muted-foreground">
                           {operation.direction} / lines {operation.programLineRange}
                         </span>
+                        {operation.manualDecisionKinds.length > 0 && (
+                          <span className="block truncate text-[8px] text-amber-200">
+                            manual {operation.manualDecisionKinds.join(', ')}
+                          </span>
+                        )}
                       </span>
                       <span className="text-right text-[8px] uppercase text-muted-foreground">
                         {operation.cutMoveCount} cut / {operation.rapidCount} rapid

@@ -2125,6 +2125,86 @@ describe('App DXF imports and project library', () => {
     ).toBe('true');
   });
 
+  it('marks split-start UPID decisions on export operation rows', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'export-split-start.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await selectFirstCutSequence(container);
+
+    const preview = container.querySelector(
+      'svg[aria-label="UPID path preview"]'
+    ) as SVGSVGElement | null;
+    expect(preview).not.toBeNull();
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      value: () => ({
+        left: 10,
+        top: 20,
+        width: 120,
+        height: 120,
+        right: 130,
+        bottom: 140,
+        x: 10,
+        y: 20,
+        toJSON: () => ({})
+      }),
+      configurable: true
+    });
+
+    const hoverToggle = container.querySelector(
+      'input[aria-label="Toggle canvas hover assist"]'
+    ) as HTMLInputElement | null;
+    const snapToggle = container.querySelector(
+      'input[aria-label="Toggle magnetic non-existing point snap"]'
+    ) as HTMLInputElement | null;
+    const startButton = container.querySelector(
+      'button[aria-label="Set path start from canvas"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      hoverToggle?.click();
+    });
+    await act(async () => {
+      snapToggle?.click();
+    });
+    await act(async () => {
+      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 0 })
+        })
+      );
+    });
+    await flushAsync();
+
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const exportOperationRow = container.querySelector('[data-upid-export-operation-row]');
+
+    expect(exportOperationRow?.getAttribute('data-upid-export-operation-manual')).toBe('start');
+    expect(exportOperationRow?.getAttribute('data-upid-export-operation-edited-segments')).toBe('2');
+    expect(exportOperationRow?.textContent).toContain('start');
+  });
+
   it('edits imported DXF path direction through path controls instead of line text surgery', async () => {
     window.showDirectoryPicker = undefined;
     const downloadGeneratedProgram = vi.fn();
