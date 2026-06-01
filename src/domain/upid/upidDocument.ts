@@ -1,8 +1,15 @@
 import type { DxfEntity } from '@/domain/dxf/types';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
-import { pathPlanToGcodeBody, postPathPlanToGcode } from '@/domain/path-intel/postGcode';
+import {
+  pathPlanToGcodeBody,
+  postPathPlanToGcode,
+  type GcodePostedMove,
+  type GcodePostedOperation
+} from '@/domain/path-intel/postGcode';
 import {
   composeGCodeProgramWithLineMap,
+  formatProgramLineRangeForBodyRange,
+  programLineForBodyLine,
   type GCodeProgramComposition
 } from '@/domain/post/gcodeTemplates';
 import type {
@@ -25,6 +32,18 @@ export interface UpidGCodeExport {
   body: string;
   post: ReturnType<typeof postUpidToGcode>;
   program: GCodeProgramComposition;
+  programOperations: UpidGCodeProgramOperation[];
+}
+
+export interface UpidGCodeProgramMove extends GcodePostedMove {
+  programLineNumber: number;
+}
+
+export interface UpidGCodeProgramOperation extends Omit<GcodePostedOperation, 'moves'> {
+  moves: UpidGCodeProgramMove[];
+  programLineEnd: number;
+  programLineRange: string;
+  programLineStart: number;
 }
 
 export function createUpidFromDxfEntities(
@@ -49,15 +68,39 @@ export function composeUpidGCodeExport(
 ): UpidGCodeExport {
   const post = postUpidToGcode(document);
   const body = post.body;
+  const program = composeGCodeProgramWithLineMap({
+    header: input.header,
+    body,
+    footer: input.footer,
+    lineEnding: input.lineEnding
+  });
 
   return {
     body,
     post,
-    program: composeGCodeProgramWithLineMap({
-      header: input.header,
-      body,
-      footer: input.footer,
-      lineEnding: input.lineEnding
-    })
+    program,
+    programOperations: mapProgramOperations(post.operations, program)
   };
+}
+
+function mapProgramOperations(
+  operations: GcodePostedOperation[],
+  program: GCodeProgramComposition
+): UpidGCodeProgramOperation[] {
+  const bodySection = program.sections.body;
+
+  return operations.map((operation) => ({
+    ...operation,
+    moves: operation.moves.map((move) => ({
+      ...move,
+      programLineNumber: programLineForBodyLine(bodySection, move.bodyLineIndex)
+    })),
+    programLineEnd: programLineForBodyLine(bodySection, operation.bodyLineEnd),
+    programLineRange: formatProgramLineRangeForBodyRange(
+      bodySection,
+      operation.bodyLineStart,
+      operation.bodyLineEnd
+    ),
+    programLineStart: programLineForBodyLine(bodySection, operation.bodyLineStart)
+  }));
 }

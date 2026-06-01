@@ -1,12 +1,7 @@
 import { Download, X } from 'lucide-react';
 
-import type { GcodePostedOperation } from '@/domain/path-intel/postGcode';
-import {
-  formatProgramLineRangeForBodyRange,
-  programLineForBodyLine,
-  type GCodeProgramLineMap,
-  type GCodeProgramSectionMap
-} from '@/domain/post/gcodeTemplates';
+import type { GCodeProgramLineMap } from '@/domain/post/gcodeTemplates';
+import type { UpidGCodeProgramOperation } from '@/domain/upid/upidDocument';
 import type { OperationOrderStrategy, PathDiagnostic } from '@/domain/path-intel/types';
 
 interface EditorUpidExportPreviewProps {
@@ -22,11 +17,8 @@ interface EditorUpidExportPreviewProps {
     cutMoveCount: number;
     rapidCount: number;
   };
-  postedOperations: GcodePostedOperation[];
+  postedOperations: UpidGCodeProgramOperation[];
   programLines: GCodeProgramLineMap[];
-  programSections: {
-    body: GCodeProgramSectionMap;
-  };
   onClose: () => void;
   onDownload: () => void;
 }
@@ -40,7 +32,6 @@ export function EditorUpidExportPreview({
   postMetrics,
   postedOperations,
   programLines,
-  programSections,
   onClose,
   onDownload
 }: EditorUpidExportPreviewProps) {
@@ -142,11 +133,7 @@ export function EditorUpidExportPreview({
                     className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1"
                     data-upid-export-operation-body-lines={formatBodyLineRange(operation)}
                     data-upid-export-operation-id={operation.operationId}
-                    data-upid-export-operation-lines={formatProgramLineRangeForBodyRange(
-                      programSections.body,
-                      operation.bodyLineStart,
-                      operation.bodyLineEnd
-                    )}
+                    data-upid-export-operation-lines={operation.programLineRange}
                     data-upid-export-operation-row
                     data-upid-export-operation-role={operation.classification}
                   >
@@ -154,12 +141,7 @@ export function EditorUpidExportPreview({
                     <span className="min-w-0">
                       <span className="block truncate text-foreground">{operation.displayName}</span>
                       <span className="block truncate text-[8px] text-muted-foreground">
-                        {operation.direction} / lines{' '}
-                        {formatProgramLineRangeForBodyRange(
-                          programSections.body,
-                          operation.bodyLineStart,
-                          operation.bodyLineEnd
-                        )}
+                        {operation.direction} / lines {operation.programLineRange}
                       </span>
                     </span>
                     <span className="text-right text-[8px] uppercase text-muted-foreground">
@@ -173,15 +155,13 @@ export function EditorUpidExportPreview({
                         data-upid-export-move-command={move.command}
                         data-upid-export-move-body-line={move.bodyLineIndex + 1}
                         data-upid-export-move-kind={move.kind}
-                        data-upid-export-move-line={programLineForBodyLine(programSections.body, move.bodyLineIndex)}
+                        data-upid-export-move-line={move.programLineNumber}
                         data-upid-export-move-reason={move.reason}
                         data-upid-export-move-row
                         data-upid-export-move-segment={move.segmentId ?? undefined}
                         key={`${operation.operationId}-${move.bodyLineIndex}`}
                       >
-                        <span className="text-muted-foreground">
-                          {programLineForBodyLine(programSections.body, move.bodyLineIndex)}
-                        </span>
+                        <span className="text-muted-foreground">{move.programLineNumber}</span>
                         <span className={move.kind === 'rapid' ? 'uppercase text-sky-200' : 'uppercase text-green-200'}>
                           {move.command}
                         </span>
@@ -230,6 +210,6 @@ function formatManualOrderCount(count: number) {
   return `${count} ${count === 1 ? 'operation' : 'operations'}`;
 }
 
-function formatBodyLineRange(operation: Pick<GcodePostedOperation, 'bodyLineEnd' | 'bodyLineStart'>) {
+function formatBodyLineRange(operation: Pick<UpidGCodeProgramOperation, 'bodyLineEnd' | 'bodyLineStart'>) {
   return `${operation.bodyLineStart + 1}-${operation.bodyLineEnd + 1}`;
 }

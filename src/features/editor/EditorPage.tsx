@@ -246,12 +246,9 @@ export function EditorPage({
         operationOrderStrategy: pathDocumentDraft.options.operationOrderStrategy
       },
       programLines: exportProgram.program.lines,
-      programSections: {
-        body: exportProgram.program.sections.body
-      },
       programText: exportProgram.program.text,
       postMetrics: exportProgram.post.metrics,
-      postedOperations: exportProgram.post.operations
+      postedOperations: exportProgram.programOperations
     };
   }, [exportPreviewOpen, pathDocumentDraft, program?.project]);
   const constructionPreview = useMemo(() => {
@@ -1252,7 +1249,6 @@ export function EditorPage({
           postMetrics={upidExport.postMetrics}
           postedOperations={upidExport.postedOperations}
           programLines={upidExport.programLines}
-          programSections={upidExport.programSections}
         />
       )}
     </div>

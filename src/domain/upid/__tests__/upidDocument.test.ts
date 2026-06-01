@@ -112,6 +112,25 @@ describe('UPID document boundary', () => {
       bodyLineStart: 0,
       operationId: document.plan.operations[0].id
     });
+    expect(exportProgram.programOperations[0]).toMatchObject({
+      bodyLineEnd: 1,
+      bodyLineStart: 0,
+      operationId: document.plan.operations[0].id,
+      programLineEnd: 4,
+      programLineStart: 3
+    });
+    expect(exportProgram.programOperations[0].moves[0]).toMatchObject({
+      bodyLineIndex: 0,
+      programLineNumber: 3,
+      reason: 'operation-start',
+      text: 'G0 X0.000 Y0.000'
+    });
+    expect(exportProgram.programOperations[0].moves[1]).toMatchObject({
+      bodyLineIndex: 1,
+      programLineNumber: 4,
+      reason: 'segment-cut',
+      text: 'G1 X10.000 Y0.000'
+    });
   });
 
   it('posts line, arc, and circle geometry only from the UPID export boundary', () => {
