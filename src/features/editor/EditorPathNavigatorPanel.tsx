@@ -974,6 +974,8 @@ function renderSegmentRow(
 ) {
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
+  const segmentLength = segment.length.toFixed(3);
+  const refDirection = ref.reversed ? 'reversed ref' : 'forward ref';
   const hovered =
     hoveredPathElement?.operationId === pathElement.operationId &&
     hoveredPathElement.segmentId === segment.id &&
@@ -995,6 +997,8 @@ function renderSegmentRow(
         data-upid-path-element-id={pathElement.id}
         data-upid-selected={selected ? 'true' : undefined}
         data-upid-segment-index={index}
+        data-upid-segment-length={segmentLength}
+        data-upid-segment-reversed={ref.reversed ? 'true' : 'false'}
         data-upid-segment-row
         data-upid-segment-id={segment.id}
         onClick={() =>
@@ -1022,6 +1026,7 @@ function renderSegmentRow(
             {' -> '}
             {formatPoint(end)}
           </span>
+          <span className="block truncate">length {segmentLength} / {refDirection}</span>
         </span>
       </button>
       <div className="border-t border-border/70 bg-background/35" data-upid-point-stack>

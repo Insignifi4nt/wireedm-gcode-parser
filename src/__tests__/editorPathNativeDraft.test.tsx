@@ -396,6 +396,39 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
+  it('shows segment length and reversible reference direction in segment rows', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const firstSegmentRow = container.querySelector('[data-upid-segment-row]') as HTMLElement | null;
+    const firstSegmentId = firstSegmentRow?.getAttribute('data-upid-segment-id');
+
+    expect(firstSegmentRow?.getAttribute('data-upid-segment-length')).toBe('10.000');
+    expect(firstSegmentRow?.getAttribute('data-upid-segment-reversed')).toBe('false');
+    expect(firstSegmentRow?.textContent).toContain('length 10.000 / forward ref');
+
+    await clickElement('button[aria-label="Select Exterior 1"]');
+    await clickElement('button[aria-label="Reverse path operation"]');
+
+    const reversedFirstSegmentRow = container.querySelector(
+      `[data-upid-segment-row][data-upid-segment-id="${firstSegmentId}"]`
+    ) as HTMLElement | null;
+
+    expect(reversedFirstSegmentRow?.getAttribute('data-upid-segment-length')).toBe('10.000');
+    expect(reversedFirstSegmentRow?.getAttribute('data-upid-segment-reversed')).toBe('true');
+    expect(reversedFirstSegmentRow?.textContent).toContain('length 10.000 / reversed ref');
+  });
+
   it('reveals collapsed contour groups when selecting path geometry on canvas', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
