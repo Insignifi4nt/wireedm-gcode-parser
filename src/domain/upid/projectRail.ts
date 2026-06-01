@@ -43,6 +43,11 @@ export type UpidOperationPathElement = PathElement & {
 export interface UpidProjectRailTreeNode {
   children: UpidProjectRailTreeNode[];
   element: UpidOperationPathElement;
+  treeMetrics: {
+    descendantCount: number;
+    directSegmentCount: number;
+    totalSegmentCount: number;
+  };
 }
 
 export interface UpidProjectRail {
@@ -487,13 +492,22 @@ function buildUpidPathElementTree(
     if (visited.has(element.id)) return null;
 
     visited.add(element.id);
+    const children = element.childIds
+      .map((childId) => elementsById.get(childId))
+      .filter((child): child is UpidOperationPathElement => Boolean(child))
+      .map((child) => buildNode(child))
+      .filter((child): child is UpidProjectRailTreeNode => Boolean(child));
+
     return {
-      children: element.childIds
-        .map((childId) => elementsById.get(childId))
-        .filter((child): child is UpidOperationPathElement => Boolean(child))
-        .map((child) => buildNode(child))
-        .filter((child): child is UpidProjectRailTreeNode => Boolean(child)),
-      element
+      children,
+      element,
+      treeMetrics: {
+        descendantCount: children.reduce((total, child) => total + 1 + child.treeMetrics.descendantCount, 0),
+        directSegmentCount: element.segmentRefs.length,
+        totalSegmentCount:
+          element.segmentRefs.length +
+          children.reduce((total, child) => total + child.treeMetrics.totalSegmentCount, 0)
+      }
     };
   }
 

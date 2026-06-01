@@ -130,6 +130,9 @@ describe('EditorPage UPID draft boundary', () => {
 
     const contourGroup = container.querySelector('[data-upid-contour-group="contour_0001"]');
     expect(contourGroup?.getAttribute('data-upid-expanded')).toBe('true');
+    expect(contourGroup?.getAttribute('data-upid-contour-direct-segments')).toBe('4');
+    expect(contourGroup?.getAttribute('data-upid-contour-total-segments')).toBe('4');
+    expect(contourGroup?.getAttribute('data-upid-contour-descendants')).toBe('0');
 
     await clickElement('button[aria-label="Select Exterior 1"]');
     expect(contourGroup?.getAttribute('data-upid-selected')).toBe('true');

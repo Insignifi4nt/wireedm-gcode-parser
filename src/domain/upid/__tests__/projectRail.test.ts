@@ -48,9 +48,19 @@ describe('UPID project rail projection', () => {
     ]);
     expect(rail.contourTree).toHaveLength(1);
     expect(rail.contourTree[0].element.displayName).toBe('Exterior 1');
+    expect(rail.contourTree[0].treeMetrics).toEqual({
+      descendantCount: 1,
+      directSegmentCount: 4,
+      totalSegmentCount: 8
+    });
     expect(rail.contourTree[0].children.map((child) => child.element.displayName)).toEqual([
       'Hole 1'
     ]);
+    expect(rail.contourTree[0].children[0].treeMetrics).toEqual({
+      descendantCount: 0,
+      directSegmentCount: 4,
+      totalSegmentCount: 4
+    });
     expect(rail.operationElements.map(upidPathElementSourceEntityCount)).toEqual([4, 4]);
   });
 

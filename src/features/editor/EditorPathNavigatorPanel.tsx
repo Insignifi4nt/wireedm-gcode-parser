@@ -714,6 +714,9 @@ function renderContourTreeNode({
       data-upid-expanded={expanded ? 'true' : 'false'}
       data-upid-hovered={hoveredPathElement?.operationId === element.operationId ? 'true' : undefined}
       data-upid-contour-group={element.id}
+      data-upid-contour-direct-segments={node.treeMetrics.directSegmentCount}
+      data-upid-contour-total-segments={node.treeMetrics.totalSegmentCount}
+      data-upid-contour-descendants={node.treeMetrics.descendantCount}
       data-upid-operation-id={element.operationId}
       data-upid-path-element-id={element.id}
       data-upid-selected={selectedPathElement?.operationId === element.operationId ? 'true' : undefined}
@@ -756,6 +759,9 @@ function renderContourTreeNode({
             data-upid-contour-parent={element.parentId ?? undefined}
             data-upid-contour-role={element.classification}
             data-upid-contour-row
+            data-upid-contour-direct-segments={node.treeMetrics.directSegmentCount}
+            data-upid-contour-total-segments={node.treeMetrics.totalSegmentCount}
+            data-upid-contour-descendants={node.treeMetrics.descendantCount}
             data-upid-contour-source-entities={sourceEntityCount}
             data-upid-operation-id={element.operationId}
             data-upid-path-element-id={element.id}
@@ -790,6 +796,9 @@ function renderContourTreeNode({
               </span>
               <span className="block truncate text-[9px] text-muted-foreground">
                 {upidPathElementNestLabel(element)}
+              </span>
+              <span className="block truncate text-[9px] text-muted-foreground">
+                {formatTreeMetrics(node.treeMetrics)}
               </span>
               {renderManualDecisionBadges(manualDecisions)}
             </span>
@@ -857,6 +866,14 @@ function renderManualDecisionBadges(decisions: UpidManualDecisionKind[]) {
       ))}
     </span>
   );
+}
+
+function formatTreeMetrics(metrics: UpidProjectRailTreeNode['treeMetrics']) {
+  const segmentLabel = metrics.directSegmentCount === 1 ? 'segment' : 'segments';
+  if (metrics.descendantCount === 0) return `${metrics.directSegmentCount} ${segmentLabel}`;
+
+  const descendantLabel = metrics.descendantCount === 1 ? 'nested contour' : 'nested contours';
+  return `${metrics.directSegmentCount} ${segmentLabel} / ${metrics.descendantCount} ${descendantLabel} / ${metrics.totalSegmentCount} total`;
 }
 
 function renderSegmentRow(
