@@ -264,7 +264,7 @@ describe('saveEditorProgram', () => {
     expect('postDiagnostics' in savedProject.upid).toBe(false);
   });
 
-  it('clears UPID state when manual text edits are saved without a path document', async () => {
+  it('rejects text-mode saves for UPID projects instead of clearing path state', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
       now: new Date('2026-05-29T10:00:00.000Z')
@@ -277,53 +277,22 @@ describe('saveEditorProgram', () => {
     const postedArtifacts = addPostedProgramArtifacts(adapter, imported);
     const text = `${postedArtifacts.programText}\n(MANUAL EDIT)`;
 
-    const saved = await saveEditorProgram(imported.workbench, {
-      filePath: postedArtifacts.programPath,
-      now: new Date('2026-05-29T12:00:00.000Z'),
-      pathDocument: null,
-      project: postedArtifacts.project,
-      text
-    });
+    await expect(
+      saveEditorProgram(imported.workbench, {
+        filePath: postedArtifacts.programPath,
+        now: new Date('2026-05-29T12:00:00.000Z'),
+        pathDocument: null,
+        project: postedArtifacts.project,
+        text
+      })
+    ).rejects.toThrow('UPID path projects must be saved with a path document.');
 
     const projectPath = 'projects/manual-edit-2026-05-29/project.json';
     const savedProject = JSON.parse(adapter.files.get(projectPath) || '{}');
 
-    expect(savedProject.upid).toBeUndefined();
-    expect(saved.editorProgram.project?.upid).toBeUndefined();
-    expect(savedProject.generated.body).toContain('G1 X10.000 Y0.000');
-    expect(savedProject.generated.body).not.toContain('G40');
-    expect(savedProject.generated.body).not.toContain('MANUAL EDIT');
-  });
-
-  it('does not persist changed header lines into the generated body artifact', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const imported = await importDxfProject(workbench, {
-      fileName: 'header-edit.dxf',
-      text: rectangleDxf(),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const postedArtifacts = addPostedProgramArtifacts(adapter, imported);
-    const text = postedArtifacts.programText.replace('G90 G21 G17 G40', 'G90 G21 G17');
-
-    await saveEditorProgram(imported.workbench, {
-      filePath: postedArtifacts.programPath,
-      now: new Date('2026-05-29T12:00:00.000Z'),
-      pathDocument: null,
-      project: postedArtifacts.project,
-      text
-    });
-
-    const projectPath = 'projects/header-edit-2026-05-29/project.json';
-    const savedProject = JSON.parse(adapter.files.get(projectPath) || '{}');
-
-    expect(savedProject.generated.body).toContain('G0 X0.000 Y0.000');
-    expect(savedProject.generated.body).not.toContain('%');
-    expect(savedProject.generated.body).not.toContain('G90 G21 G17');
-    expect(savedProject.generated.body).not.toContain('G54');
-    expect(savedProject.generated.body).not.toContain('G40');
+    expect(adapter.files.get(postedArtifacts.programPath)).toBe(postedArtifacts.programText);
+    expect(savedProject.upid?.format).toBe('upid');
+    expect(savedProject.generated).toEqual({ body: '', files: [] });
   });
 });
 

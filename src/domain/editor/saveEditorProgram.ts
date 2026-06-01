@@ -4,7 +4,11 @@ import {
   type WorkbenchManifest
 } from '@/domain/storage/workbenchStorage';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
-import { withProjectUpid, withoutProjectUpid } from '@/domain/upid/projectUpid';
+import {
+  projectUpidDocument,
+  withProjectUpid,
+  withoutProjectUpid
+} from '@/domain/upid/projectUpid';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 
 import { parseGCodeProgram } from './gcodeParser';
@@ -28,6 +32,10 @@ export async function saveEditorProgram(
   workbench: ConnectedWorkbench,
   input: SaveEditorProgramInput
 ): Promise<SaveEditorProgramResult> {
+  if (input.project && projectUpidDocument(input.project) && !input.pathDocument) {
+    throw new Error('UPID path projects must be saved with a path document.');
+  }
+
   const savesPathDocument = Boolean(input.project && input.pathDocument);
   const textToSave = savesPathDocument ? '' : input.text;
 
