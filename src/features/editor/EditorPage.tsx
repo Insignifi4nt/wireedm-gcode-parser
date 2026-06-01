@@ -462,7 +462,7 @@ export function EditorPage({
   const [selectedPathElement, setSelectedPathElement] = useState<EditorPathElementRef | null>(null);
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
-  const [inspectorRailCollapsed, setInspectorRailCollapsed] = useState(false);
+  const [inspectorRailCollapsed, setInspectorRailCollapsed] = useState(true);
   const [inspectorRailWidth, setInspectorRailWidth] = useState(420);
   const [workspacePanelPlacements, setWorkspacePanelPlacements] = useState<
     Record<EditorWorkspacePanelId, EditorPanelPlacement>
@@ -753,6 +753,10 @@ export function EditorPage({
     setHeaderContent(editorHeaderContent);
     return () => setHeaderContent(null);
   }, [editorHeaderContent, setHeaderContent]);
+
+  useEffect(() => {
+    if (pathDocumentDraft) setRailCollapsed(true);
+  }, [pathDocumentDraft, setRailCollapsed]);
 
   useEffect(() => {
     if (!pathDocumentDraft) return;

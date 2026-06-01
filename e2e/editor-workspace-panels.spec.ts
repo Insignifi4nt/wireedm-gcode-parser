@@ -13,6 +13,11 @@ test('editor exposes functional groups as dockable and floating workspace panels
     });
 
   await expect(page.locator('[data-editor-workspace-panel]')).toHaveCount(0);
+  await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-sidebar-collapsed', 'true');
+  await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveAttribute(
+    'data-editor-panel-dock-zone-collapsed',
+    'true'
+  );
   await expect(page.getByRole('button', { name: 'Float UPID Path Navigator' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Float Inspector' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Float / })).toHaveCount(0);
@@ -52,6 +57,8 @@ test('editor exposes functional groups as dockable and floating workspace panels
     'right'
   );
 
+  await page.getByRole('button', { name: 'Expand workbench sidebar' }).click();
+  await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-sidebar-collapsed', 'false');
   await dragHandleToDock(page, 'measurement', 'left');
   await expect(page.locator('[data-editor-workspace-panel="measurement"]')).toHaveAttribute(
     'data-editor-workspace-panel-placement',
