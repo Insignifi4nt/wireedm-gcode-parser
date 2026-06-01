@@ -58,7 +58,7 @@ export async function saveEditorProgram(
     editorProgram: {
       filePath: editorFilePath,
       text: textToSave,
-      parseResult: parseGCodeProgram(textToSave),
+      parseResult: savesPathDocument ? null : parseGCodeProgram(textToSave),
       project: updatedProject
     }
   };

@@ -50,7 +50,8 @@ describe('importExternalProgram', () => {
     });
     expect('sourceRequiresCleanup' in result.project.editor).toBe(false);
     expect(result.editorProgram.filePath).toBe('editor/shop-output-2026-05-29.nc');
-    expect(result.editorProgram.parseResult.path).toHaveLength(2);
+    expect(result.editorProgram.parseResult).not.toBeNull();
+    expect(result.editorProgram.parseResult?.path).toHaveLength(2);
     expect(adapter.files.get('imports/shop-output-2026-05-29.nc')).toContain('G1 X5 Y0');
     expect(adapter.files.get('editor/shop-output-2026-05-29.nc')).toBe(
       ['G90 G21', 'G0 X0 Y0', 'G1 X5 Y0', 'M30'].join('\n')
@@ -156,6 +157,7 @@ describe('importExternalProgram', () => {
     ]);
     expect(result.project.editor.activeFilePath).toBe('editor/numbered-2026-05-29.iso');
     expect(result.editorProgram.text).toBe(['G92 X0.000 Y0.000', 'G1X1Y2'].join('\n'));
-    expect(result.editorProgram.parseResult.path).toHaveLength(2);
+    expect(result.editorProgram.parseResult).not.toBeNull();
+    expect(result.editorProgram.parseResult?.path).toHaveLength(2);
   });
 });

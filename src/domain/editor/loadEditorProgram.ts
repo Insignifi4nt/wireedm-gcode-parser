@@ -7,8 +7,8 @@ import type { GCodeParseResult } from './types';
 
 export interface LoadedEditorProgram {
   filePath: string;
+  parseResult: GCodeParseResult | null;
   text: string;
-  parseResult: GCodeParseResult;
   project?: WorkbenchProject;
 }
 
@@ -41,8 +41,8 @@ export async function loadEditorProgram(
 function createUpidEditorProgram(project: WorkbenchProject): LoadedEditorProgram {
   return {
     filePath: project.source.files.at(-1)?.path ?? `projects/${project.id}/project.json`,
+    parseResult: null,
     text: '',
-    parseResult: parseGCodeProgram(''),
     project
   };
 }

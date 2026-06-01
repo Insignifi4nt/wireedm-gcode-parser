@@ -165,38 +165,40 @@ export function EditorPage({
   const isImporting = importStatus === 'importing';
   const isSaving = saveStatus === 'saving';
   const draftProgram = useMemo<LoadedEditorProgram | null>(
-    () =>
-      program
-        ? {
-            filePath: program.filePath,
-            text: draftText,
-            parseResult: parseGCodeProgram(draftText),
-            project: program.project
-          }
-        : null,
-    [draftText, program]
+    () => {
+      if (!program || savedPathDocument || pathDocumentDraft) return null;
+
+      return {
+        filePath: program.filePath,
+        text: draftText,
+        parseResult: parseGCodeProgram(draftText),
+        project: program.project
+      };
+    },
+    [draftText, pathDocumentDraft, program, savedPathDocument]
   );
+  const draftParseResult = draftProgram?.parseResult ?? null;
   const pathDocumentStats = useMemo(
     () => (pathDocumentDraft ? summarizePathDocumentForEditor(pathDocumentDraft) : null),
     [pathDocumentDraft]
   );
-  const pathCount = pathDocumentStats?.pathCount ?? draftProgram?.parseResult.path.length ?? 0;
+  const pathCount = pathDocumentStats?.pathCount ?? draftParseResult?.path.length ?? 0;
   const rapidMoveCount =
     pathDocumentStats?.rapidMoveCount ??
-    draftProgram?.parseResult.path.filter((point) => point.type === 'rapid').length ??
+    draftParseResult?.path.filter((point) => point.type === 'rapid').length ??
     0;
   const cuttingMoveCount =
     pathDocumentStats?.cuttingMoveCount ??
-    draftProgram?.parseResult.path.filter((point) => point.type === 'cut').length ??
+    draftParseResult?.path.filter((point) => point.type === 'cut').length ??
     0;
   const arcMoveCount =
     pathDocumentStats?.arcMoveCount ??
-    draftProgram?.parseResult.path.filter((point) => point.type === 'arc').length ??
+    draftParseResult?.path.filter((point) => point.type === 'arc').length ??
     0;
   const boundsText = pathDocumentStats
     ? formatBounds(pathDocumentStats.bounds)
-    : draftProgram && pathCount > 0
-      ? formatBounds(draftProgram.parseResult.bounds)
+    : draftParseResult && pathCount > 0
+      ? formatBounds(draftParseResult.bounds)
       : '-';
   const machineFit = useMemo(
     () =>

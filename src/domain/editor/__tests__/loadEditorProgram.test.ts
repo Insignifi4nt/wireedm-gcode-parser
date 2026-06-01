@@ -41,7 +41,7 @@ describe('loadEditorProgram', () => {
 
     expect(editorProgram.filePath).toBe('imports/editor-source-2026-05-29.dxf');
     expect(editorProgram.text).toBe('');
-    expect(editorProgram.parseResult.path).toHaveLength(0);
+    expect(editorProgram.parseResult).toBeNull();
     expect(editorProgram.project?.upid?.document.plan.operations).toHaveLength(1);
   });
 
@@ -78,7 +78,7 @@ describe('loadEditorProgram', () => {
 
     expect(editorProgram.filePath).toBe('imports/upid-native-2026-05-29.dxf');
     expect(editorProgram.text).toBe('');
-    expect(editorProgram.parseResult.path).toHaveLength(0);
+    expect(editorProgram.parseResult).toBeNull();
     expect(editorProgram.project?.upid?.document.plan.operations).toHaveLength(1);
   });
 

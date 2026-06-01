@@ -68,9 +68,10 @@ describe('saveEditorProgram', () => {
       filePath: imported.editorProgram.filePath,
       text: updatedText
     });
-    expect(saved.editorProgram.parseResult.stats.linearMoves).toBe(2);
-    expect(saved.editorProgram.parseResult.stats.arcMoves).toBe(1);
-    expect(saved.editorProgram.parseResult.path.at(1)).toMatchObject({
+    expect(saved.editorProgram.parseResult).not.toBeNull();
+    expect(saved.editorProgram.parseResult?.stats.linearMoves).toBe(2);
+    expect(saved.editorProgram.parseResult?.stats.arcMoves).toBe(1);
+    expect(saved.editorProgram.parseResult?.path.at(1)).toMatchObject({
       type: 'cut',
       x: 12,
       y: 4,
@@ -184,7 +185,7 @@ describe('saveEditorProgram', () => {
     expect(savedProject.pathPlanning).toBeUndefined();
     expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.editorProgram.text).toBe('');
-    expect(saved.editorProgram.parseResult.path).toHaveLength(0);
+    expect(saved.editorProgram.parseResult).toBeNull();
     expect(saved.editorProgram.filePath).toBe(imported.project.source.files[0].path);
     expect(adapter.files.get(imported.project.source.files[0].path)).toBe(rectangleDxf());
     expect(savedManifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
@@ -221,7 +222,7 @@ describe('saveEditorProgram', () => {
     expect(adapter.files.get(postedArtifacts.programPath)).toBe(postedArtifacts.programText);
     expect(saved.editorProgram.filePath).toBe(imported.project.source.files[0].path);
     expect(saved.editorProgram.text).toBe('');
-    expect(saved.editorProgram.parseResult.path).toHaveLength(0);
+    expect(saved.editorProgram.parseResult).toBeNull();
     expect(saved.editorProgram.project?.editor.activeFilePath).toBeNull();
     expect('generated' in (saved.editorProgram.project ?? {})).toBe(false);
   });
@@ -255,7 +256,7 @@ describe('saveEditorProgram', () => {
 
     expect([...adapter.files.keys()].some((path) => path.startsWith('generated/'))).toBe(false);
     expect(saved.editorProgram.text).toBe('');
-    expect(saved.editorProgram.parseResult.path).toHaveLength(0);
+    expect(saved.editorProgram.parseResult).toBeNull();
     expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
     expect('generated' in savedProject).toBe(false);
   });

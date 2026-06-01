@@ -143,6 +143,7 @@ export function EditorInspectorPanel({
     : null;
   const selectedPathStart = selectedPathElementModel ? readPathElementPoint(selectedPathElementModel, 'start') : null;
   const selectedPathEnd = selectedPathElementModel ? readPathElementPoint(selectedPathElementModel, 'end') : null;
+  const draftParseResult = draftProgram?.parseResult ?? null;
 
   return (
     <div
@@ -203,7 +204,7 @@ export function EditorInspectorPanel({
                 </dd>
               </dl>
             </>
-          ) : draftProgram ? (
+          ) : draftParseResult ? (
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
               <dt className="col-span-2 mb-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
                 Program
@@ -226,13 +227,13 @@ export function EditorInspectorPanel({
                 {editorFileName}
               </dd>
               <dt className="text-muted-foreground">Lines</dt>
-              <dd>{draftProgram.parseResult.stats.totalLines}</dd>
+              <dd>{draftParseResult.stats.totalLines}</dd>
               <dt className="text-muted-foreground">Linear</dt>
-              <dd>{draftProgram.parseResult.stats.linearMoves}</dd>
+              <dd>{draftParseResult.stats.linearMoves}</dd>
               <dt className="text-muted-foreground">Warnings</dt>
-              <dd>{draftProgram.parseResult.warnings.length}</dd>
+              <dd>{draftParseResult.warnings.length}</dd>
               <dt className="text-muted-foreground">Errors</dt>
-              <dd>{draftProgram.parseResult.errors.length}</dd>
+              <dd>{draftParseResult.errors.length}</dd>
             </dl>
           ) : (
             <p className="border border-border bg-background/50 p-2 text-muted-foreground">
@@ -380,13 +381,13 @@ export function EditorInspectorPanel({
           </section>
         )}
 
-        {!pathDocument && draftProgram &&
-          (draftProgram.parseResult.errors.length > 0 ||
-            draftProgram.parseResult.warnings.length > 0) && (
+        {!pathDocument && draftParseResult &&
+          (draftParseResult.errors.length > 0 ||
+            draftParseResult.warnings.length > 0) && (
             <section className="mt-3 border-t border-border pt-3">
               <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Parse Issues</h3>
               <div className="max-h-32 overflow-auto border border-border bg-background/50">
-                {[...draftProgram.parseResult.errors, ...draftProgram.parseResult.warnings].map(
+                {[...draftParseResult.errors, ...draftParseResult.warnings].map(
                   (issue, index) => (
                     <div
                       className="border-b border-border px-2 py-1.5 last:border-b-0"

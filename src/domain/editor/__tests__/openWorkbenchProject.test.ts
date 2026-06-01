@@ -43,7 +43,7 @@ describe('openWorkbenchProject', () => {
     expect(opened.project.id).toBe('library-part-2026-05-29');
     expect(opened.editorProgram.filePath).toBe('imports/library-part-2026-05-29.dxf');
     expect(opened.editorProgram.text).toBe('');
-    expect(opened.editorProgram.parseResult.path).toHaveLength(0);
+    expect(opened.editorProgram.parseResult).toBeNull();
     expect(opened.editorProgram.project?.upid?.document.plan.operations).toHaveLength(1);
   });
 

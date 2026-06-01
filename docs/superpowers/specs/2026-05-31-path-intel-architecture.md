@@ -69,6 +69,8 @@ edits, and future AI/user review surfaces from collapsing into an unexplained fi
 - `src/domain/upid/upidDocument.ts` names the current internal document as the Universal Path
   Intelligence Document boundary and exposes the post/export adapter.
 - `src/domain/upid/projectUpid.ts` reads and writes first-class project UPID state.
+- `src/domain/editor/loadEditorProgram.ts` and `src/domain/editor/saveEditorProgram.ts` keep UPID
+  editor sessions parse-free; `parseResult` is only populated for posted external program editing.
 - `src/features/editor/EditorPathNavigatorPanel.tsx` is the DXF path-project rail surface for
   operation selection, nested contour/segment inspection, ordering, direction, start selection,
   construction-point modes, hover assist, magnetic snap, saving, and opening export preview. It

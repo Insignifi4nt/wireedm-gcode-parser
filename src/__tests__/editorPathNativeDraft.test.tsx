@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRailProvider, type AppRailContent } from '@/app/AppRailContext';
 import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
 import { parseDxf } from '@/domain/dxf/parseDxf';
-import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { withProjectUpid } from '@/domain/upid/projectUpid';
@@ -97,7 +96,7 @@ function EditorPageHarness({
         onSaveProgramText={onSaveProgramText}
         program={{
           filePath: 'imports/rectangle.dxf',
-          parseResult: parseGCodeProgram(''),
+          parseResult: null,
           project,
           text: ''
         }}

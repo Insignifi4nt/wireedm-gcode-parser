@@ -118,7 +118,7 @@ export function EditorPreview({
     () =>
       pathDocument
         ? buildEditorPathDocumentPreviewGeometry(pathDocument, { padding: 1 })
-        : program
+        : program?.parseResult
           ? buildEditorPreviewGeometry(program.parseResult, { padding: 1 })
           : null,
     [pathDocument, program]

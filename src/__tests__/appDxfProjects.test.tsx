@@ -2,6 +2,7 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const postUpidToGcodeSpy = vi.hoisted(() => vi.fn());
+const parseGCodeProgramSpy = vi.hoisted(() => vi.fn());
 
 vi.mock('@/domain/upid/upidDocument', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/domain/upid/upidDocument')>();
@@ -11,6 +12,18 @@ vi.mock('@/domain/upid/upidDocument', async (importOriginal) => {
     postUpidToGcode: (...args: Parameters<typeof actual.postUpidToGcode>) => {
       postUpidToGcodeSpy(...args);
       return actual.postUpidToGcode(...args);
+    }
+  };
+});
+
+vi.mock('@/domain/editor/gcodeParser', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/domain/editor/gcodeParser')>();
+
+  return {
+    ...actual,
+    parseGCodeProgram: (...args: Parameters<typeof actual.parseGCodeProgram>) => {
+      parseGCodeProgramSpy(...args);
+      return actual.parseGCodeProgram(...args);
     }
   };
 });
@@ -36,6 +49,7 @@ describe('App DXF imports and project library', () => {
 
   beforeEach(() => {
     postUpidToGcodeSpy.mockClear();
+    parseGCodeProgramSpy.mockClear();
     context = createAppTestContext();
     container = context.container;
   });
@@ -1871,6 +1885,7 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-editor-code-section="text"]')).toBeNull();
     expect(container.querySelector('textarea[aria-label="Program editor"]')).toBeNull();
     expect(container.textContent).not.toContain('Program Text');
+    expect(parseGCodeProgramSpy).not.toHaveBeenCalled();
   });
 
   it('does not let text line-edit commands clear an active DXF path plan', async () => {
