@@ -1589,6 +1589,9 @@ describe('App DXF imports and project library', () => {
     const exportOperationRow = container.querySelector(
       `[data-upid-export-operation-row][data-upid-export-operation-id="${operationId}"]`
     );
+    expect(container.querySelector('[data-upid-export-stat="manual-decisions"]')?.textContent).toBe(
+      '5 decisions'
+    );
     expect(exportOperationRow?.getAttribute('data-upid-export-operation-manual-order')).toBe('1');
     expect(exportOperationRow?.getAttribute('data-upid-export-operation-manual-role')).toBe('hole');
     expect(exportOperationRow?.getAttribute('data-upid-export-operation-manual-direction')).toBe(

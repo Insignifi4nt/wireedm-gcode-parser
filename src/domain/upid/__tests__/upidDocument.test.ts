@@ -259,6 +259,13 @@ describe('UPID document boundary', () => {
       (operation) => operation.operationId === editedOperationId
     );
 
+    expect(exportProgram.planning.manualDecisionCount).toBe(4);
+    expect(exportProgram.planning.manualDecisionCounts).toEqual({
+      direction: 1,
+      order: 2,
+      role: 1,
+      start: 0
+    });
     expect(postedOperation).toMatchObject({
       manualClassification: { classification: 'hole' },
       manualDecisionKinds: ['order', 'role', 'direction'],
@@ -288,11 +295,25 @@ describe('UPID document boundary', () => {
     });
 
     expect(exportProgram.planning).toEqual({
+      manualDecisionCount: 0,
+      manualDecisionCounts: {
+        direction: 0,
+        order: 0,
+        role: 0,
+        start: 0
+      },
       manualOrderCount: 0,
       operationOrderStrategy: 'nearest'
     });
     expect(exportProgram.summary).toEqual({
       diagnosticCount: exportProgram.diagnostics.length,
+      manualDecisionCount: 0,
+      manualDecisionCounts: {
+        direction: 0,
+        order: 0,
+        role: 0,
+        start: 0
+      },
       manualOrderCount: 0,
       operationCount: 1,
       operationOrderStrategy: 'nearest',

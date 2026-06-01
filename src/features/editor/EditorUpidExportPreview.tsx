@@ -13,6 +13,7 @@ interface EditorUpidExportPreviewProps {
   operationCount: number;
   pathDocument: PathPlanningDocument;
   planning: {
+    manualDecisionCount: number;
     manualOrderCount: number;
     operationOrderStrategy: OperationOrderStrategy;
   };
@@ -88,7 +89,7 @@ export function EditorUpidExportPreview({
         className="grid gap-2 border-b border-border bg-background/55 px-2 py-2"
         data-upid-export-summary
       >
-        <dl className="grid grid-cols-2 gap-1 md:grid-cols-6">
+        <dl className="grid grid-cols-2 gap-1 md:grid-cols-7">
           <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
             <dt className="text-[8px] uppercase text-muted-foreground">Operations</dt>
             <dd data-upid-export-stat="operations">{operationCount}</dd>
@@ -117,6 +118,15 @@ export function EditorUpidExportPreview({
           >
             <dt className="text-[8px] uppercase text-muted-foreground">Manual Order</dt>
             <dd data-upid-export-stat="manual-order">{formatManualOrderCount(planning.manualOrderCount)}</dd>
+          </div>
+          <div
+            className="min-w-0 border border-border bg-card/60 px-2 py-1"
+            data-upid-export-manual-decisions-active={planning.manualDecisionCount > 0 ? 'true' : undefined}
+          >
+            <dt className="text-[8px] uppercase text-muted-foreground">Manual Decisions</dt>
+            <dd data-upid-export-stat="manual-decisions">
+              {formatManualDecisionCount(planning.manualDecisionCount)}
+            </dd>
           </div>
         </dl>
         {diagnostics.length > 0 && (
@@ -335,6 +345,11 @@ function formatOperationOrderStrategy(strategy: OperationOrderStrategy) {
 function formatManualOrderCount(count: number) {
   if (count <= 0) return 'Automatic';
   return `${count} ${count === 1 ? 'operation' : 'operations'}`;
+}
+
+function formatManualDecisionCount(count: number) {
+  if (count <= 0) return 'Automatic';
+  return `${count} ${count === 1 ? 'decision' : 'decisions'}`;
 }
 
 function formatBodyLineRange(operation: Pick<UpidGCodeProgramOperation, 'bodyLineEnd' | 'bodyLineStart'>) {

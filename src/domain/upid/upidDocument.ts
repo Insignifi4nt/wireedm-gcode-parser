@@ -46,6 +46,8 @@ export interface UpidGCodeExport {
 }
 
 export interface UpidGCodeExportPlanning {
+  manualDecisionCount: number;
+  manualDecisionCounts: Record<UpidGCodeProgramManualDecisionKind, number>;
   manualOrderCount: number;
   operationOrderStrategy: OperationOrderStrategy;
 }
@@ -149,10 +151,34 @@ export function composeUpidGCodeExport(
 }
 
 function summarizeExportPlanning(document: UniversalPathIntelligenceDocument): UpidGCodeExportPlanning {
+  const manualDecisionCounts = summarizeManualDecisionCounts(document);
+
   return {
-    manualOrderCount: document.plan.operations.filter((operation) => operation.overrides?.order).length,
+    manualDecisionCount: Object.values(manualDecisionCounts).reduce((total, count) => total + count, 0),
+    manualDecisionCounts,
+    manualOrderCount: manualDecisionCounts.order,
     operationOrderStrategy: document.options.operationOrderStrategy
   };
+}
+
+function summarizeManualDecisionCounts(
+  document: UniversalPathIntelligenceDocument
+): Record<UpidGCodeProgramManualDecisionKind, number> {
+  const counts: Record<UpidGCodeProgramManualDecisionKind, number> = {
+    direction: 0,
+    order: 0,
+    role: 0,
+    start: 0
+  };
+
+  for (const operation of document.plan.operations) {
+    if (operation.overrides?.order) counts.order += 1;
+    if (operation.overrides?.classification) counts.role += 1;
+    if (operation.overrides?.direction) counts.direction += 1;
+    if (operation.overrides?.start) counts.start += 1;
+  }
+
+  return counts;
 }
 
 function mapProgramOperations(
