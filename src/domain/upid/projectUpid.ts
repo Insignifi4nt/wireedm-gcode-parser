@@ -17,11 +17,14 @@ interface ProjectUpidCandidate {
   };
 }
 
-export function createProjectUpid(document: UniversalPathIntelligenceDocument): WorkbenchUpidState {
+export function createProjectUpid(
+  projectId: string,
+  document: UniversalPathIntelligenceDocument
+): WorkbenchUpidState {
   return {
     format: PROJECT_UPID_FORMAT,
     schemaVersion: PROJECT_UPID_SCHEMA_VERSION,
-    document
+    document: stampProjectUpidDocument(projectId, document)
   };
 }
 
@@ -93,6 +96,6 @@ export function withProjectUpid(
 ): WorkbenchProject {
   return {
     ...project,
-    upid: createProjectUpid(stampProjectUpidDocument(project.id, document))
+    upid: createProjectUpid(project.id, document)
   };
 }

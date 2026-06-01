@@ -396,11 +396,23 @@ describe('UPID document boundary', () => {
     expect(projectUpidDocument(baseProject())).toBeNull();
   });
 
+  it('creates project UPID state by stamping the current project id', () => {
+    const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
+    const upid = createProjectUpid('upid-project', document);
+
+    expect(upid.document.source.projectId).toBe('upid-project');
+    expect(document.source.projectId).toBeUndefined();
+  });
+
   it('rejects stored UPID project documents without project identity', () => {
     const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
     const project = {
       ...baseProject(),
-      upid: createProjectUpid(document)
+      upid: {
+        format: 'upid' as const,
+        schemaVersion: 1 as const,
+        document
+      }
     };
 
     expect(() => projectUpidDocument(project)).toThrow(
