@@ -62,6 +62,12 @@ export interface UpidProjectRail {
   };
 }
 
+export interface UpidPathElementTreeContext {
+  lineage: UpidOperationPathElement[];
+  node: UpidProjectRailTreeNode;
+  siblings: UpidProjectRailTreeNode[];
+}
+
 export interface UpidSelectedPathTravel {
   end: Point2;
   length: number;
@@ -485,10 +491,29 @@ export function readUpidPathElementTreeNode(
   document: PathPlanningDocument,
   elementRef: UpidPathElementRef
 ): UpidProjectRailTreeNode | null {
+  return readUpidPathElementTreeContext(document, elementRef)?.node ?? null;
+}
+
+export function readUpidPathElementTreeContext(
+  document: PathPlanningDocument,
+  elementRef: UpidPathElementRef
+): UpidPathElementTreeContext | null {
   const selectedElement = readPathElementForRef(document, elementRef);
   if (!selectedElement) return null;
 
-  return findTreeNodeByPathElementId(createUpidProjectRail(document).contourTree, selectedElement.id);
+  const rail = createUpidProjectRail(document);
+  const node = findTreeNodeByPathElementId(rail.contourTree, selectedElement.id);
+  if (!node) return null;
+
+  const parentSiblings = selectedElement.parentId
+    ? findTreeNodeByPathElementId(rail.contourTree, selectedElement.parentId)?.children ?? []
+    : rail.contourTree;
+
+  return {
+    lineage: readUpidPathElementLineage(document, elementRef),
+    node,
+    siblings: parentSiblings.filter((candidate) => candidate.element.id !== selectedElement.id)
+  };
 }
 
 export function readUpidPathElementLineage(

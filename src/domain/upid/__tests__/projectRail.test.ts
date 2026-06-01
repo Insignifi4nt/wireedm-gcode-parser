@@ -18,6 +18,7 @@ import {
   readUpidPathElementPointByRole,
   readUpidPathElementLineage,
   readUpidPathElementSourceSummary,
+  readUpidPathElementTreeContext,
   readUpidPathElementTreeNode,
   readUpidSelectedPathPoint,
   readUpidSelectedPathSegment,
@@ -144,6 +145,23 @@ describe('UPID project rail projection', () => {
         segmentId: null
       })?.map((element) => element.displayName)
     ).toEqual(['Exterior 1']);
+  });
+
+  it('resolves selected path refs into sibling tree nodes', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      ...rectangleLines(0, 0, 5, 5),
+      ...rectangleLines(20, 0, 25, 5)
+    ]);
+    const rail = createUpidProjectRail(document);
+    const firstRoot = rail.contourTree[0].element;
+
+    expect(
+      readUpidPathElementTreeContext(document, {
+        operationId: firstRoot.operationId,
+        pathElementId: firstRoot.id,
+        segmentId: null
+      })?.siblings.map((node) => node.element.displayName)
+    ).toEqual(['Exterior 2']);
   });
 
   it('keeps manual decisions available without React panel bookkeeping', () => {

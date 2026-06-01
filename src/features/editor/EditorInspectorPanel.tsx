@@ -13,10 +13,9 @@ import type { MachineFitResult } from '@/domain/machine/machineFit';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   readUpidManualOverrideRows,
-  readUpidPathElementLineage,
   readUpidPathElementPointByRole,
   readUpidPathElementSourceSummary,
-  readUpidPathElementTreeNode,
+  readUpidPathElementTreeContext,
   readUpidOperationPathElement,
   readUpidSelectedPathPoint,
   readUpidSelectedPathSegment,
@@ -123,20 +122,15 @@ export function EditorInspectorPanel({
   const selectedPathSource = selectedPathElementModel
     ? readUpidPathElementSourceSummary(selectedPathElementModel)
     : null;
-  const selectedPathTreeNode = pathDocument && selectedPathElementModel
-    ? readUpidPathElementTreeNode(pathDocument, {
+  const selectedPathTreeContext = pathDocument && selectedPathElementModel
+    ? readUpidPathElementTreeContext(pathDocument, {
         operationId: selectedPathElementModel.operationId,
         pathElementId: selectedPathElementModel.id,
         segmentId: selectedPathElement?.segmentId ?? null
       })
     : null;
-  const selectedPathLineage = pathDocument && selectedPathElementModel
-    ? readUpidPathElementLineage(pathDocument, {
-        operationId: selectedPathElementModel.operationId,
-        pathElementId: selectedPathElementModel.id,
-        segmentId: selectedPathElement?.segmentId ?? null
-      })
-    : [];
+  const selectedPathTreeNode = selectedPathTreeContext?.node ?? null;
+  const selectedPathLineage = selectedPathTreeContext?.lineage ?? [];
   const selectedPathStart = selectedPathElementModel
     ? readUpidPathElementPointByRole(selectedPathElementModel, 'start')
     : null;
@@ -401,6 +395,39 @@ export function EditorInspectorPanel({
                             type="button"
                           >
                             {child.element.displayName}
+                          </button>
+                        ))}
+                      </dd>
+                    </>
+                  )}
+                  {selectedPathTreeContext && selectedPathTreeContext.siblings.length > 0 && (
+                    <>
+                      <dt className="text-muted-foreground">Sibling Paths</dt>
+                      <dd className="flex min-w-0 flex-wrap gap-1" data-upid-selected="tree-siblings">
+                        {selectedPathTreeContext.siblings.map((sibling) => (
+                          <button
+                            aria-label={`Select sibling ${sibling.element.displayName}`}
+                            className="text-left text-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                            data-upid-sibling-path-element={sibling.element.id}
+                            key={sibling.element.id}
+                            onClick={() =>
+                              onSelectPathElement?.({
+                                operationId: sibling.element.operationId,
+                                pathElementId: sibling.element.id,
+                                segmentId: null
+                              })
+                            }
+                            onMouseEnter={() =>
+                              onHoverPathElement?.({
+                                operationId: sibling.element.operationId,
+                                pathElementId: sibling.element.id,
+                                segmentId: null
+                              })
+                            }
+                            onMouseLeave={() => onHoverPathElement?.(null)}
+                            type="button"
+                          >
+                            {sibling.element.displayName}
                           </button>
                         ))}
                       </dd>

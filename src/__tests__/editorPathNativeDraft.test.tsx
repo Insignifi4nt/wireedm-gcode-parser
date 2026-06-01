@@ -286,6 +286,35 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
+  it('selects sibling contours from the inspector path tree context', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('button[aria-label="Select Exterior 1"]');
+
+    expect(container.querySelector('[data-upid-selected-tree-context]')?.getAttribute('data-upid-path-element-id')).toBe(
+      'contour_0001'
+    );
+
+    await clickElement('button[aria-label="Select sibling Exterior 2"]');
+
+    expect(container.querySelector('[data-upid-selected-tree-context]')?.getAttribute('data-upid-path-element-id')).toBe(
+      'contour_0002'
+    );
+    expect(container.querySelector('[data-upid-selected="label"]')?.textContent).toBe('Exterior 2');
+    expect(container.querySelector('[data-upid-selected="tree-lineage"]')?.textContent).toBe('Exterior 2');
+  });
+
   it('reveals collapsed contour groups when selecting path geometry on canvas', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
@@ -454,6 +483,10 @@ function pathDocumentFromNestedRectangles() {
   return dxfEntitiesToUpidDocument(parseDxf(nestedRectangleDxf()).entities);
 }
 
+function pathDocumentFromIndependentRectangles() {
+  return dxfEntitiesToUpidDocument(parseDxf(independentRectangleDxf()).entities);
+}
+
 function rectangleDxf() {
   return [
     '0',
@@ -497,6 +530,21 @@ function nestedRectangleDxf() {
     'ENTITIES',
     ...closedLwPolylineDxf(0, 0, 20, 20),
     ...closedLwPolylineDxf(5, 5, 10, 10),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function independentRectangleDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    ...closedLwPolylineDxf(0, 0, 5, 5),
+    ...closedLwPolylineDxf(20, 0, 25, 5),
     '0',
     'ENDSEC',
     '0',
