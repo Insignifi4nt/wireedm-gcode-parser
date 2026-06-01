@@ -22,9 +22,9 @@ import {
 import type {
   ContourClassification,
   OrientedSegmentRef,
-  PathContour,
   PathDiagnostic,
-  PathOperation,
+  PathElement,
+  PathElementId,
   PathPlanningDocument,
   PathSegment
 } from '@/domain/path-intel/types';
@@ -75,11 +75,16 @@ interface EditorPathNavigatorPanelProps {
 
 interface ContourTreeNode {
   children: ContourTreeNode[];
-  contour: PathContour;
-  operation: PathOperation;
+  element: OperationPathElement;
 }
 
 type ManualDecisionKind = 'order' | 'role' | 'direction' | 'start';
+type OperationPathElement = PathElement & {
+  direction: NonNullable<PathElement['direction']>;
+  metrics: NonNullable<PathElement['metrics']>;
+  operationId: string;
+  orderIndex: number;
+};
 
 export function EditorPathNavigatorPanel({
   hasUnsavedChanges,
@@ -108,11 +113,9 @@ export function EditorPathNavigatorPanel({
   onUndoDraft
 }: EditorPathNavigatorPanelProps) {
   const segmentsById = segmentMap(pathDocument.segments);
-  const contoursById = new Map(pathDocument.contours.map((contour) => [contour.id, contour]));
-  const operationsByContourId = new Map(
-    pathDocument.plan.operations.map((operation) => [operation.contourId, operation])
-  );
-  const contourTree = buildContourTree(pathDocument.contours, operationsByContourId);
+  const operationElements = pathDocument.pathElements.filter(hasOperation);
+  const cutSequenceElements = [...operationElements].sort((first, second) => first.orderIndex - second.orderIndex);
+  const contourTree = buildPathElementTree(operationElements, pathDocument.rootPathElementIds);
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
     (operation) => operation.id === selectedPathOperationId
   );
@@ -323,16 +326,15 @@ export function EditorPathNavigatorPanel({
         <section className="shrink-0 border-b border-border py-2" data-upid-cut-sequence>
           <div className="mb-2 text-[9px] uppercase text-muted-foreground">Cut Sequence</div>
           <div className="max-h-32 overflow-auto border border-border bg-background/35" data-upid-cut-sequence-list>
-            {pathDocument.plan.operations.map((operation) =>
+            {cutSequenceElements.map((pathElement) =>
               renderCutSequenceRow({
-                contour: contoursById.get(operation.contourId),
                 hoveredPathElement,
                 isSaving,
                 onHoverPathElement,
                 onMovePathOperation,
                 onSelectPathElement,
-                operation,
-                operationCount: pathDocument.plan.operations.length,
+                operationCount: cutSequenceElements.length,
+                pathElement,
                 selectedPathElement
               })
             )}
@@ -466,43 +468,41 @@ export function EditorPathNavigatorRailCollapsed() {
 }
 
 function renderCutSequenceRow({
-  contour,
   hoveredPathElement,
   isSaving,
   onHoverPathElement,
   onMovePathOperation,
   onSelectPathElement,
-  operation,
   operationCount,
+  pathElement,
   selectedPathElement
 }: {
-  contour: PathContour | undefined;
   hoveredPathElement: EditorPathElementRef | null;
   isSaving: boolean;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
-  operation: PathOperation;
   operationCount: number;
+  pathElement: OperationPathElement;
   selectedPathElement: EditorPathElementRef | null;
 }) {
-  const selected = selectedPathElement?.operationId === operation.id;
-  const hovered = hoveredPathElement?.operationId === operation.id;
+  const selected = selectedPathElement?.operationId === pathElement.operationId;
+  const hovered = hoveredPathElement?.operationId === pathElement.operationId;
   const rapidSelected =
-    selectedPathElement?.operationId === operation.id && selectedPathElement.travelRole === 'rapid-in';
+    selectedPathElement?.operationId === pathElement.operationId && selectedPathElement.travelRole === 'rapid-in';
   const rapidHovered =
-    hoveredPathElement?.operationId === operation.id && hoveredPathElement.travelRole === 'rapid-in';
-  const manualDecisions = manualDecisionKinds(operation);
-  const cutLength = operation.metrics.cutLength.toFixed(3);
-  const rapidInLength = operation.metrics.rapidInLength.toFixed(3);
-  const label = operationLabel(operation);
-  const sourceEntityCount = sourceEntityCountForOperation(operation);
+    hoveredPathElement?.operationId === pathElement.operationId && hoveredPathElement.travelRole === 'rapid-in';
+  const manualDecisions = manualDecisionKinds(pathElement);
+  const cutLength = pathElement.metrics.cutLength.toFixed(3);
+  const rapidInLength = pathElement.metrics.rapidInLength.toFixed(3);
+  const label = pathElement.label;
+  const sourceEntityCount = sourceEntityCountForPathElement(pathElement);
   const rapidElement: EditorPathElementRef = {
-    operationId: operation.id,
+    operationId: pathElement.operationId,
     segmentId: null,
     travelRole: 'rapid-in'
   };
-  const selectOperation = () => onSelectPathElement({ operationId: operation.id, segmentId: null });
+  const selectOperation = () => onSelectPathElement({ operationId: pathElement.operationId, segmentId: null });
   const selectRapid = (event: MouseEvent<HTMLElement>) => {
     event.stopPropagation();
     onSelectPathElement(rapidElement);
@@ -510,7 +510,7 @@ function renderCutSequenceRow({
   const moveOperation = (event: MouseEvent<HTMLButtonElement>, direction: -1 | 1) => {
     event.stopPropagation();
     selectOperation();
-    onMovePathOperation(direction, operation.id);
+    onMovePathOperation(direction, pathElement.operationId);
   };
 
   return (
@@ -520,18 +520,19 @@ function renderCutSequenceRow({
       }`}
       data-upid-cut-sequence-controls
       data-upid-cut-sequence-cut={cutLength}
-      data-upid-cut-sequence-index={operation.orderIndex}
+      data-upid-cut-sequence-index={pathElement.orderIndex}
       data-upid-cut-sequence-label={label}
       data-upid-cut-sequence-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
       data-upid-cut-sequence-rapid={rapidInLength}
-      data-upid-cut-sequence-role={operation.classification}
+      data-upid-cut-sequence-role={pathElement.classification}
       data-upid-cut-sequence-row
       data-upid-cut-sequence-source-entities={sourceEntityCount}
       data-upid-hovered={hovered ? 'true' : undefined}
-      data-upid-operation-id={operation.id}
+      data-upid-operation-id={pathElement.operationId}
+      data-upid-path-element-id={pathElement.id}
       data-upid-selected={selected ? 'true' : undefined}
-      key={`cut-sequence-${operation.id}`}
-      onMouseEnter={() => onHoverPathElement({ operationId: operation.id, segmentId: null })}
+      key={`cut-sequence-${pathElement.id}`}
+      onMouseEnter={() => onHoverPathElement({ operationId: pathElement.operationId, segmentId: null })}
       onMouseLeave={() => onHoverPathElement(null)}
     >
       <button
@@ -541,15 +542,15 @@ function renderCutSequenceRow({
         onClick={selectOperation}
         type="button"
       >
-        <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
+        <span className="text-muted-foreground">{pathElement.orderIndex + 1}</span>
         <span className="min-w-0">
           <span className="block truncate text-[10px]">{label}</span>
           <span className="block truncate text-[9px] text-muted-foreground">
-            {operation.classification} / {operation.closed ? 'closed contour' : 'open chain'} /{' '}
-            {operation.direction}
+            {pathElement.classification} / {pathElement.closed ? 'closed contour' : 'open chain'} /{' '}
+            {pathElement.direction}
           </span>
           <span className="block truncate text-[9px] text-muted-foreground">
-            {formatContourNest(contour)}
+            {formatPathElementNest(pathElement)}
           </span>
           {renderManualDecisionBadges(manualDecisions)}
         </span>
@@ -581,7 +582,7 @@ function renderCutSequenceRow({
         <button
           aria-label="Move cut sequence operation up"
           className="flex items-center justify-center text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={operation.orderIndex <= 0 || isSaving}
+          disabled={pathElement.orderIndex <= 0 || isSaving}
           onClick={(event) => moveOperation(event, -1)}
           title="Move cut operation up"
           type="button"
@@ -591,7 +592,7 @@ function renderCutSequenceRow({
         <button
           aria-label="Move cut sequence operation down"
           className="flex items-center justify-center border-t border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={operation.orderIndex >= operationCount - 1 || isSaving}
+          disabled={pathElement.orderIndex >= operationCount - 1 || isSaving}
           onClick={(event) => moveOperation(event, 1)}
           title="Move cut operation down"
           type="button"
@@ -626,11 +627,11 @@ function renderContourTreeNode({
   segmentsById: ReturnType<typeof segmentMap>;
   treeDepth: number;
 }) {
-  const { contour, operation } = node;
+  const { element } = node;
   const nested = treeDepth > 0;
-  const manualDecisions = manualDecisionKinds(operation);
-  const label = contourLabel(contour);
-  const sourceEntityCount = sourceEntityCountForContour(contour);
+  const manualDecisions = manualDecisionKinds(element);
+  const label = element.label;
+  const sourceEntityCount = sourceEntityCountForPathElement(element);
 
   return (
     <details
@@ -639,66 +640,69 @@ function renderContourTreeNode({
           ? 'ml-3 border-l border-border/80 bg-background/20 pl-2'
           : 'mb-1 border border-border bg-background/45'
       }
-      data-upid-hovered={hoveredPathElement?.operationId === operation.id ? 'true' : undefined}
-      data-upid-contour-group={operation.id}
-      data-upid-selected={selectedPathElement?.operationId === operation.id ? 'true' : undefined}
+      data-upid-hovered={hoveredPathElement?.operationId === element.operationId ? 'true' : undefined}
+      data-upid-contour-group={element.id}
+      data-upid-operation-id={element.operationId}
+      data-upid-path-element-id={element.id}
+      data-upid-selected={selectedPathElement?.operationId === element.operationId ? 'true' : undefined}
       data-upid-tree-depth={treeDepth}
-      key={operation.id}
+      key={element.id}
       open
     >
       <summary className="list-none">
         <button
-          aria-pressed={operation.id === selectedPathOperationId}
+          aria-pressed={element.operationId === selectedPathOperationId}
           className={`grid w-full grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent ${
-            operation.id === selectedPathOperationId
+            element.operationId === selectedPathOperationId
               ? 'bg-sky-500/15 text-sky-100'
-              : hoveredPathElement?.operationId === operation.id
+              : hoveredPathElement?.operationId === element.operationId
                 ? 'bg-cyan-500/10 text-cyan-100'
                 : ''
           }`}
-          data-upid-contour-children={contour.childIds.length}
-          data-upid-contour-depth={contour.containmentDepth}
+          data-upid-contour-children={element.childIds.length}
+          data-upid-contour-depth={element.containmentDepth}
           data-upid-contour-label={label}
           data-upid-contour-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
-          data-upid-contour-parent={contour.parentId ?? undefined}
-          data-upid-contour-role={contour.classification}
+          data-upid-contour-parent={element.parentId ?? undefined}
+          data-upid-contour-role={element.classification}
           data-upid-contour-row
           data-upid-contour-source-entities={sourceEntityCount}
-          data-upid-operation-id={operation.id}
+          data-upid-operation-id={element.operationId}
+          data-upid-path-element-id={element.id}
           data-upid-selected={
-            selectedPathElement?.operationId === operation.id && !selectedPathElement.segmentId
+            selectedPathElement?.operationId === element.operationId && !selectedPathElement.segmentId
               ? 'true'
               : undefined
           }
           onClick={(event) => {
             event.preventDefault();
-            onSelectPathElement({ operationId: operation.id, segmentId: null });
+            onSelectPathElement({ operationId: element.operationId, segmentId: null });
           }}
-          onMouseEnter={() => onHoverPathElement({ operationId: operation.id, segmentId: null })}
+          onMouseEnter={() => onHoverPathElement({ operationId: element.operationId, segmentId: null })}
           onMouseLeave={() => onHoverPathElement(null)}
           type="button"
         >
-          <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
+          <span className="text-muted-foreground">{element.orderIndex + 1}</span>
           <span className="min-w-0">
             <span className="block truncate text-[10px]">{label}</span>
             <span className="block truncate text-[9px] text-muted-foreground">
-              {operation.classification} / {operation.closed ? 'closed contour' : 'open chain'} /{' '}
-              {operation.direction}
+              {element.classification} / {element.closed ? 'closed contour' : 'open chain'} /{' '}
+              {element.direction}
             </span>
             <span className="block truncate text-[9px] text-muted-foreground">
-              {formatContourNest(contour)}
+              {formatPathElementNest(element)}
             </span>
             {renderManualDecisionBadges(manualDecisions)}
           </span>
           <span className="text-right text-[9px] text-muted-foreground">
-            {operation.metrics.cutLength.toFixed(3)}
+            {element.metrics.cutLength.toFixed(3)}
           </span>
         </button>
       </summary>
       <div className="border-t border-border bg-card/35 py-1" data-upid-segment-stack>
-        {operation.segmentRefs.map((ref, index) =>
+        {element.segmentRefs.map((ref, index) =>
           renderSegmentRow(
-            operation,
+            element,
             ref,
             index,
             requiredSegment(segmentsById, ref.segmentId),
@@ -752,7 +756,7 @@ function renderManualDecisionBadges(decisions: ManualDecisionKind[]) {
 }
 
 function renderSegmentRow(
-  operation: PathOperation,
+  pathElement: OperationPathElement,
   ref: OrientedSegmentRef,
   index: number,
   segment: PathSegment,
@@ -766,29 +770,30 @@ function renderSegmentRow(
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
   const hovered =
-    hoveredPathElement?.operationId === operation.id &&
+    hoveredPathElement?.operationId === pathElement.operationId &&
     hoveredPathElement.segmentId === segment.id &&
     !hoveredPathElement.pointRole;
   const selected =
-    selectedPathElement?.operationId === operation.id &&
+    selectedPathElement?.operationId === pathElement.operationId &&
     selectedPathElement.segmentId === segment.id &&
     !selectedPathElement.pointRole;
 
   return (
-    <div data-upid-segment-group key={`${operation.id}-${segment.id}-${index}`}>
+    <div data-upid-path-element-id={pathElement.id} data-upid-segment-group key={`${pathElement.id}-${segment.id}-${index}`}>
       <button
         aria-pressed={selected}
         className={`grid w-full grid-cols-[26px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[9px] text-muted-foreground outline-none hover:bg-accent ${
           selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
         }`}
         data-upid-hovered={hovered ? 'true' : undefined}
-        data-upid-operation-id={operation.id}
+        data-upid-operation-id={pathElement.operationId}
+        data-upid-path-element-id={pathElement.id}
         data-upid-selected={selected ? 'true' : undefined}
         data-upid-segment-index={index}
         data-upid-segment-row
         data-upid-segment-id={segment.id}
-        onClick={() => onSelectPathElement({ operationId: operation.id, segmentId: segment.id })}
-        onMouseEnter={() => onHoverPathElement({ operationId: operation.id, segmentId: segment.id })}
+        onClick={() => onSelectPathElement({ operationId: pathElement.operationId, segmentId: segment.id })}
+        onMouseEnter={() => onHoverPathElement({ operationId: pathElement.operationId, segmentId: segment.id })}
         onMouseLeave={() => onHoverPathElement(null)}
         type="button"
       >
@@ -807,7 +812,7 @@ function renderSegmentRow(
           index,
           onHoverPathElement,
           onSelectPathElement,
-          operation,
+          pathElement,
           point: start,
           role: 'start',
           segment,
@@ -820,7 +825,7 @@ function renderSegmentRow(
           index,
           onHoverPathElement,
           onSelectPathElement,
-          operation,
+          pathElement,
           point: end,
           role: 'end',
           segment,
@@ -841,7 +846,7 @@ function renderPointRow({
   onHoverPathElement,
   onSelectPathElement,
   onSetPathStartFromElement,
-  operation,
+  pathElement,
   point,
   role,
   segment,
@@ -853,19 +858,19 @@ function renderPointRow({
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
-  operation: PathOperation;
+  pathElement: OperationPathElement;
   point: { x: number; y: number };
   role: 'start' | 'end';
   segment: PathSegment;
   selectedPathElement: EditorPathElementRef | null;
 }) {
-  const element: EditorPathElementRef = { operationId: operation.id, segmentId: segment.id, pointRole: role };
+  const element: EditorPathElementRef = { operationId: pathElement.operationId, segmentId: segment.id, pointRole: role };
   const hovered =
-    hoveredPathElement?.operationId === operation.id &&
+    hoveredPathElement?.operationId === pathElement.operationId &&
     hoveredPathElement.segmentId === segment.id &&
     hoveredPathElement.pointRole === role;
   const selected =
-    selectedPathElement?.operationId === operation.id &&
+    selectedPathElement?.operationId === pathElement.operationId &&
     selectedPathElement.segmentId === segment.id &&
     selectedPathElement.pointRole === role;
 
@@ -875,7 +880,8 @@ function renderPointRow({
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-hovered={hovered ? 'true' : undefined}
-      data-upid-operation-id={operation.id}
+      data-upid-operation-id={pathElement.operationId}
+      data-upid-path-element-id={pathElement.id}
       data-upid-selected={selected ? 'true' : undefined}
       data-upid-segment-index={index}
       data-upid-segment-id={segment.id}
@@ -898,7 +904,7 @@ function renderPointRow({
       <button
         aria-label="Set path start to this point"
         className="flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-        disabled={!operation.closed || isSaving}
+        disabled={!pathElement.closed || isSaving}
         onClick={(event) => {
           event.stopPropagation();
           onSelectPathElement(element);
@@ -917,29 +923,16 @@ function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
 }
 
-function formatContourNest(contour: PathContour | undefined) {
-  if (!contour) return 'depth 0 / children 0';
-  return `depth ${contour.containmentDepth} / children ${contour.childIds.length}`;
+function formatPathElementNest(element: PathElement) {
+  return `depth ${element.containmentDepth} / children ${element.childIds.length}`;
 }
 
-function contourLabel(contour: PathContour) {
-  return contour.label ?? contour.id;
+function sourceEntityCountForPathElement(element: PathElement) {
+  return element.provenance.sourceEntityIndices.length;
 }
 
-function operationLabel(operation: PathOperation) {
-  return operation.label ?? operation.id;
-}
-
-function sourceEntityCountForContour(contour: PathContour) {
-  return contour.provenance.sourceEntityIndices.length;
-}
-
-function sourceEntityCountForOperation(operation: PathOperation) {
-  return operation.provenance.sourceEntityIndices.length;
-}
-
-function manualDecisionKinds(operation: PathOperation): ManualDecisionKind[] {
-  const overrides = operation.overrides;
+function manualDecisionKinds(element: Pick<PathElement, 'overrides'>): ManualDecisionKind[] {
+  const overrides = element.overrides;
   if (!overrides) return [];
 
   const decisions: ManualDecisionKind[] = [];
@@ -950,39 +943,39 @@ function manualDecisionKinds(operation: PathOperation): ManualDecisionKind[] {
   return decisions;
 }
 
-function buildContourTree(
-  contours: PathContour[],
-  operationsByContourId: Map<string, PathOperation>
+function hasOperation(element: PathElement): element is OperationPathElement {
+  return element.operationId !== null && element.orderIndex !== null && element.direction !== null && element.metrics !== null;
+}
+
+function buildPathElementTree(
+  pathElements: OperationPathElement[],
+  rootPathElementIds: PathElementId[]
 ): ContourTreeNode[] {
-  const contoursById = new Map(contours.map((contour) => [contour.id, contour]));
-  const visited = new Set<string>();
+  const elementsById = new Map(pathElements.map((element) => [element.id, element]));
+  const visited = new Set<PathElementId>();
 
-  function buildNode(contour: PathContour): ContourTreeNode | null {
-    if (visited.has(contour.id)) return null;
-    const operation = operationsByContourId.get(contour.id);
-    if (!operation) return null;
+  function buildNode(element: OperationPathElement): ContourTreeNode | null {
+    if (visited.has(element.id)) return null;
 
-    visited.add(contour.id);
+    visited.add(element.id);
     return {
-      children: contour.childIds
-        .map((childId) => contoursById.get(childId))
-        .filter((child): child is PathContour => Boolean(child))
+      children: element.childIds
+        .map((childId) => elementsById.get(childId))
+        .filter((child): child is OperationPathElement => Boolean(child))
         .map((child) => buildNode(child))
         .filter((child): child is ContourTreeNode => Boolean(child)),
-      contour,
-      operation
+      element
     };
   }
 
-  const roots = contours.filter((contour) => {
-    if (!operationsByContourId.has(contour.id)) return false;
-    return !contour.parentId || !contoursById.has(contour.parentId) || !operationsByContourId.has(contour.parentId);
-  });
-  const rootNodes = roots.map((contour) => buildNode(contour)).filter((node): node is ContourTreeNode => Boolean(node));
+  const roots = rootPathElementIds
+    .map((id) => elementsById.get(id))
+    .filter((element): element is OperationPathElement => Boolean(element));
+  const rootNodes = roots.map((element) => buildNode(element)).filter((node): node is ContourTreeNode => Boolean(node));
 
-  const orphanNodes = contours
-    .filter((contour) => operationsByContourId.has(contour.id) && !visited.has(contour.id))
-    .map((contour) => buildNode(contour))
+  const orphanNodes = pathElements
+    .filter((element) => !visited.has(element.id))
+    .map((element) => buildNode(element))
     .filter((node): node is ContourTreeNode => Boolean(node));
 
   return [...rootNodes, ...orphanNodes];

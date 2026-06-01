@@ -564,6 +564,11 @@ describe('App DXF imports and project library', () => {
       'Contour 2',
       'Contour 3'
     ]);
+    expect(contourRows.map((row) => row.getAttribute('data-upid-path-element-id'))).toEqual([
+      'contour_0001',
+      'contour_0002',
+      'contour_0003'
+    ]);
     expect(contourRows.map((row) => row.getAttribute('data-upid-contour-source-entities'))).toEqual([
       '1',
       '1',
@@ -588,6 +593,11 @@ describe('App DXF imports and project library', () => {
       '1',
       '2'
     ]);
+    expect(contourGroups.map((group) => group.getAttribute('data-upid-path-element-id'))).toEqual([
+      'contour_0001',
+      'contour_0002',
+      'contour_0003'
+    ]);
     expect(contourGroups[1].parentElement?.closest('[data-upid-contour-group]')).toBe(contourGroups[0]);
     expect(contourGroups[2].parentElement?.closest('[data-upid-contour-group]')).toBe(contourGroups[1]);
 
@@ -600,6 +610,11 @@ describe('App DXF imports and project library', () => {
       'Contour 3',
       'Contour 2',
       'Contour 1'
+    ]);
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-path-element-id'))).toEqual([
+      'contour_0003',
+      'contour_0002',
+      'contour_0001'
     ]);
     expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-source-entities'))).toEqual([
       '1',

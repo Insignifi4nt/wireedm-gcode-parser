@@ -72,8 +72,8 @@ edits, and future AI/user review surfaces from collapsing into an unexplained fi
 - `src/features/editor/EditorPathNavigatorPanel.tsx` is the DXF path-project rail surface for
   operation selection, nested contour/segment inspection, ordering, direction, start selection,
   construction-point modes, hover assist, magnetic snap, saving, and opening export preview. It
-  exposes and can correct contour role and containment depth from the UPID contour tree so holes,
-  islands, and exteriors are visible before export.
+  consumes UPID `pathElements` so holes, islands, exteriors, segments, and manual overrides render
+  from the same root/nested path tree that the document persists.
 - `src/features/editor/EditorUpidExportPreview.tsx` is the explicit post boundary for inspecting and
   downloading machine-profile G-code.
 - `src/features/editor/EditorProgramLinesPanel.tsx` remains the posted-program surface for external
