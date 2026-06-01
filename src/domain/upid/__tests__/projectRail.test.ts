@@ -22,6 +22,7 @@ import {
   readUpidSelectedPathTravel,
   summarizeUpidPathDocumentForEditor,
   upidManualDecisionKinds,
+  upidPathElementAncestorIds,
   upidPathElementRefForDiagnostic,
   upidPathElementRefsMatch,
   upidStartPreviewPointRole,
@@ -61,6 +62,19 @@ describe('UPID project rail projection', () => {
       directSegmentCount: 4,
       totalSegmentCount: 4
     });
+    expect(
+      upidPathElementAncestorIds(document, {
+        operationId: rail.contourTree[0].children[0].element.operationId,
+        segmentId: rail.contourTree[0].children[0].element.segmentRefs[0].segmentId
+      })
+    ).toEqual(['contour_0002', 'contour_0001']);
+    expect(
+      upidPathElementAncestorIds(document, {
+        operationId: rail.contourTree[0].element.operationId,
+        pathElementId: 'contour_0001',
+        segmentId: null
+      })
+    ).toEqual(['contour_0001']);
     expect(rail.operationElements.map(upidPathElementSourceEntityCount)).toEqual([4, 4]);
   });
 

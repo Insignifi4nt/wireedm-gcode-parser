@@ -32,6 +32,7 @@ import type {
 import {
   createUpidProjectRail,
   upidManualDecisionKinds,
+  upidPathElementAncestorIds,
   upidPathElementNestLabel,
   upidPathElementRefForDiagnostic,
   upidPathElementRefsMatch,
@@ -127,7 +128,7 @@ export function EditorPathNavigatorPanel({
   const selectedOperation =
     selectedOperationIndex >= 0 ? pathDocument.plan.operations[selectedOperationIndex] : null;
   const hoverRevealedPathElementIds = new Set(
-    hoveredPathElement ? pathElementAncestorIds(pathDocument, hoveredPathElement) : []
+    hoveredPathElement ? upidPathElementAncestorIds(pathDocument, hoveredPathElement) : []
   );
   const isPathElementExpanded = (pathElementId: string) =>
     hoverRevealedPathElementIds.has(pathElementId) || (expandedPathElementIds[pathElementId] ?? true);
@@ -140,7 +141,7 @@ export function EditorPathNavigatorPanel({
 
   useEffect(() => {
     const pathElementIdsToReveal = selectedPathElement
-      ? pathElementAncestorIds(pathDocument, selectedPathElement)
+      ? upidPathElementAncestorIds(pathDocument, selectedPathElement)
       : [];
     if (pathElementIdsToReveal.length === 0) return;
 
@@ -500,29 +501,6 @@ export function EditorPathNavigatorRailCollapsed() {
       </div>
     </div>
   );
-}
-
-function pathElementAncestorIds(
-  pathDocument: PathPlanningDocument,
-  elementRef: EditorPathElementRef
-) {
-  const selectedElement =
-    (elementRef.pathElementId
-      ? pathDocument.pathElements.find((element) => element.id === elementRef.pathElementId)
-      : null) ??
-    pathDocument.pathElements.find((element) => element.operationId === elementRef.operationId);
-  if (!selectedElement) return [];
-
-  const pathElementsById = new Map(pathDocument.pathElements.map((element) => [element.id, element]));
-  const ids: string[] = [];
-  let current: (typeof pathDocument.pathElements)[number] | null = selectedElement;
-
-  while (current) {
-    ids.push(current.id);
-    current = current.parentId ? pathElementsById.get(current.parentId) ?? null : null;
-  }
-
-  return ids;
 }
 
 function renderCutSequenceRow({

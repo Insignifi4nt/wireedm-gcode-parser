@@ -481,6 +481,29 @@ export function upidPathElementIdForOperation(
   return document.pathElements.find((element) => element.operationId === operationId)?.id ?? null;
 }
 
+export function upidPathElementAncestorIds(
+  document: PathPlanningDocument,
+  elementRef: UpidPathElementRef
+): PathElementId[] {
+  const selectedElement =
+    (elementRef.pathElementId
+      ? document.pathElements.find((element) => element.id === elementRef.pathElementId)
+      : null) ??
+    document.pathElements.find((element) => element.operationId === elementRef.operationId);
+  if (!selectedElement) return [];
+
+  const pathElementsById = new Map(document.pathElements.map((element) => [element.id, element]));
+  const ids: PathElementId[] = [];
+  let current: (typeof document.pathElements)[number] | null = selectedElement;
+
+  while (current) {
+    ids.push(current.id);
+    current = current.parentId ? pathElementsById.get(current.parentId) ?? null : null;
+  }
+
+  return ids;
+}
+
 function buildUpidPathElementTree(
   pathElements: UpidOperationPathElement[],
   rootPathElementIds: PathElementId[]
