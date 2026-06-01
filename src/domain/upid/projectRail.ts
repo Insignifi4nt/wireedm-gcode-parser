@@ -481,15 +481,21 @@ export function upidPathElementIdForOperation(
   return document.pathElements.find((element) => element.operationId === operationId)?.id ?? null;
 }
 
+export function readUpidPathElementTreeNode(
+  document: PathPlanningDocument,
+  elementRef: UpidPathElementRef
+): UpidProjectRailTreeNode | null {
+  const selectedElement = readPathElementForRef(document, elementRef);
+  if (!selectedElement) return null;
+
+  return findTreeNodeByPathElementId(createUpidProjectRail(document).contourTree, selectedElement.id);
+}
+
 export function upidPathElementAncestorIds(
   document: PathPlanningDocument,
   elementRef: UpidPathElementRef
 ): PathElementId[] {
-  const selectedElement =
-    (elementRef.pathElementId
-      ? document.pathElements.find((element) => element.id === elementRef.pathElementId)
-      : null) ??
-    document.pathElements.find((element) => element.operationId === elementRef.operationId);
+  const selectedElement = readPathElementForRef(document, elementRef);
   if (!selectedElement) return [];
 
   const pathElementsById = new Map(document.pathElements.map((element) => [element.id, element]));
@@ -502,6 +508,33 @@ export function upidPathElementAncestorIds(
   }
 
   return ids;
+}
+
+function readPathElementForRef(
+  document: PathPlanningDocument,
+  elementRef: UpidPathElementRef
+): PathElement | null {
+  return (
+    (elementRef.pathElementId
+      ? document.pathElements.find((element) => element.id === elementRef.pathElementId)
+      : null) ??
+    document.pathElements.find((element) => element.operationId === elementRef.operationId) ??
+    null
+  );
+}
+
+function findTreeNodeByPathElementId(
+  nodes: UpidProjectRailTreeNode[],
+  pathElementId: PathElementId
+): UpidProjectRailTreeNode | null {
+  for (const node of nodes) {
+    if (node.element.id === pathElementId) return node;
+
+    const child = findTreeNodeByPathElementId(node.children, pathElementId);
+    if (child) return child;
+  }
+
+  return null;
 }
 
 function buildUpidPathElementTree(

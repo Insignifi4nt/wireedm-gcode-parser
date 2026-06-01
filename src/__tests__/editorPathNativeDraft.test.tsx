@@ -185,6 +185,37 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelectorAll('[data-upid-segment-stack]')).toHaveLength(2);
   });
 
+  it('shows selected contour subtree metrics in the inspector', async () => {
+    const pathDocument = pathDocumentFromNestedRectangles();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('button[aria-label="Select Exterior 1"]');
+
+    const exteriorTreeContext = container.querySelector('[data-upid-selected-tree-context]');
+    expect(exteriorTreeContext?.getAttribute('data-upid-path-element-id')).toBe('contour_0001');
+    expect(container.querySelector('[data-upid-selected="tree-direct-segments"]')?.textContent).toBe('4');
+    expect(container.querySelector('[data-upid-selected="tree-descendants"]')?.textContent).toBe('1');
+    expect(container.querySelector('[data-upid-selected="tree-total-segments"]')?.textContent).toBe('8');
+
+    await clickElement('button[aria-label="Select Hole 1"]');
+
+    const holeTreeContext = container.querySelector('[data-upid-selected-tree-context]');
+    expect(holeTreeContext?.getAttribute('data-upid-path-element-id')).toBe('contour_0002');
+    expect(container.querySelector('[data-upid-selected="tree-direct-segments"]')?.textContent).toBe('4');
+    expect(container.querySelector('[data-upid-selected="tree-descendants"]')?.textContent).toBe('0');
+    expect(container.querySelector('[data-upid-selected="tree-total-segments"]')?.textContent).toBe('4');
+  });
+
   it('reveals collapsed contour groups when selecting path geometry on canvas', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);

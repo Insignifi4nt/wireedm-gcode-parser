@@ -15,6 +15,7 @@ import {
   readUpidManualOverrideRows,
   readUpidPathElementPointByRole,
   readUpidPathElementSourceSummary,
+  readUpidPathElementTreeNode,
   readUpidOperationPathElement,
   readUpidSelectedPathPoint,
   readUpidSelectedPathSegment,
@@ -120,6 +121,13 @@ export function EditorInspectorPanel({
     : [];
   const selectedPathSource = selectedPathElementModel
     ? readUpidPathElementSourceSummary(selectedPathElementModel)
+    : null;
+  const selectedPathTreeNode = pathDocument && selectedPathElementModel
+    ? readUpidPathElementTreeNode(pathDocument, {
+        operationId: selectedPathElementModel.operationId,
+        pathElementId: selectedPathElementModel.id,
+        segmentId: selectedPathElement?.segmentId ?? null
+      })
     : null;
   const selectedPathStart = selectedPathElementModel
     ? readUpidPathElementPointByRole(selectedPathElementModel, 'start')
@@ -300,6 +308,31 @@ export function EditorInspectorPanel({
               <dt className="text-muted-foreground">End</dt>
               <dd data-upid-selected="end">{selectedPathEnd ? formatPoint(selectedPathEnd.point) : '-'}</dd>
             </dl>
+            {selectedPathTreeNode && (
+              <section
+                className="mt-3 border-t border-border pt-3"
+                data-upid-path-element-id={selectedPathTreeNode.element.id}
+                data-upid-selected-tree-context
+              >
+                <h4 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">
+                  Path Tree Context
+                </h4>
+                <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+                  <dt className="text-muted-foreground">Direct Segs</dt>
+                  <dd data-upid-selected="tree-direct-segments">
+                    {selectedPathTreeNode.treeMetrics.directSegmentCount}
+                  </dd>
+                  <dt className="text-muted-foreground">Nested</dt>
+                  <dd data-upid-selected="tree-descendants">
+                    {selectedPathTreeNode.treeMetrics.descendantCount}
+                  </dd>
+                  <dt className="text-muted-foreground">Total Segs</dt>
+                  <dd data-upid-selected="tree-total-segments">
+                    {selectedPathTreeNode.treeMetrics.totalSegmentCount}
+                  </dd>
+                </dl>
+              </section>
+            )}
           </section>
         )}
 

@@ -17,6 +17,7 @@ import {
   readUpidPathElementPoint,
   readUpidPathElementPointByRole,
   readUpidPathElementSourceSummary,
+  readUpidPathElementTreeNode,
   readUpidSelectedPathPoint,
   readUpidSelectedPathSegment,
   readUpidSelectedPathTravel,
@@ -76,6 +77,48 @@ describe('UPID project rail projection', () => {
       })
     ).toEqual(['contour_0001']);
     expect(rail.operationElements.map(upidPathElementSourceEntityCount)).toEqual([4, 4]);
+  });
+
+  it('resolves selected path refs back to path tree nodes with subtree metrics', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(0, 0, 20, 20), ...rectangleLines(5, 5, 10, 10)]
+    );
+    const rail = createUpidProjectRail(document);
+    const exteriorElement = rail.contourTree[0].element;
+    const holeElement = rail.contourTree[0].children[0].element;
+
+    expect(
+      readUpidPathElementTreeNode(document, {
+        operationId: holeElement.operationId,
+        pathElementId: holeElement.id,
+        segmentId: holeElement.segmentRefs[0].segmentId
+      })
+    ).toMatchObject({
+      element: {
+        id: 'contour_0002'
+      },
+      treeMetrics: {
+        descendantCount: 0,
+        directSegmentCount: 4,
+        totalSegmentCount: 4
+      }
+    });
+    expect(
+      readUpidPathElementTreeNode(document, {
+        operationId: exteriorElement.operationId,
+        pathElementId: exteriorElement.id,
+        segmentId: null
+      })
+    ).toMatchObject({
+      element: {
+        id: 'contour_0001'
+      },
+      treeMetrics: {
+        descendantCount: 1,
+        directSegmentCount: 4,
+        totalSegmentCount: 8
+      }
+    });
   });
 
   it('keeps manual decisions available without React panel bookkeeping', () => {
