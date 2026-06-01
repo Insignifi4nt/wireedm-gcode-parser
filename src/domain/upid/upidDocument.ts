@@ -13,10 +13,6 @@ import {
   type GCodeProgramComposition
 } from '@/domain/post/gcodeTemplates';
 import type {
-  ManualClassificationOverride,
-  ManualDirectionOverride,
-  ManualOrderOverride,
-  ManualStartOverride,
   OperationOrderStrategy,
   PathDiagnostic,
   PathElement,
@@ -24,6 +20,17 @@ import type {
   PathPlanningOptions,
   PathPlanningSourceMetadata
 } from '@/domain/path-intel/types';
+
+import {
+  readUpidManualDecisionDetails,
+  summarizeUpidManualDecisions,
+  upidManualDecisionKinds,
+  type UpidManualClassificationDecision,
+  type UpidManualDecisionKind,
+  type UpidManualDirectionDecision,
+  type UpidManualOrderDecision,
+  type UpidManualStartDecision
+} from './manualDecisions';
 
 export const UPID_FORMAT_NAME = 'Universal Path Intelligence Document';
 
@@ -80,28 +87,15 @@ export interface UpidGCodeProgramOperation extends Omit<GcodePostedOperation, 'm
   programLineStart: number;
 }
 
-export type UpidGCodeProgramManualDecisionKind = 'order' | 'role' | 'direction' | 'start';
+export type UpidGCodeProgramManualDecisionKind = UpidManualDecisionKind;
 
-export interface UpidGCodeProgramManualOrder {
-  orderIndex: ManualOrderOverride['orderIndex'];
-}
+export type UpidGCodeProgramManualOrder = UpidManualOrderDecision;
 
-export interface UpidGCodeProgramManualClassification {
-  classification: ManualClassificationOverride['classification'];
-}
+export type UpidGCodeProgramManualClassification = UpidManualClassificationDecision;
 
-export interface UpidGCodeProgramManualDirection {
-  direction: ManualDirectionOverride['direction'];
-}
+export type UpidGCodeProgramManualDirection = UpidManualDirectionDecision;
 
-export interface UpidGCodeProgramManualStart {
-  createdSegmentIds: string[];
-  point: ManualStartOverride['point'];
-  pointRole: ManualStartOverride['pointRole'] | null;
-  relation: ManualStartOverride['relation'];
-  sourceSegmentId: string;
-  sourceSegmentIndex: number;
-}
+export type UpidGCodeProgramManualStart = UpidManualStartDecision;
 
 export function createUpidFromDxfEntities(
   entities: DxfEntity[],
@@ -151,34 +145,14 @@ export function composeUpidGCodeExport(
 }
 
 function summarizeExportPlanning(document: UniversalPathIntelligenceDocument): UpidGCodeExportPlanning {
-  const manualDecisionCounts = summarizeManualDecisionCounts(document);
+  const manualDecisionSummary = summarizeUpidManualDecisions(document.plan.operations);
 
   return {
-    manualDecisionCount: Object.values(manualDecisionCounts).reduce((total, count) => total + count, 0),
-    manualDecisionCounts,
-    manualOrderCount: manualDecisionCounts.order,
+    manualDecisionCount: manualDecisionSummary.count,
+    manualDecisionCounts: manualDecisionSummary.counts,
+    manualOrderCount: manualDecisionSummary.counts.order,
     operationOrderStrategy: document.options.operationOrderStrategy
   };
-}
-
-function summarizeManualDecisionCounts(
-  document: UniversalPathIntelligenceDocument
-): Record<UpidGCodeProgramManualDecisionKind, number> {
-  const counts: Record<UpidGCodeProgramManualDecisionKind, number> = {
-    direction: 0,
-    order: 0,
-    role: 0,
-    start: 0
-  };
-
-  for (const operation of document.plan.operations) {
-    if (operation.overrides?.order) counts.order += 1;
-    if (operation.overrides?.classification) counts.role += 1;
-    if (operation.overrides?.direction) counts.direction += 1;
-    if (operation.overrides?.start) counts.start += 1;
-  }
-
-  return counts;
 }
 
 function mapProgramOperations(
@@ -195,16 +169,17 @@ function mapProgramOperations(
 
   return operations.map((operation) => {
     const pathElement = pathElementsByOperationId.get(operation.operationId) ?? null;
+    const manualDecisionDetails = readUpidManualDecisionDetails(pathElement);
 
     return {
       ...operation,
       editEventCount: pathElement?.provenance.edit?.events.length ?? 0,
       editedSegmentCount: pathElement?.provenance.edit?.derivedSegmentIds.length ?? 0,
-      manualClassification: upidGCodeProgramManualClassification(pathElement),
-      manualDecisionKinds: upidGCodeProgramManualDecisionKinds(pathElement),
-      manualDirection: upidGCodeProgramManualDirection(pathElement),
-      manualOrder: upidGCodeProgramManualOrder(pathElement),
-      manualStart: upidGCodeProgramManualStart(pathElement),
+      manualClassification: manualDecisionDetails.classification,
+      manualDecisionKinds: upidManualDecisionKinds(pathElement),
+      manualDirection: manualDecisionDetails.direction,
+      manualOrder: manualDecisionDetails.order,
+      manualStart: manualDecisionDetails.start,
       moves: operation.moves.map((move) =>
         mapProgramMoveTrace(move, pathElement, programLineForBodyLine(bodySection, move.bodyLineIndex))
       ),
@@ -237,55 +212,4 @@ function mapProgramMoveTrace(
     segmentIndex: segmentIndex >= 0 ? segmentIndex : null,
     segmentOrdinal: segmentIndex >= 0 ? segmentIndex + 1 : null
   };
-}
-
-function upidGCodeProgramManualDecisionKinds(
-  pathElement: PathElement | null
-): UpidGCodeProgramManualDecisionKind[] {
-  const overrides = pathElement?.overrides;
-  if (!overrides) return [];
-
-  const decisions: UpidGCodeProgramManualDecisionKind[] = [];
-  if (overrides.order) decisions.push('order');
-  if (overrides.classification) decisions.push('role');
-  if (overrides.direction) decisions.push('direction');
-  if (overrides.start) decisions.push('start');
-  return decisions;
-}
-
-function upidGCodeProgramManualStart(
-  pathElement: PathElement | null
-): UpidGCodeProgramManualStart | null {
-  const start = pathElement?.overrides?.start;
-  if (!start) return null;
-
-  return {
-    createdSegmentIds: [...start.createdSegmentIds],
-    point: { ...start.point },
-    pointRole: start.pointRole ?? null,
-    relation: start.relation,
-    sourceSegmentId: start.sourceSegmentId,
-    sourceSegmentIndex: start.sourceSegmentIndex
-  };
-}
-
-function upidGCodeProgramManualOrder(
-  pathElement: PathElement | null
-): UpidGCodeProgramManualOrder | null {
-  const order = pathElement?.overrides?.order;
-  return order ? { orderIndex: order.orderIndex } : null;
-}
-
-function upidGCodeProgramManualClassification(
-  pathElement: PathElement | null
-): UpidGCodeProgramManualClassification | null {
-  const classification = pathElement?.overrides?.classification;
-  return classification ? { classification: classification.classification } : null;
-}
-
-function upidGCodeProgramManualDirection(
-  pathElement: PathElement | null
-): UpidGCodeProgramManualDirection | null {
-  const direction = pathElement?.overrides?.direction;
-  return direction ? { direction: direction.direction } : null;
 }

@@ -25,8 +25,13 @@ import {
   requiredSegment,
   segmentMap
 } from '@/domain/path-intel/segments';
+import {
+  summarizeUpidManualDecisions,
+  type UpidManualDecisionKind
+} from './manualDecisions';
 
-export type UpidManualDecisionKind = 'order' | 'role' | 'direction' | 'start';
+export { upidManualDecisionKinds } from './manualDecisions';
+export type { UpidManualDecisionKind } from './manualDecisions';
 
 export interface UpidPathElementRef {
   operationId: string | null;
@@ -157,7 +162,7 @@ export function createUpidProjectRail(document: PathPlanningDocument): UpidProje
   const operationElements = document.pathElements.filter(isUpidOperationPathElement);
   const cutSequenceElements = [...operationElements].sort((first, second) => first.orderIndex - second.orderIndex);
   const contourTree = buildUpidPathElementTree(operationElements, document.rootPathElementIds);
-  const manualDecisionCounts = summarizeUpidManualDecisionCounts(operationElements);
+  const manualDecisionSummary = summarizeUpidManualDecisions(operationElements);
 
   return {
     contourTree,
@@ -166,31 +171,12 @@ export function createUpidProjectRail(document: PathPlanningDocument): UpidProje
     operationElements,
     summary: {
       contourCount: document.contours.length,
-      manualDecisionCount: Object.values(manualDecisionCounts).reduce((total, count) => total + count, 0),
-      manualDecisionCounts,
+      manualDecisionCount: manualDecisionSummary.count,
+      manualDecisionCounts: manualDecisionSummary.counts,
       operationCount: document.plan.operations.length,
       rootCount: contourTree.length
     }
   };
-}
-
-function summarizeUpidManualDecisionCounts(
-  elements: UpidOperationPathElement[]
-): Record<UpidManualDecisionKind, number> {
-  const counts: Record<UpidManualDecisionKind, number> = {
-    direction: 0,
-    order: 0,
-    role: 0,
-    start: 0
-  };
-
-  for (const element of elements) {
-    for (const decision of upidManualDecisionKinds(element)) {
-      counts[decision] += 1;
-    }
-  }
-
-  return counts;
 }
 
 export function isUpidOperationPathElement(element: PathElement): element is UpidOperationPathElement {
@@ -529,18 +515,6 @@ export function upidPathElementRefsMatch(
   if (expected.pointRole !== undefined && expected.pointRole !== actual.pointRole) return false;
   if (expected.travelRole !== undefined && expected.travelRole !== actual.travelRole) return false;
   return true;
-}
-
-export function upidManualDecisionKinds(element: Pick<PathElement, 'overrides'>): UpidManualDecisionKind[] {
-  const overrides = element.overrides;
-  if (!overrides) return [];
-
-  const decisions: UpidManualDecisionKind[] = [];
-  if (overrides.order) decisions.push('order');
-  if (overrides.classification) decisions.push('role');
-  if (overrides.direction) decisions.push('direction');
-  if (overrides.start) decisions.push('start');
-  return decisions;
 }
 
 export function upidPathElementSourceEntityCount(element: PathElement) {
