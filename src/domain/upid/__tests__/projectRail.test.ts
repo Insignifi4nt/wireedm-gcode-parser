@@ -13,6 +13,7 @@ import {
   createUpidProjectRail,
   normalizeUpidPathElementSelection,
   readUpidManualOverrideRows,
+  readUpidEndpointTopologyRows,
   readUpidOperationPathElement,
   readUpidPathElementPoint,
   readUpidPathElementPointByRole,
@@ -111,6 +112,34 @@ describe('UPID project rail projection', () => {
       snappedEndpointCount: 2
     });
     expect(rail.summary.topology.maxEndpointSnapGap).toBeCloseTo(0.004);
+  });
+
+  it('projects snapped endpoint topology rows with selectable path refs', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(gappedRectangle(0.004), {
+      endpointTolerance: 0.01
+    });
+    const operation = document.plan.operations[0];
+
+    const rows = readUpidEndpointTopologyRows(document);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: 'snapped-endpoint-cluster',
+      method: 'within-tolerance',
+      memberCount: 2,
+      selectRef: {
+        operationId: operation.id,
+        pathElementId: document.pathElements[0].id,
+        pointRole: 'end',
+        segmentId: operation.segmentRefs[0].segmentId
+      },
+      toleranceUsed: 0.01
+    });
+    expect(rows[0].clusterId).toMatch(/^ec_/);
+    expect(rows[0].maxPairDistance).toBeCloseTo(0.004);
+    expect(rows[0].radius).toBeCloseTo(0.002);
+    expectPointClose(rows[0].point, { x: 10.002, y: 0 });
+    expect(rows[0].members.map((member) => member.pointRole)).toEqual(['end', 'start']);
   });
 
   it('resolves selected path refs back to path tree nodes with subtree metrics', () => {

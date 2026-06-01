@@ -545,6 +545,44 @@ describe('EditorPage UPID draft boundary', () => {
     expect(topologySummary?.textContent).toContain('Topology: 4 clusters / snapped 1 / max gap 0.004');
   });
 
+  it('selects snapped endpoint topology rows from the path navigator', async () => {
+    const pathDocument = pathDocumentFromGappedRectangle();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const topologyRow = container.querySelector('[data-upid-endpoint-topology-row]') as HTMLElement | null;
+
+    expect(topologyRow).not.toBeNull();
+    expect(topologyRow?.getAttribute('data-upid-endpoint-topology-kind')).toBe('snapped-endpoint-cluster');
+    expect(topologyRow?.getAttribute('data-upid-endpoint-topology-method')).toBe('within-tolerance');
+    expect(topologyRow?.getAttribute('data-upid-endpoint-topology-members')).toBe('2');
+    expect(topologyRow?.getAttribute('data-upid-endpoint-topology-gap')).toBe('0.004');
+    expect(topologyRow?.textContent).toContain('gap 0.004 / 2 ends');
+
+    await act(async () => {
+      topologyRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(topologyRow?.getAttribute('data-upid-selected')).toBe('true');
+    expect(container.querySelector('[data-upid-selected-point-role]')?.textContent).toBe('end');
+    expect(container.querySelector('[data-upid-selected-point-coordinate]')?.textContent).toBe(
+      '10.000, 0.000'
+    );
+    expect(container.querySelector('[data-upid-selected-point-cluster-method]')?.textContent).toBe(
+      'within-tolerance'
+    );
+  });
+
   it('shows curve geometry metadata in path navigator segment rows', async () => {
     const pathDocument = pathDocumentFromArc();
     const project = projectWithUpid(pathDocument);

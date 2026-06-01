@@ -31,6 +31,7 @@ import type {
 } from '@/domain/path-intel/types';
 import {
   createUpidProjectRail,
+  readUpidEndpointTopologyRows,
   readUpidSegmentGeometry,
   readUpidSelectedPathPoint,
   upidManualDecisionKinds,
@@ -42,6 +43,7 @@ import {
   type UpidManualDecisionKind,
   type UpidOperationPathElement,
   type UpidPathElementRef,
+  type UpidEndpointTopologyRow,
   type UpidSelectedPathSegmentGeometry,
   type UpidProjectRailTreeNode
 } from '@/domain/upid/projectRail';
@@ -125,6 +127,7 @@ export function EditorPathNavigatorPanel({
   const projectRail = createUpidProjectRail(pathDocument);
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
   const endpointTopology = projectRail.summary.topology;
+  const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
   const pathTreeElementIds = projectRail.operationElements.map((element) => element.id);
   const [expandedPathElementIds, setExpandedPathElementIds] = useState<Record<string, boolean>>({});
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
@@ -452,6 +455,28 @@ export function EditorPathNavigatorPanel({
           </label>
         </section>
 
+        {endpointTopologyRows.length > 0 && (
+          <section className="shrink-0 border-b border-border py-2" data-upid-endpoint-topology>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-[9px] uppercase text-muted-foreground">Endpoint Topology</span>
+              <span className="text-[9px] text-muted-foreground">
+                {endpointTopologyRows.length} {endpointTopologyRows.length === 1 ? 'snap' : 'snaps'}
+              </span>
+            </div>
+            <div className="max-h-24 overflow-auto border border-border bg-background/35">
+              {endpointTopologyRows.map((row) =>
+                renderEndpointTopologyRow({
+                  hoveredPathElement,
+                  onHoverPathElement,
+                  onSelectPathElement,
+                  row,
+                  selectedPathElement
+                })
+              )}
+            </div>
+          </section>
+        )}
+
         {pathDocument.diagnostics.length > 0 && (
           <section className="shrink-0 border-b border-border py-2" data-upid-diagnostics>
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -541,6 +566,57 @@ export function EditorPathNavigatorPanel({
         </section>
       </section>
     </div>
+  );
+}
+
+function renderEndpointTopologyRow({
+  hoveredPathElement,
+  onHoverPathElement,
+  onSelectPathElement,
+  row,
+  selectedPathElement
+}: {
+  hoveredPathElement: EditorPathElementRef | null;
+  onHoverPathElement: (element: EditorPathElementRef | null) => void;
+  onSelectPathElement: (element: EditorPathElementRef) => void;
+  row: UpidEndpointTopologyRow;
+  selectedPathElement: EditorPathElementRef | null;
+}) {
+  const hovered = upidPathElementRefsMatch(row.selectRef, hoveredPathElement);
+  const selected = upidPathElementRefsMatch(row.selectRef, selectedPathElement);
+
+  return (
+    <button
+      className={`grid w-full grid-cols-[minmax(0,1fr)_66px] items-center border-b border-border px-2 py-1.5 text-left outline-none last:border-b-0 hover:bg-accent disabled:cursor-default ${
+        selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
+      }`}
+      data-upid-cluster-id={row.clusterId}
+      data-upid-endpoint-topology-gap={formatNumber(row.maxPairDistance)}
+      data-upid-endpoint-topology-kind={row.kind}
+      data-upid-endpoint-topology-members={row.memberCount}
+      data-upid-endpoint-topology-method={row.method}
+      data-upid-endpoint-topology-row
+      data-upid-hovered={hovered ? 'true' : undefined}
+      data-upid-selected={selected ? 'true' : undefined}
+      disabled={!row.selectRef}
+      key={row.id}
+      onClick={() => {
+        if (row.selectRef) onSelectPathElement(row.selectRef);
+      }}
+      onMouseEnter={() => {
+        if (row.selectRef) onHoverPathElement(row.selectRef);
+      }}
+      onMouseLeave={() => onHoverPathElement(null)}
+      type="button"
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-[10px] text-foreground">Snapped {row.clusterId}</span>
+        <span className="block truncate text-[9px] text-muted-foreground">
+          {formatPoint(row.point)} / gap {formatNumber(row.maxPairDistance)} / {row.memberCount} ends
+        </span>
+      </span>
+      <span className="text-right text-[9px] text-muted-foreground">R {formatNumber(row.radius)}</span>
+    </button>
   );
 }
 

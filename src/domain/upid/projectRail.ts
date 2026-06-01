@@ -207,6 +207,20 @@ export interface UpidSelectedEndpointClusterMember {
   segmentKind: string | null;
 }
 
+export interface UpidEndpointTopologyRow {
+  clusterId: string;
+  id: string;
+  kind: 'snapped-endpoint-cluster';
+  maxPairDistance: number;
+  memberCount: number;
+  members: UpidSelectedEndpointClusterMember[];
+  method: 'within-tolerance';
+  point: Point2;
+  radius: number;
+  selectRef: UpidPathElementRef | null;
+  toleranceUsed: number;
+}
+
 export interface UpidManualOverrideRow {
   kind: string;
   label: string;
@@ -270,6 +284,45 @@ function summarizeUpidEndpointTopology(document: PathPlanningDocument): UpidEndp
       (count, cluster) => count + cluster.members.length,
       0
     )
+  };
+}
+
+export function readUpidEndpointTopologyRows(document: PathPlanningDocument): UpidEndpointTopologyRow[] {
+  return document.endpointClusters
+    .filter((cluster) => cluster.method === 'within-tolerance')
+    .map((cluster): UpidEndpointTopologyRow => {
+      const members = readUpidSelectedEndpointClusterMembers(document, cluster.members);
+
+      return {
+        clusterId: cluster.id,
+        id: cluster.id,
+        kind: 'snapped-endpoint-cluster',
+        maxPairDistance: cluster.maxPairDistance,
+        memberCount: cluster.members.length,
+        members,
+        method: 'within-tolerance',
+        point: { ...cluster.point },
+        radius: cluster.radius,
+        selectRef: upidPathElementRefForEndpointClusterMember(members[0] ?? null),
+        toleranceUsed: cluster.toleranceUsed
+      };
+    })
+    .sort((first, second) => {
+      const gapSort = second.maxPairDistance - first.maxPairDistance;
+      return Math.abs(gapSort) > 1e-12 ? gapSort : first.clusterId.localeCompare(second.clusterId);
+    });
+}
+
+function upidPathElementRefForEndpointClusterMember(
+  member: UpidSelectedEndpointClusterMember | null
+): UpidPathElementRef | null {
+  if (!member?.operationId || !member.pathElementId || !member.pointRole) return null;
+
+  return {
+    operationId: member.operationId,
+    pathElementId: member.pathElementId,
+    pointRole: member.pointRole,
+    segmentId: member.segmentId
   };
 }
 
