@@ -1532,6 +1532,73 @@ describe('App DXF imports and project library', () => {
     ).toBe('true');
   });
 
+  it('marks structured manual override details on export operation rows', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([nestedContourDxf()], 'export-manual-overrides.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    let cutSequenceRow = container.querySelector('[data-upid-cut-sequence-row]') as HTMLElement | null;
+    const operationId = cutSequenceRow?.getAttribute('data-upid-operation-id');
+    expect(operationId).toBeTruthy();
+    await selectFirstCutSequence(container);
+
+    const reverseButton = container.querySelector(
+      'button[aria-label="Reverse path operation"]'
+    ) as HTMLButtonElement | null;
+    const roleSelect = container.querySelector(
+      'select[aria-label="Contour role"]'
+    ) as HTMLSelectElement | null;
+
+    await act(async () => {
+      reverseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      if (roleSelect) setSelectValue(roleSelect, 'hole');
+    });
+
+    cutSequenceRow = container.querySelector(
+      `[data-upid-cut-sequence-row][data-upid-operation-id="${operationId}"]`
+    ) as HTMLElement | null;
+    const moveDownButton = cutSequenceRow?.querySelector(
+      'button[aria-label="Move cut sequence operation down"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      moveDownButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const exportOperationRow = container.querySelector(
+      `[data-upid-export-operation-row][data-upid-export-operation-id="${operationId}"]`
+    );
+    expect(exportOperationRow?.getAttribute('data-upid-export-operation-manual-order')).toBe('1');
+    expect(exportOperationRow?.getAttribute('data-upid-export-operation-manual-role')).toBe('hole');
+    expect(exportOperationRow?.getAttribute('data-upid-export-operation-manual-direction')).toBe(
+      'reverse'
+    );
+    expect(exportOperationRow?.textContent).toContain('order 2');
+    expect(exportOperationRow?.textContent).toContain('role hole');
+    expect(exportOperationRow?.textContent).toContain('direction reverse');
+  });
+
   it('shows automatic UPID planning state in the export preview before manual edits', async () => {
     window.showDirectoryPicker = undefined;
 

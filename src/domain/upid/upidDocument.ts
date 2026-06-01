@@ -13,6 +13,9 @@ import {
   type GCodeProgramComposition
 } from '@/domain/post/gcodeTemplates';
 import type {
+  ManualClassificationOverride,
+  ManualDirectionOverride,
+  ManualOrderOverride,
   ManualStartOverride,
   OperationOrderStrategy,
   PathDiagnostic,
@@ -63,7 +66,10 @@ export interface UpidGCodeProgramMove extends GcodePostedMove {
 export interface UpidGCodeProgramOperation extends Omit<GcodePostedOperation, 'moves'> {
   editEventCount: number;
   editedSegmentCount: number;
+  manualClassification: UpidGCodeProgramManualClassification | null;
   manualDecisionKinds: UpidGCodeProgramManualDecisionKind[];
+  manualDirection: UpidGCodeProgramManualDirection | null;
+  manualOrder: UpidGCodeProgramManualOrder | null;
   manualStart: UpidGCodeProgramManualStart | null;
   moves: UpidGCodeProgramMove[];
   pathElementId: string | null;
@@ -73,6 +79,18 @@ export interface UpidGCodeProgramOperation extends Omit<GcodePostedOperation, 'm
 }
 
 export type UpidGCodeProgramManualDecisionKind = 'order' | 'role' | 'direction' | 'start';
+
+export interface UpidGCodeProgramManualOrder {
+  orderIndex: ManualOrderOverride['orderIndex'];
+}
+
+export interface UpidGCodeProgramManualClassification {
+  classification: ManualClassificationOverride['classification'];
+}
+
+export interface UpidGCodeProgramManualDirection {
+  direction: ManualDirectionOverride['direction'];
+}
 
 export interface UpidGCodeProgramManualStart {
   createdSegmentIds: string[];
@@ -156,7 +174,10 @@ function mapProgramOperations(
       ...operation,
       editEventCount: pathElement?.provenance.edit?.events.length ?? 0,
       editedSegmentCount: pathElement?.provenance.edit?.derivedSegmentIds.length ?? 0,
+      manualClassification: upidGCodeProgramManualClassification(pathElement),
       manualDecisionKinds: upidGCodeProgramManualDecisionKinds(pathElement),
+      manualDirection: upidGCodeProgramManualDirection(pathElement),
+      manualOrder: upidGCodeProgramManualOrder(pathElement),
       manualStart: upidGCodeProgramManualStart(pathElement),
       moves: operation.moves.map((move) =>
         mapProgramMoveTrace(move, pathElement, programLineForBodyLine(bodySection, move.bodyLineIndex))
@@ -220,4 +241,25 @@ function upidGCodeProgramManualStart(
     sourceSegmentId: start.sourceSegmentId,
     sourceSegmentIndex: start.sourceSegmentIndex
   };
+}
+
+function upidGCodeProgramManualOrder(
+  pathElement: PathElement | null
+): UpidGCodeProgramManualOrder | null {
+  const order = pathElement?.overrides?.order;
+  return order ? { orderIndex: order.orderIndex } : null;
+}
+
+function upidGCodeProgramManualClassification(
+  pathElement: PathElement | null
+): UpidGCodeProgramManualClassification | null {
+  const classification = pathElement?.overrides?.classification;
+  return classification ? { classification: classification.classification } : null;
+}
+
+function upidGCodeProgramManualDirection(
+  pathElement: PathElement | null
+): UpidGCodeProgramManualDirection | null {
+  const direction = pathElement?.overrides?.direction;
+  return direction ? { direction: direction.direction } : null;
 }

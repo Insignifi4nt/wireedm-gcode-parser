@@ -177,6 +177,15 @@ export function EditorUpidExportPreview({
                           ? operation.manualDecisionKinds.join(' ')
                           : undefined
                       }
+                      data-upid-export-operation-manual-direction={
+                        operation.manualDirection?.direction ?? undefined
+                      }
+                      data-upid-export-operation-manual-order={
+                        operation.manualOrder ? operation.manualOrder.orderIndex : undefined
+                      }
+                      data-upid-export-operation-manual-role={
+                        operation.manualClassification?.classification ?? undefined
+                      }
                       data-upid-export-operation-path-element={operation.pathElementId ?? undefined}
                       data-upid-export-operation-row
                       data-upid-export-operation-role={operation.classification}
@@ -206,6 +215,11 @@ export function EditorUpidExportPreview({
                         {operation.manualDecisionKinds.length > 0 && (
                           <span className="block truncate text-[8px] text-amber-200">
                             manual {operation.manualDecisionKinds.join(', ')}
+                          </span>
+                        )}
+                        {operationHasManualOverrideDetails(operation) && (
+                          <span className="block truncate text-[8px] text-cyan-200">
+                            {formatManualOverrideDetails(operation)}
                           </span>
                         )}
                         {operation.manualStart && (
@@ -331,6 +345,20 @@ function formatManualStart(start: NonNullable<UpidGCodeProgramOperation['manualS
   const pointRole = start.pointRole ? ` ${start.pointRole}` : '';
   const split = start.createdSegmentIds.length > 0 ? ` / split ${start.createdSegmentIds.length}` : '';
   return `${start.relation}${pointRole}${split} / source ${start.sourceSegmentId}`;
+}
+
+function operationHasManualOverrideDetails(operation: UpidGCodeProgramOperation) {
+  return Boolean(operation.manualOrder || operation.manualClassification || operation.manualDirection);
+}
+
+function formatManualOverrideDetails(operation: UpidGCodeProgramOperation) {
+  return [
+    operation.manualOrder ? `order ${operation.manualOrder.orderIndex + 1}` : null,
+    operation.manualClassification ? `role ${operation.manualClassification.classification}` : null,
+    operation.manualDirection ? `direction ${operation.manualDirection.direction}` : null
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' / ');
 }
 
 function upidOperationTraceRef(operation: UpidGCodeProgramOperation): EditorPathElementRef | null {

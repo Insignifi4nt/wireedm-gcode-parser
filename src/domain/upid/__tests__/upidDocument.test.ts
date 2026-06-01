@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  movePathOperation,
   reversePathOperation,
   setClosedOperationStartAtSegmentEndpoint,
-  setClosedOperationStartNearPoint
+  setClosedOperationStartNearPoint,
+  setPathOperationClassification
 } from '@/domain/path-editor/pathDocumentOperations';
 
 import { projectUpidDocument, withProjectUpid } from '../projectUpid';
@@ -238,6 +240,33 @@ describe('UPID document boundary', () => {
     });
   });
 
+  it('carries structured manual order, role, and direction metadata onto posted export operations', () => {
+    const document = createUpidFromDxfEntities([
+      ...rectangle(0, 0, 10, 5),
+      ...rectangle(20, 0, 30, 5)
+    ]);
+    const editedOperationId = document.plan.operations[0].id;
+    const moved = movePathOperation(document, editedOperationId, 1);
+    const classified = setPathOperationClassification(moved!, editedOperationId, 'hole');
+    const reversed = reversePathOperation(classified!, editedOperationId);
+
+    const exportProgram = composeUpidGCodeExport(reversed!, {
+      header: '',
+      footer: '',
+      lineEnding: 'lf'
+    });
+    const postedOperation = exportProgram.programOperations.find(
+      (operation) => operation.operationId === editedOperationId
+    );
+
+    expect(postedOperation).toMatchObject({
+      manualClassification: { classification: 'hole' },
+      manualDecisionKinds: ['order', 'role', 'direction'],
+      manualDirection: { direction: 'reverse' },
+      manualOrder: { orderIndex: 1 }
+    });
+  });
+
   it('summarizes UPID export planning and diagnostics in the export artifact', () => {
     const document = createUpidFromDxfEntities(
       [
@@ -373,4 +402,13 @@ function line(startX: number, startY: number, endX: number, endY: number) {
     start: { x: startX, y: startY },
     end: { x: endX, y: endY }
   };
+}
+
+function rectangle(minX: number, minY: number, maxX: number, maxY: number) {
+  return [
+    line(minX, minY, maxX, minY),
+    line(maxX, minY, maxX, maxY),
+    line(maxX, maxY, minX, maxY),
+    line(minX, maxY, minX, minY)
+  ];
 }
