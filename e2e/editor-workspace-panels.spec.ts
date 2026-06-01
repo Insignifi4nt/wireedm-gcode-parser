@@ -161,6 +161,71 @@ test('editor contour tree labels contours, segments, and endpoint handles clearl
   await expect(pointRow.locator('[data-upid-point-field="role"]')).toContainText('Endpoint');
 });
 
+test('editor contour tree rows cross-highlight and select canvas geometry', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'contour-tree-cross-highlight.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await showPanels(page, ['contour-tree']);
+
+  const contourRow = page.locator('[data-upid-contour-row]').first();
+  const operationId = await contourRow.getAttribute('data-upid-operation-id');
+  expect(operationId).toBeTruthy();
+
+  await contourRow.hover();
+  await expect(
+    page.locator(`[data-preview-operation="${operationId}"][data-preview-hovered="true"]`)
+  ).toHaveCount(4);
+
+  await contourRow.click();
+  await expect(contourRow).toHaveAttribute('data-upid-selected', 'true');
+  await expect(
+    page.locator(`[data-preview-operation="${operationId}"][data-preview-selected="true"]`)
+  ).toHaveCount(4);
+
+  const segmentRow = page.locator('[data-upid-segment-row]').first();
+  const segmentId = await segmentRow.getAttribute('data-upid-segment-id');
+  expect(segmentId).toBeTruthy();
+
+  await segmentRow.hover();
+  await expect(
+    page.locator(
+      `[data-preview-operation="${operationId}"][data-preview-segment="${segmentId}"][data-preview-hovered="true"]`
+    )
+  ).toHaveCount(1);
+
+  await segmentRow.click();
+  await expect(segmentRow).toHaveAttribute('data-upid-selected', 'true');
+  await expect(
+    page.locator(
+      `[data-preview-operation="${operationId}"][data-preview-segment="${segmentId}"][data-preview-selected="true"]`
+    )
+  ).toHaveCount(1);
+
+  const endpointRow = page.locator('[data-upid-point-row][data-upid-point-role="start"]').first();
+  await endpointRow.hover();
+  await expect(
+    page.locator(
+      `[data-preview-operation="${operationId}"][data-preview-segment="${segmentId}"][data-preview-point-role="start"][data-preview-hovered="true"]`
+    )
+  ).toHaveCount(1);
+
+  await endpointRow.locator('button[aria-pressed]').click();
+  await expect(endpointRow).toHaveAttribute('data-upid-selected', 'true');
+  await expect(
+    page.locator(
+      `[data-preview-operation="${operationId}"][data-preview-segment="${segmentId}"][data-preview-point-role="start"][data-preview-selected="true"]`
+    )
+  ).toHaveCount(1);
+});
+
 test('editor opens contour tree and endpoint topology without covering each other', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
   await page.goto('/');
