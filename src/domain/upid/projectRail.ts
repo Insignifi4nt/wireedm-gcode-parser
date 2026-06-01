@@ -353,7 +353,7 @@ export function readUpidSelectedPathSegment(
 
   return {
     end: orientedSegmentEnd(segment, ref),
-    geometry: readUpidSelectedPathSegmentGeometry(segment, ref),
+    geometry: readUpidSegmentGeometry(segment, ref),
     kind: segment.kind,
     layer: segment.layer,
     length: segment.length,
@@ -372,7 +372,7 @@ export function readUpidSelectedPathSegment(
   };
 }
 
-function readUpidSelectedPathSegmentGeometry(
+export function readUpidSegmentGeometry(
   segment: PathSegment,
   ref: OrientedSegmentRef
 ): UpidSelectedPathSegmentGeometry {

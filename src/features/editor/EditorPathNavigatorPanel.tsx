@@ -31,6 +31,7 @@ import type {
 } from '@/domain/path-intel/types';
 import {
   createUpidProjectRail,
+  readUpidSegmentGeometry,
   upidManualDecisionKinds,
   upidPathElementAncestorIds,
   upidPathElementNestLabel,
@@ -40,6 +41,7 @@ import {
   type UpidManualDecisionKind,
   type UpidOperationPathElement,
   type UpidPathElementRef,
+  type UpidSelectedPathSegmentGeometry,
   type UpidProjectRailTreeNode
 } from '@/domain/upid/projectRail';
 
@@ -976,6 +978,8 @@ function renderSegmentRow(
   const end = orientedSegmentEnd(segment, ref);
   const segmentLength = segment.length.toFixed(3);
   const refDirection = ref.reversed ? 'reversed ref' : 'forward ref';
+  const geometry = readUpidSegmentGeometry(segment, ref);
+  const geometrySummary = formatSegmentGeometrySummary(geometry);
   const hovered =
     hoveredPathElement?.operationId === pathElement.operationId &&
     hoveredPathElement.segmentId === segment.id &&
@@ -996,9 +1000,15 @@ function renderSegmentRow(
         data-upid-operation-id={pathElement.operationId}
         data-upid-path-element-id={pathElement.id}
         data-upid-selected={selected ? 'true' : undefined}
+        data-upid-segment-geometry={geometry.kind}
         data-upid-segment-index={index}
         data-upid-segment-length={segmentLength}
+        data-upid-segment-orientation={
+          geometry.kind === 'line' ? undefined : geometry.clockwise ? 'cw' : 'ccw'
+        }
+        data-upid-segment-radius={geometry.kind === 'line' ? undefined : formatNumber(geometry.radius)}
         data-upid-segment-reversed={ref.reversed ? 'true' : 'false'}
+        data-upid-segment-sweep={geometry.kind === 'line' ? undefined : formatNumber(geometry.sweepDegrees)}
         data-upid-segment-row
         data-upid-segment-id={segment.id}
         onClick={() =>
@@ -1027,6 +1037,7 @@ function renderSegmentRow(
             {formatPoint(end)}
           </span>
           <span className="block truncate">length {segmentLength} / {refDirection}</span>
+          {geometrySummary && <span className="block truncate">{geometrySummary}</span>}
         </span>
       </button>
       <div className="border-t border-border/70 bg-background/35" data-upid-point-stack>
@@ -1148,4 +1159,18 @@ function renderPointRow({
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
+}
+
+function formatSegmentGeometrySummary(geometry: UpidSelectedPathSegmentGeometry) {
+  if (geometry.kind === 'line') return null;
+
+  return [
+    `R ${formatNumber(geometry.radius)}`,
+    `sweep ${formatNumber(geometry.sweepDegrees)} deg`,
+    geometry.clockwise ? 'cw' : 'ccw'
+  ].join(' / ');
+}
+
+function formatNumber(value: number) {
+  return value.toFixed(3);
 }

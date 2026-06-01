@@ -464,6 +464,29 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
+  it('shows curve geometry metadata in path navigator segment rows', async () => {
+    const pathDocument = pathDocumentFromArc();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const segmentRow = container.querySelector('[data-upid-segment-row]') as HTMLElement | null;
+
+    expect(segmentRow?.getAttribute('data-upid-segment-geometry')).toBe('arc');
+    expect(segmentRow?.getAttribute('data-upid-segment-radius')).toBe('10.000');
+    expect(segmentRow?.getAttribute('data-upid-segment-sweep')).toBe('90.000');
+    expect(segmentRow?.getAttribute('data-upid-segment-orientation')).toBe('ccw');
+    expect(segmentRow?.textContent).toContain('R 10.000 / sweep 90.000 deg / ccw');
+  });
+
   it('reveals collapsed contour groups when selecting path geometry on canvas', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
