@@ -30,6 +30,7 @@ interface EditorCanvasPanelProps {
   onPathElementDrag?: (element: EditorPathElementRef, delta: { x: number; y: number }) => void;
   onPathElementClick?: (element: EditorPathElementRef) => void;
   onPathElementHover?: (element: EditorPathElementRef | null) => void;
+  onPathSegmentCenterMove?: (element: EditorPathElementRef, targetCenter: { x: number; y: number }) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
   onSetCanvasMouseMode: (mode: CanvasMouseMode) => void;
 }
@@ -59,6 +60,7 @@ export function EditorCanvasPanel({
   onPathElementDrag,
   onPathElementClick,
   onPathElementHover,
+  onPathSegmentCenterMove,
   onPreviewPointClick,
   onSetCanvasMouseMode
 }: EditorCanvasPanelProps) {
@@ -86,6 +88,7 @@ export function EditorCanvasPanel({
           onPathElementDrag={onPathElementDrag}
           onPathElementClick={onPathElementClick}
           onPathElementHover={onPathElementHover}
+          onPathSegmentCenterMove={onPathSegmentCenterMove}
           onPreviewPointClick={onPreviewPointClick}
           onSetCanvasMouseMode={onSetCanvasMouseMode}
           pathDocument={pathDocument}

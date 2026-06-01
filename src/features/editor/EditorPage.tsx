@@ -1285,6 +1285,25 @@ export function EditorPage({
     }
   }
 
+  function handleMovePathSegmentCenter(
+    element: EditorPathElementRef,
+    targetCenter: { x: number; y: number }
+  ) {
+    if (!pathDocumentDraft || !element.segmentId || isSaving) return;
+
+    const edited = movePathSegmentCenterTo(pathDocumentDraft, element.segmentId, targetCenter);
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement: {
+          operationId: element.operationId,
+          pathElementId: element.pathElementId ?? null,
+          segmentId: element.segmentId
+        },
+        selectedPathOperationId: element.operationId
+      });
+    }
+  }
+
   function applyPathDocumentEdit(
     nextDocument: PathPlanningDocument,
     options: {
@@ -1898,6 +1917,7 @@ export function EditorPage({
           onPathElementDrag={!pathClickMode ? handleDragPathElement : undefined}
           onPathElementClick={!pathClickMode ? handleSelectPathElement : undefined}
           onPathElementHover={pathHoverAssistEnabled ? setHoveredPathElement : undefined}
+          onPathSegmentCenterMove={!pathClickMode ? handleMovePathSegmentCenter : undefined}
           onPreviewPointClick={handlePreviewPointClick}
           onSetCanvasMouseMode={setCanvasMouseMode}
           pathDocument={pathDocumentDraft}

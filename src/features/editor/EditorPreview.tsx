@@ -68,6 +68,7 @@ interface EditorPreviewProps {
   onPathElementDrag?: (element: EditorPathElementRef, delta: { x: number; y: number }) => void;
   onPathElementClick?: (element: EditorPathElementRef) => void;
   onPathElementHover?: (element: EditorPathElementRef | null) => void;
+  onPathSegmentCenterMove?: (element: EditorPathElementRef, targetCenter: { x: number; y: number }) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
   onSetCanvasMouseMode?: (mode: CanvasMouseMode) => void;
   pathDocument?: PathPlanningDocument | null;
@@ -115,6 +116,7 @@ export function EditorPreview({
   onPathElementDrag,
   onPathElementClick,
   onPathElementHover,
+  onPathSegmentCenterMove,
   onPreviewPointClick,
   onSetCanvasMouseMode,
   pathDocument,
@@ -144,6 +146,12 @@ export function EditorPreview({
   const lastTapRef = useRef<PreviewLastTapState | null>(null);
   const pointDragStateRef = useRef<{ pointId: string } | null>(null);
   const pathDragStateRef = useRef<{
+    currentWorld: { x: number; y: number };
+    element: EditorPathElementRef;
+    moved: boolean;
+    startWorld: { x: number; y: number };
+  } | null>(null);
+  const segmentCenterDragStateRef = useRef<{
     currentWorld: { x: number; y: number };
     element: EditorPathElementRef;
     moved: boolean;
@@ -312,6 +320,7 @@ export function EditorPreview({
   );
   const gridLabelInset = gridLabelFontSize * 1.8;
   const zoomPercent = Math.round(zoom * 100);
+  const selectedArcCenterHandles = readSelectedArcCenterHandles(preview.paths, selectedPathElement);
 
   function handlePreviewClick(event: MouseEvent<SVGSVGElement>) {
     if (suppressClickRef.current) {
@@ -349,6 +358,27 @@ export function EditorPreview({
   }
 
   function handlePreviewMouseMove(event: MouseEvent<SVGSVGElement>) {
+    const segmentCenterDragState = segmentCenterDragStateRef.current;
+    if (segmentCenterDragState) {
+      event.preventDefault();
+      const point = previewEventToWorldPoint(event, activeViewBox, flipY, {
+        gridSize: snapGridSize,
+        snapToGrid
+      });
+      if (point) {
+        segmentCenterDragState.currentWorld = point;
+        segmentCenterDragState.moved =
+          segmentCenterDragState.moved ||
+          Math.hypot(
+            point.x - segmentCenterDragState.startWorld.x,
+            point.y - segmentCenterDragState.startWorld.y
+          ) > 1e-6;
+        suppressClickRef.current = segmentCenterDragState.moved;
+        onCursorPointChange?.(point);
+      }
+      return;
+    }
+
     const pathDragState = pathDragStateRef.current;
     if (pathDragState) {
       event.preventDefault();
@@ -416,6 +446,13 @@ export function EditorPreview({
   }
 
   function handlePreviewMouseUp() {
+    const segmentCenterDragState = segmentCenterDragStateRef.current;
+    if (segmentCenterDragState) {
+      segmentCenterDragStateRef.current = null;
+      if (segmentCenterDragState.moved) {
+        onPathSegmentCenterMove?.(segmentCenterDragState.element, segmentCenterDragState.currentWorld);
+      }
+    }
     const pathDragState = pathDragStateRef.current;
     if (pathDragState) {
       pathDragStateRef.current = null;
@@ -562,6 +599,7 @@ export function EditorPreview({
     setZoom(1);
     setPan({ x: 0, y: 0 });
     dragStateRef.current = null;
+    segmentCenterDragStateRef.current = null;
   }
 
   function handleMeasurementPointMouseDown(pointId: string, event: MouseEvent<SVGCircleElement>) {
@@ -587,6 +625,27 @@ export function EditorPreview({
     event.preventDefault();
     event.stopPropagation();
     pathDragStateRef.current = {
+      currentWorld: point,
+      element,
+      moved: false,
+      startWorld: point
+    };
+  }
+
+  function beginPathSegmentCenterDrag(element: EditorPathElementRef, event: MouseEvent<SVGCircleElement>) {
+    if (event.button !== 0 || !onPathSegmentCenterMove || event.shiftKey) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const point = previewClientToWorldPoint(svg, event.clientX, event.clientY, activeViewBox, flipY, {
+      gridSize: snapGridSize,
+      snapToGrid
+    });
+    if (!point) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    segmentCenterDragStateRef.current = {
       currentWorld: point,
       element,
       moved: false,
@@ -918,6 +977,108 @@ export function EditorPreview({
               );
             });
           })}
+          {selectedArcCenterHandles.map((handle) => {
+            const svgY = flipY - handle.center.y;
+            const element = {
+              operationId: handle.operationId,
+              pathElementId: handle.pathElementId ?? null,
+              segmentId: handle.segmentId
+            };
+
+            return (
+              <g
+                data-preview-arc-center-group
+                data-preview-operation={handle.operationId}
+                data-preview-path-element-id={handle.pathElementId}
+                data-preview-segment={handle.segmentId}
+                key={`arc-center-${handle.operationId}-${handle.segmentId}`}
+              >
+                <line
+                  data-preview-arc-center-crosshair="horizontal"
+                  pointerEvents="none"
+                  stroke="#fbbf24"
+                  strokeOpacity="0.72"
+                  strokeWidth={highlightedPointRadius * 0.2}
+                  vectorEffect="non-scaling-stroke"
+                  x1={handle.center.x - highlightedPointRadius * 1.65}
+                  x2={handle.center.x + highlightedPointRadius * 1.65}
+                  y1={svgY}
+                  y2={svgY}
+                />
+                <line
+                  data-preview-arc-center-crosshair="vertical"
+                  pointerEvents="none"
+                  stroke="#fbbf24"
+                  strokeOpacity="0.72"
+                  strokeWidth={highlightedPointRadius * 0.2}
+                  vectorEffect="non-scaling-stroke"
+                  x1={handle.center.x}
+                  x2={handle.center.x}
+                  y1={svgY - highlightedPointRadius * 1.65}
+                  y2={svgY + highlightedPointRadius * 1.65}
+                />
+                <circle
+                  aria-label="Drag selected arc center"
+                  className={onPathSegmentCenterMove ? 'cursor-grab active:cursor-grabbing' : undefined}
+                  cx={handle.center.x}
+                  cy={svgY}
+                  data-preview-arc-center={formatPreviewPoint(handle.center)}
+                  data-preview-arc-center-handle
+                  data-preview-operation={handle.operationId}
+                  data-preview-path-element-id={handle.pathElementId}
+                  data-preview-selected="true"
+                  data-preview-segment={handle.segmentId}
+                  fill="#f59e0b"
+                  fillOpacity="0.95"
+                  onClick={(event) => {
+                    if (suppressClickRef.current) {
+                      suppressClickRef.current = false;
+                      event.stopPropagation();
+                      return;
+                    }
+                    if (!onPathElementClick) return;
+                    event.stopPropagation();
+                    onPathElementClick(element);
+                  }}
+                  onMouseDown={(event) => beginPathSegmentCenterDrag(element, event)}
+                  onMouseEnter={() => onPathElementHover?.(element)}
+                  onMouseLeave={() => onPathElementHover?.(null)}
+                  r={highlightedPointRadius * 0.78}
+                  stroke="#020617"
+                  strokeWidth={highlightedPointRadius * 0.3}
+                  vectorEffect="non-scaling-stroke"
+                />
+                <circle
+                  cx={handle.center.x}
+                  cy={svgY}
+                  fill="none"
+                  pointerEvents="none"
+                  r={highlightedPointRadius * 1.95}
+                  stroke="#fbbf24"
+                  strokeOpacity="0.58"
+                  strokeWidth={highlightedPointRadius * 0.22}
+                  vectorEffect="non-scaling-stroke"
+                />
+                <text
+                  data-preview-arc-center-label
+                  dx={highlightedPointRadius * 1.45}
+                  dy={-highlightedPointRadius}
+                  fill="#fde68a"
+                  fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                  fontSize={measurementLabelFontSize}
+                  fontWeight="700"
+                  paintOrder="stroke"
+                  pointerEvents="none"
+                  stroke="#020617"
+                  strokeWidth={measurementLabelFontSize * 0.22}
+                  x={handle.center.x}
+                  y={svgY}
+                >
+                  CENTER
+                </text>
+              </g>
+            );
+          })}
           {preview.paths.map((path) => {
             const highlight = pathElementMatches(path, hoveredPathElement)
               ? 'hover'
@@ -1173,4 +1334,52 @@ function pathEndpointMatches(
       element.segmentId === path.segmentId &&
       element.pointRole === role
   );
+}
+
+function readSelectedArcCenterHandles(
+  paths: Array<{
+    center?: { x: number; y: number };
+    operationId?: string;
+    pathElementId?: string;
+    segmentId?: string;
+    source?: 'gcode' | 'path-document';
+    type: 'rapid' | 'cut' | 'arc';
+  }>,
+  selectedPathElement: EditorPathElementRef | null | undefined
+) {
+  const handles = new Map<
+    string,
+    {
+      center: { x: number; y: number };
+      operationId: string;
+      pathElementId?: string;
+      segmentId: string;
+    }
+  >();
+
+  for (const path of paths) {
+    if (
+      path.source !== 'path-document' ||
+      path.type !== 'arc' ||
+      !path.center ||
+      !path.operationId ||
+      !path.segmentId ||
+      !pathElementMatches(path, selectedPathElement)
+    ) {
+      continue;
+    }
+
+    handles.set(`${path.operationId}:${path.segmentId}`, {
+      center: path.center,
+      operationId: path.operationId,
+      pathElementId: path.pathElementId,
+      segmentId: path.segmentId
+    });
+  }
+
+  return [...handles.values()];
+}
+
+function formatPreviewPoint(point: { x: number; y: number }) {
+  return `${point.x.toFixed(3)},${point.y.toFixed(3)}`;
 }

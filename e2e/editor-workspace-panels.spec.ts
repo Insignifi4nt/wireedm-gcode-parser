@@ -330,6 +330,46 @@ test('editor moves a selected arc center to the latest measurement point', async
   await expect(page.locator('[data-upid-transform-center-current]')).toHaveText('12.000, -8.000');
 });
 
+test('editor drags a selected arc center directly on the canvas', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'arc-center-canvas-drag.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(arcDxf())
+    });
+
+  await showPanels(page, ['contour-tree']);
+  await page.locator('[data-upid-segment-row]').first().click();
+  await hidePanels(page, ['contour-tree']);
+
+  const centerHandle = page.locator('[data-preview-arc-center-handle]').first();
+  await expect(centerHandle).toBeVisible();
+  await expect(centerHandle).toHaveAttribute('data-preview-selected', 'true');
+  await expect(centerHandle).toHaveAttribute('data-preview-arc-center', '0.000,0.000');
+
+  const handleBox = await centerHandle.boundingBox();
+  expect(handleBox).not.toBeNull();
+  if (!handleBox) return;
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handleBox.x + handleBox.width / 2 + 120, handleBox.y + handleBox.height / 2, {
+    steps: 8
+  });
+  await page.mouse.up();
+
+  await showPanels(page, ['path-transform']);
+  await expect(page.locator('[data-upid-transform-center-current]')).not.toHaveText('0.000, 0.000');
+  await expect(page.locator('[data-preview-arc-center-handle]').first()).not.toHaveAttribute(
+    'data-preview-arc-center',
+    '0.000,0.000'
+  );
+});
+
 test('editor drags selected contour geometry directly on the canvas', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
   await page.goto('/');

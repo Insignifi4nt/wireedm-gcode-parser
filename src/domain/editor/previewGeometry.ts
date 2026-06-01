@@ -41,6 +41,10 @@ export interface EditorPreviewPath {
     x: number;
     y: number;
   };
+  center?: {
+    x: number;
+    y: number;
+  };
   line: number;
   operationId?: OperationId;
   pathElementId?: PathElementId;
@@ -113,6 +117,10 @@ export function buildEditorPreviewGeometry(
       paths.push({
         type: 'arc',
         d: arcPath(point),
+        center: {
+          x: point.centerX,
+          y: point.centerY
+        },
         start: {
           x: point.startX,
           y: point.startY
@@ -174,6 +182,7 @@ export function buildEditorPathDocumentPreviewGeometry(
       for (const segmentPath of pathDocumentSegmentPaths(segment, ref)) {
         paths.push({
           type: segmentPath.type,
+          center: 'center' in segmentPath ? segmentPath.center : undefined,
           d: segmentPath.d,
           start: segmentPath.start,
           end: segmentPath.end,
@@ -400,6 +409,7 @@ function pathDocumentSegmentPaths(segment: PathSegment, ref: OrientedSegmentRef)
   return [
     {
       type: 'arc' as const,
+      center: segment.center,
       d: pathDocumentArcPath(segment, ref),
       start: orientedSegmentStart(segment, ref),
       end
@@ -435,6 +445,7 @@ function circlePaths(segment: CirclePathSegment, ref: OrientedSegmentRef) {
   return [
     {
       type: 'arc' as const,
+      center: segment.center,
       d: [
         `M ${format(start.x)} ${format(start.y)}`,
         `A ${format(segment.radius)} ${format(segment.radius)} 0 1 ${sweepFlag} ${format(opposite.x)} ${format(opposite.y)}`
@@ -444,6 +455,7 @@ function circlePaths(segment: CirclePathSegment, ref: OrientedSegmentRef) {
     },
     {
       type: 'arc' as const,
+      center: segment.center,
       d: [
         `M ${format(opposite.x)} ${format(opposite.y)}`,
         `A ${format(segment.radius)} ${format(segment.radius)} 0 1 ${sweepFlag} ${format(start.x)} ${format(start.y)}`
