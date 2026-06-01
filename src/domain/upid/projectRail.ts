@@ -178,12 +178,24 @@ export interface UpidSelectedPathPoint {
 export interface UpidSelectedEndpointCluster {
   id: string;
   maxPairDistance: number;
+  members: UpidSelectedEndpointClusterMember[];
   memberCount: number;
   method: 'exact' | 'within-tolerance';
   point: Point2;
   radius: number;
   rawEndpointSide: EndpointSide;
   toleranceUsed: number;
+}
+
+export interface UpidSelectedEndpointClusterMember {
+  operationId: string | null;
+  pathElementId: string | null;
+  point: Point2;
+  pointRole: Extract<PathElementPointRole, 'start' | 'end'> | null;
+  rawEndpointSide: EndpointSide;
+  segmentId: SegmentId;
+  segmentIndex: number | null;
+  segmentKind: string | null;
 }
 
 export interface UpidManualOverrideRow {
@@ -481,6 +493,7 @@ function readUpidSelectedEndpointCluster(
   return {
     id: cluster.id,
     maxPairDistance: cluster.maxPairDistance,
+    members: readUpidSelectedEndpointClusterMembers(document, cluster.members),
     memberCount: cluster.members.length,
     method: cluster.method,
     point: { ...cluster.point },
@@ -490,11 +503,48 @@ function readUpidSelectedEndpointCluster(
   };
 }
 
+function readUpidSelectedEndpointClusterMembers(
+  document: PathPlanningDocument,
+  members: Array<{ point: Point2; segmentId: SegmentId; side: EndpointSide }>
+): UpidSelectedEndpointClusterMember[] {
+  const segmentsById = segmentMap(document.segments);
+
+  return members.map((member) => {
+    const operation = document.plan.operations.find((candidate) =>
+      candidate.segmentRefs.some((ref) => ref.segmentId === member.segmentId)
+    );
+    const segmentIndex = operation
+      ? operation.segmentRefs.findIndex((ref) => ref.segmentId === member.segmentId)
+      : -1;
+    const ref = operation && segmentIndex >= 0 ? operation.segmentRefs[segmentIndex] : null;
+    const pathElementId = operation ? upidPathElementIdForOperation(document, operation.id) : null;
+
+    return {
+      operationId: operation?.id ?? null,
+      pathElementId,
+      point: { ...member.point },
+      pointRole: ref ? pointRoleForRawEndpointSide(ref, member.side) : null,
+      rawEndpointSide: member.side,
+      segmentId: member.segmentId,
+      segmentIndex: segmentIndex >= 0 ? segmentIndex : null,
+      segmentKind: segmentsById.get(member.segmentId)?.kind ?? null
+    };
+  });
+}
+
 function orientedEndpointSide(
   ref: OrientedSegmentRef,
   pointRole: Extract<PathElementPointRole, 'start' | 'end'>
 ): EndpointSide {
   if (pointRole === 'start') return ref.reversed ? 'end' : 'start';
+  return ref.reversed ? 'start' : 'end';
+}
+
+function pointRoleForRawEndpointSide(
+  ref: OrientedSegmentRef,
+  side: EndpointSide
+): Extract<PathElementPointRole, 'start' | 'end'> {
+  if (side === 'start') return ref.reversed ? 'end' : 'start';
   return ref.reversed ? 'start' : 'end';
 }
 

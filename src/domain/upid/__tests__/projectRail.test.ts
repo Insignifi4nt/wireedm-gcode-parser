@@ -415,6 +415,24 @@ describe('UPID project rail projection', () => {
     expectPointClose(selectedPoint?.endpointCluster?.point, { x: 10.002, y: 0 });
     expect(selectedPoint?.endpointCluster?.radius).toBeCloseTo(0.002);
     expect(selectedPoint?.endpointCluster?.maxPairDistance).toBeCloseTo(0.004);
+    expect(selectedPoint?.endpointCluster?.members).toEqual([
+      expect.objectContaining({
+        operationId: operation.id,
+        pathElementId: pathElement!.id,
+        pointRole: 'end',
+        rawEndpointSide: 'end',
+        segmentId: firstSegmentRef.segmentId,
+        segmentIndex: 0
+      }),
+      expect.objectContaining({
+        operationId: operation.id,
+        pathElementId: pathElement!.id,
+        pointRole: 'start',
+        rawEndpointSide: 'start',
+        segmentId: operation.segmentRefs[1].segmentId,
+        segmentIndex: 1
+      })
+    ]);
   });
 
   it('classifies start previews and rapid travel with shared UPID selection helpers', () => {

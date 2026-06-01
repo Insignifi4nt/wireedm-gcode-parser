@@ -495,6 +495,25 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected-point-cluster-members]')?.textContent).toBe('2');
     expect(container.querySelector('[data-upid-selected-point-cluster-radius]')?.textContent).toBe('0.002');
     expect(container.querySelector('[data-upid-selected-point-cluster-gap]')?.textContent).toBe('0.004');
+
+    const clusterMembers = [
+      ...container.querySelectorAll('[data-upid-selected-point-cluster-member]')
+    ] as HTMLElement[];
+    expect(clusterMembers).toHaveLength(2);
+    expect(clusterMembers.map((member) => member.getAttribute('data-upid-cluster-member-side'))).toEqual([
+      'end',
+      'start'
+    ]);
+
+    await act(async () => {
+      clusterMembers[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-selected-point-role]')?.textContent).toBe('start');
+    expect(container.querySelector('[data-upid-selected-point-coordinate]')?.textContent).toBe(
+      '10.004, 0.000'
+    );
   });
 
   it('shows curve geometry metadata in path navigator segment rows', async () => {

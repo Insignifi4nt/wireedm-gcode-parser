@@ -765,6 +765,57 @@ export function EditorInspectorPanel({
                   <dd data-upid-selected-point-cluster-tolerance>
                     {formatNumber(selectedPathPoint.endpointCluster.toleranceUsed)}
                   </dd>
+                  <dt className="text-muted-foreground">Cluster Ends</dt>
+                  <dd
+                    className="flex min-w-0 flex-wrap gap-1"
+                    data-upid-selected-point-cluster-member-list
+                  >
+                    {selectedPathPoint.endpointCluster.members.map((member, index) =>
+                      member.operationId && member.pointRole ? (
+                        <button
+                          aria-label={`Select cluster member ${index + 1} ${member.pointRole}`}
+                          className="text-left text-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                          data-upid-cluster-member-index={index}
+                          data-upid-cluster-member-operation={member.operationId}
+                          data-upid-cluster-member-side={member.rawEndpointSide}
+                          data-upid-cluster-member-segment={member.segmentId}
+                          data-upid-cluster-member-segment-index={member.segmentIndex ?? undefined}
+                          data-upid-selected-point-cluster-member
+                          key={`${member.segmentId}-${member.rawEndpointSide}`}
+                          onClick={() =>
+                            onSelectPathElement?.({
+                              operationId: member.operationId,
+                              pathElementId: member.pathElementId,
+                              pointRole: member.pointRole,
+                              segmentId: member.segmentId
+                            })
+                          }
+                          onMouseEnter={() =>
+                            onHoverPathElement?.({
+                              operationId: member.operationId,
+                              pathElementId: member.pathElementId,
+                              pointRole: member.pointRole,
+                              segmentId: member.segmentId
+                            })
+                          }
+                          onMouseLeave={() => onHoverPathElement?.(null)}
+                          type="button"
+                        >
+                          {index + 1} {member.pointRole} {formatPoint(member.point)}
+                        </button>
+                      ) : (
+                        <span
+                          className="text-muted-foreground"
+                          data-upid-cluster-member-side={member.rawEndpointSide}
+                          data-upid-cluster-member-segment={member.segmentId}
+                          data-upid-selected-point-cluster-member
+                          key={`${member.segmentId}-${member.rawEndpointSide}`}
+                        >
+                          {index + 1} {member.rawEndpointSide} {formatPoint(member.point)}
+                        </span>
+                      )
+                    )}
+                  </dd>
                 </>
               )}
             </dl>
