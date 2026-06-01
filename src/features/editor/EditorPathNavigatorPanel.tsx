@@ -128,6 +128,10 @@ export function EditorPathNavigatorPanel({
   );
   const selectedOperation =
     selectedOperationIndex >= 0 ? pathDocument.plan.operations[selectedOperationIndex] : null;
+  const selectedSegmentIndex =
+    selectedOperation && selectedPathElement?.segmentId
+      ? selectedOperation.segmentRefs.findIndex((ref) => ref.segmentId === selectedPathElement.segmentId)
+      : -1;
   const hoverRevealedPathElementIds = new Set(
     hoveredPathElement ? upidPathElementAncestorIds(pathDocument, hoveredPathElement) : []
   );
@@ -206,6 +210,35 @@ export function EditorPathNavigatorPanel({
           <div className="mb-2 flex items-center justify-between gap-2">
             <span className="text-[9px] uppercase text-muted-foreground">Path Action Bar</span>
             {hasUnsavedChanges && <span className="text-[9px] text-amber-200">Unsaved</span>}
+          </div>
+          <div
+            className="mb-2 border border-border bg-background/35 px-2 py-1.5"
+            data-upid-active-selection
+            data-upid-active-selection-operation={selectedOperation?.id}
+            data-upid-active-selection-path-element={selectedPathElement?.pathElementId ?? undefined}
+            data-upid-active-selection-segment={selectedPathElement?.segmentId ?? undefined}
+            data-upid-active-selection-state={selectedOperation ? 'selected' : 'empty'}
+          >
+            <div className="text-[8px] uppercase text-muted-foreground">Active Selection</div>
+            {selectedOperation ? (
+              <>
+                <div className="mt-0.5 truncate text-[10px] text-foreground">
+                  {selectedOperation.displayName}
+                </div>
+                <div className="mt-0.5 truncate text-[9px] text-muted-foreground">
+                  order {selectedOperationIndex + 1} /{' '}
+                  {selectedOperation.closed ? 'closed contour' : 'open chain'} /{' '}
+                  {selectedOperation.direction}
+                </div>
+                {selectedSegmentIndex >= 0 && (
+                  <div className="mt-0.5 truncate text-[9px] text-muted-foreground">
+                    segment {selectedSegmentIndex + 1} / {selectedPathElement?.pointRole ?? 'body'}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="mt-0.5 text-[9px] text-muted-foreground">No path selected</div>
+            )}
           </div>
           <div className="grid grid-cols-4 gap-1">
             <button

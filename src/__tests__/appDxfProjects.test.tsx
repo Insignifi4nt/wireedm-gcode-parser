@@ -519,6 +519,17 @@ describe('App DXF imports and project library', () => {
       contourRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
+    const activeSelection = container.querySelector('[data-upid-active-selection]');
+    expect(activeSelection?.getAttribute('data-upid-active-selection-state')).toBe('selected');
+    expect(activeSelection?.getAttribute('data-upid-active-selection-operation')).toBe(
+      contourRow?.getAttribute('data-upid-operation-id')
+    );
+    expect(activeSelection?.textContent).toContain('Active Selection');
+    expect(activeSelection?.textContent).toContain('Exterior 1');
+    expect(activeSelection?.textContent).toContain('order 1');
+    expect(activeSelection?.textContent).toContain('closed contour');
+    expect(activeSelection?.textContent).toContain('forward');
+
     const inspector = container.querySelector('[data-editor-inspector-rail]');
     const selectedGeometry = container.querySelector('[data-upid-selected-geometry]');
     expect(inspector).not.toBeNull();
