@@ -1,4 +1,5 @@
 import type {
+  Bounds2,
   PathDiagnostic,
   PathElement,
   PathElementId,
@@ -8,9 +9,13 @@ import type {
   SegmentId
 } from '@/domain/path-intel/types';
 import {
+  boundsAreFinite,
   distance,
+  emptyBounds,
+  mergeBounds,
   orientedSegmentEnd,
   orientedSegmentStart,
+  pathBounds,
   pointsEqual,
   requiredSegment,
   segmentMap
@@ -56,6 +61,14 @@ export interface UpidSelectedPathTravel {
   start: Point2;
 }
 
+export interface UpidEditorPathStats {
+  arcMoveCount: number;
+  bounds: Bounds2;
+  cuttingMoveCount: number;
+  pathCount: number;
+  rapidMoveCount: number;
+}
+
 export function createUpidProjectRail(document: PathPlanningDocument): UpidProjectRail {
   const operationElements = document.pathElements.filter(isUpidOperationPathElement);
   const cutSequenceElements = [...operationElements].sort((first, second) => first.orderIndex - second.orderIndex);
@@ -95,6 +108,53 @@ export function readUpidOperationPathElement(
     : document?.pathElements.find((candidate) => candidate.operationId === operationId);
 
   return element && isUpidOperationPathElement(element) ? element : null;
+}
+
+export function summarizeUpidPathDocumentForEditor(document: PathPlanningDocument): UpidEditorPathStats {
+  const segmentsById = segmentMap(document.segments);
+  let bounds = emptyBounds();
+  let currentPoint: Point2 | null = null;
+  let rapidMoveCount = 0;
+  let cuttingMoveCount = 0;
+  let arcMoveCount = 0;
+
+  for (const operation of document.plan.operations) {
+    if (operation.segmentRefs.length === 0) continue;
+
+    const operationBounds = pathBounds(operation.segmentRefs, segmentsById);
+    if (boundsAreFinite(operationBounds)) {
+      bounds = mergeBounds(bounds, operationBounds);
+    }
+
+    if (!currentPoint || !pointsEqual(currentPoint, operation.startPoint, document.options.coincidenceEpsilon)) {
+      rapidMoveCount += 1;
+    }
+
+    for (const ref of operation.segmentRefs) {
+      const segment = requiredSegment(segmentsById, ref.segmentId);
+      if (segment.kind === 'line') {
+        cuttingMoveCount += 1;
+      } else if (segment.kind === 'circle') {
+        arcMoveCount += 2;
+      } else {
+        arcMoveCount += 1;
+      }
+    }
+
+    currentPoint = operation.endPoint;
+  }
+
+  if (!boundsAreFinite(bounds)) {
+    bounds = emptyDisplayBounds();
+  }
+
+  return {
+    arcMoveCount,
+    bounds,
+    cuttingMoveCount,
+    pathCount: rapidMoveCount + cuttingMoveCount + arcMoveCount,
+    rapidMoveCount
+  };
 }
 
 export function normalizeUpidPathElementSelection(
@@ -325,5 +385,14 @@ function operationRef(
     operationId: operation.id,
     pathElementId: upidPathElementIdForOperation(document, operation.id),
     segmentId
+  };
+}
+
+function emptyDisplayBounds(): Bounds2 {
+  return {
+    minX: Number.NaN,
+    minY: Number.NaN,
+    maxX: Number.NaN,
+    maxY: Number.NaN
   };
 }

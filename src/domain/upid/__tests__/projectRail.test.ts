@@ -11,6 +11,7 @@ import {
   readUpidPathElementPoint,
   readUpidPathElementPointByRole,
   readUpidSelectedPathTravel,
+  summarizeUpidPathDocumentForEditor,
   upidManualDecisionKinds,
   upidPathElementRefForDiagnostic,
   upidPathElementRefsMatch,
@@ -169,6 +170,42 @@ describe('UPID project rail projection', () => {
       end: { x: 20, y: 0 },
       length: 20,
       start: { x: 0, y: 0 }
+    });
+  });
+
+  it('summarizes path-document preview stats without posting G-code', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 10, 0),
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 10, y: 10 },
+        radius: 10,
+        startAngle: 270,
+        endAngle: 180,
+        clockwise: false,
+        start: { x: 10, y: 0 },
+        end: { x: 0, y: 10 }
+      },
+      {
+        type: 'circle',
+        layer: 'CUT',
+        center: { x: 30, y: 10 },
+        radius: 5
+      }
+    ]);
+
+    expect(summarizeUpidPathDocumentForEditor(document)).toEqual({
+      arcMoveCount: 3,
+      bounds: {
+        maxX: 35,
+        maxY: 20,
+        minX: 0,
+        minY: 0
+      },
+      cuttingMoveCount: 1,
+      pathCount: 6,
+      rapidMoveCount: 2
     });
   });
 });
