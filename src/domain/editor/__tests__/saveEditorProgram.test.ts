@@ -78,6 +78,34 @@ describe('saveEditorProgram', () => {
     });
   });
 
+  it('does not cache generated body state while saving external editor text', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importExternalProgram(workbench, {
+      fileName: 'external-edit.nc',
+      text: ['%', 'G90 G21', 'G0 X0 Y0', 'G1 X5 Y0', 'M30', '%'].join('\n'),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const updatedText = ['%', 'G90 G21', 'G0 X0 Y0', 'G1 X12 Y4', 'M30', '%'].join('\n');
+
+    const saved = await saveEditorProgram(imported.workbench, {
+      filePath: imported.editorProgram.filePath,
+      pathDocument: undefined,
+      project: imported.project,
+      text: updatedText
+    });
+
+    const storedProject = JSON.parse(
+      adapter.files.get('projects/external-edit-2026-05-29/project.json') || '{}'
+    );
+
+    expect(adapter.files.get(imported.editorProgram.filePath)).toBe(updatedText);
+    expect(storedProject.generated).toEqual({ body: '', files: [] });
+    expect(saved.editorProgram.project?.generated).toEqual({ body: '', files: [] });
+  });
+
   it('rejects saves to files that are not already part of the workbench', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {

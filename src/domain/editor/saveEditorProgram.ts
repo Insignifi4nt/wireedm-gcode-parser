@@ -6,13 +6,11 @@ import {
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   projectUpidDocument,
-  withProjectUpid,
-  withoutProjectUpid
+  withProjectUpid
 } from '@/domain/upid/projectUpid';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 
 import { parseGCodeProgram } from './gcodeParser';
-import { organizeGCodeStructure } from './gcodeStructure';
 import type { LoadedEditorProgram } from './loadEditorProgram';
 
 export interface SaveEditorProgramInput {
@@ -48,10 +46,7 @@ export async function saveEditorProgram(
     await workbench.adapter.writeText(input.filePath, textToSave);
   }
 
-  const projectSave = await saveProjectPathState(workbench, {
-    ...input,
-    text: textToSave
-  });
+  const projectSave = savesPathDocument ? await saveProjectPathState(workbench, input) : null;
   const updatedWorkbench = projectSave?.workbench ?? workbench;
   const updatedProject = projectSave?.project ?? input.project;
   const editorFilePath = savesPathDocument
@@ -73,7 +68,7 @@ async function saveProjectPathState(
   workbench: ConnectedWorkbench,
   input: SaveEditorProgramInput
 ) {
-  if (!input.project || !Object.hasOwn(input, 'pathDocument')) return null;
+  if (!input.project || !input.pathDocument) return null;
 
   const timestamp = (input.now ?? new Date()).toISOString();
   const projectEntry = workbench.manifest.projects.find((entry) => entry.id === input.project?.id);
@@ -83,36 +78,23 @@ async function saveProjectPathState(
 
   let nextProject: WorkbenchProject = {
     ...input.project,
-    updatedAt: timestamp,
-    generated: {
-      ...input.project.generated,
-      body: bodyTextFromProgram(input.text, input.project)
-    }
+    updatedAt: timestamp
   };
 
-  if (input.pathDocument) {
-    nextProject = withProjectUpid(
-      {
-        ...nextProject,
-        editor: {
-          ...nextProject.editor,
-          activeFilePath: null
-        },
-        generated: {
-          body: '',
-          files: []
-        }
+  nextProject = withProjectUpid(
+    {
+      ...nextProject,
+      editor: {
+        ...nextProject.editor,
+        activeFilePath: null
       },
-      input.pathDocument
-    );
-  } else {
-    const bodyFile = nextProject.generated.files.find((file) => file.path.endsWith('.body.gcode'));
-
-    nextProject = withoutProjectUpid(nextProject);
-    if (bodyFile) {
-      await workbench.adapter.writeText(bodyFile.path, nextProject.generated.body);
-    }
-  }
+      generated: {
+        body: '',
+        files: []
+      }
+    },
+    input.pathDocument
+  );
 
   await workbench.adapter.writeText(projectEntry.path, JSON.stringify(nextProject, null, 2));
 
@@ -147,48 +129,4 @@ async function saveProjectPathState(
 
 function sourceEditorFilePath(project: WorkbenchProject | undefined, fallback: string) {
   return project?.source.files.at(-1)?.path ?? fallback;
-}
-
-function bodyTextFromProgram(text: string, project: WorkbenchProject) {
-  const templateBody = bodyTextBetweenProjectTemplates(text, project);
-  if (templateBody !== null) return templateBody;
-
-  const structure = organizeGCodeStructure(text.split(/\r?\n/));
-  return structure.body.lines.map((line) => line.text).join('\n');
-}
-
-function bodyTextBetweenProjectTemplates(text: string, project: WorkbenchProject) {
-  const lines = text.split(/\r?\n/);
-  const headerLines = project.machine.templates.header.split(/\r?\n/);
-  const footerLines = project.machine.templates.footer.split(/\r?\n/);
-  const footerStart = findLastLineSequence(lines, footerLines);
-  if (footerStart < 0) return null;
-
-  const bodyStart = linesMatchAt(lines, headerLines, 0)
-    ? headerLines.length
-    : firstStructuredBodyLineIndex(text);
-  if (bodyStart === null) return null;
-  if (footerStart < bodyStart) return null;
-
-  return lines.slice(bodyStart, footerStart).join('\n');
-}
-
-function firstStructuredBodyLineIndex(text: string) {
-  const structure = organizeGCodeStructure(text.split(/\r?\n/));
-  const firstBodyLine = structure.body.lines[0]?.num;
-  return firstBodyLine ? firstBodyLine - 1 : null;
-}
-
-function findLastLineSequence(lines: string[], sequence: string[]) {
-  if (sequence.length === 0 || sequence.length > lines.length) return -1;
-
-  for (let index = lines.length - sequence.length; index >= 0; index--) {
-    if (linesMatchAt(lines, sequence, index)) return index;
-  }
-
-  return -1;
-}
-
-function linesMatchAt(lines: string[], sequence: string[], startIndex: number) {
-  return sequence.every((line, index) => lines[startIndex + index] === line);
 }
