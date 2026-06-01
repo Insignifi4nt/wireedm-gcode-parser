@@ -4,8 +4,17 @@ import type {
   PathElementId,
   PathOperation,
   PathPlanningDocument,
+  Point2,
   SegmentId
 } from '@/domain/path-intel/types';
+import {
+  distance,
+  orientedSegmentEnd,
+  orientedSegmentStart,
+  pointsEqual,
+  requiredSegment,
+  segmentMap
+} from '@/domain/path-intel/segments';
 
 export type UpidManualDecisionKind = 'order' | 'role' | 'direction' | 'start';
 
@@ -39,6 +48,12 @@ export interface UpidProjectRail {
     operationCount: number;
     rootCount: number;
   };
+}
+
+export interface UpidSelectedPathTravel {
+  end: Point2;
+  length: number;
+  start: Point2;
 }
 
 export function createUpidProjectRail(document: PathPlanningDocument): UpidProjectRail {
@@ -80,6 +95,100 @@ export function readUpidOperationPathElement(
     : document?.pathElements.find((candidate) => candidate.operationId === operationId);
 
   return element && isUpidOperationPathElement(element) ? element : null;
+}
+
+export function normalizeUpidPathElementSelection(
+  document: PathPlanningDocument,
+  operationId: string | null,
+  element: UpidPathElementRef | null
+): UpidPathElementRef | null {
+  const fallbackOperation = document.plan.operations[0] ?? null;
+  const operation =
+    document.plan.operations.find((candidate) => candidate.id === operationId) ?? fallbackOperation;
+  if (!operation) return null;
+
+  const pathElementId = upidPathElementIdForOperation(document, operation.id);
+  if (
+    element?.operationId === operation.id &&
+    (element.travelRole === 'rapid-in' ||
+      !element.segmentId ||
+      operation.segmentRefs.some((candidate) => candidate.segmentId === element.segmentId))
+  ) {
+    return {
+      ...element,
+      pathElementId: element.pathElementId ?? pathElementId
+    };
+  }
+
+  return {
+    operationId: operation.id,
+    pathElementId,
+    segmentId: null
+  };
+}
+
+export function readUpidPathElementPoint(
+  document: PathPlanningDocument,
+  element: UpidPathElementRef
+): Point2 | null {
+  if (!element.operationId || !element.segmentId || !element.pointRole) return null;
+
+  const operation = document.plan.operations.find((candidate) => candidate.id === element.operationId);
+  const ref = operation?.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
+  if (!ref) return null;
+
+  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
+  return element.pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref);
+}
+
+export function readUpidPathElementPointByRole(
+  element: PathElement,
+  role: 'start' | 'end'
+) {
+  return element.points.find((point) => point.role === role) ?? null;
+}
+
+export function upidStartPreviewPointRole(
+  document: PathPlanningDocument,
+  preview: {
+    operationId: string;
+    point: Point2;
+    segmentId: SegmentId;
+  }
+): 'start' | 'end' | null {
+  const operation = document.plan.operations.find((candidate) => candidate.id === preview.operationId);
+  const ref = operation?.segmentRefs.find((candidate) => candidate.segmentId === preview.segmentId);
+  if (!ref) return null;
+
+  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
+  if (pointsEqual(preview.point, orientedSegmentStart(segment, ref), document.options.coincidenceEpsilon)) {
+    return 'start';
+  }
+  if (pointsEqual(preview.point, orientedSegmentEnd(segment, ref), document.options.coincidenceEpsilon)) {
+    return 'end';
+  }
+  return null;
+}
+
+export function readUpidSelectedPathTravel(
+  document: PathPlanningDocument | null,
+  operationIndex: number,
+  element: UpidPathElementRef | null
+): UpidSelectedPathTravel | null {
+  if (!document || element?.travelRole !== 'rapid-in' || operationIndex < 0) return null;
+
+  const operation = document.plan.operations[operationIndex];
+  if (!operation || element.operationId !== operation.id) return null;
+
+  const previousOperation = operationIndex > 0 ? document.plan.operations[operationIndex - 1] : null;
+  const start = previousOperation?.endPoint ?? document.options.startPoint;
+  const end = operation.startPoint;
+
+  return {
+    end,
+    length: distance(start, end),
+    start
+  };
 }
 
 export function upidPathElementRefForDiagnostic(

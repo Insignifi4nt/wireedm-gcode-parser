@@ -40,8 +40,6 @@ import {
   boundsAreFinite,
   emptyBounds,
   mergeBounds,
-  orientedSegmentEnd,
-  orientedSegmentStart,
   pathBounds,
   pointsEqual,
   requiredSegment,
@@ -55,6 +53,12 @@ import type {
   Point2
 } from '@/domain/path-intel/types';
 import { projectUpidDocument } from '@/domain/upid/projectUpid';
+import {
+  normalizeUpidPathElementSelection,
+  readUpidPathElementPoint,
+  upidPathElementIdForOperation,
+  upidStartPreviewPointRole
+} from '@/domain/upid/projectRail';
 import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 import {
   exportMeasurementPointsAsCsv,
@@ -298,7 +302,7 @@ export function EditorPage({
       operationId: preview.operationId,
       pathElementId: preview.pathElementId,
       point: preview.point,
-      pointRole: startPreviewPointRole(pathDocumentDraft, preview),
+      pointRole: upidStartPreviewPointRole(pathDocumentDraft, preview),
       relation: preview.relation,
       segmentId: preview.segmentId
     };
@@ -591,7 +595,9 @@ export function EditorPage({
   function handleSelectPathOperation(operationId: string) {
     handleSelectPathElement({
       operationId,
-      pathElementId: pathElementIdForOperation(pathDocumentDraft, operationId),
+      pathElementId: pathDocumentDraft
+        ? upidPathElementIdForOperation(pathDocumentDraft, operationId)
+        : null,
       segmentId: null
     });
   }
@@ -796,7 +802,7 @@ export function EditorPage({
       return;
     }
 
-    const point = pathElementPoint(pathDocumentDraft, element);
+    const point = readUpidPathElementPoint(pathDocumentDraft, element);
     if (!point) return;
 
     const edited = setClosedOperationStartAtExistingPointNearPoint(
@@ -952,7 +958,7 @@ export function EditorPage({
       ? options.selectedPathElement ?? null
       : selectedPathElement;
     const nextSelectedPathElement = nextPathDocument
-      ? normalizePathElementSelection(nextPathDocument, nextSelectedPathOperationId, candidateSelectedPathElement)
+      ? normalizeUpidPathElementSelection(nextPathDocument, nextSelectedPathOperationId, candidateSelectedPathElement)
       : null;
 
     setUndoStack((current) => [...current, currentDraftSnapshot()]);
@@ -1014,7 +1020,7 @@ export function EditorPage({
     setSelectedPathOperationId(restoredOperationId);
     setSelectedPathElement(
       restoredPathDocument
-        ? normalizePathElementSelection(
+        ? normalizeUpidPathElementSelection(
             restoredPathDocument,
             restoredOperationId,
             snapshot.selectedPathElement
@@ -1255,73 +1261,6 @@ function clonePathDocument(document: PathPlanningDocument | null) {
 
 function pathDocumentSignature(document: PathPlanningDocument | null) {
   return document ? JSON.stringify(document) : '';
-}
-
-function normalizePathElementSelection(
-  document: PathPlanningDocument,
-  operationId: string | null,
-  element: EditorPathElementRef | null
-): EditorPathElementRef | null {
-  const fallbackOperation = document.plan.operations[0] ?? null;
-  const operation =
-    document.plan.operations.find((candidate) => candidate.id === operationId) ?? fallbackOperation;
-  if (!operation) return null;
-  const pathElementId = pathElementIdForOperation(document, operation.id);
-
-  if (
-    element?.operationId === operation.id &&
-    (element.travelRole === 'rapid-in' ||
-      !element.segmentId ||
-      operation.segmentRefs.some((candidate) => candidate.segmentId === element.segmentId))
-  ) {
-    return {
-      ...element,
-      pathElementId: element.pathElementId ?? pathElementId
-    };
-  }
-
-  return {
-    operationId: operation.id,
-    pathElementId,
-    segmentId: null
-  };
-}
-
-function pathElementIdForOperation(document: PathPlanningDocument | null, operationId: string) {
-  return document?.pathElements.find((element) => element.operationId === operationId)?.id ?? null;
-}
-
-function pathElementPoint(document: PathPlanningDocument, element: EditorPathElementRef) {
-  if (!element.operationId || !element.segmentId || !element.pointRole) return null;
-
-  const operation = document.plan.operations.find((candidate) => candidate.id === element.operationId);
-  const ref = operation?.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
-  if (!ref) return null;
-
-  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
-  return element.pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref);
-}
-
-function startPreviewPointRole(
-  document: PathPlanningDocument,
-  preview: {
-    operationId: string;
-    point: { x: number; y: number };
-    segmentId: string;
-  }
-): 'start' | 'end' | null {
-  const operation = document.plan.operations.find((candidate) => candidate.id === preview.operationId);
-  const ref = operation?.segmentRefs.find((candidate) => candidate.segmentId === preview.segmentId);
-  if (!ref) return null;
-
-  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
-  if (pointsEqual(preview.point, orientedSegmentStart(segment, ref), document.options.coincidenceEpsilon)) {
-    return 'start';
-  }
-  if (pointsEqual(preview.point, orientedSegmentEnd(segment, ref), document.options.coincidenceEpsilon)) {
-    return 'end';
-  }
-  return null;
 }
 
 function summarizePathDocumentForEditor(document: PathPlanningDocument) {

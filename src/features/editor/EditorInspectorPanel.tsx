@@ -14,12 +14,13 @@ import type { MachineFitResult } from '@/domain/machine/machineFit';
 import {
   orientedSegmentEnd,
   orientedSegmentStart,
-  distance,
   segmentMap
 } from '@/domain/path-intel/segments';
 import type { PathElement, PathPlanningDocument } from '@/domain/path-intel/types';
 import {
+  readUpidPathElementPointByRole,
   readUpidOperationPathElement,
+  readUpidSelectedPathTravel,
   type UpidOperationPathElement
 } from '@/domain/upid/projectRail';
 import type { MachineProfile } from '@/domain/workbench/types';
@@ -115,7 +116,7 @@ export function EditorInspectorPanel({
     ? readSelectedPathPoint(pathDocument, selectedPathElementModel, selectedPathElement)
     : null;
   const selectedPathTravel = selectedPathOperation
-    ? readSelectedPathTravel(pathDocument, selectedPathOperationIndex, selectedPathElement)
+    ? readUpidSelectedPathTravel(pathDocument, selectedPathOperationIndex, selectedPathElement)
     : null;
   const selectedPathOverrideRows = selectedPathElementModel
     ? manualOverrideRows(selectedPathElementModel.overrides)
@@ -123,8 +124,12 @@ export function EditorInspectorPanel({
   const selectedPathSource = selectedPathElementModel
     ? sourceSummaryRows(selectedPathElementModel)
     : null;
-  const selectedPathStart = selectedPathElementModel ? readPathElementPoint(selectedPathElementModel, 'start') : null;
-  const selectedPathEnd = selectedPathElementModel ? readPathElementPoint(selectedPathElementModel, 'end') : null;
+  const selectedPathStart = selectedPathElementModel
+    ? readUpidPathElementPointByRole(selectedPathElementModel, 'start')
+    : null;
+  const selectedPathEnd = selectedPathElementModel
+    ? readUpidPathElementPointByRole(selectedPathElementModel, 'end')
+    : null;
   const draftParseResult = draftProgram?.parseResult ?? null;
 
   return (
@@ -793,30 +798,5 @@ function readSelectedPathPoint(
     point: element.pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref),
     role: element.pointRole,
     segmentKind: segment.kind
-  };
-}
-
-function readPathElementPoint(element: PathElement, role: 'start' | 'end') {
-  return element.points.find((point) => point.role === role) ?? null;
-}
-
-function readSelectedPathTravel(
-  document: PathPlanningDocument | null,
-  operationIndex: number,
-  element: EditorPathElementRef | null
-) {
-  if (!document || element?.travelRole !== 'rapid-in' || operationIndex < 0) return null;
-
-  const operation = document.plan.operations[operationIndex];
-  if (!operation || element.operationId !== operation.id) return null;
-
-  const previousOperation = operationIndex > 0 ? document.plan.operations[operationIndex - 1] : null;
-  const start = previousOperation?.endPoint ?? document.options.startPoint;
-  const end = operation.startPoint;
-
-  return {
-    end,
-    length: distance(start, end),
-    start
   };
 }

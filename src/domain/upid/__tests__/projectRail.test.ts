@@ -6,10 +6,15 @@ import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/f
 
 import {
   createUpidProjectRail,
+  normalizeUpidPathElementSelection,
   readUpidOperationPathElement,
+  readUpidPathElementPoint,
+  readUpidPathElementPointByRole,
+  readUpidSelectedPathTravel,
   upidManualDecisionKinds,
   upidPathElementRefForDiagnostic,
   upidPathElementRefsMatch,
+  upidStartPreviewPointRole,
   upidPathElementSourceEntityCount
 } from '../projectRail';
 
@@ -81,6 +86,90 @@ describe('UPID project rail projection', () => {
     expect(upidPathElementRefsMatch({ ...ref!, pointRole: 'start' }, { ...ref!, pointRole: 'start' })).toBe(
       true
     );
+  });
+
+  it('normalizes selected path refs and resolves selected points from UPID geometry', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const operation = document.plan.operations[0];
+    const pathElement = document.pathElements[0];
+    const firstSegmentId = operation.segmentRefs[0].segmentId;
+
+    expect(normalizeUpidPathElementSelection(document, null, null)).toEqual({
+      operationId: operation.id,
+      pathElementId: pathElement.id,
+      segmentId: null
+    });
+    expect(
+      normalizeUpidPathElementSelection(document, operation.id, {
+        operationId: operation.id,
+        segmentId: firstSegmentId,
+        pointRole: 'start'
+      })
+    ).toEqual({
+      operationId: operation.id,
+      pathElementId: pathElement.id,
+      pointRole: 'start',
+      segmentId: firstSegmentId
+    });
+    expect(
+      normalizeUpidPathElementSelection(document, operation.id, {
+        operationId: operation.id,
+        segmentId: 'missing_segment'
+      })
+    ).toEqual({
+      operationId: operation.id,
+      pathElementId: pathElement.id,
+      segmentId: null
+    });
+    expect(
+      readUpidPathElementPoint(document, {
+        operationId: operation.id,
+        segmentId: firstSegmentId,
+        pointRole: 'start'
+      })
+    ).toEqual({ x: 0, y: 0 });
+    expect(readUpidPathElementPointByRole(pathElement, 'end')?.point).toEqual({ x: 0, y: 0 });
+  });
+
+  it('classifies start previews and rapid travel with shared UPID selection helpers', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)]
+    );
+    const secondOperation = document.plan.operations[1];
+    const firstSegmentId = secondOperation.segmentRefs[0].segmentId;
+
+    expect(
+      upidStartPreviewPointRole(document, {
+        operationId: secondOperation.id,
+        point: { x: 20, y: 0 },
+        segmentId: firstSegmentId
+      })
+    ).toBe('start');
+    expect(
+      upidStartPreviewPointRole(document, {
+        operationId: secondOperation.id,
+        point: { x: 25, y: 0 },
+        segmentId: firstSegmentId
+      })
+    ).toBe('end');
+    expect(
+      upidStartPreviewPointRole(document, {
+        operationId: secondOperation.id,
+        point: { x: 22.5, y: 0 },
+        segmentId: firstSegmentId
+      })
+    ).toBeNull();
+    expect(
+      readUpidSelectedPathTravel(document, 1, {
+        operationId: secondOperation.id,
+        segmentId: null,
+        travelRole: 'rapid-in'
+      })
+    ).toEqual({
+      end: { x: 20, y: 0 },
+      length: 20,
+      start: { x: 0, y: 0 }
+    });
   });
 });
 
