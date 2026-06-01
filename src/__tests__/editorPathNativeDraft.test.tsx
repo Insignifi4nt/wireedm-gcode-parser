@@ -203,6 +203,10 @@ describe('EditorPage UPID draft boundary', () => {
 
     const exteriorTreeContext = container.querySelector('[data-upid-selected-tree-context]');
     expect(exteriorTreeContext?.getAttribute('data-upid-path-element-id')).toBe('contour_0001');
+    expect(container.querySelector('[data-upid-selected="tree-lineage"]')?.textContent).toBe('Exterior 1');
+    expect(container.querySelector('[data-upid-selected="tree-lineage"]')?.getAttribute('data-upid-lineage-depth')).toBe(
+      '1'
+    );
     expect(container.querySelector('[data-upid-selected="tree-direct-segments"]')?.textContent).toBe('4');
     expect(container.querySelector('[data-upid-selected="tree-descendants"]')?.textContent).toBe('1');
     expect(container.querySelector('[data-upid-selected="tree-total-segments"]')?.textContent).toBe('8');
@@ -211,6 +215,12 @@ describe('EditorPage UPID draft boundary', () => {
 
     const holeTreeContext = container.querySelector('[data-upid-selected-tree-context]');
     expect(holeTreeContext?.getAttribute('data-upid-path-element-id')).toBe('contour_0002');
+    expect(container.querySelector('[data-upid-selected="tree-lineage"]')?.textContent).toBe(
+      'Exterior 1 / Hole 1'
+    );
+    expect(container.querySelector('[data-upid-selected="tree-lineage"]')?.getAttribute('data-upid-lineage-depth')).toBe(
+      '2'
+    );
     expect(container.querySelector('[data-upid-selected="tree-direct-segments"]')?.textContent).toBe('4');
     expect(container.querySelector('[data-upid-selected="tree-descendants"]')?.textContent).toBe('0');
     expect(container.querySelector('[data-upid-selected="tree-total-segments"]')?.textContent).toBe('4');

@@ -16,6 +16,7 @@ import {
   readUpidOperationPathElement,
   readUpidPathElementPoint,
   readUpidPathElementPointByRole,
+  readUpidPathElementLineage,
   readUpidPathElementSourceSummary,
   readUpidPathElementTreeNode,
   readUpidSelectedPathPoint,
@@ -119,6 +120,30 @@ describe('UPID project rail projection', () => {
         totalSegmentCount: 8
       }
     });
+  });
+
+  it('resolves selected path refs into root-to-selected path tree lineage', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(0, 0, 20, 20), ...rectangleLines(5, 5, 10, 10)]
+    );
+    const rail = createUpidProjectRail(document);
+    const exteriorElement = rail.contourTree[0].element;
+    const holeElement = rail.contourTree[0].children[0].element;
+
+    expect(
+      readUpidPathElementLineage(document, {
+        operationId: holeElement.operationId,
+        pathElementId: holeElement.id,
+        segmentId: holeElement.segmentRefs[0].segmentId
+      })?.map((element) => element.displayName)
+    ).toEqual(['Exterior 1', 'Hole 1']);
+    expect(
+      readUpidPathElementLineage(document, {
+        operationId: exteriorElement.operationId,
+        pathElementId: exteriorElement.id,
+        segmentId: null
+      })?.map((element) => element.displayName)
+    ).toEqual(['Exterior 1']);
   });
 
   it('keeps manual decisions available without React panel bookkeeping', () => {

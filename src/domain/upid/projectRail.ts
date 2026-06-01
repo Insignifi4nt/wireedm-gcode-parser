@@ -491,6 +491,27 @@ export function readUpidPathElementTreeNode(
   return findTreeNodeByPathElementId(createUpidProjectRail(document).contourTree, selectedElement.id);
 }
 
+export function readUpidPathElementLineage(
+  document: PathPlanningDocument,
+  elementRef: UpidPathElementRef
+): UpidOperationPathElement[] {
+  const selectedElement = readPathElementForRef(document, elementRef);
+  if (!selectedElement) return [];
+
+  const pathElementsById = new Map(document.pathElements.map((element) => [element.id, element]));
+  const lineage: UpidOperationPathElement[] = [];
+  let current: PathElement | null = selectedElement;
+
+  while (current) {
+    if (isUpidOperationPathElement(current)) {
+      lineage.unshift(current);
+    }
+    current = current.parentId ? pathElementsById.get(current.parentId) ?? null : null;
+  }
+
+  return lineage;
+}
+
 export function upidPathElementAncestorIds(
   document: PathPlanningDocument,
   elementRef: UpidPathElementRef

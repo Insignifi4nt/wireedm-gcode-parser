@@ -13,6 +13,7 @@ import type { MachineFitResult } from '@/domain/machine/machineFit';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   readUpidManualOverrideRows,
+  readUpidPathElementLineage,
   readUpidPathElementPointByRole,
   readUpidPathElementSourceSummary,
   readUpidPathElementTreeNode,
@@ -129,6 +130,13 @@ export function EditorInspectorPanel({
         segmentId: selectedPathElement?.segmentId ?? null
       })
     : null;
+  const selectedPathLineage = pathDocument && selectedPathElementModel
+    ? readUpidPathElementLineage(pathDocument, {
+        operationId: selectedPathElementModel.operationId,
+        pathElementId: selectedPathElementModel.id,
+        segmentId: selectedPathElement?.segmentId ?? null
+      })
+    : [];
   const selectedPathStart = selectedPathElementModel
     ? readUpidPathElementPointByRole(selectedPathElementModel, 'start')
     : null;
@@ -318,6 +326,13 @@ export function EditorInspectorPanel({
                   Path Tree Context
                 </h4>
                 <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+                  <dt className="text-muted-foreground">Lineage</dt>
+                  <dd
+                    data-upid-lineage-depth={selectedPathLineage.length}
+                    data-upid-selected="tree-lineage"
+                  >
+                    {selectedPathLineage.map((element) => element.displayName).join(' / ')}
+                  </dd>
                   <dt className="text-muted-foreground">Direct Segs</dt>
                   <dd data-upid-selected="tree-direct-segments">
                     {selectedPathTreeNode.treeMetrics.directSegmentCount}
