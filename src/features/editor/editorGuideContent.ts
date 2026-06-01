@@ -104,7 +104,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '4. Measurement Points',
         steps: [
           {
-            text: 'Click the canvas to add P1, P2, and later points. You can also type exact X/Y values and click Add Point.',
+            text: 'Use Point canvas mode to place P1, P2, and later points by clicking the canvas. You can also type exact X/Y values and click Add Point.',
             highlightTarget: 'measurement-points'
           },
           {
@@ -241,7 +241,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '4. Puncte de masurare',
         steps: [
           {
-            text: 'Click pe canvas adauga P1, P2 si urmatoarele puncte. Poti introduce si valori exacte X/Y, apoi Add Point.',
+            text: 'Foloseste modul Point pe canvas pentru P1, P2 si urmatoarele puncte prin click. Poti introduce si valori exacte X/Y, apoi Add Point.',
             highlightTarget: 'measurement-points'
           },
           {

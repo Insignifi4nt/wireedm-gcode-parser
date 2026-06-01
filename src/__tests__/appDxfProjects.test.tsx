@@ -2448,6 +2448,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await showWorkspacePanels(container, ['contour-tree', 'cut-sequence', 'path-actions', 'path-hover-assist']);
     await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
@@ -2469,6 +2470,15 @@ describe('App DXF imports and project library', () => {
       configurable: true
     });
 
+    const pointModeButton = container.querySelector(
+      '[data-editor-preview-mouse-mode-point]'
+    ) as HTMLButtonElement | null;
+    expect(pointModeButton).not.toBeNull();
+    await act(async () => {
+      pointModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(pointModeButton?.getAttribute('aria-pressed')).toBe('true');
+
     await act(async () => {
       preview?.dispatchEvent(
         new MouseEvent('click', {
@@ -2477,16 +2487,19 @@ describe('App DXF imports and project library', () => {
         })
       );
     });
+    await flushAsync();
+    expect(container.querySelector('[data-measurement-point="1"]')).not.toBeNull();
 
-    const hoverToggle = container.querySelector(
+    const hoverToggle = document.querySelector(
       'input[aria-label="Toggle canvas hover assist"]'
     ) as HTMLInputElement | null;
-    const snapToggle = container.querySelector(
+    const snapToggle = document.querySelector(
       'input[aria-label="Toggle magnetic non-existing point snap"]'
     ) as HTMLInputElement | null;
-    const perpendicularButton = container.querySelector(
+    const perpendicularButton = document.querySelector(
       'button[aria-label="Magnetize latest point perpendicular"]'
     ) as HTMLButtonElement | null;
+    expect(perpendicularButton).not.toBeNull();
 
     await act(async () => {
       hoverToggle?.click();
@@ -2505,6 +2518,7 @@ describe('App DXF imports and project library', () => {
         })
       );
     });
+    await flushAsync();
 
     const constructionPreview = container.querySelector('[data-upid-construction-preview]');
     expect(constructionPreview).not.toBeNull();
@@ -2515,7 +2529,7 @@ describe('App DXF imports and project library', () => {
     const constructionSegmentId = constructionPreview?.getAttribute('data-upid-construction-segment');
     expect(constructionSegmentId).toBeTruthy();
     expect(
-      container
+      document
         .querySelector(`[data-upid-segment-row][data-upid-segment-id="${constructionSegmentId}"]`)
         ?.getAttribute('data-upid-hovered')
     ).toBe('true');
@@ -3111,6 +3125,8 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await showWorkspacePanels(container, ['contour-tree', 'cut-sequence', 'measurement', 'path-actions', 'statistics']);
+    expect(document.querySelector('[data-editor-workspace-panel="measurement"]')).not.toBeNull();
     await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
@@ -3132,6 +3148,15 @@ describe('App DXF imports and project library', () => {
       configurable: true
     });
 
+    const pointModeButton = container.querySelector(
+      '[data-editor-preview-mouse-mode-point]'
+    ) as HTMLButtonElement | null;
+    expect(pointModeButton).not.toBeNull();
+    await act(async () => {
+      pointModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(pointModeButton?.getAttribute('aria-pressed')).toBe('true');
+
     await act(async () => {
       preview?.dispatchEvent(
         new MouseEvent('click', {
@@ -3140,13 +3165,16 @@ describe('App DXF imports and project library', () => {
         })
       );
     });
-    expect(container.querySelector('[data-measurement-point-row="1"]')?.textContent).toContain(
+    await flushAsync();
+    expect(container.querySelector('[data-measurement-point="1"]')).not.toBeNull();
+    expect(document.querySelector('[data-measurement-point-row="1"]')?.textContent).toContain(
       '2.000'
     );
 
-    const perpendicularButton = container.querySelector(
+    const perpendicularButton = document.querySelector(
       'button[aria-label="Magnetize latest point perpendicular"]'
     ) as HTMLButtonElement | null;
+    expect(perpendicularButton).not.toBeNull();
 
     await act(async () => {
       perpendicularButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -3159,10 +3187,11 @@ describe('App DXF imports and project library', () => {
         })
       );
     });
+    await flushAsync();
 
-    const secondPointRow = container.querySelector('[data-measurement-point-row="2"]') as HTMLElement | null;
+    const secondPointRow = document.querySelector('[data-measurement-point-row="2"]') as HTMLElement | null;
     expect(secondPointRow?.textContent).toContain('5.000');
-    expect(container.querySelector('[data-measurement-point-mode="2"]')?.textContent).toBe('Perp');
+    expect(document.querySelector('[data-measurement-point-mode="2"]')?.textContent).toBe('Perp');
     const targetSegmentId = secondPointRow?.getAttribute('data-measurement-point-segment');
     expect(targetSegmentId).toBeTruthy();
 
@@ -3171,7 +3200,7 @@ describe('App DXF imports and project library', () => {
     });
 
     expect(
-      container
+      document
         .querySelector(`[data-upid-segment-row][data-upid-segment-id="${targetSegmentId}"]`)
         ?.getAttribute('data-upid-hovered')
     ).toBe('true');
@@ -3191,7 +3220,7 @@ describe('App DXF imports and project library', () => {
     });
 
     expect(
-      container
+      document
         .querySelector(`[data-upid-segment-row][data-upid-segment-id="${targetSegmentId}"]`)
         ?.getAttribute('data-upid-selected')
     ).toBe('true');
@@ -3200,7 +3229,7 @@ describe('App DXF imports and project library', () => {
         .querySelector(`path[data-preview-segment="${targetSegmentId}"]`)
         ?.getAttribute('data-preview-selected')
     ).toBe('true');
-    expect(container.querySelector('[data-upid-selected-segment]')?.textContent).toContain(
+    expect(document.querySelector('[data-upid-selected-segment]')?.textContent).toContain(
       'Selected Segment'
     );
 
@@ -3224,10 +3253,10 @@ describe('App DXF imports and project library', () => {
       preview?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
     });
 
-    expect(container.querySelector('[data-measurement-point-row="2"]')?.textContent).toContain(
+    expect(document.querySelector('[data-measurement-point-row="2"]')?.textContent).toContain(
       '8.000'
     );
-    expect(container.querySelector('[data-measurement-point-row="2"]')?.textContent).toContain(
+    expect(document.querySelector('[data-measurement-point-row="2"]')?.textContent).toContain(
       '5.000'
     );
   });
@@ -3507,6 +3536,20 @@ async function selectFirstCutSequence(container: HTMLElement) {
   await act(async () => {
     firstCutSequence?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
+}
+
+async function showWorkspacePanels(container: HTMLElement, panelIds: string[]) {
+  for (const panelId of panelIds) {
+    const panelButton = container.querySelector(
+      `[data-editor-panel-menu-item="${panelId}"]`
+    ) as HTMLButtonElement | null;
+    if (panelButton?.getAttribute('aria-label')?.startsWith('Show')) {
+      await act(async () => {
+        panelButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await flushAsync();
+    }
+  }
 }
 
 function duplicateFirstContour(document: PathPlanningDocument): PathPlanningDocument {

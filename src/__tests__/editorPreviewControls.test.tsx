@@ -477,6 +477,13 @@ describe('Editor preview controls and guide', () => {
     expect(container.querySelector('[data-editor-cursor="x"]')?.textContent).toBe('5.000');
     expect(container.querySelector('[data-editor-cursor="y"]')?.textContent).toBe('5.000');
 
+    const pointModeButton = [...container.querySelectorAll('button')].find((button) =>
+      button.getAttribute('aria-label') === 'Place measurement points on canvas'
+    );
+    await act(async () => {
+      pointModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
     await act(async () => {
       preview?.dispatchEvent(
         new MouseEvent('click', {

@@ -8,7 +8,7 @@ import {
   type TouchEvent,
   type WheelEvent
 } from 'react';
-import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Magnet, Maximize2, MousePointer2, ZoomIn, ZoomOut } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
@@ -38,6 +38,7 @@ import {
   initialPreviewViewState,
   isInteractiveTarget,
   previewEventToWorldPoint,
+  previewClientToWorldPoint,
   previewTouchToWorldPoint,
   round,
   strokeForPath,
@@ -51,6 +52,7 @@ import {
 } from './editorPreviewHelpers';
 
 interface EditorPreviewProps {
+  canvasMouseMode?: CanvasMouseMode;
   constructionPreview?: EditorConstructionPreview | null;
   startPreview?: EditorStartPreview | null;
   previewLabel?: string;
@@ -63,9 +65,11 @@ interface EditorPreviewProps {
   onCursorPointChange?: (point: { x: number; y: number } | null) => void;
   onMeasurementPointMove?: (pointId: string, point: { x: number; y: number }) => void;
   onPathEndpointClick?: (element: EditorPathElementRef) => void;
+  onPathElementDrag?: (element: EditorPathElementRef, delta: { x: number; y: number }) => void;
   onPathElementClick?: (element: EditorPathElementRef) => void;
   onPathElementHover?: (element: EditorPathElementRef | null) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
+  onSetCanvasMouseMode?: (mode: CanvasMouseMode) => void;
   pathDocument?: PathPlanningDocument | null;
   pathCount?: number;
   pinnedLines: number[];
@@ -74,6 +78,8 @@ interface EditorPreviewProps {
   snapToGrid?: boolean;
   snapGridSize?: number;
 }
+
+type CanvasMouseMode = 'select' | 'point';
 
 export interface EditorConstructionPreview {
   mode: MagnetizeMode;
@@ -95,6 +101,7 @@ export interface EditorStartPreview {
 }
 
 export function EditorPreview({
+  canvasMouseMode,
   constructionPreview,
   startPreview,
   program,
@@ -105,9 +112,11 @@ export function EditorPreview({
   onCursorPointChange,
   onMeasurementPointMove,
   onPathEndpointClick,
+  onPathElementDrag,
   onPathElementClick,
   onPathElementHover,
   onPreviewPointClick,
+  onSetCanvasMouseMode,
   pathDocument,
   pathCount,
   previewLabel = 'G-code path preview',
@@ -134,6 +143,12 @@ export function EditorPreview({
   const dragStateRef = useRef<PreviewDragState | null>(null);
   const lastTapRef = useRef<PreviewLastTapState | null>(null);
   const pointDragStateRef = useRef<{ pointId: string } | null>(null);
+  const pathDragStateRef = useRef<{
+    currentWorld: { x: number; y: number };
+    element: EditorPathElementRef;
+    moved: boolean;
+    startWorld: { x: number; y: number };
+  } | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const suppressClickRef = useRef(false);
@@ -334,6 +349,24 @@ export function EditorPreview({
   }
 
   function handlePreviewMouseMove(event: MouseEvent<SVGSVGElement>) {
+    const pathDragState = pathDragStateRef.current;
+    if (pathDragState) {
+      event.preventDefault();
+      const point = previewEventToWorldPoint(event, activeViewBox, flipY, {
+        gridSize: snapGridSize,
+        snapToGrid
+      });
+      if (point) {
+        pathDragState.currentWorld = point;
+        pathDragState.moved =
+          pathDragState.moved ||
+          Math.hypot(point.x - pathDragState.startWorld.x, point.y - pathDragState.startWorld.y) > 1e-6;
+        suppressClickRef.current = pathDragState.moved;
+        onCursorPointChange?.(point);
+      }
+      return;
+    }
+
     const pointDragState = pointDragStateRef.current;
     if (pointDragState) {
       event.preventDefault();
@@ -383,6 +416,16 @@ export function EditorPreview({
   }
 
   function handlePreviewMouseUp() {
+    const pathDragState = pathDragStateRef.current;
+    if (pathDragState) {
+      pathDragStateRef.current = null;
+      if (pathDragState.moved) {
+        onPathElementDrag?.(pathDragState.element, {
+          x: round(pathDragState.currentWorld.x - pathDragState.startWorld.x),
+          y: round(pathDragState.currentWorld.y - pathDragState.startWorld.y)
+        });
+      }
+    }
     pointDragStateRef.current = null;
     dragStateRef.current = null;
   }
@@ -530,6 +573,27 @@ export function EditorPreview({
     suppressClickRef.current = true;
   }
 
+  function beginPathElementDrag(element: EditorPathElementRef, event: MouseEvent<SVGPathElement>) {
+    if (event.button !== 0 || !onPathElementDrag || event.shiftKey) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const point = previewClientToWorldPoint(svg, event.clientX, event.clientY, activeViewBox, flipY, {
+      gridSize: snapGridSize,
+      snapToGrid
+    });
+    if (!point) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    pathDragStateRef.current = {
+      currentWorld: point,
+      element,
+      moved: false,
+      startWorld: point
+    };
+  }
+
   return (
     <div className="grid h-full min-h-[220px] grid-rows-[auto_minmax(0,1fr)] bg-background/70">
       <div
@@ -550,6 +614,43 @@ export function EditorPreview({
           )}
         </div>
         <div className="flex shrink-0 items-center justify-end gap-1">
+          {canvasMouseMode && onSetCanvasMouseMode && (
+            <div
+              className="mr-1 flex items-center gap-0.5 border-r border-border pr-1"
+              data-editor-preview-mouse-mode-toolbar
+            >
+              <button
+                aria-label="Select geometry on canvas"
+                aria-pressed={canvasMouseMode === 'select'}
+                className={`flex size-5 items-center justify-center border text-muted-foreground outline-none transition hover:bg-accent ${
+                  canvasMouseMode === 'select'
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border'
+                }`}
+                data-editor-preview-mouse-mode-select
+                onClick={() => onSetCanvasMouseMode('select')}
+                title="Select geometry"
+                type="button"
+              >
+                <MousePointer2 className="size-3" />
+              </button>
+              <button
+                aria-label="Place measurement points on canvas"
+                aria-pressed={canvasMouseMode === 'point'}
+                className={`flex size-5 items-center justify-center border text-muted-foreground outline-none transition hover:bg-accent ${
+                  canvasMouseMode === 'point'
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border'
+                }`}
+                data-editor-preview-mouse-mode-point
+                onClick={() => onSetCanvasMouseMode('point')}
+                title="Place measurement points"
+                type="button"
+              >
+                <Magnet className="size-3" />
+              </button>
+            </div>
+          )}
           <Button
             aria-label="Zoom preview out"
             disabled={zoom <= MIN_PREVIEW_ZOOM}
@@ -708,7 +809,13 @@ export function EditorPreview({
                 data-type={path.type}
                 fill="none"
                 key={`${path.type}-${path.line}-${index}`}
+                className={pathElementSelected && path.type !== 'rapid' ? 'cursor-move' : undefined}
                 onClick={(event) => {
+                  if (suppressClickRef.current) {
+                    suppressClickRef.current = false;
+                    event.stopPropagation();
+                    return;
+                  }
                   if (path.source !== 'path-document' || !path.operationId || !onPathElementClick) return;
                   event.stopPropagation();
                   onPathElementClick({
@@ -728,6 +835,17 @@ export function EditorPreview({
                   });
                 }}
                 onMouseLeave={() => onPathElementHover?.(null)}
+                onMouseDown={(event) => {
+                  if (path.source !== 'path-document' || !path.operationId || path.type === 'rapid') return;
+                  beginPathElementDrag(
+                    {
+                      operationId: path.operationId,
+                      pathElementId: path.pathElementId ?? null,
+                      segmentId: path.segmentId ?? null
+                    },
+                    event
+                  );
+                }}
                 stroke={strokeForPath(path.type, highlight, isPinned)}
                 strokeDasharray={path.type === 'rapid' ? '0.4 0.4' : undefined}
                 strokeLinecap="round"

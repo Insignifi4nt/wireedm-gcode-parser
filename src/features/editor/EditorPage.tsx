@@ -256,6 +256,7 @@ export function EditorPage({
   const [measurementPoints, setMeasurementPoints] = useState<MeasurementPoint[]>([]);
   const [previewCursorPoint, setPreviewCursorPoint] = useState<{ x: number; y: number } | null>(null);
   const [gridSnapEnabled, setGridSnapEnabled] = useState(false);
+  const [canvasMouseMode, setCanvasMouseMode] = useState<'select' | 'point'>('select');
   const [guideHighlightTarget, setGuideHighlightTarget] = useState<EditorGuideTarget | null>(null);
   const [guideLanguage, setGuideLanguage] = useState<EditorGuideLanguage>(readStoredGuideLanguage);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -551,6 +552,7 @@ export function EditorPage({
     setHoveredPathElement(null);
     setExportPreviewOpen(false);
     setPathClickMode(null);
+    setCanvasMouseMode('select');
     setRedoStack([]);
     setUndoStack([]);
     clearTransientLineState();
@@ -905,7 +907,7 @@ export function EditorPage({
 
   function handlePreviewPointClick(point: { x: number; y: number }) {
     if (!pathClickMode || !pathDocumentDraft || !selectedPathOperationId) {
-      addMeasurementPoint(point.x, point.y);
+      if (canvasMouseMode === 'point') addMeasurementPoint(point.x, point.y);
       return;
     }
 
@@ -1022,6 +1024,31 @@ export function EditorPage({
         : selectedPathOperationId
           ? translatePathOperation(pathDocumentDraft, selectedPathOperationId, delta)
           : null;
+
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId
+      });
+    }
+  }
+
+  function handleDragPathElement(element: EditorPathElementRef, delta: { x: number; y: number }) {
+    if (!pathDocumentDraft || isSaving || (delta.x === 0 && delta.y === 0)) return;
+
+    const selectedElement = selectedPathElement;
+    const edited =
+      selectedElement?.operationId && !selectedElement.segmentId && selectedElement.pathElementId
+        ? translatePathElement(pathDocumentDraft, selectedElement.pathElementId, delta)
+        : selectedElement?.segmentId
+          ? translatePathSegment(pathDocumentDraft, selectedElement.segmentId, delta)
+          : element.segmentId
+            ? translatePathSegment(pathDocumentDraft, element.segmentId, delta)
+            : element.pathElementId
+              ? translatePathElement(pathDocumentDraft, element.pathElementId, delta)
+              : element.operationId
+                ? translatePathOperation(pathDocumentDraft, element.operationId, delta)
+                : null;
 
     if (edited) {
       applyPathDocumentEdit(edited, {
@@ -1265,10 +1292,14 @@ export function EditorPage({
     }
 
     if (selectedPathElement) {
-      return 'Selected geometry is linked across the canvas, contour tree, diagnostics, and inspector.';
+      return 'Drag selected geometry on the canvas, or use Transform for exact moves.';
     }
 
-    return 'Select a contour, segment, endpoint, or diagnostic to inspect and cross-highlight the path.';
+    if (canvasMouseMode === 'point') {
+      return 'Point mode: click empty canvas space to place measurement points. Switch to Select to inspect geometry.';
+    }
+
+    return 'Select mode: click a contour, segment, endpoint, or diagnostic. Use Point mode to place measurement points.';
   }
 
   function renderWorkspacePanel(
@@ -1397,6 +1428,7 @@ export function EditorPage({
         <EditorInspectorPanel
           arcMoveCount={arcMoveCount}
           boundsText={boundsText}
+          canvasMouseMode={canvasMouseMode}
           cuttingMoveCount={cuttingMoveCount}
           canInsertMeasurementPoints={!isPathProject}
           draftProgram={draftProgram}
@@ -1421,6 +1453,7 @@ export function EditorPage({
           onPointXDraftChange={setPointXDraft}
           onPointYDraftChange={setPointYDraft}
           onSelectPathElement={handleSelectPathElement}
+          onSetCanvasMouseMode={setCanvasMouseMode}
           onToggleGridSnap={() => setGridSnapEnabled((current) => !current)}
           pathCount={pathCount}
           pathDocument={pathDocumentDraft}
@@ -1623,6 +1656,7 @@ export function EditorPage({
         style={{ '--editor-inspector-width': `${inspectorRailWidth}px` } as CSSProperties}
       >
         <EditorCanvasPanel
+          canvasMouseMode={canvasMouseMode}
           constructionPreview={constructionPreview}
           draftProgram={draftProgram}
           gridSnapEnabled={gridSnapEnabled}
@@ -1632,13 +1666,14 @@ export function EditorPage({
           interactionHint={editorInteractionHint}
           hoveredPathElement={activeHoveredPathElement}
           measurementPoints={measurementPoints}
-          onAddMeasurementPoint={addMeasurementPoint}
           onCursorPointChange={setPreviewCursorPoint}
           onMeasurementPointMove={handleMeasurementPointMove}
           onPathEndpointClick={pathClickMode === 'set-start' ? handleSetPathStartFromElement : undefined}
+          onPathElementDrag={!pathClickMode ? handleDragPathElement : undefined}
           onPathElementClick={!pathClickMode ? handleSelectPathElement : undefined}
           onPathElementHover={pathHoverAssistEnabled ? setHoveredPathElement : undefined}
           onPreviewPointClick={handlePreviewPointClick}
+          onSetCanvasMouseMode={setCanvasMouseMode}
           pathDocument={pathDocumentDraft}
           pathCount={pathCount}
           pinnedLines={pinnedLines}

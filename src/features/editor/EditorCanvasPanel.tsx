@@ -8,6 +8,7 @@ import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 interface EditorCanvasPanelProps {
+  canvasMouseMode: CanvasMouseMode;
   draftProgram: LoadedEditorProgram | null;
   constructionPreview?: EditorConstructionPreview | null;
   startPreview?: EditorStartPreview | null;
@@ -23,16 +24,20 @@ interface EditorCanvasPanelProps {
   pinnedLines: number[];
   selectedPathElement?: EditorPathElementRef | null;
   selectedLines: number[];
-  onAddMeasurementPoint: (x: number, y: number) => void;
   onCursorPointChange: (point: { x: number; y: number } | null) => void;
   onMeasurementPointMove?: (pointId: string, point: { x: number; y: number }) => void;
   onPathEndpointClick?: (element: EditorPathElementRef) => void;
+  onPathElementDrag?: (element: EditorPathElementRef, delta: { x: number; y: number }) => void;
   onPathElementClick?: (element: EditorPathElementRef) => void;
   onPathElementHover?: (element: EditorPathElementRef | null) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
+  onSetCanvasMouseMode: (mode: CanvasMouseMode) => void;
 }
 
+type CanvasMouseMode = 'select' | 'point';
+
 export function EditorCanvasPanel({
+  canvasMouseMode,
   draftProgram,
   constructionPreview,
   startPreview,
@@ -48,13 +53,14 @@ export function EditorCanvasPanel({
   pinnedLines,
   selectedPathElement,
   selectedLines,
-  onAddMeasurementPoint,
   onCursorPointChange,
   onMeasurementPointMove,
   onPathEndpointClick,
+  onPathElementDrag,
   onPathElementClick,
   onPathElementHover,
-  onPreviewPointClick
+  onPreviewPointClick,
+  onSetCanvasMouseMode
 }: EditorCanvasPanelProps) {
   return (
     <section
@@ -67,6 +73,7 @@ export function EditorCanvasPanel({
         {...guideTargetProps('preview', guideHighlightTarget)}
       >
         <EditorPreview
+          canvasMouseMode={canvasMouseMode}
           hoveredLine={hoveredLine}
           hoveredPathElement={hoveredPathElement}
           constructionPreview={constructionPreview}
@@ -76,9 +83,11 @@ export function EditorCanvasPanel({
           onCursorPointChange={onCursorPointChange}
           onMeasurementPointMove={onMeasurementPointMove}
           onPathEndpointClick={onPathEndpointClick}
+          onPathElementDrag={onPathElementDrag}
           onPathElementClick={onPathElementClick}
           onPathElementHover={onPathElementHover}
-          onPreviewPointClick={onPreviewPointClick ?? ((point) => onAddMeasurementPoint(point.x, point.y))}
+          onPreviewPointClick={onPreviewPointClick}
+          onSetCanvasMouseMode={onSetCanvasMouseMode}
           pathDocument={pathDocument}
           pathCount={pathCount}
           pinnedLines={pinnedLines}

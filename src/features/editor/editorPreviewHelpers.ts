@@ -261,7 +261,7 @@ export function initialPreviewViewState(resetKey: string): PreviewViewState {
   };
 }
 
-function previewClientToWorldPoint(
+export function previewClientToWorldPoint(
   target: SVGSVGElement,
   clientX: number,
   clientY: number,

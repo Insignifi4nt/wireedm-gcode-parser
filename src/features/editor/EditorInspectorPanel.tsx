@@ -2,6 +2,7 @@ import {
   ArrowRightFromLine,
   Download,
   Magnet,
+  MousePointer2,
   Trash2
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -34,6 +35,7 @@ import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 type MeasurementExportFormat = 'csv' | 'gcode' | 'iso';
+type CanvasMouseMode = 'select' | 'point';
 
 interface EditorInspectorPanelProps {
   arcMoveCount: number;
@@ -42,6 +44,7 @@ interface EditorInspectorPanelProps {
   draftProgram: LoadedEditorProgram | null;
   editorFileName: string;
   gridSnapEnabled: boolean;
+  canvasMouseMode: CanvasMouseMode;
   guideHighlightTarget: EditorGuideTarget | null;
   fullHeight?: boolean;
   isSaving: boolean;
@@ -74,6 +77,7 @@ interface EditorInspectorPanelProps {
   onPointXDraftChange: (value: string) => void;
   onPointYDraftChange: (value: string) => void;
   onSelectPathElement?: (element: EditorPathElementRef) => void;
+  onSetCanvasMouseMode: (mode: CanvasMouseMode) => void;
   onToggleGridSnap: () => void;
 }
 
@@ -84,6 +88,7 @@ export function EditorInspectorPanel({
   draftProgram,
   editorFileName,
   gridSnapEnabled,
+  canvasMouseMode,
   guideHighlightTarget,
   fullHeight = false,
   isSaving,
@@ -111,6 +116,7 @@ export function EditorInspectorPanel({
   onPointXDraftChange,
   onPointYDraftChange,
   onSelectPathElement,
+  onSetCanvasMouseMode,
   onToggleGridSnap
 }: EditorInspectorPanelProps) {
   const selectedPathOperationIndex =
@@ -943,6 +949,38 @@ export function EditorInspectorPanel({
         <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="text-[11px] font-semibold">Measurement</h3>
           <span className="text-[10px] text-muted-foreground">{measurementPoints.length}</span>
+        </div>
+        <div className="mb-2 grid grid-cols-2 gap-1" data-editor-canvas-mouse-mode>
+          <button
+            aria-label="Select geometry on canvas"
+            aria-pressed={canvasMouseMode === 'select'}
+            className={`flex h-6 items-center justify-center gap-1 border px-1.5 text-[10px] outline-none transition hover:bg-accent ${
+              canvasMouseMode === 'select'
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border text-muted-foreground'
+            }`}
+            data-editor-canvas-mouse-mode-select
+            onClick={() => onSetCanvasMouseMode('select')}
+            type="button"
+          >
+            <MousePointer2 className="size-3" />
+            Select
+          </button>
+          <button
+            aria-label="Place measurement points on canvas"
+            aria-pressed={canvasMouseMode === 'point'}
+            className={`flex h-6 items-center justify-center gap-1 border px-1.5 text-[10px] outline-none transition hover:bg-accent ${
+              canvasMouseMode === 'point'
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border text-muted-foreground'
+            }`}
+            data-editor-canvas-mouse-mode-point
+            onClick={() => onSetCanvasMouseMode('point')}
+            type="button"
+          >
+            <Magnet className="size-3" />
+            Point
+          </button>
         </div>
         <div className="grid grid-cols-2 gap-1.5">
           <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">

@@ -250,7 +250,7 @@ describe('Editor measurement points', () => {
     expect(container.querySelector('[data-measurement-point-row="1"]')).toBeNull();
   });
 
-  it('adds measurement points from preview clicks and renders them on the preview', async () => {
+  it('keeps preview clicks in select mode until point placement is enabled', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
@@ -294,6 +294,25 @@ describe('Editor measurement points', () => {
         toJSON: () => ({})
       }),
       configurable: true
+    });
+
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          clientX: 70,
+          clientY: 80
+        })
+      );
+    });
+
+    expect(container.querySelector('[data-measurement-point-row="1"]')).toBeNull();
+
+    const pointModeButton = [...container.querySelectorAll('button')].find((button) =>
+      button.getAttribute('aria-label') === 'Place measurement points on canvas'
+    );
+    await act(async () => {
+      pointModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     await act(async () => {
@@ -370,6 +389,13 @@ describe('Editor measurement points', () => {
         toJSON: () => ({})
       }),
       configurable: true
+    });
+
+    const pointModeButton = [...container.querySelectorAll('button')].find((button) =>
+      button.getAttribute('aria-label') === 'Place measurement points on canvas'
+    );
+    await act(async () => {
+      pointModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     const touch = { clientX: 70, clientY: 80, identifier: 1, target: preview as SVGSVGElement };

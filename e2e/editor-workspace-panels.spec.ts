@@ -138,6 +138,69 @@ test('editor moves a selected arc center to the latest measurement point', async
   await expect(page.locator('[data-upid-transform-center-current]')).toHaveText('12.000, -8.000');
 });
 
+test('editor drags selected contour geometry directly on the canvas', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'canvas-drag-transform.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await showPanels(page, ['contour-tree', 'statistics']);
+  await page.locator('[data-upid-contour-row]').first().click();
+  await hidePanels(page, ['contour-tree']);
+
+  await expect(page.locator('[data-upid-selected="start"]')).toHaveText('0.000, 0.000');
+
+  const selectedPath = page
+    .locator('[data-preview-selected="true"][data-preview-source="path-document"][data-type="cut"]')
+    .first();
+  const box = await selectedPath.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) return;
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.locator('[data-upid-selected="start"]')).not.toHaveText('0.000, 0.000');
+});
+
+test('editor defaults canvas clicks to select mode before explicit point placement', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'canvas-select-mode.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await showPanels(page, ['measurement']);
+
+  const preview = page.locator('svg[aria-label="UPID path preview"]');
+  const previewBox = await preview.boundingBox();
+  expect(previewBox).not.toBeNull();
+  if (!previewBox) return;
+
+  await page.mouse.click(previewBox.x + previewBox.width / 2, previewBox.y + previewBox.height / 2);
+  await expect(page.locator('[data-measurement-point-row="1"]')).toHaveCount(0);
+  await expect(page.locator('[data-editor-preview-mouse-mode-select]')).toHaveAttribute('aria-pressed', 'true');
+
+  await page.locator('[data-editor-preview-mouse-mode-point]').click();
+  await expect(page.locator('[data-editor-preview-mouse-mode-point]')).toHaveAttribute('aria-pressed', 'true');
+  await page.mouse.click(previewBox.x + previewBox.width / 2, previewBox.y + previewBox.height / 2);
+
+  await expect(page.locator('[data-measurement-point-row="1"]')).toBeVisible();
+});
+
 async function hidePanels(page: import('@playwright/test').Page, panelIds: string[]) {
   await setPanelVisibility(page, panelIds, false);
 }
