@@ -353,6 +353,48 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected="label"]')?.textContent).toBe('Exterior 1');
   });
 
+  it('selects neighboring segments from the inspector selected segment context', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const segmentRows = [...container.querySelectorAll('[data-upid-segment-row]')];
+    const firstSegmentId = segmentRows[0].getAttribute('data-upid-segment-id');
+    const secondSegmentId = segmentRows[1].getAttribute('data-upid-segment-id');
+    const lastSegmentId = segmentRows[3].getAttribute('data-upid-segment-id');
+
+    await clickElement(`[data-upid-segment-row][data-upid-segment-id="${firstSegmentId}"]`);
+
+    expect(container.querySelector('[data-upid-selected-segment]')?.getAttribute('data-upid-selected-segment-id')).toBe(
+      firstSegmentId
+    );
+    expect(container.querySelector('[data-upid-selected-segment="sequence-neighbors"]')?.textContent).toContain(
+      '1.'
+    );
+
+    await clickElement('button[aria-label="Select next segment 2 in Exterior 1"]');
+
+    expect(container.querySelector('[data-upid-selected-segment]')?.getAttribute('data-upid-selected-segment-id')).toBe(
+      secondSegmentId
+    );
+
+    await clickElement('button[aria-label="Select previous segment 1 in Exterior 1"]');
+    await clickElement('button[aria-label="Select previous segment 4 in Exterior 1"]');
+
+    expect(container.querySelector('[data-upid-selected-segment]')?.getAttribute('data-upid-selected-segment-id')).toBe(
+      lastSegmentId
+    );
+  });
+
   it('reveals collapsed contour groups when selecting path geometry on canvas', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);

@@ -1,11 +1,13 @@
 import type {
   Bounds2,
+  OrientedSegmentRef,
   PathElementPointRole,
   PathDiagnostic,
   PathElement,
   PathElementId,
   PathOperation,
   PathPlanningDocument,
+  PathSegment,
   Point2,
   SegmentId
 } from '@/domain/path-intel/types';
@@ -77,6 +79,20 @@ export interface UpidPathElementSequenceContext {
   current: UpidPathElementSequenceNeighbor;
   next: UpidPathElementSequenceNeighbor | null;
   previous: UpidPathElementSequenceNeighbor | null;
+}
+
+export interface UpidPathElementSegmentNeighbor {
+  index: number;
+  ref: OrientedSegmentRef;
+  segment: PathSegment;
+}
+
+export interface UpidPathElementSegmentSequenceContext {
+  current: UpidPathElementSegmentNeighbor;
+  element: UpidOperationPathElement;
+  next: UpidPathElementSegmentNeighbor | null;
+  previous: UpidPathElementSegmentNeighbor | null;
+  wraps: boolean;
 }
 
 export interface UpidSelectedPathTravel {
@@ -560,6 +576,36 @@ export function readUpidPathElementSequenceContext(
   };
 }
 
+export function readUpidPathElementSegmentSequenceContext(
+  document: PathPlanningDocument,
+  elementRef: UpidPathElementRef
+): UpidPathElementSegmentSequenceContext | null {
+  if (!elementRef.segmentId) return null;
+
+  const selectedElement = readPathElementForRef(document, elementRef);
+  if (!selectedElement || !isUpidOperationPathElement(selectedElement)) return null;
+
+  const index = selectedElement.segmentRefs.findIndex((ref) => ref.segmentId === elementRef.segmentId);
+  if (index < 0) return null;
+
+  const segmentsById = segmentMap(document.segments);
+  const wraps = selectedElement.closed && selectedElement.segmentRefs.length > 1;
+  const current = segmentNeighborAt(selectedElement.segmentRefs, segmentsById, index);
+  if (!current) return null;
+
+  const previousIndex = index > 0 ? index - 1 : wraps ? selectedElement.segmentRefs.length - 1 : null;
+  const nextIndex = index < selectedElement.segmentRefs.length - 1 ? index + 1 : wraps ? 0 : null;
+
+  return {
+    current,
+    element: selectedElement,
+    next: nextIndex !== null ? segmentNeighborAt(selectedElement.segmentRefs, segmentsById, nextIndex) : null,
+    previous:
+      previousIndex !== null ? segmentNeighborAt(selectedElement.segmentRefs, segmentsById, previousIndex) : null,
+    wraps
+  };
+}
+
 export function readUpidPathElementLineage(
   document: PathPlanningDocument,
   elementRef: UpidPathElementRef
@@ -625,6 +671,24 @@ function findTreeNodeByPathElementId(
   }
 
   return null;
+}
+
+function segmentNeighborAt(
+  refs: OrientedSegmentRef[],
+  segmentsById: Map<SegmentId, PathSegment>,
+  index: number
+): UpidPathElementSegmentNeighbor | null {
+  const ref = refs[index];
+  if (!ref) return null;
+
+  const segment = segmentsById.get(ref.segmentId);
+  return segment
+    ? {
+        index,
+        ref,
+        segment
+      }
+    : null;
 }
 
 function buildUpidPathElementTree(

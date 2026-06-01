@@ -14,6 +14,7 @@ import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   readUpidManualOverrideRows,
   readUpidPathElementPointByRole,
+  readUpidPathElementSegmentSequenceContext,
   readUpidPathElementSourceSummary,
   readUpidPathElementSequenceContext,
   readUpidPathElementTreeContext,
@@ -137,6 +138,13 @@ export function EditorInspectorPanel({
         operationId: selectedPathElementModel.operationId,
         pathElementId: selectedPathElementModel.id,
         segmentId: selectedPathElement?.segmentId ?? null
+      })
+    : null;
+  const selectedPathSegmentSequenceContext = pathDocument && selectedPathElementModel && selectedPathElement?.segmentId
+    ? readUpidPathElementSegmentSequenceContext(pathDocument, {
+        operationId: selectedPathElementModel.operationId,
+        pathElementId: selectedPathElementModel.id,
+        segmentId: selectedPathElement.segmentId
       })
     : null;
   const selectedPathStart = selectedPathElementModel
@@ -557,11 +565,97 @@ export function EditorInspectorPanel({
         )}
 
         {selectedPathSegment && (
-          <section className="mt-3 border-t border-border pt-3" data-upid-selected-segment>
+          <section
+            className="mt-3 border-t border-border pt-3"
+            data-upid-selected-segment
+            data-upid-selected-segment-id={
+              selectedPathSegmentSequenceContext?.current.segment.id ?? selectedPathElement?.segmentId
+            }
+            data-upid-selected-segment-index={selectedPathSegmentSequenceContext?.current.index}
+          >
             <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Segment</h3>
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
               <dt className="text-muted-foreground">Type</dt>
               <dd data-upid-selected-segment-kind>{selectedPathSegment.kind}</dd>
+              {selectedPathSegmentSequenceContext && (
+                <>
+                  <dt className="text-muted-foreground">Segment Seq</dt>
+                  <dd
+                    className="flex min-w-0 flex-wrap items-center gap-1"
+                    data-upid-selected-segment="sequence-neighbors"
+                    data-upid-segment-current={selectedPathSegmentSequenceContext.current.segment.id}
+                  >
+                    {selectedPathSegmentSequenceContext.previous ? (
+                      <button
+                        aria-label={`Select previous segment ${
+                          selectedPathSegmentSequenceContext.previous.index + 1
+                        } in ${selectedPathSegmentSequenceContext.element.displayName}`}
+                        className="text-left text-muted-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                        data-upid-segment-previous={selectedPathSegmentSequenceContext.previous.segment.id}
+                        onClick={() =>
+                          onSelectPathElement?.({
+                            operationId: selectedPathSegmentSequenceContext.element.operationId,
+                            pathElementId: selectedPathSegmentSequenceContext.element.id,
+                            segmentId: selectedPathSegmentSequenceContext.previous!.segment.id
+                          })
+                        }
+                        onMouseEnter={() =>
+                          onHoverPathElement?.({
+                            operationId: selectedPathSegmentSequenceContext.element.operationId,
+                            pathElementId: selectedPathSegmentSequenceContext.element.id,
+                            segmentId: selectedPathSegmentSequenceContext.previous!.segment.id
+                          })
+                        }
+                        onMouseLeave={() => onHoverPathElement?.(null)}
+                        type="button"
+                      >
+                        Prev {selectedPathSegmentSequenceContext.previous.index + 1}
+                      </button>
+                    ) : (
+                      <span className="text-muted-foreground" data-upid-segment-boundary="start">
+                        Start
+                      </span>
+                    )}
+                    <span className="text-muted-foreground">/</span>
+                    <span data-upid-segment-current-label>
+                      {selectedPathSegmentSequenceContext.current.index + 1}.{' '}
+                      {selectedPathSegmentSequenceContext.current.segment.kind}
+                    </span>
+                    <span className="text-muted-foreground">/</span>
+                    {selectedPathSegmentSequenceContext.next ? (
+                      <button
+                        aria-label={`Select next segment ${
+                          selectedPathSegmentSequenceContext.next.index + 1
+                        } in ${selectedPathSegmentSequenceContext.element.displayName}`}
+                        className="text-left text-muted-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                        data-upid-segment-next={selectedPathSegmentSequenceContext.next.segment.id}
+                        onClick={() =>
+                          onSelectPathElement?.({
+                            operationId: selectedPathSegmentSequenceContext.element.operationId,
+                            pathElementId: selectedPathSegmentSequenceContext.element.id,
+                            segmentId: selectedPathSegmentSequenceContext.next!.segment.id
+                          })
+                        }
+                        onMouseEnter={() =>
+                          onHoverPathElement?.({
+                            operationId: selectedPathSegmentSequenceContext.element.operationId,
+                            pathElementId: selectedPathSegmentSequenceContext.element.id,
+                            segmentId: selectedPathSegmentSequenceContext.next!.segment.id
+                          })
+                        }
+                        onMouseLeave={() => onHoverPathElement?.(null)}
+                        type="button"
+                      >
+                        Next {selectedPathSegmentSequenceContext.next.index + 1}
+                      </button>
+                    ) : (
+                      <span className="text-muted-foreground" data-upid-segment-boundary="end">
+                        End
+                      </span>
+                    )}
+                  </dd>
+                </>
+              )}
               <dt className="text-muted-foreground">Direction</dt>
               <dd>{selectedPathSegment.reversed ? 'reversed' : 'forward'}</dd>
               <dt className="text-muted-foreground">Layer</dt>

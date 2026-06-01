@@ -17,6 +17,7 @@ import {
   readUpidPathElementPoint,
   readUpidPathElementPointByRole,
   readUpidPathElementLineage,
+  readUpidPathElementSegmentSequenceContext,
   readUpidPathElementSequenceContext,
   readUpidPathElementSourceSummary,
   readUpidPathElementTreeContext,
@@ -219,6 +220,42 @@ describe('UPID project rail projection', () => {
         },
         index: 0
       }
+    });
+  });
+
+  it('resolves selected segment refs into path-element segment neighbors', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 5, 5));
+    const pathElement = createUpidProjectRail(document).cutSequenceElements[0];
+    const firstSegment = pathElement.segmentRefs[0];
+    const secondSegment = pathElement.segmentRefs[1];
+    const lastSegment = pathElement.segmentRefs[3];
+
+    expect(
+      readUpidPathElementSegmentSequenceContext(document, {
+        operationId: pathElement.operationId,
+        pathElementId: pathElement.id,
+        segmentId: firstSegment.segmentId
+      })
+    ).toMatchObject({
+      current: {
+        index: 0,
+        segment: {
+          id: firstSegment.segmentId
+        }
+      },
+      next: {
+        index: 1,
+        segment: {
+          id: secondSegment.segmentId
+        }
+      },
+      previous: {
+        index: 3,
+        segment: {
+          id: lastSegment.segmentId
+        }
+      },
+      wraps: true
     });
   });
 
