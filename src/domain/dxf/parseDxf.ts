@@ -4,6 +4,8 @@ import type {
   DxfArcEntity,
   DxfCircleEntity,
   DxfEntity,
+  DxfEntitySource,
+  DxfInsertSource,
   DxfLineEntity,
   DxfLwPolylineEntity,
   DxfLwPolylineVertex,
@@ -46,6 +48,8 @@ interface BlockDefinitionsResult {
 }
 
 interface EntityParseContext {
+  blockName: string | null;
+  insertChain: DxfInsertSource[];
   resolveBlock?: (blockName: string) => EntityParseResult | null;
   contextLabel: string;
 }
@@ -55,10 +59,12 @@ interface InsertTransform {
   scaleX: number;
   scaleY: number;
   rotationRadians: number;
+  rotationDegrees: number;
   determinant: number;
   uniformScale: number | null;
   insertLayer: string | null;
   localOffset: DxfPoint;
+  source: DxfInsertSource;
 }
 
 type TransformEntityResult =
@@ -70,7 +76,9 @@ export function parseDxf(text: string): DxfParseResult {
   const blockResult = parseBlockDefinitions(pairs);
   const entityPairs = getSectionPairs(pairs, 'ENTITIES');
   const entityResult = parseEntitiesFromPairs(entityPairs, {
+    blockName: null,
     contextLabel: 'ENTITIES',
+    insertChain: [],
     resolveBlock: blockResult.resolveBlock
   });
   const unsupportedEntities = new Set(entityResult.unsupportedEntities);
@@ -157,7 +165,9 @@ function parseBlockDefinitions(pairs: DxfPair[]): BlockDefinitionsResult {
 
     resolving.add(normalizedName);
     const result = parseEntitiesFromPairs(rawBlock.pairs, {
+      blockName: rawBlock.name,
       contextLabel: `BLOCK "${rawBlock.name}"`,
+      insertChain: [],
       resolveBlock
     });
     resolving.delete(normalizedName);
@@ -243,7 +253,7 @@ function parseEntitiesFromPairs(entityPairs: DxfPair[], context: EntityParseCont
     const entity = parseEntity(entityType, pairsForEntity);
 
     if (entity) {
-      entities.push(entity);
+      entities.push(withEntitySource(entity, context));
     } else if (!['EOF', 'ENDSEC'].includes(entityType)) {
       unsupportedEntities.add(entityType);
     }
@@ -403,10 +413,15 @@ function expandInsert(insert: DxfInsertEntity, context: EntityParseContext): Ent
 
   for (let row = 0; row < insert.rowCount; row++) {
     for (let column = 0; column < insert.columnCount; column++) {
-      const transform = createInsertTransform(insert, {
-        x: column * insert.columnSpacing,
-        y: row * insert.rowSpacing
-      });
+      const transform = createInsertTransform(
+        insert,
+        {
+          x: column * insert.columnSpacing,
+          y: row * insert.rowSpacing
+        },
+        row,
+        column
+      );
 
       for (const entity of resolvedBlock.entities) {
         const transformed = transformEntity(entity, transform);
@@ -422,35 +437,58 @@ function expandInsert(insert: DxfInsertEntity, context: EntityParseContext): Ent
   return { entities, unsupportedEntities, warnings };
 }
 
-function createInsertTransform(insert: DxfInsertEntity, localOffset: DxfPoint): InsertTransform {
+function createInsertTransform(
+  insert: DxfInsertEntity,
+  localOffset: DxfPoint,
+  row: number,
+  column: number
+): InsertTransform {
   const rotationRadians = (insert.rotationDegrees * Math.PI) / 180;
   const determinant = insert.scaleX * insert.scaleY;
   const uniformScale =
     Math.abs(Math.abs(insert.scaleX) - Math.abs(insert.scaleY)) <= 1e-9
       ? Math.abs(insert.scaleX)
       : null;
+  const source: DxfInsertSource = {
+    blockName: insert.blockName,
+    column,
+    row,
+    layer: insert.layer,
+    transform: {
+      insertion: insert.insertion,
+      localOffset,
+      rotationDegrees: insert.rotationDegrees,
+      scaleX: insert.scaleX,
+      scaleY: insert.scaleY
+    }
+  };
 
   return {
     insertion: insert.insertion,
     scaleX: insert.scaleX,
     scaleY: insert.scaleY,
     rotationRadians,
+    rotationDegrees: insert.rotationDegrees,
     determinant,
     uniformScale,
     insertLayer: insert.layer,
-    localOffset
+    localOffset,
+    source
   };
 }
 
 function transformEntity(entity: DxfEntity, transform: InsertTransform): TransformEntityResult {
   if (entity.type === 'line') {
     return {
-      entity: {
-        ...entity,
-        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
-        start: transformPoint(entity.start, transform),
-        end: transformPoint(entity.end, transform)
-      }
+      entity: withInsertedSource(
+        {
+          ...entity,
+          layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+          start: transformPoint(entity.start, transform),
+          end: transformPoint(entity.end, transform)
+        },
+        transform.source
+      )
     };
   }
 
@@ -460,12 +498,15 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
     }
 
     return {
-      entity: {
-        ...entity,
-        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
-        center: transformPoint(entity.center, transform),
-        radius: entity.radius * transform.uniformScale
-      }
+      entity: withInsertedSource(
+        {
+          ...entity,
+          layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+          center: transformPoint(entity.center, transform),
+          radius: entity.radius * transform.uniformScale
+        },
+        transform.source
+      )
     };
   }
 
@@ -481,17 +522,20 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
     const endAngle = angleDegrees(center, end);
 
     return {
-      entity: {
-        ...entity,
-        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
-        center,
-        radius: entity.radius * transform.uniformScale,
-        start,
-        end,
-        startAngle,
-        endAngle,
-        clockwise: transform.determinant < 0 ? !entity.clockwise : entity.clockwise
-      }
+      entity: withInsertedSource(
+        {
+          ...entity,
+          layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+          center,
+          radius: entity.radius * transform.uniformScale,
+          start,
+          end,
+          startAngle,
+          endAngle,
+          clockwise: transform.determinant < 0 ? !entity.clockwise : entity.clockwise
+        },
+        transform.source
+      )
     };
   }
 
@@ -505,14 +549,17 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
 
     const bulgeSign = transform.determinant < 0 ? -1 : 1;
     return {
-      entity: {
-        ...entity,
-        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
-        vertices: entity.vertices.map((vertex) => ({
-          ...transformPoint(vertex, transform),
-          bulge: vertex.bulge * bulgeSign
-        }))
-      }
+      entity: withInsertedSource(
+        {
+          ...entity,
+          layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+          vertices: entity.vertices.map((vertex) => ({
+            ...transformPoint(vertex, transform),
+            bulge: vertex.bulge * bulgeSign
+          }))
+        },
+        transform.source
+      )
     };
   }
 
@@ -524,6 +571,30 @@ function skippedTransformedEntity(entityType: string, reason: string): Transform
   return {
     entity: null,
     warning: `Skipped ${entityType.toUpperCase()} from INSERT expansion because ${reason}.`
+  };
+}
+
+function withEntitySource<T extends DxfEntity>(entity: T, context: EntityParseContext): T {
+  if (!context.blockName && context.insertChain.length === 0) return entity;
+
+  return {
+    ...entity,
+    source: {
+      blockName: context.blockName,
+      insertChain: [...context.insertChain]
+    }
+  };
+}
+
+function withInsertedSource<T extends DxfEntity>(entity: T, insertSource: DxfInsertSource): T {
+  const source: DxfEntitySource = {
+    blockName: entity.source?.blockName ?? null,
+    insertChain: [insertSource, ...(entity.source?.insertChain ?? [])]
+  };
+
+  return {
+    ...entity,
+    source
   };
 }
 

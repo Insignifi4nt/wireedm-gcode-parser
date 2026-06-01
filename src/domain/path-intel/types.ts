@@ -1,3 +1,5 @@
+import type { DxfEntitySource } from '@/domain/dxf/types';
+
 export interface Point2 {
   x: number;
   y: number;
@@ -78,6 +80,7 @@ export interface SegmentSourceRef {
   sourceSubIndex?: number;
   layer: string | null;
   exact: boolean;
+  dxf?: DxfEntitySource;
   note?: string;
 }
 

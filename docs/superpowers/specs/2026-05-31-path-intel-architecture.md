@@ -15,6 +15,9 @@ machine profiles. Plain G-code is too lossy to be that source of truth.
   arbitrary entity sequence, so import must reconstruct topology before emitting moves.
 - Segments must be reversible. Lines, arcs, and circles need to be inspected, reversed, rotated
   inside closed contours, and eventually split by editor gestures without losing source identity.
+- Source hierarchy matters. DXF geometry hidden inside BLOCK definitions is resolved through INSERT
+  transforms before UPID planning, and segment source metadata keeps the block/insert lineage for
+  later inspection, debugging, and edit provenance.
 - Contours and posting are separate jobs. The planner should decide what belongs together and what
   cuts first; the G-code post should only turn the chosen operation plan into machine text.
 - Repairs must be visible. Endpoint tolerance snaps and posted gap bridges are diagnostics, not
@@ -54,6 +57,8 @@ edits, and future AI/user review surfaces from collapsing into an unexplained fi
 
 - `src/domain/path-intel/types.ts` defines the path document, segments, clusters, chains, contours,
   editor-facing path elements, operations, metrics, diagnostics, and manual operation overrides.
+- `src/domain/dxf/parseDxf.ts` keeps the DXF import boundary geometry-bearing and resolves
+  referenced BLOCK/INSERT geometry while preserving lineage metadata on parsed entities.
 - `src/domain/path-intel/fromDxfEntities.ts` converts parsed DXF entities into the path document.
 - `src/domain/path-intel/endpointClusters.ts` performs conservative endpoint clustering and records
   tolerance-based snaps.

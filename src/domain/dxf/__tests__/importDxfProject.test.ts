@@ -147,6 +147,24 @@ describe('importDxfProject', () => {
     expect(result.pathDocument.segments).toHaveLength(1);
     expect(result.pathDocument.segments[0]).toMatchObject({
       kind: 'line',
+      source: {
+        dxf: {
+          blockName: 'PROFILE',
+          insertChain: [
+            {
+              blockName: 'PROFILE',
+              column: 0,
+              row: 0,
+              transform: {
+                insertion: { x: 100, y: 200 },
+                rotationDegrees: 90,
+                scaleX: 1,
+                scaleY: 1
+              }
+            }
+          ]
+        }
+      },
       start: { x: 100, y: 200 },
       end: { x: 100, y: 210 }
     });

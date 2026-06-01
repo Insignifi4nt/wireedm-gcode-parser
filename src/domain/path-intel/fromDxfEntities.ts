@@ -84,7 +84,8 @@ export function pathSegmentsFromDxfEntities(
       sourceEntityIndex,
       sourceEntityType: entity.type,
       layer: entity.layer,
-      exact: true
+      exact: true,
+      ...(entity.source ? { dxf: entity.source } : {})
     };
 
     if (entity.type === 'line') {
@@ -165,6 +166,7 @@ export function pathSegmentsFromDxfEntities(
         sourceEntityIndex,
         sourceEntityType: entity.type,
         layer: entity.layer,
+        source: entity.source,
         epsilon: resolved.coincidenceEpsilon,
         diagnosticBase: diagnostics.length
       });
@@ -182,6 +184,7 @@ interface LwPolylineBuildOptions {
   sourceEntityIndex: number;
   sourceEntityType: 'lwpolyline';
   layer: string | null;
+  source?: DxfEntity['source'];
   epsilon: number;
   diagnosticBase: number;
 }
@@ -218,7 +221,8 @@ function segmentsFromLwPolyline(
       sourceEntityType: options.sourceEntityType,
       sourceSubIndex: index,
       layer: options.layer,
-      exact: true
+      exact: true,
+      ...(options.source ? { dxf: options.source } : {})
     };
 
     if (distance(start, end) <= options.epsilon) {
