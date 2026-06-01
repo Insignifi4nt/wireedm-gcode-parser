@@ -29,13 +29,15 @@ export interface ProjectUpidGCodeExport extends UpidGCodeExport {
 }
 
 export function createProjectUpid(
-  projectId: string,
+  project: WorkbenchProject,
   document: UniversalPathIntelligenceDocument
 ): WorkbenchUpidState {
+  assertUpidProjectSource(project);
+
   return {
     format: PROJECT_UPID_FORMAT,
     schemaVersion: PROJECT_UPID_SCHEMA_VERSION,
-    document: stampProjectUpidDocument(projectId, document)
+    document: stampProjectUpidDocument(project.id, document)
   };
 }
 
@@ -48,6 +50,7 @@ export function projectUpidDocument(project: WorkbenchProject | null | undefined
   if (!upid) {
     return null;
   }
+  assertUpidProjectSource(project);
 
   if (upid.format !== PROJECT_UPID_FORMAT) {
     throw new Error(`Unsupported UPID project format: ${String(upid.format)}.`);
@@ -70,6 +73,7 @@ export function composeProjectUpidGCodeExport(
   project: WorkbenchProject,
   document: UniversalPathIntelligenceDocument
 ): ProjectUpidGCodeExport {
+  assertUpidProjectSource(project);
   const pathDocument = requireProjectUpidDocument(project.id, document);
   const machine = project.machine;
   const exportProgram = composeUpidGCodeExport(pathDocument, {
@@ -132,12 +136,18 @@ function stampProjectUpidDocument(
   };
 }
 
+function assertUpidProjectSource(project: WorkbenchProject) {
+  if (project.source.kind !== 'dxf') {
+    throw new Error('UPID path state can only be attached to DXF projects.');
+  }
+}
+
 export function withProjectUpid(
   project: WorkbenchProject,
   document: UniversalPathIntelligenceDocument
 ): WorkbenchProject {
   return {
     ...project,
-    upid: createProjectUpid(project.id, document)
+    upid: createProjectUpid(project, document)
   };
 }

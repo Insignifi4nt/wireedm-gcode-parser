@@ -403,10 +403,34 @@ describe('UPID document boundary', () => {
 
   it('creates project UPID state by stamping the current project id', () => {
     const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
-    const upid = createProjectUpid('upid-project', document);
+    const upid = createProjectUpid(baseProject(), document);
 
     expect(upid.document.source.projectId).toBe('upid-project');
     expect(document.source.projectId).toBeUndefined();
+  });
+
+  it('rejects attaching UPID state to external G-code projects', () => {
+    const project = {
+      ...baseProject(),
+      source: {
+        kind: 'external-gcode' as const,
+        files: []
+      }
+    };
+    const projectlessDocument = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
+    const projectDocument = createUpidFromDxfEntities([line(0, 0, 4, 0)], {}, {
+      projectId: project.id
+    });
+
+    expect(() => createProjectUpid(project, projectlessDocument)).toThrow(
+      'UPID path state can only be attached to DXF projects.'
+    );
+    expect(() => withProjectUpid(project, projectlessDocument)).toThrow(
+      'UPID path state can only be attached to DXF projects.'
+    );
+    expect(() => composeProjectUpidGCodeExport(project, projectDocument)).toThrow(
+      'UPID path state can only be attached to DXF projects.'
+    );
   });
 
   it('composes project-owned UPID exports from project machine settings', () => {

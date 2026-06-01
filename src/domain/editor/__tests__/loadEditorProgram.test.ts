@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { importDxfProject } from '@/domain/dxf/importDxfProject';
 import { initializeWorkbenchDirectory, type WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
-import { createProjectUpid } from '@/domain/upid/projectUpid';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
 import { importExternalProgram } from '../importExternalProgram';
@@ -88,12 +87,16 @@ describe('loadEditorProgram', () => {
       text: 'G0 X0 Y0\nG1 X1 Y0',
       now: new Date('2026-05-29T11:00:00.000Z')
     });
+    const document = createUpidFromDxfEntities([line(0, 0, 4, 0)], {}, {
+      projectId: imported.project.id
+    });
     const project = {
       ...imported.project,
-      upid: createProjectUpid(
-        imported.project.id,
-        createUpidFromDxfEntities([line(0, 0, 4, 0)])
-      )
+      upid: {
+        format: 'upid' as const,
+        schemaVersion: 1 as const,
+        document
+      }
     };
 
     await expect(loadEditorProgram(imported.workbench, project)).rejects.toThrow(
