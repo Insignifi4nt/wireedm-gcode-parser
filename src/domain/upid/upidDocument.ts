@@ -15,6 +15,7 @@ import {
 import type {
   OperationOrderStrategy,
   PathDiagnostic,
+  PathElement,
   PathPlanningDocument,
   PathPlanningOptions,
   PathPlanningSourceMetadata
@@ -52,11 +53,15 @@ export interface UpidGCodeExportSummary extends UpidGCodeExportPlanning {
 }
 
 export interface UpidGCodeProgramMove extends GcodePostedMove {
+  pathElementId: string | null;
   programLineNumber: number;
+  segmentIndex: number | null;
+  segmentOrdinal: number | null;
 }
 
 export interface UpidGCodeProgramOperation extends Omit<GcodePostedOperation, 'moves'> {
   moves: UpidGCodeProgramMove[];
+  pathElementId: string | null;
   programLineEnd: number;
   programLineRange: string;
   programLineStart: number;
@@ -99,7 +104,7 @@ export function composeUpidGCodeExport(
     planning,
     post,
     program,
-    programOperations: mapProgramOperations(post.operations, program),
+    programOperations: mapProgramOperations(document, post.operations, program),
     summary: {
       ...planning,
       diagnosticCount: diagnostics.length,
@@ -117,23 +122,52 @@ function summarizeExportPlanning(document: UniversalPathIntelligenceDocument): U
 }
 
 function mapProgramOperations(
+  document: UniversalPathIntelligenceDocument,
   operations: GcodePostedOperation[],
   program: GCodeProgramComposition
 ): UpidGCodeProgramOperation[] {
   const bodySection = program.sections.body;
+  const pathElementsByOperationId = new Map(
+    document.pathElements
+      .filter((element) => element.operationId)
+      .map((element) => [element.operationId!, element])
+  );
 
-  return operations.map((operation) => ({
-    ...operation,
-    moves: operation.moves.map((move) => ({
-      ...move,
-      programLineNumber: programLineForBodyLine(bodySection, move.bodyLineIndex)
-    })),
-    programLineEnd: programLineForBodyLine(bodySection, operation.bodyLineEnd),
-    programLineRange: formatProgramLineRangeForBodyRange(
-      bodySection,
-      operation.bodyLineStart,
-      operation.bodyLineEnd
-    ),
-    programLineStart: programLineForBodyLine(bodySection, operation.bodyLineStart)
-  }));
+  return operations.map((operation) => {
+    const pathElement = pathElementsByOperationId.get(operation.operationId) ?? null;
+
+    return {
+      ...operation,
+      moves: operation.moves.map((move) =>
+        mapProgramMoveTrace(move, pathElement, programLineForBodyLine(bodySection, move.bodyLineIndex))
+      ),
+      pathElementId: pathElement?.id ?? null,
+      programLineEnd: programLineForBodyLine(bodySection, operation.bodyLineEnd),
+      programLineRange: formatProgramLineRangeForBodyRange(
+        bodySection,
+        operation.bodyLineStart,
+        operation.bodyLineEnd
+      ),
+      programLineStart: programLineForBodyLine(bodySection, operation.bodyLineStart)
+    };
+  });
+}
+
+function mapProgramMoveTrace(
+  move: GcodePostedMove,
+  pathElement: PathElement | null,
+  programLineNumber: number
+): UpidGCodeProgramMove {
+  const segmentIndex =
+    move.segmentId && pathElement
+      ? pathElement.segmentRefs.findIndex((ref) => ref.segmentId === move.segmentId)
+      : -1;
+
+  return {
+    ...move,
+    pathElementId: pathElement?.id ?? null,
+    programLineNumber,
+    segmentIndex: segmentIndex >= 0 ? segmentIndex : null,
+    segmentOrdinal: segmentIndex >= 0 ? segmentIndex + 1 : null
+  };
 }

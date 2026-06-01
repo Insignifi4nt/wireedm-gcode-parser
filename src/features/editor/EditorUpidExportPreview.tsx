@@ -134,6 +134,7 @@ export function EditorUpidExportPreview({
                     data-upid-export-operation-body-lines={formatBodyLineRange(operation)}
                     data-upid-export-operation-id={operation.operationId}
                     data-upid-export-operation-lines={operation.programLineRange}
+                    data-upid-export-operation-path-element={operation.pathElementId ?? undefined}
                     data-upid-export-operation-row
                     data-upid-export-operation-role={operation.classification}
                   >
@@ -156,9 +157,12 @@ export function EditorUpidExportPreview({
                         data-upid-export-move-body-line={move.bodyLineIndex + 1}
                         data-upid-export-move-kind={move.kind}
                         data-upid-export-move-line={move.programLineNumber}
+                        data-upid-export-move-path-element={move.pathElementId ?? undefined}
                         data-upid-export-move-reason={move.reason}
                         data-upid-export-move-row
                         data-upid-export-move-segment={move.segmentId ?? undefined}
+                        data-upid-export-move-segment-index={move.segmentIndex ?? undefined}
+                        data-upid-export-move-segment-ordinal={move.segmentOrdinal ?? undefined}
                         key={`${operation.operationId}-${move.bodyLineIndex}`}
                       >
                         <span className="text-muted-foreground">{move.programLineNumber}</span>
@@ -167,6 +171,7 @@ export function EditorUpidExportPreview({
                         </span>
                         <span className="min-w-0 truncate text-foreground">{move.text}</span>
                         <span className="truncate text-right text-[8px] uppercase text-muted-foreground">
+                          {move.segmentOrdinal ? `S${move.segmentOrdinal} / ` : ''}
                           {move.reason}
                         </span>
                       </div>

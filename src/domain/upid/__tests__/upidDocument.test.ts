@@ -133,6 +133,48 @@ describe('UPID document boundary', () => {
     });
   });
 
+  it('keeps UPID path-element and segment trace metadata on posted export moves', () => {
+    const document = createUpidFromDxfEntities([
+      line(0, 0, 10, 0),
+      line(10, 0, 10, 5)
+    ]);
+    const operation = document.plan.operations[0];
+    const pathElement = document.pathElements.find((element) => element.operationId === operation.id);
+    const firstSegmentId = operation.segmentRefs[0].segmentId;
+    const secondSegmentId = operation.segmentRefs[1].segmentId;
+
+    expect(pathElement).not.toBeUndefined();
+
+    const exportProgram = composeUpidGCodeExport(document, {
+      header: '',
+      footer: '',
+      lineEnding: 'lf'
+    });
+
+    expect(exportProgram.programOperations[0]).toMatchObject({
+      operationId: operation.id,
+      pathElementId: pathElement!.id
+    });
+    expect(exportProgram.programOperations[0].moves[0]).toMatchObject({
+      pathElementId: pathElement!.id,
+      segmentId: null,
+      segmentIndex: null,
+      segmentOrdinal: null
+    });
+    expect(exportProgram.programOperations[0].moves[1]).toMatchObject({
+      pathElementId: pathElement!.id,
+      segmentId: firstSegmentId,
+      segmentIndex: 0,
+      segmentOrdinal: 1
+    });
+    expect(exportProgram.programOperations[0].moves[2]).toMatchObject({
+      pathElementId: pathElement!.id,
+      segmentId: secondSegmentId,
+      segmentIndex: 1,
+      segmentOrdinal: 2
+    });
+  });
+
   it('summarizes UPID export planning and diagnostics in the export artifact', () => {
     const document = createUpidFromDxfEntities(
       [

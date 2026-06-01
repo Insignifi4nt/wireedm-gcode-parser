@@ -1359,6 +1359,7 @@ describe('App DXF imports and project library', () => {
     const exportOperationRows = [...container.querySelectorAll('[data-upid-export-operation-row]')];
     expect(exportOperationRows).toHaveLength(1);
     expect(exportOperationRows[0].getAttribute('data-upid-export-operation-role')).toBe('exterior');
+    expect(exportOperationRows[0].getAttribute('data-upid-export-operation-path-element')).toBeTruthy();
     expect(exportOperationRows[0].getAttribute('data-upid-export-operation-body-lines')).toBe('1-5');
     expect(exportOperationRows[0].getAttribute('data-upid-export-operation-lines')).toBe('4-8');
     expect(exportOperationRows[0].textContent).toContain('Exterior 1');
@@ -1369,13 +1370,24 @@ describe('App DXF imports and project library', () => {
     expect(exportMoveRows[0].getAttribute('data-upid-export-move-kind')).toBe('rapid');
     expect(exportMoveRows[0].getAttribute('data-upid-export-move-body-line')).toBe('1');
     expect(exportMoveRows[0].getAttribute('data-upid-export-move-line')).toBe('4');
+    expect(exportMoveRows[0].getAttribute('data-upid-export-move-path-element')).toBe(
+      exportOperationRows[0].getAttribute('data-upid-export-operation-path-element')
+    );
+    expect(exportMoveRows[0].getAttribute('data-upid-export-move-segment-index')).toBeNull();
+    expect(exportMoveRows[0].getAttribute('data-upid-export-move-segment-ordinal')).toBeNull();
     expect(exportMoveRows[0].getAttribute('data-upid-export-move-reason')).toBe('operation-start');
     expect(exportMoveRows[0].textContent).toContain('G0 X0.000 Y0.000');
     expect(exportMoveRows[1].getAttribute('data-upid-export-move-kind')).toBe('cut');
     expect(exportMoveRows[1].getAttribute('data-upid-export-move-body-line')).toBe('2');
     expect(exportMoveRows[1].getAttribute('data-upid-export-move-line')).toBe('5');
+    expect(exportMoveRows[1].getAttribute('data-upid-export-move-path-element')).toBe(
+      exportOperationRows[0].getAttribute('data-upid-export-operation-path-element')
+    );
     expect(exportMoveRows[1].getAttribute('data-upid-export-move-segment')).toBeTruthy();
+    expect(exportMoveRows[1].getAttribute('data-upid-export-move-segment-index')).toBe('0');
+    expect(exportMoveRows[1].getAttribute('data-upid-export-move-segment-ordinal')).toBe('1');
     expect(exportMoveRows[1].textContent).toContain('segment-cut');
+    expect(exportMoveRows[1].textContent).toContain('S1');
     expect(exportMoveRows[1].textContent).toContain('G1 X10.000 Y0.000');
     const programLineRows = [...container.querySelectorAll('[data-upid-export-program-line-row]')];
     expect(programLineRows).toHaveLength(11);
