@@ -21,7 +21,7 @@ import {
   distance,
   segmentMap
 } from '@/domain/path-intel/segments';
-import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import type { PathElement, PathPlanningDocument } from '@/domain/path-intel/types';
 import type { MachineProfile } from '@/domain/workbench/types';
 
 import type { EditorGuideTarget } from './editorGuideContent';
@@ -29,6 +29,12 @@ import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 type MeasurementExportFormat = 'csv' | 'gcode' | 'iso';
+type OperationPathElement = PathElement & {
+  direction: NonNullable<PathElement['direction']>;
+  metrics: NonNullable<PathElement['metrics']>;
+  operationId: string;
+  orderIndex: number;
+};
 
 interface EditorInspectorPanelProps {
   arcMoveCount: number;
@@ -117,24 +123,26 @@ export function EditorInspectorPanel({
     pathDocument?.plan.operations.findIndex((operation) => operation.id === selectedPathOperationId) ?? -1;
   const selectedPathOperation =
     selectedPathOperationIndex >= 0 ? pathDocument?.plan.operations[selectedPathOperationIndex] : null;
-  const selectedPathContour = selectedPathOperation
-    ? pathDocument?.contours.find((contour) => contour.id === selectedPathOperation.contourId) ?? null
+  const selectedPathElementModel = selectedPathOperation
+    ? readSelectedPathElement(pathDocument, selectedPathOperation.id)
     : null;
-  const selectedPathSegment = selectedPathOperation
-    ? readSelectedPathSegment(pathDocument, selectedPathOperation, selectedPathElement)
+  const selectedPathSegment = selectedPathElementModel
+    ? readSelectedPathSegment(pathDocument, selectedPathElementModel, selectedPathElement)
     : null;
-  const selectedPathPoint = selectedPathOperation
-    ? readSelectedPathPoint(pathDocument, selectedPathOperation, selectedPathElement)
+  const selectedPathPoint = selectedPathElementModel
+    ? readSelectedPathPoint(pathDocument, selectedPathElementModel, selectedPathElement)
     : null;
   const selectedPathTravel = selectedPathOperation
     ? readSelectedPathTravel(pathDocument, selectedPathOperationIndex, selectedPathElement)
     : null;
-  const selectedPathOverrideRows = selectedPathOperation
-    ? manualOverrideRows(selectedPathOperation.overrides)
+  const selectedPathOverrideRows = selectedPathElementModel
+    ? manualOverrideRows(selectedPathElementModel.overrides)
     : [];
-  const selectedPathSource = selectedPathOperation
-    ? sourceSummaryRows(selectedPathOperation)
+  const selectedPathSource = selectedPathElementModel
+    ? sourceSummaryRows(selectedPathElementModel)
     : null;
+  const selectedPathStart = selectedPathElementModel ? readPathElementPoint(selectedPathElementModel, 'start') : null;
+  const selectedPathEnd = selectedPathElementModel ? readPathElementPoint(selectedPathElementModel, 'end') : null;
 
   return (
     <div
@@ -233,30 +241,34 @@ export function EditorInspectorPanel({
           )}
         </section>
 
-        {pathDocument && selectedPathOperation && (
-          <section className="mt-3 border-t border-border pt-3" data-upid-selected-geometry>
+        {pathDocument && selectedPathElementModel && (
+          <section
+            className="mt-3 border-t border-border pt-3"
+            data-upid-path-element-id={selectedPathElementModel.id}
+            data-upid-selected-geometry
+          >
             <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Geometry</h3>
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
               <dt className="text-muted-foreground">Element</dt>
-              <dd data-upid-selected="label">{selectedPathOperation.label ?? selectedPathOperation.id}</dd>
+              <dd data-upid-selected="label">{selectedPathElementModel.label}</dd>
               <dt className="text-muted-foreground">Contour</dt>
-              <dd data-upid-selected="classification">{selectedPathOperation.classification}</dd>
+              <dd data-upid-selected="classification">{selectedPathElementModel.classification}</dd>
               <dt className="text-muted-foreground">Kind</dt>
               <dd data-upid-selected="kind">
-                {selectedPathOperation.closed ? 'closed contour' : 'open chain'}
+                {selectedPathElementModel.closed ? 'closed contour' : 'open chain'}
               </dd>
               <dt className="text-muted-foreground">Direction</dt>
-              <dd data-upid-selected="direction">{selectedPathOperation.direction}</dd>
+              <dd data-upid-selected="direction">{selectedPathElementModel.direction}</dd>
               <dt className="text-muted-foreground">Nest</dt>
               <dd data-upid-selected="nest">
-                depth {selectedPathContour?.containmentDepth ?? 0}
+                depth {selectedPathElementModel.containmentDepth}
               </dd>
               <dt className="text-muted-foreground">Children</dt>
-              <dd data-upid-selected="children">{selectedPathContour?.childIds.length ?? 0}</dd>
+              <dd data-upid-selected="children">{selectedPathElementModel.childIds.length}</dd>
               <dt className="text-muted-foreground">Segments</dt>
               <dd data-upid-selected="segments">
-                {selectedPathOperation.segmentRefs.length}{' '}
-                {selectedPathOperation.segmentRefs.length === 1 ? 'segment' : 'segments'}
+                {selectedPathElementModel.segmentRefs.length}{' '}
+                {selectedPathElementModel.segmentRefs.length === 1 ? 'segment' : 'segments'}
               </dd>
               <dt className="text-muted-foreground">Source</dt>
               <dd data-upid-selected="source-entities">{selectedPathSource?.entities ?? '0 entities'}</dd>
@@ -265,11 +277,11 @@ export function EditorInspectorPanel({
               <dt className="text-muted-foreground">Exact</dt>
               <dd data-upid-selected="source-exact">{selectedPathSource?.exact ?? '-'}</dd>
               <dt className="text-muted-foreground">Cut</dt>
-              <dd data-upid-selected="cut-length">{selectedPathOperation.metrics.cutLength.toFixed(3)}</dd>
+              <dd data-upid-selected="cut-length">{selectedPathElementModel.metrics.cutLength.toFixed(3)}</dd>
               <dt className="text-muted-foreground">Start</dt>
-              <dd data-upid-selected="start">{formatPoint(selectedPathOperation.startPoint)}</dd>
+              <dd data-upid-selected="start">{selectedPathStart ? formatPoint(selectedPathStart.point) : '-'}</dd>
               <dt className="text-muted-foreground">End</dt>
-              <dd data-upid-selected="end">{formatPoint(selectedPathOperation.endPoint)}</dd>
+              <dd data-upid-selected="end">{selectedPathEnd ? formatPoint(selectedPathEnd.point) : '-'}</dd>
             </dl>
           </section>
         )}
@@ -721,7 +733,7 @@ function measurementPointModeLabel(point: MeasurementPoint) {
   return '-';
 }
 
-function manualOverrideRows(overrides: PathPlanningDocument['plan']['operations'][number]['overrides']) {
+function manualOverrideRows(overrides: PathElement['overrides']) {
   if (!overrides) return [];
 
   const rows: Array<{ kind: string; label: string; value: string }> = [];
@@ -760,8 +772,8 @@ function manualOverrideRows(overrides: PathPlanningDocument['plan']['operations'
   return rows;
 }
 
-function sourceSummaryRows(operation: NonNullable<PathPlanningDocument['plan']['operations'][number]>) {
-  const provenance = operation.provenance;
+function sourceSummaryRows(element: PathElement) {
+  const provenance = element.provenance;
   const entityCount = provenance.sourceEntityIndices.length;
 
   return {
@@ -771,14 +783,31 @@ function sourceSummaryRows(operation: NonNullable<PathPlanningDocument['plan']['
   };
 }
 
+function readSelectedPathElement(
+  document: PathPlanningDocument | null,
+  operationId: string
+): OperationPathElement | null {
+  const element = document?.pathElements.find((candidate) => candidate.operationId === operationId);
+  return element && hasOperation(element) ? element : null;
+}
+
+function hasOperation(element: PathElement): element is OperationPathElement {
+  return (
+    element.operationId !== null &&
+    element.orderIndex !== null &&
+    element.direction !== null &&
+    element.metrics !== null
+  );
+}
+
 function readSelectedPathSegment(
   document: PathPlanningDocument | null,
-  operation: NonNullable<PathPlanningDocument['plan']['operations'][number]>,
+  pathElement: OperationPathElement,
   element: EditorPathElementRef | null
 ) {
-  if (!document || !element?.segmentId || element.operationId !== operation.id) return null;
+  if (!document || !element?.segmentId || element.operationId !== pathElement.operationId) return null;
 
-  const ref = operation.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
+  const ref = pathElement.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
   if (!ref) return null;
 
   const segment = segmentMap(document.segments).get(ref.segmentId);
@@ -802,19 +831,19 @@ function readSelectedPathSegment(
 
 function readSelectedPathPoint(
   document: PathPlanningDocument | null,
-  operation: NonNullable<PathPlanningDocument['plan']['operations'][number]>,
+  pathElement: OperationPathElement,
   element: EditorPathElementRef | null
 ) {
   if (
     !document ||
     !element?.segmentId ||
     !element.pointRole ||
-    element.operationId !== operation.id
+    element.operationId !== pathElement.operationId
   ) {
     return null;
   }
 
-  const ref = operation.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
+  const ref = pathElement.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
   if (!ref) return null;
 
   const segment = segmentMap(document.segments).get(ref.segmentId);
@@ -825,6 +854,10 @@ function readSelectedPathPoint(
     role: element.pointRole,
     segmentKind: segment.kind
   };
+}
+
+function readPathElementPoint(element: PathElement, role: 'start' | 'end') {
+  return element.points.find((point) => point.role === role) ?? null;
 }
 
 function readSelectedPathTravel(

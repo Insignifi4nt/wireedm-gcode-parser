@@ -74,6 +74,8 @@ edits, and future AI/user review surfaces from collapsing into an unexplained fi
   construction-point modes, hover assist, magnetic snap, saving, and opening export preview. It
   consumes UPID `pathElements` so holes, islands, exteriors, segments, and manual overrides render
   from the same root/nested path tree that the document persists.
+- `src/features/editor/EditorInspectorPanel.tsx` uses the selected UPID path element for geometry,
+  provenance, nesting, manual decision, segment, and point details.
 - `src/features/editor/EditorUpidExportPreview.tsx` is the explicit post boundary for inspecting and
   downloading machine-profile G-code.
 - `src/features/editor/EditorProgramLinesPanel.tsx` remains the posted-program surface for external

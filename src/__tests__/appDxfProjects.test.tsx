@@ -656,6 +656,7 @@ describe('App DXF imports and project library', () => {
 
     const selectedGeometry = container.querySelector('[data-upid-selected-geometry]');
     expect(selectedGeometry?.textContent).toContain('hole');
+    expect(selectedGeometry?.getAttribute('data-upid-path-element-id')).toBe('contour_0002');
     expect(selectedGeometry?.textContent).toContain('Nest');
     expect(selectedGeometry?.textContent).toContain('depth 1');
     expect(selectedGeometry?.textContent).toContain('Children');
