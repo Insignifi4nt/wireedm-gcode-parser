@@ -387,10 +387,12 @@ describe('UPID document boundary', () => {
     expect(body).not.toMatch(/\bF\d/);
   });
 
-  it('reads the first-class UPID document from a project', () => {
+  it('stamps projectless UPID documents when attaching them to a project', () => {
     const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
+    const projectDocument = projectUpidDocument(withProjectUpid(baseProject(), document));
 
-    expect(projectUpidDocument(withProjectUpid(baseProject(), document))).toBe(document);
+    expect(projectDocument?.source.projectId).toBe('upid-project');
+    expect(document.source.projectId).toBeUndefined();
     expect(projectUpidDocument(baseProject())).toBeNull();
   });
 

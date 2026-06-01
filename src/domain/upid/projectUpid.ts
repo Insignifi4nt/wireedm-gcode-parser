@@ -59,12 +59,36 @@ export function projectUpidDocument(project: WorkbenchProject | null | undefined
   return upid.document as UniversalPathIntelligenceDocument;
 }
 
+function stampProjectUpidDocument(
+  projectId: string,
+  document: UniversalPathIntelligenceDocument
+): UniversalPathIntelligenceDocument {
+  const documentProjectId = document.source.projectId;
+  if (typeof documentProjectId === 'string' && documentProjectId !== projectId) {
+    throw new Error(
+      `UPID document project mismatch: ${documentProjectId} cannot be used by ${projectId}.`
+    );
+  }
+
+  if (documentProjectId === projectId) {
+    return document;
+  }
+
+  return {
+    ...document,
+    source: {
+      ...document.source,
+      projectId
+    }
+  };
+}
+
 export function withProjectUpid(
   project: WorkbenchProject,
   document: UniversalPathIntelligenceDocument
 ): WorkbenchProject {
   return {
     ...project,
-    upid: createProjectUpid(document)
+    upid: createProjectUpid(stampProjectUpidDocument(project.id, document))
   };
 }

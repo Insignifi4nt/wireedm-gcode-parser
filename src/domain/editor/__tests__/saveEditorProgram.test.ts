@@ -242,6 +242,71 @@ describe('saveEditorProgram', () => {
     expect('generated' in savedProject).toBe(false);
   });
 
+  it('stamps saved UPID path documents with the current workbench project id', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'stamp-project.dxf',
+      text: rectangleDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const projectlessDocument = dxfEntitiesToUpidDocument(rectangleLines(0, 0, 10, 5));
+
+    expect(projectlessDocument.source.projectId).toBeUndefined();
+
+    const saved = await saveEditorProgram(imported.workbench, {
+      filePath: imported.project.source.files[0].path,
+      model: 'upid-document',
+      now: new Date('2026-05-29T12:00:00.000Z'),
+      pathDocument: projectlessDocument,
+      project: imported.project
+    });
+
+    const savedProject = JSON.parse(
+      adapter.files.get('projects/stamp-project-2026-05-29/project.json') || '{}'
+    );
+
+    expect(savedProject.upid.document.source.projectId).toBe(imported.project.id);
+    expect(projectlessDocument.source.projectId).toBeUndefined();
+    expect(saved.editorProgram.model).toBe('upid-document');
+    expect(saved.editorProgram.pathDocument!.source.projectId).toBe(imported.project.id);
+  });
+
+  it('rejects saved UPID path documents attached to a different workbench project id', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'reject-wrong-project.dxf',
+      text: rectangleDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const wrongProjectDocument = dxfEntitiesToUpidDocument(rectangleLines(0, 0, 10, 5), {}, {
+      projectId: 'other-project'
+    });
+
+    await expect(
+      saveEditorProgram(imported.workbench, {
+        filePath: imported.project.source.files[0].path,
+        model: 'upid-document',
+        now: new Date('2026-05-29T12:00:00.000Z'),
+        pathDocument: wrongProjectDocument,
+        project: imported.project
+      })
+    ).rejects.toThrow(
+      'UPID document project mismatch: other-project cannot be used by reject-wrong-project-2026-05-29.'
+    );
+
+    const savedProject = JSON.parse(
+      adapter.files.get('projects/reject-wrong-project-2026-05-29/project.json') || '{}'
+    );
+
+    expect(savedProject.upid.document.source.projectId).toBe(imported.project.id);
+  });
+
   it('rejects UPID path saves that are not attached to a workbench project', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {

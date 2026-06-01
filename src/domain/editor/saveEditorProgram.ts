@@ -90,7 +90,7 @@ export async function saveEditorProgram(
       ? {
           filePath: editorFilePath,
           model: 'upid-document',
-          pathDocument: input.pathDocument,
+          pathDocument: updatedProject?.upid?.document ?? input.pathDocument,
           parseResult: null,
           project: updatedProject,
           text: ''
