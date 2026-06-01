@@ -218,6 +218,25 @@ test('editor diagnostics explain what to inspect for an open chain', async ({ pa
   await expect(diagnosticRow.locator('[data-upid-diagnostic-guidance]')).toContainText(
     'affected start/end'
   );
+
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);
+  await diagnosticRow.getByRole('button', { name: 'Open Endpoint Topology' }).click();
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
+
+  await expect(page.locator('[data-editor-workspace-panel="contour-tree"]')).toHaveCount(0);
+  await diagnosticRow.getByRole('button', { name: 'Open Contour Tree' }).click();
+  await expect(page.locator('[data-editor-workspace-panel="contour-tree"]')).toBeVisible();
+
+  const boxes = await readFloatingPanelBoxes(page, [
+    'path-diagnostics',
+    'endpoint-topology',
+    'contour-tree'
+  ]);
+  for (let index = 0; index < boxes.length; index += 1) {
+    for (let compareIndex = index + 1; compareIndex < boxes.length; compareIndex += 1) {
+      expect(panelsOverlap(boxes[index], boxes[compareIndex])).toBe(false);
+    }
+  }
 });
 
 test('editor translates selected path geometry through the Transform panel', async ({ page }) => {

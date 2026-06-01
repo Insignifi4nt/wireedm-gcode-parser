@@ -79,6 +79,15 @@ const ORDER_STRATEGY_OPTIONS: Array<{
   { label: 'Nearest travel', value: 'nearest' },
   { label: 'Source order', value: 'source-order' }
 ];
+type DiagnosticPanelActionId = 'endpoint-topology' | 'contour-tree' | 'cut-sequence';
+interface DiagnosticGuidance {
+  actions: Array<{
+    label: string;
+    panelId: DiagnosticPanelActionId;
+  }>;
+  text: string;
+  title: string;
+}
 
 interface EditorPathNavigatorPanelProps {
   hasUnsavedChanges: boolean;
@@ -109,6 +118,7 @@ interface EditorPathNavigatorPanelProps {
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
   onMovePathSelectionCenter: (targetCenter: Point2) => void;
   onMoveSelectedSegmentCenter: (targetCenter: Point2) => void;
+  onOpenWorkspacePanel?: (panelId: DiagnosticPanelActionId) => void;
   onOpenExportPreview: () => void;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onRedoDraft: () => void;
@@ -148,6 +158,7 @@ export function EditorPathNavigatorPanel({
   onMovePathOperation,
   onMovePathSelectionCenter,
   onMoveSelectedSegmentCenter,
+  onOpenWorkspacePanel,
   onOpenExportPreview,
   onHoverPathElement,
   onRedoDraft,
@@ -821,6 +832,7 @@ export function EditorPathNavigatorPanel({
                     diagnostic,
                     hoveredPathElement,
                     onHoverPathElement,
+                    onOpenWorkspacePanel,
                     onSelectPathElement,
                     selectedPathElement
                   })
@@ -1065,12 +1077,14 @@ function renderDiagnosticRow({
   diagnostic,
   hoveredPathElement,
   onHoverPathElement,
+  onOpenWorkspacePanel,
   onSelectPathElement,
   selectedPathElement
 }: {
   diagnostic: UpidSelectedPathDiagnostic;
   hoveredPathElement: EditorPathElementRef | null;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
+  onOpenWorkspacePanel?: (panelId: DiagnosticPanelActionId) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   selectedPathElement: EditorPathElementRef | null;
 }) {
@@ -1116,7 +1130,7 @@ function renderDiagnosticRow({
         <span className="truncate text-muted-foreground">{diagnostic.code}</span>
       </div>
       <p className="text-[9px] leading-4 text-muted-foreground">{diagnostic.message}</p>
-      {renderDiagnosticGuidance(diagnostic)}
+      {renderDiagnosticGuidance(diagnostic, onOpenWorkspacePanel)}
       <span className="text-[8px] text-muted-foreground">
         segments {diagnostic.relatedSegmentCount} / clusters {diagnostic.relatedClusterCount}
       </span>
@@ -1164,7 +1178,10 @@ function renderDiagnosticRow({
   );
 }
 
-function renderDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic) {
+function renderDiagnosticGuidance(
+  diagnostic: UpidSelectedPathDiagnostic,
+  onOpenWorkspacePanel?: (panelId: DiagnosticPanelActionId) => void
+) {
   const guidance = readDiagnosticGuidance(diagnostic);
   if (!guidance) return null;
 
@@ -1178,26 +1195,52 @@ function renderDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic) {
         Next
       </span>
       {guidance.text}
+      {guidance.actions.length > 0 && (
+        <span className="mt-1 flex flex-wrap gap-1" data-upid-diagnostic-guidance-actions>
+          {guidance.actions.map((action) => (
+            <button
+              aria-label={action.label}
+              className="border border-border bg-background/70 px-1.5 py-0.5 text-[8px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              data-upid-diagnostic-guidance-action={action.panelId}
+              disabled={!onOpenWorkspacePanel}
+              key={action.panelId}
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenWorkspacePanel?.(action.panelId);
+              }}
+              type="button"
+            >
+              {action.label}
+            </button>
+          ))}
+        </span>
+      )}
     </div>
   );
 }
 
-function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic) {
+function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic): DiagnosticGuidance | null {
   switch (diagnostic.code) {
     case 'open-chain':
       return {
+        actions: [
+          { label: 'Open Endpoint Topology', panelId: 'endpoint-topology' },
+          { label: 'Open Contour Tree', panelId: 'contour-tree' }
+        ],
         title: 'Open chains have unmatched start/end endpoints.',
         text:
           'Open Endpoint Topology, select the affected start/end refs below, and inspect the gap in the Contour Tree. If this should be a closed loop, repair or re-import the source endpoints before exporting.'
       };
     case 'ambiguous-endpoint-cluster':
       return {
+        actions: [{ label: 'Open Endpoint Topology', panelId: 'endpoint-topology' }],
         title: 'More than one endpoint pairing is possible inside tolerance.',
         text:
           'Open Endpoint Topology and compare the candidate endpoint refs. Simplify the nearby geometry or re-import with cleaner endpoints so the chain order is unambiguous.'
       };
     case 'endpoint-cluster-snap':
       return {
+        actions: [{ label: 'Open Endpoint Topology', panelId: 'endpoint-topology' }],
         title: 'The importer healed a small endpoint gap.',
         text:
           'Inspect the snapped endpoint in Endpoint Topology. If the healed gap is intentional and tiny, continue; if it bridges the wrong edges, fix the source geometry.'
@@ -1205,6 +1248,10 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic) {
     case 'post-bridged-gap':
     case 'post-unexpected-gap':
       return {
+        actions: [
+          { label: 'Open Contour Tree', panelId: 'contour-tree' },
+          { label: 'Open Cut Sequence', panelId: 'cut-sequence' }
+        ],
         title: 'The posted path contains a bridge or unexpected travel gap.',
         text:
           'Select the affected refs, then check cut order, direction, and endpoint joins before trusting the exported G-code.'
@@ -1213,6 +1260,7 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic) {
     case 'invalid-polyline':
     case 'zero-length-segment':
       return {
+        actions: [{ label: 'Open Contour Tree', panelId: 'contour-tree' }],
         title: 'The source entity could not become clean cut geometry.',
         text:
           'Select the affected refs, then repair the source entity or remove duplicate/invalid geometry before importing again.'
@@ -1220,6 +1268,7 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic) {
     case 'self-intersection':
     case 'degenerate-contour':
       return {
+        actions: [{ label: 'Open Contour Tree', panelId: 'contour-tree' }],
         title: 'The contour shape is not a clean closed machining loop.',
         text:
           'Inspect the highlighted contour and segment rows. Repair overlapping, crossing, or collapsed geometry before relying on automatic ordering.'
@@ -1228,6 +1277,10 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic) {
     case 'closed-chain-gap':
     case 'route-dependency-cycle':
       return {
+        actions: [
+          { label: 'Open Contour Tree', panelId: 'contour-tree' },
+          { label: 'Open Cut Sequence', panelId: 'cut-sequence' }
+        ],
         title: 'The path graph needs manual inspection.',
         text:
           'Use the affected refs and Contour Tree to find the conflicting joins, then fix the source geometry or adjust ordering manually.'

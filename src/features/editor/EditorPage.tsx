@@ -265,22 +265,31 @@ function findReadableFloatingPanelGeometry(
   const existingPanels = Object.entries(placements)
     .filter(([id, placement]) => id !== panelId && placement === 'floating')
     .map(([id]) => clampFloatingPanelGeometry(geometries[id as EditorWorkspacePanelId], viewport));
+  const renderedPanels = readRenderedFloatingPanelGeometries(panelId, viewport);
   const baseGeometry = clampFloatingPanelGeometry(requestedGeometry, viewport);
 
-  if (!floatingPanelOverlapsAny(baseGeometry, existingPanels)) return baseGeometry;
+  const comparisonPanels = [...existingPanels, ...renderedPanels];
 
-  const candidateGeometries = createFloatingPanelCandidates(baseGeometry, existingPanels, viewport);
-  return (
-    candidateGeometries.find((candidate) => !floatingPanelOverlapsAny(candidate, existingPanels)) ??
-    baseGeometry
+  if (!floatingPanelOverlapsAny(baseGeometry, comparisonPanels)) return baseGeometry;
+
+  const candidateGeometries = createFloatingPanelCandidates(baseGeometry, comparisonPanels, viewport);
+  const fullSizeCandidate = candidateGeometries.find(
+    (candidate) => !floatingPanelOverlapsAny(candidate, comparisonPanels)
   );
+  if (fullSizeCandidate) return fullSizeCandidate;
+
+  for (const variant of createFloatingPanelFitVariants(baseGeometry, viewport)) {
+    const fittedCandidate = createFloatingPanelCandidates(variant, comparisonPanels, viewport).find(
+      (candidate) => !floatingPanelOverlapsAny(candidate, comparisonPanels)
+    );
+    if (fittedCandidate) return fittedCandidate;
+  }
+
+  return baseGeometry;
 }
 
 function readFloatingPanelViewport() {
-  const canvasRect = document
-    .querySelector<HTMLElement>('[data-editor-canvas-panel]')
-    ?.getBoundingClientRect();
-  const left = Math.max(FLOATING_PANEL_GAP, Math.round(canvasRect?.left ?? FLOATING_PANEL_GAP));
+  const left = FLOATING_PANEL_GAP;
   const width = Math.max(left + 280, window.innerWidth);
   const height = Math.max(FLOATING_PANEL_TOP + 220, window.innerHeight);
 
@@ -290,6 +299,26 @@ function readFloatingPanelViewport() {
     top: FLOATING_PANEL_TOP,
     width
   };
+}
+
+function readRenderedFloatingPanelGeometries(
+  panelId: EditorWorkspacePanelId,
+  viewport: ReturnType<typeof readFloatingPanelViewport>
+) {
+  return [...document.querySelectorAll<HTMLElement>('[data-editor-floating-panel]')]
+    .filter((element) => element.getAttribute('data-editor-floating-panel') !== panelId)
+    .map((element) => {
+      const rect = element.getBoundingClientRect();
+      return clampFloatingPanelGeometry(
+        {
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height
+        },
+        viewport
+      );
+    });
 }
 
 function clampFloatingPanelGeometry(
@@ -354,6 +383,23 @@ function createFloatingPanelCandidates(
   }
 
   return candidates;
+}
+
+function createFloatingPanelFitVariants(
+  baseGeometry: EditorFloatingPanelGeometry,
+  viewport: ReturnType<typeof readFloatingPanelViewport>
+) {
+  const widths = [340, 320, 300, 280, 260].filter((width) => width < baseGeometry.width);
+
+  return widths.map((width) =>
+    clampFloatingPanelGeometry(
+      {
+        ...baseGeometry,
+        width
+      },
+      viewport
+    )
+  );
 }
 
 function floatingPanelOverlapsAny(
@@ -1513,6 +1559,7 @@ export function EditorPage({
         onMovePathSelectionCenter={handleMovePathSelectionCenter}
         onMoveSelectedSegmentCenter={handleMoveSelectedSegmentCenter}
         onMovePathOperation={handleMovePathOperation}
+        onOpenWorkspacePanel={showWorkspacePanel}
         onOpenExportPreview={() => setExportPreviewOpen(true)}
         onRedoDraft={handleRedoDraft}
         onReversePathOperation={handleReversePathOperation}
