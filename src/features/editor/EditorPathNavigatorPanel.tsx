@@ -12,7 +12,7 @@ import {
   Save,
   Undo2
 } from 'lucide-react';
-import { useState, type MouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 
 import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
 import {
@@ -133,6 +133,27 @@ export function EditorPathNavigatorPanel({
       [pathElementId]: !(current[pathElementId] ?? true)
     }));
   };
+
+  useEffect(() => {
+    const pathElementIdsToReveal = selectedPathElement
+      ? pathElementAncestorIds(pathDocument, selectedPathElement)
+      : [];
+    if (pathElementIdsToReveal.length === 0) return;
+
+    setExpandedPathElementIds((current) => {
+      let changed = false;
+      const next = { ...current };
+
+      for (const pathElementId of pathElementIdsToReveal) {
+        if (next[pathElementId] === false) {
+          next[pathElementId] = true;
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [pathDocument, selectedPathElement]);
 
   return (
     <div
@@ -475,6 +496,29 @@ export function EditorPathNavigatorRailCollapsed() {
       </div>
     </div>
   );
+}
+
+function pathElementAncestorIds(
+  pathDocument: PathPlanningDocument,
+  elementRef: EditorPathElementRef
+) {
+  const selectedElement =
+    (elementRef.pathElementId
+      ? pathDocument.pathElements.find((element) => element.id === elementRef.pathElementId)
+      : null) ??
+    pathDocument.pathElements.find((element) => element.operationId === elementRef.operationId);
+  if (!selectedElement) return [];
+
+  const pathElementsById = new Map(pathDocument.pathElements.map((element) => [element.id, element]));
+  const ids: string[] = [];
+  let current: (typeof pathDocument.pathElements)[number] | null = selectedElement;
+
+  while (current) {
+    ids.push(current.id);
+    current = current.parentId ? pathElementsById.get(current.parentId) ?? null : null;
+  }
+
+  return ids;
 }
 
 function renderCutSequenceRow({

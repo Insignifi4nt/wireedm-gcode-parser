@@ -146,6 +146,41 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-segment-stack]')).not.toBeNull();
   });
 
+  it('reveals collapsed contour groups when selecting path geometry on canvas', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const firstSegmentRow = container.querySelector('[data-upid-segment-row]');
+    const segmentId = firstSegmentRow?.getAttribute('data-upid-segment-id');
+    expect(segmentId).toBeTruthy();
+
+    await clickElement('button[aria-label="Collapse Exterior 1"]');
+    const contourGroup = container.querySelector('[data-upid-contour-group="contour_0001"]');
+    expect(contourGroup?.getAttribute('data-upid-expanded')).toBe('false');
+    expect(container.querySelector('[data-upid-segment-stack]')).toBeNull();
+
+    await clickElement(
+      `svg[aria-label="UPID path preview"] path[data-preview-source="path-document"][data-preview-segment="${segmentId}"]`
+    );
+
+    expect(contourGroup?.getAttribute('data-upid-expanded')).toBe('true');
+    expect(
+      container
+        .querySelector(`[data-upid-segment-row][data-upid-segment-id="${segmentId}"]`)
+        ?.getAttribute('data-upid-selected')
+    ).toBe('true');
+  });
+
   async function clickElement(selector: string) {
     const element = container.querySelector(selector) as HTMLElement | null;
     expect(element).not.toBeNull();
