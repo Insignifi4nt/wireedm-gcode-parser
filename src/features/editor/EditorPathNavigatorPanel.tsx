@@ -1,6 +1,8 @@
 import {
   ArrowDown,
   ArrowUp,
+  ChevronDown,
+  ChevronRight,
   FileText,
   Flag,
   Magnet,
@@ -10,7 +12,7 @@ import {
   Save,
   Undo2
 } from 'lucide-react';
-import type { MouseEvent } from 'react';
+import { useState, type MouseEvent } from 'react';
 
 import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
 import {
@@ -118,11 +120,19 @@ export function EditorPathNavigatorPanel({
   const segmentsById = segmentMap(pathDocument.segments);
   const projectRail = createUpidProjectRail(pathDocument);
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
+  const [expandedPathElementIds, setExpandedPathElementIds] = useState<Record<string, boolean>>({});
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
     (operation) => operation.id === selectedPathOperationId
   );
   const selectedOperation =
     selectedOperationIndex >= 0 ? pathDocument.plan.operations[selectedOperationIndex] : null;
+  const isPathElementExpanded = (pathElementId: string) => expandedPathElementIds[pathElementId] ?? true;
+  const togglePathElementExpanded = (pathElementId: string) => {
+    setExpandedPathElementIds((current) => ({
+      ...current,
+      [pathElementId]: !(current[pathElementId] ?? true)
+    }));
+  };
 
   return (
     <div
@@ -386,10 +396,12 @@ export function EditorPathNavigatorPanel({
               onHoverPathElement,
               onSelectPathElement,
               onSetPathStartFromElement,
+              isPathElementExpanded,
               isSaving,
               selectedPathElement,
               selectedPathOperationId,
               segmentsById,
+              togglePathElementExpanded,
               treeDepth: 0
             })
           )}
@@ -621,13 +633,16 @@ function renderContourTreeNode({
   onHoverPathElement,
   onSelectPathElement,
   onSetPathStartFromElement,
+  isPathElementExpanded,
   selectedPathElement,
   selectedPathOperationId,
   segmentsById,
+  togglePathElementExpanded,
   treeDepth
 }: {
   hoveredPathElement: EditorPathElementRef | null;
   isSaving: boolean;
+  isPathElementExpanded: (pathElementId: string) => boolean;
   node: UpidProjectRailTreeNode;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
@@ -635,6 +650,7 @@ function renderContourTreeNode({
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
   segmentsById: ReturnType<typeof segmentMap>;
+  togglePathElementExpanded: (pathElementId: string) => void;
   treeDepth: number;
 }) {
   const { element } = node;
@@ -642,6 +658,7 @@ function renderContourTreeNode({
   const manualDecisions = upidManualDecisionKinds(element);
   const label = element.displayName;
   const sourceEntityCount = upidPathElementSourceEntityCount(element);
+  const expanded = isPathElementExpanded(element.id);
 
   return (
     <details
@@ -650,6 +667,7 @@ function renderContourTreeNode({
           ? 'ml-3 border-l border-border/80 bg-background/20 pl-2'
           : 'mb-1 border border-border bg-background/45'
       }
+      data-upid-expanded={expanded ? 'true' : 'false'}
       data-upid-hovered={hoveredPathElement?.operationId === element.operationId ? 'true' : undefined}
       data-upid-contour-group={element.id}
       data-upid-operation-id={element.operationId}
@@ -657,85 +675,105 @@ function renderContourTreeNode({
       data-upid-selected={selectedPathElement?.operationId === element.operationId ? 'true' : undefined}
       data-upid-tree-depth={treeDepth}
       key={element.id}
-      open
+      open={expanded}
     >
-      <summary className="list-none">
-        <button
-          aria-pressed={element.operationId === selectedPathOperationId}
-          className={`grid w-full grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent ${
+      <summary className="list-none" onClick={(event) => event.preventDefault()}>
+        <div
+          className={`grid w-full grid-cols-[20px_minmax(0,1fr)] items-stretch hover:bg-accent ${
             element.operationId === selectedPathOperationId
               ? 'bg-sky-500/15 text-sky-100'
               : hoveredPathElement?.operationId === element.operationId
                 ? 'bg-cyan-500/10 text-cyan-100'
                 : ''
           }`}
-          data-upid-contour-children={element.childIds.length}
-          data-upid-contour-depth={element.containmentDepth}
-          data-upid-contour-display-name={element.displayName}
-          data-upid-contour-label={element.label}
-          data-upid-contour-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
-          data-upid-contour-parent={element.parentId ?? undefined}
-          data-upid-contour-role={element.classification}
-          data-upid-contour-row
-          data-upid-contour-source-entities={sourceEntityCount}
-          data-upid-operation-id={element.operationId}
-          data-upid-path-element-id={element.id}
-          data-upid-selected={
-            selectedPathElement?.operationId === element.operationId && !selectedPathElement.segmentId
-              ? 'true'
-              : undefined
-          }
-          onClick={(event) => {
-            event.preventDefault();
-            onSelectPathElement({
-              operationId: element.operationId,
-              pathElementId: element.id,
-              segmentId: null
-            });
-          }}
-          onMouseEnter={() =>
-            onHoverPathElement({
-              operationId: element.operationId,
-              pathElementId: element.id,
-              segmentId: null
-            })
-          }
-          onMouseLeave={() => onHoverPathElement(null)}
-          type="button"
         >
-          <span className="text-muted-foreground">{element.orderIndex + 1}</span>
-          <span className="min-w-0">
-            <span className="block truncate text-[10px]">{label}</span>
-            <span className="block truncate text-[9px] text-muted-foreground">
-              {element.label} / {element.closed ? 'closed contour' : 'open chain'} / {element.direction}
+          <button
+            aria-expanded={expanded}
+            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
+            className="flex items-center justify-center text-muted-foreground outline-none hover:bg-accent"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              togglePathElementExpanded(element.id);
+            }}
+            type="button"
+          >
+            {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+          </button>
+          <button
+            aria-label={`Select ${label}`}
+            aria-pressed={element.operationId === selectedPathOperationId}
+            className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent"
+            data-upid-contour-children={element.childIds.length}
+            data-upid-contour-depth={element.containmentDepth}
+            data-upid-contour-display-name={element.displayName}
+            data-upid-contour-label={element.label}
+            data-upid-contour-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
+            data-upid-contour-parent={element.parentId ?? undefined}
+            data-upid-contour-role={element.classification}
+            data-upid-contour-row
+            data-upid-contour-source-entities={sourceEntityCount}
+            data-upid-operation-id={element.operationId}
+            data-upid-path-element-id={element.id}
+            data-upid-selected={
+              selectedPathElement?.operationId === element.operationId && !selectedPathElement.segmentId
+                ? 'true'
+                : undefined
+            }
+            onClick={(event) => {
+              event.preventDefault();
+              onSelectPathElement({
+                operationId: element.operationId,
+                pathElementId: element.id,
+                segmentId: null
+              });
+            }}
+            onMouseEnter={() =>
+              onHoverPathElement({
+                operationId: element.operationId,
+                pathElementId: element.id,
+                segmentId: null
+              })
+            }
+            onMouseLeave={() => onHoverPathElement(null)}
+            type="button"
+          >
+            <span className="text-muted-foreground">{element.orderIndex + 1}</span>
+            <span className="min-w-0">
+              <span className="block truncate text-[10px]">{label}</span>
+              <span className="block truncate text-[9px] text-muted-foreground">
+                {element.label} / {element.closed ? 'closed contour' : 'open chain'} / {element.direction}
+              </span>
+              <span className="block truncate text-[9px] text-muted-foreground">
+                {upidPathElementNestLabel(element)}
+              </span>
+              {renderManualDecisionBadges(manualDecisions)}
             </span>
-            <span className="block truncate text-[9px] text-muted-foreground">
-              {upidPathElementNestLabel(element)}
+            <span className="text-right text-[9px] text-muted-foreground">
+              {element.metrics.cutLength.toFixed(3)}
             </span>
-            {renderManualDecisionBadges(manualDecisions)}
-          </span>
-          <span className="text-right text-[9px] text-muted-foreground">
-            {element.metrics.cutLength.toFixed(3)}
-          </span>
-        </button>
+          </button>
+        </div>
       </summary>
-      <div className="border-t border-border bg-card/35 py-1" data-upid-segment-stack>
-        {element.segmentRefs.map((ref, index) =>
-          renderSegmentRow(
-            element,
-            ref,
-            index,
-            requiredSegment(segmentsById, ref.segmentId),
-            hoveredPathElement,
-            selectedPathElement,
-            onHoverPathElement,
-            onSelectPathElement,
-            onSetPathStartFromElement,
-            isSaving
-          )
-        )}
-      </div>
-      {node.children.length > 0 && (
+      {expanded && (
+        <div className="border-t border-border bg-card/35 py-1" data-upid-segment-stack>
+          {element.segmentRefs.map((ref, index) =>
+            renderSegmentRow(
+              element,
+              ref,
+              index,
+              requiredSegment(segmentsById, ref.segmentId),
+              hoveredPathElement,
+              selectedPathElement,
+              onHoverPathElement,
+              onSelectPathElement,
+              onSetPathStartFromElement,
+              isSaving
+            )
+          )}
+        </div>
+      )}
+      {expanded && node.children.length > 0 && (
         <div className="py-1" data-upid-contour-children-list>
           {node.children.map((child) =>
             renderContourTreeNode({
@@ -745,9 +783,11 @@ function renderContourTreeNode({
               onHoverPathElement,
               onSelectPathElement,
               onSetPathStartFromElement,
+              isPathElementExpanded,
               selectedPathElement,
               selectedPathOperationId,
               segmentsById,
+              togglePathElementExpanded,
               treeDepth: treeDepth + 1
             })
           )}

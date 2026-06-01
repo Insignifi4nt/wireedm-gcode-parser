@@ -114,6 +114,38 @@ describe('EditorPage UPID draft boundary', () => {
     });
   });
 
+  it('collapses contour tree groups without changing path selection', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const contourGroup = container.querySelector('[data-upid-contour-group="contour_0001"]');
+    expect(contourGroup?.getAttribute('data-upid-expanded')).toBe('true');
+
+    await clickElement('button[aria-label="Select Exterior 1"]');
+    expect(contourGroup?.getAttribute('data-upid-selected')).toBe('true');
+
+    await clickElement('button[aria-label="Collapse Exterior 1"]');
+
+    expect(contourGroup?.getAttribute('data-upid-expanded')).toBe('false');
+    expect(contourGroup?.getAttribute('data-upid-selected')).toBe('true');
+    expect(container.querySelector('[data-upid-segment-stack]')).toBeNull();
+
+    await clickElement('button[aria-label="Expand Exterior 1"]');
+
+    expect(contourGroup?.getAttribute('data-upid-expanded')).toBe('true');
+    expect(container.querySelector('[data-upid-segment-stack]')).not.toBeNull();
+  });
+
   async function clickElement(selector: string) {
     const element = container.querySelector(selector) as HTMLElement | null;
     expect(element).not.toBeNull();
