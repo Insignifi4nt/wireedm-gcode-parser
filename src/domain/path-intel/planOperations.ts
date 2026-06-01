@@ -7,7 +7,7 @@ import {
   rotatePathRefs,
   segmentMap
 } from './segments';
-import { buildContourDisplayNames } from './pathElements';
+import { buildContourDisplayNames } from './pathNaming';
 import type {
   ContourClassification,
   OperationPlan,

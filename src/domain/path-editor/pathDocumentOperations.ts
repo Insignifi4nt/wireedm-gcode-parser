@@ -1,6 +1,7 @@
 import { analyzeContours } from '@/domain/path-intel/contours';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
-import { buildContourDisplayNames, buildPathElements } from '@/domain/path-intel/pathElements';
+import { buildPathElements } from '@/domain/path-intel/pathElements';
+import { buildContourDisplayNames } from '@/domain/path-intel/pathNaming';
 import {
   angleIsOnSweep,
   createArcSegment,
