@@ -24,19 +24,23 @@ import type {
   OperationOrderStrategy,
   OrientedSegmentRef,
   PathDiagnostic,
-  PathElement,
-  PathElementId,
   PathPlanningDocument,
   PathSegment
 } from '@/domain/path-intel/types';
+import {
+  createUpidProjectRail,
+  upidManualDecisionKinds,
+  upidPathElementNestLabel,
+  upidPathElementRefForDiagnostic,
+  upidPathElementRefsMatch,
+  upidPathElementSourceEntityCount,
+  type UpidManualDecisionKind,
+  type UpidOperationPathElement,
+  type UpidPathElementRef,
+  type UpidProjectRailTreeNode
+} from '@/domain/upid/projectRail';
 
-export interface EditorPathElementRef {
-  operationId: string | null;
-  pathElementId?: string | null;
-  pointRole?: 'start' | 'end' | null;
-  segmentId: string | null;
-  travelRole?: 'rapid-in' | null;
-}
+export type EditorPathElementRef = UpidPathElementRef;
 
 const iconButtonClass =
   'flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40';
@@ -84,19 +88,6 @@ interface EditorPathNavigatorPanelProps {
   onUndoDraft: () => void;
 }
 
-interface ContourTreeNode {
-  children: ContourTreeNode[];
-  element: OperationPathElement;
-}
-
-type ManualDecisionKind = 'order' | 'role' | 'direction' | 'start';
-type OperationPathElement = PathElement & {
-  direction: NonNullable<PathElement['direction']>;
-  metrics: NonNullable<PathElement['metrics']>;
-  operationId: string;
-  orderIndex: number;
-};
-
 export function EditorPathNavigatorPanel({
   hasUnsavedChanges,
   hoveredPathElement,
@@ -125,15 +116,13 @@ export function EditorPathNavigatorPanel({
   onUndoDraft
 }: EditorPathNavigatorPanelProps) {
   const segmentsById = segmentMap(pathDocument.segments);
-  const operationElements = pathDocument.pathElements.filter(hasOperation);
-  const cutSequenceElements = [...operationElements].sort((first, second) => first.orderIndex - second.orderIndex);
-  const contourTree = buildPathElementTree(operationElements, pathDocument.rootPathElementIds);
+  const projectRail = createUpidProjectRail(pathDocument);
+  const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
     (operation) => operation.id === selectedPathOperationId
   );
   const selectedOperation =
     selectedOperationIndex >= 0 ? pathDocument.plan.operations[selectedOperationIndex] : null;
-  const manualOrderActive = cutSequenceElements.some((pathElement) => pathElement.overrides?.order);
 
   return (
     <div
@@ -145,7 +134,7 @@ export function EditorPathNavigatorPanel({
           <p className="text-[9px] uppercase text-muted-foreground">Project Rail</p>
           <h2 className="mt-1 text-sm font-semibold">UPID Path Navigator</h2>
           <p className="mt-1 text-[9px] text-muted-foreground">
-            {pathDocument.plan.operations.length} operations / {pathDocument.contours.length} contours
+            {projectRail.summary.operationCount} operations / {projectRail.summary.contourCount} contours
           </p>
         </div>
 
@@ -425,9 +414,9 @@ function renderDiagnosticRow({
   pathDocument: PathPlanningDocument;
   selectedPathElement: EditorPathElementRef | null;
 }) {
-  const hoverElement = diagnosticPathElement(pathDocument, diagnostic);
-  const hovered = pathElementRefsMatch(hoverElement, hoveredPathElement);
-  const selected = pathElementRefsMatch(hoverElement, selectedPathElement);
+  const hoverElement = upidPathElementRefForDiagnostic(pathDocument, diagnostic);
+  const hovered = upidPathElementRefsMatch(hoverElement, hoveredPathElement);
+  const selected = upidPathElementRefsMatch(hoverElement, selectedPathElement);
 
   return (
     <button
@@ -462,67 +451,6 @@ function renderDiagnosticRow({
   );
 }
 
-function diagnosticPathElement(
-  pathDocument: PathPlanningDocument,
-  diagnostic: PathDiagnostic
-): EditorPathElementRef | null {
-  const relatedSegmentIds = diagnostic.relatedSegmentIds ?? [];
-  for (const segmentId of relatedSegmentIds) {
-    const operation = pathDocument.plan.operations.find((candidate) =>
-      candidate.segmentRefs.some((ref) => ref.segmentId === segmentId)
-    );
-    if (operation) {
-      return {
-        operationId: operation.id,
-        pathElementId: pathElementIdForOperation(pathDocument, operation.id),
-        segmentId
-      };
-    }
-  }
-
-  const relatedContourIds = diagnostic.relatedContourIds ?? [];
-  for (const contourId of relatedContourIds) {
-    const operation = pathDocument.plan.operations.find((candidate) => candidate.contourId === contourId);
-    if (operation) {
-      return {
-        operationId: operation.id,
-        pathElementId: pathElementIdForOperation(pathDocument, operation.id),
-        segmentId: null
-      };
-    }
-  }
-
-  const relatedChainIds = diagnostic.relatedChainIds ?? [];
-  for (const chainId of relatedChainIds) {
-    const operation = pathDocument.plan.operations.find((candidate) => candidate.chainId === chainId);
-    if (operation) {
-      return {
-        operationId: operation.id,
-        pathElementId: pathElementIdForOperation(pathDocument, operation.id),
-        segmentId: null
-      };
-    }
-  }
-
-  return null;
-}
-
-function pathElementIdForOperation(pathDocument: PathPlanningDocument, operationId: string) {
-  return pathDocument.pathElements.find((element) => element.operationId === operationId)?.id ?? null;
-}
-
-function pathElementRefsMatch(
-  expected: EditorPathElementRef | null,
-  actual: EditorPathElementRef | null
-) {
-  if (!expected?.operationId || expected.operationId !== actual?.operationId) return false;
-  if (expected.pathElementId && expected.pathElementId !== actual.pathElementId) return false;
-  if (expected.segmentId !== undefined && expected.segmentId !== actual.segmentId) return false;
-  if (expected.pointRole !== undefined && expected.pointRole !== actual.pointRole) return false;
-  if (expected.travelRole !== undefined && expected.travelRole !== actual.travelRole) return false;
-  return true;
-}
-
 export function EditorPathNavigatorRailCollapsed() {
   return (
     <div className="flex h-full flex-col items-center gap-3 py-3" data-editor-project-rail-collapsed>
@@ -553,7 +481,7 @@ function renderCutSequenceRow({
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   operationCount: number;
-  pathElement: OperationPathElement;
+  pathElement: UpidOperationPathElement;
   selectedPathElement: EditorPathElementRef | null;
 }) {
   const selected = selectedPathElement?.operationId === pathElement.operationId;
@@ -562,11 +490,11 @@ function renderCutSequenceRow({
     selectedPathElement?.operationId === pathElement.operationId && selectedPathElement.travelRole === 'rapid-in';
   const rapidHovered =
     hoveredPathElement?.operationId === pathElement.operationId && hoveredPathElement.travelRole === 'rapid-in';
-  const manualDecisions = manualDecisionKinds(pathElement);
+  const manualDecisions = upidManualDecisionKinds(pathElement);
   const cutLength = pathElement.metrics.cutLength.toFixed(3);
   const rapidInLength = pathElement.metrics.rapidInLength.toFixed(3);
   const label = pathElement.displayName;
-  const sourceEntityCount = sourceEntityCountForPathElement(pathElement);
+  const sourceEntityCount = upidPathElementSourceEntityCount(pathElement);
   const rapidElement: EditorPathElementRef = {
     operationId: pathElement.operationId,
     pathElementId: pathElement.id,
@@ -632,7 +560,7 @@ function renderCutSequenceRow({
             {pathElement.direction}
           </span>
           <span className="block truncate text-[9px] text-muted-foreground">
-            {formatPathElementNest(pathElement)}
+            {upidPathElementNestLabel(pathElement)}
           </span>
           {renderManualDecisionBadges(manualDecisions)}
         </span>
@@ -700,7 +628,7 @@ function renderContourTreeNode({
 }: {
   hoveredPathElement: EditorPathElementRef | null;
   isSaving: boolean;
-  node: ContourTreeNode;
+  node: UpidProjectRailTreeNode;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
@@ -711,9 +639,9 @@ function renderContourTreeNode({
 }) {
   const { element } = node;
   const nested = treeDepth > 0;
-  const manualDecisions = manualDecisionKinds(element);
+  const manualDecisions = upidManualDecisionKinds(element);
   const label = element.displayName;
-  const sourceEntityCount = sourceEntityCountForPathElement(element);
+  const sourceEntityCount = upidPathElementSourceEntityCount(element);
 
   return (
     <details
@@ -782,7 +710,7 @@ function renderContourTreeNode({
               {element.label} / {element.closed ? 'closed contour' : 'open chain'} / {element.direction}
             </span>
             <span className="block truncate text-[9px] text-muted-foreground">
-              {formatPathElementNest(element)}
+              {upidPathElementNestLabel(element)}
             </span>
             {renderManualDecisionBadges(manualDecisions)}
           </span>
@@ -829,7 +757,7 @@ function renderContourTreeNode({
   );
 }
 
-function renderManualDecisionBadges(decisions: ManualDecisionKind[]) {
+function renderManualDecisionBadges(decisions: UpidManualDecisionKind[]) {
   if (decisions.length === 0) return null;
 
   return (
@@ -848,7 +776,7 @@ function renderManualDecisionBadges(decisions: ManualDecisionKind[]) {
 }
 
 function renderSegmentRow(
-  pathElement: OperationPathElement,
+  pathElement: UpidOperationPathElement,
   ref: OrientedSegmentRef,
   index: number,
   segment: PathSegment,
@@ -962,7 +890,7 @@ function renderPointRow({
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
-  pathElement: OperationPathElement;
+  pathElement: UpidOperationPathElement;
   point: { x: number; y: number };
   role: 'start' | 'end';
   segment: PathSegment;
@@ -1030,62 +958,4 @@ function renderPointRow({
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
-}
-
-function formatPathElementNest(element: PathElement) {
-  return `depth ${element.containmentDepth} / children ${element.childIds.length}`;
-}
-
-function sourceEntityCountForPathElement(element: PathElement) {
-  return element.provenance.sourceEntityIndices.length;
-}
-
-function manualDecisionKinds(element: Pick<PathElement, 'overrides'>): ManualDecisionKind[] {
-  const overrides = element.overrides;
-  if (!overrides) return [];
-
-  const decisions: ManualDecisionKind[] = [];
-  if (overrides.order) decisions.push('order');
-  if (overrides.classification) decisions.push('role');
-  if (overrides.direction) decisions.push('direction');
-  if (overrides.start) decisions.push('start');
-  return decisions;
-}
-
-function hasOperation(element: PathElement): element is OperationPathElement {
-  return element.operationId !== null && element.orderIndex !== null && element.direction !== null && element.metrics !== null;
-}
-
-function buildPathElementTree(
-  pathElements: OperationPathElement[],
-  rootPathElementIds: PathElementId[]
-): ContourTreeNode[] {
-  const elementsById = new Map(pathElements.map((element) => [element.id, element]));
-  const visited = new Set<PathElementId>();
-
-  function buildNode(element: OperationPathElement): ContourTreeNode | null {
-    if (visited.has(element.id)) return null;
-
-    visited.add(element.id);
-    return {
-      children: element.childIds
-        .map((childId) => elementsById.get(childId))
-        .filter((child): child is OperationPathElement => Boolean(child))
-        .map((child) => buildNode(child))
-        .filter((child): child is ContourTreeNode => Boolean(child)),
-      element
-    };
-  }
-
-  const roots = rootPathElementIds
-    .map((id) => elementsById.get(id))
-    .filter((element): element is OperationPathElement => Boolean(element));
-  const rootNodes = roots.map((element) => buildNode(element)).filter((node): node is ContourTreeNode => Boolean(node));
-
-  const orphanNodes = pathElements
-    .filter((element) => !visited.has(element.id))
-    .map((element) => buildNode(element))
-    .filter((node): node is ContourTreeNode => Boolean(node));
-
-  return [...rootNodes, ...orphanNodes];
 }

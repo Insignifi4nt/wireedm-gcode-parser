@@ -18,6 +18,10 @@ import {
   segmentMap
 } from '@/domain/path-intel/segments';
 import type { PathElement, PathPlanningDocument } from '@/domain/path-intel/types';
+import {
+  readUpidOperationPathElement,
+  type UpidOperationPathElement
+} from '@/domain/upid/projectRail';
 import type { MachineProfile } from '@/domain/workbench/types';
 
 import type { EditorGuideTarget } from './editorGuideContent';
@@ -25,12 +29,6 @@ import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 type MeasurementExportFormat = 'csv' | 'gcode' | 'iso';
-type OperationPathElement = PathElement & {
-  direction: NonNullable<PathElement['direction']>;
-  metrics: NonNullable<PathElement['metrics']>;
-  operationId: string;
-  orderIndex: number;
-};
 
 interface EditorInspectorPanelProps {
   arcMoveCount: number;
@@ -108,7 +106,7 @@ export function EditorInspectorPanel({
   const selectedPathOperation =
     selectedPathOperationIndex >= 0 ? pathDocument?.plan.operations[selectedPathOperationIndex] : null;
   const selectedPathElementModel = selectedPathOperation
-    ? readSelectedPathElement(pathDocument, selectedPathOperation.id, selectedPathElement?.pathElementId)
+    ? readUpidOperationPathElement(pathDocument, selectedPathOperation.id, selectedPathElement?.pathElementId)
     : null;
   const selectedPathSegment = selectedPathElementModel
     ? readSelectedPathSegment(pathDocument, selectedPathElementModel, selectedPathElement)
@@ -735,31 +733,9 @@ function sourceSummaryRows(element: PathElement) {
   };
 }
 
-function readSelectedPathElement(
-  document: PathPlanningDocument | null,
-  operationId: string,
-  pathElementId?: string | null
-): OperationPathElement | null {
-  const element = pathElementId
-    ? document?.pathElements.find(
-        (candidate) => candidate.id === pathElementId && candidate.operationId === operationId
-      )
-    : document?.pathElements.find((candidate) => candidate.operationId === operationId);
-  return element && hasOperation(element) ? element : null;
-}
-
-function hasOperation(element: PathElement): element is OperationPathElement {
-  return (
-    element.operationId !== null &&
-    element.orderIndex !== null &&
-    element.direction !== null &&
-    element.metrics !== null
-  );
-}
-
 function readSelectedPathSegment(
   document: PathPlanningDocument | null,
-  pathElement: OperationPathElement,
+  pathElement: UpidOperationPathElement,
   element: EditorPathElementRef | null
 ) {
   if (!document || !element?.segmentId || element.operationId !== pathElement.operationId) return null;
@@ -795,7 +771,7 @@ function formatSegmentInsertSource(insert: DxfInsertSource | null) {
 
 function readSelectedPathPoint(
   document: PathPlanningDocument | null,
-  pathElement: OperationPathElement,
+  pathElement: UpidOperationPathElement,
   element: EditorPathElementRef | null
 ) {
   if (
