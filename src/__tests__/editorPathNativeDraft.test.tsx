@@ -429,6 +429,41 @@ describe('EditorPage UPID draft boundary', () => {
     expect(reversedFirstSegmentRow?.textContent).toContain('length 10.000 / reversed ref');
   });
 
+  it('shows exact arc geometry in the selected segment inspector', async () => {
+    const pathDocument = pathDocumentFromArc();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-upid-segment-row]');
+
+    expect(
+      container
+        .querySelector('[data-upid-selected-segment-geometry]')
+        ?.getAttribute('data-upid-selected-segment-geometry')
+    ).toBe('arc');
+    expect(container.querySelector('[data-upid-selected-segment-geometry="center"]')?.textContent).toBe(
+      '0.000, 0.000'
+    );
+    expect(container.querySelector('[data-upid-selected-segment-geometry="radius"]')?.textContent).toBe(
+      '10.000'
+    );
+    expect(container.querySelector('[data-upid-selected-segment-geometry="sweep"]')?.textContent).toBe(
+      '90.000 deg'
+    );
+    expect(container.querySelector('[data-upid-selected-segment-geometry="orientation"]')?.textContent).toBe(
+      'ccw'
+    );
+  });
+
   it('reveals collapsed contour groups when selecting path geometry on canvas', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
@@ -647,6 +682,10 @@ function pathDocumentFromRectangle() {
   return dxfEntitiesToUpidDocument(parseDxf(rectangleDxf()).entities);
 }
 
+function pathDocumentFromArc() {
+  return dxfEntitiesToUpidDocument(parseDxf(arcDxf()).entities);
+}
+
 function pathDocumentFromNestedRectangles() {
   return dxfEntitiesToUpidDocument(parseDxf(nestedRectangleDxf()).entities);
 }
@@ -683,6 +722,33 @@ function rectangleDxf() {
     '0',
     '20',
     '5',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function arcDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'ARC',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '40',
+    '10',
+    '50',
+    '0',
+    '51',
+    '90',
     '0',
     'ENDSEC',
     '0',

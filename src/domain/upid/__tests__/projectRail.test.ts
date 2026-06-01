@@ -530,6 +530,68 @@ describe('UPID project rail projection', () => {
     });
   });
 
+  it('reads selected arc geometry with oriented direction and tangents', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 10,
+        startAngle: 0,
+        endAngle: 90,
+        clockwise: false,
+        start: { x: 10, y: 0 },
+        end: { x: 0, y: 10 }
+      }
+    ]);
+    const operation = document.plan.operations[0];
+    const pathElement = readUpidOperationPathElement(document, operation.id, null);
+    const selected = readUpidSelectedPathSegment(document, pathElement!, {
+      operationId: operation.id,
+      pathElementId: pathElement!.id,
+      segmentId: operation.segmentRefs[0].segmentId
+    });
+
+    expect(selected?.geometry).toMatchObject({
+      kind: 'arc',
+      center: { x: 0, y: 0 },
+      radius: 10,
+      clockwise: false
+    });
+    if (selected?.geometry.kind !== 'arc') {
+      throw new Error('Expected selected segment geometry to be an arc.');
+    }
+    expect(selected?.geometry.sweepDegrees).toBeCloseTo(90);
+    expect(selected?.geometry.startAngleDegrees).toBeCloseTo(0);
+    expect(selected?.geometry.endAngleDegrees).toBeCloseTo(90);
+    expectPointClose(selected?.geometry.startTangent, { x: 0, y: 1 });
+    expectPointClose(selected?.geometry.endTangent, { x: -1, y: 0 });
+
+    const reversed = reversePathOperation(document, operation.id)!;
+    const reversedOperation = reversed.plan.operations[0];
+    const reversedPathElement = readUpidOperationPathElement(reversed, reversedOperation.id, null);
+    const reversedSelected = readUpidSelectedPathSegment(reversed, reversedPathElement!, {
+      operationId: reversedOperation.id,
+      pathElementId: reversedPathElement!.id,
+      segmentId: reversedOperation.segmentRefs[0].segmentId
+    });
+
+    expect(reversedSelected?.geometry).toMatchObject({
+      kind: 'arc',
+      center: { x: 0, y: 0 },
+      radius: 10,
+      clockwise: true
+    });
+    if (reversedSelected?.geometry.kind !== 'arc') {
+      throw new Error('Expected reversed selected segment geometry to be an arc.');
+    }
+    expect(reversedSelected?.geometry.sweepDegrees).toBeCloseTo(90);
+    expect(reversedSelected?.geometry.startAngleDegrees).toBeCloseTo(90);
+    expect(reversedSelected?.geometry.endAngleDegrees).toBeCloseTo(0);
+    expectPointClose(reversedSelected?.geometry.startTangent, { x: 1, y: 0 });
+    expectPointClose(reversedSelected?.geometry.endTangent, { x: 0, y: -1 });
+  });
+
   it('formats selected element manual override rows from UPID overrides', () => {
     const document = createPathPlanningDocumentFromDxfEntities(
       [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)]
@@ -592,4 +654,12 @@ function line(startX: number, startY: number, endX: number, endY: number): DxfEn
     start: { x: startX, y: startY },
     end: { x: endX, y: endY }
   };
+}
+
+function expectPointClose(
+  actual: { x: number; y: number } | undefined,
+  expected: { x: number; y: number }
+) {
+  expect(actual?.x).toBeCloseTo(expected.x);
+  expect(actual?.y).toBeCloseTo(expected.y);
 }

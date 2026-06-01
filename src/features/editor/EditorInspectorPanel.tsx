@@ -22,6 +22,7 @@ import {
   readUpidSelectedPathPoint,
   readUpidSelectedPathSegment,
   readUpidSelectedPathTravel,
+  type UpidSelectedPathSegmentGeometry
 } from '@/domain/upid/projectRail';
 import type { MachineProfile } from '@/domain/workbench/types';
 
@@ -574,6 +575,7 @@ export function EditorInspectorPanel({
           <section
             className="mt-3 border-t border-border pt-3"
             data-upid-selected-segment
+            data-upid-selected-segment-geometry={selectedPathSegment.geometry.kind}
             data-upid-selected-segment-id={
               selectedPathSegmentSequenceContext?.current.segment.id ?? selectedPathElement?.segmentId
             }
@@ -668,6 +670,7 @@ export function EditorInspectorPanel({
               <dd>{selectedPathSegment.layer ?? '-'}</dd>
               <dt className="text-muted-foreground">Length</dt>
               <dd>{selectedPathSegment.length.toFixed(3)}</dd>
+              {renderSelectedSegmentGeometry(selectedPathSegment.geometry)}
               <dt className="text-muted-foreground">Start</dt>
               <dd>{formatPoint(selectedPathSegment.start)}</dd>
               <dt className="text-muted-foreground">End</dt>
@@ -989,6 +992,62 @@ function formatLimit(value: number | null) {
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
+}
+
+function renderSelectedSegmentGeometry(geometry: UpidSelectedPathSegmentGeometry) {
+  if (geometry.kind === 'line') {
+    return (
+      <>
+        <dt className="text-muted-foreground">Vector</dt>
+        <dd data-upid-selected-segment-geometry="vector">
+          {geometry.vector ? formatPoint(geometry.vector) : '-'}
+        </dd>
+        <dt className="text-muted-foreground">Heading</dt>
+        <dd data-upid-selected-segment-geometry="heading">{formatDegrees(geometry.headingDegrees)}</dd>
+        <dt className="text-muted-foreground">Tangent</dt>
+        <dd data-upid-selected-segment-geometry="start-tangent">
+          {formatPoint(geometry.startTangent)}
+        </dd>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <dt className="text-muted-foreground">Center</dt>
+      <dd data-upid-selected-segment-geometry="center">
+        {geometry.center ? formatPoint(geometry.center) : '-'}
+      </dd>
+      <dt className="text-muted-foreground">Radius</dt>
+      <dd data-upid-selected-segment-geometry="radius">{formatNumber(geometry.radius)}</dd>
+      <dt className="text-muted-foreground">Orient</dt>
+      <dd data-upid-selected-segment-geometry="orientation">
+        {geometry.clockwise ? 'cw' : 'ccw'}
+      </dd>
+      <dt className="text-muted-foreground">Sweep</dt>
+      <dd data-upid-selected-segment-geometry="sweep">{formatDegrees(geometry.sweepDegrees)}</dd>
+      <dt className="text-muted-foreground">Angles</dt>
+      <dd data-upid-selected-segment-geometry="angles">
+        {formatDegrees(geometry.startAngleDegrees)} - {formatDegrees(geometry.endAngleDegrees)}
+      </dd>
+      <dt className="text-muted-foreground">Start Tan</dt>
+      <dd data-upid-selected-segment-geometry="start-tangent">
+        {formatPoint(geometry.startTangent)}
+      </dd>
+      <dt className="text-muted-foreground">End Tan</dt>
+      <dd data-upid-selected-segment-geometry="end-tangent">
+        {formatPoint(geometry.endTangent)}
+      </dd>
+    </>
+  );
+}
+
+function formatNumber(value: number | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : '-';
+}
+
+function formatDegrees(value: number | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(3)} deg` : '-';
 }
 
 function formatOperationOrderStrategy(strategy: PathPlanningDocument['options']['operationOrderStrategy']) {

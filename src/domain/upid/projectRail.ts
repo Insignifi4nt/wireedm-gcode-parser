@@ -18,11 +18,15 @@ import {
   distance,
   emptyBounds,
   mergeBounds,
+  orientedArcClockwise,
+  orientedCircleClockwise,
   orientedSegmentEnd,
   orientedSegmentStart,
   pathBounds,
   pointsEqual,
   requiredSegment,
+  segmentEndTangent,
+  segmentStartTangent,
   segmentMap
 } from '@/domain/path-intel/segments';
 import {
@@ -111,6 +115,7 @@ export interface UpidSelectedPathTravel {
 
 export interface UpidSelectedPathSegment {
   end: Point2;
+  geometry: UpidSelectedPathSegmentGeometry;
   kind: string;
   layer: string | null;
   length: number;
@@ -127,6 +132,39 @@ export interface UpidSelectedPathSegment {
   };
   start: Point2;
 }
+
+export type UpidSelectedPathSegmentGeometry =
+  | {
+      endTangent: Point2;
+      headingDegrees: number;
+      kind: 'line';
+      startTangent: Point2;
+      vector: Point2;
+    }
+  | {
+      center: Point2;
+      clockwise: boolean;
+      endAngleDegrees: number;
+      endTangent: Point2;
+      kind: 'arc';
+      radius: number;
+      startAngleDegrees: number;
+      startTangent: Point2;
+      sweepDegrees: number;
+      sweepRadians: number;
+    }
+  | {
+      center: Point2;
+      clockwise: boolean;
+      endAngleDegrees: number;
+      endTangent: Point2;
+      kind: 'circle';
+      radius: number;
+      startAngleDegrees: number;
+      startTangent: Point2;
+      sweepDegrees: number;
+      sweepRadians: number;
+    };
 
 export interface UpidSelectedPathPoint {
   point: Point2;
@@ -315,6 +353,7 @@ export function readUpidSelectedPathSegment(
 
   return {
     end: orientedSegmentEnd(segment, ref),
+    geometry: readUpidSelectedPathSegmentGeometry(segment, ref),
     kind: segment.kind,
     layer: segment.layer,
     length: segment.length,
@@ -330,6 +369,57 @@ export function readUpidSelectedPathSegment(
       type: segment.source.sourceEntityType
     },
     start: orientedSegmentStart(segment, ref)
+  };
+}
+
+function readUpidSelectedPathSegmentGeometry(
+  segment: PathSegment,
+  ref: OrientedSegmentRef
+): UpidSelectedPathSegmentGeometry {
+  const start = orientedSegmentStart(segment, ref);
+  const end = orientedSegmentEnd(segment, ref);
+  const startTangent = segmentStartTangent(segment, ref);
+  const endTangent = segmentEndTangent(segment, ref);
+
+  if (segment.kind === 'line') {
+    return {
+      endTangent,
+      headingDegrees: angleDegreesFromVector(startTangent),
+      kind: 'line',
+      startTangent,
+      vector: {
+        x: end.x - start.x,
+        y: end.y - start.y
+      }
+    };
+  }
+
+  if (segment.kind === 'circle') {
+    return {
+      center: { ...segment.center },
+      clockwise: orientedCircleClockwise(segment, ref),
+      endAngleDegrees: angleDegreesForPoint(segment.center, end),
+      endTangent,
+      kind: 'circle',
+      radius: segment.radius,
+      startAngleDegrees: angleDegreesForPoint(segment.center, start),
+      startTangent,
+      sweepDegrees: 360,
+      sweepRadians: Math.PI * 2
+    };
+  }
+
+  return {
+    center: { ...segment.center },
+    clockwise: orientedArcClockwise(segment, ref),
+    endAngleDegrees: angleDegreesForPoint(segment.center, end),
+    endTangent,
+    kind: 'arc',
+    radius: segment.radius,
+    startAngleDegrees: angleDegreesForPoint(segment.center, start),
+    startTangent,
+    sweepDegrees: radiansToDegrees(Math.abs(segment.sweepRadians)),
+    sweepRadians: Math.abs(segment.sweepRadians)
   };
 }
 
@@ -806,6 +896,22 @@ function emptyDisplayBounds(): Bounds2 {
 
 function formatUpidSegmentInsertSource(insert: DxfInsertSource | null) {
   return insert ? `${insert.blockName} / row ${insert.row} col ${insert.column}` : null;
+}
+
+function angleDegreesForPoint(center: Point2, point: Point2) {
+  return normalizeDegrees(radiansToDegrees(Math.atan2(point.y - center.y, point.x - center.x)));
+}
+
+function angleDegreesFromVector(vector: Point2) {
+  return normalizeDegrees(radiansToDegrees(Math.atan2(vector.y, vector.x)));
+}
+
+function radiansToDegrees(radians: number) {
+  return (radians * 180) / Math.PI;
+}
+
+function normalizeDegrees(degrees: number) {
+  return ((degrees % 360) + 360) % 360;
 }
 
 function formatUpidPoint(point: Point2) {
