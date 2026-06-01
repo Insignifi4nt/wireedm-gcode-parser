@@ -200,6 +200,32 @@ test('editor translates selected path geometry through the Transform panel', asy
   await expect(page.locator('[data-upid-selected-segment="true"]')).toContainText('15.000, -3.000');
 });
 
+test('editor moves a selected contour center to a precise coordinate', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'contour-center-transform.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await showPanels(page, ['path-transform', 'contour-tree', 'statistics']);
+  await page.locator('[data-upid-contour-row]').first().click();
+  await hidePanels(page, ['contour-tree']);
+
+  await expect(page.locator('[data-upid-transform-selection-center-current]')).toHaveText('5.000, 5.000');
+
+  await page.locator('[data-upid-transform-selection-center-x]').fill('0');
+  await page.locator('[data-upid-transform-selection-center-y]').fill('0');
+  await page.locator('[data-upid-transform-selection-center-apply]').click();
+
+  await expect(page.locator('[data-upid-selected="start"]')).toHaveText('-5.000, -5.000');
+  await expect(page.locator('[data-upid-transform-selection-center-current]')).toHaveText('0.000, 0.000');
+});
+
 test('editor moves a selected arc center to the latest measurement point', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
   await page.goto('/');

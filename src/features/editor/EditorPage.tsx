@@ -107,6 +107,7 @@ import {
   writeStoredGuideLanguage,
   writeStoredLineMode
 } from './editorLineState';
+import { readPathSelectionBoundsCenter } from './pathSelectionGeometry';
 
 interface EditorPageProps {
   program: LoadedEditorProgram | null;
@@ -585,14 +586,27 @@ export function EditorPage({
   }, [editorHeaderContent, setHeaderContent]);
 
   useEffect(() => {
-    if (!pathDocumentDraft || !selectedPathElement?.segmentId) return;
+    if (!pathDocumentDraft) return;
 
-    const segment = pathDocumentDraft.segments.find((candidate) => candidate.id === selectedPathElement.segmentId);
-    if (!segment || segment.kind === 'line') return;
+    if (selectedPathElement?.segmentId) {
+      const segment = pathDocumentDraft.segments.find((candidate) => candidate.id === selectedPathElement.segmentId);
+      if (segment && segment.kind !== 'line') {
+        setPathTargetXDraft(formatCoordinateDraft(segment.center.x));
+        setPathTargetYDraft(formatCoordinateDraft(segment.center.y));
+        return;
+      }
+    }
 
-    setPathTargetXDraft(formatCoordinateDraft(segment.center.x));
-    setPathTargetYDraft(formatCoordinateDraft(segment.center.y));
-  }, [pathDocumentDraft, selectedPathElement?.segmentId]);
+    const selectionCenter = readPathSelectionBoundsCenter(
+      pathDocumentDraft,
+      selectedPathElement,
+      selectedPathOperationId
+    );
+    if (!selectionCenter) return;
+
+    setPathTargetXDraft(formatCoordinateDraft(selectionCenter.x));
+    setPathTargetYDraft(formatCoordinateDraft(selectionCenter.y));
+  }, [pathDocumentDraft, selectedPathElement, selectedPathOperationId]);
 
   function setLastClickedLine(lineNumber: number | null) {
     lastClickedLineRef.current = lineNumber;
@@ -1049,6 +1063,22 @@ export function EditorPage({
     }
   }
 
+  function handleMovePathSelectionCenter(targetCenter: { x: number; y: number }) {
+    if (!pathDocumentDraft || isSaving) return;
+
+    const selectionCenter = readPathSelectionBoundsCenter(
+      pathDocumentDraft,
+      selectedPathElement,
+      selectedPathOperationId
+    );
+    if (!selectionCenter) return;
+
+    handleTranslatePathSelection({
+      x: targetCenter.x - selectionCenter.x,
+      y: targetCenter.y - selectionCenter.y
+    });
+  }
+
   function handleDragPathElement(element: EditorPathElementRef, delta: { x: number; y: number }) {
     if (!pathDocumentDraft || isSaving || (delta.x === 0 && delta.y === 0)) return;
 
@@ -1357,6 +1387,7 @@ export function EditorPage({
         onActivatePathClickMode={setPathClickMode}
         onExpandedPathElementIdsChange={setExpandedPathElementIds}
         onHoverPathElement={setHoveredPathElement}
+        onMovePathSelectionCenter={handleMovePathSelectionCenter}
         onMoveSelectedSegmentCenter={handleMoveSelectedSegmentCenter}
         onMovePathOperation={handleMovePathOperation}
         onOpenExportPreview={() => setExportPreviewOpen(true)}

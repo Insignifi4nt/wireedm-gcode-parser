@@ -58,6 +58,7 @@ import {
   type UpidProjectRail,
   type UpidProjectRailTreeNode
 } from '@/domain/upid/projectRail';
+import { readPathSelectionBoundsCenter } from './pathSelectionGeometry';
 
 export type EditorPathElementRef = UpidPathElementRef;
 
@@ -106,6 +107,7 @@ interface EditorPathNavigatorPanelProps {
   onExpandedPathElementIdsChange: Dispatch<SetStateAction<Record<string, boolean>>>;
   onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
+  onMovePathSelectionCenter: (targetCenter: Point2) => void;
   onMoveSelectedSegmentCenter: (targetCenter: Point2) => void;
   onOpenExportPreview: () => void;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
@@ -144,6 +146,7 @@ export function EditorPathNavigatorPanel({
   onExpandedPathElementIdsChange,
   onActivatePathClickMode,
   onMovePathOperation,
+  onMovePathSelectionCenter,
   onMoveSelectedSegmentCenter,
   onOpenExportPreview,
   onHoverPathElement,
@@ -188,6 +191,11 @@ export function EditorPathNavigatorPanel({
   const selectedSegment =
     selectedPathElement?.segmentId ? segmentsById.get(selectedPathElement.segmentId) ?? null : null;
   const selectedSegmentCenter = selectedSegment && selectedSegment.kind !== 'line' ? selectedSegment.center : null;
+  const selectedGeometryCenter = readPathSelectionBoundsCenter(
+    pathDocument,
+    selectedPathElement,
+    selectedPathOperationId
+  );
   const translateX = Number(pathTranslateXDraft);
   const translateY = Number(pathTranslateYDraft);
   const targetX = Number(pathTargetXDraft);
@@ -210,6 +218,12 @@ export function EditorPathNavigatorPanel({
     Number.isFinite(targetX) &&
     Number.isFinite(targetY) &&
     (!selectedSegmentCenter || targetX !== selectedSegmentCenter.x || targetY !== selectedSegmentCenter.y) &&
+    !isSaving;
+  const canMoveSelectedGeometryCenter =
+    Boolean(selectedGeometryCenter) &&
+    Number.isFinite(targetX) &&
+    Number.isFinite(targetY) &&
+    (!selectedGeometryCenter || targetX !== selectedGeometryCenter.x || targetY !== selectedGeometryCenter.y) &&
     !isSaving;
   const hoverRevealedPathElementIds = new Set(
     hoveredPathElement ? upidPathElementAncestorIds(pathDocument, hoveredPathElement) : []
@@ -575,6 +589,75 @@ export function EditorPathNavigatorPanel({
             <Move className="size-3" />
             Apply Translation
           </button>
+          <div
+            className="mt-3 border-t border-border pt-2"
+            data-upid-transform-selection-center
+            data-upid-transform-selection-center-enabled={selectedGeometryCenter ? 'true' : 'false'}
+          >
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[9px] uppercase text-muted-foreground">Selection Center</span>
+              <span
+                className="truncate text-[9px] text-muted-foreground"
+                data-upid-transform-selection-center-current
+              >
+                {selectedGeometryCenter ? formatPoint(selectedGeometryCenter) : '-'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+                X
+                <input
+                  aria-label="Selection center target X"
+                  className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  data-upid-transform-selection-center-x
+                  disabled={!selectedGeometryCenter || isSaving}
+                  inputMode="decimal"
+                  onChange={(event) => onPathTargetXDraftChange(event.currentTarget.value)}
+                  type="number"
+                  value={pathTargetXDraft}
+                />
+              </label>
+              <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+                Y
+                <input
+                  aria-label="Selection center target Y"
+                  className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  data-upid-transform-selection-center-y
+                  disabled={!selectedGeometryCenter || isSaving}
+                  inputMode="decimal"
+                  onChange={(event) => onPathTargetYDraftChange(event.currentTarget.value)}
+                  type="number"
+                  value={pathTargetYDraft}
+                />
+              </label>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-1">
+              <button
+                aria-label="Use latest measurement point as selection center target"
+                className={textButtonClass}
+                data-upid-transform-selection-center-use-latest
+                disabled={!selectedGeometryCenter || !latestMeasurementPoint || isSaving}
+                onClick={() => {
+                  if (!latestMeasurementPoint) return;
+                  onPathTargetXDraftChange(formatNumber(latestMeasurementPoint.x));
+                  onPathTargetYDraftChange(formatNumber(latestMeasurementPoint.y));
+                }}
+                type="button"
+              >
+                Latest Point
+              </button>
+              <button
+                aria-label="Move selected geometry center to target"
+                className={textButtonClass}
+                data-upid-transform-selection-center-apply
+                disabled={!canMoveSelectedGeometryCenter}
+                onClick={() => onMovePathSelectionCenter({ x: targetX, y: targetY })}
+                type="button"
+              >
+                Move Center
+              </button>
+            </div>
+          </div>
           <div
             className="mt-3 border-t border-border pt-2"
             data-upid-transform-center
