@@ -482,6 +482,10 @@ describe('EditorPage UPID draft boundary', () => {
       (row) => row.getAttribute('data-upid-point-role') === 'end' && row.textContent?.includes('10.000, 0.000')
     ) as HTMLElement | undefined;
     expect(snappedEndpointRow).not.toBeUndefined();
+    expect(snappedEndpointRow?.getAttribute('data-upid-point-cluster-method')).toBe('within-tolerance');
+    expect(snappedEndpointRow?.getAttribute('data-upid-point-cluster-members')).toBe('2');
+    expect(snappedEndpointRow?.getAttribute('data-upid-point-cluster-gap')).toBe('0.004');
+    expect(snappedEndpointRow?.textContent).toContain('cluster within-tolerance / gap 0.004 / 2 ends');
 
     await act(async () => {
       snappedEndpointRow?.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));

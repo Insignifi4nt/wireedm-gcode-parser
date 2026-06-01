@@ -32,6 +32,7 @@ import type {
 import {
   createUpidProjectRail,
   readUpidSegmentGeometry,
+  readUpidSelectedPathPoint,
   upidManualDecisionKinds,
   upidPathElementAncestorIds,
   upidPathElementNestLabel,
@@ -512,6 +513,7 @@ export function EditorPathNavigatorPanel({
               onSetPathStartFromElement,
               isPathElementExpanded,
               isSaving,
+              pathDocument,
               selectedPathElement,
               selectedPathOperationId,
               segmentsById,
@@ -749,6 +751,7 @@ function renderContourTreeNode({
   onHoverPathElement,
   onSelectPathElement,
   onSetPathStartFromElement,
+  pathDocument,
   isPathElementExpanded,
   selectedPathElement,
   selectedPathOperationId,
@@ -763,6 +766,7 @@ function renderContourTreeNode({
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
+  pathDocument: PathPlanningDocument;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
   segmentsById: ReturnType<typeof segmentMap>;
@@ -891,6 +895,7 @@ function renderContourTreeNode({
               ref,
               index,
               requiredSegment(segmentsById, ref.segmentId),
+              pathDocument,
               hoveredPathElement,
               selectedPathElement,
               onHoverPathElement,
@@ -912,6 +917,7 @@ function renderContourTreeNode({
               onSelectPathElement,
               onSetPathStartFromElement,
               isPathElementExpanded,
+              pathDocument,
               selectedPathElement,
               selectedPathOperationId,
               segmentsById,
@@ -967,6 +973,7 @@ function renderSegmentRow(
   ref: OrientedSegmentRef,
   index: number,
   segment: PathSegment,
+  pathDocument: PathPlanningDocument,
   hoveredPathElement: EditorPathElementRef | null,
   selectedPathElement: EditorPathElementRef | null,
   onHoverPathElement: (element: EditorPathElementRef | null) => void,
@@ -1047,6 +1054,7 @@ function renderSegmentRow(
           onSelectPathElement,
           pathElement,
           point: start,
+          pathDocument,
           role: 'start',
           segment,
           hoveredPathElement,
@@ -1060,6 +1068,7 @@ function renderSegmentRow(
           onSelectPathElement,
           pathElement,
           point: end,
+          pathDocument,
           role: 'end',
           segment,
           hoveredPathElement,
@@ -1081,6 +1090,7 @@ function renderPointRow({
   onSetPathStartFromElement,
   pathElement,
   point,
+  pathDocument,
   role,
   segment,
   selectedPathElement
@@ -1092,6 +1102,7 @@ function renderPointRow({
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   pathElement: UpidOperationPathElement;
+  pathDocument: PathPlanningDocument;
   point: { x: number; y: number };
   role: 'start' | 'end';
   segment: PathSegment;
@@ -1111,6 +1122,12 @@ function renderPointRow({
     selectedPathElement?.operationId === pathElement.operationId &&
     selectedPathElement.segmentId === segment.id &&
     selectedPathElement.pointRole === role;
+  const selectedPoint = readUpidSelectedPathPoint(pathDocument, pathElement, element);
+  const endpointCluster = selectedPoint?.endpointCluster ?? null;
+  const endpointClusterGap = endpointCluster ? formatNumber(endpointCluster.maxPairDistance) : undefined;
+  const endpointClusterSummary = endpointCluster
+    ? `cluster ${endpointCluster.method} / gap ${endpointClusterGap} / ${endpointCluster.memberCount} ends`
+    : null;
 
   return (
     <div
@@ -1120,6 +1137,10 @@ function renderPointRow({
       data-upid-hovered={hovered ? 'true' : undefined}
       data-upid-operation-id={pathElement.operationId}
       data-upid-path-element-id={pathElement.id}
+      data-upid-point-cluster-gap={endpointClusterGap}
+      data-upid-point-cluster-id={endpointCluster?.id}
+      data-upid-point-cluster-members={endpointCluster?.memberCount}
+      data-upid-point-cluster-method={endpointCluster?.method}
       data-upid-selected={selected ? 'true' : undefined}
       data-upid-segment-index={index}
       data-upid-segment-id={segment.id}
@@ -1137,6 +1158,7 @@ function renderPointRow({
         <span className="uppercase">{role}</span>
         <span className="min-w-0">
           <span className="block truncate">{formatPoint(point)}</span>
+          {endpointClusterSummary && <span className="block truncate">{endpointClusterSummary}</span>}
         </span>
       </button>
       <button
