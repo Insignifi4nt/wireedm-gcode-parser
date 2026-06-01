@@ -72,8 +72,7 @@ describe('App DXF imports and project library', () => {
     expect(project.source.kind).toBe('dxf');
     expect(project.upid.format).toBe('upid');
     expect(project.upid.document.plan.operations).toHaveLength(1);
-    expect(project.generated.body).toBe('');
-    expect(project.generated.files).toEqual([]);
+    expect('generated' in project).toBe(false);
     expect(window.localStorage.getItem(`wire-edm-workbench:file:generated/${project.id}.iso`)).toBeNull();
 
     const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
@@ -1734,7 +1733,7 @@ describe('App DXF imports and project library', () => {
 
     expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
     expect(savedProject.pathPlanning).toBeUndefined();
-    expect(savedProject.generated).toEqual({ body: '', files: [] });
+    expect('generated' in savedProject).toBe(false);
     expect(savedProject.editor.activeFilePath).toBeNull();
     expect(window.localStorage.getItem(`wire-edm-workbench:file:generated/${savedProject.id}.body.gcode`)).toBeNull();
 

@@ -77,7 +77,6 @@ export async function importDxfProject(
   const projectPath = `${projectDirectory}/project.json`;
 
   project.machine = { ...machineProfile };
-  project.generated.body = '';
   project.upid = createProjectUpid(pathDocument);
   project.source.files = [
     {

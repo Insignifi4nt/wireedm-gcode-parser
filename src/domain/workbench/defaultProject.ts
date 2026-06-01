@@ -58,10 +58,6 @@ export function createWorkbenchProject({
       kind: sourceKind,
       files: []
     },
-    generated: {
-      body: '',
-      files: []
-    },
     machine: createDefaultMachineProfile(),
     editor: {
       sourceRequiresCleanup: sourceKind !== 'dxf',

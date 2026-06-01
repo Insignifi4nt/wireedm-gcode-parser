@@ -47,7 +47,7 @@ describe('importDxfProject', () => {
         sourceRequiresCleanup: false
       }
     });
-    expect(result.project.generated.body).toBe('');
+    expect('generated' in result.project).toBe(false);
     expect('generatedBody' in result).toBe(false);
     expect('generatedProgram' in result).toBe(false);
     expect(result.pathDocument.contours).toHaveLength(1);
@@ -129,7 +129,7 @@ describe('importDxfProject', () => {
       }
     });
     expect('generatedProgram' in result).toBe(false);
-    expect(result.project.generated.files).toEqual([]);
+    expect('generated' in result.project).toBe(false);
     expect(result.project.editor.activeFilePath).toBeNull();
   });
 

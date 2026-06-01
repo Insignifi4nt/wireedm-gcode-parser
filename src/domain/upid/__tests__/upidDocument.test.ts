@@ -46,10 +46,6 @@ function baseProject() {
       kind: 'dxf' as const,
       files: []
     },
-    generated: {
-      body: '',
-      files: []
-    },
     machine: {
       id: 'machine',
       name: 'Machine',

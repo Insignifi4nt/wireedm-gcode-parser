@@ -87,10 +87,6 @@ async function saveProjectPathState(
       editor: {
         ...nextProject.editor,
         activeFilePath: null
-      },
-      generated: {
-        body: '',
-        files: []
       }
     },
     input.pathDocument

@@ -193,8 +193,7 @@ describe('App dashboard and workbench shell', () => {
       window.localStorage.getItem(`wire-edm-workbench:file:${importManifest.projects[0].path}`) ||
         '{}'
     );
-    expect(project.generated.files).toEqual([]);
-    expect(project.generated.body).toBe('');
+    expect('generated' in project).toBe(false);
     expect(project.machine.templates).toEqual({
       header: '%\nCUSTOM HEADER',
       footer: 'CUSTOM FOOTER\n%'

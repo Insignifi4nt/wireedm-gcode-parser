@@ -9,7 +9,7 @@ export type WorkbenchSourceKind = 'dxf' | 'external-gcode' | 'manual';
 export interface WorkbenchFileRef {
   name: string;
   path: string;
-  kind: WorkbenchSourceKind | 'generated' | 'exported' | 'template';
+  kind: WorkbenchSourceKind | 'exported' | 'template';
   createdAt: string;
 }
 
@@ -58,10 +58,6 @@ export interface WorkbenchProject {
   updatedAt: string;
   source: {
     kind: WorkbenchSourceKind;
-    files: WorkbenchFileRef[];
-  };
-  generated: {
-    body: string;
     files: WorkbenchFileRef[];
   };
   upid?: WorkbenchUpidState;

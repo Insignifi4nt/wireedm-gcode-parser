@@ -17,13 +17,13 @@ describe('createWorkbenchProject', () => {
       name: 'Fixture Part',
       createdAt: '2026-05-29T10:00:00.000Z',
       source: { kind: 'dxf', files: [] },
-      generated: { body: '', files: [] },
       editor: {
         sourceRequiresCleanup: false,
         activeFilePath: null,
         pinnedLineNumbers: []
       }
     });
+    expect('generated' in project).toBe(false);
     expect(project.machine.templates.header).toContain('G90 G21 G17 G40');
     expect(project.machine.templates.footer).toContain('M30');
     expect(project.machine.output.extension).toBe('iso');

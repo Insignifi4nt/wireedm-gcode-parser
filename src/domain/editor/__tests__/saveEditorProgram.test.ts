@@ -102,8 +102,8 @@ describe('saveEditorProgram', () => {
     );
 
     expect(adapter.files.get(imported.editorProgram.filePath)).toBe(updatedText);
-    expect(storedProject.generated).toEqual({ body: '', files: [] });
-    expect(saved.editorProgram.project?.generated).toEqual({ body: '', files: [] });
+    expect('generated' in storedProject).toBe(false);
+    expect('generated' in (saved.editorProgram.project ?? {})).toBe(false);
   });
 
   it('rejects saves to files that are not already part of the workbench', async () => {
@@ -168,7 +168,7 @@ describe('saveEditorProgram', () => {
     const savedManifest = JSON.parse(adapter.files.get('workbench.json') || '{}');
 
     expect(adapter.files.has(bodyPath)).toBe(false);
-    expect(savedProject.generated).toEqual({ body: '', files: [] });
+    expect('generated' in savedProject).toBe(false);
     expect(savedProject.editor.activeFilePath).toBeNull();
     expect(savedProject.upid.format).toBe('upid');
     expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
@@ -223,7 +223,7 @@ describe('saveEditorProgram', () => {
     expect(saved.editorProgram.text).toBe('');
     expect(saved.editorProgram.parseResult.path).toHaveLength(0);
     expect(saved.editorProgram.project?.editor.activeFilePath).toBeNull();
-    expect(saved.editorProgram.project?.generated).toEqual({ body: '', files: [] });
+    expect('generated' in (saved.editorProgram.project ?? {})).toBe(false);
   });
 
   it('saves UPID path edits even when no generated editor program file exists', async () => {
@@ -257,7 +257,7 @@ describe('saveEditorProgram', () => {
     expect(saved.editorProgram.text).toBe('');
     expect(saved.editorProgram.parseResult.path).toHaveLength(0);
     expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
-    expect(savedProject.generated).toEqual({ body: '', files: [] });
+    expect('generated' in savedProject).toBe(false);
   });
 
   it('does not persist export-time post diagnostics while saving a UPID path document', async () => {
@@ -320,7 +320,7 @@ describe('saveEditorProgram', () => {
 
     expect(adapter.files.get(postedArtifacts.programPath)).toBe(postedArtifacts.programText);
     expect(savedProject.upid?.format).toBe('upid');
-    expect(savedProject.generated).toEqual({ body: '', files: [] });
+    expect('generated' in savedProject).toBe(false);
   });
 });
 
