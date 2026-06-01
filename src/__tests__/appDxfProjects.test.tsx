@@ -807,9 +807,10 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
-      'Create a measurement point first'
-    );
+    const constructionHint = container.querySelector('[data-editor-command-hint]')?.textContent ?? '';
+    expect(constructionHint).toContain('Perpendicular mode');
+    expect(constructionHint).toContain('Step 1');
+    expect(constructionHint).toContain('add a measurement point');
   });
 
   it('opens DXF path projects without selecting the first cut sequence', async () => {

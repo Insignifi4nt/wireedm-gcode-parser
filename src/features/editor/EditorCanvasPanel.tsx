@@ -105,7 +105,9 @@ export function EditorCanvasPanel({
       {interactionHint && (
         <div
           className="flex min-h-7 items-center border-t border-border bg-background/55 px-2 font-mono text-[10px] text-muted-foreground"
+          aria-live="polite"
           data-editor-command-hint
+          role="status"
         >
           {interactionHint}
         </div>

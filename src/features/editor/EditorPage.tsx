@@ -1512,32 +1512,32 @@ export function EditorPage({
 
     if (pathClickMode === 'set-start') {
       if (!selectedPathOperationId) {
-        return 'Select a closed contour first, then choose the start point on the canvas or contour tree.';
+        return 'Start mode / Step 1: select a closed contour in the Contour Tree or canvas before choosing the start point.';
       }
 
       return pathMagneticSnapEnabled
-        ? 'Click the contour near the desired start. Magnetic mode can split a segment at the clicked point.'
-        : 'Click an existing contour endpoint to set the start point.';
+        ? 'Start mode / Step 2: click the contour near the desired start. Magnetic mode can split a segment at the clicked point.'
+        : 'Start mode / Step 2: click an existing endpoint on the canvas or in the Contour Tree.';
     }
 
     if (pathClickMode === 'perpendicular' || pathClickMode === 'tangent') {
-      const relation = pathClickMode === 'perpendicular' ? 'perpendicular' : 'tangent';
+      const relation = pathClickMode === 'perpendicular' ? 'Perpendicular' : 'Tangent';
       if (measurementPoints.length === 0) {
-        return `Create a measurement point first, then click the target path to add a ${relation} construction point.`;
+        return `${relation} mode / Step 1: add a measurement point first; it becomes the source point for the construction.`;
       }
 
-      return `Click the target path to add a ${relation} construction point from the latest measurement point.`;
+      return `${relation} mode / Step 2: select the target contour or segment to add the construction point from the latest measurement point.`;
     }
 
     if (selectedPathElement) {
-      return 'Drag selected geometry on the canvas, or use Transform for exact moves. Move Center to Origin sends the selection center to X0 Y0.';
+      return 'Selection active / Next: drag selected geometry on the canvas, or use Transform for exact moves. Move Center to Origin sends the selection center to X0 Y0.';
     }
 
     if (canvasMouseMode === 'point') {
-      return 'Point mode: click empty canvas space to place measurement points. Switch to Select to inspect geometry.';
+      return 'Point mode / Step 1: click empty canvas space to place measurement points. Switch to Select to inspect geometry.';
     }
 
-    return 'Select mode: click a contour, segment, endpoint, or diagnostic. Use Point mode to place measurement points.';
+    return 'Select mode / Next: click a contour, segment, endpoint, or diagnostic. Use Point mode to place measurement points.';
   }
 
   function renderWorkspacePanel(

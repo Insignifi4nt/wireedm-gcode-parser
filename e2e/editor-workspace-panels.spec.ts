@@ -564,6 +564,43 @@ test('editor defaults canvas clicks to select mode before explicit point placeme
   await expect(page.locator('[data-measurement-point-row="1"]')).toBeVisible();
 });
 
+test('editor command hint guides CAD construction modes step by step', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'command-hints.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await showPanels(page, ['path-actions', 'measurement', 'contour-tree']);
+
+  const hint = page.locator('[data-editor-command-hint]');
+  await expect(hint).toContainText('Select mode');
+  await expect(hint).toContainText('Point mode');
+
+  await page.getByRole('button', { name: 'Magnetize latest point perpendicular' }).click();
+  await expect(hint).toContainText('Perpendicular mode');
+  await expect(hint).toContainText('Step 1');
+  await expect(hint).toContainText('add a measurement point');
+
+  await page.getByLabel('Measurement point X').fill('5');
+  await page.getByLabel('Measurement point Y').fill('5');
+  await page.getByRole('button', { name: 'Add Point' }).click();
+  await expect(hint).toContainText('Step 2');
+  await expect(hint).toContainText('select the target contour or segment');
+
+  await page.getByRole('button', { name: 'Magnetize latest point perpendicular' }).click();
+  await page.locator('[data-upid-contour-row]').first().click();
+  await page.getByRole('button', { name: 'Set path start from canvas' }).click();
+  await expect(hint).toContainText('Start mode');
+  await expect(hint).toContainText('Step 2');
+  await expect(hint).toContainText('click an existing endpoint');
+});
+
 test('editor rectangle-selects path geometry from a blank canvas drag in select mode', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
   await page.goto('/');
