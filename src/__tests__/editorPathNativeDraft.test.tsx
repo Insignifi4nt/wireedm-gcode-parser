@@ -591,6 +591,40 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
+  it('marks path navigator rows with local diagnostic summaries', async () => {
+    const pathDocument = pathDocumentFromGappedRectangle();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const contourRow = container.querySelector('[data-upid-contour-row]') as HTMLElement | null;
+    const segmentRows = [...container.querySelectorAll('[data-upid-segment-row]')] as HTMLElement[];
+    const pointRows = [...container.querySelectorAll('[data-upid-point-row]')] as HTMLElement[];
+
+    expect(contourRow?.getAttribute('data-upid-contour-diagnostics')).toBe('2');
+    expect(contourRow?.getAttribute('data-upid-contour-diagnostic-severity')).toBe('warning');
+    expect(contourRow?.textContent).toContain('2 issues');
+    expect(segmentRows.map((row) => row.getAttribute('data-upid-segment-diagnostics'))).toEqual([
+      '2',
+      '2',
+      '1',
+      '1'
+    ]);
+    expect(
+      pointRows
+        .filter((row) => row.getAttribute('data-upid-point-diagnostics') === '1')
+        .map((row) => `${row.getAttribute('data-upid-segment-index')}:${row.getAttribute('data-upid-point-role')}`)
+    ).toEqual(['0:start', '0:end', '1:start', '3:end']);
+  });
+
   it('selects snapped endpoint topology rows from the path navigator', async () => {
     const pathDocument = pathDocumentFromGappedRectangle();
     const project = projectWithUpid(pathDocument);

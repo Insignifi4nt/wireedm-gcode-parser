@@ -34,6 +34,7 @@ import {
   readUpidPathDiagnostics,
   readUpidSegmentGeometry,
   readUpidSelectedPathPoint,
+  summarizeUpidDiagnosticsForPathElementRef,
   upidManualDecisionKinds,
   upidPathElementAncestorIds,
   upidPathElementNestLabel,
@@ -43,6 +44,7 @@ import {
   type UpidOperationPathElement,
   type UpidPathElementRef,
   type UpidEndpointTopologyRow,
+  type UpidPathDiagnosticSummary,
   type UpidSelectedPathDiagnostic,
   type UpidSelectedPathSegmentGeometry,
   type UpidProjectRailTreeNode
@@ -955,6 +957,11 @@ function renderContourTreeNode({
   const sourceEntityCount = upidPathElementSourceEntityCount(element);
   const editedSegmentCount = element.provenance.edit?.derivedSegmentIds.length ?? 0;
   const expanded = isPathElementExpanded(element.id);
+  const diagnosticSummary = summarizeUpidDiagnosticsForPathElementRef(pathDocument, {
+    operationId: element.operationId,
+    pathElementId: element.id,
+    segmentId: null
+  });
 
   return (
     <details
@@ -1006,6 +1013,8 @@ function renderContourTreeNode({
             data-upid-contour-children={element.childIds.length}
             data-upid-contour-depth={element.containmentDepth}
             data-upid-contour-display-name={element.displayName}
+            data-upid-contour-diagnostic-severity={diagnosticSummary.severity ?? undefined}
+            data-upid-contour-diagnostics={diagnosticSummary.count}
             data-upid-contour-label={element.label}
             data-upid-contour-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
             data-upid-contour-parent={element.parentId ?? undefined}
@@ -1055,6 +1064,7 @@ function renderContourTreeNode({
                 {formatTreeMetrics(node.treeMetrics)}
               </span>
               {renderManualDecisionBadges(manualDecisions)}
+              {renderDiagnosticSummaryBadge(diagnosticSummary)}
             </span>
             <span className="text-right text-[9px] text-muted-foreground">
               {element.metrics.cutLength.toFixed(3)}
@@ -1124,6 +1134,27 @@ function renderManualDecisionBadges(decisions: UpidManualDecisionKind[]) {
   );
 }
 
+function renderDiagnosticSummaryBadge(summary: UpidPathDiagnosticSummary) {
+  if (summary.count === 0) return null;
+
+  return (
+    <span className="mt-1 flex flex-wrap gap-1" data-upid-diagnostic-summary-badge>
+      <span
+        className={`border px-1 text-[8px] uppercase ${
+          summary.severity === 'error'
+            ? 'border-destructive/50 bg-destructive/10 text-destructive'
+            : summary.severity === 'warning'
+              ? 'border-amber-400/40 bg-amber-400/10 text-amber-200'
+              : 'border-sky-400/40 bg-sky-400/10 text-sky-200'
+        }`}
+        data-upid-diagnostic-summary-severity={summary.severity ?? undefined}
+      >
+        {summary.count} {summary.count === 1 ? 'issue' : 'issues'}
+      </span>
+    </span>
+  );
+}
+
 function formatTreeMetrics(metrics: UpidProjectRailTreeNode['treeMetrics']) {
   const segmentLabel = metrics.directSegmentCount === 1 ? 'segment' : 'segments';
   if (metrics.descendantCount === 0) return `${metrics.directSegmentCount} ${segmentLabel}`;
@@ -1162,6 +1193,11 @@ function renderSegmentRow(
   const refDirection = ref.reversed ? 'reversed ref' : 'forward ref';
   const geometry = readUpidSegmentGeometry(segment, ref);
   const geometrySummary = formatSegmentGeometrySummary(geometry);
+  const diagnosticSummary = summarizeUpidDiagnosticsForPathElementRef(pathDocument, {
+    operationId: pathElement.operationId,
+    pathElementId: pathElement.id,
+    segmentId: segment.id
+  });
   const hovered =
     hoveredPathElement?.operationId === pathElement.operationId &&
     hoveredPathElement.segmentId === segment.id &&
@@ -1181,6 +1217,8 @@ function renderSegmentRow(
         data-upid-hovered={hovered ? 'true' : undefined}
         data-upid-operation-id={pathElement.operationId}
         data-upid-path-element-id={pathElement.id}
+        data-upid-segment-diagnostic-severity={diagnosticSummary.severity ?? undefined}
+        data-upid-segment-diagnostics={diagnosticSummary.count}
         data-upid-selected={selected ? 'true' : undefined}
         data-upid-segment-geometry={geometry.kind}
         data-upid-segment-index={index}
@@ -1220,6 +1258,7 @@ function renderSegmentRow(
           </span>
           <span className="block truncate">length {segmentLength} / {refDirection}</span>
           {geometrySummary && <span className="block truncate">{geometrySummary}</span>}
+          {renderDiagnosticSummaryBadge(diagnosticSummary)}
         </span>
       </button>
       <div className="border-t border-border/70 bg-background/35" data-upid-point-stack>
@@ -1303,6 +1342,7 @@ function renderPointRow({
   const endpointClusterSummary = endpointCluster
     ? `cluster ${endpointCluster.method} / gap ${endpointClusterGap} / ${endpointCluster.memberCount} ends`
     : null;
+  const diagnosticSummary = summarizeUpidDiagnosticsForPathElementRef(pathDocument, element);
 
   return (
     <div
@@ -1316,6 +1356,8 @@ function renderPointRow({
       data-upid-point-cluster-id={endpointCluster?.id}
       data-upid-point-cluster-members={endpointCluster?.memberCount}
       data-upid-point-cluster-method={endpointCluster?.method}
+      data-upid-point-diagnostic-severity={diagnosticSummary.severity ?? undefined}
+      data-upid-point-diagnostics={diagnosticSummary.count}
       data-upid-selected={selected ? 'true' : undefined}
       data-upid-segment-index={index}
       data-upid-segment-id={segment.id}
@@ -1334,6 +1376,7 @@ function renderPointRow({
         <span className="min-w-0">
           <span className="block truncate">{formatPoint(point)}</span>
           {endpointClusterSummary && <span className="block truncate">{endpointClusterSummary}</span>}
+          {renderDiagnosticSummaryBadge(diagnosticSummary)}
         </span>
       </button>
       <button

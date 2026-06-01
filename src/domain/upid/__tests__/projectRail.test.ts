@@ -24,6 +24,7 @@ import {
   readUpidPathElementSourceSummary,
   readUpidPathElementTreeContext,
   readUpidPathElementTreeNode,
+  summarizeUpidDiagnosticsForPathElementRef,
   readUpidSelectedPathPoint,
   readUpidSelectedPathSegment,
   readUpidSelectedPathTravel,
@@ -469,6 +470,82 @@ describe('UPID project rail projection', () => {
         segmentId: operation.segmentRefs[1].segmentId
       })
     ]);
+  });
+
+  it('summarizes diagnostics for contour, segment, and point refs', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(gappedRectangle(0.004), {
+      endpointTolerance: 0.01
+    });
+    const operation = document.plan.operations[0];
+    const pathElement = document.pathElements[0];
+    const [firstSegment, secondSegment, thirdSegment] = operation.segmentRefs;
+
+    expect(
+      summarizeUpidDiagnosticsForPathElementRef(document, {
+        operationId: operation.id,
+        pathElementId: pathElement.id,
+        segmentId: null
+      })
+    ).toEqual({
+      count: 2,
+      errorCount: 0,
+      infoCount: 0,
+      severity: 'warning',
+      warningCount: 2
+    });
+    expect(
+      summarizeUpidDiagnosticsForPathElementRef(document, {
+        operationId: operation.id,
+        pathElementId: pathElement.id,
+        segmentId: firstSegment.segmentId
+      })
+    ).toMatchObject({
+      count: 2,
+      severity: 'warning'
+    });
+    expect(
+      summarizeUpidDiagnosticsForPathElementRef(document, {
+        operationId: operation.id,
+        pathElementId: pathElement.id,
+        segmentId: thirdSegment.segmentId
+      })
+    ).toMatchObject({
+      count: 1,
+      severity: 'warning'
+    });
+    expect(
+      summarizeUpidDiagnosticsForPathElementRef(document, {
+        operationId: operation.id,
+        pathElementId: pathElement.id,
+        pointRole: 'end',
+        segmentId: firstSegment.segmentId
+      })
+    ).toMatchObject({
+      count: 1,
+      severity: 'warning'
+    });
+    expect(
+      summarizeUpidDiagnosticsForPathElementRef(document, {
+        operationId: operation.id,
+        pathElementId: pathElement.id,
+        pointRole: 'start',
+        segmentId: firstSegment.segmentId
+      })
+    ).toMatchObject({
+      count: 1,
+      severity: 'warning'
+    });
+    expect(
+      summarizeUpidDiagnosticsForPathElementRef(document, {
+        operationId: operation.id,
+        pathElementId: pathElement.id,
+        pointRole: 'start',
+        segmentId: secondSegment.segmentId
+      })
+    ).toMatchObject({
+      count: 1,
+      severity: 'warning'
+    });
   });
 
   it('normalizes selected path refs and resolves selected points from UPID geometry', () => {

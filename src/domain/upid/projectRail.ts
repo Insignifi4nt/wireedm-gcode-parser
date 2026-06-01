@@ -252,6 +252,14 @@ export interface UpidSelectedPathDiagnostic {
   severity: PathDiagnostic['severity'];
 }
 
+export interface UpidPathDiagnosticSummary {
+  count: number;
+  errorCount: number;
+  infoCount: number;
+  severity: PathDiagnostic['severity'] | null;
+  warningCount: number;
+}
+
 export interface UpidSelectedPathDiagnosticMetric {
   key: string;
   label: string;
@@ -412,6 +420,17 @@ export function readUpidPathDiagnostics(
   return document.diagnostics.map((diagnostic) => readUpidPathDiagnostic(document, diagnostic));
 }
 
+export function summarizeUpidDiagnosticsForPathElementRef(
+  document: PathPlanningDocument,
+  elementRef: UpidPathElementRef
+): UpidPathDiagnosticSummary {
+  return summarizeUpidDiagnostics(
+    document.diagnostics.filter((diagnostic) =>
+      upidDiagnosticAffectsPathElementRef(document, elementRef, diagnostic)
+    )
+  );
+}
+
 function readUpidPathDiagnostic(
   document: PathPlanningDocument,
   diagnostic: PathDiagnostic
@@ -568,6 +587,56 @@ function upidDiagnosticAffectsPathElement(
   }
 
   return false;
+}
+
+function upidDiagnosticAffectsPathElementRef(
+  document: PathPlanningDocument,
+  elementRef: UpidPathElementRef,
+  diagnostic: PathDiagnostic
+) {
+  if (!elementRef.segmentId) {
+    return upidDiagnosticAffectsPathElement(document, elementRef, diagnostic);
+  }
+
+  if (elementRef.pointRole) {
+    const selectedElement = readPathElementForRef(document, elementRef);
+    if (!selectedElement || !isUpidOperationPathElement(selectedElement)) {
+      return false;
+    }
+
+    const selectedPoint = readUpidSelectedPathPoint(document, selectedElement, elementRef);
+    return Boolean(
+      selectedPoint?.endpointCluster &&
+        diagnostic.relatedClusterIds?.includes(selectedPoint.endpointCluster.id)
+    );
+  }
+
+  return Boolean(diagnostic.relatedSegmentIds?.includes(elementRef.segmentId));
+}
+
+function summarizeUpidDiagnostics(diagnostics: PathDiagnostic[]): UpidPathDiagnosticSummary {
+  const summary: UpidPathDiagnosticSummary = {
+    count: diagnostics.length,
+    errorCount: 0,
+    infoCount: 0,
+    severity: null,
+    warningCount: 0
+  };
+
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.severity === 'error') {
+      summary.errorCount += 1;
+      summary.severity = 'error';
+    } else if (diagnostic.severity === 'warning') {
+      summary.warningCount += 1;
+      if (summary.severity !== 'error') summary.severity = 'warning';
+    } else {
+      summary.infoCount += 1;
+      if (!summary.severity) summary.severity = 'info';
+    }
+  }
+
+  return summary;
 }
 
 export function isUpidOperationPathElement(element: PathElement): element is UpidOperationPathElement {
