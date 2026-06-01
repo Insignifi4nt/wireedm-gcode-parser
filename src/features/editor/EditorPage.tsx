@@ -237,6 +237,7 @@ export function EditorPage({
       fileName,
       machineName: machine.name,
       operationCount: exportProgram.summary.operationCount,
+      pathDocument: pathDocumentDraft,
       planning: exportProgram.planning,
       programLines: exportProgram.program.lines,
       programText: exportProgram.program.text,
@@ -1278,6 +1279,7 @@ export function EditorPage({
           onHoverPathElement={setHoveredPathElement}
           onSelectPathElement={handleSelectPathElement}
           operationCount={upidExport.operationCount}
+          pathDocument={upidExport.pathDocument}
           planning={upidExport.planning}
           postMetrics={upidExport.postMetrics}
           postedOperations={upidExport.postedOperations}

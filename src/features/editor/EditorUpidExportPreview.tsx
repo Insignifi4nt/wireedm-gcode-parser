@@ -1,8 +1,9 @@
 import { Download, X } from 'lucide-react';
 
 import type { GCodeProgramLineMap } from '@/domain/post/gcodeTemplates';
+import { upidPathElementRefForDiagnostic } from '@/domain/upid/projectRail';
 import type { UpidGCodeProgramOperation } from '@/domain/upid/upidDocument';
-import type { OperationOrderStrategy, PathDiagnostic } from '@/domain/path-intel/types';
+import type { OperationOrderStrategy, PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 interface EditorUpidExportPreviewProps {
@@ -10,6 +11,7 @@ interface EditorUpidExportPreviewProps {
   fileName: string;
   machineName: string;
   operationCount: number;
+  pathDocument: PathPlanningDocument;
   planning: {
     manualOrderCount: number;
     operationOrderStrategy: OperationOrderStrategy;
@@ -31,6 +33,7 @@ export function EditorUpidExportPreview({
   fileName,
   machineName,
   operationCount,
+  pathDocument,
   planning,
   postMetrics,
   postedOperations,
@@ -118,18 +121,36 @@ export function EditorUpidExportPreview({
         </dl>
         {diagnostics.length > 0 && (
           <div className="max-h-20 overflow-auto border border-border bg-card/60" data-upid-export-diagnostics>
-            {diagnostics.map((diagnostic) => (
-              <div
-                className="border-b border-border px-2 py-1 last:border-b-0"
-                data-upid-export-diagnostic-code={diagnostic.code}
-                data-upid-export-diagnostic-row
-                data-upid-export-diagnostic-severity={diagnostic.severity}
-                key={diagnostic.id}
-              >
-                <span className="mr-2 uppercase text-amber-200">{diagnostic.severity}</span>
-                <span>{diagnostic.message}</span>
-              </div>
-            ))}
+            {diagnostics.map((diagnostic) => {
+              const traceRef = upidDiagnosticTraceRef(pathDocument, diagnostic);
+
+              return (
+                <button
+                  className="w-full border-b border-border px-2 py-1 text-left outline-none last:border-b-0 hover:bg-accent disabled:cursor-default disabled:hover:bg-transparent"
+                  data-upid-export-diagnostic-code={diagnostic.code}
+                  data-upid-export-diagnostic-operation={traceRef?.operationId ?? undefined}
+                  data-upid-export-diagnostic-path-element={traceRef?.pathElementId ?? undefined}
+                  data-upid-export-diagnostic-row
+                  data-upid-export-diagnostic-segment={traceRef?.segmentId ?? undefined}
+                  data-upid-export-diagnostic-severity={diagnostic.severity}
+                  disabled={!traceRef}
+                  key={diagnostic.id}
+                  onClick={() => {
+                    if (traceRef) onSelectPathElement?.(traceRef);
+                  }}
+                  onMouseEnter={() => {
+                    if (traceRef) onHoverPathElement?.(traceRef);
+                  }}
+                  onMouseLeave={() => {
+                    if (traceRef) onHoverPathElement?.(null);
+                  }}
+                  type="button"
+                >
+                  <span className="mr-2 uppercase text-amber-200">{diagnostic.severity}</span>
+                  <span>{diagnostic.message}</span>
+                </button>
+              );
+            })}
           </div>
         )}
         {postedOperations.length > 0 && (
@@ -304,4 +325,11 @@ function upidMoveTraceRef(
     segmentId: move.segmentId,
     travelRole: move.kind === 'rapid' && move.reason === 'operation-start' ? 'rapid-in' : undefined
   };
+}
+
+function upidDiagnosticTraceRef(
+  pathDocument: PathPlanningDocument,
+  diagnostic: PathDiagnostic
+): EditorPathElementRef | null {
+  return upidPathElementRefForDiagnostic(pathDocument, diagnostic);
 }

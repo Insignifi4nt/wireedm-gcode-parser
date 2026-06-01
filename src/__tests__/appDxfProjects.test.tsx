@@ -1597,6 +1597,35 @@ describe('App DXF imports and project library', () => {
     expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-code')).toBe('open-chain');
     expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-severity')).toBe('warning');
     expect(diagnosticRows[0].textContent).toContain('open chain');
+
+    const tracedPathElementId = diagnosticRows[0].getAttribute('data-upid-export-diagnostic-path-element');
+    const tracedSegmentId = diagnosticRows[0].getAttribute('data-upid-export-diagnostic-segment');
+
+    expect(tracedPathElementId).toBeTruthy();
+    expect(tracedSegmentId).toBeTruthy();
+
+    await act(async () => {
+      diagnosticRows[0].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    expect(
+      container
+        .querySelector(`[data-upid-segment-row][data-upid-segment-id="${tracedSegmentId}"]`)
+        ?.getAttribute('data-upid-hovered')
+    ).toBe('true');
+
+    await act(async () => {
+      diagnosticRows[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(
+      container
+        .querySelector(`[data-upid-segment-row][data-upid-segment-id="${tracedSegmentId}"]`)
+        ?.getAttribute('data-upid-selected')
+    ).toBe('true');
+    expect(container.querySelector('[data-upid-selected-segment]')?.getAttribute('data-upid-selected-segment-id')).toBe(
+      tracedSegmentId
+    );
     expect(container.querySelector('[data-upid-export-gcode]')?.textContent).toContain('G1 X10.000 Y0.000');
   });
 
