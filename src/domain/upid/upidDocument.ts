@@ -1,4 +1,4 @@
-import type { DxfEntity } from '@/domain/dxf/types';
+import type { DxfDrawingUnits, DxfEntity } from '@/domain/dxf/types';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import {
   pathPlanToGcodeBody,
@@ -65,6 +65,7 @@ export interface UpidGCodeExportDocumentTrace {
   segmentCount: number;
   sourceEntityCount: number;
   sourceKind: UniversalPathIntelligenceDocument['source']['kind'];
+  sourceUnits: DxfDrawingUnits | null;
 }
 
 export interface UpidGCodeExportPlanning {
@@ -174,7 +175,8 @@ function traceUpidDocumentForExport(
     schemaVersion: document.schemaVersion,
     segmentCount: document.segments.length,
     sourceEntityCount: document.source.entityCount,
-    sourceKind: document.source.kind
+    sourceKind: document.source.kind,
+    sourceUnits: document.source.units ?? null
   };
 }
 

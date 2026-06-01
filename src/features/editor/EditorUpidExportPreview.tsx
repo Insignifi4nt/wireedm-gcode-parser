@@ -90,9 +90,16 @@ export function EditorUpidExportPreview({
             data-upid-export-document-source-file={documentTrace.fileName ?? undefined}
             data-upid-export-document-source-kind={documentTrace.sourceKind}
             data-upid-export-document-trace
+            data-upid-export-document-units={documentTrace.sourceUnits?.label ?? undefined}
+            data-upid-export-document-units-code={documentTrace.sourceUnits?.code ?? undefined}
+            data-upid-export-document-units-scale={
+              documentTrace.sourceUnits?.scaleToMillimeters ?? undefined
+            }
+            data-upid-export-document-units-source={documentTrace.sourceUnits?.source ?? undefined}
           >
             UPID v{documentTrace.schemaVersion} / {documentTrace.sourceKind}
             {documentTrace.fileName ? ` / ${documentTrace.fileName}` : ''}
+            {documentTrace.sourceUnits ? ` / ${documentTrace.sourceUnits.label}` : ''}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">

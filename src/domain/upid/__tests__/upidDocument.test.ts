@@ -101,7 +101,13 @@ describe('UPID document boundary', () => {
       {
         fileName: 'trace-source.dxf',
         importedAt: '2026-05-31T10:00:00.000Z',
-        projectId: 'trace-project'
+        projectId: 'trace-project',
+        units: {
+          code: 4,
+          label: 'millimeters',
+          scaleToMillimeters: 1,
+          source: 'dxf-insunits'
+        }
       }
     );
 
@@ -122,7 +128,13 @@ describe('UPID document boundary', () => {
       schemaVersion: 1,
       segmentCount: 1,
       sourceEntityCount: 1,
-      sourceKind: 'dxf-entities'
+      sourceKind: 'dxf-entities',
+      sourceUnits: {
+        code: 4,
+        label: 'millimeters',
+        scaleToMillimeters: 1,
+        source: 'dxf-insunits'
+      }
     });
     expect(exportProgram.body).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
     expect(exportProgram.program.text).toBe('%\nG90 G21\nG0 X0.000 Y0.000\nG1 X10.000 Y0.000\nM30\n%\n');

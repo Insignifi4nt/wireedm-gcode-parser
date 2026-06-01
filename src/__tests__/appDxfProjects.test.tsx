@@ -1440,7 +1440,7 @@ describe('App DXF imports and project library', () => {
 
     const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
     Object.defineProperty(fileInput, 'files', {
-      value: [new File([rectangleDxf()], 'export-preview.dxf')],
+      value: [new File([rectangleMillimeterDxf()], 'export-preview.dxf')],
       configurable: true
     });
 
@@ -1479,8 +1479,13 @@ describe('App DXF imports and project library', () => {
     expect(exportTrace?.getAttribute('data-upid-export-document-project')).toMatch(
       /^export-preview-\d{4}-\d{2}-\d{2}$/
     );
+    expect(exportTrace?.getAttribute('data-upid-export-document-units')).toBe('millimeters');
+    expect(exportTrace?.getAttribute('data-upid-export-document-units-code')).toBe('4');
+    expect(exportTrace?.getAttribute('data-upid-export-document-units-scale')).toBe('1');
+    expect(exportTrace?.getAttribute('data-upid-export-document-units-source')).toBe('dxf-insunits');
     expect(exportTrace?.textContent).toContain('UPID v1');
     expect(exportTrace?.textContent).toContain('export-preview.dxf');
+    expect(exportTrace?.textContent).toContain('millimeters');
     expect(exportSummary).not.toBeNull();
     expect(container.querySelector('[data-upid-export-stat="operations"]')?.textContent).toBe('1');
     expect(container.querySelector('[data-upid-export-stat="rapid"]')?.textContent).toBe('1');
@@ -3033,6 +3038,51 @@ describe('App DXF imports and project library', () => {
 
 function rectangleDxf() {
   return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'LWPOLYLINE',
+    '90',
+    '4',
+    '70',
+    '1',
+    '10',
+    '0',
+    '20',
+    '0',
+    '10',
+    '10',
+    '20',
+    '0',
+    '10',
+    '10',
+    '20',
+    '5',
+    '10',
+    '0',
+    '20',
+    '5',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function rectangleMillimeterDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'HEADER',
+    '9',
+    '$INSUNITS',
+    '70',
+    '4',
+    '0',
+    'ENDSEC',
     '0',
     'SECTION',
     '2',
