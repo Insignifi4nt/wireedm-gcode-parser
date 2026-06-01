@@ -21,6 +21,7 @@ import {
 } from '@/domain/path-intel/segments';
 import type {
   ContourClassification,
+  OperationOrderStrategy,
   OrientedSegmentRef,
   PathDiagnostic,
   PathElement,
@@ -46,6 +47,14 @@ const modeButtonClass =
 const activeModeButtonClass =
   'flex h-6 items-center justify-center gap-1 border border-primary bg-primary px-1 text-[10px] text-primary-foreground outline-none transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40';
 const CONTOUR_ROLE_OPTIONS: ContourClassification[] = ['exterior', 'hole', 'island', 'ambiguous'];
+const ORDER_STRATEGY_OPTIONS: Array<{
+  label: string;
+  value: OperationOrderStrategy;
+}> = [
+  { label: 'Inside/out nearest', value: 'inside-out-nearest' },
+  { label: 'Nearest travel', value: 'nearest' },
+  { label: 'Source order', value: 'source-order' }
+];
 
 interface EditorPathNavigatorPanelProps {
   hasUnsavedChanges: boolean;
@@ -68,6 +77,7 @@ interface EditorPathNavigatorPanelProps {
   onSaveClick: () => void | Promise<void>;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onSetPathOperationClassification: (classification: ContourClassification) => void;
+  onSetPathOperationOrderStrategy: (strategy: OperationOrderStrategy) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   onToggleHoverAssist: () => void;
   onToggleMagneticSnap: () => void;
@@ -108,6 +118,7 @@ export function EditorPathNavigatorPanel({
   onSaveClick,
   onSelectPathElement,
   onSetPathOperationClassification,
+  onSetPathOperationOrderStrategy,
   onSetPathStartFromElement,
   onToggleHoverAssist,
   onToggleMagneticSnap,
@@ -220,6 +231,24 @@ export function EditorPathNavigatorPanel({
             <FileText className="size-3" />
             Export Preview
           </button>
+          <label className="mt-2 grid gap-1 text-[9px] uppercase text-muted-foreground" data-upid-order-strategy>
+            Planning Mode
+            <select
+              aria-label="Planning order strategy"
+              className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={isSaving}
+              onChange={(event) =>
+                onSetPathOperationOrderStrategy(event.currentTarget.value as OperationOrderStrategy)
+              }
+              value={pathDocument.options.operationOrderStrategy}
+            >
+              {ORDER_STRATEGY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="mt-2 grid gap-1 text-[9px] uppercase text-muted-foreground">
             Contour Role
             <select

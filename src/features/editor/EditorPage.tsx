@@ -31,6 +31,7 @@ import {
   setClosedOperationStartAtExistingPointNearPoint,
   setClosedOperationStartNearPoint,
   setPathOperationClassification,
+  setPathOperationOrderStrategy,
   slideMagnetizedPointOnSegment,
   type MagnetizedPathPoint,
   type MagnetizeMode
@@ -46,7 +47,13 @@ import {
   requiredSegment,
   segmentMap
 } from '@/domain/path-intel/segments';
-import type { Bounds2, ContourClassification, PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
+import type {
+  Bounds2,
+  ContourClassification,
+  OperationOrderStrategy,
+  PathPlanningDocument,
+  Point2
+} from '@/domain/path-intel/types';
 import { projectUpidDocument } from '@/domain/upid/projectUpid';
 import { postUpidToGcode } from '@/domain/upid/upidDocument';
 import {
@@ -358,6 +365,7 @@ export function EditorPage({
                 onSaveClick={handleSaveClick}
                 onSelectPathElement={handleSelectPathElement}
                 onSetPathOperationClassification={handleSetPathOperationClassification}
+                onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
                 onSetPathStartFromElement={handleSetPathStartFromElement}
                 onToggleHoverAssist={handleTogglePathHoverAssist}
                 onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
@@ -849,6 +857,17 @@ export function EditorPage({
     if (!pathDocumentDraft || !selectedPathOperationId || isSaving) return;
     const edited = setPathOperationClassification(pathDocumentDraft, selectedPathOperationId, classification);
     if (edited) applyPathDocumentEdit(edited);
+  }
+
+  function handleSetPathOperationOrderStrategy(strategy: OperationOrderStrategy) {
+    if (!pathDocumentDraft || isSaving) return;
+    const edited = setPathOperationOrderStrategy(pathDocumentDraft, strategy);
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId
+      });
+    }
   }
 
   function applyPathDocumentEdit(

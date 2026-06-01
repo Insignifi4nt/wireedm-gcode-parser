@@ -698,6 +698,50 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-selected="source-exact"]')?.textContent).toBe('exact');
   });
 
+  it('changes UPID operation order strategy from the Path Navigator', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([independentContourOrderDxf()], 'order-strategy.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    let cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-path-element-id'))).toEqual([
+      'contour_0002',
+      'contour_0001'
+    ]);
+
+    const strategySelect = container.querySelector(
+      'select[aria-label="Planning order strategy"]'
+    ) as HTMLSelectElement | null;
+    expect(strategySelect).not.toBeNull();
+    expect(strategySelect?.value).toBe('inside-out-nearest');
+
+    await act(async () => {
+      if (strategySelect) setSelectValue(strategySelect, 'source-order');
+    });
+    await flushAsync();
+
+    cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-path-element-id'))).toEqual([
+      'contour_0001',
+      'contour_0002'
+    ]);
+    expect(
+      (container.querySelector('select[aria-label="Planning order strategy"]') as HTMLSelectElement | null)?.value
+    ).toBe('source-order');
+    expect(container.textContent).toContain('Unsaved');
+  });
+
   it('shows DXF block and insert lineage for selected UPID contours', async () => {
     window.showDirectoryPicker = undefined;
 
@@ -2335,6 +2379,31 @@ function nestedContourDxf() {
       { x: 15, y: 7 },
       { x: 15, y: 12 },
       { x: 10, y: 12 }
+    ]),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function independentContourOrderDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    ...closedPolylineDxf([
+      { x: 40, y: 0 },
+      { x: 50, y: 0 },
+      { x: 50, y: 5 },
+      { x: 40, y: 5 }
+    ]),
+    ...closedPolylineDxf([
+      { x: 0, y: 0 },
+      { x: 5, y: 0 },
+      { x: 5, y: 5 },
+      { x: 0, y: 5 }
     ]),
     '0',
     'ENDSEC',
