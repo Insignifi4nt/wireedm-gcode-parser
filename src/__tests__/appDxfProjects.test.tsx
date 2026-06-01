@@ -716,6 +716,18 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-selected="source-inserts"]')?.textContent).toBe(
       'PROFILE / 4 segments'
     );
+
+    const segmentRow = container.querySelector('[data-upid-segment-row]') as HTMLElement | null;
+    await act(async () => {
+      segmentRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-upid-selected-segment-source="block"]')?.textContent).toBe(
+      'PROFILE'
+    );
+    expect(container.querySelector('[data-upid-selected-segment-source="insert"]')?.textContent).toBe(
+      'PROFILE / row 0 col 0'
+    );
   });
 
   it('lets the user manually correct the selected UPID contour role', async () => {

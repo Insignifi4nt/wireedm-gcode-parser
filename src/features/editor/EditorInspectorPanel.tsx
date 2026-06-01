@@ -11,6 +11,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import type { GCodeStructure } from '@/domain/editor/gcodeStructure';
+import type { DxfInsertSource } from '@/domain/dxf/types';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { MachineFitResult } from '@/domain/machine/machineFit';
@@ -359,6 +360,18 @@ export function EditorInspectorPanel({
               <dd data-upid-selected-segment-source="exact">
                 {selectedPathSegment.source.exact ? 'exact' : 'approximated'}
               </dd>
+              {selectedPathSegment.source.block && (
+                <>
+                  <dt className="text-muted-foreground">Block</dt>
+                  <dd data-upid-selected-segment-source="block">{selectedPathSegment.source.block}</dd>
+                </>
+              )}
+              {selectedPathSegment.source.insert && (
+                <>
+                  <dt className="text-muted-foreground">Insert</dt>
+                  <dd data-upid-selected-segment-source="insert">{selectedPathSegment.source.insert}</dd>
+                </>
+              )}
             </dl>
           </section>
         )}
@@ -849,13 +862,19 @@ function readSelectedPathSegment(
     length: segment.length,
     reversed: ref.reversed,
     source: {
+      block: segment.source.dxf?.blockName ?? null,
       entityIndex: segment.source.sourceEntityIndex,
       exact: segment.source.exact,
+      insert: formatSegmentInsertSource(segment.source.dxf?.insertChain[0] ?? null),
       subIndex: segment.source.sourceSubIndex,
       type: segment.source.sourceEntityType
     },
     start: orientedSegmentStart(segment, ref)
   };
+}
+
+function formatSegmentInsertSource(insert: DxfInsertSource | null) {
+  return insert ? `${insert.blockName} / row ${insert.row} col ${insert.column}` : null;
 }
 
 function readSelectedPathPoint(
