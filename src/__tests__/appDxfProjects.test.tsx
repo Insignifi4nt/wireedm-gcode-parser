@@ -1589,9 +1589,17 @@ describe('App DXF imports and project library', () => {
     const exportOperationRow = container.querySelector(
       `[data-upid-export-operation-row][data-upid-export-operation-id="${operationId}"]`
     );
-    expect(container.querySelector('[data-upid-export-stat="manual-decisions"]')?.textContent).toBe(
-      '5 decisions'
-    );
+    const manualDecisions = container.querySelector('[data-upid-export-stat="manual-decisions"]');
+    const manualDecisionCard = manualDecisions?.parentElement;
+    expect(manualDecisions?.textContent).toContain('5 decisions');
+    expect(manualDecisions?.textContent).toContain('order 3');
+    expect(manualDecisions?.textContent).toContain('role 1');
+    expect(manualDecisions?.textContent).toContain('direction 1');
+    expect(manualDecisions?.textContent).toContain('start 0');
+    expect(manualDecisionCard?.getAttribute('data-upid-export-manual-decisions-order')).toBe('3');
+    expect(manualDecisionCard?.getAttribute('data-upid-export-manual-decisions-role')).toBe('1');
+    expect(manualDecisionCard?.getAttribute('data-upid-export-manual-decisions-direction')).toBe('1');
+    expect(manualDecisionCard?.getAttribute('data-upid-export-manual-decisions-start')).toBe('0');
     expect(exportOperationRow?.getAttribute('data-upid-export-operation-manual-order')).toBe('1');
     expect(exportOperationRow?.getAttribute('data-upid-export-operation-manual-role')).toBe('hole');
     expect(exportOperationRow?.getAttribute('data-upid-export-operation-manual-direction')).toBe(
@@ -1630,6 +1638,9 @@ describe('App DXF imports and project library', () => {
       'Inside/out nearest'
     );
     expect(container.querySelector('[data-upid-export-stat="manual-order"]')?.textContent).toBe(
+      'Automatic'
+    );
+    expect(container.querySelector('[data-upid-export-stat="manual-decisions"]')?.textContent).toContain(
       'Automatic'
     );
   });

@@ -2,7 +2,10 @@ import { Download, X } from 'lucide-react';
 
 import type { GCodeProgramLineMap } from '@/domain/post/gcodeTemplates';
 import { upidPathElementRefForDiagnostic } from '@/domain/upid/projectRail';
-import type { UpidGCodeProgramOperation } from '@/domain/upid/upidDocument';
+import type {
+  UpidGCodeProgramManualDecisionKind,
+  UpidGCodeProgramOperation
+} from '@/domain/upid/upidDocument';
 import type { OperationOrderStrategy, PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
@@ -14,6 +17,7 @@ interface EditorUpidExportPreviewProps {
   pathDocument: PathPlanningDocument;
   planning: {
     manualDecisionCount: number;
+    manualDecisionCounts: Record<UpidGCodeProgramManualDecisionKind, number>;
     manualOrderCount: number;
     operationOrderStrategy: OperationOrderStrategy;
   };
@@ -122,10 +126,19 @@ export function EditorUpidExportPreview({
           <div
             className="min-w-0 border border-border bg-card/60 px-2 py-1"
             data-upid-export-manual-decisions-active={planning.manualDecisionCount > 0 ? 'true' : undefined}
+            data-upid-export-manual-decisions-direction={planning.manualDecisionCounts.direction}
+            data-upid-export-manual-decisions-order={planning.manualDecisionCounts.order}
+            data-upid-export-manual-decisions-role={planning.manualDecisionCounts.role}
+            data-upid-export-manual-decisions-start={planning.manualDecisionCounts.start}
           >
             <dt className="text-[8px] uppercase text-muted-foreground">Manual Decisions</dt>
             <dd data-upid-export-stat="manual-decisions">
               {formatManualDecisionCount(planning.manualDecisionCount)}
+              {planning.manualDecisionCount > 0 && (
+                <span className="block truncate text-[8px] text-muted-foreground">
+                  {formatManualDecisionBreakdown(planning.manualDecisionCounts)}
+                </span>
+              )}
             </dd>
           </div>
         </dl>
@@ -350,6 +363,10 @@ function formatManualOrderCount(count: number) {
 function formatManualDecisionCount(count: number) {
   if (count <= 0) return 'Automatic';
   return `${count} ${count === 1 ? 'decision' : 'decisions'}`;
+}
+
+function formatManualDecisionBreakdown(counts: Record<UpidGCodeProgramManualDecisionKind, number>) {
+  return `order ${counts.order} / role ${counts.role} / direction ${counts.direction} / start ${counts.start}`;
 }
 
 function formatBodyLineRange(operation: Pick<UpidGCodeProgramOperation, 'bodyLineEnd' | 'bodyLineStart'>) {
