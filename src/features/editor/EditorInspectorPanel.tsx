@@ -328,10 +328,38 @@ export function EditorInspectorPanel({
                 <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
                   <dt className="text-muted-foreground">Lineage</dt>
                   <dd
+                    className="flex min-w-0 flex-wrap gap-1"
                     data-upid-lineage-depth={selectedPathLineage.length}
                     data-upid-selected="tree-lineage"
                   >
-                    {selectedPathLineage.map((element) => element.displayName).join(' / ')}
+                    {selectedPathLineage.map((element, index) => (
+                      <span className="inline-flex items-center gap-1" key={element.id}>
+                        {index > 0 && <span className="text-muted-foreground"> / </span>}
+                        <button
+                          aria-label={`Select lineage ${element.displayName}`}
+                          className="text-left text-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                          data-upid-lineage-item={element.id}
+                          onClick={() =>
+                            onSelectPathElement?.({
+                              operationId: element.operationId,
+                              pathElementId: element.id,
+                              segmentId: null
+                            })
+                          }
+                          onMouseEnter={() =>
+                            onHoverPathElement?.({
+                              operationId: element.operationId,
+                              pathElementId: element.id,
+                              segmentId: null
+                            })
+                          }
+                          onMouseLeave={() => onHoverPathElement?.(null)}
+                          type="button"
+                        >
+                          {element.displayName}
+                        </button>
+                      </span>
+                    ))}
                   </dd>
                   <dt className="text-muted-foreground">Direct Segs</dt>
                   <dd data-upid-selected="tree-direct-segments">
