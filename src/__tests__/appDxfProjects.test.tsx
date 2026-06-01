@@ -462,6 +462,10 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-contour-row]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-stack]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-row]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Resize Inspector Rail"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Collapse Inspector Rail"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Resize right bar"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Collapse right bar"]')).toBeNull();
     expect(container.querySelector('[data-editor-path-plan-panel]')).toBeNull();
     expect(container.querySelector('[data-editor-posted-body-preview]')).toBeNull();
     expect(container.querySelector('[data-editor-code-section="lines"]')).toBeNull();
@@ -475,6 +479,19 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).not.toContain('Program Text');
     expect(container.textContent).not.toContain('Header');
     expect(container.textContent).not.toContain('Footer');
+
+    const collapseInspectorButton = container.querySelector(
+      '[aria-label="Collapse Inspector Rail"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      collapseInspectorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-inspector-collapsed]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Expand Inspector Rail"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Expand right bar"]')).toBeNull();
   });
 
   it('uses UPID-selected geometry details in the Inspector Rail for DXF projects', async () => {

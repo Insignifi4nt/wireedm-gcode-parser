@@ -156,8 +156,8 @@ export function EditorPage({
   const [selectedPathElement, setSelectedPathElement] = useState<EditorPathElementRef | null>(null);
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
-  const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
-  const [rightRailWidth, setRightRailWidth] = useState(420);
+  const [inspectorRailCollapsed, setInspectorRailCollapsed] = useState(false);
+  const [inspectorRailWidth, setInspectorRailWidth] = useState(420);
   const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
   const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
   const draftText = editorDraftText(draftState);
@@ -531,14 +531,14 @@ export function EditorPage({
     await onImportProgramFile(file);
   }
 
-  function handleRightRailResizeStart(event: PointerEvent<HTMLDivElement>) {
+  function handleInspectorRailResizeStart(event: PointerEvent<HTMLDivElement>) {
     event.preventDefault();
     const startX = event.clientX;
-    const startWidth = rightRailWidth;
+    const startWidth = inspectorRailWidth;
 
     function handlePointerMove(moveEvent: globalThis.PointerEvent) {
       const nextWidth = Math.min(560, Math.max(280, startWidth - (moveEvent.clientX - startX)));
-      setRightRailWidth(nextWidth);
+      setInspectorRailWidth(nextWidth);
     }
 
     function handlePointerUp() {
@@ -1102,11 +1102,11 @@ export function EditorPage({
       />
       <section
         className={`grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)] gap-y-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)] ${
-          rightRailCollapsed
+          inspectorRailCollapsed
             ? 'lg:grid-cols-[minmax(0,1fr)_42px]'
             : 'lg:grid-cols-[minmax(0,1fr)_4px_var(--editor-inspector-width)]'
         }`}
-        style={{ '--editor-inspector-width': `${rightRailWidth}px` } as CSSProperties}
+        style={{ '--editor-inspector-width': `${inspectorRailWidth}px` } as CSSProperties}
       >
         <EditorCanvasPanel
           constructionPreview={constructionPreview}
@@ -1132,16 +1132,16 @@ export function EditorPage({
           startPreview={startPreview}
         />
 
-        {rightRailCollapsed ? (
+        {inspectorRailCollapsed ? (
           <div
             className="hidden min-h-0 border border-border bg-card/95 lg:flex lg:flex-col lg:items-center lg:gap-3 lg:py-2"
             data-editor-inspector-collapsed
           >
             <button
-              aria-label="Expand right bar"
+              aria-label="Expand Inspector Rail"
               className="flex size-7 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-              onClick={() => setRightRailCollapsed(false)}
-              title="Expand right bar"
+              onClick={() => setInspectorRailCollapsed(false)}
+              title="Expand Inspector Rail"
               type="button"
             >
               <PanelRightOpen className="size-3.5" />
@@ -1153,10 +1153,10 @@ export function EditorPage({
         ) : (
           <>
             <div
-              aria-label="Resize right bar"
+              aria-label="Resize Inspector Rail"
               className="hidden cursor-col-resize bg-border/30 transition hover:bg-primary/40 lg:block"
               data-editor-inspector-resizer
-              onPointerDown={handleRightRailResizeStart}
+              onPointerDown={handleInspectorRailResizeStart}
               role="separator"
             />
             <aside
@@ -1166,10 +1166,10 @@ export function EditorPage({
             >
               <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-1">
                 <button
-                  aria-label="Collapse right bar"
+                  aria-label="Collapse Inspector Rail"
                   className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-                  onClick={() => setRightRailCollapsed(true)}
-                  title="Collapse right bar"
+                  onClick={() => setInspectorRailCollapsed(true)}
+                  title="Collapse Inspector Rail"
                   type="button"
                 >
                   <PanelRightClose className="size-3.5" />
