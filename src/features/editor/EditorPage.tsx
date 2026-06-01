@@ -11,7 +11,7 @@ import {
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 import { useAppRail } from '@/app/AppRailContext';
-import { buildOutputFilename, composeGCodeProgramWithLineMap } from '@/domain/post/gcodeTemplates';
+import { buildOutputFilename } from '@/domain/post/gcodeTemplates';
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 import {
   deleteBodyGroup,
@@ -55,7 +55,7 @@ import type {
   Point2
 } from '@/domain/path-intel/types';
 import { projectUpidDocument } from '@/domain/upid/projectUpid';
-import { postUpidToGcode } from '@/domain/upid/upidDocument';
+import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 import {
   exportMeasurementPointsAsCsv,
   exportMeasurementPointsAsGCode,
@@ -220,8 +220,6 @@ export function EditorPage({
   const upidExport = useMemo(() => {
     if (!exportPreviewOpen || !pathDocumentDraft || !program?.project) return null;
 
-    const posted = postUpidToGcode(pathDocumentDraft);
-    const body = posted.body;
     const machine = program.project.machine;
     const fileName = buildOutputFilename(
       program.project.id,
@@ -231,16 +229,15 @@ export function EditorPage({
     const manualOrderCount = pathDocumentDraft.plan.operations.filter(
       (operation) => operation.overrides?.order
     ).length;
-    const programComposition = composeGCodeProgramWithLineMap({
+    const exportProgram = composeUpidGCodeExport(pathDocumentDraft, {
       header: machine.templates.header,
-      body,
       footer: machine.templates.footer,
       lineEnding: machine.output.lineEnding
     });
 
     return {
-      body,
-      diagnostics: [...pathDocumentDraft.diagnostics, ...posted.diagnostics],
+      body: exportProgram.body,
+      diagnostics: [...pathDocumentDraft.diagnostics, ...exportProgram.post.diagnostics],
       fileName,
       machineName: machine.name,
       operationCount: pathDocumentDraft.plan.operations.length,
@@ -248,13 +245,13 @@ export function EditorPage({
         manualOrderCount,
         operationOrderStrategy: pathDocumentDraft.options.operationOrderStrategy
       },
-      programLines: programComposition.lines,
+      programLines: exportProgram.program.lines,
       programSections: {
-        body: programComposition.sections.body
+        body: exportProgram.program.sections.body
       },
-      programText: programComposition.text,
-      postMetrics: posted.metrics,
-      postedOperations: posted.operations
+      programText: exportProgram.program.text,
+      postMetrics: exportProgram.post.metrics,
+      postedOperations: exportProgram.post.operations
     };
   }, [exportPreviewOpen, pathDocumentDraft, program?.project]);
   const constructionPreview = useMemo(() => {

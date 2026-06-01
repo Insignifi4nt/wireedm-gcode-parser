@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { projectUpidDocument, withProjectUpid } from '../projectUpid';
-import { createUpidFromDxfEntities, postUpidToGcode, postUpidToGcodeBody } from '../upidDocument';
+import {
+  composeUpidGCodeExport,
+  createUpidFromDxfEntities,
+  postUpidToGcode,
+  postUpidToGcodeBody
+} from '../upidDocument';
 
 describe('UPID document boundary', () => {
   it('creates a Universal Path Intelligence Document from DXF entities and posts it at the export boundary', () => {
@@ -65,6 +70,47 @@ describe('UPID document boundary', () => {
       reason: 'segment-cut',
       segmentId,
       text: 'G1 X10.000 Y0.000'
+    });
+  });
+
+  it('composes a UPID export program with final G-code line metadata', () => {
+    const document = createUpidFromDxfEntities([
+      {
+        type: 'line',
+        layer: 'CUT',
+        start: { x: 0, y: 0 },
+        end: { x: 10, y: 0 }
+      }
+    ]);
+
+    const exportProgram = composeUpidGCodeExport(document, {
+      header: '%\nG90 G21',
+      footer: 'M30\n%',
+      lineEnding: 'lf'
+    });
+
+    expect(exportProgram.body).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
+    expect(exportProgram.program.text).toBe('%\nG90 G21\nG0 X0.000 Y0.000\nG1 X10.000 Y0.000\nM30\n%\n');
+    expect(exportProgram.program.sections.body).toEqual({
+      endLineNumber: 4,
+      lineCount: 2,
+      lineOffset: 2,
+      startLineNumber: 3
+    });
+    expect(exportProgram.program.lines[2]).toEqual({
+      lineNumber: 3,
+      section: 'body',
+      sectionLineNumber: 1,
+      text: 'G0 X0.000 Y0.000'
+    });
+    expect(exportProgram.post.metrics).toEqual({
+      cutMoveCount: 1,
+      rapidCount: 1
+    });
+    expect(exportProgram.post.operations[0]).toMatchObject({
+      bodyLineEnd: 1,
+      bodyLineStart: 0,
+      operationId: document.plan.operations[0].id
     });
   });
 
