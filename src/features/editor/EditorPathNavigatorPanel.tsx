@@ -1207,6 +1207,7 @@ function renderEndpointTopologyRow({
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-cluster-id={row.kind === 'snapped-endpoint-cluster' ? row.clusterId : undefined}
+      data-upid-open-endpoint-cluster={row.kind === 'open-endpoint-cluster' ? row.clusterId : undefined}
       data-upid-diagnostic-id={row.kind === 'ambiguous-endpoint-cluster' ? row.diagnosticId : undefined}
       data-upid-endpoint-topology-candidates={
         row.kind === 'ambiguous-endpoint-cluster' ? row.candidateCount : undefined
@@ -1216,10 +1217,14 @@ function renderEndpointTopologyRow({
       }
       data-upid-endpoint-topology-kind={row.kind}
       data-upid-endpoint-topology-members={
-        row.kind === 'snapped-endpoint-cluster' ? row.memberCount : undefined
+        row.kind === 'snapped-endpoint-cluster' || row.kind === 'open-endpoint-cluster'
+          ? row.memberCount
+          : undefined
       }
       data-upid-endpoint-topology-method={
-        row.kind === 'snapped-endpoint-cluster' ? row.method : undefined
+        row.kind === 'snapped-endpoint-cluster' || row.kind === 'open-endpoint-cluster'
+          ? row.method
+          : undefined
       }
       data-upid-endpoint-topology-min-candidate-gap={
         row.kind === 'ambiguous-endpoint-cluster' && row.minCandidateDistance !== null
@@ -1243,7 +1248,17 @@ function renderEndpointTopologyRow({
       onMouseLeave={() => onHoverPathElement(null)}
       type="button"
     >
-      {row.kind === 'snapped-endpoint-cluster' ? (
+      {row.kind === 'open-endpoint-cluster' ? (
+        <>
+          <span className="min-w-0">
+            <span className="block truncate text-[10px] text-amber-100">Open end {row.clusterId}</span>
+            <span className="block truncate text-[9px] text-muted-foreground">
+              {formatPoint(row.point)} / not paired / {formatOpenEndpointMember(row.member)}
+            </span>
+          </span>
+          <span className="text-right text-[9px] text-amber-200">{row.method}</span>
+        </>
+      ) : row.kind === 'snapped-endpoint-cluster' ? (
         <>
           <span className="min-w-0">
             <span className="block truncate text-[10px] text-foreground">Snapped {row.clusterId}</span>
@@ -1267,6 +1282,15 @@ function renderEndpointTopologyRow({
       )}
     </button>
   );
+}
+
+function formatOpenEndpointMember(
+  member: Extract<UpidEndpointTopologyRow, { kind: 'open-endpoint-cluster' }>['member']
+) {
+  if (!member) return 'unknown endpoint';
+  const role = member.pointRole ? member.pointRole.toUpperCase() : member.rawEndpointSide.toUpperCase();
+  const segmentIndex = member.segmentIndex !== null ? `S${member.segmentIndex + 1}` : member.segmentId;
+  return `${segmentIndex} ${role}`;
 }
 
 function TopologyMetric({

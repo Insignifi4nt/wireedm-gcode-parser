@@ -210,6 +210,40 @@ describe('UPID project rail projection', () => {
     expect(row.members.map((member) => member.pointRole)).toEqual(['end', 'start']);
   });
 
+  it('projects open endpoint topology rows with selectable endpoint refs', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([line(0, 0, 10, 0)]);
+    const operation = document.plan.operations[0];
+
+    const rows = readUpidEndpointTopologyRows(document);
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.kind)).toEqual(['open-endpoint-cluster', 'open-endpoint-cluster']);
+    const first = rows[0];
+    expect(first.kind).toBe('open-endpoint-cluster');
+    if (first.kind !== 'open-endpoint-cluster') {
+      throw new Error('Expected open endpoint topology row.');
+    }
+    expect(first).toMatchObject({
+      clusterId: document.endpointClusters[0].id,
+      memberCount: 1,
+      point: { x: 0, y: 0 },
+      selectRef: {
+        operationId: operation.id,
+        pathElementId: document.pathElements[0].id,
+        pointRole: 'start',
+        segmentId: operation.segmentRefs[0].segmentId
+      }
+    });
+    expect(rows[1]).toMatchObject({
+      kind: 'open-endpoint-cluster',
+      point: { x: 10, y: 0 },
+      selectRef: {
+        pointRole: 'end',
+        segmentId: operation.segmentRefs[0].segmentId
+      }
+    });
+  });
+
   it('projects ambiguous endpoint topology rows with diagnostic context', () => {
     const document = createPathPlanningDocumentFromDxfEntities(
       [
@@ -226,10 +260,11 @@ describe('UPID project rail projection', () => {
 
     const rows = readUpidEndpointTopologyRows(document);
 
+    const ambiguousRows = rows.filter((row) => row.kind === 'ambiguous-endpoint-cluster');
     expect(diagnostic).not.toBeUndefined();
     expect(rows.some((row) => row.kind === 'snapped-endpoint-cluster')).toBe(false);
-    expect(rows).toHaveLength(diagnostics.length);
-    const row = rows[0];
+    expect(ambiguousRows).toHaveLength(diagnostics.length);
+    const row = ambiguousRows[0];
     expect(row.kind).toBe('ambiguous-endpoint-cluster');
     if (row.kind !== 'ambiguous-endpoint-cluster') {
       throw new Error('Expected ambiguous endpoint topology row.');

@@ -358,6 +358,10 @@ test('editor diagnostics explain what to inspect for an open chain', async ({ pa
   await page.getByRole('button', { name: 'Open Repair Workspace' }).click();
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
   await expect(page.locator('[data-editor-workspace-panel="contour-tree"]')).toBeVisible();
+  const openEndpointRows = page.locator('[data-upid-endpoint-topology-kind="open-endpoint-cluster"]');
+  await expect(openEndpointRows).toHaveCount(2);
+  await expect(openEndpointRows.first()).toContainText('Open end');
+  await expect(openEndpointRows.first()).toContainText('not paired');
   let boxes = await readFloatingPanelBoxes(page, [
     'path-diagnostics',
     'endpoint-topology',
@@ -368,6 +372,9 @@ test('editor diagnostics explain what to inspect for an open chain', async ({ pa
       expect(panelsOverlap(boxes[index], boxes[compareIndex])).toBe(false);
     }
   }
+  await openEndpointRows.first().click();
+  await expect(openEndpointRows.first()).toHaveAttribute('data-upid-selected', 'true');
+  await expect(page.locator('[data-preview-path-endpoint][data-preview-selected="true"]')).toHaveCount(1);
 
   await hidePanels(page, ['endpoint-topology', 'contour-tree']);
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);
