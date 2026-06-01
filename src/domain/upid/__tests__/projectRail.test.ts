@@ -10,6 +10,8 @@ import {
   readUpidOperationPathElement,
   readUpidPathElementPoint,
   readUpidPathElementPointByRole,
+  readUpidSelectedPathPoint,
+  readUpidSelectedPathSegment,
   readUpidSelectedPathTravel,
   summarizeUpidPathDocumentForEditor,
   upidManualDecisionKinds,
@@ -206,6 +208,64 @@ describe('UPID project rail projection', () => {
       cuttingMoveCount: 1,
       pathCount: 6,
       rapidMoveCount: 2
+    });
+  });
+
+  it('reads selected segment and point details with DXF provenance', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'line',
+        handle: 'BEEF',
+        layer: 'CUT',
+        source: {
+          blockName: 'PROFILE',
+          insertChain: [
+            {
+              blockName: 'PROFILE',
+              column: 2,
+              row: 3,
+              layer: 'CUT',
+              transform: {
+                insertion: { x: 100, y: 200 },
+                rotationDegrees: 0,
+                scaleX: 1,
+                scaleY: 1
+              }
+            }
+          ]
+        },
+        start: { x: 0, y: 0 },
+        end: { x: 10, y: 0 }
+      }
+    ]);
+    const operation = document.plan.operations[0];
+    const pathElement = readUpidOperationPathElement(document, operation.id, null);
+    const elementRef = {
+      operationId: operation.id,
+      pathElementId: pathElement!.id,
+      segmentId: operation.segmentRefs[0].segmentId
+    };
+
+    expect(readUpidSelectedPathSegment(document, pathElement!, elementRef)).toMatchObject({
+      end: { x: 10, y: 0 },
+      kind: 'line',
+      layer: 'CUT',
+      length: 10,
+      reversed: false,
+      source: {
+        block: 'PROFILE',
+        entityIndex: 0,
+        exact: true,
+        handle: 'BEEF',
+        insert: 'PROFILE / row 3 col 2',
+        type: 'line'
+      },
+      start: { x: 0, y: 0 }
+    });
+    expect(readUpidSelectedPathPoint(document, pathElement!, { ...elementRef, pointRole: 'end' })).toEqual({
+      point: { x: 10, y: 0 },
+      role: 'end',
+      segmentKind: 'line'
     });
   });
 });

@@ -7,21 +7,16 @@ import {
 
 import { Button } from '@/components/ui/button';
 import type { GCodeStructure } from '@/domain/editor/gcodeStructure';
-import type { DxfInsertSource } from '@/domain/dxf/types';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { MachineFitResult } from '@/domain/machine/machineFit';
-import {
-  orientedSegmentEnd,
-  orientedSegmentStart,
-  segmentMap
-} from '@/domain/path-intel/segments';
 import type { PathElement, PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   readUpidPathElementPointByRole,
   readUpidOperationPathElement,
+  readUpidSelectedPathPoint,
+  readUpidSelectedPathSegment,
   readUpidSelectedPathTravel,
-  type UpidOperationPathElement
 } from '@/domain/upid/projectRail';
 import type { MachineProfile } from '@/domain/workbench/types';
 
@@ -110,10 +105,10 @@ export function EditorInspectorPanel({
     ? readUpidOperationPathElement(pathDocument, selectedPathOperation.id, selectedPathElement?.pathElementId)
     : null;
   const selectedPathSegment = selectedPathElementModel
-    ? readSelectedPathSegment(pathDocument, selectedPathElementModel, selectedPathElement)
+    ? readUpidSelectedPathSegment(pathDocument, selectedPathElementModel, selectedPathElement)
     : null;
   const selectedPathPoint = selectedPathElementModel
-    ? readSelectedPathPoint(pathDocument, selectedPathElementModel, selectedPathElement)
+    ? readUpidSelectedPathPoint(pathDocument, selectedPathElementModel, selectedPathElement)
     : null;
   const selectedPathTravel = selectedPathOperation
     ? readUpidSelectedPathTravel(pathDocument, selectedPathOperationIndex, selectedPathElement)
@@ -735,68 +730,5 @@ function sourceSummaryRows(element: PathElement) {
           }`
         : null,
     layers: provenance.layers.length > 0 ? provenance.layers.map((layer) => layer ?? '-').join(', ') : '-'
-  };
-}
-
-function readSelectedPathSegment(
-  document: PathPlanningDocument | null,
-  pathElement: UpidOperationPathElement,
-  element: EditorPathElementRef | null
-) {
-  if (!document || !element?.segmentId || element.operationId !== pathElement.operationId) return null;
-
-  const ref = pathElement.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
-  if (!ref) return null;
-
-  const segment = segmentMap(document.segments).get(ref.segmentId);
-  if (!segment) return null;
-
-  return {
-    end: orientedSegmentEnd(segment, ref),
-    kind: segment.kind,
-    layer: segment.layer,
-    length: segment.length,
-    reversed: ref.reversed,
-    source: {
-      block: segment.source.dxf?.blockName ?? null,
-      entityIndex: segment.source.sourceEntityIndex,
-      exact: segment.source.exact,
-      handle: segment.source.sourceEntityHandle ?? null,
-      insert: formatSegmentInsertSource(segment.source.dxf?.insertChain[0] ?? null),
-      subIndex: segment.source.sourceSubIndex,
-      type: segment.source.sourceEntityType
-    },
-    start: orientedSegmentStart(segment, ref)
-  };
-}
-
-function formatSegmentInsertSource(insert: DxfInsertSource | null) {
-  return insert ? `${insert.blockName} / row ${insert.row} col ${insert.column}` : null;
-}
-
-function readSelectedPathPoint(
-  document: PathPlanningDocument | null,
-  pathElement: UpidOperationPathElement,
-  element: EditorPathElementRef | null
-) {
-  if (
-    !document ||
-    !element?.segmentId ||
-    !element.pointRole ||
-    element.operationId !== pathElement.operationId
-  ) {
-    return null;
-  }
-
-  const ref = pathElement.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
-  if (!ref) return null;
-
-  const segment = segmentMap(document.segments).get(ref.segmentId);
-  if (!segment) return null;
-
-  return {
-    point: element.pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref),
-    role: element.pointRole,
-    segmentKind: segment.kind
   };
 }

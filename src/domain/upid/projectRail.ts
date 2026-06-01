@@ -1,5 +1,6 @@
 import type {
   Bounds2,
+  PathElementPointRole,
   PathDiagnostic,
   PathElement,
   PathElementId,
@@ -8,6 +9,7 @@ import type {
   Point2,
   SegmentId
 } from '@/domain/path-intel/types';
+import type { DxfInsertSource } from '@/domain/dxf/types';
 import {
   boundsAreFinite,
   distance,
@@ -59,6 +61,30 @@ export interface UpidSelectedPathTravel {
   end: Point2;
   length: number;
   start: Point2;
+}
+
+export interface UpidSelectedPathSegment {
+  end: Point2;
+  kind: string;
+  layer: string | null;
+  length: number;
+  reversed: boolean;
+  source: {
+    block: string | null;
+    entityIndex: number;
+    exact: boolean;
+    handle: string | null;
+    insert: string | null;
+    subIndex?: number;
+    type: string;
+  };
+  start: Point2;
+}
+
+export interface UpidSelectedPathPoint {
+  point: Point2;
+  role: Extract<PathElementPointRole, 'start' | 'end'>;
+  segmentKind: string;
 }
 
 export interface UpidEditorPathStats {
@@ -206,6 +232,65 @@ export function readUpidPathElementPointByRole(
   role: 'start' | 'end'
 ) {
   return element.points.find((point) => point.role === role) ?? null;
+}
+
+export function readUpidSelectedPathSegment(
+  document: PathPlanningDocument | null,
+  pathElement: UpidOperationPathElement,
+  element: UpidPathElementRef | null
+): UpidSelectedPathSegment | null {
+  if (!document || !element?.segmentId || element.operationId !== pathElement.operationId) return null;
+
+  const ref = pathElement.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
+  if (!ref) return null;
+
+  const segment = segmentMap(document.segments).get(ref.segmentId);
+  if (!segment) return null;
+
+  return {
+    end: orientedSegmentEnd(segment, ref),
+    kind: segment.kind,
+    layer: segment.layer,
+    length: segment.length,
+    reversed: ref.reversed,
+    source: {
+      block: segment.source.dxf?.blockName ?? null,
+      entityIndex: segment.source.sourceEntityIndex,
+      exact: segment.source.exact,
+      handle: segment.source.sourceEntityHandle ?? null,
+      insert: formatUpidSegmentInsertSource(segment.source.dxf?.insertChain[0] ?? null),
+      subIndex: segment.source.sourceSubIndex,
+      type: segment.source.sourceEntityType
+    },
+    start: orientedSegmentStart(segment, ref)
+  };
+}
+
+export function readUpidSelectedPathPoint(
+  document: PathPlanningDocument | null,
+  pathElement: UpidOperationPathElement,
+  element: UpidPathElementRef | null
+): UpidSelectedPathPoint | null {
+  if (
+    !document ||
+    !element?.segmentId ||
+    !element.pointRole ||
+    element.operationId !== pathElement.operationId
+  ) {
+    return null;
+  }
+
+  const ref = pathElement.segmentRefs.find((candidate) => candidate.segmentId === element.segmentId);
+  if (!ref) return null;
+
+  const segment = segmentMap(document.segments).get(ref.segmentId);
+  if (!segment) return null;
+
+  return {
+    point: element.pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref),
+    role: element.pointRole,
+    segmentKind: segment.kind
+  };
 }
 
 export function upidStartPreviewPointRole(
@@ -395,4 +480,8 @@ function emptyDisplayBounds(): Bounds2 {
     maxX: Number.NaN,
     maxY: Number.NaN
   };
+}
+
+function formatUpidSegmentInsertSource(insert: DxfInsertSource | null) {
+  return insert ? `${insert.blockName} / row ${insert.row} col ${insert.column}` : null;
 }
