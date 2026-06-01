@@ -196,6 +196,30 @@ test('editor opens common floating workspace panels in readable non-overlapping 
   }
 });
 
+test('editor diagnostics explain what to inspect for an open chain', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'open-chain-guidance.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(simpleLineDxf())
+    });
+
+  await showPanels(page, ['path-diagnostics']);
+
+  const diagnosticRow = page.locator('[data-upid-diagnostic-row]').first();
+  await expect(diagnosticRow).toHaveAttribute('data-upid-diagnostic-code', 'open-chain');
+  await expect(diagnosticRow.locator('[data-upid-diagnostic-guidance]')).toContainText(
+    'Open Endpoint Topology'
+  );
+  await expect(diagnosticRow.locator('[data-upid-diagnostic-guidance]')).toContainText(
+    'affected start/end'
+  );
+});
+
 test('editor translates selected path geometry through the Transform panel', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
   await page.goto('/');
@@ -453,6 +477,28 @@ CUT
 0
 20
 10
+0
+ENDSEC
+0
+EOF
+`;
+}
+
+function simpleLineDxf() {
+  return `0
+SECTION
+2
+ENTITIES
+0
+LINE
+10
+0
+20
+0
+11
+10
+21
+0
 0
 ENDSEC
 0

@@ -814,7 +814,7 @@ export function EditorPathNavigatorPanel({
                 {pathDiagnostics.length} {pathDiagnostics.length === 1 ? 'issue' : 'issues'}
               </span>
             </div>
-            <div className="max-h-24 overflow-auto border border-border bg-background/35">
+            <div className="max-h-48 overflow-auto border border-border bg-background/35">
               {pathDiagnostics.length > 0 ? (
                 pathDiagnostics.map((diagnostic) =>
                   renderDiagnosticRow({
@@ -1116,6 +1116,7 @@ function renderDiagnosticRow({
         <span className="truncate text-muted-foreground">{diagnostic.code}</span>
       </div>
       <p className="text-[9px] leading-4 text-muted-foreground">{diagnostic.message}</p>
+      {renderDiagnosticGuidance(diagnostic)}
       <span className="text-[8px] text-muted-foreground">
         segments {diagnostic.relatedSegmentCount} / clusters {diagnostic.relatedClusterCount}
       </span>
@@ -1161,6 +1162,79 @@ function renderDiagnosticRow({
       )}
     </div>
   );
+}
+
+function renderDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic) {
+  const guidance = readDiagnosticGuidance(diagnostic);
+  if (!guidance) return null;
+
+  return (
+    <div
+      className="mt-1 border border-border bg-background/45 px-2 py-1 text-[8px] leading-4 text-muted-foreground"
+      data-upid-diagnostic-guidance
+      title={guidance.title}
+    >
+      <span className="mr-1 uppercase text-foreground" data-upid-diagnostic-guidance-label>
+        Next
+      </span>
+      {guidance.text}
+    </div>
+  );
+}
+
+function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic) {
+  switch (diagnostic.code) {
+    case 'open-chain':
+      return {
+        title: 'Open chains have unmatched start/end endpoints.',
+        text:
+          'Open Endpoint Topology, select the affected start/end refs below, and inspect the gap in the Contour Tree. If this should be a closed loop, repair or re-import the source endpoints before exporting.'
+      };
+    case 'ambiguous-endpoint-cluster':
+      return {
+        title: 'More than one endpoint pairing is possible inside tolerance.',
+        text:
+          'Open Endpoint Topology and compare the candidate endpoint refs. Simplify the nearby geometry or re-import with cleaner endpoints so the chain order is unambiguous.'
+      };
+    case 'endpoint-cluster-snap':
+      return {
+        title: 'The importer healed a small endpoint gap.',
+        text:
+          'Inspect the snapped endpoint in Endpoint Topology. If the healed gap is intentional and tiny, continue; if it bridges the wrong edges, fix the source geometry.'
+      };
+    case 'post-bridged-gap':
+    case 'post-unexpected-gap':
+      return {
+        title: 'The posted path contains a bridge or unexpected travel gap.',
+        text:
+          'Select the affected refs, then check cut order, direction, and endpoint joins before trusting the exported G-code.'
+      };
+    case 'invalid-arc':
+    case 'invalid-polyline':
+    case 'zero-length-segment':
+      return {
+        title: 'The source entity could not become clean cut geometry.',
+        text:
+          'Select the affected refs, then repair the source entity or remove duplicate/invalid geometry before importing again.'
+      };
+    case 'self-intersection':
+    case 'degenerate-contour':
+      return {
+        title: 'The contour shape is not a clean closed machining loop.',
+        text:
+          'Inspect the highlighted contour and segment rows. Repair overlapping, crossing, or collapsed geometry before relying on automatic ordering.'
+      };
+    case 'branching-topology':
+    case 'closed-chain-gap':
+    case 'route-dependency-cycle':
+      return {
+        title: 'The path graph needs manual inspection.',
+        text:
+          'Use the affected refs and Contour Tree to find the conflicting joins, then fix the source geometry or adjust ordering manually.'
+      };
+    default:
+      return null;
+  }
 }
 
 export function EditorPathNavigatorRailCollapsed() {
