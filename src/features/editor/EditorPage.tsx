@@ -11,7 +11,6 @@ import {
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 import { useAppRail } from '@/app/AppRailContext';
-import { buildOutputFilename } from '@/domain/post/gcodeTemplates';
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 import {
   deleteBodyGroup,
@@ -49,7 +48,7 @@ import {
   upidPathElementIdForOperation,
   upidStartPreviewPointRole
 } from '@/domain/upid/projectRail';
-import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
+import { composeProjectUpidGCodeExport } from '@/domain/upid/projectUpid';
 import {
   createMeasurementPointPathSnapFromMagnetized,
   exportMeasurementPointsAsCsv,
@@ -219,26 +218,16 @@ export function EditorPage({
   const upidExport = useMemo(() => {
     if (!exportPreviewOpen || !pathDocumentDraft || !program?.project) return null;
 
-    const machine = program.project.machine;
-    const fileName = buildOutputFilename(
-      program.project.id,
-      machine.output.extension,
-      machine.output.customExtension
-    );
-    const exportProgram = composeUpidGCodeExport(pathDocumentDraft, {
-      header: machine.templates.header,
-      footer: machine.templates.footer,
-      lineEnding: machine.output.lineEnding
-    });
+    const exportProgram = composeProjectUpidGCodeExport(program.project, pathDocumentDraft);
 
     return {
       body: exportProgram.body,
       diagnostics: exportProgram.diagnostics,
       documentTrace: exportProgram.documentTrace,
-      fileName,
-      machineName: machine.name,
+      fileName: exportProgram.fileName,
+      machineName: exportProgram.machineName,
       operationCount: exportProgram.summary.operationCount,
-      pathDocument: pathDocumentDraft,
+      pathDocument: exportProgram.pathDocument,
       planning: exportProgram.planning,
       programLines: exportProgram.program.lines,
       programText: exportProgram.program.text,

@@ -1,6 +1,11 @@
+import { buildOutputFilename } from '@/domain/post/gcodeTemplates';
 import type { WorkbenchProject, WorkbenchUpidState } from '@/domain/workbench/types';
 
-import type { UniversalPathIntelligenceDocument } from './upidDocument';
+import {
+  composeUpidGCodeExport,
+  type UpidGCodeExport,
+  type UniversalPathIntelligenceDocument
+} from './upidDocument';
 
 const PROJECT_UPID_FORMAT = 'upid';
 const PROJECT_UPID_SCHEMA_VERSION = 1;
@@ -15,6 +20,12 @@ interface ProjectUpidCandidate {
       projectId?: unknown;
     };
   };
+}
+
+export interface ProjectUpidGCodeExport extends UpidGCodeExport {
+  fileName: string;
+  machineName: string;
+  pathDocument: UniversalPathIntelligenceDocument;
 }
 
 export function createProjectUpid(
@@ -52,18 +63,49 @@ export function projectUpidDocument(project: WorkbenchProject | null | undefined
     );
   }
 
-  const documentProjectId = upid.document.source?.projectId;
+  return requireProjectUpidDocument(project.id, upid.document as UniversalPathIntelligenceDocument);
+}
+
+export function composeProjectUpidGCodeExport(
+  project: WorkbenchProject,
+  document: UniversalPathIntelligenceDocument
+): ProjectUpidGCodeExport {
+  const pathDocument = requireProjectUpidDocument(project.id, document);
+  const machine = project.machine;
+  const exportProgram = composeUpidGCodeExport(pathDocument, {
+    header: machine.templates.header,
+    footer: machine.templates.footer,
+    lineEnding: machine.output.lineEnding
+  });
+
+  return {
+    ...exportProgram,
+    fileName: buildOutputFilename(
+      project.id,
+      machine.output.extension,
+      machine.output.customExtension
+    ),
+    machineName: machine.name,
+    pathDocument
+  };
+}
+
+function requireProjectUpidDocument(
+  projectId: string,
+  document: UniversalPathIntelligenceDocument
+) {
+  const documentProjectId = document.source.projectId;
   if (typeof documentProjectId !== 'string') {
-    throw new Error(`UPID document project identity is required for ${project.id}.`);
+    throw new Error(`UPID document project identity is required for ${projectId}.`);
   }
 
-  if (documentProjectId !== project.id) {
+  if (documentProjectId !== projectId) {
     throw new Error(
-      `UPID document project mismatch: ${documentProjectId} cannot be used by ${project.id}.`
+      `UPID document project mismatch: ${documentProjectId} cannot be used by ${projectId}.`
     );
   }
 
-  return upid.document as UniversalPathIntelligenceDocument;
+  return document;
 }
 
 function stampProjectUpidDocument(

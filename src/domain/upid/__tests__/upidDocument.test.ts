@@ -8,7 +8,12 @@ import {
   setPathOperationClassification
 } from '@/domain/path-editor/pathDocumentOperations';
 
-import { createProjectUpid, projectUpidDocument, withProjectUpid } from '../projectUpid';
+import {
+  composeProjectUpidGCodeExport,
+  createProjectUpid,
+  projectUpidDocument,
+  withProjectUpid
+} from '../projectUpid';
 import {
   composeUpidGCodeExport,
   createUpidFromDxfEntities,
@@ -402,6 +407,34 @@ describe('UPID document boundary', () => {
 
     expect(upid.document.source.projectId).toBe('upid-project');
     expect(document.source.projectId).toBeUndefined();
+  });
+
+  it('composes project-owned UPID exports from project machine settings', () => {
+    const project = withProjectUpid(baseProject(), createUpidFromDxfEntities([line(0, 0, 4, 0)]));
+    const document = projectUpidDocument(project)!;
+
+    const exportProgram = composeProjectUpidGCodeExport(project, document);
+
+    expect(exportProgram.fileName).toBe('upid-project.iso');
+    expect(exportProgram.machineName).toBe('Machine');
+    expect(exportProgram.documentTrace.projectId).toBe('upid-project');
+    expect(exportProgram.pathDocument).toBe(document);
+    expect(exportProgram.program.text).toBe('G0 X0.000 Y0.000\r\nG1 X4.000 Y0.000\r\n');
+  });
+
+  it('rejects project UPID exports for documents outside the current project', () => {
+    const project = baseProject();
+    const projectlessDocument = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
+    const foreignDocument = createUpidFromDxfEntities([line(0, 0, 4, 0)], {}, {
+      projectId: 'other-project'
+    });
+
+    expect(() => composeProjectUpidGCodeExport(project, projectlessDocument)).toThrow(
+      'UPID document project identity is required for upid-project.'
+    );
+    expect(() => composeProjectUpidGCodeExport(project, foreignDocument)).toThrow(
+      'UPID document project mismatch: other-project cannot be used by upid-project.'
+    );
   });
 
   it('rejects stored UPID project documents without project identity', () => {
