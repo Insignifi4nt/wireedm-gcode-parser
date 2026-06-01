@@ -246,6 +246,7 @@ export interface UpidSelectedPathDiagnostic {
   relatedChainCount: number;
   relatedClusterCount: number;
   relatedContourCount: number;
+  relatedRefs: UpidPathElementRef[];
   relatedSegmentCount: number;
   selectRef: UpidPathElementRef | null;
   severity: PathDiagnostic['severity'];
@@ -410,6 +411,7 @@ export function readUpidPathElementDiagnostics(
       relatedChainCount: diagnostic.relatedChainIds?.length ?? 0,
       relatedClusterCount: diagnostic.relatedClusterIds?.length ?? 0,
       relatedContourCount: diagnostic.relatedContourIds?.length ?? 0,
+      relatedRefs: upidPathElementRefsForDiagnostic(document, diagnostic),
       relatedSegmentCount: diagnostic.relatedSegmentIds?.length ?? 0,
       selectRef: upidPathElementRefForDiagnostic(document, diagnostic),
       severity: diagnostic.severity
@@ -445,6 +447,70 @@ function readUpidDiagnosticMetrics(diagnostic: PathDiagnostic): UpidSelectedPath
   }
 
   return metrics;
+}
+
+function upidPathElementRefsForDiagnostic(
+  document: PathPlanningDocument,
+  diagnostic: PathDiagnostic
+): UpidPathElementRef[] {
+  const refs: UpidPathElementRef[] = [];
+
+  for (const clusterId of diagnostic.relatedClusterIds ?? []) {
+    const cluster = document.endpointClusters.find((candidate) => candidate.id === clusterId);
+    if (!cluster) continue;
+
+    for (const member of readUpidSelectedEndpointClusterMembers(document, cluster.members)) {
+      const ref = upidPathElementRefForEndpointClusterMember(member);
+      if (ref) refs.push(ref);
+    }
+  }
+
+  if (refs.length === 0) {
+    for (const segmentId of diagnostic.relatedSegmentIds ?? []) {
+      const ref = refForFirstRelatedSegment(document, [segmentId]);
+      if (ref) refs.push(ref);
+    }
+  }
+
+  for (const contourId of diagnostic.relatedContourIds ?? []) {
+    const ref = refForFirstRelatedOperation(
+      document,
+      [contourId],
+      (operation, id) => operation.contourId === id
+    );
+    if (ref) refs.push(ref);
+  }
+
+  for (const chainId of diagnostic.relatedChainIds ?? []) {
+    const ref = refForFirstRelatedOperation(
+      document,
+      [chainId],
+      (operation, id) => operation.chainId === id
+    );
+    if (ref) refs.push(ref);
+  }
+
+  return dedupeUpidPathElementRefs(refs);
+}
+
+function dedupeUpidPathElementRefs(refs: UpidPathElementRef[]) {
+  const seen = new Set<string>();
+  const unique: UpidPathElementRef[] = [];
+
+  for (const ref of refs) {
+    const key = [
+      ref.operationId ?? '',
+      ref.pathElementId ?? '',
+      ref.segmentId ?? '',
+      ref.pointRole ?? '',
+      ref.travelRole ?? ''
+    ].join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(ref);
+  }
+
+  return unique;
 }
 
 function upidDiagnosticAffectsPathElement(

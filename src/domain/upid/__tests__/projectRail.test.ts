@@ -455,6 +455,20 @@ describe('UPID project rail projection', () => {
         value: expect.closeTo(0.004)
       }
     ]);
+    expect(snapDiagnostic!.relatedRefs).toEqual([
+      expect.objectContaining({
+        operationId: operation.id,
+        pathElementId: pathElement.id,
+        pointRole: 'end',
+        segmentId: operation.segmentRefs[0].segmentId
+      }),
+      expect.objectContaining({
+        operationId: operation.id,
+        pathElementId: pathElement.id,
+        pointRole: 'start',
+        segmentId: operation.segmentRefs[1].segmentId
+      })
+    ]);
   });
 
   it('normalizes selected path refs and resolves selected points from UPID geometry', () => {

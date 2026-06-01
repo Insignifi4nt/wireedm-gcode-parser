@@ -595,6 +595,25 @@ describe('EditorPage UPID draft boundary', () => {
     expect(
       container.querySelector('[data-upid-selected-diagnostic-metric="tolerance"]')?.textContent
     ).toBe('Tolerance 0.010');
+
+    const snapDiagnosticRow = container.querySelector(
+      '[data-upid-selected-diagnostic-row][data-upid-selected-diagnostic-code="endpoint-cluster-snap"]'
+    );
+    const affectedRefs = [
+      ...(snapDiagnosticRow?.querySelectorAll('[data-upid-selected-diagnostic-ref]') ?? [])
+    ] as HTMLElement[];
+    expect(affectedRefs).toHaveLength(2);
+    expect(affectedRefs[0].getAttribute('data-upid-selected-diagnostic-ref-segment')).toBeTruthy();
+    expect(affectedRefs[1].getAttribute('data-upid-selected-diagnostic-ref-segment')).toBeTruthy();
+
+    await act(async () => {
+      affectedRefs[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-selected-point-coordinate]')?.textContent).toBe(
+      '10.004, 0.000'
+    );
   });
 
   it('selects ambiguous endpoint topology rows from the path navigator', async () => {

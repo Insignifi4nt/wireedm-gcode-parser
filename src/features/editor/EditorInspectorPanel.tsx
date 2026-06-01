@@ -1111,7 +1111,7 @@ function renderSelectedPathDiagnosticRow({
   onSelectPathElement?: (element: EditorPathElementRef) => void;
 }) {
   return (
-    <button
+    <div
       className="grid min-w-0 gap-0.5 border border-border bg-background/45 px-2 py-1.5 text-left outline-none hover:bg-accent disabled:cursor-default"
       data-upid-selected-diagnostic-code={diagnostic.code}
       data-upid-selected-diagnostic-id={diagnostic.id}
@@ -1119,7 +1119,6 @@ function renderSelectedPathDiagnosticRow({
       data-upid-selected-diagnostic-related-segments={diagnostic.relatedSegmentCount}
       data-upid-selected-diagnostic-row
       data-upid-selected-diagnostic-severity={diagnostic.severity}
-      disabled={!diagnostic.selectRef}
       key={diagnostic.id}
       onClick={() => {
         if (diagnostic.selectRef) onSelectPathElement?.(diagnostic.selectRef);
@@ -1128,7 +1127,11 @@ function renderSelectedPathDiagnosticRow({
         if (diagnostic.selectRef) onHoverPathElement?.(diagnostic.selectRef);
       }}
       onMouseLeave={() => onHoverPathElement?.(null)}
-      type="button"
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && diagnostic.selectRef) onSelectPathElement?.(diagnostic.selectRef);
+      }}
+      role={diagnostic.selectRef ? 'button' : undefined}
+      tabIndex={diagnostic.selectRef ? 0 : undefined}
     >
       <span className="flex min-w-0 items-center justify-between gap-2 text-[9px] uppercase">
         <span className={diagnostic.severity === 'error' ? 'text-destructive' : 'text-amber-200'}>
@@ -1155,7 +1158,32 @@ function renderSelectedPathDiagnosticRow({
           ))}
         </span>
       )}
-    </button>
+      {diagnostic.relatedRefs.length > 0 && (
+        <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
+          {diagnostic.relatedRefs.map((ref, index) => (
+            <button
+              aria-label={`Select diagnostic affected geometry ${index + 1}`}
+              className="border border-border bg-background/60 px-1 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+              data-upid-selected-diagnostic-ref
+              data-upid-selected-diagnostic-ref-index={index}
+              data-upid-selected-diagnostic-ref-operation={ref.operationId ?? undefined}
+              data-upid-selected-diagnostic-ref-path-element={ref.pathElementId ?? undefined}
+              data-upid-selected-diagnostic-ref-segment={ref.segmentId ?? undefined}
+              key={`${ref.operationId ?? ''}-${ref.pathElementId ?? ''}-${ref.segmentId ?? ''}-${index}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelectPathElement?.(ref);
+              }}
+              onMouseEnter={() => onHoverPathElement?.(ref)}
+              onMouseLeave={() => onHoverPathElement?.(null)}
+              type="button"
+            >
+              {index + 1} {ref.segmentId ?? ref.pathElementId ?? ref.operationId ?? 'ref'}
+            </button>
+          ))}
+        </span>
+      )}
+    </div>
   );
 }
 
