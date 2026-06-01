@@ -29,14 +29,14 @@
 - [ ] Add `AppRailContext` and wire `AppShell` to render override content in the existing collapsible rail.
 - [ ] Add `EditorPathNavigatorPanel` with named nested containers: Project Rail, UPID Path Navigator, Contour Tree, Segment Stack, Path Action Bar, Hover Assist, Magnetic Snap.
 - [ ] Register the panel from `EditorPage` whenever `pathDocumentDraft` exists.
-- [ ] Remove the DXF path `EditorPathPlanPanel` from the right-side panel and keep editor rails UPID-native.
+- [x] Remove the DXF path `EditorPathPlanPanel` from the right-side panel and keep editor rails UPID-native.
 - [ ] Run the focused Vitest case and make it pass.
 
 ## Task 2: UPID Naming Boundary
 
 - [ ] Add a small UPID type/export boundary that names the current path document as `UniversalPathIntelligenceDocument` without migrating storage yet.
 - [ ] Update visible DXF editor labels from generic "Path Operations" to "UPID Path Navigator" where the editing model is path-native.
-- [ ] Keep persisted `project.pathPlanning.document` compatible in this slice, because storage migration should be separate and reversible.
+- [x] Persist `project.upid.document` as the clean project path model instead of keeping generated-file or `pathPlanning` compatibility paths.
 - [ ] Add tests proving imported DXF projects still save/reopen path edits after the visible UPID rename.
 
 ## Task 3: Canvas Hover To Navigator Highlight

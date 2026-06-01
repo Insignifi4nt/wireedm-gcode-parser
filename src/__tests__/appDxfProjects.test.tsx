@@ -339,7 +339,7 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
   });
 
-  it('uses UPID geometry for editor path stats instead of stale generated G-code', async () => {
+  it('uses UPID geometry for editor path stats without an editor program file', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
@@ -362,11 +362,7 @@ describe('App DXF imports and project library', () => {
     const project = JSON.parse(
       window.localStorage.getItem(`wire-edm-workbench:file:${projectPath}`) || '{}'
     );
-    const activeProgramPath = project.editor.activeFilePath;
-    window.localStorage.setItem(
-      `wire-edm-workbench:file:${activeProgramPath}`,
-      'G0 X0 Y0\nG1 X1 Y0\nM30'
-    );
+    expect(project.editor.activeFilePath).toBeNull();
 
     const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Dashboard')
@@ -391,7 +387,7 @@ describe('App DXF imports and project library', () => {
       'X0.000..10.000 Y0.000..5.000'
     );
     expect(container.querySelector('[data-upid-stat="segments"]')?.textContent).toBe('4');
-    expect(container.textContent).not.toContain('G1 X1 Y0');
+    expect(container.querySelector('[data-editor-code-section="text"]')).toBeNull();
   });
 
   it('warns in the editor when imported DXF geometry exceeds the active machine profile work area', async () => {

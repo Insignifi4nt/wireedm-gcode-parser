@@ -18,11 +18,8 @@ export function withProjectUpid(
   project: WorkbenchProject,
   document: UniversalPathIntelligenceDocument
 ): WorkbenchProject {
-  const nextProject: WorkbenchProject = {
+  return {
     ...project,
     upid: createProjectUpid(document)
   };
-  delete (nextProject as WorkbenchProject & { generated?: unknown }).generated;
-
-  return nextProject;
 }
