@@ -54,7 +54,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '1. Workbench And Storage',
         steps: [
           {
-            text: 'The app prepares local storage automatically. Imported work, templates, generated programs, and editor files are kept in the browser-managed workbench until you export them or clear browser data.'
+            text: 'The app prepares local storage automatically. Imported work, templates, UPID path projects, and editor files are kept in the browser-managed workbench until you export them or clear browser data.'
           },
           {
             text: 'Use a workbench folder for disk-visible storage. If the remembered folder needs permission again, Settings shows Reconnect Workbench Folder; otherwise it asks you to choose the folder.'

@@ -14,7 +14,6 @@ export const HEADER_TEMPLATE_PATH = 'templates/header.gcode';
 export const FOOTER_TEMPLATE_PATH = 'templates/footer.gcode';
 export const WORKBENCH_DIRECTORIES = [
   'imports',
-  'generated',
   'exports',
   'templates',
   'machines',

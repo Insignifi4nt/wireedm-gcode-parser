@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  WORKBENCH_DIRECTORIES,
-  initializeWorkbenchDirectory,
-  type WorkbenchStorageAdapter
-} from '../workbenchStorage';
+import { initializeWorkbenchDirectory, type WorkbenchStorageAdapter } from '../workbenchStorage';
 
 class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
@@ -34,7 +30,15 @@ describe('initializeWorkbenchDirectory', () => {
       now: new Date('2026-05-29T12:00:00.000Z')
     });
 
-    expect([...adapter.directories].sort()).toEqual([...WORKBENCH_DIRECTORIES].sort());
+    expect([...adapter.directories].sort()).toEqual([
+      'editor',
+      'exports',
+      'imports',
+      'machines',
+      'projects',
+      'templates'
+    ]);
+    expect(adapter.directories.has('generated')).toBe(false);
     expect(adapter.files.get('templates/header.gcode')).toContain('G90 G21 G17 G40');
     expect(adapter.files.get('templates/footer.gcode')).toContain('M30');
     expect(result.manifest).toMatchObject({
