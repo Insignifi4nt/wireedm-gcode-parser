@@ -36,6 +36,7 @@ import {
   cleanupAppTestContext,
   createAppTestContext,
   dispatchTouchEvent,
+  enableAutoOpenEditorWorkspacePanels,
   flushAsync,
   parseSvgViewBox,
   renderApp,
@@ -53,6 +54,7 @@ describe('App DXF imports and project library', () => {
   beforeEach(() => {
     composeUpidGCodeExportSpy.mockClear();
     parseGCodeProgramSpy.mockClear();
+    enableAutoOpenEditorWorkspacePanels();
     context = createAppTestContext();
     container = context.container;
   });
@@ -174,7 +176,8 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     expect(container.textContent).toContain('Editor');
-    expect(container.textContent).toContain('imports/library-open-');
+    expect(container.textContent).toContain('library-open / UPID Project');
+    expect(manifest.projects[0].path).toContain('projects/library-open-');
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-row]')?.textContent).toContain(
       '0.000, 0.000 -> 10.000, 0.000'
@@ -789,7 +792,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
-      'Select a contour'
+      'Select mode'
     );
 
     const perpendicularButton = container.querySelector(

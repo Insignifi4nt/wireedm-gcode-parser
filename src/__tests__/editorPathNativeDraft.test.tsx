@@ -16,6 +16,7 @@ import { EditorPage } from '@/features/editor/EditorPage';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const noop = () => undefined;
+let autoOpenedPanelToolbars = new WeakSet<Element>();
 
 describe('EditorPage UPID draft boundary', () => {
   let container: HTMLDivElement;
@@ -24,6 +25,7 @@ describe('EditorPage UPID draft boundary', () => {
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
+    autoOpenedPanelToolbars = new WeakSet<Element>();
     root = createRoot(container);
   });
 
@@ -415,7 +417,9 @@ describe('EditorPage UPID draft boundary', () => {
 
     expect(firstSegmentRow?.getAttribute('data-upid-segment-length')).toBe('10.000');
     expect(firstSegmentRow?.getAttribute('data-upid-segment-reversed')).toBe('false');
-    expect(firstSegmentRow?.textContent).toContain('length 10.000 / forward ref');
+    expect(firstSegmentRow?.querySelector('[data-upid-segment-field="length"]')?.textContent).toContain(
+      '10.000 / forward ref'
+    );
 
     await clickElement('button[aria-label="Select Exterior 1"]');
     await clickElement('button[aria-label="Reverse path operation"]');
@@ -426,7 +430,9 @@ describe('EditorPage UPID draft boundary', () => {
 
     expect(reversedFirstSegmentRow?.getAttribute('data-upid-segment-length')).toBe('10.000');
     expect(reversedFirstSegmentRow?.getAttribute('data-upid-segment-reversed')).toBe('true');
-    expect(reversedFirstSegmentRow?.textContent).toContain('length 10.000 / reversed ref');
+    expect(reversedFirstSegmentRow?.querySelector('[data-upid-segment-field="length"]')?.textContent).toContain(
+      '10.000 / reversed ref'
+    );
   });
 
   it('shows exact arc geometry in the selected segment inspector', async () => {
@@ -1178,5 +1184,21 @@ async function flushAsync() {
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
+    openEditorWorkspacePanelsOnce();
+    await Promise.resolve();
+    await Promise.resolve();
   });
+}
+
+function openEditorWorkspacePanelsOnce() {
+  for (const toolbar of document.querySelectorAll('[data-editor-panel-toolbar]')) {
+    if (autoOpenedPanelToolbars.has(toolbar)) continue;
+    autoOpenedPanelToolbars.add(toolbar);
+
+    for (const button of toolbar.querySelectorAll('button[data-editor-panel-menu-item]')) {
+      if (button.getAttribute('aria-label')?.startsWith('Show')) {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+    }
+  }
 }

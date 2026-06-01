@@ -71,6 +71,14 @@ export interface AppTestContext {
   root: Root;
 }
 
+let autoOpenEditorWorkspacePanels = false;
+let autoOpenedEditorPanelToolbars = new WeakSet<Element>();
+
+export function enableAutoOpenEditorWorkspacePanels() {
+  autoOpenEditorWorkspacePanels = true;
+  autoOpenedEditorPanelToolbars = new WeakSet<Element>();
+}
+
 export function createAppTestContext(): AppTestContext {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -87,6 +95,8 @@ export function cleanupAppTestContext(context: AppTestContext) {
   context.container.remove();
   window.showDirectoryPicker = context.previousPicker;
   window.localStorage.clear();
+  autoOpenEditorWorkspacePanels = false;
+  autoOpenedEditorPanelToolbars = new WeakSet<Element>();
 }
 
 export async function renderApp(
@@ -103,7 +113,25 @@ export async function flushAsync() {
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
+    if (autoOpenEditorWorkspacePanels) {
+      openEditorWorkspacePanelsOnce();
+      await Promise.resolve();
+      await Promise.resolve();
+    }
   });
+}
+
+function openEditorWorkspacePanelsOnce() {
+  for (const toolbar of document.querySelectorAll('[data-editor-panel-toolbar]')) {
+    if (autoOpenedEditorPanelToolbars.has(toolbar)) continue;
+    autoOpenedEditorPanelToolbars.add(toolbar);
+
+    for (const button of toolbar.querySelectorAll('button[data-editor-panel-menu-item]')) {
+      if (button.getAttribute('aria-label')?.startsWith('Show')) {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+    }
+  }
 }
 
 export function setTextAreaValue(element: HTMLTextAreaElement, value: string) {

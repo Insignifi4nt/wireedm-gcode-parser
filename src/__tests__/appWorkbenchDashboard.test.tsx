@@ -94,7 +94,8 @@ describe('App dashboard and workbench shell', () => {
     expect(text).not.toContain('flange-slot');
     expect(text).not.toContain('repair-job');
     expect(text).not.toContain('Verify');
-    expect(text).not.toContain('Export');
+    expect(text).toContain('Export preview only');
+    expect(text).not.toContain('Download Program');
   });
 
   it('collapses the app storage rail to give the editor more working width', async () => {

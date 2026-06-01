@@ -34,6 +34,7 @@ describe('parseDxf spline fallback', () => {
       {
         type: 'polyline',
         layer: 'CUT',
+        handle: null,
         closed: true,
         vertices: [
           { x: 0, y: 0, bulge: 0.41421356237309503 },
