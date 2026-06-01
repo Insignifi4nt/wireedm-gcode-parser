@@ -13,12 +13,49 @@ import type {
   CirclePathSegment,
   OperationPlan,
   OrientedSegmentRef,
+  PathOperation,
   PathDiagnostic,
   PathPlanningOptions,
   PathSegment,
   Point2
 } from './types';
 import { resolvePathPlanningOptions } from './segments';
+
+export type GcodePostedMoveKind = 'rapid' | 'cut';
+
+export type GcodePostedMoveReason =
+  | 'operation-start'
+  | 'segment-cut'
+  | 'gap-bridge'
+  | 'unexpected-gap';
+
+export interface GcodePostedMove {
+  bodyLineIndex: number;
+  command: 'G0' | 'G1' | 'G2' | 'G3';
+  contourId: string | null;
+  endPoint: Point2;
+  kind: GcodePostedMoveKind;
+  operationId: string | null;
+  reason: GcodePostedMoveReason;
+  segmentId: string | null;
+  startPoint: Point2 | null;
+  text: string;
+}
+
+export interface GcodePostedOperation {
+  bodyLineEnd: number;
+  bodyLineStart: number;
+  classification: PathOperation['classification'];
+  closed: boolean;
+  contourId: string;
+  cutMoveCount: number;
+  direction: PathOperation['direction'];
+  displayName: string;
+  moves: GcodePostedMove[];
+  operationId: string;
+  orderIndex: number;
+  rapidCount: number;
+}
 
 export interface GcodePostResult {
   body: string;
@@ -27,6 +64,8 @@ export interface GcodePostResult {
     rapidCount: number;
     cutMoveCount: number;
   };
+  moves: GcodePostedMove[];
+  operations: GcodePostedOperation[];
 }
 
 export function pathPlanToGcodeBody(
@@ -46,19 +85,48 @@ export function postPathPlanToGcode(
   const segmentsById = segmentMap(segments);
   const lines: string[] = [];
   const diagnostics: PathDiagnostic[] = [];
+  const moves: GcodePostedMove[] = [];
+  const postedOperations: GcodePostedOperation[] = [];
   let currentPosition: Point2 | null = null;
-  let rapidCount = 0;
-  let cutMoveCount = 0;
 
   const nextDiagnosticId = () => `diag_post_${String(diagnostics.length + 1).padStart(4, '0')}`;
+  const appendMove = (
+    move: Omit<GcodePostedMove, 'bodyLineIndex'>
+  ): GcodePostedMove => {
+    const postedMove = {
+      ...move,
+      bodyLineIndex: lines.length
+    };
+    lines.push(postedMove.text);
+    moves.push(postedMove);
+    return postedMove;
+  };
 
   for (const operation of plan.operations) {
     if (operation.segmentRefs.length === 0) continue;
 
+    const operationMoves: GcodePostedMove[] = [];
+    const appendOperationMove = (move: Omit<GcodePostedMove, 'bodyLineIndex' | 'contourId' | 'operationId'>) => {
+      const postedMove = appendMove({
+        ...move,
+        contourId: operation.contourId,
+        operationId: operation.id
+      });
+      operationMoves.push(postedMove);
+      currentPosition = postedMove.endPoint;
+      return postedMove;
+    };
+
     if (!pointsEqualNullable(currentPosition, operation.startPoint, resolved.coincidenceEpsilon)) {
-      lines.push(`G0 ${xy(operation.startPoint)}`);
-      rapidCount++;
-      currentPosition = operation.startPoint;
+      appendOperationMove({
+        command: 'G0',
+        endPoint: operation.startPoint,
+        kind: 'rapid',
+        reason: 'operation-start',
+        segmentId: null,
+        startPoint: currentPosition,
+        text: `G0 ${xy(operation.startPoint)}`
+      });
     }
 
     for (const ref of operation.segmentRefs) {
@@ -66,7 +134,6 @@ export function postPathPlanToGcode(
       const segmentStart = orientedSegmentStart(segment, ref);
 
       const bridge = moveToSegmentStartIfNeeded(
-        lines,
         currentPosition,
         segmentStart,
         ref,
@@ -75,18 +142,16 @@ export function postPathPlanToGcode(
         nextDiagnosticId
       );
       diagnostics.push(...bridge.diagnostics);
-      rapidCount += bridge.rapidCount;
-      cutMoveCount += bridge.cutMoveCount;
+      if (bridge.move) {
+        appendOperationMove(bridge.move);
+      }
 
       const move = moveForSegment(segment, ref);
-      lines.push(...move.lines);
-      cutMoveCount += move.cutMoveCount;
-      currentPosition = move.endPoint;
+      move.moves.forEach((postedMove) => appendOperationMove(postedMove));
     }
 
     if (operation.closed) {
       const bridge = moveToSegmentStartIfNeeded(
-        lines,
         currentPosition,
         operation.startPoint,
         operation.segmentRefs[operation.segmentRefs.length - 1],
@@ -95,11 +160,31 @@ export function postPathPlanToGcode(
         nextDiagnosticId
       );
       diagnostics.push(...bridge.diagnostics);
-      rapidCount += bridge.rapidCount;
-      cutMoveCount += bridge.cutMoveCount;
-      currentPosition = operation.startPoint;
+      if (bridge.move) {
+        appendOperationMove(bridge.move);
+      }
+    }
+
+    if (operationMoves.length > 0) {
+      postedOperations.push({
+        bodyLineEnd: operationMoves[operationMoves.length - 1].bodyLineIndex,
+        bodyLineStart: operationMoves[0].bodyLineIndex,
+        classification: operation.classification,
+        closed: operation.closed,
+        contourId: operation.contourId,
+        cutMoveCount: operationMoves.filter((move) => move.kind === 'cut').length,
+        direction: operation.direction,
+        displayName: operation.displayName,
+        moves: operationMoves,
+        operationId: operation.id,
+        orderIndex: operation.orderIndex,
+        rapidCount: operationMoves.filter((move) => move.kind === 'rapid').length
+      });
     }
   }
+
+  const rapidCount = moves.filter((move) => move.kind === 'rapid').length;
+  const cutMoveCount = moves.filter((move) => move.kind === 'cut').length;
 
   return {
     body: lines.join('\n'),
@@ -107,12 +192,13 @@ export function postPathPlanToGcode(
     metrics: {
       rapidCount,
       cutMoveCount
-    }
+    },
+    moves,
+    operations: postedOperations
   };
 }
 
 function moveToSegmentStartIfNeeded(
-  lines: string[],
   currentPosition: Point2 | null,
   target: Point2,
   ref: OrientedSegmentRef,
@@ -123,12 +209,11 @@ function moveToSegmentStartIfNeeded(
   const diagnostics: PathDiagnostic[] = [];
 
   if (!currentPosition || pointsEqual(currentPosition, target, coincidenceEpsilon)) {
-    return { diagnostics, rapidCount: 0, cutMoveCount: 0 };
+    return { diagnostics, move: null };
   }
 
   const gap = distance(currentPosition, target);
   if (gap <= endpointTolerance) {
-    lines.push(`G1 ${xy(target)}`);
     diagnostics.push({
       id: nextDiagnosticId(),
       severity: 'warning',
@@ -137,10 +222,20 @@ function moveToSegmentStartIfNeeded(
       relatedSegmentIds: [ref.segmentId],
       details: { gap, endpointTolerance }
     });
-    return { diagnostics, rapidCount: 0, cutMoveCount: 1 };
+    return {
+      diagnostics,
+      move: {
+        command: 'G1' as const,
+        endPoint: target,
+        kind: 'cut' as const,
+        reason: 'gap-bridge' as const,
+        segmentId: ref.segmentId,
+        startPoint: currentPosition,
+        text: `G1 ${xy(target)}`
+      }
+    };
   }
 
-  lines.push(`G0 ${xy(target)}`);
   diagnostics.push({
     id: nextDiagnosticId(),
     severity: 'warning',
@@ -149,15 +244,36 @@ function moveToSegmentStartIfNeeded(
     relatedSegmentIds: [ref.segmentId],
     details: { gap, endpointTolerance }
   });
-  return { diagnostics, rapidCount: 1, cutMoveCount: 0 };
+  return {
+    diagnostics,
+    move: {
+      command: 'G0' as const,
+      endPoint: target,
+      kind: 'rapid' as const,
+      reason: 'unexpected-gap' as const,
+      segmentId: ref.segmentId,
+      startPoint: currentPosition,
+      text: `G0 ${xy(target)}`
+    }
+  };
 }
 
 function moveForSegment(segment: PathSegment, ref: OrientedSegmentRef) {
   if (segment.kind === 'line') {
+    const start = orientedSegmentStart(segment, ref);
+    const end = orientedSegmentEnd(segment, ref);
     return {
-      lines: [`G1 ${xy(orientedSegmentEnd(segment, ref))}`],
-      endPoint: orientedSegmentEnd(segment, ref),
-      cutMoveCount: 1
+      moves: [
+        {
+          command: 'G1' as const,
+          endPoint: end,
+          kind: 'cut' as const,
+          reason: 'segment-cut' as const,
+          segmentId: segment.id,
+          startPoint: start,
+          text: `G1 ${xy(end)}`
+        }
+      ]
     };
   }
 
@@ -171,18 +287,26 @@ function moveForSegment(segment: PathSegment, ref: OrientedSegmentRef) {
 function moveForArc(segment: ArcPathSegment, ref: OrientedSegmentRef) {
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
-  const command = orientedArcClockwise(segment, ref) ? 'G2' : 'G3';
+  const command: 'G2' | 'G3' = orientedArcClockwise(segment, ref) ? 'G2' : 'G3';
 
   return {
-    lines: [`${command} ${xy(end)} ${ij(segment.center, start)}`],
-    endPoint: end,
-    cutMoveCount: 1
+    moves: [
+      {
+        command,
+        endPoint: end,
+        kind: 'cut' as const,
+        reason: 'segment-cut' as const,
+        segmentId: segment.id,
+        startPoint: start,
+        text: `${command} ${xy(end)} ${ij(segment.center, start)}`
+      }
+    ]
   };
 }
 
 function moveForCircle(segment: CirclePathSegment, ref: OrientedSegmentRef) {
   const clockwise = orientedCircleClockwise(segment, ref);
-  const command = clockwise ? 'G2' : 'G3';
+  const command: 'G2' | 'G3' = clockwise ? 'G2' : 'G3';
   const start = segment.preferredStart;
   const opposite = {
     x: segment.center.x - (start.x - segment.center.x),
@@ -190,12 +314,26 @@ function moveForCircle(segment: CirclePathSegment, ref: OrientedSegmentRef) {
   };
 
   return {
-    lines: [
-      `${command} ${xy(opposite)} ${ij(segment.center, start)}`,
-      `${command} ${xy(start)} ${ij(segment.center, opposite)}`
+    moves: [
+      {
+        command,
+        endPoint: opposite,
+        kind: 'cut' as const,
+        reason: 'segment-cut' as const,
+        segmentId: segment.id,
+        startPoint: start,
+        text: `${command} ${xy(opposite)} ${ij(segment.center, start)}`
+      },
+      {
+        command,
+        endPoint: start,
+        kind: 'cut' as const,
+        reason: 'segment-cut' as const,
+        segmentId: segment.id,
+        startPoint: opposite,
+        text: `${command} ${xy(start)} ${ij(segment.center, opposite)}`
+      }
     ],
-    endPoint: start,
-    cutMoveCount: 2
   };
 }
 

@@ -1,5 +1,6 @@
 import { Download, X } from 'lucide-react';
 
+import type { GcodePostedOperation } from '@/domain/path-intel/postGcode';
 import type { OperationOrderStrategy, PathDiagnostic } from '@/domain/path-intel/types';
 
 interface EditorUpidExportPreviewProps {
@@ -15,6 +16,7 @@ interface EditorUpidExportPreviewProps {
     cutMoveCount: number;
     rapidCount: number;
   };
+  postedOperations: GcodePostedOperation[];
   programText: string;
   onClose: () => void;
   onDownload: () => void;
@@ -27,6 +29,7 @@ export function EditorUpidExportPreview({
   operationCount,
   planning,
   postMetrics,
+  postedOperations,
   programText,
   onClose,
   onDownload
@@ -117,6 +120,36 @@ export function EditorUpidExportPreview({
             ))}
           </div>
         )}
+        {postedOperations.length > 0 && (
+          <section className="border border-border bg-card/60" data-upid-export-operations>
+            <div className="border-b border-border px-2 py-1 text-[8px] uppercase text-muted-foreground">
+              Posted Operations
+            </div>
+            <div className="max-h-28 overflow-auto">
+              {postedOperations.map((operation) => (
+                <div
+                  className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2 border-b border-border px-2 py-1 last:border-b-0"
+                  data-upid-export-operation-id={operation.operationId}
+                  data-upid-export-operation-lines={formatBodyLineRange(operation)}
+                  data-upid-export-operation-row
+                  data-upid-export-operation-role={operation.classification}
+                  key={operation.operationId}
+                >
+                  <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-foreground">{operation.displayName}</span>
+                    <span className="block truncate text-[8px] text-muted-foreground">
+                      {operation.direction} / lines {formatBodyLineRange(operation)}
+                    </span>
+                  </span>
+                  <span className="text-right text-[8px] uppercase text-muted-foreground">
+                    {operation.cutMoveCount} cut / {operation.rapidCount} rapid
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </section>
       <pre
         className="min-h-0 overflow-auto whitespace-pre-wrap bg-background/80 p-3 leading-5 text-foreground"
@@ -137,4 +170,8 @@ function formatOperationOrderStrategy(strategy: OperationOrderStrategy) {
 function formatManualOrderCount(count: number) {
   if (count <= 0) return 'Automatic';
   return `${count} ${count === 1 ? 'operation' : 'operations'}`;
+}
+
+function formatBodyLineRange(operation: Pick<GcodePostedOperation, 'bodyLineEnd' | 'bodyLineStart'>) {
+  return `${operation.bodyLineStart + 1}-${operation.bodyLineEnd + 1}`;
 }

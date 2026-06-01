@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { projectUpidDocument, withProjectUpid } from '../projectUpid';
-import { createUpidFromDxfEntities, postUpidToGcodeBody } from '../upidDocument';
+import { createUpidFromDxfEntities, postUpidToGcode, postUpidToGcodeBody } from '../upidDocument';
 
 describe('UPID document boundary', () => {
   it('creates a Universal Path Intelligence Document from DXF entities and posts it at the export boundary', () => {
@@ -18,6 +18,54 @@ describe('UPID document boundary', () => {
     expect(document.segments).toHaveLength(1);
     expect(document.plan.operations).toHaveLength(1);
     expect(postUpidToGcodeBody(document)).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
+  });
+
+  it('keeps a structured operation map when posting UPID to G-code', () => {
+    const document = createUpidFromDxfEntities([
+      {
+        type: 'line',
+        layer: 'CUT',
+        start: { x: 0, y: 0 },
+        end: { x: 10, y: 0 }
+      }
+    ]);
+    const operation = document.plan.operations[0];
+    const segmentId = operation.segmentRefs[0].segmentId;
+
+    const posted = postUpidToGcode(document);
+
+    expect(posted.body).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
+    expect(posted.moves.map((move) => move.text)).toEqual(posted.body.split('\n'));
+    expect(posted.operations).toHaveLength(1);
+    expect(posted.operations[0]).toMatchObject({
+      operationId: operation.id,
+      contourId: operation.contourId,
+      displayName: operation.displayName,
+      classification: operation.classification,
+      bodyLineStart: 0,
+      bodyLineEnd: 1,
+      rapidCount: 1,
+      cutMoveCount: 1
+    });
+    expect(posted.operations[0].moves).toEqual(posted.moves);
+    expect(posted.moves[0]).toMatchObject({
+      bodyLineIndex: 0,
+      command: 'G0',
+      kind: 'rapid',
+      operationId: operation.id,
+      reason: 'operation-start',
+      segmentId: null,
+      text: 'G0 X0.000 Y0.000'
+    });
+    expect(posted.moves[1]).toMatchObject({
+      bodyLineIndex: 1,
+      command: 'G1',
+      kind: 'cut',
+      operationId: operation.id,
+      reason: 'segment-cut',
+      segmentId,
+      text: 'G1 X10.000 Y0.000'
+    });
   });
 
   it('posts line, arc, and circle geometry only from the UPID export boundary', () => {

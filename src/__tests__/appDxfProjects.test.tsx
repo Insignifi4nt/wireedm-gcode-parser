@@ -1354,6 +1354,13 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-export-stat="rapid"]')?.textContent).toBe('1');
     expect(container.querySelector('[data-upid-export-stat="cut"]')?.textContent).toBe('4');
     expect(container.querySelector('[data-upid-export-stat="diagnostics"]')?.textContent).toBe('0');
+    const exportOperationRows = [...container.querySelectorAll('[data-upid-export-operation-row]')];
+    expect(exportOperationRows).toHaveLength(1);
+    expect(exportOperationRows[0].getAttribute('data-upid-export-operation-role')).toBe('exterior');
+    expect(exportOperationRows[0].getAttribute('data-upid-export-operation-lines')).toBe('1-5');
+    expect(exportOperationRows[0].textContent).toContain('Exterior 1');
+    expect(exportOperationRows[0].textContent).toContain('4 cut');
+    expect(exportOperationRows[0].textContent).toContain('1 rapid');
     expect(exportCode?.textContent).toContain('G90 G21 G17 G40');
     expect(exportCode?.textContent).toContain('G1 X10.000 Y0.000');
     expect(exportCode?.textContent).toContain('M30');

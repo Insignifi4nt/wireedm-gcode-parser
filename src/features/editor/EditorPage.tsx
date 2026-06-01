@@ -248,7 +248,8 @@ export function EditorPage({
         footer: machine.templates.footer,
         lineEnding: machine.output.lineEnding
       }),
-      postMetrics: posted.metrics
+      postMetrics: posted.metrics,
+      postedOperations: posted.operations
     };
   }, [exportPreviewOpen, pathDocumentDraft, program?.project]);
   const constructionPreview = useMemo(() => {
@@ -1247,6 +1248,7 @@ export function EditorPage({
           operationCount={upidExport.operationCount}
           planning={upidExport.planning}
           postMetrics={upidExport.postMetrics}
+          postedOperations={upidExport.postedOperations}
           programText={upidExport.programText}
         />
       )}
