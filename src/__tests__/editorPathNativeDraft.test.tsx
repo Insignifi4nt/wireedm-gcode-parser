@@ -545,6 +545,52 @@ describe('EditorPage UPID draft boundary', () => {
     expect(topologySummary?.textContent).toContain('Topology: 4 clusters / snapped 1 / max gap 0.004');
   });
 
+  it('shows projected diagnostics in the path navigator', async () => {
+    const pathDocument = pathDocumentFromGappedRectangle();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const diagnosticRow = container.querySelector(
+      '[data-upid-diagnostic-row][data-upid-diagnostic-code="endpoint-cluster-snap"]'
+    ) as HTMLElement | null;
+
+    expect(diagnosticRow).not.toBeNull();
+    expect(diagnosticRow?.getAttribute('data-upid-diagnostic-related-clusters')).toBe('1');
+    expect(diagnosticRow?.getAttribute('data-upid-diagnostic-related-segments')).toBe('2');
+    expect(diagnosticRow?.querySelector('[data-upid-diagnostic-metric="maxPairDistance"]')?.textContent).toBe(
+      'Max Gap 0.004'
+    );
+    expect(diagnosticRow?.querySelector('[data-upid-diagnostic-metric="tolerance"]')?.textContent).toBe(
+      'Tolerance 0.010'
+    );
+
+    const affectedRefs = [
+      ...(diagnosticRow?.querySelectorAll('[data-upid-diagnostic-ref]') ?? [])
+    ] as HTMLElement[];
+    expect(affectedRefs).toHaveLength(2);
+    expect(affectedRefs[0].getAttribute('data-upid-diagnostic-ref-segment')).toBeTruthy();
+    expect(affectedRefs[1].getAttribute('data-upid-diagnostic-ref-segment')).toBeTruthy();
+
+    await act(async () => {
+      affectedRefs[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-selected-point-role]')?.textContent).toBe('start');
+    expect(container.querySelector('[data-upid-selected-point-coordinate]')?.textContent).toBe(
+      '10.004, 0.000'
+    );
+  });
+
   it('selects snapped endpoint topology rows from the path navigator', async () => {
     const pathDocument = pathDocumentFromGappedRectangle();
     const project = projectWithUpid(pathDocument);

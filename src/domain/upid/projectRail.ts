@@ -403,19 +403,32 @@ export function readUpidPathElementDiagnostics(
 ): UpidSelectedPathDiagnostic[] {
   return document.diagnostics
     .filter((diagnostic) => upidDiagnosticAffectsPathElement(document, elementRef, diagnostic))
-    .map((diagnostic) => ({
-      code: diagnostic.code,
-      id: diagnostic.id,
-      message: diagnostic.message,
-      metrics: readUpidDiagnosticMetrics(diagnostic),
-      relatedChainCount: diagnostic.relatedChainIds?.length ?? 0,
-      relatedClusterCount: diagnostic.relatedClusterIds?.length ?? 0,
-      relatedContourCount: diagnostic.relatedContourIds?.length ?? 0,
-      relatedRefs: upidPathElementRefsForDiagnostic(document, diagnostic),
-      relatedSegmentCount: diagnostic.relatedSegmentIds?.length ?? 0,
-      selectRef: upidPathElementRefForDiagnostic(document, diagnostic),
-      severity: diagnostic.severity
-    }));
+    .map((diagnostic) => readUpidPathDiagnostic(document, diagnostic));
+}
+
+export function readUpidPathDiagnostics(
+  document: PathPlanningDocument
+): UpidSelectedPathDiagnostic[] {
+  return document.diagnostics.map((diagnostic) => readUpidPathDiagnostic(document, diagnostic));
+}
+
+function readUpidPathDiagnostic(
+  document: PathPlanningDocument,
+  diagnostic: PathDiagnostic
+): UpidSelectedPathDiagnostic {
+  return {
+    code: diagnostic.code,
+    id: diagnostic.id,
+    message: diagnostic.message,
+    metrics: readUpidDiagnosticMetrics(diagnostic),
+    relatedChainCount: diagnostic.relatedChainIds?.length ?? 0,
+    relatedClusterCount: diagnostic.relatedClusterIds?.length ?? 0,
+    relatedContourCount: diagnostic.relatedContourIds?.length ?? 0,
+    relatedRefs: upidPathElementRefsForDiagnostic(document, diagnostic),
+    relatedSegmentCount: diagnostic.relatedSegmentIds?.length ?? 0,
+    selectRef: upidPathElementRefForDiagnostic(document, diagnostic),
+    severity: diagnostic.severity
+  };
 }
 
 function readUpidDiagnosticMetrics(diagnostic: PathDiagnostic): UpidSelectedPathDiagnosticMetric[] {

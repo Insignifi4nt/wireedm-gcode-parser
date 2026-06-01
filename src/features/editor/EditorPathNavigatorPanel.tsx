@@ -25,25 +25,25 @@ import type {
   ContourClassification,
   OperationOrderStrategy,
   OrientedSegmentRef,
-  PathDiagnostic,
   PathPlanningDocument,
   PathSegment
 } from '@/domain/path-intel/types';
 import {
   createUpidProjectRail,
   readUpidEndpointTopologyRows,
+  readUpidPathDiagnostics,
   readUpidSegmentGeometry,
   readUpidSelectedPathPoint,
   upidManualDecisionKinds,
   upidPathElementAncestorIds,
   upidPathElementNestLabel,
-  upidPathElementRefForDiagnostic,
   upidPathElementRefsMatch,
   upidPathElementSourceEntityCount,
   type UpidManualDecisionKind,
   type UpidOperationPathElement,
   type UpidPathElementRef,
   type UpidEndpointTopologyRow,
+  type UpidSelectedPathDiagnostic,
   type UpidSelectedPathSegmentGeometry,
   type UpidProjectRailTreeNode
 } from '@/domain/upid/projectRail';
@@ -128,6 +128,7 @@ export function EditorPathNavigatorPanel({
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
   const endpointTopology = projectRail.summary.topology;
   const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
+  const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
   const pathTreeElementIds = projectRail.operationElements.map((element) => element.id);
   const [expandedPathElementIds, setExpandedPathElementIds] = useState<Record<string, boolean>>({});
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
@@ -477,23 +478,21 @@ export function EditorPathNavigatorPanel({
           </section>
         )}
 
-        {pathDocument.diagnostics.length > 0 && (
+        {pathDiagnostics.length > 0 && (
           <section className="shrink-0 border-b border-border py-2" data-upid-diagnostics>
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-[9px] uppercase text-muted-foreground">Path Diagnostics</span>
               <span className="text-[9px] text-amber-200">
-                {pathDocument.diagnostics.length}{' '}
-                {pathDocument.diagnostics.length === 1 ? 'issue' : 'issues'}
+                {pathDiagnostics.length} {pathDiagnostics.length === 1 ? 'issue' : 'issues'}
               </span>
             </div>
             <div className="max-h-24 overflow-auto border border-border bg-background/35">
-              {pathDocument.diagnostics.map((diagnostic) =>
+              {pathDiagnostics.map((diagnostic) =>
                 renderDiagnosticRow({
                   diagnostic,
                   hoveredPathElement,
                   onHoverPathElement,
                   onSelectPathElement,
-                  pathDocument,
                   selectedPathElement
                 })
               )}
@@ -658,34 +657,39 @@ function renderDiagnosticRow({
   hoveredPathElement,
   onHoverPathElement,
   onSelectPathElement,
-  pathDocument,
   selectedPathElement
 }: {
-  diagnostic: PathDiagnostic;
+  diagnostic: UpidSelectedPathDiagnostic;
   hoveredPathElement: EditorPathElementRef | null;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
-  pathDocument: PathPlanningDocument;
   selectedPathElement: EditorPathElementRef | null;
 }) {
-  const hoverElement = upidPathElementRefForDiagnostic(pathDocument, diagnostic);
+  const hoverElement = diagnostic.selectRef;
   const hovered = upidPathElementRefsMatch(hoverElement, hoveredPathElement);
   const selected = upidPathElementRefsMatch(hoverElement, selectedPathElement);
+  const selectDiagnostic = () => {
+    if (hoverElement) onSelectPathElement(hoverElement);
+  };
 
   return (
-    <button
-      className={`w-full border-b border-border px-2 py-1.5 text-left outline-none last:border-b-0 hover:bg-accent disabled:cursor-default ${
+    <div
+      aria-disabled={hoverElement ? undefined : true}
+      className={`grid w-full gap-0.5 border-b border-border px-2 py-1.5 text-left outline-none last:border-b-0 hover:bg-accent ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-diagnostic-code={diagnostic.code}
+      data-upid-diagnostic-id={diagnostic.id}
+      data-upid-diagnostic-related-clusters={diagnostic.relatedClusterCount}
+      data-upid-diagnostic-related-segments={diagnostic.relatedSegmentCount}
       data-upid-hovered={hovered ? 'true' : undefined}
       data-upid-diagnostic-row
       data-upid-diagnostic-severity={diagnostic.severity}
       data-upid-selected={selected ? 'true' : undefined}
-      disabled={!hoverElement}
       key={diagnostic.id}
-      onClick={() => {
-        if (hoverElement) onSelectPathElement(hoverElement);
+      onClick={selectDiagnostic}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') selectDiagnostic();
       }}
       onMouseEnter={() => {
         if (hoverElement) onHoverPathElement(hoverElement);
@@ -693,6 +697,8 @@ function renderDiagnosticRow({
       onMouseLeave={() => {
         if (hoverElement) onHoverPathElement(null);
       }}
+      role={hoverElement ? 'button' : undefined}
+      tabIndex={hoverElement ? 0 : undefined}
     >
       <div className="mb-1 flex items-center justify-between gap-2 text-[8px] uppercase">
         <span className={diagnostic.severity === 'error' ? 'text-destructive' : 'text-amber-200'}>
@@ -701,7 +707,50 @@ function renderDiagnosticRow({
         <span className="truncate text-muted-foreground">{diagnostic.code}</span>
       </div>
       <p className="text-[9px] leading-4 text-muted-foreground">{diagnostic.message}</p>
-    </button>
+      <span className="text-[8px] text-muted-foreground">
+        segments {diagnostic.relatedSegmentCount} / clusters {diagnostic.relatedClusterCount}
+      </span>
+      {diagnostic.metrics.length > 0 && (
+        <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
+          {diagnostic.metrics.map((metric) => (
+            <span
+              className="border border-border bg-background/60 px-1 text-[8px] text-muted-foreground"
+              data-upid-diagnostic-metric={metric.key}
+              key={metric.key}
+            >
+              {metric.label} {formatNumber(metric.value)}
+            </span>
+          ))}
+        </span>
+      )}
+      {diagnostic.relatedRefs.length > 0 && (
+        <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
+          {diagnostic.relatedRefs.map((ref, index) => (
+            <button
+              aria-label={`Select diagnostic affected geometry ${index + 1}`}
+              className="border border-border bg-background/60 px-1 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+              data-upid-diagnostic-ref
+              data-upid-diagnostic-ref-index={index}
+              data-upid-diagnostic-ref-operation={ref.operationId ?? undefined}
+              data-upid-diagnostic-ref-path-element={ref.pathElementId ?? undefined}
+              data-upid-diagnostic-ref-point-role={ref.pointRole ?? undefined}
+              data-upid-diagnostic-ref-segment={ref.segmentId ?? undefined}
+              data-upid-diagnostic-ref-travel={ref.travelRole ?? undefined}
+              key={`${ref.operationId ?? ''}-${ref.pathElementId ?? ''}-${ref.segmentId ?? ''}-${ref.pointRole ?? ''}-${index}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelectPathElement(ref);
+              }}
+              onMouseEnter={() => onHoverPathElement(ref)}
+              onMouseLeave={() => onHoverPathElement(null)}
+              type="button"
+            >
+              {index + 1} {ref.segmentId ?? ref.pathElementId ?? ref.operationId ?? 'ref'}
+            </button>
+          ))}
+        </span>
+      )}
+    </div>
   );
 }
 
