@@ -76,6 +76,10 @@ describe('path-intel DXF planning', () => {
       'Contour 2',
       'Contour 1'
     ]);
+    expect(document.plan.operations.map((operation) => operation.displayName)).toEqual([
+      'Hole 1',
+      'Exterior 1'
+    ]);
   });
 
   it('exposes nested contour path elements for UPID editor navigation', () => {

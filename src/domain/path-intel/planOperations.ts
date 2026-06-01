@@ -7,6 +7,7 @@ import {
   rotatePathRefs,
   segmentMap
 } from './segments';
+import { buildContourDisplayNames } from './pathElements';
 import type {
   ContourClassification,
   OperationPlan,
@@ -47,6 +48,7 @@ export function planOperations(input: PlanOperationsInput): OperationPlan {
   const segmentsById = segmentMap(input.segments);
   const diagnostics: PathDiagnostic[] = [];
   const items = buildPlanItems(input.chains, input.contours);
+  const displayNamesByContourId = buildContourDisplayNames(input.contours);
   const remaining = new Map(items.map((item) => [item.id, item]));
   const operations: PathOperation[] = [];
   let currentPosition = resolved.startPoint;
@@ -75,6 +77,7 @@ export function planOperations(input: PlanOperationsInput): OperationPlan {
     operations.push({
       id: `op_${String(operations.length + 1).padStart(4, '0')}`,
       label: selected.contour.label,
+      displayName: displayNamesByContourId.get(selected.contour.id) ?? selected.contour.label,
       provenance: selected.contour.provenance,
       orderIndex: operations.length,
       contourId: selected.contour.id,

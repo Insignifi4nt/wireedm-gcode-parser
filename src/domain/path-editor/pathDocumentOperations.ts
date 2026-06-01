@@ -1,6 +1,6 @@
 import { analyzeContours } from '@/domain/path-intel/contours';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
-import { buildPathElements } from '@/domain/path-intel/pathElements';
+import { buildContourDisplayNames, buildPathElements } from '@/domain/path-intel/pathElements';
 import {
   angleIsOnSweep,
   createArcSegment,
@@ -107,6 +107,7 @@ export function setPathOperationClassification(
   const contour = next.contours.find((candidate) => candidate.id === operation.contourId);
   if (contour) contour.classification = classification;
 
+  refreshOperationDisplayNames(next);
   refreshPathElements(next);
   return next;
 }
@@ -708,6 +709,7 @@ function refreshPlan(document: PathPlanningDocument) {
     const refreshed = contourResult.contours.find((candidate) => candidate.id === contour.id);
     return refreshed ?? contour;
   });
+  refreshOperationDisplayNames(document);
   refreshPathElements(document);
 }
 
@@ -715,6 +717,13 @@ function refreshPathElements(document: PathPlanningDocument) {
   const pathElementTree = buildPathElements(document.contours, document.chains, document.plan);
   document.pathElements = pathElementTree.pathElements;
   document.rootPathElementIds = pathElementTree.rootPathElementIds;
+}
+
+function refreshOperationDisplayNames(document: PathPlanningDocument) {
+  const displayNamesByContourId = buildContourDisplayNames(document.contours);
+  document.plan.operations.forEach((operation) => {
+    operation.displayName = displayNamesByContourId.get(operation.contourId) ?? operation.label;
+  });
 }
 
 function refreshChainTopology(

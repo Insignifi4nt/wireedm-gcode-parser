@@ -14,7 +14,7 @@ export function buildPathElements(
 ): PathElementTree {
   const chainsById = new Map(chains.map((chain) => [chain.id, chain]));
   const operationsByContourId = new Map(plan.operations.map((operation) => [operation.contourId, operation]));
-  const displayNamesByContourId = pathElementDisplayNames(contours);
+  const displayNamesByContourId = buildContourDisplayNames(contours);
 
   const pathElements: PathElement[] = contours.map((contour) => {
     const chain = chainsById.get(contour.chainId);
@@ -54,7 +54,7 @@ export function buildPathElements(
   };
 }
 
-function pathElementDisplayNames(contours: PathContour[]) {
+export function buildContourDisplayNames(contours: PathContour[]) {
   const counts = new Map<ContourClassification, number>();
   const names = new Map<string, string>();
 

@@ -251,6 +251,7 @@ export interface PathOperationOverrides {
 export interface PathOperation {
   id: OperationId;
   label: string;
+  displayName: string;
   provenance: PathElementProvenance;
   orderIndex: number;
   contourId: ContourId;

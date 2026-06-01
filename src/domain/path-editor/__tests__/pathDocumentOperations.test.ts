@@ -103,6 +103,7 @@ describe('pathDocumentOperations', () => {
     const edited = setPathOperationClassification(document, operation.id, 'hole');
 
     expect(edited?.plan.operations[0].classification).toBe('hole');
+    expect(edited?.plan.operations[0].displayName).toBe('Hole 1');
     expect(edited?.plan.operations[0].overrides?.classification).toEqual({
       classification: 'hole',
       kind: 'manual'
@@ -110,6 +111,7 @@ describe('pathDocumentOperations', () => {
     expect(edited?.contours[0].classification).toBe('hole');
     expect(edited?.pathElements[0]).toMatchObject({
       classification: 'hole',
+      displayName: 'Hole 1',
       overrides: {
         classification: {
           classification: 'hole',
