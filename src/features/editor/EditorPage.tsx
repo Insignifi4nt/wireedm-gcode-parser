@@ -22,6 +22,7 @@ import {
 import { organizeGCodeStructure } from '@/domain/editor/gcodeStructure';
 import { normalizeToISO } from '@/domain/editor/isoNormalizer';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
+import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import { evaluateMachineFit } from '@/domain/machine/machineFit';
 import {
   constructMagnetizedPoint,
@@ -96,7 +97,7 @@ interface EditorPageProps {
   onBackToDashboard: () => void;
   onDownloadEditorFile: (fileName: string, text: string) => void;
   onImportProgramFile: (file: File) => void | Promise<void>;
-  onSaveProgramText: (text: string, pathDocument?: PathPlanningDocument | null) => void | Promise<void>;
+  onSaveEditorDraft: (draft: EditorSaveDraft) => void | Promise<void>;
   onStatusMessage?: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void;
 }
 
@@ -121,7 +122,7 @@ export function EditorPage({
   onBackToDashboard,
   onDownloadEditorFile,
   onImportProgramFile,
-  onSaveProgramText,
+  onSaveEditorDraft,
   onStatusMessage
 }: EditorPageProps) {
   const { setHeaderContent, setRailContent } = useAppRail();
@@ -551,7 +552,17 @@ export function EditorPage({
 
   async function handleSaveClick() {
     if (!program || !hasUnsavedChanges || isSaving) return;
-    await onSaveProgramText(draftText, pathDocumentDraft);
+    await onSaveEditorDraft(
+      pathDocumentDraft
+        ? {
+            model: 'upid-document',
+            pathDocument: pathDocumentDraft
+          }
+        : {
+            model: 'gcode-text',
+            text: draftText
+          }
+    );
   }
 
   function handleNormalizeDraft() {

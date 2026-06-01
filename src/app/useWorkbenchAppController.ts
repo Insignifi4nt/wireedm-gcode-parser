@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StatusToast, StatusToastType } from '@/components/StatusToasts';
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
-import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import { supportsWorkbenchDirectoryAccess } from '@/domain/storage/fileSystemAccess';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
@@ -43,10 +43,7 @@ export interface WorkbenchAppController {
   handleOpenEditor: () => void;
   handleOpenLatestImportInEditor: () => Promise<void>;
   handleOpenWorkbenchProject: (projectPath: string) => Promise<void>;
-  handleSaveEditorProgram: (
-    text: string,
-    pathDocument?: PathPlanningDocument | null
-  ) => Promise<void>;
+  handleSaveEditorDraft: (draft: EditorSaveDraft) => Promise<void>;
   handleSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => Promise<void>;
   showStatusToast: (message: string, type?: StatusToastType) => void;
 }
@@ -277,7 +274,7 @@ export function useWorkbenchAppController(
     }
   }
 
-  async function handleSaveEditorProgram(text: string, pathDocument?: PathPlanningDocument | null) {
+  async function handleSaveEditorDraft(draft: EditorSaveDraft) {
     if (!connectedWorkbench || !loadedEditorProgram || editorSaveStatus === 'saving') return;
 
     setEditorSaveStatus('saving');
@@ -286,22 +283,14 @@ export function useWorkbenchAppController(
     try {
       const result = await appServices.saveEditorProgram(connectedWorkbench, {
         filePath: loadedEditorProgram.filePath,
-        ...(pathDocument
-          ? {
-              model: 'upid-document' as const,
-              pathDocument
-            }
-          : {
-              model: 'gcode-text' as const,
-              text
-            }),
-        project: loadedEditorProgram.project,
+        ...draft,
+        project: loadedEditorProgram.project
       });
       setConnectedWorkbench(result.workbench);
       setLoadedEditorProgram(result.editorProgram);
-      refreshLatestImportAfterSave(result.workbench, result.editorProgram, pathDocument);
+      refreshLatestImportAfterSave(result.workbench, result.editorProgram, draft);
       setEditorSaveStatus('idle');
-      showStatusToast('Program saved.', 'success');
+      showStatusToast(draft.model === 'upid-document' ? 'Path plan saved.' : 'Program saved.', 'success');
     } catch (error) {
       setEditorSaveStatus('error');
       const message = error instanceof Error ? error.message : 'Could not save editor program.';
@@ -320,18 +309,18 @@ export function useWorkbenchAppController(
   function refreshLatestImportAfterSave(
     workbench: ConnectedWorkbench,
     editorProgram: LoadedEditorProgram,
-    pathDocument: PathPlanningDocument | null | undefined
+    draft: EditorSaveDraft
   ) {
     setLatestImport((current) => {
       if (!current || current.project.id !== editorProgram.project?.id) return current;
-      if (!pathDocument || !editorProgram.project.upid) return null;
+      if (draft.model !== 'upid-document' || !editorProgram.project.upid) return null;
 
       return {
         ...current,
         workbench,
         project: editorProgram.project,
-        pathDocument,
-        pathDiagnostics: pathDocument.diagnostics
+        pathDocument: draft.pathDocument,
+        pathDiagnostics: draft.pathDocument.diagnostics
       };
     });
   }
@@ -363,7 +352,7 @@ export function useWorkbenchAppController(
     handleOpenEditor: () => setActiveView('editor'),
     handleOpenLatestImportInEditor,
     handleOpenWorkbenchProject,
-    handleSaveEditorProgram,
+    handleSaveEditorDraft,
     handleSaveWorkbenchSettings,
     showStatusToast
   };

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRailProvider, type AppRailContent } from '@/app/AppRailContext';
 import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
 import { parseDxf } from '@/domain/dxf/parseDxf';
+import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { withProjectUpid } from '@/domain/upid/projectUpid';
@@ -33,12 +34,12 @@ describe('EditorPage UPID draft boundary', () => {
   it('saves UPID path edits without materializing posted G-code as editor text', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
-    const onSaveProgramText = vi.fn();
+    const onSaveEditorDraft = vi.fn();
 
     await act(async () => {
       root.render(
         <EditorPageHarness
-          onSaveProgramText={onSaveProgramText}
+          onSaveEditorDraft={onSaveEditorDraft}
           project={project}
         />
       );
@@ -52,14 +53,19 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('button[aria-label="Save Path Plan"]');
 
-    expect(onSaveProgramText).toHaveBeenCalledTimes(1);
-    const [text, savedDocument] = onSaveProgramText.mock.calls[0] as [
-      string,
-      PathPlanningDocument
-    ];
-
-    expect(text).toBe('');
-    expect(savedDocument.plan.operations[0].direction).toBe('reverse');
+    expect(onSaveEditorDraft).toHaveBeenCalledTimes(1);
+    expect(onSaveEditorDraft).toHaveBeenCalledWith({
+      model: 'upid-document',
+      pathDocument: expect.objectContaining({
+        plan: expect.objectContaining({
+          operations: [
+            expect.objectContaining({
+              direction: 'reverse'
+            })
+          ]
+        })
+      })
+    });
   });
 
   async function clickElement(selector: string) {
@@ -74,10 +80,10 @@ describe('EditorPage UPID draft boundary', () => {
 });
 
 function EditorPageHarness({
-  onSaveProgramText,
+  onSaveEditorDraft,
   project
 }: {
-  onSaveProgramText: (text: string, pathDocument?: PathPlanningDocument | null) => void;
+  onSaveEditorDraft: (draft: EditorSaveDraft) => void;
   project: WorkbenchProject;
 }) {
   const [headerContent, setHeaderContent] = useState<ReactNode | null>(null);
@@ -93,7 +99,7 @@ function EditorPageHarness({
         onBackToDashboard={noop}
         onDownloadEditorFile={noop}
         onImportProgramFile={noop}
-        onSaveProgramText={onSaveProgramText}
+        onSaveEditorDraft={onSaveEditorDraft}
         program={{
           filePath: 'imports/rectangle.dxf',
           model: 'upid-document',

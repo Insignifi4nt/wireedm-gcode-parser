@@ -20,19 +20,25 @@ interface SaveEditorProgramBaseInput {
   project?: WorkbenchProject;
 }
 
-export type SaveEditorProgramInput = SaveGCodeEditorProgramInput | SaveUpidEditorProgramInput;
+export type EditorSaveDraft = SaveGCodeEditorDraft | SaveUpidEditorDraft;
 
-export interface SaveGCodeEditorProgramInput extends SaveEditorProgramBaseInput {
+export interface SaveGCodeEditorDraft {
   model: 'gcode-text';
   pathDocument?: never;
   text: string;
 }
 
-export interface SaveUpidEditorProgramInput extends SaveEditorProgramBaseInput {
+export interface SaveUpidEditorDraft {
   model: 'upid-document';
   pathDocument: PathPlanningDocument;
   text?: never;
 }
+
+export type SaveEditorProgramInput =
+  | (SaveEditorProgramBaseInput & SaveGCodeEditorDraft)
+  | (SaveEditorProgramBaseInput & SaveUpidEditorDraft);
+
+type SaveUpidEditorProgramInput = SaveEditorProgramBaseInput & SaveUpidEditorDraft;
 
 export interface SaveEditorProgramResult {
   editorProgram: LoadedEditorProgram;
