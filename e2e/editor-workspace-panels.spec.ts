@@ -161,6 +161,41 @@ test('editor contour tree labels contours, segments, and endpoint handles clearl
   await expect(pointRow.locator('[data-upid-point-field="role"]')).toContainText('Endpoint');
 });
 
+test('editor contour tree exposes hierarchy rails and endpoint topology from the tree context', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'contour-tree-topology-map.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await showPanels(page, ['contour-tree']);
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);
+
+  const treeMap = page.locator('[data-upid-contour-tree-map]');
+  await expect(treeMap).toContainText('Contour');
+  await expect(treeMap).toContainText('Segment');
+  await expect(treeMap).toContainText('Endpoint');
+  await expect(treeMap.locator('[data-upid-contour-tree-map-step="topology"]')).toContainText(
+    'Endpoint Join Map'
+  );
+
+  await expect(page.locator('[data-upid-tree-depth-rail="contour"]').first()).toBeVisible();
+  await expect(page.locator('[data-upid-tree-depth-rail="segment"]').first()).toBeVisible();
+  await expect(page.locator('[data-upid-tree-depth-rail="endpoint"]').first()).toBeVisible();
+  await expect(page.locator('[data-upid-tree-depth-label="contour"]').first()).toContainText('Contour');
+  await expect(page.locator('[data-upid-tree-depth-label="segment"]').first()).toContainText('Segment');
+  await expect(page.locator('[data-upid-tree-depth-label="endpoint"]').first()).toContainText('Endpoint');
+
+  await page.getByRole('button', { name: 'Open Endpoint Join Map from Contour Tree' }).click();
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
+  await expect(page.locator('[data-upid-endpoint-topology-title]')).toContainText('Endpoint Join Map');
+});
+
 test('editor contour tree rows cross-highlight and select canvas geometry', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
   await page.goto('/');

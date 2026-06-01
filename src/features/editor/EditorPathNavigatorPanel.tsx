@@ -1024,6 +1024,53 @@ export function EditorPathNavigatorPanel({
 
         {renderWorkspacePanel('contour-tree', 'Contour Tree', (
         <section className="min-h-0 overflow-auto" data-upid-contour-tree>
+          <div
+            className="mb-2 border border-border bg-background/45 p-2"
+            data-upid-contour-tree-map
+            title="Tree map: Contour rows contain Segment rows, and each Segment exposes start/end Endpoint handles. Endpoint Join Map explains how those handles connect."
+          >
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[9px] uppercase text-muted-foreground">Tree Map</span>
+              <button
+                aria-label="Open Endpoint Join Map from Contour Tree"
+                className={textButtonClass}
+                disabled={!onOpenWorkspacePanel}
+                onClick={() => onOpenWorkspacePanel?.('endpoint-topology')}
+                type="button"
+              >
+                Endpoint Join Map
+              </button>
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)_14px_minmax(0,1fr)_14px_minmax(0,1fr)_14px_minmax(0,1fr)] items-center text-[8px] uppercase text-muted-foreground">
+              <span
+                className="border border-sky-400/35 bg-sky-400/10 px-1.5 py-1 text-sky-100"
+                data-upid-contour-tree-map-step="contour"
+              >
+                Contour
+              </span>
+              <span className="text-center">&gt;</span>
+              <span
+                className="border border-cyan-400/35 bg-cyan-400/10 px-1.5 py-1 text-cyan-100"
+                data-upid-contour-tree-map-step="segment"
+              >
+                Segment
+              </span>
+              <span className="text-center">&gt;</span>
+              <span
+                className="border border-violet-400/35 bg-violet-400/10 px-1.5 py-1 text-violet-100"
+                data-upid-contour-tree-map-step="endpoint"
+              >
+                Endpoint
+              </span>
+              <span className="text-center">&gt;</span>
+              <span
+                className="border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-1 text-emerald-100"
+                data-upid-contour-tree-map-step="topology"
+              >
+                Endpoint Join Map
+              </span>
+            </div>
+          </div>
           <p
             className="mb-2 border border-border bg-background/35 px-2 py-1.5 text-[9px] leading-4 text-muted-foreground"
             data-upid-contour-tree-help
@@ -1756,7 +1803,13 @@ function renderContourTreeNode({
             onMouseLeave={() => onHoverPathElement(null)}
             type="button"
           >
-            <span className="flex flex-col items-center gap-0.5 pt-0.5 text-center text-muted-foreground">
+            <span
+              className="flex flex-col items-center gap-0.5 pt-0.5 text-center text-muted-foreground"
+              data-upid-tree-depth-rail="contour"
+            >
+              <span className="text-[8px] uppercase" data-upid-tree-depth-label="contour">
+                Contour
+              </span>
               <span className="text-[8px] uppercase">#{element.orderIndex + 1}</span>
               <span className="h-full min-h-6 border-l border-border/80" aria-hidden="true" />
             </span>
@@ -2051,7 +2104,10 @@ function renderSegmentRow(
         onMouseLeave={() => onHoverPathElement(null)}
         type="button"
       >
-        <span className="flex flex-col items-center gap-0.5 pt-0.5">
+        <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="segment">
+          <span className="text-[8px] uppercase" data-upid-tree-depth-label="segment">
+            Segment
+          </span>
           <span className="text-[8px] uppercase">S{index + 1}</span>
           <span className="h-full min-h-5 border-l border-border/70" aria-hidden="true" />
         </span>
@@ -2186,7 +2242,7 @@ function renderPointRow({
 
   return (
     <div
-      className={`grid w-full grid-cols-[minmax(0,1fr)_20px] gap-1 border-l border-border/60 px-1.5 py-1 pl-5 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent ${
+      className={`grid w-full grid-cols-[34px_minmax(0,1fr)_20px] gap-1 border-l border-border/60 px-1.5 py-1 pl-5 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-hovered={hovered ? 'true' : undefined}
@@ -2212,6 +2268,12 @@ function renderPointRow({
       onMouseEnter={() => onHoverPathElement(element)}
       onMouseLeave={() => onHoverPathElement(null)}
     >
+      <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="endpoint">
+        <span className="text-[8px] uppercase" data-upid-tree-depth-label="endpoint">
+          Endpoint
+        </span>
+        <span className="h-full min-h-5 border-l border-border/60" aria-hidden="true" />
+      </span>
       <button
         aria-pressed={selected}
         className="min-w-0 text-left outline-none"
