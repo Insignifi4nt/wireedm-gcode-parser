@@ -686,6 +686,13 @@ export function EditorPathNavigatorPanel({
               {formatEndpointTopologyStatus(endpointTopologyPanel)}
             </span>
           </div>
+          <p
+            className="mb-2 border border-border bg-background/35 px-2 py-1.5 text-[9px] leading-4 text-muted-foreground"
+            data-upid-endpoint-topology-help
+          >
+            Endpoint topology pairs segment starts and ends into continuous contours. Healed joins show
+            importer tolerance corrections; open ends or ambiguous joins point to geometry that needs review.
+          </p>
           <div
             className="mb-2 grid grid-cols-2 gap-1 text-[9px]"
             data-upid-endpoint-topology-summary
@@ -766,6 +773,27 @@ export function EditorPathNavigatorPanel({
 
         {renderWorkspacePanel('contour-tree', 'Contour Tree', (
         <section className="min-h-0 overflow-auto" data-upid-contour-tree>
+          <p
+            className="mb-2 border border-border bg-background/35 px-2 py-1.5 text-[9px] leading-4 text-muted-foreground"
+            data-upid-contour-tree-help
+          >
+            Hover or select any row to cross-highlight the canvas. The tree is the editable hierarchy:
+            contours contain ordered segments, and each segment exposes start/end endpoint handles.
+          </p>
+          <div
+            className="mb-2 grid grid-cols-3 gap-1 text-[8px] uppercase text-muted-foreground"
+            data-upid-contour-tree-legend
+          >
+            <span className="border border-border bg-background/35 px-1 py-0.5" data-upid-contour-tree-legend="contour">
+              Contour: whole cut loop
+            </span>
+            <span className="border border-border bg-background/35 px-1 py-0.5" data-upid-contour-tree-legend="segment">
+              Segment: line or arc
+            </span>
+            <span className="border border-border bg-background/35 px-1 py-0.5" data-upid-contour-tree-legend="endpoint">
+              Endpoint: start/end handle
+            </span>
+          </div>
           <div className="mb-2 grid gap-1" data-upid-path-tree-controls>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[9px] uppercase text-muted-foreground">Contour Tree</span>
@@ -1306,7 +1334,7 @@ function renderContourTreeNode({
           <button
             aria-label={`Select ${label}`}
             aria-pressed={element.operationId === selectedPathOperationId}
-            className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)_52px] items-center gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent"
+            className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)] items-start gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent"
             data-upid-contour-children={element.childIds.length}
             data-upid-contour-depth={element.containmentDepth}
             data-upid-contour-display-name={element.displayName}
@@ -1351,7 +1379,7 @@ function renderContourTreeNode({
             onMouseLeave={() => onHoverPathElement(null)}
             type="button"
           >
-            <span className="text-muted-foreground">{element.orderIndex + 1}</span>
+            <span className="pt-0.5 text-center text-muted-foreground">{element.orderIndex + 1}</span>
             <span className="min-w-0">
               <span className="flex min-w-0 items-center gap-1">
                 <span
@@ -1366,8 +1394,25 @@ function renderContourTreeNode({
                 </span>
                 <span className="truncate text-[10px] text-foreground">{label}</span>
               </span>
+              <span className="mt-1 flex flex-wrap gap-1 text-[8px] text-muted-foreground">
+                <span className="border border-border bg-background/45 px-1" data-upid-contour-field="role">
+                  Role <span className="text-foreground">{element.classification}</span>
+                </span>
+                <span className="border border-border bg-background/45 px-1" data-upid-contour-field="order">
+                  Cut order <span className="text-foreground">{element.orderIndex + 1}</span>
+                </span>
+                <span className="border border-border bg-background/45 px-1" data-upid-contour-field="segments">
+                  Segments <span className="text-foreground">{node.treeMetrics.directSegmentCount}</span>
+                  {node.treeMetrics.totalSegmentCount !== node.treeMetrics.directSegmentCount && (
+                    <> / total {node.treeMetrics.totalSegmentCount}</>
+                  )}
+                </span>
+                <span className="border border-border bg-background/45 px-1" data-upid-contour-field="cut-length">
+                  Cut <span className="text-foreground">{element.metrics.cutLength.toFixed(3)}</span>
+                </span>
+              </span>
               <span className="mt-0.5 block truncate text-[9px] text-muted-foreground">
-                source {element.label} / cut order {element.orderIndex + 1} / {element.direction}
+                Source {element.label} / direction {element.direction}
               </span>
               <span className="block truncate text-[9px] text-muted-foreground">
                 {upidPathElementNestLabel(element)}
@@ -1377,9 +1422,6 @@ function renderContourTreeNode({
               </span>
               {renderManualDecisionBadges(manualDecisions)}
               {renderDiagnosticSummaryBadge(diagnosticSummary)}
-            </span>
-            <span className="text-right text-[9px] text-muted-foreground">
-              {element.metrics.cutLength.toFixed(3)}
             </span>
           </button>
         </div>
@@ -1619,12 +1661,25 @@ function renderSegmentRow(
             </span>
             <span className="truncate text-[9px] text-muted-foreground">#{index + 1}</span>
           </span>
-          <span className="block truncate">
+          <span className="block truncate" data-upid-segment-span>
             {formatPoint(start)}
             {' -> '}
             {formatPoint(end)}
           </span>
-          <span className="block truncate">length {segmentLength} / {refDirection}</span>
+          <span className="mt-1 grid gap-0.5 text-[8px]">
+            <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-segment-field="from">
+              <span className="uppercase text-muted-foreground">From</span>
+              <span className="truncate text-foreground">{formatPoint(start)}</span>
+            </span>
+            <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-segment-field="to">
+              <span className="uppercase text-muted-foreground">To</span>
+              <span className="truncate text-foreground">{formatPoint(end)}</span>
+            </span>
+            <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-segment-field="length">
+              <span className="uppercase text-muted-foreground">Length</span>
+              <span className="truncate text-foreground">{segmentLength} / {refDirection}</span>
+            </span>
+          </span>
           {geometrySummary && <span className="block truncate">{geometrySummary}</span>}
           {renderDiagnosticSummaryBadge(diagnosticSummary)}
         </span>
@@ -1745,7 +1800,14 @@ function renderPointRow({
       >
         <span className="uppercase" data-upid-point-role-label>{role.toUpperCase()}</span>
         <span className="min-w-0">
-          <span className="block truncate">{formatPoint(point)}</span>
+          <span className="grid grid-cols-[52px_minmax(0,1fr)] gap-1" data-upid-point-field="role">
+            <span className="uppercase text-muted-foreground">Endpoint</span>
+            <span className="truncate text-foreground">{role.toUpperCase()}</span>
+          </span>
+          <span className="grid grid-cols-[52px_minmax(0,1fr)] gap-1" data-upid-point-field="coordinate">
+            <span className="uppercase text-muted-foreground">XY</span>
+            <span className="truncate">{formatPoint(point)}</span>
+          </span>
           {endpointClusterSummary && <span className="block truncate">{endpointClusterSummary}</span>}
           {renderDiagnosticSummaryBadge(diagnosticSummary)}
         </span>

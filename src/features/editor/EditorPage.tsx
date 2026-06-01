@@ -156,6 +156,21 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   measurement: 'Measurement'
 };
 
+const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string> = {
+  'path-summary': 'project counts, topology, source, and planning state',
+  'path-actions': 'selection actions, start point, direction, and contour role',
+  'path-transform': 'exact move tools for contours, segments, and arc centers',
+  'path-hover-assist': 'canvas hover and magnetic construction behavior',
+  'endpoint-topology': 'endpoint joins, healed gaps, open ends, and ambiguous clusters',
+  'path-diagnostics': 'warnings and linked rows for broken or risky path geometry',
+  'cut-sequence': 'operation order, rapid moves, and cut direction',
+  'contour-tree': 'nested contours, segments, endpoints, and canvas cross-highlighting',
+  position: 'cursor position and grid snap state',
+  statistics: 'bounds, move counts, and selected geometry details',
+  machine: 'active Wire EDM profile and machine fit checks',
+  measurement: 'manual points, construction points, and export actions'
+};
+
 const PATH_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
   'path-summary',
   'path-actions',
@@ -179,7 +194,7 @@ const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFlo
   'path-actions': { x: 274, y: 104, width: 320, height: 430 },
   'path-transform': { x: 298, y: 134, width: 320, height: 220 },
   'path-hover-assist': { x: 322, y: 164, width: 300, height: 190 },
-  'endpoint-topology': { x: 346, y: 194, width: 340, height: 260 },
+  'endpoint-topology': { x: 812, y: 84, width: 360, height: 300 },
   'path-diagnostics': { x: 370, y: 224, width: 360, height: 260 },
   'cut-sequence': { x: 394, y: 254, width: 340, height: 340 },
   'contour-tree': { x: 418, y: 84, width: 380, height: 560 },
@@ -485,6 +500,7 @@ export function EditorPage({
                 id: group.id,
                 title: group.title,
                 panels: group.panelIds.map((id) => ({
+                  description: EDITOR_WORKSPACE_PANEL_DESCRIPTIONS[id],
                   id,
                   title: EDITOR_WORKSPACE_PANEL_TITLES[id],
                   placement: workspacePanelPlacements[id],

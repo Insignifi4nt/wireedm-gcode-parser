@@ -30,6 +30,7 @@ export interface EditorWorkspacePanelController {
 }
 
 interface EditorPanelMenuItem {
+  description?: string;
   id: string;
   title: string;
   placement: EditorPanelPlacement;
@@ -71,11 +72,16 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
             </h3>
             {group.panels.map((panel) => {
               const isHidden = panel.placement === 'hidden';
+              const status = isHidden
+                ? 'off'
+                : panel.placement === 'floating'
+                  ? 'free'
+                  : panel.placement.replace('docked-', '');
 
               return (
                 <button
                   aria-label={`${isHidden ? 'Show' : 'Hide'} ${panel.title}`}
-                  className="grid h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border border-border px-1.5 text-left text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+                  className="grid min-h-8 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border border-border px-1.5 py-1 text-left text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
                   data-editor-panel-menu-item={panel.id}
                   key={panel.id}
                   onClick={isHidden ? panel.onShow : panel.onHide}
@@ -83,9 +89,22 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
                   type="button"
                 >
                   {isHidden ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-                  <span className="truncate">{panel.title}</span>
-                  <span className="text-[8px] uppercase text-muted-foreground">
-                    {isHidden ? 'off' : panel.placement === 'floating' ? 'free' : panel.placement.replace('docked-', '')}
+                  <span className="min-w-0">
+                    <span className="block truncate text-[10px] text-foreground">{panel.title}</span>
+                    {panel.description && (
+                      <span
+                        className="block truncate text-[8px] text-muted-foreground"
+                        data-editor-panel-menu-item-description
+                      >
+                        {panel.description}
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className="text-[8px] uppercase text-muted-foreground"
+                    data-editor-panel-menu-item-status
+                  >
+                    {status}
                   </span>
                 </button>
               );

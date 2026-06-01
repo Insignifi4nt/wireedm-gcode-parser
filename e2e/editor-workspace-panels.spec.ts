@@ -73,6 +73,98 @@ test('editor exposes functional groups as dockable and floating workspace panels
   );
 });
 
+test('editor panel menu explains endpoint topology before opening it', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'endpoint-topology-discovery.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await page.locator('[data-editor-panel-toolbar] summary').click();
+  const topologyItem = page.locator('[data-editor-panel-menu-item="endpoint-topology"]');
+  await expect(topologyItem).toBeVisible();
+  await expect(topologyItem.locator('[data-editor-panel-menu-item-description]')).toContainText(
+    'endpoint joins'
+  );
+  await expect(topologyItem.locator('[data-editor-panel-menu-item-status]')).toContainText('off');
+
+  await topologyItem.click();
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
+  await expect(page.locator('[data-upid-endpoint-topology-help]')).toContainText(
+    'pairs segment starts and ends'
+  );
+});
+
+test('editor contour tree labels contours, segments, and endpoint handles clearly', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'contour-tree-clarity.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await showPanels(page, ['contour-tree']);
+
+  await expect(page.locator('[data-upid-contour-tree-help]')).toContainText(
+    'Hover or select any row to cross-highlight the canvas'
+  );
+  await expect(page.locator('[data-upid-contour-tree-legend="contour"]')).toContainText('whole cut loop');
+  await expect(page.locator('[data-upid-contour-tree-legend="segment"]')).toContainText('line or arc');
+  await expect(page.locator('[data-upid-contour-tree-legend="endpoint"]')).toContainText('start/end handle');
+
+  const contourRow = page.locator('[data-upid-contour-row]').first();
+  await expect(contourRow.locator('[data-upid-contour-field="role"]')).toContainText('Role');
+  await expect(contourRow.locator('[data-upid-contour-field="order"]')).toContainText('Cut order');
+  await expect(contourRow.locator('[data-upid-contour-field="segments"]')).toContainText('Segments');
+
+  await contourRow.click();
+  const segmentRow = page.locator('[data-upid-segment-row]').first();
+  await expect(segmentRow.locator('[data-upid-segment-field="from"]')).toContainText('From');
+  await expect(segmentRow.locator('[data-upid-segment-field="to"]')).toContainText('To');
+  await expect(segmentRow.locator('[data-upid-segment-field="length"]')).toContainText('Length');
+  await expect(page.locator('[data-upid-point-row]').first().locator('[data-upid-point-field="role"]')).toContainText(
+    'Endpoint'
+  );
+});
+
+test('editor opens contour tree and endpoint topology without covering each other', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'tree-topology-placement.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await showPanels(page, ['contour-tree', 'endpoint-topology']);
+
+  const treeBox = await page.locator('[data-editor-floating-panel="contour-tree"]').boundingBox();
+  const topologyBox = await page.locator('[data-editor-floating-panel="endpoint-topology"]').boundingBox();
+  expect(treeBox).not.toBeNull();
+  expect(topologyBox).not.toBeNull();
+  if (!treeBox || !topologyBox) return;
+
+  const overlaps =
+    treeBox.x < topologyBox.x + topologyBox.width &&
+    treeBox.x + treeBox.width > topologyBox.x &&
+    treeBox.y < topologyBox.y + topologyBox.height &&
+    treeBox.y + treeBox.height > topologyBox.y;
+
+  expect(overlaps).toBe(false);
+});
+
 test('editor translates selected path geometry through the Transform panel', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
   await page.goto('/');
