@@ -343,6 +343,32 @@ describe('UPID project rail projection', () => {
     expect(
       normalizeUpidPathElementSelection(document, operation.id, {
         operationId: operation.id,
+        pathElementId: 'stale_path_element',
+        segmentId: firstSegmentId,
+        pointRole: 'start'
+      })
+    ).toEqual({
+      operationId: operation.id,
+      pathElementId: pathElement.id,
+      pointRole: 'start',
+      segmentId: firstSegmentId
+    });
+    expect(
+      normalizeUpidPathElementSelection(document, operation.id, {
+        operationId: operation.id,
+        pathElementId: 'stale_path_element',
+        travelRole: 'rapid-in',
+        segmentId: null
+      })
+    ).toEqual({
+      operationId: operation.id,
+      pathElementId: pathElement.id,
+      segmentId: null,
+      travelRole: 'rapid-in'
+    });
+    expect(
+      normalizeUpidPathElementSelection(document, operation.id, {
+        operationId: operation.id,
         segmentId: 'missing_segment'
       })
     ).toEqual({

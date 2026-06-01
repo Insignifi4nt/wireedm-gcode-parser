@@ -268,7 +268,7 @@ export function normalizeUpidPathElementSelection(
   ) {
     return {
       ...element,
-      pathElementId: element.pathElementId ?? pathElementId
+      pathElementId
     };
   }
 
