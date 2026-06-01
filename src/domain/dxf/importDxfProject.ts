@@ -65,6 +65,7 @@ export async function importDxfProject(
     fileName: input.fileName,
     importedAt: timestamp,
     projectId: project.id,
+    ...(parseResult.drawing ? { drawing: parseResult.drawing } : {}),
     ...(parseResult.units ? { units: parseResult.units } : {})
   });
   if (pathDocument.segments.length === 0 || pathDocument.plan.operations.length === 0) {

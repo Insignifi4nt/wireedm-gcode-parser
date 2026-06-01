@@ -498,7 +498,10 @@ describe('App DXF imports and project library', () => {
     await act(async () => {
       collapseInspectorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    await flushAsync();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
     expect(
       container
@@ -557,7 +560,7 @@ describe('App DXF imports and project library', () => {
     await act(async () => {
       hideHoverAssistButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    await flushAsync();
+    await flushReactOnly();
 
     expect(container.querySelector('[data-editor-workspace-panel="path-hover-assist"]')).toBeNull();
     expect(container.querySelector('button[aria-label="Show Hover Assist"]')).not.toBeNull();
@@ -693,7 +696,7 @@ describe('App DXF imports and project library', () => {
     await act(async () => {
       hideDiagnosticsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    await flushAsync();
+    await flushReactOnly();
 
     expect(container.querySelector('[data-editor-workspace-panel="path-diagnostics"]')).toBeNull();
     expect(container.querySelector('button[aria-label="Show Path Diagnostics"]')).not.toBeNull();
@@ -3553,6 +3556,13 @@ async function showWorkspacePanels(container: HTMLElement, panelIds: string[]) {
       await flushAsync();
     }
   }
+}
+
+async function flushReactOnly() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
 function duplicateFirstContour(document: PathPlanningDocument): PathPlanningDocument {

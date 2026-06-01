@@ -3,6 +3,7 @@ import { parseString as parseDxfString, toPolylines } from 'dxf';
 import type {
   DxfArcEntity,
   DxfCircleEntity,
+  DxfDrawingMetadata,
   DxfDrawingUnits,
   DxfEntity,
   DxfEntitySource,
@@ -79,6 +80,7 @@ const IGNORED_LAYOUT_ENTITY_TYPES = new Set(['VIEWPORT']);
 export function parseDxf(text: string): DxfParseResult {
   const pairs = toPairs(text);
   const units = parseDrawingUnits(pairs);
+  const drawing = parseDrawingMetadata(pairs);
   const blockResult = parseBlockDefinitions(pairs);
   const entityPairs = getSectionPairs(pairs, 'ENTITIES');
   const entityResult = parseEntitiesFromPairs(entityPairs, {
@@ -95,6 +97,7 @@ export function parseDxf(text: string): DxfParseResult {
     if (fallbackResult.entities.length > 0) {
       return {
         entities: [...entityResult.entities, ...fallbackResult.entities],
+        ...(drawing ? { drawing } : {}),
         ...(units ? { units } : {}),
         unsupportedEntities: unsupported,
         warnings: [
@@ -108,6 +111,7 @@ export function parseDxf(text: string): DxfParseResult {
 
   return {
     entities: entityResult.entities,
+    ...(drawing ? { drawing } : {}),
     ...(units ? { units } : {}),
     unsupportedEntities: unsupported,
     warnings: [
@@ -115,6 +119,49 @@ export function parseDxf(text: string): DxfParseResult {
       ...entityResult.warnings
     ]
   };
+}
+
+function parseDrawingMetadata(pairs: DxfPair[]): DxfDrawingMetadata | undefined {
+  const headerPairs = getSectionPairs(pairs, 'HEADER');
+  const basePoint = parseHeaderPoint(headerPairs, '$INSBASE');
+  const extentsMin = parseHeaderPoint(headerPairs, '$EXTMIN');
+  const extentsMax = parseHeaderPoint(headerPairs, '$EXTMAX');
+  const drawing: DxfDrawingMetadata = {};
+
+  if (basePoint) drawing.basePoint = basePoint;
+  if (extentsMin && extentsMax) {
+    drawing.extents = {
+      min: extentsMin,
+      max: extentsMax
+    };
+  }
+
+  return drawing.basePoint || drawing.extents ? drawing : undefined;
+}
+
+function parseHeaderPoint(headerPairs: DxfPair[], variableName: string): DxfPoint | null {
+  for (let index = 0; index < headerPairs.length; index++) {
+    const pair = headerPairs[index];
+    if (pair.code === 0 && pair.value.toUpperCase() === 'ENDSEC') break;
+    if (pair.code !== 9 || pair.value.toUpperCase() !== variableName) continue;
+
+    const variablePairs = pairsUntilNextHeaderVariable(headerPairs, index + 1);
+    return pointFromCodes(variablePairs, 10, 20);
+  }
+
+  return null;
+}
+
+function pairsUntilNextHeaderVariable(pairs: DxfPair[], startIndex: number) {
+  const variablePairs: DxfPair[] = [];
+
+  for (let index = startIndex; index < pairs.length; index++) {
+    const pair = pairs[index];
+    if (pair.code === 9 || (pair.code === 0 && pair.value.toUpperCase() === 'ENDSEC')) break;
+    variablePairs.push(pair);
+  }
+
+  return variablePairs;
 }
 
 function parseDrawingUnits(pairs: DxfPair[]): DxfDrawingUnits | undefined {

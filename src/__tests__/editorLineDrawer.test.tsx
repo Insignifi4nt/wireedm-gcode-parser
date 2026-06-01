@@ -6,6 +6,7 @@ import {
   cleanupAppTestContext,
   createAppTestContext,
   dispatchTouchEvent,
+  enableAutoOpenEditorWorkspacePanels,
   flushAsync,
   parseSvgViewBox,
   renderApp,
@@ -21,6 +22,7 @@ describe('Editor line drawer operations', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    enableAutoOpenEditorWorkspacePanels();
     context = createAppTestContext();
     container = context.container;
   });

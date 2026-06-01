@@ -283,6 +283,72 @@ EOF
     });
   });
 
+  it('preserves DXF base point and drawing extents metadata without moving geometry', () => {
+    const result = parseDxf(`
+0
+SECTION
+2
+HEADER
+9
+$INSBASE
+10
+1
+20
+2
+30
+0
+9
+$EXTMIN
+10
+-5
+20
+-6
+30
+0
+9
+$EXTMAX
+10
+15
+20
+16
+30
+0
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+10
+3
+20
+4
+11
+13
+21
+4
+0
+ENDSEC
+0
+EOF
+`);
+
+    expect(result.drawing).toEqual({
+      basePoint: { x: 1, y: 2 },
+      extents: {
+        min: { x: -5, y: -6 },
+        max: { x: 15, y: 16 }
+      }
+    });
+    expect(result.entities[0]).toMatchObject({
+      type: 'line',
+      start: { x: 3, y: 4 },
+      end: { x: 13, y: 4 }
+    });
+  });
+
   it('expands geometry from BLOCK definitions referenced by INSERT entities', () => {
     const result = parseDxf(`
 0

@@ -72,11 +72,9 @@ export interface AppTestContext {
 }
 
 let autoOpenEditorWorkspacePanels = false;
-let autoOpenedEditorPanelToolbars = new WeakSet<Element>();
 
 export function enableAutoOpenEditorWorkspacePanels() {
   autoOpenEditorWorkspacePanels = true;
-  autoOpenedEditorPanelToolbars = new WeakSet<Element>();
 }
 
 export function createAppTestContext(): AppTestContext {
@@ -96,7 +94,6 @@ export function cleanupAppTestContext(context: AppTestContext) {
   window.showDirectoryPicker = context.previousPicker;
   window.localStorage.clear();
   autoOpenEditorWorkspacePanels = false;
-  autoOpenedEditorPanelToolbars = new WeakSet<Element>();
 }
 
 export async function renderApp(
@@ -117,15 +114,26 @@ export async function flushAsync() {
       openEditorWorkspacePanelsOnce();
       await Promise.resolve();
       await Promise.resolve();
+      openEditorWorkspacePanelsOnce();
+      await Promise.resolve();
+      await Promise.resolve();
     }
   });
 }
 
 function openEditorWorkspacePanelsOnce() {
-  for (const toolbar of document.querySelectorAll('[data-editor-panel-toolbar]')) {
-    if (autoOpenedEditorPanelToolbars.has(toolbar)) continue;
-    autoOpenedEditorPanelToolbars.add(toolbar);
+  for (const button of document.querySelectorAll('button[aria-label^="Expand "]')) {
+    const label = button.getAttribute('aria-label') ?? '';
+    if (
+      label === 'Expand Inspector Rail' ||
+      label === 'Expand Inspector Dock' ||
+      label === 'Expand workbench sidebar'
+    ) {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
+  }
 
+  for (const toolbar of document.querySelectorAll('[data-editor-panel-toolbar]')) {
     for (const button of toolbar.querySelectorAll('button[data-editor-panel-menu-item]')) {
       if (button.getAttribute('aria-label')?.startsWith('Show')) {
         button.dispatchEvent(new MouseEvent('click', { bubbles: true }));

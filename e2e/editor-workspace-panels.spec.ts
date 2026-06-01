@@ -400,6 +400,32 @@ test('editor moves a selected contour center to a precise coordinate', async ({ 
   await expect(page.locator('[data-upid-transform-document-center]')).toHaveText('0.000, 0.000');
 });
 
+test('editor transform panel shows DXF source placement metadata', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'source-placement.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(placedRectangleDxf())
+    });
+
+  await showPanels(page, ['path-transform']);
+
+  await expect(page.locator('[data-upid-transform-document-bounds]')).toHaveText(
+    'X 3.000..13.000 Y 4.000..14.000'
+  );
+  await expect(page.locator('[data-upid-transform-source-extents]')).toHaveText(
+    'X -5.000..15.000 Y -6.000..16.000'
+  );
+  await expect(page.locator('[data-upid-transform-source-base]')).toHaveText('1.000, 2.000');
+  await expect(page.locator('[data-upid-transform-document-placement-help]')).toContainText(
+    'source extents come from DXF header metadata'
+  );
+});
+
 test('editor moves a selected arc center to a chosen measurement point', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
   await page.goto('/');
@@ -710,6 +736,96 @@ CUT
 0
 20
 10
+0
+ENDSEC
+0
+EOF
+`;
+}
+
+function placedRectangleDxf() {
+  return `0
+SECTION
+2
+HEADER
+9
+$INSBASE
+10
+1
+20
+2
+30
+0
+9
+$EXTMIN
+10
+-5
+20
+-6
+30
+0
+9
+$EXTMAX
+10
+15
+20
+16
+30
+0
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+8
+CUT
+10
+3
+20
+4
+11
+13
+21
+4
+0
+LINE
+8
+CUT
+10
+13
+20
+4
+11
+13
+21
+14
+0
+LINE
+8
+CUT
+10
+13
+20
+14
+11
+3
+21
+14
+0
+LINE
+8
+CUT
+10
+3
+20
+14
+11
+3
+21
+4
 0
 ENDSEC
 0

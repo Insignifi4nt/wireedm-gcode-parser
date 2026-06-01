@@ -1,4 +1,4 @@
-import type { DxfDrawingUnits, DxfEntitySource } from '@/domain/dxf/types';
+import type { DxfDrawingMetadata, DxfDrawingUnits, DxfEntitySource } from '@/domain/dxf/types';
 
 export interface Point2 {
   x: number;
@@ -34,6 +34,7 @@ export interface PathPlanningOptions {
 export type OperationOrderStrategy = 'inside-out-nearest' | 'nearest' | 'source-order';
 
 export interface PathPlanningSourceMetadata {
+  drawing?: DxfDrawingMetadata;
   fileName?: string;
   importedAt?: string;
   projectId?: string;

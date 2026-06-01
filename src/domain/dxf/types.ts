@@ -31,6 +31,14 @@ export interface DxfDrawingUnits {
   scaleToMillimeters: number | null;
 }
 
+export interface DxfDrawingMetadata {
+  basePoint?: DxfPoint;
+  extents?: {
+    min: DxfPoint;
+    max: DxfPoint;
+  };
+}
+
 export interface DxfLineEntity {
   type: 'line';
   handle?: string | null;
@@ -98,6 +106,7 @@ export type DxfEntity =
 
 export interface DxfParseResult {
   entities: DxfEntity[];
+  drawing?: DxfDrawingMetadata;
   units?: DxfDrawingUnits;
   unsupportedEntities: string[];
   warnings: string[];

@@ -213,6 +213,8 @@ export function EditorPathNavigatorPanel({
   const documentBounds = readPathDocumentBounds(pathDocument);
   const documentCenter = readPathDocumentBoundsCenter(pathDocument);
   const documentOriginOffset = documentCenter ? { x: -documentCenter.x, y: -documentCenter.y } : null;
+  const sourceBasePoint = pathDocument.source.drawing?.basePoint ?? null;
+  const sourceExtents = pathDocument.source.drawing?.extents ?? null;
   const selectedGeometryCenter = readPathSelectionBoundsCenter(
     pathDocument,
     selectedPathElement,
@@ -603,12 +605,30 @@ export function EditorPathNavigatorPanel({
                   {documentOriginOffset ? formatPoint(documentOriginOffset) : '-'}
                 </dd>
               </div>
+              <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
+                <dt className="uppercase text-muted-foreground">DXF Extents</dt>
+                <dd
+                  className="truncate text-foreground"
+                  data-upid-transform-source-extents
+                  title={sourceExtents ? formatSourceExtents(sourceExtents) : 'No DXF header extents'}
+                >
+                  {sourceExtents ? formatSourceExtents(sourceExtents) : '-'}
+                </dd>
+              </div>
+              <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
+                <dt className="uppercase text-muted-foreground">DXF Base</dt>
+                <dd className="truncate text-foreground" data-upid-transform-source-base>
+                  {sourceBasePoint ? formatPoint(sourceBasePoint) : '-'}
+                </dd>
+              </div>
             </dl>
             <p
               className="mt-2 text-[9px] leading-4 text-muted-foreground"
               data-upid-transform-document-placement-help
             >
-              Select a contour, then use Origin and Move Center to translate its center to X0 Y0.
+              Document bounds are computed from imported geometry; source extents come from DXF header
+              metadata when present. Select a contour, then use Origin and Move Center to translate its
+              center to X0 Y0.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -2251,6 +2271,10 @@ function formatPoint(point: { x: number; y: number }) {
 
 function formatBounds(bounds: Bounds2) {
   return `X ${formatNumber(bounds.minX)}..${formatNumber(bounds.maxX)} Y ${formatNumber(bounds.minY)}..${formatNumber(bounds.maxY)}`;
+}
+
+function formatSourceExtents(extents: { min: { x: number; y: number }; max: { x: number; y: number } }) {
+  return `X ${formatNumber(extents.min.x)}..${formatNumber(extents.max.x)} Y ${formatNumber(extents.min.y)}..${formatNumber(extents.max.y)}`;
 }
 
 function formatSegmentGeometrySummary(geometry: UpidSelectedPathSegmentGeometry) {
