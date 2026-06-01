@@ -294,6 +294,7 @@ export interface PathElement {
   chainId: ChainId;
   operationId: OperationId | null;
   label: string;
+  displayName: string;
   classification: ContourClassification;
   closed: boolean;
   parentId: PathElementId | null;

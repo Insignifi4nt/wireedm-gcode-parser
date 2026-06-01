@@ -519,7 +519,7 @@ function renderCutSequenceRow({
   const manualDecisions = manualDecisionKinds(pathElement);
   const cutLength = pathElement.metrics.cutLength.toFixed(3);
   const rapidInLength = pathElement.metrics.rapidInLength.toFixed(3);
-  const label = pathElement.label;
+  const label = pathElement.displayName;
   const sourceEntityCount = sourceEntityCountForPathElement(pathElement);
   const rapidElement: EditorPathElementRef = {
     operationId: pathElement.operationId,
@@ -582,7 +582,7 @@ function renderCutSequenceRow({
         <span className="min-w-0">
           <span className="block truncate text-[10px]">{label}</span>
           <span className="block truncate text-[9px] text-muted-foreground">
-            {pathElement.classification} / {pathElement.closed ? 'closed contour' : 'open chain'} /{' '}
+            {pathElement.label} / {pathElement.closed ? 'closed contour' : 'open chain'} /{' '}
             {pathElement.direction}
           </span>
           <span className="block truncate text-[9px] text-muted-foreground">
@@ -666,7 +666,7 @@ function renderContourTreeNode({
   const { element } = node;
   const nested = treeDepth > 0;
   const manualDecisions = manualDecisionKinds(element);
-  const label = element.label;
+  const label = element.displayName;
   const sourceEntityCount = sourceEntityCountForPathElement(element);
 
   return (
@@ -697,7 +697,8 @@ function renderContourTreeNode({
           }`}
           data-upid-contour-children={element.childIds.length}
           data-upid-contour-depth={element.containmentDepth}
-          data-upid-contour-label={label}
+          data-upid-contour-display-name={element.displayName}
+          data-upid-contour-label={element.label}
           data-upid-contour-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
           data-upid-contour-parent={element.parentId ?? undefined}
           data-upid-contour-role={element.classification}
@@ -732,8 +733,7 @@ function renderContourTreeNode({
           <span className="min-w-0">
             <span className="block truncate text-[10px]">{label}</span>
             <span className="block truncate text-[9px] text-muted-foreground">
-              {element.classification} / {element.closed ? 'closed contour' : 'open chain'} /{' '}
-              {element.direction}
+              {element.label} / {element.closed ? 'closed contour' : 'open chain'} / {element.direction}
             </span>
             <span className="block truncate text-[9px] text-muted-foreground">
               {formatPathElementNest(element)}

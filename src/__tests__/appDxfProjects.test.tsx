@@ -589,6 +589,11 @@ describe('App DXF imports and project library', () => {
       'Contour 2',
       'Contour 3'
     ]);
+    expect(contourRows.map((row) => row.getAttribute('data-upid-contour-display-name'))).toEqual([
+      'Exterior 1',
+      'Hole 1',
+      'Island 1'
+    ]);
     expect(contourRows.map((row) => row.getAttribute('data-upid-path-element-id'))).toEqual([
       'contour_0001',
       'contour_0002',
@@ -632,9 +637,9 @@ describe('App DXF imports and project library', () => {
     expect(cutSequence?.textContent).toContain('Cut Sequence');
     expect(cutSequenceRows).toHaveLength(3);
     expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-label'))).toEqual([
-      'Contour 3',
-      'Contour 2',
-      'Contour 1'
+      'Island 1',
+      'Hole 1',
+      'Exterior 1'
     ]);
     expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-path-element-id'))).toEqual([
       'contour_0003',
