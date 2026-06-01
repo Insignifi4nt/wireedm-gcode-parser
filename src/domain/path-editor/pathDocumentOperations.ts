@@ -1,5 +1,6 @@
 import { analyzeContours } from '@/domain/path-intel/contours';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
+import { buildPathElements } from '@/domain/path-intel/pathElements';
 import {
   angleIsOnSweep,
   createArcSegment,
@@ -77,6 +78,7 @@ export function movePathOperation(
   next.plan.operations.splice(targetIndex, 0, operation);
   refreshPlan(next);
   recordManualOrderOverrides(next);
+  refreshPathElements(next);
   return next;
 }
 
@@ -102,6 +104,7 @@ export function setPathOperationClassification(
   const contour = next.contours.find((candidate) => candidate.id === operation.contourId);
   if (contour) contour.classification = classification;
 
+  refreshPathElements(next);
   return next;
 }
 
@@ -673,6 +676,13 @@ function refreshPlan(document: PathPlanningDocument) {
     const refreshed = contourResult.contours.find((candidate) => candidate.id === contour.id);
     return refreshed ?? contour;
   });
+  refreshPathElements(document);
+}
+
+function refreshPathElements(document: PathPlanningDocument) {
+  const pathElementTree = buildPathElements(document.contours, document.chains, document.plan);
+  document.pathElements = pathElementTree.pathElements;
+  document.rootPathElementIds = pathElementTree.rootPathElementIds;
 }
 
 function refreshChainTopology(

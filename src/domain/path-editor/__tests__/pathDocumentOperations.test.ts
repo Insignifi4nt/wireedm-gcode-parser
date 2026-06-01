@@ -59,6 +59,43 @@ describe('pathDocumentOperations', () => {
     expect(started?.plan.operations[1].overrides?.start?.createdSegmentIds).toHaveLength(2);
   });
 
+  it('refreshes UPID path elements after manual path edits', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)]
+    );
+    const [first, second] = document.plan.operations;
+
+    const moved = movePathOperation(document, second.id, -1);
+    const movedFirstElement = moved?.pathElements.find((element) => element.contourId === second.contourId);
+    expect(movedFirstElement).toMatchObject({
+      operationId: second.id,
+      orderIndex: 0,
+      overrides: {
+        order: {
+          kind: 'manual',
+          orderIndex: 0
+        }
+      }
+    });
+
+    const reversed = reversePathOperation(moved!, first.id);
+    const reversedElement = reversed?.pathElements.find((element) => element.contourId === first.contourId);
+    expect(reversedElement).toMatchObject({
+      direction: 'reverse',
+      overrides: {
+        direction: {
+          kind: 'manual',
+          direction: 'reverse'
+        }
+      }
+    });
+
+    const started = setClosedOperationStartNearPoint(reversed!, first.id, { x: 2.5, y: 0 });
+    const startedElement = started?.pathElements.find((element) => element.contourId === first.contourId);
+    expect(startedElement?.points.find((point) => point.role === 'start')?.point).toEqual({ x: 2.5, y: 0 });
+    expect(startedElement?.segmentRefs).toHaveLength(5);
+  });
+
   it('records a manual contour role correction on the operation and contour', () => {
     const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
     const operation = document.plan.operations[0];
@@ -71,6 +108,15 @@ describe('pathDocumentOperations', () => {
       kind: 'manual'
     });
     expect(edited?.contours[0].classification).toBe('hole');
+    expect(edited?.pathElements[0]).toMatchObject({
+      classification: 'hole',
+      overrides: {
+        classification: {
+          classification: 'hole',
+          kind: 'manual'
+        }
+      }
+    });
   });
 
   it('previews existing start points until split points are allowed', () => {

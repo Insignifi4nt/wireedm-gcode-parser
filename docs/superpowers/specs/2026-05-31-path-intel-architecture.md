@@ -53,13 +53,15 @@ edits, and future AI/user review surfaces from collapsing into an unexplained fi
 ## Current Code Map
 
 - `src/domain/path-intel/types.ts` defines the path document, segments, clusters, chains, contours,
-  operations, metrics, diagnostics, and manual operation overrides.
+  editor-facing path elements, operations, metrics, diagnostics, and manual operation overrides.
 - `src/domain/path-intel/fromDxfEntities.ts` converts parsed DXF entities into the path document.
 - `src/domain/path-intel/endpointClusters.ts` performs conservative endpoint clustering and records
   tolerance-based snaps.
 - `src/domain/path-intel/chains.ts` builds continuous reversible chains from unordered segments.
 - `src/domain/path-intel/contours.ts` classifies closed and open chains.
 - `src/domain/path-intel/planOperations.ts` chooses operation order, contour starts, and direction.
+- `src/domain/path-intel/pathElements.ts` assembles navigator-ready root/nested path elements from
+  contours and operations without making UI code stitch the model together ad hoc.
 - `src/domain/path-intel/postGcode.ts` emits body G-code from the operation plan.
 - `src/domain/path-editor/pathDocumentOperations.ts` edits UPID operations for manual order, role,
   direction, start, split, and construction workflows while recording override metadata.

@@ -264,6 +264,45 @@ export interface OperationPlan {
   diagnostics: PathDiagnostic[];
 }
 
+export type PathElementId = string;
+export type PathElementKind = 'contour' | 'open-chain';
+export type PathElementPointRole = 'start' | 'end' | 'representative';
+
+export interface PathElementPoint {
+  role: PathElementPointRole;
+  point: Point2;
+  source: 'operation' | 'contour';
+}
+
+export interface PathElement {
+  id: PathElementId;
+  kind: PathElementKind;
+  contourId: ContourId;
+  chainId: ChainId;
+  operationId: OperationId | null;
+  label: string;
+  classification: ContourClassification;
+  closed: boolean;
+  parentId: PathElementId | null;
+  childIds: PathElementId[];
+  containmentDepth: number;
+  segmentRefs: OrientedSegmentRef[];
+  points: PathElementPoint[];
+  provenance: PathElementProvenance;
+  diagnosticIds: DiagnosticId[];
+  orderIndex: number | null;
+  direction: PathOperation['direction'] | null;
+  metrics: PathOperationMetrics | null;
+  overrides?: PathOperationOverrides;
+  bounds: Bounds2;
+  confidence: number;
+}
+
+export interface PathElementTree {
+  pathElements: PathElement[];
+  rootPathElementIds: PathElementId[];
+}
+
 export interface SegmentBuildResult {
   segments: PathSegment[];
   diagnostics: PathDiagnostic[];
@@ -280,6 +319,8 @@ export interface PathPlanningDocument {
   endpointClusters: EndpointCluster[];
   chains: PathChain[];
   contours: PathContour[];
+  pathElements: PathElement[];
+  rootPathElementIds: PathElementId[];
   plan: OperationPlan;
   diagnostics: PathDiagnostic[];
 }

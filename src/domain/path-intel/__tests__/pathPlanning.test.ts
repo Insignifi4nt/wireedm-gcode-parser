@@ -78,6 +78,50 @@ describe('path-intel DXF planning', () => {
     ]);
   });
 
+  it('exposes nested contour path elements for UPID editor navigation', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(0, 0, 20, 20), ...rectangleLines(5, 5, 10, 10)],
+      { endpointTolerance: DEFAULT_TOLERANCE }
+    );
+
+    expect(document.rootPathElementIds).toEqual(['contour_0001']);
+    expect(document.pathElements).toHaveLength(2);
+    expect(document.pathElements.map((element) => element.id)).toEqual(['contour_0001', 'contour_0002']);
+    expect(document.pathElements[0]).toMatchObject({
+      id: 'contour_0001',
+      kind: 'contour',
+      label: 'Contour 1',
+      classification: 'exterior',
+      parentId: null,
+      childIds: ['contour_0002'],
+      operationId: 'op_0002',
+      orderIndex: 1,
+      direction: 'forward',
+      closed: true
+    });
+    expect(document.pathElements[1]).toMatchObject({
+      id: 'contour_0002',
+      kind: 'contour',
+      label: 'Contour 2',
+      classification: 'hole',
+      parentId: 'contour_0001',
+      childIds: [],
+      operationId: 'op_0001',
+      orderIndex: 0,
+      direction: 'forward',
+      closed: true
+    });
+    expect(document.pathElements[0].segmentRefs).toHaveLength(4);
+    expect(document.pathElements[0].points.map((point) => point.role)).toEqual([
+      'start',
+      'end',
+      'representative'
+    ]);
+    expect(document.pathElements[0].provenance.sourceEntityIndices).toEqual([0, 1, 2, 3]);
+    expect(document.pathElements[0].diagnosticIds).toEqual([]);
+    expect(document.pathElements[0].overrides).toBeUndefined();
+  });
+
   it('summarizes source provenance on contours and planned operations', () => {
     const document = createPathPlanningDocumentFromDxfEntities(
       [

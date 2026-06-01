@@ -3,6 +3,7 @@ import type { DxfEntity, DxfLwPolylineVertex, DxfPoint } from '@/domain/dxf/type
 import { buildChains } from './chains';
 import { analyzeContours } from './contours';
 import { clusterSegmentEndpoints } from './endpointClusters';
+import { buildPathElements } from './pathElements';
 import { planOperations } from './planOperations';
 import {
   createArcSegment,
@@ -39,6 +40,7 @@ export function createPathPlanningDocumentFromDxfEntities(
     segments: segmentBuild.segments,
     options: resolved
   });
+  const pathElementTree = buildPathElements(contourResult.contours, chainResult.chains, plan);
 
   return {
     schemaVersion: 1,
@@ -52,6 +54,8 @@ export function createPathPlanningDocumentFromDxfEntities(
     endpointClusters: clusterResult.clusters,
     chains: chainResult.chains,
     contours: contourResult.contours,
+    pathElements: pathElementTree.pathElements,
+    rootPathElementIds: pathElementTree.rootPathElementIds,
     plan,
     diagnostics: [
       ...segmentBuild.diagnostics,
