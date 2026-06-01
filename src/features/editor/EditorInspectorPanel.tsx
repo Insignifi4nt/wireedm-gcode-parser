@@ -284,6 +284,12 @@ export function EditorInspectorPanel({
                   <dd data-upid-selected="source-blocks">{selectedPathSource.blocks}</dd>
                 </>
               )}
+              {selectedPathSource?.handles && (
+                <>
+                  <dt className="text-muted-foreground">Handles</dt>
+                  <dd data-upid-selected="source-handles">{selectedPathSource.handles}</dd>
+                </>
+              )}
               {selectedPathSource?.inserts && (
                 <>
                   <dt className="text-muted-foreground">Inserts</dt>
@@ -354,6 +360,12 @@ export function EditorInspectorPanel({
               <dd data-upid-selected-segment-source="type">{selectedPathSegment.source.type}</dd>
               <dt className="text-muted-foreground">Entity</dt>
               <dd data-upid-selected-segment-source="entity">{selectedPathSegment.source.entityIndex}</dd>
+              {selectedPathSegment.source.handle && (
+                <>
+                  <dt className="text-muted-foreground">Handle</dt>
+                  <dd data-upid-selected-segment-source="handle">{selectedPathSegment.source.handle}</dd>
+                </>
+              )}
               <dt className="text-muted-foreground">Part</dt>
               <dd data-upid-selected-segment-source="sub">{selectedPathSegment.source.subIndex ?? '-'}</dd>
               <dt className="text-muted-foreground">Exact</dt>
@@ -810,6 +822,10 @@ function sourceSummaryRows(element: PathElement) {
         : null,
     entities: `${entityCount} ${entityCount === 1 ? 'entity' : 'entities'}`,
     exact: provenance.exact ? 'exact' : 'mixed',
+    handles:
+      provenance.sourceEntityHandles && provenance.sourceEntityHandles.length > 0
+        ? provenance.sourceEntityHandles.join(', ')
+        : null,
     inserts:
       provenance.dxf && provenance.dxf.insertBlockNames.length > 0
         ? `${provenance.dxf.insertBlockNames.join(', ')} / ${insertedSegmentCount} ${
@@ -865,6 +881,7 @@ function readSelectedPathSegment(
       block: segment.source.dxf?.blockName ?? null,
       entityIndex: segment.source.sourceEntityIndex,
       exact: segment.source.exact,
+      handle: segment.source.sourceEntityHandle ?? null,
       insert: formatSegmentInsertSource(segment.source.dxf?.insertChain[0] ?? null),
       subIndex: segment.source.sourceSubIndex,
       type: segment.source.sourceEntityType

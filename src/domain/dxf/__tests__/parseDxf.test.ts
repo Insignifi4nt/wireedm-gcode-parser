@@ -146,6 +146,58 @@ EOF
     expect(result.warnings).toEqual(['Unsupported DXF entity: SPLINE']);
   });
 
+  it('preserves DXF entity handles on supported geometry', () => {
+    const result = parseDxf(`
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+5
+A1
+8
+CUT
+10
+0
+20
+0
+11
+10
+21
+0
+0
+LWPOLYLINE
+5
+B2
+8
+PROFILE
+70
+0
+10
+0
+20
+0
+10
+4
+20
+0
+0
+ENDSEC
+0
+EOF
+`);
+
+    expect(result.entities[0]).toMatchObject({
+      type: 'line',
+      handle: 'A1'
+    });
+    expect(result.entities[1]).toMatchObject({
+      type: 'lwpolyline',
+      handle: 'B2'
+    });
+  });
+
   it('expands geometry from BLOCK definitions referenced by INSERT entities', () => {
     const result = parseDxf(`
 0

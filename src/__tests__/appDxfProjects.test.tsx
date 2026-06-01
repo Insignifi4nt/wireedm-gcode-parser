@@ -713,6 +713,7 @@ describe('App DXF imports and project library', () => {
     await selectFirstCutSequence(container);
 
     expect(container.querySelector('[data-upid-selected="source-blocks"]')?.textContent).toBe('PROFILE');
+    expect(container.querySelector('[data-upid-selected="source-handles"]')?.textContent).toBe('BEEF');
     expect(container.querySelector('[data-upid-selected="source-inserts"]')?.textContent).toBe(
       'PROFILE / 4 segments'
     );
@@ -724,6 +725,9 @@ describe('App DXF imports and project library', () => {
 
     expect(container.querySelector('[data-upid-selected-segment-source="block"]')?.textContent).toBe(
       'PROFILE'
+    );
+    expect(container.querySelector('[data-upid-selected-segment-source="handle"]')?.textContent).toBe(
+      'BEEF'
     );
     expect(container.querySelector('[data-upid-selected-segment-source="insert"]')?.textContent).toBe(
       'PROFILE / row 0 col 0'
@@ -2269,12 +2273,15 @@ function insertedBlockRectangleDxf() {
     'BLOCK',
     '2',
     'PROFILE',
-    ...closedPolylineDxf([
-      { x: 0, y: 0 },
-      { x: 10, y: 0 },
-      { x: 10, y: 5 },
-      { x: 0, y: 5 }
-    ]),
+    ...closedPolylineDxf(
+      [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 5 },
+        { x: 0, y: 5 }
+      ],
+      'BEEF'
+    ),
     '0',
     'ENDBLK',
     '0',
@@ -2331,10 +2338,11 @@ function nestedContourDxf() {
   ].join('\n');
 }
 
-function closedPolylineDxf(points: Array<{ x: number; y: number }>) {
+function closedPolylineDxf(points: Array<{ x: number; y: number }>, handle?: string) {
   return [
     '0',
     'LWPOLYLINE',
+    ...(handle ? ['5', handle] : []),
     '90',
     String(points.length),
     '70',

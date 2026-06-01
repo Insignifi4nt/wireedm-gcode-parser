@@ -85,6 +85,7 @@ export function pathSegmentsFromDxfEntities(
       sourceEntityType: entity.type,
       layer: entity.layer,
       exact: true,
+      ...(entity.handle ? { sourceEntityHandle: entity.handle } : {}),
       ...(entity.source ? { dxf: entity.source } : {})
     };
 
@@ -167,6 +168,7 @@ export function pathSegmentsFromDxfEntities(
         sourceEntityType: entity.type,
         sourceLabel: 'LWPOLYLINE',
         layer: entity.layer,
+        sourceEntityHandle: entity.handle,
         source: entity.source,
         epsilon: resolved.coincidenceEpsilon,
         diagnosticBase: diagnostics.length
@@ -183,6 +185,7 @@ export function pathSegmentsFromDxfEntities(
         sourceEntityType: entity.type,
         sourceLabel: 'POLYLINE',
         layer: entity.layer,
+        sourceEntityHandle: entity.handle,
         source: entity.source,
         epsilon: resolved.coincidenceEpsilon,
         diagnosticBase: diagnostics.length
@@ -201,6 +204,7 @@ interface LwPolylineBuildOptions {
   sourceEntityIndex: number;
   sourceEntityType: 'lwpolyline' | 'polyline';
   sourceLabel: 'LWPOLYLINE' | 'POLYLINE';
+  sourceEntityHandle?: string | null;
   layer: string | null;
   source?: DxfEntity['source'];
   epsilon: number;
@@ -236,6 +240,7 @@ function segmentsFromPolyline(
     const end = vertices[(index + 1) % vertices.length];
     const source: SegmentSourceRef = {
       sourceEntityIndex: options.sourceEntityIndex,
+      ...(options.sourceEntityHandle ? { sourceEntityHandle: options.sourceEntityHandle } : {}),
       sourceEntityType: options.sourceEntityType,
       sourceSubIndex: index,
       layer: options.layer,

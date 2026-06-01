@@ -165,6 +165,7 @@ describe('path-intel DXF planning', () => {
     const document = createPathPlanningDocumentFromDxfEntities(
       rectangleLines(0, 0, 10, 5).map((entity) => ({
         ...entity,
+        handle: 'BEEF',
         source: {
           blockName: 'PROFILE',
           insertChain: [
@@ -191,6 +192,8 @@ describe('path-intel DXF planning', () => {
       insertBlockNames: ['PROFILE'],
       insertedSegmentCount: 4
     });
+    expect(document.contours[0].provenance.sourceEntityHandles).toEqual(['BEEF']);
+    expect(document.segments[0].source.sourceEntityHandle).toBe('BEEF');
     expect(document.pathElements[0].provenance.dxf).toEqual(document.contours[0].provenance.dxf);
     expect(document.plan.operations[0].provenance.dxf).toEqual(document.contours[0].provenance.dxf);
   });

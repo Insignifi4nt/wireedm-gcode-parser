@@ -26,6 +26,7 @@ export interface DxfEntitySource {
 
 export interface DxfLineEntity {
   type: 'line';
+  handle?: string | null;
   layer: string | null;
   source?: DxfEntitySource;
   start: DxfPoint;
@@ -34,6 +35,7 @@ export interface DxfLineEntity {
 
 export interface DxfArcEntity {
   type: 'arc';
+  handle?: string | null;
   layer: string | null;
   source?: DxfEntitySource;
   center: DxfPoint;
@@ -47,6 +49,7 @@ export interface DxfArcEntity {
 
 export interface DxfCircleEntity {
   type: 'circle';
+  handle?: string | null;
   layer: string | null;
   source?: DxfEntitySource;
   center: DxfPoint;
@@ -63,6 +66,7 @@ export interface DxfPolylineVertex extends DxfPoint {
 
 export interface DxfLwPolylineEntity {
   type: 'lwpolyline';
+  handle?: string | null;
   layer: string | null;
   source?: DxfEntitySource;
   closed: boolean;
@@ -71,6 +75,7 @@ export interface DxfLwPolylineEntity {
 
 export interface DxfPolylineEntity {
   type: 'polyline';
+  handle?: string | null;
   layer: string | null;
   source?: DxfEntitySource;
   closed: boolean;

@@ -294,6 +294,7 @@ function parseEntity(entityType: string, pairs: DxfPair[]): DxfEntity | null {
 }
 
 function parseLine(pairs: DxfPair[]): DxfLineEntity | null {
+  const handle = stringValue(pairs, 5);
   const layer = stringValue(pairs, 8);
   const start = pointFromCodes(pairs, 10, 20);
   const end = pointFromCodes(pairs, 11, 21);
@@ -302,6 +303,7 @@ function parseLine(pairs: DxfPair[]): DxfLineEntity | null {
 
   return {
     type: 'line',
+    handle,
     layer,
     start,
     end
@@ -309,6 +311,7 @@ function parseLine(pairs: DxfPair[]): DxfLineEntity | null {
 }
 
 function parseArc(pairs: DxfPair[]): DxfArcEntity | null {
+  const handle = stringValue(pairs, 5);
   const layer = stringValue(pairs, 8);
   const center = pointFromCodes(pairs, 10, 20);
   const radius = numberValue(pairs, 40);
@@ -319,6 +322,7 @@ function parseArc(pairs: DxfPair[]): DxfArcEntity | null {
 
   return {
     type: 'arc',
+    handle,
     layer,
     center,
     radius,
@@ -331,6 +335,7 @@ function parseArc(pairs: DxfPair[]): DxfArcEntity | null {
 }
 
 function parseCircle(pairs: DxfPair[]): DxfCircleEntity | null {
+  const handle = stringValue(pairs, 5);
   const layer = stringValue(pairs, 8);
   const center = pointFromCodes(pairs, 10, 20);
   const radius = numberValue(pairs, 40);
@@ -339,6 +344,7 @@ function parseCircle(pairs: DxfPair[]): DxfCircleEntity | null {
 
   return {
     type: 'circle',
+    handle,
     layer,
     center,
     radius
@@ -346,6 +352,7 @@ function parseCircle(pairs: DxfPair[]): DxfCircleEntity | null {
 }
 
 function parseLwPolyline(pairs: DxfPair[]): DxfLwPolylineEntity | null {
+  const handle = stringValue(pairs, 5);
   const layer = stringValue(pairs, 8);
   const flags = numberValue(pairs, 70) ?? 0;
   const vertices: DxfLwPolylineVertex[] = [];
@@ -372,6 +379,7 @@ function parseLwPolyline(pairs: DxfPair[]): DxfLwPolylineEntity | null {
 
   return {
     type: 'lwpolyline',
+    handle,
     layer,
     closed: (flags & 1) === 1,
     vertices
@@ -383,6 +391,7 @@ function parseClassicPolyline(pairs: DxfPair[]): DxfPolylineEntity | null {
     (pair) => pair.code === 0 && pair.value.toUpperCase() === 'VERTEX'
   );
   const headerPairs = firstVertexIndex >= 0 ? pairs.slice(0, firstVertexIndex) : pairs;
+  const handle = stringValue(headerPairs, 5);
   const layer = stringValue(headerPairs, 8);
   const flags = numberValue(headerPairs, 70) ?? 0;
   const vertices: DxfPolylineVertex[] = [];
@@ -406,6 +415,7 @@ function parseClassicPolyline(pairs: DxfPair[]): DxfPolylineEntity | null {
 
   return {
     type: 'polyline',
+    handle,
     layer,
     closed: (flags & 1) === 1,
     vertices

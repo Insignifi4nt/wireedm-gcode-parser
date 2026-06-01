@@ -135,6 +135,7 @@ function contourLabel(index: number) {
 
 function summarizePathProvenance(segments: Array<PathSegment | undefined>): PathElementProvenance {
   const entityIndices = new Set<number>();
+  const entityHandles = new Set<string>();
   const entityTypes = new Set<string>();
   const dxfBlockNames = new Set<string>();
   const dxfInsertBlockNames = new Set<string>();
@@ -149,6 +150,9 @@ function summarizePathProvenance(segments: Array<PathSegment | undefined>): Path
     }
 
     entityIndices.add(segment.source.sourceEntityIndex);
+    if (segment.source.sourceEntityHandle) {
+      entityHandles.add(segment.source.sourceEntityHandle);
+    }
     entityTypes.add(segment.source.sourceEntityType);
     layers.add(segment.source.layer);
     if (segment.source.dxf?.blockName) {
@@ -174,6 +178,7 @@ function summarizePathProvenance(segments: Array<PathSegment | undefined>): Path
 
   return {
     sourceEntityIndices: [...entityIndices].sort((first, second) => first - second),
+    ...(entityHandles.size > 0 ? { sourceEntityHandles: [...entityHandles].sort() } : {}),
     sourceEntityTypes: [...entityTypes].sort(),
     layers: [...layers].sort(compareNullableText),
     exact,
