@@ -13,7 +13,7 @@ export interface MeasurementPointPathSnap {
   kind: 'path-construction';
   mode: MeasurementPointSnapMode;
   operationId: string;
-  pathElementId?: string | null;
+  pathElementId: string | null;
   relation: 'perpendicular' | 'tangent' | 'nearest-fallback';
   segmentId: string;
   sourcePoint: {

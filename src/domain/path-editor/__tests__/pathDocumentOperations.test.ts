@@ -300,6 +300,7 @@ describe('pathDocumentOperations', () => {
       {
         mode: construction!.mode,
         operationId: construction!.operationId,
+        pathElementId: construction!.pathElementId,
         relation: construction!.relation,
         segmentId: construction!.segmentId,
         sourcePoint: construction!.sourcePoint
@@ -314,6 +315,38 @@ describe('pathDocumentOperations', () => {
     expect(slid?.point.y).toBe(5);
   });
 
+  it('slides construction snaps by stored UPID path element identity when operation ids drift', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      ...rectangleLines(0, 0, 10, 5),
+      ...rectangleLines(20, 0, 30, 5)
+    ]);
+    const construction = constructMagnetizedPoint(
+      document,
+      { x: 5, y: 2 },
+      { x: 5, y: 5 },
+      'perpendicular'
+    );
+    expect(construction).not.toBeNull();
+
+    const slid = slideMagnetizedPointOnSegment(
+      document,
+      {
+        mode: construction!.mode,
+        operationId: 'stale-operation-id',
+        pathElementId: construction!.pathElementId,
+        relation: construction!.relation,
+        segmentId: construction!.segmentId,
+        sourcePoint: construction!.sourcePoint
+      },
+      { x: 25, y: 5 }
+    );
+
+    expect(slid?.operationId).toBe(construction?.operationId);
+    expect(slid?.pathElementId).toBe(construction?.pathElementId);
+    expect(slid?.segmentId).toBe(construction?.segmentId);
+    expect(slid?.point).toEqual({ x: 10, y: 5 });
+  });
+
   it('slides tangent fallback points as nearest snaps instead of freezing them', () => {
     const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
     const fallback = constructMagnetizedPoint(document, { x: 5, y: 5 }, { x: 5, y: 5 }, 'tangent');
@@ -324,6 +357,7 @@ describe('pathDocumentOperations', () => {
       {
         mode: fallback!.mode,
         operationId: fallback!.operationId,
+        pathElementId: fallback!.pathElementId,
         relation: fallback!.relation,
         segmentId: fallback!.segmentId,
         sourcePoint: fallback!.sourcePoint
@@ -357,6 +391,7 @@ describe('pathDocumentOperations', () => {
       {
         mode: construction!.mode,
         operationId: construction!.operationId,
+        pathElementId: construction!.pathElementId,
         relation: construction!.relation,
         segmentId: construction!.segmentId,
         sourcePoint: construction!.sourcePoint

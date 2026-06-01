@@ -65,7 +65,7 @@ edits, and future AI/user review surfaces from collapsing into an unexplained fi
 - `src/domain/path-intel/postGcode.ts` emits body G-code from the operation plan.
 - `src/domain/path-editor/pathDocumentOperations.ts` edits UPID operations for manual order, role,
   direction, start, split, and construction workflows while recording override metadata and keeping
-  tool previews attached to UPID path element identity.
+  tool previews and saved construction snaps attached to UPID path element identity.
 - `src/domain/upid/upidDocument.ts` names the current internal document as the Universal Path
   Intelligence Document boundary and exposes the post/export adapter.
 - `src/domain/upid/projectUpid.ts` reads and writes first-class project UPID state.

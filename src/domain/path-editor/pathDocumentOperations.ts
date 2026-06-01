@@ -298,13 +298,14 @@ export function slideMagnetizedPointOnSegment(
   snap: {
     mode: MagnetizeMode;
     operationId: string;
+    pathElementId: PathElementId | null;
     relation: MagnetizedPathPoint['relation'];
     segmentId: SegmentId;
     sourcePoint: Point2;
   },
   contourHintPoint: Point2
 ): MagnetizedPathPoint | null {
-  const operation = document.plan.operations.find((candidate) => candidate.id === snap.operationId);
+  const operation = operationForSnap(document, snap.operationId, snap.pathElementId);
   if (!operation) return null;
 
   const storedSegmentIndex = operation.segmentRefs.findIndex((ref) => ref.segmentId === snap.segmentId);
@@ -388,6 +389,17 @@ function nearestExistingOperationEndpoint(
 
 function pathElementIdForOperation(document: PathPlanningDocument, operationId: string) {
   return document.pathElements.find((element) => element.operationId === operationId)?.id ?? null;
+}
+
+function operationForSnap(
+  document: PathPlanningDocument,
+  operationId: string,
+  pathElementId?: PathElementId | null
+) {
+  const elementOperationId = pathElementId
+    ? document.pathElements.find((element) => element.id === pathElementId)?.operationId
+    : null;
+  return document.plan.operations.find((candidate) => candidate.id === (elementOperationId ?? operationId));
 }
 
 function splitOperationSegmentAtPoint(
