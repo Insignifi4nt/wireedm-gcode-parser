@@ -1206,6 +1206,7 @@ function renderEndpointTopologyRow({
       className={`grid w-full grid-cols-[minmax(0,1fr)_66px] items-center border-b border-border px-2 py-1.5 text-left outline-none last:border-b-0 hover:bg-accent disabled:cursor-default ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
+      data-upid-exact-endpoint-cluster={row.kind === 'exact-endpoint-cluster' ? row.clusterId : undefined}
       data-upid-cluster-id={row.kind === 'snapped-endpoint-cluster' ? row.clusterId : undefined}
       data-upid-open-endpoint-cluster={row.kind === 'open-endpoint-cluster' ? row.clusterId : undefined}
       data-upid-diagnostic-id={row.kind === 'ambiguous-endpoint-cluster' ? row.diagnosticId : undefined}
@@ -1217,12 +1218,16 @@ function renderEndpointTopologyRow({
       }
       data-upid-endpoint-topology-kind={row.kind}
       data-upid-endpoint-topology-members={
-        row.kind === 'snapped-endpoint-cluster' || row.kind === 'open-endpoint-cluster'
+        row.kind === 'snapped-endpoint-cluster' ||
+        row.kind === 'open-endpoint-cluster' ||
+        row.kind === 'exact-endpoint-cluster'
           ? row.memberCount
           : undefined
       }
       data-upid-endpoint-topology-method={
-        row.kind === 'snapped-endpoint-cluster' || row.kind === 'open-endpoint-cluster'
+        row.kind === 'snapped-endpoint-cluster' ||
+        row.kind === 'open-endpoint-cluster' ||
+        row.kind === 'exact-endpoint-cluster'
           ? row.method
           : undefined
       }
@@ -1248,7 +1253,17 @@ function renderEndpointTopologyRow({
       onMouseLeave={() => onHoverPathElement(null)}
       type="button"
     >
-      {row.kind === 'open-endpoint-cluster' ? (
+      {row.kind === 'exact-endpoint-cluster' ? (
+        <>
+          <span className="min-w-0">
+            <span className="block truncate text-[10px] text-emerald-100">Exact join {row.clusterId}</span>
+            <span className="block truncate text-[9px] text-muted-foreground">
+              {formatPoint(row.point)} / paired exactly / {formatEndpointMemberPair(row.members)}
+            </span>
+          </span>
+          <span className="text-right text-[9px] text-emerald-200">{row.memberCount} ends</span>
+        </>
+      ) : row.kind === 'open-endpoint-cluster' ? (
         <>
           <span className="min-w-0">
             <span className="block truncate text-[10px] text-amber-100">Open end {row.clusterId}</span>
@@ -1284,10 +1299,25 @@ function renderEndpointTopologyRow({
   );
 }
 
+function formatEndpointMemberPair(members: Array<{ pointRole: 'start' | 'end' | null; rawEndpointSide: 'start' | 'end'; segmentIndex: number | null; segmentId: string }>) {
+  const labels = members.slice(0, 2).map((member) => formatEndpointMember(member));
+  if (members.length > 2) labels.push(`+${members.length - 2}`);
+  return labels.join(' / ');
+}
+
 function formatOpenEndpointMember(
   member: Extract<UpidEndpointTopologyRow, { kind: 'open-endpoint-cluster' }>['member']
 ) {
   if (!member) return 'unknown endpoint';
+  return formatEndpointMember(member);
+}
+
+function formatEndpointMember(member: {
+  pointRole: 'start' | 'end' | null;
+  rawEndpointSide: 'start' | 'end';
+  segmentId: string;
+  segmentIndex: number | null;
+}) {
   const role = member.pointRole ? member.pointRole.toUpperCase() : member.rawEndpointSide.toUpperCase();
   const segmentIndex = member.segmentIndex !== null ? `S${member.segmentIndex + 1}` : member.segmentId;
   return `${segmentIndex} ${role}`;

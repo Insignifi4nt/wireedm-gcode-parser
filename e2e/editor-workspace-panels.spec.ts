@@ -112,6 +112,12 @@ test('editor panel menu explains endpoint topology before opening it', async ({ 
   await expect(page.locator('[data-upid-endpoint-topology-help]')).toContainText(
     'pairs segment starts and ends'
   );
+  const exactJoinRows = page.locator('[data-upid-endpoint-topology-kind="exact-endpoint-cluster"]');
+  await expect(exactJoinRows).toHaveCount(4);
+  await expect(exactJoinRows.first()).toContainText('Exact join');
+  await exactJoinRows.first().click();
+  await expect(exactJoinRows.first()).toHaveAttribute('data-upid-selected', 'true');
+  await expect(page.locator('[data-preview-path-endpoint][data-preview-selected="true"]')).toHaveCount(1);
 });
 
 test('editor contour tree labels contours, segments, and endpoint handles clearly', async ({ page }) => {

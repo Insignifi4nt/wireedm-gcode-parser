@@ -185,8 +185,9 @@ describe('UPID project rail projection', () => {
 
     const rows = readUpidEndpointTopologyRows(document);
 
-    expect(rows).toHaveLength(1);
-    const row = rows[0];
+    const snappedRows = rows.filter((row) => row.kind === 'snapped-endpoint-cluster');
+    expect(snappedRows).toHaveLength(1);
+    const row = snappedRows[0];
     expect(row.kind).toBe('snapped-endpoint-cluster');
     if (row.kind !== 'snapped-endpoint-cluster') {
       throw new Error('Expected snapped endpoint topology row.');
@@ -242,6 +243,37 @@ describe('UPID project rail projection', () => {
         segmentId: operation.segmentRefs[0].segmentId
       }
     });
+  });
+
+  it('projects exact endpoint topology rows with selectable paired endpoint refs', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 10));
+    const operation = document.plan.operations[0];
+
+    const rows = readUpidEndpointTopologyRows(document);
+
+    expect(rows).toHaveLength(4);
+    expect(rows.map((row) => row.kind)).toEqual([
+      'exact-endpoint-cluster',
+      'exact-endpoint-cluster',
+      'exact-endpoint-cluster',
+      'exact-endpoint-cluster'
+    ]);
+    const first = rows[0];
+    expect(first.kind).toBe('exact-endpoint-cluster');
+    if (first.kind !== 'exact-endpoint-cluster') {
+      throw new Error('Expected exact endpoint topology row.');
+    }
+    expect(first).toMatchObject({
+      memberCount: 2,
+      method: 'exact',
+      selectRef: {
+        operationId: operation.id,
+        pathElementId: document.pathElements[0].id,
+        pointRole: 'start'
+      }
+    });
+    expect(first.clusterId).toMatch(/^ec_/);
+    expect(first.members).toHaveLength(2);
   });
 
   it('projects ambiguous endpoint topology rows with diagnostic context', () => {

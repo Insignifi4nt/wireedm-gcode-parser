@@ -224,9 +224,21 @@ export interface UpidSelectedEndpointClusterMember {
 }
 
 export type UpidEndpointTopologyRow =
+  | UpidExactEndpointTopologyRow
   | UpidOpenEndpointTopologyRow
   | UpidSnappedEndpointTopologyRow
   | UpidAmbiguousEndpointTopologyRow;
+
+export interface UpidExactEndpointTopologyRow {
+  clusterId: string;
+  id: string;
+  kind: 'exact-endpoint-cluster';
+  memberCount: number;
+  members: UpidSelectedEndpointClusterMember[];
+  method: 'exact';
+  point: Point2;
+  selectRef: UpidPathElementRef | null;
+}
 
 export interface UpidOpenEndpointTopologyRow {
   clusterId: string;
@@ -418,6 +430,24 @@ function summarizeUpidEndpointTopology(document: PathPlanningDocument): UpidEndp
 }
 
 export function readUpidEndpointTopologyRows(document: PathPlanningDocument): UpidEndpointTopologyRow[] {
+  const exactRows = document.endpointClusters
+    .filter((cluster) => cluster.method === 'exact' && cluster.members.length > 1)
+    .map((cluster): UpidExactEndpointTopologyRow => {
+      const members = readUpidSelectedEndpointClusterMembers(document, cluster.members);
+
+      return {
+        clusterId: cluster.id,
+        id: cluster.id,
+        kind: 'exact-endpoint-cluster',
+        memberCount: cluster.members.length,
+        members,
+        method: 'exact',
+        point: { ...cluster.point },
+        selectRef: upidPathElementRefForEndpointClusterMember(members[0] ?? null)
+      };
+    })
+    .sort((first, second) => first.clusterId.localeCompare(second.clusterId));
+
   const openRows = document.endpointClusters
     .filter((cluster) => cluster.members.length === 1)
     .map((cluster): UpidOpenEndpointTopologyRow => {
@@ -481,7 +511,7 @@ export function readUpidEndpointTopologyRows(document: PathPlanningDocument): Up
       };
     });
 
-  return [...openRows, ...snappedRows, ...ambiguousRows];
+  return [...openRows, ...snappedRows, ...exactRows, ...ambiguousRows];
 }
 
 function upidPathElementRefForEndpointClusterMember(
