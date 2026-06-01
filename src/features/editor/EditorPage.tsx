@@ -1576,6 +1576,7 @@ export function EditorPage({
         isSaving={isSaving}
         latestMeasurementPoint={measurementPoints.at(-1) ?? null}
         magneticSnapEnabled={pathMagneticSnapEnabled}
+        measurementPoints={measurementPoints}
         onActivatePathClickMode={setPathClickMode}
         onExpandedPathElementIdsChange={setExpandedPathElementIds}
         onHoverPathElement={setHoveredPathElement}

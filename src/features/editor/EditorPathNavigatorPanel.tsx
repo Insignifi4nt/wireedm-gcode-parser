@@ -22,6 +22,7 @@ import {
 } from 'react';
 
 import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
+import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import {
   orientedSegmentEnd,
   orientedSegmentStart,
@@ -110,6 +111,7 @@ interface EditorPathNavigatorPanelProps {
     options?: { fill?: boolean }
   ) => ReactNode;
   latestMeasurementPoint: Point2 | null;
+  measurementPoints: MeasurementPoint[];
   pathTargetXDraft: string;
   pathTargetYDraft: string;
   pathTranslateXDraft: string;
@@ -153,6 +155,7 @@ export function EditorPathNavigatorPanel({
   pathDocument,
   expandedPathElementIds,
   latestMeasurementPoint,
+  measurementPoints,
   renderWorkspacePanel = (_id, _title, children) => children,
   redoAvailable,
   selectedPathElement,
@@ -728,6 +731,30 @@ export function EditorPathNavigatorPanel({
                 Move Center
               </button>
             </div>
+            {measurementPoints.length > 0 && (
+              <div className="mt-2 border-t border-border pt-2" data-upid-transform-selection-center-points>
+                <span className="mb-1 block text-[9px] uppercase text-muted-foreground">Target Point</span>
+                <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
+                  {measurementPoints.map((point, index) => (
+                    <button
+                      aria-label={`Use measurement point P${index + 1} as selection center target`}
+                      className={textButtonClass}
+                      data-upid-transform-selection-center-use-point={index + 1}
+                      disabled={!selectedGeometryCenter || isSaving}
+                      key={point.id}
+                      onClick={() => {
+                        onPathTargetXDraftChange(formatNumber(point.x));
+                        onPathTargetYDraftChange(formatNumber(point.y));
+                      }}
+                      title={`P${index + 1}: ${formatPoint(point)}`}
+                      type="button"
+                    >
+                      P{index + 1}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div
             className="mt-3 border-t border-border pt-2"
@@ -807,6 +834,30 @@ export function EditorPathNavigatorPanel({
                 Move Center
               </button>
             </div>
+            {measurementPoints.length > 0 && (
+              <div className="mt-2 border-t border-border pt-2" data-upid-transform-center-points>
+                <span className="mb-1 block text-[9px] uppercase text-muted-foreground">Target Point</span>
+                <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
+                  {measurementPoints.map((point, index) => (
+                    <button
+                      aria-label={`Use measurement point P${index + 1} as center target`}
+                      className={textButtonClass}
+                      data-upid-transform-center-use-point={index + 1}
+                      disabled={!selectedSegmentCenter || isSaving}
+                      key={point.id}
+                      onClick={() => {
+                        onPathTargetXDraftChange(formatNumber(point.x));
+                        onPathTargetYDraftChange(formatNumber(point.y));
+                      }}
+                      title={`P${index + 1}: ${formatPoint(point)}`}
+                      type="button"
+                    >
+                      P{index + 1}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </section>
         ))}

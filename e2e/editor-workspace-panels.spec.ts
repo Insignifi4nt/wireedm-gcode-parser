@@ -335,7 +335,7 @@ test('editor moves a selected contour center to a precise coordinate', async ({ 
   await expect(page.locator('[data-upid-transform-document-center]')).toHaveText('0.000, 0.000');
 });
 
-test('editor moves a selected arc center to the latest measurement point', async ({ page }) => {
+test('editor moves a selected arc center to a chosen measurement point', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
   await page.goto('/');
 
@@ -351,12 +351,17 @@ test('editor moves a selected arc center to the latest measurement point', async
   await page.getByLabel('Measurement point X').fill('12');
   await page.getByLabel('Measurement point Y').fill('-8');
   await page.getByRole('button', { name: 'Add Point' }).click();
+  await page.getByLabel('Measurement point X').fill('-4');
+  await page.getByLabel('Measurement point Y').fill('6');
+  await page.getByRole('button', { name: 'Add Point' }).click();
 
   await page.locator('[data-upid-segment-row]').first().click();
   await expect(page.locator('[data-upid-transform-center-current]')).toHaveText('0.000, 0.000');
 
   await hidePanels(page, ['contour-tree']);
-  await page.locator('[data-upid-transform-center-use-latest]').click();
+  await expect(page.locator('[data-upid-transform-center-use-point="1"]')).toContainText('P1');
+  await expect(page.locator('[data-upid-transform-center-use-point="2"]')).toContainText('P2');
+  await page.locator('[data-upid-transform-center-use-point="1"]').click();
   await expect(page.locator('[data-upid-transform-center-x]')).toHaveValue('12.000');
   await expect(page.locator('[data-upid-transform-center-y]')).toHaveValue('-8.000');
 
