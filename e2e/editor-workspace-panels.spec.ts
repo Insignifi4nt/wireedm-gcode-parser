@@ -309,9 +309,11 @@ test('editor moves a selected contour center to a precise coordinate', async ({ 
   await hidePanels(page, ['contour-tree']);
 
   await expect(page.locator('[data-upid-transform-selection-center-current]')).toHaveText('5.000, 5.000');
+  await expect(page.locator('[data-editor-command-hint]')).toContainText('Move Center to Origin');
 
-  await page.locator('[data-upid-transform-selection-center-x]').fill('0');
-  await page.locator('[data-upid-transform-selection-center-y]').fill('0');
+  await page.locator('[data-upid-transform-selection-center-use-origin]').click();
+  await expect(page.locator('[data-upid-transform-selection-center-x]')).toHaveValue('0.000');
+  await expect(page.locator('[data-upid-transform-selection-center-y]')).toHaveValue('0.000');
   await page.locator('[data-upid-transform-selection-center-apply]').click();
 
   await expect(page.locator('[data-upid-selected="start"]')).toHaveText('-5.000, -5.000');

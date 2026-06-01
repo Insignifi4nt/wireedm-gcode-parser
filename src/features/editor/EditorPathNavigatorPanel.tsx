@@ -642,7 +642,20 @@ export function EditorPathNavigatorPanel({
                 />
               </label>
             </div>
-            <div className="mt-2 grid grid-cols-2 gap-1">
+            <div className="mt-2 grid grid-cols-3 gap-1">
+              <button
+                aria-label="Use origin as selection center target"
+                className={textButtonClass}
+                data-upid-transform-selection-center-use-origin
+                disabled={!selectedGeometryCenter || isSaving}
+                onClick={() => {
+                  onPathTargetXDraftChange(formatNumber(0));
+                  onPathTargetYDraftChange(formatNumber(0));
+                }}
+                type="button"
+              >
+                Origin
+              </button>
               <button
                 aria-label="Use latest measurement point as selection center target"
                 className={textButtonClass}
@@ -708,7 +721,20 @@ export function EditorPathNavigatorPanel({
                 />
               </label>
             </div>
-            <div className="mt-2 grid grid-cols-2 gap-1">
+            <div className="mt-2 grid grid-cols-3 gap-1">
+              <button
+                aria-label="Use origin as center target"
+                className={textButtonClass}
+                data-upid-transform-center-use-origin
+                disabled={!selectedSegmentCenter || isSaving}
+                onClick={() => {
+                  onPathTargetXDraftChange(formatNumber(0));
+                  onPathTargetYDraftChange(formatNumber(0));
+                }}
+                type="button"
+              >
+                Origin
+              </button>
               <button
                 aria-label="Use latest measurement point as center target"
                 className={textButtonClass}

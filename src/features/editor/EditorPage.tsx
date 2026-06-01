@@ -1526,7 +1526,7 @@ export function EditorPage({
     }
 
     if (selectedPathElement) {
-      return 'Drag selected geometry on the canvas, or use Transform for exact moves.';
+      return 'Drag selected geometry on the canvas, or use Transform for exact moves. Move Center to Origin sends the selection center to X0 Y0.';
     }
 
     if (canvasMouseMode === 'point') {
