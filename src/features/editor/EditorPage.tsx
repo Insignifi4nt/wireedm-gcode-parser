@@ -28,6 +28,7 @@ import {
   constructMagnetizedPoint,
   movePathOperation,
   previewClosedOperationStartNearPoint,
+  setClosedOperationStartAtSegmentEndpoint,
   reversePathOperation,
   setClosedOperationStartAtExistingPointNearPoint,
   setClosedOperationStartNearPoint,
@@ -44,7 +45,6 @@ import type {
 } from '@/domain/path-intel/types';
 import {
   normalizeUpidPathElementSelection,
-  readUpidPathElementPoint,
   summarizeUpidPathDocumentForEditor,
   upidPathElementIdForOperation,
   upidStartPreviewPointRole
@@ -818,13 +818,11 @@ export function EditorPage({
       return;
     }
 
-    const point = readUpidPathElementPoint(pathDocumentDraft, element);
-    if (!point) return;
-
-    const edited = setClosedOperationStartAtExistingPointNearPoint(
+    const edited = setClosedOperationStartAtSegmentEndpoint(
       pathDocumentDraft,
       element.operationId,
-      point
+      element.segmentId,
+      element.pointRole
     );
     if (!edited) return;
 

@@ -1793,6 +1793,43 @@ describe('App DXF imports and project library', () => {
     );
   });
 
+  it('preserves exact endpoint provenance when setting start from a path-tree point row', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'endpoint-start-provenance.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const targetPointRow = container.querySelector(
+      '[data-upid-point-row][data-upid-segment-index="1"][data-upid-point-role="start"]'
+    ) as HTMLElement | null;
+    const targetSegmentId = targetPointRow?.getAttribute('data-upid-segment-id');
+    expect(targetPointRow).not.toBeNull();
+    expect(targetSegmentId).toBeTruthy();
+
+    const setStartButton = targetPointRow?.querySelector(
+      'button[aria-label="Set path start to this point"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      setStartButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const overrides = container.querySelector('[data-upid-selected-overrides]');
+    expect(container.querySelector('[data-upid-selected="start"]')?.textContent).toBe('10.000, 0.000');
+    expect(overrides?.textContent).toContain('existing start');
+    expect(overrides?.textContent).toContain(`source ${targetSegmentId}`);
+  });
+
   it('highlights canvas geometry from UPID navigator row hover', async () => {
     window.showDirectoryPicker = undefined;
 

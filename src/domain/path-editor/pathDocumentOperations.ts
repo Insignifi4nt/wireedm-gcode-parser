@@ -237,6 +237,42 @@ export function setClosedOperationStartAtExistingPointNearPoint(
   return setClosedOperationStartNearPoint(document, operationId, endpoint.point);
 }
 
+export function setClosedOperationStartAtSegmentEndpoint(
+  document: PathPlanningDocument,
+  operationId: string,
+  segmentId: SegmentId,
+  pointRole: EndpointSide
+) {
+  const next = cloneDocument(document);
+  const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation || !operation.closed) return null;
+
+  const segmentIndex = operation.segmentRefs.findIndex((ref) => ref.segmentId === segmentId);
+  const ref = operation.segmentRefs[segmentIndex];
+  if (!ref) return null;
+
+  const segment = requiredSegment(segmentMap(next.segments), ref.segmentId);
+  const point = pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref);
+  const startIndex = pointRole === 'start' ? segmentIndex : (segmentIndex + 1) % operation.segmentRefs.length;
+
+  operation.segmentRefs = rotatePathRefs(operation.segmentRefs, startIndex);
+  operation.overrides = {
+    ...operation.overrides,
+    start: {
+      kind: 'manual',
+      point: { ...point },
+      relation: 'existing-point',
+      sourceSegmentId: segmentId,
+      sourceSegmentIndex: segmentIndex,
+      pointRole,
+      createdSegmentIds: []
+    }
+  };
+  syncChainRefs(next, operation);
+  refreshPlan(next);
+  return next;
+}
+
 export function previewClosedOperationStartNearPoint(
   document: PathPlanningDocument,
   operationId: string,

@@ -10,6 +10,7 @@ import {
   movePathOperation,
   previewClosedOperationStartNearPoint,
   reversePathOperation,
+  setClosedOperationStartAtSegmentEndpoint,
   setPathOperationClassification,
   setClosedOperationStartAtExistingPointNearPoint,
   setClosedOperationStartNearPoint,
@@ -194,6 +195,31 @@ describe('pathDocumentOperations', () => {
       sourceSegmentId,
       sourceSegmentIndex: 0,
       pointRole: 'end',
+      createdSegmentIds: []
+    });
+  });
+
+  it('sets a closed operation start from the exact selected segment endpoint', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const operation = document.plan.operations[0];
+    const targetSegmentId = operation.segmentRefs[1].segmentId;
+
+    const edited = setClosedOperationStartAtSegmentEndpoint(
+      document,
+      operation.id,
+      targetSegmentId,
+      'start'
+    );
+
+    expect(edited?.plan.operations[0].startPoint).toEqual({ x: 10, y: 0 });
+    expect(edited?.plan.operations[0].segmentRefs[0].segmentId).toBe(targetSegmentId);
+    expect(edited?.plan.operations[0].overrides?.start).toEqual({
+      kind: 'manual',
+      point: { x: 10, y: 0 },
+      relation: 'existing-point',
+      sourceSegmentId: targetSegmentId,
+      sourceSegmentIndex: 1,
+      pointRole: 'start',
       createdSegmentIds: []
     });
   });
