@@ -35,6 +35,9 @@ import {
   setPathOperationClassification,
   setPathOperationOrderStrategy,
   slideMagnetizedPointOnSegment,
+  translatePathElement,
+  translatePathOperation,
+  translatePathSegment,
   type MagnetizedPathPoint,
   type MagnetizeMode
 } from '@/domain/path-editor/pathDocumentOperations';
@@ -126,6 +129,7 @@ interface EditorDraftSnapshot {
 type EditorWorkspacePanelId =
   | 'path-summary'
   | 'path-actions'
+  | 'path-transform'
   | 'path-hover-assist'
   | 'endpoint-topology'
   | 'path-diagnostics'
@@ -139,6 +143,7 @@ type EditorWorkspacePanelId =
 const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   'path-summary': 'Path Summary',
   'path-actions': 'Path Actions',
+  'path-transform': 'Transform',
   'path-hover-assist': 'Hover Assist',
   'endpoint-topology': 'Endpoint Topology',
   'path-diagnostics': 'Path Diagnostics',
@@ -153,6 +158,7 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
 const PATH_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
   'path-summary',
   'path-actions',
+  'path-transform',
   'path-hover-assist',
   'endpoint-topology',
   'path-diagnostics',
@@ -170,11 +176,12 @@ const INSPECTOR_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
 const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFloatingPanelGeometry> = {
   'path-summary': { x: 250, y: 74, width: 300, height: 220 },
   'path-actions': { x: 274, y: 104, width: 320, height: 430 },
-  'path-hover-assist': { x: 298, y: 134, width: 300, height: 190 },
-  'endpoint-topology': { x: 322, y: 164, width: 340, height: 260 },
-  'path-diagnostics': { x: 346, y: 194, width: 360, height: 260 },
-  'cut-sequence': { x: 370, y: 224, width: 340, height: 340 },
-  'contour-tree': { x: 394, y: 84, width: 380, height: 560 },
+  'path-transform': { x: 298, y: 134, width: 320, height: 220 },
+  'path-hover-assist': { x: 322, y: 164, width: 300, height: 190 },
+  'endpoint-topology': { x: 346, y: 194, width: 340, height: 260 },
+  'path-diagnostics': { x: 370, y: 224, width: 360, height: 260 },
+  'cut-sequence': { x: 394, y: 254, width: 340, height: 340 },
+  'contour-tree': { x: 418, y: 84, width: 380, height: 560 },
   position: { x: 1020, y: 74, width: 300, height: 180 },
   statistics: { x: 990, y: 104, width: 360, height: 560 },
   machine: { x: 1040, y: 134, width: 300, height: 220 },
@@ -189,7 +196,7 @@ const WORKSPACE_PANEL_GROUPS: Array<{
   {
     id: 'path',
     title: 'Path',
-    panelIds: ['path-summary', 'path-actions', 'path-hover-assist', 'endpoint-topology', 'path-diagnostics']
+    panelIds: ['path-summary', 'path-actions', 'path-transform', 'path-hover-assist', 'endpoint-topology', 'path-diagnostics']
   },
   {
     id: 'sequence',
@@ -254,6 +261,8 @@ export function EditorPage({
   const [programLinesOpen, setProgramLinesOpen] = useState(true);
   const [pointXDraft, setPointXDraft] = useState('');
   const [pointYDraft, setPointYDraft] = useState('');
+  const [pathTranslateXDraft, setPathTranslateXDraft] = useState('0');
+  const [pathTranslateYDraft, setPathTranslateYDraft] = useState('0');
   const [lineMode, setLineMode] = useState<'select' | 'edit'>(readStoredLineMode);
   const [pathClickMode, setPathClickMode] = useState<'set-start' | MagnetizeMode | null>(null);
   const [hoveredPathElement, setHoveredPathElement] = useState<EditorPathElementRef | null>(null);
@@ -268,7 +277,7 @@ export function EditorPage({
   const [inspectorRailWidth, setInspectorRailWidth] = useState(420);
   const [workspacePanelPlacements, setWorkspacePanelPlacements] = useState<
     Record<EditorWorkspacePanelId, EditorPanelPlacement>
-  >(() => createDefaultPanelRecord(() => 'floating'));
+  >(() => createDefaultPanelRecord(() => 'hidden'));
   const [workspacePanelGeometries, setWorkspacePanelGeometries] = useState<
     Record<EditorWorkspacePanelId, EditorFloatingPanelGeometry>
   >(() => ({ ...DEFAULT_WORKSPACE_PANEL_GEOMETRY }));
@@ -990,6 +999,25 @@ export function EditorPage({
     }
   }
 
+  function handleTranslatePathSelection(delta: { x: number; y: number }) {
+    if (!pathDocumentDraft || isSaving) return;
+
+    const edited = selectedPathElement?.segmentId
+      ? translatePathSegment(pathDocumentDraft, selectedPathElement.segmentId, delta)
+      : selectedPathElement?.pathElementId
+        ? translatePathElement(pathDocumentDraft, selectedPathElement.pathElementId, delta)
+        : selectedPathOperationId
+          ? translatePathOperation(pathDocumentDraft, selectedPathOperationId, delta)
+          : null;
+
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId
+      });
+    }
+  }
+
   function applyPathDocumentEdit(
     nextDocument: PathPlanningDocument,
     options: {
@@ -1265,15 +1293,20 @@ export function EditorPage({
         onSetPathOperationClassification={handleSetPathOperationClassification}
         onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
         onSetPathStartFromElement={handleSetPathStartFromElement}
+        onTranslatePathSelection={handleTranslatePathSelection}
         onToggleHoverAssist={handleTogglePathHoverAssist}
         onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
         onUndoDraft={handleUndoDraft}
         pathClickMode={pathClickMode}
         pathDocument={pathDocument}
+        pathTranslateXDraft={pathTranslateXDraft}
+        pathTranslateYDraft={pathTranslateYDraft}
         redoAvailable={redoStack.length > 0}
         renderWorkspacePanel={renderWorkspacePanel}
         selectedPathElement={selectedPathElement}
         selectedPathOperationId={selectedPathOperationId}
+        onPathTranslateXDraftChange={setPathTranslateXDraft}
+        onPathTranslateYDraftChange={setPathTranslateYDraft}
         undoAvailable={undoStack.length > 0}
       />
     );

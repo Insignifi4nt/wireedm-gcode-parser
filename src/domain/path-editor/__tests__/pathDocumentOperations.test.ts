@@ -15,7 +15,9 @@ import {
   setClosedOperationStartAtExistingPointNearPoint,
   setClosedOperationStartNearPoint,
   setPathOperationOrderStrategy,
-  slideMagnetizedPointOnSegment
+  slideMagnetizedPointOnSegment,
+  translatePathElement,
+  translatePathSegment
 } from '../pathDocumentOperations';
 
 describe('pathDocumentOperations', () => {
@@ -259,6 +261,71 @@ describe('pathDocumentOperations', () => {
     const startedElement = started?.pathElements.find((element) => element.contourId === first.contourId);
     expect(startedElement?.points.find((point) => point.role === 'start')?.point).toEqual({ x: 2.5, y: 0 });
     expect(startedElement?.segmentRefs).toHaveLength(5);
+  });
+
+  it('translates a selected UPID contour while keeping topology and planning state live', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const pathElement = document.pathElements[0];
+    const operation = document.plan.operations[0];
+
+    const translated = translatePathElement(document, pathElement.id, { x: 7, y: -2 });
+
+    expect(translated?.segments.map((segment) => [segment.start, segment.end])).toEqual([
+      [{ x: 7, y: -2 }, { x: 17, y: -2 }],
+      [{ x: 17, y: -2 }, { x: 17, y: 3 }],
+      [{ x: 17, y: 3 }, { x: 7, y: 3 }],
+      [{ x: 7, y: 3 }, { x: 7, y: -2 }]
+    ]);
+    expect(translated?.plan.operations[0]).toMatchObject({
+      id: operation.id,
+      startPoint: { x: 7, y: -2 },
+      endPoint: { x: 7, y: -2 },
+      metrics: {
+        cutLength: 30,
+        segmentCount: 4
+      }
+    });
+    expect(translated?.pathElements[0]).toMatchObject({
+      id: pathElement.id,
+      operationId: operation.id,
+      bounds: { minX: 7, minY: -2, maxX: 17, maxY: 3 }
+    });
+    expect(translated?.chains[0].metrics.gapLength).toBe(0);
+    expect(document.segments[0].start).toEqual({ x: 0, y: 0 });
+  });
+
+  it('translates an arc segment by moving its endpoints and center as one geometry', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 5,
+        startAngle: 0,
+        endAngle: 90,
+        clockwise: false,
+        start: { x: 5, y: 0 },
+        end: { x: 0, y: 5 }
+      }
+    ]);
+    const segmentId = document.segments[0].id;
+
+    const translated = translatePathSegment(document, segmentId, { x: 2, y: 3 });
+    const translatedSegment = translated?.segments[0];
+
+    expect(translatedSegment).toMatchObject({
+      kind: 'arc',
+      start: { x: 7, y: 3 },
+      end: { x: 2, y: 8 },
+      center: { x: 2, y: 3 },
+      radius: 5,
+      clockwise: false
+    });
+    expect(translatedSegment?.length).toBeCloseTo(document.segments[0].length, 6);
+    expect(document.segments[0]).toMatchObject({
+      start: { x: 5, y: 0 },
+      end: { x: 0, y: 5 }
+    });
   });
 
   it('records a manual contour role correction on the operation and contour', () => {

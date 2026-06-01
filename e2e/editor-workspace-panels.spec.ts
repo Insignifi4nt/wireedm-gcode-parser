@@ -12,15 +12,7 @@ test('editor exposes functional groups as dockable and floating workspace panels
       buffer: Buffer.from(rectangleDxf())
     });
 
-  await expect(page.locator('[data-editor-workspace-panel="path-summary"]')).toBeVisible();
-  await expect(page.locator('[data-editor-workspace-panel="path-actions"]')).toBeVisible();
-  await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toBeVisible();
-  await expect(page.locator('[data-editor-workspace-panel="cut-sequence"]')).toBeVisible();
-  await expect(page.locator('[data-editor-workspace-panel="contour-tree"]')).toBeVisible();
-  await expect(page.locator('[data-editor-workspace-panel="position"]')).toBeVisible();
-  await expect(page.locator('[data-editor-workspace-panel="statistics"]')).toBeVisible();
-  await expect(page.locator('[data-editor-workspace-panel="machine"]')).toBeVisible();
-  await expect(page.locator('[data-editor-workspace-panel="measurement"]')).toBeVisible();
+  await expect(page.locator('[data-editor-workspace-panel]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Float UPID Path Navigator' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Float Inspector' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Float / })).toHaveCount(0);
@@ -28,10 +20,18 @@ test('editor exposes functional groups as dockable and floating workspace panels
 
   await page.locator('[data-editor-panel-toolbar] summary').click();
   await expect(page.locator('[data-editor-panel-menu-group="path"]')).toBeVisible();
+  await expect(page.locator('[data-editor-panel-menu-item="path-transform"]')).toBeVisible();
   await expect(page.locator('[data-editor-panel-menu-group="inspection"]')).toBeVisible();
   await expect(page.locator('[data-editor-panel-menu-group="machine"]')).toBeVisible();
   await expect(page.locator('[data-editor-panel-menu-group="measurement"]')).toBeVisible();
   await page.locator('[data-editor-panel-toolbar] summary').click();
+
+  await showPanels(page, ['path-summary', 'path-actions', 'path-transform', 'path-diagnostics', 'measurement']);
+  await expect(page.locator('[data-editor-workspace-panel="path-summary"]')).toBeVisible();
+  await expect(page.locator('[data-editor-workspace-panel="path-actions"]')).toBeVisible();
+  await expect(page.locator('[data-editor-workspace-panel="path-transform"]')).toBeVisible();
+  await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toBeVisible();
+  await expect(page.locator('[data-editor-workspace-panel="measurement"]')).toBeVisible();
 
   await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toHaveAttribute(
     'data-editor-workspace-panel-placement',
@@ -72,6 +72,65 @@ test('editor exposes functional groups as dockable and floating workspace panels
     'floating'
   );
 });
+
+test('editor translates selected path geometry through the Transform panel', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'transform-panel.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await showPanels(page, ['path-transform', 'contour-tree', 'statistics']);
+  await page.locator('[data-upid-contour-row]').first().click();
+  await expect(page.locator('[data-upid-transform-target]')).toContainText('Exterior');
+  await hidePanels(page, ['contour-tree']);
+
+  await page.locator('[data-upid-transform-delta-x]').fill('3');
+  await page.locator('[data-upid-transform-delta-y]').fill('-4');
+  await page.locator('[data-upid-transform-apply]').click();
+
+  await expect(page.locator('[data-upid-selected="start"]')).toHaveText('3.000, -4.000');
+  await expect(page.locator('[data-upid-selected="end"]')).toHaveText('3.000, -4.000');
+
+  await showPanels(page, ['contour-tree']);
+  await page.locator('[data-upid-segment-row]').first().click();
+  await hidePanels(page, ['contour-tree']);
+  await page.locator('[data-upid-transform-delta-x]').fill('2');
+  await page.locator('[data-upid-transform-delta-y]').fill('1');
+  await page.locator('[data-upid-transform-apply]').click();
+
+  await expect(page.locator('[data-upid-selected-segment="true"]')).toContainText('5.000, -3.000');
+  await expect(page.locator('[data-upid-selected-segment="true"]')).toContainText('15.000, -3.000');
+});
+
+async function hidePanels(page: import('@playwright/test').Page, panelIds: string[]) {
+  await setPanelVisibility(page, panelIds, false);
+}
+
+async function showPanels(page: import('@playwright/test').Page, panelIds: string[]) {
+  await setPanelVisibility(page, panelIds, true);
+}
+
+async function setPanelVisibility(
+  page: import('@playwright/test').Page,
+  panelIds: string[],
+  visible: boolean
+) {
+  await page.locator('[data-editor-panel-toolbar] summary').click();
+  for (const panelId of panelIds) {
+    const item = page.locator(`[data-editor-panel-menu-item="${panelId}"]`);
+    const label = await item.getAttribute('aria-label');
+    if (label?.startsWith(visible ? 'Show' : 'Hide')) {
+      await item.click();
+    }
+  }
+  await page.locator('[data-editor-panel-toolbar] summary').click();
+}
 
 async function dragHandleToDock(
   page: import('@playwright/test').Page,

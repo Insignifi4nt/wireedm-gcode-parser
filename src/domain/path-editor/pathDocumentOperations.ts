@@ -1,4 +1,5 @@
 import { analyzeContours } from '@/domain/path-intel/contours';
+import { buildChains } from '@/domain/path-intel/chains';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
 import { buildPathElements } from '@/domain/path-intel/pathElements';
 import { buildContourDisplayNames } from '@/domain/path-intel/pathNaming';
@@ -6,6 +7,7 @@ import { planOperations } from '@/domain/path-intel/planOperations';
 import {
   angleIsOnSweep,
   createArcSegment,
+  createCircleSegment,
   createLineSegment,
   distance,
   endpointKey,
@@ -147,6 +149,44 @@ export function setPathOperationClassification(
   refreshOperationDisplayNames(next);
   refreshPathElements(next);
   return next;
+}
+
+export function translatePathElement(
+  document: PathPlanningDocument,
+  pathElementId: PathElementId,
+  delta: Point2
+) {
+  const pathElement = document.pathElements.find((candidate) => candidate.id === pathElementId);
+  if (!pathElement) return null;
+
+  return translatePathSegments(
+    document,
+    pathElement.segmentRefs.map((ref) => ref.segmentId),
+    delta
+  );
+}
+
+export function translatePathOperation(
+  document: PathPlanningDocument,
+  operationId: string,
+  delta: Point2
+) {
+  const operation = document.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation) return null;
+
+  return translatePathSegments(
+    document,
+    operation.segmentRefs.map((ref) => ref.segmentId),
+    delta
+  );
+}
+
+export function translatePathSegment(
+  document: PathPlanningDocument,
+  segmentId: SegmentId,
+  delta: Point2
+) {
+  return translatePathSegments(document, [segmentId], delta);
 }
 
 export function reversePathOperation(document: PathPlanningDocument, operationId: string) {
@@ -623,6 +663,166 @@ function replaceDocumentSegment(document: PathPlanningDocument, segmentId: Segme
   document.segments.splice(index, 1, ...replacements);
 }
 
+function translatePathSegments(document: PathPlanningDocument, segmentIds: SegmentId[], delta: Point2) {
+  if (delta.x === 0 && delta.y === 0) return null;
+
+  const translatedSegmentIds = new Set(segmentIds);
+  if (translatedSegmentIds.size === 0) return null;
+
+  const next = cloneDocument(document);
+  let changed = false;
+  next.segments = next.segments.map((segment) => {
+    if (!translatedSegmentIds.has(segment.id)) return segment;
+    changed = true;
+    return translateSegmentGeometry(segment, delta);
+  });
+
+  if (!changed) return null;
+
+  refreshDocumentAfterSegmentGeometryEdit(next, translatedSegmentIds, delta);
+  return next;
+}
+
+function translateSegmentGeometry(segment: PathSegment, delta: Point2): PathSegment {
+  if (segment.kind === 'line') {
+    return createLineSegment({
+      id: segment.id,
+      source: segment.source,
+      start: translatePoint(segment.start, delta),
+      end: translatePoint(segment.end, delta)
+    });
+  }
+
+  if (segment.kind === 'circle') {
+    return createCircleSegment({
+      id: segment.id,
+      source: segment.source,
+      center: translatePoint(segment.center, delta),
+      radius: segment.radius
+    });
+  }
+
+  return createArcSegment({
+    id: segment.id,
+    source: segment.source,
+    start: translatePoint(segment.start, delta),
+    end: translatePoint(segment.end, delta),
+    center: translatePoint(segment.center, delta),
+    radius: segment.radius,
+    clockwise: segment.clockwise
+  });
+}
+
+function refreshDocumentAfterSegmentGeometryEdit(
+  document: PathPlanningDocument,
+  translatedSegmentIds: Set<SegmentId>,
+  delta: Point2
+) {
+  const previousOperations = document.plan.operations.map((operation) => structuredClone(operation));
+  const previousOperationsByContourId = new Map(previousOperations.map((operation) => [operation.contourId, operation]));
+  const manualClassificationsByContourId = manualClassifications(document);
+
+  const clusterResult = clusterSegmentEndpoints(document.segments, document.options);
+  const chainResult = buildChains(document.segments, clusterResult, document.options);
+  const contourResult = analyzeContours(chainResult.chains, document.segments, document.options);
+  const contours = contourResult.contours.map((contour) => {
+    const classification = manualClassificationsByContourId.get(contour.id);
+    return classification ? { ...contour, classification } : contour;
+  });
+  const replanned = planOperations({
+    chains: chainResult.chains,
+    contours,
+    segments: document.segments,
+    options: document.options
+  });
+  const restoredOperationsByContourId = new Map(
+    replanned.operations.map((operation) => [
+      operation.contourId,
+      restoreGeometryEditOperationState(
+        operation,
+        previousOperationsByContourId.get(operation.contourId),
+        translatedSegmentIds,
+        delta
+      )
+    ])
+  );
+  const orderedOperations: PathOperation[] = [];
+
+  for (const previousOperation of previousOperations) {
+    const restored = restoredOperationsByContourId.get(previousOperation.contourId);
+    if (!restored) continue;
+    orderedOperations.push(restored);
+    restoredOperationsByContourId.delete(previousOperation.contourId);
+  }
+
+  orderedOperations.push(...restoredOperationsByContourId.values());
+
+  document.endpointClusters = clusterResult.clusters;
+  document.chains = chainResult.chains;
+  document.contours = contours;
+  document.plan = {
+    ...replanned,
+    operations: orderedOperations
+  };
+  document.diagnostics = [
+    ...clusterResult.diagnostics,
+    ...chainResult.diagnostics,
+    ...contourResult.diagnostics,
+    ...replanned.diagnostics
+  ];
+
+  for (const operation of document.plan.operations) {
+    syncChainRefs(document, operation);
+  }
+
+  refreshPlan(document);
+}
+
+function restoreGeometryEditOperationState(
+  operation: PathOperation,
+  previous: PathOperation | undefined,
+  translatedSegmentIds: Set<SegmentId>,
+  delta: Point2
+): PathOperation {
+  if (!previous) return operation;
+
+  const overrides = previous.overrides ? structuredClone(previous.overrides) : undefined;
+  if (overrides?.start && startOverrideTouchesTranslatedSegments(overrides.start, translatedSegmentIds)) {
+    overrides.start = {
+      ...overrides.start,
+      point: translatePoint(overrides.start.point, delta)
+    };
+  }
+
+  const restored: PathOperation = {
+    ...operation,
+    id: previous.id,
+    ...(overrides ? { overrides } : {})
+  };
+
+  if (overrides?.classification) {
+    restored.classification = overrides.classification.classification;
+  }
+
+  if (overrides?.direction || overrides?.start) {
+    restored.segmentRefs = previous.segmentRefs.map((ref) => ({ ...ref }));
+    restored.direction = previous.direction;
+  }
+
+  return restored;
+}
+
+function startOverrideTouchesTranslatedSegments(
+  start: NonNullable<PathOperation['overrides']>['start'],
+  translatedSegmentIds: Set<SegmentId>
+) {
+  return Boolean(
+    start &&
+      (translatedSegmentIds.has(start.sourceSegmentId) ||
+        start.createdSegmentIds.some((segmentId) => translatedSegmentIds.has(segmentId)))
+  );
+}
+
 function splitCircle(
   segment: CirclePathSegment,
   ref: OrientedSegmentRef,
@@ -1014,4 +1214,11 @@ function normalize(vector: Point2): Point2 {
   const length = Math.hypot(vector.x, vector.y);
   if (length <= 0) return { x: 0, y: 0 };
   return { x: vector.x / length, y: vector.y / length };
+}
+
+function translatePoint(point: Point2, delta: Point2): Point2 {
+  return {
+    x: point.x + delta.x,
+    y: point.y + delta.y
+  };
 }

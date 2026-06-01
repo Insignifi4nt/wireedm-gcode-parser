@@ -7,6 +7,7 @@ import {
   Flag,
   Magnet,
   MousePointer2,
+  Move,
   Redo2,
   RefreshCw,
   Save,
@@ -92,6 +93,8 @@ interface EditorPathNavigatorPanelProps {
     children: ReactNode,
     options?: { fill?: boolean }
   ) => ReactNode;
+  pathTranslateXDraft: string;
+  pathTranslateYDraft: string;
   redoAvailable: boolean;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
@@ -105,9 +108,12 @@ interface EditorPathNavigatorPanelProps {
   onReversePathOperation: () => void;
   onSaveClick: () => void | Promise<void>;
   onSelectPathElement: (element: EditorPathElementRef) => void;
+  onPathTranslateXDraftChange: (value: string) => void;
+  onPathTranslateYDraftChange: (value: string) => void;
   onSetPathOperationClassification: (classification: ContourClassification) => void;
   onSetPathOperationOrderStrategy: (strategy: OperationOrderStrategy) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
+  onTranslatePathSelection: (delta: { x: number; y: number }) => void;
   onToggleHoverAssist: () => void;
   onToggleMagneticSnap: () => void;
   onUndoDraft: () => void;
@@ -136,12 +142,17 @@ export function EditorPathNavigatorPanel({
   onReversePathOperation,
   onSaveClick,
   onSelectPathElement,
+  onPathTranslateXDraftChange,
+  onPathTranslateYDraftChange,
   onSetPathOperationClassification,
   onSetPathOperationOrderStrategy,
   onSetPathStartFromElement,
+  onTranslatePathSelection,
   onToggleHoverAssist,
   onToggleMagneticSnap,
-  onUndoDraft
+  onUndoDraft,
+  pathTranslateXDraft,
+  pathTranslateYDraft
 }: EditorPathNavigatorPanelProps) {
   const segmentsById = segmentMap(pathDocument.segments);
   const projectRail = createUpidProjectRail(pathDocument);
@@ -161,6 +172,21 @@ export function EditorPathNavigatorPanel({
     selectedOperation && selectedPathElement?.segmentId
       ? selectedOperation.segmentRefs.findIndex((ref) => ref.segmentId === selectedPathElement.segmentId)
       : -1;
+  const translateX = Number(pathTranslateXDraft);
+  const translateY = Number(pathTranslateYDraft);
+  const translateTargetLabel = selectedPathElement?.segmentId
+    ? `Segment ${selectedSegmentIndex >= 0 ? selectedSegmentIndex + 1 : ''}`.trim()
+    : selectedOperation
+      ? selectedOperation.closed
+        ? selectedOperation.displayName
+        : 'Open chain'
+      : 'No selection';
+  const canTranslateSelection =
+    Boolean(selectedOperation) &&
+    Number.isFinite(translateX) &&
+    Number.isFinite(translateY) &&
+    (translateX !== 0 || translateY !== 0) &&
+    !isSaving;
   const hoverRevealedPathElementIds = new Set(
     hoveredPathElement ? upidPathElementAncestorIds(pathDocument, hoveredPathElement) : []
   );
@@ -476,6 +502,56 @@ export function EditorPathNavigatorPanel({
             </button>
           </div>
         </div>
+        ))}
+
+        {renderWorkspacePanel('path-transform', 'Transform', (
+        <section data-upid-path-transform>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-[9px] uppercase text-muted-foreground">Transform</span>
+            <span className="truncate text-[9px] text-muted-foreground" data-upid-transform-target>
+              {translateTargetLabel}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+              X
+              <input
+                aria-label="Translate X"
+                className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                data-upid-transform-delta-x
+                disabled={!selectedOperation || isSaving}
+                inputMode="decimal"
+                onChange={(event) => onPathTranslateXDraftChange(event.currentTarget.value)}
+                type="number"
+                value={pathTranslateXDraft}
+              />
+            </label>
+            <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+              Y
+              <input
+                aria-label="Translate Y"
+                className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                data-upid-transform-delta-y
+                disabled={!selectedOperation || isSaving}
+                inputMode="decimal"
+                onChange={(event) => onPathTranslateYDraftChange(event.currentTarget.value)}
+                type="number"
+                value={pathTranslateYDraft}
+              />
+            </label>
+          </div>
+          <button
+            aria-label="Apply translation to selected path geometry"
+            className={`mt-2 w-full ${textButtonClass}`}
+            data-upid-transform-apply
+            disabled={!canTranslateSelection}
+            onClick={() => onTranslatePathSelection({ x: translateX, y: translateY })}
+            type="button"
+          >
+            <Move className="size-3" />
+            Apply Translation
+          </button>
+        </section>
         ))}
 
         {renderWorkspacePanel('path-hover-assist', 'Hover Assist', (

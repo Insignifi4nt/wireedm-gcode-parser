@@ -128,8 +128,10 @@ export function AppShell({
         }}
       >
         <aside
-          className={`grid min-w-0 overflow-hidden border-r border-border bg-card/95 ${
-            replaceExpandedRailChrome ? 'grid-rows-[minmax(0,1fr)]' : 'grid-rows-[auto_minmax(0,1fr)]'
+          className={`grid min-w-0 overflow-hidden ${
+            replaceExpandedRailChrome
+              ? 'grid-rows-[minmax(0,1fr)] bg-background p-2'
+              : 'grid-rows-[auto_minmax(0,1fr)] border-r border-border bg-card/95'
           }`}
           data-app-rail
         >
@@ -150,7 +152,7 @@ export function AppShell({
               </button>
             </div>
           )}
-          <div className={`min-h-0 overflow-hidden ${replaceExpandedRailChrome ? 'p-2' : ''}`}>
+          <div className="min-h-0 overflow-hidden">
             {sidebarCollapsed ? (
               railContent?.collapsed ?? (
                 <div className="flex h-full flex-col items-center gap-3 py-3">
