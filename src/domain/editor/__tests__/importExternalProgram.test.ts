@@ -50,6 +50,7 @@ describe('importExternalProgram', () => {
     });
     expect('sourceRequiresCleanup' in result.project.editor).toBe(false);
     expect(result.editorProgram.filePath).toBe('editor/shop-output-2026-05-29.nc');
+    expect(result.editorProgram.model).toBe('gcode-text');
     expect(result.editorProgram.parseResult).not.toBeNull();
     expect(result.editorProgram.parseResult?.path).toHaveLength(2);
     expect(adapter.files.get('imports/shop-output-2026-05-29.nc')).toContain('G1 X5 Y0');

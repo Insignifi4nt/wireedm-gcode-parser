@@ -59,6 +59,7 @@ export async function saveEditorProgram(
     workbench: updatedWorkbench,
     editorProgram: {
       filePath: editorFilePath,
+      model: savesPathDocument ? 'upid-document' : 'gcode-text',
       text: textToSave,
       parseResult: savesPathDocument ? null : parseGCodeProgram(textToSave),
       project: updatedProject

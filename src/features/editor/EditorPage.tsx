@@ -167,16 +167,17 @@ export function EditorPage({
   const isSaving = saveStatus === 'saving';
   const draftProgram = useMemo<LoadedEditorProgram | null>(
     () => {
-      if (!program || savedPathDocument || pathDocumentDraft) return null;
+      if (!program || program.model === 'upid-document' || pathDocumentDraft) return null;
 
       return {
         filePath: program.filePath,
+        model: 'gcode-text',
         text: draftText,
         parseResult: parseGCodeProgram(draftText),
         project: program.project
       };
     },
-    [draftText, pathDocumentDraft, program, savedPathDocument]
+    [draftText, pathDocumentDraft, program]
   );
   const draftParseResult = draftProgram?.parseResult ?? null;
   const pathDocumentStats = useMemo(

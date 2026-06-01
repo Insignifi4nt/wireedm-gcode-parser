@@ -64,6 +64,7 @@ describe('saveEditorProgram', () => {
     expect(adapter.files.get(imported.editorProgram.filePath)).toBe(updatedText);
     expect(saved.editorProgram).toMatchObject({
       filePath: imported.editorProgram.filePath,
+      model: 'gcode-text',
       text: updatedText
     });
     expect(saved.editorProgram.parseResult).not.toBeNull();
@@ -172,6 +173,7 @@ describe('saveEditorProgram', () => {
     expect(savedProject.pathPlanning).toBeUndefined();
     expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.editorProgram.text).toBe('');
+    expect(saved.editorProgram.model).toBe('upid-document');
     expect(saved.editorProgram.parseResult).toBeNull();
     expect(saved.editorProgram.filePath).toBe(projectPath);
     expect(adapter.files.get(imported.project.source.files[0].path)).toBe(rectangleDxf());
@@ -210,6 +212,7 @@ describe('saveEditorProgram', () => {
 
     expect([...adapter.files.keys()].some((path) => path.startsWith('generated/'))).toBe(false);
     expect(saved.editorProgram.text).toBe('');
+    expect(saved.editorProgram.model).toBe('upid-document');
     expect(saved.editorProgram.parseResult).toBeNull();
     expect(saved.editorProgram.filePath).toBe('projects/missing-generated-2026-05-29/project.json');
     expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');

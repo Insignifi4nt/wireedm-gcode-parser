@@ -96,6 +96,7 @@ function EditorPageHarness({
         onSaveProgramText={onSaveProgramText}
         program={{
           filePath: 'imports/rectangle.dxf',
+          model: 'upid-document',
           parseResult: null,
           project,
           text: ''

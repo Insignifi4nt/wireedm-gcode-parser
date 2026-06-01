@@ -115,6 +115,7 @@ export async function importExternalProgram(
 
   const editorProgram: LoadedEditorProgram = {
     filePath: editorPath,
+    model: 'gcode-text',
     text: editorText,
     parseResult: parseGCodeProgram(editorText),
     project
