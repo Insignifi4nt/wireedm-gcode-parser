@@ -39,4 +39,13 @@ describe('createWorkbenchProject', () => {
     expect(project.editor.sourceRequiresCleanup).toBe(true);
     expect(project.id).toBe('external-input-2026-05-29');
   });
+
+  it('requires every project to declare a real source kind', () => {
+    expect(() =>
+      createWorkbenchProject({
+        name: 'Untyped Input',
+        now: new Date('2026-05-29T10:00:00.000Z')
+      } as Parameters<typeof createWorkbenchProject>[0])
+    ).toThrow('Project source kind is required.');
+  });
 });

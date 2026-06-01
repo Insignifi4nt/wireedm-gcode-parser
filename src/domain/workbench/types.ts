@@ -4,7 +4,7 @@ export const OUTPUT_EXTENSIONS = ['iso', 'nc', 'gcode'] as const;
 
 export type OutputExtension = (typeof OUTPUT_EXTENSIONS)[number] | 'custom';
 
-export type WorkbenchSourceKind = 'dxf' | 'external-gcode' | 'manual';
+export type WorkbenchSourceKind = 'dxf' | 'external-gcode';
 
 export interface WorkbenchFileRef {
   name: string;

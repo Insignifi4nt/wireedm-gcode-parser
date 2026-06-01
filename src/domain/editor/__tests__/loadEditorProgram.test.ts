@@ -128,7 +128,7 @@ describe('loadEditorProgram', () => {
       createdAt: '2026-05-29T11:00:00.000Z',
       updatedAt: '2026-05-29T11:00:00.000Z',
       source: {
-        kind: 'manual' as const,
+        kind: 'external-gcode' as const,
         files: []
       },
       generated: {

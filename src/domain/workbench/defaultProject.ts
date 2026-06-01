@@ -35,16 +35,20 @@ export function createDefaultMachineProfile(): MachineProfile {
 interface CreateWorkbenchProjectOptions {
   id?: string;
   name: string;
-  sourceKind?: WorkbenchSourceKind;
+  sourceKind: WorkbenchSourceKind;
   now?: Date;
 }
 
 export function createWorkbenchProject({
   id,
   name,
-  sourceKind = 'manual',
+  sourceKind,
   now = new Date()
 }: CreateWorkbenchProjectOptions): WorkbenchProject {
+  if (!sourceKind) {
+    throw new Error('Project source kind is required.');
+  }
+
   const timestamp = now.toISOString();
   const safeId = id ?? slugProjectName(name, timestamp);
 

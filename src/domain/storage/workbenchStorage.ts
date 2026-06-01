@@ -33,7 +33,7 @@ export interface WorkbenchProjectIndexEntry {
   id: string;
   name: string;
   path: string;
-  sourceKind: 'dxf' | 'external-gcode' | 'manual';
+  sourceKind: 'dxf' | 'external-gcode';
   updatedAt: string;
 }
 
