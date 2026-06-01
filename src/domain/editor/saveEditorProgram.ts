@@ -54,16 +54,27 @@ export async function saveEditorProgram(
     savesPathDocument && updatedProject
       ? upidEditorDocumentPath(updatedWorkbench, updatedProject)
       : input.filePath;
+  const editorProgram: LoadedEditorProgram =
+    savesPathDocument && input.pathDocument
+      ? {
+          filePath: editorFilePath,
+          model: 'upid-document',
+          pathDocument: input.pathDocument,
+          parseResult: null,
+          project: updatedProject,
+          text: ''
+        }
+      : {
+          filePath: editorFilePath,
+          model: 'gcode-text',
+          parseResult: parseGCodeProgram(textToSave),
+          project: updatedProject,
+          text: textToSave
+        };
 
   return {
     workbench: updatedWorkbench,
-    editorProgram: {
-      filePath: editorFilePath,
-      model: savesPathDocument ? 'upid-document' : 'gcode-text',
-      text: textToSave,
-      parseResult: savesPathDocument ? null : parseGCodeProgram(textToSave),
-      project: updatedProject
-    }
+    editorProgram
   };
 }
 

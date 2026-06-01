@@ -41,6 +41,7 @@ describe('loadEditorProgram', () => {
 
     expect(editorProgram.filePath).toBe('projects/editor-source-2026-05-29/project.json');
     expect(editorProgram.model).toBe('upid-document');
+    expect(editorProgram.pathDocument).toBe(imported.pathDocument);
     expect(editorProgram.text).toBe('');
     expect(editorProgram.parseResult).toBeNull();
     expect(editorProgram.project?.upid?.document.plan.operations).toHaveLength(1);

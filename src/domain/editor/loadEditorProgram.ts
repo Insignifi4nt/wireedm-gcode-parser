@@ -1,4 +1,5 @@
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { projectUpidDocument } from '@/domain/upid/projectUpid';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 
@@ -6,20 +7,34 @@ import { upidEditorDocumentPath } from './editorProjectPaths';
 import { parseGCodeProgram } from './gcodeParser';
 import type { GCodeParseResult } from './types';
 
-export interface LoadedEditorProgram {
+export type LoadedEditorProgram = LoadedGCodeEditorProgram | LoadedUpidEditorProgram;
+
+interface LoadedEditorProgramBase {
   filePath: string;
-  model: 'gcode-text' | 'upid-document';
-  parseResult: GCodeParseResult | null;
-  text: string;
   project?: WorkbenchProject;
+}
+
+export interface LoadedGCodeEditorProgram extends LoadedEditorProgramBase {
+  model: 'gcode-text';
+  parseResult: GCodeParseResult;
+  pathDocument?: undefined;
+  text: string;
+}
+
+export interface LoadedUpidEditorProgram extends LoadedEditorProgramBase {
+  model: 'upid-document';
+  parseResult: null;
+  pathDocument: PathPlanningDocument;
+  text: '';
 }
 
 export async function loadEditorProgram(
   workbench: ConnectedWorkbench,
   project: WorkbenchProject
 ): Promise<LoadedEditorProgram> {
-  if (projectUpidDocument(project)) {
-    return createUpidEditorProgram(workbench, project);
+  const pathDocument = projectUpidDocument(project);
+  if (pathDocument) {
+    return createUpidEditorProgram(workbench, project, pathDocument);
   }
 
   const filePath = project.editor.activeFilePath;
@@ -43,11 +58,13 @@ export async function loadEditorProgram(
 
 function createUpidEditorProgram(
   workbench: ConnectedWorkbench,
-  project: WorkbenchProject
+  project: WorkbenchProject,
+  pathDocument: PathPlanningDocument
 ): LoadedEditorProgram {
   return {
     filePath: upidEditorDocumentPath(workbench, project),
     model: 'upid-document',
+    pathDocument,
     parseResult: null,
     text: '',
     project

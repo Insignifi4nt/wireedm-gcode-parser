@@ -41,7 +41,6 @@ import type {
   OperationOrderStrategy,
   PathPlanningDocument
 } from '@/domain/path-intel/types';
-import { projectUpidDocument } from '@/domain/upid/projectUpid';
 import {
   normalizeUpidPathElementSelection,
   readUpidPathElementPoint,
@@ -154,7 +153,7 @@ export function EditorPage({
   const [rightRailWidth, setRightRailWidth] = useState(420);
   const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
   const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
-  const savedPathDocument = useMemo(() => projectUpidDocument(program?.project), [program?.project]);
+  const savedPathDocument = program?.model === 'upid-document' ? program.pathDocument : null;
   const savedPathDocumentSignature = useMemo(
     () => pathDocumentSignature(savedPathDocument),
     [savedPathDocument]
@@ -416,7 +415,7 @@ export function EditorPage({
 
   useEffect(() => {
     setDraftText(program?.text ?? '');
-    const pathDocument = projectUpidDocument(program?.project);
+    const pathDocument = program?.model === 'upid-document' ? program.pathDocument : null;
     const nextPathDocument = pathDocument ? structuredClone(pathDocument) : null;
     setPathDocumentDraft(nextPathDocument);
     setSelectedPathOperationId(null);

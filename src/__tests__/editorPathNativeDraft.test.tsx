@@ -98,6 +98,7 @@ function EditorPageHarness({
           filePath: 'imports/rectangle.dxf',
           model: 'upid-document',
           parseResult: null,
+          pathDocument: project.upid!.document,
           project,
           text: ''
         }}
