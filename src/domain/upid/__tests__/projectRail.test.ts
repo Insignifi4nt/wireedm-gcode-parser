@@ -17,6 +17,7 @@ import {
   readUpidPathElementPoint,
   readUpidPathElementPointByRole,
   readUpidPathElementLineage,
+  readUpidPathElementSequenceContext,
   readUpidPathElementSourceSummary,
   readUpidPathElementTreeContext,
   readUpidPathElementTreeNode,
@@ -162,6 +163,63 @@ describe('UPID project rail projection', () => {
         segmentId: null
       })?.siblings.map((node) => node.element.displayName)
     ).toEqual(['Exterior 2']);
+  });
+
+  it('resolves selected path refs into cut-sequence neighbors', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      ...rectangleLines(0, 0, 5, 5),
+      ...rectangleLines(20, 0, 25, 5)
+    ]);
+    const rail = createUpidProjectRail(document);
+    const firstElement = rail.cutSequenceElements[0];
+    const secondElement = rail.cutSequenceElements[1];
+
+    expect(
+      readUpidPathElementSequenceContext(document, {
+        operationId: firstElement.operationId,
+        pathElementId: firstElement.id,
+        segmentId: null
+      })
+    ).toMatchObject({
+      current: {
+        element: {
+          displayName: firstElement.displayName,
+          id: firstElement.id
+        },
+        index: 0
+      },
+      next: {
+        element: {
+          displayName: secondElement.displayName,
+          id: secondElement.id
+        },
+        index: 1
+      },
+      previous: null
+    });
+    expect(
+      readUpidPathElementSequenceContext(document, {
+        operationId: secondElement.operationId,
+        pathElementId: secondElement.id,
+        segmentId: null
+      })
+    ).toMatchObject({
+      current: {
+        element: {
+          displayName: secondElement.displayName,
+          id: secondElement.id
+        },
+        index: 1
+      },
+      next: null,
+      previous: {
+        element: {
+          displayName: firstElement.displayName,
+          id: firstElement.id
+        },
+        index: 0
+      }
+    });
   });
 
   it('keeps manual decisions available without React panel bookkeeping', () => {

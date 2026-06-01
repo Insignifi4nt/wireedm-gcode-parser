@@ -15,6 +15,7 @@ import {
   readUpidManualOverrideRows,
   readUpidPathElementPointByRole,
   readUpidPathElementSourceSummary,
+  readUpidPathElementSequenceContext,
   readUpidPathElementTreeContext,
   readUpidOperationPathElement,
   readUpidSelectedPathPoint,
@@ -131,6 +132,13 @@ export function EditorInspectorPanel({
     : null;
   const selectedPathTreeNode = selectedPathTreeContext?.node ?? null;
   const selectedPathLineage = selectedPathTreeContext?.lineage ?? [];
+  const selectedPathSequenceContext = pathDocument && selectedPathElementModel
+    ? readUpidPathElementSequenceContext(pathDocument, {
+        operationId: selectedPathElementModel.operationId,
+        pathElementId: selectedPathElementModel.id,
+        segmentId: selectedPathElement?.segmentId ?? null
+      })
+    : null;
   const selectedPathStart = selectedPathElementModel
     ? readUpidPathElementPointByRole(selectedPathElementModel, 'start')
     : null;
@@ -355,6 +363,81 @@ export function EditorInspectorPanel({
                       </span>
                     ))}
                   </dd>
+                  {selectedPathSequenceContext && (
+                    <>
+                      <dt className="text-muted-foreground">Cut Seq</dt>
+                      <dd
+                        className="flex min-w-0 flex-wrap items-center gap-1"
+                        data-upid-selected="sequence-neighbors"
+                        data-upid-sequence-current={selectedPathSequenceContext.current.element.id}
+                      >
+                        {selectedPathSequenceContext.previous ? (
+                          <button
+                            aria-label={`Select previous cut sequence ${selectedPathSequenceContext.previous.element.displayName}`}
+                            className="text-left text-muted-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                            data-upid-sequence-previous={selectedPathSequenceContext.previous.element.id}
+                            onClick={() =>
+                              onSelectPathElement?.({
+                                operationId: selectedPathSequenceContext.previous!.element.operationId,
+                                pathElementId: selectedPathSequenceContext.previous!.element.id,
+                                segmentId: null
+                              })
+                            }
+                            onMouseEnter={() =>
+                              onHoverPathElement?.({
+                                operationId: selectedPathSequenceContext.previous!.element.operationId,
+                                pathElementId: selectedPathSequenceContext.previous!.element.id,
+                                segmentId: null
+                              })
+                            }
+                            onMouseLeave={() => onHoverPathElement?.(null)}
+                            type="button"
+                          >
+                            Prev {selectedPathSequenceContext.previous.index + 1}
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground" data-upid-sequence-boundary="start">
+                            Start
+                          </span>
+                        )}
+                        <span className="text-muted-foreground">/</span>
+                        <span data-upid-sequence-current-label>
+                          {selectedPathSequenceContext.current.index + 1}.{' '}
+                          {selectedPathSequenceContext.current.element.displayName}
+                        </span>
+                        <span className="text-muted-foreground">/</span>
+                        {selectedPathSequenceContext.next ? (
+                          <button
+                            aria-label={`Select next cut sequence ${selectedPathSequenceContext.next.element.displayName}`}
+                            className="text-left text-muted-foreground underline-offset-2 outline-none hover:text-primary hover:underline"
+                            data-upid-sequence-next={selectedPathSequenceContext.next.element.id}
+                            onClick={() =>
+                              onSelectPathElement?.({
+                                operationId: selectedPathSequenceContext.next!.element.operationId,
+                                pathElementId: selectedPathSequenceContext.next!.element.id,
+                                segmentId: null
+                              })
+                            }
+                            onMouseEnter={() =>
+                              onHoverPathElement?.({
+                                operationId: selectedPathSequenceContext.next!.element.operationId,
+                                pathElementId: selectedPathSequenceContext.next!.element.id,
+                                segmentId: null
+                              })
+                            }
+                            onMouseLeave={() => onHoverPathElement?.(null)}
+                            type="button"
+                          >
+                            Next {selectedPathSequenceContext.next.index + 1}
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground" data-upid-sequence-boundary="end">
+                            End
+                          </span>
+                        )}
+                      </dd>
+                    </>
+                  )}
                   <dt className="text-muted-foreground">Direct Segs</dt>
                   <dd data-upid-selected="tree-direct-segments">
                     {selectedPathTreeNode.treeMetrics.directSegmentCount}

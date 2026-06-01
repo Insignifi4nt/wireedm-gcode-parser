@@ -68,6 +68,17 @@ export interface UpidPathElementTreeContext {
   siblings: UpidProjectRailTreeNode[];
 }
 
+export interface UpidPathElementSequenceNeighbor {
+  element: UpidOperationPathElement;
+  index: number;
+}
+
+export interface UpidPathElementSequenceContext {
+  current: UpidPathElementSequenceNeighbor;
+  next: UpidPathElementSequenceNeighbor | null;
+  previous: UpidPathElementSequenceNeighbor | null;
+}
+
 export interface UpidSelectedPathTravel {
   end: Point2;
   length: number;
@@ -513,6 +524,39 @@ export function readUpidPathElementTreeContext(
     lineage: readUpidPathElementLineage(document, elementRef),
     node,
     siblings: parentSiblings.filter((candidate) => candidate.element.id !== selectedElement.id)
+  };
+}
+
+export function readUpidPathElementSequenceContext(
+  document: PathPlanningDocument,
+  elementRef: UpidPathElementRef
+): UpidPathElementSequenceContext | null {
+  const selectedElement = readPathElementForRef(document, elementRef);
+  if (!selectedElement || !isUpidOperationPathElement(selectedElement)) return null;
+
+  const cutSequenceElements = createUpidProjectRail(document).cutSequenceElements;
+  const index = cutSequenceElements.findIndex((element) => element.id === selectedElement.id);
+  if (index < 0) return null;
+
+  return {
+    current: {
+      element: cutSequenceElements[index],
+      index
+    },
+    next:
+      index < cutSequenceElements.length - 1
+        ? {
+            element: cutSequenceElements[index + 1],
+            index: index + 1
+          }
+        : null,
+    previous:
+      index > 0
+        ? {
+            element: cutSequenceElements[index - 1],
+            index: index - 1
+          }
+        : null
   };
 }
 

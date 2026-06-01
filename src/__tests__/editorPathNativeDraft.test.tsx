@@ -315,6 +315,44 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected="tree-lineage"]')?.textContent).toBe('Exterior 2');
   });
 
+  it('selects cut-sequence neighbors from the inspector path tree context', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('button[aria-label="Select Exterior 1"]');
+
+    expect(container.querySelector('[data-upid-selected-tree-context]')?.getAttribute('data-upid-path-element-id')).toBe(
+      'contour_0001'
+    );
+    expect(container.querySelector('[data-upid-selected="sequence-neighbors"]')?.textContent).toContain(
+      'Exterior 1'
+    );
+
+    await clickElement('button[aria-label="Select next cut sequence Exterior 2"]');
+
+    expect(container.querySelector('[data-upid-selected-tree-context]')?.getAttribute('data-upid-path-element-id')).toBe(
+      'contour_0002'
+    );
+    expect(container.querySelector('[data-upid-selected="label"]')?.textContent).toBe('Exterior 2');
+
+    await clickElement('button[aria-label="Select previous cut sequence Exterior 1"]');
+
+    expect(container.querySelector('[data-upid-selected-tree-context]')?.getAttribute('data-upid-path-element-id')).toBe(
+      'contour_0001'
+    );
+    expect(container.querySelector('[data-upid-selected="label"]')?.textContent).toBe('Exterior 1');
+  });
+
   it('reveals collapsed contour groups when selecting path geometry on canvas', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
