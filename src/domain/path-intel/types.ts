@@ -86,6 +86,20 @@ export interface SegmentEditProvenance {
   point: Point2;
 }
 
+export interface PathElementEditEvent {
+  derivedSegmentIds: SegmentId[];
+  kind: SegmentEditProvenance['kind'];
+  operationId: OperationId;
+  parentSegmentId: SegmentId;
+  point: Point2;
+}
+
+export interface PathElementEditProvenance {
+  derivedSegmentIds: SegmentId[];
+  events: PathElementEditEvent[];
+  parentSegmentIds: SegmentId[];
+}
+
 export interface SegmentSourceRef {
   sourceEntityIndex: number;
   sourceEntityHandle?: string;
@@ -105,6 +119,7 @@ export interface PathElementProvenance {
   layers: Array<string | null>;
   exact: boolean;
   dxf?: PathElementDxfProvenance;
+  edit?: PathElementEditProvenance;
 }
 
 export interface PathElementDxfProvenance {

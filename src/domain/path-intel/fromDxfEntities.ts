@@ -40,7 +40,12 @@ export function createPathPlanningDocumentFromDxfEntities(
     segments: segmentBuild.segments,
     options: resolved
   });
-  const pathElementTree = buildPathElements(contourResult.contours, chainResult.chains, plan);
+  const pathElementTree = buildPathElements(
+    contourResult.contours,
+    chainResult.chains,
+    plan,
+    segmentBuild.segments
+  );
 
   return {
     schemaVersion: 1,

@@ -135,6 +135,7 @@ export interface UpidManualOverrideRow {
 export interface UpidPathElementSourceSummary {
   blocks: string | null;
   entities: string;
+  edits: string | null;
   exact: 'exact' | 'mixed';
   handles: string | null;
   inserts: string | null;
@@ -398,6 +399,7 @@ export function readUpidPathElementSourceSummary(element: PathElement): UpidPath
         ? provenance.dxf.blockNames.join(', ')
         : null,
     entities: `${entityCount} ${entityCount === 1 ? 'entity' : 'entities'}`,
+    edits: formatUpidPathElementEditSummary(provenance.edit ?? null),
     exact: provenance.exact ? 'exact' : 'mixed',
     handles:
       provenance.sourceEntityHandles && provenance.sourceEntityHandles.length > 0
@@ -411,6 +413,14 @@ export function readUpidPathElementSourceSummary(element: PathElement): UpidPath
         : null,
     layers: provenance.layers.length > 0 ? provenance.layers.map((layer) => layer ?? '-').join(', ') : '-'
   };
+}
+
+function formatUpidPathElementEditSummary(edit: PathElement['provenance']['edit'] | null) {
+  if (!edit || edit.derivedSegmentIds.length === 0) return null;
+
+  const eventLabel = edit.events.length === 1 ? 'edit' : 'edits';
+  const segmentLabel = edit.derivedSegmentIds.length === 1 ? 'segment' : 'segments';
+  return `${edit.events.length} ${eventLabel} / ${edit.derivedSegmentIds.length} ${segmentLabel}`;
 }
 
 export function upidStartPreviewPointRole(

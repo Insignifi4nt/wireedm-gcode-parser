@@ -768,7 +768,12 @@ function refreshPlan(document: PathPlanningDocument) {
 }
 
 function refreshPathElements(document: PathPlanningDocument) {
-  const pathElementTree = buildPathElements(document.contours, document.chains, document.plan);
+  const pathElementTree = buildPathElements(
+    document.contours,
+    document.chains,
+    document.plan,
+    document.segments
+  );
   document.pathElements = pathElementTree.pathElements;
   document.rootPathElementIds = pathElementTree.rootPathElementIds;
 }

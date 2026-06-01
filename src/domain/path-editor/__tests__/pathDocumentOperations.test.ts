@@ -329,6 +329,29 @@ describe('pathDocumentOperations', () => {
     }
   });
 
+  it('rolls segment edit provenance up to the refreshed UPID path element', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const operation = document.plan.operations[0];
+    const replacedSegmentId = operation.segmentRefs[0].segmentId;
+
+    const edited = setClosedOperationStartNearPoint(document, operation.id, { x: 5, y: 0 });
+    const createdSegmentIds = edited?.plan.operations[0].overrides?.start?.createdSegmentIds ?? [];
+
+    expect(edited?.pathElements[0].provenance.edit).toEqual({
+      derivedSegmentIds: createdSegmentIds,
+      events: [
+        {
+          derivedSegmentIds: createdSegmentIds,
+          kind: 'manual-start-split',
+          operationId: operation.id,
+          parentSegmentId: replacedSegmentId,
+          point: { x: 5, y: 0 }
+        }
+      ],
+      parentSegmentIds: [replacedSegmentId]
+    });
+  });
+
   it('sets a closed operation start at a clicked point by splitting the containing arc segment', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       line(0, 0, 0, -5),

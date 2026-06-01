@@ -570,6 +570,7 @@ function renderCutSequenceRow({
   const rapidInLength = pathElement.metrics.rapidInLength.toFixed(3);
   const label = pathElement.displayName;
   const sourceEntityCount = upidPathElementSourceEntityCount(pathElement);
+  const editedSegmentCount = pathElement.provenance.edit?.derivedSegmentIds.length ?? 0;
   const rapidElement: EditorPathElementRef = {
     operationId: pathElement.operationId,
     pathElementId: pathElement.id,
@@ -601,6 +602,7 @@ function renderCutSequenceRow({
       data-upid-cut-sequence-cut={cutLength}
       data-upid-cut-sequence-index={pathElement.orderIndex}
       data-upid-cut-sequence-label={label}
+      data-upid-cut-sequence-edited-segments={editedSegmentCount > 0 ? editedSegmentCount : undefined}
       data-upid-cut-sequence-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
       data-upid-cut-sequence-rapid={rapidInLength}
       data-upid-cut-sequence-role={pathElement.classification}
@@ -721,6 +723,7 @@ function renderContourTreeNode({
   const manualDecisions = upidManualDecisionKinds(element);
   const label = element.displayName;
   const sourceEntityCount = upidPathElementSourceEntityCount(element);
+  const editedSegmentCount = element.provenance.edit?.derivedSegmentIds.length ?? 0;
   const expanded = isPathElementExpanded(element.id);
 
   return (
@@ -781,6 +784,7 @@ function renderContourTreeNode({
             data-upid-contour-direct-segments={node.treeMetrics.directSegmentCount}
             data-upid-contour-total-segments={node.treeMetrics.totalSegmentCount}
             data-upid-contour-descendants={node.treeMetrics.descendantCount}
+            data-upid-contour-edited-segments={editedSegmentCount > 0 ? editedSegmentCount : undefined}
             data-upid-contour-source-entities={sourceEntityCount}
             data-upid-hovered={hoveredPathElement?.operationId === element.operationId ? 'true' : undefined}
             data-upid-operation-id={element.operationId}

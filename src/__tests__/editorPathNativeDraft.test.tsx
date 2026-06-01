@@ -470,6 +470,19 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected-segment-source-edit-point]')?.textContent).toBe(
       '5.000, 0.000'
     );
+    expect(container.querySelector('[data-upid-selected="source-edits"]')?.textContent).toBe(
+      '1 edit / 2 segments'
+    );
+    expect(
+      container
+        .querySelector('[data-upid-contour-row][data-upid-path-element-id="contour_0001"]')
+        ?.getAttribute('data-upid-contour-edited-segments')
+    ).toBe('2');
+    expect(
+      container
+        .querySelector('[data-upid-cut-sequence-row][data-upid-path-element-id="contour_0001"]')
+        ?.getAttribute('data-upid-cut-sequence-edited-segments')
+    ).toBe('2');
   });
 
   it('temporarily reveals collapsed contour groups while canvas hover assist targets geometry', async () => {

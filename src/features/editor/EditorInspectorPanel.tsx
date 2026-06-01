@@ -301,6 +301,12 @@ export function EditorInspectorPanel({
               <dd data-upid-selected="source-layers">{selectedPathSource?.layers ?? '-'}</dd>
               <dt className="text-muted-foreground">Exact</dt>
               <dd data-upid-selected="source-exact">{selectedPathSource?.exact ?? '-'}</dd>
+              {selectedPathSource?.edits && (
+                <>
+                  <dt className="text-muted-foreground">Edits</dt>
+                  <dd data-upid-selected="source-edits">{selectedPathSource.edits}</dd>
+                </>
+              )}
               {selectedPathSource?.blocks && (
                 <>
                   <dt className="text-muted-foreground">Blocks</dt>
