@@ -253,8 +253,11 @@ export interface UpidSelectedPathDiagnostic {
 }
 
 export interface UpidPathDiagnosticSummary {
+  codes: PathDiagnostic['code'][];
   count: number;
   errorCount: number;
+  firstCode: PathDiagnostic['code'] | null;
+  ids: string[];
   infoCount: number;
   severity: PathDiagnostic['severity'] | null;
   warningCount: number;
@@ -616,8 +619,11 @@ function upidDiagnosticAffectsPathElementRef(
 
 function summarizeUpidDiagnostics(diagnostics: PathDiagnostic[]): UpidPathDiagnosticSummary {
   const summary: UpidPathDiagnosticSummary = {
+    codes: diagnostics.map((diagnostic) => diagnostic.code),
     count: diagnostics.length,
     errorCount: 0,
+    firstCode: diagnostics[0]?.code ?? null,
+    ids: diagnostics.map((diagnostic) => diagnostic.id),
     infoCount: 0,
     severity: null,
     warningCount: 0

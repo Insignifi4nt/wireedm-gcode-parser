@@ -1013,6 +1013,8 @@ function renderContourTreeNode({
             data-upid-contour-children={element.childIds.length}
             data-upid-contour-depth={element.containmentDepth}
             data-upid-contour-display-name={element.displayName}
+            data-upid-contour-diagnostic-codes={formatDiagnosticSummaryCodes(diagnosticSummary)}
+            data-upid-contour-diagnostic-ids={formatDiagnosticSummaryIds(diagnosticSummary)}
             data-upid-contour-diagnostic-severity={diagnosticSummary.severity ?? undefined}
             data-upid-contour-diagnostics={diagnosticSummary.count}
             data-upid-contour-label={element.label}
@@ -1149,10 +1151,24 @@ function renderDiagnosticSummaryBadge(summary: UpidPathDiagnosticSummary) {
         }`}
         data-upid-diagnostic-summary-severity={summary.severity ?? undefined}
       >
-        {summary.count} {summary.count === 1 ? 'issue' : 'issues'}
+        {formatDiagnosticSummaryLabel(summary)}
       </span>
     </span>
   );
+}
+
+function formatDiagnosticSummaryCodes(summary: UpidPathDiagnosticSummary) {
+  return summary.codes.length > 0 ? summary.codes.join(' ') : undefined;
+}
+
+function formatDiagnosticSummaryIds(summary: UpidPathDiagnosticSummary) {
+  return summary.ids.length > 0 ? summary.ids.join(' ') : undefined;
+}
+
+function formatDiagnosticSummaryLabel(summary: UpidPathDiagnosticSummary) {
+  if (!summary.firstCode) return `${summary.count} ${summary.count === 1 ? 'issue' : 'issues'}`;
+  if (summary.count === 1) return summary.firstCode;
+  return `${summary.firstCode} +${summary.count - 1}`;
 }
 
 function formatTreeMetrics(metrics: UpidProjectRailTreeNode['treeMetrics']) {
@@ -1217,6 +1233,8 @@ function renderSegmentRow(
         data-upid-hovered={hovered ? 'true' : undefined}
         data-upid-operation-id={pathElement.operationId}
         data-upid-path-element-id={pathElement.id}
+        data-upid-segment-diagnostic-codes={formatDiagnosticSummaryCodes(diagnosticSummary)}
+        data-upid-segment-diagnostic-ids={formatDiagnosticSummaryIds(diagnosticSummary)}
         data-upid-segment-diagnostic-severity={diagnosticSummary.severity ?? undefined}
         data-upid-segment-diagnostics={diagnosticSummary.count}
         data-upid-selected={selected ? 'true' : undefined}
@@ -1356,6 +1374,8 @@ function renderPointRow({
       data-upid-point-cluster-id={endpointCluster?.id}
       data-upid-point-cluster-members={endpointCluster?.memberCount}
       data-upid-point-cluster-method={endpointCluster?.method}
+      data-upid-point-diagnostic-codes={formatDiagnosticSummaryCodes(diagnosticSummary)}
+      data-upid-point-diagnostic-ids={formatDiagnosticSummaryIds(diagnosticSummary)}
       data-upid-point-diagnostic-severity={diagnosticSummary.severity ?? undefined}
       data-upid-point-diagnostics={diagnosticSummary.count}
       data-upid-selected={selected ? 'true' : undefined}

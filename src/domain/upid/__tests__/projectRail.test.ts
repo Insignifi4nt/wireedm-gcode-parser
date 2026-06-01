@@ -488,7 +488,10 @@ describe('UPID project rail projection', () => {
       })
     ).toEqual({
       count: 2,
+      codes: ['endpoint-cluster-snap', 'closed-chain-gap'],
       errorCount: 0,
+      firstCode: 'endpoint-cluster-snap',
+      ids: expect.arrayContaining([expect.stringMatching(/^diag_cluster_/), expect.stringMatching(/^diag_chain_/)]),
       infoCount: 0,
       severity: 'warning',
       warningCount: 2
