@@ -54,6 +54,7 @@ interface EditorPreviewProps {
   constructionPreview?: EditorConstructionPreview | null;
   startPreview?: EditorStartPreview | null;
   previewLabel?: string;
+  previewTitle?: string;
   program: LoadedEditorProgram | null;
   hoveredLine: number | null;
   hoveredPathElement?: EditorPathElementRef | null;
@@ -110,6 +111,7 @@ export function EditorPreview({
   pathDocument,
   pathCount,
   previewLabel = 'G-code path preview',
+  previewTitle = 'Preview',
   pinnedLines,
   selectedPathElement,
   selectedLines,
@@ -535,7 +537,12 @@ export function EditorPreview({
         data-editor-preview-header
       >
         <div className="flex min-w-0 items-center gap-3">
-          <h3 className="font-mono text-[11px] font-semibold text-foreground">Preview</h3>
+          <h3
+            className="font-mono text-[11px] font-semibold text-foreground"
+            data-editor-preview-title
+          >
+            {previewTitle}
+          </h3>
           {typeof pathCount === 'number' && (
             <span>
               {pathCount} {pathCount === 1 ? 'path item' : 'path items'}

@@ -58,6 +58,7 @@ export function EditorCanvasPanel({
     <section
       className="flex min-h-0 min-w-0 flex-col overflow-hidden border border-border bg-[#0e1317]"
       data-editor-canvas-panel
+      data-editor-canvas-model={pathDocument ? 'upid' : 'gcode'}
     >
       <div
         className={`min-h-0 flex-1 ${guideHighlightClass('preview', guideHighlightTarget)}`}
@@ -80,6 +81,7 @@ export function EditorCanvasPanel({
           pathCount={pathCount}
           pinnedLines={pinnedLines}
           previewLabel={pathDocument ? 'UPID path preview' : 'G-code path preview'}
+          previewTitle={pathDocument ? 'Path Canvas' : 'Preview'}
           program={draftProgram}
           selectedPathElement={selectedPathElement}
           snapToGrid={gridSnapEnabled}

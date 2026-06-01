@@ -458,6 +458,10 @@ describe('App DXF imports and project library', () => {
 
     expect(container.querySelector('[data-editor-project-rail]')).not.toBeNull();
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-canvas-model]')?.getAttribute('data-editor-canvas-model')).toBe(
+      'upid'
+    );
+    expect(container.querySelector('[data-editor-preview-title]')?.textContent).toBe('Path Canvas');
     expect(container.querySelector('[data-upid-contour-tree]')).not.toBeNull();
     expect(container.querySelector('[data-upid-contour-row]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-stack]')).not.toBeNull();
