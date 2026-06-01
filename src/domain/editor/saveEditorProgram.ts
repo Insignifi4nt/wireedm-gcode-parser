@@ -62,6 +62,10 @@ export async function saveEditorProgram(
     throw new Error('DXF projects must contain a UPID document.');
   }
 
+  if (input.model === 'upid-document' && input.project && !projectPathDocument) {
+    throw new Error('UPID path saves require an existing UPID project.');
+  }
+
   if (projectPathDocument && input.model !== 'upid-document') {
     throw new Error('UPID path projects must be saved with a path document.');
   }

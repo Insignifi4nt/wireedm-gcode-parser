@@ -326,6 +326,36 @@ describe('saveEditorProgram', () => {
     expect(adapter.files.has('projects/loose-upid/project.json')).toBe(false);
   });
 
+  it('rejects UPID path saves for external G-code projects without UPID state', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importExternalProgram(workbench, {
+      fileName: 'external-path-save.nc',
+      text: 'G0 X0 Y0\nG1 X1 Y0',
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const document = dxfEntitiesToUpidDocument(rectangleLines(0, 0, 10, 5));
+
+    await expect(
+      saveEditorProgram(imported.workbench, {
+        filePath: imported.editorProgram.filePath,
+        model: 'upid-document',
+        now: new Date('2026-05-29T12:00:00.000Z'),
+        pathDocument: document,
+        project: imported.project
+      })
+    ).rejects.toThrow('UPID path saves require an existing UPID project.');
+
+    const savedProject = JSON.parse(
+      adapter.files.get('projects/external-path-save-2026-05-29/project.json') || '{}'
+    );
+
+    expect(savedProject.upid).toBeUndefined();
+    expect(adapter.files.get(imported.editorProgram.filePath)).toBe('G0 X0 Y0\nG1 X1 Y0');
+  });
+
   it('does not persist export-time post diagnostics while saving a UPID path document', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
