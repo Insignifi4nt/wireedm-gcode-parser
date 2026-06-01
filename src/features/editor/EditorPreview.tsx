@@ -19,7 +19,7 @@ import {
   buildEditorPreviewGeometry,
   fitViewBoxToViewportAspect
 } from '@/domain/editor/previewGeometry';
-import type { EditorPreviewViewBox } from '@/domain/editor/previewGeometry';
+import type { EditorPreviewPath, EditorPreviewViewBox } from '@/domain/editor/previewGeometry';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 import {
@@ -81,6 +81,19 @@ interface EditorPreviewProps {
 }
 
 type CanvasMouseMode = 'select' | 'point';
+
+interface SelectionMarqueeState {
+  currentWorld: { x: number; y: number };
+  moved: boolean;
+  startWorld: { x: number; y: number };
+}
+
+interface SelectionMarqueeRect {
+  maxX: number;
+  maxY: number;
+  minX: number;
+  minY: number;
+}
 
 export interface EditorConstructionPreview {
   mode: MagnetizeMode;
@@ -151,6 +164,8 @@ export function EditorPreview({
     moved: boolean;
     startWorld: { x: number; y: number };
   } | null>(null);
+  const selectionMarqueeRef = useRef<SelectionMarqueeState | null>(null);
+  const [selectionMarquee, setSelectionMarquee] = useState<SelectionMarqueeState | null>(null);
   const segmentCenterDragStateRef = useRef<{
     currentWorld: { x: number; y: number };
     element: EditorPathElementRef;
@@ -304,12 +319,13 @@ export function EditorPreview({
     );
   }
 
+  const activePreview = preview;
   const activeViewBox = previewViewBox;
   const viewBox = `${format(activeViewBox.minX)} ${format(activeViewBox.minY)} ${format(activeViewBox.width)} ${format(activeViewBox.height)}`;
-  const flipY = preview.viewBox.minY * 2 + preview.viewBox.height;
+  const flipY = activePreview.viewBox.minY * 2 + activePreview.viewBox.height;
   const grid = buildPreviewGrid(activeViewBox, flipY);
   const gridLabels = buildVisibleGridLabels(grid.lines, grid.labelSpacing);
-  const markerRadius = Math.max(Math.max(preview.viewBox.width, preview.viewBox.height) * 0.004, 0.06);
+  const markerRadius = Math.max(Math.max(activePreview.viewBox.width, activePreview.viewBox.height) * 0.004, 0.06);
   const markerLabelFontSize = Math.max(markerRadius * 1.55, 0.16);
   const measurementLabelFontSize = Math.max(markerRadius * 1.75, 0.18);
   const highlightedPointRadius = Math.max(markerRadius * 1.45, 0.11);
@@ -320,7 +336,7 @@ export function EditorPreview({
   );
   const gridLabelInset = gridLabelFontSize * 1.8;
   const zoomPercent = Math.round(zoom * 100);
-  const selectedArcCenterHandles = readSelectedArcCenterHandles(preview.paths, selectedPathElement);
+  const selectedArcCenterHandles = readSelectedArcCenterHandles(activePreview.paths, selectedPathElement);
 
   function handlePreviewClick(event: MouseEvent<SVGSVGElement>) {
     if (suppressClickRef.current) {
@@ -345,6 +361,30 @@ export function EditorPreview({
   }
 
   function handlePreviewMouseDown(event: MouseEvent<SVGSVGElement>) {
+    if (
+      event.button === 0 &&
+      !event.shiftKey &&
+      canvasMouseMode === 'select' &&
+      onPathElementClick &&
+      activePreview.paths.some((path) => path.source === 'path-document')
+    ) {
+      const point = previewEventToWorldPoint(event, activeViewBox, flipY, {
+        gridSize: snapGridSize,
+        snapToGrid: false
+      });
+      if (!point) return;
+
+      event.preventDefault();
+      const nextSelectionMarquee = {
+        currentWorld: point,
+        moved: false,
+        startWorld: point
+      };
+      selectionMarqueeRef.current = nextSelectionMarquee;
+      setSelectionMarquee(nextSelectionMarquee);
+      return;
+    }
+
     if (!(event.button === 1 || (event.button === 0 && event.shiftKey))) return;
 
     event.preventDefault();
@@ -412,6 +452,31 @@ export function EditorPreview({
       return;
     }
 
+    const activeSelectionMarquee = selectionMarqueeRef.current;
+    if (activeSelectionMarquee) {
+      event.preventDefault();
+      const point = previewEventToWorldPoint(event, activeViewBox, flipY, {
+        gridSize: snapGridSize,
+        snapToGrid: false
+      });
+      if (point) {
+        const moved =
+          activeSelectionMarquee.moved ||
+          Math.hypot(point.x - activeSelectionMarquee.startWorld.x, point.y - activeSelectionMarquee.startWorld.y) >
+            selectionMarqueeMoveThreshold(activeViewBox);
+        const nextSelectionMarquee = {
+          ...activeSelectionMarquee,
+          currentWorld: point,
+          moved
+        };
+        selectionMarqueeRef.current = nextSelectionMarquee;
+        setSelectionMarquee(nextSelectionMarquee);
+        suppressClickRef.current = moved;
+        onCursorPointChange?.(point);
+      }
+      return;
+    }
+
     const activeDragState = dragStateRef.current;
     if (!activeDragState) {
       onCursorPointChange?.(
@@ -446,6 +511,17 @@ export function EditorPreview({
   }
 
   function handlePreviewMouseUp() {
+    const activeSelectionMarquee = selectionMarqueeRef.current;
+    if (activeSelectionMarquee) {
+      selectionMarqueeRef.current = null;
+      setSelectionMarquee(null);
+      if (activeSelectionMarquee.moved) {
+        const element = selectPathElementInMarquee(activePreview.paths, readSelectionMarqueeRect(activeSelectionMarquee));
+        if (element) onPathElementClick?.(element);
+        suppressClickRef.current = true;
+      }
+    }
+
     const segmentCenterDragState = segmentCenterDragStateRef.current;
     if (segmentCenterDragState) {
       segmentCenterDragStateRef.current = null;
@@ -599,6 +675,8 @@ export function EditorPreview({
     setZoom(1);
     setPan({ x: 0, y: 0 });
     dragStateRef.current = null;
+    selectionMarqueeRef.current = null;
+    setSelectionMarquee(null);
     segmentCenterDragStateRef.current = null;
   }
 
@@ -837,8 +915,22 @@ export function EditorPreview({
             </g>
           </>
         )}
+        {selectionMarquee && (
+          <rect
+            data-preview-selection-marquee
+            fill="#38bdf8"
+            fillOpacity="0.12"
+            pointerEvents="none"
+            stroke="#67e8f9"
+            strokeDasharray="0.5 0.32"
+            strokeOpacity="0.9"
+            strokeWidth="0.75"
+            vectorEffect="non-scaling-stroke"
+            {...selectionMarqueeSvgRect(selectionMarquee, flipY)}
+          />
+        )}
         <g transform={`matrix(1 0 0 -1 0 ${flipY})`}>
-          {preview.paths.map((path, index) => {
+          {activePreview.paths.map((path, index) => {
             const pathElementHovered = pathElementMatches(path, hoveredPathElement);
             const pathElementSelected = pathElementMatches(path, selectedPathElement);
             const highlight = pathElementHovered
@@ -915,7 +1007,7 @@ export function EditorPreview({
           })}
         </g>
         <g>
-          {preview.paths.map((path, index) => {
+          {activePreview.paths.map((path, index) => {
             if (path.source !== 'path-document' || !path.operationId || !path.segmentId) return null;
 
             return (['start', 'end'] as const).map((role) => {
@@ -1079,7 +1171,7 @@ export function EditorPreview({
               </g>
             );
           })}
-          {preview.paths.map((path) => {
+          {activePreview.paths.map((path) => {
             const highlight = pathElementMatches(path, hoveredPathElement)
               ? 'hover'
               : pathElementMatches(path, selectedPathElement)
@@ -1138,7 +1230,7 @@ export function EditorPreview({
               </g>
             );
           })}
-          {preview.markers.map((marker) => {
+          {activePreview.markers.map((marker) => {
             const svgY = flipY - marker.y;
             const radius = marker.type === 'start' ? markerRadius * 1.25 : markerRadius;
 
@@ -1378,6 +1470,86 @@ function readSelectedArcCenterHandles(
   }
 
   return [...handles.values()];
+}
+
+function selectionMarqueeMoveThreshold(viewBox: EditorPreviewViewBox) {
+  return Math.max(Math.min(viewBox.width, viewBox.height) * 0.003, 0.02);
+}
+
+function readSelectionMarqueeRect(selection: SelectionMarqueeState): SelectionMarqueeRect {
+  return {
+    maxX: Math.max(selection.startWorld.x, selection.currentWorld.x),
+    maxY: Math.max(selection.startWorld.y, selection.currentWorld.y),
+    minX: Math.min(selection.startWorld.x, selection.currentWorld.x),
+    minY: Math.min(selection.startWorld.y, selection.currentWorld.y)
+  };
+}
+
+function selectionMarqueeSvgRect(selection: SelectionMarqueeState, flipY: number) {
+  const rect = readSelectionMarqueeRect(selection);
+  return {
+    height: Math.max(rect.maxY - rect.minY, 0),
+    width: Math.max(rect.maxX - rect.minX, 0),
+    x: rect.minX,
+    y: flipY - rect.maxY
+  };
+}
+
+function selectPathElementInMarquee(
+  paths: EditorPreviewPath[],
+  marquee: SelectionMarqueeRect
+): EditorPathElementRef | null {
+  const selectablePaths = paths.filter(
+    (path) => path.source === 'path-document' && path.operationId && path.type !== 'rapid' && !path.travelRole
+  );
+  const hitPaths = selectablePaths.filter((path) => boundsIntersect(path.bounds, marquee));
+  if (hitPaths.length === 0) return null;
+
+  const hitGroups = new Map<string, EditorPreviewPath[]>();
+  const selectableGroups = new Map<string, EditorPreviewPath[]>();
+  for (const path of selectablePaths) {
+    const key = pathSelectionGroupKey(path);
+    selectableGroups.set(key, [...(selectableGroups.get(key) ?? []), path]);
+  }
+  for (const path of hitPaths) {
+    const key = pathSelectionGroupKey(path);
+    hitGroups.set(key, [...(hitGroups.get(key) ?? []), path]);
+  }
+
+  for (const [key, hitGroup] of hitGroups) {
+    const selectableGroup = selectableGroups.get(key) ?? [];
+    if (hitGroup.length > 1 || hitGroup.length >= selectableGroup.length) {
+      const first = hitGroup[0];
+      return {
+        operationId: first.operationId!,
+        pathElementId: first.pathElementId ?? null,
+        segmentId: null
+      };
+    }
+  }
+
+  const first = hitPaths[0];
+  return {
+    operationId: first.operationId!,
+    pathElementId: first.pathElementId ?? null,
+    segmentId: first.segmentId ?? null
+  };
+}
+
+function pathSelectionGroupKey(path: EditorPreviewPath) {
+  return `${path.operationId ?? ''}:${path.pathElementId ?? ''}`;
+}
+
+function boundsIntersect(
+  first: { maxX: number; maxY: number; minX: number; minY: number },
+  second: { maxX: number; maxY: number; minX: number; minY: number }
+) {
+  return (
+    first.minX <= second.maxX &&
+    first.maxX >= second.minX &&
+    first.minY <= second.maxY &&
+    first.maxY >= second.minY
+  );
 }
 
 function formatPreviewPoint(point: { x: number; y: number }) {

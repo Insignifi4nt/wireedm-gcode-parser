@@ -32,6 +32,7 @@ import type {
 
 export interface EditorPreviewPath {
   type: 'rapid' | 'cut' | 'arc';
+  bounds: Bounds2;
   d: string;
   start: {
     x: number;
@@ -100,6 +101,7 @@ export function buildEditorPreviewGeometry(
       const start = currentPoint ?? { x: point.x, y: point.y };
       paths.push({
         type: point.type,
+        bounds: boundsFromPoints([start, point]),
         d: `M ${format(start.x)} ${format(start.y)} L ${format(point.x)} ${format(point.y)}`,
         start,
         end: {
@@ -116,6 +118,11 @@ export function buildEditorPreviewGeometry(
     if (point.type === 'arc') {
       paths.push({
         type: 'arc',
+        bounds: boundsFromPoints([
+          { x: point.startX, y: point.startY },
+          { x: point.endX, y: point.endY },
+          { x: point.centerX, y: point.centerY }
+        ]),
         d: arcPath(point),
         center: {
           x: point.centerX,
@@ -166,6 +173,7 @@ export function buildEditorPathDocumentPreviewGeometry(
     if (!currentPoint || !pathPointsEqual(currentPoint, operation.startPoint, document.options.coincidenceEpsilon)) {
       paths.push({
         type: 'rapid',
+        bounds: boundsFromPoints([rapidStart, operation.startPoint]),
         d: linePath(rapidStart, operation.startPoint),
         start: rapidStart,
         end: operation.startPoint,
@@ -182,6 +190,7 @@ export function buildEditorPathDocumentPreviewGeometry(
       for (const segmentPath of pathDocumentSegmentPaths(segment, ref)) {
         paths.push({
           type: segmentPath.type,
+          bounds: segment.bounds,
           center: 'center' in segmentPath ? segmentPath.center : undefined,
           d: segmentPath.d,
           start: segmentPath.start,
@@ -432,6 +441,18 @@ function pathDocumentArcPath(segment: ArcPathSegment, ref: OrientedSegmentRef) {
     `M ${format(start.x)} ${format(start.y)}`,
     `A ${format(segment.radius)} ${format(segment.radius)} 0 ${largeArcFlag} ${sweepFlag} ${format(end.x)} ${format(end.y)}`
   ].join(' ');
+}
+
+function boundsFromPoints(points: Point2[]): Bounds2 {
+  return points.reduce(
+    (bounds, point) => ({
+      maxX: Math.max(bounds.maxX, point.x),
+      maxY: Math.max(bounds.maxY, point.y),
+      minX: Math.min(bounds.minX, point.x),
+      minY: Math.min(bounds.minY, point.y)
+    }),
+    emptyBounds()
+  );
 }
 
 function circlePaths(segment: CirclePathSegment, ref: OrientedSegmentRef) {

@@ -433,6 +433,75 @@ test('editor defaults canvas clicks to select mode before explicit point placeme
   await expect(page.locator('[data-measurement-point-row="1"]')).toBeVisible();
 });
 
+test('editor rectangle-selects path geometry from a blank canvas drag in select mode', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'canvas-rectangle-select.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await expect(page.locator('[data-editor-preview-mouse-mode-select]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('[data-preview-selected="true"][data-preview-source="path-document"]')).toHaveCount(0);
+
+  const preview = page.locator('svg[aria-label="UPID path preview"]');
+  const previewBox = await preview.boundingBox();
+  const cutBoxes = await page
+    .locator('[data-preview-source="path-document"][data-type="cut"]')
+    .evaluateAll((paths) =>
+      paths.map((path) => {
+        const box = path.getBoundingClientRect();
+        return {
+          height: box.height,
+          width: box.width,
+          x: box.x,
+          y: box.y
+        };
+      })
+    );
+
+  expect(previewBox).not.toBeNull();
+  expect(cutBoxes.length).toBeGreaterThan(0);
+  if (!previewBox || cutBoxes.length === 0) return;
+
+  const geometryBox = cutBoxes.reduce(
+    (box, current) => ({
+      maxX: Math.max(box.maxX, current.x + current.width),
+      maxY: Math.max(box.maxY, current.y + current.height),
+      minX: Math.min(box.minX, current.x),
+      minY: Math.min(box.minY, current.y)
+    }),
+    {
+      maxX: -Infinity,
+      maxY: -Infinity,
+      minX: Infinity,
+      minY: Infinity
+    }
+  );
+  const start = {
+    x: Math.max(previewBox.x + 8, geometryBox.minX - 42),
+    y: Math.max(previewBox.y + 8, geometryBox.minY - 42)
+  };
+  const end = {
+    x: Math.min(previewBox.x + previewBox.width - 8, geometryBox.maxX + 42),
+    y: Math.min(previewBox.y + previewBox.height - 8, geometryBox.maxY + 42)
+  };
+
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  await expect(page.locator('[data-preview-selection-marquee]')).toBeVisible();
+  await page.mouse.up();
+
+  await expect(page.locator('[data-preview-selection-marquee]')).toHaveCount(0);
+  await expect(page.locator('[data-preview-selected="true"][data-preview-source="path-document"][data-type="cut"]')).toHaveCount(4);
+  await expect(page.locator('[data-measurement-point-row="1"]')).toHaveCount(0);
+});
+
 async function hidePanels(page: import('@playwright/test').Page, panelIds: string[]) {
   await setPanelVisibility(page, panelIds, false);
 }

@@ -28,6 +28,12 @@ describe('buildEditorPreviewGeometry', () => {
     expect(preview.paths).toEqual([
       {
         type: 'rapid',
+        bounds: {
+          maxX: 0,
+          maxY: 0,
+          minX: 0,
+          minY: 0
+        },
         d: 'M 0 0 L 0 0',
         start: {
           x: 0,
@@ -42,6 +48,12 @@ describe('buildEditorPreviewGeometry', () => {
       },
       {
         type: 'cut',
+        bounds: {
+          maxX: 10,
+          maxY: 0,
+          minX: 0,
+          minY: 0
+        },
         d: 'M 0 0 L 10 0',
         start: {
           x: 0,
@@ -56,6 +68,16 @@ describe('buildEditorPreviewGeometry', () => {
       },
       {
         type: 'arc',
+        bounds: {
+          maxX: 20,
+          maxY: 10,
+          minX: 10,
+          minY: 0
+        },
+        center: {
+          x: 10,
+          y: 10
+        },
         d: 'M 10 0 A 10 10 0 0 1 20 10',
         start: {
           x: 10,
