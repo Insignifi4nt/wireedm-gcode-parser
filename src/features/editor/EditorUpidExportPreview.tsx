@@ -127,24 +127,48 @@ export function EditorUpidExportPreview({
             </div>
             <div className="max-h-28 overflow-auto">
               {postedOperations.map((operation) => (
-                <div
-                  className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2 border-b border-border px-2 py-1 last:border-b-0"
-                  data-upid-export-operation-id={operation.operationId}
-                  data-upid-export-operation-lines={formatBodyLineRange(operation)}
-                  data-upid-export-operation-row
-                  data-upid-export-operation-role={operation.classification}
-                  key={operation.operationId}
-                >
-                  <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-foreground">{operation.displayName}</span>
-                    <span className="block truncate text-[8px] text-muted-foreground">
-                      {operation.direction} / lines {formatBodyLineRange(operation)}
+                <div className="border-b border-border last:border-b-0" key={operation.operationId}>
+                  <div
+                    className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1"
+                    data-upid-export-operation-id={operation.operationId}
+                    data-upid-export-operation-lines={formatBodyLineRange(operation)}
+                    data-upid-export-operation-row
+                    data-upid-export-operation-role={operation.classification}
+                  >
+                    <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-foreground">{operation.displayName}</span>
+                      <span className="block truncate text-[8px] text-muted-foreground">
+                        {operation.direction} / lines {formatBodyLineRange(operation)}
+                      </span>
                     </span>
-                  </span>
-                  <span className="text-right text-[8px] uppercase text-muted-foreground">
-                    {operation.cutMoveCount} cut / {operation.rapidCount} rapid
-                  </span>
+                    <span className="text-right text-[8px] uppercase text-muted-foreground">
+                      {operation.cutMoveCount} cut / {operation.rapidCount} rapid
+                    </span>
+                  </div>
+                  <div className="border-t border-border/70 bg-background/35" data-upid-export-move-stack>
+                    {operation.moves.map((move) => (
+                      <div
+                        className="grid grid-cols-[2.5rem_2rem_minmax(0,1fr)_8rem] items-center gap-2 border-b border-border/70 px-2 py-1 last:border-b-0"
+                        data-upid-export-move-command={move.command}
+                        data-upid-export-move-kind={move.kind}
+                        data-upid-export-move-line={move.bodyLineIndex + 1}
+                        data-upid-export-move-reason={move.reason}
+                        data-upid-export-move-row
+                        data-upid-export-move-segment={move.segmentId ?? undefined}
+                        key={`${operation.operationId}-${move.bodyLineIndex}`}
+                      >
+                        <span className="text-muted-foreground">{move.bodyLineIndex + 1}</span>
+                        <span className={move.kind === 'rapid' ? 'uppercase text-sky-200' : 'uppercase text-green-200'}>
+                          {move.command}
+                        </span>
+                        <span className="min-w-0 truncate text-foreground">{move.text}</span>
+                        <span className="truncate text-right text-[8px] uppercase text-muted-foreground">
+                          {move.reason}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

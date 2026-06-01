@@ -1361,6 +1361,17 @@ describe('App DXF imports and project library', () => {
     expect(exportOperationRows[0].textContent).toContain('Exterior 1');
     expect(exportOperationRows[0].textContent).toContain('4 cut');
     expect(exportOperationRows[0].textContent).toContain('1 rapid');
+    const exportMoveRows = [...container.querySelectorAll('[data-upid-export-move-row]')];
+    expect(exportMoveRows).toHaveLength(5);
+    expect(exportMoveRows[0].getAttribute('data-upid-export-move-kind')).toBe('rapid');
+    expect(exportMoveRows[0].getAttribute('data-upid-export-move-line')).toBe('1');
+    expect(exportMoveRows[0].getAttribute('data-upid-export-move-reason')).toBe('operation-start');
+    expect(exportMoveRows[0].textContent).toContain('G0 X0.000 Y0.000');
+    expect(exportMoveRows[1].getAttribute('data-upid-export-move-kind')).toBe('cut');
+    expect(exportMoveRows[1].getAttribute('data-upid-export-move-line')).toBe('2');
+    expect(exportMoveRows[1].getAttribute('data-upid-export-move-segment')).toBeTruthy();
+    expect(exportMoveRows[1].textContent).toContain('segment-cut');
+    expect(exportMoveRows[1].textContent).toContain('G1 X10.000 Y0.000');
     expect(exportCode?.textContent).toContain('G90 G21 G17 G40');
     expect(exportCode?.textContent).toContain('G1 X10.000 Y0.000');
     expect(exportCode?.textContent).toContain('M30');
