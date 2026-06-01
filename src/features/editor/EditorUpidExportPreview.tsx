@@ -180,6 +180,11 @@ export function EditorUpidExportPreview({
                       data-upid-export-operation-path-element={operation.pathElementId ?? undefined}
                       data-upid-export-operation-row
                       data-upid-export-operation-role={operation.classification}
+                      data-upid-export-operation-start-point-role={operation.manualStart?.pointRole ?? undefined}
+                      data-upid-export-operation-start-relation={operation.manualStart?.relation ?? undefined}
+                      data-upid-export-operation-start-segment={
+                        operation.manualStart?.sourceSegmentId ?? undefined
+                      }
                       disabled={!traceRef}
                       onClick={() => {
                         if (traceRef) onSelectPathElement?.(traceRef);
@@ -201,6 +206,11 @@ export function EditorUpidExportPreview({
                         {operation.manualDecisionKinds.length > 0 && (
                           <span className="block truncate text-[8px] text-amber-200">
                             manual {operation.manualDecisionKinds.join(', ')}
+                          </span>
+                        )}
+                        {operation.manualStart && (
+                          <span className="block truncate text-[8px] text-cyan-200">
+                            start {formatManualStart(operation.manualStart)}
                           </span>
                         )}
                       </span>
@@ -315,6 +325,12 @@ function formatManualOrderCount(count: number) {
 
 function formatBodyLineRange(operation: Pick<UpidGCodeProgramOperation, 'bodyLineEnd' | 'bodyLineStart'>) {
   return `${operation.bodyLineStart + 1}-${operation.bodyLineEnd + 1}`;
+}
+
+function formatManualStart(start: NonNullable<UpidGCodeProgramOperation['manualStart']>) {
+  const pointRole = start.pointRole ? ` ${start.pointRole}` : '';
+  const split = start.createdSegmentIds.length > 0 ? ` / split ${start.createdSegmentIds.length}` : '';
+  return `${start.relation}${pointRole}${split} / source ${start.sourceSegmentId}`;
 }
 
 function upidOperationTraceRef(operation: UpidGCodeProgramOperation): EditorPathElementRef | null {

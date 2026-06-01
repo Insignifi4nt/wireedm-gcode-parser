@@ -2310,6 +2310,56 @@ describe('App DXF imports and project library', () => {
     expect(exportOperationRow?.textContent).toContain('start');
   });
 
+  it('marks exact endpoint start details on export operation rows', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'export-endpoint-start.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const targetPointRow = container.querySelector(
+      '[data-upid-point-row][data-upid-segment-index="1"][data-upid-point-role="start"]'
+    ) as HTMLElement | null;
+    const targetSegmentId = targetPointRow?.getAttribute('data-upid-segment-id');
+    const setStartButton = targetPointRow?.querySelector(
+      'button[aria-label="Set path start to this point"]'
+    ) as HTMLButtonElement | null;
+    expect(targetSegmentId).toBeTruthy();
+
+    await act(async () => {
+      setStartButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const exportOperationRow = container.querySelector('[data-upid-export-operation-row]');
+    expect(exportOperationRow?.getAttribute('data-upid-export-operation-start-relation')).toBe(
+      'existing-point'
+    );
+    expect(exportOperationRow?.getAttribute('data-upid-export-operation-start-segment')).toBe(
+      targetSegmentId
+    );
+    expect(exportOperationRow?.getAttribute('data-upid-export-operation-start-point-role')).toBe(
+      'start'
+    );
+    expect(exportOperationRow?.textContent).toContain(`source ${targetSegmentId}`);
+  });
+
   it('edits imported DXF path direction through path controls instead of line text surgery', async () => {
     window.showDirectoryPicker = undefined;
     const downloadGeneratedProgram = vi.fn();

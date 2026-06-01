@@ -13,6 +13,7 @@ import {
   type GCodeProgramComposition
 } from '@/domain/post/gcodeTemplates';
 import type {
+  ManualStartOverride,
   OperationOrderStrategy,
   PathDiagnostic,
   PathElement,
@@ -63,6 +64,7 @@ export interface UpidGCodeProgramOperation extends Omit<GcodePostedOperation, 'm
   editEventCount: number;
   editedSegmentCount: number;
   manualDecisionKinds: UpidGCodeProgramManualDecisionKind[];
+  manualStart: UpidGCodeProgramManualStart | null;
   moves: UpidGCodeProgramMove[];
   pathElementId: string | null;
   programLineEnd: number;
@@ -71,6 +73,15 @@ export interface UpidGCodeProgramOperation extends Omit<GcodePostedOperation, 'm
 }
 
 export type UpidGCodeProgramManualDecisionKind = 'order' | 'role' | 'direction' | 'start';
+
+export interface UpidGCodeProgramManualStart {
+  createdSegmentIds: string[];
+  point: ManualStartOverride['point'];
+  pointRole: ManualStartOverride['pointRole'] | null;
+  relation: ManualStartOverride['relation'];
+  sourceSegmentId: string;
+  sourceSegmentIndex: number;
+}
 
 export function createUpidFromDxfEntities(
   entities: DxfEntity[],
@@ -146,6 +157,7 @@ function mapProgramOperations(
       editEventCount: pathElement?.provenance.edit?.events.length ?? 0,
       editedSegmentCount: pathElement?.provenance.edit?.derivedSegmentIds.length ?? 0,
       manualDecisionKinds: upidGCodeProgramManualDecisionKinds(pathElement),
+      manualStart: upidGCodeProgramManualStart(pathElement),
       moves: operation.moves.map((move) =>
         mapProgramMoveTrace(move, pathElement, programLineForBodyLine(bodySection, move.bodyLineIndex))
       ),
@@ -192,4 +204,20 @@ function upidGCodeProgramManualDecisionKinds(
   if (overrides.direction) decisions.push('direction');
   if (overrides.start) decisions.push('start');
   return decisions;
+}
+
+function upidGCodeProgramManualStart(
+  pathElement: PathElement | null
+): UpidGCodeProgramManualStart | null {
+  const start = pathElement?.overrides?.start;
+  if (!start) return null;
+
+  return {
+    createdSegmentIds: [...start.createdSegmentIds],
+    point: { ...start.point },
+    pointRole: start.pointRole ?? null,
+    relation: start.relation,
+    sourceSegmentId: start.sourceSegmentId,
+    sourceSegmentIndex: start.sourceSegmentIndex
+  };
 }

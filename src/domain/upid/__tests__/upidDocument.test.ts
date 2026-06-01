@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   reversePathOperation,
+  setClosedOperationStartAtSegmentEndpoint,
   setClosedOperationStartNearPoint
 } from '@/domain/path-editor/pathDocumentOperations';
 
@@ -202,6 +203,38 @@ describe('UPID document boundary', () => {
       editedSegmentCount: 2,
       manualDecisionKinds: ['direction', 'start'],
       operationId
+    });
+  });
+
+  it('carries exact manual start metadata onto posted export operations', () => {
+    const document = createUpidFromDxfEntities([
+      line(0, 0, 10, 0),
+      line(10, 0, 10, 5),
+      line(10, 5, 0, 5),
+      line(0, 5, 0, 0)
+    ]);
+    const operation = document.plan.operations[0];
+    const targetSegmentId = operation.segmentRefs[1].segmentId;
+    const started = setClosedOperationStartAtSegmentEndpoint(
+      document,
+      operation.id,
+      targetSegmentId,
+      'start'
+    );
+
+    const exportProgram = composeUpidGCodeExport(started!, {
+      header: '',
+      footer: '',
+      lineEnding: 'lf'
+    });
+
+    expect(exportProgram.programOperations[0].manualStart).toEqual({
+      point: { x: 10, y: 0 },
+      relation: 'existing-point',
+      sourceSegmentId: targetSegmentId,
+      sourceSegmentIndex: 1,
+      pointRole: 'start',
+      createdSegmentIds: []
     });
   });
 
