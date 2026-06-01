@@ -1390,6 +1390,18 @@ describe('App DXF imports and project library', () => {
     expect(exportPreview).not.toBeNull();
     expect(exportPreview?.textContent).toContain('UPID Export Preview');
     expect(exportPreview?.textContent).toContain('Default Wire EDM');
+    const exportTrace = container.querySelector('[data-upid-export-document-trace]');
+    expect(exportTrace?.getAttribute('data-upid-export-document-format')).toBe(
+      'Universal Path Intelligence Document'
+    );
+    expect(exportTrace?.getAttribute('data-upid-export-document-schema')).toBe('1');
+    expect(exportTrace?.getAttribute('data-upid-export-document-source-kind')).toBe('dxf-entities');
+    expect(exportTrace?.getAttribute('data-upid-export-document-source-file')).toBe('export-preview.dxf');
+    expect(exportTrace?.getAttribute('data-upid-export-document-project')).toMatch(
+      /^export-preview-\d{4}-\d{2}-\d{2}$/
+    );
+    expect(exportTrace?.textContent).toContain('UPID v1');
+    expect(exportTrace?.textContent).toContain('export-preview.dxf');
     expect(exportSummary).not.toBeNull();
     expect(container.querySelector('[data-upid-export-stat="operations"]')?.textContent).toBe('1');
     expect(container.querySelector('[data-upid-export-stat="rapid"]')?.textContent).toBe('1');

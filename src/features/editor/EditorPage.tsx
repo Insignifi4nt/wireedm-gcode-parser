@@ -234,6 +234,7 @@ export function EditorPage({
     return {
       body: exportProgram.body,
       diagnostics: exportProgram.diagnostics,
+      documentTrace: exportProgram.documentTrace,
       fileName,
       machineName: machine.name,
       operationCount: exportProgram.summary.operationCount,
@@ -1272,6 +1273,7 @@ export function EditorPage({
         <EditorUpidExportPreview
           fileName={upidExport.fileName}
           diagnostics={upidExport.diagnostics}
+          documentTrace={upidExport.documentTrace}
           machineName={upidExport.machineName}
           onClose={() => setExportPreviewOpen(false)}
           onDownload={() => onDownloadEditorFile(upidExport.fileName, upidExport.programText)}

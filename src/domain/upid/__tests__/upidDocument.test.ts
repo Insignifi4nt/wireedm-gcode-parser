@@ -82,14 +82,22 @@ describe('UPID document boundary', () => {
   });
 
   it('composes a UPID export program with final G-code line metadata', () => {
-    const document = createUpidFromDxfEntities([
+    const document = createUpidFromDxfEntities(
+      [
+        {
+          type: 'line',
+          layer: 'CUT',
+          start: { x: 0, y: 0 },
+          end: { x: 10, y: 0 }
+        }
+      ],
+      {},
       {
-        type: 'line',
-        layer: 'CUT',
-        start: { x: 0, y: 0 },
-        end: { x: 10, y: 0 }
+        fileName: 'trace-source.dxf',
+        importedAt: '2026-05-31T10:00:00.000Z',
+        projectId: 'trace-project'
       }
-    ]);
+    );
 
     const exportProgram = composeUpidGCodeExport(document, {
       header: '%\nG90 G21',
@@ -97,6 +105,19 @@ describe('UPID document boundary', () => {
       lineEnding: 'lf'
     });
 
+    expect(exportProgram.documentTrace).toEqual({
+      contourCount: 1,
+      fileName: 'trace-source.dxf',
+      format: 'Universal Path Intelligence Document',
+      importedAt: '2026-05-31T10:00:00.000Z',
+      operationCount: 1,
+      pathElementCount: 1,
+      projectId: 'trace-project',
+      schemaVersion: 1,
+      segmentCount: 1,
+      sourceEntityCount: 1,
+      sourceKind: 'dxf-entities'
+    });
     expect(exportProgram.body).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
     expect(exportProgram.program.text).toBe('%\nG90 G21\nG0 X0.000 Y0.000\nG1 X10.000 Y0.000\nM30\n%\n');
     expect(exportProgram.program.sections.body).toEqual({

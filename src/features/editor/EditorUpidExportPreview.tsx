@@ -3,6 +3,7 @@ import { Download, X } from 'lucide-react';
 import type { GCodeProgramLineMap } from '@/domain/post/gcodeTemplates';
 import { upidPathElementRefForDiagnostic } from '@/domain/upid/projectRail';
 import type {
+  UpidGCodeExportDocumentTrace,
   UpidGCodeProgramManualDecisionKind,
   UpidGCodeProgramOperation
 } from '@/domain/upid/upidDocument';
@@ -11,6 +12,7 @@ import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 interface EditorUpidExportPreviewProps {
   diagnostics: PathDiagnostic[];
+  documentTrace: UpidGCodeExportDocumentTrace;
   fileName: string;
   machineName: string;
   operationCount: number;
@@ -35,6 +37,7 @@ interface EditorUpidExportPreviewProps {
 
 export function EditorUpidExportPreview({
   diagnostics,
+  documentTrace,
   fileName,
   machineName,
   operationCount,
@@ -66,6 +69,24 @@ export function EditorUpidExportPreview({
           <h2 className="truncate text-[12px] font-semibold">UPID Export Preview</h2>
           <p className="mt-0.5 truncate text-[9px] text-muted-foreground">
             {machineName} / {fileName}
+          </p>
+          <p
+            className="mt-0.5 truncate text-[9px] text-muted-foreground"
+            data-upid-export-document-contours={documentTrace.contourCount}
+            data-upid-export-document-format={documentTrace.format}
+            data-upid-export-document-imported-at={documentTrace.importedAt ?? undefined}
+            data-upid-export-document-operations={documentTrace.operationCount}
+            data-upid-export-document-path-elements={documentTrace.pathElementCount}
+            data-upid-export-document-project={documentTrace.projectId ?? undefined}
+            data-upid-export-document-schema={documentTrace.schemaVersion}
+            data-upid-export-document-segments={documentTrace.segmentCount}
+            data-upid-export-document-source-entities={documentTrace.sourceEntityCount}
+            data-upid-export-document-source-file={documentTrace.fileName ?? undefined}
+            data-upid-export-document-source-kind={documentTrace.sourceKind}
+            data-upid-export-document-trace
+          >
+            UPID v{documentTrace.schemaVersion} / {documentTrace.sourceKind}
+            {documentTrace.fileName ? ` / ${documentTrace.fileName}` : ''}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">

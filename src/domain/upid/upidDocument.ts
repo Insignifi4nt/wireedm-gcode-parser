@@ -45,11 +45,26 @@ export interface ComposeUpidGCodeExportInput {
 export interface UpidGCodeExport {
   body: string;
   diagnostics: PathDiagnostic[];
+  documentTrace: UpidGCodeExportDocumentTrace;
   planning: UpidGCodeExportPlanning;
   post: ReturnType<typeof postUpidToGcode>;
   program: GCodeProgramComposition;
   programOperations: UpidGCodeProgramOperation[];
   summary: UpidGCodeExportSummary;
+}
+
+export interface UpidGCodeExportDocumentTrace {
+  contourCount: number;
+  fileName: string | null;
+  format: typeof UPID_FORMAT_NAME;
+  importedAt: string | null;
+  operationCount: number;
+  pathElementCount: number;
+  projectId: string | null;
+  schemaVersion: UniversalPathIntelligenceDocument['schemaVersion'];
+  segmentCount: number;
+  sourceEntityCount: number;
+  sourceKind: UniversalPathIntelligenceDocument['source']['kind'];
 }
 
 export interface UpidGCodeExportPlanning {
@@ -131,6 +146,7 @@ export function composeUpidGCodeExport(
   return {
     body,
     diagnostics,
+    documentTrace: traceUpidDocumentForExport(document),
     planning,
     post,
     program,
@@ -141,6 +157,24 @@ export function composeUpidGCodeExport(
       operationCount: document.plan.operations.length,
       postDiagnosticCount: post.diagnostics.length
     }
+  };
+}
+
+function traceUpidDocumentForExport(
+  document: UniversalPathIntelligenceDocument
+): UpidGCodeExportDocumentTrace {
+  return {
+    contourCount: document.contours.length,
+    fileName: document.source.fileName ?? null,
+    format: UPID_FORMAT_NAME,
+    importedAt: document.source.importedAt ?? null,
+    operationCount: document.plan.operations.length,
+    pathElementCount: document.pathElements.length,
+    projectId: document.source.projectId ?? null,
+    schemaVersion: document.schemaVersion,
+    segmentCount: document.segments.length,
+    sourceEntityCount: document.source.entityCount,
+    sourceKind: document.source.kind
   };
 }
 
