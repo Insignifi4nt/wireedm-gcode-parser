@@ -74,6 +74,8 @@ type TransformEntityResult =
   | { entity: DxfEntity; warning?: never }
   | { entity: null; warning: string };
 
+const IGNORED_LAYOUT_ENTITY_TYPES = new Set(['VIEWPORT']);
+
 export function parseDxf(text: string): DxfParseResult {
   const pairs = toPairs(text);
   const units = parseDrawingUnits(pairs);
@@ -317,7 +319,7 @@ function parseEntitiesFromPairs(entityPairs: DxfPair[], context: EntityParseCont
 
     if (entity) {
       entities.push(withEntitySource(entity, context));
-    } else if (!['EOF', 'ENDSEC'].includes(entityType)) {
+    } else if (!['EOF', 'ENDSEC'].includes(entityType) && !IGNORED_LAYOUT_ENTITY_TYPES.has(entityType)) {
       unsupportedEntities.add(entityType);
     }
 

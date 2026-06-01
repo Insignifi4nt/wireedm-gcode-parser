@@ -146,6 +146,46 @@ EOF
     expect(result.warnings).toEqual(['Unsupported DXF entity: SPLINE']);
   });
 
+  it('ignores layout VIEWPORT metadata instead of warning about unsupported cut geometry', () => {
+    const result = parseDxf(`
+0
+SECTION
+2
+ENTITIES
+0
+VIEWPORT
+8
+0
+10
+0
+20
+0
+40
+1000
+0
+LINE
+8
+CUT
+10
+0
+20
+0
+11
+10
+21
+0
+0
+ENDSEC
+0
+EOF
+`);
+
+    expect(result.entities).toHaveLength(1);
+    expect(result.entities[0]).toMatchObject({ type: 'line' });
+    expect(result.unsupportedEntities).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+
   it('preserves DXF entity handles on supported geometry', () => {
     const result = parseDxf(`
 0
