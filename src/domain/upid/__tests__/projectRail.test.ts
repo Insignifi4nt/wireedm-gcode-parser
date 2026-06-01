@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DxfEntity } from '@/domain/dxf/types';
-import { movePathOperation, reversePathOperation } from '@/domain/path-editor/pathDocumentOperations';
+import {
+  movePathOperation,
+  reversePathOperation,
+  setClosedOperationStartNearPoint,
+  setPathOperationClassification
+} from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 
 import {
   createUpidProjectRail,
   normalizeUpidPathElementSelection,
+  readUpidManualOverrideRows,
   readUpidOperationPathElement,
   readUpidPathElementPoint,
   readUpidPathElementPointByRole,
+  readUpidPathElementSourceSummary,
   readUpidSelectedPathPoint,
   readUpidSelectedPathSegment,
   readUpidSelectedPathTravel,
@@ -267,6 +274,50 @@ describe('UPID project rail projection', () => {
       role: 'end',
       segmentKind: 'line'
     });
+    expect(readUpidPathElementSourceSummary(pathElement!)).toEqual({
+      blocks: 'PROFILE',
+      entities: '1 entity',
+      exact: 'exact',
+      handles: 'BEEF',
+      inserts: 'PROFILE / 1 segment',
+      layers: 'CUT'
+    });
+  });
+
+  it('formats selected element manual override rows from UPID overrides', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)]
+    );
+    const targetOperationId = document.plan.operations[1].id;
+
+    const moved = movePathOperation(document, targetOperationId, -1);
+    const classified = setPathOperationClassification(moved!, targetOperationId, 'hole');
+    const reversed = reversePathOperation(classified!, targetOperationId);
+    const started = setClosedOperationStartNearPoint(reversed!, targetOperationId, { x: 22.5, y: 0 });
+    const pathElement = readUpidOperationPathElement(started!, targetOperationId, null);
+
+    expect(readUpidManualOverrideRows(pathElement!.overrides)).toEqual([
+      {
+        kind: 'order',
+        label: 'Order',
+        value: 'Manual position 1'
+      },
+      {
+        kind: 'classification',
+        label: 'Role',
+        value: 'hole'
+      },
+      {
+        kind: 'direction',
+        label: 'Direction',
+        value: 'reverse'
+      },
+      {
+        kind: 'start',
+        label: 'Start',
+        value: '22.500, 0.000 / split 2'
+      }
+    ]);
   });
 });
 

@@ -10,9 +10,11 @@ import type { GCodeStructure } from '@/domain/editor/gcodeStructure';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { MachineFitResult } from '@/domain/machine/machineFit';
-import type { PathElement, PathPlanningDocument } from '@/domain/path-intel/types';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
+  readUpidManualOverrideRows,
   readUpidPathElementPointByRole,
+  readUpidPathElementSourceSummary,
   readUpidOperationPathElement,
   readUpidSelectedPathPoint,
   readUpidSelectedPathSegment,
@@ -114,10 +116,10 @@ export function EditorInspectorPanel({
     ? readUpidSelectedPathTravel(pathDocument, selectedPathOperationIndex, selectedPathElement)
     : null;
   const selectedPathOverrideRows = selectedPathElementModel
-    ? manualOverrideRows(selectedPathElementModel.overrides)
+    ? readUpidManualOverrideRows(selectedPathElementModel.overrides)
     : [];
   const selectedPathSource = selectedPathElementModel
-    ? sourceSummaryRows(selectedPathElementModel)
+    ? readUpidPathElementSourceSummary(selectedPathElementModel)
     : null;
   const selectedPathStart = selectedPathElementModel
     ? readUpidPathElementPointByRole(selectedPathElementModel, 'start')
@@ -666,69 +668,4 @@ function measurementPointModeLabel(point: MeasurementPoint) {
   if (point.pathSnap.mode === 'perpendicular') return 'Perp';
   if (point.pathSnap.mode === 'tangent') return 'Tan';
   return '-';
-}
-
-function manualOverrideRows(overrides: PathElement['overrides']) {
-  if (!overrides) return [];
-
-  const rows: Array<{ kind: string; label: string; value: string }> = [];
-  if (overrides.order) {
-    rows.push({
-      kind: 'order',
-      label: 'Order',
-      value: `Manual position ${overrides.order.orderIndex + 1}`
-    });
-  }
-  if (overrides.classification) {
-    rows.push({
-      kind: 'classification',
-      label: 'Role',
-      value: overrides.classification.classification
-    });
-  }
-  if (overrides.direction) {
-    rows.push({
-      kind: 'direction',
-      label: 'Direction',
-      value: overrides.direction.direction
-    });
-  }
-  if (overrides.start) {
-    rows.push({
-      kind: 'start',
-      label: 'Start',
-      value:
-        overrides.start.createdSegmentIds.length > 0
-          ? `${formatPoint(overrides.start.point)} / split ${overrides.start.createdSegmentIds.length}`
-          : formatPoint(overrides.start.point)
-    });
-  }
-
-  return rows;
-}
-
-function sourceSummaryRows(element: PathElement) {
-  const provenance = element.provenance;
-  const entityCount = provenance.sourceEntityIndices.length;
-  const insertedSegmentCount = provenance.dxf?.insertedSegmentCount ?? 0;
-
-  return {
-    blocks:
-      provenance.dxf && provenance.dxf.blockNames.length > 0
-        ? provenance.dxf.blockNames.join(', ')
-        : null,
-    entities: `${entityCount} ${entityCount === 1 ? 'entity' : 'entities'}`,
-    exact: provenance.exact ? 'exact' : 'mixed',
-    handles:
-      provenance.sourceEntityHandles && provenance.sourceEntityHandles.length > 0
-        ? provenance.sourceEntityHandles.join(', ')
-        : null,
-    inserts:
-      provenance.dxf && provenance.dxf.insertBlockNames.length > 0
-        ? `${provenance.dxf.insertBlockNames.join(', ')} / ${insertedSegmentCount} ${
-            insertedSegmentCount === 1 ? 'segment' : 'segments'
-          }`
-        : null,
-    layers: provenance.layers.length > 0 ? provenance.layers.map((layer) => layer ?? '-').join(', ') : '-'
-  };
 }

@@ -87,6 +87,21 @@ export interface UpidSelectedPathPoint {
   segmentKind: string;
 }
 
+export interface UpidManualOverrideRow {
+  kind: string;
+  label: string;
+  value: string;
+}
+
+export interface UpidPathElementSourceSummary {
+  blocks: string | null;
+  entities: string;
+  exact: 'exact' | 'mixed';
+  handles: string | null;
+  inserts: string | null;
+  layers: string;
+}
+
 export interface UpidEditorPathStats {
   arcMoveCount: number;
   bounds: Bounds2;
@@ -293,6 +308,71 @@ export function readUpidSelectedPathPoint(
   };
 }
 
+export function readUpidManualOverrideRows(overrides: PathElement['overrides']): UpidManualOverrideRow[] {
+  if (!overrides) return [];
+
+  const rows: UpidManualOverrideRow[] = [];
+  if (overrides.order) {
+    rows.push({
+      kind: 'order',
+      label: 'Order',
+      value: `Manual position ${overrides.order.orderIndex + 1}`
+    });
+  }
+  if (overrides.classification) {
+    rows.push({
+      kind: 'classification',
+      label: 'Role',
+      value: overrides.classification.classification
+    });
+  }
+  if (overrides.direction) {
+    rows.push({
+      kind: 'direction',
+      label: 'Direction',
+      value: overrides.direction.direction
+    });
+  }
+  if (overrides.start) {
+    rows.push({
+      kind: 'start',
+      label: 'Start',
+      value:
+        overrides.start.createdSegmentIds.length > 0
+          ? `${formatUpidPoint(overrides.start.point)} / split ${overrides.start.createdSegmentIds.length}`
+          : formatUpidPoint(overrides.start.point)
+    });
+  }
+
+  return rows;
+}
+
+export function readUpidPathElementSourceSummary(element: PathElement): UpidPathElementSourceSummary {
+  const provenance = element.provenance;
+  const entityCount = provenance.sourceEntityIndices.length;
+  const insertedSegmentCount = provenance.dxf?.insertedSegmentCount ?? 0;
+
+  return {
+    blocks:
+      provenance.dxf && provenance.dxf.blockNames.length > 0
+        ? provenance.dxf.blockNames.join(', ')
+        : null,
+    entities: `${entityCount} ${entityCount === 1 ? 'entity' : 'entities'}`,
+    exact: provenance.exact ? 'exact' : 'mixed',
+    handles:
+      provenance.sourceEntityHandles && provenance.sourceEntityHandles.length > 0
+        ? provenance.sourceEntityHandles.join(', ')
+        : null,
+    inserts:
+      provenance.dxf && provenance.dxf.insertBlockNames.length > 0
+        ? `${provenance.dxf.insertBlockNames.join(', ')} / ${insertedSegmentCount} ${
+            insertedSegmentCount === 1 ? 'segment' : 'segments'
+          }`
+        : null,
+    layers: provenance.layers.length > 0 ? provenance.layers.map((layer) => layer ?? '-').join(', ') : '-'
+  };
+}
+
 export function upidStartPreviewPointRole(
   document: PathPlanningDocument,
   preview: {
@@ -484,4 +564,8 @@ function emptyDisplayBounds(): Bounds2 {
 
 function formatUpidSegmentInsertSource(insert: DxfInsertSource | null) {
   return insert ? `${insert.blockName} / row ${insert.row} col ${insert.column}` : null;
+}
+
+function formatUpidPoint(point: Point2) {
+  return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
 }
