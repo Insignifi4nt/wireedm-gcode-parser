@@ -184,12 +184,62 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe('true');
   });
 
+  it('temporarily reveals collapsed contour groups while canvas hover assist targets geometry', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const firstSegmentRow = container.querySelector('[data-upid-segment-row]');
+    const segmentId = firstSegmentRow?.getAttribute('data-upid-segment-id');
+    expect(segmentId).toBeTruthy();
+
+    await clickElement('input[aria-label="Toggle canvas hover assist"]');
+    await clickElement('button[aria-label="Collapse Exterior 1"]');
+    const contourGroup = container.querySelector('[data-upid-contour-group="contour_0001"]');
+    expect(contourGroup?.getAttribute('data-upid-expanded')).toBe('false');
+    expect(container.querySelector('[data-upid-segment-stack]')).toBeNull();
+
+    const previewSelector = `svg[aria-label="UPID path preview"] path[data-preview-source="path-document"][data-preview-segment="${segmentId}"]`;
+    await dispatchMouseEvent(previewSelector, 'mouseover');
+
+    expect(contourGroup?.getAttribute('data-upid-expanded')).toBe('true');
+    expect(
+      container
+        .querySelector(`[data-upid-segment-row][data-upid-segment-id="${segmentId}"]`)
+        ?.getAttribute('data-upid-hovered')
+    ).toBe('true');
+
+    await dispatchMouseEvent(previewSelector, 'mouseout');
+
+    expect(contourGroup?.getAttribute('data-upid-expanded')).toBe('false');
+    expect(container.querySelector('[data-upid-segment-stack]')).toBeNull();
+  });
+
   async function clickElement(selector: string) {
     const element = container.querySelector(selector) as HTMLElement | null;
     expect(element).not.toBeNull();
 
     await act(async () => {
       element?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+  }
+
+  async function dispatchMouseEvent(selector: string, type: 'mouseover' | 'mouseout') {
+    const element = container.querySelector(selector) as HTMLElement | null;
+    expect(element).not.toBeNull();
+
+    await act(async () => {
+      element?.dispatchEvent(new MouseEvent(type, { bubbles: true }));
     });
     await flushAsync();
   }

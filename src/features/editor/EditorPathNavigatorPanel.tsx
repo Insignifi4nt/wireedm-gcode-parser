@@ -126,7 +126,11 @@ export function EditorPathNavigatorPanel({
   );
   const selectedOperation =
     selectedOperationIndex >= 0 ? pathDocument.plan.operations[selectedOperationIndex] : null;
-  const isPathElementExpanded = (pathElementId: string) => expandedPathElementIds[pathElementId] ?? true;
+  const hoverRevealedPathElementIds = new Set(
+    hoveredPathElement ? pathElementAncestorIds(pathDocument, hoveredPathElement) : []
+  );
+  const isPathElementExpanded = (pathElementId: string) =>
+    hoverRevealedPathElementIds.has(pathElementId) || (expandedPathElementIds[pathElementId] ?? true);
   const togglePathElementExpanded = (pathElementId: string) => {
     setExpandedPathElementIds((current) => ({
       ...current,
