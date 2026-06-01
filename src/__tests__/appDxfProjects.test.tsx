@@ -740,6 +740,54 @@ describe('App DXF imports and project library', () => {
       (container.querySelector('select[aria-label="Planning order strategy"]') as HTMLSelectElement | null)?.value
     ).toBe('source-order');
     expect(container.textContent).toContain('Unsaved');
+
+    const saveButton = container.querySelector(
+      'button[aria-label="Save Path Plan"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const manifest = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const savedProject = JSON.parse(
+      window.localStorage.getItem(`wire-edm-workbench:file:${manifest.projects[0].path}`) || '{}'
+    );
+
+    expect(savedProject.upid.document.options.operationOrderStrategy).toBe('source-order');
+    expect(
+      savedProject.upid.document.plan.operations.map((operation: { contourId: string }) => operation.contourId)
+    ).toEqual(['contour_0001', 'contour_0002']);
+
+    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Dashboard')
+    );
+
+    await act(async () => {
+      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const openLatestButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Open in Editor')
+    );
+
+    await act(async () => {
+      openLatestButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
+    expect(
+      (container.querySelector('select[aria-label="Planning order strategy"]') as HTMLSelectElement | null)?.value
+    ).toBe('source-order');
+    expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-path-element-id'))).toEqual([
+      'contour_0001',
+      'contour_0002'
+    ]);
   });
 
   it('shows DXF block and insert lineage for selected UPID contours', async () => {
