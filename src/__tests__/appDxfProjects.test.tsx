@@ -844,6 +844,17 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
     await selectFirstCutSequence(container);
 
+    const sourceSummary = container.querySelector('[data-upid-source-summary]');
+    expect(sourceSummary?.getAttribute('data-upid-source-entities')).toBe('1');
+    expect(sourceSummary?.getAttribute('data-upid-source-segments')).toBe('4');
+    expect(sourceSummary?.getAttribute('data-upid-source-layers')).toBe('CUT');
+    expect(sourceSummary?.getAttribute('data-upid-source-blocks')).toBe('PROFILE');
+    expect(sourceSummary?.getAttribute('data-upid-source-inserts')).toBe('PROFILE');
+    expect(sourceSummary?.getAttribute('data-upid-source-inserted-segments')).toBe('4');
+    expect(sourceSummary?.textContent).toContain('Source: 1 entity / 4 segments / 1 layer');
+    expect(sourceSummary?.textContent).toContain('blocks PROFILE');
+    expect(sourceSummary?.textContent).toContain('inserts PROFILE');
+
     expect(container.querySelector('[data-upid-selected="source-blocks"]')?.textContent).toBe('PROFILE');
     expect(container.querySelector('[data-upid-selected="source-handles"]')?.textContent).toBe('BEEF');
     expect(container.querySelector('[data-upid-selected="source-inserts"]')?.textContent).toBe(

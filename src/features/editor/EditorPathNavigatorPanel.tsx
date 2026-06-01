@@ -47,6 +47,7 @@ import {
   type UpidPathDiagnosticSummary,
   type UpidSelectedPathDiagnostic,
   type UpidSelectedPathSegmentGeometry,
+  type UpidProjectRail,
   type UpidProjectRailTreeNode
 } from '@/domain/upid/projectRail';
 
@@ -129,6 +130,7 @@ export function EditorPathNavigatorPanel({
   const projectRail = createUpidProjectRail(pathDocument);
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
   const endpointTopology = projectRail.summary.topology;
+  const sourceSummary = projectRail.summary.source;
   const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
   const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
   const pathTreeElementIds = projectRail.operationElements.map((element) => element.id);
@@ -229,6 +231,28 @@ export function EditorPathNavigatorPanel({
                 {formatPathManualDecisionBreakdown(projectRail.summary.manualDecisionCounts)}
               </span>
             )}
+          </p>
+          <p
+            className="mt-1 truncate text-[9px] text-muted-foreground"
+            data-upid-source-approximated-segments={sourceSummary.approximatedSegmentCount}
+            data-upid-source-block-count={sourceSummary.blockCount}
+            data-upid-source-blocks={
+              sourceSummary.blockNames.length > 0 ? sourceSummary.blockNames.join(', ') : undefined
+            }
+            data-upid-source-edited-segments={sourceSummary.editedSegmentCount}
+            data-upid-source-entities={sourceSummary.entityCount}
+            data-upid-source-exact-segments={sourceSummary.exactSegmentCount}
+            data-upid-source-insert-block-count={sourceSummary.insertBlockCount}
+            data-upid-source-inserted-segments={sourceSummary.insertedSegmentCount}
+            data-upid-source-inserts={
+              sourceSummary.insertBlockNames.length > 0 ? sourceSummary.insertBlockNames.join(', ') : undefined
+            }
+            data-upid-source-layer-count={sourceSummary.layerCount}
+            data-upid-source-layers={formatSourceLayers(sourceSummary.layers)}
+            data-upid-source-segments={sourceSummary.segmentCount}
+            data-upid-source-summary
+          >
+            {formatProjectSourceSummary(sourceSummary)}
           </p>
         </div>
 
@@ -1188,6 +1212,36 @@ function formatPathManualDecisionBreakdown(
   counts: Record<UpidManualDecisionKind, number>
 ) {
   return `order ${counts.order} / role ${counts.role} / direction ${counts.direction} / start ${counts.start}`;
+}
+
+function formatProjectSourceSummary(source: UpidProjectRail['summary']['source']) {
+  const parts = [
+    `Source: ${formatCount(source.entityCount, 'entity')} / ${formatCount(source.segmentCount, 'segment')} / ${formatCount(source.layerCount, 'layer')}`
+  ];
+
+  if (source.blockNames.length > 0) {
+    parts.push(`blocks ${source.blockNames.join(', ')}`);
+  }
+
+  if (source.insertBlockNames.length > 0) {
+    parts.push(`inserts ${source.insertBlockNames.join(', ')}`);
+  }
+
+  if (source.approximatedSegmentCount > 0 || source.editedSegmentCount > 0) {
+    parts.push(
+      `exact ${source.exactSegmentCount} / approx ${source.approximatedSegmentCount} / edits ${source.editedSegmentCount}`
+    );
+  }
+
+  return parts.join(' / ');
+}
+
+function formatCount(count: number, singular: string) {
+  return `${count} ${count === 1 ? singular : `${singular}s`}`;
+}
+
+function formatSourceLayers(layers: Array<string | null>) {
+  return layers.map((layer) => layer ?? '-').join(', ');
 }
 
 function renderSegmentRow(

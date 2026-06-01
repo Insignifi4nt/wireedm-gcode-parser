@@ -56,6 +56,20 @@ describe('UPID project rail projection', () => {
       },
       operationCount: 2,
       rootCount: 1,
+      source: {
+        approximatedSegmentCount: 0,
+        blockCount: 0,
+        blockNames: [],
+        editedSegmentCount: 0,
+        entityCount: 8,
+        exactSegmentCount: 8,
+        insertBlockCount: 0,
+        insertBlockNames: [],
+        insertedSegmentCount: 0,
+        layerCount: 1,
+        layers: ['CUT'],
+        segmentCount: 8
+      },
       topology: {
         ambiguousEndpointClusterCount: 0,
         endpointClusterCount: document.endpointClusters.length,
@@ -98,6 +112,53 @@ describe('UPID project rail projection', () => {
       })
     ).toEqual(['contour_0001']);
     expect(rail.operationElements.map(upidPathElementSourceEntityCount)).toEqual([4, 4]);
+  });
+
+  it('summarizes project-level source provenance for the path navigator', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'line',
+        handle: 'BEEF',
+        layer: 'CUT',
+        source: {
+          blockName: 'PROFILE',
+          insertChain: [
+            {
+              blockName: 'PROFILE',
+              column: 0,
+              row: 0,
+              layer: 'CUT',
+              transform: {
+                insertion: { x: 100, y: 200 },
+                rotationDegrees: 0,
+                scaleX: 1,
+                scaleY: 1
+              }
+            }
+          ]
+        },
+        start: { x: 0, y: 0 },
+        end: { x: 10, y: 0 }
+      },
+      line(20, 0, 30, 0, 'ETCH')
+    ]);
+
+    const rail = createUpidProjectRail(document);
+
+    expect(rail.summary.source).toEqual({
+      approximatedSegmentCount: 0,
+      blockCount: 1,
+      blockNames: ['PROFILE'],
+      editedSegmentCount: 0,
+      entityCount: 2,
+      exactSegmentCount: 2,
+      insertBlockCount: 1,
+      insertBlockNames: ['PROFILE'],
+      insertedSegmentCount: 1,
+      layerCount: 2,
+      layers: ['CUT', 'ETCH'],
+      segmentCount: 2
+    });
   });
 
   it('summarizes endpoint topology for the project rail', () => {
@@ -937,10 +998,16 @@ function gappedRectangle(gap: number): DxfEntity[] {
   ];
 }
 
-function line(startX: number, startY: number, endX: number, endY: number): DxfEntity {
+function line(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  layer = 'CUT'
+): DxfEntity {
   return {
     type: 'line',
-    layer: 'CUT',
+    layer,
     start: { x: startX, y: startY },
     end: { x: endX, y: endY }
   };

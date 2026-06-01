@@ -75,8 +75,24 @@ export interface UpidProjectRail {
     manualDecisionCounts: Record<UpidManualDecisionKind, number>;
     operationCount: number;
     rootCount: number;
+    source: UpidProjectSourceSummary;
     topology: UpidEndpointTopologySummary;
   };
+}
+
+export interface UpidProjectSourceSummary {
+  approximatedSegmentCount: number;
+  blockCount: number;
+  blockNames: string[];
+  editedSegmentCount: number;
+  entityCount: number;
+  exactSegmentCount: number;
+  insertBlockCount: number;
+  insertBlockNames: string[];
+  insertedSegmentCount: number;
+  layerCount: number;
+  layers: Array<string | null>;
+  segmentCount: number;
 }
 
 export interface UpidEndpointTopologySummary {
@@ -310,9 +326,63 @@ export function createUpidProjectRail(document: PathPlanningDocument): UpidProje
       manualDecisionCounts: manualDecisionSummary.counts,
       operationCount: document.plan.operations.length,
       rootCount: contourTree.length,
+      source: summarizeUpidProjectSource(document),
       topology: summarizeUpidEndpointTopology(document)
     }
   };
+}
+
+function summarizeUpidProjectSource(document: PathPlanningDocument): UpidProjectSourceSummary {
+  const layers = uniqueOrdered(document.segments.flatMap((segment) => upidSegmentSourceLayers(segment)));
+  const blockNames = uniqueOrdered(
+    document.segments
+      .map((segment) => segment.source.dxf?.blockName ?? null)
+      .filter((blockName): blockName is string => Boolean(blockName))
+  );
+  const insertBlockNames = uniqueOrdered(
+    document.segments.flatMap((segment) =>
+      segment.source.dxf?.insertChain.map((insert) => insert.blockName) ?? []
+    )
+  );
+
+  return {
+    approximatedSegmentCount: document.segments.filter((segment) => !segment.source.exact).length,
+    blockCount: blockNames.length,
+    blockNames,
+    editedSegmentCount: document.segments.filter((segment) => Boolean(segment.source.edit)).length,
+    entityCount: document.source.entityCount,
+    exactSegmentCount: document.segments.filter((segment) => segment.source.exact).length,
+    insertBlockCount: insertBlockNames.length,
+    insertBlockNames,
+    insertedSegmentCount: document.segments.filter(
+      (segment) => (segment.source.dxf?.insertChain.length ?? 0) > 0
+    ).length,
+    layerCount: layers.length,
+    layers,
+    segmentCount: document.segments.length
+  };
+}
+
+function upidSegmentSourceLayers(segment: PathSegment) {
+  const layers = [
+    segment.layer,
+    ...(segment.source.dxf?.insertChain.map((insert) => insert.layer) ?? [])
+  ];
+  const nonNullLayers = layers.filter((layer): layer is string => typeof layer === 'string' && layer.length > 0);
+  return nonNullLayers.length > 0 ? nonNullLayers : [null];
+}
+
+function uniqueOrdered<T>(values: T[]) {
+  const seen = new Set<T>();
+  const unique: T[] = [];
+
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+
+  return unique;
 }
 
 function summarizeUpidEndpointTopology(document: PathPlanningDocument): UpidEndpointTopologySummary {
