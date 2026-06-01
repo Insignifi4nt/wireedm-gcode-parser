@@ -149,6 +149,7 @@ export function EditorPathNavigatorPanel({
   const endpointTopology = projectRail.summary.topology;
   const sourceSummary = projectRail.summary.source;
   const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
+  const endpointTopologyPanel = summarizeEndpointTopologyPanel(pathDocument);
   const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
   const pathTreeElementIds = projectRail.operationElements.map((element) => element.id);
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
@@ -504,16 +505,33 @@ export function EditorPathNavigatorPanel({
         </section>
         ))}
 
-        {endpointTopologyRows.length > 0 && (
-          renderWorkspacePanel('endpoint-topology', 'Endpoint Topology', (
-          <section data-upid-endpoint-topology>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">Endpoint Topology</span>
-              <span className="text-[9px] text-muted-foreground">
-                {endpointTopologyRows.length} {endpointTopologyRows.length === 1 ? 'snap' : 'snaps'}
-              </span>
-            </div>
-            <div className="max-h-24 overflow-auto border border-border bg-background/35">
+        {renderWorkspacePanel('endpoint-topology', 'Endpoint Topology', (
+        <section data-upid-endpoint-topology>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-[9px] uppercase text-muted-foreground">Endpoint Topology</span>
+            <span
+              className={`text-[9px] ${
+                endpointTopologyPanel.openEndCount > 0 || endpointTopologyPanel.ambiguousCount > 0
+                  ? 'text-amber-200'
+                  : 'text-emerald-200'
+              }`}
+              data-upid-endpoint-topology-status
+            >
+              {formatEndpointTopologyStatus(endpointTopologyPanel)}
+            </span>
+          </div>
+          <div
+            className="mb-2 grid grid-cols-2 gap-1 text-[9px]"
+            data-upid-endpoint-topology-summary
+            title="Endpoint topology explains how segment starts and ends are paired into continuous contours."
+          >
+            <TopologyMetric label="Exact joins" value={endpointTopologyPanel.exactJoinCount} tone="ok" />
+            <TopologyMetric label="Open ends" value={endpointTopologyPanel.openEndCount} tone={endpointTopologyPanel.openEndCount > 0 ? 'warn' : 'muted'} />
+            <TopologyMetric label="Healed joins" value={endpointTopologyPanel.snappedCount} tone={endpointTopologyPanel.snappedCount > 0 ? 'warn' : 'muted'} />
+            <TopologyMetric label="Ambiguous" value={endpointTopologyPanel.ambiguousCount} tone={endpointTopologyPanel.ambiguousCount > 0 ? 'warn' : 'muted'} />
+          </div>
+          {endpointTopologyRows.length > 0 ? (
+            <div className="max-h-32 overflow-auto border border-border bg-background/35">
               {endpointTopologyRows.map((row) =>
                 renderEndpointTopologyRow({
                   hoveredPathElement,
@@ -524,9 +542,13 @@ export function EditorPathNavigatorPanel({
                 })
               )}
             </div>
-          </section>
-          ))
-        )}
+          ) : (
+            <p className="border border-border bg-background/35 px-2 py-1.5 text-[9px] text-muted-foreground">
+              No healed or ambiguous joins. Every contour endpoint is cleanly paired inside import precision.
+            </p>
+          )}
+        </section>
+        ))}
 
         {renderWorkspacePanel('path-diagnostics', 'Path Diagnostics', (
           <section data-upid-diagnostics>
@@ -710,6 +732,56 @@ function renderEndpointTopologyRow({
       )}
     </button>
   );
+}
+
+function TopologyMetric({
+  label,
+  tone,
+  value
+}: {
+  label: string;
+  tone: 'muted' | 'ok' | 'warn';
+  value: number;
+}) {
+  return (
+    <div
+      className={`border px-1.5 py-1 ${
+        tone === 'ok'
+          ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'
+          : tone === 'warn'
+            ? 'border-amber-400/40 bg-amber-400/10 text-amber-100'
+            : 'border-border bg-background/40 text-muted-foreground'
+      }`}
+    >
+      <span className="block text-[8px] uppercase text-muted-foreground">{label}</span>
+      <span className="block text-[11px] font-semibold text-foreground">{value}</span>
+    </div>
+  );
+}
+
+function summarizeEndpointTopologyPanel(document: PathPlanningDocument) {
+  const openEndCount = document.endpointClusters.filter((cluster) => cluster.members.length === 1).length;
+  const exactJoinCount = document.endpointClusters.filter(
+    (cluster) => cluster.method === 'exact' && cluster.members.length > 1
+  ).length;
+  const snappedCount = document.endpointClusters.filter((cluster) => cluster.method === 'within-tolerance').length;
+  const ambiguousCount = document.diagnostics.filter(
+    (diagnostic) => diagnostic.code === 'ambiguous-endpoint-cluster'
+  ).length;
+
+  return {
+    ambiguousCount,
+    exactJoinCount,
+    openEndCount,
+    snappedCount
+  };
+}
+
+function formatEndpointTopologyStatus(summary: ReturnType<typeof summarizeEndpointTopologyPanel>) {
+  if (summary.openEndCount > 0) return `${summary.openEndCount} open ${summary.openEndCount === 1 ? 'end' : 'ends'}`;
+  if (summary.ambiguousCount > 0) return `${summary.ambiguousCount} ambiguous`;
+  if (summary.snappedCount > 0) return `${summary.snappedCount} healed`;
+  return 'cleanly paired';
 }
 
 function renderDiagnosticRow({
@@ -1015,6 +1087,7 @@ function renderContourTreeNode({
   const sourceEntityCount = upidPathElementSourceEntityCount(element);
   const editedSegmentCount = element.provenance.edit?.derivedSegmentIds.length ?? 0;
   const expanded = isPathElementExpanded(element.id);
+  const contourKindLabel = element.closed ? 'Closed contour' : 'Open chain';
   const diagnosticSummary = summarizeUpidDiagnosticsForPathElementRef(pathDocument, {
     operationId: element.operationId,
     pathElementId: element.id,
@@ -1093,6 +1166,7 @@ function renderContourTreeNode({
                 ? 'true'
                 : undefined
             }
+            title={`${label}: ${contourKindLabel}. Selects and highlights the whole contour on the canvas.`}
             onClick={(event) => {
               event.preventDefault();
               onSelectPathElement({
@@ -1113,9 +1187,21 @@ function renderContourTreeNode({
           >
             <span className="text-muted-foreground">{element.orderIndex + 1}</span>
             <span className="min-w-0">
-              <span className="block truncate text-[10px]">{label}</span>
-              <span className="block truncate text-[9px] text-muted-foreground">
-                {element.label} / {element.closed ? 'closed contour' : 'open chain'} / {element.direction}
+              <span className="flex min-w-0 items-center gap-1">
+                <span
+                  className={`shrink-0 border px-1 text-[8px] uppercase ${
+                    element.closed
+                      ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'
+                      : 'border-amber-400/40 bg-amber-400/10 text-amber-100'
+                  }`}
+                  data-upid-contour-node-summary
+                >
+                  {contourKindLabel}
+                </span>
+                <span className="truncate text-[10px] text-foreground">{label}</span>
+              </span>
+              <span className="mt-0.5 block truncate text-[9px] text-muted-foreground">
+                source {element.label} / cut order {element.orderIndex + 1} / {element.direction}
               </span>
               <span className="block truncate text-[9px] text-muted-foreground">
                 {upidPathElementNestLabel(element)}
@@ -1297,6 +1383,7 @@ function renderSegmentRow(
   const refDirection = ref.reversed ? 'reversed ref' : 'forward ref';
   const geometry = readUpidSegmentGeometry(segment, ref);
   const geometrySummary = formatSegmentGeometrySummary(geometry);
+  const segmentKindLabel = `${segment.kind.toUpperCase()} segment`;
   const diagnosticSummary = summarizeUpidDiagnosticsForPathElementRef(pathDocument, {
     operationId: pathElement.operationId,
     pathElementId: pathElement.id,
@@ -1337,6 +1424,7 @@ function renderSegmentRow(
         data-upid-segment-sweep={geometry.kind === 'line' ? undefined : formatNumber(geometry.sweepDegrees)}
         data-upid-segment-row
         data-upid-segment-id={segment.id}
+        title={`${segmentKindLabel}. Selects and highlights one segment of ${pathElement.displayName}.`}
         onClick={() =>
           onSelectPathElement({
             operationId: pathElement.operationId,
@@ -1356,7 +1444,15 @@ function renderSegmentRow(
       >
         <span>{index + 1}</span>
         <span className="min-w-0">
-          <span className="block truncate uppercase text-foreground">{segment.kind}</span>
+          <span className="flex min-w-0 items-center gap-1">
+            <span
+              className="shrink-0 border border-border bg-background/50 px-1 text-[8px] uppercase text-muted-foreground"
+              data-upid-segment-kind-label
+            >
+              {segmentKindLabel}
+            </span>
+            <span className="truncate text-[9px] text-muted-foreground">#{index + 1}</span>
+          </span>
           <span className="block truncate">
             {formatPoint(start)}
             {' -> '}
@@ -1471,6 +1567,7 @@ function renderPointRow({
       data-upid-segment-id={segment.id}
       data-upid-point-role={role}
       data-upid-point-row
+      title={`Endpoint cluster ${endpointCluster?.id ?? 'unpaired'}: ${role} point for segment ${index + 1}.`}
       onMouseEnter={() => onHoverPathElement(element)}
       onMouseLeave={() => onHoverPathElement(null)}
     >
@@ -1480,7 +1577,7 @@ function renderPointRow({
         onClick={() => onSelectPathElement(element)}
         type="button"
       >
-        <span className="uppercase">{role}</span>
+        <span className="uppercase" data-upid-point-role-label>{role.toUpperCase()}</span>
         <span className="min-w-0">
           <span className="block truncate">{formatPoint(point)}</span>
           {endpointClusterSummary && <span className="block truncate">{endpointClusterSummary}</span>}

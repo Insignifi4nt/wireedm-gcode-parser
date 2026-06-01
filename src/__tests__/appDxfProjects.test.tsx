@@ -630,6 +630,7 @@ describe('App DXF imports and project library', () => {
       'path-summary',
       'path-actions',
       'path-hover-assist',
+      'endpoint-topology',
       'path-diagnostics',
       'cut-sequence',
       'contour-tree',
@@ -650,6 +651,10 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('button[aria-label^="Float "]')).toBeNull();
     expect(container.querySelector('button[aria-label^="Dock "]')).toBeNull();
     expect(container.querySelector('[data-editor-workspace-panel-handle="path-diagnostics"]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-endpoint-topology]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-endpoint-topology-status]')?.textContent).toContain(
+      'cleanly paired'
+    );
 
     const hoverAssistToggle = container.querySelector(
       'input[aria-label="Toggle canvas hover assist"]'
@@ -735,6 +740,36 @@ describe('App DXF imports and project library', () => {
     expect(inspector?.textContent).not.toContain('Warnings');
     expect(inspector?.textContent).not.toContain('Errors');
     expect(inspector?.textContent).not.toContain('Lines');
+  });
+
+  it('labels contour tree rows with clear path, segment, and endpoint meaning', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'clear-contour-tree.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const contourRow = container.querySelector('[data-upid-contour-row]');
+    const segmentRow = container.querySelector('[data-upid-segment-row]');
+    const pointRow = container.querySelector('[data-upid-point-row]');
+
+    expect(contourRow?.querySelector('[data-upid-contour-node-summary]')?.textContent).toContain(
+      'Closed contour'
+    );
+    expect(contourRow?.getAttribute('title')).toContain('Selects and highlights the whole contour');
+    expect(segmentRow?.querySelector('[data-upid-segment-kind-label]')?.textContent).toContain('LINE segment');
+    expect(segmentRow?.getAttribute('title')).toContain('Selects and highlights one segment');
+    expect(pointRow?.querySelector('[data-upid-point-role-label]')?.textContent).toMatch(/START|END/);
+    expect(pointRow?.getAttribute('title')).toContain('Endpoint cluster');
   });
 
   it('opens DXF path projects without selecting the first cut sequence', async () => {
