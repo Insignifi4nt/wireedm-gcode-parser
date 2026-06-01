@@ -199,6 +199,29 @@ describe('importDxfProject', () => {
     ]);
   });
 
+  it('preserves DXF drawing units metadata on the UPID source without scaling coordinates', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+
+    const result = await importDxfProject(workbench, {
+      fileName: 'metric-profile.dxf',
+      text: dxfWithMillimeterUnits(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+
+    expect(result.parseResult.units).toEqual({
+      code: 4,
+      label: 'millimeters',
+      scaleToMillimeters: 1,
+      source: 'dxf-insunits'
+    });
+    expect(result.pathDocument.source.units).toEqual(result.parseResult.units);
+    expect(result.pathDocument.segments[0].start).toEqual({ x: 0, y: 0 });
+    expect(result.pathDocument.segments[0].end).toEqual({ x: 10, y: 0 });
+  });
+
   it('keeps unsupported DXF warnings while still importing supported geometry', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
@@ -336,6 +359,41 @@ function blockInsertDxf() {
     '200',
     '50',
     '90',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function dxfWithMillimeterUnits() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'HEADER',
+    '9',
+    '$INSUNITS',
+    '70',
+    '4',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'LINE',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '11',
+    '10',
+    '21',
+    '0',
     '0',
     'ENDSEC',
     '0',

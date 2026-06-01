@@ -3,6 +3,7 @@ import { parseString as parseDxfString, toPolylines } from 'dxf';
 import type {
   DxfArcEntity,
   DxfCircleEntity,
+  DxfDrawingUnits,
   DxfEntity,
   DxfEntitySource,
   DxfInsertSource,
@@ -75,6 +76,7 @@ type TransformEntityResult =
 
 export function parseDxf(text: string): DxfParseResult {
   const pairs = toPairs(text);
+  const units = parseDrawingUnits(pairs);
   const blockResult = parseBlockDefinitions(pairs);
   const entityPairs = getSectionPairs(pairs, 'ENTITIES');
   const entityResult = parseEntitiesFromPairs(entityPairs, {
@@ -91,6 +93,7 @@ export function parseDxf(text: string): DxfParseResult {
     if (fallbackResult.entities.length > 0) {
       return {
         entities: [...entityResult.entities, ...fallbackResult.entities],
+        ...(units ? { units } : {}),
         unsupportedEntities: unsupported,
         warnings: [
           ...unsupported.map((entity) => `Unsupported DXF entity: ${entity}`),
@@ -103,6 +106,7 @@ export function parseDxf(text: string): DxfParseResult {
 
   return {
     entities: entityResult.entities,
+    ...(units ? { units } : {}),
     unsupportedEntities: unsupported,
     warnings: [
       ...unsupported.map((entity) => `Unsupported DXF entity: ${entity}`),
@@ -110,6 +114,63 @@ export function parseDxf(text: string): DxfParseResult {
     ]
   };
 }
+
+function parseDrawingUnits(pairs: DxfPair[]): DxfDrawingUnits | undefined {
+  const headerPairs = getSectionPairs(pairs, 'HEADER');
+
+  for (let index = 0; index < headerPairs.length; index++) {
+    const pair = headerPairs[index];
+    if (pair.code === 0 && pair.value.toUpperCase() === 'ENDSEC') break;
+    if (pair.code !== 9 || pair.value.toUpperCase() !== '$INSUNITS') continue;
+
+    const valuePair = headerPairs.slice(index + 1).find((candidate) => candidate.code === 70);
+    if (!valuePair) return undefined;
+
+    const code = Number.parseInt(valuePair.value, 10);
+    if (!Number.isFinite(code)) return undefined;
+    return dxfUnitsFromInsunitsCode(code);
+  }
+
+  return undefined;
+}
+
+function dxfUnitsFromInsunitsCode(code: number): DxfDrawingUnits {
+  const known = DXF_INSUNITS[code] ?? {
+    label: `unknown-${code}`,
+    scaleToMillimeters: null
+  };
+
+  return {
+    source: 'dxf-insunits',
+    code,
+    label: known.label,
+    scaleToMillimeters: known.scaleToMillimeters
+  };
+}
+
+const DXF_INSUNITS: Record<number, { label: string; scaleToMillimeters: number | null }> = {
+  0: { label: 'unitless', scaleToMillimeters: null },
+  1: { label: 'inches', scaleToMillimeters: 25.4 },
+  2: { label: 'feet', scaleToMillimeters: 304.8 },
+  3: { label: 'miles', scaleToMillimeters: 1609344 },
+  4: { label: 'millimeters', scaleToMillimeters: 1 },
+  5: { label: 'centimeters', scaleToMillimeters: 10 },
+  6: { label: 'meters', scaleToMillimeters: 1000 },
+  7: { label: 'kilometers', scaleToMillimeters: 1000000 },
+  8: { label: 'microinches', scaleToMillimeters: 0.0000254 },
+  9: { label: 'mils', scaleToMillimeters: 0.0254 },
+  10: { label: 'yards', scaleToMillimeters: 914.4 },
+  11: { label: 'angstroms', scaleToMillimeters: 1e-7 },
+  12: { label: 'nanometers', scaleToMillimeters: 0.000001 },
+  13: { label: 'microns', scaleToMillimeters: 0.001 },
+  14: { label: 'decimeters', scaleToMillimeters: 100 },
+  15: { label: 'decameters', scaleToMillimeters: 10000 },
+  16: { label: 'hectometers', scaleToMillimeters: 100000 },
+  17: { label: 'gigameters', scaleToMillimeters: 1000000000000 },
+  18: { label: 'astronomical-units', scaleToMillimeters: 149597870700000 },
+  19: { label: 'light-years', scaleToMillimeters: 9.4607304725808e18 },
+  20: { label: 'parsecs', scaleToMillimeters: 3.085677581491367e19 }
+};
 
 function toPairs(text: string): DxfPair[] {
   const lines = text

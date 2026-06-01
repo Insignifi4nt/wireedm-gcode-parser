@@ -1,4 +1,4 @@
-import type { DxfEntitySource } from '@/domain/dxf/types';
+import type { DxfDrawingUnits, DxfEntitySource } from '@/domain/dxf/types';
 
 export interface Point2 {
   x: number;
@@ -34,6 +34,7 @@ export interface PathPlanningSourceMetadata {
   fileName?: string;
   importedAt?: string;
   projectId?: string;
+  units?: DxfDrawingUnits;
 }
 
 export type ResolvedPathPlanningOptions = Required<PathPlanningOptions>;

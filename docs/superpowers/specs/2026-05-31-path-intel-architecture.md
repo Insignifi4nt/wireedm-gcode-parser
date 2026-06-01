@@ -21,6 +21,8 @@ machine profiles. Plain G-code is too lossy to be that source of truth.
 - Source identity matters too. When DXF entities provide handles, UPID carries those handles into
   segment sources and path-element provenance so a contour can be traced back to original CAD
   entity identity instead of only an import-order index.
+- Drawing context should be explicit. DXF `$INSUNITS` is preserved on the UPID source metadata so
+  imported coordinates carry their authored unit label without silently scaling geometry.
 - Contours and posting are separate jobs. The planner should decide what belongs together and what
   cuts first; the G-code post should only turn the chosen operation plan into machine text.
 - Repairs must be visible. Endpoint tolerance snaps and posted gap bridges are diagnostics, not

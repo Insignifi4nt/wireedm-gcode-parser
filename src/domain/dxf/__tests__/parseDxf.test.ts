@@ -198,6 +198,51 @@ EOF
     });
   });
 
+  it('preserves DXF INSUNITS drawing metadata without scaling geometry', () => {
+    const result = parseDxf(`
+0
+SECTION
+2
+HEADER
+9
+$INSUNITS
+70
+4
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+10
+0
+20
+0
+11
+10
+21
+0
+0
+ENDSEC
+0
+EOF
+`);
+
+    expect(result.units).toEqual({
+      code: 4,
+      label: 'millimeters',
+      scaleToMillimeters: 1,
+      source: 'dxf-insunits'
+    });
+    expect(result.entities[0]).toMatchObject({
+      type: 'line',
+      start: { x: 0, y: 0 },
+      end: { x: 10, y: 0 }
+    });
+  });
+
   it('expands geometry from BLOCK definitions referenced by INSERT entities', () => {
     const result = parseDxf(`
 0

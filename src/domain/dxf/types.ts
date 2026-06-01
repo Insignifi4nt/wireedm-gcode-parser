@@ -24,6 +24,13 @@ export interface DxfEntitySource {
   insertChain: DxfInsertSource[];
 }
 
+export interface DxfDrawingUnits {
+  source: 'dxf-insunits';
+  code: number;
+  label: string;
+  scaleToMillimeters: number | null;
+}
+
 export interface DxfLineEntity {
   type: 'line';
   handle?: string | null;
@@ -91,6 +98,7 @@ export type DxfEntity =
 
 export interface DxfParseResult {
   entities: DxfEntity[];
+  units?: DxfDrawingUnits;
   unsupportedEntities: string[];
   warnings: string[];
 }
