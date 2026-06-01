@@ -50,7 +50,11 @@ export function projectUpidDocument(project: WorkbenchProject | null | undefined
   }
 
   const documentProjectId = upid.document.source?.projectId;
-  if (typeof documentProjectId === 'string' && documentProjectId !== project.id) {
+  if (typeof documentProjectId !== 'string') {
+    throw new Error(`UPID document project identity is required for ${project.id}.`);
+  }
+
+  if (documentProjectId !== project.id) {
     throw new Error(
       `UPID document project mismatch: ${documentProjectId} cannot be used by ${project.id}.`
     );

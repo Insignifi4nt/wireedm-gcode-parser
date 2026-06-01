@@ -8,7 +8,7 @@ import {
   setPathOperationClassification
 } from '@/domain/path-editor/pathDocumentOperations';
 
-import { projectUpidDocument, withProjectUpid } from '../projectUpid';
+import { createProjectUpid, projectUpidDocument, withProjectUpid } from '../projectUpid';
 import {
   composeUpidGCodeExport,
   createUpidFromDxfEntities,
@@ -394,6 +394,18 @@ describe('UPID document boundary', () => {
     expect(projectDocument?.source.projectId).toBe('upid-project');
     expect(document.source.projectId).toBeUndefined();
     expect(projectUpidDocument(baseProject())).toBeNull();
+  });
+
+  it('rejects stored UPID project documents without project identity', () => {
+    const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
+    const project = {
+      ...baseProject(),
+      upid: createProjectUpid(document)
+    };
+
+    expect(() => projectUpidDocument(project)).toThrow(
+      'UPID document project identity is required for upid-project.'
+    );
   });
 
   it('rejects UPID documents attached to a different workbench project id', () => {
