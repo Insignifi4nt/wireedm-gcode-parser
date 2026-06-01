@@ -219,6 +219,41 @@ describe('path-intel DXF planning', () => {
     expect(document.plan.metrics.totalRapidLength).toBeGreaterThan(0);
   });
 
+  it('can preserve source contour order for independent contours when requested', () => {
+    const sourceOrdered = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(40, 0, 50, 5), ...rectangleLines(0, 0, 5, 5)],
+      {
+        endpointTolerance: DEFAULT_TOLERANCE,
+        operationOrderStrategy: 'source-order'
+      }
+    );
+    const nearestOrdered = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(40, 0, 50, 5), ...rectangleLines(0, 0, 5, 5)],
+      { endpointTolerance: DEFAULT_TOLERANCE }
+    );
+    const explicitNearest = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(40, 0, 50, 5), ...rectangleLines(0, 0, 5, 5)],
+      {
+        endpointTolerance: DEFAULT_TOLERANCE,
+        operationOrderStrategy: 'nearest'
+      }
+    );
+
+    expect(sourceOrdered.plan.operations.map((operation) => operation.contourId)).toEqual([
+      'contour_0001',
+      'contour_0002'
+    ]);
+    expect(sourceOrdered.plan.operations[0].startPoint.x).toBe(40);
+    expect(nearestOrdered.plan.operations.map((operation) => operation.contourId)).toEqual([
+      'contour_0002',
+      'contour_0001'
+    ]);
+    expect(explicitNearest.plan.operations.map((operation) => operation.contourId)).toEqual([
+      'contour_0002',
+      'contour_0001'
+    ]);
+  });
+
   it('preserves a LWPOLYLINE bulge arc as G2/G3 instead of flattening it to G1', () => {
     const document = createPathPlanningDocumentFromDxfEntities(
       [

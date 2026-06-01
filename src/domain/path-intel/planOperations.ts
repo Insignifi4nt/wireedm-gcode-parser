@@ -33,7 +33,9 @@ interface PlanItem {
   id: string;
   chain: PathChain;
   contour: PathContour;
+  contourOrder: number;
   prerequisites: Set<string>;
+  sourceOrder: number;
 }
 
 interface Arrangement {
@@ -113,15 +115,17 @@ export function planOperations(input: PlanOperationsInput): OperationPlan {
 function buildPlanItems(chains: PathChain[], contours: PathContour[]) {
   const chainsById = new Map(chains.map((chain) => [chain.id, chain]));
   const items = contours
-    .map((contour): PlanItem | null => {
+    .map((contour, contourOrder): PlanItem | null => {
       const chain = chainsById.get(contour.chainId);
       if (!chain) return null;
 
       return {
         id: contour.id,
         chain,
+        contourOrder,
         contour,
-        prerequisites: new Set(contour.childIds)
+        prerequisites: new Set(contour.childIds),
+        sourceOrder: sourceOrderForContour(contour)
       };
     })
     .filter((item): item is PlanItem => item !== null);
@@ -146,17 +150,25 @@ function chooseNextItem(
       arrangement: arrangeItem(item, currentPosition, segmentsById, options)
     }))
     .sort((a, b) => {
+      if (options.operationOrderStrategy === 'source-order') {
+        const sourceDelta = comparePlanSourceOrder(a.item, b.item);
+        if (sourceDelta !== 0) return sourceDelta;
+      }
+
       const rapidDelta =
         distance(currentPosition, a.arrangement.startPoint) -
         distance(currentPosition, b.arrangement.startPoint);
       if (Math.abs(rapidDelta) > options.coincidenceEpsilon) return rapidDelta;
 
-      const priorityDelta = classificationPriority(a.item.contour.classification) -
-        classificationPriority(b.item.contour.classification);
-      if (priorityDelta !== 0) return priorityDelta;
+      if (options.operationOrderStrategy === 'inside-out-nearest') {
+        const priorityDelta =
+          classificationPriority(a.item.contour.classification) -
+          classificationPriority(b.item.contour.classification);
+        if (priorityDelta !== 0) return priorityDelta;
 
-      const depthDelta = b.item.contour.containmentDepth - a.item.contour.containmentDepth;
-      if (depthDelta !== 0) return depthDelta;
+        const depthDelta = b.item.contour.containmentDepth - a.item.contour.containmentDepth;
+        if (depthDelta !== 0) return depthDelta;
+      }
 
       const pointCompare = comparePoint(a.arrangement.startPoint, b.arrangement.startPoint, options.coincidenceEpsilon);
       if (pointCompare !== 0) return pointCompare;
@@ -259,6 +271,24 @@ function classificationPriority(classification: ContourClassification) {
   if (classification === 'open-chain') return 2;
   if (classification === 'exterior') return 3;
   return 4;
+}
+
+function sourceOrderForContour(contour: PathContour) {
+  const sourceIndices = contour.provenance.sourceEntityIndices;
+  return sourceIndices.length > 0 ? Math.min(...sourceIndices) : Number.POSITIVE_INFINITY;
+}
+
+function comparePlanSourceOrder(a: PlanItem, b: PlanItem) {
+  if (a.sourceOrder !== b.sourceOrder) {
+    if (!Number.isFinite(a.sourceOrder)) return 1;
+    if (!Number.isFinite(b.sourceOrder)) return -1;
+    return a.sourceOrder - b.sourceOrder;
+  }
+
+  const contourOrderDelta = a.contourOrder - b.contourOrder;
+  if (contourOrderDelta !== 0) return contourOrderDelta;
+
+  return a.id.localeCompare(b.id);
 }
 
 function comparePoint(a: Point2, b: Point2, epsilon: number) {

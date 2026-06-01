@@ -28,7 +28,10 @@ export interface PathPlanningOptions {
   allowReverseOpenChains?: boolean;
   allowReverseClosedContours?: boolean;
   approximationMaxAngleRadians?: number;
+  operationOrderStrategy?: OperationOrderStrategy;
 }
+
+export type OperationOrderStrategy = 'inside-out-nearest' | 'nearest' | 'source-order';
 
 export interface PathPlanningSourceMetadata {
   fileName?: string;
@@ -45,7 +48,8 @@ export const DEFAULT_PATH_PLANNING_OPTIONS: ResolvedPathPlanningOptions = {
   startPoint: { x: 0, y: 0 },
   allowReverseOpenChains: false,
   allowReverseClosedContours: true,
-  approximationMaxAngleRadians: Math.PI / 18
+  approximationMaxAngleRadians: Math.PI / 18,
+  operationOrderStrategy: 'inside-out-nearest'
 };
 
 export type DiagnosticSeverity = 'info' | 'warning' | 'error';
