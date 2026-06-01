@@ -1584,6 +1584,7 @@ export function EditorPage({
         onMoveSelectedSegmentCenter={handleMoveSelectedSegmentCenter}
         onMovePathOperation={handleMovePathOperation}
         onOpenWorkspacePanel={showWorkspacePanel}
+        onOpenWorkspacePanels={showWorkspacePanels}
         onOpenExportPreview={() => setExportPreviewOpen(true)}
         onRedoDraft={handleRedoDraft}
         onReversePathOperation={handleReversePathOperation}
@@ -1875,6 +1876,31 @@ export function EditorPage({
       ...current,
       [panelId]: 'floating'
     }));
+  }
+
+  function showWorkspacePanels(panelIds: EditorWorkspacePanelId[]) {
+    const uniquePanelIds = [...new Set(panelIds)];
+    setWorkspacePanelGeometries((current) => {
+      const nextGeometries = { ...current };
+      const nextPlacements = { ...workspacePanelPlacements };
+      for (const panelId of uniquePanelIds) {
+        nextGeometries[panelId] = findReadableFloatingPanelGeometry(
+          panelId,
+          nextGeometries[panelId],
+          nextPlacements,
+          nextGeometries
+        );
+        nextPlacements[panelId] = 'floating';
+      }
+      return nextGeometries;
+    });
+    setWorkspacePanelPlacements((current) => {
+      const nextPlacements = { ...current };
+      for (const panelId of uniquePanelIds) {
+        nextPlacements[panelId] = 'floating';
+      }
+      return nextPlacements;
+    });
   }
 
   return (
