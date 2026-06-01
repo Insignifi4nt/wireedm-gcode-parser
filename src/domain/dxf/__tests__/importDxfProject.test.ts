@@ -131,6 +131,28 @@ describe('importDxfProject', () => {
     expect(result.project.editor.activeFilePath).toBeNull();
   });
 
+  it('imports geometry stored inside a DXF BLOCK through INSERT into the UPID document', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+
+    const result = await importDxfProject(workbench, {
+      fileName: 'inserted-block.dxf',
+      text: blockInsertDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+
+    expect(result.entityCount).toBe(1);
+    expect(result.pathDocument.segments).toHaveLength(1);
+    expect(result.pathDocument.segments[0]).toMatchObject({
+      kind: 'line',
+      start: { x: 100, y: 200 },
+      end: { x: 100, y: 210 }
+    });
+    expect(result.project.upid?.document).toBe(result.pathDocument);
+  });
+
   it('keeps same-name imports separate instead of replacing the earlier project', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     let workbench = await initializeWorkbenchDirectory(adapter, {
@@ -247,6 +269,55 @@ function simpleSlotDxf() {
     '270',
     '51',
     '0',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function blockInsertDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'BLOCKS',
+    '0',
+    'BLOCK',
+    '2',
+    'PROFILE',
+    '0',
+    'LINE',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '11',
+    '10',
+    '21',
+    '0',
+    '0',
+    'ENDBLK',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'INSERT',
+    '8',
+    'CUT',
+    '2',
+    'PROFILE',
+    '10',
+    '100',
+    '20',
+    '200',
+    '50',
+    '90',
     '0',
     'ENDSEC',
     '0',

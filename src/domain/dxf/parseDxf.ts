@@ -16,44 +16,75 @@ interface DxfPair {
   value: string;
 }
 
+interface EntityParseResult {
+  entities: DxfEntity[];
+  unsupportedEntities: Set<string>;
+  warnings: string[];
+}
+
+interface DxfInsertEntity {
+  type: 'insert';
+  layer: string | null;
+  blockName: string;
+  insertion: DxfPoint;
+  scaleX: number;
+  scaleY: number;
+  rotationDegrees: number;
+  columnCount: number;
+  rowCount: number;
+  columnSpacing: number;
+  rowSpacing: number;
+}
+
+interface RawBlockDefinition {
+  name: string;
+  pairs: DxfPair[];
+}
+
+interface BlockDefinitionsResult {
+  resolveBlock: (blockName: string) => EntityParseResult | null;
+}
+
+interface EntityParseContext {
+  resolveBlock?: (blockName: string) => EntityParseResult | null;
+  contextLabel: string;
+}
+
+interface InsertTransform {
+  insertion: DxfPoint;
+  scaleX: number;
+  scaleY: number;
+  rotationRadians: number;
+  determinant: number;
+  uniformScale: number | null;
+  insertLayer: string | null;
+  localOffset: DxfPoint;
+}
+
+type TransformEntityResult =
+  | { entity: DxfEntity; warning?: never }
+  | { entity: null; warning: string };
+
 export function parseDxf(text: string): DxfParseResult {
   const pairs = toPairs(text);
-  const entityPairs = getEntitiesSectionPairs(pairs);
-  const entities: DxfEntity[] = [];
-  const unsupportedEntities = new Set<string>();
-
-  for (let index = 0; index < entityPairs.length; index++) {
-    const pair = entityPairs[index];
-    if (pair.code !== 0) continue;
-
-    const entityType = pair.value.toUpperCase();
-    if (entityType === 'ENDSEC') break;
-
-    const nextIndex =
-      entityType === 'POLYLINE'
-        ? findClassicPolylineEnd(entityPairs, index + 1)
-        : findNextEntityStart(entityPairs, index + 1);
-    const pairsForEntity = entityPairs.slice(index + 1, nextIndex);
-    const entity = parseEntity(entityType, pairsForEntity);
-
-    if (entity) {
-      entities.push(entity);
-    } else if (!['EOF', 'ENDSEC'].includes(entityType)) {
-      unsupportedEntities.add(entityType);
-    }
-
-    index = nextIndex - 1;
-  }
+  const blockResult = parseBlockDefinitions(pairs);
+  const entityPairs = getSectionPairs(pairs, 'ENTITIES');
+  const entityResult = parseEntitiesFromPairs(entityPairs, {
+    contextLabel: 'ENTITIES',
+    resolveBlock: blockResult.resolveBlock
+  });
+  const unsupportedEntities = new Set(entityResult.unsupportedEntities);
 
   const unsupported = [...unsupportedEntities].sort();
   if (unsupported.length > 0) {
     const fallbackResult = flattenUnsupportedCurves(text, unsupported);
     if (fallbackResult.entities.length > 0) {
       return {
-        entities: [...entities, ...fallbackResult.entities],
+        entities: [...entityResult.entities, ...fallbackResult.entities],
         unsupportedEntities: unsupported,
         warnings: [
           ...unsupported.map((entity) => `Unsupported DXF entity: ${entity}`),
+          ...entityResult.warnings,
           ...fallbackResult.warnings
         ]
       };
@@ -61,9 +92,12 @@ export function parseDxf(text: string): DxfParseResult {
   }
 
   return {
-    entities,
+    entities: entityResult.entities,
     unsupportedEntities: unsupported,
-    warnings: unsupported.map((entity) => `Unsupported DXF entity: ${entity}`)
+    warnings: [
+      ...unsupported.map((entity) => `Unsupported DXF entity: ${entity}`),
+      ...entityResult.warnings
+    ]
   };
 }
 
@@ -84,19 +118,140 @@ function toPairs(text: string): DxfPair[] {
   return pairs;
 }
 
-function getEntitiesSectionPairs(pairs: DxfPair[]) {
+function getSectionPairs(pairs: DxfPair[], sectionName: string) {
   for (let index = 0; index < pairs.length - 1; index++) {
     if (
       pairs[index].code === 0 &&
       pairs[index].value.toUpperCase() === 'SECTION' &&
       pairs[index + 1]?.code === 2 &&
-      pairs[index + 1]?.value.toUpperCase() === 'ENTITIES'
+      pairs[index + 1]?.value.toUpperCase() === sectionName
     ) {
       return pairs.slice(index + 2);
     }
   }
 
   return [];
+}
+
+function parseBlockDefinitions(pairs: DxfPair[]): BlockDefinitionsResult {
+  const blockPairs = getSectionPairs(pairs, 'BLOCKS');
+  const rawBlocks = extractRawBlockDefinitions(blockPairs);
+  const resolvedBlocks = new Map<string, EntityParseResult>();
+  const resolving = new Set<string>();
+
+  const resolveBlock = (blockName: string): EntityParseResult | null => {
+    const normalizedName = normalizeBlockName(blockName);
+    const cached = resolvedBlocks.get(normalizedName);
+    if (cached) return cached;
+
+    const rawBlock = rawBlocks.get(normalizedName);
+    if (!rawBlock) return null;
+
+    if (resolving.has(normalizedName)) {
+      return {
+        entities: [],
+        unsupportedEntities: new Set(['INSERT']),
+        warnings: [`Skipped circular INSERT reference for BLOCK "${rawBlock.name}".`]
+      };
+    }
+
+    resolving.add(normalizedName);
+    const result = parseEntitiesFromPairs(rawBlock.pairs, {
+      contextLabel: `BLOCK "${rawBlock.name}"`,
+      resolveBlock
+    });
+    resolving.delete(normalizedName);
+    resolvedBlocks.set(normalizedName, result);
+    return result;
+  };
+
+  return { resolveBlock };
+}
+
+function extractRawBlockDefinitions(blockPairs: DxfPair[]) {
+  const blocks = new Map<string, RawBlockDefinition>();
+
+  for (let index = 0; index < blockPairs.length; index++) {
+    const pair = blockPairs[index];
+    if (pair.code !== 0) continue;
+
+    const entityType = pair.value.toUpperCase();
+    if (entityType === 'ENDSEC') break;
+    if (entityType !== 'BLOCK') continue;
+
+    const endIndex = findBlockEnd(blockPairs, index + 1);
+    const pairsForBlock = blockPairs.slice(index + 1, endIndex);
+    const blockName = stringValue(pairsForBlock, 2);
+
+    if (blockName) {
+      blocks.set(normalizeBlockName(blockName), {
+        name: blockName,
+        pairs: pairsForBlock
+      });
+    }
+
+    index = endIndex;
+  }
+
+  return blocks;
+}
+
+function findBlockEnd(pairs: DxfPair[], startIndex: number) {
+  for (let index = startIndex; index < pairs.length; index++) {
+    if (pairs[index].code === 0 && pairs[index].value.toUpperCase() === 'ENDBLK') {
+      return index;
+    }
+  }
+
+  return findNextEntityStart(pairs, startIndex);
+}
+
+function parseEntitiesFromPairs(entityPairs: DxfPair[], context: EntityParseContext): EntityParseResult {
+  const entities: DxfEntity[] = [];
+  const unsupportedEntities = new Set<string>();
+  const warnings: string[] = [];
+
+  for (let index = 0; index < entityPairs.length; index++) {
+    const pair = entityPairs[index];
+    if (pair.code !== 0) continue;
+
+    const entityType = pair.value.toUpperCase();
+    if (['ENDSEC', 'ENDBLK'].includes(entityType)) break;
+
+    const nextIndex =
+      entityType === 'POLYLINE'
+        ? findClassicPolylineEnd(entityPairs, index + 1)
+        : findNextEntityStart(entityPairs, index + 1);
+    const pairsForEntity = entityPairs.slice(index + 1, nextIndex);
+
+    if (entityType === 'INSERT') {
+      const insert = parseInsert(pairsForEntity);
+      if (!insert || !context.resolveBlock) {
+        unsupportedEntities.add(entityType);
+        index = nextIndex - 1;
+        continue;
+      }
+
+      const expanded = expandInsert(insert, context);
+      entities.push(...expanded.entities);
+      expanded.unsupportedEntities.forEach((entity) => unsupportedEntities.add(entity));
+      warnings.push(...expanded.warnings);
+      index = nextIndex - 1;
+      continue;
+    }
+
+    const entity = parseEntity(entityType, pairsForEntity);
+
+    if (entity) {
+      entities.push(entity);
+    } else if (!['EOF', 'ENDSEC'].includes(entityType)) {
+      unsupportedEntities.add(entityType);
+    }
+
+    index = nextIndex - 1;
+  }
+
+  return { entities, unsupportedEntities, warnings };
 }
 
 function findNextEntityStart(pairs: DxfPair[], startIndex: number) {
@@ -210,6 +365,186 @@ function parseLwPolyline(pairs: DxfPair[]): DxfLwPolylineEntity | null {
   };
 }
 
+function parseInsert(pairs: DxfPair[]): DxfInsertEntity | null {
+  const blockName = stringValue(pairs, 2);
+  if (!blockName) return null;
+
+  return {
+    type: 'insert',
+    layer: stringValue(pairs, 8),
+    blockName,
+    insertion: {
+      x: numberValue(pairs, 10) ?? 0,
+      y: numberValue(pairs, 20) ?? 0
+    },
+    scaleX: numberValue(pairs, 41) ?? 1,
+    scaleY: numberValue(pairs, 42) ?? 1,
+    rotationDegrees: numberValue(pairs, 50) ?? 0,
+    columnCount: positiveIntegerValue(pairs, 70) ?? 1,
+    rowCount: positiveIntegerValue(pairs, 71) ?? 1,
+    columnSpacing: numberValue(pairs, 44) ?? 0,
+    rowSpacing: numberValue(pairs, 45) ?? 0
+  };
+}
+
+function expandInsert(insert: DxfInsertEntity, context: EntityParseContext): EntityParseResult {
+  const resolvedBlock = context.resolveBlock?.(insert.blockName);
+  if (!resolvedBlock) {
+    return {
+      entities: [],
+      unsupportedEntities: new Set(['INSERT']),
+      warnings: [`Skipped INSERT in ${context.contextLabel}; BLOCK "${insert.blockName}" was not found.`]
+    };
+  }
+
+  const entities: DxfEntity[] = [];
+  const unsupportedEntities = new Set(resolvedBlock.unsupportedEntities);
+  const warnings = [...resolvedBlock.warnings];
+
+  for (let row = 0; row < insert.rowCount; row++) {
+    for (let column = 0; column < insert.columnCount; column++) {
+      const transform = createInsertTransform(insert, {
+        x: column * insert.columnSpacing,
+        y: row * insert.rowSpacing
+      });
+
+      for (const entity of resolvedBlock.entities) {
+        const transformed = transformEntity(entity, transform);
+        if (transformed.entity) {
+          entities.push(transformed.entity);
+        } else {
+          warnings.push(transformed.warning);
+        }
+      }
+    }
+  }
+
+  return { entities, unsupportedEntities, warnings };
+}
+
+function createInsertTransform(insert: DxfInsertEntity, localOffset: DxfPoint): InsertTransform {
+  const rotationRadians = (insert.rotationDegrees * Math.PI) / 180;
+  const determinant = insert.scaleX * insert.scaleY;
+  const uniformScale =
+    Math.abs(Math.abs(insert.scaleX) - Math.abs(insert.scaleY)) <= 1e-9
+      ? Math.abs(insert.scaleX)
+      : null;
+
+  return {
+    insertion: insert.insertion,
+    scaleX: insert.scaleX,
+    scaleY: insert.scaleY,
+    rotationRadians,
+    determinant,
+    uniformScale,
+    insertLayer: insert.layer,
+    localOffset
+  };
+}
+
+function transformEntity(entity: DxfEntity, transform: InsertTransform): TransformEntityResult {
+  if (entity.type === 'line') {
+    return {
+      entity: {
+        ...entity,
+        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+        start: transformPoint(entity.start, transform),
+        end: transformPoint(entity.end, transform)
+      }
+    };
+  }
+
+  if (entity.type === 'circle') {
+    if (transform.uniformScale == null) {
+      return skippedTransformedEntity(entity.type, 'non-uniform INSERT scale would turn it into an ellipse');
+    }
+
+    return {
+      entity: {
+        ...entity,
+        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+        center: transformPoint(entity.center, transform),
+        radius: entity.radius * transform.uniformScale
+      }
+    };
+  }
+
+  if (entity.type === 'arc') {
+    if (transform.uniformScale == null) {
+      return skippedTransformedEntity(entity.type, 'non-uniform INSERT scale would turn it into an elliptical arc');
+    }
+
+    const center = transformPoint(entity.center, transform);
+    const start = transformPoint(entity.start, transform);
+    const end = transformPoint(entity.end, transform);
+    const startAngle = angleDegrees(center, start);
+    const endAngle = angleDegrees(center, end);
+
+    return {
+      entity: {
+        ...entity,
+        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+        center,
+        radius: entity.radius * transform.uniformScale,
+        start,
+        end,
+        startAngle,
+        endAngle,
+        clockwise: transform.determinant < 0 ? !entity.clockwise : entity.clockwise
+      }
+    };
+  }
+
+  if (entity.type === 'lwpolyline') {
+    if (
+      transform.uniformScale == null &&
+      entity.vertices.some((vertex) => Math.abs(vertex.bulge) > 1e-12)
+    ) {
+      return skippedTransformedEntity(entity.type, 'non-uniform INSERT scale would turn a bulge arc into an ellipse');
+    }
+
+    const bulgeSign = transform.determinant < 0 ? -1 : 1;
+    return {
+      entity: {
+        ...entity,
+        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+        vertices: entity.vertices.map((vertex) => ({
+          ...transformPoint(vertex, transform),
+          bulge: vertex.bulge * bulgeSign
+        }))
+      }
+    };
+  }
+
+  const exhaustiveEntity: never = entity;
+  return skippedTransformedEntity(String(exhaustiveEntity), 'unsupported block geometry');
+}
+
+function skippedTransformedEntity(entityType: string, reason: string): TransformEntityResult {
+  return {
+    entity: null,
+    warning: `Skipped ${entityType.toUpperCase()} from INSERT expansion because ${reason}.`
+  };
+}
+
+function transformPoint(point: DxfPoint, transform: InsertTransform) {
+  const localX = point.x + transform.localOffset.x;
+  const localY = point.y + transform.localOffset.y;
+  const scaledX = localX * transform.scaleX;
+  const scaledY = localY * transform.scaleY;
+  const cos = Math.cos(transform.rotationRadians);
+  const sin = Math.sin(transform.rotationRadians);
+
+  return {
+    x: round(transform.insertion.x + scaledX * cos - scaledY * sin),
+    y: round(transform.insertion.y + scaledX * sin + scaledY * cos)
+  };
+}
+
+function inheritedBlockLayer(entityLayer: string | null, insertLayer: string | null) {
+  return entityLayer === '0' && insertLayer ? insertLayer : entityLayer;
+}
+
 function pointFromCodes(pairs: DxfPair[], xCode: number, yCode: number): DxfPoint | null {
   const x = numberValue(pairs, xCode);
   const y = numberValue(pairs, yCode);
@@ -224,8 +559,18 @@ function numberValue(pairs: DxfPair[], code: number) {
   return Number.isFinite(value) ? value : null;
 }
 
+function positiveIntegerValue(pairs: DxfPair[], code: number) {
+  const value = numberValue(pairs, code);
+  if (value == null || value < 1) return null;
+  return Math.floor(value);
+}
+
 function stringValue(pairs: DxfPair[], code: number) {
   return pairs.find((candidate) => candidate.code === code)?.value ?? null;
+}
+
+function normalizeBlockName(blockName: string) {
+  return blockName.toUpperCase();
 }
 
 function pointOnCircle(center: DxfPoint, radius: number, angleDegrees: number) {
@@ -238,6 +583,10 @@ function pointOnCircle(center: DxfPoint, radius: number, angleDegrees: number) {
 
 function round(value: number) {
   return Number(value.toFixed(12));
+}
+
+function angleDegrees(center: DxfPoint, point: DxfPoint) {
+  return round((Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI);
 }
 
 interface LibraryDxfEntity {

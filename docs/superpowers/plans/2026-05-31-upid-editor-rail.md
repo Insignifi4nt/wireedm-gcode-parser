@@ -4,7 +4,7 @@
 
 **Goal:** Move DXF-origin editing toward `DXF -> UPID -> hybrid CAD/CAM editor -> export preview -> G-code post`.
 
-**Architecture:** Keep the existing path-intel document as the first UPID implementation while adding a path-native editor shell. The app shell keeps its collapsible Project Rail, but editor pages can replace the default storage summary with a UPID Path Navigator. G-code remains persisted/exported for compatibility, but DXF editing surfaces operate on the UPID/path document and only show posted text in an explicit export preview later.
+**Architecture:** Keep the existing path-intel document as the first UPID implementation while adding a path-native editor shell. The app shell keeps its collapsible Project Rail, but editor pages can replace the default storage summary with a UPID Path Navigator. DXF editing surfaces operate on the UPID/path document, and G-code is posted only in an explicit export preview at the end of the workflow.
 
 **Tech Stack:** React, TypeScript, Vitest, Playwright, existing path-intel/path-editor domain modules.
 
@@ -15,7 +15,7 @@
 - Modify `src/app/AppShell.tsx`: support an editor-provided Project Rail override while preserving the default workbench rail for dashboard and non-editor states.
 - Create `src/app/AppRailContext.tsx`: small context used by editor pages to register expanded/collapsed rail content.
 - Create `src/features/editor/EditorPathNavigatorPanel.tsx`: UPID Path Navigator for contours, nested segments, related action groups, hover/snap toggles, and save/export actions.
-- Modify `src/features/editor/EditorPage.tsx`: register the path navigator in the Project Rail for DXF/UPID projects, remove the path G-code panel from the right rail, and keep legacy G-code panels only for external posted programs.
+- Modify `src/features/editor/EditorPage.tsx`: register the path navigator in the Project Rail for DXF/UPID projects and remove the path G-code panel from the editor rails.
 - Modify `src/features/editor/EditorInspectorPanel.tsx`: make the right Inspector Rail focus on position, selected geometry, machine fit, and measurement/construction points.
 - Modify `src/features/editor/EditorPreview.tsx`: expose path element hover events and render selected/hovered path elements independently of G-code line selection.
 - Modify `src/domain/editor/previewGeometry.ts`: keep operation and segment identity available for preview paths.
@@ -29,7 +29,7 @@
 - [ ] Add `AppRailContext` and wire `AppShell` to render override content in the existing collapsible rail.
 - [ ] Add `EditorPathNavigatorPanel` with named nested containers: Project Rail, UPID Path Navigator, Contour Tree, Segment Stack, Path Action Bar, Hover Assist, Magnetic Snap.
 - [ ] Register the panel from `EditorPage` whenever `pathDocumentDraft` exists.
-- [ ] Remove the DXF path `EditorPathPlanPanel` from the right-side panel while leaving legacy G-code editor panels for posted external files.
+- [ ] Remove the DXF path `EditorPathPlanPanel` from the right-side panel and keep editor rails UPID-native.
 - [ ] Run the focused Vitest case and make it pass.
 
 ## Task 2: UPID Naming Boundary

@@ -17,7 +17,7 @@ export interface DxfArcEntity {
   radius: number;
   startAngle: number;
   endAngle: number;
-  clockwise: false;
+  clockwise: boolean;
   start: DxfPoint;
   end: DxfPoint;
 }
