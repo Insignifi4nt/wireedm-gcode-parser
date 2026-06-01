@@ -67,7 +67,7 @@ export function analyzeContours(
     const signedArea = signedAreaOfPath(chain.segmentRefs, segmentsById);
     const area = Math.abs(signedArea);
     const orientation = orientationFromArea(signedArea, resolved.coincidenceEpsilon);
-    const representativePoint = polygonCentroidOrAverage(approximatePolygon);
+    const representativePoint = polygonCentroidOrAverage(approximatePolygon, resolved.coincidenceEpsilon);
     const selfIntersects = hasSelfIntersection(approximatePolygon, resolved.coincidenceEpsilon);
     let classification: ContourClassification = 'ambiguous';
     let confidence = 0.95;
@@ -201,7 +201,7 @@ function assignContainment(contours: PathContour[], epsilon: number) {
   for (const contour of closedSimple) {
     const containers = closedSimple
       .filter((candidate) => candidate.id !== contour.id && (candidate.area ?? 0) > (contour.area ?? 0) + epsilon)
-      .filter((candidate) => pointInPolygon(contour.representativePoint!, candidate.approximatePolygon))
+      .filter((candidate) => pointInPolygon(contour.representativePoint!, candidate.approximatePolygon, epsilon))
       .sort((a, b) => (a.area ?? 0) - (b.area ?? 0));
 
     contour.containmentDepth = containers.length;
@@ -246,8 +246,8 @@ function boundsFromPolygon(points: Point2[]): Bounds2 {
   );
 }
 
-function polygonCentroidOrAverage(points: Point2[]) {
-  const clean = stripClosingDuplicate(points);
+function polygonCentroidOrAverage(points: Point2[], epsilon: number) {
+  const clean = stripClosingDuplicate(points, epsilon);
   if (clean.length === 0) return null;
   if (clean.length < 3) return averagePoint(clean);
 
@@ -280,8 +280,8 @@ function averagePoint(points: Point2[]): Point2 {
   return { x: sum.x / points.length, y: sum.y / points.length };
 }
 
-function pointInPolygon(point: Point2, polygon: Point2[]) {
-  const clean = stripClosingDuplicate(polygon);
+function pointInPolygon(point: Point2, polygon: Point2[], epsilon = 1e-9) {
+  const clean = stripClosingDuplicate(polygon, epsilon);
   let inside = false;
 
   for (let index = 0, previousIndex = clean.length - 1; index < clean.length; previousIndex = index++) {
@@ -299,7 +299,7 @@ function pointInPolygon(point: Point2, polygon: Point2[]) {
 }
 
 function hasSelfIntersection(points: Point2[], epsilon: number) {
-  const clean = stripClosingDuplicate(points);
+  const clean = stripClosingDuplicate(points, epsilon);
   if (clean.length < 4) return false;
 
   for (let first = 0; first < clean.length; first++) {
@@ -344,10 +344,10 @@ function rangesOverlap(a: number, b: number, c: number, d: number, epsilon: numb
   return Math.max(minA, minB) <= Math.min(maxA, maxB) + epsilon;
 }
 
-function stripClosingDuplicate(points: Point2[]) {
+function stripClosingDuplicate(points: Point2[], epsilon = 1e-9) {
   if (points.length <= 1) return points.slice();
   const first = points[0];
   const last = points[points.length - 1];
-  if (distance(first, last) <= 1e-9) return points.slice(0, -1);
+  if (distance(first, last) <= epsilon) return points.slice(0, -1);
   return points.slice();
 }

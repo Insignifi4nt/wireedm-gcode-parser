@@ -320,6 +320,50 @@ describe('path-intel DXF planning', () => {
     expect(countRapids(posted.body)).toBe(1);
   });
 
+  it('treats micron endpoint jitter as coincident instead of diagnostic repair', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 10, 0),
+      line(10.000001, 0, 10, 5),
+      line(10, 5.000001, 0, 5),
+      line(0, 5, 0, 0.000001)
+    ]);
+
+    expect(document.chains).toHaveLength(1);
+    expect(document.chains[0]).toMatchObject({
+      closed: true,
+      metrics: {
+        gapLength: 0
+      }
+    });
+    expect(document.endpointClusters.every((cluster) => cluster.method === 'exact')).toBe(true);
+    expect(document.contours[0].classification).toBe('exterior');
+    expect(document.diagnostics.some((diagnostic) => diagnostic.code === 'endpoint-cluster-snap')).toBe(false);
+    expect(document.diagnostics.some((diagnostic) => diagnostic.code === 'closed-chain-gap')).toBe(false);
+  });
+
+  it('does not mark an arc contour as self-intersecting at a micron healed join', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: -8.48521, y: 9.178846 },
+        radius: 12.5,
+        startAngle: 308.331,
+        endAngle: 317.14,
+        clockwise: false,
+        start: { x: -0.919253095454, y: -0.771344757898 },
+        end: { x: 0.000000373547, y: 0.0000004889 }
+      },
+      line(0, 0, -0.341071, 1.417693),
+      line(-0.341071, 1.417693, -0.919253095454, -0.771344757898)
+    ]);
+
+    expect(document.chains).toHaveLength(1);
+    expect(document.chains[0].closed).toBe(true);
+    expect(document.contours[0].classification).toBe('exterior');
+    expect(document.diagnostics.some((diagnostic) => diagnostic.code === 'self-intersection')).toBe(false);
+  });
+
   it('keeps near endpoints over tolerance open and ambiguous', () => {
     const document = createPathPlanningDocumentFromDxfEntities(gappedRectangle(0.02), {
       endpointTolerance: DEFAULT_TOLERANCE

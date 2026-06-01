@@ -45,7 +45,7 @@ export type ResolvedPathPlanningOptions = Required<PathPlanningOptions>;
 
 export const DEFAULT_PATH_PLANNING_OPTIONS: ResolvedPathPlanningOptions = {
   endpointTolerance: 0.001,
-  coincidenceEpsilon: 1e-9,
+  coincidenceEpsilon: 1e-5,
   startPoint: { x: 0, y: 0 },
   allowReverseOpenChains: false,
   allowReverseClosedContours: true,

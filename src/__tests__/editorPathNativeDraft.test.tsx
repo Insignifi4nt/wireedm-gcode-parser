@@ -657,7 +657,9 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    const topologyRow = container.querySelector('[data-upid-endpoint-topology-row]') as HTMLElement | null;
+    const topologyRow = container.querySelector(
+      '[data-upid-endpoint-topology-kind="snapped-endpoint-cluster"]'
+    ) as HTMLElement | null;
 
     expect(topologyRow).not.toBeNull();
     expect(topologyRow?.getAttribute('data-upid-endpoint-topology-kind')).toBe('snapped-endpoint-cluster');
@@ -728,7 +730,9 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    const topologyRow = container.querySelector('[data-upid-endpoint-topology-row]') as HTMLElement | null;
+    const topologyRow = container.querySelector(
+      '[data-upid-endpoint-topology-kind="ambiguous-endpoint-cluster"]'
+    ) as HTMLElement | null;
 
     expect(topologyRow).not.toBeNull();
     expect(topologyRow?.getAttribute('data-upid-endpoint-topology-kind')).toBe('ambiguous-endpoint-cluster');
