@@ -303,6 +303,40 @@ describe('saveEditorProgram', () => {
     expect(savedProject.upid?.format).toBe('upid');
     expect('generated' in savedProject).toBe(false);
   });
+
+  it('rejects text-mode saves for DXF projects that do not contain UPID state', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'stale-dxf.dxf',
+      text: rectangleDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const staleFilePath = 'generated/stale-dxf.iso';
+    const staleProject = {
+      ...imported.project,
+      upid: undefined,
+      editor: {
+        ...imported.project.editor,
+        activeFilePath: staleFilePath
+      }
+    };
+    await adapter.writeText(staleFilePath, 'G0 X0 Y0');
+
+    await expect(
+      saveEditorProgram(imported.workbench, {
+        filePath: staleFilePath,
+        model: 'gcode-text',
+        now: new Date('2026-05-29T12:00:00.000Z'),
+        project: staleProject,
+        text: 'G1 X999.000 Y999.000'
+      })
+    ).rejects.toThrow('DXF projects must contain a UPID document.');
+
+    expect(adapter.files.get(staleFilePath)).toBe('G0 X0 Y0');
+  });
 });
 
 function rectangleDxf() {

@@ -53,7 +53,12 @@ export async function saveEditorProgram(
     throw new Error('Editor save model is required.');
   }
 
-  if (input.project && projectUpidDocument(input.project) && input.model !== 'upid-document') {
+  const projectPathDocument = input.project ? projectUpidDocument(input.project) : null;
+  if (input.project?.source.kind === 'dxf' && !projectPathDocument) {
+    throw new Error('DXF projects must contain a UPID document.');
+  }
+
+  if (projectPathDocument && input.model !== 'upid-document') {
     throw new Error('UPID path projects must be saved with a path document.');
   }
 
