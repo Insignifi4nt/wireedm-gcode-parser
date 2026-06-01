@@ -1004,6 +1004,7 @@ describe('App DXF imports and project library', () => {
       `svg[aria-label="UPID path preview"] path[data-preview-segment="${segmentId}"]`
     );
     expect(previewSegment).not.toBeNull();
+    expect(previewSegment?.getAttribute('data-preview-path-element-id')).toBe('contour_0001');
 
     await act(async () => {
       previewSegment?.dispatchEvent(
@@ -1016,6 +1017,9 @@ describe('App DXF imports and project library', () => {
 
     expect(segmentRow?.getAttribute('data-upid-selected')).toBe('true');
     expect(previewSegment?.getAttribute('data-preview-selected')).toBe('true');
+    expect(
+      container.querySelector('[data-upid-selected-geometry]')?.getAttribute('data-upid-path-element-id')
+    ).toBe('contour_0001');
     expect(container.querySelector('[data-upid-selected-segment]')?.textContent).toContain('Selected Segment');
     expect(container.querySelectorAll('[data-measurement-point]')).toHaveLength(0);
   });

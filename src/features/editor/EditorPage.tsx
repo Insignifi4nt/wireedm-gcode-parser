@@ -574,7 +574,11 @@ export function EditorPage({
   }
 
   function handleSelectPathOperation(operationId: string) {
-    handleSelectPathElement({ operationId, segmentId: null });
+    handleSelectPathElement({
+      operationId,
+      pathElementId: pathElementIdForOperation(pathDocumentDraft, operationId),
+      segmentId: null
+    });
   }
 
   function isGroupExpanded(groupId: string) {
@@ -1240,6 +1244,7 @@ function normalizePathElementSelection(
   const operation =
     document.plan.operations.find((candidate) => candidate.id === operationId) ?? fallbackOperation;
   if (!operation) return null;
+  const pathElementId = pathElementIdForOperation(document, operation.id);
 
   if (
     element?.operationId === operation.id &&
@@ -1247,13 +1252,21 @@ function normalizePathElementSelection(
       !element.segmentId ||
       operation.segmentRefs.some((candidate) => candidate.segmentId === element.segmentId))
   ) {
-    return element;
+    return {
+      ...element,
+      pathElementId: element.pathElementId ?? pathElementId
+    };
   }
 
   return {
     operationId: operation.id,
+    pathElementId,
     segmentId: null
   };
+}
+
+function pathElementIdForOperation(document: PathPlanningDocument | null, operationId: string) {
+  return document?.pathElements.find((element) => element.operationId === operationId)?.id ?? null;
 }
 
 function pathElementPoint(document: PathPlanningDocument, element: EditorPathElementRef) {

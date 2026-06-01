@@ -124,7 +124,7 @@ export function EditorInspectorPanel({
   const selectedPathOperation =
     selectedPathOperationIndex >= 0 ? pathDocument?.plan.operations[selectedPathOperationIndex] : null;
   const selectedPathElementModel = selectedPathOperation
-    ? readSelectedPathElement(pathDocument, selectedPathOperation.id)
+    ? readSelectedPathElement(pathDocument, selectedPathOperation.id, selectedPathElement?.pathElementId)
     : null;
   const selectedPathSegment = selectedPathElementModel
     ? readSelectedPathSegment(pathDocument, selectedPathElementModel, selectedPathElement)
@@ -785,9 +785,14 @@ function sourceSummaryRows(element: PathElement) {
 
 function readSelectedPathElement(
   document: PathPlanningDocument | null,
-  operationId: string
+  operationId: string,
+  pathElementId?: string | null
 ): OperationPathElement | null {
-  const element = document?.pathElements.find((candidate) => candidate.operationId === operationId);
+  const element = pathElementId
+    ? document?.pathElements.find(
+        (candidate) => candidate.id === pathElementId && candidate.operationId === operationId
+      )
+    : document?.pathElements.find((candidate) => candidate.operationId === operationId);
   return element && hasOperation(element) ? element : null;
 }
 

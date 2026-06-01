@@ -689,6 +689,7 @@ export function EditorPreview({
                 data-pinned={isPinned ? 'true' : undefined}
                 data-preview-hovered={pathElementHovered ? 'true' : undefined}
                 data-preview-operation={path.operationId}
+                data-preview-path-element-id={path.pathElementId}
                 data-preview-selected={pathElementSelected ? 'true' : undefined}
                 data-preview-segment={path.segmentId}
                 data-preview-source={path.source}
@@ -701,6 +702,7 @@ export function EditorPreview({
                   event.stopPropagation();
                   onPathElementClick({
                     operationId: path.operationId,
+                    pathElementId: path.pathElementId ?? null,
                     segmentId: path.segmentId ?? null,
                     travelRole: path.travelRole ?? null
                   });
@@ -709,6 +711,7 @@ export function EditorPreview({
                   if (path.source !== 'path-document' || !path.operationId) return;
                   onPathElementHover?.({
                     operationId: path.operationId,
+                    pathElementId: path.pathElementId ?? null,
                     segmentId: path.segmentId ?? null,
                     travelRole: path.travelRole ?? null
                   });
@@ -744,6 +747,7 @@ export function EditorPreview({
                   cy={svgY}
                   data-preview-hovered={highlight === 'hover' ? 'true' : undefined}
                   data-preview-operation={path.operationId}
+                  data-preview-path-element-id={path.pathElementId}
                   data-preview-path-endpoint
                   data-preview-point-role={role}
                   data-preview-selected={highlight === 'selected' ? 'true' : undefined}
@@ -756,6 +760,7 @@ export function EditorPreview({
                     event.stopPropagation();
                     onPathElementClick({
                       operationId: path.operationId ?? null,
+                      pathElementId: path.pathElementId ?? null,
                       pointRole: role,
                       segmentId: path.segmentId ?? null
                     });
@@ -763,6 +768,7 @@ export function EditorPreview({
                   onMouseEnter={() => {
                     onPathElementHover?.({
                       operationId: path.operationId ?? null,
+                      pathElementId: path.pathElementId ?? null,
                       pointRole: role,
                       segmentId: path.segmentId ?? null
                     });
@@ -1005,10 +1011,11 @@ export function EditorPreview({
 }
 
 function pathElementMatches(
-  path: { operationId?: string; segmentId?: string; travelRole?: 'rapid-in' },
+  path: { operationId?: string; pathElementId?: string; segmentId?: string; travelRole?: 'rapid-in' },
   element: EditorPathElementRef | null | undefined
 ) {
   if (!element?.operationId || path.operationId !== element.operationId) return false;
+  if (element.pathElementId && path.pathElementId !== element.pathElementId) return false;
   if (element.pointRole) return false;
   if (element.travelRole) return path.travelRole === element.travelRole;
   if (path.travelRole) return false;
@@ -1017,13 +1024,14 @@ function pathElementMatches(
 }
 
 function pathEndpointMatches(
-  path: { operationId?: string; segmentId?: string },
+  path: { operationId?: string; pathElementId?: string; segmentId?: string },
   role: 'start' | 'end',
   element: EditorPathElementRef | null | undefined
 ) {
   return Boolean(
     element?.operationId &&
       path.operationId === element.operationId &&
+      (!element.pathElementId || path.pathElementId === element.pathElementId) &&
       path.segmentId &&
       element.segmentId === path.segmentId &&
       element.pointRole === role

@@ -43,7 +43,7 @@ their source of truth.
 
 DXF-origin project storage now treats `project.upid.document` as the first-class persisted internal
 path model. The editor reads and writes that UPID document directly instead of maintaining a parallel
-generated G-code artifact or compatibility payload.
+generated G-code artifact.
 
 Manual path edits are stored as operation-level UPID overrides. Reordering operations, correcting a
 contour role, reversing a cut direction, or choosing a start point changes the executable plan and
@@ -67,8 +67,7 @@ edits, and future AI/user review surfaces from collapsing into an unexplained fi
   direction, start, split, and construction workflows while recording override metadata.
 - `src/domain/upid/upidDocument.ts` names the current internal document as the Universal Path
   Intelligence Document boundary and exposes the post/export adapter.
-- `src/domain/upid/projectUpid.ts` reads and writes the first-class project UPID state while removing
-  stale generated payloads from saved project JSON.
+- `src/domain/upid/projectUpid.ts` reads and writes first-class project UPID state.
 - `src/features/editor/EditorPathNavigatorPanel.tsx` is the DXF path-project rail surface for
   operation selection, nested contour/segment inspection, ordering, direction, start selection,
   construction-point modes, hover assist, magnetic snap, saving, and opening export preview. It
@@ -76,6 +75,8 @@ edits, and future AI/user review surfaces from collapsing into an unexplained fi
   from the same root/nested path tree that the document persists.
 - `src/features/editor/EditorInspectorPanel.tsx` uses the selected UPID path element for geometry,
   provenance, nesting, manual decision, segment, and point details.
+- `src/domain/editor/previewGeometry.ts` carries UPID path element identity into canvas paths so
+  canvas hover/selection can round-trip to the navigator and inspector without lossy lookup.
 - `src/features/editor/EditorUpidExportPreview.tsx` is the explicit post boundary for inspecting and
   downloading machine-profile G-code.
 - `src/features/editor/EditorProgramLinesPanel.tsx` remains the posted-program surface for external

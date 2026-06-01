@@ -23,6 +23,7 @@ import type {
   CirclePathSegment,
   OperationId,
   OrientedSegmentRef,
+  PathElementId,
   PathPlanningDocument,
   PathSegment,
   Point2,
@@ -42,6 +43,7 @@ export interface EditorPreviewPath {
   };
   line: number;
   operationId?: OperationId;
+  pathElementId?: PathElementId;
   segmentId?: SegmentId;
   source?: 'gcode' | 'path-document';
   travelRole?: 'rapid-in';
@@ -139,6 +141,11 @@ export function buildEditorPathDocumentPreviewGeometry(
 ): EditorPreviewGeometry {
   const padding = options.padding ?? 1;
   const segmentsById = segmentMap(document.segments);
+  const pathElementsByOperationId = new Map(
+    document.pathElements
+      .filter((element) => element.operationId !== null)
+      .map((element) => [element.operationId!, element])
+  );
   const paths: EditorPreviewPath[] = [];
   let bounds = emptyBounds();
   let currentPoint: Point2 | null = null;
@@ -146,6 +153,7 @@ export function buildEditorPathDocumentPreviewGeometry(
 
   for (const operation of document.plan.operations) {
     bounds = mergeBounds(bounds, pathBounds(operation.segmentRefs, segmentsById));
+    const pathElementId = pathElementsByOperationId.get(operation.id)?.id;
     const rapidStart = currentPoint ?? document.options.startPoint;
     if (!currentPoint || !pathPointsEqual(currentPoint, operation.startPoint, document.options.coincidenceEpsilon)) {
       paths.push({
@@ -155,6 +163,7 @@ export function buildEditorPathDocumentPreviewGeometry(
         end: operation.startPoint,
         line: pathLineNumber(options.lineHints, pathIndex++),
         operationId: operation.id,
+        pathElementId,
         source: 'path-document',
         travelRole: 'rapid-in'
       });
@@ -170,6 +179,7 @@ export function buildEditorPathDocumentPreviewGeometry(
           end: segmentPath.end,
           line: pathLineNumber(options.lineHints, pathIndex++),
           operationId: operation.id,
+          pathElementId,
           segmentId: ref.segmentId,
           source: 'path-document'
         });

@@ -31,6 +31,7 @@ import type {
 
 export interface EditorPathElementRef {
   operationId: string | null;
+  pathElementId?: string | null;
   pointRole?: 'start' | 'end' | null;
   segmentId: string | null;
   travelRole?: 'rapid-in' | null;
@@ -424,22 +425,44 @@ function diagnosticPathElement(
     const operation = pathDocument.plan.operations.find((candidate) =>
       candidate.segmentRefs.some((ref) => ref.segmentId === segmentId)
     );
-    if (operation) return { operationId: operation.id, segmentId };
+    if (operation) {
+      return {
+        operationId: operation.id,
+        pathElementId: pathElementIdForOperation(pathDocument, operation.id),
+        segmentId
+      };
+    }
   }
 
   const relatedContourIds = diagnostic.relatedContourIds ?? [];
   for (const contourId of relatedContourIds) {
     const operation = pathDocument.plan.operations.find((candidate) => candidate.contourId === contourId);
-    if (operation) return { operationId: operation.id, segmentId: null };
+    if (operation) {
+      return {
+        operationId: operation.id,
+        pathElementId: pathElementIdForOperation(pathDocument, operation.id),
+        segmentId: null
+      };
+    }
   }
 
   const relatedChainIds = diagnostic.relatedChainIds ?? [];
   for (const chainId of relatedChainIds) {
     const operation = pathDocument.plan.operations.find((candidate) => candidate.chainId === chainId);
-    if (operation) return { operationId: operation.id, segmentId: null };
+    if (operation) {
+      return {
+        operationId: operation.id,
+        pathElementId: pathElementIdForOperation(pathDocument, operation.id),
+        segmentId: null
+      };
+    }
   }
 
   return null;
+}
+
+function pathElementIdForOperation(pathDocument: PathPlanningDocument, operationId: string) {
+  return pathDocument.pathElements.find((element) => element.operationId === operationId)?.id ?? null;
 }
 
 function pathElementRefsMatch(
@@ -447,6 +470,7 @@ function pathElementRefsMatch(
   actual: EditorPathElementRef | null
 ) {
   if (!expected?.operationId || expected.operationId !== actual?.operationId) return false;
+  if (expected.pathElementId && expected.pathElementId !== actual.pathElementId) return false;
   if (expected.segmentId !== undefined && expected.segmentId !== actual.segmentId) return false;
   if (expected.pointRole !== undefined && expected.pointRole !== actual.pointRole) return false;
   if (expected.travelRole !== undefined && expected.travelRole !== actual.travelRole) return false;
@@ -499,10 +523,16 @@ function renderCutSequenceRow({
   const sourceEntityCount = sourceEntityCountForPathElement(pathElement);
   const rapidElement: EditorPathElementRef = {
     operationId: pathElement.operationId,
+    pathElementId: pathElement.id,
     segmentId: null,
     travelRole: 'rapid-in'
   };
-  const selectOperation = () => onSelectPathElement({ operationId: pathElement.operationId, segmentId: null });
+  const selectOperation = () =>
+    onSelectPathElement({
+      operationId: pathElement.operationId,
+      pathElementId: pathElement.id,
+      segmentId: null
+    });
   const selectRapid = (event: MouseEvent<HTMLElement>) => {
     event.stopPropagation();
     onSelectPathElement(rapidElement);
@@ -532,7 +562,13 @@ function renderCutSequenceRow({
       data-upid-path-element-id={pathElement.id}
       data-upid-selected={selected ? 'true' : undefined}
       key={`cut-sequence-${pathElement.id}`}
-      onMouseEnter={() => onHoverPathElement({ operationId: pathElement.operationId, segmentId: null })}
+      onMouseEnter={() =>
+        onHoverPathElement({
+          operationId: pathElement.operationId,
+          pathElementId: pathElement.id,
+          segmentId: null
+        })
+      }
       onMouseLeave={() => onHoverPathElement(null)}
     >
       <button
@@ -676,9 +712,19 @@ function renderContourTreeNode({
           }
           onClick={(event) => {
             event.preventDefault();
-            onSelectPathElement({ operationId: element.operationId, segmentId: null });
+            onSelectPathElement({
+              operationId: element.operationId,
+              pathElementId: element.id,
+              segmentId: null
+            });
           }}
-          onMouseEnter={() => onHoverPathElement({ operationId: element.operationId, segmentId: null })}
+          onMouseEnter={() =>
+            onHoverPathElement({
+              operationId: element.operationId,
+              pathElementId: element.id,
+              segmentId: null
+            })
+          }
           onMouseLeave={() => onHoverPathElement(null)}
           type="button"
         >
@@ -792,8 +838,20 @@ function renderSegmentRow(
         data-upid-segment-index={index}
         data-upid-segment-row
         data-upid-segment-id={segment.id}
-        onClick={() => onSelectPathElement({ operationId: pathElement.operationId, segmentId: segment.id })}
-        onMouseEnter={() => onHoverPathElement({ operationId: pathElement.operationId, segmentId: segment.id })}
+        onClick={() =>
+          onSelectPathElement({
+            operationId: pathElement.operationId,
+            pathElementId: pathElement.id,
+            segmentId: segment.id
+          })
+        }
+        onMouseEnter={() =>
+          onHoverPathElement({
+            operationId: pathElement.operationId,
+            pathElementId: pathElement.id,
+            segmentId: segment.id
+          })
+        }
         onMouseLeave={() => onHoverPathElement(null)}
         type="button"
       >
@@ -864,7 +922,12 @@ function renderPointRow({
   segment: PathSegment;
   selectedPathElement: EditorPathElementRef | null;
 }) {
-  const element: EditorPathElementRef = { operationId: pathElement.operationId, segmentId: segment.id, pointRole: role };
+  const element: EditorPathElementRef = {
+    operationId: pathElement.operationId,
+    pathElementId: pathElement.id,
+    segmentId: segment.id,
+    pointRole: role
+  };
   const hovered =
     hoveredPathElement?.operationId === pathElement.operationId &&
     hoveredPathElement.segmentId === segment.id &&

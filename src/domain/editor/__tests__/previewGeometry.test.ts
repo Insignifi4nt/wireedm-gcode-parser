@@ -122,6 +122,7 @@ describe('buildEditorPreviewGeometry', () => {
       d: 'M 0 0 L 0 0',
       line: 4,
       operationId: document.plan.operations[0].id,
+      pathElementId: document.pathElements[0].id,
       source: 'path-document',
       type: 'rapid'
     });
@@ -129,6 +130,7 @@ describe('buildEditorPreviewGeometry', () => {
       d: 'M 0 0 L 10 0',
       line: 5,
       operationId: document.plan.operations[0].id,
+      pathElementId: document.pathElements[0].id,
       segmentId: document.plan.operations[0].segmentRefs[0].segmentId,
       source: 'path-document',
       type: 'cut'
