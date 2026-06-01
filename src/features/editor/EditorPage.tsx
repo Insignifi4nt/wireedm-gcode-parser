@@ -71,6 +71,14 @@ import {
 import { EditorProgramLinesPanel } from './EditorProgramLinesPanel';
 import { EditorProgramTextPanel } from './EditorProgramTextPanel';
 import { EditorUpidExportPreview } from './EditorUpidExportPreview';
+import {
+  cloneEditorDraftState,
+  createEditorDraftState,
+  editorDraftPathDocument,
+  editorDraftSignature,
+  editorDraftText,
+  type EditorDraftState
+} from './editorDraftState';
 import type { EditorGuideLanguage, EditorGuideTarget } from './editorGuideContent';
 import {
   confirmBulkLineDelete,
@@ -102,10 +110,9 @@ interface EditorPageProps {
 }
 
 interface EditorDraftSnapshot {
-  pathDocument: PathPlanningDocument | null;
+  draft: EditorDraftState;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
-  text: string;
 }
 
 function handleEditorDragOver(event: DragEvent<HTMLDivElement>) {
@@ -126,7 +133,7 @@ export function EditorPage({
   onStatusMessage
 }: EditorPageProps) {
   const { setHeaderContent, setRailContent } = useAppRail();
-  const [draftText, setDraftText] = useState(program?.text ?? '');
+  const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
   const lastClickedLineRef = useRef<number | null>(null);
   const [pinnedLines, setPinnedLines] = useState<number[]>([]);
@@ -141,7 +148,6 @@ export function EditorPage({
   const [pointYDraft, setPointYDraft] = useState('');
   const [lineMode, setLineMode] = useState<'select' | 'edit'>(readStoredLineMode);
   const [pathClickMode, setPathClickMode] = useState<'set-start' | MagnetizeMode | null>(null);
-  const [pathDocumentDraft, setPathDocumentDraft] = useState<PathPlanningDocument | null>(null);
   const [hoveredPathElement, setHoveredPathElement] = useState<EditorPathElementRef | null>(null);
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
   const [pathHoverAssistEnabled, setPathHoverAssistEnabled] = useState(false);
@@ -154,15 +160,13 @@ export function EditorPage({
   const [rightRailWidth, setRightRailWidth] = useState(420);
   const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
   const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
-  const savedPathDocument = program?.model === 'upid-document' ? program.pathDocument : null;
-  const savedPathDocumentSignature = useMemo(
-    () => pathDocumentSignature(savedPathDocument),
-    [savedPathDocument]
+  const draftText = editorDraftText(draftState);
+  const pathDocumentDraft = editorDraftPathDocument(draftState);
+  const savedDraftSignature = useMemo(
+    () => editorDraftSignature(createEditorDraftState(program)),
+    [program]
   );
-  const draftPathDocumentSignature = useMemo(
-    () => pathDocumentSignature(pathDocumentDraft),
-    [pathDocumentDraft]
-  );
+  const draftSignature = useMemo(() => editorDraftSignature(draftState), [draftState]);
   const isImporting = importStatus === 'importing';
   const isSaving = saveStatus === 'saving';
   const draftProgram = useMemo<LoadedEditorProgram | null>(
@@ -314,9 +318,7 @@ export function EditorPage({
     program?.model === 'upid-document'
       ? 'UPID Project'
       : program?.filePath.split('/').pop() ?? '-';
-  const hasUnsavedChanges = Boolean(
-    program && (draftText !== program.text || draftPathDocumentSignature !== savedPathDocumentSignature)
-  );
+  const hasUnsavedChanges = Boolean(program && draftSignature !== savedDraftSignature);
   const constructionHoveredPathElement = useMemo<EditorPathElementRef | null>(
     () =>
       constructionPreview && pathHoverAssistEnabled
@@ -430,10 +432,7 @@ export function EditorPage({
   );
 
   useEffect(() => {
-    setDraftText(program?.text ?? '');
-    const pathDocument = program?.model === 'upid-document' ? program.pathDocument : null;
-    const nextPathDocument = pathDocument ? structuredClone(pathDocument) : null;
-    setPathDocumentDraft(nextPathDocument);
+    setDraftState(createEditorDraftState(program));
     setSelectedPathOperationId(null);
     setSelectedPathElement(null);
     setHoveredPathElement(null);
@@ -567,7 +566,7 @@ export function EditorPage({
 
   function handleNormalizeDraft() {
     if (!program || isSaving) return;
-    replaceDraftText(normalizeToISO(draftText, { crlf: false }));
+    replaceGCodeDraftText(normalizeToISO(draftText, { crlf: false }));
   }
 
   function handleExportNormalizedISO() {
@@ -638,7 +637,7 @@ export function EditorPage({
       .filter((_, index) => !linesToDelete.has(index + 1))
       .join('\n');
 
-    replaceDraftText(nextText);
+    replaceGCodeDraftText(nextText);
     setHoveredLine(null);
     setLastClickedLine(null);
     setPinnedLines((current) => current.filter((line) => !linesToDelete.has(line)));
@@ -651,7 +650,7 @@ export function EditorPage({
     const result = moveSelectedLines(draftText, selectedLines, direction);
     if (!result) return;
 
-    replaceDraftText(result.text);
+    replaceGCodeDraftText(result.text);
     setHoveredLine(null);
     setLastClickedLine(null);
     setPinnedLines([]);
@@ -676,7 +675,7 @@ export function EditorPage({
     if (lineNumber < 1 || lineNumber > lines.length || lines[lineNumber - 1] === sanitizedText) return;
 
     lines[lineNumber - 1] = sanitizedText;
-    replaceDraftText(lines.join('\n'));
+    replaceGCodeDraftText(lines.join('\n'));
     setHoveredLine(null);
     setLastClickedLine(null);
     setPinnedLines([]);
@@ -689,7 +688,7 @@ export function EditorPage({
     const result = moveBodyGroup(draftText, structure, groupId, direction);
     if (!result) return;
 
-    replaceDraftText(result.text);
+    replaceGCodeDraftText(result.text);
     setHoveredLine(null);
     setLastClickedLine(null);
     setPinnedLines([]);
@@ -706,7 +705,7 @@ export function EditorPage({
     if (!result) return;
 
     const deletedLines = new Set(result.deletedLineNumbers);
-    replaceDraftText(result.text);
+    replaceGCodeDraftText(result.text);
     setHoveredLine(null);
     setLastClickedLine(null);
     setPinnedLines((current) => current.filter((line) => !deletedLines.has(line)));
@@ -729,7 +728,7 @@ export function EditorPage({
       return;
     }
 
-    replaceDraftText(result.text);
+    replaceGCodeDraftText(result.text);
     setHoveredLine(null);
     setLastClickedLine(result.newStartLine);
     setPinnedLines([]);
@@ -901,16 +900,12 @@ export function EditorPage({
   ) {
     if (!program?.project) return;
 
-    replaceDraftText(
-      '',
-      {
-        pathDocument: nextDocument,
-        selectedPathElement: Object.hasOwn(options, 'selectedPathElement')
-          ? options.selectedPathElement
-          : selectedPathElement,
-        selectedPathOperationId: options.selectedPathOperationId ?? selectedPathOperationId
-      }
-    );
+    replaceUpidDraftDocument(nextDocument, {
+      selectedPathElement: Object.hasOwn(options, 'selectedPathElement')
+        ? options.selectedPathElement
+        : selectedPathElement,
+      selectedPathOperationId: options.selectedPathOperationId ?? selectedPathOperationId
+    });
   }
 
   function handleInsertMeasurementPoints() {
@@ -919,7 +914,7 @@ export function EditorPage({
     const result = insertMeasurementPointsIntoText(draftText, measurementPoints, {
       insertAfterLine: selectedLines.length > 0 ? Math.min(...selectedLines) : undefined
     });
-    replaceDraftText(result.text);
+    replaceGCodeDraftText(result.text);
     setHoveredLine(null);
     setLastClickedLine(null);
     setPinnedLines([]);
@@ -952,20 +947,39 @@ export function EditorPage({
     );
   }
 
-  function replaceDraftText(
-    nextText: string,
+  function replaceGCodeDraftText(nextText: string) {
+    if (draftState.model !== 'gcode-text' || nextText === draftState.text) return;
+    applyEditorDraftState({
+      model: 'gcode-text',
+      text: nextText
+    });
+  }
+
+  function replaceUpidDraftDocument(
+    nextDocument: PathPlanningDocument,
     options: {
-      pathDocument?: PathPlanningDocument | null;
       selectedPathElement?: EditorPathElementRef | null;
       selectedPathOperationId?: string | null;
     } = {}
   ) {
-    const hasPathDocumentOption = Object.hasOwn(options, 'pathDocument');
-    if (nextText === draftText && !hasPathDocumentOption) return;
+    applyEditorDraftState(
+      {
+        model: 'upid-document',
+        pathDocument: nextDocument
+      },
+      options
+    );
+  }
 
-    const nextPathDocument = hasPathDocumentOption
-      ? clonePathDocument(options.pathDocument ?? null)
-      : null;
+  function applyEditorDraftState(
+    nextDraft: EditorDraftState,
+    options: {
+      selectedPathElement?: EditorPathElementRef | null;
+      selectedPathOperationId?: string | null;
+    } = {}
+  ) {
+    const clonedDraft = cloneEditorDraftState(nextDraft);
+    const nextPathDocument = editorDraftPathDocument(clonedDraft);
     const nextSelectedPathOperationId = nextPathDocument
       ? options.selectedPathOperationId ?? selectedPathOperationId
       : null;
@@ -973,13 +987,16 @@ export function EditorPage({
       ? options.selectedPathElement ?? null
       : selectedPathElement;
     const nextSelectedPathElement = nextPathDocument
-      ? normalizeUpidPathElementSelection(nextPathDocument, nextSelectedPathOperationId, candidateSelectedPathElement)
+      ? normalizeUpidPathElementSelection(
+          nextPathDocument,
+          nextSelectedPathOperationId,
+          candidateSelectedPathElement
+        )
       : null;
 
     setUndoStack((current) => [...current, currentDraftSnapshot()]);
     setRedoStack([]);
-    setDraftText(nextText);
-    setPathDocumentDraft(nextPathDocument);
+    setDraftState(clonedDraft);
     setSelectedPathOperationId(nextSelectedPathOperationId);
     setSelectedPathElement(nextSelectedPathElement);
     if (!nextPathDocument) setPathClickMode(null);
@@ -1006,13 +1023,13 @@ export function EditorPage({
   }
 
   function handleDraftTextChange(nextText: string) {
-    if (nextText === draftText) return;
-    if (pathDocumentDraft) {
-      setUndoStack((current) => [...current, currentDraftSnapshot()]);
-      setRedoStack([]);
-    }
-    setDraftText(nextText);
-    setPathDocumentDraft(null);
+    if (draftState.model !== 'gcode-text' || nextText === draftState.text) return;
+    setUndoStack((current) => [...current, currentDraftSnapshot()]);
+    setRedoStack([]);
+    setDraftState({
+      model: 'gcode-text',
+      text: nextText
+    });
     setSelectedPathOperationId(null);
     setSelectedPathElement(null);
     setPathClickMode(null);
@@ -1020,17 +1037,16 @@ export function EditorPage({
 
   function currentDraftSnapshot(): EditorDraftSnapshot {
     return {
-      text: draftText,
-      pathDocument: clonePathDocument(pathDocumentDraft),
+      draft: cloneEditorDraftState(draftState),
       selectedPathElement,
       selectedPathOperationId
     };
   }
 
   function restoreDraftSnapshot(snapshot: EditorDraftSnapshot) {
-    const restoredPathDocument = clonePathDocument(snapshot.pathDocument);
-    setDraftText(snapshot.text);
-    setPathDocumentDraft(restoredPathDocument);
+    const restoredDraft = cloneEditorDraftState(snapshot.draft);
+    const restoredPathDocument = editorDraftPathDocument(restoredDraft);
+    setDraftState(restoredDraft);
     const restoredOperationId = restoredPathDocument ? snapshot.selectedPathOperationId : null;
     setSelectedPathOperationId(restoredOperationId);
     setSelectedPathElement(
@@ -1268,14 +1284,6 @@ export function EditorPage({
       )}
     </div>
   );
-}
-
-function clonePathDocument(document: PathPlanningDocument | null) {
-  return document ? structuredClone(document) : null;
-}
-
-function pathDocumentSignature(document: PathPlanningDocument | null) {
-  return document ? JSON.stringify(document) : '';
 }
 
 function nextMeasurementPointId(currentLength: number) {

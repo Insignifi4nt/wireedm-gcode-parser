@@ -68,6 +68,52 @@ describe('EditorPage UPID draft boundary', () => {
     });
   });
 
+  it('undoes and redoes UPID path edits as modeled path documents', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const project = projectWithUpid(pathDocument);
+    const onSaveEditorDraft = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-upid-cut-sequence-select]');
+    await clickElement('button[aria-label="Reverse path operation"]');
+    expect(container.textContent).toContain('Unsaved');
+
+    await clickElement('button[aria-label="Undo"]');
+    expect(container.textContent).not.toContain('Unsaved');
+    const saveButton = container.querySelector(
+      'button[aria-label="Save Path Plan"]'
+    ) as HTMLButtonElement;
+    expect(saveButton.disabled).toBe(true);
+
+    await clickElement('button[aria-label="Redo"]');
+    expect(container.textContent).toContain('Unsaved');
+
+    await clickElement('button[aria-label="Save Path Plan"]');
+
+    expect(onSaveEditorDraft).toHaveBeenCalledTimes(1);
+    expect(onSaveEditorDraft).toHaveBeenCalledWith({
+      model: 'upid-document',
+      pathDocument: expect.objectContaining({
+        plan: expect.objectContaining({
+          operations: [
+            expect.objectContaining({
+              direction: 'reverse'
+            })
+          ]
+        })
+      })
+    });
+  });
+
   async function clickElement(selector: string) {
     const element = container.querySelector(selector) as HTMLElement | null;
     expect(element).not.toBeNull();
