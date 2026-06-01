@@ -581,6 +581,14 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected-point-cluster-method]')?.textContent).toBe(
       'within-tolerance'
     );
+    expect(container.querySelector('[data-upid-selected-diagnostic-row]')?.textContent).toContain(
+      'endpoint-cluster-snap'
+    );
+    expect(
+      container
+        .querySelector('[data-upid-selected-diagnostic-row]')
+        ?.getAttribute('data-upid-selected-diagnostic-code')
+    ).toBe('endpoint-cluster-snap');
   });
 
   it('selects ambiguous endpoint topology rows from the path navigator', async () => {

@@ -13,6 +13,7 @@ import type { MachineFitResult } from '@/domain/machine/machineFit';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   readUpidManualOverrideRows,
+  readUpidPathElementDiagnostics,
   readUpidPathElementPointByRole,
   readUpidPathElementSegmentSequenceContext,
   readUpidPathElementSourceSummary,
@@ -22,6 +23,7 @@ import {
   readUpidSelectedPathPoint,
   readUpidSelectedPathSegment,
   readUpidSelectedPathTravel,
+  type UpidSelectedPathDiagnostic,
   type UpidSelectedPathSegmentGeometry
 } from '@/domain/upid/projectRail';
 import type { MachineProfile } from '@/domain/workbench/types';
@@ -148,6 +150,9 @@ export function EditorInspectorPanel({
         segmentId: selectedPathElement.segmentId
       })
     : null;
+  const selectedPathDiagnostics = pathDocument && selectedPathElement
+    ? readUpidPathElementDiagnostics(pathDocument, selectedPathElement)
+    : [];
   const selectedPathStart = selectedPathElementModel
     ? readUpidPathElementPointByRole(selectedPathElementModel, 'start')
     : null;
@@ -551,6 +556,23 @@ export function EditorInspectorPanel({
                   <span>{row.value}</span>
                 </div>
               ))}
+            </div>
+          </section>
+        )}
+
+        {selectedPathDiagnostics.length > 0 && (
+          <section className="mt-3 border-t border-border pt-3" data-upid-selected-diagnostics>
+            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">
+              Selection Diagnostics
+            </h3>
+            <div className="grid gap-1">
+              {selectedPathDiagnostics.map((diagnostic) =>
+                renderSelectedPathDiagnosticRow({
+                  diagnostic,
+                  onHoverPathElement,
+                  onSelectPathElement
+                })
+              )}
             </div>
           </section>
         )}
@@ -1077,6 +1099,51 @@ function formatLimit(value: number | null) {
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
+}
+
+function renderSelectedPathDiagnosticRow({
+  diagnostic,
+  onHoverPathElement,
+  onSelectPathElement
+}: {
+  diagnostic: UpidSelectedPathDiagnostic;
+  onHoverPathElement?: (element: EditorPathElementRef | null) => void;
+  onSelectPathElement?: (element: EditorPathElementRef) => void;
+}) {
+  return (
+    <button
+      className="grid min-w-0 gap-0.5 border border-border bg-background/45 px-2 py-1.5 text-left outline-none hover:bg-accent disabled:cursor-default"
+      data-upid-selected-diagnostic-code={diagnostic.code}
+      data-upid-selected-diagnostic-id={diagnostic.id}
+      data-upid-selected-diagnostic-related-clusters={diagnostic.relatedClusterCount}
+      data-upid-selected-diagnostic-related-segments={diagnostic.relatedSegmentCount}
+      data-upid-selected-diagnostic-row
+      data-upid-selected-diagnostic-severity={diagnostic.severity}
+      disabled={!diagnostic.selectRef}
+      key={diagnostic.id}
+      onClick={() => {
+        if (diagnostic.selectRef) onSelectPathElement?.(diagnostic.selectRef);
+      }}
+      onMouseEnter={() => {
+        if (diagnostic.selectRef) onHoverPathElement?.(diagnostic.selectRef);
+      }}
+      onMouseLeave={() => onHoverPathElement?.(null)}
+      type="button"
+    >
+      <span className="flex min-w-0 items-center justify-between gap-2 text-[9px] uppercase">
+        <span className={diagnostic.severity === 'error' ? 'text-destructive' : 'text-amber-200'}>
+          {diagnostic.severity}
+        </span>
+        <span className="truncate text-foreground">{diagnostic.code}</span>
+      </span>
+      <span className="line-clamp-2 text-[9px] leading-4 text-muted-foreground">
+        {diagnostic.message}
+      </span>
+      <span className="text-[8px] text-muted-foreground">
+        segments {diagnostic.relatedSegmentCount} / clusters {diagnostic.relatedClusterCount}
+      </span>
+    </button>
+  );
 }
 
 function renderSelectedSegmentGeometry(geometry: UpidSelectedPathSegmentGeometry) {

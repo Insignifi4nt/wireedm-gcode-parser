@@ -15,6 +15,7 @@ import {
   readUpidManualOverrideRows,
   readUpidEndpointTopologyRows,
   readUpidOperationPathElement,
+  readUpidPathElementDiagnostics,
   readUpidPathElementPoint,
   readUpidPathElementPointByRole,
   readUpidPathElementLineage,
@@ -411,6 +412,37 @@ describe('UPID project rail projection', () => {
     expect(upidPathElementRefsMatch({ ...ref!, pointRole: 'start' }, { ...ref!, pointRole: 'start' })).toBe(
       true
     );
+  });
+
+  it('projects diagnostics that affect the selected path geometry', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(gappedRectangle(0.004), {
+      endpointTolerance: 0.01
+    });
+    const operation = document.plan.operations[0];
+    const pathElement = document.pathElements[0];
+
+    const diagnostics = readUpidPathElementDiagnostics(document, {
+      operationId: operation.id,
+      pathElementId: pathElement.id,
+      pointRole: 'end',
+      segmentId: operation.segmentRefs[0].segmentId
+    });
+
+    const snapDiagnostic = diagnostics.find((diagnostic) => diagnostic.code === 'endpoint-cluster-snap');
+
+    expect(snapDiagnostic).not.toBeUndefined();
+    expect(snapDiagnostic).toMatchObject({
+      code: 'endpoint-cluster-snap',
+      relatedClusterCount: 1,
+      relatedSegmentCount: 2,
+      selectRef: {
+        operationId: operation.id,
+        pathElementId: pathElement.id,
+        segmentId: operation.segmentRefs[0].segmentId
+      },
+      severity: 'warning'
+    });
+    expect(snapDiagnostic!.id).toMatch(/^diag_cluster_/);
   });
 
   it('normalizes selected path refs and resolves selected points from UPID geometry', () => {

@@ -238,6 +238,18 @@ export interface UpidAmbiguousEndpointTopologyRow {
   toleranceUsed: number | null;
 }
 
+export interface UpidSelectedPathDiagnostic {
+  code: PathDiagnostic['code'];
+  id: string;
+  message: string;
+  relatedChainCount: number;
+  relatedClusterCount: number;
+  relatedContourCount: number;
+  relatedSegmentCount: number;
+  selectRef: UpidPathElementRef | null;
+  severity: PathDiagnostic['severity'];
+}
+
 export interface UpidManualOverrideRow {
   kind: string;
   label: string;
@@ -375,6 +387,69 @@ function readDiagnosticNumberArray(diagnostic: PathDiagnostic, key: string) {
   return Array.isArray(value)
     ? value.filter((candidate): candidate is number => typeof candidate === 'number')
     : [];
+}
+
+export function readUpidPathElementDiagnostics(
+  document: PathPlanningDocument,
+  elementRef: UpidPathElementRef
+): UpidSelectedPathDiagnostic[] {
+  return document.diagnostics
+    .filter((diagnostic) => upidDiagnosticAffectsPathElement(document, elementRef, diagnostic))
+    .map((diagnostic) => ({
+      code: diagnostic.code,
+      id: diagnostic.id,
+      message: diagnostic.message,
+      relatedChainCount: diagnostic.relatedChainIds?.length ?? 0,
+      relatedClusterCount: diagnostic.relatedClusterIds?.length ?? 0,
+      relatedContourCount: diagnostic.relatedContourIds?.length ?? 0,
+      relatedSegmentCount: diagnostic.relatedSegmentIds?.length ?? 0,
+      selectRef: upidPathElementRefForDiagnostic(document, diagnostic),
+      severity: diagnostic.severity
+    }));
+}
+
+function upidDiagnosticAffectsPathElement(
+  document: PathPlanningDocument,
+  elementRef: UpidPathElementRef,
+  diagnostic: PathDiagnostic
+) {
+  const selectedElement = readPathElementForRef(document, elementRef);
+  const selectedSegmentIds = new Set(selectedElement?.segmentRefs.map((ref) => ref.segmentId) ?? []);
+  if (elementRef.segmentId) {
+    selectedSegmentIds.add(elementRef.segmentId);
+  }
+
+  if (diagnostic.relatedSegmentIds?.some((segmentId) => selectedSegmentIds.has(segmentId))) {
+    return true;
+  }
+
+  const selectedOperation = document.plan.operations.find(
+    (operation) => operation.id === selectedElement?.operationId || operation.id === elementRef.operationId
+  );
+  if (
+    selectedOperation?.chainId &&
+    diagnostic.relatedChainIds?.includes(selectedOperation.chainId)
+  ) {
+    return true;
+  }
+  if (
+    selectedOperation?.contourId &&
+    diagnostic.relatedContourIds?.includes(selectedOperation.contourId)
+  ) {
+    return true;
+  }
+
+  if (selectedElement && isUpidOperationPathElement(selectedElement) && elementRef.segmentId && elementRef.pointRole) {
+    const selectedPoint = readUpidSelectedPathPoint(document, selectedElement, elementRef);
+    if (
+      selectedPoint?.endpointCluster &&
+      diagnostic.relatedClusterIds?.includes(selectedPoint.endpointCluster.id)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export function isUpidOperationPathElement(element: PathElement): element is UpidOperationPathElement {
