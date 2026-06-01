@@ -28,6 +28,9 @@ vi.mock('@/domain/editor/gcodeParser', async (importOriginal) => {
   };
 });
 
+import { saveEditorProgram as saveEditorProgramService } from '@/domain/editor/saveEditorProgram';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
+
 import {
   FakeDirectoryHandle,
   cleanupAppTestContext,
@@ -973,6 +976,82 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-contour-row]')?.getAttribute('data-upid-contour-role')).toBe(
       'hole'
     );
+  });
+
+  it('refreshes the latest import panel from the saved UPID path document', async () => {
+    window.showDirectoryPicker = undefined;
+    const saveEditorProgram = vi.fn(async (...args: Parameters<typeof saveEditorProgramService>) => {
+      const result = await saveEditorProgramService(...args);
+      if (result.editorProgram.model !== 'upid-document' || !result.editorProgram.project) {
+        return result;
+      }
+
+      const savedDocument = duplicateFirstContour(result.editorProgram.pathDocument);
+      const savedProject = {
+        ...result.editorProgram.project,
+        upid: {
+          ...result.editorProgram.project.upid!,
+          document: savedDocument
+        }
+      };
+
+      return {
+        ...result,
+        editorProgram: {
+          ...result.editorProgram,
+          pathDocument: savedDocument,
+          project: savedProject
+        }
+      };
+    });
+
+    await renderApp(context, { saveEditorProgram });
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'latest-saved-upid.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await selectFirstCutSequence(container);
+
+    const reverseButton = container.querySelector(
+      'button[aria-label="Reverse path operation"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      reverseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const saveButton = container.querySelector(
+      'button[aria-label="Save Path Plan"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Dashboard')
+    );
+
+    await act(async () => {
+      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const contoursLabel = [...container.querySelectorAll('dt')].find(
+      (node) => node.textContent === 'Contours'
+    );
+
+    expect(saveEditorProgram).toHaveBeenCalledOnce();
+    expect(contoursLabel?.nextElementSibling?.textContent).toBe('2');
   });
 
   it('reorders UPID cut sequence directly from Project Rail rows', async () => {
@@ -3099,6 +3178,23 @@ async function selectFirstCutSequence(container: HTMLElement) {
   await act(async () => {
     firstCutSequence?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
+}
+
+function duplicateFirstContour(document: PathPlanningDocument): PathPlanningDocument {
+  const contour = document.contours[0];
+  if (!contour) return document;
+
+  return {
+    ...document,
+    contours: [
+      ...document.contours,
+      {
+        ...contour,
+        id: `${contour.id}_saved`,
+        label: `${contour.label} Saved`
+      }
+    ]
+  };
 }
 
 function worldClientPoint(preview: SVGSVGElement, point: { x: number; y: number }) {

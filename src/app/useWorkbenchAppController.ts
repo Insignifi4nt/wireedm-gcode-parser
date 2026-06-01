@@ -288,7 +288,7 @@ export function useWorkbenchAppController(
       });
       setConnectedWorkbench(result.workbench);
       setLoadedEditorProgram(result.editorProgram);
-      refreshLatestImportAfterSave(result.workbench, result.editorProgram, draft);
+      refreshLatestImportAfterSave(result.workbench, result.editorProgram);
       setEditorSaveStatus('idle');
       showStatusToast(draft.model === 'upid-document' ? 'Path plan saved.' : 'Program saved.', 'success');
     } catch (error) {
@@ -308,19 +308,18 @@ export function useWorkbenchAppController(
 
   function refreshLatestImportAfterSave(
     workbench: ConnectedWorkbench,
-    editorProgram: LoadedEditorProgram,
-    draft: EditorSaveDraft
+    editorProgram: LoadedEditorProgram
   ) {
     setLatestImport((current) => {
       if (!current || current.project.id !== editorProgram.project?.id) return current;
-      if (draft.model !== 'upid-document' || !editorProgram.project.upid) return null;
+      if (editorProgram.model !== 'upid-document' || !editorProgram.project.upid) return null;
 
       return {
         ...current,
         workbench,
         project: editorProgram.project,
-        pathDocument: draft.pathDocument,
-        pathDiagnostics: draft.pathDocument.diagnostics
+        pathDocument: editorProgram.pathDocument,
+        pathDiagnostics: editorProgram.pathDocument.diagnostics
       };
     });
   }
