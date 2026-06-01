@@ -26,7 +26,7 @@ class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
 }
 
 describe('loadEditorProgram', () => {
-  it('opens DXF import projects from UPID instead of parsing the generated program', async () => {
+  it('opens DXF import projects from the UPID project document instead of a source or generated file', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
       now: new Date('2026-05-29T10:00:00.000Z')
@@ -39,7 +39,7 @@ describe('loadEditorProgram', () => {
 
     const editorProgram = await loadEditorProgram(imported.workbench, imported.project);
 
-    expect(editorProgram.filePath).toBe('imports/editor-source-2026-05-29.dxf');
+    expect(editorProgram.filePath).toBe('projects/editor-source-2026-05-29/project.json');
     expect(editorProgram.text).toBe('');
     expect(editorProgram.parseResult).toBeNull();
     expect(editorProgram.project?.upid?.document.plan.operations).toHaveLength(1);

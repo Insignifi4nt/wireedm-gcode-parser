@@ -2,6 +2,7 @@ import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 import { projectUpidDocument } from '@/domain/upid/projectUpid';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 
+import { upidEditorDocumentPath } from './editorProjectPaths';
 import { parseGCodeProgram } from './gcodeParser';
 import type { GCodeParseResult } from './types';
 
@@ -17,7 +18,7 @@ export async function loadEditorProgram(
   project: WorkbenchProject
 ): Promise<LoadedEditorProgram> {
   if (projectUpidDocument(project)) {
-    return createUpidEditorProgram(project);
+    return createUpidEditorProgram(workbench, project);
   }
 
   const filePath = project.editor.activeFilePath;
@@ -38,9 +39,12 @@ export async function loadEditorProgram(
   };
 }
 
-function createUpidEditorProgram(project: WorkbenchProject): LoadedEditorProgram {
+function createUpidEditorProgram(
+  workbench: ConnectedWorkbench,
+  project: WorkbenchProject
+): LoadedEditorProgram {
   return {
-    filePath: project.source.files.at(-1)?.path ?? `projects/${project.id}/project.json`,
+    filePath: upidEditorDocumentPath(workbench, project),
     parseResult: null,
     text: '',
     project

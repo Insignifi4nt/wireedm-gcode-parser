@@ -173,7 +173,7 @@ describe('saveEditorProgram', () => {
     expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.editorProgram.text).toBe('');
     expect(saved.editorProgram.parseResult).toBeNull();
-    expect(saved.editorProgram.filePath).toBe(imported.project.source.files[0].path);
+    expect(saved.editorProgram.filePath).toBe(projectPath);
     expect(adapter.files.get(imported.project.source.files[0].path)).toBe(rectangleDxf());
     expect(savedManifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(saved.workbench.manifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
@@ -211,6 +211,7 @@ describe('saveEditorProgram', () => {
     expect([...adapter.files.keys()].some((path) => path.startsWith('generated/'))).toBe(false);
     expect(saved.editorProgram.text).toBe('');
     expect(saved.editorProgram.parseResult).toBeNull();
+    expect(saved.editorProgram.filePath).toBe('projects/missing-generated-2026-05-29/project.json');
     expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
     expect('generated' in savedProject).toBe(false);
   });

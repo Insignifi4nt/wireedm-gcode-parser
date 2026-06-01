@@ -10,6 +10,7 @@ import {
 } from '@/domain/upid/projectUpid';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 
+import { upidEditorDocumentPath } from './editorProjectPaths';
 import { parseGCodeProgram } from './gcodeParser';
 import type { LoadedEditorProgram } from './loadEditorProgram';
 
@@ -49,9 +50,10 @@ export async function saveEditorProgram(
   const projectSave = savesPathDocument ? await saveProjectPathState(workbench, input) : null;
   const updatedWorkbench = projectSave?.workbench ?? workbench;
   const updatedProject = projectSave?.project ?? input.project;
-  const editorFilePath = savesPathDocument
-    ? sourceEditorFilePath(updatedProject, input.filePath)
-    : input.filePath;
+  const editorFilePath =
+    savesPathDocument && updatedProject
+      ? upidEditorDocumentPath(updatedWorkbench, updatedProject)
+      : input.filePath;
 
   return {
     workbench: updatedWorkbench,
@@ -121,8 +123,4 @@ async function saveProjectPathState(
       manifest: updatedManifest
     }
   };
-}
-
-function sourceEditorFilePath(project: WorkbenchProject | undefined, fallback: string) {
-  return project?.source.files.at(-1)?.path ?? fallback;
 }
