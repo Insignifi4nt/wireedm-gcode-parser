@@ -205,6 +205,9 @@ const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFlo
   measurement: { x: 1010, y: 194, width: 340, height: 420 }
 };
 
+const FLOATING_PANEL_GAP = 8;
+const FLOATING_PANEL_TOP = 42;
+
 const WORKSPACE_PANEL_GROUPS: Array<{
   id: string;
   title: string;
@@ -250,6 +253,126 @@ function createDefaultPanelRecord<T>(valueFor: (id: EditorWorkspacePanelId) => T
 function handleEditorDragOver(event: DragEvent<HTMLDivElement>) {
   event.preventDefault();
   event.dataTransfer.dropEffect = 'copy';
+}
+
+function findReadableFloatingPanelGeometry(
+  panelId: EditorWorkspacePanelId,
+  requestedGeometry: EditorFloatingPanelGeometry,
+  placements: Record<EditorWorkspacePanelId, EditorPanelPlacement>,
+  geometries: Record<EditorWorkspacePanelId, EditorFloatingPanelGeometry>
+) {
+  const viewport = readFloatingPanelViewport();
+  const existingPanels = Object.entries(placements)
+    .filter(([id, placement]) => id !== panelId && placement === 'floating')
+    .map(([id]) => clampFloatingPanelGeometry(geometries[id as EditorWorkspacePanelId], viewport));
+  const baseGeometry = clampFloatingPanelGeometry(requestedGeometry, viewport);
+
+  if (!floatingPanelOverlapsAny(baseGeometry, existingPanels)) return baseGeometry;
+
+  const candidateGeometries = createFloatingPanelCandidates(baseGeometry, existingPanels, viewport);
+  return (
+    candidateGeometries.find((candidate) => !floatingPanelOverlapsAny(candidate, existingPanels)) ??
+    baseGeometry
+  );
+}
+
+function readFloatingPanelViewport() {
+  const canvasRect = document
+    .querySelector<HTMLElement>('[data-editor-canvas-panel]')
+    ?.getBoundingClientRect();
+  const left = Math.max(FLOATING_PANEL_GAP, Math.round(canvasRect?.left ?? FLOATING_PANEL_GAP));
+  const width = Math.max(left + 280, window.innerWidth);
+  const height = Math.max(FLOATING_PANEL_TOP + 220, window.innerHeight);
+
+  return {
+    height,
+    left,
+    top: FLOATING_PANEL_TOP,
+    width
+  };
+}
+
+function clampFloatingPanelGeometry(
+  geometry: EditorFloatingPanelGeometry,
+  viewport: ReturnType<typeof readFloatingPanelViewport>
+): EditorFloatingPanelGeometry {
+  const maxWidth = Math.max(260, viewport.width - viewport.left - FLOATING_PANEL_GAP);
+  const width = Math.min(Math.max(260, geometry.width), maxWidth);
+  const maxHeight = Math.max(180, viewport.height - viewport.top - FLOATING_PANEL_GAP);
+  const height = Math.min(Math.max(180, geometry.height), maxHeight);
+  const maxX = Math.max(viewport.left, viewport.width - width - FLOATING_PANEL_GAP);
+  const maxY = Math.max(viewport.top, viewport.height - height - FLOATING_PANEL_GAP);
+
+  return {
+    x: Math.min(Math.max(viewport.left, geometry.x), maxX),
+    y: Math.min(Math.max(viewport.top, geometry.y), maxY),
+    width,
+    height
+  };
+}
+
+function createFloatingPanelCandidates(
+  baseGeometry: EditorFloatingPanelGeometry,
+  existingPanels: EditorFloatingPanelGeometry[],
+  viewport: ReturnType<typeof readFloatingPanelViewport>
+) {
+  const maxX = Math.max(viewport.left, viewport.width - baseGeometry.width - FLOATING_PANEL_GAP);
+  const maxY = Math.max(viewport.top, viewport.height - baseGeometry.height - FLOATING_PANEL_GAP);
+  const xStops = new Set<number>([
+    baseGeometry.x,
+    viewport.left,
+    maxX,
+    ...existingPanels.flatMap((panel) => [
+      panel.x + panel.width + FLOATING_PANEL_GAP,
+      panel.x - baseGeometry.width - FLOATING_PANEL_GAP
+    ])
+  ]);
+  const yStops = new Set<number>([
+    baseGeometry.y,
+    viewport.top,
+    maxY,
+    ...existingPanels.flatMap((panel) => [
+      panel.y + panel.height + FLOATING_PANEL_GAP,
+      panel.y - baseGeometry.height - FLOATING_PANEL_GAP
+    ])
+  ]);
+
+  const candidates: EditorFloatingPanelGeometry[] = [];
+  for (const y of [...yStops].sort((first, second) => first - second)) {
+    for (const x of [...xStops].sort((first, second) => first - second)) {
+      candidates.push(
+        clampFloatingPanelGeometry(
+          {
+            ...baseGeometry,
+            x,
+            y
+          },
+          viewport
+        )
+      );
+    }
+  }
+
+  return candidates;
+}
+
+function floatingPanelOverlapsAny(
+  geometry: EditorFloatingPanelGeometry,
+  existingPanels: EditorFloatingPanelGeometry[]
+) {
+  return existingPanels.some((panel) => floatingPanelsOverlap(geometry, panel));
+}
+
+function floatingPanelsOverlap(
+  first: EditorFloatingPanelGeometry,
+  second: EditorFloatingPanelGeometry
+) {
+  return (
+    first.x < second.x + second.width + FLOATING_PANEL_GAP &&
+    first.x + first.width + FLOATING_PANEL_GAP > second.x &&
+    first.y < second.y + second.height + FLOATING_PANEL_GAP &&
+    first.y + first.height + FLOATING_PANEL_GAP > second.y
+  );
 }
 
 export function EditorPage({
@@ -1668,6 +1791,15 @@ export function EditorPage({
   }
 
   function showWorkspacePanel(panelId: EditorWorkspacePanelId) {
+    setWorkspacePanelGeometries((current) => ({
+      ...current,
+      [panelId]: findReadableFloatingPanelGeometry(
+        panelId,
+        current[panelId],
+        workspacePanelPlacements,
+        current
+      )
+    }));
     setWorkspacePanelPlacements((current) => ({
       ...current,
       [panelId]: 'floating'

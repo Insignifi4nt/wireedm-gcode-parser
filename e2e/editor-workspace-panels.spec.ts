@@ -165,6 +165,37 @@ test('editor opens contour tree and endpoint topology without covering each othe
   expect(overlaps).toBe(false);
 });
 
+test('editor opens common floating workspace panels in readable non-overlapping positions', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await page.goto('/');
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'common-panel-placement.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+  await showPanels(page, ['path-transform', 'contour-tree', 'statistics']);
+
+  const panelIds = ['path-transform', 'contour-tree', 'statistics'];
+  const boxes = await readFloatingPanelBoxes(page, panelIds);
+
+  for (const box of boxes) {
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(36);
+    expect(box.x + box.width).toBeLessThanOrEqual(1400);
+    expect(box.y + box.height).toBeLessThanOrEqual(760);
+  }
+
+  for (let index = 0; index < boxes.length; index += 1) {
+    for (let compareIndex = index + 1; compareIndex < boxes.length; compareIndex += 1) {
+      expect(panelsOverlap(boxes[index], boxes[compareIndex])).toBe(false);
+    }
+  }
+});
+
 test('editor translates selected path geometry through the Transform panel', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
   await page.goto('/');
@@ -363,6 +394,28 @@ async function dragHandleToDock(
     steps: 8
   });
   await page.mouse.up();
+}
+
+async function readFloatingPanelBoxes(page: import('@playwright/test').Page, panelIds: string[]) {
+  const boxes = [];
+  for (const panelId of panelIds) {
+    const box = await page.locator(`[data-editor-floating-panel="${panelId}"]`).boundingBox();
+    expect(box).not.toBeNull();
+    if (box) boxes.push(box);
+  }
+  return boxes;
+}
+
+function panelsOverlap(
+  first: { x: number; y: number; width: number; height: number },
+  second: { x: number; y: number; width: number; height: number }
+) {
+  return (
+    first.x < second.x + second.width &&
+    first.x + first.width > second.x &&
+    first.y < second.y + second.height &&
+    first.y + first.height > second.y
+  );
 }
 
 function rectangleDxf() {
