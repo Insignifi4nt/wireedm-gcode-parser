@@ -231,6 +231,8 @@ export function EditorPage({
     const manualOrderCount = pathDocumentDraft.plan.operations.filter(
       (operation) => operation.overrides?.order
     ).length;
+    const headerLineCount = countComposedSectionLines(machine.templates.header);
+    const bodyLineCount = countComposedSectionLines(body);
 
     return {
       body,
@@ -248,6 +250,10 @@ export function EditorPage({
         footer: machine.templates.footer,
         lineEnding: machine.output.lineEnding
       }),
+      programSections: {
+        bodyLineCount,
+        bodyLineOffset: headerLineCount
+      },
       postMetrics: posted.metrics,
       postedOperations: posted.operations
     };
@@ -1249,6 +1255,7 @@ export function EditorPage({
           planning={upidExport.planning}
           postMetrics={upidExport.postMetrics}
           postedOperations={upidExport.postedOperations}
+          programSections={upidExport.programSections}
           programText={upidExport.programText}
         />
       )}
@@ -1262,6 +1269,11 @@ function clonePathDocument(document: PathPlanningDocument | null) {
 
 function pathDocumentSignature(document: PathPlanningDocument | null) {
   return document ? JSON.stringify(document) : '';
+}
+
+function countComposedSectionLines(section: string) {
+  const trimmed = section.trim();
+  return trimmed ? trimmed.split(/\r?\n/).length : 0;
 }
 
 function normalizePathElementSelection(

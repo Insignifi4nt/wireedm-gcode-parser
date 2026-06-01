@@ -17,6 +17,10 @@ interface EditorUpidExportPreviewProps {
     rapidCount: number;
   };
   postedOperations: GcodePostedOperation[];
+  programSections: {
+    bodyLineCount: number;
+    bodyLineOffset: number;
+  };
   programText: string;
   onClose: () => void;
   onDownload: () => void;
@@ -30,10 +34,13 @@ export function EditorUpidExportPreview({
   planning,
   postMetrics,
   postedOperations,
+  programSections,
   programText,
   onClose,
   onDownload
 }: EditorUpidExportPreviewProps) {
+  const programLines = splitProgramLines(programText);
+
   return (
     <section
       aria-label="UPID Export Preview"
@@ -130,8 +137,9 @@ export function EditorUpidExportPreview({
                 <div className="border-b border-border last:border-b-0" key={operation.operationId}>
                   <div
                     className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1"
+                    data-upid-export-operation-body-lines={formatBodyLineRange(operation)}
                     data-upid-export-operation-id={operation.operationId}
-                    data-upid-export-operation-lines={formatBodyLineRange(operation)}
+                    data-upid-export-operation-lines={formatProgramLineRange(operation, programSections.bodyLineOffset)}
                     data-upid-export-operation-row
                     data-upid-export-operation-role={operation.classification}
                   >
@@ -139,7 +147,8 @@ export function EditorUpidExportPreview({
                     <span className="min-w-0">
                       <span className="block truncate text-foreground">{operation.displayName}</span>
                       <span className="block truncate text-[8px] text-muted-foreground">
-                        {operation.direction} / lines {formatBodyLineRange(operation)}
+                        {operation.direction} / lines{' '}
+                        {formatProgramLineRange(operation, programSections.bodyLineOffset)}
                       </span>
                     </span>
                     <span className="text-right text-[8px] uppercase text-muted-foreground">
@@ -151,14 +160,20 @@ export function EditorUpidExportPreview({
                       <div
                         className="grid grid-cols-[2.5rem_2rem_minmax(0,1fr)_8rem] items-center gap-2 border-b border-border/70 px-2 py-1 last:border-b-0"
                         data-upid-export-move-command={move.command}
+                        data-upid-export-move-body-line={move.bodyLineIndex + 1}
                         data-upid-export-move-kind={move.kind}
-                        data-upid-export-move-line={move.bodyLineIndex + 1}
+                        data-upid-export-move-line={programLineForBodyLine(
+                          move.bodyLineIndex,
+                          programSections.bodyLineOffset
+                        )}
                         data-upid-export-move-reason={move.reason}
                         data-upid-export-move-row
                         data-upid-export-move-segment={move.segmentId ?? undefined}
                         key={`${operation.operationId}-${move.bodyLineIndex}`}
                       >
-                        <span className="text-muted-foreground">{move.bodyLineIndex + 1}</span>
+                        <span className="text-muted-foreground">
+                          {programLineForBodyLine(move.bodyLineIndex, programSections.bodyLineOffset)}
+                        </span>
                         <span className={move.kind === 'rapid' ? 'uppercase text-sky-200' : 'uppercase text-green-200'}>
                           {move.command}
                         </span>
@@ -175,12 +190,23 @@ export function EditorUpidExportPreview({
           </section>
         )}
       </section>
-      <pre
-        className="min-h-0 overflow-auto whitespace-pre-wrap bg-background/80 p-3 leading-5 text-foreground"
+      <div
+        className="min-h-0 overflow-auto bg-background/80 p-3 leading-5 text-foreground"
         data-upid-export-gcode
       >
-        {programText}
-      </pre>
+        {programLines.map((line, index) => (
+          <div
+            className="grid grid-cols-[3rem_minmax(0,1fr)] gap-3 border-b border-border/40 py-0.5 last:border-b-0"
+            data-upid-export-program-line={index + 1}
+            data-upid-export-program-line-row
+            data-upid-export-program-section={programSectionForLine(index, programSections)}
+            key={`${index}-${line}`}
+          >
+            <span className="select-none text-right text-muted-foreground">{index + 1}</span>
+            <code className="whitespace-pre-wrap break-words">{line}</code>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -198,4 +224,32 @@ function formatManualOrderCount(count: number) {
 
 function formatBodyLineRange(operation: Pick<GcodePostedOperation, 'bodyLineEnd' | 'bodyLineStart'>) {
   return `${operation.bodyLineStart + 1}-${operation.bodyLineEnd + 1}`;
+}
+
+function formatProgramLineRange(
+  operation: Pick<GcodePostedOperation, 'bodyLineEnd' | 'bodyLineStart'>,
+  bodyLineOffset: number
+) {
+  return `${programLineForBodyLine(operation.bodyLineStart, bodyLineOffset)}-${programLineForBodyLine(
+    operation.bodyLineEnd,
+    bodyLineOffset
+  )}`;
+}
+
+function programLineForBodyLine(bodyLineIndex: number, bodyLineOffset: number) {
+  return bodyLineOffset + bodyLineIndex + 1;
+}
+
+function splitProgramLines(programText: string) {
+  const trimmedTrailingLineEnding = programText.replace(/\r?\n$/, '');
+  return trimmedTrailingLineEnding ? trimmedTrailingLineEnding.split(/\r?\n/) : [];
+}
+
+function programSectionForLine(
+  zeroBasedLineIndex: number,
+  sections: { bodyLineCount: number; bodyLineOffset: number }
+) {
+  if (zeroBasedLineIndex < sections.bodyLineOffset) return 'header';
+  if (zeroBasedLineIndex < sections.bodyLineOffset + sections.bodyLineCount) return 'body';
+  return 'footer';
 }
