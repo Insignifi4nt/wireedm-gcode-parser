@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { dxfEntitiesToUpidDocument } from '../dxfToUpid';
@@ -39,6 +42,10 @@ describe('dxfEntitiesToUpidDocument', () => {
       kind: 'dxf-entities',
       projectId: 'bracket-2026-05-31'
     });
+  });
+
+  it('does not keep a direct DXF-to-G-code adapter in the DXF boundary', () => {
+    expect(existsSync(join(process.cwd(), 'src/domain/dxf/dxfToGcode.ts'))).toBe(false);
   });
 });
 

@@ -20,6 +20,48 @@ describe('UPID document boundary', () => {
     expect(postUpidToGcodeBody(document)).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
   });
 
+  it('posts line, arc, and circle geometry only from the UPID export boundary', () => {
+    const document = createUpidFromDxfEntities([
+      {
+        type: 'line',
+        layer: 'CUT',
+        start: { x: 0, y: 0 },
+        end: { x: 10, y: 0 }
+      },
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 10, y: 10 },
+        radius: 10,
+        startAngle: 270,
+        endAngle: 180,
+        clockwise: false,
+        start: { x: 10, y: 0 },
+        end: { x: 0, y: 10 }
+      },
+      {
+        type: 'circle',
+        layer: 'HOLE',
+        center: { x: 30, y: 30 },
+        radius: 5
+      }
+    ]);
+
+    const body = postUpidToGcodeBody(document);
+
+    expect(body).toBe(
+      [
+        'G0 X0.000 Y0.000',
+        'G1 X10.000 Y0.000',
+        'G3 X0.000 Y10.000 I0.000 J10.000',
+        'G0 X35.000 Y30.000',
+        'G3 X25.000 Y30.000 I-5.000 J0.000',
+        'G3 X35.000 Y30.000 I5.000 J0.000'
+      ].join('\n')
+    );
+    expect(body).not.toMatch(/\bF\d/);
+  });
+
   it('reads the first-class UPID document from a project', () => {
     const document = createUpidFromDxfEntities([
       {
