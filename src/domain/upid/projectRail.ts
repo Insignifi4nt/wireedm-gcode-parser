@@ -242,12 +242,19 @@ export interface UpidSelectedPathDiagnostic {
   code: PathDiagnostic['code'];
   id: string;
   message: string;
+  metrics: UpidSelectedPathDiagnosticMetric[];
   relatedChainCount: number;
   relatedClusterCount: number;
   relatedContourCount: number;
   relatedSegmentCount: number;
   selectRef: UpidPathElementRef | null;
   severity: PathDiagnostic['severity'];
+}
+
+export interface UpidSelectedPathDiagnosticMetric {
+  key: string;
+  label: string;
+  value: number;
 }
 
 export interface UpidManualOverrideRow {
@@ -399,6 +406,7 @@ export function readUpidPathElementDiagnostics(
       code: diagnostic.code,
       id: diagnostic.id,
       message: diagnostic.message,
+      metrics: readUpidDiagnosticMetrics(diagnostic),
       relatedChainCount: diagnostic.relatedChainIds?.length ?? 0,
       relatedClusterCount: diagnostic.relatedClusterIds?.length ?? 0,
       relatedContourCount: diagnostic.relatedContourIds?.length ?? 0,
@@ -406,6 +414,37 @@ export function readUpidPathElementDiagnostics(
       selectRef: upidPathElementRefForDiagnostic(document, diagnostic),
       severity: diagnostic.severity
     }));
+}
+
+function readUpidDiagnosticMetrics(diagnostic: PathDiagnostic): UpidSelectedPathDiagnosticMetric[] {
+  const metrics: UpidSelectedPathDiagnosticMetric[] = [];
+  const tolerance = readDiagnosticNumber(diagnostic, 'tolerance');
+  const maxPairDistance = readDiagnosticNumber(diagnostic, 'maxPairDistance');
+  const candidateDistances = readDiagnosticNumberArray(diagnostic, 'candidateDistances');
+
+  if (tolerance !== null) {
+    metrics.push({
+      key: 'tolerance',
+      label: 'Tolerance',
+      value: tolerance
+    });
+  }
+  if (maxPairDistance !== null) {
+    metrics.push({
+      key: 'maxPairDistance',
+      label: 'Max Gap',
+      value: maxPairDistance
+    });
+  }
+  if (candidateDistances.length > 0) {
+    metrics.push({
+      key: 'minCandidateDistance',
+      label: 'Min Candidate',
+      value: Math.min(...candidateDistances)
+    });
+  }
+
+  return metrics;
 }
 
 function upidDiagnosticAffectsPathElement(

@@ -443,6 +443,18 @@ describe('UPID project rail projection', () => {
       severity: 'warning'
     });
     expect(snapDiagnostic!.id).toMatch(/^diag_cluster_/);
+    expect(snapDiagnostic!.metrics).toEqual([
+      {
+        key: 'tolerance',
+        label: 'Tolerance',
+        value: 0.01
+      },
+      {
+        key: 'maxPairDistance',
+        label: 'Max Gap',
+        value: expect.closeTo(0.004)
+      }
+    ]);
   });
 
   it('normalizes selected path refs and resolves selected points from UPID geometry', () => {

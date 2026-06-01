@@ -1142,6 +1142,19 @@ function renderSelectedPathDiagnosticRow({
       <span className="text-[8px] text-muted-foreground">
         segments {diagnostic.relatedSegmentCount} / clusters {diagnostic.relatedClusterCount}
       </span>
+      {diagnostic.metrics.length > 0 && (
+        <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
+          {diagnostic.metrics.map((metric) => (
+            <span
+              className="border border-border bg-background/60 px-1 text-[8px] text-muted-foreground"
+              data-upid-selected-diagnostic-metric={metric.key}
+              key={metric.key}
+            >
+              {metric.label} {formatNumber(metric.value)}
+            </span>
+          ))}
+        </span>
+      )}
     </button>
   );
 }

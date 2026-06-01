@@ -589,6 +589,12 @@ describe('EditorPage UPID draft boundary', () => {
         .querySelector('[data-upid-selected-diagnostic-row]')
         ?.getAttribute('data-upid-selected-diagnostic-code')
     ).toBe('endpoint-cluster-snap');
+    expect(
+      container.querySelector('[data-upid-selected-diagnostic-metric="maxPairDistance"]')?.textContent
+    ).toBe('Max Gap 0.004');
+    expect(
+      container.querySelector('[data-upid-selected-diagnostic-metric="tolerance"]')?.textContent
+    ).toBe('Tolerance 0.010');
   });
 
   it('selects ambiguous endpoint topology rows from the path navigator', async () => {
