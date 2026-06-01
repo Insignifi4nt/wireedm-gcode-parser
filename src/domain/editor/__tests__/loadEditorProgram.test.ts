@@ -105,8 +105,7 @@ describe('loadEditorProgram', () => {
       machine: workbench.activeMachineProfile,
       editor: {
         activeFilePath: 'editor/missing.iso',
-        pinnedLineNumbers: [],
-        sourceRequiresCleanup: true
+        pinnedLineNumbers: []
       }
     };
 
@@ -145,8 +144,7 @@ describe('loadEditorProgram', () => {
       machine: workbench.activeMachineProfile,
       editor: {
         activeFilePath: null,
-        pinnedLineNumbers: [],
-        sourceRequiresCleanup: false
+        pinnedLineNumbers: []
       }
     };
     await adapter.writeText('generated/posted-fallback.iso', 'G0 X0 Y0\nG1 X10 Y0');

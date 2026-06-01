@@ -64,7 +64,6 @@ export function createWorkbenchProject({
     },
     machine: createDefaultMachineProfile(),
     editor: {
-      sourceRequiresCleanup: sourceKind !== 'dxf',
       activeFilePath: null,
       pinnedLineNumbers: []
     }

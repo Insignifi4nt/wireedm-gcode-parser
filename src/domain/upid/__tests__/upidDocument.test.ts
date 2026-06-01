@@ -65,8 +65,7 @@ function baseProject() {
     },
     editor: {
       activeFilePath: null,
-      pinnedLineNumbers: [],
-      sourceRequiresCleanup: false
+      pinnedLineNumbers: []
     }
   };
 }

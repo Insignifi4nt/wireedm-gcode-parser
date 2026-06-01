@@ -42,11 +42,9 @@ describe('importDxfProject', () => {
       name: 'Top Slot',
       source: {
         kind: 'dxf'
-      },
-      editor: {
-        sourceRequiresCleanup: false
       }
     });
+    expect('sourceRequiresCleanup' in result.project.editor).toBe(false);
     expect('generated' in result.project).toBe(false);
     expect('generatedBody' in result).toBe(false);
     expect('generatedProgram' in result).toBe(false);

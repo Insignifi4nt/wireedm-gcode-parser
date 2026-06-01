@@ -216,7 +216,7 @@ describe('Editor import, export, and parse feedback', () => {
     );
 
     expect(project.source.kind).toBe('external-gcode');
-    expect(project.editor.sourceRequiresCleanup).toBe(true);
+    expect('sourceRequiresCleanup' in project.editor).toBe(false);
     expect(project.editor.activeFilePath).toMatch(/^editor\/shop-output-\d{4}-\d{2}-\d{2}\.nc$/);
 
     const updatedProgramText = [

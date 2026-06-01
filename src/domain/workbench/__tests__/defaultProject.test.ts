@@ -18,25 +18,25 @@ describe('createWorkbenchProject', () => {
       createdAt: '2026-05-29T10:00:00.000Z',
       source: { kind: 'dxf', files: [] },
       editor: {
-        sourceRequiresCleanup: false,
         activeFilePath: null,
         pinnedLineNumbers: []
       }
     });
     expect('generated' in project).toBe(false);
+    expect('sourceRequiresCleanup' in project.editor).toBe(false);
     expect(project.machine.templates.header).toContain('G90 G21 G17 G40');
     expect(project.machine.templates.footer).toContain('M30');
     expect(project.machine.output.extension).toBe('iso');
   });
 
-  it('marks external gcode imports for the cleanup/display pipeline', () => {
+  it('creates external gcode projects without persisting cleanup flags', () => {
     const project = createWorkbenchProject({
       name: 'External Input',
       sourceKind: 'external-gcode',
       now: new Date('2026-05-29T10:00:00.000Z')
     });
 
-    expect(project.editor.sourceRequiresCleanup).toBe(true);
+    expect('sourceRequiresCleanup' in project.editor).toBe(false);
     expect(project.id).toBe('external-input-2026-05-29');
   });
 

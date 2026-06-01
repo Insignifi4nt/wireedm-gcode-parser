@@ -39,7 +39,6 @@ export interface MachineProfile {
 }
 
 export interface EditorSessionState {
-  sourceRequiresCleanup: boolean;
   activeFilePath: string | null;
   pinnedLineNumbers: number[];
 }
