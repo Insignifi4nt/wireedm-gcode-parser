@@ -123,7 +123,12 @@ describe('UPID project rail projection', () => {
     const rows = readUpidEndpointTopologyRows(document);
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
+    const row = rows[0];
+    expect(row.kind).toBe('snapped-endpoint-cluster');
+    if (row.kind !== 'snapped-endpoint-cluster') {
+      throw new Error('Expected snapped endpoint topology row.');
+    }
+    expect(row).toMatchObject({
       kind: 'snapped-endpoint-cluster',
       method: 'within-tolerance',
       memberCount: 2,
@@ -135,11 +140,50 @@ describe('UPID project rail projection', () => {
       },
       toleranceUsed: 0.01
     });
-    expect(rows[0].clusterId).toMatch(/^ec_/);
-    expect(rows[0].maxPairDistance).toBeCloseTo(0.004);
-    expect(rows[0].radius).toBeCloseTo(0.002);
-    expectPointClose(rows[0].point, { x: 10.002, y: 0 });
-    expect(rows[0].members.map((member) => member.pointRole)).toEqual(['end', 'start']);
+    expect(row.clusterId).toMatch(/^ec_/);
+    expect(row.maxPairDistance).toBeCloseTo(0.004);
+    expect(row.radius).toBeCloseTo(0.002);
+    expectPointClose(row.point, { x: 10.002, y: 0 });
+    expect(row.members.map((member) => member.pointRole)).toEqual(['end', 'start']);
+  });
+
+  it('projects ambiguous endpoint topology rows with diagnostic context', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [
+        line(0, 0, 10, 0),
+        line(10.009, 0, 20, 0),
+        line(10.018, 0, 30, 0)
+      ],
+      { endpointTolerance: 0.01 }
+    );
+    const diagnostics = document.diagnostics.filter(
+      (candidate) => candidate.code === 'ambiguous-endpoint-cluster'
+    );
+    const diagnostic = diagnostics[0];
+
+    const rows = readUpidEndpointTopologyRows(document);
+
+    expect(diagnostic).not.toBeUndefined();
+    expect(rows.some((row) => row.kind === 'snapped-endpoint-cluster')).toBe(false);
+    expect(rows).toHaveLength(diagnostics.length);
+    const row = rows[0];
+    expect(row.kind).toBe('ambiguous-endpoint-cluster');
+    if (row.kind !== 'ambiguous-endpoint-cluster') {
+      throw new Error('Expected ambiguous endpoint topology row.');
+    }
+    expect(row).toMatchObject({
+      diagnosticId: diagnostic!.id,
+      kind: 'ambiguous-endpoint-cluster',
+      relatedSegmentCount: diagnostic!.relatedSegmentIds!.length,
+      selectRef: {
+        operationId: document.plan.operations[0].id,
+        pathElementId: document.pathElements[0].id,
+        segmentId: diagnostic!.relatedSegmentIds![0]
+      },
+      severity: 'warning',
+      toleranceUsed: 0.01
+    });
+    expect(row.candidateDistances).toContainEqual(expect.closeTo(0.009));
   });
 
   it('resolves selected path refs back to path tree nodes with subtree metrics', () => {

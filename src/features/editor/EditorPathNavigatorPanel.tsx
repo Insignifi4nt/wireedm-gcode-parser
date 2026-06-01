@@ -590,11 +590,29 @@ function renderEndpointTopologyRow({
       className={`grid w-full grid-cols-[minmax(0,1fr)_66px] items-center border-b border-border px-2 py-1.5 text-left outline-none last:border-b-0 hover:bg-accent disabled:cursor-default ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
-      data-upid-cluster-id={row.clusterId}
-      data-upid-endpoint-topology-gap={formatNumber(row.maxPairDistance)}
+      data-upid-cluster-id={row.kind === 'snapped-endpoint-cluster' ? row.clusterId : undefined}
+      data-upid-diagnostic-id={row.kind === 'ambiguous-endpoint-cluster' ? row.diagnosticId : undefined}
+      data-upid-endpoint-topology-candidates={
+        row.kind === 'ambiguous-endpoint-cluster' ? row.candidateCount : undefined
+      }
+      data-upid-endpoint-topology-gap={
+        row.kind === 'snapped-endpoint-cluster' ? formatNumber(row.maxPairDistance) : undefined
+      }
       data-upid-endpoint-topology-kind={row.kind}
-      data-upid-endpoint-topology-members={row.memberCount}
-      data-upid-endpoint-topology-method={row.method}
+      data-upid-endpoint-topology-members={
+        row.kind === 'snapped-endpoint-cluster' ? row.memberCount : undefined
+      }
+      data-upid-endpoint-topology-method={
+        row.kind === 'snapped-endpoint-cluster' ? row.method : undefined
+      }
+      data-upid-endpoint-topology-min-candidate-gap={
+        row.kind === 'ambiguous-endpoint-cluster' && row.minCandidateDistance !== null
+          ? formatNumber(row.minCandidateDistance)
+          : undefined
+      }
+      data-upid-endpoint-topology-related-segments={
+        row.kind === 'ambiguous-endpoint-cluster' ? row.relatedSegmentCount : undefined
+      }
       data-upid-endpoint-topology-row
       data-upid-hovered={hovered ? 'true' : undefined}
       data-upid-selected={selected ? 'true' : undefined}
@@ -609,13 +627,28 @@ function renderEndpointTopologyRow({
       onMouseLeave={() => onHoverPathElement(null)}
       type="button"
     >
-      <span className="min-w-0">
-        <span className="block truncate text-[10px] text-foreground">Snapped {row.clusterId}</span>
-        <span className="block truncate text-[9px] text-muted-foreground">
-          {formatPoint(row.point)} / gap {formatNumber(row.maxPairDistance)} / {row.memberCount} ends
-        </span>
-      </span>
-      <span className="text-right text-[9px] text-muted-foreground">R {formatNumber(row.radius)}</span>
+      {row.kind === 'snapped-endpoint-cluster' ? (
+        <>
+          <span className="min-w-0">
+            <span className="block truncate text-[10px] text-foreground">Snapped {row.clusterId}</span>
+            <span className="block truncate text-[9px] text-muted-foreground">
+              {formatPoint(row.point)} / gap {formatNumber(row.maxPairDistance)} / {row.memberCount} ends
+            </span>
+          </span>
+          <span className="text-right text-[9px] text-muted-foreground">R {formatNumber(row.radius)}</span>
+        </>
+      ) : (
+        <>
+          <span className="min-w-0">
+            <span className="block truncate text-[10px] text-foreground">Ambiguous {row.diagnosticId}</span>
+            <span className="block truncate text-[9px] text-muted-foreground">
+              ambiguous / candidates {row.candidateCount} / min gap{' '}
+              {row.minCandidateDistance !== null ? formatNumber(row.minCandidateDistance) : '-'}
+            </span>
+          </span>
+          <span className="text-right text-[9px] text-muted-foreground">{row.relatedSegmentCount} seg</span>
+        </>
+      )}
     </button>
   );
 }

@@ -583,6 +583,38 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
+  it('selects ambiguous endpoint topology rows from the path navigator', async () => {
+    const pathDocument = pathDocumentFromAmbiguousEndpoints();
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const topologyRow = container.querySelector('[data-upid-endpoint-topology-row]') as HTMLElement | null;
+
+    expect(topologyRow).not.toBeNull();
+    expect(topologyRow?.getAttribute('data-upid-endpoint-topology-kind')).toBe('ambiguous-endpoint-cluster');
+    expect(topologyRow?.getAttribute('data-upid-endpoint-topology-candidates')).toBe('1');
+    expect(topologyRow?.getAttribute('data-upid-endpoint-topology-related-segments')).toBe('2');
+    expect(topologyRow?.getAttribute('data-upid-endpoint-topology-min-candidate-gap')).toBe('0.009');
+    expect(topologyRow?.textContent).toContain('ambiguous / candidates 1 / min gap 0.009');
+
+    await act(async () => {
+      topologyRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(topologyRow?.getAttribute('data-upid-selected')).toBe('true');
+    expect(container.querySelector('[data-upid-selected-segment]')).not.toBeNull();
+  });
+
   it('shows curve geometry metadata in path navigator segment rows', async () => {
     const pathDocument = pathDocumentFromArc();
     const project = projectWithUpid(pathDocument);
@@ -830,6 +862,12 @@ function pathDocumentFromGappedRectangle() {
   });
 }
 
+function pathDocumentFromAmbiguousEndpoints() {
+  return dxfEntitiesToUpidDocument(parseDxf(ambiguousEndpointsDxf()).entities, {
+    endpointTolerance: 0.01
+  });
+}
+
 function pathDocumentFromArc() {
   return dxfEntitiesToUpidDocument(parseDxf(arcDxf()).entities);
 }
@@ -914,6 +952,22 @@ function gappedRectangleDxf() {
     ...lineDxf(10.004, 0, 10, 5),
     ...lineDxf(10, 5, 0, 5),
     ...lineDxf(0, 5, 0, 0),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function ambiguousEndpointsDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    ...lineDxf(0, 0, 10, 0),
+    ...lineDxf(10.009, 0, 20, 0),
+    ...lineDxf(10.018, 0, 30, 0),
     '0',
     'ENDSEC',
     '0',

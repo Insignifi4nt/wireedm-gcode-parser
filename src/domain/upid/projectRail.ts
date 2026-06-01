@@ -207,7 +207,11 @@ export interface UpidSelectedEndpointClusterMember {
   segmentKind: string | null;
 }
 
-export interface UpidEndpointTopologyRow {
+export type UpidEndpointTopologyRow =
+  | UpidSnappedEndpointTopologyRow
+  | UpidAmbiguousEndpointTopologyRow;
+
+export interface UpidSnappedEndpointTopologyRow {
   clusterId: string;
   id: string;
   kind: 'snapped-endpoint-cluster';
@@ -219,6 +223,19 @@ export interface UpidEndpointTopologyRow {
   radius: number;
   selectRef: UpidPathElementRef | null;
   toleranceUsed: number;
+}
+
+export interface UpidAmbiguousEndpointTopologyRow {
+  candidateCount: number;
+  candidateDistances: number[];
+  diagnosticId: string;
+  id: string;
+  kind: 'ambiguous-endpoint-cluster';
+  minCandidateDistance: number | null;
+  relatedSegmentCount: number;
+  selectRef: UpidPathElementRef | null;
+  severity: PathDiagnostic['severity'];
+  toleranceUsed: number | null;
 }
 
 export interface UpidManualOverrideRow {
@@ -288,9 +305,9 @@ function summarizeUpidEndpointTopology(document: PathPlanningDocument): UpidEndp
 }
 
 export function readUpidEndpointTopologyRows(document: PathPlanningDocument): UpidEndpointTopologyRow[] {
-  return document.endpointClusters
+  const snappedRows = document.endpointClusters
     .filter((cluster) => cluster.method === 'within-tolerance')
-    .map((cluster): UpidEndpointTopologyRow => {
+    .map((cluster): UpidSnappedEndpointTopologyRow => {
       const members = readUpidSelectedEndpointClusterMembers(document, cluster.members);
 
       return {
@@ -311,6 +328,28 @@ export function readUpidEndpointTopologyRows(document: PathPlanningDocument): Up
       const gapSort = second.maxPairDistance - first.maxPairDistance;
       return Math.abs(gapSort) > 1e-12 ? gapSort : first.clusterId.localeCompare(second.clusterId);
     });
+
+  const ambiguousRows = document.diagnostics
+    .filter((diagnostic) => diagnostic.code === 'ambiguous-endpoint-cluster')
+    .map((diagnostic): UpidAmbiguousEndpointTopologyRow => {
+      const candidateDistances = readDiagnosticNumberArray(diagnostic, 'candidateDistances');
+
+      return {
+        candidateCount: candidateDistances.length,
+        candidateDistances,
+        diagnosticId: diagnostic.id,
+        id: diagnostic.id,
+        kind: 'ambiguous-endpoint-cluster',
+        minCandidateDistance:
+          candidateDistances.length > 0 ? Math.min(...candidateDistances) : null,
+        relatedSegmentCount: diagnostic.relatedSegmentIds?.length ?? 0,
+        selectRef: upidPathElementRefForDiagnostic(document, diagnostic),
+        severity: diagnostic.severity,
+        toleranceUsed: readDiagnosticNumber(diagnostic, 'tolerance')
+      };
+    });
+
+  return [...snappedRows, ...ambiguousRows];
 }
 
 function upidPathElementRefForEndpointClusterMember(
@@ -324,6 +363,18 @@ function upidPathElementRefForEndpointClusterMember(
     pointRole: member.pointRole,
     segmentId: member.segmentId
   };
+}
+
+function readDiagnosticNumber(diagnostic: PathDiagnostic, key: string) {
+  const value = diagnostic.details?.[key];
+  return typeof value === 'number' ? value : null;
+}
+
+function readDiagnosticNumberArray(diagnostic: PathDiagnostic, key: string) {
+  const value = diagnostic.details?.[key];
+  return Array.isArray(value)
+    ? value.filter((candidate): candidate is number => typeof candidate === 'number')
+    : [];
 }
 
 export function isUpidOperationPathElement(element: PathElement): element is UpidOperationPathElement {
