@@ -77,6 +77,8 @@ edits, and future AI/user review surfaces from collapsing into an unexplained fi
   provenance, nesting, manual decision, segment, and point details.
 - `src/domain/editor/previewGeometry.ts` carries UPID path element identity into canvas paths so
   canvas hover/selection can round-trip to the navigator and inspector without lossy lookup.
+- `src/features/editor/EditorPage.tsx` keeps the UPID-to-G-code post adapter behind the open export
+  preview boundary, so normal path editing does not compute hidden machine text.
 - `src/features/editor/EditorUpidExportPreview.tsx` is the explicit post boundary for inspecting and
   downloading machine-profile G-code.
 - `src/features/editor/EditorProgramLinesPanel.tsx` remains the posted-program surface for external

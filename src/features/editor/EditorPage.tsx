@@ -209,7 +209,7 @@ export function EditorPage({
     [pathDocumentDraft, program]
   );
   const upidExport = useMemo(() => {
-    if (!pathDocumentDraft || !program?.project) return null;
+    if (!exportPreviewOpen || !pathDocumentDraft || !program?.project) return null;
 
     const posted = postUpidToGcode(pathDocumentDraft);
     const body = posted.body;
@@ -234,7 +234,7 @@ export function EditorPage({
       }),
       postMetrics: posted.metrics
     };
-  }, [pathDocumentDraft, program?.project]);
+  }, [exportPreviewOpen, pathDocumentDraft, program?.project]);
   const constructionPreview = useMemo(() => {
     if (
       !pathDocumentDraft ||

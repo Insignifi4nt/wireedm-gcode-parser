@@ -1,6 +1,20 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const postUpidToGcodeSpy = vi.hoisted(() => vi.fn());
+
+vi.mock('@/domain/upid/upidDocument', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/domain/upid/upidDocument')>();
+
+  return {
+    ...actual,
+    postUpidToGcode: (...args: Parameters<typeof actual.postUpidToGcode>) => {
+      postUpidToGcodeSpy(...args);
+      return actual.postUpidToGcode(...args);
+    }
+  };
+});
+
 import {
   FakeDirectoryHandle,
   cleanupAppTestContext,
@@ -21,6 +35,7 @@ describe('App DXF imports and project library', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    postUpidToGcodeSpy.mockClear();
     context = createAppTestContext();
     container = context.container;
   });
@@ -1136,6 +1151,7 @@ describe('App DXF imports and project library', () => {
 
     expect(container.querySelector('[data-upid-export-preview]')).toBeNull();
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
+    expect(postUpidToGcodeSpy).not.toHaveBeenCalled();
 
     const openPreviewButton = container.querySelector(
       'button[aria-label="Open UPID export preview"]'
@@ -1149,6 +1165,7 @@ describe('App DXF imports and project library', () => {
     const exportPreview = container.querySelector('[data-upid-export-preview]');
     const exportSummary = container.querySelector('[data-upid-export-summary]');
     const exportCode = container.querySelector('[data-upid-export-gcode]');
+    expect(postUpidToGcodeSpy).toHaveBeenCalledTimes(1);
     expect(exportPreview).not.toBeNull();
     expect(exportPreview?.textContent).toContain('UPID Export Preview');
     expect(exportPreview?.textContent).toContain('Default Wire EDM');
