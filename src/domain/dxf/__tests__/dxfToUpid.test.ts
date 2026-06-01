@@ -26,6 +26,28 @@ describe('dxfEntitiesToUpidDocument', () => {
     expect(document.segments).toHaveLength(1);
     expect(document.plan.operations).toHaveLength(1);
     expect(document.options.endpointTolerance).toBe(0);
+    expect(document.options.coincidenceEpsilon).toBe(0.000001);
+  });
+
+  it('treats sub-micron CAD endpoint noise as coincident at the DXF import boundary', () => {
+    const document = dxfEntitiesToUpidDocument([
+      line(0, 0, 10, 0),
+      line(10.0000002, 0, 10, 10),
+      line(10, 10.0000002, 0, 10),
+      line(0, 10, 0, 0)
+    ]);
+
+    expect(document.chains).toHaveLength(1);
+    expect(document.chains[0]).toMatchObject({
+      closed: true,
+      metrics: {
+        gapLength: 0
+      }
+    });
+    expect(document.contours).toHaveLength(1);
+    expect(document.plan.operations).toHaveLength(1);
+    expect(document.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('open-chain');
+    expect(document.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('closed-chain-gap');
   });
 
   it('records source file identity when creating a UPID document from DXF import data', () => {

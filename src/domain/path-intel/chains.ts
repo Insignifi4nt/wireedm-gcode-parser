@@ -5,6 +5,7 @@ import {
   orientedSegmentEnd,
   orientedSegmentStart,
   pathCutLength,
+  pointsEqual,
   requiredSegment,
   segmentEndTangent,
   segmentMap,
@@ -20,6 +21,7 @@ import type {
   PathDiagnostic,
   PathPlanningOptions,
   PathSegment,
+  Point2,
   SegmentId
 } from './types';
 import { resolvePathPlanningOptions } from './segments';
@@ -90,7 +92,7 @@ export function buildChains(
       segmentsById
     });
     const id = nextChainId(chains.length);
-    const gapLength = chainGapLength(walked.refs, segmentsById, walked.closed);
+    const gapLength = chainGapLength(walked.refs, segmentsById, walked.closed, resolved.coincidenceEpsilon);
     const diagnosticIds: string[] = [];
 
     if (!walked.closed) {
@@ -298,23 +300,42 @@ function otherCluster(pair: SegmentClusterPair, clusterId: EndpointClusterId) {
 function chainGapLength(
   refs: OrientedSegmentRef[],
   segmentsById: Map<SegmentId, PathSegment>,
-  closed: boolean
+  closed: boolean,
+  coincidenceEpsilon: number
 ) {
   let gapLength = 0;
 
   for (let index = 0; index < refs.length - 1; index++) {
     const current = requiredSegment(segmentsById, refs[index].segmentId);
     const next = requiredSegment(segmentsById, refs[index + 1].segmentId);
-    gapLength += distance(orientedSegmentEnd(current, refs[index]), orientedSegmentStart(next, refs[index + 1]));
+    gapLength += bridgedGapLength(
+      orientedSegmentEnd(current, refs[index]),
+      orientedSegmentStart(next, refs[index + 1]),
+      coincidenceEpsilon
+    );
   }
 
   if (closed && refs.length > 1) {
     const last = requiredSegment(segmentsById, refs[refs.length - 1].segmentId);
     const first = requiredSegment(segmentsById, refs[0].segmentId);
-    gapLength += distance(orientedSegmentEnd(last, refs[refs.length - 1]), orientedSegmentStart(first, refs[0]));
+    gapLength += bridgedGapLength(
+      orientedSegmentEnd(last, refs[refs.length - 1]),
+      orientedSegmentStart(first, refs[0]),
+      coincidenceEpsilon
+    );
   }
 
   return gapLength;
+}
+
+function bridgedGapLength(
+  left: Point2,
+  right: Point2,
+  coincidenceEpsilon: number
+) {
+  if (pointsEqual(left, right, coincidenceEpsilon)) return 0;
+  const gap = distance(left, right);
+  return gap;
 }
 
 function requiredPair(pairs: Map<SegmentId, SegmentClusterPair>, segmentId: SegmentId) {
