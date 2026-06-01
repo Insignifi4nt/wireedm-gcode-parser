@@ -91,10 +91,17 @@ test('editor panel menu explains endpoint topology before opening it', async ({ 
   await expect(topologyItem.locator('[data-editor-panel-menu-item-description]')).toContainText(
     'endpoint joins'
   );
+  await expect(topologyItem.locator('[data-editor-panel-menu-item-description]')).toContainText(
+    'join map'
+  );
   await expect(topologyItem.locator('[data-editor-panel-menu-item-status]')).toContainText('off');
 
   await topologyItem.click();
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
+  await expect(page.locator('[data-upid-endpoint-topology-title]')).toContainText('Endpoint Join Map');
+  await expect(page.locator('[data-upid-endpoint-topology-summary-label="open-ends"]')).toContainText(
+    'Open chain clues'
+  );
   await expect(page.locator('[data-upid-endpoint-topology-help]')).toContainText(
     'pairs segment starts and ends'
   );
@@ -122,18 +129,29 @@ test('editor contour tree labels contours, segments, and endpoint handles clearl
   await expect(page.locator('[data-upid-contour-tree-legend="endpoint"]')).toContainText('start/end handle');
 
   const contourRow = page.locator('[data-upid-contour-row]').first();
+  await expect(contourRow).toHaveAttribute('data-upid-tree-row-kind', 'contour');
+  await expect(contourRow).toHaveAttribute('data-upid-tree-row-level', '0');
+  await expect(contourRow.locator('[data-upid-tree-kind-label]')).toContainText('Contour');
+  await expect(contourRow.locator('[data-upid-tree-action-hint]')).toContainText('selects whole contour');
   await expect(contourRow.locator('[data-upid-contour-field="role"]')).toContainText('Role');
   await expect(contourRow.locator('[data-upid-contour-field="order"]')).toContainText('Cut order');
   await expect(contourRow.locator('[data-upid-contour-field="segments"]')).toContainText('Segments');
 
   await contourRow.click();
   const segmentRow = page.locator('[data-upid-segment-row]').first();
+  await expect(segmentRow).toHaveAttribute('data-upid-tree-row-kind', 'segment');
+  await expect(segmentRow).toHaveAttribute('data-upid-tree-row-level', '1');
+  await expect(segmentRow.locator('[data-upid-tree-kind-label]')).toContainText('Segment');
+  await expect(segmentRow.locator('[data-upid-tree-action-hint]')).toContainText('selects one segment');
   await expect(segmentRow.locator('[data-upid-segment-field="from"]')).toContainText('From');
   await expect(segmentRow.locator('[data-upid-segment-field="to"]')).toContainText('To');
   await expect(segmentRow.locator('[data-upid-segment-field="length"]')).toContainText('Length');
-  await expect(page.locator('[data-upid-point-row]').first().locator('[data-upid-point-field="role"]')).toContainText(
-    'Endpoint'
-  );
+  const pointRow = page.locator('[data-upid-point-row]').first();
+  await expect(pointRow).toHaveAttribute('data-upid-tree-row-kind', 'endpoint');
+  await expect(pointRow).toHaveAttribute('data-upid-tree-row-level', '2');
+  await expect(pointRow.locator('[data-upid-tree-kind-label]')).toContainText('Endpoint');
+  await expect(pointRow.locator('[data-upid-tree-action-hint]')).toContainText('selects a start/end handle');
+  await expect(pointRow.locator('[data-upid-point-field="role"]')).toContainText('Endpoint');
 });
 
 test('editor opens contour tree and endpoint topology without covering each other', async ({ page }) => {

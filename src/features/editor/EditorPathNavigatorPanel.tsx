@@ -767,13 +767,24 @@ export function EditorPathNavigatorPanel({
 
         {renderWorkspacePanel('endpoint-topology', 'Endpoint Topology', (
         <section data-upid-endpoint-topology>
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-[9px] uppercase text-muted-foreground">Endpoint Topology</span>
+          <div className="mb-2 flex items-start justify-between gap-2">
+            <span className="min-w-0">
+              <span className="block text-[9px] uppercase text-muted-foreground">Endpoint Topology</span>
+              <span
+                className="block truncate text-[12px] font-semibold text-foreground"
+                data-upid-endpoint-topology-title
+              >
+                Endpoint Join Map
+              </span>
+              <span className="block text-[9px] leading-3 text-muted-foreground">
+                Shows which start/end handles form chains.
+              </span>
+            </span>
             <span
-              className={`text-[9px] ${
+              className={`shrink-0 border px-1.5 py-0.5 text-[9px] ${
                 endpointTopologyPanel.openEndCount > 0 || endpointTopologyPanel.ambiguousCount > 0
-                  ? 'text-amber-200'
-                  : 'text-emerald-200'
+                  ? 'border-amber-400/40 bg-amber-400/10 text-amber-200'
+                  : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'
               }`}
               data-upid-endpoint-topology-status
             >
@@ -784,18 +795,19 @@ export function EditorPathNavigatorPanel({
             className="mb-2 border border-border bg-background/35 px-2 py-1.5 text-[9px] leading-4 text-muted-foreground"
             data-upid-endpoint-topology-help
           >
-            Endpoint topology pairs segment starts and ends into continuous contours. Healed joins show
-            importer tolerance corrections; open ends or ambiguous joins point to geometry that needs review.
+            Endpoint topology pairs segment starts and ends into continuous contours. The join map tells you
+            whether the importer found exact joins, tiny healed gaps, open chain clues, or ambiguous endpoint
+            candidates that need review before export.
           </p>
           <div
             className="mb-2 grid grid-cols-2 gap-1 text-[9px]"
             data-upid-endpoint-topology-summary
             title="Endpoint topology explains how segment starts and ends are paired into continuous contours."
           >
-            <TopologyMetric label="Exact joins" value={endpointTopologyPanel.exactJoinCount} tone="ok" />
-            <TopologyMetric label="Open ends" value={endpointTopologyPanel.openEndCount} tone={endpointTopologyPanel.openEndCount > 0 ? 'warn' : 'muted'} />
-            <TopologyMetric label="Healed joins" value={endpointTopologyPanel.snappedCount} tone={endpointTopologyPanel.snappedCount > 0 ? 'warn' : 'muted'} />
-            <TopologyMetric label="Ambiguous" value={endpointTopologyPanel.ambiguousCount} tone={endpointTopologyPanel.ambiguousCount > 0 ? 'warn' : 'muted'} />
+            <TopologyMetric id="exact-joins" label="Exact joins" value={endpointTopologyPanel.exactJoinCount} tone="ok" />
+            <TopologyMetric id="open-ends" label="Open chain clues" value={endpointTopologyPanel.openEndCount} tone={endpointTopologyPanel.openEndCount > 0 ? 'warn' : 'muted'} />
+            <TopologyMetric id="healed-joins" label="Healed joins" value={endpointTopologyPanel.snappedCount} tone={endpointTopologyPanel.snappedCount > 0 ? 'warn' : 'muted'} />
+            <TopologyMetric id="ambiguous" label="Ambiguous joins" value={endpointTopologyPanel.ambiguousCount} tone={endpointTopologyPanel.ambiguousCount > 0 ? 'warn' : 'muted'} />
           </div>
           {endpointTopologyRows.length > 0 ? (
             <div className="max-h-32 overflow-auto border border-border bg-background/35">
@@ -1024,10 +1036,12 @@ function renderEndpointTopologyRow({
 }
 
 function TopologyMetric({
+  id,
   label,
   tone,
   value
 }: {
+  id: string;
   label: string;
   tone: 'muted' | 'ok' | 'warn';
   value: number;
@@ -1041,8 +1055,14 @@ function TopologyMetric({
             ? 'border-amber-400/40 bg-amber-400/10 text-amber-100'
             : 'border-border bg-background/40 text-muted-foreground'
       }`}
+      data-upid-endpoint-topology-summary-card={id}
     >
-      <span className="block text-[8px] uppercase text-muted-foreground">{label}</span>
+      <span
+        className="block text-[8px] uppercase text-muted-foreground"
+        data-upid-endpoint-topology-summary-label={id}
+      >
+        {label}
+      </span>
       <span className="block text-[11px] font-semibold text-foreground">{value}</span>
     </div>
   );
@@ -1520,7 +1540,7 @@ function renderContourTreeNode({
     >
       <summary className="list-none" onClick={(event) => event.preventDefault()}>
         <div
-          className={`grid w-full grid-cols-[20px_minmax(0,1fr)] items-stretch hover:bg-accent ${
+          className={`grid w-full grid-cols-[22px_minmax(0,1fr)] items-stretch hover:bg-accent ${
             element.operationId === selectedPathOperationId
               ? 'bg-sky-500/15 text-sky-100'
               : hoveredPathElement?.operationId === element.operationId
@@ -1562,6 +1582,9 @@ function renderContourTreeNode({
             data-upid-contour-descendants={node.treeMetrics.descendantCount}
             data-upid-contour-edited-segments={editedSegmentCount > 0 ? editedSegmentCount : undefined}
             data-upid-contour-source-entities={sourceEntityCount}
+            data-upid-tree-row-action="select-contour"
+            data-upid-tree-row-kind="contour"
+            data-upid-tree-row-level={treeDepth}
             data-upid-hovered={hoveredPathElement?.operationId === element.operationId ? 'true' : undefined}
             data-upid-operation-id={element.operationId}
             data-upid-path-element-id={element.id}
@@ -1589,9 +1612,19 @@ function renderContourTreeNode({
             onMouseLeave={() => onHoverPathElement(null)}
             type="button"
           >
-            <span className="pt-0.5 text-center text-muted-foreground">{element.orderIndex + 1}</span>
+            <span className="flex flex-col items-center gap-0.5 pt-0.5 text-center text-muted-foreground">
+              <span className="text-[8px] uppercase">#{element.orderIndex + 1}</span>
+              <span className="h-full min-h-6 border-l border-border/80" aria-hidden="true" />
+            </span>
             <span className="min-w-0">
-              <span className="flex min-w-0 items-center gap-1">
+              <span className="flex min-w-0 flex-wrap items-center gap-1">
+                <span
+                  className="shrink-0 border border-sky-400/35 bg-sky-400/10 px-1 text-[8px] uppercase text-sky-100"
+                  data-upid-tree-kind-label
+                  title="Contour row: selects the complete path operation and highlights the whole loop on the canvas."
+                >
+                  Contour
+                </span>
                 <span
                   className={`shrink-0 border px-1 text-[8px] uppercase ${
                     element.closed
@@ -1603,6 +1636,12 @@ function renderContourTreeNode({
                   {contourKindLabel}
                 </span>
                 <span className="truncate text-[10px] text-foreground">{label}</span>
+              </span>
+              <span
+                className="mt-0.5 block text-[8px] uppercase tracking-normal text-muted-foreground"
+                data-upid-tree-action-hint
+              >
+                selects whole contour on canvas
               </span>
               <span className="mt-1 flex flex-wrap gap-1 text-[8px] text-muted-foreground">
                 <span className="border border-border bg-background/45 px-1" data-upid-contour-field="role">
@@ -1817,10 +1856,15 @@ function renderSegmentRow(
     !selectedPathElement.pointRole;
 
   return (
-    <div data-upid-path-element-id={pathElement.id} data-upid-segment-group key={`${pathElement.id}-${segment.id}-${index}`}>
+    <div
+      className="border-l border-border/70 pl-2"
+      data-upid-path-element-id={pathElement.id}
+      data-upid-segment-group
+      key={`${pathElement.id}-${segment.id}-${index}`}
+    >
       <button
         aria-pressed={selected}
-        className={`grid w-full grid-cols-[26px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[9px] text-muted-foreground outline-none hover:bg-accent ${
+        className={`grid w-full grid-cols-[28px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[9px] text-muted-foreground outline-none hover:bg-accent ${
           selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
         }`}
         data-upid-hovered={hovered ? 'true' : undefined}
@@ -1842,6 +1886,9 @@ function renderSegmentRow(
         data-upid-segment-sweep={geometry.kind === 'line' ? undefined : formatNumber(geometry.sweepDegrees)}
         data-upid-segment-row
         data-upid-segment-id={segment.id}
+        data-upid-tree-row-action="select-segment"
+        data-upid-tree-row-kind="segment"
+        data-upid-tree-row-level="1"
         title={`${segmentKindLabel}. Selects and highlights one segment of ${pathElement.displayName}.`}
         onClick={() =>
           onSelectPathElement({
@@ -1860,9 +1907,19 @@ function renderSegmentRow(
         onMouseLeave={() => onHoverPathElement(null)}
         type="button"
       >
-        <span>{index + 1}</span>
+        <span className="flex flex-col items-center gap-0.5 pt-0.5">
+          <span className="text-[8px] uppercase">S{index + 1}</span>
+          <span className="h-full min-h-5 border-l border-border/70" aria-hidden="true" />
+        </span>
         <span className="min-w-0">
-          <span className="flex min-w-0 items-center gap-1">
+          <span className="flex min-w-0 flex-wrap items-center gap-1">
+            <span
+              className="shrink-0 border border-cyan-400/35 bg-cyan-400/10 px-1 text-[8px] uppercase text-cyan-100"
+              data-upid-tree-kind-label
+              title="Segment row: selects one line or arc inside the contour."
+            >
+              Segment
+            </span>
             <span
               className="shrink-0 border border-border bg-background/50 px-1 text-[8px] uppercase text-muted-foreground"
               data-upid-segment-kind-label
@@ -1870,6 +1927,12 @@ function renderSegmentRow(
               {segmentKindLabel}
             </span>
             <span className="truncate text-[9px] text-muted-foreground">#{index + 1}</span>
+          </span>
+          <span
+            className="mt-0.5 block text-[8px] uppercase tracking-normal text-muted-foreground"
+            data-upid-tree-action-hint
+          >
+            selects one segment on canvas
           </span>
           <span className="block truncate" data-upid-segment-span>
             {formatPoint(start)}
@@ -1979,7 +2042,7 @@ function renderPointRow({
 
   return (
     <div
-      className={`grid w-full grid-cols-[38px_minmax(0,1fr)_20px] gap-1 px-1.5 py-0.5 pl-5 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent ${
+      className={`grid w-full grid-cols-[minmax(0,1fr)_20px] gap-1 border-l border-border/60 px-1.5 py-1 pl-5 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-hovered={hovered ? 'true' : undefined}
@@ -1998,18 +2061,36 @@ function renderPointRow({
       data-upid-segment-id={segment.id}
       data-upid-point-role={role}
       data-upid-point-row
+      data-upid-tree-row-action="select-endpoint"
+      data-upid-tree-row-kind="endpoint"
+      data-upid-tree-row-level="2"
       title={`Endpoint cluster ${endpointCluster?.id ?? 'unpaired'}: ${role} point for segment ${index + 1}.`}
       onMouseEnter={() => onHoverPathElement(element)}
       onMouseLeave={() => onHoverPathElement(null)}
     >
       <button
         aria-pressed={selected}
-        className="col-span-2 grid min-w-0 grid-cols-[38px_minmax(0,1fr)] gap-1 text-left outline-none"
+        className="min-w-0 text-left outline-none"
         onClick={() => onSelectPathElement(element)}
         type="button"
       >
-        <span className="uppercase" data-upid-point-role-label>{role.toUpperCase()}</span>
         <span className="min-w-0">
+          <span className="flex min-w-0 flex-wrap items-center gap-1">
+            <span
+              className="shrink-0 border border-violet-400/35 bg-violet-400/10 px-1 text-[8px] uppercase text-violet-100"
+              data-upid-tree-kind-label
+              title="Endpoint row: selects one start or end handle for this segment."
+            >
+              Endpoint
+            </span>
+            <span className="uppercase text-muted-foreground" data-upid-point-role-label>{role.toUpperCase()}</span>
+          </span>
+          <span
+            className="mt-0.5 block text-[8px] uppercase tracking-normal text-muted-foreground"
+            data-upid-tree-action-hint
+          >
+            selects a start/end handle
+          </span>
           <span className="grid grid-cols-[52px_minmax(0,1fr)] gap-1" data-upid-point-field="role">
             <span className="uppercase text-muted-foreground">Endpoint</span>
             <span className="truncate text-foreground">{role.toUpperCase()}</span>

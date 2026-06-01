@@ -162,7 +162,7 @@ const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string
   'path-actions': 'selection actions, start point, direction, and contour role',
   'path-transform': 'exact move tools for contours, segments, and arc centers',
   'path-hover-assist': 'canvas hover and magnetic construction behavior',
-  'endpoint-topology': 'endpoint joins, healed gaps, open ends, and ambiguous clusters',
+  'endpoint-topology': 'join map for endpoint joins, healed gaps, open ends, and ambiguous clusters',
   'path-diagnostics': 'warnings and linked rows for broken or risky path geometry',
   'cut-sequence': 'operation order, rapid moves, and cut direction',
   'contour-tree': 'nested contours, segments, endpoints, and canvas cross-highlighting',
