@@ -456,14 +456,30 @@ export function projectUpidPathDiagnostic(
 function readUpidDiagnosticMetrics(diagnostic: PathDiagnostic): UpidSelectedPathDiagnosticMetric[] {
   const metrics: UpidSelectedPathDiagnosticMetric[] = [];
   const tolerance = readDiagnosticNumber(diagnostic, 'tolerance');
+  const endpointTolerance = readDiagnosticNumber(diagnostic, 'endpointTolerance');
+  const gap = readDiagnosticNumber(diagnostic, 'gap');
   const maxPairDistance = readDiagnosticNumber(diagnostic, 'maxPairDistance');
   const candidateDistances = readDiagnosticNumberArray(diagnostic, 'candidateDistances');
 
+  if (gap !== null) {
+    metrics.push({
+      key: 'gap',
+      label: 'Gap',
+      value: gap
+    });
+  }
   if (tolerance !== null) {
     metrics.push({
       key: 'tolerance',
       label: 'Tolerance',
       value: tolerance
+    });
+  }
+  if (endpointTolerance !== null) {
+    metrics.push({
+      key: 'endpointTolerance',
+      label: 'Tolerance',
+      value: endpointTolerance
     });
   }
   if (maxPairDistance !== null) {

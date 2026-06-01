@@ -20,6 +20,7 @@ import {
   postUpidToGcode,
   postUpidToGcodeBody
 } from '../upidDocument';
+import { projectUpidPathDiagnostic } from '../projectRail';
 
 describe('UPID document boundary', () => {
   it('creates a Universal Path Intelligence Document from DXF entities and posts it at the export boundary', () => {
@@ -348,6 +349,20 @@ describe('UPID document boundary', () => {
     expect(exportProgram.diagnostics.map((diagnostic) => diagnostic.code)).toContain('endpoint-cluster-snap');
     expect(exportProgram.diagnostics.map((diagnostic) => diagnostic.code)).toContain('post-bridged-gap');
     expect(exportProgram.diagnostics).toEqual([...document.diagnostics, ...exportProgram.post.diagnostics]);
+    const bridgedGap = exportProgram.diagnostics.find((diagnostic) => diagnostic.code === 'post-bridged-gap');
+    expect(bridgedGap).toBeTruthy();
+    expect(projectUpidPathDiagnostic(document, bridgedGap!).metrics).toEqual([
+      {
+        key: 'gap',
+        label: 'Gap',
+        value: expect.closeTo(0.004)
+      },
+      {
+        key: 'endpointTolerance',
+        label: 'Tolerance',
+        value: 0.01
+      }
+    ]);
   });
 
   it('posts line, arc, and circle geometry only from the UPID export boundary', () => {
