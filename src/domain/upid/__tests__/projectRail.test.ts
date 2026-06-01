@@ -482,6 +482,7 @@ describe('UPID project rail projection', () => {
     expect(readUpidPathElementSourceSummary(pathElement!)).toEqual({
       blocks: 'PROFILE',
       entities: '1 entity',
+      edits: null,
       exact: 'exact',
       handles: 'BEEF',
       inserts: 'PROFILE / 1 segment',
@@ -520,7 +521,7 @@ describe('UPID project rail projection', () => {
       {
         kind: 'start',
         label: 'Start',
-        value: '22.500, 0.000 / split 2'
+        value: '22.500, 0.000 / split 2 / source seg_0005'
       }
     ]);
   });

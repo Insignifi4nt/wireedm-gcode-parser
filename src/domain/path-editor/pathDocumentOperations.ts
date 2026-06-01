@@ -180,6 +180,7 @@ export function setClosedOperationStartNearPoint(
   const nearest = nearestPointOnOperation(next, operation.id, point);
   if (!nearest) return null;
 
+  const startSelection = manualStartSelection(next, operation, nearest);
   const split = splitOperationSegmentAtPoint(next, operation, nearest);
   const refs = split?.refs ?? operation.segmentRefs;
   const startIndex = split?.startIndex ?? nearest.segmentIndex;
@@ -189,12 +190,37 @@ export function setClosedOperationStartNearPoint(
     start: {
       kind: 'manual',
       point: { ...nearest.point },
+      relation: split?.createdSegmentIds?.length ? 'new-split-point' : 'existing-point',
+      sourceSegmentId: nearest.segmentId,
+      sourceSegmentIndex: nearest.segmentIndex,
+      ...(startSelection.pointRole ? { pointRole: startSelection.pointRole } : {}),
       createdSegmentIds: split?.createdSegmentIds ?? []
     }
   };
   syncChainRefs(next, operation);
   refreshPlan(next);
   return next;
+}
+
+function manualStartSelection(
+  document: PathPlanningDocument,
+  operation: PathOperation,
+  nearest: NearestPathPoint
+) {
+  const ref = operation.segmentRefs[nearest.segmentIndex];
+  if (!ref) return {};
+
+  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
+  const start = orientedSegmentStart(segment, ref);
+  const end = orientedSegmentEnd(segment, ref);
+  const epsilon = document.options.coincidenceEpsilon;
+  const pointRole: EndpointSide | undefined = pointsEqual(nearest.point, start, epsilon)
+    ? 'start'
+    : pointsEqual(nearest.point, end, epsilon)
+      ? 'end'
+      : undefined;
+
+  return { pointRole };
 }
 
 export function setClosedOperationStartAtExistingPointNearPoint(

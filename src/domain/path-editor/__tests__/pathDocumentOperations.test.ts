@@ -11,6 +11,7 @@ import {
   previewClosedOperationStartNearPoint,
   reversePathOperation,
   setPathOperationClassification,
+  setClosedOperationStartAtExistingPointNearPoint,
   setClosedOperationStartNearPoint,
   setPathOperationOrderStrategy,
   slideMagnetizedPointOnSegment
@@ -160,6 +161,41 @@ describe('pathDocumentOperations', () => {
     expect(started?.plan.operations[1].overrides?.start?.kind).toBe('manual');
     expect(started?.plan.operations[1].overrides?.start?.point).toEqual({ x: 2.5, y: 0 });
     expect(started?.plan.operations[1].overrides?.start?.createdSegmentIds).toHaveLength(2);
+  });
+
+  it('records how a manual start point was chosen', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const operation = document.plan.operations[0];
+    const sourceSegmentId = operation.segmentRefs[0].segmentId;
+
+    const splitStarted = setClosedOperationStartNearPoint(document, operation.id, { x: 5, y: 0 });
+    const splitOverride = splitStarted?.plan.operations[0].overrides?.start;
+
+    expect(splitOverride).toMatchObject({
+      kind: 'manual',
+      point: { x: 5, y: 0 },
+      relation: 'new-split-point',
+      sourceSegmentId,
+      sourceSegmentIndex: 0
+    });
+    expect(splitOverride?.pointRole).toBeUndefined();
+    expect(splitOverride?.createdSegmentIds).toHaveLength(2);
+
+    const existingStarted = setClosedOperationStartAtExistingPointNearPoint(
+      document,
+      operation.id,
+      { x: 9, y: 0.35 }
+    );
+
+    expect(existingStarted?.plan.operations[0].overrides?.start).toMatchObject({
+      kind: 'manual',
+      point: { x: 10, y: 0 },
+      relation: 'existing-point',
+      sourceSegmentId,
+      sourceSegmentIndex: 0,
+      pointRole: 'end',
+      createdSegmentIds: []
+    });
   });
 
   it('refreshes UPID path elements after manual path edits', () => {

@@ -1,5 +1,6 @@
 import type {
   Bounds2,
+  ManualStartOverride,
   OrientedSegmentRef,
   PathElementPointRole,
   PathDiagnostic,
@@ -378,14 +379,21 @@ export function readUpidManualOverrideRows(overrides: PathElement['overrides']):
     rows.push({
       kind: 'start',
       label: 'Start',
-      value:
-        overrides.start.createdSegmentIds.length > 0
-          ? `${formatUpidPoint(overrides.start.point)} / split ${overrides.start.createdSegmentIds.length}`
-          : formatUpidPoint(overrides.start.point)
+      value: formatUpidStartOverride(overrides.start)
     });
   }
 
   return rows;
+}
+
+function formatUpidStartOverride(start: ManualStartOverride) {
+  const source = `source ${start.sourceSegmentId}`;
+
+  if (start.relation === 'new-split-point') {
+    return `${formatUpidPoint(start.point)} / split ${start.createdSegmentIds.length} / ${source}`;
+  }
+
+  return `${formatUpidPoint(start.point)} / existing ${start.pointRole ?? 'point'} / ${source}`;
 }
 
 export function readUpidPathElementSourceSummary(element: PathElement): UpidPathElementSourceSummary {

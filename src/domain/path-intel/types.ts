@@ -265,6 +265,10 @@ export interface ManualClassificationOverride {
 export interface ManualStartOverride {
   kind: 'manual';
   point: Point2;
+  relation: 'existing-point' | 'new-split-point';
+  sourceSegmentId: SegmentId;
+  sourceSegmentIndex: number;
+  pointRole?: EndpointSide;
   createdSegmentIds: SegmentId[];
 }
 
