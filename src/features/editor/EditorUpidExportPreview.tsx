@@ -40,6 +40,12 @@ export function EditorUpidExportPreview({
   onHoverPathElement,
   onSelectPathElement
 }: EditorUpidExportPreviewProps) {
+  const tracedMovesByProgramLine = new Map(
+    postedOperations.flatMap((operation) =>
+      operation.moves.map((move) => [move.programLineNumber, move] as const)
+    )
+  );
+
   return (
     <section
       aria-label="UPID Export Preview"
@@ -226,18 +232,37 @@ export function EditorUpidExportPreview({
         className="min-h-0 overflow-auto bg-background/80 p-3 leading-5 text-foreground"
         data-upid-export-gcode
       >
-        {programLines.map((line) => (
-          <div
-            className="grid grid-cols-[3rem_minmax(0,1fr)] gap-3 border-b border-border/40 py-0.5 last:border-b-0"
-            data-upid-export-program-line={line.lineNumber}
-            data-upid-export-program-line-row
-            data-upid-export-program-section={line.section}
-            key={`${line.lineNumber}-${line.text}`}
-          >
-            <span className="select-none text-right text-muted-foreground">{line.lineNumber}</span>
-            <code className="whitespace-pre-wrap break-words">{line.text}</code>
-          </div>
-        ))}
+        {programLines.map((line) => {
+          const move = tracedMovesByProgramLine.get(line.lineNumber) ?? null;
+          const traceRef = move ? upidMoveTraceRef(move) : null;
+
+          return (
+            <button
+              className="grid w-full grid-cols-[3rem_minmax(0,1fr)] gap-3 border-b border-border/40 py-0.5 text-left last:border-b-0 disabled:cursor-text"
+              data-upid-export-program-line={line.lineNumber}
+              data-upid-export-program-line-path-element={move?.pathElementId ?? undefined}
+              data-upid-export-program-line-row
+              data-upid-export-program-line-segment={move?.segmentId ?? undefined}
+              data-upid-export-program-line-segment-ordinal={move?.segmentOrdinal ?? undefined}
+              data-upid-export-program-section={line.section}
+              disabled={!traceRef}
+              key={`${line.lineNumber}-${line.text}`}
+              onClick={() => {
+                if (traceRef) onSelectPathElement?.(traceRef);
+              }}
+              onMouseEnter={() => {
+                if (traceRef) onHoverPathElement?.(traceRef);
+              }}
+              onMouseLeave={() => {
+                if (traceRef) onHoverPathElement?.(null);
+              }}
+              type="button"
+            >
+              <span className="select-none text-right text-muted-foreground">{line.lineNumber}</span>
+              <code className="whitespace-pre-wrap break-words">{line.text}</code>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
