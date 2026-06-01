@@ -71,7 +71,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'From the dashboard, import a DXF to create a clean internal path project. G-code is posted later from the active path plan and machine profile.'
           },
           {
-            text: 'From the editor, click Import Program or drag in .gcode, .nc, .iso, or .txt files. External programs pass through the cleanup/display pipeline before preview and editing.',
+            text: 'From the editor, click Import Program or drag in .gcode, .nc, .iso, or .txt files. External programs pass through the cleanup/display pipeline before canvas display and editing.',
             mock: { label: 'Import Program', tone: 'primary' },
             highlightTarget: 'import-program'
           },
@@ -81,20 +81,20 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         ]
       },
       {
-        title: '3. Preview Navigation',
+        title: '3. Canvas Navigation',
         steps: [
           {
-            text: 'The preview shows rapid and cut moves, start/end markers, selected rows, hovered rows, pinned references, measurement points, the grid, and axes.',
+            text: 'The canvas shows rapid and cut moves, start/end markers, selected rows, hovered rows, pinned references, measurement points, the grid, and axes.',
             highlightTarget: 'preview'
           },
           {
-            text: 'Use the preview toolbar, Ctrl/Cmd +/- shortcuts, mouse wheel, or Fit to Screen to zoom. Shift-drag or middle-drag pans the view.'
+            text: 'Use the canvas toolbar, Ctrl/Cmd +/- shortcuts, mouse wheel, or Fit to Screen to zoom. Shift-drag or middle-drag pans the view.'
           },
           {
-            text: 'Press G to toggle grid visibility. Current Position shows live mouse coordinates over the preview.'
+            text: 'Press G to toggle grid visibility. Current Position shows live mouse coordinates over the canvas.'
           },
           {
-            text: 'Enable Grid Snap when cursor coordinates and clicked measurement points should land on the 5 mm preview grid.',
+            text: 'Enable Grid Snap when cursor coordinates and clicked measurement points should land on the 5 mm canvas grid.',
             mock: { label: 'Grid Snap ON' },
             highlightTarget: 'grid-snap'
           }
@@ -104,7 +104,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '4. Measurement Points',
         steps: [
           {
-            text: 'Click the preview to add P1, P2, and later points. You can also type exact X/Y values and click Add Point.',
+            text: 'Click the canvas to add P1, P2, and later points. You can also type exact X/Y values and click Add Point.',
             highlightTarget: 'measurement-points'
           },
           {
@@ -130,7 +130,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'program-lines'
           },
           {
-            text: 'Close or reopen Program Lines from its header when you need more room for the preview without losing the current draft.',
+            text: 'Close or reopen Program Lines from its header when you need more room for the canvas without losing the current draft.',
             mock: { label: 'Close drawer' },
             highlightTarget: 'program-lines'
           },
@@ -148,7 +148,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'selection-counter'
           },
           {
-            text: 'Hover a row and use its pin button to keep that endpoint highlighted on the preview. The red pin button clears all pinned references.',
+            text: 'Hover a row and use its pin button to keep that endpoint highlighted on the canvas. The red pin button clears all pinned references.',
             mock: { label: 'Pin', tone: 'danger' },
             highlightTarget: 'clear-pins'
           }
@@ -208,7 +208,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Din dashboard, importa un DXF ca sa creezi un proiect intern de path. G-code-ul se posteaza mai tarziu din planul de path si profilul de masina activ.'
           },
           {
-            text: 'Din editor, apasa Import Program sau trage fisiere .gcode, .nc, .iso ori .txt. Programele externe trec prin pipeline-ul de cleanup/display inainte de preview si editare.',
+            text: 'Din editor, apasa Import Program sau trage fisiere .gcode, .nc, .iso ori .txt. Programele externe trec prin pipeline-ul de cleanup/display inainte de afisare pe canvas si editare.',
             mock: { label: 'Import Program', tone: 'primary' },
             highlightTarget: 'import-program'
           },
@@ -218,17 +218,17 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         ]
       },
       {
-        title: '3. Navigare preview',
+        title: '3. Navigare canvas',
         steps: [
           {
-            text: 'Preview-ul arata miscari rapide si de taiere, markere start/end, randuri selectate, randuri hover, repere pinned, puncte de masurare, grid si axe.',
+            text: 'Canvas-ul arata miscari rapide si de taiere, markere start/end, randuri selectate, randuri hover, repere pinned, puncte de masurare, grid si axe.',
             highlightTarget: 'preview'
           },
           {
-            text: 'Foloseste toolbar-ul de preview, shortcut-uri Ctrl/Cmd +/-, rotita mouse-ului sau Fit to Screen pentru zoom. Shift-drag sau middle-drag face pan.'
+            text: 'Foloseste toolbar-ul canvasului, shortcut-uri Ctrl/Cmd +/-, rotita mouse-ului sau Fit to Screen pentru zoom. Shift-drag sau middle-drag face pan.'
           },
           {
-            text: 'Apasa G ca sa ascunzi sau afisezi gridul. Current Position arata coordonatele live ale mouse-ului pe preview.'
+            text: 'Apasa G ca sa ascunzi sau afisezi gridul. Current Position arata coordonatele live ale mouse-ului pe canvas.'
           },
           {
             text: 'Activeaza Grid Snap cand coordonatele cursorului si punctele adaugate prin click trebuie sa cada pe gridul de 5 mm.',
@@ -241,7 +241,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '4. Puncte de masurare',
         steps: [
           {
-            text: 'Click pe preview adauga P1, P2 si urmatoarele puncte. Poti introduce si valori exacte X/Y, apoi Add Point.',
+            text: 'Click pe canvas adauga P1, P2 si urmatoarele puncte. Poti introduce si valori exacte X/Y, apoi Add Point.',
             highlightTarget: 'measurement-points'
           },
           {
@@ -267,7 +267,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'program-lines'
           },
           {
-            text: 'Inchide sau redeschide Program Lines din header cand vrei mai mult spatiu pentru preview, fara sa pierzi draftul curent.',
+            text: 'Inchide sau redeschide Program Lines din header cand vrei mai mult spatiu pentru canvas, fara sa pierzi draftul curent.',
             mock: { label: 'Close drawer' },
             highlightTarget: 'program-lines'
           },
@@ -285,7 +285,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'selection-counter'
           },
           {
-            text: 'Hover pe un rand si foloseste pin-ul lui ca endpoint-ul sa ramana evidentiat in preview. Pin-ul rosu curata toate reperele pinned.',
+            text: 'Hover pe un rand si foloseste pin-ul lui ca endpoint-ul sa ramana evidentiat pe canvas. Pin-ul rosu curata toate reperele pinned.',
             mock: { label: 'Pin', tone: 'danger' },
             highlightTarget: 'clear-pins'
           }

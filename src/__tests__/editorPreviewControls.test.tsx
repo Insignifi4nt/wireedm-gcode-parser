@@ -363,6 +363,8 @@ describe('Editor preview controls and guide', () => {
     expect(container.querySelector('[data-editor-guide-overlay]')).not.toBeNull();
     expect(dialog?.textContent).toContain('Wire EDM Workbench Manual');
     expect(dialog?.textContent).toContain('Import Program');
+    expect(dialog?.textContent).toContain('Canvas Navigation');
+    expect(dialog?.textContent).not.toContain('Preview Navigation');
     expect(dialog?.textContent).toContain('UPID Path Navigator');
     expect(dialog?.textContent).toContain('Close or reopen Program Lines');
 
@@ -377,6 +379,8 @@ describe('Editor preview controls and guide', () => {
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
       'Manual Wire EDM Workbench'
     );
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('Navigare canvas');
+    expect(container.querySelector('[role="dialog"]')?.textContent).not.toContain('Navigare preview');
 
     const englishToggle = container.querySelector(
       'button[data-editor-guide-language="en"]'
