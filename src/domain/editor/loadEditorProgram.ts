@@ -37,6 +37,10 @@ export async function loadEditorProgram(
     return createUpidEditorProgram(workbench, project, pathDocument);
   }
 
+  if (project.source.kind === 'dxf') {
+    throw new Error('DXF projects must contain a UPID document.');
+  }
+
   const filePath = project.editor.activeFilePath;
   if (!filePath) {
     throw new Error('Project does not reference an editor program.');

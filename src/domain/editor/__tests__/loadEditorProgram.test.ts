@@ -63,10 +63,6 @@ describe('loadEditorProgram', () => {
         kind: 'external-gcode' as const,
         files: []
       },
-      generated: {
-        body: '',
-        files: []
-      },
       machine: workbench.activeMachineProfile,
       editor: {
         activeFilePath: 'editor/missing.iso',
@@ -79,6 +75,41 @@ describe('loadEditorProgram', () => {
     );
   });
 
+  it('rejects DXF projects without a UPID document instead of opening an active G-code file', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const project = {
+      ...workbench.manifest.projects[0],
+      schemaVersion: 1 as const,
+      id: 'old-dxf-generated',
+      name: 'Old DXF Generated',
+      createdAt: '2026-05-29T11:00:00.000Z',
+      updatedAt: '2026-05-29T11:00:00.000Z',
+      source: {
+        kind: 'dxf' as const,
+        files: [
+          {
+            createdAt: '2026-05-29T11:00:00.000Z',
+            kind: 'dxf' as const,
+            name: 'old.dxf',
+            path: 'imports/old.dxf'
+          }
+        ]
+      },
+      machine: workbench.activeMachineProfile,
+      editor: {
+        activeFilePath: 'generated/old.iso',
+        pinnedLineNumbers: []
+      }
+    };
+    await adapter.writeText('generated/old.iso', 'G0 X0 Y0\nG1 X10 Y0');
+
+    await expect(loadEditorProgram(workbench, project)).rejects.toThrow(
+      'DXF projects must contain a UPID document.'
+    );
+  });
 });
 
 function simpleArcDxf() {
