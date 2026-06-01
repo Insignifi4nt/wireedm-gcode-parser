@@ -677,6 +677,8 @@ describe('App DXF imports and project library', () => {
     });
 
     expect(cutSequenceRows[0].getAttribute('data-upid-selected')).toBe('true');
+    expect(container.querySelector('[data-upid-selected="label"]')?.textContent).toBe('Island 1');
+    expect(container.querySelector('[data-upid-selected="source-label"]')?.textContent).toBe('Contour 3');
     expect(container.querySelector('[data-upid-selected="classification"]')?.textContent).toBe('island');
     expect(container.querySelector('[data-upid-selected="nest"]')?.textContent).toContain('depth 2');
 
@@ -765,6 +767,8 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-contour-row]')?.getAttribute('data-upid-contour-role')).toBe(
       'hole'
     );
+    expect(container.querySelector('[data-upid-selected="label"]')?.textContent).toBe('Hole 1');
+    expect(container.querySelector('[data-upid-selected="source-label"]')?.textContent).toBe('Contour 1');
     expect(container.querySelector('[data-upid-selected="classification"]')?.textContent).toBe('hole');
     expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain('Role');
     expect(container.querySelector('[data-upid-selected-overrides]')?.textContent).toContain('hole');

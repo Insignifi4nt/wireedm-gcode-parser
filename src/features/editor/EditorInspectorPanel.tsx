@@ -252,7 +252,9 @@ export function EditorInspectorPanel({
             <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Geometry</h3>
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
               <dt className="text-muted-foreground">Element</dt>
-              <dd data-upid-selected="label">{selectedPathElementModel.label}</dd>
+              <dd data-upid-selected="label">{selectedPathElementModel.displayName}</dd>
+              <dt className="text-muted-foreground">Source</dt>
+              <dd data-upid-selected="source-label">{selectedPathElementModel.label}</dd>
               <dt className="text-muted-foreground">Contour</dt>
               <dd data-upid-selected="classification">{selectedPathElementModel.classification}</dd>
               <dt className="text-muted-foreground">Kind</dt>
@@ -272,7 +274,7 @@ export function EditorInspectorPanel({
                 {selectedPathElementModel.segmentRefs.length}{' '}
                 {selectedPathElementModel.segmentRefs.length === 1 ? 'segment' : 'segments'}
               </dd>
-              <dt className="text-muted-foreground">Source</dt>
+              <dt className="text-muted-foreground">Entities</dt>
               <dd data-upid-selected="source-entities">{selectedPathSource?.entities ?? '0 entities'}</dd>
               <dt className="text-muted-foreground">Layers</dt>
               <dd data-upid-selected="source-layers">{selectedPathSource?.layers ?? '-'}</dd>
