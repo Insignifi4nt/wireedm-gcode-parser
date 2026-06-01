@@ -57,6 +57,7 @@ export function AppShell({
         ? 'Connecting Workbench Folder'
         : 'Storage not connected';
   const projectCount = connectedWorkbench?.manifest.projects.length ?? 0;
+  const replaceExpandedRailChrome = Boolean(railContent?.replaceRailChrome && !sidebarCollapsed);
 
   function handleSidebarResizeStart(event: PointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -87,15 +88,6 @@ export function AppShell({
         className="flex h-9 shrink-0 items-center border-b border-border bg-[#11171b]/95 px-2"
         data-app-header
       >
-        <button
-          aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}
-          className="mr-2 flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-          onClick={() => setSidebarCollapsed((current) => !current)}
-          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          type="button"
-        >
-          {sidebarCollapsed ? <PanelLeftOpen className="size-3.5" /> : <PanelLeftClose className="size-3.5" />}
-        </button>
         {headerContent ?? (
           <div className="mr-4 flex min-w-0 items-center gap-2 font-mono text-xs font-semibold text-foreground">
             <HardDrive className="size-4 text-primary" />
@@ -135,9 +127,32 @@ export function AppShell({
           gridTemplateColumns: sidebarCollapsed ? '42px minmax(0, 1fr)' : `${sidebarWidth}px 4px minmax(0, 1fr)`
         }}
       >
-        <aside className="min-w-0 overflow-hidden border-r border-border bg-card/95" data-app-rail>
-          {sidebarCollapsed
-            ? railContent?.collapsed ?? (
+        <aside
+          className={`grid min-w-0 overflow-hidden border-r border-border bg-card/95 ${
+            replaceExpandedRailChrome ? 'grid-rows-[minmax(0,1fr)]' : 'grid-rows-[auto_minmax(0,1fr)]'
+          }`}
+          data-app-rail
+        >
+          {!replaceExpandedRailChrome && (
+            <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-1">
+              <button
+                aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}
+                className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+                onClick={() => setSidebarCollapsed((current) => !current)}
+                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                type="button"
+              >
+                {sidebarCollapsed ? (
+                  <PanelLeftOpen className="size-3.5" />
+                ) : (
+                  <PanelLeftClose className="size-3.5" />
+                )}
+              </button>
+            </div>
+          )}
+          <div className={`min-h-0 overflow-hidden ${replaceExpandedRailChrome ? 'p-2' : ''}`}>
+            {sidebarCollapsed ? (
+              railContent?.collapsed ?? (
                 <div className="flex h-full flex-col items-center gap-3 py-3">
                   <Database className="size-4 text-primary" />
                   <div
@@ -154,7 +169,8 @@ export function AppShell({
                   </div>
                 </div>
               )
-            : railContent?.expanded ?? (
+            ) : (
+              railContent?.expanded ?? (
                 <div className="p-3">
                   <div className="mb-3 flex items-center justify-between">
                     <div>
@@ -207,7 +223,9 @@ export function AppShell({
                     <p className="mt-1">No feeds in export defaults</p>
                   </div>
                 </div>
-              )}
+              )
+            )}
+          </div>
         </aside>
         {!sidebarCollapsed && (
           <div
@@ -219,7 +237,7 @@ export function AppShell({
           />
         )}
 
-        <AppRailProvider value={{ setHeaderContent, setRailContent }}>
+        <AppRailProvider value={{ setHeaderContent, setRailCollapsed: setSidebarCollapsed, setRailContent }}>
           <main className="min-h-0 min-w-0 overflow-hidden">{children}</main>
         </AppRailProvider>
       </div>

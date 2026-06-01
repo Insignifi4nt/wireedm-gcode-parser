@@ -103,6 +103,8 @@ describe('App dashboard and workbench shell', () => {
     await renderApp(context);
 
     const shell = container.querySelector('[data-app-shell]');
+    const appRail = container.querySelector('[data-app-rail]');
+    const appHeader = container.querySelector('[data-app-header]');
     const collapseButton = container.querySelector(
       'button[aria-label="Collapse workbench sidebar"]'
     ) as HTMLButtonElement | null;
@@ -110,6 +112,8 @@ describe('App dashboard and workbench shell', () => {
     expect(shell?.className).toContain('flex-col');
     expect(shell?.getAttribute('data-sidebar-collapsed')).toBe('false');
     expect(collapseButton).not.toBeNull();
+    expect(appRail?.contains(collapseButton)).toBe(true);
+    expect(appHeader?.contains(collapseButton)).toBe(false);
 
     await act(async () => {
       collapseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -117,7 +121,11 @@ describe('App dashboard and workbench shell', () => {
     await flushAsync();
 
     expect(shell?.getAttribute('data-sidebar-collapsed')).toBe('true');
-    expect(container.querySelector('button[aria-label="Expand workbench sidebar"]')).not.toBeNull();
+    const expandButton = container.querySelector(
+      'button[aria-label="Expand workbench sidebar"]'
+    ) as HTMLButtonElement | null;
+    expect(expandButton).not.toBeNull();
+    expect(appRail?.contains(expandButton)).toBe(true);
   });
 
   it('saves custom workbench templates and output settings in the browser cache', async () => {

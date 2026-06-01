@@ -3,10 +3,12 @@ import { createContext, useContext, type Dispatch, type ReactNode, type SetState
 export interface AppRailContent {
   collapsed: ReactNode;
   expanded: ReactNode;
+  replaceRailChrome?: boolean;
 }
 
 interface AppRailContextValue {
   setHeaderContent: Dispatch<SetStateAction<ReactNode | null>>;
+  setRailCollapsed: Dispatch<SetStateAction<boolean>>;
   setRailContent: Dispatch<SetStateAction<AppRailContent | null>>;
 }
 

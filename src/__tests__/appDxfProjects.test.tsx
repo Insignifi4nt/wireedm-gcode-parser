@@ -469,8 +469,9 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-contour-row]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-stack]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-row]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Resize Inspector Rail"]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Collapse Inspector Rail"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Resize Inspector Dock"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Collapse Inspector Dock"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-panel-dock-zone="right"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Resize right bar"]')).toBeNull();
     expect(container.querySelector('[aria-label="Collapse right bar"]')).toBeNull();
     expect(container.querySelector('[data-editor-path-plan-panel]')).toBeNull();
@@ -488,7 +489,7 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).not.toContain('Footer');
 
     const collapseInspectorButton = container.querySelector(
-      '[aria-label="Collapse Inspector Rail"]'
+      '[aria-label="Collapse Inspector Dock"]'
     ) as HTMLButtonElement | null;
 
     await act(async () => {
@@ -496,9 +497,198 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    expect(container.querySelector('[data-editor-inspector-collapsed]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Expand Inspector Rail"]')).not.toBeNull();
+    expect(
+      container
+        .querySelector('[data-editor-panel-dock-zone="right"]')
+        ?.getAttribute('data-editor-panel-dock-zone-collapsed')
+    ).toBe('true');
+    expect(container.querySelector('[aria-label="Expand Inspector Dock"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Expand right bar"]')).toBeNull();
+  });
+
+  it('floats and restores editor panels without losing panel state', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'dockable-panels.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const hoverAssistToggle = container.querySelector(
+      'input[aria-label="Toggle canvas hover assist"]'
+    ) as HTMLInputElement | null;
+    const gridSnapToggle = container.querySelector(
+      'button[aria-label="Toggle preview grid snap"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      hoverAssistToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      gridSnapToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(hoverAssistToggle?.checked).toBe(true);
+    expect(gridSnapToggle?.textContent).toContain('ON');
+
+    expect(
+      container
+        .querySelector('[data-editor-workspace-panel="path-hover-assist"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('floating');
+    expect(container.querySelector('button[aria-label="Float Hover Assist"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Dock Hover Assist"]')).toBeNull();
+    expect(container.querySelector('[data-editor-workspace-panel-handle="path-hover-assist"]')).not.toBeNull();
+
+    const hideHoverAssistButton = container.querySelector(
+      'button[aria-label="Hide Hover Assist"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      hideHoverAssistButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-workspace-panel="path-hover-assist"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Show Hover Assist"]')).not.toBeNull();
+
+    const showHoverAssistButton = container.querySelector(
+      'button[aria-label="Show Hover Assist"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      showHoverAssistButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const restoredHoverAssistToggle = container.querySelector(
+      '[data-editor-workspace-panel="path-hover-assist"] input[aria-label="Toggle canvas hover assist"]'
+    ) as HTMLInputElement | null;
+    expect(restoredHoverAssistToggle?.checked).toBe(true);
+    expect(
+      container
+        .querySelector('[data-editor-workspace-panel="path-hover-assist"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('floating');
+
+    expect(
+      container
+        .querySelector('[data-editor-workspace-panel="position"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('floating');
+
+    const hidePositionButton = container.querySelector(
+      'button[aria-label="Hide Position"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      hidePositionButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const showPositionButton = container.querySelector(
+      'button[aria-label="Show Position"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      showPositionButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-workspace-panel="position"] [data-editor-grid-snap]')?.textContent).toContain(
+      'ON'
+    );
+  });
+
+  it('exposes path and inspector functionality as individual workspace panels', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'workspace-panels.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('button[aria-label="Float UPID Path Navigator"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Float Inspector"]')).toBeNull();
+
+    const expectedPanels = [
+      'path-summary',
+      'path-actions',
+      'path-hover-assist',
+      'path-diagnostics',
+      'cut-sequence',
+      'contour-tree',
+      'position',
+      'statistics',
+      'machine',
+      'measurement'
+    ];
+
+    for (const panelId of expectedPanels) {
+      expect(container.querySelector(`[data-editor-workspace-panel="${panelId}"]`)).not.toBeNull();
+      expect(container.querySelector(`[data-editor-panel-menu-item="${panelId}"]`)).not.toBeNull();
+    }
+    expect(container.querySelector('[data-editor-panel-menu-group="path"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-panel-menu-group="inspection"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-panel-menu-group="machine"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-panel-menu-group="measurement"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label^="Float "]')).toBeNull();
+    expect(container.querySelector('button[aria-label^="Dock "]')).toBeNull();
+    expect(container.querySelector('[data-editor-workspace-panel-handle="path-diagnostics"]')).not.toBeNull();
+
+    const hoverAssistToggle = container.querySelector(
+      'input[aria-label="Toggle canvas hover assist"]'
+    ) as HTMLInputElement | null;
+    const gridSnapToggle = container.querySelector(
+      'button[aria-label="Toggle preview grid snap"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      hoverAssistToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      gridSnapToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(
+      container
+        .querySelector('[data-editor-workspace-panel="path-diagnostics"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('floating');
+    expect(
+      container
+        .querySelector('[data-editor-workspace-panel="measurement"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('floating');
+    expect(
+      container.querySelector('[data-editor-workspace-panel="measurement"] input[aria-label="Measurement point X"]')
+    ).not.toBeNull();
+
+    const hideDiagnosticsButton = container.querySelector(
+      'button[aria-label="Hide Path Diagnostics"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      hideDiagnosticsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-workspace-panel="path-diagnostics"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Show Path Diagnostics"]')).not.toBeNull();
   });
 
   it('uses UPID-selected geometry details in the Inspector Rail for DXF projects', async () => {
@@ -533,7 +723,7 @@ describe('App DXF imports and project library', () => {
     expect(activeSelection?.textContent).toContain('closed contour');
     expect(activeSelection?.textContent).toContain('forward');
 
-    const inspector = container.querySelector('[data-editor-inspector-rail]');
+    const inspector = container.querySelector('[data-editor-workspace-panel="statistics"]');
     const selectedGeometry = container.querySelector('[data-upid-selected-geometry]');
     expect(inspector).not.toBeNull();
     expect(selectedGeometry).not.toBeNull();

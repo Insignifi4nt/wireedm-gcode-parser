@@ -72,7 +72,7 @@ describe('Editor import, export, and parse feedback', () => {
     const codePanel = container.querySelector('[data-editor-side-code-panel]');
     const statsSection = container.querySelector('[data-editor-stats-section]') as HTMLDetailsElement | null;
     expect(statsSection).not.toBeNull();
-    expect(statsSection?.open).toBe(false);
+    expect(statsSection?.open).toBe(true);
     expect(codePanel?.compareDocumentPosition(statsSection!)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
     );

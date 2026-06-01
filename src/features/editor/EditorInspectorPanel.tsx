@@ -4,6 +4,7 @@ import {
   Magnet,
   Trash2
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import type { GCodeStructure } from '@/domain/editor/gcodeStructure';
@@ -54,6 +55,12 @@ interface EditorInspectorPanelProps {
   previewCursorPoint: { x: number; y: number } | null;
   program: LoadedEditorProgram | null;
   rapidMoveCount: number;
+  renderWorkspacePanel?: (
+    id: string,
+    title: string,
+    children: ReactNode,
+    options?: { fill?: boolean }
+  ) => ReactNode;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
   structure: GCodeStructure | null;
@@ -90,6 +97,7 @@ export function EditorInspectorPanel({
   previewCursorPoint,
   program,
   rapidMoveCount,
+  renderWorkspacePanel = (_id, _title, children) => children,
   selectedPathElement,
   selectedPathOperationId,
   structure,
@@ -166,6 +174,7 @@ export function EditorInspectorPanel({
       className={`${fullHeight ? 'h-full min-h-0' : 'max-h-[42vh] border-t border-border'} overflow-y-auto p-2`}
       data-editor-inspector-summary
     >
+      {renderWorkspacePanel('position', 'Position', (
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-[11px] font-semibold">Position</h3>
@@ -192,8 +201,10 @@ export function EditorInspectorPanel({
           <dd data-editor-cursor="y">{formatCursorCoordinate(previewCursorPoint?.y)}</dd>
         </dl>
       </section>
+      ))}
 
-      <details className="mt-3 border-t border-border pt-3" data-editor-stats-section>
+      {renderWorkspacePanel('statistics', 'Statistics', (
+      <details data-editor-stats-section open>
         <summary className="cursor-pointer select-none font-mono text-[11px] font-semibold outline-none hover:text-foreground">
           Statistics
         </summary>
@@ -891,9 +902,11 @@ export function EditorInspectorPanel({
             </section>
           )}
       </details>
+      ), { fill: true })}
 
       {machineProfile && (
-        <section className="mt-3 border-t border-border pt-3" data-editor-machine-section>
+        renderWorkspacePanel('machine', 'Machine', (
+        <section data-editor-machine-section>
           <h3 className="mb-2 text-[11px] font-semibold">Machine</h3>
           <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
             <dt className="text-muted-foreground">Profile</dt>
@@ -916,10 +929,12 @@ export function EditorInspectorPanel({
             </div>
           )}
         </section>
+        ))
       )}
 
+      {renderWorkspacePanel('measurement', 'Measurement', (
       <section
-        className={`mt-3 border-t border-border pt-3 ${guideHighlightClass(
+        className={`${guideHighlightClass(
           'measurement-points',
           guideHighlightTarget
         )}`}
@@ -1085,6 +1100,7 @@ export function EditorInspectorPanel({
           </Button>
         </div>
       </section>
+      ))}
     </div>
   );
 }

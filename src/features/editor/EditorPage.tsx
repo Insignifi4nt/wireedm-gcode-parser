@@ -6,7 +6,8 @@ import {
   type CSSProperties,
   type DragEvent,
   type MouseEvent,
-  type PointerEvent
+  type PointerEvent,
+  type ReactNode
 } from 'react';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 
@@ -71,6 +72,14 @@ import { EditorProgramLinesPanel } from './EditorProgramLinesPanel';
 import { EditorProgramTextPanel } from './EditorProgramTextPanel';
 import { EditorUpidExportPreview } from './EditorUpidExportPreview';
 import {
+  EditorPanelDockZone,
+  EditorPanelToolbar,
+  EditorWorkspacePanelFrame,
+  type EditorDockSide,
+  type EditorFloatingPanelGeometry,
+  type EditorPanelPlacement
+} from './EditorWorkspacePanels';
+import {
   cloneEditorDraftState,
   createEditorDraftState,
   editorDraftPathDocument,
@@ -114,6 +123,106 @@ interface EditorDraftSnapshot {
   selectedPathOperationId: string | null;
 }
 
+type EditorWorkspacePanelId =
+  | 'path-summary'
+  | 'path-actions'
+  | 'path-hover-assist'
+  | 'endpoint-topology'
+  | 'path-diagnostics'
+  | 'cut-sequence'
+  | 'contour-tree'
+  | 'position'
+  | 'statistics'
+  | 'machine'
+  | 'measurement';
+
+const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
+  'path-summary': 'Path Summary',
+  'path-actions': 'Path Actions',
+  'path-hover-assist': 'Hover Assist',
+  'endpoint-topology': 'Endpoint Topology',
+  'path-diagnostics': 'Path Diagnostics',
+  'cut-sequence': 'Cut Sequence',
+  'contour-tree': 'Contour Tree',
+  position: 'Position',
+  statistics: 'Statistics',
+  machine: 'Machine',
+  measurement: 'Measurement'
+};
+
+const PATH_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
+  'path-summary',
+  'path-actions',
+  'path-hover-assist',
+  'endpoint-topology',
+  'path-diagnostics',
+  'cut-sequence',
+  'contour-tree'
+];
+
+const INSPECTOR_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
+  'position',
+  'statistics',
+  'machine',
+  'measurement'
+];
+
+const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFloatingPanelGeometry> = {
+  'path-summary': { x: 250, y: 74, width: 300, height: 220 },
+  'path-actions': { x: 274, y: 104, width: 320, height: 430 },
+  'path-hover-assist': { x: 298, y: 134, width: 300, height: 190 },
+  'endpoint-topology': { x: 322, y: 164, width: 340, height: 260 },
+  'path-diagnostics': { x: 346, y: 194, width: 360, height: 260 },
+  'cut-sequence': { x: 370, y: 224, width: 340, height: 340 },
+  'contour-tree': { x: 394, y: 84, width: 380, height: 560 },
+  position: { x: 1020, y: 74, width: 300, height: 180 },
+  statistics: { x: 990, y: 104, width: 360, height: 560 },
+  machine: { x: 1040, y: 134, width: 300, height: 220 },
+  measurement: { x: 1010, y: 194, width: 340, height: 420 }
+};
+
+const WORKSPACE_PANEL_GROUPS: Array<{
+  id: string;
+  title: string;
+  panelIds: EditorWorkspacePanelId[];
+}> = [
+  {
+    id: 'path',
+    title: 'Path',
+    panelIds: ['path-summary', 'path-actions', 'path-hover-assist', 'endpoint-topology', 'path-diagnostics']
+  },
+  {
+    id: 'sequence',
+    title: 'Sequence',
+    panelIds: ['cut-sequence', 'contour-tree']
+  },
+  {
+    id: 'inspection',
+    title: 'Inspection',
+    panelIds: ['position', 'statistics']
+  },
+  {
+    id: 'machine',
+    title: 'Machine',
+    panelIds: ['machine']
+  },
+  {
+    id: 'measurement',
+    title: 'Measurement',
+    panelIds: ['measurement']
+  }
+];
+
+function createDefaultPanelRecord<T>(valueFor: (id: EditorWorkspacePanelId) => T): Record<EditorWorkspacePanelId, T> {
+  return [...PATH_WORKSPACE_PANEL_IDS, ...INSPECTOR_WORKSPACE_PANEL_IDS].reduce(
+    (record, id) => {
+      record[id] = valueFor(id);
+      return record;
+    },
+    {} as Record<EditorWorkspacePanelId, T>
+  );
+}
+
 function handleEditorDragOver(event: DragEvent<HTMLDivElement>) {
   event.preventDefault();
   event.dataTransfer.dropEffect = 'copy';
@@ -131,7 +240,7 @@ export function EditorPage({
   onSaveEditorDraft,
   onStatusMessage
 }: EditorPageProps) {
-  const { setHeaderContent, setRailContent } = useAppRail();
+  const { setHeaderContent, setRailCollapsed, setRailContent } = useAppRail();
   const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
   const lastClickedLineRef = useRef<number | null>(null);
@@ -157,6 +266,17 @@ export function EditorPage({
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
   const [inspectorRailCollapsed, setInspectorRailCollapsed] = useState(false);
   const [inspectorRailWidth, setInspectorRailWidth] = useState(420);
+  const [workspacePanelPlacements, setWorkspacePanelPlacements] = useState<
+    Record<EditorWorkspacePanelId, EditorPanelPlacement>
+  >(() => createDefaultPanelRecord(() => 'floating'));
+  const [workspacePanelGeometries, setWorkspacePanelGeometries] = useState<
+    Record<EditorWorkspacePanelId, EditorFloatingPanelGeometry>
+  >(() => ({ ...DEFAULT_WORKSPACE_PANEL_GEOMETRY }));
+  const [workspaceDockOrders, setWorkspaceDockOrders] = useState<Record<EditorDockSide, EditorWorkspacePanelId[]>>({
+    left: [],
+    right: []
+  });
+  const [expandedPathElementIds, setExpandedPathElementIds] = useState<Record<string, boolean>>({});
   const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
   const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
   const draftText = editorDraftText(draftState);
@@ -342,54 +462,41 @@ export function EditorPage({
   const lineRows = useMemo(() => (structure ? flattenStructureLines(structure) : []), [structure]);
   const bodyGroups = structure?.body.contours ?? [];
   const isPathProject = Boolean(pathDocumentDraft);
+  const editorPanelToolbar = useMemo(
+    () => (
+      <EditorPanelToolbar
+        groups={
+          pathDocumentDraft
+            ? WORKSPACE_PANEL_GROUPS.map((group) => ({
+                id: group.id,
+                title: group.title,
+                panels: group.panelIds.map((id) => ({
+                  id,
+                  title: EDITOR_WORKSPACE_PANEL_TITLES[id],
+                  placement: workspacePanelPlacements[id],
+                  onHide: () => hideWorkspacePanel(id),
+                  onShow: () => showWorkspacePanel(id)
+                }))
+              }))
+            : []
+        }
+      />
+    ),
+    [pathDocumentDraft, workspacePanelPlacements]
+  );
   const editorRailContent = useMemo(
     () =>
       pathDocumentDraft
         ? {
             collapsed: <EditorPathNavigatorRailCollapsed />,
-            expanded: (
-              <EditorPathNavigatorPanel
-                hasUnsavedChanges={hasUnsavedChanges}
-                hoveredPathElement={activeHoveredPathElement}
-                hoverAssistEnabled={pathHoverAssistEnabled}
-                isSaving={isSaving}
-                magneticSnapEnabled={pathMagneticSnapEnabled}
-                onActivatePathClickMode={setPathClickMode}
-                onHoverPathElement={setHoveredPathElement}
-                onMovePathOperation={handleMovePathOperation}
-                onOpenExportPreview={() => setExportPreviewOpen(true)}
-                onRedoDraft={handleRedoDraft}
-                onReversePathOperation={handleReversePathOperation}
-                onSaveClick={handleSaveClick}
-                onSelectPathElement={handleSelectPathElement}
-                onSetPathOperationClassification={handleSetPathOperationClassification}
-                onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
-                onSetPathStartFromElement={handleSetPathStartFromElement}
-                onToggleHoverAssist={handleTogglePathHoverAssist}
-                onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
-                onUndoDraft={handleUndoDraft}
-                pathClickMode={pathClickMode}
-                pathDocument={pathDocumentDraft}
-                redoAvailable={redoStack.length > 0}
-                selectedPathElement={selectedPathElement}
-                selectedPathOperationId={selectedPathOperationId}
-                undoAvailable={undoStack.length > 0}
-              />
-            )
+            expanded: renderEditorDockZone('left'),
+            replaceRailChrome: true
           }
         : null,
     [
-      hasUnsavedChanges,
-      isSaving,
-      pathClickMode,
       pathDocumentDraft,
-      activeHoveredPathElement,
-      pathHoverAssistEnabled,
-      pathMagneticSnapEnabled,
-      redoStack.length,
-      selectedPathElement,
-      selectedPathOperationId,
-      undoStack.length
+      workspacePanelPlacements,
+      workspaceDockOrders
     ]
   );
   const editorHeaderContent = useMemo(
@@ -406,9 +513,11 @@ export function EditorPage({
         saveErrorMessage={saveErrorMessage}
         title={editorHeaderTitle}
         titleTooltip={editorHeaderTooltip}
+        workspaceControls={editorPanelToolbar}
       />
     ),
     [
+      editorPanelToolbar,
       editorHeaderEyebrow,
       editorHeaderTitle,
       editorHeaderTooltip,
@@ -1075,6 +1184,318 @@ export function EditorPage({
     );
   }
 
+  function renderWorkspacePanel(
+    id: string,
+    title: string,
+    children: ReactNode,
+    options: { fill?: boolean } = {}
+  ) {
+    const panelId = id as EditorWorkspacePanelId;
+
+    return (
+      <EditorWorkspacePanelFrame
+        dockOrder={readWorkspacePanelDockOrder(panelId)}
+        fill={options.fill}
+        geometry={workspacePanelGeometries[panelId]}
+        id={id}
+        onDragEnd={(point) => handleWorkspacePanelDragEnd(panelId, point)}
+        onFloatFromDock={(point) => floatWorkspacePanelFromDock(panelId, point)}
+        onGeometryChange={(geometry) => setWorkspacePanelGeometry(panelId, geometry)}
+        onHide={() => hideWorkspacePanel(panelId)}
+        placement={workspacePanelPlacements[panelId]}
+        title={title}
+      >
+        {children}
+      </EditorWorkspacePanelFrame>
+    );
+  }
+
+  function renderPathNavigatorPanel(pathDocument: PathPlanningDocument) {
+    return (
+      <EditorPathNavigatorPanel
+        expandedPathElementIds={expandedPathElementIds}
+        hasUnsavedChanges={hasUnsavedChanges}
+        hoveredPathElement={activeHoveredPathElement}
+        hoverAssistEnabled={pathHoverAssistEnabled}
+        isSaving={isSaving}
+        magneticSnapEnabled={pathMagneticSnapEnabled}
+        onActivatePathClickMode={setPathClickMode}
+        onExpandedPathElementIdsChange={setExpandedPathElementIds}
+        onHoverPathElement={setHoveredPathElement}
+        onMovePathOperation={handleMovePathOperation}
+        onOpenExportPreview={() => setExportPreviewOpen(true)}
+        onRedoDraft={handleRedoDraft}
+        onReversePathOperation={handleReversePathOperation}
+        onSaveClick={handleSaveClick}
+        onSelectPathElement={handleSelectPathElement}
+        onSetPathOperationClassification={handleSetPathOperationClassification}
+        onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
+        onSetPathStartFromElement={handleSetPathStartFromElement}
+        onToggleHoverAssist={handleTogglePathHoverAssist}
+        onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
+        onUndoDraft={handleUndoDraft}
+        pathClickMode={pathClickMode}
+        pathDocument={pathDocument}
+        redoAvailable={redoStack.length > 0}
+        renderWorkspacePanel={renderWorkspacePanel}
+        selectedPathElement={selectedPathElement}
+        selectedPathOperationId={selectedPathOperationId}
+        undoAvailable={undoStack.length > 0}
+      />
+    );
+  }
+
+  function renderInspectorPanelContent() {
+    return (
+      <div
+        className={`min-h-0 overflow-hidden ${
+          isPathProject ? '' : 'grid lg:grid-rows-[minmax(0,1fr)_auto]'
+        }`}
+      >
+        {!pathDocumentDraft && (
+          <div
+            className="grid min-h-0 gap-2 overflow-hidden p-2 lg:grid-rows-[minmax(260px,1fr)_auto]"
+            data-editor-side-code-panel
+          >
+            <EditorProgramLinesPanel
+              bodyGroups={bodyGroups}
+              draftText={draftText}
+              guideHighlightTarget={guideHighlightTarget}
+              hasUnsavedChanges={hasUnsavedChanges}
+              isGroupExpanded={isGroupExpanded}
+              isSaving={isSaving}
+              lineMode={lineMode}
+              lineRows={lineRows}
+              onClearPins={() => setPinnedLines([])}
+              onClearSelectedLines={clearSelectedLines}
+              onDeleteGroup={handleDeleteGroup}
+              onDeleteSelectedLines={handleDeleteSelectedLines}
+              onExportNormalizedISO={handleExportNormalizedISO}
+              onHoverLineChange={setHoveredLine}
+              onLineClick={handleLineClick}
+              onLineEditCommit={handleLineEditCommit}
+              onMoveGroup={handleMoveGroup}
+              onMoveSelectedLines={handleMoveSelectedLines}
+              onNormalizeDraft={handleNormalizeDraft}
+              onRedoDraft={handleRedoDraft}
+              onSaveClick={handleSaveClick}
+              onSetLineMode={handleSetLineMode}
+              onSetStartHere={handleSetStartHere}
+              onToggleGroup={handleToggleGroup}
+              onTogglePin={handleTogglePin}
+              onToggleProgramLinesOpen={() => setProgramLinesOpen((current) => !current)}
+              onUndoDraft={handleUndoDraft}
+              pinnedLines={pinnedLines}
+              program={program}
+              programLinesOpen={programLinesOpen}
+              redoAvailable={redoStack.length > 0}
+              selectedLines={selectedLines}
+              structure={structure}
+              undoAvailable={undoStack.length > 0}
+            />
+            {renderProgramTextPanel()}
+          </div>
+        )}
+        <EditorInspectorPanel
+          arcMoveCount={arcMoveCount}
+          boundsText={boundsText}
+          cuttingMoveCount={cuttingMoveCount}
+          canInsertMeasurementPoints={!isPathProject}
+          draftProgram={draftProgram}
+          editorFileName={editorFileName}
+          fullHeight={isPathProject}
+          gridSnapEnabled={gridSnapEnabled}
+          guideHighlightTarget={guideHighlightTarget}
+          isSaving={isSaving}
+          measurementPoints={measurementPoints}
+          machineFit={machineFit}
+          machineProfile={program?.project?.machine ?? null}
+          onAddMeasurementPoint={handleAddMeasurementPoint}
+          onClearMeasurementPoints={() => setMeasurementPoints([])}
+          onDeleteMeasurementPoint={(pointId) =>
+            setMeasurementPoints((current) =>
+              current.filter((measurementPoint) => measurementPoint.id !== pointId)
+            )
+          }
+          onExportMeasurementPoints={handleExportMeasurementPoints}
+          onHoverPathElement={setHoveredPathElement}
+          onInsertMeasurementPoints={handleInsertMeasurementPoints}
+          onPointXDraftChange={setPointXDraft}
+          onPointYDraftChange={setPointYDraft}
+          onSelectPathElement={handleSelectPathElement}
+          onToggleGridSnap={() => setGridSnapEnabled((current) => !current)}
+          pathCount={pathCount}
+          pathDocument={pathDocumentDraft}
+          pointXDraft={pointXDraft}
+          pointYDraft={pointYDraft}
+          previewCursorPoint={previewCursorPoint}
+          program={program}
+          rapidMoveCount={rapidMoveCount}
+          renderWorkspacePanel={isPathProject ? renderWorkspacePanel : undefined}
+          selectedPathElement={selectedPathElement}
+          selectedPathOperationId={selectedPathOperationId}
+          structure={isPathProject ? null : structure}
+        />
+      </div>
+    );
+  }
+
+  function setWorkspacePanelGeometry(
+    panelId: EditorWorkspacePanelId,
+    geometry: EditorFloatingPanelGeometry
+  ) {
+    setWorkspacePanelGeometries((current) => ({
+      ...current,
+      [panelId]: geometry
+    }));
+  }
+
+  function renderEditorDockZone(side: EditorDockSide) {
+    const panelCount = workspaceDockOrders[side].filter(
+      (panelId) => workspacePanelPlacements[panelId] === `docked-${side}`
+    ).length;
+
+    return (
+      <EditorPanelDockZone
+        collapsed={side === 'right' ? inspectorRailCollapsed : false}
+        panelCount={panelCount}
+        side={side}
+        title={side === 'left' ? 'Panel Dock' : 'Inspector Dock'}
+        onDropPanel={(panelId, dockSide, point) =>
+          dockWorkspacePanel(panelId as EditorWorkspacePanelId, dockSide, point)
+        }
+        onToggleCollapsed={
+          side === 'right'
+            ? () => setInspectorRailCollapsed((current) => !current)
+            : () => setRailCollapsed(true)
+        }
+      />
+    );
+  }
+
+  function readWorkspacePanelDockOrder(panelId: EditorWorkspacePanelId) {
+    const placement = workspacePanelPlacements[panelId];
+    if (placement !== 'docked-left' && placement !== 'docked-right') return 0;
+
+    const side = placement === 'docked-left' ? 'left' : 'right';
+    const order = workspaceDockOrders[side].indexOf(panelId);
+    return order >= 0 ? order : workspaceDockOrders[side].length;
+  }
+
+  function handleWorkspacePanelDragEnd(
+    panelId: EditorWorkspacePanelId,
+    point: { x: number; y: number }
+  ) {
+    const side = findWorkspaceDockSide(point);
+    if (!side) return;
+    dockWorkspacePanel(panelId, side, point);
+  }
+
+  function findWorkspaceDockSide(point: { x: number; y: number }): EditorDockSide | null {
+    for (const side of ['left', 'right'] as const) {
+      const dockZone = document.querySelector(`[data-editor-panel-dock-zone="${side}"]`);
+      const rect = dockZone?.getBoundingClientRect();
+      if (
+        rect &&
+        point.x >= rect.left &&
+        point.x <= rect.right &&
+        point.y >= rect.top &&
+        point.y <= rect.bottom
+      ) {
+        return side;
+      }
+    }
+
+    return null;
+  }
+
+  function dockWorkspacePanel(
+    panelId: EditorWorkspacePanelId,
+    side: EditorDockSide,
+    point: { x: number; y: number }
+  ) {
+    setWorkspacePanelPlacements((current) => ({
+      ...current,
+      [panelId]: `docked-${side}`
+    }));
+    setWorkspaceDockOrders((current) => {
+      const withoutPanel = {
+        left: current.left.filter((id) => id !== panelId),
+        right: current.right.filter((id) => id !== panelId)
+      };
+      const nextSideOrder = [...withoutPanel[side]];
+      const insertAt = findWorkspaceDockInsertIndex(side, panelId, point.y, nextSideOrder);
+      nextSideOrder.splice(insertAt, 0, panelId);
+
+      return {
+        ...withoutPanel,
+        [side]: nextSideOrder
+      };
+    });
+  }
+
+  function findWorkspaceDockInsertIndex(
+    side: EditorDockSide,
+    panelId: EditorWorkspacePanelId,
+    y: number,
+    fallbackOrder: EditorWorkspacePanelId[]
+  ) {
+    const dockedPanels = [
+      ...document.querySelectorAll<HTMLElement>(
+        `[data-editor-workspace-panel-side="${side}"][data-editor-workspace-panel-placement="docked-${side}"]`
+      )
+    ].filter((element) => element.getAttribute('data-editor-workspace-panel') !== panelId);
+
+    if (dockedPanels.length === 0) return fallbackOrder.length;
+
+    const sortedPanels = dockedPanels.sort(
+      (first, second) => first.getBoundingClientRect().top - second.getBoundingClientRect().top
+    );
+    const insertBefore = sortedPanels.findIndex((element) => {
+      const rect = element.getBoundingClientRect();
+      return y < rect.top + rect.height / 2;
+    });
+
+    return insertBefore >= 0 ? insertBefore : sortedPanels.length;
+  }
+
+  function floatWorkspacePanelFromDock(
+    panelId: EditorWorkspacePanelId,
+    point: { x: number; y: number }
+  ) {
+    setWorkspacePanelGeometry(panelId, {
+      ...workspacePanelGeometries[panelId],
+      x: Math.max(6, point.x - 24),
+      y: Math.max(42, point.y - 14)
+    });
+    setWorkspacePanelPlacements((current) => ({
+      ...current,
+      [panelId]: 'floating'
+    }));
+    setWorkspaceDockOrders((current) => ({
+      left: current.left.filter((id) => id !== panelId),
+      right: current.right.filter((id) => id !== panelId)
+    }));
+  }
+
+  function hideWorkspacePanel(panelId: EditorWorkspacePanelId) {
+    setWorkspacePanelPlacements((current) => ({
+      ...current,
+      [panelId]: 'hidden'
+    }));
+    setWorkspaceDockOrders((current) => ({
+      left: current.left.filter((id) => id !== panelId),
+      right: current.right.filter((id) => id !== panelId)
+    }));
+  }
+
+  function showWorkspacePanel(panelId: EditorWorkspacePanelId) {
+    setWorkspacePanelPlacements((current) => ({
+      ...current,
+      [panelId]: 'floating'
+    }));
+  }
+
   return (
     <div
       className="relative flex h-full min-h-0 flex-col overflow-hidden"
@@ -1090,6 +1511,11 @@ export function EditorPage({
         onLanguageChange={handleGuideLanguageChange}
         open={guideOpen}
       />
+      <div data-editor-floating-layer />
+      <div className="hidden" data-editor-workspace-panel-registry>
+        {pathDocumentDraft && renderPathNavigatorPanel(pathDocumentDraft)}
+        {isPathProject && renderInspectorPanelContent()}
+      </div>
       <section
         className={`grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)] gap-y-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)] ${
           inspectorRailCollapsed
@@ -1122,7 +1548,20 @@ export function EditorPage({
           startPreview={startPreview}
         />
 
-        {inspectorRailCollapsed ? (
+        {isPathProject ? (
+          <>
+            {!inspectorRailCollapsed && (
+              <div
+                aria-label="Resize Inspector Dock"
+                className="hidden cursor-col-resize bg-border/30 transition hover:bg-primary/40 lg:block"
+                data-editor-inspector-resizer
+                onPointerDown={handleInspectorRailResizeStart}
+                role="separator"
+              />
+            )}
+            {renderEditorDockZone('right')}
+          </>
+        ) : inspectorRailCollapsed ? (
           <div
             className="hidden min-h-0 border border-border bg-card/95 lg:flex lg:flex-col lg:items-center lg:gap-3 lg:py-2"
             data-editor-inspector-collapsed
@@ -1165,95 +1604,7 @@ export function EditorPage({
                   <PanelRightClose className="size-3.5" />
                 </button>
               </div>
-              <div
-                className={`min-h-0 overflow-hidden ${
-                  isPathProject ? '' : 'grid lg:grid-rows-[minmax(0,1fr)_auto]'
-                }`}
-              >
-          {!pathDocumentDraft && (
-            <div
-              className="grid min-h-0 gap-2 overflow-hidden p-2 lg:grid-rows-[minmax(260px,1fr)_auto]"
-              data-editor-side-code-panel
-            >
-              <EditorProgramLinesPanel
-                bodyGroups={bodyGroups}
-                draftText={draftText}
-                guideHighlightTarget={guideHighlightTarget}
-                hasUnsavedChanges={hasUnsavedChanges}
-                isGroupExpanded={isGroupExpanded}
-                isSaving={isSaving}
-                lineMode={lineMode}
-                lineRows={lineRows}
-                onClearPins={() => setPinnedLines([])}
-                onClearSelectedLines={clearSelectedLines}
-                onDeleteGroup={handleDeleteGroup}
-                onDeleteSelectedLines={handleDeleteSelectedLines}
-                onExportNormalizedISO={handleExportNormalizedISO}
-                onHoverLineChange={setHoveredLine}
-                onLineClick={handleLineClick}
-                onLineEditCommit={handleLineEditCommit}
-                onMoveGroup={handleMoveGroup}
-                onMoveSelectedLines={handleMoveSelectedLines}
-                onNormalizeDraft={handleNormalizeDraft}
-                onRedoDraft={handleRedoDraft}
-                onSaveClick={handleSaveClick}
-                onSetLineMode={handleSetLineMode}
-                onSetStartHere={handleSetStartHere}
-                onToggleGroup={handleToggleGroup}
-                onTogglePin={handleTogglePin}
-                onToggleProgramLinesOpen={() => setProgramLinesOpen((current) => !current)}
-                onUndoDraft={handleUndoDraft}
-                pinnedLines={pinnedLines}
-                program={program}
-                programLinesOpen={programLinesOpen}
-                redoAvailable={redoStack.length > 0}
-                selectedLines={selectedLines}
-                structure={structure}
-                undoAvailable={undoStack.length > 0}
-              />
-              {renderProgramTextPanel()}
-            </div>
-          )}
-          <EditorInspectorPanel
-            arcMoveCount={arcMoveCount}
-            boundsText={boundsText}
-            cuttingMoveCount={cuttingMoveCount}
-            canInsertMeasurementPoints={!isPathProject}
-            draftProgram={draftProgram}
-            editorFileName={editorFileName}
-            fullHeight={isPathProject}
-            gridSnapEnabled={gridSnapEnabled}
-            guideHighlightTarget={guideHighlightTarget}
-            isSaving={isSaving}
-            measurementPoints={measurementPoints}
-            machineFit={machineFit}
-            machineProfile={program?.project?.machine ?? null}
-            onAddMeasurementPoint={handleAddMeasurementPoint}
-            onClearMeasurementPoints={() => setMeasurementPoints([])}
-            onDeleteMeasurementPoint={(pointId) =>
-              setMeasurementPoints((current) =>
-                current.filter((measurementPoint) => measurementPoint.id !== pointId)
-              )
-            }
-            onExportMeasurementPoints={handleExportMeasurementPoints}
-            onHoverPathElement={setHoveredPathElement}
-            onInsertMeasurementPoints={handleInsertMeasurementPoints}
-            onPointXDraftChange={setPointXDraft}
-            onPointYDraftChange={setPointYDraft}
-            onSelectPathElement={handleSelectPathElement}
-            onToggleGridSnap={() => setGridSnapEnabled((current) => !current)}
-            pathCount={pathCount}
-            pathDocument={pathDocumentDraft}
-            pointXDraft={pointXDraft}
-            pointYDraft={pointYDraft}
-            previewCursorPoint={previewCursorPoint}
-            program={program}
-            rapidMoveCount={rapidMoveCount}
-            selectedPathElement={selectedPathElement}
-            selectedPathOperationId={selectedPathOperationId}
-            structure={isPathProject ? null : structure}
-          />
-              </div>
+              {renderInspectorPanelContent()}
             </aside>
           </>
         )}

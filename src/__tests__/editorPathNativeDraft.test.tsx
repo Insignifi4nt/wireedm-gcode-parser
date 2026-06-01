@@ -932,7 +932,7 @@ function EditorPageHarness({
   const [railContent, setRailContent] = useState<AppRailContent | null>(null);
 
   return (
-    <AppRailProvider value={{ setHeaderContent, setRailContent }}>
+    <AppRailProvider value={{ setHeaderContent, setRailCollapsed: () => undefined, setRailContent }}>
       <div>{headerContent}</div>
       <aside data-test-editor-project-rail>{railContent?.expanded}</aside>
       <EditorPage

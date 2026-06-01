@@ -12,7 +12,13 @@ import {
   Save,
   Undo2
 } from 'lucide-react';
-import { useEffect, useState, type MouseEvent } from 'react';
+import {
+  useEffect,
+  type Dispatch,
+  type MouseEvent,
+  type ReactNode,
+  type SetStateAction
+} from 'react';
 
 import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
 import {
@@ -79,10 +85,18 @@ interface EditorPathNavigatorPanelProps {
   magneticSnapEnabled: boolean;
   pathClickMode: 'set-start' | MagnetizeMode | null;
   pathDocument: PathPlanningDocument;
+  expandedPathElementIds: Record<string, boolean>;
+  renderWorkspacePanel?: (
+    id: string,
+    title: string,
+    children: ReactNode,
+    options?: { fill?: boolean }
+  ) => ReactNode;
   redoAvailable: boolean;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
   undoAvailable: boolean;
+  onExpandedPathElementIdsChange: Dispatch<SetStateAction<Record<string, boolean>>>;
   onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
   onOpenExportPreview: () => void;
@@ -107,10 +121,13 @@ export function EditorPathNavigatorPanel({
   magneticSnapEnabled,
   pathClickMode,
   pathDocument,
+  expandedPathElementIds,
+  renderWorkspacePanel = (_id, _title, children) => children,
   redoAvailable,
   selectedPathElement,
   selectedPathOperationId,
   undoAvailable,
+  onExpandedPathElementIdsChange,
   onActivatePathClickMode,
   onMovePathOperation,
   onOpenExportPreview,
@@ -134,7 +151,6 @@ export function EditorPathNavigatorPanel({
   const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
   const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
   const pathTreeElementIds = projectRail.operationElements.map((element) => element.id);
-  const [expandedPathElementIds, setExpandedPathElementIds] = useState<Record<string, boolean>>({});
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
     (operation) => operation.id === selectedPathOperationId
   );
@@ -150,13 +166,13 @@ export function EditorPathNavigatorPanel({
   const isPathElementExpanded = (pathElementId: string) =>
     hoverRevealedPathElementIds.has(pathElementId) || (expandedPathElementIds[pathElementId] ?? true);
   const togglePathElementExpanded = (pathElementId: string) => {
-    setExpandedPathElementIds((current) => ({
+    onExpandedPathElementIdsChange((current) => ({
       ...current,
       [pathElementId]: !(current[pathElementId] ?? true)
     }));
   };
   const setPathTreeExpanded = (expanded: boolean) => {
-    setExpandedPathElementIds((current) => {
+    onExpandedPathElementIdsChange((current) => {
       const next = { ...current };
 
       for (const pathElementId of pathTreeElementIds) {
@@ -173,7 +189,7 @@ export function EditorPathNavigatorPanel({
       : [];
     if (pathElementIdsToReveal.length === 0) return;
 
-    setExpandedPathElementIds((current) => {
+    onExpandedPathElementIdsChange((current) => {
       let changed = false;
       const next = { ...current };
 
@@ -186,15 +202,16 @@ export function EditorPathNavigatorPanel({
 
       return changed ? next : current;
     });
-  }, [pathDocument, selectedPathElement]);
+  }, [onExpandedPathElementIdsChange, pathDocument, selectedPathElement]);
 
   return (
     <div
       className="flex h-full min-h-0 flex-col overflow-hidden p-2 font-mono text-[10px]"
       data-editor-project-rail
     >
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden" data-upid-path-navigator>
-        <div className="shrink-0 border-b border-border pb-2">
+      <section className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto" data-upid-path-navigator>
+        {renderWorkspacePanel('path-summary', 'Path Summary', (
+        <div>
           <p className="text-[9px] uppercase text-muted-foreground">Project Rail</p>
           <h2 className="mt-1 text-sm font-semibold">UPID Path Navigator</h2>
           <p className="mt-1 text-[9px] text-muted-foreground">
@@ -255,8 +272,10 @@ export function EditorPathNavigatorPanel({
             {formatProjectSourceSummary(sourceSummary)}
           </p>
         </div>
+        ))}
 
-        <div className="shrink-0 border-b border-border py-2" data-upid-path-action-bar>
+        {renderWorkspacePanel('path-actions', 'Path Actions', (
+        <div data-upid-path-action-bar>
           <div className="mb-2 flex items-center justify-between gap-2">
             <span className="text-[9px] uppercase text-muted-foreground">Path Action Bar</span>
             {hasUnsavedChanges && <span className="text-[9px] text-amber-200">Unsaved</span>}
@@ -456,8 +475,10 @@ export function EditorPathNavigatorPanel({
             </button>
           </div>
         </div>
+        ))}
 
-        <section className="shrink-0 border-b border-border py-2" data-upid-hover-assist>
+        {renderWorkspacePanel('path-hover-assist', 'Hover Assist', (
+        <section data-upid-hover-assist>
           <div className="mb-1 text-[9px] uppercase text-muted-foreground">Hover Assist</div>
           <label className="flex items-center justify-between gap-2">
             <span>Canvas hover highlights navigator</span>
@@ -481,9 +502,11 @@ export function EditorPathNavigatorPanel({
             />
           </label>
         </section>
+        ))}
 
         {endpointTopologyRows.length > 0 && (
-          <section className="shrink-0 border-b border-border py-2" data-upid-endpoint-topology>
+          renderWorkspacePanel('endpoint-topology', 'Endpoint Topology', (
+          <section data-upid-endpoint-topology>
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-[9px] uppercase text-muted-foreground">Endpoint Topology</span>
               <span className="text-[9px] text-muted-foreground">
@@ -502,10 +525,11 @@ export function EditorPathNavigatorPanel({
               )}
             </div>
           </section>
+          ))
         )}
 
-        {pathDiagnostics.length > 0 && (
-          <section className="shrink-0 border-b border-border py-2" data-upid-diagnostics>
+        {renderWorkspacePanel('path-diagnostics', 'Path Diagnostics', (
+          <section data-upid-diagnostics>
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-[9px] uppercase text-muted-foreground">Path Diagnostics</span>
               <span className="text-[9px] text-amber-200">
@@ -513,20 +537,27 @@ export function EditorPathNavigatorPanel({
               </span>
             </div>
             <div className="max-h-24 overflow-auto border border-border bg-background/35">
-              {pathDiagnostics.map((diagnostic) =>
-                renderDiagnosticRow({
-                  diagnostic,
-                  hoveredPathElement,
-                  onHoverPathElement,
-                  onSelectPathElement,
-                  selectedPathElement
-                })
+              {pathDiagnostics.length > 0 ? (
+                pathDiagnostics.map((diagnostic) =>
+                  renderDiagnosticRow({
+                    diagnostic,
+                    hoveredPathElement,
+                    onHoverPathElement,
+                    onSelectPathElement,
+                    selectedPathElement
+                  })
+                )
+              ) : (
+                <p className="px-2 py-1.5 text-muted-foreground" data-upid-diagnostics-empty>
+                  No path issues
+                </p>
               )}
             </div>
           </section>
-        )}
+        ))}
 
-        <section className="shrink-0 border-b border-border py-2" data-upid-cut-sequence>
+        {renderWorkspacePanel('cut-sequence', 'Cut Sequence', (
+        <section data-upid-cut-sequence>
           <div className="mb-2 text-[9px] uppercase text-muted-foreground">Cut Sequence</div>
           <div className="max-h-32 overflow-auto border border-border bg-background/35" data-upid-cut-sequence-list>
             {cutSequenceElements.map((pathElement) =>
@@ -543,8 +574,10 @@ export function EditorPathNavigatorPanel({
             )}
           </div>
         </section>
+        ))}
 
-        <section className="min-h-0 flex-1 overflow-auto py-2" data-upid-contour-tree>
+        {renderWorkspacePanel('contour-tree', 'Contour Tree', (
+        <section className="min-h-0 overflow-auto" data-upid-contour-tree>
           <div className="mb-2 grid gap-1" data-upid-path-tree-controls>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[9px] uppercase text-muted-foreground">Contour Tree</span>
@@ -589,6 +622,7 @@ export function EditorPathNavigatorPanel({
             })
           )}
         </section>
+        ), { fill: true })}
       </section>
     </div>
   );

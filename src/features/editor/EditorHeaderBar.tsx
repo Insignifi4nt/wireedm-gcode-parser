@@ -1,4 +1,4 @@
-import { useRef, type ChangeEvent } from 'react';
+import { useRef, type ChangeEvent, type ReactNode } from 'react';
 import { ArrowLeft, CircleHelp, FileUp } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ interface EditorHeaderBarProps {
   saveErrorMessage: string | null;
   title?: string;
   titleTooltip?: string;
+  workspaceControls?: ReactNode;
   onBackToDashboard: () => void;
   onImportProgramFile: (file: File) => void | Promise<void>;
   onOpenGuide: () => void;
@@ -29,6 +30,7 @@ export function EditorHeaderBar({
   saveErrorMessage,
   title,
   titleTooltip,
+  workspaceControls,
   onBackToDashboard,
   onImportProgramFile,
   onOpenGuide
@@ -63,6 +65,7 @@ export function EditorHeaderBar({
         </h2>
       </div>
       <div className="flex min-w-0 shrink-0 items-center justify-end gap-1">
+        {workspaceControls}
         <input
           ref={fileInputRef}
           accept=".gcode,.nc,.iso,.txt,text/plain"
