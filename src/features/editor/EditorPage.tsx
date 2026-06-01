@@ -455,6 +455,7 @@ export function EditorPage({
   );
   const activeHoveredPathElement =
     constructionHoveredPathElement ?? startHoveredPathElement ?? hoveredPathElement;
+  const editorInteractionHint = readEditorInteractionHint();
   const structure = useMemo(
     () => (draftProgram ? organizeGCodeStructure(draftProgram.text.split(/\r?\n/)) : null),
     [draftProgram]
@@ -1184,6 +1185,39 @@ export function EditorPage({
     );
   }
 
+  function readEditorInteractionHint() {
+    if (!pathDocumentDraft) {
+      return program
+        ? 'Select program rows to inspect, edit, move, or pin geometry in the preview.'
+        : 'Import a program or DXF file to begin.';
+    }
+
+    if (pathClickMode === 'set-start') {
+      if (!selectedPathOperationId) {
+        return 'Select a closed contour first, then choose the start point on the canvas or contour tree.';
+      }
+
+      return pathMagneticSnapEnabled
+        ? 'Click the contour near the desired start. Magnetic mode can split a segment at the clicked point.'
+        : 'Click an existing contour endpoint to set the start point.';
+    }
+
+    if (pathClickMode === 'perpendicular' || pathClickMode === 'tangent') {
+      const relation = pathClickMode === 'perpendicular' ? 'perpendicular' : 'tangent';
+      if (measurementPoints.length === 0) {
+        return `Create a measurement point first, then click the target path to add a ${relation} construction point.`;
+      }
+
+      return `Click the target path to add a ${relation} construction point from the latest measurement point.`;
+    }
+
+    if (selectedPathElement) {
+      return 'Selected geometry is linked across the canvas, contour tree, diagnostics, and inspector.';
+    }
+
+    return 'Select a contour, segment, endpoint, or diagnostic to inspect and cross-highlight the path.';
+  }
+
   function renderWorkspacePanel(
     id: string,
     title: string,
@@ -1531,6 +1565,7 @@ export function EditorPage({
           guideHighlightTarget={guideHighlightTarget}
           guideOpen={guideOpen}
           hoveredLine={hoveredLine}
+          interactionHint={editorInteractionHint}
           hoveredPathElement={activeHoveredPathElement}
           measurementPoints={measurementPoints}
           onAddMeasurementPoint={addMeasurementPoint}

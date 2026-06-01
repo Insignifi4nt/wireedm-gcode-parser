@@ -772,6 +772,40 @@ describe('App DXF imports and project library', () => {
     expect(pointRow?.getAttribute('title')).toContain('Endpoint cluster');
   });
 
+  it('shows canvas command hints for path construction modes', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'command-hints.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
+      'Select a contour'
+    );
+
+    const perpendicularButton = container.querySelector(
+      'button[aria-label="Magnetize latest point perpendicular"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      perpendicularButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
+      'Create a measurement point first'
+    );
+  });
+
   it('opens DXF path projects without selecting the first cut sequence', async () => {
     window.showDirectoryPicker = undefined;
 

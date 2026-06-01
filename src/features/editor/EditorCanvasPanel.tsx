@@ -15,6 +15,7 @@ interface EditorCanvasPanelProps {
   guideHighlightTarget: EditorGuideTarget | null;
   guideOpen: boolean;
   hoveredLine: number | null;
+  interactionHint?: string | null;
   hoveredPathElement?: EditorPathElementRef | null;
   measurementPoints: MeasurementPoint[];
   pathDocument?: PathPlanningDocument | null;
@@ -39,6 +40,7 @@ export function EditorCanvasPanel({
   guideHighlightTarget,
   guideOpen,
   hoveredLine,
+  interactionHint,
   hoveredPathElement,
   measurementPoints,
   pathDocument,
@@ -88,6 +90,14 @@ export function EditorCanvasPanel({
           selectedLines={selectedLines}
         />
       </div>
+      {interactionHint && (
+        <div
+          className="flex min-h-7 items-center border-t border-border bg-background/55 px-2 font-mono text-[10px] text-muted-foreground"
+          data-editor-command-hint
+        >
+          {interactionHint}
+        </div>
+      )}
     </section>
   );
 }
