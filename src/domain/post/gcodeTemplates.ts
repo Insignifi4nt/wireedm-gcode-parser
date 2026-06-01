@@ -54,6 +54,20 @@ export function composeGCodeProgramWithLineMap({
   };
 }
 
+export function programLineForBodyLine(bodySection: GCodeProgramSectionMap, bodyLineIndex: number) {
+  return bodySection.lineOffset + bodyLineIndex + 1;
+}
+
+export function formatProgramLineRangeForBodyRange(
+  bodySection: GCodeProgramSectionMap,
+  bodyLineStartIndex: number,
+  bodyLineEndIndex: number
+) {
+  const start = programLineForBodyLine(bodySection, bodyLineStartIndex);
+  const end = programLineForBodyLine(bodySection, bodyLineEndIndex);
+  return start === end ? String(start) : `${start}-${end}`;
+}
+
 export function normalizeOutputExtension(
   extension: OutputExtension,
   customExtension?: string

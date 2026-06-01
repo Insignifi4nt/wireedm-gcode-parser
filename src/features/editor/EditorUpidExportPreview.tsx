@@ -1,7 +1,12 @@
 import { Download, X } from 'lucide-react';
 
 import type { GcodePostedOperation } from '@/domain/path-intel/postGcode';
-import type { GCodeProgramLineMap } from '@/domain/post/gcodeTemplates';
+import {
+  formatProgramLineRangeForBodyRange,
+  programLineForBodyLine,
+  type GCodeProgramLineMap,
+  type GCodeProgramSectionMap
+} from '@/domain/post/gcodeTemplates';
 import type { OperationOrderStrategy, PathDiagnostic } from '@/domain/path-intel/types';
 
 interface EditorUpidExportPreviewProps {
@@ -20,8 +25,7 @@ interface EditorUpidExportPreviewProps {
   postedOperations: GcodePostedOperation[];
   programLines: GCodeProgramLineMap[];
   programSections: {
-    bodyLineCount: number;
-    bodyLineOffset: number;
+    body: GCodeProgramSectionMap;
   };
   onClose: () => void;
   onDownload: () => void;
@@ -138,7 +142,11 @@ export function EditorUpidExportPreview({
                     className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1"
                     data-upid-export-operation-body-lines={formatBodyLineRange(operation)}
                     data-upid-export-operation-id={operation.operationId}
-                    data-upid-export-operation-lines={formatProgramLineRange(operation, programSections.bodyLineOffset)}
+                    data-upid-export-operation-lines={formatProgramLineRangeForBodyRange(
+                      programSections.body,
+                      operation.bodyLineStart,
+                      operation.bodyLineEnd
+                    )}
                     data-upid-export-operation-row
                     data-upid-export-operation-role={operation.classification}
                   >
@@ -147,7 +155,11 @@ export function EditorUpidExportPreview({
                       <span className="block truncate text-foreground">{operation.displayName}</span>
                       <span className="block truncate text-[8px] text-muted-foreground">
                         {operation.direction} / lines{' '}
-                        {formatProgramLineRange(operation, programSections.bodyLineOffset)}
+                        {formatProgramLineRangeForBodyRange(
+                          programSections.body,
+                          operation.bodyLineStart,
+                          operation.bodyLineEnd
+                        )}
                       </span>
                     </span>
                     <span className="text-right text-[8px] uppercase text-muted-foreground">
@@ -161,17 +173,14 @@ export function EditorUpidExportPreview({
                         data-upid-export-move-command={move.command}
                         data-upid-export-move-body-line={move.bodyLineIndex + 1}
                         data-upid-export-move-kind={move.kind}
-                        data-upid-export-move-line={programLineForBodyLine(
-                          move.bodyLineIndex,
-                          programSections.bodyLineOffset
-                        )}
+                        data-upid-export-move-line={programLineForBodyLine(programSections.body, move.bodyLineIndex)}
                         data-upid-export-move-reason={move.reason}
                         data-upid-export-move-row
                         data-upid-export-move-segment={move.segmentId ?? undefined}
                         key={`${operation.operationId}-${move.bodyLineIndex}`}
                       >
                         <span className="text-muted-foreground">
-                          {programLineForBodyLine(move.bodyLineIndex, programSections.bodyLineOffset)}
+                          {programLineForBodyLine(programSections.body, move.bodyLineIndex)}
                         </span>
                         <span className={move.kind === 'rapid' ? 'uppercase text-sky-200' : 'uppercase text-green-200'}>
                           {move.command}
@@ -223,18 +232,4 @@ function formatManualOrderCount(count: number) {
 
 function formatBodyLineRange(operation: Pick<GcodePostedOperation, 'bodyLineEnd' | 'bodyLineStart'>) {
   return `${operation.bodyLineStart + 1}-${operation.bodyLineEnd + 1}`;
-}
-
-function formatProgramLineRange(
-  operation: Pick<GcodePostedOperation, 'bodyLineEnd' | 'bodyLineStart'>,
-  bodyLineOffset: number
-) {
-  return `${programLineForBodyLine(operation.bodyLineStart, bodyLineOffset)}-${programLineForBodyLine(
-    operation.bodyLineEnd,
-    bodyLineOffset
-  )}`;
-}
-
-function programLineForBodyLine(bodyLineIndex: number, bodyLineOffset: number) {
-  return bodyLineOffset + bodyLineIndex + 1;
 }

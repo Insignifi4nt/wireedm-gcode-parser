@@ -4,6 +4,8 @@ import {
   buildOutputFilename,
   composeGCodeProgram,
   composeGCodeProgramWithLineMap,
+  formatProgramLineRangeForBodyRange,
+  programLineForBodyLine,
   normalizeOutputExtension
 } from '../gcodeTemplates';
 
@@ -55,6 +57,10 @@ describe('gcodeTemplates', () => {
       { lineNumber: 5, section: 'footer', sectionLineNumber: 1, text: 'M30' },
       { lineNumber: 6, section: 'footer', sectionLineNumber: 2, text: '%' }
     ]);
+    expect(programLineForBodyLine(composition.sections.body, 0)).toBe(3);
+    expect(programLineForBodyLine(composition.sections.body, 1)).toBe(4);
+    expect(formatProgramLineRangeForBodyRange(composition.sections.body, 0, 1)).toBe('3-4');
+    expect(formatProgramLineRangeForBodyRange(composition.sections.body, 1, 1)).toBe('4');
   });
 
   it('keeps omitted sections in the line map without adding blank program lines', () => {

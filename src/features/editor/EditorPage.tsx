@@ -250,8 +250,7 @@ export function EditorPage({
       },
       programLines: programComposition.lines,
       programSections: {
-        bodyLineCount: programComposition.sections.body.lineCount,
-        bodyLineOffset: programComposition.sections.body.lineOffset
+        body: programComposition.sections.body
       },
       programText: programComposition.text,
       postMetrics: posted.metrics,
