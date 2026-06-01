@@ -7,18 +7,51 @@ export interface ComposeGCodeProgramInput {
   lineEnding?: 'lf' | 'crlf';
 }
 
-export function composeGCodeProgram({
+export type GCodeProgramSectionName = 'header' | 'body' | 'footer';
+
+export interface GCodeProgramLineMap {
+  lineNumber: number;
+  section: GCodeProgramSectionName;
+  sectionLineNumber: number;
+  text: string;
+}
+
+export interface GCodeProgramSectionMap {
+  endLineNumber: number | null;
+  lineCount: number;
+  lineOffset: number;
+  startLineNumber: number | null;
+}
+
+export interface GCodeProgramComposition {
+  lines: GCodeProgramLineMap[];
+  sections: Record<GCodeProgramSectionName, GCodeProgramSectionMap>;
+  text: string;
+}
+
+export function composeGCodeProgram(input: ComposeGCodeProgramInput) {
+  return composeGCodeProgramWithLineMap(input).text;
+}
+
+export function composeGCodeProgramWithLineMap({
   header,
   body,
   footer,
   lineEnding = 'crlf'
-}: ComposeGCodeProgramInput) {
+}: ComposeGCodeProgramInput): GCodeProgramComposition {
   const eol = lineEnding === 'crlf' ? '\r\n' : '\n';
-  const sections = [header, body, footer]
-    .map((section) => section.trim())
-    .filter(Boolean);
+  const lines: GCodeProgramLineMap[] = [];
+  const sections = {
+    header: mapSection('header', header, lines),
+    body: mapSection('body', body, lines),
+    footer: mapSection('footer', footer, lines)
+  };
 
-  return `${sections.join(eol)}${eol}`;
+  return {
+    lines,
+    sections,
+    text: `${lines.map((line) => line.text).join(eol)}${eol}`
+  };
 }
 
 export function normalizeOutputExtension(
@@ -42,4 +75,43 @@ export function buildOutputFilename(
 ) {
   const cleanBase = baseName.trim().replace(/\.[a-z0-9]+$/i, '') || 'wire-edm-output';
   return `${cleanBase}.${normalizeOutputExtension(extension, customExtension)}`;
+}
+
+function mapSection(
+  section: GCodeProgramSectionName,
+  source: string,
+  lines: GCodeProgramLineMap[]
+): GCodeProgramSectionMap {
+  const lineOffset = lines.length;
+  const sectionLines = splitComposedSectionLines(source);
+
+  sectionLines.forEach((text, index) => {
+    lines.push({
+      lineNumber: lines.length + 1,
+      section,
+      sectionLineNumber: index + 1,
+      text
+    });
+  });
+
+  if (sectionLines.length === 0) {
+    return {
+      endLineNumber: null,
+      lineCount: 0,
+      lineOffset,
+      startLineNumber: null
+    };
+  }
+
+  return {
+    endLineNumber: lineOffset + sectionLines.length,
+    lineCount: sectionLines.length,
+    lineOffset,
+    startLineNumber: lineOffset + 1
+  };
+}
+
+function splitComposedSectionLines(section: string) {
+  const trimmed = section.trim();
+  return trimmed ? trimmed.split(/\r?\n/) : [];
 }

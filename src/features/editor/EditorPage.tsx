@@ -11,7 +11,7 @@ import {
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 import { useAppRail } from '@/app/AppRailContext';
-import { buildOutputFilename, composeGCodeProgram } from '@/domain/post/gcodeTemplates';
+import { buildOutputFilename, composeGCodeProgramWithLineMap } from '@/domain/post/gcodeTemplates';
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 import {
   deleteBodyGroup,
@@ -231,8 +231,12 @@ export function EditorPage({
     const manualOrderCount = pathDocumentDraft.plan.operations.filter(
       (operation) => operation.overrides?.order
     ).length;
-    const headerLineCount = countComposedSectionLines(machine.templates.header);
-    const bodyLineCount = countComposedSectionLines(body);
+    const programComposition = composeGCodeProgramWithLineMap({
+      header: machine.templates.header,
+      body,
+      footer: machine.templates.footer,
+      lineEnding: machine.output.lineEnding
+    });
 
     return {
       body,
@@ -244,16 +248,12 @@ export function EditorPage({
         manualOrderCount,
         operationOrderStrategy: pathDocumentDraft.options.operationOrderStrategy
       },
-      programText: composeGCodeProgram({
-        header: machine.templates.header,
-        body,
-        footer: machine.templates.footer,
-        lineEnding: machine.output.lineEnding
-      }),
+      programLines: programComposition.lines,
       programSections: {
-        bodyLineCount,
-        bodyLineOffset: headerLineCount
+        bodyLineCount: programComposition.sections.body.lineCount,
+        bodyLineOffset: programComposition.sections.body.lineOffset
       },
+      programText: programComposition.text,
       postMetrics: posted.metrics,
       postedOperations: posted.operations
     };
@@ -1255,8 +1255,8 @@ export function EditorPage({
           planning={upidExport.planning}
           postMetrics={upidExport.postMetrics}
           postedOperations={upidExport.postedOperations}
+          programLines={upidExport.programLines}
           programSections={upidExport.programSections}
-          programText={upidExport.programText}
         />
       )}
     </div>
@@ -1269,11 +1269,6 @@ function clonePathDocument(document: PathPlanningDocument | null) {
 
 function pathDocumentSignature(document: PathPlanningDocument | null) {
   return document ? JSON.stringify(document) : '';
-}
-
-function countComposedSectionLines(section: string) {
-  const trimmed = section.trim();
-  return trimmed ? trimmed.split(/\r?\n/).length : 0;
 }
 
 function normalizePathElementSelection(

@@ -1,6 +1,7 @@
 import { Download, X } from 'lucide-react';
 
 import type { GcodePostedOperation } from '@/domain/path-intel/postGcode';
+import type { GCodeProgramLineMap } from '@/domain/post/gcodeTemplates';
 import type { OperationOrderStrategy, PathDiagnostic } from '@/domain/path-intel/types';
 
 interface EditorUpidExportPreviewProps {
@@ -17,11 +18,11 @@ interface EditorUpidExportPreviewProps {
     rapidCount: number;
   };
   postedOperations: GcodePostedOperation[];
+  programLines: GCodeProgramLineMap[];
   programSections: {
     bodyLineCount: number;
     bodyLineOffset: number;
   };
-  programText: string;
   onClose: () => void;
   onDownload: () => void;
 }
@@ -34,13 +35,11 @@ export function EditorUpidExportPreview({
   planning,
   postMetrics,
   postedOperations,
+  programLines,
   programSections,
-  programText,
   onClose,
   onDownload
 }: EditorUpidExportPreviewProps) {
-  const programLines = splitProgramLines(programText);
-
   return (
     <section
       aria-label="UPID Export Preview"
@@ -194,16 +193,16 @@ export function EditorUpidExportPreview({
         className="min-h-0 overflow-auto bg-background/80 p-3 leading-5 text-foreground"
         data-upid-export-gcode
       >
-        {programLines.map((line, index) => (
+        {programLines.map((line) => (
           <div
             className="grid grid-cols-[3rem_minmax(0,1fr)] gap-3 border-b border-border/40 py-0.5 last:border-b-0"
-            data-upid-export-program-line={index + 1}
+            data-upid-export-program-line={line.lineNumber}
             data-upid-export-program-line-row
-            data-upid-export-program-section={programSectionForLine(index, programSections)}
-            key={`${index}-${line}`}
+            data-upid-export-program-section={line.section}
+            key={`${line.lineNumber}-${line.text}`}
           >
-            <span className="select-none text-right text-muted-foreground">{index + 1}</span>
-            <code className="whitespace-pre-wrap break-words">{line}</code>
+            <span className="select-none text-right text-muted-foreground">{line.lineNumber}</span>
+            <code className="whitespace-pre-wrap break-words">{line.text}</code>
           </div>
         ))}
       </div>
@@ -238,18 +237,4 @@ function formatProgramLineRange(
 
 function programLineForBodyLine(bodyLineIndex: number, bodyLineOffset: number) {
   return bodyLineOffset + bodyLineIndex + 1;
-}
-
-function splitProgramLines(programText: string) {
-  const trimmedTrailingLineEnding = programText.replace(/\r?\n$/, '');
-  return trimmedTrailingLineEnding ? trimmedTrailingLineEnding.split(/\r?\n/) : [];
-}
-
-function programSectionForLine(
-  zeroBasedLineIndex: number,
-  sections: { bodyLineCount: number; bodyLineOffset: number }
-) {
-  if (zeroBasedLineIndex < sections.bodyLineOffset) return 'header';
-  if (zeroBasedLineIndex < sections.bodyLineOffset + sections.bodyLineCount) return 'body';
-  return 'footer';
 }
