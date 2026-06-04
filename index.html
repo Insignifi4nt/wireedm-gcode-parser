@@ -1,28 +1,21 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Wire EDM G-Code Viewer - Interactive visualization and measurement tools for Wire EDM machining">
-    <title>Wire EDM G-Code Viewer</title>
-    
-    <!-- Stylesheets in dependency order: theme → main → components -->
-  <script type="module" crossorigin src="/wireedm-gcode-parser/assets/main-DS4wHngB.js"></script>
-  <link rel="stylesheet" crossorigin href="/wireedm-gcode-parser/assets/main-C0psdS0-.css">
-  <script type="module">import.meta.url;import("_").catch(()=>1);(async function*(){})().next();window.__vite_is_modern_browser=true</script>
-  <script type="module">!function(){if(window.__vite_is_modern_browser)return;console.warn("vite: loading legacy chunks, syntax error above and the same error below should be ignored");var e=document.getElementById("vite-legacy-polyfill"),n=document.createElement("script");n.src=e.src,n.onload=function(){System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))},document.body.appendChild(n)}();</script>
-</head>
-<body>
-    <div id="app">
-        <!-- Application content will be dynamically created by main.js -->
-        <div id="loading">
-            <p>Loading Wire EDM G-Code Viewer...</p>
-        </div>
-    </div>
-    
-    <!-- Main application module -->
-  <script nomodule>!function(){var e=document,t=e.createElement("script");if(!("noModule"in t)&&"onbeforeload"in t){var n=!1;e.addEventListener("beforeload",(function(e){if(e.target===t)n=!0;else if(!e.target.hasAttribute("nomodule")||!n)return;e.preventDefault()}),!0),t.type="module",t.src=".",e.head.appendChild(t),t.remove()}}();</script>
-  <script nomodule crossorigin id="vite-legacy-polyfill" src="/wireedm-gcode-parser/assets/polyfills-legacy-Bv5XiVFU.js"></script>
-  <script nomodule crossorigin id="vite-legacy-entry" data-src="/wireedm-gcode-parser/assets/main-legacy-DIlQbMTi.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A local-first Wire EDM workbench for DXF import, G-code editing, verification, and export."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23101316'/%3E%3Cpath d='M14 40 32 22l18 18' fill='none' stroke='%2339ff14' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='32' cy='22' r='5' fill='%23fbbf24'/%3E%3C/svg%3E"
+    />
+    <title>Wire EDM Workbench</title>
+    <script type="module" crossorigin src="/wireedm-gcode-parser/assets/main-C0tUNIZA.js"></script>
+    <link rel="stylesheet" crossorigin href="/wireedm-gcode-parser/assets/main-jERe-C2D.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
 </html>
