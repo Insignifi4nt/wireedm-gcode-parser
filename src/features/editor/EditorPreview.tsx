@@ -176,6 +176,7 @@ export function EditorPreview({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const suppressClickRef = useRef(false);
   const touchTapRef = useRef<PreviewTouchTapState | null>(null);
+  const pendingTouchPointClickTimeoutRef = useRef<number | null>(null);
 
   const fittedViewBox = preview
     ? fitViewBoxToViewportAspect(preview.viewBox, surfaceSize.width, surfaceSize.height)
@@ -194,6 +195,14 @@ export function EditorPreview({
     dragStateRef.current = null;
     setViewState(activeViewState);
   }
+
+  useEffect(() => {
+    return () => {
+      if (pendingTouchPointClickTimeoutRef.current !== null) {
+        window.clearTimeout(pendingTouchPointClickTimeoutRef.current);
+      }
+    };
+  }, []);
 
   function setZoom(action: number | ((current: number) => number)) {
     setViewState((current) => ({
@@ -635,7 +644,7 @@ export function EditorPreview({
     touchTapRef.current = null;
     onCursorPointChange?.(null);
 
-    if (!state || !touch || !onPreviewPointClick || state.mode === 'pan') return;
+    if (!state || !touch || state.mode === 'pan') return;
 
     event.preventDefault();
     const distance = Math.hypot(touch.clientX - state.clientX, touch.clientY - state.clientY);
@@ -649,21 +658,29 @@ export function EditorPreview({
       Math.hypot(touch.clientX - previousTap.clientX, touch.clientY - previousTap.clientY) <=
         TOUCH_TAP_THRESHOLD
     ) {
+      if (pendingTouchPointClickTimeoutRef.current !== null) {
+        window.clearTimeout(pendingTouchPointClickTimeoutRef.current);
+        pendingTouchPointClickTimeoutRef.current = null;
+      }
       lastTapRef.current = null;
       handleFitPreview();
       return;
     }
+    const point = previewTouchToWorldPoint(touch, event.currentTarget, activeViewBox, flipY, {
+      gridSize: snapGridSize,
+      snapToGrid
+    });
     lastTapRef.current = {
       clientX: touch.clientX,
       clientY: touch.clientY,
       time: now
     };
+    if (!point || !onPreviewPointClick) return;
 
-    const point = previewTouchToWorldPoint(touch, event.currentTarget, activeViewBox, flipY, {
-      gridSize: snapGridSize,
-      snapToGrid
-    });
-    if (point) onPreviewPointClick(point);
+    pendingTouchPointClickTimeoutRef.current = window.setTimeout(() => {
+      pendingTouchPointClickTimeoutRef.current = null;
+      onPreviewPointClick(point);
+    }, TOUCH_DOUBLE_TAP_TIMEOUT_MS);
   }
 
   function handlePreviewTouchCancel() {

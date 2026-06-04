@@ -79,6 +79,31 @@ describe('App dashboard and workbench shell', () => {
     expect(dialog?.querySelector('button[aria-label="Choose Workbench Folder"]')).toBeNull();
   });
 
+  it('closes the settings modal when Escape is pressed', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const settingsButton = container.querySelector(
+      'button[aria-label="Open settings"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      settingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(
+      container.querySelector('[role="dialog"][aria-label="Workbench settings"]')
+    ).not.toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[role="dialog"][aria-label="Workbench settings"]')).toBeNull();
+  });
+
   it('renders real cache and import actions without fake dashboard rows or dead mode tabs', async () => {
     window.showDirectoryPicker = vi.fn();
 

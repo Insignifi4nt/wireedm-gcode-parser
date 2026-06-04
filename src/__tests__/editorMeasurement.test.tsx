@@ -350,66 +350,72 @@ describe('Editor measurement points', () => {
 
   it('adds measurement points from preview touch taps like the old mobile canvas', async () => {
     window.showDirectoryPicker = undefined;
+    vi.useFakeTimers();
 
-    await renderApp(context);
+    try {
+      await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
-    );
+      const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('Open Editor')
+      );
 
-    await act(async () => {
-      openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await flushAsync();
+      await act(async () => {
+        openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await flushAsync();
 
-    const fileInput = container.querySelector(
-      'input[aria-label="G-code program file"]'
-    ) as HTMLInputElement | null;
-    Object.defineProperty(fileInput, 'files', {
-      value: [new File(['G0 X0 Y0\nG1 X10 Y10\nM30'], 'touch.nc')],
-      configurable: true
-    });
+      const fileInput = container.querySelector(
+        'input[aria-label="G-code program file"]'
+      ) as HTMLInputElement | null;
+      Object.defineProperty(fileInput, 'files', {
+        value: [new File(['G0 X0 Y0\nG1 X10 Y10\nM30'], 'touch.nc')],
+        configurable: true
+      });
 
-    await act(async () => {
-      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await flushAsync();
+      await act(async () => {
+        fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await flushAsync();
 
-    const preview = container.querySelector(
-      'svg[aria-label="G-code path preview"]'
-    ) as SVGSVGElement | null;
-    Object.defineProperty(preview, 'getBoundingClientRect', {
-      value: () => ({
-        left: 10,
-        top: 20,
-        width: 120,
-        height: 120,
-        right: 130,
-        bottom: 140,
-        x: 10,
-        y: 20,
-        toJSON: () => ({})
-      }),
-      configurable: true
-    });
+      const preview = container.querySelector(
+        'svg[aria-label="G-code path preview"]'
+      ) as SVGSVGElement | null;
+      Object.defineProperty(preview, 'getBoundingClientRect', {
+        value: () => ({
+          left: 10,
+          top: 20,
+          width: 120,
+          height: 120,
+          right: 130,
+          bottom: 140,
+          x: 10,
+          y: 20,
+          toJSON: () => ({})
+        }),
+        configurable: true
+      });
 
-    const pointModeButton = [...container.querySelectorAll('button')].find((button) =>
-      button.getAttribute('aria-label') === 'Place measurement points on canvas'
-    );
-    await act(async () => {
-      pointModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+      const pointModeButton = [...container.querySelectorAll('button')].find((button) =>
+        button.getAttribute('aria-label') === 'Place measurement points on canvas'
+      );
+      await act(async () => {
+        pointModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
 
-    const touch = { clientX: 70, clientY: 80, identifier: 1, target: preview as SVGSVGElement };
+      const touch = { clientX: 70, clientY: 80, identifier: 1, target: preview as SVGSVGElement };
 
-    await act(async () => {
-      dispatchTouchEvent(preview, 'touchstart', [touch], [touch]);
-      dispatchTouchEvent(preview, 'touchend', [], [touch]);
-    });
+      await act(async () => {
+        dispatchTouchEvent(preview, 'touchstart', [touch], [touch]);
+        dispatchTouchEvent(preview, 'touchend', [], [touch]);
+        await vi.advanceTimersByTimeAsync(500);
+      });
 
-    expect(container.querySelector('[data-measurement-point-row="1"]')?.textContent).toContain(
-      '5.000'
-    );
-    expect(container.querySelector('[data-measurement-point="1"]')).not.toBeNull();
+      expect(container.querySelector('[data-measurement-point-row="1"]')?.textContent).toContain(
+        '5.000'
+      );
+      expect(container.querySelector('[data-measurement-point="1"]')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -206,6 +206,13 @@ describe('Editor preview controls and guide', () => {
     const zoomInButton = container.querySelector(
       'button[aria-label="Zoom preview in"]'
     ) as HTMLButtonElement | null;
+    const pointModeButton = container.querySelector(
+      'button[data-editor-preview-mouse-mode-point]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      pointModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
 
     await act(async () => {
       zoomInButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -225,6 +232,7 @@ describe('Editor preview controls and guide', () => {
     });
 
     expect(parseSvgViewBox(preview?.getAttribute('viewBox') ?? '')).toEqual(initialViewBox);
+    expect(container.querySelector('[data-measurement-point-row="1"]')).toBeNull();
   });
 
   it('shows live preview cursor coordinates like the old sidebar', async () => {

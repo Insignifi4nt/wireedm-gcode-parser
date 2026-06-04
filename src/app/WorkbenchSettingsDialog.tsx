@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Database, HardDrive, RefreshCw, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,17 @@ export function WorkbenchSettingsDialog({
   storageWarningMessage,
   workbenchStatus
 }: WorkbenchSettingsDialogProps) {
+  useEffect(() => {
+    if (!open) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, open]);
+
   if (!open) return null;
 
   const isConnecting =
