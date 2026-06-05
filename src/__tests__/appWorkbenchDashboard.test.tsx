@@ -9,6 +9,7 @@ import {
   createAppTestContext,
   flushAsync,
   renderApp,
+  setInputValue,
   setSelectValue,
   setTextAreaValue,
   simpleLineDxf,
@@ -304,6 +305,77 @@ describe('App dashboard and workbench shell', () => {
     expect(dialog?.textContent).toContain('Temporary memory');
     expect(dialog?.textContent).toContain('No - current tab only.');
     expect(dialog?.textContent).toContain('This workbench has no persistent storage location.');
+  });
+
+  it('filters and sorts dashboard projects without changing project actions', async () => {
+    const workbench = createDirectoryWorkbench('wire-jobs');
+    workbench.manifest.projects = [
+      {
+        id: 'old-dxf',
+        name: 'Alpha bracket',
+        path: 'projects/alpha/project.json',
+        sourceKind: 'dxf',
+        updatedAt: '2026-05-30T10:00:00.000Z'
+      },
+      {
+        id: 'new-gcode',
+        name: 'Zeta repair',
+        path: 'projects/zeta/project.json',
+        sourceKind: 'external-gcode',
+        updatedAt: '2026-05-31T10:00:00.000Z'
+      }
+    ];
+
+    await renderApp(context, {
+      connectCachedWorkbench: async () => workbench
+    });
+
+    const projectText = () =>
+      container.querySelector('[aria-label="Project list"]')?.textContent ?? '';
+    expect(projectText()).toContain('Zeta repair');
+    expect(projectText()).toContain('Alpha bracket');
+    expect(projectText().indexOf('Zeta repair')).toBeLessThan(
+      projectText().indexOf('Alpha bracket')
+    );
+
+    const sortSelect = container.querySelector(
+      'select[aria-label="Project sort"]'
+    ) as HTMLSelectElement | null;
+    expect(sortSelect).not.toBeNull();
+
+    await act(async () => {
+      if (sortSelect) setSelectValue(sortSelect, 'name-asc');
+    });
+
+    expect(projectText().indexOf('Alpha bracket')).toBeLessThan(
+      projectText().indexOf('Zeta repair')
+    );
+
+    const sourceSelect = container.querySelector(
+      'select[aria-label="Project source filter"]'
+    ) as HTMLSelectElement | null;
+    expect(sourceSelect).not.toBeNull();
+
+    await act(async () => {
+      if (sourceSelect) setSelectValue(sourceSelect, 'external-gcode');
+    });
+
+    expect(projectText()).toContain('Zeta repair');
+    expect(projectText()).not.toContain('Alpha bracket');
+    expect(container.textContent).toContain('1 / 2 projects');
+
+    const searchInput = container.querySelector(
+      'input[aria-label="Search projects"]'
+    ) as HTMLInputElement | null;
+    expect(searchInput).not.toBeNull();
+
+    await act(async () => {
+      if (searchInput) setInputValue(searchInput, 'missing');
+    });
+
+    expect(projectText()).not.toContain('Zeta repair');
+    expect(projectText()).toContain('No projects match the active filters.');
+    expect(container.querySelector('button[aria-label="Rename project new-gcode"]')).toBeNull();
   });
 });
 
