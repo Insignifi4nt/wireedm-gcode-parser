@@ -25,6 +25,10 @@ class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
   async writeText(path: string, contents: string) {
     this.files.set(path, contents);
   }
+
+  async deleteText(path: string) {
+    this.files.delete(path);
+  }
 }
 
 class MemoryHandleStore implements WorkbenchDirectoryHandleStore {

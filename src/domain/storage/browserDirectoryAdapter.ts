@@ -19,6 +19,19 @@ export function createBrowserDirectoryAdapter(
         throw error;
       }
     },
+    deleteText: async (path: string) => {
+      try {
+        const parts = splitPath(path);
+        const fileName = parts.at(-1);
+        if (!fileName) return;
+
+        const directory = await getDirectory(root, parts.slice(0, -1), false);
+        await directory.removeEntry(fileName);
+      } catch (error) {
+        if (isNotFoundError(error)) return;
+        throw error;
+      }
+    },
     writeText: async (path: string, contents: string) => {
       const handle = await getFile(root, splitPath(path), true);
       const writable = await handle.createWritable();

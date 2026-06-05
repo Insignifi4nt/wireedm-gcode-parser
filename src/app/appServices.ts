@@ -33,6 +33,16 @@ import {
   updateWorkbenchSettings,
   type UpdateWorkbenchSettingsInput
 } from '@/domain/storage/updateWorkbenchSettings';
+import {
+  renameWorkbenchProject,
+  type RenameWorkbenchProjectInput,
+  type RenameWorkbenchProjectResult
+} from '@/domain/storage/renameWorkbenchProject';
+import {
+  deleteWorkbenchProject,
+  type DeleteWorkbenchProjectInput,
+  type DeleteWorkbenchProjectResult
+} from '@/domain/storage/deleteWorkbenchProject';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
 export interface AppServices {
@@ -56,6 +66,14 @@ export interface AppServices {
     workbench: ConnectedWorkbench,
     input: SaveEditorProgramInput
   ) => Promise<SaveEditorProgramResult>;
+  renameWorkbenchProject: (
+    workbench: ConnectedWorkbench,
+    input: RenameWorkbenchProjectInput
+  ) => Promise<RenameWorkbenchProjectResult>;
+  deleteWorkbenchProject: (
+    workbench: ConnectedWorkbench,
+    input: DeleteWorkbenchProjectInput
+  ) => Promise<DeleteWorkbenchProjectResult>;
   updateWorkbenchSettings: (
     workbench: ConnectedWorkbench,
     input: UpdateWorkbenchSettingsInput
@@ -72,6 +90,8 @@ export const defaultAppServices: AppServices = {
   loadEditorProgram,
   openWorkbenchProject,
   saveEditorProgram,
+  renameWorkbenchProject,
+  deleteWorkbenchProject,
   updateWorkbenchSettings,
   downloadGeneratedProgram: downloadProgramFile
 };

@@ -43,6 +43,8 @@ export interface WorkbenchAppController {
   handleOpenEditor: () => void;
   handleOpenLatestImportInEditor: () => Promise<void>;
   handleOpenWorkbenchProject: (projectPath: string) => Promise<void>;
+  handleDeleteWorkbenchProject: (projectId: string) => Promise<void>;
+  handleRenameWorkbenchProject: (projectId: string, name: string) => Promise<void>;
   handleSaveEditorDraft: (draft: EditorSaveDraft) => Promise<void>;
   handleSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => Promise<void>;
   showStatusToast: (message: string, type?: StatusToastType) => void;
@@ -246,6 +248,53 @@ export function useWorkbenchAppController(
     }
   }
 
+  async function handleRenameWorkbenchProject(projectId: string, name: string) {
+    if (!connectedWorkbench) {
+      throw new Error('Workbench is not connected.');
+    }
+
+    try {
+      const result = await appServices.renameWorkbenchProject(connectedWorkbench, {
+        projectId,
+        name
+      });
+      setConnectedWorkbench(result.workbench);
+      reconcileProjectMutation(result.workbench, result.project);
+      showStatusToast(`Project renamed: ${result.project.name}`, 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not rename workbench project.';
+      showStatusToast(message, 'error');
+      throw error instanceof Error ? error : new Error(message);
+    }
+  }
+
+  async function handleDeleteWorkbenchProject(projectId: string) {
+    if (!connectedWorkbench) {
+      throw new Error('Workbench is not connected.');
+    }
+
+    try {
+      const result = await appServices.deleteWorkbenchProject(connectedWorkbench, {
+        projectId
+      });
+      setConnectedWorkbench(result.workbench);
+      removeDeletedProjectState(result.project.id);
+      if (result.cleanupErrorMessages.length > 0) {
+        const fileLabel = result.cleanupErrorMessages.length === 1 ? 'owned file' : 'owned files';
+        showStatusToast(
+          `Project removed, but ${result.cleanupErrorMessages.length} ${fileLabel} could not be deleted.`,
+          'error'
+        );
+      } else {
+        showStatusToast(`Project deleted: ${result.project.name}`, 'success');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not delete workbench project.';
+      showStatusToast(message, 'error');
+      throw error instanceof Error ? error : new Error(message);
+    }
+  }
+
   async function handleImportExternalProgram(file: File) {
     if (!connectedWorkbench || editorImportStatus === 'importing') return;
 
@@ -324,6 +373,54 @@ export function useWorkbenchAppController(
     });
   }
 
+  function reconcileProjectMutation(
+    workbench: ConnectedWorkbench,
+    project: { id: string; name: string; updatedAt: string }
+  ) {
+    setLoadedEditorProgram((current) =>
+      current && current.project?.id === project.id
+        ? {
+            ...current,
+            project: current.project
+              ? {
+                  ...current.project,
+                  name: project.name,
+                  updatedAt: project.updatedAt
+                }
+              : current.project
+          }
+        : current
+    );
+
+    setLatestImport((current) =>
+      current && current.project.id === project.id
+        ? {
+            ...current,
+            workbench,
+            project: {
+              ...current.project,
+              name: project.name,
+              updatedAt: project.updatedAt
+            }
+          }
+        : current
+    );
+  }
+
+  function removeDeletedProjectState(projectId: string) {
+    setLoadedEditorProgram((current) => {
+      if (!current || current.project?.id !== projectId) return current;
+      return null;
+    });
+    setLatestImport((current) => {
+      if (!current || current.project.id !== projectId) return current;
+      return null;
+    });
+    setEditorSaveStatus('idle');
+    setEditorSaveErrorMessage(null);
+    setActiveView((current) => (current === 'editor' ? 'dashboard' : current));
+  }
+
   return {
     activeView,
     connectedWorkbench,
@@ -351,6 +448,8 @@ export function useWorkbenchAppController(
     handleOpenEditor: () => setActiveView('editor'),
     handleOpenLatestImportInEditor,
     handleOpenWorkbenchProject,
+    handleDeleteWorkbenchProject,
+    handleRenameWorkbenchProject,
     handleSaveEditorDraft,
     handleSaveWorkbenchSettings,
     showStatusToast

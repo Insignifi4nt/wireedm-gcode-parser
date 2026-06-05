@@ -1,9 +1,12 @@
+import { useState } from 'react';
+
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
 import { DashboardHeader } from './DashboardHeader';
 import { LatestDxfImportPanel } from './LatestDxfImportPanel';
+import { ProjectActionDialog, type ProjectAction } from './ProjectActionDialog';
 import { ProjectListPanel } from './ProjectListPanel';
 import { WorkbenchSettingsPanel } from './WorkbenchSettingsPanel';
 
@@ -18,6 +21,8 @@ interface DashboardPageProps {
   onOpenEditor: () => void;
   onOpenLatestImportInEditor: () => void;
   onOpenProject: (projectPath: string) => void | Promise<void>;
+  onDeleteProject: (projectId: string) => Promise<void>;
+  onRenameProject: (projectId: string, name: string) => Promise<void>;
   onImportDxfFile: (file: File) => void | Promise<void>;
   onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
 }
@@ -33,10 +38,17 @@ export function DashboardPage({
   onOpenEditor,
   onOpenLatestImportInEditor,
   onOpenProject,
+  onDeleteProject,
+  onRenameProject,
   onImportDxfFile,
   onSaveWorkbenchSettings
 }: DashboardPageProps) {
   const projects = connectedWorkbench?.manifest.projects ?? [];
+  const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
+
+  function closeProjectAction() {
+    setProjectAction(null);
+  }
 
   return (
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)]">
@@ -50,7 +62,12 @@ export function DashboardPage({
       />
 
       <section className="grid min-h-0 grid-cols-[minmax(0,1fr)_340px] gap-3 p-3">
-        <ProjectListPanel onOpenProject={onOpenProject} projects={projects} />
+        <ProjectListPanel
+          onDeleteProject={(project) => setProjectAction({ kind: 'delete', project })}
+          onOpenProject={onOpenProject}
+          onRenameProject={(project) => setProjectAction({ kind: 'rename', project })}
+          projects={projects}
+        />
 
         <LatestDxfImportPanel
           latestImport={latestImport}
@@ -64,6 +81,13 @@ export function DashboardPage({
           />
         </LatestDxfImportPanel>
       </section>
+
+      <ProjectActionDialog
+        action={projectAction}
+        onClose={closeProjectAction}
+        onDeleteProject={onDeleteProject}
+        onRenameProject={onRenameProject}
+      />
     </div>
   );
 }

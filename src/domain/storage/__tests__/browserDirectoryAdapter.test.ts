@@ -50,6 +50,12 @@ class FakeDirectoryHandle {
       (contents) => this.files.set(name, contents)
     );
   }
+
+  async removeEntry(name: string) {
+    if (!this.files.delete(name)) {
+      throw new DOMException('Not found', 'NotFoundError');
+    }
+  }
 }
 
 describe('createBrowserDirectoryAdapter', () => {
@@ -69,5 +75,15 @@ describe('createBrowserDirectoryAdapter', () => {
     const adapter = createBrowserDirectoryAdapter(root as unknown as FileSystemDirectoryHandle);
 
     await expect(adapter.readText('templates/missing.gcode')).resolves.toBeNull();
+  });
+
+  it('deletes nested text files through a directory handle', async () => {
+    const root = new FakeDirectoryHandle('jobs');
+    const adapter = createBrowserDirectoryAdapter(root as unknown as FileSystemDirectoryHandle);
+
+    await adapter.writeText('projects/example/project.json', '{}');
+    await adapter.deleteText('projects/example/project.json');
+
+    await expect(adapter.readText('projects/example/project.json')).resolves.toBeNull();
   });
 });

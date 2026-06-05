@@ -66,4 +66,17 @@ describe('createBrowserCacheAdapter', () => {
     expect(await adapter.readText('workbench.json')).toBeNull();
     expect(storage.getItem('other-app:key')).toBe('keep');
   });
+
+  it('deletes individual cached files', async () => {
+    const storage = new MemoryStorage();
+    const adapter = createBrowserCacheAdapter(storage, {
+      name: 'Browser cache',
+      namespace: 'wire-edm-test'
+    });
+
+    await adapter.writeText('projects/example/project.json', '{}');
+    await adapter.deleteText('projects/example/project.json');
+
+    expect(await adapter.readText('projects/example/project.json')).toBeNull();
+  });
 });

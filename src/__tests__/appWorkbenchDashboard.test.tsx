@@ -316,6 +316,7 @@ function createTemporaryWorkbench(): ConnectedWorkbench {
       kind: 'memory',
       ensureDirectory: async () => undefined,
       readText: async () => null,
+      deleteText: async () => undefined,
       writeText: async () => undefined
     },
     manifest: {
@@ -350,6 +351,7 @@ function createDirectoryWorkbench(name: string): ConnectedWorkbench {
       kind: 'directory',
       ensureDirectory: async () => undefined,
       readText: async () => null,
+      deleteText: async () => undefined,
       writeText: async () => undefined
     },
     manifest: {

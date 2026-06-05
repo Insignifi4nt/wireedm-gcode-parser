@@ -185,6 +185,164 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
   });
 
+  it('renames a persisted project from the dashboard without changing its path or project id', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([simpleLineDxf()], 'rename-me.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Dashboard')
+    );
+    expect(dashboardButton).toBeDefined();
+
+    await act(async () => {
+      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const manifestBeforeRename = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const projectId = manifestBeforeRename.projects[0].id;
+    const projectPath = manifestBeforeRename.projects[0].path;
+    const renameButton = container.querySelector(
+      `button[aria-label="Rename project ${projectId}"]`
+    ) as HTMLButtonElement | null;
+    expect(renameButton).not.toBeNull();
+
+    await act(async () => {
+      renameButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const renameDialog = container.querySelector('[role="dialog"][aria-label="Rename project"]');
+    expect(renameDialog).not.toBeNull();
+    const renameInput = container.querySelector(
+      'input[aria-label="Project name"]'
+    ) as HTMLInputElement | null;
+    expect(renameInput).not.toBeNull();
+
+    await act(async () => {
+      if (renameInput) setInputValue(renameInput, 'Renamed Library Job');
+    });
+
+    const renameForm = container.querySelector(
+      '[role="dialog"][aria-label="Rename project"]'
+    ) as HTMLFormElement | null;
+    expect(renameForm).not.toBeNull();
+
+    await act(async () => {
+      renameForm?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await flushAsync();
+
+    const manifestAfterRename = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const projectAfterRename = JSON.parse(
+      window.localStorage.getItem(`wire-edm-workbench:file:${projectPath}`) || '{}'
+    );
+
+    expect(manifestAfterRename.projects).toHaveLength(1);
+    expect(manifestAfterRename.projects[0].id).toBe(projectId);
+    expect(manifestAfterRename.projects[0].path).toBe(projectPath);
+    expect(manifestAfterRename.projects[0].name).toBe('Renamed Library Job');
+    expect(projectAfterRename.id).toBe(projectId);
+    expect(projectAfterRename.name).toBe('Renamed Library Job');
+    expect(projectAfterRename.source.files[0].path).toContain(projectId);
+    expect(container.textContent).toContain('Renamed Library Job');
+    expect(container.textContent).toContain('Renamed Library Job');
+
+    const openLatestImportButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Open in Editor')
+    );
+    expect(openLatestImportButton).toBeDefined();
+
+    await act(async () => {
+      openLatestImportButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.textContent).toContain('Renamed Library Job / UPID Project');
+  });
+
+  it('hard-deletes a persisted project and clears the latest import view', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([simpleLineDxf()], 'delete-me.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Dashboard')
+    );
+    expect(dashboardButton).toBeDefined();
+
+    await act(async () => {
+      dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const manifestBeforeDelete = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const projectId = manifestBeforeDelete.projects[0].id;
+    const projectPath = manifestBeforeDelete.projects[0].path;
+    const deleteButton = container.querySelector(
+      `button[aria-label="Delete project ${projectId}"]`
+    ) as HTMLButtonElement | null;
+    expect(deleteButton).not.toBeNull();
+
+    await act(async () => {
+      deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const deleteDialog = container.querySelector('[role="dialog"][aria-label="Delete project"]');
+    expect(deleteDialog).not.toBeNull();
+    const confirmDeleteButton = [...(deleteDialog?.querySelectorAll('button') ?? [])].find((button) =>
+      button.textContent?.trim() === 'Delete'
+    ) as HTMLButtonElement | undefined;
+    expect(confirmDeleteButton).toBeDefined();
+
+    await act(async () => {
+      confirmDeleteButton?.click();
+    });
+    await flushAsync();
+
+    const manifestAfterDelete = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+
+    expect(manifestAfterDelete.projects).toHaveLength(0);
+    expect(window.localStorage.getItem(`wire-edm-workbench:file:${projectPath}`)).toBeNull();
+    expect(window.localStorage.getItem(`wire-edm-workbench:file:imports/${projectId}.dxf`)).toBeNull();
+    expect(container.textContent).toContain('No projects yet');
+    expect(container.textContent).toContain('Manifest');
+    expect(container.textContent).not.toContain('Open in Editor');
+    expect(container.textContent).not.toContain('UPID on demand');
+  });
+
   it('surfaces UPID path diagnostics in the Project Rail navigator', async () => {
     window.showDirectoryPicker = undefined;
 

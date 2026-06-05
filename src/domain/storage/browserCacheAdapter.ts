@@ -30,6 +30,9 @@ export function createBrowserCacheAdapter(
       }
     },
     readText: async (path: string) => storage.getItem(fileKey(namespace, path)),
+    deleteText: async (path: string) => {
+      storage.removeItem(fileKey(namespace, path));
+    },
     writeText: async (path: string, contents: string) => {
       storage.setItem(fileKey(namespace, path), contents);
     },
