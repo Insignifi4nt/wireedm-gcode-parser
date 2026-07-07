@@ -4,12 +4,16 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
+  FlipHorizontal,
+  FlipVertical,
   Flag,
   Magnet,
   MousePointer2,
   Move,
   Redo2,
   RefreshCw,
+  RotateCcw,
+  RotateCw,
   Save,
   Undo2
 } from 'lucide-react';
@@ -21,7 +25,7 @@ import {
   type SetStateAction
 } from 'react';
 
-import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
+import type { MagnetizeMode, PathMirrorAxis } from '@/domain/path-editor/pathDocumentOperations';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import {
   orientedSegmentEnd,
@@ -129,8 +133,12 @@ interface EditorPathNavigatorPanelProps {
   onOpenWorkspacePanels?: (panelIds: DiagnosticPanelActionId[]) => void;
   onOpenExportPreview: () => void;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
+  onMirrorPathDocument: (axis: PathMirrorAxis) => void;
+  onMirrorPathSelection: (axis: PathMirrorAxis) => void;
   onRedoDraft: () => void;
   onReversePathOperation: () => void;
+  onRotatePathDocument: (angleDegrees: number) => void;
+  onRotatePathSelection: (angleDegrees: number) => void;
   onSaveClick: () => void | Promise<void>;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onPathTargetXDraftChange: (value: string) => void;
@@ -171,8 +179,12 @@ export function EditorPathNavigatorPanel({
   onOpenWorkspacePanels,
   onOpenExportPreview,
   onHoverPathElement,
+  onMirrorPathDocument,
+  onMirrorPathSelection,
   onRedoDraft,
   onReversePathOperation,
+  onRotatePathDocument,
+  onRotatePathSelection,
   onSaveClick,
   onSelectPathElement,
   onPathTargetXDraftChange,
@@ -251,6 +263,8 @@ export function EditorPathNavigatorPanel({
     Number.isFinite(targetY) &&
     (!selectedGeometryCenter || targetX !== selectedGeometryCenter.x || targetY !== selectedGeometryCenter.y) &&
     !isSaving;
+  const canOrientDocument = Boolean(documentCenter) && pathDocument.segments.length > 0 && !isSaving;
+  const canOrientSelection = Boolean(selectedGeometryCenter) && !isSaving;
   const hoverRevealedPathElementIds = new Set(
     hoveredPathElement ? upidPathElementAncestorIds(pathDocument, hoveredPathElement) : []
   );
@@ -672,6 +686,132 @@ export function EditorPathNavigatorPanel({
             <Move className="size-3" />
             Apply Translation
           </button>
+          <div className="mt-3 border-t border-border pt-2" data-upid-transform-orientation>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[9px] uppercase text-muted-foreground">Orientation</span>
+              <span className="truncate text-[9px] text-muted-foreground" data-upid-transform-orientation-origin>
+                {documentCenter ? formatPoint(documentCenter) : '-'}
+              </span>
+            </div>
+            <div className="grid gap-1">
+              <div
+                className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-1"
+                data-upid-transform-selection-orientation
+              >
+                <span className="truncate text-[9px] uppercase text-muted-foreground">Selection</span>
+                <div className="grid grid-cols-5 gap-1">
+                  <button
+                    aria-label="Rotate selection 90 degrees counterclockwise"
+                    className={iconButtonClass}
+                    disabled={!canOrientSelection}
+                    onClick={() => onRotatePathSelection(-90)}
+                    title="Rotate selection 90 degrees counterclockwise"
+                    type="button"
+                  >
+                    <RotateCcw className="size-3" />
+                  </button>
+                  <button
+                    aria-label="Rotate selection 90 degrees clockwise"
+                    className={iconButtonClass}
+                    disabled={!canOrientSelection}
+                    onClick={() => onRotatePathSelection(90)}
+                    title="Rotate selection 90 degrees clockwise"
+                    type="button"
+                  >
+                    <RotateCw className="size-3" />
+                  </button>
+                  <button
+                    aria-label="Rotate selection 180 degrees"
+                    className={iconButtonClass}
+                    disabled={!canOrientSelection}
+                    onClick={() => onRotatePathSelection(180)}
+                    title="Rotate selection 180 degrees"
+                    type="button"
+                  >
+                    <span className="font-mono text-[9px]">180</span>
+                  </button>
+                  <button
+                    aria-label="Mirror selection across X axis"
+                    className={iconButtonClass}
+                    disabled={!canOrientSelection}
+                    onClick={() => onMirrorPathSelection('x')}
+                    title="Mirror selection across X axis"
+                    type="button"
+                  >
+                    <FlipVertical className="size-3" />
+                  </button>
+                  <button
+                    aria-label="Mirror selection across Y axis"
+                    className={iconButtonClass}
+                    disabled={!canOrientSelection}
+                    onClick={() => onMirrorPathSelection('y')}
+                    title="Mirror selection across Y axis"
+                    type="button"
+                  >
+                    <FlipHorizontal className="size-3" />
+                  </button>
+                </div>
+              </div>
+              <div
+                className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-1"
+                data-upid-transform-document-orientation
+              >
+                <span className="truncate text-[9px] uppercase text-muted-foreground">Document</span>
+                <div className="grid grid-cols-5 gap-1">
+                  <button
+                    aria-label="Rotate document 90 degrees counterclockwise"
+                    className={iconButtonClass}
+                    disabled={!canOrientDocument}
+                    onClick={() => onRotatePathDocument(-90)}
+                    title="Rotate document 90 degrees counterclockwise"
+                    type="button"
+                  >
+                    <RotateCcw className="size-3" />
+                  </button>
+                  <button
+                    aria-label="Rotate document 90 degrees clockwise"
+                    className={iconButtonClass}
+                    disabled={!canOrientDocument}
+                    onClick={() => onRotatePathDocument(90)}
+                    title="Rotate document 90 degrees clockwise"
+                    type="button"
+                  >
+                    <RotateCw className="size-3" />
+                  </button>
+                  <button
+                    aria-label="Rotate document 180 degrees"
+                    className={iconButtonClass}
+                    disabled={!canOrientDocument}
+                    onClick={() => onRotatePathDocument(180)}
+                    title="Rotate document 180 degrees"
+                    type="button"
+                  >
+                    <span className="font-mono text-[9px]">180</span>
+                  </button>
+                  <button
+                    aria-label="Mirror document across X axis"
+                    className={iconButtonClass}
+                    disabled={!canOrientDocument}
+                    onClick={() => onMirrorPathDocument('x')}
+                    title="Mirror document across X axis"
+                    type="button"
+                  >
+                    <FlipVertical className="size-3" />
+                  </button>
+                  <button
+                    aria-label="Mirror document across Y axis"
+                    className={iconButtonClass}
+                    disabled={!canOrientDocument}
+                    onClick={() => onMirrorPathDocument('y')}
+                    title="Mirror document across Y axis"
+                    type="button"
+                  >
+                    <FlipHorizontal className="size-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
           <div
             className="mt-3 border-t border-border pt-2"
             data-upid-transform-selection-center

@@ -26,9 +26,17 @@ import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import { evaluateMachineFit } from '@/domain/machine/machineFit';
 import {
   constructMagnetizedPoint,
+  mirrorPathDocument,
+  mirrorPathElement,
+  mirrorPathOperation,
+  mirrorPathSegment,
   movePathOperation,
   movePathSegmentCenterTo,
   previewClosedOperationStartNearPoint,
+  rotatePathDocument,
+  rotatePathElement,
+  rotatePathOperation,
+  rotatePathSegment,
   setClosedOperationStartAtSegmentEndpoint,
   reversePathOperation,
   setClosedOperationStartAtExistingPointNearPoint,
@@ -40,7 +48,8 @@ import {
   translatePathOperation,
   translatePathSegment,
   type MagnetizedPathPoint,
-  type MagnetizeMode
+  type MagnetizeMode,
+  type PathMirrorAxis
 } from '@/domain/path-editor/pathDocumentOperations';
 import type {
   ContourClassification,
@@ -107,7 +116,11 @@ import {
   writeStoredGuideLanguage,
   writeStoredLineMode
 } from './editorLineState';
-import { readPathSelectionBoundsCenter, resolvePathDragTarget } from './pathSelectionGeometry';
+import {
+  readPathDocumentBoundsCenter,
+  readPathSelectionBoundsCenter,
+  resolvePathDragTarget
+} from './pathSelectionGeometry';
 
 interface EditorPageProps {
   program: LoadedEditorProgram | null;
@@ -160,7 +173,7 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
 const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string> = {
   'path-summary': 'project counts, topology, source, and planning state',
   'path-actions': 'selection actions, start point, direction, and contour role',
-  'path-transform': 'exact move tools for contours, segments, and arc centers',
+  'path-transform': 'move, rotate, and mirror tools for document and selected geometry',
   'path-hover-assist': 'canvas hover and magnetic construction behavior',
   'endpoint-topology': 'join map for endpoint joins, healed gaps, open ends, and ambiguous clusters',
   'path-diagnostics': 'warnings and linked rows for broken or risky path geometry',
@@ -1236,6 +1249,88 @@ export function EditorPage({
     }
   }
 
+  function handleRotatePathSelection(angleDegrees: number) {
+    if (!pathDocumentDraft || isSaving) return;
+
+    const origin = readPathSelectionBoundsCenter(
+      pathDocumentDraft,
+      selectedPathElement,
+      selectedPathOperationId
+    );
+    if (!origin) return;
+
+    const edited = selectedPathElement?.segmentId
+      ? rotatePathSegment(pathDocumentDraft, selectedPathElement.segmentId, angleDegrees, origin)
+      : selectedPathElement?.pathElementId
+        ? rotatePathElement(pathDocumentDraft, selectedPathElement.pathElementId, angleDegrees, origin)
+        : selectedPathOperationId
+          ? rotatePathOperation(pathDocumentDraft, selectedPathOperationId, angleDegrees, origin)
+          : null;
+
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId
+      });
+    }
+  }
+
+  function handleMirrorPathSelection(axis: PathMirrorAxis) {
+    if (!pathDocumentDraft || isSaving) return;
+
+    const origin = readPathSelectionBoundsCenter(
+      pathDocumentDraft,
+      selectedPathElement,
+      selectedPathOperationId
+    );
+    if (!origin) return;
+
+    const edited = selectedPathElement?.segmentId
+      ? mirrorPathSegment(pathDocumentDraft, selectedPathElement.segmentId, axis, origin)
+      : selectedPathElement?.pathElementId
+        ? mirrorPathElement(pathDocumentDraft, selectedPathElement.pathElementId, axis, origin)
+        : selectedPathOperationId
+          ? mirrorPathOperation(pathDocumentDraft, selectedPathOperationId, axis, origin)
+          : null;
+
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId
+      });
+    }
+  }
+
+  function handleRotatePathDocument(angleDegrees: number) {
+    if (!pathDocumentDraft || isSaving) return;
+
+    const origin = readPathDocumentBoundsCenter(pathDocumentDraft);
+    if (!origin) return;
+
+    const edited = rotatePathDocument(pathDocumentDraft, angleDegrees, origin);
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId
+      });
+    }
+  }
+
+  function handleMirrorPathDocument(axis: PathMirrorAxis) {
+    if (!pathDocumentDraft || isSaving) return;
+
+    const origin = readPathDocumentBoundsCenter(pathDocumentDraft);
+    if (!origin) return;
+
+    const edited = mirrorPathDocument(pathDocumentDraft, axis, origin);
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId
+      });
+    }
+  }
+
   function handleMovePathSelectionCenter(targetCenter: { x: number; y: number }) {
     if (!pathDocumentDraft || isSaving) return;
 
@@ -1576,6 +1671,8 @@ export function EditorPage({
         onActivatePathClickMode={setPathClickMode}
         onExpandedPathElementIdsChange={setExpandedPathElementIds}
         onHoverPathElement={setHoveredPathElement}
+        onMirrorPathDocument={handleMirrorPathDocument}
+        onMirrorPathSelection={handleMirrorPathSelection}
         onMovePathSelectionCenter={handleMovePathSelectionCenter}
         onMoveSelectedSegmentCenter={handleMoveSelectedSegmentCenter}
         onMovePathOperation={handleMovePathOperation}
@@ -1584,6 +1681,8 @@ export function EditorPage({
         onOpenExportPreview={() => setExportPreviewOpen(true)}
         onRedoDraft={handleRedoDraft}
         onReversePathOperation={handleReversePathOperation}
+        onRotatePathDocument={handleRotatePathDocument}
+        onRotatePathSelection={handleRotatePathSelection}
         onSaveClick={handleSaveClick}
         onSelectPathElement={handleSelectPathElement}
         onPathTargetXDraftChange={setPathTargetXDraft}

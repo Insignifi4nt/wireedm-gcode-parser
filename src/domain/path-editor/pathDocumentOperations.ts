@@ -72,6 +72,8 @@ export interface PathStartPreview {
   segmentIndex: number;
 }
 
+export type PathMirrorAxis = 'x' | 'y';
+
 export function movePathOperation(
   document: PathPlanningDocument,
   operationId: string,
@@ -187,6 +189,118 @@ export function translatePathSegment(
   delta: Point2
 ) {
   return translatePathSegments(document, [segmentId], delta);
+}
+
+export function rotatePathDocument(
+  document: PathPlanningDocument,
+  angleDegrees: number,
+  origin: Point2
+) {
+  return transformPathSegments(
+    document,
+    document.segments.map((segment) => segment.id),
+    rotationPointTransform(angleDegrees, origin),
+    1
+  );
+}
+
+export function rotatePathElement(
+  document: PathPlanningDocument,
+  pathElementId: PathElementId,
+  angleDegrees: number,
+  origin: Point2
+) {
+  const pathElement = document.pathElements.find((candidate) => candidate.id === pathElementId);
+  if (!pathElement) return null;
+
+  return transformPathSegments(
+    document,
+    pathElement.segmentRefs.map((ref) => ref.segmentId),
+    rotationPointTransform(angleDegrees, origin),
+    1
+  );
+}
+
+export function rotatePathOperation(
+  document: PathPlanningDocument,
+  operationId: string,
+  angleDegrees: number,
+  origin: Point2
+) {
+  const operation = document.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation) return null;
+
+  return transformPathSegments(
+    document,
+    operation.segmentRefs.map((ref) => ref.segmentId),
+    rotationPointTransform(angleDegrees, origin),
+    1
+  );
+}
+
+export function rotatePathSegment(
+  document: PathPlanningDocument,
+  segmentId: SegmentId,
+  angleDegrees: number,
+  origin: Point2
+) {
+  return transformPathSegments(document, [segmentId], rotationPointTransform(angleDegrees, origin), 1);
+}
+
+export function mirrorPathDocument(
+  document: PathPlanningDocument,
+  axis: PathMirrorAxis,
+  origin: Point2
+) {
+  return transformPathSegments(
+    document,
+    document.segments.map((segment) => segment.id),
+    mirrorPointTransform(axis, origin),
+    -1
+  );
+}
+
+export function mirrorPathElement(
+  document: PathPlanningDocument,
+  pathElementId: PathElementId,
+  axis: PathMirrorAxis,
+  origin: Point2
+) {
+  const pathElement = document.pathElements.find((candidate) => candidate.id === pathElementId);
+  if (!pathElement) return null;
+
+  return transformPathSegments(
+    document,
+    pathElement.segmentRefs.map((ref) => ref.segmentId),
+    mirrorPointTransform(axis, origin),
+    -1
+  );
+}
+
+export function mirrorPathOperation(
+  document: PathPlanningDocument,
+  operationId: string,
+  axis: PathMirrorAxis,
+  origin: Point2
+) {
+  const operation = document.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation) return null;
+
+  return transformPathSegments(
+    document,
+    operation.segmentRefs.map((ref) => ref.segmentId),
+    mirrorPointTransform(axis, origin),
+    -1
+  );
+}
+
+export function mirrorPathSegment(
+  document: PathPlanningDocument,
+  segmentId: SegmentId,
+  axis: PathMirrorAxis,
+  origin: Point2
+) {
+  return transformPathSegments(document, [segmentId], mirrorPointTransform(axis, origin), -1);
 }
 
 export function movePathSegmentCenterTo(
@@ -680,30 +794,45 @@ function replaceDocumentSegment(document: PathPlanningDocument, segmentId: Segme
 function translatePathSegments(document: PathPlanningDocument, segmentIds: SegmentId[], delta: Point2) {
   if (delta.x === 0 && delta.y === 0) return null;
 
-  const translatedSegmentIds = new Set(segmentIds);
-  if (translatedSegmentIds.size === 0) return null;
+  return transformPathSegments(document, segmentIds, (point) => translatePoint(point, delta), 1);
+}
+
+function transformPathSegments(
+  document: PathPlanningDocument,
+  segmentIds: SegmentId[],
+  transformPoint: (point: Point2) => Point2,
+  determinant: 1 | -1
+) {
+  if (!Number.isFinite(determinant)) return null;
+
+  const transformedSegmentIds = new Set(segmentIds);
+  if (transformedSegmentIds.size === 0) return null;
 
   const next = cloneDocument(document);
   let changed = false;
   next.segments = next.segments.map((segment) => {
-    if (!translatedSegmentIds.has(segment.id)) return segment;
+    if (!transformedSegmentIds.has(segment.id)) return segment;
     changed = true;
-    return translateSegmentGeometry(segment, delta);
+    return transformSegmentGeometry(segment, transformPoint, determinant);
   });
 
   if (!changed) return null;
 
-  refreshDocumentAfterSegmentGeometryEdit(next, translatedSegmentIds, delta);
+  refreshDocumentAfterSegmentGeometryEdit(next, transformedSegmentIds, transformPoint);
   return next;
 }
 
-function translateSegmentGeometry(segment: PathSegment, delta: Point2): PathSegment {
+function transformSegmentGeometry(
+  segment: PathSegment,
+  transformPoint: (point: Point2) => Point2,
+  determinant: 1 | -1
+): PathSegment {
   if (segment.kind === 'line') {
     return createLineSegment({
       id: segment.id,
       source: segment.source,
-      start: translatePoint(segment.start, delta),
-      end: translatePoint(segment.end, delta)
+      start: transformPoint(segment.start),
+      end: transformPoint(segment.end)
     });
   }
 
@@ -711,7 +840,8 @@ function translateSegmentGeometry(segment: PathSegment, delta: Point2): PathSegm
     return createCircleSegment({
       id: segment.id,
       source: segment.source,
-      center: translatePoint(segment.center, delta),
+      center: transformPoint(segment.center),
+      preferredStart: transformPoint(segment.preferredStart),
       radius: segment.radius
     });
   }
@@ -719,18 +849,18 @@ function translateSegmentGeometry(segment: PathSegment, delta: Point2): PathSegm
   return createArcSegment({
     id: segment.id,
     source: segment.source,
-    start: translatePoint(segment.start, delta),
-    end: translatePoint(segment.end, delta),
-    center: translatePoint(segment.center, delta),
+    start: transformPoint(segment.start),
+    end: transformPoint(segment.end),
+    center: transformPoint(segment.center),
     radius: segment.radius,
-    clockwise: segment.clockwise
+    clockwise: determinant < 0 ? !segment.clockwise : segment.clockwise
   });
 }
 
 function refreshDocumentAfterSegmentGeometryEdit(
   document: PathPlanningDocument,
-  translatedSegmentIds: Set<SegmentId>,
-  delta: Point2
+  transformedSegmentIds: Set<SegmentId>,
+  transformPoint: (point: Point2) => Point2
 ) {
   const previousOperations = document.plan.operations.map((operation) => structuredClone(operation));
   const previousOperationsByContourId = new Map(previousOperations.map((operation) => [operation.contourId, operation]));
@@ -755,8 +885,8 @@ function refreshDocumentAfterSegmentGeometryEdit(
       restoreGeometryEditOperationState(
         operation,
         previousOperationsByContourId.get(operation.contourId),
-        translatedSegmentIds,
-        delta
+        transformedSegmentIds,
+        transformPoint
       )
     ])
   );
@@ -795,16 +925,16 @@ function refreshDocumentAfterSegmentGeometryEdit(
 function restoreGeometryEditOperationState(
   operation: PathOperation,
   previous: PathOperation | undefined,
-  translatedSegmentIds: Set<SegmentId>,
-  delta: Point2
+  transformedSegmentIds: Set<SegmentId>,
+  transformPoint: (point: Point2) => Point2
 ): PathOperation {
   if (!previous) return operation;
 
   const overrides = previous.overrides ? structuredClone(previous.overrides) : undefined;
-  if (overrides?.start && startOverrideTouchesTranslatedSegments(overrides.start, translatedSegmentIds)) {
+  if (overrides?.start && startOverrideTouchesTransformedSegments(overrides.start, transformedSegmentIds)) {
     overrides.start = {
       ...overrides.start,
-      point: translatePoint(overrides.start.point, delta)
+      point: transformPoint(overrides.start.point)
     };
   }
 
@@ -826,14 +956,14 @@ function restoreGeometryEditOperationState(
   return restored;
 }
 
-function startOverrideTouchesTranslatedSegments(
+function startOverrideTouchesTransformedSegments(
   start: NonNullable<PathOperation['overrides']>['start'],
-  translatedSegmentIds: Set<SegmentId>
+  transformedSegmentIds: Set<SegmentId>
 ) {
   return Boolean(
     start &&
-      (translatedSegmentIds.has(start.sourceSegmentId) ||
-        start.createdSegmentIds.some((segmentId) => translatedSegmentIds.has(segmentId)))
+      (transformedSegmentIds.has(start.sourceSegmentId) ||
+        start.createdSegmentIds.some((segmentId) => transformedSegmentIds.has(segmentId)))
   );
 }
 
@@ -1235,4 +1365,38 @@ function translatePoint(point: Point2, delta: Point2): Point2 {
     x: point.x + delta.x,
     y: point.y + delta.y
   };
+}
+
+function rotationPointTransform(angleDegrees: number, origin: Point2) {
+  const normalizedAngle = ((angleDegrees % 360) + 360) % 360;
+  const radians = (normalizedAngle * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+
+  return (point: Point2): Point2 => {
+    const localX = point.x - origin.x;
+    const localY = point.y - origin.y;
+    return {
+      x: roundCoordinate(origin.x + localX * cos - localY * sin),
+      y: roundCoordinate(origin.y + localX * sin + localY * cos)
+    };
+  };
+}
+
+function mirrorPointTransform(axis: PathMirrorAxis, origin: Point2) {
+  return (point: Point2): Point2 =>
+    axis === 'x'
+      ? {
+          x: roundCoordinate(point.x),
+          y: roundCoordinate(origin.y - (point.y - origin.y))
+        }
+      : {
+          x: roundCoordinate(origin.x - (point.x - origin.x)),
+          y: roundCoordinate(point.y)
+        };
+}
+
+function roundCoordinate(value: number) {
+  const rounded = Number(value.toFixed(12));
+  return Math.abs(rounded) <= 1e-12 ? 0 : rounded;
 }

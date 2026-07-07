@@ -10,6 +10,8 @@ import {
   movePathOperation,
   previewClosedOperationStartNearPoint,
   reversePathOperation,
+  mirrorPathDocument,
+  rotatePathDocument,
   setClosedOperationStartAtSegmentEndpoint,
   setPathOperationClassification,
   setClosedOperationStartAtExistingPointNearPoint,
@@ -376,6 +378,79 @@ describe('pathDocumentOperations', () => {
       'G0 X8.000 Y23.000',
       'G3 X-2.000 Y23.000 I-5.000 J0.000',
       'G3 X8.000 Y23.000 I5.000 J0.000'
+    ]);
+  });
+
+  it('rotates an imported document around a chosen origin before posting G-code', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+
+    const rotated = rotatePathDocument(document, 180, { x: 0, y: 0 });
+    const firstSegment = rotated?.segments[0];
+
+    expect(firstSegment).toMatchObject({
+      kind: 'line',
+      start: { x: 0, y: 0 },
+      end: { x: -10, y: 0 }
+    });
+    expect(rotated?.contours[0].bounds).toEqual({
+      minX: -10,
+      minY: -5,
+      maxX: 0,
+      maxY: 0
+    });
+    expect(pathPlanToGcodeBody(rotated!.plan, rotated!.segments).split('\n').slice(0, 2)).toEqual([
+      'G0 X0.000 Y0.000',
+      'G1 X-10.000 Y0.000'
+    ]);
+  });
+
+  it('mirrors imported arcs across an axis and flips their cutting direction', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 5,
+        startAngle: 0,
+        endAngle: 90,
+        clockwise: false,
+        start: { x: 5, y: 0 },
+        end: { x: 0, y: 5 }
+      }
+    ]);
+
+    const mirrored = mirrorPathDocument(document, 'x', { x: 0, y: 0 });
+
+    expect(mirrored?.segments[0]).toMatchObject({
+      kind: 'arc',
+      start: { x: 5, y: 0 },
+      end: { x: 0, y: -5 },
+      center: { x: 0, y: 0 },
+      clockwise: true
+    });
+    expect(pathPlanToGcodeBody(mirrored!.plan, mirrored!.segments).split('\n')).toEqual([
+      'G0 X5.000 Y0.000',
+      'G2 X0.000 Y-5.000 I-5.000 J0.000'
+    ]);
+  });
+
+  it('rotates a circle preferred start point with the document', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 0 }, radius: 5 }
+    ]);
+
+    const rotated = rotatePathDocument(document, 180, { x: 0, y: 0 });
+    const body = pathPlanToGcodeBody(rotated!.plan, rotated!.segments);
+
+    expect(rotated?.segments[0]).toMatchObject({
+      kind: 'circle',
+      center: { x: -10, y: 0 },
+      preferredStart: { x: -15, y: 0 }
+    });
+    expect(body.split('\n')).toEqual([
+      'G0 X-15.000 Y0.000',
+      'G3 X-5.000 Y0.000 I5.000 J0.000',
+      'G3 X-15.000 Y0.000 I-5.000 J0.000'
     ]);
   });
 

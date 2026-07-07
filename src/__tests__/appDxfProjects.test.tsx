@@ -3230,6 +3230,45 @@ describe('App DXF imports and project library', () => {
     });
   });
 
+  it('rotates the full imported DXF document from the transform panel before export', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([singleLineDxf()], 'line-orientation.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await showWorkspacePanels(container, ['path-transform']);
+
+    const rotateDocumentButton = container.querySelector(
+      'button[aria-label="Rotate document 180 degrees"]'
+    ) as HTMLButtonElement | null;
+    expect(rotateDocumentButton?.disabled).toBe(false);
+
+    await act(async () => {
+      rotateDocumentButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const exportCode = container.querySelector('[data-upid-export-gcode]');
+    expect(exportCode?.textContent).toContain('G0 X4.000 Y2.000');
+    expect(exportCode?.textContent).toContain('G1 X1.000 Y2.000');
+  });
+
   it('keeps manual G-code text editing out of active DXF path plans', async () => {
     window.showDirectoryPicker = undefined;
 
@@ -3621,6 +3660,31 @@ function circleDxf() {
     '20',
     '40',
     '5',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function singleLineDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'LINE',
+    '8',
+    'CUT',
+    '10',
+    '1',
+    '20',
+    '2',
+    '11',
+    '4',
+    '21',
+    '2',
     '0',
     'ENDSEC',
     '0',

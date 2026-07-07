@@ -35,6 +35,7 @@ export interface CreateCircleSegmentInput {
   id: SegmentId;
   source: SegmentSourceRef;
   center: Point2;
+  preferredStart?: Point2;
   radius: number;
 }
 
@@ -97,7 +98,7 @@ export function createArcSegment(input: CreateArcSegmentInput): ArcPathSegment {
 }
 
 export function createCircleSegment(input: CreateCircleSegmentInput): CirclePathSegment {
-  const preferredStart = {
+  const preferredStart = input.preferredStart ?? {
     x: input.center.x + input.radius,
     y: input.center.y
   };
