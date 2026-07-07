@@ -1,6 +1,7 @@
 import type {
   Bounds2,
   EndpointSide,
+  ManualLeadInOverride,
   ManualStartOverride,
   OrientedSegmentRef,
   PathElementPointRole,
@@ -44,7 +45,7 @@ export interface UpidPathElementRef {
   pathElementId?: string | null;
   pointRole?: 'start' | 'end' | null;
   segmentId: SegmentId | null;
-  travelRole?: 'rapid-in' | null;
+  travelRole?: 'rapid-in' | 'lead-in' | null;
 }
 
 export type UpidOperationPathElement = PathElement & {
@@ -136,6 +137,7 @@ export interface UpidPathElementSegmentSequenceContext {
 
 export interface UpidSelectedPathTravel {
   end: Point2;
+  kind: NonNullable<UpidPathElementRef['travelRole']>;
   length: number;
   start: Point2;
 }
@@ -831,8 +833,19 @@ export function summarizeUpidPathDocumentForEditor(document: PathPlanningDocumen
       bounds = mergeBounds(bounds, operationBounds);
     }
 
-    if (!currentPoint || !pointsEqual(currentPoint, operation.startPoint, document.options.coincidenceEpsilon)) {
+    const leadIn = operation.overrides?.leadIn;
+    const entryPoint = leadIn?.from ?? operation.startPoint;
+    if (!currentPoint || !pointsEqual(currentPoint, entryPoint, document.options.coincidenceEpsilon)) {
       rapidMoveCount += 1;
+    }
+    if (leadIn && !pointsEqual(leadIn.from, leadIn.to, document.options.coincidenceEpsilon)) {
+      cuttingMoveCount += 1;
+      bounds = mergeBounds(bounds, {
+        maxX: Math.max(leadIn.from.x, leadIn.to.x),
+        maxY: Math.max(leadIn.from.y, leadIn.to.y),
+        minX: Math.min(leadIn.from.x, leadIn.to.x),
+        minY: Math.min(leadIn.from.y, leadIn.to.y)
+      });
     }
 
     for (const ref of operation.segmentRefs) {
@@ -875,7 +888,7 @@ export function normalizeUpidPathElementSelection(
   const pathElementId = upidPathElementIdForOperation(document, operation.id);
   if (
     element?.operationId === operation.id &&
-    (element.travelRole === 'rapid-in' ||
+    (element.travelRole ||
       !element.segmentId ||
       operation.segmentRefs.some((candidate) => candidate.segmentId === element.segmentId))
   ) {
@@ -1129,6 +1142,13 @@ export function readUpidManualOverrideRows(overrides: PathElement['overrides']):
       value: formatUpidStartOverride(overrides.start)
     });
   }
+  if (overrides.leadIn) {
+    rows.push({
+      kind: 'lead-in',
+      label: 'Lead-in',
+      value: formatUpidLeadInOverride(overrides.leadIn)
+    });
+  }
 
   return rows;
 }
@@ -1141,6 +1161,10 @@ function formatUpidStartOverride(start: ManualStartOverride) {
   }
 
   return `${formatUpidPoint(start.point)} / existing ${start.pointRole ?? 'point'} / ${source}`;
+}
+
+function formatUpidLeadInOverride(leadIn: ManualLeadInOverride) {
+  return `${leadIn.move.toUpperCase()} ${formatUpidPoint(leadIn.from)} -> ${formatUpidPoint(leadIn.to)} / ${leadIn.source}`;
 }
 
 export function readUpidPathElementSourceSummary(element: PathElement): UpidPathElementSourceSummary {
@@ -1205,17 +1229,30 @@ export function readUpidSelectedPathTravel(
   operationIndex: number,
   element: UpidPathElementRef | null
 ): UpidSelectedPathTravel | null {
-  if (!document || element?.travelRole !== 'rapid-in' || operationIndex < 0) return null;
+  if (!document || !element?.travelRole || operationIndex < 0) return null;
 
   const operation = document.plan.operations[operationIndex];
   if (!operation || element.operationId !== operation.id) return null;
 
+  if (element.travelRole === 'lead-in') {
+    const leadIn = operation.overrides?.leadIn;
+    return leadIn
+      ? {
+          end: { ...leadIn.to },
+          kind: 'lead-in',
+          length: distance(leadIn.from, leadIn.to),
+          start: { ...leadIn.from }
+        }
+      : null;
+  }
+
   const previousOperation = operationIndex > 0 ? document.plan.operations[operationIndex - 1] : null;
   const start = previousOperation?.endPoint ?? document.options.startPoint;
-  const end = operation.startPoint;
+  const end = operation.overrides?.leadIn?.from ?? operation.startPoint;
 
   return {
     end,
+    kind: 'rapid-in',
     length: distance(start, end),
     start
   };

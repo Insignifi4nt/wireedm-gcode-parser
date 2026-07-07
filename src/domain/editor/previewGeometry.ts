@@ -51,7 +51,7 @@ export interface EditorPreviewPath {
   pathElementId?: PathElementId;
   segmentId?: SegmentId;
   source?: 'gcode' | 'path-document';
-  travelRole?: 'rapid-in';
+  travelRole?: 'rapid-in' | 'lead-in';
 }
 
 export interface EditorPreviewViewBox {
@@ -169,19 +169,38 @@ export function buildEditorPathDocumentPreviewGeometry(
   for (const operation of document.plan.operations) {
     bounds = mergeBounds(bounds, pathBounds(operation.segmentRefs, segmentsById));
     const pathElementId = pathElementsByOperationId.get(operation.id)?.id;
+    const leadIn = operation.overrides?.leadIn;
+    const entryPoint = leadIn?.from ?? operation.startPoint;
     const rapidStart = currentPoint ?? document.options.startPoint;
-    if (!currentPoint || !pathPointsEqual(currentPoint, operation.startPoint, document.options.coincidenceEpsilon)) {
+    if (!currentPoint || !pathPointsEqual(currentPoint, entryPoint, document.options.coincidenceEpsilon)) {
       paths.push({
         type: 'rapid',
-        bounds: boundsFromPoints([rapidStart, operation.startPoint]),
-        d: linePath(rapidStart, operation.startPoint),
+        bounds: boundsFromPoints([rapidStart, entryPoint]),
+        d: linePath(rapidStart, entryPoint),
         start: rapidStart,
-        end: operation.startPoint,
+        end: entryPoint,
         line: pathLineNumber(options.lineHints, pathIndex++),
         operationId: operation.id,
         pathElementId,
         source: 'path-document',
         travelRole: 'rapid-in'
+      });
+    }
+
+    if (leadIn && !pathPointsEqual(leadIn.from, leadIn.to, document.options.coincidenceEpsilon)) {
+      const leadInBounds = boundsFromPoints([leadIn.from, leadIn.to]);
+      bounds = mergeBounds(bounds, leadInBounds);
+      paths.push({
+        type: 'cut',
+        bounds: leadInBounds,
+        d: linePath(leadIn.from, leadIn.to),
+        start: leadIn.from,
+        end: leadIn.to,
+        line: pathLineNumber(options.lineHints, pathIndex++),
+        operationId: operation.id,
+        pathElementId,
+        source: 'path-document',
+        travelRole: 'lead-in'
       });
     }
 

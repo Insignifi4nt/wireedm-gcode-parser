@@ -15,6 +15,7 @@ import {
   setClosedOperationStartAtSegmentEndpoint,
   setPathOperationClassification,
   setClosedOperationStartAtExistingPointNearPoint,
+  setCircleOperationCenterPierceLeadIn,
   setClosedOperationStartNearPoint,
   setPathOperationOrderStrategy,
   movePathSegmentCenterTo,
@@ -716,6 +717,49 @@ describe('pathDocumentOperations', () => {
       'G0 X15.000 Y20.000',
       'G3 X5.000 Y20.000 I-5.000 J0.000',
       'G3 X15.000 Y20.000 I5.000 J0.000'
+    ]);
+  });
+
+  it('adds a cut lead-in from the circle center to the contour start', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const operation = document.plan.operations[0];
+
+    const edited = setCircleOperationCenterPierceLeadIn(document, operation.id);
+    const body = pathPlanToGcodeBody(edited!.plan, edited!.segments);
+
+    expect(edited?.plan.operations[0].overrides?.leadIn).toMatchObject({
+      from: { x: 10, y: 20 },
+      move: 'cut',
+      to: { x: 15, y: 20 }
+    });
+    expect(edited?.plan.operations[0].metrics.cutLength).toBeCloseTo(2 * Math.PI * 5 + 5, 6);
+    expect(body.split('\n')).toEqual([
+      'G0 X10.000 Y20.000',
+      'G1 X15.000 Y20.000',
+      'G3 X5.000 Y20.000 I-5.000 J0.000',
+      'G3 X15.000 Y20.000 I5.000 J0.000'
+    ]);
+  });
+
+  it('keeps a circle center lead-in aligned when moving the operation', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const operation = document.plan.operations[0];
+    const edited = setCircleOperationCenterPierceLeadIn(document, operation.id);
+
+    const moved = translatePathDocument(edited!, { x: 2, y: -3 });
+    const body = pathPlanToGcodeBody(moved!.plan, moved!.segments);
+
+    expect(moved?.plan.operations[0].overrides?.leadIn).toMatchObject({
+      from: { x: 12, y: 17 },
+      to: { x: 17, y: 17 }
+    });
+    expect(body.split('\n').slice(0, 2)).toEqual([
+      'G0 X12.000 Y17.000',
+      'G1 X17.000 Y17.000'
     ]);
   });
 

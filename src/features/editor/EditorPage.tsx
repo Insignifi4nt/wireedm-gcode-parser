@@ -37,6 +37,7 @@ import {
   rotatePathElement,
   rotatePathOperation,
   rotatePathSegment,
+  setCircleOperationCenterPierceLeadIn,
   setClosedOperationStartAtSegmentEndpoint,
   reversePathOperation,
   setClosedOperationStartAtExistingPointNearPoint,
@@ -1220,6 +1221,18 @@ export function EditorPage({
     if (edited) applyPathDocumentEdit(edited);
   }
 
+  function handleSetPathOperationCenterPierceLeadIn() {
+    if (!pathDocumentDraft || !selectedPathOperationId || isSaving) return;
+    const edited = setCircleOperationCenterPierceLeadIn(pathDocumentDraft, selectedPathOperationId);
+    if (!edited) {
+      onStatusMessage?.('Select a closed circular contour before adding a center pierce lead-in.', 'warning');
+      return;
+    }
+
+    applyPathDocumentEdit(edited);
+    onStatusMessage?.('Center pierce lead-in added.', 'success');
+  }
+
   function handleSetPathOperationOrderStrategy(strategy: OperationOrderStrategy) {
     if (!pathDocumentDraft || isSaving) return;
     const edited = setPathOperationOrderStrategy(pathDocumentDraft, strategy);
@@ -1701,6 +1714,7 @@ export function EditorPage({
         onPathTargetXDraftChange={setPathTargetXDraft}
         onPathTargetYDraftChange={setPathTargetYDraft}
         onSetPathOperationClassification={handleSetPathOperationClassification}
+        onSetPathOperationCenterPierceLeadIn={handleSetPathOperationCenterPierceLeadIn}
         onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
         onSetPathStartFromElement={handleSetPathStartFromElement}
         onTranslatePathDocument={handleTranslatePathDocument}

@@ -4,6 +4,7 @@ import type { DxfEntity } from '@/domain/dxf/types';
 import {
   movePathOperation,
   reversePathOperation,
+  setCircleOperationCenterPierceLeadIn,
   setClosedOperationStartNearPoint,
   setPathOperationClassification
 } from '@/domain/path-editor/pathDocumentOperations';
@@ -50,6 +51,7 @@ describe('UPID project rail projection', () => {
       manualDecisionCount: 0,
       manualDecisionCounts: {
         direction: 0,
+        'lead-in': 0,
         order: 0,
         role: 0,
         start: 0
@@ -510,6 +512,7 @@ describe('UPID project rail projection', () => {
     expect(rail.summary.manualDecisionCount).toBe(3);
     expect(rail.summary.manualDecisionCounts).toEqual({
       direction: 1,
+      'lead-in': 0,
       order: 2,
       role: 0,
       start: 0
@@ -833,8 +836,47 @@ describe('UPID project rail projection', () => {
       })
     ).toEqual({
       end: { x: 20, y: 0 },
+      kind: 'rapid-in',
       length: 20,
       start: { x: 0, y: 0 }
+    });
+  });
+
+  it('reads center pierce lead-in travel from operation overrides', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const operation = document.plan.operations[0];
+    const edited = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
+
+    expect(
+      normalizeUpidPathElementSelection(edited, operation.id, {
+        operationId: operation.id,
+        segmentId: null,
+        travelRole: 'lead-in'
+      })
+    ).toEqual({
+      operationId: operation.id,
+      pathElementId: edited.pathElements[0].id,
+      segmentId: null,
+      travelRole: 'lead-in'
+    });
+    expect(
+      readUpidSelectedPathTravel(edited, 0, {
+        operationId: operation.id,
+        segmentId: null,
+        travelRole: 'lead-in'
+      })
+    ).toEqual({
+      end: { x: 15, y: 20 },
+      kind: 'lead-in',
+      length: 5,
+      start: { x: 10, y: 20 }
+    });
+    expect(summarizeUpidPathDocumentForEditor(edited)).toMatchObject({
+      cuttingMoveCount: 1,
+      pathCount: 4,
+      rapidMoveCount: 1
     });
   });
 

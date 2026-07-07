@@ -28,6 +28,7 @@ import {
   type UpidManualClassificationDecision,
   type UpidManualDecisionKind,
   type UpidManualDirectionDecision,
+  type UpidManualLeadInDecision,
   type UpidManualOrderDecision,
   type UpidManualStartDecision
 } from './manualDecisions';
@@ -94,6 +95,7 @@ export interface UpidGCodeProgramOperation extends Omit<GcodePostedOperation, 'm
   manualClassification: UpidGCodeProgramManualClassification | null;
   manualDecisionKinds: UpidGCodeProgramManualDecisionKind[];
   manualDirection: UpidGCodeProgramManualDirection | null;
+  manualLeadIn: UpidGCodeProgramManualLeadIn | null;
   manualOrder: UpidGCodeProgramManualOrder | null;
   manualStart: UpidGCodeProgramManualStart | null;
   moves: UpidGCodeProgramMove[];
@@ -110,6 +112,8 @@ export type UpidGCodeProgramManualOrder = UpidManualOrderDecision;
 export type UpidGCodeProgramManualClassification = UpidManualClassificationDecision;
 
 export type UpidGCodeProgramManualDirection = UpidManualDirectionDecision;
+
+export type UpidGCodeProgramManualLeadIn = UpidManualLeadInDecision;
 
 export type UpidGCodeProgramManualStart = UpidManualStartDecision;
 
@@ -214,6 +218,7 @@ function mapProgramOperations(
       manualClassification: manualDecisionDetails.classification,
       manualDecisionKinds: upidManualDecisionKinds(pathElement),
       manualDirection: manualDecisionDetails.direction,
+      manualLeadIn: manualDecisionDetails.leadIn,
       manualOrder: manualDecisionDetails.order,
       manualStart: manualDecisionDetails.start,
       moves: operation.moves.map((move) =>

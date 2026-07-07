@@ -1,6 +1,8 @@
 import type { Bounds2, PathPlanningDocument, PathSegment, Point2 } from '@/domain/path-intel/types';
 import type { UpidPathElementRef } from '@/domain/upid/projectRail';
 
+export type PathBoundsAnchor = 'center' | 'min' | 'max' | 'min-x-max-y' | 'max-x-min-y';
+
 export function resolvePathDragTarget(
   selectedPathElement: UpidPathElementRef | null,
   draggedPathElement: UpidPathElementRef
@@ -45,10 +47,39 @@ export function readPathDocumentBoundsCenter(document: PathPlanningDocument): Po
   const bounds = readPathDocumentBounds(document);
   if (!bounds || !boundsAreFinite(bounds)) return null;
 
-  return {
-    x: (bounds.minX + bounds.maxX) / 2,
-    y: (bounds.minY + bounds.maxY) / 2
-  };
+  return readBoundsAnchorPoint(bounds, 'center');
+}
+
+export function readBoundsAnchorPoint(bounds: Bounds2, anchor: PathBoundsAnchor): Point2 | null {
+  if (!boundsAreFinite(bounds)) return null;
+
+  switch (anchor) {
+    case 'center':
+      return {
+        x: (bounds.minX + bounds.maxX) / 2,
+        y: (bounds.minY + bounds.maxY) / 2
+      };
+    case 'min':
+      return {
+        x: bounds.minX,
+        y: bounds.minY
+      };
+    case 'max':
+      return {
+        x: bounds.maxX,
+        y: bounds.maxY
+      };
+    case 'min-x-max-y':
+      return {
+        x: bounds.minX,
+        y: bounds.maxY
+      };
+    case 'max-x-min-y':
+      return {
+        x: bounds.maxX,
+        y: bounds.minY
+      };
+  }
 }
 
 function readPathSelectionBounds(

@@ -3,6 +3,8 @@ import {
   useState,
   type CSSProperties,
   type DragEvent,
+  type FocusEvent,
+  type MouseEvent,
   type PointerEvent,
   type ReactNode
 } from 'react';
@@ -49,18 +51,39 @@ interface EditorPanelToolbarProps {
 }
 
 export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const visibleGroups = groups.filter((group) => group.panels.length > 0);
   if (visibleGroups.length === 0) return null;
+
+  function handleBlur(event: FocusEvent<HTMLElement>) {
+    const nextFocus = event.relatedTarget;
+    if (!nextFocus || !event.currentTarget.contains(nextFocus as Node)) {
+      setMenuOpen(false);
+    }
+  }
+
+  function handleSummaryClick(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    setMenuOpen(true);
+  }
 
   return (
     <details
       className="relative min-w-0 font-mono text-[10px]"
       data-editor-panel-toolbar
+      onBlur={handleBlur}
+      onFocus={() => setMenuOpen(true)}
+      onMouseEnter={() => setMenuOpen(true)}
+      onMouseLeave={() => setMenuOpen(false)}
+      open={menuOpen}
     >
-      <summary className="flex h-7 cursor-pointer select-none items-center border border-border bg-background/70 px-2 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground">
+      <summary
+        className="flex h-7 cursor-pointer select-none items-center border border-border bg-background/70 px-2 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+        onClick={handleSummaryClick}
+      >
         Panels
       </summary>
-      <div className="absolute right-0 top-8 z-50 grid max-h-[76vh] w-72 gap-2 overflow-auto border border-border bg-card p-2 shadow-2xl">
+      <div className="absolute right-0 top-7 z-50 grid max-h-[76vh] w-72 gap-2 overflow-auto border border-border bg-card p-2 shadow-2xl">
         {visibleGroups.map((group) => (
           <section
             className="grid gap-1 border border-border bg-background/35 p-1"

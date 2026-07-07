@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { setCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 
 import { parseGCodeProgram } from '../gcodeParser';
@@ -190,6 +191,41 @@ describe('buildEditorPreviewGeometry', () => {
     expect(preview.paths.filter((path) => path.type === 'rapid')).toHaveLength(1);
     expect(preview.paths[1].segmentId).toBe(document.plan.operations[0].segmentRefs[0].segmentId);
     expect(preview.paths[2].segmentId).toBe(document.plan.operations[0].segmentRefs[0].segmentId);
+  });
+
+  it('renders a center pierce lead-in as an editable path-document preview move', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const edited = setCircleOperationCenterPierceLeadIn(document, document.plan.operations[0].id)!;
+
+    const preview = buildEditorPathDocumentPreviewGeometry(edited, {
+      lineHints: [4, 5, 6, 7],
+      padding: 1
+    });
+
+    expect(preview.paths.map((path) => [path.type, path.travelRole ?? null])).toEqual([
+      ['rapid', 'rapid-in'],
+      ['cut', 'lead-in'],
+      ['arc', null],
+      ['arc', null]
+    ]);
+    expect(preview.paths[0]).toMatchObject({
+      d: 'M 0 0 L 10 20',
+      end: { x: 10, y: 20 },
+      source: 'path-document',
+      travelRole: 'rapid-in'
+    });
+    expect(preview.paths[1]).toMatchObject({
+      d: 'M 10 20 L 15 20',
+      end: { x: 15, y: 20 },
+      operationId: edited.plan.operations[0].id,
+      pathElementId: edited.pathElements[0].id,
+      source: 'path-document',
+      start: { x: 10, y: 20 },
+      travelRole: 'lead-in',
+      type: 'cut'
+    });
   });
 
   it('uses stable synthetic line ids when path document preview has stale line hints', () => {

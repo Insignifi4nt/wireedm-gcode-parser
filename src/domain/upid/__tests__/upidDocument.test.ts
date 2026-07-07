@@ -301,6 +301,7 @@ describe('UPID document boundary', () => {
     expect(exportProgram.planning.manualDecisionCount).toBe(4);
     expect(exportProgram.planning.manualDecisionCounts).toEqual({
       direction: 1,
+      'lead-in': 0,
       order: 2,
       role: 1,
       start: 0
@@ -337,6 +338,7 @@ describe('UPID document boundary', () => {
       manualDecisionCount: 0,
       manualDecisionCounts: {
         direction: 0,
+        'lead-in': 0,
         order: 0,
         role: 0,
         start: 0
@@ -349,6 +351,7 @@ describe('UPID document boundary', () => {
       manualDecisionCount: 0,
       manualDecisionCounts: {
         direction: 0,
+        'lead-in': 0,
         order: 0,
         role: 0,
         start: 0

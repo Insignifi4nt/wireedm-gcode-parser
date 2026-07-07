@@ -1009,7 +1009,8 @@ export function EditorPreview({
                     {
                       operationId: path.operationId,
                       pathElementId: path.pathElementId ?? null,
-                      segmentId: path.segmentId ?? null
+                      segmentId: path.segmentId ?? null,
+                      travelRole: path.travelRole ?? null
                     },
                     event
                   );
@@ -1418,7 +1419,7 @@ export function EditorPreview({
 }
 
 function pathElementMatches(
-  path: { operationId?: string; pathElementId?: string; segmentId?: string; travelRole?: 'rapid-in' },
+  path: { operationId?: string; pathElementId?: string; segmentId?: string; travelRole?: 'rapid-in' | 'lead-in' },
   element: EditorPathElementRef | null | undefined
 ) {
   if (!element?.operationId || path.operationId !== element.operationId) return false;

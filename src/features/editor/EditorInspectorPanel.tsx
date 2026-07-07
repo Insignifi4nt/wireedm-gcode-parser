@@ -599,7 +599,7 @@ export function EditorInspectorPanel({
             <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Travel</h3>
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
               <dt className="text-muted-foreground">Kind</dt>
-              <dd data-upid-selected-travel="kind">rapid-in</dd>
+              <dd data-upid-selected-travel="kind">{selectedPathTravel.kind}</dd>
               <dt className="text-muted-foreground">Length</dt>
               <dd data-upid-selected-travel="length">{selectedPathTravel.length.toFixed(3)}</dd>
               <dt className="text-muted-foreground">Start</dt>
