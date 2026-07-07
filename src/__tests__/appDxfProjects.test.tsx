@@ -3502,6 +3502,146 @@ describe('App DXF imports and project library', () => {
     );
   });
 
+  it('prefills target coordinates from the selected document reference point', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([circleDxf()], 'document-axis-placement.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await showWorkspacePanels(container, ['path-transform']);
+
+    const referenceSelect = container.querySelector(
+      'select[aria-label="Document reference point"]'
+    ) as HTMLSelectElement | null;
+    const targetXInput = container.querySelector(
+      'input[data-upid-transform-target-center-x]'
+    ) as HTMLInputElement | null;
+    const targetYInput = container.querySelector(
+      'input[data-upid-transform-target-center-y]'
+    ) as HTMLInputElement | null;
+    const moveDocumentReferenceButton = container.querySelector(
+      'button[data-upid-transform-target-center-apply]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      if (targetXInput) setInputValue(targetXInput, '0');
+      if (targetYInput) setInputValue(targetYInput, '20');
+    });
+    await act(async () => {
+      moveDocumentReferenceButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-transform-document-bounds]')?.textContent).toBe(
+      'X -5.000..5.000 Y 15.000..25.000'
+    );
+
+    await act(async () => {
+      if (referenceSelect) setSelectValue(referenceSelect, 'min');
+    });
+    await flushAsync();
+
+    expect(targetXInput?.value).toBe('-5.000');
+    expect(targetYInput?.value).toBe('15.000');
+
+    await act(async () => {
+      if (targetYInput) setInputValue(targetYInput, '0');
+    });
+    await act(async () => {
+      moveDocumentReferenceButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-transform-document-bounds]')?.textContent).toBe(
+      'X -5.000..5.000 Y 0.000..10.000'
+    );
+  });
+
+  it('keeps document target fields tied to document references after selecting contours', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([nestedContourDxf()], 'document-reference-after-selection.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await showWorkspacePanels(container, ['path-transform', 'cut-sequence']);
+    await selectFirstCutSequence(container);
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-transform-target]')?.textContent).toBe('Island 1');
+
+    const documentTargetButton = container.querySelector(
+      'button[aria-label="Target document for transform"]'
+    ) as HTMLButtonElement | null;
+    const targetXInput = container.querySelector(
+      'input[data-upid-transform-target-center-x]'
+    ) as HTMLInputElement | null;
+    const targetYInput = container.querySelector(
+      'input[data-upid-transform-target-center-y]'
+    ) as HTMLInputElement | null;
+
+    await act(async () => {
+      documentTargetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-transform-target]')?.textContent).toBe('Document');
+    expect(container.querySelector('[data-upid-transform-document-reference-point]')?.textContent).toBe(
+      '15.000, 10.000'
+    );
+    expect(targetXInput?.value).toBe('15.000');
+    expect(targetYInput?.value).toBe('10.000');
+
+    const translateXInput = container.querySelector(
+      'input[aria-label="Translate X"]'
+    ) as HTMLInputElement | null;
+    const translateYInput = container.querySelector(
+      'input[aria-label="Translate Y"]'
+    ) as HTMLInputElement | null;
+    const applyDocumentTranslationButton = container.querySelector(
+      'button[aria-label="Apply translation to document geometry"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      if (translateXInput) setInputValue(translateXInput, '2');
+      if (translateYInput) setInputValue(translateYInput, '3');
+    });
+    await act(async () => {
+      applyDocumentTranslationButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-transform-target]')?.textContent).toBe('Document');
+    expect(container.querySelector('[data-upid-transform-document-reference-point]')?.textContent).toBe(
+      '17.000, 13.000'
+    );
+    const movedTargetXInput = container.querySelector(
+      'input[data-upid-transform-target-center-x]'
+    ) as HTMLInputElement | null;
+    const movedTargetYInput = container.querySelector(
+      'input[data-upid-transform-target-center-y]'
+    ) as HTMLInputElement | null;
+    expect(movedTargetXInput?.value).toBe('17.000');
+    expect(movedTargetYInput?.value).toBe('13.000');
+  });
+
   it('places the full document from a picked measurement reference point', async () => {
     window.showDirectoryPicker = undefined;
 

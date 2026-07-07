@@ -344,6 +344,26 @@ export function EditorPathNavigatorPanel({
   const hoverRevealedPathElementIds = new Set(
     hoveredPathElement ? upidPathElementAncestorIds(pathDocument, hoveredPathElement) : []
   );
+  const readDocumentReferencePoint = (
+    mode: DocumentReferenceMode,
+    measurementPointId = documentReferenceMeasurementPointId
+  ): Point2 | null => {
+    if (mode === 'picked') {
+      if (measurementPointId) {
+        return measurementPoints.find((point) => point.id === measurementPointId) ?? null;
+      }
+
+      return measurementPoints.at(-1) ?? null;
+    }
+
+    return documentBounds ? readBoundsAnchorPoint(documentBounds, mode) : null;
+  };
+  const setTargetDraftsFromPoint = (point: Point2 | null) => {
+    if (!point) return;
+
+    onPathTargetXDraftChange(formatNumber(point.x));
+    onPathTargetYDraftChange(formatNumber(point.y));
+  };
   const isPathElementExpanded = (pathElementId: string) =>
     hoverRevealedPathElementIds.has(pathElementId) || (expandedPathElementIds[pathElementId] ?? true);
   const togglePathElementExpanded = (pathElementId: string) => {
@@ -363,6 +383,16 @@ export function EditorPathNavigatorPanel({
       return next;
     });
   };
+
+  useEffect(() => {
+    setTargetDraftsFromPoint(activeTargetReferencePoint);
+  }, [
+    activePathTransformTarget,
+    activeTargetReferencePoint?.x,
+    activeTargetReferencePoint?.y,
+    documentReferenceMode,
+    documentReferenceMeasurementPointId
+  ]);
 
   useEffect(() => {
     if (pathTransformTargetPinned) return;
@@ -732,10 +762,15 @@ export function EditorPathNavigatorPanel({
                 disabled={!documentBounds || isSaving}
                 onChange={(event) => {
                   const nextMode = event.currentTarget.value as DocumentReferenceMode;
+                  const nextMeasurementPointId =
+                    nextMode === 'picked'
+                      ? documentReferenceMeasurementPointId ?? measurementPoints.at(-1)?.id ?? null
+                      : documentReferenceMeasurementPointId;
                   setDocumentReferenceMode(nextMode);
-                  if (nextMode === 'picked' && !documentReferenceMeasurementPointId) {
-                    setDocumentReferenceMeasurementPointId(measurementPoints.at(-1)?.id ?? null);
+                  if (nextMode === 'picked' && nextMeasurementPointId !== documentReferenceMeasurementPointId) {
+                    setDocumentReferenceMeasurementPointId(nextMeasurementPointId);
                   }
+                  setTargetDraftsFromPoint(readDocumentReferencePoint(nextMode, nextMeasurementPointId));
                 }}
                 value={documentReferenceMode}
               >
@@ -793,11 +828,12 @@ export function EditorPathNavigatorPanel({
                     className={textButtonClass}
                     data-upid-transform-document-reference-use-latest
                     disabled={!latestDocumentReferenceMeasurementPoint || isSaving}
-                    onClick={() =>
+                    onClick={() => {
                       setDocumentReferenceMeasurementPointId(
                         latestDocumentReferenceMeasurementPoint?.id ?? null
-                      )
-                    }
+                      );
+                      setTargetDraftsFromPoint(latestDocumentReferenceMeasurementPoint);
+                    }}
                     type="button"
                   >
                     Latest
@@ -811,7 +847,10 @@ export function EditorPathNavigatorPanel({
                       data-upid-transform-document-reference-use-point={index + 1}
                       disabled={isSaving}
                       key={point.id}
-                      onClick={() => setDocumentReferenceMeasurementPointId(point.id)}
+                      onClick={() => {
+                        setDocumentReferenceMeasurementPointId(point.id);
+                        setTargetDraftsFromPoint(point);
+                      }}
                       title={`P${index + 1}: ${formatPoint(point)}`}
                       type="button"
                     >

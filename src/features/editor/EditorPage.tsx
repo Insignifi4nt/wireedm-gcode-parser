@@ -773,29 +773,6 @@ export function EditorPage({
     if (pathDocumentDraft) setRailCollapsed(true);
   }, [pathDocumentDraft, setRailCollapsed]);
 
-  useEffect(() => {
-    if (!pathDocumentDraft) return;
-
-    if (selectedPathElement?.segmentId) {
-      const segment = pathDocumentDraft.segments.find((candidate) => candidate.id === selectedPathElement.segmentId);
-      if (segment && segment.kind !== 'line') {
-        setPathTargetXDraft(formatCoordinateDraft(segment.center.x));
-        setPathTargetYDraft(formatCoordinateDraft(segment.center.y));
-        return;
-      }
-    }
-
-    const selectionCenter = readPathSelectionBoundsCenter(
-      pathDocumentDraft,
-      selectedPathElement,
-      selectedPathOperationId
-    );
-    if (!selectionCenter) return;
-
-    setPathTargetXDraft(formatCoordinateDraft(selectionCenter.x));
-    setPathTargetYDraft(formatCoordinateDraft(selectionCenter.y));
-  }, [pathDocumentDraft, selectedPathElement, selectedPathOperationId]);
-
   function setLastClickedLine(lineNumber: number | null) {
     lastClickedLineRef.current = lineNumber;
   }
