@@ -7,6 +7,7 @@ import {
   Settings as SettingsIcon
 } from 'lucide-react';
 
+import { StatusNotificationMenu, type StatusToast } from '@/components/StatusToasts';
 import { Button } from '@/components/ui/button';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
@@ -19,6 +20,7 @@ interface AppShellProps {
   errorMessage: string | null;
   onConnectWorkbench: () => void | Promise<void>;
   storageActionLabel: string | null;
+  statusNotifications: StatusToast[];
   storageWarningMessage: string | null;
   children: ReactNode;
 }
@@ -29,6 +31,7 @@ export function AppShell({
   errorMessage,
   onConnectWorkbench,
   storageActionLabel,
+  statusNotifications,
   storageWarningMessage,
   children
 }: AppShellProps) {
@@ -95,6 +98,7 @@ export function AppShell({
           </div>
         )}
         <div className="ml-auto flex items-center gap-2">
+          <StatusNotificationMenu notifications={statusNotifications} />
           <span
             aria-label={storageStatusLabel}
             className={`inline-flex h-7 items-center gap-2 border px-2 font-mono text-[10px] ${

@@ -32,6 +32,7 @@ export interface WorkbenchAppController {
   loadedEditorProgram: LoadedEditorProgram | null;
   settingsErrorMessage: string | null;
   settingsStatus: SettingsStatus;
+  statusNotifications: StatusToast[];
   statusToasts: StatusToast[];
   workbenchStatus: WorkbenchStatus;
   dismissStatusToast: (id: string) => void;
@@ -76,6 +77,7 @@ export function useWorkbenchAppController(
   const [latestImport, setLatestImport] = useState<ImportDxfProjectResult | null>(null);
   const [activeView, setActiveView] = useState<ActiveView>('dashboard');
   const [loadedEditorProgram, setLoadedEditorProgram] = useState<LoadedEditorProgram | null>(null);
+  const [statusNotifications, setStatusNotifications] = useState<StatusToast[]>([]);
   const [statusToasts, setStatusToasts] = useState<StatusToast[]>([]);
   const statusToastCounter = useRef(0);
 
@@ -85,15 +87,15 @@ export function useWorkbenchAppController(
 
   const showStatusToast = useCallback((message: string, type: StatusToastType = 'info') => {
     const id = `status-${Date.now()}-${++statusToastCounter.current}`;
-    setStatusToasts((current) => [
-      ...current.slice(-4),
-      {
-        id,
-        message,
-        type,
-        durationMs: type === 'error' ? 8000 : 4500
-      }
-    ]);
+    const toast = {
+      createdAt: Date.now(),
+      durationMs: type === 'error' ? 6500 : 3500,
+      id,
+      message,
+      type
+    };
+    setStatusToasts((current) => [toast, ...current].slice(0, 3));
+    setStatusNotifications((current) => [toast, ...current].slice(0, 25));
   }, []);
 
   useEffect(() => {
@@ -437,6 +439,7 @@ export function useWorkbenchAppController(
     loadedEditorProgram,
     settingsErrorMessage,
     settingsStatus,
+    statusNotifications,
     statusToasts,
     workbenchStatus,
     dismissStatusToast,

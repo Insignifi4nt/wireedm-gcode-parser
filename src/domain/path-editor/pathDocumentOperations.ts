@@ -183,6 +183,14 @@ export function translatePathOperation(
   );
 }
 
+export function translatePathDocument(document: PathPlanningDocument, delta: Point2) {
+  return translatePathSegments(
+    document,
+    document.segments.map((segment) => segment.id),
+    delta
+  );
+}
+
 export function translatePathSegment(
   document: PathPlanningDocument,
   segmentId: SegmentId,

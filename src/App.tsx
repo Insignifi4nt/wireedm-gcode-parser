@@ -18,6 +18,7 @@ export default function App({ services }: AppProps = {}) {
       errorMessage={app.errorMessage}
       onConnectWorkbench={app.handleConnectWorkbench}
       storageActionLabel={app.storageActionLabel}
+      statusNotifications={app.statusNotifications}
       storageWarningMessage={app.storageWarningMessage}
       workbenchStatus={app.workbenchStatus}
     >

@@ -19,6 +19,7 @@ import {
   setPathOperationOrderStrategy,
   movePathSegmentCenterTo,
   slideMagnetizedPointOnSegment,
+  translatePathDocument,
   translatePathElement,
   translatePathSegment
 } from '../pathDocumentOperations';
@@ -295,6 +296,30 @@ describe('pathDocumentOperations', () => {
     });
     expect(translated?.chains[0].metrics.gapLength).toBe(0);
     expect(document.segments[0].start).toEqual({ x: 0, y: 0 });
+  });
+
+  it('translates every contour in an imported document as one placement operation', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      ...rectangleLines(0, 0, 10, 5),
+      { type: 'circle', layer: 'CUT', center: { x: 30, y: 20 }, radius: 5 }
+    ]);
+
+    const translated = translatePathDocument(document, { x: -10, y: 4 });
+    const body = pathPlanToGcodeBody(translated!.plan, translated!.segments);
+
+    expect(translated?.pathElements.map((element) => element.bounds)).toEqual(expect.arrayContaining([
+      { minX: -10, minY: 4, maxX: 0, maxY: 9 },
+      { minX: 15, minY: 19, maxX: 25, maxY: 29 }
+    ]));
+    expect(translated?.plan.operations.map((operation) => operation.startPoint)).toEqual(expect.arrayContaining([
+      { x: 0, y: 4 },
+      { x: 25, y: 24 }
+    ]));
+    expect(body.split('\n')).toContain('G0 X25.000 Y24.000');
+    expect(document.pathElements.map((element) => element.bounds)).toEqual(expect.arrayContaining([
+      { minX: 0, minY: 0, maxX: 10, maxY: 5 },
+      { minX: 25, minY: 15, maxX: 35, maxY: 25 }
+    ]));
   });
 
   it('translates an arc segment by moving its endpoints and center as one geometry', () => {

@@ -3269,6 +3269,51 @@ describe('App DXF imports and project library', () => {
     expect(exportCode?.textContent).toContain('G1 X1.000 Y2.000');
   });
 
+  it('translates the full imported DXF document from the transform panel without selecting contours', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([independentContourOrderDxf()], 'multi-contour-placement.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await showWorkspacePanels(container, ['path-transform']);
+
+    const translateXInput = container.querySelector(
+      'input[aria-label="Translate X"]'
+    ) as HTMLInputElement | null;
+    const translateYInput = container.querySelector(
+      'input[aria-label="Translate Y"]'
+    ) as HTMLInputElement | null;
+
+    await act(async () => {
+      if (translateXInput) setInputValue(translateXInput, '-10');
+      if (translateYInput) setInputValue(translateYInput, '4');
+    });
+
+    const applyDocumentTranslationButton = container.querySelector(
+      'button[aria-label="Apply translation to document geometry"]'
+    ) as HTMLButtonElement | null;
+    expect(applyDocumentTranslationButton?.disabled).toBe(false);
+
+    await act(async () => {
+      applyDocumentTranslationButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-transform-document-bounds]')?.textContent).toBe(
+      'X -10.000..40.000 Y 4.000..9.000'
+    );
+    expect(container.querySelector('[data-upid-transform-target]')?.textContent).toBe('Document');
+  });
+
   it('keeps manual G-code text editing out of active DXF path plans', async () => {
     window.showDirectoryPicker = undefined;
 

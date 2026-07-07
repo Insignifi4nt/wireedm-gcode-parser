@@ -44,6 +44,7 @@ import {
   setPathOperationClassification,
   setPathOperationOrderStrategy,
   slideMagnetizedPointOnSegment,
+  translatePathDocument,
   translatePathElement,
   translatePathOperation,
   translatePathSegment,
@@ -1249,6 +1250,18 @@ export function EditorPage({
     }
   }
 
+  function handleTranslatePathDocument(delta: { x: number; y: number }) {
+    if (!pathDocumentDraft || isSaving) return;
+
+    const edited = translatePathDocument(pathDocumentDraft, delta);
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId
+      });
+    }
+  }
+
   function handleRotatePathSelection(angleDegrees: number) {
     if (!pathDocumentDraft || isSaving) return;
 
@@ -1690,6 +1703,7 @@ export function EditorPage({
         onSetPathOperationClassification={handleSetPathOperationClassification}
         onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
         onSetPathStartFromElement={handleSetPathStartFromElement}
+        onTranslatePathDocument={handleTranslatePathDocument}
         onTranslatePathSelection={handleTranslatePathSelection}
         onToggleHoverAssist={handleTogglePathHoverAssist}
         onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}

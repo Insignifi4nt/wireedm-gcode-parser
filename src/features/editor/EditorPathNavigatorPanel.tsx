@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import {
   useEffect,
+  useState,
   type Dispatch,
   type MouseEvent,
   type ReactNode,
@@ -90,6 +91,7 @@ const ORDER_STRATEGY_OPTIONS: Array<{
   { label: 'Source order', value: 'source-order' }
 ];
 type DiagnosticPanelActionId = 'endpoint-topology' | 'contour-tree' | 'cut-sequence';
+type PathTransformTarget = 'document' | 'selection';
 interface DiagnosticGuidance {
   actions: Array<{
     label: string;
@@ -149,6 +151,7 @@ interface EditorPathNavigatorPanelProps {
   onSetPathOperationOrderStrategy: (strategy: OperationOrderStrategy) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   onTranslatePathSelection: (delta: { x: number; y: number }) => void;
+  onTranslatePathDocument: (delta: { x: number; y: number }) => void;
   onToggleHoverAssist: () => void;
   onToggleMagneticSnap: () => void;
   onUndoDraft: () => void;
@@ -194,6 +197,7 @@ export function EditorPathNavigatorPanel({
   onSetPathOperationClassification,
   onSetPathOperationOrderStrategy,
   onSetPathStartFromElement,
+  onTranslatePathDocument,
   onTranslatePathSelection,
   onToggleHoverAssist,
   onToggleMagneticSnap,
@@ -227,8 +231,6 @@ export function EditorPathNavigatorPanel({
   const documentBounds = readPathDocumentBounds(pathDocument);
   const documentCenter = readPathDocumentBoundsCenter(pathDocument);
   const documentOriginOffset = documentCenter ? { x: -documentCenter.x, y: -documentCenter.y } : null;
-  const sourceBasePoint = pathDocument.source.drawing?.basePoint ?? null;
-  const sourceExtents = pathDocument.source.drawing?.extents ?? null;
   const selectedGeometryCenter = readPathSelectionBoundsCenter(
     pathDocument,
     selectedPathElement,
@@ -263,8 +265,36 @@ export function EditorPathNavigatorPanel({
     Number.isFinite(targetY) &&
     (!selectedGeometryCenter || targetX !== selectedGeometryCenter.x || targetY !== selectedGeometryCenter.y) &&
     !isSaving;
+  const hasTransformSelection = Boolean(selectedOperation && selectedGeometryCenter);
   const canOrientDocument = Boolean(documentCenter) && pathDocument.segments.length > 0 && !isSaving;
-  const canOrientSelection = Boolean(selectedGeometryCenter) && !isSaving;
+  const canOrientSelection = hasTransformSelection && !isSaving;
+  const [pathTransformTarget, setPathTransformTarget] = useState<PathTransformTarget>('document');
+  const selectedTransformIdentity =
+    selectedPathElement?.segmentId ?? selectedPathElement?.pathElementId ?? selectedPathOperationId;
+  const activePathTransformTarget =
+    pathTransformTarget === 'selection' && hasTransformSelection ? 'selection' : 'document';
+  const activePathTransformTargetName = activePathTransformTarget === 'document' ? 'document' : 'selection';
+  const activeTransformTargetLabel =
+    activePathTransformTarget === 'document' ? 'Document' : translateTargetLabel;
+  const activeTransformCenter =
+    activePathTransformTarget === 'document' ? documentCenter : selectedGeometryCenter;
+  const canTranslateDocument =
+    Boolean(documentBounds) &&
+    Number.isFinite(translateX) &&
+    Number.isFinite(translateY) &&
+    (translateX !== 0 || translateY !== 0) &&
+    !isSaving;
+  const canTranslateActiveTarget =
+    activePathTransformTarget === 'document' ? canTranslateDocument : canTranslateSelection;
+  const canMoveDocumentCenter =
+    Boolean(documentCenter) &&
+    Number.isFinite(targetX) &&
+    Number.isFinite(targetY) &&
+    (!documentCenter || targetX !== documentCenter.x || targetY !== documentCenter.y) &&
+    !isSaving;
+  const canMoveActiveTargetCenter =
+    activePathTransformTarget === 'document' ? canMoveDocumentCenter : canMoveSelectedGeometryCenter;
+  const canOrientActiveTarget = activePathTransformTarget === 'document' ? canOrientDocument : canOrientSelection;
   const hoverRevealedPathElementIds = new Set(
     hoveredPathElement ? upidPathElementAncestorIds(pathDocument, hoveredPathElement) : []
   );
@@ -287,6 +317,10 @@ export function EditorPathNavigatorPanel({
       return next;
     });
   };
+
+  useEffect(() => {
+    setPathTransformTarget(selectedTransformIdentity ? 'selection' : 'document');
+  }, [selectedTransformIdentity]);
 
   useEffect(() => {
     const pathElementIdsToReveal = selectedPathElement
@@ -585,18 +619,40 @@ export function EditorPathNavigatorPanel({
         {renderWorkspacePanel('path-transform', 'Transform', (
         <section data-upid-path-transform>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-[9px] uppercase text-muted-foreground">Transform</span>
+            <span className="text-[9px] uppercase text-muted-foreground">Placement</span>
             <span className="truncate text-[9px] text-muted-foreground" data-upid-transform-target>
-              {translateTargetLabel}
+              {activeTransformTargetLabel}
             </span>
+          </div>
+          <div className="mb-2 grid grid-cols-2 gap-1" data-upid-transform-target-mode>
+            <button
+              aria-label="Target document for transform"
+              aria-pressed={activePathTransformTarget === 'document'}
+              className={activePathTransformTarget === 'document' ? activeModeButtonClass : modeButtonClass}
+              disabled={!documentBounds || isSaving}
+              onClick={() => setPathTransformTarget('document')}
+              type="button"
+            >
+              Document
+            </button>
+            <button
+              aria-label="Target selection for transform"
+              aria-pressed={activePathTransformTarget === 'selection'}
+              className={activePathTransformTarget === 'selection' ? activeModeButtonClass : modeButtonClass}
+              disabled={!hasTransformSelection || isSaving}
+              onClick={() => setPathTransformTarget('selection')}
+              type="button"
+            >
+              Selection
+            </button>
           </div>
           <div
             className="mb-3 border border-border bg-background/35 p-2"
             data-upid-transform-document-placement
           >
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">Document Placement</span>
-              <span className="text-[8px] uppercase text-muted-foreground">Origin Check</span>
+              <span className="text-[9px] uppercase text-muted-foreground">Reference</span>
+              <span className="text-[8px] uppercase text-muted-foreground">Document</span>
             </div>
             <dl className="grid gap-1 font-mono text-[9px]">
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
@@ -621,31 +677,13 @@ export function EditorPathNavigatorPanel({
                   {documentOriginOffset ? formatPoint(documentOriginOffset) : '-'}
                 </dd>
               </div>
-              <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
-                <dt className="uppercase text-muted-foreground">DXF Extents</dt>
-                <dd
-                  className="truncate text-foreground"
-                  data-upid-transform-source-extents
-                  title={sourceExtents ? formatSourceExtents(sourceExtents) : 'No DXF header extents'}
-                >
-                  {sourceExtents ? formatSourceExtents(sourceExtents) : '-'}
-                </dd>
-              </div>
-              <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
-                <dt className="uppercase text-muted-foreground">DXF Base</dt>
-                <dd className="truncate text-foreground" data-upid-transform-source-base>
-                  {sourceBasePoint ? formatPoint(sourceBasePoint) : '-'}
-                </dd>
-              </div>
             </dl>
-            <p
-              className="mt-2 text-[9px] leading-4 text-muted-foreground"
-              data-upid-transform-document-placement-help
-            >
-              Document bounds are computed from imported geometry; source extents come from DXF header
-              metadata when present. Select a contour, then use Origin and Move Center to translate its
-              center to X0 Y0.
-            </p>
+          </div>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[9px] uppercase text-muted-foreground">Move</span>
+            <span className="truncate text-[9px] text-muted-foreground">
+              {activePathTransformTarget === 'document' ? 'Document geometry' : 'Selected geometry'}
+            </span>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
@@ -654,7 +692,7 @@ export function EditorPathNavigatorPanel({
                 aria-label="Translate X"
                 className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                 data-upid-transform-delta-x
-                disabled={!selectedOperation || isSaving}
+                disabled={(activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving}
                 inputMode="decimal"
                 onChange={(event) => onPathTranslateXDraftChange(event.currentTarget.value)}
                 type="number"
@@ -667,7 +705,7 @@ export function EditorPathNavigatorPanel({
                 aria-label="Translate Y"
                 className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                 data-upid-transform-delta-y
-                disabled={!selectedOperation || isSaving}
+                disabled={(activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving}
                 inputMode="decimal"
                 onChange={(event) => onPathTranslateYDraftChange(event.currentTarget.value)}
                 type="number"
@@ -676,11 +714,21 @@ export function EditorPathNavigatorPanel({
             </label>
           </div>
           <button
-            aria-label="Apply translation to selected path geometry"
+            aria-label={
+              activePathTransformTarget === 'document'
+                ? 'Apply translation to document geometry'
+                : 'Apply translation to selected path geometry'
+            }
             className={`mt-2 w-full ${textButtonClass}`}
             data-upid-transform-apply
-            disabled={!canTranslateSelection}
-            onClick={() => onTranslatePathSelection({ x: translateX, y: translateY })}
+            disabled={!canTranslateActiveTarget}
+            onClick={() => {
+              if (activePathTransformTarget === 'document') {
+                onTranslatePathDocument({ x: translateX, y: translateY });
+              } else {
+                onTranslatePathSelection({ x: translateX, y: translateY });
+              }
+            }}
             type="button"
           >
             <Move className="size-3" />
@@ -690,150 +738,109 @@ export function EditorPathNavigatorPanel({
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="text-[9px] uppercase text-muted-foreground">Orientation</span>
               <span className="truncate text-[9px] text-muted-foreground" data-upid-transform-orientation-origin>
-                {documentCenter ? formatPoint(documentCenter) : '-'}
+                {activeTransformCenter ? formatPoint(activeTransformCenter) : '-'}
               </span>
             </div>
-            <div className="grid gap-1">
-              <div
-                className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-1"
-                data-upid-transform-selection-orientation
-              >
-                <span className="truncate text-[9px] uppercase text-muted-foreground">Selection</span>
-                <div className="grid grid-cols-5 gap-1">
-                  <button
-                    aria-label="Rotate selection 90 degrees counterclockwise"
-                    className={iconButtonClass}
-                    disabled={!canOrientSelection}
-                    onClick={() => onRotatePathSelection(-90)}
-                    title="Rotate selection 90 degrees counterclockwise"
-                    type="button"
-                  >
-                    <RotateCcw className="size-3" />
-                  </button>
-                  <button
-                    aria-label="Rotate selection 90 degrees clockwise"
-                    className={iconButtonClass}
-                    disabled={!canOrientSelection}
-                    onClick={() => onRotatePathSelection(90)}
-                    title="Rotate selection 90 degrees clockwise"
-                    type="button"
-                  >
-                    <RotateCw className="size-3" />
-                  </button>
-                  <button
-                    aria-label="Rotate selection 180 degrees"
-                    className={iconButtonClass}
-                    disabled={!canOrientSelection}
-                    onClick={() => onRotatePathSelection(180)}
-                    title="Rotate selection 180 degrees"
-                    type="button"
-                  >
-                    <span className="font-mono text-[9px]">180</span>
-                  </button>
-                  <button
-                    aria-label="Mirror selection across X axis"
-                    className={iconButtonClass}
-                    disabled={!canOrientSelection}
-                    onClick={() => onMirrorPathSelection('x')}
-                    title="Mirror selection across X axis"
-                    type="button"
-                  >
-                    <FlipVertical className="size-3" />
-                  </button>
-                  <button
-                    aria-label="Mirror selection across Y axis"
-                    className={iconButtonClass}
-                    disabled={!canOrientSelection}
-                    onClick={() => onMirrorPathSelection('y')}
-                    title="Mirror selection across Y axis"
-                    type="button"
-                  >
-                    <FlipHorizontal className="size-3" />
-                  </button>
-                </div>
-              </div>
-              <div
-                className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-1"
-                data-upid-transform-document-orientation
-              >
-                <span className="truncate text-[9px] uppercase text-muted-foreground">Document</span>
-                <div className="grid grid-cols-5 gap-1">
-                  <button
-                    aria-label="Rotate document 90 degrees counterclockwise"
-                    className={iconButtonClass}
-                    disabled={!canOrientDocument}
-                    onClick={() => onRotatePathDocument(-90)}
-                    title="Rotate document 90 degrees counterclockwise"
-                    type="button"
-                  >
-                    <RotateCcw className="size-3" />
-                  </button>
-                  <button
-                    aria-label="Rotate document 90 degrees clockwise"
-                    className={iconButtonClass}
-                    disabled={!canOrientDocument}
-                    onClick={() => onRotatePathDocument(90)}
-                    title="Rotate document 90 degrees clockwise"
-                    type="button"
-                  >
-                    <RotateCw className="size-3" />
-                  </button>
-                  <button
-                    aria-label="Rotate document 180 degrees"
-                    className={iconButtonClass}
-                    disabled={!canOrientDocument}
-                    onClick={() => onRotatePathDocument(180)}
-                    title="Rotate document 180 degrees"
-                    type="button"
-                  >
-                    <span className="font-mono text-[9px]">180</span>
-                  </button>
-                  <button
-                    aria-label="Mirror document across X axis"
-                    className={iconButtonClass}
-                    disabled={!canOrientDocument}
-                    onClick={() => onMirrorPathDocument('x')}
-                    title="Mirror document across X axis"
-                    type="button"
-                  >
-                    <FlipVertical className="size-3" />
-                  </button>
-                  <button
-                    aria-label="Mirror document across Y axis"
-                    className={iconButtonClass}
-                    disabled={!canOrientDocument}
-                    onClick={() => onMirrorPathDocument('y')}
-                    title="Mirror document across Y axis"
-                    type="button"
-                  >
-                    <FlipHorizontal className="size-3" />
-                  </button>
-                </div>
+            <div
+              className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-1"
+              data-upid-transform-document-orientation={activePathTransformTarget === 'document' ? 'true' : undefined}
+              data-upid-transform-selection-orientation={activePathTransformTarget === 'selection' ? 'true' : undefined}
+            >
+              <span className="truncate text-[9px] uppercase text-muted-foreground">
+                {activePathTransformTarget}
+              </span>
+              <div className="grid grid-cols-5 gap-1">
+                <button
+                  aria-label={`Rotate ${activePathTransformTarget} 90 degrees counterclockwise`}
+                  className={iconButtonClass}
+                  disabled={!canOrientActiveTarget}
+                  onClick={() =>
+                    activePathTransformTarget === 'document'
+                      ? onRotatePathDocument(-90)
+                      : onRotatePathSelection(-90)
+                  }
+                  title={`Rotate ${activePathTransformTarget} 90 degrees counterclockwise`}
+                  type="button"
+                >
+                  <RotateCcw className="size-3" />
+                </button>
+                <button
+                  aria-label={`Rotate ${activePathTransformTarget} 90 degrees clockwise`}
+                  className={iconButtonClass}
+                  disabled={!canOrientActiveTarget}
+                  onClick={() =>
+                    activePathTransformTarget === 'document' ? onRotatePathDocument(90) : onRotatePathSelection(90)
+                  }
+                  title={`Rotate ${activePathTransformTarget} 90 degrees clockwise`}
+                  type="button"
+                >
+                  <RotateCw className="size-3" />
+                </button>
+                <button
+                  aria-label={`Rotate ${activePathTransformTarget} 180 degrees`}
+                  className={iconButtonClass}
+                  disabled={!canOrientActiveTarget}
+                  onClick={() =>
+                    activePathTransformTarget === 'document' ? onRotatePathDocument(180) : onRotatePathSelection(180)
+                  }
+                  title={`Rotate ${activePathTransformTarget} 180 degrees`}
+                  type="button"
+                >
+                  <span className="font-mono text-[9px]">180</span>
+                </button>
+                <button
+                  aria-label={`Mirror ${activePathTransformTarget} across X axis`}
+                  className={iconButtonClass}
+                  disabled={!canOrientActiveTarget}
+                  onClick={() =>
+                    activePathTransformTarget === 'document' ? onMirrorPathDocument('x') : onMirrorPathSelection('x')
+                  }
+                  title={`Mirror ${activePathTransformTarget} across X axis`}
+                  type="button"
+                >
+                  <FlipVertical className="size-3" />
+                </button>
+                <button
+                  aria-label={`Mirror ${activePathTransformTarget} across Y axis`}
+                  className={iconButtonClass}
+                  disabled={!canOrientActiveTarget}
+                  onClick={() =>
+                    activePathTransformTarget === 'document' ? onMirrorPathDocument('y') : onMirrorPathSelection('y')
+                  }
+                  title={`Mirror ${activePathTransformTarget} across Y axis`}
+                  type="button"
+                >
+                  <FlipHorizontal className="size-3" />
+                </button>
               </div>
             </div>
           </div>
           <div
             className="mt-3 border-t border-border pt-2"
-            data-upid-transform-selection-center
-            data-upid-transform-selection-center-enabled={selectedGeometryCenter ? 'true' : 'false'}
+            data-upid-transform-selection-center={activePathTransformTarget === 'selection' ? 'true' : undefined}
+            data-upid-transform-selection-center-enabled={activeTransformCenter ? 'true' : 'false'}
+            data-upid-transform-target-center
+            data-upid-transform-target-center-target={activePathTransformTarget}
           >
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">Selection Center</span>
+              <span className="text-[9px] uppercase text-muted-foreground">Center Target</span>
               <span
                 className="truncate text-[9px] text-muted-foreground"
                 data-upid-transform-selection-center-current
+                data-upid-transform-target-center-current
               >
-                {selectedGeometryCenter ? formatPoint(selectedGeometryCenter) : '-'}
+                {activeTransformCenter ? formatPoint(activeTransformCenter) : '-'}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
                 X
                 <input
-                  aria-label="Selection center target X"
+                  aria-label={`${activeTransformTargetLabel} center target X`}
                   className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                   data-upid-transform-selection-center-x
-                  disabled={!selectedGeometryCenter || isSaving}
+                  data-upid-transform-target-center-x
+                  disabled={!activeTransformCenter || isSaving}
                   inputMode="decimal"
                   onChange={(event) => onPathTargetXDraftChange(event.currentTarget.value)}
                   type="number"
@@ -843,10 +850,11 @@ export function EditorPathNavigatorPanel({
               <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
                 Y
                 <input
-                  aria-label="Selection center target Y"
+                  aria-label={`${activeTransformTargetLabel} center target Y`}
                   className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                   data-upid-transform-selection-center-y
-                  disabled={!selectedGeometryCenter || isSaving}
+                  data-upid-transform-target-center-y
+                  disabled={!activeTransformCenter || isSaving}
                   inputMode="decimal"
                   onChange={(event) => onPathTargetYDraftChange(event.currentTarget.value)}
                   type="number"
@@ -856,10 +864,11 @@ export function EditorPathNavigatorPanel({
             </div>
             <div className="mt-2 grid grid-cols-3 gap-1">
               <button
-                aria-label="Use origin as selection center target"
+                aria-label={`Use origin as ${activePathTransformTargetName} center target`}
                 className={textButtonClass}
                 data-upid-transform-selection-center-use-origin
-                disabled={!selectedGeometryCenter || isSaving}
+                data-upid-transform-target-center-use-origin
+                disabled={!activeTransformCenter || isSaving}
                 onClick={() => {
                   onPathTargetXDraftChange(formatNumber(0));
                   onPathTargetYDraftChange(formatNumber(0));
@@ -869,10 +878,11 @@ export function EditorPathNavigatorPanel({
                 Origin
               </button>
               <button
-                aria-label="Use latest measurement point as selection center target"
+                aria-label={`Use latest measurement point as ${activePathTransformTargetName} center target`}
                 className={textButtonClass}
                 data-upid-transform-selection-center-use-latest
-                disabled={!selectedGeometryCenter || !latestMeasurementPoint || isSaving}
+                data-upid-transform-target-center-use-latest
+                disabled={!activeTransformCenter || !latestMeasurementPoint || isSaving}
                 onClick={() => {
                   if (!latestMeasurementPoint) return;
                   onPathTargetXDraftChange(formatNumber(latestMeasurementPoint.x));
@@ -883,26 +893,42 @@ export function EditorPathNavigatorPanel({
                 Latest Point
               </button>
               <button
-                aria-label="Move selected geometry center to target"
+                aria-label={`Move ${activePathTransformTargetName} center to target`}
                 className={textButtonClass}
                 data-upid-transform-selection-center-apply
-                disabled={!canMoveSelectedGeometryCenter}
-                onClick={() => onMovePathSelectionCenter({ x: targetX, y: targetY })}
+                data-upid-transform-target-center-apply
+                disabled={!canMoveActiveTargetCenter}
+                onClick={() => {
+                  if (activePathTransformTarget === 'document') {
+                    if (!documentCenter) return;
+                    onTranslatePathDocument({
+                      x: targetX - documentCenter.x,
+                      y: targetY - documentCenter.y
+                    });
+                  } else {
+                    onMovePathSelectionCenter({ x: targetX, y: targetY });
+                  }
+                }}
                 type="button"
               >
                 Move Center
               </button>
             </div>
             {measurementPoints.length > 0 && (
-              <div className="mt-2 border-t border-border pt-2" data-upid-transform-selection-center-points>
+              <div
+                className="mt-2 border-t border-border pt-2"
+                data-upid-transform-selection-center-points
+                data-upid-transform-target-center-points
+              >
                 <span className="mb-1 block text-[9px] uppercase text-muted-foreground">Target Point</span>
                 <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
                   {measurementPoints.map((point, index) => (
                     <button
-                      aria-label={`Use measurement point P${index + 1} as selection center target`}
+                      aria-label={`Use measurement point P${index + 1} as ${activePathTransformTargetName} center target`}
                       className={textButtonClass}
                       data-upid-transform-selection-center-use-point={index + 1}
-                      disabled={!selectedGeometryCenter || isSaving}
+                      data-upid-transform-target-center-use-point={index + 1}
+                      disabled={!activeTransformCenter || isSaving}
                       key={point.id}
                       onClick={() => {
                         onPathTargetXDraftChange(formatNumber(point.x));
@@ -918,13 +944,14 @@ export function EditorPathNavigatorPanel({
               </div>
             )}
           </div>
-          <div
-            className="mt-3 border-t border-border pt-2"
-            data-upid-transform-center
-            data-upid-transform-center-enabled={selectedSegmentCenter ? 'true' : 'false'}
-          >
+          {selectedSegmentCenter && (
+            <div
+              className="mt-3 border-t border-border pt-2"
+              data-upid-transform-center
+              data-upid-transform-center-enabled="true"
+            >
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">Center Target</span>
+              <span className="text-[9px] uppercase text-muted-foreground">Segment Center</span>
               <span className="truncate text-[9px] text-muted-foreground" data-upid-transform-center-current>
                 {selectedSegmentCenter ? formatPoint(selectedSegmentCenter) : '-'}
               </span>
@@ -1021,6 +1048,7 @@ export function EditorPathNavigatorPanel({
               </div>
             )}
           </div>
+          )}
         </section>
         ))}
 
@@ -2570,10 +2598,6 @@ function formatPoint(point: { x: number; y: number }) {
 
 function formatBounds(bounds: Bounds2) {
   return `X ${formatNumber(bounds.minX)}..${formatNumber(bounds.maxX)} Y ${formatNumber(bounds.minY)}..${formatNumber(bounds.maxY)}`;
-}
-
-function formatSourceExtents(extents: { min: { x: number; y: number }; max: { x: number; y: number } }) {
-  return `X ${formatNumber(extents.min.x)}..${formatNumber(extents.max.x)} Y ${formatNumber(extents.min.y)}..${formatNumber(extents.max.y)}`;
 }
 
 function formatSegmentGeometrySummary(geometry: UpidSelectedPathSegmentGeometry) {

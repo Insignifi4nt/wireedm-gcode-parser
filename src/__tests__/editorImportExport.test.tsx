@@ -266,43 +266,75 @@ describe('Editor import, export, and parse feedback', () => {
     ).toBe(updatedProgramText);
   });
 
-  it('shows dismissible status toasts for editor imports like the old status system', async () => {
+  it('auto-dismisses compact status toasts while keeping top-bar notification history', async () => {
+    vi.useFakeTimers();
     window.showDirectoryPicker = undefined;
 
-    await renderApp(context);
+    try {
+      await renderApp(context);
 
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
-    );
+      const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('Open Editor')
+      );
 
-    await act(async () => {
-      openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await flushAsync();
+      await act(async () => {
+        openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await flushAsync();
 
-    const fileInput = container.querySelector(
-      'input[aria-label="G-code program file"]'
-    ) as HTMLInputElement | null;
-    Object.defineProperty(fileInput, 'files', {
-      value: [new File(['G0 X0 Y0\nG1 X5 Y5\nM30'], 'toast-import.nc')],
-      configurable: true
-    });
+      const fileInput = container.querySelector(
+        'input[aria-label="G-code program file"]'
+      ) as HTMLInputElement | null;
+      Object.defineProperty(fileInput, 'files', {
+        value: [new File(['G0 X0 Y0\nG1 X5 Y5\nM30'], 'toast-import.nc')],
+        configurable: true
+      });
 
-    await act(async () => {
-      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await flushAsync();
+      await act(async () => {
+        fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await flushAsync();
 
-    const toast = container.querySelector('[data-status-toast="success"]') as HTMLButtonElement | null;
-    expect(toast).not.toBeNull();
-    expect(toast?.textContent).toContain('Program imported');
-    expect(toast?.textContent).toContain('toast-import.nc');
+      const toastContainer = container.querySelector('[data-status-toast-container]');
+      expect(toastContainer?.getAttribute('data-status-toast-placement')).toBe('top-center');
 
-    await act(async () => {
-      toast?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+      const toast = container.querySelector('[data-status-toast="success"]') as HTMLButtonElement | null;
+      expect(toast).not.toBeNull();
+      expect(toast?.textContent).toContain('Program imported');
+      expect(toast?.textContent).toContain('toast-import.nc');
 
-    expect(container.querySelector('[data-status-toast="success"]')).toBeNull();
+      Object.defineProperty(fileInput, 'files', {
+        value: [new File(['G0 X1 Y1\nM30'], 'toast-import-2.nc')],
+        configurable: true
+      });
+
+      await act(async () => {
+        fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await flushAsync();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4500);
+      });
+      await flushAsync();
+
+      expect(container.querySelector('[data-status-toast="success"]')).toBeNull();
+
+      const notificationsButton = container.querySelector(
+        'button[aria-label="Open notifications"]'
+      ) as HTMLButtonElement | null;
+      expect(notificationsButton).not.toBeNull();
+
+      await act(async () => {
+        notificationsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+
+      const historyItems = [...container.querySelectorAll('[data-status-notification-item]')];
+      expect(historyItems[0]?.textContent).toContain('toast-import-2.nc');
+      expect(historyItems[1]?.textContent).toContain('toast-import.nc');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('exports the current editor draft as a normalized ISO file without mutating the draft', async () => {
