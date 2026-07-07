@@ -1,6 +1,28 @@
 import type { Bounds2, PathPlanningDocument, PathSegment, Point2 } from '@/domain/path-intel/types';
 import type { UpidPathElementRef } from '@/domain/upid/projectRail';
 
+export function resolvePathDragTarget(
+  selectedPathElement: UpidPathElementRef | null,
+  draggedPathElement: UpidPathElementRef
+): UpidPathElementRef {
+  if (!selectedPathElement?.operationId) return draggedPathElement;
+  if (selectedPathElement.operationId !== draggedPathElement.operationId) return draggedPathElement;
+
+  if (
+    selectedPathElement.pathElementId &&
+    draggedPathElement.pathElementId &&
+    selectedPathElement.pathElementId !== draggedPathElement.pathElementId
+  ) {
+    return draggedPathElement;
+  }
+
+  if (selectedPathElement.travelRole || selectedPathElement.pointRole) return draggedPathElement;
+
+  if (!selectedPathElement.segmentId) return selectedPathElement;
+
+  return selectedPathElement.segmentId === draggedPathElement.segmentId ? selectedPathElement : draggedPathElement;
+}
+
 export function readPathSelectionBoundsCenter(
   document: PathPlanningDocument,
   selectedPathElement: UpidPathElementRef | null,

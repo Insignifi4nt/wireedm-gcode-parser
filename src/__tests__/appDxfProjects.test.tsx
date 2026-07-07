@@ -3160,6 +3160,76 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-contour-row]')?.textContent).toContain('forward');
   });
 
+  it('exports translated imported circle contours with shifted arc endpoints and valid IJ offsets', async () => {
+    window.showDirectoryPicker = undefined;
+    const downloadGeneratedProgram = vi.fn();
+
+    await renderApp(context, { downloadGeneratedProgram });
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([circleDxf()], 'circle-move.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await showWorkspacePanels(container, ['path-transform']);
+    await selectFirstCutSequence(container);
+
+    const translateXInput = container.querySelector(
+      'input[aria-label="Translate X"]'
+    ) as HTMLInputElement | null;
+    const translateYInput = container.querySelector(
+      'input[aria-label="Translate Y"]'
+    ) as HTMLInputElement | null;
+
+    await act(async () => {
+      if (translateXInput) setInputValue(translateXInput, '-7');
+      if (translateYInput) setInputValue(translateYInput, '3');
+    });
+
+    const applyTranslationButton = container.querySelector(
+      'button[aria-label="Apply translation to selected path geometry"]'
+    ) as HTMLButtonElement | null;
+    expect(applyTranslationButton?.disabled).toBe(false);
+
+    await act(async () => {
+      applyTranslationButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-selected="start"]')?.textContent).toBe('8.000, 23.000');
+
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const exportCode = container.querySelector('[data-upid-export-gcode]');
+    expect(exportCode?.textContent).toContain('G0 X8.000 Y23.000');
+    expect(exportCode?.textContent).toContain('G3 X-2.000 Y23.000 I-5.000 J0.000');
+    expect(exportCode?.textContent).toContain('G3 X8.000 Y23.000 I5.000 J0.000');
+    expect(exportCode?.textContent).not.toContain('G0 X15.000 Y20.000');
+
+    const downloadButton = container.querySelector(
+      'button[aria-label="Download UPID export program"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      downloadButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(downloadGeneratedProgram).toHaveBeenCalledWith({
+      fileName: expect.stringMatching(/^circle-move-\d{4}-\d{2}-\d{2}\.iso$/),
+      text: expect.stringContaining('G3 X-2.000 Y23.000 I-5.000 J0.000')
+    });
+  });
+
   it('keeps manual G-code text editing out of active DXF path plans', async () => {
     window.showDirectoryPicker = undefined;
 
@@ -3527,6 +3597,29 @@ function rectangleDxf() {
     '10',
     '0',
     '20',
+    '5',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function circleDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'CIRCLE',
+    '8',
+    'CUT',
+    '10',
+    '10',
+    '20',
+    '20',
+    '40',
     '5',
     '0',
     'ENDSEC',

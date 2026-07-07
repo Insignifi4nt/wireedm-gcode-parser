@@ -358,6 +358,46 @@ describe('pathDocumentOperations', () => {
     expect(movedSegment?.length).toBeCloseTo(document.segments[0].length, 6);
   });
 
+  it('posts a translated circle contour with shifted endpoints and stable center offsets', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const operation = document.plan.operations[0];
+
+    const translated = translatePathElement(document, document.pathElements[0].id, { x: -7, y: 3 });
+    const body = pathPlanToGcodeBody(translated!.plan, translated!.segments);
+
+    expect(translated?.plan.operations[0]).toMatchObject({
+      id: operation.id,
+      startPoint: { x: 8, y: 23 },
+      endPoint: { x: 8, y: 23 }
+    });
+    expect(body.split('\n')).toEqual([
+      'G0 X8.000 Y23.000',
+      'G3 X-2.000 Y23.000 I-5.000 J0.000',
+      'G3 X8.000 Y23.000 I5.000 J0.000'
+    ]);
+  });
+
+  it('keeps a manually selected circle start stable after translating the contour', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const operation = document.plan.operations[0];
+    const started = setClosedOperationStartNearPoint(document, operation.id, { x: 10, y: 25 });
+
+    const translated = translatePathElement(started!, started!.pathElements[0].id, { x: -7, y: 3 });
+    const body = pathPlanToGcodeBody(translated!.plan, translated!.segments);
+
+    expect(translated?.plan.operations[0].startPoint.x).toBeCloseTo(3, 6);
+    expect(translated?.plan.operations[0].startPoint.y).toBeCloseTo(28, 6);
+    expect(body.split('\n')).toEqual([
+      'G0 X3.000 Y28.000',
+      'G3 X3.000 Y18.000 I0.000 J-5.000',
+      'G3 X3.000 Y28.000 I0.000 J5.000'
+    ]);
+  });
+
   it('does not move a line segment center because lines have no circle center', () => {
     const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
 
@@ -560,6 +600,23 @@ describe('pathDocumentOperations', () => {
     expect(edited?.plan.operations[0].startPoint.x).toBeCloseTo(0, 6);
     expect(edited?.plan.operations[0].startPoint.y).toBeCloseTo(5, 6);
     expect(body.split('\n')[0]).toBe('G0 X0.000 Y5.000');
+  });
+
+  it('projects a circle center start pick to a valid circumference start point', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const operation = document.plan.operations[0];
+
+    const edited = setClosedOperationStartNearPoint(document, operation.id, { x: 10, y: 20 });
+    const body = pathPlanToGcodeBody(edited!.plan, edited!.segments);
+
+    expect(edited?.plan.operations[0].startPoint).toEqual({ x: 15, y: 20 });
+    expect(body.split('\n')).toEqual([
+      'G0 X15.000 Y20.000',
+      'G3 X5.000 Y20.000 I-5.000 J0.000',
+      'G3 X15.000 Y20.000 I5.000 J0.000'
+    ]);
   });
 
   it('magnetizes a point to the nearest contour feature with tangent metadata', () => {

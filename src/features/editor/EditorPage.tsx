@@ -107,7 +107,7 @@ import {
   writeStoredGuideLanguage,
   writeStoredLineMode
 } from './editorLineState';
-import { readPathSelectionBoundsCenter } from './pathSelectionGeometry';
+import { readPathSelectionBoundsCenter, resolvePathDragTarget } from './pathSelectionGeometry';
 
 interface EditorPageProps {
   program: LoadedEditorProgram | null;
@@ -1255,24 +1255,20 @@ export function EditorPage({
   function handleDragPathElement(element: EditorPathElementRef, delta: { x: number; y: number }) {
     if (!pathDocumentDraft || isSaving || (delta.x === 0 && delta.y === 0)) return;
 
-    const selectedElement = selectedPathElement;
+    const dragTarget = resolvePathDragTarget(selectedPathElement, element);
     const edited =
-      selectedElement?.operationId && !selectedElement.segmentId && selectedElement.pathElementId
-        ? translatePathElement(pathDocumentDraft, selectedElement.pathElementId, delta)
-        : selectedElement?.segmentId
-          ? translatePathSegment(pathDocumentDraft, selectedElement.segmentId, delta)
-          : element.segmentId
-            ? translatePathSegment(pathDocumentDraft, element.segmentId, delta)
-            : element.pathElementId
-              ? translatePathElement(pathDocumentDraft, element.pathElementId, delta)
-              : element.operationId
-                ? translatePathOperation(pathDocumentDraft, element.operationId, delta)
-                : null;
+      dragTarget.segmentId
+        ? translatePathSegment(pathDocumentDraft, dragTarget.segmentId, delta)
+        : dragTarget.pathElementId
+          ? translatePathElement(pathDocumentDraft, dragTarget.pathElementId, delta)
+          : dragTarget.operationId
+            ? translatePathOperation(pathDocumentDraft, dragTarget.operationId, delta)
+            : null;
 
     if (edited) {
       applyPathDocumentEdit(edited, {
-        selectedPathElement,
-        selectedPathOperationId
+        selectedPathElement: dragTarget,
+        selectedPathOperationId: dragTarget.operationId
       });
     }
   }
