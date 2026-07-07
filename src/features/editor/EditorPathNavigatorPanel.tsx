@@ -26,7 +26,11 @@ import {
   type SetStateAction
 } from 'react';
 
-import type { MagnetizeMode, PathMirrorAxis } from '@/domain/path-editor/pathDocumentOperations';
+import {
+  canSetCircleOperationCenterPierceLeadIn,
+  type MagnetizeMode,
+  type PathMirrorAxis
+} from '@/domain/path-editor/pathDocumentOperations';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import {
   orientedSegmentEnd,
@@ -66,9 +70,11 @@ import {
   type UpidProjectRailTreeNode
 } from '@/domain/upid/projectRail';
 import {
+  readBoundsAnchorPoint,
   readPathDocumentBounds,
   readPathDocumentBoundsCenter,
-  readPathSelectionBoundsCenter
+  readPathSelectionBoundsCenter,
+  type PathBoundsAnchor
 } from './pathSelectionGeometry';
 
 export type EditorPathElementRef = UpidPathElementRef;
@@ -92,6 +98,18 @@ const ORDER_STRATEGY_OPTIONS: Array<{
 ];
 type DiagnosticPanelActionId = 'endpoint-topology' | 'contour-tree' | 'cut-sequence';
 type PathTransformTarget = 'document' | 'selection';
+type DocumentReferenceMode = PathBoundsAnchor | 'picked';
+const DOCUMENT_REFERENCE_OPTIONS: Array<{
+  label: string;
+  value: DocumentReferenceMode;
+}> = [
+  { label: 'Center', value: 'center' },
+  { label: 'Min XY', value: 'min' },
+  { label: 'Max XY', value: 'max' },
+  { label: 'Min X / Max Y', value: 'min-x-max-y' },
+  { label: 'Max X / Min Y', value: 'max-x-min-y' },
+  { label: 'Picked Point', value: 'picked' }
+];
 interface DiagnosticGuidance {
   actions: Array<{
     label: string;
@@ -148,6 +166,7 @@ interface EditorPathNavigatorPanelProps {
   onPathTranslateXDraftChange: (value: string) => void;
   onPathTranslateYDraftChange: (value: string) => void;
   onSetPathOperationClassification: (classification: ContourClassification) => void;
+  onSetPathOperationCenterPierceLeadIn: () => void;
   onSetPathOperationOrderStrategy: (strategy: OperationOrderStrategy) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   onTranslatePathSelection: (delta: { x: number; y: number }) => void;
@@ -195,6 +214,7 @@ export function EditorPathNavigatorPanel({
   onPathTranslateXDraftChange,
   onPathTranslateYDraftChange,
   onSetPathOperationClassification,
+  onSetPathOperationCenterPierceLeadIn,
   onSetPathOperationOrderStrategy,
   onSetPathStartFromElement,
   onTranslatePathDocument,
@@ -230,7 +250,6 @@ export function EditorPathNavigatorPanel({
   const selectedSegmentCenter = selectedSegment && selectedSegment.kind !== 'line' ? selectedSegment.center : null;
   const documentBounds = readPathDocumentBounds(pathDocument);
   const documentCenter = readPathDocumentBoundsCenter(pathDocument);
-  const documentOriginOffset = documentCenter ? { x: -documentCenter.x, y: -documentCenter.y } : null;
   const selectedGeometryCenter = readPathSelectionBoundsCenter(
     pathDocument,
     selectedPathElement,
@@ -268,7 +287,31 @@ export function EditorPathNavigatorPanel({
   const hasTransformSelection = Boolean(selectedOperation && selectedGeometryCenter);
   const canOrientDocument = Boolean(documentCenter) && pathDocument.segments.length > 0 && !isSaving;
   const canOrientSelection = hasTransformSelection && !isSaving;
+  const canSetCenterPierceLeadIn =
+    selectedPathOperationId
+      ? canSetCircleOperationCenterPierceLeadIn(pathDocument, selectedPathOperationId) && !isSaving
+      : false;
   const [pathTransformTarget, setPathTransformTarget] = useState<PathTransformTarget>('document');
+  const [pathTransformTargetPinned, setPathTransformTargetPinned] = useState(false);
+  const [documentReferenceMode, setDocumentReferenceMode] = useState<DocumentReferenceMode>('center');
+  const [documentReferenceMeasurementPointId, setDocumentReferenceMeasurementPointId] = useState<string | null>(
+    null
+  );
+  const selectedDocumentReferenceMeasurementPoint = documentReferenceMeasurementPointId
+    ? measurementPoints.find((point) => point.id === documentReferenceMeasurementPointId) ?? null
+    : null;
+  const latestDocumentReferenceMeasurementPoint = measurementPoints.at(-1) ?? null;
+  const pickedDocumentReferencePoint =
+    selectedDocumentReferenceMeasurementPoint ?? latestDocumentReferenceMeasurementPoint;
+  const documentReferencePoint =
+    documentReferenceMode === 'picked'
+      ? pickedDocumentReferencePoint
+      : documentBounds
+        ? readBoundsAnchorPoint(documentBounds, documentReferenceMode)
+        : null;
+  const documentOriginOffset = documentReferencePoint
+    ? { x: -documentReferencePoint.x, y: -documentReferencePoint.y }
+    : null;
   const selectedTransformIdentity =
     selectedPathElement?.segmentId ?? selectedPathElement?.pathElementId ?? selectedPathOperationId;
   const activePathTransformTarget =
@@ -278,6 +321,9 @@ export function EditorPathNavigatorPanel({
     activePathTransformTarget === 'document' ? 'Document' : translateTargetLabel;
   const activeTransformCenter =
     activePathTransformTarget === 'document' ? documentCenter : selectedGeometryCenter;
+  const activeTargetReferencePoint =
+    activePathTransformTarget === 'document' ? documentReferencePoint : selectedGeometryCenter;
+  const activeTargetReferenceName = activePathTransformTarget === 'document' ? 'reference' : 'center';
   const canTranslateDocument =
     Boolean(documentBounds) &&
     Number.isFinite(translateX) &&
@@ -286,14 +332,14 @@ export function EditorPathNavigatorPanel({
     !isSaving;
   const canTranslateActiveTarget =
     activePathTransformTarget === 'document' ? canTranslateDocument : canTranslateSelection;
-  const canMoveDocumentCenter =
-    Boolean(documentCenter) &&
+  const canMoveDocumentReference =
+    Boolean(documentReferencePoint) &&
     Number.isFinite(targetX) &&
     Number.isFinite(targetY) &&
-    (!documentCenter || targetX !== documentCenter.x || targetY !== documentCenter.y) &&
+    (!documentReferencePoint || targetX !== documentReferencePoint.x || targetY !== documentReferencePoint.y) &&
     !isSaving;
-  const canMoveActiveTargetCenter =
-    activePathTransformTarget === 'document' ? canMoveDocumentCenter : canMoveSelectedGeometryCenter;
+  const canMoveActiveTargetReference =
+    activePathTransformTarget === 'document' ? canMoveDocumentReference : canMoveSelectedGeometryCenter;
   const canOrientActiveTarget = activePathTransformTarget === 'document' ? canOrientDocument : canOrientSelection;
   const hoverRevealedPathElementIds = new Set(
     hoveredPathElement ? upidPathElementAncestorIds(pathDocument, hoveredPathElement) : []
@@ -319,8 +365,17 @@ export function EditorPathNavigatorPanel({
   };
 
   useEffect(() => {
+    if (pathTransformTargetPinned) return;
+
     setPathTransformTarget(selectedTransformIdentity ? 'selection' : 'document');
-  }, [selectedTransformIdentity]);
+  }, [pathTransformTargetPinned, selectedTransformIdentity]);
+
+  useEffect(() => {
+    if (pathTransformTarget !== 'selection' || hasTransformSelection) return;
+
+    setPathTransformTarget('document');
+    setPathTransformTargetPinned(false);
+  }, [hasTransformSelection, pathTransformTarget]);
 
   useEffect(() => {
     const pathElementIdsToReveal = selectedPathElement
@@ -376,6 +431,7 @@ export function EditorPathNavigatorPanel({
             className="mt-1 text-[9px] text-muted-foreground"
             data-upid-path-manual-decision-count={projectRail.summary.manualDecisionCount}
             data-upid-path-manual-decision-direction={projectRail.summary.manualDecisionCounts.direction}
+            data-upid-path-manual-decision-lead-in={projectRail.summary.manualDecisionCounts['lead-in']}
             data-upid-path-manual-decision-order={projectRail.summary.manualDecisionCounts.order}
             data-upid-path-manual-decision-role={projectRail.summary.manualDecisionCounts.role}
             data-upid-path-manual-decision-start={projectRail.summary.manualDecisionCounts.start}
@@ -578,7 +634,7 @@ export function EditorPathNavigatorPanel({
               ))}
             </select>
           </label>
-          <div className="mt-1 grid grid-cols-3 gap-1">
+          <div className="mt-1 grid grid-cols-4 gap-1">
             <button
               aria-label="Set path start from canvas"
               aria-pressed={pathClickMode === 'set-start'}
@@ -589,6 +645,17 @@ export function EditorPathNavigatorPanel({
             >
               <MousePointer2 className="size-3" />
               Start
+            </button>
+            <button
+              aria-label="Add center pierce lead-in"
+              aria-pressed={Boolean(selectedOperation?.overrides?.leadIn)}
+              className={selectedOperation?.overrides?.leadIn ? activeModeButtonClass : modeButtonClass}
+              disabled={!canSetCenterPierceLeadIn}
+              onClick={onSetPathOperationCenterPierceLeadIn}
+              type="button"
+            >
+              <Flag className="size-3" />
+              Pierce
             </button>
             <button
               aria-label="Magnetize latest point perpendicular"
@@ -630,7 +697,10 @@ export function EditorPathNavigatorPanel({
               aria-pressed={activePathTransformTarget === 'document'}
               className={activePathTransformTarget === 'document' ? activeModeButtonClass : modeButtonClass}
               disabled={!documentBounds || isSaving}
-              onClick={() => setPathTransformTarget('document')}
+              onClick={() => {
+                setPathTransformTarget('document');
+                setPathTransformTargetPinned(true);
+              }}
               type="button"
             >
               Document
@@ -640,7 +710,10 @@ export function EditorPathNavigatorPanel({
               aria-pressed={activePathTransformTarget === 'selection'}
               className={activePathTransformTarget === 'selection' ? activeModeButtonClass : modeButtonClass}
               disabled={!hasTransformSelection || isSaving}
-              onClick={() => setPathTransformTarget('selection')}
+              onClick={() => {
+                setPathTransformTarget('selection');
+                setPathTransformTargetPinned(true);
+              }}
               type="button"
             >
               Selection
@@ -652,7 +725,26 @@ export function EditorPathNavigatorPanel({
           >
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="text-[9px] uppercase text-muted-foreground">Reference</span>
-              <span className="text-[8px] uppercase text-muted-foreground">Document</span>
+              <select
+                aria-label="Document reference point"
+                className="h-6 max-w-[132px] border border-border bg-background px-1 font-mono text-[9px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                data-upid-transform-document-reference
+                disabled={!documentBounds || isSaving}
+                onChange={(event) => {
+                  const nextMode = event.currentTarget.value as DocumentReferenceMode;
+                  setDocumentReferenceMode(nextMode);
+                  if (nextMode === 'picked' && !documentReferenceMeasurementPointId) {
+                    setDocumentReferenceMeasurementPointId(measurementPoints.at(-1)?.id ?? null);
+                  }
+                }}
+                value={documentReferenceMode}
+              >
+                {DOCUMENT_REFERENCE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <dl className="grid gap-1 font-mono text-[9px]">
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
@@ -672,12 +764,63 @@ export function EditorPathNavigatorPanel({
                 </dd>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
+                <dt className="uppercase text-muted-foreground">Reference</dt>
+                <dd className="truncate text-foreground" data-upid-transform-document-reference-point>
+                  {documentReferencePoint ? formatPoint(documentReferencePoint) : '-'}
+                </dd>
+              </div>
+              <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
                 <dt className="uppercase text-muted-foreground">To Origin</dt>
                 <dd className="truncate text-foreground" data-upid-transform-origin-offset>
                   {documentOriginOffset ? formatPoint(documentOriginOffset) : '-'}
                 </dd>
               </div>
             </dl>
+            {documentReferenceMode === 'picked' && (
+              <div
+                className="mt-2 border-t border-border pt-2"
+                data-upid-transform-document-reference-points
+              >
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="text-[9px] uppercase text-muted-foreground">Picked Point</span>
+                  <span className="truncate text-[9px] text-muted-foreground">
+                    {pickedDocumentReferencePoint ? formatPoint(pickedDocumentReferencePoint) : 'No point'}
+                  </span>
+                </div>
+                <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
+                  <button
+                    aria-label="Use latest measurement point as document reference"
+                    className={textButtonClass}
+                    data-upid-transform-document-reference-use-latest
+                    disabled={!latestDocumentReferenceMeasurementPoint || isSaving}
+                    onClick={() =>
+                      setDocumentReferenceMeasurementPointId(
+                        latestDocumentReferenceMeasurementPoint?.id ?? null
+                      )
+                    }
+                    type="button"
+                  >
+                    Latest
+                  </button>
+                  {measurementPoints.map((point, index) => (
+                    <button
+                      aria-label={`Use measurement point P${index + 1} as document reference`}
+                      className={
+                        point.id === pickedDocumentReferencePoint?.id ? activeModeButtonClass : textButtonClass
+                      }
+                      data-upid-transform-document-reference-use-point={index + 1}
+                      disabled={isSaving}
+                      key={point.id}
+                      onClick={() => setDocumentReferenceMeasurementPointId(point.id)}
+                      title={`P${index + 1}: ${formatPoint(point)}`}
+                      type="button"
+                    >
+                      P{index + 1}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="text-[9px] uppercase text-muted-foreground">Move</span>
@@ -818,29 +961,31 @@ export function EditorPathNavigatorPanel({
           <div
             className="mt-3 border-t border-border pt-2"
             data-upid-transform-selection-center={activePathTransformTarget === 'selection' ? 'true' : undefined}
-            data-upid-transform-selection-center-enabled={activeTransformCenter ? 'true' : 'false'}
+            data-upid-transform-selection-center-enabled={activeTargetReferencePoint ? 'true' : 'false'}
             data-upid-transform-target-center
             data-upid-transform-target-center-target={activePathTransformTarget}
           >
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">Center Target</span>
+              <span className="text-[9px] uppercase text-muted-foreground">
+                {activePathTransformTarget === 'document' ? 'Reference Target' : 'Center Target'}
+              </span>
               <span
                 className="truncate text-[9px] text-muted-foreground"
                 data-upid-transform-selection-center-current
                 data-upid-transform-target-center-current
               >
-                {activeTransformCenter ? formatPoint(activeTransformCenter) : '-'}
+                {activeTargetReferencePoint ? formatPoint(activeTargetReferencePoint) : '-'}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
                 X
                 <input
-                  aria-label={`${activeTransformTargetLabel} center target X`}
+                  aria-label={`${activeTransformTargetLabel} ${activeTargetReferenceName} target X`}
                   className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                   data-upid-transform-selection-center-x
                   data-upid-transform-target-center-x
-                  disabled={!activeTransformCenter || isSaving}
+                  disabled={!activeTargetReferencePoint || isSaving}
                   inputMode="decimal"
                   onChange={(event) => onPathTargetXDraftChange(event.currentTarget.value)}
                   type="number"
@@ -850,11 +995,11 @@ export function EditorPathNavigatorPanel({
               <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
                 Y
                 <input
-                  aria-label={`${activeTransformTargetLabel} center target Y`}
+                  aria-label={`${activeTransformTargetLabel} ${activeTargetReferenceName} target Y`}
                   className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                   data-upid-transform-selection-center-y
                   data-upid-transform-target-center-y
-                  disabled={!activeTransformCenter || isSaving}
+                  disabled={!activeTargetReferencePoint || isSaving}
                   inputMode="decimal"
                   onChange={(event) => onPathTargetYDraftChange(event.currentTarget.value)}
                   type="number"
@@ -864,11 +1009,11 @@ export function EditorPathNavigatorPanel({
             </div>
             <div className="mt-2 grid grid-cols-3 gap-1">
               <button
-                aria-label={`Use origin as ${activePathTransformTargetName} center target`}
+                aria-label={`Use origin as ${activePathTransformTargetName} ${activeTargetReferenceName} target`}
                 className={textButtonClass}
                 data-upid-transform-selection-center-use-origin
                 data-upid-transform-target-center-use-origin
-                disabled={!activeTransformCenter || isSaving}
+                disabled={!activeTargetReferencePoint || isSaving}
                 onClick={() => {
                   onPathTargetXDraftChange(formatNumber(0));
                   onPathTargetYDraftChange(formatNumber(0));
@@ -878,11 +1023,11 @@ export function EditorPathNavigatorPanel({
                 Origin
               </button>
               <button
-                aria-label={`Use latest measurement point as ${activePathTransformTargetName} center target`}
+                aria-label={`Use latest measurement point as ${activePathTransformTargetName} ${activeTargetReferenceName} target`}
                 className={textButtonClass}
                 data-upid-transform-selection-center-use-latest
                 data-upid-transform-target-center-use-latest
-                disabled={!activeTransformCenter || !latestMeasurementPoint || isSaving}
+                disabled={!activeTargetReferencePoint || !latestMeasurementPoint || isSaving}
                 onClick={() => {
                   if (!latestMeasurementPoint) return;
                   onPathTargetXDraftChange(formatNumber(latestMeasurementPoint.x));
@@ -893,17 +1038,17 @@ export function EditorPathNavigatorPanel({
                 Latest Point
               </button>
               <button
-                aria-label={`Move ${activePathTransformTargetName} center to target`}
+                aria-label={`Move ${activePathTransformTargetName} ${activeTargetReferenceName} to target`}
                 className={textButtonClass}
                 data-upid-transform-selection-center-apply
                 data-upid-transform-target-center-apply
-                disabled={!canMoveActiveTargetCenter}
+                disabled={!canMoveActiveTargetReference}
                 onClick={() => {
                   if (activePathTransformTarget === 'document') {
-                    if (!documentCenter) return;
+                    if (!documentReferencePoint) return;
                     onTranslatePathDocument({
-                      x: targetX - documentCenter.x,
-                      y: targetY - documentCenter.y
+                      x: targetX - documentReferencePoint.x,
+                      y: targetY - documentReferencePoint.y
                     });
                   } else {
                     onMovePathSelectionCenter({ x: targetX, y: targetY });
@@ -911,7 +1056,7 @@ export function EditorPathNavigatorPanel({
                 }}
                 type="button"
               >
-                Move Center
+                {activePathTransformTarget === 'document' ? 'Move Ref' : 'Move Center'}
               </button>
             </div>
             {measurementPoints.length > 0 && (
@@ -924,11 +1069,11 @@ export function EditorPathNavigatorPanel({
                 <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
                   {measurementPoints.map((point, index) => (
                     <button
-                      aria-label={`Use measurement point P${index + 1} as ${activePathTransformTargetName} center target`}
+                      aria-label={`Use measurement point P${index + 1} as ${activePathTransformTargetName} ${activeTargetReferenceName} target`}
                       className={textButtonClass}
                       data-upid-transform-selection-center-use-point={index + 1}
                       data-upid-transform-target-center-use-point={index + 1}
-                      disabled={!activeTransformCenter || isSaving}
+                      disabled={!activeTargetReferencePoint || isSaving}
                       key={point.id}
                       onClick={() => {
                         onPathTargetXDraftChange(formatNumber(point.x));
@@ -2139,6 +2284,14 @@ function renderContourTreeNode({
       </summary>
       {expanded && (
         <div className="border-t border-border bg-card/35 py-1" data-upid-segment-stack>
+          {element.overrides?.leadIn &&
+            renderLeadInRow(
+              element,
+              hoveredPathElement,
+              selectedPathElement,
+              onHoverPathElement,
+              onSelectPathElement
+            )}
           {element.segmentRefs.map((ref, index) =>
             renderSegmentRow(
               element,
@@ -2250,7 +2403,7 @@ function formatPathManualDecisionCount(count: number) {
 function formatPathManualDecisionBreakdown(
   counts: Record<UpidManualDecisionKind, number>
 ) {
-  return `order ${counts.order} / role ${counts.role} / direction ${counts.direction} / start ${counts.start}`;
+  return `order ${counts.order} / role ${counts.role} / direction ${counts.direction} / start ${counts.start} / lead-in ${counts['lead-in']}`;
 }
 
 function formatProjectSourceSummary(source: UpidProjectRail['summary']['source']) {
@@ -2281,6 +2434,105 @@ function formatCount(count: number, singular: string) {
 
 function formatSourceLayers(layers: Array<string | null>) {
   return layers.map((layer) => layer ?? '-').join(', ');
+}
+
+function renderLeadInRow(
+  pathElement: UpidOperationPathElement,
+  hoveredPathElement: EditorPathElementRef | null,
+  selectedPathElement: EditorPathElementRef | null,
+  onHoverPathElement: (element: EditorPathElementRef | null) => void,
+  onSelectPathElement: (element: EditorPathElementRef) => void
+) {
+  const leadIn = pathElement.overrides?.leadIn;
+  if (!leadIn) return null;
+
+  const element: EditorPathElementRef = {
+    operationId: pathElement.operationId,
+    pathElementId: pathElement.id,
+    segmentId: null,
+    travelRole: 'lead-in'
+  };
+  const hovered =
+    hoveredPathElement?.operationId === pathElement.operationId &&
+    hoveredPathElement.travelRole === 'lead-in';
+  const selected =
+    selectedPathElement?.operationId === pathElement.operationId &&
+    selectedPathElement.travelRole === 'lead-in';
+  const length = Math.hypot(leadIn.to.x - leadIn.from.x, leadIn.to.y - leadIn.from.y);
+
+  return (
+    <div
+      className="border-l border-border/70 pl-2"
+      data-upid-lead-in-row
+      data-upid-operation-id={pathElement.operationId}
+      data-upid-path-element-id={pathElement.id}
+      data-upid-selected={selected ? 'true' : undefined}
+      data-upid-travel-role="lead-in"
+      key={`${pathElement.id}-lead-in`}
+    >
+      <button
+        aria-pressed={selected}
+        className={`grid w-full grid-cols-[28px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[9px] text-muted-foreground outline-none hover:bg-accent ${
+          selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
+        }`}
+        data-upid-hovered={hovered ? 'true' : undefined}
+        data-upid-selected={selected ? 'true' : undefined}
+        data-upid-tree-row-action="select-lead-in"
+        data-upid-tree-row-kind="lead-in"
+        data-upid-tree-row-level="1"
+        onClick={() => onSelectPathElement(element)}
+        onMouseEnter={() => onHoverPathElement(element)}
+        onMouseLeave={() => onHoverPathElement(null)}
+        title={`Lead-in cut from ${formatPoint(leadIn.from)} to ${formatPoint(leadIn.to)}.`}
+        type="button"
+      >
+        <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="lead-in">
+          <span className="text-[8px] uppercase" data-upid-tree-depth-label="lead-in">
+            Pierce
+          </span>
+          <Flag className="size-3" />
+          <span className="h-full min-h-5 border-l border-border/70" aria-hidden="true" />
+        </span>
+        <span className="min-w-0">
+          <span className="flex min-w-0 flex-wrap items-center gap-1">
+            <span
+              className="shrink-0 border border-amber-400/40 bg-amber-400/10 px-1 text-[8px] uppercase text-amber-100"
+              data-upid-tree-kind-label
+              title="Pierce lead-in row: selects the center-to-contour cut move."
+            >
+              Lead-in
+            </span>
+            <span className="truncate text-[9px] text-muted-foreground">Center pierce cut</span>
+          </span>
+          <span
+            className="mt-0.5 block text-[8px] uppercase tracking-normal text-muted-foreground"
+            data-upid-tree-action-hint
+          >
+            selects pierce cut on canvas
+          </span>
+          <span className="block truncate" data-upid-lead-in-span>
+            {formatPoint(leadIn.from)}
+            {' -> '}
+            {formatPoint(leadIn.to)}
+          </span>
+          <span className="mt-1 grid gap-0.5 text-[8px]">
+            <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-lead-in-field="from">
+              <span className="uppercase text-muted-foreground">From</span>
+              <span className="truncate text-foreground">{formatPoint(leadIn.from)}</span>
+            </span>
+            <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-lead-in-field="to">
+              <span className="uppercase text-muted-foreground">To</span>
+              <span className="truncate text-foreground">{formatPoint(leadIn.to)}</span>
+            </span>
+            <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-lead-in-field="length">
+              <span className="uppercase text-muted-foreground">Length</span>
+              <span className="truncate text-foreground">{length.toFixed(3)} / G1</span>
+            </span>
+          </span>
+        </span>
+      </button>
+    </div>
+  );
 }
 
 function renderSegmentRow(

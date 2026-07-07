@@ -161,6 +161,7 @@ export function EditorUpidExportPreview({
             className="min-w-0 border border-border bg-card/60 px-2 py-1"
             data-upid-export-manual-decisions-active={planning.manualDecisionCount > 0 ? 'true' : undefined}
             data-upid-export-manual-decisions-direction={planning.manualDecisionCounts.direction}
+            data-upid-export-manual-decisions-lead-in={planning.manualDecisionCounts['lead-in']}
             data-upid-export-manual-decisions-order={planning.manualDecisionCounts.order}
             data-upid-export-manual-decisions-role={planning.manualDecisionCounts.role}
             data-upid-export-manual-decisions-start={planning.manualDecisionCounts.start}
@@ -377,7 +378,7 @@ function formatManualDecisionCount(count: number) {
 }
 
 function formatManualDecisionBreakdown(counts: Record<UpidGCodeProgramManualDecisionKind, number>) {
-  return `order ${counts.order} / role ${counts.role} / direction ${counts.direction} / start ${counts.start}`;
+  return `order ${counts.order} / role ${counts.role} / direction ${counts.direction} / start ${counts.start} / lead-in ${counts['lead-in']}`;
 }
 
 function renderExportDiagnosticRow({
@@ -522,6 +523,11 @@ function upidMoveTraceRef(
     operationId: move.operationId,
     pathElementId: move.pathElementId,
     segmentId: move.segmentId,
-    travelRole: move.kind === 'rapid' && move.reason === 'operation-start' ? 'rapid-in' : undefined
+    travelRole:
+      move.kind === 'rapid' && move.reason === 'operation-start'
+        ? 'rapid-in'
+        : move.reason === 'manual-lead-in'
+          ? 'lead-in'
+          : undefined
   };
 }

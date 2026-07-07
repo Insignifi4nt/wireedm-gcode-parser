@@ -1,13 +1,14 @@
 import type {
   ManualClassificationOverride,
   ManualDirectionOverride,
+  ManualLeadInOverride,
   ManualOrderOverride,
   ManualStartOverride,
   PathElement,
   PathOperation
 } from '@/domain/path-intel/types';
 
-export type UpidManualDecisionKind = 'order' | 'role' | 'direction' | 'start';
+export type UpidManualDecisionKind = 'order' | 'role' | 'direction' | 'start' | 'lead-in';
 
 export type UpidManualDecisionCounts = Record<UpidManualDecisionKind, number>;
 
@@ -32,9 +33,19 @@ export interface UpidManualStartDecision {
   sourceSegmentIndex: number;
 }
 
+export interface UpidManualLeadInDecision {
+  from: ManualLeadInOverride['from'];
+  move: ManualLeadInOverride['move'];
+  source: ManualLeadInOverride['source'];
+  sourceSegmentId: string;
+  sourceSegmentIndex: number;
+  to: ManualLeadInOverride['to'];
+}
+
 export interface UpidManualDecisionDetails {
   classification: UpidManualClassificationDecision | null;
   direction: UpidManualDirectionDecision | null;
+  leadIn: UpidManualLeadInDecision | null;
   order: UpidManualOrderDecision | null;
   start: UpidManualStartDecision | null;
 }
@@ -55,6 +66,7 @@ export function upidManualDecisionKinds(source: UpidManualDecisionSource): UpidM
   if (overrides.classification) decisions.push('role');
   if (overrides.direction) decisions.push('direction');
   if (overrides.start) decisions.push('start');
+  if (overrides.leadIn) decisions.push('lead-in');
   return decisions;
 }
 
@@ -83,6 +95,7 @@ export function readUpidManualDecisionDetails(
   return {
     classification: readUpidManualClassificationDecision(overrides?.classification),
     direction: readUpidManualDirectionDecision(overrides?.direction),
+    leadIn: readUpidManualLeadInDecision(overrides?.leadIn),
     order: readUpidManualOrderDecision(overrides?.order),
     start: readUpidManualStartDecision(overrides?.start)
   };
@@ -91,6 +104,7 @@ export function readUpidManualDecisionDetails(
 function createEmptyUpidManualDecisionCounts(): UpidManualDecisionCounts {
   return {
     direction: 0,
+    'lead-in': 0,
     order: 0,
     role: 0,
     start: 0
@@ -127,5 +141,20 @@ function readUpidManualStartDecision(
     relation: start.relation,
     sourceSegmentId: start.sourceSegmentId,
     sourceSegmentIndex: start.sourceSegmentIndex
+  };
+}
+
+function readUpidManualLeadInDecision(
+  leadIn: ManualLeadInOverride | undefined
+): UpidManualLeadInDecision | null {
+  if (!leadIn) return null;
+
+  return {
+    from: { ...leadIn.from },
+    move: leadIn.move,
+    source: leadIn.source,
+    sourceSegmentId: leadIn.sourceSegmentId,
+    sourceSegmentIndex: leadIn.sourceSegmentIndex,
+    to: { ...leadIn.to }
   };
 }

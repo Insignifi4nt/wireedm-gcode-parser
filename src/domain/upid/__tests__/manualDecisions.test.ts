@@ -42,6 +42,7 @@ describe('UPID manual decisions', () => {
       count: 5,
       counts: {
         direction: 1,
+        'lead-in': 0,
         order: 2,
         role: 1,
         start: 1
@@ -51,6 +52,7 @@ describe('UPID manual decisions', () => {
     expect(readUpidManualDecisionDetails(finalOperation)).toMatchObject({
       classification: { classification: 'hole' },
       direction: { direction: 'reverse' },
+      leadIn: null,
       order: { orderIndex: 1 },
       start: {
         pointRole: 'start',
@@ -67,6 +69,7 @@ describe('UPID manual decisions', () => {
       count: 0,
       counts: {
         direction: 0,
+        'lead-in': 0,
         order: 0,
         role: 0,
         start: 0
@@ -76,6 +79,7 @@ describe('UPID manual decisions', () => {
     expect(readUpidManualDecisionDetails(document.plan.operations[0])).toEqual({
       classification: null,
       direction: null,
+      leadIn: null,
       order: null,
       start: null
     });

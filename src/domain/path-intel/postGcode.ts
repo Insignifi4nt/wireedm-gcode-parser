@@ -25,6 +25,7 @@ export type GcodePostedMoveKind = 'rapid' | 'cut';
 
 export type GcodePostedMoveReason =
   | 'operation-start'
+  | 'manual-lead-in'
   | 'segment-cut'
   | 'gap-bridge'
   | 'unexpected-gap';
@@ -117,15 +118,29 @@ export function postPathPlanToGcode(
       return postedMove;
     };
 
-    if (!pointsEqualNullable(currentPosition, operation.startPoint, resolved.coincidenceEpsilon)) {
+    const entryPoint = operationEntryPoint(operation);
+    if (!pointsEqualNullable(currentPosition, entryPoint, resolved.coincidenceEpsilon)) {
       appendOperationMove({
         command: 'G0',
-        endPoint: operation.startPoint,
+        endPoint: entryPoint,
         kind: 'rapid',
         reason: 'operation-start',
         segmentId: null,
         startPoint: currentPosition,
-        text: `G0 ${xy(operation.startPoint)}`
+        text: `G0 ${xy(entryPoint)}`
+      });
+    }
+
+    const leadIn = operation.overrides?.leadIn;
+    if (leadIn && !pointsEqual(leadIn.from, leadIn.to, resolved.coincidenceEpsilon)) {
+      appendOperationMove({
+        command: 'G1',
+        endPoint: leadIn.to,
+        kind: 'cut',
+        reason: 'manual-lead-in',
+        segmentId: leadIn.sourceSegmentId,
+        startPoint: leadIn.from,
+        text: `G1 ${xy(leadIn.to)}`
       });
     }
 
@@ -339,6 +354,10 @@ function moveForCircle(segment: CirclePathSegment, ref: OrientedSegmentRef) {
 
 function pointsEqualNullable(a: Point2 | null, b: Point2, epsilon: number) {
   return !!a && pointsEqual(a, b, epsilon);
+}
+
+function operationEntryPoint(operation: PathOperation) {
+  return operation.overrides?.leadIn?.from ?? operation.startPoint;
 }
 
 function xy(point: Point2) {

@@ -378,6 +378,41 @@ export function setClosedOperationStartNearPoint(
   return next;
 }
 
+export function setCircleOperationCenterPierceLeadIn(
+  document: PathPlanningDocument,
+  operationId: string
+) {
+  const next = cloneDocument(document);
+  const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation || !operation.closed) return null;
+
+  const leadInSource = circularOperationLeadInSource(next, operation);
+  if (!leadInSource) return null;
+
+  operation.overrides = {
+    ...operation.overrides,
+    leadIn: {
+      kind: 'manual',
+      move: 'cut',
+      from: { ...leadInSource.center },
+      to: { ...operation.startPoint },
+      source: 'circle-center',
+      sourceSegmentId: leadInSource.segmentId,
+      sourceSegmentIndex: leadInSource.segmentIndex
+    }
+  };
+  refreshPlan(next);
+  return next;
+}
+
+export function canSetCircleOperationCenterPierceLeadIn(
+  document: PathPlanningDocument,
+  operationId: string
+) {
+  const operation = document.plan.operations.find((candidate) => candidate.id === operationId);
+  return Boolean(operation && circularOperationLeadInSource(document, operation));
+}
+
 function manualStartSelection(
   document: PathPlanningDocument,
   operation: PathOperation,
@@ -945,6 +980,13 @@ function restoreGeometryEditOperationState(
       point: transformPoint(overrides.start.point)
     };
   }
+  if (overrides?.leadIn && transformedSegmentIds.has(overrides.leadIn.sourceSegmentId)) {
+    overrides.leadIn = {
+      ...overrides.leadIn,
+      from: transformPoint(overrides.leadIn.from),
+      to: transformPoint(overrides.leadIn.to)
+    };
+  }
 
   const restored: PathOperation = {
     ...operation,
@@ -1160,9 +1202,11 @@ function refreshPlan(document: PathPlanningDocument) {
     operation.endPoint = operation.closed
       ? operation.startPoint
       : pathEndPoint(operation.segmentRefs, segmentsById) ?? operation.endPoint;
+    refreshOperationLeadIn(document, operation);
+    const entryPoint = operationEntryPoint(operation);
     operation.metrics = {
-      cutLength: pathCutLength(operation.segmentRefs, segmentsById),
-      rapidInLength: distance(current, operation.startPoint),
+      cutLength: pathCutLength(operation.segmentRefs, segmentsById) + operationLeadInCutLength(operation),
+      rapidInLength: distance(current, entryPoint),
       segmentCount: operation.segmentRefs.length
     };
     current = operation.endPoint;
@@ -1267,6 +1311,84 @@ function planMetrics(plan: OperationPlan) {
   };
 }
 
+function operationEntryPoint(operation: PathOperation) {
+  return operation.overrides?.leadIn?.from ?? operation.startPoint;
+}
+
+function operationLeadInCutLength(operation: PathOperation) {
+  const leadIn = operation.overrides?.leadIn;
+  return leadIn ? distance(leadIn.from, leadIn.to) : 0;
+}
+
+function refreshOperationLeadIn(document: PathPlanningDocument, operation: PathOperation) {
+  const leadIn = operation.overrides?.leadIn;
+  if (!leadIn) return;
+
+  if (leadIn.source === 'circle-center') {
+    const source = circularOperationLeadInSource(document, operation);
+    if (source) {
+      operation.overrides = {
+        ...operation.overrides,
+        leadIn: {
+          ...leadIn,
+          from: { ...source.center },
+          to: { ...operation.startPoint },
+          sourceSegmentId: source.segmentId,
+          sourceSegmentIndex: source.segmentIndex
+        }
+      };
+      return;
+    }
+  }
+
+  operation.overrides = {
+    ...operation.overrides,
+    leadIn: {
+      ...leadIn,
+      to: { ...operation.startPoint }
+    }
+  };
+}
+
+function circularOperationLeadInSource(document: PathPlanningDocument, operation: PathOperation) {
+  if (!operation.closed || operation.segmentRefs.length === 0) return null;
+
+  const segmentsById = segmentMap(document.segments);
+  const epsilon = document.options.coincidenceEpsilon;
+  let source:
+    | {
+        center: Point2;
+        radius: number;
+        segmentId: SegmentId;
+        segmentIndex: number;
+      }
+    | null = null;
+
+  for (const [segmentIndex, ref] of operation.segmentRefs.entries()) {
+    const segment = requiredSegment(segmentsById, ref.segmentId);
+    if (segment.kind === 'line') return null;
+
+    if (!source) {
+      source = {
+        center: { ...segment.center },
+        radius: segment.radius,
+        segmentId: ref.segmentId,
+        segmentIndex
+      };
+      continue;
+    }
+
+    if (
+      !pointsEqual(source.center, segment.center, epsilon) ||
+      Math.abs(source.radius - segment.radius) > epsilon
+    ) {
+      return null;
+    }
+  }
+
+  return source;
+}
+
 function manualClassifications(document: PathPlanningDocument) {
   return new Map(
     document.plan.operations
@@ -1315,7 +1437,8 @@ function manualOverridesWithoutOrder(overrides: PathOperation['overrides']) {
   const preserved = {
     ...(overrides.classification ? { classification: overrides.classification } : {}),
     ...(overrides.direction ? { direction: overrides.direction } : {}),
-    ...(overrides.start ? { start: overrides.start } : {})
+    ...(overrides.start ? { start: overrides.start } : {}),
+    ...(overrides.leadIn ? { leadIn: overrides.leadIn } : {})
   };
 
   return Object.keys(preserved).length > 0 ? preserved : undefined;

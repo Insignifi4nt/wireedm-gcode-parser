@@ -273,11 +273,22 @@ export interface ManualStartOverride {
   createdSegmentIds: SegmentId[];
 }
 
+export interface ManualLeadInOverride {
+  kind: 'manual';
+  move: 'cut';
+  from: Point2;
+  to: Point2;
+  source: 'circle-center';
+  sourceSegmentId: SegmentId;
+  sourceSegmentIndex: number;
+}
+
 export interface PathOperationOverrides {
   classification?: ManualClassificationOverride;
   order?: ManualOrderOverride;
   direction?: ManualDirectionOverride;
   start?: ManualStartOverride;
+  leadIn?: ManualLeadInOverride;
 }
 
 export interface PathOperation {
