@@ -321,8 +321,22 @@ function pointCoordinates(point: GCodePathPoint) {
 
 function arcPath(point: GCodeArcPathPoint) {
   const radius = Math.hypot(point.startX - point.centerX, point.startY - point.centerY);
-  const largeArcFlag = isLargeArc(point) ? 1 : 0;
   const sweepFlag = point.clockwise ? 0 : 1;
+
+  if (radius > 1e-9 && pointsEqual({ x: point.startX, y: point.startY }, { x: point.endX, y: point.endY })) {
+    const opposite = {
+      x: point.centerX - (point.startX - point.centerX),
+      y: point.centerY - (point.startY - point.centerY)
+    };
+
+    return [
+      `M ${format(point.startX)} ${format(point.startY)}`,
+      `A ${format(radius)} ${format(radius)} 0 1 ${sweepFlag} ${format(opposite.x)} ${format(opposite.y)}`,
+      `A ${format(radius)} ${format(radius)} 0 1 ${sweepFlag} ${format(point.endX)} ${format(point.endY)}`
+    ].join(' ');
+  }
+
+  const largeArcFlag = isLargeArc(point) ? 1 : 0;
 
   return [
     `M ${format(point.startX)} ${format(point.startY)}`,

@@ -4,7 +4,8 @@ import {
   pathPlanToGcodeBody,
   postPathPlanToGcode,
   type GcodePostedMove,
-  type GcodePostedOperation
+  type GcodePostedOperation,
+  type GcodePostOptions
 } from '@/domain/path-intel/postGcode';
 import {
   composeGCodeProgramWithLineMap,
@@ -125,19 +126,33 @@ export function createUpidFromDxfEntities(
   return createPathPlanningDocumentFromDxfEntities(entities, options, sourceMetadata);
 }
 
-export function postUpidToGcodeBody(document: UniversalPathIntelligenceDocument) {
-  return pathPlanToGcodeBody(document.plan, document.segments, document.options);
+export function postUpidToGcodeBody(
+  document: UniversalPathIntelligenceDocument,
+  options: GcodePostOptions = {}
+) {
+  return pathPlanToGcodeBody(document.plan, document.segments, {
+    ...document.options,
+    ...options
+  });
 }
 
-export function postUpidToGcode(document: UniversalPathIntelligenceDocument) {
-  return postPathPlanToGcode(document.plan, document.segments, document.options);
+export function postUpidToGcode(
+  document: UniversalPathIntelligenceDocument,
+  options: GcodePostOptions = {}
+) {
+  return postPathPlanToGcode(document.plan, document.segments, {
+    ...document.options,
+    ...options
+  });
 }
 
 export function composeUpidGCodeExport(
   document: UniversalPathIntelligenceDocument,
   input: ComposeUpidGCodeExportInput
 ): UpidGCodeExport {
-  const post = postUpidToGcode(document);
+  const post = postUpidToGcode(document, {
+    arcCenterMode: inferArcCenterModeFromHeader(input.header)
+  });
   const body = post.body;
   const diagnostics = [...document.diagnostics, ...post.diagnostics];
   const planning = summarizeExportPlanning(document);
@@ -163,6 +178,23 @@ export function composeUpidGCodeExport(
       postDiagnosticCount: post.diagnostics.length
     }
   };
+}
+
+function inferArcCenterModeFromHeader(header: string): GcodePostOptions['arcCenterMode'] {
+  let mode: GcodePostOptions['arcCenterMode'] = 'incremental';
+
+  for (const rawLine of header.split(/\r?\n/)) {
+    const line = rawLine
+      .toUpperCase()
+      .replace(/^N\d+(?:\s+|$)/, '')
+      .replace(/[;(].*$/, '')
+      .trim();
+
+    if (/\bG60\b/.test(line) || /\bG90\.1\b/.test(line)) mode = 'absolute';
+    if (/\bG91\.1\b/.test(line)) mode = 'incremental';
+  }
+
+  return mode;
 }
 
 function traceUpidDocumentForExport(

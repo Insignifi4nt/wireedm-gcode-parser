@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 import {
   movePathOperation,
   reversePathOperation,
@@ -420,6 +421,43 @@ describe('UPID document boundary', () => {
       ].join('\n')
     );
     expect(body).not.toMatch(/\bF\d/);
+  });
+
+  it('exports absolute arc centers when the program header selects absolute IJ mode', () => {
+    const document = createUpidFromDxfEntities([
+      {
+        type: 'circle',
+        layer: 'HOLE',
+        center: { x: 30, y: 30 },
+        radius: 5
+      }
+    ]);
+
+    const exportProgram = composeUpidGCodeExport(document, {
+      header: '%\nG60',
+      footer: 'M02',
+      lineEnding: 'lf'
+    });
+    const parsed = parseGCodeProgram(exportProgram.program.text);
+    const arcs = parsed.path.filter((point) => point.type === 'arc');
+
+    expect(exportProgram.body).toContain('G3 X25.000 Y30.000 I30.000 J30.000');
+    expect(exportProgram.body).toContain('G3 X35.000 Y30.000 I30.000 J30.000');
+    expect(arcs).toHaveLength(2);
+    expect(arcs).toEqual([
+      expect.objectContaining({
+        centerX: 30,
+        centerY: 30,
+        endX: 25,
+        endY: 30
+      }),
+      expect.objectContaining({
+        centerX: 30,
+        centerY: 30,
+        endX: 35,
+        endY: 30
+      })
+    ]);
   });
 
   it('stamps projectless UPID documents when attaching them to a project', () => {

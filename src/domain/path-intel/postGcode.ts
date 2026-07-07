@@ -30,6 +30,12 @@ export type GcodePostedMoveReason =
   | 'gap-bridge'
   | 'unexpected-gap';
 
+export type GcodeArcCenterMode = 'absolute' | 'incremental';
+
+export interface GcodePostOptions extends PathPlanningOptions {
+  arcCenterMode?: GcodeArcCenterMode;
+}
+
 export interface GcodePostedMove {
   bodyLineIndex: number;
   command: 'G0' | 'G1' | 'G2' | 'G3';
@@ -72,7 +78,7 @@ export interface GcodePostResult {
 export function pathPlanToGcodeBody(
   plan: OperationPlan,
   segments: PathSegment[],
-  options: PathPlanningOptions = {}
+  options: GcodePostOptions = {}
 ) {
   return postPathPlanToGcode(plan, segments, options).body;
 }
@@ -80,9 +86,10 @@ export function pathPlanToGcodeBody(
 export function postPathPlanToGcode(
   plan: OperationPlan,
   segments: PathSegment[],
-  options: PathPlanningOptions = {}
+  options: GcodePostOptions = {}
 ): GcodePostResult {
   const resolved = resolvePathPlanningOptions(options);
+  const arcCenterMode = options.arcCenterMode ?? 'incremental';
   const segmentsById = segmentMap(segments);
   const lines: string[] = [];
   const diagnostics: PathDiagnostic[] = [];
@@ -161,7 +168,7 @@ export function postPathPlanToGcode(
         appendOperationMove(bridge.move);
       }
 
-      const move = moveForSegment(segment, ref);
+      const move = moveForSegment(segment, ref, arcCenterMode);
       move.moves.forEach((postedMove) => appendOperationMove(postedMove));
     }
 
@@ -273,7 +280,7 @@ function moveToSegmentStartIfNeeded(
   };
 }
 
-function moveForSegment(segment: PathSegment, ref: OrientedSegmentRef) {
+function moveForSegment(segment: PathSegment, ref: OrientedSegmentRef, arcCenterMode: GcodeArcCenterMode) {
   if (segment.kind === 'line') {
     const start = orientedSegmentStart(segment, ref);
     const end = orientedSegmentEnd(segment, ref);
@@ -293,13 +300,13 @@ function moveForSegment(segment: PathSegment, ref: OrientedSegmentRef) {
   }
 
   if (segment.kind === 'arc') {
-    return moveForArc(segment, ref);
+    return moveForArc(segment, ref, arcCenterMode);
   }
 
-  return moveForCircle(segment, ref);
+  return moveForCircle(segment, ref, arcCenterMode);
 }
 
-function moveForArc(segment: ArcPathSegment, ref: OrientedSegmentRef) {
+function moveForArc(segment: ArcPathSegment, ref: OrientedSegmentRef, arcCenterMode: GcodeArcCenterMode) {
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
   const command: 'G2' | 'G3' = orientedArcClockwise(segment, ref) ? 'G2' : 'G3';
@@ -313,13 +320,13 @@ function moveForArc(segment: ArcPathSegment, ref: OrientedSegmentRef) {
         reason: 'segment-cut' as const,
         segmentId: segment.id,
         startPoint: start,
-        text: `${command} ${xy(end)} ${ij(segment.center, start)}`
+        text: `${command} ${xy(end)} ${ij(segment.center, start, arcCenterMode)}`
       }
     ]
   };
 }
 
-function moveForCircle(segment: CirclePathSegment, ref: OrientedSegmentRef) {
+function moveForCircle(segment: CirclePathSegment, ref: OrientedSegmentRef, arcCenterMode: GcodeArcCenterMode) {
   const clockwise = orientedCircleClockwise(segment, ref);
   const command: 'G2' | 'G3' = clockwise ? 'G2' : 'G3';
   const start = segment.preferredStart;
@@ -337,7 +344,7 @@ function moveForCircle(segment: CirclePathSegment, ref: OrientedSegmentRef) {
         reason: 'segment-cut' as const,
         segmentId: segment.id,
         startPoint: start,
-        text: `${command} ${xy(opposite)} ${ij(segment.center, start)}`
+        text: `${command} ${xy(opposite)} ${ij(segment.center, start, arcCenterMode)}`
       },
       {
         command,
@@ -346,7 +353,7 @@ function moveForCircle(segment: CirclePathSegment, ref: OrientedSegmentRef) {
         reason: 'segment-cut' as const,
         segmentId: segment.id,
         startPoint: opposite,
-        text: `${command} ${xy(start)} ${ij(segment.center, opposite)}`
+        text: `${command} ${xy(start)} ${ij(segment.center, opposite, arcCenterMode)}`
       }
     ],
   };
@@ -364,7 +371,9 @@ function xy(point: Point2) {
   return `X${format(point.x)} Y${format(point.y)}`;
 }
 
-function ij(center: Point2, start: Point2) {
+function ij(center: Point2, start: Point2, mode: GcodeArcCenterMode) {
+  if (mode === 'absolute') return `I${format(center.x)} J${format(center.y)}`;
+
   return `I${format(center.x - start.x)} J${format(center.y - start.y)}`;
 }
 

@@ -121,6 +121,43 @@ describe('buildEditorPreviewGeometry', () => {
     });
   });
 
+  it('renders parsed full-circle arc moves as two drawable SVG arcs', () => {
+    const preview = buildEditorPreviewGeometry(
+      parseGCodeProgram(['G0 X15 Y20', 'G3 X15 Y20 I-5 J0'].join('\n'))
+    );
+
+    expect(preview.viewBox).toEqual({
+      minX: 4,
+      minY: 14,
+      width: 12,
+      height: 12
+    });
+    expect(preview.paths[1]).toEqual({
+      type: 'arc',
+      bounds: {
+        maxX: 15,
+        maxY: 20,
+        minX: 10,
+        minY: 20
+      },
+      center: {
+        x: 10,
+        y: 20
+      },
+      d: 'M 15 20 A 5 5 0 1 1 5 20 A 5 5 0 1 1 15 20',
+      start: {
+        x: 15,
+        y: 20
+      },
+      end: {
+        x: 15,
+        y: 20
+      },
+      line: 2,
+      source: 'gcode'
+    });
+  });
+
   it('turns path planning documents into preview paths without reparsing generated G-code', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       line(0, 0, 10, 0),
