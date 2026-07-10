@@ -662,10 +662,9 @@ export function EditorPage({
     previewCursorPoint,
     selectedPathOperationId
   ]);
-  const editorHeaderEyebrow = program?.model === 'upid-document' ? 'UPID Editor' : 'Editor';
   const editorHeaderTitle =
     program?.model === 'upid-document'
-      ? `${program.project?.name ?? 'Path Project'} / UPID Project`
+      ? program.project?.name ?? 'Path Project'
       : program?.filePath;
   const editorHeaderTooltip = program?.model === 'upid-document' ? program.filePath : undefined;
   const documentContext: EditorDocumentContext =
@@ -767,7 +766,6 @@ export function EditorPage({
     () => (
       <EditorHeaderBar
         documentContext={documentContext}
-        eyebrow={editorHeaderEyebrow}
         exportAvailable={exportAvailable}
         exportLabel={
           isPathProject
@@ -806,7 +804,6 @@ export function EditorPage({
     ),
     [
       editorPanelToolbar,
-      editorHeaderEyebrow,
       editorHeaderTitle,
       editorHeaderTooltip,
       documentContext,

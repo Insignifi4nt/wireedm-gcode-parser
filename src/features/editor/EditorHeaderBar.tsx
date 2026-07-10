@@ -16,7 +16,6 @@ const DOCUMENT_CONTEXT_LABELS: Record<EditorDocumentContext, string> = {
 
 interface EditorHeaderBarProps {
   documentContext: EditorDocumentContext;
-  eyebrow?: string;
   exportAvailable: boolean;
   exportLabel: string | null;
   filePath: string | undefined;

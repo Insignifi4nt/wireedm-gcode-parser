@@ -1327,7 +1327,10 @@ export function EditorPathNavigatorPanel({
             <TopologyMetric id="ambiguous" label="Ambiguous joins" value={endpointTopologyPanel.ambiguousCount} tone={endpointTopologyPanel.ambiguousCount > 0 ? 'warn' : 'muted'} />
           </div>
           {endpointTopologyRows.length > 0 ? (
-            <div className="max-h-32 overflow-auto border border-border bg-background/35">
+            <div
+              className="border border-border bg-background/35"
+              data-upid-endpoint-topology-list
+            >
               {endpointTopologyRows.map((row) =>
                 renderEndpointTopologyRow({
                   hoveredPathElement,
@@ -1395,7 +1398,10 @@ export function EditorPathNavigatorPanel({
                 </ol>
               </div>
             )}
-            <div className="max-h-48 overflow-auto border border-border bg-background/35">
+            <div
+              className="border border-border bg-background/35"
+              data-upid-diagnostics-list
+            >
               {pathDiagnostics.length > 0 ? (
                 pathDiagnostics.map((diagnostic) =>
                   renderDiagnosticRow({
@@ -1417,27 +1423,24 @@ export function EditorPathNavigatorPanel({
         ))}
 
         {renderWorkspacePanel('cut-sequence', 'Cut Sequence', (
-        <section data-upid-cut-sequence>
-          <div className="mb-2 text-[10px] uppercase text-muted-foreground">Cut Sequence</div>
-          <div className="max-h-32 overflow-auto border border-border bg-background/35" data-upid-cut-sequence-list>
-            {cutSequenceElements.map((pathElement) =>
-              renderCutSequenceRow({
-                hoveredPathElement,
-                isSaving,
-                onHoverPathElement,
-                onMovePathOperation,
-                onSelectPathElement,
-                operationCount: cutSequenceElements.length,
-                pathElement,
-                selectedPathElement
-              })
-            )}
-          </div>
+        <section className="-m-2" data-upid-cut-sequence data-upid-cut-sequence-list>
+          {cutSequenceElements.map((pathElement) =>
+            renderCutSequenceRow({
+              hoveredPathElement,
+              isSaving,
+              onHoverPathElement,
+              onMovePathOperation,
+              onSelectPathElement,
+              operationCount: cutSequenceElements.length,
+              pathElement,
+              selectedPathElement
+            })
+          )}
         </section>
         ))}
 
         {renderWorkspacePanel('contour-tree', 'Contour Tree', (
-        <section className="min-h-0 overflow-auto" data-upid-contour-tree>
+        <section className="min-h-0" data-upid-contour-tree>
           <div className="mb-2 flex items-center gap-1" data-upid-path-tree-controls>
             <div className="mr-auto flex items-center gap-1">
               <span className="text-[10px] text-muted-foreground">
@@ -1454,7 +1457,7 @@ export function EditorPathNavigatorPanel({
                   <Info aria-hidden="true" className="size-3.5" />
                 </button>
                 <div
-                  className="pointer-events-none invisible absolute left-0 top-7 z-30 w-64 border border-border bg-card p-2 text-[10px] normal-case leading-4 text-foreground opacity-0 shadow-xl transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+                  className="pointer-events-none invisible absolute left-[-36px] top-7 z-30 w-[170px] border border-border bg-card p-2 text-[10px] normal-case leading-4 text-foreground opacity-0 shadow-xl transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
                   data-upid-contour-tree-tooltip
                   id="contour-tree-help-tooltip"
                   role="tooltip"

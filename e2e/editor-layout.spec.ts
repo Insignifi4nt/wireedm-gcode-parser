@@ -83,11 +83,45 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
   const leftDock = page.locator('[data-editor-panel-dock-zone="left"]');
   const rightDock = page.locator('[data-editor-panel-dock-zone="right"]');
   const workspaceToolbar = appHeader.locator('[data-editor-panel-toolbar]');
-  const workspaceTrigger = workspaceToolbar.locator('summary');
+  const workspaceTrigger = workspaceToolbar.locator('summary[aria-label="Panels"]');
 
   for (const panelId of PATH_SHORTCUT_IDS) {
-    await expect(page.locator(`[data-editor-panel-shortcut="${panelId}"]`)).toBeVisible();
+    const shortcut = page.locator(`[data-editor-panel-shortcut="${panelId}"]`);
+    await expect(shortcut).toBeVisible();
+    await expect(shortcut).toHaveAttribute('title', /^(Show|Hide) /);
+    const shortcutBox = await shortcut.boundingBox();
+    expect(shortcutBox).not.toBeNull();
+    expect(shortcutBox!.width).toBeLessThanOrEqual(30);
   }
+  await expect(appHeader.getByRole('button', { name: /import program/i })).toHaveCount(0);
+
+  const contourTreeHelp = page.getByRole('button', { name: 'Contour Tree help' });
+  await contourTreeHelp.hover();
+  const contourTreeTooltip = page.locator('[data-upid-contour-tree-tooltip]');
+  await expect(contourTreeTooltip).toBeVisible();
+  const contourTreeBox = await page
+    .locator('[data-editor-workspace-panel="contour-tree"]')
+    .boundingBox();
+  const contourTreeTooltipBox = await contourTreeTooltip.boundingBox();
+  expect(contourTreeBox).not.toBeNull();
+  expect(contourTreeTooltipBox).not.toBeNull();
+  expect(contourTreeTooltipBox!.x).toBeGreaterThanOrEqual(contourTreeBox!.x);
+  expect(contourTreeTooltipBox!.x + contourTreeTooltipBox!.width).toBeLessThanOrEqual(
+    contourTreeBox!.x + contourTreeBox!.width
+  );
+
+  await page.locator('[data-editor-panel-shortcut="cut-sequence"]').click();
+  const cutSequencePanel = page.locator('[data-editor-workspace-panel="cut-sequence"]');
+  const cutSequenceList = cutSequencePanel.locator('[data-upid-cut-sequence-list]');
+  await expect(cutSequencePanel).toBeVisible();
+  await expect(cutSequenceList).toBeVisible();
+  expect(
+    await cutSequencePanel.evaluate((element) => getComputedStyle(element).overflowY)
+  ).toBe('auto');
+  expect(
+    await cutSequenceList.evaluate((element) => getComputedStyle(element).overflowY)
+  ).toBe('visible');
+  await page.locator('[data-editor-panel-shortcut="cut-sequence"]').click();
 
   const workspaceBox = await workspaceToolbar.boundingBox();
   const undoBox = await appHeader
@@ -116,6 +150,7 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
   await expect(page.locator('[data-editor-status-bar]')).toBeVisible();
   await expect(workspaceTrigger).toBeVisible();
   await expect(page.locator('[data-editor-panel-shortcuts]')).not.toBeVisible();
+  await expect(appHeader.getByRole('button', { name: /import program/i })).toHaveCount(0);
   await expect(page.locator('[data-editor-dock-panel-stack="left"]')).toHaveCSS(
     'scrollbar-width',
     'thin'
@@ -137,7 +172,6 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
     appHeader.getByRole('button', { name: /redo active document change/i }),
     appHeader.getByRole('button', { name: /save active document/i }),
     appHeader.getByRole('button', { name: /export preview/i }),
-    appHeader.getByRole('button', { name: /import program/i }),
     appHeader.getByRole('button', { name: /open usage guide/i })
   ];
   for (const command of essentialControls) {

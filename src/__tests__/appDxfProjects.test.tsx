@@ -82,8 +82,11 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    expect(container.textContent).toContain('Editor');
-    expect(container.textContent).toContain('part / UPID Project');
+    expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-document-identity]')?.textContent).toContain('part');
+    expect(container.querySelector('[data-editor-document-identity]')?.textContent).not.toContain(
+      '/ UPID Project'
+    );
     expect(container.textContent).not.toContain('imports/part-');
     expect(container.textContent).not.toContain('project.json');
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
@@ -111,10 +114,10 @@ describe('App DXF imports and project library', () => {
     expect('generated' in project).toBe(false);
     expect(window.localStorage.getItem(`wire-edm-workbench:file:generated/${project.id}.iso`)).toBeNull();
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
+    const dashboardButton = container.querySelector(
+      'button[aria-label="Back to Dashboard"]'
     );
-    expect(dashboardButton).toBeDefined();
+    expect(dashboardButton).not.toBeNull();
 
     await act(async () => {
       dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -154,10 +157,10 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
+    const dashboardButton = container.querySelector(
+      'button[aria-label="Back to Dashboard"]'
     );
-    expect(dashboardButton).toBeDefined();
+    expect(dashboardButton).not.toBeNull();
 
     await act(async () => {
       dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -179,8 +182,10 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    expect(container.textContent).toContain('Editor');
-    expect(container.textContent).toContain('library-open / UPID Project');
+    expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-document-identity]')?.textContent).toContain(
+      'library-open'
+    );
     expect(manifest.projects[0].path).toContain('projects/library-open-');
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-row]')?.textContent).toContain(
@@ -205,10 +210,10 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
+    const dashboardButton = container.querySelector(
+      'button[aria-label="Back to Dashboard"]'
     );
-    expect(dashboardButton).toBeDefined();
+    expect(dashboardButton).not.toBeNull();
 
     await act(async () => {
       dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -278,7 +283,9 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    expect(container.textContent).toContain('Renamed Library Job / UPID Project');
+    expect(container.querySelector('[data-editor-document-identity]')?.textContent).toContain(
+      'Renamed Library Job'
+    );
   });
 
   it('hard-deletes a persisted project and clears the latest import view', async () => {
@@ -297,10 +304,10 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
+    const dashboardButton = container.querySelector(
+      'button[aria-label="Back to Dashboard"]'
     );
-    expect(dashboardButton).toBeDefined();
+    expect(dashboardButton).not.toBeNull();
 
     await act(async () => {
       dashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -482,8 +489,8 @@ describe('App DXF imports and project library', () => {
     expect(storedProject.upid?.format).toBe('upid');
     expect(storedProject.pathPlanning).toBeUndefined();
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
+    const dashboardButton = container.querySelector(
+      'button[aria-label="Back to Dashboard"]'
     );
 
     await act(async () => {
@@ -535,8 +542,8 @@ describe('App DXF imports and project library', () => {
     );
     expect(project.editor.activeFilePath).toBeNull();
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
+    const dashboardButton = container.querySelector(
+      'button[aria-label="Back to Dashboard"]'
     );
 
     await act(async () => {
@@ -1388,8 +1395,8 @@ describe('App DXF imports and project library', () => {
       savedProject.upid.document.plan.operations.map((operation: { contourId: string }) => operation.contourId)
     ).toEqual(['contour_0001', 'contour_0002']);
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
+    const dashboardButton = container.querySelector(
+      'button[aria-label="Back to Dashboard"]'
     );
 
     await act(async () => {
@@ -1553,8 +1560,8 @@ describe('App DXF imports and project library', () => {
     expect(savedProject.upid.document.plan.operations[0].classification).toBe('hole');
     expect(savedProject.pathPlanning).toBeUndefined();
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
+    const dashboardButton = container.querySelector(
+      'button[aria-label="Back to Dashboard"]'
     );
 
     await act(async () => {
@@ -1637,8 +1644,8 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
+    const dashboardButton = container.querySelector(
+      'button[aria-label="Back to Dashboard"]'
     );
 
     await act(async () => {
@@ -3364,8 +3371,8 @@ describe('App DXF imports and project library', () => {
       closePreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    const dashboardButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Dashboard')
+    const dashboardButton = container.querySelector(
+      'button[aria-label="Back to Dashboard"]'
     );
 
     await act(async () => {

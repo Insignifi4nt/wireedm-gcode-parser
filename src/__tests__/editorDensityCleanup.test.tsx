@@ -48,7 +48,9 @@ describe('Editor density cleanup', () => {
     await importSimplePathProject();
 
     const header = container.querySelector('[data-editor-context="path-project"]');
-    expect(header?.querySelector('[data-editor-document-identity]')).not.toBeNull();
+    const documentIdentity = header?.querySelector('[data-editor-document-identity]');
+    expect(documentIdentity).not.toBeNull();
+    expect(documentIdentity?.textContent).not.toContain('/ UPID Project');
     expect(header?.querySelector('button[aria-label="Import Program"]')).toBeNull();
     expect(header?.querySelector('input[aria-label="G-code program file"]')).toBeNull();
     expect(header?.textContent).toContain('Undo');
@@ -78,5 +80,24 @@ describe('Editor density cleanup', () => {
     expect(helpTooltip?.textContent).toContain('cross-highlight the canvas');
     expect(helpTooltip?.textContent).toContain('whole cut loop');
     expect(helpTooltip?.textContent).toContain('Endpoint Topology');
+  });
+
+  it('lets each workspace panel own scrolling for its primary row collection', async () => {
+    await importSimplePathProject();
+
+    const cutSequence = document.querySelector('[data-upid-cut-sequence-list]');
+    expect(cutSequence).not.toBeNull();
+    expect(cutSequence?.matches('[data-upid-cut-sequence]')).toBe(true);
+    expect(cutSequence?.className).not.toMatch(/max-h-|overflow-auto/);
+
+    for (const selector of [
+      '[data-upid-contour-tree]',
+      '[data-upid-endpoint-topology-list]',
+      '[data-upid-diagnostics-list]'
+    ]) {
+      const primaryList = document.querySelector(selector);
+      expect(primaryList).not.toBeNull();
+      expect(primaryList?.className).not.toMatch(/max-h-|overflow-auto/);
+    }
   });
 });

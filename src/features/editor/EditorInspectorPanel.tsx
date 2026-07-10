@@ -1030,7 +1030,10 @@ export function EditorInspectorPanel({
           </Button>
         </div>
         {measurementPoints.length > 0 && (
-          <div className="mt-2 max-h-24 overflow-auto border border-border bg-background/50">
+          <div
+            className="mt-2 border border-border bg-background/50"
+            data-measurement-point-list
+          >
             {measurementPoints.map((point, index) => (
               <div
                 className="grid grid-cols-[30px_1fr_1fr_36px_22px] items-center gap-1.5 border-b border-border px-1.5 py-1 last:border-b-0"

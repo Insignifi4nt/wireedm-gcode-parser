@@ -81,6 +81,9 @@ describe('Editor measurement points', () => {
     expect(container.textContent).toContain('P1');
     expect(container.textContent).toContain('12.500');
     expect(container.textContent).toContain('P2');
+    const measurementPointList = document.querySelector('[data-measurement-point-list]');
+    expect(measurementPointList).not.toBeNull();
+    expect(measurementPointList?.className).not.toMatch(/max-h-|overflow-auto/);
 
     const insertAfterRow = container.querySelector('[data-editor-line="2"]') as HTMLButtonElement | null;
     await act(async () => {
