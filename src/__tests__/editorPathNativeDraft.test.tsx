@@ -32,6 +32,116 @@ describe('EditorPage UPID draft boundary', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it('identifies a loaded UPID draft as a path project with persistent primary commands', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
+    expect(container.textContent).toContain('Path Project');
+    expect(container.querySelector('button[aria-label="Save active document"]')).not.toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Open Path Project export preview"]')
+    ).not.toBeNull();
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain('Saved');
+  });
+
+  it('keeps technical path status visible without opening an inspector panel', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const status = container.querySelector('[data-editor-status-bar]');
+    expect(status?.textContent).toContain('Selection None');
+    expect(status?.textContent).toContain('Cursor X — Y —');
+    expect(status?.textContent).toContain('Moves 5');
+    expect(status?.textContent).toContain('Operations 1');
+    expect(status?.textContent).toContain('Contours 1');
+    expect(status?.textContent).toContain('Segments 4');
+    expect(status?.textContent).toContain('Diagnostics 0');
+    expect(status?.textContent).toContain('Machine Default Wire EDM');
+    expect(status?.textContent).toContain('Fit Unchecked');
+  });
+
+  it('guards Back only after the active path draft is modified', async () => {
+    const onBackToDashboard = vi.fn();
+    const confirmDiscard = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onBackToDashboard={onBackToDashboard}
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('button[aria-label="Back to Dashboard"]');
+    expect(confirmDiscard).not.toHaveBeenCalled();
+    expect(onBackToDashboard).toHaveBeenCalledOnce();
+    onBackToDashboard.mockClear();
+
+    await clickElement('[data-upid-cut-sequence-select]');
+    await clickElement('button[aria-label="Reverse path operation"]');
+    await clickElement('button[aria-label="Back to Dashboard"]');
+
+    expect(confirmDiscard).toHaveBeenCalledWith('Discard unsaved changes?');
+    expect(onBackToDashboard).not.toHaveBeenCalled();
+
+    confirmDiscard.mockReturnValue(true);
+    await clickElement('button[aria-label="Back to Dashboard"]');
+    expect(onBackToDashboard).toHaveBeenCalledOnce();
+  });
+
+  it('guards beforeunload only while the active path draft is modified', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const cleanEvent = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(cleanEvent);
+    expect(cleanEvent.defaultPrevented).toBe(false);
+
+    await clickElement('[data-upid-cut-sequence-select]');
+    await clickElement('button[aria-label="Reverse path operation"]');
+    const modifiedEvent = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(modifiedEvent);
+    expect(modifiedEvent.defaultPrevented).toBe(true);
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    const restoredEvent = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(restoredEvent);
+    expect(restoredEvent.defaultPrevented).toBe(false);
   });
 
   it('saves UPID path edits without materializing posted G-code as editor text', async () => {
@@ -932,9 +1042,11 @@ describe('EditorPage UPID draft boundary', () => {
 });
 
 function EditorPageHarness({
+  onBackToDashboard = noop,
   onSaveEditorDraft,
   project
 }: {
+  onBackToDashboard?: () => void;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void;
   project: WorkbenchProject;
 }) {
@@ -948,7 +1060,7 @@ function EditorPageHarness({
       <EditorPage
         importErrorMessage={null}
         importStatus="idle"
-        onBackToDashboard={noop}
+        onBackToDashboard={onBackToDashboard}
         onDownloadEditorFile={noop}
         onImportProgramFile={noop}
         onSaveEditorDraft={onSaveEditorDraft}

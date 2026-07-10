@@ -103,6 +103,19 @@ describe('App front-end redesign', () => {
     });
     await flushAsync();
 
+    expect(container.querySelector('[data-editor-context="machine-program"]')).not.toBeNull();
+    expect(container.textContent).toContain('Machine Program');
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
+      'Program Lines'
+    );
+    const normalizedIsoExport = container.querySelector(
+      'button[aria-label="Export normalized ISO"]'
+    );
+    expect(normalizedIsoExport).not.toBeNull();
+    expect(normalizedIsoExport?.textContent).toContain('Export normalized ISO');
+    expect(
+      container.querySelector('button[aria-label="Open Path Project export preview"]')
+    ).toBeNull();
     expect(container.querySelector('[data-app-header] h2')?.textContent).toMatch(/sample.*\.iso/);
     expect(container.querySelector('[data-editor-canvas-model="gcode"]')).not.toBeNull();
 

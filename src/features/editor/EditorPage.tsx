@@ -76,7 +76,7 @@ import {
 
 import { EditorCanvasPanel } from './EditorCanvasPanel';
 import { EditorGuideDialog } from './EditorGuideDialog';
-import { EditorHeaderBar } from './EditorHeaderBar';
+import { EditorHeaderBar, type EditorDocumentContext } from './EditorHeaderBar';
 import { EditorInspectorPanel } from './EditorInspectorPanel';
 import {
   EditorPathNavigatorPanel,
@@ -85,6 +85,7 @@ import {
 } from './EditorPathNavigatorPanel';
 import { EditorProgramLinesPanel } from './EditorProgramLinesPanel';
 import { EditorProgramTextPanel } from './EditorProgramTextPanel';
+import { EditorStatusBar } from './EditorStatusBar';
 import { EditorUpidExportPreview } from './EditorUpidExportPreview';
 import {
   EditorPanelDockZone,
@@ -638,6 +639,12 @@ export function EditorPage({
       ? `${program.project?.name ?? 'Path Project'} / UPID Project`
       : program?.filePath;
   const editorHeaderTooltip = program?.model === 'upid-document' ? program.filePath : undefined;
+  const documentContext: EditorDocumentContext =
+    program?.model === 'upid-document'
+      ? 'path-project'
+      : program?.model === 'gcode-text'
+        ? 'machine-program'
+        : 'empty-program';
   const editorFileName =
     program?.model === 'upid-document'
       ? 'UPID Project'
@@ -676,6 +683,16 @@ export function EditorPage({
   const lineRows = useMemo(() => (structure ? flattenStructureLines(structure) : []), [structure]);
   const bodyGroups = structure?.body.contours ?? [];
   const isPathProject = Boolean(pathDocumentDraft);
+  const editorSelectionSummary = selectedPathElement?.segmentId
+    ? `Segment ${selectedPathElement.segmentId}`
+    : selectedPathOperationId
+      ? `Operation ${selectedPathOperationId}`
+      : selectedLines.length > 0
+        ? `${selectedLines.length} ${selectedLines.length === 1 ? 'line' : 'lines'}`
+        : 'None';
+  const diagnosticCount = pathDocumentDraft
+    ? pathDocumentDraft.diagnostics.length
+    : (draftParseResult?.errors.length ?? 0) + (draftParseResult?.warnings.length ?? 0);
   const editorPanelToolbar = useMemo(
     () => (
       <EditorPanelToolbar
@@ -717,17 +734,39 @@ export function EditorPage({
   const editorHeaderContent = useMemo(
     () => (
       <EditorHeaderBar
+        documentContext={documentContext}
         eyebrow={editorHeaderEyebrow}
+        exportLabel={
+          isPathProject
+            ? 'Open Path Project export preview'
+            : documentContext === 'machine-program'
+              ? 'Export normalized ISO'
+              : null
+        }
         filePath={program?.filePath}
         guideHighlightTarget={guideHighlightTarget}
+        hasUnsavedChanges={hasUnsavedChanges}
         importErrorMessage={importErrorMessage}
         isImporting={isImporting}
-        onBackToDashboard={onBackToDashboard}
-        onImportProgramFile={onImportProgramFile}
+        isSaving={isSaving}
+        onBackToDashboard={handleBackToDashboard}
+        onExport={
+          isPathProject
+            ? () => setExportPreviewOpen(true)
+            : documentContext === 'machine-program'
+              ? handleExportNormalizedISO
+              : null
+        }
+        onImportProgramFile={handleImportProgramFile}
         onOpenGuide={() => setGuideOpen(true)}
+        onRedo={handleRedoDraft}
+        onSave={handleSaveClick}
+        onUndo={handleUndoDraft}
+        redoAvailable={redoStack.length > 0}
         saveErrorMessage={saveErrorMessage}
         title={editorHeaderTitle}
         titleTooltip={editorHeaderTooltip}
+        undoAvailable={undoStack.length > 0}
         workspaceControls={editorPanelToolbar}
       />
     ),
@@ -736,13 +775,21 @@ export function EditorPage({
       editorHeaderEyebrow,
       editorHeaderTitle,
       editorHeaderTooltip,
+      documentContext,
+      draftSignature,
       guideHighlightTarget,
+      hasUnsavedChanges,
       importErrorMessage,
       isImporting,
+      isPathProject,
+      isSaving,
       onBackToDashboard,
       onImportProgramFile,
+      pathDocumentDraft,
       program?.filePath,
-      saveErrorMessage
+      redoStack,
+      saveErrorMessage,
+      undoStack
     ]
   );
 
@@ -757,7 +804,7 @@ export function EditorPage({
     setRedoStack([]);
     setUndoStack([]);
     clearTransientLineState();
-  }, [program?.filePath]);
+  }, [program?.filePath, savedDraftSignature]);
 
   useEffect(() => {
     setRailContent(editorRailContent);
@@ -768,6 +815,18 @@ export function EditorPage({
     setHeaderContent(editorHeaderContent);
     return () => setHeaderContent(null);
   }, [editorHeaderContent, setHeaderContent]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     if (pathDocumentDraft) setRailCollapsed(true);
@@ -842,12 +901,26 @@ export function EditorPage({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [draftText, isSaving, measurementPoints.length, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
 
+  function handleBackToDashboard() {
+    if (!confirmDiscardUnsavedChanges()) return;
+    onBackToDashboard();
+  }
+
+  async function handleImportProgramFile(file: File) {
+    if (!confirmDiscardUnsavedChanges()) return;
+    await onImportProgramFile(file);
+  }
+
+  function confirmDiscardUnsavedChanges() {
+    return !hasUnsavedChanges || window.confirm('Discard unsaved changes?');
+  }
+
   async function handleEditorDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     const file = event.dataTransfer.files?.[0];
     if (!file || isImporting) return;
 
-    await onImportProgramFile(file);
+    await handleImportProgramFile(file);
   }
 
   function handleInspectorRailResizeStart(event: PointerEvent<HTMLDivElement>) {
@@ -2120,6 +2193,21 @@ export function EditorPage({
           </>
         )}
       </section>
+      <EditorStatusBar
+        contourCount={pathDocumentDraft?.contours.length ?? null}
+        documentContext={documentContext}
+        diagnosticCount={diagnosticCount}
+        hasUnsavedChanges={hasUnsavedChanges}
+        isSaving={isSaving}
+        machineFitStatus={machineFit?.status ?? null}
+        machineProfileName={program?.project?.machine.name ?? null}
+        moveCount={pathCount}
+        operationCount={pathDocumentDraft?.plan.operations.length ?? null}
+        programLineCount={draftParseResult?.stats.totalLines ?? null}
+        previewCursorPoint={previewCursorPoint}
+        segmentCount={pathDocumentDraft?.segments.length ?? null}
+        selectionSummary={editorSelectionSummary}
+      />
       {exportPreviewOpen && upidExport && (
         <EditorUpidExportPreview
           fileName={upidExport.fileName}
