@@ -7,6 +7,7 @@ import {
   FlipHorizontal,
   FlipVertical,
   Flag,
+  Info,
   Magnet,
   MousePointer2,
   Move,
@@ -1437,99 +1438,51 @@ export function EditorPathNavigatorPanel({
 
         {renderWorkspacePanel('contour-tree', 'Contour Tree', (
         <section className="min-h-0 overflow-auto" data-upid-contour-tree>
-          <div
-            className="mb-2 border border-border bg-background/45 p-2"
-            data-upid-contour-tree-map
-            title="Tree map: Contour rows contain Segment rows, and each Segment exposes start/end Endpoint handles. Endpoint Join Map explains how those handles connect."
-          >
-            <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[10px] uppercase text-muted-foreground">Tree Map</span>
-              <button
-                aria-label="Open Endpoint Join Map from Contour Tree"
-                className={textButtonClass}
-                disabled={!onOpenWorkspacePanel}
-                onClick={() => onOpenWorkspacePanel?.('endpoint-topology')}
-                type="button"
-              >
-                Endpoint Join Map
-              </button>
-            </div>
-            <div className="grid grid-cols-2 items-stretch gap-1 text-[10px] uppercase text-muted-foreground">
-              <span
-                className="border border-sky-400/35 bg-sky-400/10 px-1.5 py-1 text-sky-100"
-                data-upid-contour-tree-map-step="contour"
-              >
-                Contour
+          <div className="mb-2 flex items-center gap-1" data-upid-path-tree-controls>
+            <div className="mr-auto flex items-center gap-1">
+              <span className="text-[10px] text-muted-foreground">
+                {projectRail.summary.rootCount} roots
               </span>
-              <span className="hidden" aria-hidden="true">&gt;</span>
-              <span
-                className="border border-cyan-400/35 bg-cyan-400/10 px-1.5 py-1 text-cyan-100"
-                data-upid-contour-tree-map-step="segment"
-              >
-                Segment
-              </span>
-              <span className="hidden" aria-hidden="true">&gt;</span>
-              <span
-                className="border border-violet-400/35 bg-violet-400/10 px-1.5 py-1 text-violet-100"
-                data-upid-contour-tree-map-step="endpoint"
-              >
-                Endpoint
-              </span>
-              <span className="hidden" aria-hidden="true">&gt;</span>
-              <span
-                className="border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-1 text-emerald-100"
-                data-upid-contour-tree-map-step="topology"
-              >
-                Endpoint Join Map
-              </span>
+              <div className="group relative">
+                <button
+                  aria-describedby="contour-tree-help-tooltip"
+                  aria-label="Contour Tree help"
+                  className="flex size-7 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                  title="Contour Tree help"
+                  type="button"
+                >
+                  <Info aria-hidden="true" className="size-3.5" />
+                </button>
+                <div
+                  className="pointer-events-none invisible absolute left-0 top-7 z-30 w-64 border border-border bg-card p-2 text-[10px] normal-case leading-4 text-foreground opacity-0 shadow-xl transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+                  data-upid-contour-tree-tooltip
+                  id="contour-tree-help-tooltip"
+                  role="tooltip"
+                >
+                  Hover or select a row to cross-highlight the canvas. A contour is a whole cut loop
+                  made from ordered line or arc segments; each segment exposes start and end endpoint
+                  handles. Inspect joins in Endpoint Topology from Panels or Diagnostics.
+                </div>
+              </div>
             </div>
-          </div>
-          <p
-            className="mb-2 border border-border bg-background/35 px-2 py-1.5 text-[10px] leading-4 text-muted-foreground"
-            data-upid-contour-tree-help
-          >
-            Hover or select any row to cross-highlight the canvas. The tree is the editable hierarchy:
-            contours contain ordered segments, and each segment exposes start/end endpoint handles.
-          </p>
-          <div
-            className="mb-2 grid grid-cols-1 gap-1 text-[10px] uppercase text-muted-foreground"
-            data-upid-contour-tree-legend
-          >
-            <span className="border border-border bg-background/35 px-1 py-0.5" data-upid-contour-tree-legend="contour">
-              Contour: whole cut loop
-            </span>
-            <span className="border border-border bg-background/35 px-1 py-0.5" data-upid-contour-tree-legend="segment">
-              Segment: line or arc
-            </span>
-            <span className="border border-border bg-background/35 px-1 py-0.5" data-upid-contour-tree-legend="endpoint">
-              Endpoint: start/end handle
-            </span>
-          </div>
-          <div className="mb-2 grid gap-1" data-upid-path-tree-controls>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] uppercase text-muted-foreground">Contour Tree</span>
-              <span className="text-[10px] text-muted-foreground">{projectRail.summary.rootCount} roots</span>
-            </div>
-            <div className="grid grid-cols-2 gap-1">
-              <button
-                aria-label="Expand entire contour tree"
-                className={textButtonClass}
-                disabled={pathTreeElementIds.length === 0 || isSaving}
-                onClick={() => setPathTreeExpanded(true)}
-                type="button"
-              >
-                Expand All
-              </button>
-              <button
-                aria-label="Collapse entire contour tree"
-                className={textButtonClass}
-                disabled={pathTreeElementIds.length === 0 || isSaving}
-                onClick={() => setPathTreeExpanded(false)}
-                type="button"
-              >
-                Collapse All
-              </button>
-            </div>
+            <button
+              aria-label="Expand entire contour tree"
+              className={textButtonClass}
+              disabled={pathTreeElementIds.length === 0 || isSaving}
+              onClick={() => setPathTreeExpanded(true)}
+              type="button"
+            >
+              Expand All
+            </button>
+            <button
+              aria-label="Collapse entire contour tree"
+              className={textButtonClass}
+              disabled={pathTreeElementIds.length === 0 || isSaving}
+              onClick={() => setPathTreeExpanded(false)}
+              type="button"
+            >
+              Collapse All
+            </button>
           </div>
           {contourTree.map((node) =>
             renderContourTreeNode({

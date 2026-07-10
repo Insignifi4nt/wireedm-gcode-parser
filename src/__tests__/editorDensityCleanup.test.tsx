@@ -25,7 +25,7 @@ describe('Editor density cleanup', () => {
     cleanupAppTestContext(context);
   });
 
-  it('keeps primary panels directly accessible in a compact Path Project header', async () => {
+  async function importSimplePathProject() {
     window.showDirectoryPicker = undefined;
     await renderApp(context);
 
@@ -42,6 +42,10 @@ describe('Editor density cleanup', () => {
       input?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+  }
+
+  it('keeps primary panels directly accessible in a compact Path Project header', async () => {
+    await importSimplePathProject();
 
     const header = container.querySelector('[data-editor-context="path-project"]');
     expect(header?.querySelector('[data-editor-document-identity]')).not.toBeNull();
@@ -58,5 +62,21 @@ describe('Editor density cleanup', () => {
       expect(shortcut.textContent).toBe('');
       expect(shortcut.getAttribute('title')).toMatch(/^(Show|Hide) /);
     }
+  });
+
+  it('moves Contour Tree teaching content into one hover and focus explanation', async () => {
+    await importSimplePathProject();
+
+    expect(document.querySelector('[data-upid-contour-tree-map]')).toBeNull();
+    expect(document.querySelector('[data-upid-contour-tree-help]')).toBeNull();
+    expect(document.querySelector('[data-upid-contour-tree-legend]')).toBeNull();
+
+    const helpButton = document.querySelector('button[aria-label="Contour Tree help"]');
+    const helpTooltip = document.querySelector('[data-upid-contour-tree-tooltip]');
+    expect(helpButton).not.toBeNull();
+    expect(helpButton?.getAttribute('aria-describedby')).toBe(helpTooltip?.id);
+    expect(helpTooltip?.textContent).toContain('cross-highlight the canvas');
+    expect(helpTooltip?.textContent).toContain('whole cut loop');
+    expect(helpTooltip?.textContent).toContain('Endpoint Topology');
   });
 });
