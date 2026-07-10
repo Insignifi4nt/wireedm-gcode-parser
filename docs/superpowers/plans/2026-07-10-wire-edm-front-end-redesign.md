@@ -396,7 +396,7 @@ In the Transform panel, render:
   Move the active reference or selection center to X0 Y0, or enter a precise target.
 </p>
 <dd data-upid-transform-source-extents>{formatDrawingExtents(pathDocument.source.drawing?.extents)}</dd>
-<dd data-upid-transform-source-base>{formatPoint(pathDocument.source.drawing?.insertionBase)}</dd>
+<dd data-upid-transform-source-base>{formatPoint(pathDocument.source.drawing?.basePoint)}</dd>
 ```
 
 Use the existing source metadata only; do not transform or scale it.
