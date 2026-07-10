@@ -136,6 +136,52 @@ describe('EditorPanelToolbar', () => {
     }
   });
 
+  it('does not reopen after focus leaves while hover-open is pending', async () => {
+    vi.useFakeTimers();
+
+    try {
+      await act(async () => {
+        root.render(
+          <EditorPanelToolbar
+            groups={[
+              {
+                id: 'path',
+                title: 'Path',
+                panels: [
+                  {
+                    id: 'path-actions',
+                    title: 'Path Actions',
+                    placement: 'hidden',
+                    onHide: vi.fn(),
+                    onShow: vi.fn()
+                  }
+                ]
+              }
+            ]}
+          />
+        );
+      });
+
+      const details = container.querySelector('details') as HTMLDetailsElement | null;
+
+      await act(async () => {
+        details?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        details?.dispatchEvent(
+          new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body })
+        );
+      });
+      expect(details?.open).toBe(false);
+
+      await act(async () => {
+        vi.runAllTimers();
+      });
+
+      expect(details?.open).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not reopen after a panel selection while hover-open is pending', async () => {
     vi.useFakeTimers();
 

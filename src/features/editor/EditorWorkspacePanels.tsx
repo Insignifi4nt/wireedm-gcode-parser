@@ -94,6 +94,7 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
   function handleBlur(event: FocusEvent<HTMLElement>) {
     const nextFocus = event.relatedTarget;
     if (!nextFocus || !event.currentTarget.contains(nextFocus as Node)) {
+      clearHoverOpenTimer();
       setMenuOpen(false);
     }
   }
