@@ -119,6 +119,7 @@ git commit -m "feat: clarify workbench document entry points"
 - Delete: `src/features/dashboard/dashboardSettings.ts`
 - Modify: `src/__tests__/appWorkbenchDashboard.test.tsx`
 - Modify: `src/__tests__/appFrontEndRedesign.test.tsx`
+- Modify: `src/__tests__/appDxfProjects.test.tsx` (settings-relocation setup only)
 
 **Interfaces:**
 - Consumes: `ConnectedWorkbench`, `UpdateWorkbenchSettingsInput`, storage connection handler, settings status/error.
@@ -194,7 +195,7 @@ Expected: PASS; no TypeScript errors.
 - [ ] **Step 7: Commit the unified shell and settings**
 
 ```bash
-git add src/App.tsx src/app/AppShell.tsx src/app/WorkbenchSettingsDialog.tsx src/app/MachineOutputSettingsPanel.tsx src/app/workbenchSettings.ts src/features/dashboard/DashboardPage.tsx src/__tests__/appWorkbenchDashboard.test.tsx src/__tests__/appFrontEndRedesign.test.tsx
+git add src/App.tsx src/app/AppShell.tsx src/app/WorkbenchSettingsDialog.tsx src/app/MachineOutputSettingsPanel.tsx src/app/workbenchSettings.ts src/features/dashboard/DashboardPage.tsx src/__tests__/appWorkbenchDashboard.test.tsx src/__tests__/appFrontEndRedesign.test.tsx src/__tests__/appDxfProjects.test.tsx
 git rm src/features/dashboard/WorkbenchSettingsPanel.tsx src/features/dashboard/dashboardSettings.ts
 git commit -m "feat: unify workbench shell status and settings"
 ```
