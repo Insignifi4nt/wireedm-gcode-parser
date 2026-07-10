@@ -79,3 +79,4 @@ ChatGPT-Pro/
 /.claude/settings.local.json
 .playwright-cli/
 .superpowers/
+.worktrees/
