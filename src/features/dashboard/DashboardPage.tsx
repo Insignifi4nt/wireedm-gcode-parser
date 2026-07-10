@@ -8,6 +8,7 @@ import { DashboardHeader } from './DashboardHeader';
 import { LatestDxfImportPanel } from './LatestDxfImportPanel';
 import { ProjectActionDialog, type ProjectAction } from './ProjectActionDialog';
 import { ProjectListPanel } from './ProjectListPanel';
+import { StartWorkPanel } from './StartWorkPanel';
 import { WorkbenchSettingsPanel } from './WorkbenchSettingsPanel';
 
 interface DashboardPageProps {
@@ -15,6 +16,8 @@ interface DashboardPageProps {
   connectedWorkbench: ConnectedWorkbench | null;
   importStatus: 'idle' | 'importing' | 'error';
   importErrorMessage: string | null;
+  programImportStatus: 'idle' | 'importing' | 'error';
+  programImportErrorMessage: string | null;
   latestImport: ImportDxfProjectResult | null;
   settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
   settingsErrorMessage: string | null;
@@ -24,6 +27,7 @@ interface DashboardPageProps {
   onDeleteProject: (projectId: string) => Promise<void>;
   onRenameProject: (projectId: string, name: string) => Promise<void>;
   onImportDxfFile: (file: File) => void | Promise<void>;
+  onImportProgramFile: (file: File) => void | Promise<void>;
   onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
 }
 
@@ -32,6 +36,8 @@ export function DashboardPage({
   connectedWorkbench,
   importStatus,
   importErrorMessage,
+  programImportStatus,
+  programImportErrorMessage,
   latestImport,
   settingsStatus,
   settingsErrorMessage,
@@ -41,6 +47,7 @@ export function DashboardPage({
   onDeleteProject,
   onRenameProject,
   onImportDxfFile,
+  onImportProgramFile,
   onSaveWorkbenchSettings
 }: DashboardPageProps) {
   const projects = connectedWorkbench?.manifest.projects ?? [];
@@ -54,10 +61,6 @@ export function DashboardPage({
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)]">
       <DashboardHeader
         connectedWorkbench={connectedWorkbench}
-        importErrorMessage={importErrorMessage}
-        importStatus={importStatus}
-        onImportDxfFile={onImportDxfFile}
-        onOpenEditor={onOpenEditor}
         workbenchStatus={workbenchStatus}
       />
 
@@ -69,17 +72,41 @@ export function DashboardPage({
           projects={projects}
         />
 
-        <LatestDxfImportPanel
-          latestImport={latestImport}
-          onOpenLatestImportInEditor={onOpenLatestImportInEditor}
-        >
-          <WorkbenchSettingsPanel
-            connectedWorkbench={connectedWorkbench}
-            onSaveWorkbenchSettings={onSaveWorkbenchSettings}
-            settingsErrorMessage={settingsErrorMessage}
-            settingsStatus={settingsStatus}
+        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
+          <StartWorkPanel
+            connected={Boolean(connectedWorkbench)}
+            dxfErrorMessage={importErrorMessage}
+            dxfImporting={importStatus === 'importing'}
+            onImportDxfFile={onImportDxfFile}
+            onImportProgramFile={onImportProgramFile}
+            onOpenEditor={onOpenEditor}
+            programErrorMessage={programImportErrorMessage}
+            programImporting={programImportStatus === 'importing'}
           />
-        </LatestDxfImportPanel>
+
+          {latestImport ? (
+            <LatestDxfImportPanel
+              latestImport={latestImport}
+              onOpenLatestImportInEditor={onOpenLatestImportInEditor}
+            >
+              <WorkbenchSettingsPanel
+                connectedWorkbench={connectedWorkbench}
+                onSaveWorkbenchSettings={onSaveWorkbenchSettings}
+                settingsErrorMessage={settingsErrorMessage}
+                settingsStatus={settingsStatus}
+              />
+            </LatestDxfImportPanel>
+          ) : (
+            <div className="min-h-0 overflow-auto border border-border bg-card p-3">
+              <WorkbenchSettingsPanel
+                connectedWorkbench={connectedWorkbench}
+                onSaveWorkbenchSettings={onSaveWorkbenchSettings}
+                settingsErrorMessage={settingsErrorMessage}
+                settingsStatus={settingsStatus}
+              />
+            </div>
+          )}
+        </div>
       </section>
 
       <ProjectActionDialog

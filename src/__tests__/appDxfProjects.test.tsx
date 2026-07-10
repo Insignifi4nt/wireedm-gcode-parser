@@ -338,7 +338,7 @@ describe('App DXF imports and project library', () => {
     expect(window.localStorage.getItem(`wire-edm-workbench:file:${projectPath}`)).toBeNull();
     expect(window.localStorage.getItem(`wire-edm-workbench:file:imports/${projectId}.dxf`)).toBeNull();
     expect(container.textContent).toContain('No projects yet');
-    expect(container.textContent).toContain('Manifest');
+    expect(container.textContent).not.toContain('Manifest');
     expect(container.textContent).not.toContain('Open in Editor');
     expect(container.textContent).not.toContain('UPID on demand');
   });

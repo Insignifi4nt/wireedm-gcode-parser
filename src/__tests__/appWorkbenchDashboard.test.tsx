@@ -37,7 +37,7 @@ describe('App dashboard and workbench shell', () => {
     const text = container.textContent || '';
 
     expect(text).toContain('Browser cache');
-    expect(text).toContain('imports, exports, templates, machines, editor, projects');
+    expect(text).not.toContain('imports, exports, templates, machines, editor, projects');
     expect(text).toContain('Import DXF');
     expect(text).toContain('Browser cache active');
     expect(text).toContain('This browser does not support choosing a workbench folder.');
@@ -120,7 +120,7 @@ describe('App dashboard and workbench shell', () => {
     expect(text).not.toContain('flange-slot');
     expect(text).not.toContain('repair-job');
     expect(text).not.toContain('Verify');
-    expect(text).toContain('Export preview only');
+    expect(text).not.toContain('Export preview only');
     expect(text).not.toContain('Download Program');
   });
 
