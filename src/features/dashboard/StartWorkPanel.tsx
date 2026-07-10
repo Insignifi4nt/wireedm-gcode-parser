@@ -47,11 +47,11 @@ export function StartWorkPanel({
   }
 
   return (
-    <section className="border border-border bg-card" aria-label="Start work">
-      <div className="h-8 border-b border-border px-3 py-2">
-        <h3 className="font-mono text-xs font-semibold">Start Work</h3>
+    <section className="technical-panel" aria-label="Start work">
+      <div className="technical-panel-header">
+        <h3 className="text-xs font-semibold">Start Work</h3>
       </div>
-      <div className="grid gap-3 p-3 font-mono text-[11px]">
+      <div className="grid gap-3 p-3 text-[11px]">
         <input
           ref={dxfInputRef}
           accept=".dxf,application/dxf"
@@ -72,7 +72,7 @@ export function StartWorkPanel({
         />
 
         <div className="grid gap-1">
-          <span className="text-muted-foreground">DXF geometry</span>
+          <span className="technical-label">DXF geometry</span>
           <Button
             disabled={!connected || isImporting}
             onClick={() => dxfInputRef.current?.click()}
@@ -84,7 +84,7 @@ export function StartWorkPanel({
         </div>
 
         <div className="grid gap-1">
-          <span className="text-muted-foreground">Posted file: .gcode, .nc, .iso, .txt</span>
+          <span className="technical-label">Posted file: .gcode, .nc, .iso, .txt</span>
           <Button
             disabled={!connected || isImporting}
             onClick={() => programInputRef.current?.click()}
@@ -97,7 +97,7 @@ export function StartWorkPanel({
         </div>
 
         <div className="grid gap-1">
-          <span className="text-muted-foreground">Program workspace</span>
+          <span className="technical-label">Program workspace</span>
           <Button
             disabled={!connected || isImporting}
             onClick={onOpenEditor}

@@ -67,6 +67,8 @@ export function EditorHeaderBar({
 }: EditorHeaderBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const heading = title ?? filePath ?? 'Import or open a G-code program';
+  const visibleExportLabel =
+    exportLabel === 'Open Path Project export preview' ? 'Export Preview' : exportLabel;
 
   async function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
@@ -79,7 +81,7 @@ export function EditorHeaderBar({
 
   return (
     <div
-      className="mr-3 flex min-w-0 flex-1 items-center gap-2"
+      className="mr-2 flex min-w-0 flex-1 items-center gap-1.5"
       data-editor-context={documentContext}
     >
       <Button
@@ -87,20 +89,21 @@ export function EditorHeaderBar({
         className="h-7 shrink-0 px-2 text-[10px]"
         onClick={onBackToDashboard}
         size="sm"
+        title="Return to Workbench"
         variant="outline"
       >
         <ArrowLeft />
-        Workbench
+        <span data-editor-back-label>Workbench</span>
         <span className="sr-only"> Dashboard</span>
       </Button>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <p className="font-mono text-[9px] uppercase text-muted-foreground">{eyebrow}</p>
-          <span className="border border-border bg-background/60 px-1.5 py-0.5 font-mono text-[9px] uppercase text-muted-foreground">
+          <p className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">{eyebrow}</p>
+          <span className="rounded-[2px] border border-border bg-background/60 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.04em] text-muted-foreground">
             {DOCUMENT_CONTEXT_LABELS[documentContext]}
           </span>
         </div>
-        <h2 className="truncate font-mono text-[12px] font-semibold" title={titleTooltip ?? filePath}>
+        <h2 className="technical-value truncate text-[12px] font-semibold" title={titleTooltip ?? filePath}>
           {heading}
         </h2>
       </div>
@@ -109,47 +112,55 @@ export function EditorHeaderBar({
         <Button
           aria-label="Undo active document change"
           className="h-7 px-2 text-[10px]"
+          data-editor-header-command
           disabled={!undoAvailable || isSaving}
           onClick={onUndo}
           size="sm"
+          title="Undo"
           variant="outline"
         >
           <Undo2 />
-          Undo
+          <span data-editor-header-command-label>Undo</span>
         </Button>
         <Button
           aria-label="Redo active document change"
           className="h-7 px-2 text-[10px]"
+          data-editor-header-command
           disabled={!redoAvailable || isSaving}
           onClick={onRedo}
           size="sm"
+          title="Redo"
           variant="outline"
         >
           <Redo2 />
-          Redo
+          <span data-editor-header-command-label>Redo</span>
         </Button>
         <Button
           aria-label="Save active document"
           className="h-7 px-2 text-[10px]"
+          data-editor-header-command
           disabled={!hasUnsavedChanges || isSaving}
           onClick={onSave}
           size="sm"
+          title="Save"
           variant="outline"
         >
           <Save />
-          {isSaving ? 'Saving...' : 'Save'}
+          <span data-editor-header-command-label>{isSaving ? 'Saving...' : 'Save'}</span>
         </Button>
         {onExport && exportLabel && (
           <Button
             aria-label={exportLabel}
             className="h-7 px-2 text-[10px]"
+            data-editor-header-command
             disabled={!exportAvailable || isSaving}
             onClick={onExport}
             size="sm"
+            title={visibleExportLabel ?? exportLabel}
             variant="outline"
           >
             <FileOutput />
-            {exportLabel}
+            <span data-editor-header-command-label>{visibleExportLabel}</span>
           </Button>
         )}
         <input
@@ -163,27 +174,34 @@ export function EditorHeaderBar({
         />
         <Button
           {...guideTargetProps('import-program', guideHighlightTarget)}
+          aria-label={isImporting ? 'Importing program' : 'Import Program'}
           className={`h-7 px-2 text-[10px] ${guideHighlightClass(
             'import-program',
             guideHighlightTarget
           )}`}
+          data-editor-header-command
           disabled={isImporting}
           onClick={() => fileInputRef.current?.click()}
           size="sm"
+          title="Import Program"
           variant="default"
         >
           <FileUp />
-          {isImporting ? 'Importing...' : 'Import Program'}
+          <span data-editor-header-command-label>
+            {isImporting ? 'Importing...' : 'Import Program'}
+          </span>
         </Button>
         <Button
           aria-label="Open usage guide"
           className="h-7 px-2 text-[10px]"
+          data-editor-header-command
           onClick={onOpenGuide}
           size="sm"
+          title="Controls"
           variant="outline"
         >
           <CircleHelp />
-          Controls
+          <span data-editor-header-command-label>Controls</span>
         </Button>
       </div>
       {(importErrorMessage || saveErrorMessage) && (

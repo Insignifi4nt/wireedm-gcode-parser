@@ -14,15 +14,15 @@ export function LatestDxfImportPanel({
   const allWarnings = [...latestImport.parseResult.warnings, ...pathMessages];
 
   return (
-    <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-border bg-card">
-      <div className="h-8 border-b border-border px-3 py-2">
-        <h3 className="font-mono text-xs font-semibold">Latest DXF Import</h3>
+    <div className="technical-panel grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+      <div className="technical-panel-header">
+        <h3 className="text-xs font-semibold">Latest DXF Import</h3>
       </div>
-      <div className="min-h-0 overflow-auto p-3 font-mono text-[11px]">
+      <div className="work-region-scrollbar min-h-0 overflow-auto p-3 text-[11px]">
         <div className="space-y-3">
           <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2">
             <dt className="text-muted-foreground">Project</dt>
-            <dd className="truncate">{latestImport.project.name}</dd>
+            <dd className="truncate" title={latestImport.project.name}>{latestImport.project.name}</dd>
             <dt className="text-muted-foreground">Entities</dt>
             <dd>{latestImport.entityCount}</dd>
             <dt className="text-muted-foreground">Warnings</dt>

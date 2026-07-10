@@ -177,7 +177,7 @@ export function EditorInspectorPanel({
 
   return (
     <div
-      className={`${fullHeight ? 'h-full min-h-0' : 'max-h-[42vh] border-t border-border'} overflow-y-auto p-2`}
+      className={`work-region-scrollbar ${fullHeight ? 'h-full min-h-0' : 'max-h-[42vh] border-t border-border'} overflow-y-auto p-2 text-[10px]`}
       data-editor-inspector-summary
     >
       {renderWorkspacePanel('position', 'Position', (

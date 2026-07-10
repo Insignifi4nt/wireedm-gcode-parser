@@ -1,4 +1,4 @@
-import { useState, type PointerEvent, type ReactNode } from 'react';
+import { useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import {
   Database,
   HardDrive,
@@ -102,16 +102,16 @@ export function AppShell({
 
   return (
     <div
-      className="flex h-screen flex-col overflow-hidden bg-background text-foreground"
+      className="technical-workbench flex h-screen flex-col overflow-hidden bg-background text-foreground"
       data-app-shell
       data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'}
     >
       <header
-        className="flex h-9 shrink-0 items-center border-b border-border bg-[#11171b]/95 px-2"
+        className="flex h-10 shrink-0 items-center border-b border-border bg-[#11171b] px-2"
         data-app-header
       >
         {headerContent ?? (
-          <div className="mr-4 flex min-w-0 items-center gap-2 font-mono text-xs font-semibold text-foreground">
+          <div className="mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground">
             <HardDrive className="size-4 text-primary" />
             <span className="truncate">Wire EDM Workbench</span>
           </div>
@@ -120,16 +120,17 @@ export function AppShell({
           <StatusNotificationMenu notifications={statusNotifications} />
           <span
             aria-label={storageStatusLabel}
-            className={`inline-flex h-7 items-center gap-2 border px-2 font-mono text-[10px] ${
+            className={`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${
               isTemporaryStorage
                 ? 'border-amber-500/50 bg-amber-500/10 text-amber-100'
                 : storageActionLabel || (!connectedWorkbench && !isConnectingStorage)
                   ? 'border-destructive/60 bg-destructive/10 text-destructive'
                   : 'border-border bg-background/60 text-muted-foreground'
             }`}
+            title={storageStatusLabel}
           >
             <Database className="size-3.5" />
-            {storageStatusLabel}
+            <span data-storage-status-label>{storageStatusLabel}</span>
           </span>
           <Button
             aria-label="Open settings"
@@ -146,13 +147,15 @@ export function AppShell({
 
       <div
         className="grid min-h-0 flex-1 transition-[grid-template-columns]"
-        style={{
-          gridTemplateColumns: !hasRailContent
-            ? 'minmax(0, 1fr)'
-            : sidebarCollapsed
-              ? '42px minmax(0, 1fr)'
-              : `${sidebarWidth}px 4px minmax(0, 1fr)`
-        }}
+        data-app-workspace-grid
+        data-has-rail={hasRailContent ? 'true' : 'false'}
+        data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'}
+        style={
+          {
+            '--app-rail-width': `${sidebarWidth}px`,
+            gridTemplateColumns: hasRailContent ? undefined : 'minmax(0, 1fr)'
+          } as CSSProperties
+        }
       >
         {railContent && (
           <aside
@@ -167,7 +170,7 @@ export function AppShell({
               <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-1">
                 <button
                   aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}
-                  className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+                  className="flex size-7 items-center justify-center rounded-[2px] border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   onClick={() => setSidebarCollapsed((current) => !current)}
                   title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                   type="button"
@@ -201,12 +204,17 @@ export function AppShell({
       </div>
       <footer
         aria-label="Application status"
-        className="flex h-7 shrink-0 items-center gap-3 overflow-hidden border-t border-border bg-[#11171b]/95 px-3 font-mono text-[10px] text-muted-foreground"
+        className="technical-value flex h-6 shrink-0 items-center gap-3 overflow-hidden border-t border-border bg-[#11171b] px-3 text-[10px] text-muted-foreground"
         data-app-status-bar
       >
-        <span className="truncate text-foreground">{activeStorageLabel}</span>
+        <span className="truncate text-foreground" title={activeStorageLabel}>
+          {activeStorageLabel}
+        </span>
         <span aria-hidden="true">•</span>
-        <span className="truncate">
+        <span
+          className="truncate"
+          title={connectedWorkbench?.activeMachineProfile.name ?? 'No machine profile'}
+        >
           {connectedWorkbench?.activeMachineProfile.name ?? 'No machine profile'}
         </span>
         <span aria-hidden="true">•</span>

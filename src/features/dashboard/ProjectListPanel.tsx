@@ -32,29 +32,29 @@ export function ProjectListPanel({
   return (
     <section
       aria-labelledby="project-library-title"
-      className="min-h-0 border border-border bg-card"
+      className="technical-panel min-h-[260px] min-[1180px]:min-h-[420px]"
       data-project-library
     >
-      <div className="flex h-8 items-center justify-between border-b border-border px-3">
-        <h2 className="font-mono text-xs font-semibold" id="project-library-title">
+      <div className="technical-panel-header justify-between">
+        <h2 className="text-xs font-semibold" id="project-library-title">
           Project Library
         </h2>
-        <span className="font-mono text-[10px] text-muted-foreground">{projectCountLabel}</span>
+        <span className="technical-value text-[10px] text-muted-foreground">{projectCountLabel}</span>
       </div>
-      <div className="p-3 font-mono text-[11px]">
+      <div className="p-3 text-[11px]">
         {projects.length > 0 ? (
           <div className="grid gap-2">
             <div className="grid grid-cols-[minmax(0,1fr)_150px_150px] gap-2">
               <input
                 aria-label="Search projects"
-                className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+                className="technical-input px-2 text-[11px] outline-none"
                 onChange={(event) => setSearchText(event.currentTarget.value)}
                 placeholder="Search projects"
                 value={searchText}
               />
               <select
                 aria-label="Project source filter"
-                className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+                className="technical-input px-2 text-[11px] outline-none"
                 onChange={(event) =>
                   setSourceFilter(event.currentTarget.value as ProjectSourceFilter)
                 }
@@ -66,7 +66,7 @@ export function ProjectListPanel({
               </select>
               <select
                 aria-label="Project sort"
-                className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+                className="technical-input px-2 text-[11px] outline-none"
                 onChange={(event) => setSortMode(event.currentTarget.value as ProjectSortMode)}
                 value={sortMode}
               >
@@ -87,15 +87,15 @@ export function ProjectListPanel({
                     key={project.id}
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-foreground">{project.name}</p>
-                      <p className="mt-1 truncate text-[10px] text-muted-foreground">
+                      <p className="truncate text-foreground" title={project.name}>{project.name}</p>
+                      <p className="technical-value mt-1 truncate text-[10px] text-muted-foreground" title={project.path}>
                         {project.path}
                       </p>
                     </div>
                     <span className="text-muted-foreground">
                       {getProjectSourceLabel(project.sourceKind)}
                     </span>
-                    <span className="truncate text-muted-foreground">{project.updatedAt}</span>
+                    <span className="technical-value truncate text-muted-foreground" title={project.updatedAt}>{project.updatedAt}</span>
                     <div className="flex items-center gap-1">
                       <Button
                         aria-label={`Open project ${project.id} in editor`}

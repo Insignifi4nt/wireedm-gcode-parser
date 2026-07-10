@@ -2117,7 +2117,7 @@ export function EditorPage({
 
   return (
     <div
-      className="relative flex h-full min-h-0 flex-col overflow-hidden"
+      className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background"
       data-editor-drop-zone="true"
       data-editor-layout="canvas-first"
       onDragOver={handleEditorDragOver}
@@ -2136,11 +2136,9 @@ export function EditorPage({
         {isPathProject && renderInspectorPanelContent()}
       </div>
       <section
-        className={`grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)] gap-y-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)] ${
-          inspectorRailCollapsed
-            ? 'lg:grid-cols-[minmax(0,1fr)_42px]'
-            : 'lg:grid-cols-[minmax(0,1fr)_4px_var(--editor-inspector-width)]'
-        }`}
+        className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)] gap-y-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)]"
+        data-editor-main-grid
+        data-inspector-collapsed={inspectorRailCollapsed ? 'true' : 'false'}
         style={{ '--editor-inspector-width': `${inspectorRailWidth}px` } as CSSProperties}
       >
         <EditorCanvasPanel
@@ -2212,7 +2210,7 @@ export function EditorPage({
               role="separator"
             />
             <aside
-              className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/95 font-mono text-[10px]"
+              className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/95 text-[10px]"
               data-editor-inspector-panel
               data-editor-inspector-rail
             >

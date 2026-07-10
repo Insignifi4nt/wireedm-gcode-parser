@@ -43,7 +43,7 @@ export function EditorStatusBar({
 
   return (
     <footer
-      className="flex h-6 shrink-0 items-center gap-3 overflow-x-auto whitespace-nowrap border-t border-border bg-card/95 px-2 font-mono text-[9px] text-muted-foreground"
+      className="technical-value work-region-scrollbar flex h-6 shrink-0 items-center gap-3 overflow-x-auto whitespace-nowrap border-t border-border bg-card/95 px-2 text-[10px] text-muted-foreground"
       data-editor-status-bar
     >
       <span>{DOCUMENT_CONTEXT_LABELS[documentContext]}</span>

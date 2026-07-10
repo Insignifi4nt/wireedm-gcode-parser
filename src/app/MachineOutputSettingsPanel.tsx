@@ -64,12 +64,12 @@ export function MachineOutputSettingsPanel({
           {isSavingSettings ? 'Saving...' : 'Save Settings'}
         </Button>
       </div>
-      <div className="grid gap-2 font-mono text-[11px]">
+      <div className="grid gap-2 text-[11px]">
         <label className="grid gap-1 text-muted-foreground">
           Machine Profile
           <input
             aria-label="Machine profile name"
-            className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+            className="technical-input px-2 text-[11px] outline-none"
             disabled={isSavingSettings}
             onChange={(event) => updateSettingsDraft({ machineName: event.currentTarget.value })}
             value={activeSettingsDraft.machineName}
@@ -79,7 +79,7 @@ export function MachineOutputSettingsPanel({
           Header
           <textarea
             aria-label="Header template"
-            className="min-h-20 resize-y border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-foreground outline-none focus:border-ring"
+            className="technical-input technical-value min-h-20 resize-y p-2 text-[10px] leading-4 outline-none"
             disabled={isSavingSettings}
             onChange={(event) => updateSettingsDraft({ header: event.currentTarget.value })}
             spellCheck={false}
@@ -90,7 +90,7 @@ export function MachineOutputSettingsPanel({
           Footer
           <textarea
             aria-label="Footer template"
-            className="min-h-20 resize-y border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-foreground outline-none focus:border-ring"
+            className="technical-input technical-value min-h-20 resize-y p-2 text-[10px] leading-4 outline-none"
             disabled={isSavingSettings}
             onChange={(event) => updateSettingsDraft({ footer: event.currentTarget.value })}
             spellCheck={false}
@@ -102,7 +102,7 @@ export function MachineOutputSettingsPanel({
             Extension
             <select
               aria-label="Output extension"
-              className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+              className="technical-input technical-value px-2 text-[11px] outline-none"
               disabled={isSavingSettings}
               onChange={(event) =>
                 updateSettingsDraft({
@@ -121,7 +121,7 @@ export function MachineOutputSettingsPanel({
             Line Ending
             <select
               aria-label="Line ending"
-              className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+              className="technical-input technical-value px-2 text-[11px] outline-none"
               disabled={isSavingSettings}
               onChange={(event) =>
                 updateSettingsDraft({
@@ -140,7 +140,7 @@ export function MachineOutputSettingsPanel({
             Custom Extension
             <input
               aria-label="Custom output extension"
-              className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+              className="technical-input technical-value px-2 text-[11px] outline-none"
               disabled={isSavingSettings}
               onChange={(event) =>
                 updateSettingsDraft({ customExtension: event.currentTarget.value })
@@ -154,7 +154,7 @@ export function MachineOutputSettingsPanel({
             Max Width mm
             <input
               aria-label="Machine max width"
-              className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+              className="technical-input technical-value px-2 text-[11px] outline-none"
               disabled={isSavingSettings}
               inputMode="decimal"
               min="0"
@@ -171,7 +171,7 @@ export function MachineOutputSettingsPanel({
             Max Length mm
             <input
               aria-label="Machine max length"
-              className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
+              className="technical-input technical-value px-2 text-[11px] outline-none"
               disabled={isSavingSettings}
               inputMode="decimal"
               min="0"

@@ -74,7 +74,7 @@ export function WorkbenchSettingsDialog({
       <div
         aria-label="Workbench settings"
         aria-modal="true"
-        className="grid max-h-[86vh] w-full max-w-4xl grid-cols-[220px_minmax(0,1fr)] overflow-hidden border border-border bg-card shadow-2xl"
+        className="grid max-h-[86vh] w-full max-w-4xl grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1"
         onMouseDown={(event) => event.stopPropagation()}
         role="dialog"
       >
@@ -91,7 +91,7 @@ export function WorkbenchSettingsDialog({
             <button
               aria-current={activeSection === 'storage' ? 'page' : undefined}
               aria-label="Storage settings"
-              className={`flex h-9 items-center gap-2 border px-3 text-left font-mono text-[11px] outline-none transition ${
+              className={`flex h-8 items-center gap-2 rounded-[2px] border px-3 text-left text-[11px] outline-none transition ${
                 activeSection === 'storage'
                   ? 'border-primary/40 bg-accent text-foreground'
                   : 'border-transparent text-muted-foreground hover:border-border hover:bg-accent/50 hover:text-foreground'
@@ -105,7 +105,7 @@ export function WorkbenchSettingsDialog({
             <button
               aria-current={activeSection === 'machine-output' ? 'page' : undefined}
               aria-label="Machine & Output settings"
-              className={`flex h-9 items-center gap-2 border px-3 text-left font-mono text-[11px] outline-none transition ${
+              className={`flex h-8 items-center gap-2 rounded-[2px] border px-3 text-left text-[11px] outline-none transition ${
                 activeSection === 'machine-output'
                   ? 'border-primary/40 bg-accent text-foreground'
                   : 'border-transparent text-muted-foreground hover:border-border hover:bg-accent/50 hover:text-foreground'
@@ -121,17 +121,17 @@ export function WorkbenchSettingsDialog({
 
         <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
           <header className="border-b border-border p-4">
-            <h2 className="font-mono text-base font-semibold">
+            <h2 className="text-base font-semibold">
               {activeSection === 'storage' ? 'Storage' : 'Machine & Output'}
             </h2>
           </header>
 
-          <div className="min-h-0 overflow-auto p-4">
+          <div className="work-region-scrollbar min-h-0 overflow-auto p-4">
             {activeSection === 'storage' ? (
               <div className="grid gap-5">
                 <section>
-                  <h3 className="font-mono text-xs font-semibold">Connection</h3>
-                  <div className="mt-3 divide-y divide-border border-y border-border font-mono text-[11px]">
+                  <h3 className="text-xs font-semibold">Connection</h3>
+                  <div className="technical-value mt-3 divide-y divide-border border-y border-border text-[11px]">
                     <SettingsRow label="Status" value={statusLabel} />
                     <SettingsRow
                       label="Workbench"
@@ -172,8 +172,8 @@ export function WorkbenchSettingsDialog({
                 </section>
 
                 <section>
-                  <h3 className="font-mono text-xs font-semibold">Location</h3>
-                  <div className="mt-3 divide-y divide-border border-y border-border font-mono text-[11px]">
+                  <h3 className="text-xs font-semibold">Location</h3>
+                  <div className="technical-value mt-3 divide-y divide-border border-y border-border text-[11px]">
                     {locationRows.map((row) => (
                       <SettingsRow key={row.label} label={row.label} value={row.value} />
                     ))}
@@ -199,7 +199,7 @@ function SettingsRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid grid-cols-[150px_minmax(0,1fr)] gap-4 py-3">
       <div className="text-muted-foreground">{label}</div>
-      <div className="min-w-0 break-words text-foreground">{value}</div>
+      <div className="min-w-0 break-words text-foreground" title={value}>{value}</div>
     </div>
   );
 }

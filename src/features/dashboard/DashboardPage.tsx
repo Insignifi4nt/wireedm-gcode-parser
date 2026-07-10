@@ -59,7 +59,10 @@ export function DashboardPage({
         workbenchStatus={workbenchStatus}
       />
 
-      <section className="grid min-h-0 content-start gap-3 overflow-auto p-3 min-[1180px]:grid-cols-[minmax(0,1fr)_340px] min-[1180px]:items-start">
+      <section
+        className="work-region-scrollbar grid min-h-0 content-start gap-3 overflow-auto p-3 min-[1180px]:grid-cols-[minmax(0,1fr)_332px] min-[1180px]:items-start"
+        data-workbench-scroll-region
+      >
         <ProjectListPanel
           onDeleteProject={(project) => setProjectAction({ kind: 'delete', project })}
           onOpenProject={onOpenProject}

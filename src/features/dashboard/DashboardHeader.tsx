@@ -13,9 +13,9 @@ export function DashboardHeader({
   const storageLabel = getStorageLabel(connectedWorkbench, isPreparing);
 
   return (
-    <section className="border-b border-border bg-background/80 px-4 py-3">
-      <h1 className="font-mono text-base font-semibold">Workbench</h1>
-      <p className="mt-1 font-mono text-[10px] text-muted-foreground">{storageLabel}</p>
+    <section className="border-b border-border bg-card/45 px-4 py-3">
+      <h1 className="text-base font-semibold tracking-tight">Workbench</h1>
+      <p className="mt-1 text-[11px] text-muted-foreground">{storageLabel}</p>
     </section>
   );
 }

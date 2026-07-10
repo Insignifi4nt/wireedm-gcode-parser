@@ -80,13 +80,13 @@ import {
 export type EditorPathElementRef = UpidPathElementRef;
 
 const iconButtonClass =
-  'flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40';
+  'flex size-7 items-center justify-center rounded-[2px] border border-border text-muted-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
 const textButtonClass =
-  'flex h-6 items-center justify-center gap-1 border border-border px-1.5 text-[10px] text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40';
+  'flex h-7 items-center justify-center gap-1 rounded-[2px] border border-border px-1.5 text-[10px] text-muted-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
 const modeButtonClass =
-  'flex h-6 items-center justify-center gap-1 border border-border px-1 text-[10px] text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40';
+  'flex h-7 items-center justify-center gap-1 rounded-[2px] border border-border px-1 text-[10px] text-muted-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
 const activeModeButtonClass =
-  'flex h-6 items-center justify-center gap-1 border border-primary bg-primary px-1 text-[10px] text-primary-foreground outline-none transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40';
+  'flex h-7 items-center justify-center gap-1 rounded-[2px] border border-primary bg-primary px-1 text-[10px] text-primary-foreground outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
 const CONTOUR_ROLE_OPTIONS: ContourClassification[] = ['exterior', 'hole', 'island', 'ambiguous'];
 const ORDER_STRATEGY_OPTIONS: Array<{
   label: string;
@@ -430,10 +430,10 @@ export function EditorPathNavigatorPanel({
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col overflow-hidden p-2 font-mono text-[10px]"
+      className="flex h-full min-h-0 flex-col overflow-hidden p-2 text-[10px]"
       data-editor-project-rail
     >
-      <section className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto" data-upid-path-navigator>
+      <section className="work-region-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto" data-upid-path-navigator>
         {renderWorkspacePanel('path-summary', 'Path Summary', (
         <div>
           <p className="text-[9px] uppercase text-muted-foreground">Project Rail</p>
@@ -1454,28 +1454,28 @@ export function EditorPathNavigatorPanel({
                 Endpoint Join Map
               </button>
             </div>
-            <div className="grid grid-cols-[minmax(0,1fr)_14px_minmax(0,1fr)_14px_minmax(0,1fr)_14px_minmax(0,1fr)] items-center text-[8px] uppercase text-muted-foreground">
+            <div className="grid grid-cols-2 items-stretch gap-1 text-[10px] uppercase text-muted-foreground">
               <span
                 className="border border-sky-400/35 bg-sky-400/10 px-1.5 py-1 text-sky-100"
                 data-upid-contour-tree-map-step="contour"
               >
                 Contour
               </span>
-              <span className="text-center">&gt;</span>
+              <span className="hidden" aria-hidden="true">&gt;</span>
               <span
                 className="border border-cyan-400/35 bg-cyan-400/10 px-1.5 py-1 text-cyan-100"
                 data-upid-contour-tree-map-step="segment"
               >
                 Segment
               </span>
-              <span className="text-center">&gt;</span>
+              <span className="hidden" aria-hidden="true">&gt;</span>
               <span
                 className="border border-violet-400/35 bg-violet-400/10 px-1.5 py-1 text-violet-100"
                 data-upid-contour-tree-map-step="endpoint"
               >
                 Endpoint
               </span>
-              <span className="text-center">&gt;</span>
+              <span className="hidden" aria-hidden="true">&gt;</span>
               <span
                 className="border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-1 text-emerald-100"
                 data-upid-contour-tree-map-step="topology"
@@ -1492,7 +1492,7 @@ export function EditorPathNavigatorPanel({
             contours contain ordered segments, and each segment exposes start/end endpoint handles.
           </p>
           <div
-            className="mb-2 grid grid-cols-3 gap-1 text-[8px] uppercase text-muted-foreground"
+            className="mb-2 grid grid-cols-1 gap-1 text-[10px] uppercase text-muted-foreground"
             data-upid-contour-tree-legend
           >
             <span className="border border-border bg-background/35 px-1 py-0.5" data-upid-contour-tree-legend="contour">

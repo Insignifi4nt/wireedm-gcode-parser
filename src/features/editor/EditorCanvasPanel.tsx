@@ -66,7 +66,7 @@ export function EditorCanvasPanel({
 }: EditorCanvasPanelProps) {
   return (
     <section
-      className="flex min-h-0 min-w-0 flex-col overflow-hidden border border-border bg-[#0e1317]"
+      className="flex min-h-0 min-w-0 flex-col overflow-hidden border border-border bg-[#090d10] shadow-[0_8px_24px_rgba(0,0,0,0.18)]"
       data-editor-canvas-panel
       data-editor-canvas-model={pathDocument ? 'upid' : 'gcode'}
     >
@@ -104,7 +104,7 @@ export function EditorCanvasPanel({
       </div>
       {interactionHint && (
         <div
-          className="flex min-h-7 items-center border-t border-border bg-background/55 px-2 font-mono text-[10px] text-muted-foreground"
+          className="flex min-h-7 items-center border-t border-border bg-background/80 px-2 text-[10px] text-muted-foreground"
           aria-live="polite"
           data-editor-command-hint
           role="status"

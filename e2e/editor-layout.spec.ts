@@ -1,36 +1,18 @@
-import fs from 'node:fs';
-import path from 'node:path';
-
 import { expect, test } from '@playwright/test';
 
-import { seedWorkbenchCacheFromFolder } from './fixtures/workbench-cache';
-
-const workbenchFolder = findWorkbenchFolder();
-
-test.skip(
-  !workbenchFolder,
-  'Set WIREDM_PLAYWRIGHT_WORKBENCH or keep USERPROFILE/Documents/WireEDM_WEB_FOLDER available.'
-);
-
 test('machine program editor uses one header and an open resizable inspector', async ({ page }) => {
-  const projectId = findEditorProjectId(workbenchFolder);
-  test.skip(!projectId, 'Seeded workbench has no project with an active editor file.');
-
-  const seed = await seedWorkbenchCacheFromFolder(page, {
-    folder: workbenchFolder ?? undefined,
-    project: projectId
-  });
-  const activeFilePath = seed.projectDocument.editor?.activeFilePath;
-  if (!activeFilePath) throw new Error('Seeded project has no active editor file.');
-
-  await page.setViewportSize({ width: 1584, height: 1158 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
-  await page.getByRole('button', { name: `Open project ${seed.selectedProject.id} in editor` }).click();
+  await page.locator('input[aria-label="Machine program file"]').setInputFiles({
+    name: 'layout-program.nc',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('%\nG90\nG0 X0 Y0\nG1 X20 Y0\nG1 X20 Y10\nM02\n%')
+  });
 
   const appHeader = page.locator('[data-app-header]');
   await expect(appHeader.getByRole('button', { name: /dashboard/i })).toBeVisible();
   await expect(appHeader).not.toContainText('Wire EDM Workbench');
-  await expect(appHeader.getByText(activeFilePath)).toBeVisible();
+  await expect(appHeader.getByRole('heading', { name: /layout-program/i })).toBeVisible();
   await expect(appHeader.getByRole('button', { name: /import program/i })).toBeVisible();
   await expect(appHeader.getByRole('button', { name: /open usage guide/i })).toBeVisible();
   await expect(page.locator('[data-editor-header-bar]')).toHaveCount(0);
@@ -56,15 +38,75 @@ test('machine program editor uses one header and an open resizable inspector', a
   await page.getByRole('button', { name: 'Expand Inspector Rail' }).click();
   await expect(rightRail).toBeVisible();
 
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        [...document.querySelectorAll('*')]
-          .filter((element) => element.scrollHeight > element.clientHeight)
-          .every((element) => getComputedStyle(element).scrollbarWidth === 'none')
-      )
-    )
-    .toBe(true);
+  await expect(page.locator('[data-editor-lines-panel]')).toHaveCSS('scrollbar-width', 'thin');
+  await expect(page.locator('[data-app-header]')).toHaveCSS('height', '40px');
+  await expect(page.locator('[data-editor-status-bar]')).toHaveCSS('height', '24px');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
+});
+
+test('path editor keeps both docks, controls, and a dominant canvas at 1024px', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'laptop-layout.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+
+  const appHeader = page.locator('[data-app-header]');
+  const canvas = page.locator('[data-editor-canvas-panel]');
+  const leftDock = page.locator('[data-editor-panel-dock-zone="left"]');
+  const rightDock = page.locator('[data-editor-panel-dock-zone="right"]');
+
+  const controlsBox = await appHeader
+    .getByRole('button', { name: /open usage guide/i })
+    .boundingBox();
+  const notificationsBox = await page.locator('[data-status-notification-root]').boundingBox();
+  expect(controlsBox).not.toBeNull();
+  expect(notificationsBox).not.toBeNull();
+  expect(controlsBox!.x + controlsBox!.width).toBeLessThanOrEqual(notificationsBox!.x - 4);
+
+  await page.setViewportSize({ width: 1024, height: 720 });
+
+  await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible();
+  await expect(canvas).toBeVisible();
+  await expect(leftDock).toBeVisible();
+  await expect(rightDock).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Collapse Panel Dock' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Collapse Inspector Dock' })).toBeVisible();
+  await expect(page.locator('[data-editor-status-bar]')).toBeVisible();
+  await expect(page.locator('[data-editor-dock-panel-stack="left"]')).toHaveCSS(
+    'scrollbar-width',
+    'thin'
+  );
+  await expect(page.locator('[data-editor-dock-panel-stack="right"]')).toHaveCSS(
+    'scrollbar-width',
+    'thin'
+  );
+
+  expect(await readWidth(canvas)).toBeGreaterThanOrEqual(400);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
+
+  const headerBox = await appHeader.boundingBox();
+  expect(headerBox).not.toBeNull();
+  for (const name of [
+    /dashboard/i,
+    /undo active document change/i,
+    /redo active document change/i,
+    /save active document/i,
+    /export preview/i,
+    /import program/i,
+    /open usage guide/i
+  ]) {
+    const command = appHeader.getByRole('button', { name });
+    await expect(command).toBeVisible();
+    const commandBox = await command.boundingBox();
+    expect(commandBox).not.toBeNull();
+    expect(commandBox!.x).toBeGreaterThanOrEqual(headerBox!.x);
+    expect(commandBox!.x + commandBox!.width).toBeLessThanOrEqual(
+      headerBox!.x + headerBox!.width
+    );
+  }
 });
 
 async function drag(locator: import('@playwright/test').Locator, deltaX: number, deltaY: number) {
@@ -82,34 +124,62 @@ async function readWidth(locator: import('@playwright/test').Locator) {
   return await locator.evaluate((element) => element.getBoundingClientRect().width);
 }
 
-function findWorkbenchFolder() {
-  const candidates = [
-    process.env.WIREDM_PLAYWRIGHT_WORKBENCH,
-    process.env.USERPROFILE
-      ? path.join(process.env.USERPROFILE, 'Documents', 'WireEDM_WEB_FOLDER')
-      : null,
-    process.env.HOME
-      ? path.join(process.env.HOME, 'Documents', 'WireEDM_WEB_FOLDER')
-      : null
-  ].filter((candidate): candidate is string => Boolean(candidate));
-
-  return candidates.find((candidate) =>
-    fs.existsSync(path.join(candidate, 'workbench.json'))
-  ) ?? null;
-}
-
-function findEditorProjectId(folder: string | undefined | null) {
-  if (!folder) return null;
-  const manifest = JSON.parse(fs.readFileSync(path.join(folder, 'workbench.json'), 'utf8'));
-  const projects = [...(manifest.projects ?? [])].sort((left, right) => {
-    const rightTime = Date.parse(right.updatedAt ?? '') || 0;
-    const leftTime = Date.parse(left.updatedAt ?? '') || 0;
-    return rightTime - leftTime;
-  });
-
-  for (const project of projects) {
-    const projectDocument = JSON.parse(fs.readFileSync(path.join(folder, project.path), 'utf8'));
-    if (projectDocument.editor?.activeFilePath) return project.id;
-  }
-  return null;
+function rectangleDxf() {
+  return `0
+SECTION
+2
+ENTITIES
+0
+LINE
+8
+CUT
+10
+0
+20
+0
+11
+20
+21
+0
+0
+LINE
+8
+CUT
+10
+20
+20
+0
+11
+20
+21
+10
+0
+LINE
+8
+CUT
+10
+20
+20
+10
+11
+0
+21
+10
+0
+LINE
+8
+CUT
+10
+0
+20
+10
+11
+0
+21
+0
+0
+ENDSEC
+0
+EOF
+`;
 }

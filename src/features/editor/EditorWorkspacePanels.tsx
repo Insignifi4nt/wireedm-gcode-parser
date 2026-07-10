@@ -113,7 +113,7 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
   }
 
   return (
-    <div className="flex min-w-0 items-center gap-1 font-mono text-[10px]" data-editor-panel-toolbar>
+    <div className="flex min-w-0 items-center gap-1 text-[10px]" data-editor-panel-toolbar>
       <div className="hidden items-center gap-1 xl:flex" data-editor-panel-shortcuts>
         {EDITOR_PANEL_SHORTCUTS.map((shortcut) => {
           const panel = panelsById.get(shortcut.id);
@@ -181,7 +181,7 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
                       <span className="block truncate text-[10px] text-foreground">{panel.title}</span>
                       {panel.description && (
                         <span
-                          className="block truncate text-[8px] text-muted-foreground"
+                          className="block truncate text-[10px] text-muted-foreground"
                           data-editor-panel-menu-item-description
                         >
                           {panel.description}
@@ -189,7 +189,7 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
                       )}
                     </span>
                     <span
-                      className="text-[8px] uppercase text-muted-foreground"
+                      className="technical-value text-[10px] uppercase text-muted-foreground"
                       data-editor-panel-menu-item-status
                     >
                       {status}
@@ -238,18 +238,18 @@ export function EditorPanelDockZone({
 
   return (
     <aside
-      className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/95 font-mono text-[10px]"
+      className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/95 text-[10px]"
       data-editor-panel-dock-zone={side}
       data-editor-panel-dock-zone-collapsed={collapsed ? 'true' : 'false'}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
       <div className="flex h-7 shrink-0 items-center justify-between gap-2 border-b border-border px-1">
-        <span className="truncate px-1 text-[9px] font-semibold uppercase text-muted-foreground">
+        <span className="truncate px-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
           {collapsed ? title.slice(0, 1) : title}
         </span>
         <div className="flex items-center gap-1">
-          <span className="px-1 text-[8px] text-muted-foreground">{panelCount}</span>
+          <span className="technical-value px-1 text-[10px] text-muted-foreground">{panelCount}</span>
           {onToggleCollapsed && (
             <button
               aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${title}`}
@@ -264,12 +264,12 @@ export function EditorPanelDockZone({
         </div>
       </div>
       <div
-        className={`min-h-0 overflow-auto p-1 ${collapsed ? 'hidden' : 'grid content-start gap-1'}`}
+        className={`work-region-scrollbar min-h-0 overflow-auto p-1 ${collapsed ? 'hidden' : 'grid content-start gap-1'}`}
         data-editor-dock-panel-stack={side}
       >
         {panelCount === 0 && (
           <div
-            className="grid min-h-24 place-items-center border border-dashed border-border bg-background/25 px-2 text-center text-[9px] uppercase text-muted-foreground"
+            className="grid min-h-24 place-items-center border border-dashed border-border bg-background/25 px-2 text-center text-[10px] uppercase text-muted-foreground"
             data-editor-empty-dock={side}
           >
             Drop panels
@@ -353,7 +353,7 @@ export function EditorFloatingPanel({
 
   return (
     <aside
-      className="fixed z-30 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/98 font-mono text-[10px] shadow-2xl"
+      className="fixed z-30 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/98 text-[10px] shadow-2xl"
       data-editor-floating-panel={id}
       style={
         {
@@ -462,7 +462,7 @@ export function EditorWorkspacePanelFrame({
         title={title}
       >
         <div
-          className="h-full min-h-0 overflow-auto p-2"
+          className="work-region-scrollbar h-full min-h-0 overflow-auto p-2"
           data-editor-workspace-panel={id}
           data-editor-workspace-panel-placement={placement}
         >
@@ -489,7 +489,7 @@ export function EditorWorkspacePanelFrame({
 
   const dockedPanel = (
     <section
-      className={`grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/70 ${
+      className={`grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-x-0 border-b-0 border-t border-border bg-card/55 ${
         fill ? 'flex-1' : 'shrink-0'
       }`}
       data-editor-workspace-panel={id}
@@ -516,7 +516,7 @@ export function EditorWorkspacePanelFrame({
           <X className="size-3" />
         </button>
       </div>
-      <div className="min-h-0 overflow-auto p-2">{children}</div>
+      <div className="work-region-scrollbar min-h-0 overflow-auto p-2">{children}</div>
     </section>
   );
 
