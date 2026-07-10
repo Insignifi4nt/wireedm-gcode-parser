@@ -137,8 +137,11 @@ test('editor exposes functional groups as dockable and floating workspace panels
   await page.locator('[data-editor-panel-menu-item="path-diagnostics"]').click();
   await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toHaveCount(0);
   await page.locator('[data-editor-panel-toolbar] summary').click();
-  await expect(page.getByRole('button', { name: 'Show Path Diagnostics' })).toBeVisible();
-  await page.locator('[data-editor-panel-menu-item="path-diagnostics"]').click();
+  const pathDiagnosticsMenuItem = page.locator(
+    '[data-editor-panel-menu-item="path-diagnostics"]'
+  );
+  await expect(pathDiagnosticsMenuItem).toBeVisible();
+  await pathDiagnosticsMenuItem.click();
   await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toHaveAttribute(
     'data-editor-workspace-panel-placement',
     'floating'

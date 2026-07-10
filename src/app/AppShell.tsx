@@ -81,7 +81,7 @@ export function AppShell({
       : 'neutral';
   const projectCount = connectedWorkbench?.manifest.projects.length ?? 0;
   const hasRailContent = railContent !== null;
-  const replaceExpandedRailChrome = Boolean(railContent?.replaceRailChrome && !sidebarCollapsed);
+  const replaceRailChrome = Boolean(railContent?.replaceRailChrome);
   const outputExtension = connectedWorkbench
     ? `.${normalizeOutputExtension(
         connectedWorkbench.manifest.output.extension,
@@ -169,13 +169,13 @@ export function AppShell({
         {railContent && (
           <aside
             className={`grid min-w-0 overflow-hidden ${
-              replaceExpandedRailChrome
-                ? 'grid-rows-[minmax(0,1fr)] bg-background p-2'
+              replaceRailChrome
+                ? 'grid-rows-[minmax(0,1fr)] bg-background pb-8 pt-2'
                 : 'grid-rows-[auto_minmax(0,1fr)] border-r border-border bg-card/95'
             }`}
             data-app-rail
           >
-            {!replaceExpandedRailChrome && (
+            {!replaceRailChrome && (
               <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-1">
                 <button
                   aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}

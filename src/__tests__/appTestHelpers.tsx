@@ -127,6 +127,7 @@ function openEditorWorkspacePanelsOnce() {
     if (
       label === 'Expand Inspector Rail' ||
       label === 'Expand Inspector Dock' ||
+      label === 'Expand Panel Dock' ||
       label === 'Expand workbench sidebar'
     ) {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }));

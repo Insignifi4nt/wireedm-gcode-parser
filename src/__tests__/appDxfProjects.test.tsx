@@ -740,7 +740,7 @@ describe('App DXF imports and project library', () => {
 
       await act(async () => {
         container
-          .querySelector('button[aria-label="Expand workbench sidebar"]')
+          .querySelector('button[aria-label="Expand Panel Dock"]')
           ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
       await flushReactOnly();

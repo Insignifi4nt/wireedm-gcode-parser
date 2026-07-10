@@ -185,6 +185,61 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
   }
 });
 
+test('left and right docks expose symmetric collapsed controls', async ({ page }) => {
+  await page.setViewportSize({ width: 1708, height: 874 });
+  await page.goto('/');
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'symmetric-docks.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+
+  const expandedLeftBox = await page
+    .locator('[data-editor-panel-dock-zone="left"]')
+    .boundingBox();
+  const expandedRightBox = await page
+    .locator('[data-editor-panel-dock-zone="right"]')
+    .boundingBox();
+  expect(expandedLeftBox).not.toBeNull();
+  expect(expandedRightBox).not.toBeNull();
+  expect(Math.abs(expandedLeftBox!.y - expandedRightBox!.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(expandedLeftBox!.height - expandedRightBox!.height)).toBeLessThanOrEqual(1);
+
+  await page.getByRole('button', { name: 'Collapse Inspector Dock' }).click();
+  const expandInspector = page.getByRole('button', { name: 'Expand Inspector Dock' });
+  await expect(expandInspector).toBeVisible();
+
+  await page.getByRole('button', { name: 'Collapse Panel Dock' }).click();
+  const collapsedLeft = page.locator('[data-editor-collapsed-dock="left"]');
+  const collapsedRight = page.locator('[data-editor-collapsed-dock="right"]');
+  await expect(collapsedLeft).toBeVisible();
+  await expect(collapsedRight).toBeVisible();
+
+  const leftBox = await collapsedLeft.boundingBox();
+  const rightBox = await collapsedRight.boundingBox();
+  expect(leftBox).not.toBeNull();
+  expect(rightBox).not.toBeNull();
+  expect(Math.abs(leftBox!.width - rightBox!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(leftBox!.y - rightBox!.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(leftBox!.height - rightBox!.height)).toBeLessThanOrEqual(1);
+
+  const expandPanel = page.getByRole('button', { name: 'Expand Panel Dock' });
+  await expect(expandPanel).toBeVisible();
+  const expandPanelBox = await expandPanel.boundingBox();
+  const expandInspectorBox = await expandInspector.boundingBox();
+  expect(expandPanelBox).not.toBeNull();
+  expect(expandInspectorBox).not.toBeNull();
+  expect(expandPanelBox!.width).toBe(expandInspectorBox!.width);
+  expect(expandPanelBox!.height).toBe(expandInspectorBox!.height);
+
+  await expandPanel.click();
+  await expandInspector.click();
+  await expect(page.locator('[data-editor-panel-dock-zone="left"]')).toBeVisible();
+  await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Collapse Panel Dock' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Collapse Inspector Dock' })).toBeVisible();
+});
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1024, height: 720 }
@@ -218,7 +273,7 @@ for (const viewport of [
       );
       await expect(contourTree).not.toBeVisible();
 
-      await page.getByRole('button', { name: 'Expand workbench sidebar' }).click();
+      await page.getByRole('button', { name: 'Expand Panel Dock' }).click();
       await expect(page.locator('[data-app-rail-expanded-content]')).not.toHaveAttribute(
         'aria-hidden',
         'true'

@@ -1924,20 +1924,6 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic): Diagnos
   }
 }
 
-export function EditorPathNavigatorRailCollapsed() {
-  return (
-    <div className="flex h-full flex-col items-center gap-3 py-3" data-editor-project-rail-collapsed>
-      <Magnet className="size-4 text-primary" />
-      <div
-        className="rotate-180 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground [writing-mode:vertical-rl]"
-        title="UPID Path Navigator"
-      >
-        UPID
-      </div>
-    </div>
-  );
-}
-
 function renderCutSequenceRow({
   hoveredPathElement,
   isSaving,

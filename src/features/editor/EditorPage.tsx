@@ -80,7 +80,6 @@ import { EditorHeaderBar, type EditorDocumentContext } from './EditorHeaderBar';
 import { EditorInspectorPanel } from './EditorInspectorPanel';
 import {
   EditorPathNavigatorPanel,
-  EditorPathNavigatorRailCollapsed,
   type EditorPathElementRef
 } from './EditorPathNavigatorPanel';
 import { EditorProgramLinesPanel } from './EditorProgramLinesPanel';
@@ -91,6 +90,7 @@ import {
   clampEditorFloatingPanelGeometry,
   EDITOR_FLOATING_PANEL_GAP,
   EDITOR_FLOATING_PANEL_TOP,
+  EditorCollapsedDockZone,
   EditorPanelDockZone,
   EditorPanelToolbar,
   EditorWorkspacePanelFrame,
@@ -751,7 +751,15 @@ export function EditorPage({
     () =>
       pathDocumentDraft
         ? {
-            collapsed: <EditorPathNavigatorRailCollapsed />,
+            collapsed: (
+              <EditorCollapsedDockZone
+                onExpand={() => setRailCollapsed(false)}
+                panelCount={readWorkspaceDockPanelCount('left')}
+                registerDockZone={false}
+                side="left"
+                title="Panel Dock"
+              />
+            ),
             expanded: renderEditorDockZone('left'),
             replaceRailChrome: true
           }
@@ -2013,14 +2021,10 @@ export function EditorPage({
   }
 
   function renderEditorDockZone(side: EditorDockSide) {
-    const panelCount = workspaceDockOrders[side].filter(
-      (panelId) => workspacePanelPlacements[panelId] === `docked-${side}`
-    ).length;
-
     return (
       <EditorPanelDockZone
         collapsed={side === 'right' ? inspectorRailCollapsed : false}
-        panelCount={panelCount}
+        panelCount={readWorkspaceDockPanelCount(side)}
         side={side}
         title={side === 'left' ? 'Panel Dock' : 'Inspector Dock'}
         onDropPanel={(panelId, dockSide, point) =>
@@ -2033,6 +2037,12 @@ export function EditorPage({
         }
       />
     );
+  }
+
+  function readWorkspaceDockPanelCount(side: EditorDockSide) {
+    return workspaceDockOrders[side].filter(
+      (panelId) => workspacePanelPlacements[panelId] === `docked-${side}`
+    ).length;
   }
 
   function readWorkspacePanelDockOrder(panelId: EditorWorkspacePanelId) {

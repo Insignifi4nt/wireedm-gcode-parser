@@ -18,6 +18,10 @@ import {
   ListTree,
   MousePointer2,
   Move,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   PanelsTopLeft,
   Ruler,
   Search,
@@ -284,6 +288,52 @@ interface EditorPanelDockZoneProps {
   onToggleCollapsed?: () => void;
 }
 
+interface EditorCollapsedDockZoneProps {
+  panelCount: number;
+  registerDockZone?: boolean;
+  side: EditorDockSide;
+  title: string;
+  onExpand: () => void;
+}
+
+export function EditorCollapsedDockZone({
+  panelCount,
+  registerDockZone = true,
+  side,
+  title,
+  onExpand
+}: EditorCollapsedDockZoneProps) {
+  const ExpandIcon = side === 'left' ? PanelLeftOpen : PanelRightOpen;
+
+  return (
+    <aside
+      className="grid h-full min-h-0 overflow-hidden border border-border bg-card/95 text-[10px]"
+      data-editor-collapsed-dock={side}
+      data-editor-panel-dock-zone={registerDockZone ? side : undefined}
+      data-editor-panel-dock-zone-collapsed="true"
+    >
+      <div className="flex min-h-0 flex-col items-center gap-2 py-1">
+        <button
+          aria-label={`Expand ${title}`}
+          className="flex size-7 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={onExpand}
+          title={`Expand ${title}`}
+          type="button"
+        >
+          <ExpandIcon aria-hidden="true" className="size-3.5" />
+        </button>
+        <span className="technical-value text-[10px] text-muted-foreground">{panelCount}</span>
+        <span
+          className="rotate-180 truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground [writing-mode:vertical-rl]"
+          title={title}
+        >
+          {title}
+        </span>
+      </div>
+    </aside>
+  );
+}
+
 export function EditorPanelDockZone({
   children,
   collapsed = false,
@@ -293,6 +343,17 @@ export function EditorPanelDockZone({
   onDropPanel,
   onToggleCollapsed
 }: EditorPanelDockZoneProps) {
+  if (collapsed && onToggleCollapsed) {
+    return (
+      <EditorCollapsedDockZone
+        onExpand={onToggleCollapsed}
+        panelCount={panelCount}
+        side={side}
+        title={title}
+      />
+    );
+  }
+
   function handleDragOver(event: DragEvent<HTMLElement>) {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -309,31 +370,35 @@ export function EditorPanelDockZone({
     <aside
       className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/95 text-[10px]"
       data-editor-panel-dock-zone={side}
-      data-editor-panel-dock-zone-collapsed={collapsed ? 'true' : 'false'}
+      data-editor-panel-dock-zone-collapsed="false"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
       <div className="flex h-7 shrink-0 items-center justify-between gap-2 border-b border-border px-1">
         <span className="truncate px-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-          {collapsed ? title.slice(0, 1) : title}
+          {title}
         </span>
         <div className="flex items-center gap-1">
           <span className="technical-value px-1 text-[10px] text-muted-foreground">{panelCount}</span>
           {onToggleCollapsed && (
             <button
-              aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${title}`}
+              aria-label={`Collapse ${title}`}
               className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
               onClick={onToggleCollapsed}
-              title={`${collapsed ? 'Expand' : 'Collapse'} ${title}`}
+              title={`Collapse ${title}`}
               type="button"
             >
-              {collapsed ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
+              {side === 'left' ? (
+                <PanelLeftClose aria-hidden="true" className="size-3" />
+              ) : (
+                <PanelRightClose aria-hidden="true" className="size-3" />
+              )}
             </button>
           )}
         </div>
       </div>
       <div
-        className={`work-region-scrollbar min-h-0 overflow-auto p-1 ${collapsed ? 'hidden' : 'grid content-start gap-1'}`}
+        className="work-region-scrollbar grid min-h-0 content-start gap-1 overflow-auto p-1"
         data-editor-dock-panel-stack={side}
       >
         {panelCount === 0 && (
