@@ -171,6 +171,7 @@ function getVisibleProjects(
         !query ||
         project.name.toLowerCase().includes(query) ||
         project.path.toLowerCase().includes(query) ||
+        getProjectSourceLabel(project.sourceKind).toLowerCase().includes(query) ||
         project.sourceKind.toLowerCase().includes(query);
       return matchesSource && matchesSearch;
     })

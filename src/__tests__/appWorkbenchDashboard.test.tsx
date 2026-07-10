@@ -395,6 +395,57 @@ describe('App dashboard and workbench shell', () => {
     expect(dialog?.textContent).toContain('This workbench has no persistent storage location.');
   });
 
+  it('searches project sources by visible labels without replacing raw filter values', async () => {
+    const workbench = createDirectoryWorkbench('wire-jobs');
+    workbench.manifest.projects = [
+      {
+        id: 'path-project',
+        name: 'Alpha bracket',
+        path: 'projects/alpha/project.json',
+        sourceKind: 'dxf',
+        updatedAt: '2026-05-30T10:00:00.000Z'
+      },
+      {
+        id: 'machine-program',
+        name: 'Zeta repair',
+        path: 'projects/zeta/project.json',
+        sourceKind: 'external-gcode',
+        updatedAt: '2026-05-31T10:00:00.000Z'
+      }
+    ];
+
+    await renderApp(context, {
+      connectCachedWorkbench: async () => workbench
+    });
+
+    const sourceSelect = container.querySelector(
+      'select[aria-label="Project source filter"]'
+    ) as HTMLSelectElement | null;
+    const searchInput = container.querySelector(
+      'input[aria-label="Search projects"]'
+    ) as HTMLInputElement | null;
+
+    expect(sourceSelect?.querySelector('option[value="dxf"]')?.textContent).toBe('Path Project');
+    expect(sourceSelect?.querySelector('option[value="external-gcode"]')?.textContent).toBe(
+      'Machine Program'
+    );
+    expect(searchInput).not.toBeNull();
+
+    await act(async () => {
+      if (searchInput) setInputValue(searchInput, 'Path Project');
+    });
+
+    expect(container.querySelector('[data-project-source="dxf"]')).not.toBeNull();
+    expect(container.querySelector('[data-project-source="external-gcode"]')).toBeNull();
+
+    await act(async () => {
+      if (searchInput) setInputValue(searchInput, 'Machine Program');
+    });
+
+    expect(container.querySelector('[data-project-source="dxf"]')).toBeNull();
+    expect(container.querySelector('[data-project-source="external-gcode"]')).not.toBeNull();
+  });
+
   it('filters and sorts dashboard projects without changing project actions', async () => {
     const workbench = createDirectoryWorkbench('wire-jobs');
     workbench.manifest.projects = [
