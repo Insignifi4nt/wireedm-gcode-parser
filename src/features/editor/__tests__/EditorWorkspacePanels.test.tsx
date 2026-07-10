@@ -238,9 +238,19 @@ describe('EditorPanelToolbar', () => {
     }
   });
 
-  it('offers direct Tree, Actions, Transform, Diagnostics, and Measure shortcuts', async () => {
+  it('delegates every primary Path shortcut to its existing panel controller', async () => {
+    const shortcutPanels = [
+      ['contour-tree', 'Contour Tree', 'Tree'],
+      ['path-actions', 'Path Actions', 'Actions'],
+      ['cut-sequence', 'Cut Sequence', 'Sequence'],
+      ['path-transform', 'Transform', 'Transform'],
+      ['path-diagnostics', 'Path Diagnostics', 'Diagnostics'],
+      ['statistics', 'Statistics', 'Inspect'],
+      ['measurement', 'Measurement', 'Measure'],
+      ['machine', 'Machine', 'Machine']
+    ] as const;
     const callbacks = new Map(
-      ['contour-tree', 'path-actions', 'path-transform', 'path-diagnostics', 'measurement'].map((id) => [
+      shortcutPanels.map(([id]) => [
         id,
         { onHide: vi.fn(), onShow: vi.fn() }
       ])
@@ -253,29 +263,19 @@ describe('EditorPanelToolbar', () => {
             {
               id: 'all',
               title: 'All',
-              panels: [
-                { id: 'contour-tree', title: 'Contour Tree', placement: 'hidden', ...callbacks.get('contour-tree')! },
-                { id: 'path-actions', title: 'Path Actions', placement: 'docked-right', ...callbacks.get('path-actions')! },
-                { id: 'path-transform', title: 'Transform', placement: 'hidden', ...callbacks.get('path-transform')! },
-                { id: 'path-diagnostics', title: 'Path Diagnostics', placement: 'hidden', ...callbacks.get('path-diagnostics')! },
-                { id: 'measurement', title: 'Measurement', placement: 'hidden', ...callbacks.get('measurement')! },
-                { id: 'statistics', title: 'Statistics', placement: 'hidden', onHide: vi.fn(), onShow: vi.fn() }
-              ]
+              panels: shortcutPanels.map(([id, title]) => ({
+                id,
+                title,
+                placement: id === 'path-actions' ? 'docked-right' as const : 'hidden' as const,
+                ...callbacks.get(id)!
+              }))
             }
           ]}
         />
       );
     });
 
-    const expectedShortcuts = [
-      ['contour-tree', 'Tree'],
-      ['path-actions', 'Actions'],
-      ['path-transform', 'Transform'],
-      ['path-diagnostics', 'Diagnostics'],
-      ['measurement', 'Measure']
-    ];
-
-    for (const [id, label] of expectedShortcuts) {
+    for (const [id, , label] of shortcutPanels) {
       const shortcut = container.querySelector(
         `button[data-editor-panel-shortcut="${id}"]`
       ) as HTMLButtonElement | null;
@@ -285,11 +285,11 @@ describe('EditorPanelToolbar', () => {
       });
     }
 
-    expect(callbacks.get('contour-tree')?.onShow).toHaveBeenCalledTimes(1);
-    expect(callbacks.get('path-actions')?.onHide).toHaveBeenCalledTimes(1);
-    expect(callbacks.get('path-transform')?.onShow).toHaveBeenCalledTimes(1);
-    expect(callbacks.get('path-diagnostics')?.onShow).toHaveBeenCalledTimes(1);
-    expect(callbacks.get('measurement')?.onShow).toHaveBeenCalledTimes(1);
-    expect(container.querySelectorAll('[data-editor-panel-menu-item]')).toHaveLength(6);
+    for (const [id] of shortcutPanels) {
+      const controller = callbacks.get(id);
+      expect(controller?.onShow).toHaveBeenCalledTimes(id === 'path-actions' ? 0 : 1);
+      expect(controller?.onHide).toHaveBeenCalledTimes(id === 'path-actions' ? 1 : 0);
+    }
+    expect(container.querySelectorAll('[data-editor-panel-menu-item]')).toHaveLength(8);
   });
 });

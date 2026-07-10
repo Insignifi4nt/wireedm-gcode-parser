@@ -1,5 +1,16 @@
 import { expect, test } from '@playwright/test';
 
+const PATH_SHORTCUT_IDS = [
+  'contour-tree',
+  'path-actions',
+  'cut-sequence',
+  'path-transform',
+  'path-diagnostics',
+  'statistics',
+  'measurement',
+  'machine'
+];
+
 test('machine program editor uses one header and an open resizable inspector', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
@@ -58,7 +69,7 @@ test('machine program line commands stay fully visible at desktop and laptop wid
   await expectLineCommandInsideToolbar(page, 1024);
 });
 
-test('path editor keeps both docks, controls, and a dominant canvas at 1024px', async ({ page }) => {
+test('path editor keeps direct shortcuts at 1440 and essential controls at 1024', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
   await page.locator('input[aria-label="DXF file"]').setInputFiles({
@@ -71,6 +82,20 @@ test('path editor keeps both docks, controls, and a dominant canvas at 1024px', 
   const canvas = page.locator('[data-editor-canvas-panel]');
   const leftDock = page.locator('[data-editor-panel-dock-zone="left"]');
   const rightDock = page.locator('[data-editor-panel-dock-zone="right"]');
+  const workspaceToolbar = appHeader.locator('[data-editor-panel-toolbar]');
+  const workspaceTrigger = workspaceToolbar.locator('summary');
+
+  for (const panelId of PATH_SHORTCUT_IDS) {
+    await expect(page.locator(`[data-editor-panel-shortcut="${panelId}"]`)).toBeVisible();
+  }
+
+  const workspaceBox = await workspaceToolbar.boundingBox();
+  const undoBox = await appHeader
+    .getByRole('button', { name: /undo active document change/i })
+    .boundingBox();
+  expect(workspaceBox).not.toBeNull();
+  expect(undoBox).not.toBeNull();
+  expect(workspaceBox!.x + workspaceBox!.width).toBeLessThanOrEqual(undoBox!.x - 4);
 
   const controlsBox = await appHeader
     .getByRole('button', { name: /open usage guide/i })
@@ -89,6 +114,8 @@ test('path editor keeps both docks, controls, and a dominant canvas at 1024px', 
   await expect(page.getByRole('button', { name: 'Collapse Panel Dock' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Collapse Inspector Dock' })).toBeVisible();
   await expect(page.locator('[data-editor-status-bar]')).toBeVisible();
+  await expect(workspaceTrigger).toBeVisible();
+  await expect(page.locator('[data-editor-panel-shortcuts]')).not.toBeVisible();
   await expect(page.locator('[data-editor-dock-panel-stack="left"]')).toHaveCSS(
     'scrollbar-width',
     'thin'
@@ -103,16 +130,17 @@ test('path editor keeps both docks, controls, and a dominant canvas at 1024px', 
 
   const headerBox = await appHeader.boundingBox();
   expect(headerBox).not.toBeNull();
-  for (const name of [
-    /dashboard/i,
-    /undo active document change/i,
-    /redo active document change/i,
-    /save active document/i,
-    /export preview/i,
-    /import program/i,
-    /open usage guide/i
-  ]) {
-    const command = appHeader.getByRole('button', { name });
+  const essentialControls = [
+    appHeader.getByRole('button', { name: /dashboard/i }),
+    workspaceTrigger,
+    appHeader.getByRole('button', { name: /undo active document change/i }),
+    appHeader.getByRole('button', { name: /redo active document change/i }),
+    appHeader.getByRole('button', { name: /save active document/i }),
+    appHeader.getByRole('button', { name: /export preview/i }),
+    appHeader.getByRole('button', { name: /import program/i }),
+    appHeader.getByRole('button', { name: /open usage guide/i })
+  ];
+  for (const command of essentialControls) {
     await expect(command).toBeVisible();
     const commandBox = await command.boundingBox();
     expect(commandBox).not.toBeNull();

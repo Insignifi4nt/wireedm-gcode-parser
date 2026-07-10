@@ -54,9 +54,12 @@ interface EditorPanelToolbarProps {
 const EDITOR_PANEL_SHORTCUTS = [
   { id: 'contour-tree', label: 'Tree' },
   { id: 'path-actions', label: 'Actions' },
+  { id: 'cut-sequence', label: 'Sequence' },
   { id: 'path-transform', label: 'Transform' },
   { id: 'path-diagnostics', label: 'Diagnostics' },
-  { id: 'measurement', label: 'Measure' }
+  { id: 'statistics', label: 'Inspect' },
+  { id: 'measurement', label: 'Measure' },
+  { id: 'machine', label: 'Machine' }
 ];
 const EDITOR_PANEL_HOVER_OPEN_DELAY_MS = 500;
 
@@ -114,7 +117,7 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
 
   return (
     <div className="flex min-w-0 items-center gap-1 text-[10px]" data-editor-panel-toolbar>
-      <div className="hidden items-center gap-1 xl:flex" data-editor-panel-shortcuts>
+      <div className="hidden items-center gap-1 min-[1360px]:flex" data-editor-panel-shortcuts>
         {EDITOR_PANEL_SHORTCUTS.map((shortcut) => {
           const panel = panelsById.get(shortcut.id);
           if (!panel) return null;
