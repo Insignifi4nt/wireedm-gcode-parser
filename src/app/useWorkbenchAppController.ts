@@ -15,6 +15,16 @@ export type ImportStatus = 'idle' | 'importing' | 'error';
 export type SaveStatus = 'idle' | 'saving' | 'error';
 export type SettingsStatus = 'idle' | 'saving' | 'saved' | 'error';
 export type ActiveView = 'dashboard' | 'editor';
+type WorkbenchOperationKind =
+  | 'dxf-import'
+  | 'editor-import'
+  | 'editor-save'
+  | 'project-delete'
+  | 'project-open'
+  | 'project-rename'
+  | 'settings-save'
+  | 'storage-switch';
+const WORKBENCH_BUSY_MESSAGE = 'Another workbench operation is still in progress.';
 
 export interface WorkbenchAppController {
   activeView: ActiveView;
@@ -23,6 +33,7 @@ export interface WorkbenchAppController {
   editorImportStatus: ImportStatus;
   editorSaveErrorMessage: string | null;
   editorSaveStatus: SaveStatus;
+  workbenchInteractionLocked: boolean;
   errorMessage: string | null;
   importErrorMessage: string | null;
   importStatus: ImportStatus;
@@ -79,6 +90,10 @@ export function useWorkbenchAppController(
   const [loadedEditorProgram, setLoadedEditorProgram] = useState<LoadedEditorProgram | null>(null);
   const [statusNotifications, setStatusNotifications] = useState<StatusToast[]>([]);
   const [statusToasts, setStatusToasts] = useState<StatusToast[]>([]);
+  const [activeWorkbenchOperation, setActiveWorkbenchOperation] =
+    useState<WorkbenchOperationKind | null>(null);
+  const workbenchOperationRef = useRef<{ id: number; kind: WorkbenchOperationKind } | null>(null);
+  const workbenchOperationCounter = useRef(0);
   const statusToastCounter = useRef(0);
 
   const dismissStatusToast = useCallback((id: string) => {
@@ -141,14 +156,21 @@ export function useWorkbenchAppController(
   }, [appServices]);
 
   async function handleConnectWorkbench() {
-    if (workbenchStatus === 'connecting-storage') return;
+    if (activeView === 'editor' || workbenchStatus === 'connecting-storage') return;
+    const operationId = beginWorkbenchOperation('storage-switch');
+    if (operationId === null) return;
 
     setWorkbenchStatus('connecting-storage');
     setErrorMessage(null);
 
     try {
       const workbench = await appServices.connectWorkbenchDirectory();
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setConnectedWorkbench(workbench);
+      setLoadedEditorProgram(null);
+      setLatestImport(null);
+      resetEditorLoadState();
+      setActiveView('dashboard');
       setSettingsStatus('idle');
       setSettingsErrorMessage(null);
       setStorageActionLabel(null);
@@ -156,39 +178,50 @@ export function useWorkbenchAppController(
       setWorkbenchStatus('ready');
       showStatusToast(`Workbench folder connected: ${workbench.manifest.name}`, 'success');
     } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       if (error instanceof DOMException && error.name === 'AbortError') {
         setWorkbenchStatus(connectedWorkbench ? 'ready' : 'error');
         return;
       }
 
-      setWorkbenchStatus('error');
+      setWorkbenchStatus(connectedWorkbench ? 'ready' : 'error');
       const message = error instanceof Error ? error.message : 'Could not connect workbench folder.';
       setErrorMessage(message);
       showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
     }
   }
 
   async function handleSaveWorkbenchSettings(input: UpdateWorkbenchSettingsInput) {
     if (!connectedWorkbench || settingsStatus === 'saving') return;
+    const operationId = beginWorkbenchOperation('settings-save');
+    if (operationId === null) return;
 
     setSettingsStatus('saving');
     setSettingsErrorMessage(null);
 
     try {
       const updatedWorkbench = await appServices.updateWorkbenchSettings(connectedWorkbench, input);
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setConnectedWorkbench(updatedWorkbench);
       setSettingsStatus('saved');
       showStatusToast('Workbench settings saved.', 'success');
     } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setSettingsStatus('error');
       const message = error instanceof Error ? error.message : 'Could not save workbench settings.';
       setSettingsErrorMessage(message);
       showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
     }
   }
 
   async function handleImportDxfFile(file: File) {
     if (!connectedWorkbench || importStatus === 'importing') return;
+    const operationId = beginWorkbenchOperation('dxf-import');
+    if (operationId === null) return;
 
     setImportStatus('importing');
     setImportErrorMessage(null);
@@ -200,6 +233,7 @@ export function useWorkbenchAppController(
         text
       });
       const editorProgram = await appServices.loadEditorProgram(result.workbench, result.project);
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setConnectedWorkbench(result.workbench);
       setLatestImport(result);
       setLoadedEditorProgram(editorProgram);
@@ -208,10 +242,13 @@ export function useWorkbenchAppController(
       setImportStatus('idle');
       showStatusToast(`DXF imported and opened: ${file.name}`, 'success');
     } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setImportStatus('error');
       const message = error instanceof Error ? error.message : 'Could not import DXF.';
       setImportErrorMessage(message);
       showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
     }
   }
 
@@ -222,31 +259,50 @@ export function useWorkbenchAppController(
 
   async function handleOpenLatestImportInEditor() {
     if (!latestImport) return;
+    const operationId = beginWorkbenchOperation('project-open');
+    if (operationId === null) return;
+    const activeImport = latestImport;
 
-    const editorProgram = await appServices.loadEditorProgram(
-      latestImport.workbench,
-      latestImport.project
-    );
-    setLoadedEditorProgram(editorProgram);
-    setEditorSaveStatus('idle');
-    setEditorSaveErrorMessage(null);
-    setActiveView('editor');
-    showStatusToast('Path project opened in editor.', 'success');
+    try {
+      const editorProgram = await appServices.loadEditorProgram(
+        activeImport.workbench,
+        activeImport.project
+      );
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      setLoadedEditorProgram(editorProgram);
+      resetEditorLoadState();
+      setActiveView('editor');
+      showStatusToast('Path project opened in editor.', 'success');
+    } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      const message = error instanceof Error ? error.message : 'Could not open the latest path project.';
+      setErrorMessage(message);
+      showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
+    }
   }
 
   async function handleOpenWorkbenchProject(projectPath: string) {
     if (!connectedWorkbench) return;
+    const operationId = beginWorkbenchOperation('project-open');
+    if (operationId === null) return;
+    const workbench = connectedWorkbench;
 
     try {
-      const result = await appServices.openWorkbenchProject(connectedWorkbench, projectPath);
+      const result = await appServices.openWorkbenchProject(workbench, projectPath);
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setLoadedEditorProgram(result.editorProgram);
       resetEditorLoadState();
       setActiveView('editor');
       showStatusToast(`Project opened: ${result.project.name}`, 'success');
     } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       const message = error instanceof Error ? error.message : 'Could not open workbench project.';
       setErrorMessage(message);
       showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
     }
   }
 
@@ -254,19 +310,26 @@ export function useWorkbenchAppController(
     if (!connectedWorkbench) {
       throw new Error('Workbench is not connected.');
     }
+    const operationId = beginWorkbenchOperation('project-rename');
+    if (operationId === null) throw new Error(WORKBENCH_BUSY_MESSAGE);
+    const workbench = connectedWorkbench;
 
     try {
-      const result = await appServices.renameWorkbenchProject(connectedWorkbench, {
+      const result = await appServices.renameWorkbenchProject(workbench, {
         projectId,
         name
       });
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setConnectedWorkbench(result.workbench);
       reconcileProjectMutation(result.workbench, result.project);
       showStatusToast(`Project renamed: ${result.project.name}`, 'success');
     } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       const message = error instanceof Error ? error.message : 'Could not rename workbench project.';
       showStatusToast(message, 'error');
       throw error instanceof Error ? error : new Error(message);
+    } finally {
+      finishWorkbenchOperation(operationId);
     }
   }
 
@@ -274,11 +337,15 @@ export function useWorkbenchAppController(
     if (!connectedWorkbench) {
       throw new Error('Workbench is not connected.');
     }
+    const operationId = beginWorkbenchOperation('project-delete');
+    if (operationId === null) throw new Error(WORKBENCH_BUSY_MESSAGE);
+    const workbench = connectedWorkbench;
 
     try {
-      const result = await appServices.deleteWorkbenchProject(connectedWorkbench, {
+      const result = await appServices.deleteWorkbenchProject(workbench, {
         projectId
       });
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setConnectedWorkbench(result.workbench);
       removeDeletedProjectState(result.project.id);
       if (result.cleanupErrorMessages.length > 0) {
@@ -291,14 +358,19 @@ export function useWorkbenchAppController(
         showStatusToast(`Project deleted: ${result.project.name}`, 'success');
       }
     } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       const message = error instanceof Error ? error.message : 'Could not delete workbench project.';
       showStatusToast(message, 'error');
       throw error instanceof Error ? error : new Error(message);
+    } finally {
+      finishWorkbenchOperation(operationId);
     }
   }
 
   async function handleImportExternalProgram(file: File) {
     if (!connectedWorkbench || editorImportStatus === 'importing') return;
+    const operationId = beginWorkbenchOperation('editor-import');
+    if (operationId === null) return;
 
     setEditorImportStatus('importing');
     setEditorImportErrorMessage(null);
@@ -310,6 +382,7 @@ export function useWorkbenchAppController(
         text,
         byteLength: file.size
       });
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setConnectedWorkbench(result.workbench);
       setLoadedEditorProgram(result.editorProgram);
       setEditorSaveStatus('idle');
@@ -318,36 +391,66 @@ export function useWorkbenchAppController(
       setEditorImportStatus('idle');
       showStatusToast(`Program imported: ${file.name}`, 'success');
     } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setEditorImportStatus('error');
       const message = error instanceof Error ? error.message : 'Could not import program.';
       setEditorImportErrorMessage(message);
       showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
     }
   }
 
   async function handleSaveEditorDraft(draft: EditorSaveDraft) {
     if (!connectedWorkbench || !loadedEditorProgram || editorSaveStatus === 'saving') return;
+    const operationId = beginWorkbenchOperation('editor-save');
+    if (operationId === null) return;
+    const workbench = connectedWorkbench;
+    const editorProgram = loadedEditorProgram;
 
     setEditorSaveStatus('saving');
     setEditorSaveErrorMessage(null);
 
     try {
-      const result = await appServices.saveEditorProgram(connectedWorkbench, {
-        filePath: loadedEditorProgram.filePath,
+      const result = await appServices.saveEditorProgram(workbench, {
+        filePath: editorProgram.filePath,
         ...draft,
-        project: loadedEditorProgram.project
+        project: editorProgram.project
       });
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setConnectedWorkbench(result.workbench);
       setLoadedEditorProgram(result.editorProgram);
       refreshLatestImportAfterSave(result.workbench, result.editorProgram);
       setEditorSaveStatus('idle');
       showStatusToast(draft.model === 'upid-document' ? 'Path plan saved.' : 'Program saved.', 'success');
     } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
       setEditorSaveStatus('error');
       const message = error instanceof Error ? error.message : 'Could not save editor program.';
       setEditorSaveErrorMessage(message);
       showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
     }
+  }
+
+  function beginWorkbenchOperation(kind: WorkbenchOperationKind) {
+    if (workbenchOperationRef.current !== null) return null;
+
+    const id = ++workbenchOperationCounter.current;
+    workbenchOperationRef.current = { id, kind };
+    setActiveWorkbenchOperation(kind);
+    return id;
+  }
+
+  function isCurrentWorkbenchOperation(id: number) {
+    return workbenchOperationRef.current?.id === id;
+  }
+
+  function finishWorkbenchOperation(id: number) {
+    if (!isCurrentWorkbenchOperation(id)) return;
+    workbenchOperationRef.current = null;
+    setActiveWorkbenchOperation(null);
   }
 
   function resetEditorLoadState() {
@@ -428,6 +531,7 @@ export function useWorkbenchAppController(
     connectedWorkbench,
     editorImportErrorMessage,
     editorImportStatus,
+    workbenchInteractionLocked: activeWorkbenchOperation !== null,
     editorSaveErrorMessage,
     editorSaveStatus,
     errorMessage,
@@ -443,12 +547,18 @@ export function useWorkbenchAppController(
     statusToasts,
     workbenchStatus,
     dismissStatusToast,
-    handleBackToDashboard: () => setActiveView('dashboard'),
+    handleBackToDashboard: () => {
+      if (workbenchOperationRef.current !== null) return;
+      setActiveView('dashboard');
+    },
     handleConnectWorkbench,
     handleDownloadEditorFile,
     handleImportDxfFile,
     handleImportExternalProgram,
-    handleOpenEditor: () => setActiveView('editor'),
+    handleOpenEditor: () => {
+      if (workbenchOperationRef.current !== null) return;
+      setActiveView('editor');
+    },
     handleOpenLatestImportInEditor,
     handleOpenWorkbenchProject,
     handleDeleteWorkbenchProject,

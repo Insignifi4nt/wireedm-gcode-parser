@@ -151,6 +151,51 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
   }
 });
 
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 1024, height: 720 }
+]) {
+  test(`path editor restores its docked Contour Tree after repeated rail collapse at ${viewport.width}px`, async ({
+    page
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    await page.locator('input[aria-label="DXF file"]').setInputFiles({
+      name: `stable-contour-tree-${viewport.width}.dxf`,
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+
+    const contourTree = page.locator(
+      '[data-app-rail-expanded-content] [data-editor-workspace-panel="contour-tree"]'
+    );
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      await expect(contourTree).toBeVisible();
+      await expect(contourTree).toHaveAttribute(
+        'data-editor-workspace-panel-placement',
+        'docked-left'
+      );
+      await expect(contourTree).toContainText('Contour Tree');
+
+      await page.getByRole('button', { name: 'Collapse Panel Dock' }).click();
+      await expect(page.locator('[data-app-rail-expanded-content]')).toHaveAttribute(
+        'aria-hidden',
+        'true'
+      );
+      await expect(contourTree).not.toBeVisible();
+
+      await page.getByRole('button', { name: 'Expand workbench sidebar' }).click();
+      await expect(page.locator('[data-app-rail-expanded-content]')).not.toHaveAttribute(
+        'aria-hidden',
+        'true'
+      );
+    }
+
+    await expect(contourTree).toBeVisible();
+    await expect(contourTree).toContainText('Contour Tree');
+  });
+}
+
 async function drag(locator: import('@playwright/test').Locator, deltaX: number, deltaY: number) {
   const box = await locator.boundingBox();
   if (!box) throw new Error('Drag target is not visible.');

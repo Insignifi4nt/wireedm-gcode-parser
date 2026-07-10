@@ -67,6 +67,7 @@ describe('App dashboard and workbench shell', () => {
     const settingsButton = container.querySelector(
       'button[aria-label="Open settings"]'
     ) as HTMLButtonElement | null;
+    settingsButton?.focus();
 
     await act(async () => {
       settingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -87,6 +88,40 @@ describe('App dashboard and workbench shell', () => {
     expect(dialog?.textContent).toContain('No chosen workbench folder is connected.');
     expect(dialog?.textContent).toContain('wire-edm-workbench:*');
     expect(dialog?.querySelector('button[aria-label="Choose Workbench Folder"]')).toBeNull();
+
+    const closeButton = dialog?.querySelector(
+      'button[aria-label="Close settings"]'
+    ) as HTMLButtonElement | null;
+    expect(document.activeElement).toBe(closeButton);
+    for (const selector of ['[data-app-header]', '[data-app-workspace-grid]', '[data-app-status-bar]']) {
+      const backgroundRegion = container.querySelector(selector) as HTMLElement | null;
+      expect(backgroundRegion?.inert).toBe(true);
+      expect(backgroundRegion?.getAttribute('aria-hidden')).toBe('true');
+    }
+
+    const focusableElements = [...dialog!.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    )];
+    const lastFocusable = focusableElements.at(-1)!;
+    lastFocusable.focus();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
+    });
+    expect(document.activeElement).toBe(closeButton);
+
+    closeButton?.focus();
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'Tab', shiftKey: true })
+      );
+    });
+    expect(document.activeElement).toBe(lastFocusable);
+
+    settingsButton?.focus();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab' }));
+    });
+    expect(document.activeElement).toBe(closeButton);
   });
 
   it('closes the settings modal when Escape is pressed', async () => {
@@ -97,6 +132,12 @@ describe('App dashboard and workbench shell', () => {
     const settingsButton = container.querySelector(
       'button[aria-label="Open settings"]'
     ) as HTMLButtonElement | null;
+    const workspaceRegion = container.querySelector('[data-app-workspace-grid]') as HTMLElement;
+    const statusRegion = container.querySelector('[data-app-status-bar]') as HTMLElement;
+    workspaceRegion.setAttribute('aria-hidden', 'false');
+    workspaceRegion.inert = false;
+    statusRegion.inert = true;
+    settingsButton?.focus();
 
     await act(async () => {
       settingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -112,6 +153,42 @@ describe('App dashboard and workbench shell', () => {
     await flushAsync();
 
     expect(container.querySelector('[role="dialog"][aria-label="Workbench settings"]')).toBeNull();
+    expect(document.activeElement).toBe(settingsButton);
+    expect(workspaceRegion.getAttribute('aria-hidden')).toBe('false');
+    expect(workspaceRegion.inert).toBe(false);
+    expect(statusRegion.inert).toBe(true);
+    expect(statusRegion.getAttribute('aria-hidden')).toBeNull();
+  });
+
+  it('restores the settings opener after close-button and backdrop dismissal', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+    const settingsButton = container.querySelector(
+      'button[aria-label="Open settings"]'
+    ) as HTMLButtonElement;
+
+    for (const closeRoute of ['button', 'backdrop'] as const) {
+      settingsButton.focus();
+      await act(async () => {
+        settingsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(document.activeElement?.getAttribute('aria-label')).toBe('Close settings');
+
+      await act(async () => {
+        if (closeRoute === 'button') {
+          container
+            .querySelector('button[aria-label="Close settings"]')
+            ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        } else {
+          container
+            .querySelector('[data-workbench-settings-overlay]')
+            ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        }
+      });
+      await flushAsync();
+      expect(container.querySelector('[data-workbench-settings-overlay]')).toBeNull();
+      expect(document.activeElement).toBe(settingsButton);
+    }
   });
 
   it('renders real cache and import actions without fake dashboard rows or dead mode tabs', async () => {
@@ -366,6 +443,124 @@ describe('App dashboard and workbench shell', () => {
     expect(container.textContent).toContain('Chosen workbench folder');
     expect(container.textContent).toContain('Folder namewire-jobs');
     expect(connectWorkbenchDirectoryService).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the browser-cache workbench active when a folder upgrade fails', async () => {
+    window.showDirectoryPicker = vi.fn();
+    const connectWorkbenchDirectoryService = vi.fn(async () => {
+      throw new Error('Folder permission was denied.');
+    });
+
+    await renderApp(context, {
+      connectRememberedWorkbenchDirectory: async () => ({ status: 'missing' }),
+      connectWorkbenchDirectory: connectWorkbenchDirectoryService
+    });
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Open settings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const connectButton = container.querySelector(
+      'button[aria-label="Choose Workbench Folder"]'
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      connectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(connectWorkbenchDirectoryService).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain('Folder permission was denied.');
+    expect(container.querySelector('[data-storage-status-label]')?.textContent).toContain(
+      'Browser cache'
+    );
+    expect(container.querySelector('[data-workbench-page]')).not.toBeNull();
+    expect(
+      [...container.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('Import DXF as Path Project')
+      )?.disabled
+    ).toBe(false);
+  });
+
+  it('requires returning to Workbench before switching storage and unloads the old editor document', async () => {
+    window.showDirectoryPicker = vi.fn();
+    const folderWorkbench = createDirectoryWorkbench('production-jobs');
+    const connectWorkbenchDirectoryService = vi.fn(async () => folderWorkbench);
+
+    await renderApp(context, {
+      connectRememberedWorkbenchDirectory: async () => ({ status: 'missing' }),
+      connectWorkbenchDirectory: connectWorkbenchDirectoryService
+    });
+
+    const programInput = container.querySelector(
+      'input[aria-label="Machine program file"]'
+    ) as HTMLInputElement | null;
+    expect(programInput).not.toBeNull();
+    Object.defineProperty(programInput, 'files', {
+      configurable: true,
+      value: [new File(['G0 X0 Y0\nG1 X8 Y4\nM30'], 'cache-program.nc')]
+    });
+    await act(async () => {
+      programInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-context="machine-program"]')).not.toBeNull();
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Open settings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    let connectButton = container.querySelector(
+      'button[aria-label="Choose Workbench Folder"]'
+    ) as HTMLButtonElement | null;
+    expect(connectButton?.disabled).toBe(true);
+    expect(container.textContent).toContain('Return to Workbench before switching storage');
+    await act(async () => {
+      connectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(connectWorkbenchDirectoryService).not.toHaveBeenCalled();
+
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Close settings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container
+        .querySelector('button[aria-label="Back to Dashboard"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Open settings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    connectButton = container.querySelector(
+      'button[aria-label="Choose Workbench Folder"]'
+    ) as HTMLButtonElement | null;
+    expect(connectButton?.disabled).toBe(false);
+    await act(async () => {
+      connectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+    expect(connectWorkbenchDirectoryService).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Close settings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      [...container.querySelectorAll('button')]
+        .find((button) => button.textContent?.includes('Open Editor'))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+    expect(container.querySelector('[data-editor-context="empty-program"]')).not.toBeNull();
+    const emptyProgramEditor = container.querySelector(
+      'textarea[aria-label="Program editor"]'
+    ) as HTMLTextAreaElement | null;
+    expect(emptyProgramEditor?.value).toBe('');
+    expect(emptyProgramEditor?.disabled).toBe(true);
   });
 
   it('labels unsupported persistent storage as temporary instead of connected local storage', async () => {

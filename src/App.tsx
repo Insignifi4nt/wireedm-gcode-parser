@@ -16,10 +16,14 @@ export default function App({ services }: AppProps = {}) {
     <AppShell
       connectedWorkbench={app.connectedWorkbench}
       errorMessage={app.errorMessage}
+      interactionLocked={app.workbenchInteractionLocked}
       onConnectWorkbench={app.handleConnectWorkbench}
       onSaveWorkbenchSettings={app.handleSaveWorkbenchSettings}
       settingsErrorMessage={app.settingsErrorMessage}
       settingsStatus={app.settingsStatus}
+      storageSwitchDisabled={
+        app.activeView === 'editor' || app.workbenchInteractionLocked
+      }
       storageActionLabel={app.storageActionLabel}
       statusNotifications={app.statusNotifications}
       storageWarningMessage={app.storageWarningMessage}
@@ -28,6 +32,7 @@ export default function App({ services }: AppProps = {}) {
       <StatusToastList onDismiss={app.dismissStatusToast} toasts={app.statusToasts} />
       {app.activeView === 'editor' ? (
         <EditorPage
+          interactionLocked={app.workbenchInteractionLocked}
           importErrorMessage={app.editorImportErrorMessage}
           importStatus={app.editorImportStatus}
           key={app.loadedEditorProgram?.filePath ?? 'empty-editor'}
@@ -45,6 +50,7 @@ export default function App({ services }: AppProps = {}) {
           connectedWorkbench={app.connectedWorkbench}
           importErrorMessage={app.importErrorMessage}
           importStatus={app.importStatus}
+          interactionLocked={app.workbenchInteractionLocked}
           latestImport={app.latestImport}
           onImportDxfFile={app.handleImportDxfFile}
           onImportProgramFile={app.handleImportExternalProgram}

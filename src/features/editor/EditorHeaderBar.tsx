@@ -23,6 +23,7 @@ interface EditorHeaderBarProps {
   guideHighlightTarget: EditorGuideTarget | null;
   hasUnsavedChanges: boolean;
   importErrorMessage: string | null;
+  interactionLocked: boolean;
   isImporting: boolean;
   isSaving: boolean;
   redoAvailable: boolean;
@@ -49,6 +50,7 @@ export function EditorHeaderBar({
   guideHighlightTarget,
   hasUnsavedChanges,
   importErrorMessage,
+  interactionLocked,
   isImporting,
   isSaving,
   redoAvailable,
@@ -73,7 +75,7 @@ export function EditorHeaderBar({
   async function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
     const file = input.files?.[0];
-    if (!file) return;
+    if (!file || interactionLocked) return;
 
     await onImportProgramFile(file);
     input.value = '';
@@ -87,6 +89,7 @@ export function EditorHeaderBar({
       <Button
         aria-label="Back to Dashboard"
         className="h-7 shrink-0 px-2 text-[10px]"
+        disabled={interactionLocked}
         onClick={onBackToDashboard}
         size="sm"
         title="Return to Workbench"
@@ -113,7 +116,7 @@ export function EditorHeaderBar({
           aria-label="Undo active document change"
           className="h-7 px-2 text-[10px]"
           data-editor-header-command
-          disabled={!undoAvailable || isSaving}
+          disabled={!undoAvailable || interactionLocked}
           onClick={onUndo}
           size="sm"
           title="Undo"
@@ -126,7 +129,7 @@ export function EditorHeaderBar({
           aria-label="Redo active document change"
           className="h-7 px-2 text-[10px]"
           data-editor-header-command
-          disabled={!redoAvailable || isSaving}
+          disabled={!redoAvailable || interactionLocked}
           onClick={onRedo}
           size="sm"
           title="Redo"
@@ -139,7 +142,7 @@ export function EditorHeaderBar({
           aria-label="Save active document"
           className="h-7 px-2 text-[10px]"
           data-editor-header-command
-          disabled={!hasUnsavedChanges || isSaving}
+          disabled={!hasUnsavedChanges || interactionLocked}
           onClick={onSave}
           size="sm"
           title="Save"
@@ -153,7 +156,7 @@ export function EditorHeaderBar({
             aria-label={exportLabel}
             className="h-7 px-2 text-[10px]"
             data-editor-header-command
-            disabled={!exportAvailable || isSaving}
+            disabled={!exportAvailable || interactionLocked}
             onClick={onExport}
             size="sm"
             title={visibleExportLabel ?? exportLabel}
@@ -168,7 +171,7 @@ export function EditorHeaderBar({
           accept=".gcode,.nc,.iso,.txt,text/plain"
           aria-label="G-code program file"
           className="hidden"
-          disabled={isImporting}
+          disabled={interactionLocked}
           onChange={handleFileInputChange}
           type="file"
         />
@@ -180,7 +183,7 @@ export function EditorHeaderBar({
             guideHighlightTarget
           )}`}
           data-editor-header-command
-          disabled={isImporting}
+          disabled={interactionLocked}
           onClick={() => fileInputRef.current?.click()}
           size="sm"
           title="Import Program"

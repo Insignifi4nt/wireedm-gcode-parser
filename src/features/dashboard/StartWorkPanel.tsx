@@ -7,6 +7,7 @@ export interface StartWorkPanelProps {
   connected: boolean;
   dxfErrorMessage: string | null;
   dxfImporting: boolean;
+  interactionLocked: boolean;
   programErrorMessage: string | null;
   programImporting: boolean;
   onImportDxfFile: (file: File) => void | Promise<void>;
@@ -18,6 +19,7 @@ export function StartWorkPanel({
   connected,
   dxfErrorMessage,
   dxfImporting,
+  interactionLocked,
   programErrorMessage,
   programImporting,
   onImportDxfFile,
@@ -26,7 +28,7 @@ export function StartWorkPanel({
 }: StartWorkPanelProps) {
   const dxfInputRef = useRef<HTMLInputElement>(null);
   const programInputRef = useRef<HTMLInputElement>(null);
-  const isImporting = dxfImporting || programImporting;
+  const isImporting = interactionLocked || dxfImporting || programImporting;
 
   async function handleDxfInputChange(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;

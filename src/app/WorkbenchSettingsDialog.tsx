@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Database, RefreshCw, SlidersHorizontal, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -13,12 +13,14 @@ type WorkbenchStatus = 'initializing' | 'ready' | 'connecting-storage' | 'error'
 interface WorkbenchSettingsDialogProps {
   connectedWorkbench: ConnectedWorkbench | null;
   errorMessage: string | null;
+  interactionLocked: boolean;
   onClose: () => void;
   onConnectWorkbench: () => void | Promise<void>;
   onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
   open: boolean;
   settingsErrorMessage: string | null;
   settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
+  storageSwitchDisabled: boolean;
   storageActionLabel: string | null;
   storageWarningMessage: string | null;
   workbenchStatus: WorkbenchStatus;
@@ -27,28 +29,88 @@ interface WorkbenchSettingsDialogProps {
 export function WorkbenchSettingsDialog({
   connectedWorkbench,
   errorMessage,
+  interactionLocked,
   onClose,
   onConnectWorkbench,
   onSaveWorkbenchSettings,
   open,
   settingsErrorMessage,
   settingsStatus,
+  storageSwitchDisabled,
   storageActionLabel,
   storageWarningMessage,
   workbenchStatus
 }: WorkbenchSettingsDialogProps) {
   const [activeSection, setActiveSection] = useState<'storage' | 'machine-output'>('storage');
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const latestCloseRef = useRef(onClose);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  latestCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
 
+    if (!overlayRef.current || !dialogRef.current) return;
+    const overlay: HTMLDivElement = overlayRef.current;
+    const dialog: HTMLDivElement = dialogRef.current;
+
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const siblingSnapshots = [...(overlay.parentElement?.children ?? [])]
+      .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== overlay)
+      .map((element) => ({
+        ariaHidden: element.getAttribute('aria-hidden'),
+        element,
+        inertAttribute: element.getAttribute('inert'),
+        inertProperty: element.inert
+      }));
+
+    for (const snapshot of siblingSnapshots) {
+      snapshot.element.inert = true;
+      snapshot.element.setAttribute('inert', '');
+      snapshot.element.setAttribute('aria-hidden', 'true');
+    }
+
+    (closeButtonRef.current ?? dialog).focus();
+
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        latestCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusableElements = readDialogFocusableElements(dialog);
+      const first = focusableElements[0] ?? dialog;
+      const last = focusableElements.at(-1) ?? dialog;
+      const activeElement = document.activeElement;
+      const focusIsOutside = !(activeElement instanceof Node) || !dialog.contains(activeElement);
+
+      if (focusIsOutside || (!event.shiftKey && activeElement === last)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, open]);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      for (const snapshot of siblingSnapshots) {
+        snapshot.element.inert = snapshot.inertProperty;
+        if (snapshot.inertAttribute === null) snapshot.element.removeAttribute('inert');
+        else snapshot.element.setAttribute('inert', snapshot.inertAttribute);
+        if (snapshot.ariaHidden === null) snapshot.element.removeAttribute('aria-hidden');
+        else snapshot.element.setAttribute('aria-hidden', snapshot.ariaHidden);
+      }
+      openerRef.current?.focus();
+      openerRef.current = null;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (open) setActiveSection('storage');
@@ -67,8 +129,12 @@ export function WorkbenchSettingsDialog({
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
       data-workbench-settings-overlay
+      ref={overlayRef}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) {
+          event.preventDefault();
+          onClose();
+        }
       }}
     >
       <div
@@ -76,13 +142,16 @@ export function WorkbenchSettingsDialog({
         aria-modal="true"
         className="grid max-h-[86vh] w-full max-w-4xl grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1"
         onMouseDown={(event) => event.stopPropagation()}
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <aside className="min-h-0 border-r border-border bg-background/45 p-3">
           <button
             aria-label="Close settings"
             className="mb-4 flex size-8 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
             onClick={onClose}
+            ref={closeButtonRef}
             type="button"
           >
             <X className="size-4" />
@@ -156,13 +225,25 @@ export function WorkbenchSettingsDialog({
                     <Button
                       aria-label={storageActionLabel ?? 'Choose Workbench Folder'}
                       className="mt-3"
+                      disabled={storageSwitchDisabled}
                       onClick={onConnectWorkbench}
+                      title={
+                        storageSwitchDisabled
+                          ? 'Return to Workbench before switching storage'
+                          : storageActionLabel ?? undefined
+                      }
                       type="button"
                       variant="outline"
                     >
                       <RefreshCw />
                       {storageActionLabel}
                     </Button>
+                  )}
+                  {canConnect && storageSwitchDisabled && (
+                    <p className="mt-2 font-mono text-[10px] text-muted-foreground">
+                      Return to Workbench before switching storage so the open document stays bound
+                      to its current workbench.
+                    </p>
                   )}
                   {isConnected && connectedWorkbench.adapter.kind === 'memory' && (
                     <p className="mt-3 border border-amber-500/50 bg-amber-500/10 p-2 font-mono text-[10px] text-amber-100">
@@ -183,6 +264,7 @@ export function WorkbenchSettingsDialog({
             ) : (
               <MachineOutputSettingsPanel
                 connectedWorkbench={connectedWorkbench}
+                interactionLocked={interactionLocked}
                 onSaveWorkbenchSettings={onSaveWorkbenchSettings}
                 settingsErrorMessage={settingsErrorMessage}
                 settingsStatus={settingsStatus}
@@ -201,6 +283,16 @@ function SettingsRow({ label, value }: { label: string; value: string }) {
       <div className="text-muted-foreground">{label}</div>
       <div className="min-w-0 break-words text-foreground" title={value}>{value}</div>
     </div>
+  );
+}
+
+function readDialogFocusableElements(dialog: HTMLElement) {
+  return [...dialog.querySelectorAll<HTMLElement>(
+    'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'
+  )].filter(
+    (element) =>
+      !element.closest('[hidden], [aria-hidden="true"], [inert]') &&
+      element.getAttribute('aria-disabled') !== 'true'
   );
 }
 

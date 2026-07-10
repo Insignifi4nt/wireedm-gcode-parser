@@ -1,6 +1,9 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { importExternalProgram as importExternalProgramService } from '@/domain/editor/importExternalProgram';
+import { saveEditorProgram as saveEditorProgramService } from '@/domain/editor/saveEditorProgram';
+
 import {
   FakeDirectoryHandle,
   cleanupAppTestContext,
@@ -632,6 +635,197 @@ describe('Editor import, export, and parse feedback', () => {
     expect(replacedProgramEditor?.value).toContain('G1 X7 Y7');
   });
 
+  it('serializes replacement import behind save and preserves same-document history', async () => {
+    window.showDirectoryPicker = undefined;
+    const saveGate = createDeferred<void>();
+    const saveEditorProgram = vi.fn(async (...args: Parameters<typeof saveEditorProgramService>) => {
+      const result = await saveEditorProgramService(...args);
+      await saveGate.promise;
+      return result;
+    });
+    const importExternalProgram = vi.fn(importExternalProgramService);
+
+    await renderApp(context, { importExternalProgram, saveEditorProgram });
+
+    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Open Editor')
+    );
+    await act(async () => {
+      openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    let fileInput = container.querySelector(
+      'input[aria-label="G-code program file"]'
+    ) as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['G0 X0 Y0\nG1 X5 Y5\nM30'], 'save-race.nc')]
+    });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const programEditor = container.querySelector(
+      'textarea[aria-label="Program editor"]'
+    ) as HTMLTextAreaElement | null;
+    expect(programEditor).not.toBeNull();
+    await act(async () => {
+      if (programEditor) setTextAreaValue(programEditor, 'G0 X0 Y0\nG1 X9 Y9\nM30');
+    });
+
+    const saveButton = container.querySelector(
+      'button[aria-label="Save active document"]'
+    ) as HTMLButtonElement | null;
+    fileInput = container.querySelector(
+      'input[aria-label="G-code program file"]'
+    ) as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['G0 X0 Y0\nG1 X99 Y99\nM30'], 'must-not-import.nc')]
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const backButton = container.querySelector(
+      'button[aria-label="Back to Dashboard"]'
+    ) as HTMLButtonElement | null;
+    const undoButton = container.querySelector(
+      'button[aria-label="Undo active document change"]'
+    ) as HTMLButtonElement | null;
+    expect(saveEditorProgram).toHaveBeenCalledTimes(1);
+    expect(importExternalProgram).toHaveBeenCalledTimes(1);
+    expect(backButton?.disabled).toBe(true);
+    expect(fileInput?.disabled).toBe(true);
+    expect(programEditor?.disabled).toBe(true);
+    expect(undoButton?.disabled).toBe(true);
+
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'z' })
+      );
+    });
+    expect(programEditor?.value).toBe('G0 X0 Y0\nG1 X9 Y9\nM30');
+
+    await act(async () => {
+      saveGate.resolve();
+      await saveGate.promise;
+    });
+    await flushAsync();
+
+    expect(container.textContent).not.toContain('Unsaved');
+    expect(programEditor?.value).toBe('G0 X0 Y0\nG1 X9 Y9\nM30');
+    expect(undoButton?.disabled).toBe(false);
+    await act(async () => {
+      undoButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(programEditor?.value).toBe('G0 X0 Y0\nG1 X5 Y5\nM30');
+    expect(container.textContent).not.toContain('must-not-import.nc');
+  });
+
+  it('locks dashboard project and settings mutations while a program import is pending', async () => {
+    window.showDirectoryPicker = vi.fn();
+    const secondImportGate = createDeferred<void>();
+    let importAttempt = 0;
+    const importExternalProgram = vi.fn(
+      async (...args: Parameters<typeof importExternalProgramService>) => {
+        importAttempt += 1;
+        if (importAttempt === 2) await secondImportGate.promise;
+        return importExternalProgramService(...args);
+      }
+    );
+    const connectWorkbenchDirectory = vi.fn(async () => {
+      throw new Error('Storage switching must stay disabled during import.');
+    });
+
+    await renderApp(context, { connectWorkbenchDirectory, importExternalProgram });
+
+    let programInput = container.querySelector(
+      'input[aria-label="Machine program file"]'
+    ) as HTMLInputElement | null;
+    Object.defineProperty(programInput, 'files', {
+      configurable: true,
+      value: [new File(['G0 X0 Y0\nG1 X2 Y2\nM30'], 'existing-project.nc')]
+    });
+    await act(async () => {
+      programInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Back to Dashboard"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    programInput = container.querySelector(
+      'input[aria-label="Machine program file"]'
+    ) as HTMLInputElement | null;
+    Object.defineProperty(programInput, 'files', {
+      configurable: true,
+      value: [new File(['G0 X0 Y0\nG1 X7 Y7\nM30'], 'pending-project.nc')]
+    });
+    await act(async () => {
+      programInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(importExternalProgram).toHaveBeenCalledTimes(2);
+    expect(programInput?.disabled).toBe(true);
+    for (const selector of [
+      'button[aria-label^="Open project "]',
+      'button[aria-label^="Rename project "]',
+      'button[aria-label^="Delete project "]'
+    ]) {
+      expect((container.querySelector(selector) as HTMLButtonElement | null)?.disabled).toBe(true);
+    }
+
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Open settings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const connectButton = container.querySelector(
+      'button[aria-label="Choose Workbench Folder"]'
+    ) as HTMLButtonElement | null;
+    expect(connectButton?.disabled).toBe(true);
+    await act(async () => {
+      connectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const machineSettingsButton = [...container.querySelectorAll('button')].find(
+      (button) => button.getAttribute('aria-label') === 'Machine & Output settings'
+    );
+    expect(machineSettingsButton).not.toBeNull();
+    await act(async () => {
+      machineSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    const saveSettingsButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Save Settings')
+    );
+    expect(saveSettingsButton?.disabled).toBe(true);
+    expect(connectWorkbenchDirectory).not.toHaveBeenCalled();
+
+    await act(async () => {
+      secondImportGate.resolve();
+      await secondImportGate.promise;
+    });
+    await flushAsync();
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Close settings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(container.querySelector('[data-editor-context="machine-program"]')).not.toBeNull();
+    expect(container.textContent).toContain('pending-project');
+  });
+
   it('shows editor parse warning details instead of only warning counts', async () => {
     window.showDirectoryPicker = undefined;
 
@@ -664,6 +858,16 @@ describe('Editor import, export, and parse feedback', () => {
     expect(container.textContent).toContain('Unknown G-code command: BAD X1');
   });
 });
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
 
 function createProgramDropEvent(fileName: string, text: string) {
   const event = new Event('drop', { bubbles: true, cancelable: true });

@@ -1,5 +1,20 @@
 import { expect, test } from '@playwright/test';
 
+const WORKSPACE_PANEL_TITLES = [
+  ['path-summary', 'Path Summary'],
+  ['path-actions', 'Path Actions'],
+  ['path-transform', 'Transform'],
+  ['path-hover-assist', 'Hover Assist'],
+  ['endpoint-topology', 'Endpoint Topology'],
+  ['path-diagnostics', 'Path Diagnostics'],
+  ['cut-sequence', 'Cut Sequence'],
+  ['contour-tree', 'Contour Tree'],
+  ['position', 'Position'],
+  ['statistics', 'Statistics'],
+  ['machine', 'Machine'],
+  ['measurement', 'Measurement']
+] as const;
+
 test('editor exposes functional groups as dockable and floating workspace panels', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto('/');
@@ -25,10 +40,12 @@ test('editor exposes functional groups as dockable and floating workspace panels
     'data-editor-panel-dock-zone-collapsed',
     'false'
   );
-  await expect(page.getByRole('button', { name: 'Float UPID Path Navigator' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Float Inspector' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /^Float / })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /^Dock / })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Dock Contour Tree left' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Dock Path Actions right' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Float Contour Tree' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Float Path Actions' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: /^Float / })).toHaveCount(2);
+  await expect(page.getByRole('button', { name: /^Dock / })).toHaveCount(4);
 
   await page.locator('[data-editor-panel-toolbar] summary').click();
   await expect(page.locator('[data-editor-panel-menu-group="path"]')).toBeVisible();
@@ -50,6 +67,47 @@ test('editor exposes functional groups as dockable and floating workspace panels
     'floating'
   );
   await expect(page.locator('[data-editor-workspace-panel="measurement"]')).toHaveAttribute(
+    'data-editor-workspace-panel-placement',
+    'floating'
+  );
+
+  const transformPanel = page.locator('[data-editor-floating-panel="path-transform"]');
+  let transformBox = await transformPanel.boundingBox();
+  expect(transformBox).not.toBeNull();
+  await page.getByRole('button', { name: 'Move Transform' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => (await transformPanel.boundingBox())?.x).toBe(transformBox!.x + 10);
+  transformBox = await transformPanel.boundingBox();
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect.poll(async () => (await transformPanel.boundingBox())?.y).toBe(transformBox!.y + 1);
+
+  transformBox = await transformPanel.boundingBox();
+  await page.getByRole('button', { name: 'Resize Transform' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => (await transformPanel.boundingBox())?.width).toBe(
+    transformBox!.width + 10
+  );
+  transformBox = await transformPanel.boundingBox();
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect.poll(async () => (await transformPanel.boundingBox())?.height).toBe(
+    transformBox!.height + 1
+  );
+
+  await page.getByRole('button', { name: 'Dock Transform left' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-editor-workspace-panel="path-transform"]')).toHaveAttribute(
+    'data-editor-workspace-panel-placement',
+    'docked-left'
+  );
+  await page.getByRole('button', { name: 'Dock Transform right' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-editor-workspace-panel="path-transform"]')).toHaveAttribute(
+    'data-editor-workspace-panel-placement',
+    'docked-right'
+  );
+  await page.getByRole('button', { name: 'Float Transform' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-editor-workspace-panel="path-transform"]')).toHaveAttribute(
     'data-editor-workspace-panel-placement',
     'floating'
   );
@@ -85,6 +143,25 @@ test('editor exposes functional groups as dockable and floating workspace panels
     'data-editor-workspace-panel-placement',
     'floating'
   );
+});
+
+test('every workspace panel exposes keyboard placement commands', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'workspace-command-inventory.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+
+  for (const [panelId, title] of WORKSPACE_PANEL_TITLES) {
+    await showPanels(page, [panelId]);
+    await expect(page.locator(`[data-editor-workspace-panel="${panelId}"]`)).toBeVisible();
+    await expect(page.getByRole('button', { name: `Dock ${title} left` })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Dock ${title} right` })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Float ${title}` })).toBeVisible();
+    await hidePanels(page, [panelId]);
+  }
 });
 
 test('editor panel menu explains endpoint topology before opening it', async ({ page }) => {
@@ -333,6 +410,22 @@ test('editor opens common floating workspace panels in readable non-overlapping 
     for (let compareIndex = index + 1; compareIndex < boxes.length; compareIndex += 1) {
       expect(panelsOverlap(boxes[index], boxes[compareIndex])).toBe(false);
     }
+  }
+
+  await dragPanelControlBeyondViewport(
+    page,
+    page.locator('[data-editor-workspace-panel-handle="path-transform"]')
+  );
+  await expectFloatingPanelInsideViewport(page, 'path-transform', 1400, 760);
+  await dragPanelControlBeyondViewport(
+    page,
+    page.locator('[data-editor-floating-panel-resizer="path-transform"]')
+  );
+  await expectFloatingPanelInsideViewport(page, 'path-transform', 1400, 760);
+
+  await page.setViewportSize({ width: 1024, height: 720 });
+  for (const panelId of panelIds) {
+    await expectFloatingPanelInsideViewport(page, panelId, 1024, 720);
   }
 });
 
@@ -806,6 +899,40 @@ async function readFloatingPanelBoxes(page: import('@playwright/test').Page, pan
     if (box) boxes.push(box);
   }
   return boxes;
+}
+
+async function dragPanelControlBeyondViewport(
+  page: import('@playwright/test').Page,
+  control: import('@playwright/test').Locator
+) {
+  const box = await control.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) return;
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(2400, 1600, { steps: 8 });
+  await page.mouse.up();
+}
+
+async function expectFloatingPanelInsideViewport(
+  page: import('@playwright/test').Page,
+  panelId: string,
+  viewportWidth: number,
+  viewportHeight: number
+) {
+  await expect
+    .poll(async () => {
+      const box = await page.locator(`[data-editor-floating-panel="${panelId}"]`).boundingBox();
+      return Boolean(
+        box &&
+          box.x >= 8 &&
+          box.y >= 42 &&
+          box.x + box.width <= viewportWidth - 8 + 0.5 &&
+          box.y + box.height <= viewportHeight - 8 + 0.5
+      );
+    })
+    .toBe(true);
 }
 
 function panelsOverlap(

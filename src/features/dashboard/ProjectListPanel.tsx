@@ -8,6 +8,7 @@ type ProjectSourceFilter = 'all' | WorkbenchProjectIndexEntry['sourceKind'];
 type ProjectSortMode = 'updated-desc' | 'updated-asc' | 'name-asc' | 'name-desc' | 'type';
 
 interface ProjectListPanelProps {
+  interactionLocked: boolean;
   projects: WorkbenchProjectIndexEntry[];
   onOpenProject: (projectPath: string) => void | Promise<void>;
   onDeleteProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
@@ -15,6 +16,7 @@ interface ProjectListPanelProps {
 }
 
 export function ProjectListPanel({
+  interactionLocked,
   projects,
   onDeleteProject,
   onOpenProject,
@@ -99,6 +101,7 @@ export function ProjectListPanel({
                     <div className="flex items-center gap-1">
                       <Button
                         aria-label={`Open project ${project.id} in editor`}
+                        disabled={interactionLocked}
                         onClick={() => onOpenProject(project.path)}
                         size="sm"
                         type="button"
@@ -109,6 +112,7 @@ export function ProjectListPanel({
                       <Button
                         aria-label={`Rename project ${project.id}`}
                         className="size-7 text-muted-foreground hover:text-foreground"
+                        disabled={interactionLocked}
                         onClick={() => onRenameProject(project)}
                         size="icon"
                         title="Rename project"
@@ -120,6 +124,7 @@ export function ProjectListPanel({
                       <Button
                         aria-label={`Delete project ${project.id}`}
                         className="size-7 text-muted-foreground hover:text-destructive"
+                        disabled={interactionLocked}
                         onClick={() => onDeleteProject(project)}
                         size="icon"
                         title="Delete project"

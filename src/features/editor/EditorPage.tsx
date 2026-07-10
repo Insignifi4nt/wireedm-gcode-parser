@@ -88,6 +88,9 @@ import { EditorProgramTextPanel } from './EditorProgramTextPanel';
 import { EditorStatusBar } from './EditorStatusBar';
 import { EditorUpidExportPreview } from './EditorUpidExportPreview';
 import {
+  clampEditorFloatingPanelGeometry,
+  EDITOR_FLOATING_PANEL_GAP,
+  EDITOR_FLOATING_PANEL_TOP,
   EditorPanelDockZone,
   EditorPanelToolbar,
   EditorWorkspacePanelFrame,
@@ -127,6 +130,7 @@ import {
 
 interface EditorPageProps {
   program: LoadedEditorProgram | null;
+  interactionLocked?: boolean;
   importStatus: 'idle' | 'importing' | 'error';
   importErrorMessage: string | null;
   saveStatus: 'idle' | 'saving' | 'error';
@@ -221,9 +225,6 @@ const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFlo
   measurement: { x: 250, y: 194, width: 340, height: 420 }
 };
 
-const FLOATING_PANEL_GAP = 8;
-const FLOATING_PANEL_TOP = 42;
-
 const WORKSPACE_PANEL_GROUPS: Array<{
   id: string;
   title: string;
@@ -304,9 +305,11 @@ function findReadableFloatingPanelGeometry(
   const viewport = readFloatingPanelViewport();
   const existingPanels = Object.entries(placements)
     .filter(([id, placement]) => id !== panelId && placement === 'floating')
-    .map(([id]) => clampFloatingPanelGeometry(geometries[id as EditorWorkspacePanelId], viewport));
+    .map(([id]) =>
+      clampEditorFloatingPanelGeometry(geometries[id as EditorWorkspacePanelId], viewport)
+    );
   const renderedPanels = readRenderedFloatingPanelGeometries(panelId, viewport);
-  const baseGeometry = clampFloatingPanelGeometry(requestedGeometry, viewport);
+  const baseGeometry = clampEditorFloatingPanelGeometry(requestedGeometry, viewport);
 
   const comparisonPanels = [...existingPanels, ...renderedPanels];
 
@@ -329,14 +332,14 @@ function findReadableFloatingPanelGeometry(
 }
 
 function readFloatingPanelViewport() {
-  const left = FLOATING_PANEL_GAP;
+  const left = EDITOR_FLOATING_PANEL_GAP;
   const width = Math.max(left + 280, window.innerWidth);
-  const height = Math.max(FLOATING_PANEL_TOP + 220, window.innerHeight);
+  const height = Math.max(EDITOR_FLOATING_PANEL_TOP + 220, window.innerHeight);
 
   return {
     height,
     left,
-    top: FLOATING_PANEL_TOP,
+    top: EDITOR_FLOATING_PANEL_TOP,
     width
   };
 }
@@ -349,7 +352,7 @@ function readRenderedFloatingPanelGeometries(
     .filter((element) => element.getAttribute('data-editor-floating-panel') !== panelId)
     .map((element) => {
       const rect = element.getBoundingClientRect();
-      return clampFloatingPanelGeometry(
+      return clampEditorFloatingPanelGeometry(
         {
           x: rect.left,
           y: rect.top,
@@ -361,39 +364,26 @@ function readRenderedFloatingPanelGeometries(
     });
 }
 
-function clampFloatingPanelGeometry(
-  geometry: EditorFloatingPanelGeometry,
-  viewport: ReturnType<typeof readFloatingPanelViewport>
-): EditorFloatingPanelGeometry {
-  const maxWidth = Math.max(260, viewport.width - viewport.left - FLOATING_PANEL_GAP);
-  const width = Math.min(Math.max(260, geometry.width), maxWidth);
-  const maxHeight = Math.max(180, viewport.height - viewport.top - FLOATING_PANEL_GAP);
-  const height = Math.min(Math.max(180, geometry.height), maxHeight);
-  const maxX = Math.max(viewport.left, viewport.width - width - FLOATING_PANEL_GAP);
-  const maxY = Math.max(viewport.top, viewport.height - height - FLOATING_PANEL_GAP);
-
-  return {
-    x: Math.min(Math.max(viewport.left, geometry.x), maxX),
-    y: Math.min(Math.max(viewport.top, geometry.y), maxY),
-    width,
-    height
-  };
-}
-
 function createFloatingPanelCandidates(
   baseGeometry: EditorFloatingPanelGeometry,
   existingPanels: EditorFloatingPanelGeometry[],
   viewport: ReturnType<typeof readFloatingPanelViewport>
 ) {
-  const maxX = Math.max(viewport.left, viewport.width - baseGeometry.width - FLOATING_PANEL_GAP);
-  const maxY = Math.max(viewport.top, viewport.height - baseGeometry.height - FLOATING_PANEL_GAP);
+  const maxX = Math.max(
+    viewport.left,
+    viewport.width - baseGeometry.width - EDITOR_FLOATING_PANEL_GAP
+  );
+  const maxY = Math.max(
+    viewport.top,
+    viewport.height - baseGeometry.height - EDITOR_FLOATING_PANEL_GAP
+  );
   const xStops = new Set<number>([
     baseGeometry.x,
     viewport.left,
     maxX,
     ...existingPanels.flatMap((panel) => [
-      panel.x + panel.width + FLOATING_PANEL_GAP,
-      panel.x - baseGeometry.width - FLOATING_PANEL_GAP
+      panel.x + panel.width + EDITOR_FLOATING_PANEL_GAP,
+      panel.x - baseGeometry.width - EDITOR_FLOATING_PANEL_GAP
     ])
   ]);
   const yStops = new Set<number>([
@@ -401,8 +391,8 @@ function createFloatingPanelCandidates(
     viewport.top,
     maxY,
     ...existingPanels.flatMap((panel) => [
-      panel.y + panel.height + FLOATING_PANEL_GAP,
-      panel.y - baseGeometry.height - FLOATING_PANEL_GAP
+      panel.y + panel.height + EDITOR_FLOATING_PANEL_GAP,
+      panel.y - baseGeometry.height - EDITOR_FLOATING_PANEL_GAP
     ])
   ]);
 
@@ -410,7 +400,7 @@ function createFloatingPanelCandidates(
   for (const y of [...yStops].sort((first, second) => first - second)) {
     for (const x of [...xStops].sort((first, second) => first - second)) {
       candidates.push(
-        clampFloatingPanelGeometry(
+        clampEditorFloatingPanelGeometry(
           {
             ...baseGeometry,
             x,
@@ -432,7 +422,7 @@ function createFloatingPanelFitVariants(
   const widths = [340, 320, 300, 280, 260].filter((width) => width < baseGeometry.width);
 
   return widths.map((width) =>
-    clampFloatingPanelGeometry(
+    clampEditorFloatingPanelGeometry(
       {
         ...baseGeometry,
         width
@@ -454,15 +444,28 @@ function floatingPanelsOverlap(
   second: EditorFloatingPanelGeometry
 ) {
   return (
-    first.x < second.x + second.width + FLOATING_PANEL_GAP &&
-    first.x + first.width + FLOATING_PANEL_GAP > second.x &&
-    first.y < second.y + second.height + FLOATING_PANEL_GAP &&
-    first.y + first.height + FLOATING_PANEL_GAP > second.y
+    first.x < second.x + second.width + EDITOR_FLOATING_PANEL_GAP &&
+    first.x + first.width + EDITOR_FLOATING_PANEL_GAP > second.x &&
+    first.y < second.y + second.height + EDITOR_FLOATING_PANEL_GAP &&
+    first.y + first.height + EDITOR_FLOATING_PANEL_GAP > second.y
+  );
+}
+
+function floatingPanelGeometriesEqual(
+  first: EditorFloatingPanelGeometry,
+  second: EditorFloatingPanelGeometry
+) {
+  return (
+    first.x === second.x &&
+    first.y === second.y &&
+    first.width === second.width &&
+    first.height === second.height
   );
 }
 
 export function EditorPage({
   program,
+  interactionLocked = false,
   importStatus,
   importErrorMessage,
   saveStatus,
@@ -522,9 +525,12 @@ export function EditorPage({
     () => editorDraftSignature(createEditorDraftState(program)),
     [program]
   );
+  const programIdentity = program ? `${program.model}:${program.filePath}` : 'empty';
+  const lastProgramIdentityRef = useRef(programIdentity);
   const draftSignature = useMemo(() => editorDraftSignature(draftState), [draftState]);
   const isImporting = importStatus === 'importing';
   const isSaving = saveStatus === 'saving';
+  const isEditorMutationLocked = interactionLocked || isImporting || isSaving;
   const draftProgram = useMemo<LoadedEditorProgram | null>(
     () => {
       if (!program || program.model === 'upid-document' || pathDocumentDraft) return null;
@@ -774,6 +780,7 @@ export function EditorPage({
         guideHighlightTarget={guideHighlightTarget}
         hasUnsavedChanges={hasUnsavedChanges}
         importErrorMessage={importErrorMessage}
+        interactionLocked={isEditorMutationLocked}
         isImporting={isImporting}
         isSaving={isSaving}
         onBackToDashboard={handleBackToDashboard}
@@ -810,6 +817,7 @@ export function EditorPage({
       guideHighlightTarget,
       hasUnsavedChanges,
       importErrorMessage,
+      isEditorMutationLocked,
       isImporting,
       isPathProject,
       isSaving,
@@ -828,7 +836,28 @@ export function EditorPage({
   );
 
   useEffect(() => {
-    setDraftState(createEditorDraftState(program));
+    const identityChanged = lastProgramIdentityRef.current !== programIdentity;
+    lastProgramIdentityRef.current = programIdentity;
+    const nextDraft = createEditorDraftState(program);
+    setDraftState((current) =>
+      editorDraftSignature(current) === savedDraftSignature ? current : nextDraft
+    );
+
+    if (!identityChanged) {
+      const nextPathDocument = editorDraftPathDocument(nextDraft);
+      if (!nextPathDocument) return;
+      if (!selectedPathOperationId && !selectedPathElement) return;
+
+      const normalizedSelection = normalizeUpidPathElementSelection(
+        nextPathDocument,
+        selectedPathOperationId,
+        selectedPathElement
+      );
+      setSelectedPathElement(normalizedSelection);
+      setSelectedPathOperationId(normalizedSelection?.operationId ?? null);
+      return;
+    }
+
     setSelectedPathOperationId(null);
     setSelectedPathElement(null);
     setHoveredPathElement(null);
@@ -838,7 +867,7 @@ export function EditorPage({
     setRedoStack([]);
     setUndoStack([]);
     clearTransientLineState();
-  }, [program?.filePath, savedDraftSignature]);
+  }, [programIdentity, savedDraftSignature]);
 
   useEffect(() => {
     setInspectorRailCollapsed(false);
@@ -848,6 +877,29 @@ export function EditorPage({
 
     if (program?.model === 'upid-document') setRailCollapsed(false);
   }, [program?.filePath, program?.model]);
+
+  useEffect(() => {
+    function clampFloatingPanelsToViewport() {
+      const viewport = readFloatingPanelViewport();
+      setWorkspacePanelGeometries((current) => {
+        let next = current;
+
+        for (const panelId of [...PATH_WORKSPACE_PANEL_IDS, ...INSPECTOR_WORKSPACE_PANEL_IDS]) {
+          if (workspacePanelPlacements[panelId] !== 'floating') continue;
+          const clamped = clampEditorFloatingPanelGeometry(current[panelId], viewport);
+          if (floatingPanelGeometriesEqual(clamped, current[panelId])) continue;
+
+          if (next === current) next = { ...current };
+          next[panelId] = clamped;
+        }
+
+        return next;
+      });
+    }
+
+    window.addEventListener('resize', clampFloatingPanelsToViewport);
+    return () => window.removeEventListener('resize', clampFloatingPanelsToViewport);
+  }, [workspacePanelPlacements]);
 
   useEffect(() => {
     setRailContent(editorRailContent);
@@ -906,6 +958,7 @@ export function EditorPage({
 
       const target = event.target;
       if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) return;
+      if (isEditorMutationLocked) return;
 
       const isUndo = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey;
       const isRedo =
@@ -938,14 +991,16 @@ export function EditorPage({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [draftText, isSaving, measurementPoints.length, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
+  }, [draftText, isEditorMutationLocked, measurementPoints.length, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
 
   function handleBackToDashboard() {
+    if (isEditorMutationLocked) return;
     if (!confirmDiscardUnsavedChanges()) return;
     onBackToDashboard();
   }
 
   async function handleImportProgramFile(file: File) {
+    if (isEditorMutationLocked) return;
     if (!confirmDiscardUnsavedChanges()) return;
     await onImportProgramFile(file);
   }
@@ -957,7 +1012,7 @@ export function EditorPage({
   async function handleEditorDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     const file = event.dataTransfer.files?.[0];
-    if (!file || isImporting) return;
+    if (!file || isEditorMutationLocked) return;
 
     await handleImportProgramFile(file);
   }
@@ -982,7 +1037,7 @@ export function EditorPage({
   }
 
   async function handleSaveClick() {
-    if (!program || !hasUnsavedChanges || isSaving) return;
+    if (!program || !hasUnsavedChanges || isEditorMutationLocked) return;
     await onSaveEditorDraft(
       pathDocumentDraft
         ? {
@@ -997,12 +1052,12 @@ export function EditorPage({
   }
 
   function handleNormalizeDraft() {
-    if (!program || isSaving) return;
+    if (!program || isEditorMutationLocked) return;
     replaceGCodeDraftText(normalizeToISO(draftText, { crlf: false }));
   }
 
   function handleExportNormalizedISO() {
-    if (!program || isSaving || draftText.trim() === '') return;
+    if (!program || isEditorMutationLocked || draftText.trim() === '') return;
 
     const dateStamp = new Date().toISOString().slice(0, 10);
     onDownloadEditorFile(`normalized-${dateStamp}.iso`, normalizeToISO(draftText));
@@ -1060,7 +1115,7 @@ export function EditorPage({
   }
 
   function handleDeleteSelectedLines() {
-    if (!program || pathDocumentDraft || selectedLines.length === 0 || isSaving) return;
+    if (!program || pathDocumentDraft || selectedLines.length === 0 || isEditorMutationLocked) return;
     if (selectedLines.length > 3 && !confirmBulkLineDelete(selectedLines.length)) return;
 
     const linesToDelete = new Set(selectedLines);
@@ -1077,7 +1132,7 @@ export function EditorPage({
   }
 
   function handleMoveSelectedLines(direction: -1 | 1) {
-    if (!program || pathDocumentDraft || selectedLines.length === 0 || isSaving) return;
+    if (!program || pathDocumentDraft || selectedLines.length === 0 || isEditorMutationLocked) return;
 
     const result = moveSelectedLines(draftText, selectedLines, direction);
     if (!result) return;
@@ -1100,7 +1155,7 @@ export function EditorPage({
   }
 
   function handleLineEditCommit(lineNumber: number, nextText: string) {
-    if (!program || isSaving) return;
+    if (!program || isEditorMutationLocked) return;
 
     const sanitizedText = sanitizeLineText(nextText);
     const lines = draftText.split(/\r?\n/);
@@ -1115,7 +1170,7 @@ export function EditorPage({
   }
 
   function handleMoveGroup(groupId: string, direction: -1 | 1) {
-    if (!structure || !program || isSaving) return;
+    if (!structure || !program || isEditorMutationLocked) return;
 
     const result = moveBodyGroup(draftText, structure, groupId, direction);
     if (!result) return;
@@ -1128,7 +1183,7 @@ export function EditorPage({
   }
 
   function handleDeleteGroup(groupId: string) {
-    if (!structure || !program || isSaving) return;
+    if (!structure || !program || isEditorMutationLocked) return;
 
     const group = structure.body.contours?.find((candidate) => candidate.id === groupId);
     if (group && group.lines.length > 3 && !confirmGroupDelete(group.id, group.lines.length)) return;
@@ -1145,7 +1200,7 @@ export function EditorPage({
   }
 
   function handleSetStartHere() {
-    if (!program || isSaving) return;
+    if (!program || isEditorMutationLocked) return;
     if (selectedLines.length !== 1) {
       onStatusMessage?.('Select exactly one motion line in the body to set as start.', 'warning');
       return;
@@ -1213,6 +1268,8 @@ export function EditorPage({
   }
 
   function handlePreviewPointClick(point: { x: number; y: number }) {
+    if (isEditorMutationLocked) return;
+
     if (!pathClickMode || !pathDocumentDraft || !selectedPathOperationId) {
       if (canvasMouseMode === 'point') addMeasurementPoint(point.x, point.y);
       return;
@@ -1245,7 +1302,13 @@ export function EditorPage({
   }
 
   function handleSetPathStartFromElement(element: EditorPathElementRef) {
-    if (!pathDocumentDraft || !element.operationId || !element.segmentId || !element.pointRole || isSaving) {
+    if (
+      !pathDocumentDraft ||
+      !element.operationId ||
+      !element.segmentId ||
+      !element.pointRole ||
+      isEditorMutationLocked
+    ) {
       return;
     }
 
@@ -1293,25 +1356,25 @@ export function EditorPage({
   }
 
   function handleMovePathOperation(direction: -1 | 1, operationId = selectedPathOperationId ?? undefined) {
-    if (!pathDocumentDraft || !operationId || isSaving) return;
+    if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
     const edited = movePathOperation(pathDocumentDraft, operationId, direction);
     if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
 
   function handleReversePathOperation() {
-    if (!pathDocumentDraft || !selectedPathOperationId || isSaving) return;
+    if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
     const edited = reversePathOperation(pathDocumentDraft, selectedPathOperationId);
     if (edited) applyPathDocumentEdit(edited);
   }
 
   function handleSetPathOperationClassification(classification: ContourClassification) {
-    if (!pathDocumentDraft || !selectedPathOperationId || isSaving) return;
+    if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
     const edited = setPathOperationClassification(pathDocumentDraft, selectedPathOperationId, classification);
     if (edited) applyPathDocumentEdit(edited);
   }
 
   function handleSetPathOperationCenterPierceLeadIn() {
-    if (!pathDocumentDraft || !selectedPathOperationId || isSaving) return;
+    if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
     const edited = setCircleOperationCenterPierceLeadIn(pathDocumentDraft, selectedPathOperationId);
     if (!edited) {
       onStatusMessage?.('Select a closed circular contour before adding a center pierce lead-in.', 'warning');
@@ -1323,7 +1386,7 @@ export function EditorPage({
   }
 
   function handleSetPathOperationOrderStrategy(strategy: OperationOrderStrategy) {
-    if (!pathDocumentDraft || isSaving) return;
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPathOperationOrderStrategy(pathDocumentDraft, strategy);
     if (edited) {
       applyPathDocumentEdit(edited, {
@@ -1334,7 +1397,7 @@ export function EditorPage({
   }
 
   function handleTranslatePathSelection(delta: { x: number; y: number }) {
-    if (!pathDocumentDraft || isSaving) return;
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
 
     const edited = selectedPathElement?.segmentId
       ? translatePathSegment(pathDocumentDraft, selectedPathElement.segmentId, delta)
@@ -1353,7 +1416,7 @@ export function EditorPage({
   }
 
   function handleTranslatePathDocument(delta: { x: number; y: number }) {
-    if (!pathDocumentDraft || isSaving) return;
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
 
     const edited = translatePathDocument(pathDocumentDraft, delta);
     if (edited) {
@@ -1365,7 +1428,7 @@ export function EditorPage({
   }
 
   function handleRotatePathSelection(angleDegrees: number) {
-    if (!pathDocumentDraft || isSaving) return;
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
 
     const origin = readPathSelectionBoundsCenter(
       pathDocumentDraft,
@@ -1391,7 +1454,7 @@ export function EditorPage({
   }
 
   function handleMirrorPathSelection(axis: PathMirrorAxis) {
-    if (!pathDocumentDraft || isSaving) return;
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
 
     const origin = readPathSelectionBoundsCenter(
       pathDocumentDraft,
@@ -1417,7 +1480,7 @@ export function EditorPage({
   }
 
   function handleRotatePathDocument(angleDegrees: number) {
-    if (!pathDocumentDraft || isSaving) return;
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
 
     const origin = readPathDocumentBoundsCenter(pathDocumentDraft);
     if (!origin) return;
@@ -1432,7 +1495,7 @@ export function EditorPage({
   }
 
   function handleMirrorPathDocument(axis: PathMirrorAxis) {
-    if (!pathDocumentDraft || isSaving) return;
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
 
     const origin = readPathDocumentBoundsCenter(pathDocumentDraft);
     if (!origin) return;
@@ -1447,7 +1510,7 @@ export function EditorPage({
   }
 
   function handleMovePathSelectionCenter(targetCenter: { x: number; y: number }) {
-    if (!pathDocumentDraft || isSaving) return;
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
 
     const selectionCenter = readPathSelectionBoundsCenter(
       pathDocumentDraft,
@@ -1463,7 +1526,7 @@ export function EditorPage({
   }
 
   function handleDragPathElement(element: EditorPathElementRef, delta: { x: number; y: number }) {
-    if (!pathDocumentDraft || isSaving || (delta.x === 0 && delta.y === 0)) return;
+    if (!pathDocumentDraft || isEditorMutationLocked || (delta.x === 0 && delta.y === 0)) return;
 
     const dragTarget = resolvePathDragTarget(selectedPathElement, element);
     const edited =
@@ -1484,7 +1547,7 @@ export function EditorPage({
   }
 
   function handleMoveSelectedSegmentCenter(targetCenter: { x: number; y: number }) {
-    if (!pathDocumentDraft || !selectedPathElement?.segmentId || isSaving) return;
+    if (!pathDocumentDraft || !selectedPathElement?.segmentId || isEditorMutationLocked) return;
 
     const edited = movePathSegmentCenterTo(pathDocumentDraft, selectedPathElement.segmentId, targetCenter);
     if (edited) {
@@ -1499,7 +1562,7 @@ export function EditorPage({
     element: EditorPathElementRef,
     targetCenter: { x: number; y: number }
   ) {
-    if (!pathDocumentDraft || !element.segmentId || isSaving) return;
+    if (!pathDocumentDraft || !element.segmentId || isEditorMutationLocked) return;
 
     const edited = movePathSegmentCenterTo(pathDocumentDraft, element.segmentId, targetCenter);
     if (edited) {
@@ -1532,7 +1595,7 @@ export function EditorPage({
   }
 
   function handleInsertMeasurementPoints() {
-    if (!program || pathDocumentDraft || measurementPoints.length === 0 || isSaving) return;
+    if (!program || pathDocumentDraft || measurementPoints.length === 0 || isEditorMutationLocked) return;
 
     const result = insertMeasurementPointsIntoText(draftText, measurementPoints, {
       insertAfterLine: selectedLines.length > 0 ? Math.min(...selectedLines) : undefined
@@ -1601,6 +1664,8 @@ export function EditorPage({
       selectedPathOperationId?: string | null;
     } = {}
   ) {
+    if (isEditorMutationLocked) return;
+
     const clonedDraft = cloneEditorDraftState(nextDraft);
     const nextPathDocument = editorDraftPathDocument(clonedDraft);
     const nextSelectedPathOperationId = nextPathDocument
@@ -1626,6 +1691,7 @@ export function EditorPage({
   }
 
   function handleUndoDraft() {
+    if (isEditorMutationLocked) return;
     const previous = undoStack.at(-1);
     if (previous === undefined) return;
 
@@ -1636,6 +1702,7 @@ export function EditorPage({
   }
 
   function handleRedoDraft() {
+    if (isEditorMutationLocked) return;
     const next = redoStack[0];
     if (next === undefined) return;
 
@@ -1646,7 +1713,13 @@ export function EditorPage({
   }
 
   function handleDraftTextChange(nextText: string) {
-    if (draftState.model !== 'gcode-text' || nextText === draftState.text) return;
+    if (
+      isEditorMutationLocked ||
+      draftState.model !== 'gcode-text' ||
+      nextText === draftState.text
+    ) {
+      return;
+    }
     setUndoStack((current) => [...current, currentDraftSnapshot()]);
     setRedoStack([]);
     setDraftState({
@@ -1702,7 +1775,7 @@ export function EditorPage({
       <EditorProgramTextPanel
         draftText={draftText}
         hasUnsavedChanges={hasUnsavedChanges}
-        isSaving={isSaving}
+        isSaving={isEditorMutationLocked}
         onDraftTextChange={handleDraftTextChange}
         program={program}
       />
@@ -1760,7 +1833,9 @@ export function EditorPage({
         fill={options.fill}
         geometry={workspacePanelGeometries[panelId]}
         id={id}
+        onDock={(side) => dockWorkspacePanel(panelId, side)}
         onDragEnd={(point) => handleWorkspacePanelDragEnd(panelId, point)}
+        onFloat={() => floatWorkspacePanel(panelId)}
         onFloatFromDock={(point) => floatWorkspacePanelFromDock(panelId, point)}
         onGeometryChange={(geometry) => setWorkspacePanelGeometry(panelId, geometry)}
         onHide={() => hideWorkspacePanel(panelId)}
@@ -1779,7 +1854,7 @@ export function EditorPage({
         hasUnsavedChanges={hasUnsavedChanges}
         hoveredPathElement={activeHoveredPathElement}
         hoverAssistEnabled={pathHoverAssistEnabled}
-        isSaving={isSaving}
+        isSaving={isEditorMutationLocked}
         latestMeasurementPoint={measurementPoints.at(-1) ?? null}
         magneticSnapEnabled={pathMagneticSnapEnabled}
         measurementPoints={measurementPoints}
@@ -1846,7 +1921,7 @@ export function EditorPage({
               guideHighlightTarget={guideHighlightTarget}
               hasUnsavedChanges={hasUnsavedChanges}
               isGroupExpanded={isGroupExpanded}
-              isSaving={isSaving}
+              isSaving={isEditorMutationLocked}
               lineMode={lineMode}
               lineRows={lineRows}
               onClearPins={() => setPinnedLines([])}
@@ -1890,7 +1965,7 @@ export function EditorPage({
           fullHeight={isPathProject}
           gridSnapEnabled={gridSnapEnabled}
           guideHighlightTarget={guideHighlightTarget}
-          isSaving={isSaving}
+          isSaving={isEditorMutationLocked}
           measurementPoints={measurementPoints}
           machineFit={machineFit}
           machineProfile={program?.project?.machine ?? null}
@@ -1929,10 +2004,15 @@ export function EditorPage({
     panelId: EditorWorkspacePanelId,
     geometry: EditorFloatingPanelGeometry
   ) {
-    setWorkspacePanelGeometries((current) => ({
-      ...current,
-      [panelId]: geometry
-    }));
+    setWorkspacePanelGeometries((current) => {
+      const clamped = clampEditorFloatingPanelGeometry(geometry, readFloatingPanelViewport());
+      if (floatingPanelGeometriesEqual(current[panelId], clamped)) return current;
+
+      return {
+        ...current,
+        [panelId]: clamped
+      };
+    });
   }
 
   function renderEditorDockZone(side: EditorDockSide) {
@@ -1997,8 +2077,10 @@ export function EditorPage({
   function dockWorkspacePanel(
     panelId: EditorWorkspacePanelId,
     side: EditorDockSide,
-    point: { x: number; y: number }
+    point?: { x: number; y: number }
   ) {
+    if (side === 'left') setRailCollapsed(false);
+    else setInspectorRailCollapsed(false);
     setWorkspacePanelPlacements((current) => ({
       ...current,
       [panelId]: `docked-${side}`
@@ -2009,7 +2091,9 @@ export function EditorPage({
         right: current.right.filter((id) => id !== panelId)
       };
       const nextSideOrder = [...withoutPanel[side]];
-      const insertAt = findWorkspaceDockInsertIndex(side, panelId, point.y, nextSideOrder);
+      const insertAt = point
+        ? findWorkspaceDockInsertIndex(side, panelId, point.y, nextSideOrder)
+        : nextSideOrder.length;
       nextSideOrder.splice(insertAt, 0, panelId);
 
       return {
@@ -2053,6 +2137,26 @@ export function EditorPage({
       x: Math.max(6, point.x - 24),
       y: Math.max(42, point.y - 14)
     });
+    setWorkspacePanelPlacements((current) => ({
+      ...current,
+      [panelId]: 'floating'
+    }));
+    setWorkspaceDockOrders((current) => ({
+      left: current.left.filter((id) => id !== panelId),
+      right: current.right.filter((id) => id !== panelId)
+    }));
+  }
+
+  function floatWorkspacePanel(panelId: EditorWorkspacePanelId) {
+    setWorkspacePanelGeometries((current) => ({
+      ...current,
+      [panelId]: findReadableFloatingPanelGeometry(
+        panelId,
+        current[panelId],
+        workspacePanelPlacements,
+        current
+      )
+    }));
     setWorkspacePanelPlacements((current) => ({
       ...current,
       [panelId]: 'floating'

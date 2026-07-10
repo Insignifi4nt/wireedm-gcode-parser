@@ -20,10 +20,12 @@ interface AppShellProps {
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
   connectedWorkbench: ConnectedWorkbench | null;
   errorMessage: string | null;
+  interactionLocked: boolean;
   onConnectWorkbench: () => void | Promise<void>;
   onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
   settingsErrorMessage: string | null;
   settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
+  storageSwitchDisabled: boolean;
   storageActionLabel: string | null;
   statusNotifications: StatusToast[];
   storageWarningMessage: string | null;
@@ -34,10 +36,12 @@ export function AppShell({
   workbenchStatus,
   connectedWorkbench,
   errorMessage,
+  interactionLocked,
   onConnectWorkbench,
   onSaveWorkbenchSettings,
   settingsErrorMessage,
   settingsStatus,
+  storageSwitchDisabled,
   storageActionLabel,
   statusNotifications,
   storageWarningMessage,
@@ -66,10 +70,15 @@ export function AppShell({
     : isReady
       ? connectedWorkbench.adapter.kind === 'directory'
         ? 'Workbench folder connected'
-        : storageActionLabel ?? `${activeStorageLabel} active`
+        : `${activeStorageLabel} active`
       : isConnectingStorage
         ? 'Connecting Workbench Folder'
         : 'Storage not connected';
+  const storageStatusTone = isTemporaryStorage
+    ? 'temporary'
+    : workbenchStatus === 'error' || (!connectedWorkbench && !isConnectingStorage)
+      ? 'error'
+      : 'neutral';
   const projectCount = connectedWorkbench?.manifest.projects.length ?? 0;
   const hasRailContent = railContent !== null;
   const replaceExpandedRailChrome = Boolean(railContent?.replaceRailChrome && !sidebarCollapsed);
@@ -121,9 +130,9 @@ export function AppShell({
           <span
             aria-label={storageStatusLabel}
             className={`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${
-              isTemporaryStorage
+              storageStatusTone === 'temporary'
                 ? 'border-amber-500/50 bg-amber-500/10 text-amber-100'
-                : storageActionLabel || (!connectedWorkbench && !isConnectingStorage)
+                : storageStatusTone === 'error'
                   ? 'border-destructive/60 bg-destructive/10 text-destructive'
                   : 'border-border bg-background/60 text-muted-foreground'
             }`}
@@ -183,8 +192,21 @@ export function AppShell({
                 </button>
               </div>
             )}
-            <div className="min-h-0 overflow-hidden">
-              {sidebarCollapsed ? railContent.collapsed : railContent.expanded}
+            <div
+              aria-hidden={sidebarCollapsed ? undefined : true}
+              className={`min-h-0 overflow-hidden ${sidebarCollapsed ? '' : 'hidden'}`}
+              data-app-rail-collapsed-content
+              inert={sidebarCollapsed ? undefined : true}
+            >
+              {railContent.collapsed}
+            </div>
+            <div
+              aria-hidden={sidebarCollapsed ? true : undefined}
+              className={`min-h-0 overflow-hidden ${sidebarCollapsed ? 'hidden' : ''}`}
+              data-app-rail-expanded-content
+              inert={sidebarCollapsed ? true : undefined}
+            >
+              {railContent.expanded}
             </div>
           </aside>
         )}
@@ -229,12 +251,14 @@ export function AppShell({
       <WorkbenchSettingsDialog
         connectedWorkbench={connectedWorkbench}
         errorMessage={errorMessage}
+        interactionLocked={interactionLocked}
         onClose={() => setSettingsOpen(false)}
         onConnectWorkbench={onConnectWorkbench}
         onSaveWorkbenchSettings={onSaveWorkbenchSettings}
         open={settingsOpen}
         settingsErrorMessage={settingsErrorMessage}
         settingsStatus={settingsStatus}
+        storageSwitchDisabled={storageSwitchDisabled}
         storageActionLabel={storageActionLabel}
         storageWarningMessage={storageWarningMessage}
         workbenchStatus={workbenchStatus}

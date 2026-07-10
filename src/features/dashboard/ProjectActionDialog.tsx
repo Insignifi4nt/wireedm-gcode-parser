@@ -10,6 +10,7 @@ export type ProjectAction =
 
 interface ProjectActionDialogProps {
   action: ProjectAction | null;
+  interactionLocked: boolean;
   onClose: () => void;
   onDeleteProject: (projectId: string) => Promise<void>;
   onRenameProject: (projectId: string, name: string) => Promise<void>;
@@ -17,6 +18,7 @@ interface ProjectActionDialogProps {
 
 export function ProjectActionDialog({
   action,
+  interactionLocked,
   onClose,
   onDeleteProject,
   onRenameProject
@@ -119,7 +121,7 @@ export function ProjectActionDialog({
               <input
                 aria-label="Project name"
                 className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
-                disabled={isSaving}
+                disabled={isSaving || interactionLocked}
                 onChange={(event) => setName(event.currentTarget.value)}
                 value={name}
               />
@@ -145,7 +147,7 @@ export function ProjectActionDialog({
             Cancel
           </Button>
           <Button
-            disabled={isSaving || (isRename && name.trim() === '')}
+            disabled={interactionLocked || isSaving || (isRename && name.trim() === '')}
             type="submit"
             variant={isRename ? 'default' : 'danger'}
           >

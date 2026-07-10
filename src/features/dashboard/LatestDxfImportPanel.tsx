@@ -2,11 +2,13 @@ import { Button } from '@/components/ui/button';
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 
 interface LatestDxfImportPanelProps {
+  interactionLocked: boolean;
   latestImport: ImportDxfProjectResult;
   onOpenLatestImportInEditor: () => void;
 }
 
 export function LatestDxfImportPanel({
+  interactionLocked,
   latestImport,
   onOpenLatestImportInEditor
 }: LatestDxfImportPanelProps) {
@@ -38,7 +40,11 @@ export function LatestDxfImportPanel({
             </div>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button onClick={onOpenLatestImportInEditor} variant="default">
+            <Button
+              disabled={interactionLocked}
+              onClick={onOpenLatestImportInEditor}
+              variant="default"
+            >
               Open in Editor
             </Button>
           </div>

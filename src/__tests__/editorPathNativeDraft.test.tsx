@@ -134,6 +134,63 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
+  it('preserves path selection and undo history when a same-document save result arrives', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+    const onSaveEditorDraft = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement(
+      `[data-upid-cut-sequence-row][data-upid-operation-id="${firstOperation.id}"] [data-upid-cut-sequence-select]`
+    );
+    await clickElement('button[aria-label="Reverse path operation"]');
+    await clickElement(
+      `[data-upid-cut-sequence-row][data-upid-operation-id="${secondOperation.id}"] [data-upid-cut-sequence-select]`
+    );
+    await clickElement('button[aria-label="Save active document"]');
+
+    const savedDraft = onSaveEditorDraft.mock.calls[0]?.[0] as EditorSaveDraft | undefined;
+    expect(savedDraft?.model).toBe('upid-document');
+    if (!savedDraft || savedDraft.model !== 'upid-document') {
+      throw new Error('Expected a UPID save draft.');
+    }
+    const savedProject = withProjectUpid(project, savedDraft.pathDocument);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={savedProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
+      `Selection Operation ${secondOperation.id}`
+    );
+    const undoButton = container.querySelector(
+      'button[aria-label="Undo active document change"]'
+    ) as HTMLButtonElement | null;
+    expect(undoButton?.disabled).toBe(false);
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
+      `Selection Operation ${firstOperation.id}`
+    );
+    expect(container.textContent).toContain('Unsaved');
+  });
+
   it('uses the latest save callback from the persistent header', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
     const firstSave = vi.fn();

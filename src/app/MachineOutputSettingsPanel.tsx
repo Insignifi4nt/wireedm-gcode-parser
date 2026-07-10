@@ -14,6 +14,7 @@ import {
 
 interface MachineOutputSettingsPanelProps {
   connectedWorkbench: ConnectedWorkbench | null;
+  interactionLocked: boolean;
   onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
   settingsErrorMessage: string | null;
   settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
@@ -21,6 +22,7 @@ interface MachineOutputSettingsPanelProps {
 
 export function MachineOutputSettingsPanel({
   connectedWorkbench,
+  interactionLocked,
   onSaveWorkbenchSettings,
   settingsErrorMessage,
   settingsStatus
@@ -35,6 +37,7 @@ export function MachineOutputSettingsPanel({
   const activeSettingsDraft =
     settingsDraft.sourceKey === latestSettingsDraft.sourceKey ? settingsDraft : latestSettingsDraft;
   const isSavingSettings = settingsStatus === 'saving';
+  const settingsControlsDisabled = interactionLocked || isSavingSettings;
 
   useEffect(() => {
     setSettingsDraft((current) =>
@@ -59,7 +62,7 @@ export function MachineOutputSettingsPanel({
   return (
     <form className="grid gap-3" onSubmit={handleSettingsSubmit}>
       <div className="flex items-center justify-end">
-        <Button disabled={isSavingSettings} size="sm" type="submit" variant="outline">
+        <Button disabled={settingsControlsDisabled} size="sm" type="submit" variant="outline">
           <Save />
           {isSavingSettings ? 'Saving...' : 'Save Settings'}
         </Button>
@@ -70,7 +73,7 @@ export function MachineOutputSettingsPanel({
           <input
             aria-label="Machine profile name"
             className="technical-input px-2 text-[11px] outline-none"
-            disabled={isSavingSettings}
+            disabled={settingsControlsDisabled}
             onChange={(event) => updateSettingsDraft({ machineName: event.currentTarget.value })}
             value={activeSettingsDraft.machineName}
           />
@@ -80,7 +83,7 @@ export function MachineOutputSettingsPanel({
           <textarea
             aria-label="Header template"
             className="technical-input technical-value min-h-20 resize-y p-2 text-[10px] leading-4 outline-none"
-            disabled={isSavingSettings}
+            disabled={settingsControlsDisabled}
             onChange={(event) => updateSettingsDraft({ header: event.currentTarget.value })}
             spellCheck={false}
             value={activeSettingsDraft.header}
@@ -91,7 +94,7 @@ export function MachineOutputSettingsPanel({
           <textarea
             aria-label="Footer template"
             className="technical-input technical-value min-h-20 resize-y p-2 text-[10px] leading-4 outline-none"
-            disabled={isSavingSettings}
+            disabled={settingsControlsDisabled}
             onChange={(event) => updateSettingsDraft({ footer: event.currentTarget.value })}
             spellCheck={false}
             value={activeSettingsDraft.footer}
@@ -103,7 +106,7 @@ export function MachineOutputSettingsPanel({
             <select
               aria-label="Output extension"
               className="technical-input technical-value px-2 text-[11px] outline-none"
-              disabled={isSavingSettings}
+              disabled={settingsControlsDisabled}
               onChange={(event) =>
                 updateSettingsDraft({
                   extension: event.currentTarget.value as OutputExtension
@@ -122,7 +125,7 @@ export function MachineOutputSettingsPanel({
             <select
               aria-label="Line ending"
               className="technical-input technical-value px-2 text-[11px] outline-none"
-              disabled={isSavingSettings}
+              disabled={settingsControlsDisabled}
               onChange={(event) =>
                 updateSettingsDraft({
                   lineEnding: event.currentTarget.value as 'lf' | 'crlf'
@@ -141,7 +144,7 @@ export function MachineOutputSettingsPanel({
             <input
               aria-label="Custom output extension"
               className="technical-input technical-value px-2 text-[11px] outline-none"
-              disabled={isSavingSettings}
+              disabled={settingsControlsDisabled}
               onChange={(event) =>
                 updateSettingsDraft({ customExtension: event.currentTarget.value })
               }
@@ -155,7 +158,7 @@ export function MachineOutputSettingsPanel({
             <input
               aria-label="Machine max width"
               className="technical-input technical-value px-2 text-[11px] outline-none"
-              disabled={isSavingSettings}
+              disabled={settingsControlsDisabled}
               inputMode="decimal"
               min="0"
               onChange={(event) =>
@@ -172,7 +175,7 @@ export function MachineOutputSettingsPanel({
             <input
               aria-label="Machine max length"
               className="technical-input technical-value px-2 text-[11px] outline-none"
-              disabled={isSavingSettings}
+              disabled={settingsControlsDisabled}
               inputMode="decimal"
               min="0"
               onChange={(event) =>

@@ -695,6 +695,60 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[aria-label="Expand right bar"]')).toBeNull();
   });
 
+  it('keeps the docked Contour Tree attached through repeated left rail collapse cycles', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+    const fileInput = container.querySelector(
+      'input[aria-label="DXF file"]'
+    ) as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File([rectangleDxf()], 'stable-left-dock.dxf')]
+    });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      const contourTree = container.querySelector(
+        '[data-app-rail-expanded-content] [data-editor-workspace-panel="contour-tree"]'
+      );
+      expect(contourTree?.isConnected).toBe(true);
+      expect(contourTree?.textContent).toContain('Contour Tree');
+      expect(contourTree?.getAttribute('data-editor-workspace-panel-placement')).toBe(
+        'docked-left'
+      );
+
+      await act(async () => {
+        container
+          .querySelector('button[aria-label="Collapse Panel Dock"]')
+          ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await flushReactOnly();
+      expect(
+        container.querySelector('[data-app-rail-expanded-content]')?.getAttribute('aria-hidden')
+      ).toBe('true');
+
+      await act(async () => {
+        container
+          .querySelector('button[aria-label="Expand workbench sidebar"]')
+          ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await flushReactOnly();
+      expect(
+        container.querySelector('[data-app-rail-expanded-content]')?.getAttribute('aria-hidden')
+      ).toBeNull();
+    }
+
+    const restoredContourTree = container.querySelector(
+      '[data-app-rail-expanded-content] [data-editor-workspace-panel="contour-tree"]'
+    );
+    expect(restoredContourTree?.isConnected).toBe(true);
+    expect(restoredContourTree?.textContent).toContain('Contour Tree');
+  });
+
   it('floats and restores editor panels without losing panel state', async () => {
     window.showDirectoryPicker = undefined;
 
@@ -732,8 +786,12 @@ describe('App DXF imports and project library', () => {
         .querySelector('[data-editor-workspace-panel="path-hover-assist"]')
         ?.getAttribute('data-editor-workspace-panel-placement')
     ).toBe('floating');
-    expect(container.querySelector('button[aria-label="Float Hover Assist"]')).toBeNull();
-    expect(container.querySelector('button[aria-label="Dock Hover Assist"]')).toBeNull();
+    expect(
+      (container.querySelector('button[aria-label="Float Hover Assist"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+    expect(container.querySelector('button[aria-label="Dock Hover Assist left"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Dock Hover Assist right"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-workspace-panel-handle="path-hover-assist"]')).not.toBeNull();
 
     const hideHoverAssistButton = container.querySelector(
@@ -893,34 +951,34 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    expect(container.querySelector('button[aria-label="Float UPID Path Navigator"]')).toBeNull();
-    expect(container.querySelector('button[aria-label="Float Inspector"]')).toBeNull();
-
     const expectedPanels = [
-      'path-summary',
-      'path-actions',
-      'path-transform',
-      'path-hover-assist',
-      'endpoint-topology',
-      'path-diagnostics',
-      'cut-sequence',
-      'contour-tree',
-      'position',
-      'statistics',
-      'machine',
-      'measurement'
-    ];
+      ['path-summary', 'Path Summary'],
+      ['path-actions', 'Path Actions'],
+      ['path-transform', 'Transform'],
+      ['path-hover-assist', 'Hover Assist'],
+      ['endpoint-topology', 'Endpoint Topology'],
+      ['path-diagnostics', 'Path Diagnostics'],
+      ['cut-sequence', 'Cut Sequence'],
+      ['contour-tree', 'Contour Tree'],
+      ['position', 'Position'],
+      ['statistics', 'Statistics'],
+      ['machine', 'Machine'],
+      ['measurement', 'Measurement']
+    ] as const;
 
-    for (const panelId of expectedPanels) {
+    for (const [panelId, title] of expectedPanels) {
       expect(container.querySelector(`[data-editor-workspace-panel="${panelId}"]`)).not.toBeNull();
       expect(container.querySelector(`[data-editor-panel-menu-item="${panelId}"]`)).not.toBeNull();
+      expect(container.querySelector(`button[aria-label="Dock ${title} left"]`)).not.toBeNull();
+      expect(container.querySelector(`button[aria-label="Dock ${title} right"]`)).not.toBeNull();
+      expect(container.querySelector(`button[aria-label="Float ${title}"]`)).not.toBeNull();
     }
     expect(container.querySelector('[data-editor-panel-menu-group="path"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-panel-menu-group="inspection"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-panel-menu-group="machine"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-panel-menu-group="measurement"]')).not.toBeNull();
-    expect(container.querySelector('button[aria-label^="Float "]')).toBeNull();
-    expect(container.querySelector('button[aria-label^="Dock "]')).toBeNull();
+    expect(container.querySelectorAll('button[aria-label^="Float "]')).toHaveLength(12);
+    expect(container.querySelectorAll('button[aria-label^="Dock "]')).toHaveLength(24);
     expect(container.querySelector('[data-editor-workspace-panel-handle="path-diagnostics"]')).not.toBeNull();
     expect(container.querySelector('[data-upid-endpoint-topology]')).not.toBeNull();
     expect(container.querySelector('[data-upid-endpoint-topology-status]')?.textContent).toContain(
@@ -1594,6 +1652,84 @@ describe('App DXF imports and project library', () => {
 
     expect(saveEditorProgram).toHaveBeenCalledOnce();
     expect(contoursLabel?.nextElementSibling?.textContent).toBe('2');
+  });
+
+  it('blocks path mutations during a deferred save while preserving selection and undo', async () => {
+    window.showDirectoryPicker = undefined;
+    const saveGate = createDeferred<void>();
+    const saveEditorProgram = vi.fn(async (...args: Parameters<typeof saveEditorProgramService>) => {
+      const result = await saveEditorProgramService(...args);
+      await saveGate.promise;
+      return result;
+    });
+
+    await renderApp(context, { saveEditorProgram });
+    const fileInput = container.querySelector(
+      'input[aria-label="DXF file"]'
+    ) as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File([rectangleDxf()], 'deferred-path-save.dxf')]
+    });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await selectFirstCutSequence(container);
+
+    const reverseButton = container.querySelector(
+      'button[aria-label="Reverse path operation"]'
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      reverseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(container.querySelector('[data-upid-selected="direction"]')?.textContent).toBe(
+      'reverse'
+    );
+
+    const saveButton = container.querySelector(
+      'button[aria-label="Save active document"]'
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const undoButton = container.querySelector(
+      'button[aria-label="Undo active document change"]'
+    ) as HTMLButtonElement | null;
+    expect(saveEditorProgram).toHaveBeenCalledOnce();
+    expect(reverseButton?.disabled).toBe(true);
+    expect(undoButton?.disabled).toBe(true);
+    expect(
+      (container.querySelector('button[aria-label="Back to Dashboard"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+    await act(async () => {
+      reverseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(container.querySelector('[data-upid-selected="direction"]')?.textContent).toBe(
+      'reverse'
+    );
+
+    await act(async () => {
+      saveGate.resolve();
+      await saveGate.promise;
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain('Saved');
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
+      'Selection Operation'
+    );
+    expect(undoButton?.disabled).toBe(false);
+    await act(async () => {
+      undoButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(container.querySelector('[data-upid-selected="direction"]')?.textContent).toBe(
+      'forward'
+    );
+    expect(container.textContent).toContain('Unsaved');
   });
 
   it('reorders UPID cut sequence directly from Project Rail rows', async () => {
@@ -4542,6 +4678,16 @@ async function flushReactOnly() {
     await Promise.resolve();
     await Promise.resolve();
   });
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
 }
 
 function duplicateFirstContour(document: PathPlanningDocument): PathPlanningDocument {

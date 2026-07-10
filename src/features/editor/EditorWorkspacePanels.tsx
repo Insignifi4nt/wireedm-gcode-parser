@@ -5,6 +5,7 @@ import {
   type CSSProperties,
   type DragEvent,
   type FocusEvent,
+  type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
   type ReactNode
@@ -22,11 +23,60 @@ export interface EditorFloatingPanelGeometry {
   height: number;
 }
 
+export interface EditorFloatingPanelViewport {
+  height: number;
+  left: number;
+  top: number;
+  width: number;
+}
+
+export const EDITOR_FLOATING_PANEL_GAP = 8;
+export const EDITOR_FLOATING_PANEL_TOP = 42;
+
+export function clampEditorFloatingPanelGeometry(
+  geometry: EditorFloatingPanelGeometry,
+  viewport: EditorFloatingPanelViewport
+): EditorFloatingPanelGeometry {
+  const maxWidth = Math.max(
+    260,
+    viewport.width - viewport.left - EDITOR_FLOATING_PANEL_GAP
+  );
+  const width = Math.min(Math.max(260, geometry.width), maxWidth);
+  const maxHeight = Math.max(
+    180,
+    viewport.height - viewport.top - EDITOR_FLOATING_PANEL_GAP
+  );
+  const height = Math.min(Math.max(180, geometry.height), maxHeight);
+  const maxX = Math.max(
+    viewport.left,
+    viewport.width - width - EDITOR_FLOATING_PANEL_GAP
+  );
+  const maxY = Math.max(
+    viewport.top,
+    viewport.height - height - EDITOR_FLOATING_PANEL_GAP
+  );
+  const x = Math.min(Math.max(viewport.left, geometry.x), maxX);
+  const y = Math.min(Math.max(viewport.top, geometry.y), maxY);
+
+  if (
+    x === geometry.x &&
+    y === geometry.y &&
+    width === geometry.width &&
+    height === geometry.height
+  ) {
+    return geometry;
+  }
+
+  return { height, width, x, y };
+}
+
 export interface EditorWorkspacePanelController {
   dockOrder?: number;
   geometry: EditorFloatingPanelGeometry;
   placement: EditorPanelPlacement;
+  onDock: (side: EditorDockSide) => void;
   onDragEnd: (point: { x: number; y: number }) => void;
+  onFloat: () => void;
   onFloatFromDock: (point: { x: number; y: number }) => void;
   onGeometryChange: (geometry: EditorFloatingPanelGeometry) => void;
   onHide: () => void;
@@ -288,8 +338,10 @@ interface EditorFloatingPanelProps {
   children: ReactNode;
   geometry: EditorFloatingPanelGeometry;
   id: string;
+  onDock: (side: EditorDockSide) => void;
   title: string;
   onDragEnd: (point: { x: number; y: number }) => void;
+  onFloat: () => void;
   onGeometryChange: (geometry: EditorFloatingPanelGeometry) => void;
   onHide: () => void;
 }
@@ -298,12 +350,14 @@ export function EditorFloatingPanel({
   children,
   geometry,
   id,
+  onDock,
   title,
   onDragEnd,
+  onFloat,
   onGeometryChange,
   onHide
 }: EditorFloatingPanelProps) {
-  function handleDragStart(event: PointerEvent<HTMLDivElement>) {
+  function handleDragStart(event: PointerEvent<HTMLButtonElement>) {
     event.preventDefault();
     const startX = event.clientX;
     const startY = event.clientY;
@@ -330,7 +384,35 @@ export function EditorFloatingPanel({
     window.addEventListener('pointerup', handlePointerUp, { once: true });
   }
 
-  function handleResizeStart(event: PointerEvent<HTMLDivElement>) {
+  function handleMoveKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    const step = event.shiftKey ? 1 : 10;
+    const delta = keyboardArrowDelta(event.key, step);
+    if (!delta) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    onGeometryChange({
+      ...geometry,
+      x: geometry.x + delta.x,
+      y: geometry.y + delta.y
+    });
+  }
+
+  function handleResizeKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    const step = event.shiftKey ? 1 : 10;
+    const delta = keyboardArrowDelta(event.key, step);
+    if (!delta) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    onGeometryChange({
+      ...geometry,
+      width: geometry.width + delta.x,
+      height: geometry.height + delta.y
+    });
+  }
+
+  function handleResizeStart(event: PointerEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
     const startX = event.clientX;
@@ -367,12 +449,24 @@ export function EditorFloatingPanel({
         } as CSSProperties
       }
     >
-      <div
-        className="flex h-7 cursor-move items-center justify-between gap-2 border-b border-border bg-background/70 px-1"
-        data-editor-workspace-panel-handle={id}
-        onPointerDown={handleDragStart}
-      >
-        <span className="min-w-0 truncate px-1 text-[10px] font-semibold text-foreground">{title}</span>
+      <div className="flex h-7 items-center gap-1 border-b border-border bg-background/70 px-1">
+        <button
+          aria-label={`Move ${title}`}
+          className="flex h-6 min-w-0 flex-1 cursor-move items-center truncate px-1 text-left text-[10px] font-semibold text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          data-editor-workspace-panel-handle={id}
+          onKeyDown={handleMoveKeyDown}
+          onPointerDown={handleDragStart}
+          title={`Move ${title}`}
+          type="button"
+        >
+          <span className="truncate">{title}</span>
+        </button>
+        <EditorPanelPlacementControls
+          onDock={onDock}
+          onFloat={onFloat}
+          placement="floating"
+          title={title}
+        />
         <button
           aria-label={`Hide ${title}`}
           className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
@@ -385,14 +479,76 @@ export function EditorFloatingPanel({
         </button>
       </div>
       <div className="min-h-0 overflow-hidden">{children}</div>
-      <div
+      <button
         aria-label={`Resize ${title}`}
         className="absolute bottom-0 right-0 size-4 cursor-nwse-resize border-b border-r border-primary/70"
         data-editor-floating-panel-resizer={id}
+        onKeyDown={handleResizeKeyDown}
         onPointerDown={handleResizeStart}
-        role="separator"
+        title={`Resize ${title}`}
+        type="button"
       />
     </aside>
+  );
+}
+
+function keyboardArrowDelta(key: string, step: number) {
+  if (key === 'ArrowLeft') return { x: -step, y: 0 };
+  if (key === 'ArrowRight') return { x: step, y: 0 };
+  if (key === 'ArrowUp') return { x: 0, y: -step };
+  if (key === 'ArrowDown') return { x: 0, y: step };
+  return null;
+}
+
+function EditorPanelPlacementControls({
+  onDock,
+  onFloat,
+  placement,
+  title
+}: {
+  onDock: (side: EditorDockSide) => void;
+  onFloat: () => void;
+  placement: EditorPanelPlacement;
+  title: string;
+}) {
+  const commands = [
+    {
+      disabled: placement === 'docked-left',
+      label: `Dock ${title} left`,
+      shortLabel: 'L',
+      onClick: () => onDock('left')
+    },
+    {
+      disabled: placement === 'docked-right',
+      label: `Dock ${title} right`,
+      shortLabel: 'R',
+      onClick: () => onDock('right')
+    },
+    {
+      disabled: placement === 'floating',
+      label: `Float ${title}`,
+      shortLabel: 'F',
+      onClick: onFloat
+    }
+  ];
+
+  return (
+    <div className="flex shrink-0 items-center gap-0.5" data-editor-panel-placement-controls>
+      {commands.map((command) => (
+        <button
+          aria-label={command.label}
+          className="flex size-5 items-center justify-center border border-border font-mono text-[9px] text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-35"
+          disabled={command.disabled}
+          key={command.label}
+          onClick={command.onClick}
+          onPointerDown={(event) => event.stopPropagation()}
+          title={command.label}
+          type="button"
+        >
+          <span aria-hidden="true">{command.shortLabel}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -411,7 +567,9 @@ export function EditorWorkspacePanelFrame({
   id,
   placement,
   title,
+  onDock,
   onDragEnd,
+  onFloat,
   onFloatFromDock,
   onGeometryChange,
   onHide
@@ -459,7 +617,9 @@ export function EditorWorkspacePanelFrame({
       <EditorFloatingPanel
         geometry={geometry}
         id={id}
+        onDock={onDock}
         onDragEnd={onDragEnd}
+        onFloat={onFloat}
         onGeometryChange={onGeometryChange}
         onHide={onHide}
         title={title}
@@ -507,17 +667,27 @@ export function EditorWorkspacePanelFrame({
         onDragEnd={handleNativeDragEnd}
         onDragStart={handleNativeDragStart}
       >
-        <span className="truncate px-1 text-[10px] font-semibold text-foreground">{title}</span>
-        <button
-          aria-label={`Hide ${title}`}
-          className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-          onClick={onHide}
-          onPointerDown={(event) => event.stopPropagation()}
-          title={`Hide ${title}`}
-          type="button"
-        >
-          <X className="size-3" />
-        </button>
+        <span className="min-w-0 flex-1 truncate px-1 text-[10px] font-semibold text-foreground">
+          {title}
+        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <EditorPanelPlacementControls
+            onDock={onDock}
+            onFloat={onFloat}
+            placement={placement}
+            title={title}
+          />
+          <button
+            aria-label={`Hide ${title}`}
+            className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+            onClick={onHide}
+            onPointerDown={(event) => event.stopPropagation()}
+            title={`Hide ${title}`}
+            type="button"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
       </div>
       <div className="work-region-scrollbar min-h-0 overflow-auto p-2">{children}</div>
     </section>

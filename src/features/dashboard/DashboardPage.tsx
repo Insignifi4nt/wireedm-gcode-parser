@@ -14,6 +14,7 @@ interface DashboardPageProps {
   connectedWorkbench: ConnectedWorkbench | null;
   importStatus: 'idle' | 'importing' | 'error';
   importErrorMessage: string | null;
+  interactionLocked: boolean;
   programImportStatus: 'idle' | 'importing' | 'error';
   programImportErrorMessage: string | null;
   latestImport: ImportDxfProjectResult | null;
@@ -31,6 +32,7 @@ export function DashboardPage({
   connectedWorkbench,
   importStatus,
   importErrorMessage,
+  interactionLocked,
   programImportStatus,
   programImportErrorMessage,
   latestImport,
@@ -64,6 +66,7 @@ export function DashboardPage({
         data-workbench-scroll-region
       >
         <ProjectListPanel
+          interactionLocked={interactionLocked}
           onDeleteProject={(project) => setProjectAction({ kind: 'delete', project })}
           onOpenProject={onOpenProject}
           onRenameProject={(project) => setProjectAction({ kind: 'rename', project })}
@@ -75,6 +78,7 @@ export function DashboardPage({
             connected={Boolean(connectedWorkbench)}
             dxfErrorMessage={importErrorMessage}
             dxfImporting={importStatus === 'importing'}
+            interactionLocked={interactionLocked}
             onImportDxfFile={onImportDxfFile}
             onImportProgramFile={onImportProgramFile}
             onOpenEditor={onOpenEditor}
@@ -84,6 +88,7 @@ export function DashboardPage({
 
           {latestImport && (
             <LatestDxfImportPanel
+              interactionLocked={interactionLocked}
               latestImport={latestImport}
               onOpenLatestImportInEditor={onOpenLatestImportInEditor}
             />
@@ -93,6 +98,7 @@ export function DashboardPage({
 
       <ProjectActionDialog
         action={projectAction}
+        interactionLocked={interactionLocked}
         onClose={closeProjectAction}
         onDeleteProject={onDeleteProject}
         onRenameProject={onRenameProject}
