@@ -100,10 +100,12 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
 
   function handleSummaryClick(event: MouseEvent<HTMLElement>) {
     event.preventDefault();
+    clearHoverOpenTimer();
     setMenuOpen((current) => !current);
   }
 
   function handlePanelClick(panel: EditorPanelMenuItem) {
+    clearHoverOpenTimer();
     if (panel.placement === 'hidden') panel.onShow();
     else panel.onHide();
     setMenuOpen(false);

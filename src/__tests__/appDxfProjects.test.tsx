@@ -796,6 +796,87 @@ describe('App DXF imports and project library', () => {
     );
   });
 
+  it('applies Path Project workspace defaults only once for the same saved document', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([rectangleDxf()], 'stable-workspace.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const pathActionsMenuItem = container.querySelector(
+      'button[data-editor-panel-menu-item="path-actions"]'
+    ) as HTMLButtonElement | null;
+    expect(pathActionsMenuItem?.getAttribute('aria-label')).toBe('Hide Path Actions');
+    expect(
+      container
+        .querySelector('[data-editor-workspace-panel="path-actions"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('docked-right');
+
+    await act(async () => {
+      pathActionsMenuItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushReactOnly();
+
+    const showPathActionsButton = container.querySelector(
+      'button[data-editor-panel-menu-item="path-actions"]'
+    ) as HTMLButtonElement | null;
+    expect(showPathActionsButton?.getAttribute('aria-label')).toBe('Show Path Actions');
+
+    await act(async () => {
+      showPathActionsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushReactOnly();
+
+    expect(
+      container
+        .querySelector('[data-editor-workspace-panel="path-actions"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('floating');
+
+    await selectFirstCutSequence(container);
+    const reverseButton = container.querySelector(
+      'button[aria-label="Reverse path operation"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      reverseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.textContent).toContain('Unsaved');
+    expect(
+      container
+        .querySelector('[data-editor-workspace-panel="path-actions"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('floating');
+
+    const saveButton = container.querySelector(
+      'button[aria-label="Save Path Plan"]'
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(container.textContent).toContain('Saved');
+    expect(
+      container
+        .querySelector('[data-editor-workspace-panel="path-actions"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('floating');
+  });
+
   it('exposes path and inspector functionality as individual workspace panels', async () => {
     window.showDirectoryPicker = undefined;
 

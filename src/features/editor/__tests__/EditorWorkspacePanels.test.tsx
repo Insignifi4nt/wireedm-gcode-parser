@@ -90,6 +90,108 @@ describe('EditorPanelToolbar', () => {
     expect(details?.open).toBe(false);
   });
 
+  it('does not reopen after an explicit close while hover-open is pending', async () => {
+    vi.useFakeTimers();
+
+    try {
+      await act(async () => {
+        root.render(
+          <EditorPanelToolbar
+            groups={[
+              {
+                id: 'path',
+                title: 'Path',
+                panels: [
+                  {
+                    id: 'path-actions',
+                    title: 'Path Actions',
+                    placement: 'hidden',
+                    onHide: vi.fn(),
+                    onShow: vi.fn()
+                  }
+                ]
+              }
+            ]}
+          />
+        );
+      });
+
+      const details = container.querySelector('details') as HTMLDetailsElement | null;
+      const summary = container.querySelector('summary');
+
+      await act(async () => {
+        details?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        summary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        summary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(details?.open).toBe(false);
+
+      await act(async () => {
+        vi.runAllTimers();
+      });
+
+      expect(details?.open).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not reopen after a panel selection while hover-open is pending', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const onShow = vi.fn();
+
+      await act(async () => {
+        root.render(
+          <EditorPanelToolbar
+            groups={[
+              {
+                id: 'path',
+                title: 'Path',
+                panels: [
+                  {
+                    id: 'path-actions',
+                    title: 'Path Actions',
+                    placement: 'hidden',
+                    onHide: vi.fn(),
+                    onShow
+                  }
+                ]
+              }
+            ]}
+          />
+        );
+      });
+
+      const details = container.querySelector('details') as HTMLDetailsElement | null;
+      const summary = container.querySelector('summary');
+      const item = container.querySelector(
+        'button[data-editor-panel-menu-item="path-actions"]'
+      ) as HTMLButtonElement | null;
+
+      await act(async () => {
+        summary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(details?.open).toBe(true);
+
+      await act(async () => {
+        details?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(onShow).toHaveBeenCalledTimes(1);
+      expect(details?.open).toBe(false);
+
+      await act(async () => {
+        vi.runAllTimers();
+      });
+
+      expect(details?.open).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('offers direct Tree, Actions, Transform, Diagnostics, and Measure shortcuts', async () => {
     const callbacks = new Map(
       ['contour-tree', 'path-actions', 'path-transform', 'path-diagnostics', 'measurement'].map((id) => [
