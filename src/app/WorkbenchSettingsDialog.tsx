@@ -1,9 +1,12 @@
-import { useEffect } from 'react';
-import { Database, HardDrive, RefreshCw, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Database, RefreshCw, SlidersHorizontal, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { BROWSER_WORKBENCH_NAMESPACE } from '@/domain/storage/connectCachedWorkbench';
+import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+
+import { MachineOutputSettingsPanel } from './MachineOutputSettingsPanel';
 
 type WorkbenchStatus = 'initializing' | 'ready' | 'connecting-storage' | 'error';
 
@@ -12,7 +15,10 @@ interface WorkbenchSettingsDialogProps {
   errorMessage: string | null;
   onClose: () => void;
   onConnectWorkbench: () => void | Promise<void>;
+  onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
   open: boolean;
+  settingsErrorMessage: string | null;
+  settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
   storageActionLabel: string | null;
   storageWarningMessage: string | null;
   workbenchStatus: WorkbenchStatus;
@@ -23,11 +29,16 @@ export function WorkbenchSettingsDialog({
   errorMessage,
   onClose,
   onConnectWorkbench,
+  onSaveWorkbenchSettings,
   open,
+  settingsErrorMessage,
+  settingsStatus,
   storageActionLabel,
   storageWarningMessage,
   workbenchStatus
 }: WorkbenchSettingsDialogProps) {
+  const [activeSection, setActiveSection] = useState<'storage' | 'machine-output'>('storage');
+
   useEffect(() => {
     if (!open) return;
 
@@ -38,6 +49,10 @@ export function WorkbenchSettingsDialog({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose, open]);
+
+  useEffect(() => {
+    if (open) setActiveSection('storage');
+  }, [open]);
 
   if (!open) return null;
 
@@ -74,74 +89,105 @@ export function WorkbenchSettingsDialog({
           </button>
           <nav aria-label="Settings sections" className="grid gap-1">
             <button
-              aria-current="page"
-              className="flex h-9 items-center gap-2 border border-primary/40 bg-accent px-3 text-left font-mono text-[11px] text-foreground outline-none"
+              aria-current={activeSection === 'storage' ? 'page' : undefined}
+              aria-label="Storage settings"
+              className={`flex h-9 items-center gap-2 border px-3 text-left font-mono text-[11px] outline-none transition ${
+                activeSection === 'storage'
+                  ? 'border-primary/40 bg-accent text-foreground'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:bg-accent/50 hover:text-foreground'
+              }`}
+              onClick={() => setActiveSection('storage')}
               type="button"
             >
               <Database className="size-4" />
               Storage
+            </button>
+            <button
+              aria-current={activeSection === 'machine-output' ? 'page' : undefined}
+              aria-label="Machine & Output settings"
+              className={`flex h-9 items-center gap-2 border px-3 text-left font-mono text-[11px] outline-none transition ${
+                activeSection === 'machine-output'
+                  ? 'border-primary/40 bg-accent text-foreground'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:bg-accent/50 hover:text-foreground'
+              }`}
+              onClick={() => setActiveSection('machine-output')}
+              type="button"
+            >
+              <SlidersHorizontal className="size-4" />
+              Machine &amp; Output
             </button>
           </nav>
         </aside>
 
         <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
           <header className="border-b border-border p-4">
-            <h2 className="font-mono text-base font-semibold">Storage</h2>
+            <h2 className="font-mono text-base font-semibold">
+              {activeSection === 'storage' ? 'Storage' : 'Machine & Output'}
+            </h2>
           </header>
 
           <div className="min-h-0 overflow-auto p-4">
-            <div className="grid gap-5">
-              <section>
-                <h3 className="font-mono text-xs font-semibold">Connection</h3>
-                <div className="mt-3 divide-y divide-border border-y border-border font-mono text-[11px]">
-                  <SettingsRow label="Status" value={statusLabel} />
-                  <SettingsRow
-                    label="Workbench"
-                    value={connectedWorkbench?.manifest.name ?? 'Not connected'}
-                  />
-                  <SettingsRow
-                    label="Projects"
-                    value={`${connectedWorkbench?.manifest.projects.length ?? 0} projects`}
-                  />
-                </div>
-                {errorMessage && (
-                  <p className="mt-3 border border-destructive bg-destructive/10 p-2 font-mono text-[10px] text-destructive">
-                    {errorMessage}
-                  </p>
-                )}
-                {storageWarningMessage && (
-                  <p className="mt-3 border border-amber-500/50 bg-amber-500/10 p-2 font-mono text-[10px] text-amber-100">
-                    {storageWarningMessage}
-                  </p>
-                )}
-                {canConnect && (
-                  <Button
-                    aria-label={storageActionLabel ?? 'Choose Workbench Folder'}
-                    className="mt-3"
-                    onClick={onConnectWorkbench}
-                    type="button"
-                    variant="outline"
-                  >
-                    <RefreshCw />
-                    {storageActionLabel}
-                  </Button>
-                )}
-                {isConnected && connectedWorkbench.adapter.kind === 'memory' && (
-                  <p className="mt-3 border border-amber-500/50 bg-amber-500/10 p-2 font-mono text-[10px] text-amber-100">
-                    Changes stay available only until this tab reloads.
-                  </p>
-                )}
-              </section>
+            {activeSection === 'storage' ? (
+              <div className="grid gap-5">
+                <section>
+                  <h3 className="font-mono text-xs font-semibold">Connection</h3>
+                  <div className="mt-3 divide-y divide-border border-y border-border font-mono text-[11px]">
+                    <SettingsRow label="Status" value={statusLabel} />
+                    <SettingsRow
+                      label="Workbench"
+                      value={connectedWorkbench?.manifest.name ?? 'Not connected'}
+                    />
+                    <SettingsRow
+                      label="Projects"
+                      value={`${connectedWorkbench?.manifest.projects.length ?? 0} projects`}
+                    />
+                  </div>
+                  {errorMessage && (
+                    <p className="mt-3 border border-destructive bg-destructive/10 p-2 font-mono text-[10px] text-destructive">
+                      {errorMessage}
+                    </p>
+                  )}
+                  {storageWarningMessage && (
+                    <p className="mt-3 border border-amber-500/50 bg-amber-500/10 p-2 font-mono text-[10px] text-amber-100">
+                      {storageWarningMessage}
+                    </p>
+                  )}
+                  {canConnect && (
+                    <Button
+                      aria-label={storageActionLabel ?? 'Choose Workbench Folder'}
+                      className="mt-3"
+                      onClick={onConnectWorkbench}
+                      type="button"
+                      variant="outline"
+                    >
+                      <RefreshCw />
+                      {storageActionLabel}
+                    </Button>
+                  )}
+                  {isConnected && connectedWorkbench.adapter.kind === 'memory' && (
+                    <p className="mt-3 border border-amber-500/50 bg-amber-500/10 p-2 font-mono text-[10px] text-amber-100">
+                      Changes stay available only until this tab reloads.
+                    </p>
+                  )}
+                </section>
 
-              <section>
-                <h3 className="font-mono text-xs font-semibold">Location</h3>
-                <div className="mt-3 divide-y divide-border border-y border-border font-mono text-[11px]">
-                  {locationRows.map((row) => (
-                    <SettingsRow key={row.label} label={row.label} value={row.value} />
-                  ))}
-                </div>
-              </section>
-            </div>
+                <section>
+                  <h3 className="font-mono text-xs font-semibold">Location</h3>
+                  <div className="mt-3 divide-y divide-border border-y border-border font-mono text-[11px]">
+                    {locationRows.map((row) => (
+                      <SettingsRow key={row.label} label={row.label} value={row.value} />
+                    ))}
+                  </div>
+                </section>
+              </div>
+            ) : (
+              <MachineOutputSettingsPanel
+                connectedWorkbench={connectedWorkbench}
+                onSaveWorkbenchSettings={onSaveWorkbenchSettings}
+                settingsErrorMessage={settingsErrorMessage}
+                settingsStatus={settingsStatus}
+              />
+            )}
           </div>
         </section>
       </div>

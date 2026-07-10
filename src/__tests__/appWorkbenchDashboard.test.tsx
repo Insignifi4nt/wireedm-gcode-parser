@@ -2,6 +2,7 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import { updateWorkbenchSettings } from '@/domain/storage/updateWorkbenchSettings';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 
 import {
@@ -40,7 +41,6 @@ describe('App dashboard and workbench shell', () => {
     expect(text).not.toContain('imports, exports, templates, machines, editor, projects');
     expect(text).toContain('Import DXF');
     expect(text).toContain('Browser cache active');
-    expect(text).toContain('This browser does not support choosing a workbench folder.');
     expect(text).not.toContain('imports, generated, exports');
     expect([...container.querySelectorAll('button')].some((button) =>
       button.textContent?.includes('Choose Workbench Folder')
@@ -48,6 +48,15 @@ describe('App dashboard and workbench shell', () => {
     expect(container.querySelector('button[aria-label="Open settings"]')).not.toBeNull();
     expect(text).not.toContain('Connect the workbench folder first');
     expect(text).not.toContain('The next real feature');
+
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Open settings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(
+      container.querySelector('[role="dialog"][aria-label="Workbench settings"]')?.textContent
+    ).toContain('This browser does not support choosing a workbench folder.');
   });
 
   it('opens a settings modal with storage navigation and workbench location details', async () => {
@@ -124,41 +133,45 @@ describe('App dashboard and workbench shell', () => {
     expect(text).not.toContain('Download Program');
   });
 
-  it('collapses the app storage rail to give the editor more working width', async () => {
+  it('uses the full workbench width when there is no contextual rail', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
 
     const shell = container.querySelector('[data-app-shell]');
     const appRail = container.querySelector('[data-app-rail]');
-    const appHeader = container.querySelector('[data-app-header]');
     const collapseButton = container.querySelector(
       'button[aria-label="Collapse workbench sidebar"]'
     ) as HTMLButtonElement | null;
 
     expect(shell?.className).toContain('flex-col');
     expect(shell?.getAttribute('data-sidebar-collapsed')).toBe('false');
-    expect(collapseButton).not.toBeNull();
-    expect(appRail?.contains(collapseButton)).toBe(true);
-    expect(appHeader?.contains(collapseButton)).toBe(false);
-
-    await act(async () => {
-      collapseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await flushAsync();
-
-    expect(shell?.getAttribute('data-sidebar-collapsed')).toBe('true');
-    const expandButton = container.querySelector(
-      'button[aria-label="Expand workbench sidebar"]'
-    ) as HTMLButtonElement | null;
-    expect(expandButton).not.toBeNull();
-    expect(appRail?.contains(expandButton)).toBe(true);
+    expect(appRail).toBeNull();
+    expect(container.querySelector('[data-app-rail-resizer]')).toBeNull();
+    expect(collapseButton).toBeNull();
+    expect(container.querySelector('main')?.parentElement?.style.gridTemplateColumns).toBe(
+      'minmax(0, 1fr)'
+    );
   });
 
   it('saves custom workbench templates and output settings in the browser cache', async () => {
     window.showDirectoryPicker = undefined;
+    const updateWorkbenchSettingsService = vi.fn(updateWorkbenchSettings);
 
-    await renderApp(context);
+    await renderApp(context, { updateWorkbenchSettings: updateWorkbenchSettingsService });
+
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Open settings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const machineOutputSettingsButton = [...container.querySelectorAll('button')].find(
+      (button) => button.getAttribute('aria-label') === 'Machine & Output settings'
+    );
+    expect(machineOutputSettingsButton).toBeDefined();
+    await act(async () => {
+      machineOutputSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
 
     const headerEditor = container.querySelector(
       'textarea[aria-label="Header template"]'
@@ -172,17 +185,44 @@ describe('App dashboard and workbench shell', () => {
     const lineEnding = container.querySelector(
       'select[aria-label="Line ending"]'
     ) as HTMLSelectElement | null;
+    const customExtension = container.querySelector(
+      'input[aria-label="Custom output extension"]'
+    ) as HTMLInputElement | null;
+    const machineName = container.querySelector(
+      'input[aria-label="Machine profile name"]'
+    ) as HTMLInputElement | null;
+    const workAreaWidth = container.querySelector(
+      'input[aria-label="Machine max width"]'
+    ) as HTMLInputElement | null;
+    const workAreaLength = container.querySelector(
+      'input[aria-label="Machine max length"]'
+    ) as HTMLInputElement | null;
 
     expect(headerEditor).not.toBeNull();
     expect(footerEditor).not.toBeNull();
     expect(outputExtension).not.toBeNull();
     expect(lineEnding).not.toBeNull();
+    expect(machineName).not.toBeNull();
+    expect(workAreaWidth).not.toBeNull();
+    expect(workAreaLength).not.toBeNull();
 
     await act(async () => {
       if (headerEditor) setTextAreaValue(headerEditor, '%\nCUSTOM HEADER');
       if (footerEditor) setTextAreaValue(footerEditor, 'CUSTOM FOOTER\n%');
-      if (outputExtension) setSelectValue(outputExtension, 'nc');
+      if (outputExtension) setSelectValue(outputExtension, 'custom');
       if (lineEnding) setSelectValue(lineEnding, 'lf');
+      if (machineName) setInputValue(machineName, 'Shop Wire EDM');
+      if (workAreaWidth) setInputValue(workAreaWidth, '320.5');
+      if (workAreaLength) setInputValue(workAreaLength, '470');
+    });
+
+    const visibleCustomExtension = container.querySelector(
+      'input[aria-label="Custom output extension"]'
+    ) as HTMLInputElement | null;
+    expect(customExtension).toBeNull();
+    expect(visibleCustomExtension).not.toBeNull();
+    await act(async () => {
+      if (visibleCustomExtension) setInputValue(visibleCustomExtension, '.CUT');
     });
 
     const saveSettingsButton = [...container.querySelectorAll('button')].find((button) =>
@@ -191,9 +231,27 @@ describe('App dashboard and workbench shell', () => {
     expect(saveSettingsButton).toBeDefined();
 
     await act(async () => {
-      saveSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      saveSettingsButton?.click();
     });
     await flushAsync();
+
+    expect(updateWorkbenchSettingsService).toHaveBeenCalledOnce();
+    expect(updateWorkbenchSettingsService.mock.calls[0]?.[1]).toMatchObject({
+      header: '%\nCUSTOM HEADER',
+      footer: 'CUSTOM FOOTER\n%',
+      machineProfile: {
+        name: 'Shop Wire EDM',
+        output: {
+          extension: 'custom',
+          customExtension: '.CUT',
+          lineEnding: 'lf'
+        },
+        workArea: {
+          widthMm: 320.5,
+          lengthMm: 470
+        }
+      }
+    });
 
     expect(window.localStorage.getItem('wire-edm-workbench:file:templates/header.gcode')).toBe(
       '%\nCUSTOM HEADER'
@@ -206,8 +264,16 @@ describe('App dashboard and workbench shell', () => {
       window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
     );
     expect(manifest.output).toEqual({
-      extension: 'nc',
+      extension: 'custom',
+      customExtension: 'cut',
       lineEnding: 'lf'
+    });
+    expect(manifest.machineProfiles[0]).toMatchObject({
+      name: 'Shop Wire EDM',
+      workArea: {
+        widthMm: 320.5,
+        lengthMm: 470
+      }
     });
     expect(container.textContent).toContain('Settings saved');
 
@@ -236,8 +302,13 @@ describe('App dashboard and workbench shell', () => {
       footer: 'CUSTOM FOOTER\n%'
     });
     expect(project.machine.output).toEqual({
-      extension: 'nc',
+      extension: 'custom',
+      customExtension: 'cut',
       lineEnding: 'lf'
+    });
+    expect(project.machine.workArea).toEqual({
+      widthMm: 320.5,
+      lengthMm: 470
     });
   });
 
@@ -288,7 +359,6 @@ describe('App dashboard and workbench shell', () => {
     });
 
     expect(container.textContent).toContain('Temporary storage only');
-    expect(container.textContent).toContain('Changes stay available only until this tab reloads.');
     expect(container.textContent).not.toContain('Workbench folder connected');
 
     const settingsButton = container.querySelector(
@@ -302,6 +372,7 @@ describe('App dashboard and workbench shell', () => {
     const dialog = container.querySelector(
       '[role="dialog"][aria-label="Workbench settings"]'
     );
+    expect(dialog?.textContent).toContain('Changes stay available only until this tab reloads.');
     expect(dialog?.textContent).toContain('Temporary memory');
     expect(dialog?.textContent).toContain('No - current tab only.');
     expect(dialog?.textContent).toContain('This workbench has no persistent storage location.');

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
-import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
 import { DashboardHeader } from './DashboardHeader';
@@ -9,7 +8,6 @@ import { LatestDxfImportPanel } from './LatestDxfImportPanel';
 import { ProjectActionDialog, type ProjectAction } from './ProjectActionDialog';
 import { ProjectListPanel } from './ProjectListPanel';
 import { StartWorkPanel } from './StartWorkPanel';
-import { WorkbenchSettingsPanel } from './WorkbenchSettingsPanel';
 
 interface DashboardPageProps {
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
@@ -19,8 +17,6 @@ interface DashboardPageProps {
   programImportStatus: 'idle' | 'importing' | 'error';
   programImportErrorMessage: string | null;
   latestImport: ImportDxfProjectResult | null;
-  settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
-  settingsErrorMessage: string | null;
   onOpenEditor: () => void;
   onOpenLatestImportInEditor: () => void;
   onOpenProject: (projectPath: string) => void | Promise<void>;
@@ -28,7 +24,6 @@ interface DashboardPageProps {
   onRenameProject: (projectId: string, name: string) => Promise<void>;
   onImportDxfFile: (file: File) => void | Promise<void>;
   onImportProgramFile: (file: File) => void | Promise<void>;
-  onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
 }
 
 export function DashboardPage({
@@ -39,16 +34,13 @@ export function DashboardPage({
   programImportStatus,
   programImportErrorMessage,
   latestImport,
-  settingsStatus,
-  settingsErrorMessage,
   onOpenEditor,
   onOpenLatestImportInEditor,
   onOpenProject,
   onDeleteProject,
   onRenameProject,
   onImportDxfFile,
-  onImportProgramFile,
-  onSaveWorkbenchSettings
+  onImportProgramFile
 }: DashboardPageProps) {
   const projects = connectedWorkbench?.manifest.projects ?? [];
   const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
@@ -72,7 +64,7 @@ export function DashboardPage({
           projects={projects}
         />
 
-        <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
+        <div className="grid min-h-0 content-start gap-3">
           <StartWorkPanel
             connected={Boolean(connectedWorkbench)}
             dxfErrorMessage={importErrorMessage}
@@ -84,27 +76,11 @@ export function DashboardPage({
             programImporting={programImportStatus === 'importing'}
           />
 
-          {latestImport ? (
+          {latestImport && (
             <LatestDxfImportPanel
               latestImport={latestImport}
               onOpenLatestImportInEditor={onOpenLatestImportInEditor}
-            >
-              <WorkbenchSettingsPanel
-                connectedWorkbench={connectedWorkbench}
-                onSaveWorkbenchSettings={onSaveWorkbenchSettings}
-                settingsErrorMessage={settingsErrorMessage}
-                settingsStatus={settingsStatus}
-              />
-            </LatestDxfImportPanel>
-          ) : (
-            <div className="min-h-0 overflow-auto border border-border bg-card p-3">
-              <WorkbenchSettingsPanel
-                connectedWorkbench={connectedWorkbench}
-                onSaveWorkbenchSettings={onSaveWorkbenchSettings}
-                settingsErrorMessage={settingsErrorMessage}
-                settingsStatus={settingsStatus}
-              />
-            </div>
+            />
           )}
         </div>
       </section>

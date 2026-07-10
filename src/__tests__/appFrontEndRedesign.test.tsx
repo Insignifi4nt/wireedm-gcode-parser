@@ -34,6 +34,55 @@ describe('App front-end redesign', () => {
     expect(container.textContent).not.toContain('Export preview only');
   });
 
+  it('keeps environment configuration in one settings surface', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Open settings"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const machineOutputSettingsButton = [...container.querySelectorAll('button')].find(
+      (button) => button.getAttribute('aria-label') === 'Machine & Output settings'
+    );
+    expect(machineOutputSettingsButton).not.toBeNull();
+    await act(async () => {
+      machineOutputSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(machineOutputSettingsButton?.getAttribute('aria-current')).toBe('page');
+
+    const dialog = container.querySelector(
+      '[role="dialog"][aria-label="Workbench settings"]'
+    );
+    expect(dialog?.querySelector('input[aria-label="Machine profile name"]')).not.toBeNull();
+    expect(dialog?.querySelector('textarea[aria-label="Header template"]')).not.toBeNull();
+    expect(dialog?.querySelector('select[aria-label="Output extension"]')).not.toBeNull();
+    expect(container.querySelector('main textarea[aria-label="Header template"]')).toBeNull();
+  });
+
+  it('shows storage, machine, output, and project state in the application status bar', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+
+    const status = container.querySelector('[data-app-status-bar]');
+    expect(status?.textContent).toContain('Browser cache');
+    expect(status?.textContent).toContain('Default Wire EDM');
+    expect(status?.textContent).toContain('.iso');
+    expect(status?.textContent).toContain('CRLF');
+    expect(status?.textContent).toContain('0 projects');
+  });
+
+  it('does not report temporary storage before a workbench adapter is active', async () => {
+    await renderApp(context, {
+      connectRememberedWorkbenchDirectory: () => new Promise<never>(() => undefined)
+    });
+
+    const status = container.querySelector('[data-app-status-bar]');
+    expect(status?.textContent).toContain('Preparing storage');
+    expect(status?.textContent).not.toContain('Temporary storage');
+  });
+
   it('opens an imported posted file in the Machine Program workspace', async () => {
     window.showDirectoryPicker = undefined;
     await renderApp(context);

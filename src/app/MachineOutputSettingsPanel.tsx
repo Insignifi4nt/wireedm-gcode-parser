@@ -6,21 +6,25 @@ import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbe
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 import type { OutputExtension } from '@/domain/workbench/types';
 
-import { settingsDraftFromWorkbench, type SettingsDraft } from './dashboardSettings';
+import {
+  settingsDraftFromWorkbench,
+  workbenchSettingsInputFromDraft,
+  type SettingsDraft
+} from './workbenchSettings';
 
-interface WorkbenchSettingsPanelProps {
+interface MachineOutputSettingsPanelProps {
   connectedWorkbench: ConnectedWorkbench | null;
+  onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
   settingsErrorMessage: string | null;
   settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
-  onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
 }
 
-export function WorkbenchSettingsPanel({
+export function MachineOutputSettingsPanel({
   connectedWorkbench,
+  onSaveWorkbenchSettings,
   settingsErrorMessage,
-  settingsStatus,
-  onSaveWorkbenchSettings
-}: WorkbenchSettingsPanelProps) {
+  settingsStatus
+}: MachineOutputSettingsPanelProps) {
   const [settingsDraft, setSettingsDraft] = useState(() =>
     settingsDraftFromWorkbench(connectedWorkbench)
   );
@@ -43,38 +47,9 @@ export function WorkbenchSettingsPanel({
 
   async function handleSettingsSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSaveWorkbenchSettings({
-      header: activeSettingsDraft.header,
-      footer: activeSettingsDraft.footer,
-      machineProfile: {
-        ...activeWorkbench.activeMachineProfile,
-        name: activeSettingsDraft.machineName,
-        templates: {
-          header: activeSettingsDraft.header,
-          footer: activeSettingsDraft.footer
-        },
-        output: {
-          extension: activeSettingsDraft.extension,
-          customExtension:
-            activeSettingsDraft.extension === 'custom'
-              ? activeSettingsDraft.customExtension
-              : undefined,
-          lineEnding: activeSettingsDraft.lineEnding
-        },
-        workArea: {
-          widthMm: numberOrNull(activeSettingsDraft.workAreaWidthMm),
-          lengthMm: numberOrNull(activeSettingsDraft.workAreaLengthMm)
-        }
-      },
-      output: {
-        extension: activeSettingsDraft.extension,
-        customExtension:
-          activeSettingsDraft.extension === 'custom'
-            ? activeSettingsDraft.customExtension
-            : undefined,
-        lineEnding: activeSettingsDraft.lineEnding
-      }
-    });
+    await onSaveWorkbenchSettings(
+      workbenchSettingsInputFromDraft(activeWorkbench, activeSettingsDraft)
+    );
   }
 
   function updateSettingsDraft(patch: Partial<Omit<SettingsDraft, 'sourceKey'>>) {
@@ -82,15 +57,14 @@ export function WorkbenchSettingsPanel({
   }
 
   return (
-    <form className="mt-4 border-t border-border pt-3" onSubmit={handleSettingsSubmit}>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="font-mono text-xs font-semibold">Workbench Settings</h3>
+    <form className="grid gap-3" onSubmit={handleSettingsSubmit}>
+      <div className="flex items-center justify-end">
         <Button disabled={isSavingSettings} size="sm" type="submit" variant="outline">
           <Save />
           {isSavingSettings ? 'Saving...' : 'Save Settings'}
         </Button>
       </div>
-      <div className="grid gap-2">
+      <div className="grid gap-2 font-mono text-[11px]">
         <label className="grid gap-1 text-muted-foreground">
           Machine Profile
           <input
@@ -188,6 +162,7 @@ export function WorkbenchSettingsPanel({
                 updateSettingsDraft({ workAreaWidthMm: event.currentTarget.value })
               }
               placeholder="unset"
+              step="any"
               type="number"
               value={activeSettingsDraft.workAreaWidthMm}
             />
@@ -204,6 +179,7 @@ export function WorkbenchSettingsPanel({
                 updateSettingsDraft({ workAreaLengthMm: event.currentTarget.value })
               }
               placeholder="unset"
+              step="any"
               type="number"
               value={activeSettingsDraft.workAreaLengthMm}
             />
@@ -222,10 +198,4 @@ export function WorkbenchSettingsPanel({
       </div>
     </form>
   );
-}
-
-function numberOrNull(value: string) {
-  if (value.trim() === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }

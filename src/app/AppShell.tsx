@@ -9,6 +9,8 @@ import {
 
 import { StatusNotificationMenu, type StatusToast } from '@/components/StatusToasts';
 import { Button } from '@/components/ui/button';
+import { normalizeOutputExtension } from '@/domain/post/gcodeTemplates';
+import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
 import { AppRailProvider, type AppRailContent } from './AppRailContext';
@@ -19,6 +21,9 @@ interface AppShellProps {
   connectedWorkbench: ConnectedWorkbench | null;
   errorMessage: string | null;
   onConnectWorkbench: () => void | Promise<void>;
+  onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
+  settingsErrorMessage: string | null;
+  settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
   storageActionLabel: string | null;
   statusNotifications: StatusToast[];
   storageWarningMessage: string | null;
@@ -30,6 +35,9 @@ export function AppShell({
   connectedWorkbench,
   errorMessage,
   onConnectWorkbench,
+  onSaveWorkbenchSettings,
+  settingsErrorMessage,
+  settingsStatus,
   storageActionLabel,
   statusNotifications,
   storageWarningMessage,
@@ -44,10 +52,13 @@ export function AppShell({
   const isConnectingStorage =
     workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage';
   const isTemporaryStorage = isReady && connectedWorkbench.adapter.kind === 'memory';
-  const activeStorageLabel =
-    connectedWorkbench?.adapter.kind === 'directory'
+  const activeStorageLabel = !connectedWorkbench
+    ? isConnectingStorage
+      ? 'Preparing storage'
+      : 'No storage'
+    : connectedWorkbench.adapter.kind === 'directory'
       ? 'Workbench folder'
-      : connectedWorkbench?.adapter.kind === 'browser-cache'
+      : connectedWorkbench.adapter.kind === 'browser-cache'
         ? 'Browser cache'
         : 'Temporary storage';
   const storageStatusLabel = isTemporaryStorage
@@ -60,7 +71,15 @@ export function AppShell({
         ? 'Connecting Workbench Folder'
         : 'Storage not connected';
   const projectCount = connectedWorkbench?.manifest.projects.length ?? 0;
+  const hasRailContent = railContent !== null;
   const replaceExpandedRailChrome = Boolean(railContent?.replaceRailChrome && !sidebarCollapsed);
+  const outputExtension = connectedWorkbench
+    ? `.${normalizeOutputExtension(
+        connectedWorkbench.manifest.output.extension,
+        connectedWorkbench.manifest.output.customExtension
+      )}`
+    : 'No output';
+  const lineEnding = connectedWorkbench?.manifest.output.lineEnding.toUpperCase() ?? 'No line ending';
 
   function handleSidebarResizeStart(event: PointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -128,112 +147,45 @@ export function AppShell({
       <div
         className="grid min-h-0 flex-1 transition-[grid-template-columns]"
         style={{
-          gridTemplateColumns: sidebarCollapsed ? '42px minmax(0, 1fr)' : `${sidebarWidth}px 4px minmax(0, 1fr)`
+          gridTemplateColumns: !hasRailContent
+            ? 'minmax(0, 1fr)'
+            : sidebarCollapsed
+              ? '42px minmax(0, 1fr)'
+              : `${sidebarWidth}px 4px minmax(0, 1fr)`
         }}
       >
-        <aside
-          className={`grid min-w-0 overflow-hidden ${
-            replaceExpandedRailChrome
-              ? 'grid-rows-[minmax(0,1fr)] bg-background p-2'
-              : 'grid-rows-[auto_minmax(0,1fr)] border-r border-border bg-card/95'
-          }`}
-          data-app-rail
-        >
-          {!replaceExpandedRailChrome && (
-            <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-1">
-              <button
-                aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}
-                className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-                onClick={() => setSidebarCollapsed((current) => !current)}
-                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                type="button"
-              >
-                {sidebarCollapsed ? (
-                  <PanelLeftOpen className="size-3.5" />
-                ) : (
-                  <PanelLeftClose className="size-3.5" />
-                )}
-              </button>
-            </div>
-          )}
-          <div className="min-h-0 overflow-hidden">
-            {sidebarCollapsed ? (
-              railContent?.collapsed ?? (
-                <div className="flex h-full flex-col items-center gap-3 py-3">
-                  <Database className="size-4 text-primary" />
-                  <div
-                    className="rotate-180 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground [writing-mode:vertical-rl]"
-                    title={
-                      isReady
-                        ? `${projectCount} project${projectCount === 1 ? '' : 's'}`
-                        : 'Preparing local storage'
-                    }
-                  >
-                    {isReady
-                      ? `${projectCount} ${projectCount === 1 ? 'project' : 'projects'}`
-                      : 'storage'}
-                  </div>
-                </div>
-              )
-            ) : (
-              railContent?.expanded ?? (
-                <div className="p-3">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div>
-                      <p className="font-mono text-[10px] uppercase text-muted-foreground">Local Storage</p>
-                      <h1 className="mt-1 font-mono text-sm font-semibold">Workbench</h1>
-                    </div>
-                    <Database className="size-4 text-primary" />
-                  </div>
-
-                  <div className="border border-border bg-background/50 p-2 font-mono text-[11px]">
-                    {isReady ? (
-                      <dl className="grid grid-cols-[76px_minmax(0,1fr)] gap-y-2">
-                        <dt className="text-muted-foreground">Storage</dt>
-                        <dd className="truncate text-foreground">{activeStorageLabel}</dd>
-                        <dt className="text-muted-foreground">Name</dt>
-                        <dd className="truncate text-foreground">{connectedWorkbench.manifest.name}</dd>
-                        <dt className="text-muted-foreground">Projects</dt>
-                        <dd>
-                          {projectCount} {projectCount === 1 ? 'project' : 'projects'}
-                        </dd>
-                        <dt className="text-muted-foreground">Output</dt>
-                        <dd>.{connectedWorkbench.manifest.output.extension}</dd>
-                      </dl>
-                    ) : (
-                      <p className="text-muted-foreground">
-                        Preparing the local storage workbench.
-                      </p>
-                    )}
-                    {isTemporaryStorage && (
-                      <p className="mt-3 border-t border-border pt-2 text-amber-100">
-                        Changes stay available only until this tab reloads.
-                      </p>
-                    )}
-                  </div>
-
-                  {errorMessage && (
-                    <p className="mt-3 border border-destructive bg-destructive/10 p-2 font-mono text-[10px] text-destructive">
-                      {errorMessage}
-                    </p>
+        {railContent && (
+          <aside
+            className={`grid min-w-0 overflow-hidden ${
+              replaceExpandedRailChrome
+                ? 'grid-rows-[minmax(0,1fr)] bg-background p-2'
+                : 'grid-rows-[auto_minmax(0,1fr)] border-r border-border bg-card/95'
+            }`}
+            data-app-rail
+          >
+            {!replaceExpandedRailChrome && (
+              <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-1">
+                <button
+                  aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}
+                  className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+                  onClick={() => setSidebarCollapsed((current) => !current)}
+                  title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                  type="button"
+                >
+                  {sidebarCollapsed ? (
+                    <PanelLeftOpen className="size-3.5" />
+                  ) : (
+                    <PanelLeftClose className="size-3.5" />
                   )}
-                  {storageWarningMessage && (
-                    <p className="mt-3 border border-amber-500/50 bg-amber-500/10 p-2 font-mono text-[10px] text-amber-100">
-                      {storageWarningMessage}
-                    </p>
-                  )}
-
-                  <div className="mt-5 border-t border-border pt-3 font-mono text-[10px] text-muted-foreground">
-                    <p>Cache-first projects</p>
-                    <p className="mt-1">Machine-profile export</p>
-                    <p className="mt-1">No feeds in export defaults</p>
-                  </div>
-                </div>
-              )
+                </button>
+              </div>
             )}
-          </div>
-        </aside>
-        {!sidebarCollapsed && (
+            <div className="min-h-0 overflow-hidden">
+              {sidebarCollapsed ? railContent.collapsed : railContent.expanded}
+            </div>
+          </aside>
+        )}
+        {railContent && !sidebarCollapsed && (
           <div
             aria-label="Resize project rail"
             className="cursor-col-resize border-r border-border bg-border/30 transition hover:bg-primary/40"
@@ -247,12 +199,34 @@ export function AppShell({
           <main className="min-h-0 min-w-0 overflow-hidden">{children}</main>
         </AppRailProvider>
       </div>
+      <footer
+        aria-label="Application status"
+        className="flex h-7 shrink-0 items-center gap-3 overflow-hidden border-t border-border bg-[#11171b]/95 px-3 font-mono text-[10px] text-muted-foreground"
+        data-app-status-bar
+      >
+        <span className="truncate text-foreground">{activeStorageLabel}</span>
+        <span aria-hidden="true">•</span>
+        <span className="truncate">
+          {connectedWorkbench?.activeMachineProfile.name ?? 'No machine profile'}
+        </span>
+        <span aria-hidden="true">•</span>
+        <span>{outputExtension}</span>
+        <span aria-hidden="true">•</span>
+        <span>{lineEnding}</span>
+        <span aria-hidden="true">•</span>
+        <span>
+          {projectCount} {projectCount === 1 ? 'project' : 'projects'}
+        </span>
+      </footer>
       <WorkbenchSettingsDialog
         connectedWorkbench={connectedWorkbench}
         errorMessage={errorMessage}
         onClose={() => setSettingsOpen(false)}
         onConnectWorkbench={onConnectWorkbench}
+        onSaveWorkbenchSettings={onSaveWorkbenchSettings}
         open={settingsOpen}
+        settingsErrorMessage={settingsErrorMessage}
+        settingsStatus={settingsStatus}
         storageActionLabel={storageActionLabel}
         storageWarningMessage={storageWarningMessage}
         workbenchStatus={workbenchStatus}

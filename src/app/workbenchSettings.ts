@@ -1,3 +1,4 @@
+import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 import type { OutputExtension } from '@/domain/workbench/types';
 
@@ -53,4 +54,44 @@ export function settingsDraftFromWorkbench(workbench: ConnectedWorkbench | null)
     workAreaLengthMm: profile.workArea.lengthMm?.toString() ?? '',
     workAreaWidthMm: profile.workArea.widthMm?.toString() ?? ''
   };
+}
+
+export function workbenchSettingsInputFromDraft(
+  activeWorkbench: ConnectedWorkbench,
+  draft: SettingsDraft
+): UpdateWorkbenchSettingsInput {
+  const customExtension = draft.extension === 'custom' ? draft.customExtension : undefined;
+
+  return {
+    header: draft.header,
+    footer: draft.footer,
+    machineProfile: {
+      ...activeWorkbench.activeMachineProfile,
+      name: draft.machineName,
+      templates: {
+        header: draft.header,
+        footer: draft.footer
+      },
+      output: {
+        extension: draft.extension,
+        customExtension,
+        lineEnding: draft.lineEnding
+      },
+      workArea: {
+        widthMm: numberOrNull(draft.workAreaWidthMm),
+        lengthMm: numberOrNull(draft.workAreaLengthMm)
+      }
+    },
+    output: {
+      extension: draft.extension,
+      customExtension,
+      lineEnding: draft.lineEnding
+    }
+  };
+}
+
+function numberOrNull(value: string) {
+  if (value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }

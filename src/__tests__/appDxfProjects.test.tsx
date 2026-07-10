@@ -560,6 +560,7 @@ describe('App DXF imports and project library', () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
+    await openMachineOutputSettings(container);
 
     const maxWidthInput = container.querySelector(
       'input[aria-label="Machine max width"]'
@@ -584,6 +585,7 @@ describe('App DXF imports and project library', () => {
       saveSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushAsync();
+    await closeWorkbenchSettings(container);
 
     const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
     Object.defineProperty(fileInput, 'files', {
@@ -3797,6 +3799,7 @@ describe('App DXF imports and project library', () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
+    await openMachineOutputSettings(container);
 
     const headerEditor = container.querySelector(
       'textarea[aria-label="Header template"]'
@@ -3815,6 +3818,7 @@ describe('App DXF imports and project library', () => {
       saveSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushAsync();
+    await closeWorkbenchSettings(container);
 
     const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
     Object.defineProperty(fileInput, 'files', {
@@ -4306,6 +4310,34 @@ async function selectFirstCutSequence(container: HTMLElement) {
 
   await act(async () => {
     firstCutSequence?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+}
+
+async function openMachineOutputSettings(container: HTMLElement) {
+  const openSettingsButton = container.querySelector(
+    'button[aria-label="Open settings"]'
+  ) as HTMLButtonElement | null;
+
+  await act(async () => {
+    openSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+
+  const machineOutputSettingsButton = [...container.querySelectorAll('button')].find(
+    (button) => button.getAttribute('aria-label') === 'Machine & Output settings'
+  );
+
+  await act(async () => {
+    machineOutputSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+}
+
+async function closeWorkbenchSettings(container: HTMLElement) {
+  const closeSettingsButton = container.querySelector(
+    'button[aria-label="Close settings"]'
+  ) as HTMLButtonElement | null;
+
+  await act(async () => {
+    closeSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
 }
 

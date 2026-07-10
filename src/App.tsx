@@ -17,6 +17,9 @@ export default function App({ services }: AppProps = {}) {
       connectedWorkbench={app.connectedWorkbench}
       errorMessage={app.errorMessage}
       onConnectWorkbench={app.handleConnectWorkbench}
+      onSaveWorkbenchSettings={app.handleSaveWorkbenchSettings}
+      settingsErrorMessage={app.settingsErrorMessage}
+      settingsStatus={app.settingsStatus}
       storageActionLabel={app.storageActionLabel}
       statusNotifications={app.statusNotifications}
       storageWarningMessage={app.storageWarningMessage}
@@ -50,11 +53,8 @@ export default function App({ services }: AppProps = {}) {
           onOpenLatestImportInEditor={app.handleOpenLatestImportInEditor}
           onOpenProject={app.handleOpenWorkbenchProject}
           onRenameProject={app.handleRenameWorkbenchProject}
-          onSaveWorkbenchSettings={app.handleSaveWorkbenchSettings}
           programImportErrorMessage={app.editorImportErrorMessage}
           programImportStatus={app.editorImportStatus}
-          settingsErrorMessage={app.settingsErrorMessage}
-          settingsStatus={app.settingsStatus}
           workbenchStatus={app.workbenchStatus}
         />
       )}
