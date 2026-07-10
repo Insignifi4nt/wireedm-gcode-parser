@@ -43,7 +43,6 @@ interface EditorHeaderBarProps {
 
 export function EditorHeaderBar({
   documentContext,
-  eyebrow = 'Editor',
   exportAvailable,
   exportLabel,
   filePath,
@@ -69,6 +68,7 @@ export function EditorHeaderBar({
 }: EditorHeaderBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const heading = title ?? filePath ?? 'Import or open a G-code program';
+  const canImportProgram = documentContext !== 'path-project';
   const visibleExportLabel =
     exportLabel === 'Open Path Project export preview' ? 'Export Preview' : exportLabel;
 
@@ -88,7 +88,7 @@ export function EditorHeaderBar({
     >
       <Button
         aria-label="Back to Dashboard"
-        className="h-7 shrink-0 px-2 text-[10px]"
+        className="size-7 shrink-0 p-0"
         disabled={interactionLocked}
         onClick={onBackToDashboard}
         size="sm"
@@ -96,22 +96,28 @@ export function EditorHeaderBar({
         variant="outline"
       >
         <ArrowLeft />
-        <span data-editor-back-label>Workbench</span>
-        <span className="sr-only"> Dashboard</span>
       </Button>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <p className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">{eyebrow}</p>
-          <span className="rounded-[2px] border border-border bg-background/60 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.04em] text-muted-foreground">
-            {DOCUMENT_CONTEXT_LABELS[documentContext]}
-          </span>
-        </div>
+      <div
+        className="flex min-w-0 flex-1 items-center gap-1.5"
+        data-editor-document-identity
+      >
         <h2 className="technical-value truncate text-[12px] font-semibold" title={titleTooltip ?? filePath}>
           {heading}
         </h2>
+        <span className="shrink-0 border border-border bg-background/60 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.04em] text-muted-foreground">
+          {DOCUMENT_CONTEXT_LABELS[documentContext]}
+        </span>
       </div>
-      <div className="flex min-w-0 shrink-0 items-center justify-end gap-1">
-        {workspaceControls}
+      <div className="flex min-w-0 shrink-0 items-center justify-end gap-1.5">
+        {workspaceControls && (
+          <div
+            className="flex shrink-0 items-center border-r border-border pr-1.5"
+            data-editor-header-workspace-controls
+          >
+            {workspaceControls}
+          </div>
+        )}
+        <div className="flex shrink-0 items-center gap-1" data-editor-header-document-commands>
         <Button
           aria-label="Undo active document change"
           className="h-7 px-2 text-[10px]"
@@ -160,43 +166,47 @@ export function EditorHeaderBar({
             onClick={onExport}
             size="sm"
             title={visibleExportLabel ?? exportLabel}
-            variant="outline"
+            variant={documentContext === 'path-project' ? 'default' : 'outline'}
           >
             <FileOutput />
             <span data-editor-header-command-label>{visibleExportLabel}</span>
           </Button>
         )}
-        <input
-          ref={fileInputRef}
-          accept=".gcode,.nc,.iso,.txt,text/plain"
-          aria-label="G-code program file"
-          className="hidden"
-          disabled={interactionLocked}
-          onChange={handleFileInputChange}
-          type="file"
-        />
-        <Button
-          {...guideTargetProps('import-program', guideHighlightTarget)}
-          aria-label={isImporting ? 'Importing program' : 'Import Program'}
-          className={`h-7 px-2 text-[10px] ${guideHighlightClass(
-            'import-program',
-            guideHighlightTarget
-          )}`}
-          data-editor-header-command
-          disabled={interactionLocked}
-          onClick={() => fileInputRef.current?.click()}
-          size="sm"
-          title="Import Program"
-          variant="default"
-        >
-          <FileUp />
-          <span data-editor-header-command-label>
-            {isImporting ? 'Importing...' : 'Import Program'}
-          </span>
-        </Button>
+        {canImportProgram && (
+          <>
+            <input
+              ref={fileInputRef}
+              accept=".gcode,.nc,.iso,.txt,text/plain"
+              aria-label="G-code program file"
+              className="hidden"
+              disabled={interactionLocked}
+              onChange={handleFileInputChange}
+              type="file"
+            />
+            <Button
+              {...guideTargetProps('import-program', guideHighlightTarget)}
+              aria-label={isImporting ? 'Importing program' : 'Import Program'}
+              className={`h-7 px-2 text-[10px] ${guideHighlightClass(
+                'import-program',
+                guideHighlightTarget
+              )}`}
+              data-editor-header-command
+              disabled={interactionLocked}
+              onClick={() => fileInputRef.current?.click()}
+              size="sm"
+              title="Import Program"
+              variant="default"
+            >
+              <FileUp />
+              <span data-editor-header-command-label>
+                {isImporting ? 'Importing...' : 'Import Program'}
+              </span>
+            </Button>
+          </>
+        )}
         <Button
           aria-label="Open usage guide"
-          className="h-7 px-2 text-[10px]"
+          className="size-7 p-0"
           data-editor-header-command
           onClick={onOpenGuide}
           size="sm"
@@ -204,8 +214,8 @@ export function EditorHeaderBar({
           variant="outline"
         >
           <CircleHelp />
-          <span data-editor-header-command-label>Controls</span>
         </Button>
+        </div>
       </div>
       {(importErrorMessage || saveErrorMessage) && (
         <div className="absolute left-10 right-3 top-10 z-50 space-y-1">

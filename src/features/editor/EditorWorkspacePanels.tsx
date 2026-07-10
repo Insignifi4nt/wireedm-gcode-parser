@@ -11,7 +11,20 @@ import {
   type ReactNode
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Eye, EyeOff, X } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  ListOrdered,
+  ListTree,
+  MousePointer2,
+  Move,
+  PanelsTopLeft,
+  Ruler,
+  Search,
+  Settings2,
+  TriangleAlert,
+  X
+} from 'lucide-react';
 
 export type EditorDockSide = 'left' | 'right';
 export type EditorPanelPlacement = 'floating' | 'hidden' | `docked-${EditorDockSide}`;
@@ -102,15 +115,15 @@ interface EditorPanelToolbarProps {
 }
 
 const EDITOR_PANEL_SHORTCUTS = [
-  { id: 'contour-tree', label: 'Tree' },
-  { id: 'path-actions', label: 'Actions' },
-  { id: 'cut-sequence', label: 'Sequence' },
-  { id: 'path-transform', label: 'Transform' },
-  { id: 'path-diagnostics', label: 'Diagnostics' },
-  { id: 'statistics', label: 'Inspect' },
-  { id: 'measurement', label: 'Measure' },
-  { id: 'machine', label: 'Machine' }
-];
+  { icon: ListTree, id: 'contour-tree' },
+  { icon: MousePointer2, id: 'path-actions' },
+  { icon: ListOrdered, id: 'cut-sequence' },
+  { icon: Move, id: 'path-transform' },
+  { icon: TriangleAlert, id: 'path-diagnostics' },
+  { icon: Search, id: 'statistics' },
+  { icon: Ruler, id: 'measurement' },
+  { icon: Settings2, id: 'machine' }
+] as const;
 const EDITOR_PANEL_HOVER_OPEN_DELAY_MS = 500;
 
 export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
@@ -172,18 +185,19 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
           const panel = panelsById.get(shortcut.id);
           if (!panel) return null;
           const action = panel.placement === 'hidden' ? 'Show' : 'Hide';
+          const ShortcutIcon = shortcut.icon;
 
           return (
             <button
-              aria-label={`${action} ${shortcut.label} workspace panel`}
-              className="flex h-7 items-center border border-border bg-background/70 px-2 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+              aria-label={`${action} ${panel.title} workspace panel`}
+              className="flex size-7 items-center justify-center border border-border bg-background/70 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
               data-editor-panel-shortcut={shortcut.id}
               key={shortcut.id}
               onClick={() => handlePanelClick(panel)}
               title={`${action} ${panel.title}`}
               type="button"
             >
-              {shortcut.label}
+              <ShortcutIcon aria-hidden="true" className="size-3.5" />
             </button>
           );
         })}
@@ -196,10 +210,12 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
         open={menuOpen}
       >
         <summary
-          className="flex h-7 cursor-pointer select-none items-center border border-border bg-background/70 px-2 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+          aria-label="Panels"
+          className="flex size-7 cursor-pointer select-none items-center justify-center border border-border bg-background/70 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
           onClick={handleSummaryClick}
+          title="All workspace panels"
         >
-          Workspace
+          <PanelsTopLeft aria-hidden="true" className="size-3.5" />
         </summary>
         <div className="absolute right-0 top-7 z-50 grid max-h-[76vh] w-72 gap-2 overflow-auto border border-border bg-card p-2 shadow-2xl">
           {visibleGroups.map((group) => (

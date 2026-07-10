@@ -58,7 +58,9 @@ describe('EditorPanelToolbar', () => {
       'button[data-editor-panel-menu-item="path-actions"]'
     ) as HTMLButtonElement | null;
 
-    expect(summary?.textContent).toBe('Workspace');
+    expect(summary?.textContent).toBe('');
+    expect(summary?.getAttribute('aria-label')).toBe('Panels');
+    expect(summary?.getAttribute('title')).toBe('All workspace panels');
     expect(details?.open).toBe(false);
 
     await act(async () => {
@@ -244,14 +246,14 @@ describe('EditorPanelToolbar', () => {
 
   it('delegates every primary Path shortcut to its existing panel controller', async () => {
     const shortcutPanels = [
-      ['contour-tree', 'Contour Tree', 'Tree'],
-      ['path-actions', 'Path Actions', 'Actions'],
-      ['cut-sequence', 'Cut Sequence', 'Sequence'],
-      ['path-transform', 'Transform', 'Transform'],
-      ['path-diagnostics', 'Path Diagnostics', 'Diagnostics'],
-      ['statistics', 'Statistics', 'Inspect'],
-      ['measurement', 'Measurement', 'Measure'],
-      ['machine', 'Machine', 'Machine']
+      ['contour-tree', 'Contour Tree'],
+      ['path-actions', 'Path Actions'],
+      ['cut-sequence', 'Cut Sequence'],
+      ['path-transform', 'Transform'],
+      ['path-diagnostics', 'Path Diagnostics'],
+      ['statistics', 'Statistics'],
+      ['measurement', 'Measurement'],
+      ['machine', 'Machine']
     ] as const;
     const callbacks = new Map(
       shortcutPanels.map(([id]) => [
@@ -279,11 +281,16 @@ describe('EditorPanelToolbar', () => {
       );
     });
 
-    for (const [id, , label] of shortcutPanels) {
+    for (const [id, title] of shortcutPanels) {
       const shortcut = container.querySelector(
         `button[data-editor-panel-shortcut="${id}"]`
       ) as HTMLButtonElement | null;
-      expect(shortcut?.textContent).toBe(label);
+      const action = id === 'path-actions' ? 'Hide' : 'Show';
+      expect(shortcut?.textContent).toBe('');
+      expect(shortcut?.getAttribute('aria-label')).toBe(
+        `${action} ${title} workspace panel`
+      );
+      expect(shortcut?.getAttribute('title')).toBe(`${action} ${title}`);
       await act(async () => {
         shortcut?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });

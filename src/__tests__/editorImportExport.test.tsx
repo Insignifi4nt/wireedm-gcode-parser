@@ -49,7 +49,7 @@ describe('Editor import, export, and parse feedback', () => {
     });
     await flushAsync();
 
-    expect(container.textContent).toContain('Editor');
+    expect(container.querySelector('[data-editor-document-identity]')).not.toBeNull();
     expect(container.textContent).toContain('Import Program');
     expect(container.querySelector('[data-editor-context="empty-program"]')).not.toBeNull();
     expect(container.textContent).toContain('Empty Program');
