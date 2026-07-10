@@ -640,6 +640,24 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[aria-label="Resize Inspector Dock"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Collapse Inspector Dock"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-panel-dock-zone="right"]')).not.toBeNull();
+    expect(
+      container
+        .querySelector('[data-editor-workspace-panel="contour-tree"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('docked-left');
+    expect(
+      container
+        .querySelector('[data-editor-workspace-panel="path-actions"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('docked-right');
+    expect(container.querySelector('[data-app-shell]')?.getAttribute('data-sidebar-collapsed')).toBe(
+      'false'
+    );
+    expect(
+      container
+        .querySelector('[data-editor-panel-dock-zone="right"]')
+        ?.getAttribute('data-editor-panel-dock-zone-collapsed')
+    ).toBe('false');
     expect(container.querySelector('[aria-label="Resize right bar"]')).toBeNull();
     expect(container.querySelector('[aria-label="Collapse right bar"]')).toBeNull();
     expect(container.querySelector('[data-editor-path-plan-panel]')).toBeNull();
@@ -800,6 +818,7 @@ describe('App DXF imports and project library', () => {
     const expectedPanels = [
       'path-summary',
       'path-actions',
+      'path-transform',
       'path-hover-assist',
       'endpoint-topology',
       'path-diagnostics',
@@ -3400,6 +3419,34 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-transform-target]')?.textContent).toBe('Document');
   });
 
+  it('shows unchanged DXF source placement metadata in the transform workspace', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([placedRectangleDxf()], 'source-placement.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+    await showWorkspacePanels(container, ['path-transform']);
+
+    expect(container.querySelector('[data-upid-transform-source-extents]')?.textContent).toBe(
+      'X -5.000..15.000 Y -6.000..16.000'
+    );
+    expect(container.querySelector('[data-upid-transform-source-base]')?.textContent).toBe(
+      '1.000, 2.000'
+    );
+    expect(container.querySelector('[data-upid-transform-document-placement-help]')?.textContent).toContain(
+      'Move the active reference or selection center to X0 Y0, or enter a precise target.'
+    );
+  });
+
   it('keeps document target placement independent from the selected interior contour', async () => {
     window.showDirectoryPicker = undefined;
 
@@ -4095,6 +4142,55 @@ function rectangleDxf() {
     '0',
     '20',
     '5',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function placedRectangleDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'HEADER',
+    '9',
+    '$INSBASE',
+    '10',
+    '1',
+    '20',
+    '2',
+    '30',
+    '0',
+    '9',
+    '$EXTMIN',
+    '10',
+    '-5',
+    '20',
+    '-6',
+    '30',
+    '0',
+    '9',
+    '$EXTMAX',
+    '10',
+    '15',
+    '20',
+    '16',
+    '30',
+    '0',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    ...closedPolylineDxf([
+      { x: 3, y: 4 },
+      { x: 13, y: 4 },
+      { x: 13, y: 14 },
+      { x: 3, y: 14 }
+    ]),
     '0',
     'ENDSEC',
     '0',

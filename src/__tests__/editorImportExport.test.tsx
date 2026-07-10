@@ -6,7 +6,6 @@ import {
   cleanupAppTestContext,
   createAppTestContext,
   dispatchTouchEvent,
-  enableAutoOpenEditorWorkspacePanels,
   flushAsync,
   parseSvgViewBox,
   renderApp,
@@ -22,7 +21,6 @@ describe('Editor import, export, and parse feedback', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
-    enableAutoOpenEditorWorkspacePanels();
     context = createAppTestContext();
     container = context.container;
   });
@@ -80,6 +78,10 @@ describe('Editor import, export, and parse feedback', () => {
     expect(container.querySelector('[data-editor-layout="canvas-first"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-canvas-panel]')).not.toBeNull();
     expect(container.querySelector('[data-editor-inspector-panel]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-code-section="lines"]')?.textContent).toContain(
+      'Program Lines'
+    );
+    expect(container.querySelector('button[aria-label="Expand Inspector Rail"]')).toBeNull();
     expect(container.querySelector('[data-editor-side-code-panel]')).not.toBeNull();
     expect(container.querySelector('[data-editor-line-toolbar]')).not.toBeNull();
     const codePanel = container.querySelector('[data-editor-side-code-panel]');

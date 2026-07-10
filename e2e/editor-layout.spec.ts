@@ -12,7 +12,7 @@ test.skip(
   'Set WIREDM_PLAYWRIGHT_WORKBENCH or keep USERPROFILE/Documents/WireEDM_WEB_FOLDER available.'
 );
 
-test('editor uses one header and resizable collapsible side rails', async ({ page }) => {
+test('machine program editor uses one header and an open resizable inspector', async ({ page }) => {
   const projectId = findEditorProjectId(workbenchFolder);
   test.skip(!projectId, 'Seeded workbench has no project with an active editor file.');
 
@@ -41,20 +41,19 @@ test('editor uses one header and resizable collapsible side rails', async ({ pag
   await expect(previewHeader.getByRole('button', { name: /fit preview to screen/i })).toBeVisible();
   await expect(page.locator('[data-editor-preview-toolbar]')).toHaveCount(0);
 
-  const appRail = page.locator('[data-app-rail]');
-  const appRailStart = await readWidth(appRail);
-  await drag(page.locator('[data-app-rail-resizer]'), 60, 0);
-  await expect.poll(() => readWidth(appRail)).toBeGreaterThan(appRailStart + 30);
+  await expect(page.locator('[data-app-rail]')).toHaveCount(0);
 
   const rightRail = page.locator('[data-editor-inspector-rail]');
+  await expect(rightRail).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Expand Inspector Rail' })).toHaveCount(0);
   const rightRailStart = await readWidth(rightRail);
   await drag(page.locator('[data-editor-inspector-resizer]'), 70, 0);
   await expect.poll(() => readWidth(rightRail)).toBeLessThan(rightRailStart - 35);
 
-  await page.getByRole('button', { name: /collapse right bar/i }).click();
+  await page.getByRole('button', { name: 'Collapse Inspector Rail' }).click();
   await expect(page.locator('[data-editor-inspector-collapsed]')).toBeVisible();
   await expect(rightRail).not.toBeVisible();
-  await page.getByRole('button', { name: /expand right bar/i }).click();
+  await page.getByRole('button', { name: 'Expand Inspector Rail' }).click();
   await expect(rightRail).toBeVisible();
 
   await expect

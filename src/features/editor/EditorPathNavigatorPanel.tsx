@@ -781,6 +781,10 @@ export function EditorPathNavigatorPanel({
                 ))}
               </select>
             </div>
+            <p className="mb-2 text-[9px] leading-4 text-muted-foreground" data-upid-transform-document-placement-help>
+              Move the active reference or selection center to X0 Y0, or enter a precise target. DXF
+              source extents come from DXF header metadata and are shown unchanged.
+            </p>
             <dl className="grid gap-1 font-mono text-[9px]">
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
                 <dt className="uppercase text-muted-foreground">Bounds</dt>
@@ -808,6 +812,20 @@ export function EditorPathNavigatorPanel({
                 <dt className="uppercase text-muted-foreground">To Origin</dt>
                 <dd className="truncate text-foreground" data-upid-transform-origin-offset>
                   {documentOriginOffset ? formatPoint(documentOriginOffset) : '-'}
+                </dd>
+              </div>
+              <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
+                <dt className="uppercase text-muted-foreground">Source Ext</dt>
+                <dd className="truncate text-foreground" data-upid-transform-source-extents>
+                  {formatDrawingExtents(pathDocument.source.drawing?.extents)}
+                </dd>
+              </div>
+              <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
+                <dt className="uppercase text-muted-foreground">Source Base</dt>
+                <dd className="truncate text-foreground" data-upid-transform-source-base>
+                  {pathDocument.source.drawing?.basePoint
+                    ? formatPoint(pathDocument.source.drawing.basePoint)
+                    : '-'}
                 </dd>
               </div>
             </dl>
@@ -2889,6 +2907,13 @@ function formatPoint(point: { x: number; y: number }) {
 
 function formatBounds(bounds: Bounds2) {
   return `X ${formatNumber(bounds.minX)}..${formatNumber(bounds.maxX)} Y ${formatNumber(bounds.minY)}..${formatNumber(bounds.maxY)}`;
+}
+
+function formatDrawingExtents(
+  extents: { min: { x: number; y: number }; max: { x: number; y: number } } | undefined
+) {
+  if (!extents) return '-';
+  return `X ${formatNumber(extents.min.x)}..${formatNumber(extents.max.x)} Y ${formatNumber(extents.min.y)}..${formatNumber(extents.max.y)}`;
 }
 
 function formatSegmentGeometrySummary(geometry: UpidSelectedPathSegmentGeometry) {

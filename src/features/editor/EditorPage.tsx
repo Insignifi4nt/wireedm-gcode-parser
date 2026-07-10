@@ -218,7 +218,7 @@ const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFlo
   position: { x: 1020, y: 74, width: 300, height: 180 },
   statistics: { x: 990, y: 104, width: 360, height: 560 },
   machine: { x: 1040, y: 134, width: 300, height: 220 },
-  measurement: { x: 1010, y: 194, width: 340, height: 420 }
+  measurement: { x: 250, y: 194, width: 340, height: 420 }
 };
 
 const FLOATING_PANEL_GAP = 8;
@@ -264,6 +264,30 @@ function createDefaultPanelRecord<T>(valueFor: (id: EditorWorkspacePanelId) => T
     },
     {} as Record<EditorWorkspacePanelId, T>
   );
+}
+
+const HIDDEN_WORKSPACE_PANEL_PLACEMENTS = createDefaultPanelRecord<EditorPanelPlacement>(() => 'hidden');
+const PATH_DEFAULT_PLACEMENTS = createDefaultPanelRecord<EditorPanelPlacement>((id) =>
+  id === 'contour-tree' ? 'docked-left' : id === 'path-actions' ? 'docked-right' : 'hidden'
+);
+const PATH_DEFAULT_DOCK_ORDERS: Record<EditorDockSide, EditorWorkspacePanelId[]> = {
+  left: ['contour-tree'],
+  right: ['path-actions']
+};
+
+function createDefaultWorkspacePanelPlacements(model: LoadedEditorProgram['model'] | undefined) {
+  return {
+    ...(model === 'upid-document' ? PATH_DEFAULT_PLACEMENTS : HIDDEN_WORKSPACE_PANEL_PLACEMENTS)
+  };
+}
+
+function createDefaultWorkspaceDockOrders(model: LoadedEditorProgram['model'] | undefined) {
+  return model === 'upid-document'
+    ? {
+        left: [...PATH_DEFAULT_DOCK_ORDERS.left],
+        right: [...PATH_DEFAULT_DOCK_ORDERS.right]
+      }
+    : { left: [], right: [] };
 }
 
 function handleEditorDragOver(event: DragEvent<HTMLDivElement>) {
@@ -478,18 +502,17 @@ export function EditorPage({
   const [selectedPathElement, setSelectedPathElement] = useState<EditorPathElementRef | null>(null);
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
-  const [inspectorRailCollapsed, setInspectorRailCollapsed] = useState(true);
+  const [inspectorRailCollapsed, setInspectorRailCollapsed] = useState(false);
   const [inspectorRailWidth, setInspectorRailWidth] = useState(420);
   const [workspacePanelPlacements, setWorkspacePanelPlacements] = useState<
     Record<EditorWorkspacePanelId, EditorPanelPlacement>
-  >(() => createDefaultPanelRecord(() => 'hidden'));
+  >(() => createDefaultWorkspacePanelPlacements(program?.model));
   const [workspacePanelGeometries, setWorkspacePanelGeometries] = useState<
     Record<EditorWorkspacePanelId, EditorFloatingPanelGeometry>
   >(() => ({ ...DEFAULT_WORKSPACE_PANEL_GEOMETRY }));
-  const [workspaceDockOrders, setWorkspaceDockOrders] = useState<Record<EditorDockSide, EditorWorkspacePanelId[]>>({
-    left: [],
-    right: []
-  });
+  const [workspaceDockOrders, setWorkspaceDockOrders] = useState<Record<EditorDockSide, EditorWorkspacePanelId[]>>(
+    () => createDefaultWorkspaceDockOrders(program?.model)
+  );
   const [expandedPathElementIds, setExpandedPathElementIds] = useState<Record<string, boolean>>({});
   const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
   const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
@@ -818,6 +841,15 @@ export function EditorPage({
   }, [program?.filePath, savedDraftSignature]);
 
   useEffect(() => {
+    setInspectorRailCollapsed(false);
+    setProgramLinesOpen(true);
+    setWorkspacePanelPlacements(createDefaultWorkspacePanelPlacements(program?.model));
+    setWorkspaceDockOrders(createDefaultWorkspaceDockOrders(program?.model));
+
+    if (program?.model === 'upid-document') setRailCollapsed(false);
+  }, [program?.filePath, program?.model]);
+
+  useEffect(() => {
     setRailContent(editorRailContent);
     return () => setRailContent(null);
   }, [editorRailContent, setRailContent]);
@@ -838,10 +870,6 @@ export function EditorPage({
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedChanges]);
-
-  useEffect(() => {
-    if (pathDocumentDraft) setRailCollapsed(true);
-  }, [pathDocumentDraft, setRailCollapsed]);
 
   function setLastClickedLine(lineNumber: number | null) {
     lastClickedLineRef.current = lineNumber;

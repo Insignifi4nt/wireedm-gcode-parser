@@ -12,11 +12,18 @@ test('editor exposes functional groups as dockable and floating workspace panels
       buffer: Buffer.from(rectangleDxf())
     });
 
-  await expect(page.locator('[data-editor-workspace-panel]')).toHaveCount(0);
-  await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-sidebar-collapsed', 'true');
+  await expect(page.locator('[data-editor-workspace-panel="contour-tree"]')).toHaveAttribute(
+    'data-editor-workspace-panel-placement',
+    'docked-left'
+  );
+  await expect(page.locator('[data-editor-workspace-panel="path-actions"]')).toHaveAttribute(
+    'data-editor-workspace-panel-placement',
+    'docked-right'
+  );
+  await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-sidebar-collapsed', 'false');
   await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveAttribute(
     'data-editor-panel-dock-zone-collapsed',
-    'true'
+    'false'
   );
   await expect(page.getByRole('button', { name: 'Float UPID Path Navigator' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Float Inspector' })).toHaveCount(0);
@@ -57,7 +64,6 @@ test('editor exposes functional groups as dockable and floating workspace panels
     'right'
   );
 
-  await page.getByRole('button', { name: 'Expand workbench sidebar' }).click();
   await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-sidebar-collapsed', 'false');
   await dragHandleToDock(page, 'measurement', 'left');
   await expect(page.locator('[data-editor-workspace-panel="measurement"]')).toHaveAttribute(
@@ -72,6 +78,7 @@ test('editor exposes functional groups as dockable and floating workspace panels
   await page.locator('[data-editor-panel-toolbar] summary').click();
   await page.locator('[data-editor-panel-menu-item="path-diagnostics"]').click();
   await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toHaveCount(0);
+  await page.locator('[data-editor-panel-toolbar] summary').click();
   await expect(page.getByRole('button', { name: 'Show Path Diagnostics' })).toBeVisible();
   await page.locator('[data-editor-panel-menu-item="path-diagnostics"]').click();
   await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toHaveAttribute(
@@ -279,6 +286,7 @@ test('editor opens contour tree and endpoint topology without covering each othe
       buffer: Buffer.from(rectangleDxf())
     });
 
+  await hidePanels(page, ['contour-tree']);
   await showPanels(page, ['contour-tree', 'endpoint-topology']);
 
   const treeBox = await page.locator('[data-editor-floating-panel="contour-tree"]').boundingBox();
@@ -308,6 +316,7 @@ test('editor opens common floating workspace panels in readable non-overlapping 
       buffer: Buffer.from(rectangleDxf())
     });
 
+  await hidePanels(page, ['contour-tree']);
   await showPanels(page, ['path-transform', 'contour-tree', 'statistics']);
 
   const panelIds = ['path-transform', 'contour-tree', 'statistics'];
@@ -757,15 +766,14 @@ async function setPanelVisibility(
   panelIds: string[],
   visible: boolean
 ) {
-  await page.locator('[data-editor-panel-toolbar] summary').click();
   for (const panelId of panelIds) {
     const item = page.locator(`[data-editor-panel-menu-item="${panelId}"]`);
     const label = await item.getAttribute('aria-label');
     if (label?.startsWith(visible ? 'Show' : 'Hide')) {
+      await page.locator('[data-editor-panel-toolbar] summary').click();
       await item.click();
     }
   }
-  await page.locator('[data-editor-panel-toolbar] summary').click();
 }
 
 async function dragHandleToDock(

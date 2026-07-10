@@ -21,7 +21,7 @@ describe('EditorPanelToolbar', () => {
     container.remove();
   });
 
-  it('opens the panel menu on hover, closes on leave, and remains clickable for automation', async () => {
+  it('opens on hover, toggles from the Workspace trigger, and closes after a selection', async () => {
     const onShow = vi.fn();
 
     await act(async () => {
@@ -47,33 +47,101 @@ describe('EditorPanelToolbar', () => {
       );
     });
 
-    const toolbar = container.querySelector('[data-editor-panel-toolbar]') as HTMLDetailsElement | null;
+    const toolbar = container.querySelector('[data-editor-panel-toolbar]');
+    const details = toolbar?.querySelector('details') as HTMLDetailsElement | null;
     const summary = toolbar?.querySelector('summary');
     const item = toolbar?.querySelector(
       'button[data-editor-panel-menu-item="path-actions"]'
     ) as HTMLButtonElement | null;
 
-    expect(toolbar?.open).toBe(false);
+    expect(summary?.textContent).toBe('Workspace');
+    expect(details?.open).toBe(false);
 
     await act(async () => {
-      toolbar?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      details?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await new Promise((resolve) => window.setTimeout(resolve, 550));
     });
-    expect(toolbar?.open).toBe(true);
+    expect(details?.open).toBe(true);
 
     await act(async () => {
-      toolbar?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
+      details?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
     });
-    expect(toolbar?.open).toBe(false);
+    expect(details?.open).toBe(false);
 
     await act(async () => {
       summary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    expect(toolbar?.open).toBe(true);
+    expect(details?.open).toBe(true);
+
+    await act(async () => {
+      summary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(details?.open).toBe(false);
+
+    await act(async () => {
+      summary?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
 
     await act(async () => {
       item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(onShow).toHaveBeenCalledTimes(1);
+    expect(details?.open).toBe(false);
+  });
+
+  it('offers direct Tree, Actions, Transform, Diagnostics, and Measure shortcuts', async () => {
+    const callbacks = new Map(
+      ['contour-tree', 'path-actions', 'path-transform', 'path-diagnostics', 'measurement'].map((id) => [
+        id,
+        { onHide: vi.fn(), onShow: vi.fn() }
+      ])
+    );
+
+    await act(async () => {
+      root.render(
+        <EditorPanelToolbar
+          groups={[
+            {
+              id: 'all',
+              title: 'All',
+              panels: [
+                { id: 'contour-tree', title: 'Contour Tree', placement: 'hidden', ...callbacks.get('contour-tree')! },
+                { id: 'path-actions', title: 'Path Actions', placement: 'docked-right', ...callbacks.get('path-actions')! },
+                { id: 'path-transform', title: 'Transform', placement: 'hidden', ...callbacks.get('path-transform')! },
+                { id: 'path-diagnostics', title: 'Path Diagnostics', placement: 'hidden', ...callbacks.get('path-diagnostics')! },
+                { id: 'measurement', title: 'Measurement', placement: 'hidden', ...callbacks.get('measurement')! },
+                { id: 'statistics', title: 'Statistics', placement: 'hidden', onHide: vi.fn(), onShow: vi.fn() }
+              ]
+            }
+          ]}
+        />
+      );
+    });
+
+    const expectedShortcuts = [
+      ['contour-tree', 'Tree'],
+      ['path-actions', 'Actions'],
+      ['path-transform', 'Transform'],
+      ['path-diagnostics', 'Diagnostics'],
+      ['measurement', 'Measure']
+    ];
+
+    for (const [id, label] of expectedShortcuts) {
+      const shortcut = container.querySelector(
+        `button[data-editor-panel-shortcut="${id}"]`
+      ) as HTMLButtonElement | null;
+      expect(shortcut?.textContent).toBe(label);
+      await act(async () => {
+        shortcut?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+    }
+
+    expect(callbacks.get('contour-tree')?.onShow).toHaveBeenCalledTimes(1);
+    expect(callbacks.get('path-actions')?.onHide).toHaveBeenCalledTimes(1);
+    expect(callbacks.get('path-transform')?.onShow).toHaveBeenCalledTimes(1);
+    expect(callbacks.get('path-diagnostics')?.onShow).toHaveBeenCalledTimes(1);
+    expect(callbacks.get('measurement')?.onShow).toHaveBeenCalledTimes(1);
+    expect(container.querySelectorAll('[data-editor-panel-menu-item]')).toHaveLength(6);
   });
 });

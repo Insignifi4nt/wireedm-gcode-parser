@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
   type CSSProperties,
   type DragEvent,
@@ -50,9 +51,44 @@ interface EditorPanelToolbarProps {
   groups: EditorPanelMenuGroup[];
 }
 
+const EDITOR_PANEL_SHORTCUTS = [
+  { id: 'contour-tree', label: 'Tree' },
+  { id: 'path-actions', label: 'Actions' },
+  { id: 'path-transform', label: 'Transform' },
+  { id: 'path-diagnostics', label: 'Diagnostics' },
+  { id: 'measurement', label: 'Measure' }
+];
+const EDITOR_PANEL_HOVER_OPEN_DELAY_MS = 500;
+
 export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const hoverOpenTimerRef = useRef<number | null>(null);
   const visibleGroups = groups.filter((group) => group.panels.length > 0);
+  const panelsById = new Map(
+    visibleGroups.flatMap((group) => group.panels.map((panel) => [panel.id, panel] as const))
+  );
+
+  function clearHoverOpenTimer() {
+    if (hoverOpenTimerRef.current === null) return;
+    window.clearTimeout(hoverOpenTimerRef.current);
+    hoverOpenTimerRef.current = null;
+  }
+
+  function handleMouseEnter() {
+    clearHoverOpenTimer();
+    hoverOpenTimerRef.current = window.setTimeout(() => {
+      hoverOpenTimerRef.current = null;
+      setMenuOpen(true);
+    }, EDITOR_PANEL_HOVER_OPEN_DELAY_MS);
+  }
+
+  function handleMouseLeave() {
+    clearHoverOpenTimer();
+    setMenuOpen(false);
+  }
+
+  useEffect(() => clearHoverOpenTimer, []);
+
   if (visibleGroups.length === 0) return null;
 
   function handleBlur(event: FocusEvent<HTMLElement>) {
@@ -64,78 +100,105 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
 
   function handleSummaryClick(event: MouseEvent<HTMLElement>) {
     event.preventDefault();
-    setMenuOpen(true);
+    setMenuOpen((current) => !current);
+  }
+
+  function handlePanelClick(panel: EditorPanelMenuItem) {
+    if (panel.placement === 'hidden') panel.onShow();
+    else panel.onHide();
+    setMenuOpen(false);
   }
 
   return (
-    <details
-      className="relative min-w-0 font-mono text-[10px]"
-      data-editor-panel-toolbar
-      onBlur={handleBlur}
-      onFocus={() => setMenuOpen(true)}
-      onMouseEnter={() => setMenuOpen(true)}
-      onMouseLeave={() => setMenuOpen(false)}
-      open={menuOpen}
-    >
-      <summary
-        className="flex h-7 cursor-pointer select-none items-center border border-border bg-background/70 px-2 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-        onClick={handleSummaryClick}
-      >
-        Panels
-      </summary>
-      <div className="absolute right-0 top-7 z-50 grid max-h-[76vh] w-72 gap-2 overflow-auto border border-border bg-card p-2 shadow-2xl">
-        {visibleGroups.map((group) => (
-          <section
-            className="grid gap-1 border border-border bg-background/35 p-1"
-            data-editor-panel-menu-group={group.id}
-            key={group.id}
-          >
-            <h3 className="px-1 py-0.5 text-[9px] font-semibold uppercase text-muted-foreground">
-              {group.title}
-            </h3>
-            {group.panels.map((panel) => {
-              const isHidden = panel.placement === 'hidden';
-              const status = isHidden
-                ? 'off'
-                : panel.placement === 'floating'
-                  ? 'free'
-                  : panel.placement.replace('docked-', '');
+    <div className="flex min-w-0 items-center gap-1 font-mono text-[10px]" data-editor-panel-toolbar>
+      <div className="hidden items-center gap-1 xl:flex" data-editor-panel-shortcuts>
+        {EDITOR_PANEL_SHORTCUTS.map((shortcut) => {
+          const panel = panelsById.get(shortcut.id);
+          if (!panel) return null;
+          const action = panel.placement === 'hidden' ? 'Show' : 'Hide';
 
-              return (
-                <button
-                  aria-label={`${isHidden ? 'Show' : 'Hide'} ${panel.title}`}
-                  className="grid min-h-8 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border border-border px-1.5 py-1 text-left text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-                  data-editor-panel-menu-item={panel.id}
-                  key={panel.id}
-                  onClick={isHidden ? panel.onShow : panel.onHide}
-                  title={`${isHidden ? 'Show' : 'Hide'} ${panel.title}`}
-                  type="button"
-                >
-                  {isHidden ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-                  <span className="min-w-0">
-                    <span className="block truncate text-[10px] text-foreground">{panel.title}</span>
-                    {panel.description && (
-                      <span
-                        className="block truncate text-[8px] text-muted-foreground"
-                        data-editor-panel-menu-item-description
-                      >
-                        {panel.description}
-                      </span>
-                    )}
-                  </span>
-                  <span
-                    className="text-[8px] uppercase text-muted-foreground"
-                    data-editor-panel-menu-item-status
-                  >
-                    {status}
-                  </span>
-                </button>
-              );
-            })}
-          </section>
-        ))}
+          return (
+            <button
+              aria-label={`${action} ${shortcut.label} workspace panel`}
+              className="flex h-7 items-center border border-border bg-background/70 px-2 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+              data-editor-panel-shortcut={shortcut.id}
+              key={shortcut.id}
+              onClick={() => handlePanelClick(panel)}
+              title={`${action} ${panel.title}`}
+              type="button"
+            >
+              {shortcut.label}
+            </button>
+          );
+        })}
       </div>
-    </details>
+      <details
+        className="relative min-w-0"
+        onBlur={handleBlur}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        open={menuOpen}
+      >
+        <summary
+          className="flex h-7 cursor-pointer select-none items-center border border-border bg-background/70 px-2 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+          onClick={handleSummaryClick}
+        >
+          Workspace
+        </summary>
+        <div className="absolute right-0 top-7 z-50 grid max-h-[76vh] w-72 gap-2 overflow-auto border border-border bg-card p-2 shadow-2xl">
+          {visibleGroups.map((group) => (
+            <section
+              className="grid gap-1 border border-border bg-background/35 p-1"
+              data-editor-panel-menu-group={group.id}
+              key={group.id}
+            >
+              <h3 className="px-1 py-0.5 text-[9px] font-semibold uppercase text-muted-foreground">
+                {group.title}
+              </h3>
+              {group.panels.map((panel) => {
+                const isHidden = panel.placement === 'hidden';
+                const status = isHidden
+                  ? 'off'
+                  : panel.placement === 'floating'
+                    ? 'free'
+                    : panel.placement.replace('docked-', '');
+
+                return (
+                  <button
+                    aria-label={`${isHidden ? 'Show' : 'Hide'} ${panel.title}`}
+                    className="grid min-h-8 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border border-border px-1.5 py-1 text-left text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
+                    data-editor-panel-menu-item={panel.id}
+                    key={panel.id}
+                    onClick={() => handlePanelClick(panel)}
+                    title={`${isHidden ? 'Show' : 'Hide'} ${panel.title}`}
+                    type="button"
+                  >
+                    {isHidden ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+                    <span className="min-w-0">
+                      <span className="block truncate text-[10px] text-foreground">{panel.title}</span>
+                      {panel.description && (
+                        <span
+                          className="block truncate text-[8px] text-muted-foreground"
+                          data-editor-panel-menu-item-description
+                        >
+                          {panel.description}
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className="text-[8px] uppercase text-muted-foreground"
+                      data-editor-panel-menu-item-status
+                    >
+                      {status}
+                    </span>
+                  </button>
+                );
+              })}
+            </section>
+          ))}
+        </div>
+      </details>
+    </div>
   );
 }
 
@@ -361,7 +424,26 @@ export function EditorWorkspacePanelFrame({
     }
 
     const dockSide = placement === 'docked-left' ? 'left' : 'right';
-    setDockTarget(document.querySelector<HTMLElement>(`[data-editor-dock-panel-stack="${dockSide}"]`));
+    const selector = `[data-editor-dock-panel-stack="${dockSide}"]`;
+    let retryCount = 0;
+    let retryTimer: number | null = null;
+    const findDockTarget = () => {
+      const nextDockTarget = document.querySelector<HTMLElement>(selector);
+      if (nextDockTarget) {
+        setDockTarget(nextDockTarget);
+        return;
+      }
+      if (retryCount >= 10) return;
+
+      retryCount += 1;
+      retryTimer = window.setTimeout(findDockTarget, 0);
+    };
+
+    findDockTarget();
+
+    return () => {
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+    };
   }, [placement]);
 
   if (placement === 'hidden') return null;
