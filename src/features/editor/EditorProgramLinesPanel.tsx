@@ -285,7 +285,7 @@ export function EditorProgramLinesPanel({
           </button>
         </div>
         <div
-          className="flex min-w-0 items-center justify-start gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-wrap items-center justify-start gap-1 whitespace-normal"
           data-editor-line-toolbar
         >
           {programLinesOpen && (

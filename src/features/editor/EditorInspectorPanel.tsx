@@ -890,7 +890,7 @@ export function EditorInspectorPanel({
                       data-editor-parse-issue={index}
                       key={`${issue.type}-${issue.line}-${issue.message}-${index}`}
                     >
-                      <div className="flex items-center justify-between gap-2 text-[9px] uppercase">
+                      <div className="flex items-center justify-between gap-2 text-[10px] uppercase">
                         <span className={issue.type === 'error' ? 'text-destructive' : 'text-amber-300'}>
                           {issue.type}
                         </span>
@@ -983,7 +983,7 @@ export function EditorInspectorPanel({
           </button>
         </div>
         <div className="grid grid-cols-2 gap-1.5">
-          <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+          <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
             X
             <input
               aria-label="Measurement point X"
@@ -995,7 +995,7 @@ export function EditorInspectorPanel({
               value={pointXDraft}
             />
           </label>
-          <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+          <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
             Y
             <input
               aria-label="Measurement point Y"
@@ -1055,7 +1055,7 @@ export function EditorInspectorPanel({
                 {point.pathSnap ? (
                   <button
                     aria-label={`Select measurement point target P${index + 1}`}
-                    className="text-left text-[9px] uppercase text-muted-foreground outline-none hover:text-foreground"
+                    className="text-left text-[10px] uppercase text-muted-foreground outline-none hover:text-foreground"
                     data-measurement-point-mode={index + 1}
                     onClick={() =>
                       onSelectPathElement?.({
@@ -1070,7 +1070,7 @@ export function EditorInspectorPanel({
                   </button>
                 ) : (
                   <span
-                    className="text-[9px] uppercase text-muted-foreground"
+                    className="text-[10px] uppercase text-muted-foreground"
                     data-measurement-point-mode={index + 1}
                   >
                     -
@@ -1187,23 +1187,23 @@ function renderSelectedPathDiagnosticRow({
       role={diagnostic.selectRef ? 'button' : undefined}
       tabIndex={diagnostic.selectRef ? 0 : undefined}
     >
-      <span className="flex min-w-0 items-center justify-between gap-2 text-[9px] uppercase">
+      <span className="flex min-w-0 items-center justify-between gap-2 text-[10px] uppercase">
         <span className={diagnostic.severity === 'error' ? 'text-destructive' : 'text-amber-200'}>
           {diagnostic.severity}
         </span>
         <span className="truncate text-foreground">{diagnostic.code}</span>
       </span>
-      <span className="line-clamp-2 text-[9px] leading-4 text-muted-foreground">
+      <span className="line-clamp-2 text-[10px] leading-4 text-muted-foreground">
         {diagnostic.message}
       </span>
-      <span className="text-[8px] text-muted-foreground">
+      <span className="text-[10px] text-muted-foreground">
         segments {diagnostic.relatedSegmentCount} / clusters {diagnostic.relatedClusterCount}
       </span>
       {diagnostic.metrics.length > 0 && (
         <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
           {diagnostic.metrics.map((metric) => (
             <span
-              className="border border-border bg-background/60 px-1 text-[8px] text-muted-foreground"
+              className="border border-border bg-background/60 px-1 text-[10px] text-muted-foreground"
               data-upid-selected-diagnostic-metric={metric.key}
               key={metric.key}
             >
@@ -1217,7 +1217,7 @@ function renderSelectedPathDiagnosticRow({
           {diagnostic.relatedRefs.map((ref, index) => (
             <button
               aria-label={`Select diagnostic affected geometry ${index + 1}`}
-              className="border border-border bg-background/60 px-1 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+              className="border border-border bg-background/60 px-1 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
               data-upid-selected-diagnostic-ref
               data-upid-selected-diagnostic-ref-index={index}
               data-upid-selected-diagnostic-ref-operation={ref.operationId ?? undefined}

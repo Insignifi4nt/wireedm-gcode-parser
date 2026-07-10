@@ -81,7 +81,7 @@ export function StatusNotificationMenu({ notifications }: { notifications: Statu
         <Bell className="size-3.5" />
         {notifications.length > 0 && (
           <span
-            className="min-w-4 border border-primary/50 bg-primary/20 px-1 text-center text-[8px] text-primary"
+            className="min-w-4 border border-primary/50 bg-primary/20 px-1 text-center text-[10px] text-primary"
             data-status-notification-count
           >
             {countLabel}
@@ -93,7 +93,7 @@ export function StatusNotificationMenu({ notifications }: { notifications: Statu
           className="absolute right-0 top-8 z-50 grid max-h-[70vh] w-[min(320px,calc(100vw-24px))] overflow-auto border border-border bg-card/98 p-1.5 shadow-2xl"
           data-status-notification-menu
         >
-          <div className="flex h-7 items-center justify-between border-b border-border px-1.5 text-[9px] uppercase text-muted-foreground">
+          <div className="flex h-7 items-center justify-between border-b border-border px-1.5 text-[10px] uppercase text-muted-foreground">
             <span>Notifications</span>
             <span>{notifications.length}</span>
           </div>

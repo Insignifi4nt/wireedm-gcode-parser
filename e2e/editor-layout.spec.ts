@@ -44,6 +44,20 @@ test('machine program editor uses one header and an open resizable inspector', a
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
 });
 
+test('machine program line commands stay fully visible at desktop and laptop widths', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await page.locator('input[aria-label="Machine program file"]').setInputFiles({
+    name: 'visible-line-commands.nc',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('%\nG90\nG0 X0 Y0\nG1 X20 Y0\nG1 X20 Y10\nM02\n%')
+  });
+
+  await expectLineCommandInsideToolbar(page, 1440);
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await expectLineCommandInsideToolbar(page, 1024);
+});
+
 test('path editor keeps both docks, controls, and a dominant canvas at 1024px', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
@@ -122,6 +136,34 @@ async function drag(locator: import('@playwright/test').Locator, deltaX: number,
 
 async function readWidth(locator: import('@playwright/test').Locator) {
   return await locator.evaluate((element) => element.getBoundingClientRect().width);
+}
+
+async function expectLineCommandInsideToolbar(
+  page: import('@playwright/test').Page,
+  viewportWidth: number
+) {
+  const toolbar = page.locator('[data-editor-line-toolbar]');
+  const deleteSelected = toolbar.getByRole('button', { name: 'Delete Selected' });
+  await expect(toolbar).toBeVisible();
+  await expect(deleteSelected).toBeVisible();
+  await expect
+    .poll(async () => {
+      const [toolbarBox, commandBox] = await Promise.all([
+        toolbar.boundingBox(),
+        deleteSelected.boundingBox()
+      ]);
+      if (!toolbarBox || !commandBox) return false;
+      return (
+        commandBox.x >= toolbarBox.x &&
+        commandBox.x + commandBox.width <= toolbarBox.x + toolbarBox.width &&
+        commandBox.y >= toolbarBox.y &&
+        commandBox.y + commandBox.height <= toolbarBox.y + toolbarBox.height
+      );
+    })
+    .toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    viewportWidth
+  );
 }
 
 function rectangleDxf() {

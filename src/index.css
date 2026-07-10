@@ -180,11 +180,6 @@ summary:focus-visible {
   min-height: 28px;
 }
 
-.text-\[8px\],
-.text-\[9px\] {
-  font-size: 10px;
-}
-
 [data-app-workspace-grid][data-has-rail="false"] {
   grid-template-columns: minmax(0, 1fr);
 }

@@ -71,13 +71,13 @@ export function EditorUpidExportPreview({
     >
       <div className="flex min-w-0 items-center justify-between gap-2 border-b border-border bg-card px-2 py-2">
         <div className="min-w-0">
-          <p className="text-[9px] uppercase text-muted-foreground">Export Preview</p>
+          <p className="text-[10px] uppercase text-muted-foreground">Export Preview</p>
           <h2 className="truncate text-[12px] font-semibold">UPID Export Preview</h2>
-          <p className="mt-0.5 truncate text-[9px] text-muted-foreground">
+          <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
             {machineName} / {fileName}
           </p>
           <p
-            className="mt-0.5 truncate text-[9px] text-muted-foreground"
+            className="mt-0.5 truncate text-[10px] text-muted-foreground"
             data-upid-export-document-contours={documentTrace.contourCount}
             data-upid-export-document-format={documentTrace.format}
             data-upid-export-document-imported-at={documentTrace.importedAt ?? undefined}
@@ -129,23 +129,23 @@ export function EditorUpidExportPreview({
       >
         <dl className="grid grid-cols-2 gap-1 md:grid-cols-7">
           <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
-            <dt className="text-[8px] uppercase text-muted-foreground">Operations</dt>
+            <dt className="text-[10px] uppercase text-muted-foreground">Operations</dt>
             <dd data-upid-export-stat="operations">{operationCount}</dd>
           </div>
           <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
-            <dt className="text-[8px] uppercase text-muted-foreground">Rapid</dt>
+            <dt className="text-[10px] uppercase text-muted-foreground">Rapid</dt>
             <dd data-upid-export-stat="rapid">{postMetrics.rapidCount}</dd>
           </div>
           <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
-            <dt className="text-[8px] uppercase text-muted-foreground">Cut</dt>
+            <dt className="text-[10px] uppercase text-muted-foreground">Cut</dt>
             <dd data-upid-export-stat="cut">{postMetrics.cutMoveCount}</dd>
           </div>
           <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
-            <dt className="text-[8px] uppercase text-muted-foreground">Diagnostics</dt>
+            <dt className="text-[10px] uppercase text-muted-foreground">Diagnostics</dt>
             <dd data-upid-export-stat="diagnostics">{diagnostics.length}</dd>
           </div>
           <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
-            <dt className="text-[8px] uppercase text-muted-foreground">Planning</dt>
+            <dt className="text-[10px] uppercase text-muted-foreground">Planning</dt>
             <dd className="truncate" data-upid-export-stat="planning-mode">
               {formatOperationOrderStrategy(planning.operationOrderStrategy)}
             </dd>
@@ -154,7 +154,7 @@ export function EditorUpidExportPreview({
             className="min-w-0 border border-border bg-card/60 px-2 py-1"
             data-upid-export-manual-order-active={planning.manualOrderCount > 0 ? 'true' : undefined}
           >
-            <dt className="text-[8px] uppercase text-muted-foreground">Manual Order</dt>
+            <dt className="text-[10px] uppercase text-muted-foreground">Manual Order</dt>
             <dd data-upid-export-stat="manual-order">{formatManualOrderCount(planning.manualOrderCount)}</dd>
           </div>
           <div
@@ -166,11 +166,11 @@ export function EditorUpidExportPreview({
             data-upid-export-manual-decisions-role={planning.manualDecisionCounts.role}
             data-upid-export-manual-decisions-start={planning.manualDecisionCounts.start}
           >
-            <dt className="text-[8px] uppercase text-muted-foreground">Manual Decisions</dt>
+            <dt className="text-[10px] uppercase text-muted-foreground">Manual Decisions</dt>
             <dd data-upid-export-stat="manual-decisions">
               {formatManualDecisionCount(planning.manualDecisionCount)}
               {planning.manualDecisionCount > 0 && (
-                <span className="block truncate text-[8px] text-muted-foreground">
+                <span className="block truncate text-[10px] text-muted-foreground">
                   {formatManualDecisionBreakdown(planning.manualDecisionCounts)}
                 </span>
               )}
@@ -190,7 +190,7 @@ export function EditorUpidExportPreview({
         )}
         {postedOperations.length > 0 && (
           <section className="border border-border bg-card/60" data-upid-export-operations>
-            <div className="border-b border-border px-2 py-1 text-[8px] uppercase text-muted-foreground">
+            <div className="border-b border-border px-2 py-1 text-[10px] uppercase text-muted-foreground">
               Posted Operations
             </div>
             <div className="max-h-28 overflow-auto">
@@ -244,26 +244,26 @@ export function EditorUpidExportPreview({
                       <span className="text-muted-foreground">{operation.orderIndex + 1}</span>
                       <span className="min-w-0">
                         <span className="block truncate text-foreground">{operation.displayName}</span>
-                        <span className="block truncate text-[8px] text-muted-foreground">
+                        <span className="block truncate text-[10px] text-muted-foreground">
                           {operation.direction} / lines {operation.programLineRange}
                         </span>
                         {operation.manualDecisionKinds.length > 0 && (
-                          <span className="block truncate text-[8px] text-amber-200">
+                          <span className="block truncate text-[10px] text-amber-200">
                             manual {operation.manualDecisionKinds.join(', ')}
                           </span>
                         )}
                         {operationHasManualOverrideDetails(operation) && (
-                          <span className="block truncate text-[8px] text-cyan-200">
+                          <span className="block truncate text-[10px] text-cyan-200">
                             {formatManualOverrideDetails(operation)}
                           </span>
                         )}
                         {operation.manualStart && (
-                          <span className="block truncate text-[8px] text-cyan-200">
+                          <span className="block truncate text-[10px] text-cyan-200">
                             start {formatManualStart(operation.manualStart)}
                           </span>
                         )}
                       </span>
-                      <span className="text-right text-[8px] uppercase text-muted-foreground">
+                      <span className="text-right text-[10px] uppercase text-muted-foreground">
                         {operation.cutMoveCount} cut / {operation.rapidCount} rapid
                       </span>
                     </button>
@@ -306,7 +306,7 @@ export function EditorUpidExportPreview({
                               {move.command}
                             </span>
                             <span className="min-w-0 truncate text-foreground">{move.text}</span>
-                            <span className="truncate text-right text-[8px] uppercase text-muted-foreground">
+                            <span className="truncate text-right text-[10px] uppercase text-muted-foreground">
                               {move.segmentOrdinal ? `S${move.segmentOrdinal} / ` : ''}
                               {move.reason}
                             </span>
@@ -426,17 +426,17 @@ function renderExportDiagnosticRow({
         <span className="uppercase text-amber-200">{diagnostic.severity}</span>
         <span className="truncate text-muted-foreground">{diagnostic.code}</span>
       </span>
-      <span className="line-clamp-2 text-[9px] leading-4 text-muted-foreground">
+      <span className="line-clamp-2 text-[10px] leading-4 text-muted-foreground">
         {diagnostic.message}
       </span>
-      <span className="text-[8px] text-muted-foreground">
+      <span className="text-[10px] text-muted-foreground">
         segments {diagnostic.relatedSegmentCount} / clusters {diagnostic.relatedClusterCount}
       </span>
       {diagnostic.metrics.length > 0 && (
         <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
           {diagnostic.metrics.map((metric) => (
             <span
-              className="border border-border bg-background/60 px-1 text-[8px] text-muted-foreground"
+              className="border border-border bg-background/60 px-1 text-[10px] text-muted-foreground"
               data-upid-export-diagnostic-metric={metric.key}
               key={metric.key}
             >
@@ -450,7 +450,7 @@ function renderExportDiagnosticRow({
           {diagnostic.relatedRefs.map((ref, index) => (
             <button
               aria-label={`Select export diagnostic affected geometry ${index + 1}`}
-              className="border border-border bg-background/60 px-1 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+              className="border border-border bg-background/60 px-1 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
               data-upid-export-diagnostic-ref
               data-upid-export-diagnostic-ref-index={index}
               data-upid-export-diagnostic-ref-operation={ref.operationId ?? undefined}

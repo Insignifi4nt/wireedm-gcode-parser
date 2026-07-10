@@ -436,13 +436,13 @@ export function EditorPathNavigatorPanel({
       <section className="work-region-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto" data-upid-path-navigator>
         {renderWorkspacePanel('path-summary', 'Path Summary', (
         <div>
-          <p className="text-[9px] uppercase text-muted-foreground">Project Rail</p>
+          <p className="text-[10px] uppercase text-muted-foreground">Project Rail</p>
           <h2 className="mt-1 text-sm font-semibold">UPID Path Navigator</h2>
-          <p className="mt-1 text-[9px] text-muted-foreground">
+          <p className="mt-1 text-[10px] text-muted-foreground">
             {projectRail.summary.operationCount} operations / {projectRail.summary.contourCount} contours
           </p>
           <p
-            className="mt-1 truncate text-[9px] text-muted-foreground"
+            className="mt-1 truncate text-[10px] text-muted-foreground"
             data-upid-topology-ambiguous={endpointTopology.ambiguousEndpointClusterCount}
             data-upid-topology-clusters={endpointTopology.endpointClusterCount}
             data-upid-topology-max-gap={endpointTopology.maxEndpointSnapGap.toFixed(3)}
@@ -458,7 +458,7 @@ export function EditorPathNavigatorPanel({
             )}
           </p>
           <p
-            className="mt-1 text-[9px] text-muted-foreground"
+            className="mt-1 text-[10px] text-muted-foreground"
             data-upid-path-manual-decision-count={projectRail.summary.manualDecisionCount}
             data-upid-path-manual-decision-direction={projectRail.summary.manualDecisionCounts.direction}
             data-upid-path-manual-decision-lead-in={projectRail.summary.manualDecisionCounts['lead-in']}
@@ -475,7 +475,7 @@ export function EditorPathNavigatorPanel({
             )}
           </p>
           <p
-            className="mt-1 truncate text-[9px] text-muted-foreground"
+            className="mt-1 truncate text-[10px] text-muted-foreground"
             data-upid-source-approximated-segments={sourceSummary.approximatedSegmentCount}
             data-upid-source-block-count={sourceSummary.blockCount}
             data-upid-source-blocks={
@@ -502,8 +502,8 @@ export function EditorPathNavigatorPanel({
         {renderWorkspacePanel('path-actions', 'Path Actions', (
         <div data-upid-path-action-bar>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-[9px] uppercase text-muted-foreground">Path Action Bar</span>
-            {hasUnsavedChanges && <span className="text-[9px] text-amber-200">Unsaved</span>}
+            <span className="text-[10px] uppercase text-muted-foreground">Path Action Bar</span>
+            {hasUnsavedChanges && <span className="text-[10px] text-amber-200">Unsaved</span>}
           </div>
           <div
             className="mb-2 border border-border bg-background/35 px-2 py-1.5"
@@ -513,25 +513,25 @@ export function EditorPathNavigatorPanel({
             data-upid-active-selection-segment={selectedPathElement?.segmentId ?? undefined}
             data-upid-active-selection-state={selectedOperation ? 'selected' : 'empty'}
           >
-            <div className="text-[8px] uppercase text-muted-foreground">Active Selection</div>
+            <div className="text-[10px] uppercase text-muted-foreground">Active Selection</div>
             {selectedOperation ? (
               <>
                 <div className="mt-0.5 truncate text-[10px] text-foreground">
                   {selectedOperation.displayName}
                 </div>
-                <div className="mt-0.5 truncate text-[9px] text-muted-foreground">
+                <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
                   order {selectedOperationIndex + 1} /{' '}
                   {selectedOperation.closed ? 'closed contour' : 'open chain'} /{' '}
                   {selectedOperation.direction}
                 </div>
                 {selectedSegmentIndex >= 0 && (
-                  <div className="mt-0.5 truncate text-[9px] text-muted-foreground">
+                  <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
                     segment {selectedSegmentIndex + 1} / {selectedPathElement?.pointRole ?? 'body'}
                   </div>
                 )}
               </>
             ) : (
-              <div className="mt-0.5 text-[9px] text-muted-foreground">No path selected</div>
+              <div className="mt-0.5 text-[10px] text-muted-foreground">No path selected</div>
             )}
           </div>
           <div className="grid grid-cols-4 gap-1">
@@ -613,7 +613,7 @@ export function EditorPathNavigatorPanel({
             Export Preview
           </button>
           <label
-            className="mt-2 grid gap-1 text-[9px] uppercase text-muted-foreground"
+            className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground"
             data-upid-manual-order-active={manualOrderActive ? 'true' : undefined}
             data-upid-order-strategy
           >
@@ -633,7 +633,7 @@ export function EditorPathNavigatorPanel({
                 </option>
               ))}
             </select>
-            <span className="normal-case text-[9px] text-muted-foreground" data-upid-order-strategy-status>
+            <span className="normal-case text-[10px] text-muted-foreground" data-upid-order-strategy-status>
               {manualOrderActive ? 'Manual order overrides active' : 'Automatic order active'}
             </span>
           </label>
@@ -646,7 +646,7 @@ export function EditorPathNavigatorPanel({
           >
             Reapply Planning Mode
           </button>
-          <label className="mt-2 grid gap-1 text-[9px] uppercase text-muted-foreground">
+          <label className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground">
             Contour Role
             <select
               aria-label="Contour role"
@@ -716,8 +716,8 @@ export function EditorPathNavigatorPanel({
         {renderWorkspacePanel('path-transform', 'Transform', (
         <section data-upid-path-transform>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-[9px] uppercase text-muted-foreground">Placement</span>
-            <span className="truncate text-[9px] text-muted-foreground" data-upid-transform-target>
+            <span className="text-[10px] uppercase text-muted-foreground">Placement</span>
+            <span className="truncate text-[10px] text-muted-foreground" data-upid-transform-target>
               {activeTransformTargetLabel}
             </span>
           </div>
@@ -754,10 +754,10 @@ export function EditorPathNavigatorPanel({
             data-upid-transform-document-placement
           >
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">Reference</span>
+              <span className="text-[10px] uppercase text-muted-foreground">Reference</span>
               <select
                 aria-label="Document reference point"
-                className="h-6 max-w-[132px] border border-border bg-background px-1 font-mono text-[9px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-6 max-w-[132px] border border-border bg-background px-1 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                 data-upid-transform-document-reference
                 disabled={!documentBounds || isSaving}
                 onChange={(event) => {
@@ -781,11 +781,11 @@ export function EditorPathNavigatorPanel({
                 ))}
               </select>
             </div>
-            <p className="mb-2 text-[9px] leading-4 text-muted-foreground" data-upid-transform-document-placement-help>
+            <p className="mb-2 text-[10px] leading-4 text-muted-foreground" data-upid-transform-document-placement-help>
               Move the active reference or selection center to X0 Y0, or enter a precise target. DXF
               source extents come from DXF header metadata and are shown unchanged.
             </p>
-            <dl className="grid gap-1 font-mono text-[9px]">
+            <dl className="grid gap-1 font-mono text-[10px]">
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
                 <dt className="uppercase text-muted-foreground">Bounds</dt>
                 <dd
@@ -835,8 +835,8 @@ export function EditorPathNavigatorPanel({
                 data-upid-transform-document-reference-points
               >
                 <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="text-[9px] uppercase text-muted-foreground">Picked Point</span>
-                  <span className="truncate text-[9px] text-muted-foreground">
+                  <span className="text-[10px] uppercase text-muted-foreground">Picked Point</span>
+                  <span className="truncate text-[10px] text-muted-foreground">
                     {pickedDocumentReferencePoint ? formatPoint(pickedDocumentReferencePoint) : 'No point'}
                   </span>
                 </div>
@@ -880,13 +880,13 @@ export function EditorPathNavigatorPanel({
             )}
           </div>
           <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-[9px] uppercase text-muted-foreground">Move</span>
-            <span className="truncate text-[9px] text-muted-foreground">
+            <span className="text-[10px] uppercase text-muted-foreground">Move</span>
+            <span className="truncate text-[10px] text-muted-foreground">
               {activePathTransformTarget === 'document' ? 'Document geometry' : 'Selected geometry'}
             </span>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+            <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
               X
               <input
                 aria-label="Translate X"
@@ -899,7 +899,7 @@ export function EditorPathNavigatorPanel({
                 value={pathTranslateXDraft}
               />
             </label>
-            <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+            <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
               Y
               <input
                 aria-label="Translate Y"
@@ -936,8 +936,8 @@ export function EditorPathNavigatorPanel({
           </button>
           <div className="mt-3 border-t border-border pt-2" data-upid-transform-orientation>
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">Orientation</span>
-              <span className="truncate text-[9px] text-muted-foreground" data-upid-transform-orientation-origin>
+              <span className="text-[10px] uppercase text-muted-foreground">Orientation</span>
+              <span className="truncate text-[10px] text-muted-foreground" data-upid-transform-orientation-origin>
                 {activeTransformCenter ? formatPoint(activeTransformCenter) : '-'}
               </span>
             </div>
@@ -946,7 +946,7 @@ export function EditorPathNavigatorPanel({
               data-upid-transform-document-orientation={activePathTransformTarget === 'document' ? 'true' : undefined}
               data-upid-transform-selection-orientation={activePathTransformTarget === 'selection' ? 'true' : undefined}
             >
-              <span className="truncate text-[9px] uppercase text-muted-foreground">
+              <span className="truncate text-[10px] uppercase text-muted-foreground">
                 {activePathTransformTarget}
               </span>
               <div className="grid grid-cols-5 gap-1">
@@ -986,7 +986,7 @@ export function EditorPathNavigatorPanel({
                   title={`Rotate ${activePathTransformTarget} 180 degrees`}
                   type="button"
                 >
-                  <span className="font-mono text-[9px]">180</span>
+                  <span className="font-mono text-[10px]">180</span>
                 </button>
                 <button
                   aria-label={`Mirror ${activePathTransformTarget} across X axis`}
@@ -1023,11 +1023,11 @@ export function EditorPathNavigatorPanel({
             data-upid-transform-target-center-target={activePathTransformTarget}
           >
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">
+              <span className="text-[10px] uppercase text-muted-foreground">
                 {activePathTransformTarget === 'document' ? 'Reference Target' : 'Center Target'}
               </span>
               <span
-                className="truncate text-[9px] text-muted-foreground"
+                className="truncate text-[10px] text-muted-foreground"
                 data-upid-transform-selection-center-current
                 data-upid-transform-target-center-current
               >
@@ -1035,7 +1035,7 @@ export function EditorPathNavigatorPanel({
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+              <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
                 X
                 <input
                   aria-label={`${activeTransformTargetLabel} ${activeTargetReferenceName} target X`}
@@ -1049,7 +1049,7 @@ export function EditorPathNavigatorPanel({
                   value={pathTargetXDraft}
                 />
               </label>
-              <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+              <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
                 Y
                 <input
                   aria-label={`${activeTransformTargetLabel} ${activeTargetReferenceName} target Y`}
@@ -1122,7 +1122,7 @@ export function EditorPathNavigatorPanel({
                 data-upid-transform-selection-center-points
                 data-upid-transform-target-center-points
               >
-                <span className="mb-1 block text-[9px] uppercase text-muted-foreground">Target Point</span>
+                <span className="mb-1 block text-[10px] uppercase text-muted-foreground">Target Point</span>
                 <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
                   {measurementPoints.map((point, index) => (
                     <button
@@ -1153,13 +1153,13 @@ export function EditorPathNavigatorPanel({
               data-upid-transform-center-enabled="true"
             >
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">Segment Center</span>
-              <span className="truncate text-[9px] text-muted-foreground" data-upid-transform-center-current>
+              <span className="text-[10px] uppercase text-muted-foreground">Segment Center</span>
+              <span className="truncate text-[10px] text-muted-foreground" data-upid-transform-center-current>
                 {selectedSegmentCenter ? formatPoint(selectedSegmentCenter) : '-'}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+              <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
                 X
                 <input
                   aria-label="Center target X"
@@ -1172,7 +1172,7 @@ export function EditorPathNavigatorPanel({
                   value={pathTargetXDraft}
                 />
               </label>
-              <label className="grid gap-1 text-[9px] uppercase text-muted-foreground">
+              <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
                 Y
                 <input
                   aria-label="Center target Y"
@@ -1227,7 +1227,7 @@ export function EditorPathNavigatorPanel({
             </div>
             {measurementPoints.length > 0 && (
               <div className="mt-2 border-t border-border pt-2" data-upid-transform-center-points>
-                <span className="mb-1 block text-[9px] uppercase text-muted-foreground">Target Point</span>
+                <span className="mb-1 block text-[10px] uppercase text-muted-foreground">Target Point</span>
                 <div className="grid max-h-16 grid-cols-4 gap-1 overflow-auto">
                   {measurementPoints.map((point, index) => (
                     <button
@@ -1256,7 +1256,7 @@ export function EditorPathNavigatorPanel({
 
         {renderWorkspacePanel('path-hover-assist', 'Hover Assist', (
         <section data-upid-hover-assist>
-          <div className="mb-1 text-[9px] uppercase text-muted-foreground">Hover Assist</div>
+          <div className="mb-1 text-[10px] uppercase text-muted-foreground">Hover Assist</div>
           <label className="flex items-center justify-between gap-2">
             <span>Canvas hover highlights navigator</span>
             <input
@@ -1285,19 +1285,19 @@ export function EditorPathNavigatorPanel({
         <section data-upid-endpoint-topology>
           <div className="mb-2 flex items-start justify-between gap-2">
             <span className="min-w-0">
-              <span className="block text-[9px] uppercase text-muted-foreground">Endpoint Topology</span>
+              <span className="block text-[10px] uppercase text-muted-foreground">Endpoint Topology</span>
               <span
                 className="block truncate text-[12px] font-semibold text-foreground"
                 data-upid-endpoint-topology-title
               >
                 Endpoint Join Map
               </span>
-              <span className="block text-[9px] leading-3 text-muted-foreground">
+              <span className="block text-[10px] leading-3 text-muted-foreground">
                 Shows which start/end handles form chains.
               </span>
             </span>
             <span
-              className={`shrink-0 border px-1.5 py-0.5 text-[9px] ${
+              className={`shrink-0 border px-1.5 py-0.5 text-[10px] ${
                 endpointTopologyPanel.openEndCount > 0 || endpointTopologyPanel.ambiguousCount > 0
                   ? 'border-amber-400/40 bg-amber-400/10 text-amber-200'
                   : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'
@@ -1308,7 +1308,7 @@ export function EditorPathNavigatorPanel({
             </span>
           </div>
           <p
-            className="mb-2 border border-border bg-background/35 px-2 py-1.5 text-[9px] leading-4 text-muted-foreground"
+            className="mb-2 border border-border bg-background/35 px-2 py-1.5 text-[10px] leading-4 text-muted-foreground"
             data-upid-endpoint-topology-help
           >
             Endpoint topology pairs segment starts and ends into continuous contours. The join map tells you
@@ -1316,7 +1316,7 @@ export function EditorPathNavigatorPanel({
             candidates that need review before export.
           </p>
           <div
-            className="mb-2 grid grid-cols-2 gap-1 text-[9px]"
+            className="mb-2 grid grid-cols-2 gap-1 text-[10px]"
             data-upid-endpoint-topology-summary
             title="Endpoint topology explains how segment starts and ends are paired into continuous contours."
           >
@@ -1338,7 +1338,7 @@ export function EditorPathNavigatorPanel({
               )}
             </div>
           ) : (
-            <p className="border border-border bg-background/35 px-2 py-1.5 text-[9px] text-muted-foreground">
+            <p className="border border-border bg-background/35 px-2 py-1.5 text-[10px] text-muted-foreground">
               No healed or ambiguous joins. Every contour endpoint is cleanly paired inside import precision.
             </p>
           )}
@@ -1348,22 +1348,22 @@ export function EditorPathNavigatorPanel({
         {renderWorkspacePanel('path-diagnostics', 'Path Diagnostics', (
           <section data-upid-diagnostics>
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">Path Diagnostics</span>
-              <span className="text-[9px] text-amber-200">
+              <span className="text-[10px] uppercase text-muted-foreground">Path Diagnostics</span>
+              <span className="text-[10px] text-amber-200">
                 {pathDiagnostics.length} {pathDiagnostics.length === 1 ? 'issue' : 'issues'}
               </span>
             </div>
             {pathDiagnostics.length > 0 && (
               <div
-                className="mb-2 border border-amber-400/35 bg-amber-400/10 px-2 py-1.5 text-[9px] leading-4 text-amber-50"
+                className="mb-2 border border-amber-400/35 bg-amber-400/10 px-2 py-1.5 text-[10px] leading-4 text-amber-50"
                 data-upid-diagnostics-repair-workflow
                 title="Repair workflow for diagnostics: identify the broken join, inspect affected geometry, then repair or re-import before export."
               >
                 <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="text-[9px] uppercase text-amber-100">Repair workflow</span>
+                  <span className="text-[10px] uppercase text-amber-100">Repair workflow</span>
                   <button
                     aria-label="Open Repair Workspace"
-                    className="border border-amber-300/40 bg-background/70 px-1.5 py-0.5 text-[8px] text-amber-50 outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                    className="border border-amber-300/40 bg-background/70 px-1.5 py-0.5 text-[10px] text-amber-50 outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={!onOpenWorkspacePanel && !onOpenWorkspacePanels}
                     onClick={() => {
                       if (onOpenWorkspacePanels) {
@@ -1417,7 +1417,7 @@ export function EditorPathNavigatorPanel({
 
         {renderWorkspacePanel('cut-sequence', 'Cut Sequence', (
         <section data-upid-cut-sequence>
-          <div className="mb-2 text-[9px] uppercase text-muted-foreground">Cut Sequence</div>
+          <div className="mb-2 text-[10px] uppercase text-muted-foreground">Cut Sequence</div>
           <div className="max-h-32 overflow-auto border border-border bg-background/35" data-upid-cut-sequence-list>
             {cutSequenceElements.map((pathElement) =>
               renderCutSequenceRow({
@@ -1443,7 +1443,7 @@ export function EditorPathNavigatorPanel({
             title="Tree map: Contour rows contain Segment rows, and each Segment exposes start/end Endpoint handles. Endpoint Join Map explains how those handles connect."
           >
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">Tree Map</span>
+              <span className="text-[10px] uppercase text-muted-foreground">Tree Map</span>
               <button
                 aria-label="Open Endpoint Join Map from Contour Tree"
                 className={textButtonClass}
@@ -1485,7 +1485,7 @@ export function EditorPathNavigatorPanel({
             </div>
           </div>
           <p
-            className="mb-2 border border-border bg-background/35 px-2 py-1.5 text-[9px] leading-4 text-muted-foreground"
+            className="mb-2 border border-border bg-background/35 px-2 py-1.5 text-[10px] leading-4 text-muted-foreground"
             data-upid-contour-tree-help
           >
             Hover or select any row to cross-highlight the canvas. The tree is the editable hierarchy:
@@ -1507,8 +1507,8 @@ export function EditorPathNavigatorPanel({
           </div>
           <div className="mb-2 grid gap-1" data-upid-path-tree-controls>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[9px] uppercase text-muted-foreground">Contour Tree</span>
-              <span className="text-[9px] text-muted-foreground">{projectRail.summary.rootCount} roots</span>
+              <span className="text-[10px] uppercase text-muted-foreground">Contour Tree</span>
+              <span className="text-[10px] text-muted-foreground">{projectRail.summary.rootCount} roots</span>
             </div>
             <div className="grid grid-cols-2 gap-1">
               <button
@@ -1627,42 +1627,42 @@ function renderEndpointTopologyRow({
         <>
           <span className="min-w-0">
             <span className="block truncate text-[10px] text-emerald-100">Exact join {row.clusterId}</span>
-            <span className="block truncate text-[9px] text-muted-foreground">
+            <span className="block truncate text-[10px] text-muted-foreground">
               {formatPoint(row.point)} / paired exactly / {formatEndpointMemberPair(row.members)}
             </span>
           </span>
-          <span className="text-right text-[9px] text-emerald-200">{row.memberCount} ends</span>
+          <span className="text-right text-[10px] text-emerald-200">{row.memberCount} ends</span>
         </>
       ) : row.kind === 'open-endpoint-cluster' ? (
         <>
           <span className="min-w-0">
             <span className="block truncate text-[10px] text-amber-100">Open end {row.clusterId}</span>
-            <span className="block truncate text-[9px] text-muted-foreground">
+            <span className="block truncate text-[10px] text-muted-foreground">
               {formatPoint(row.point)} / not paired / {formatOpenEndpointMember(row.member)}
             </span>
           </span>
-          <span className="text-right text-[9px] text-amber-200">{row.method}</span>
+          <span className="text-right text-[10px] text-amber-200">{row.method}</span>
         </>
       ) : row.kind === 'snapped-endpoint-cluster' ? (
         <>
           <span className="min-w-0">
             <span className="block truncate text-[10px] text-foreground">Snapped {row.clusterId}</span>
-            <span className="block truncate text-[9px] text-muted-foreground">
+            <span className="block truncate text-[10px] text-muted-foreground">
               {formatPoint(row.point)} / gap {formatNumber(row.maxPairDistance)} / {row.memberCount} ends
             </span>
           </span>
-          <span className="text-right text-[9px] text-muted-foreground">R {formatNumber(row.radius)}</span>
+          <span className="text-right text-[10px] text-muted-foreground">R {formatNumber(row.radius)}</span>
         </>
       ) : (
         <>
           <span className="min-w-0">
             <span className="block truncate text-[10px] text-foreground">Ambiguous {row.diagnosticId}</span>
-            <span className="block truncate text-[9px] text-muted-foreground">
+            <span className="block truncate text-[10px] text-muted-foreground">
               ambiguous / candidates {row.candidateCount} / min gap{' '}
               {row.minCandidateDistance !== null ? formatNumber(row.minCandidateDistance) : '-'}
             </span>
           </span>
-          <span className="text-right text-[9px] text-muted-foreground">{row.relatedSegmentCount} seg</span>
+          <span className="text-right text-[10px] text-muted-foreground">{row.relatedSegmentCount} seg</span>
         </>
       )}
     </button>
@@ -1716,7 +1716,7 @@ function TopologyMetric({
       data-upid-endpoint-topology-summary-card={id}
     >
       <span
-        className="block text-[8px] uppercase text-muted-foreground"
+        className="block text-[10px] uppercase text-muted-foreground"
         data-upid-endpoint-topology-summary-label={id}
       >
         {label}
@@ -1801,22 +1801,22 @@ function renderDiagnosticRow({
       role={hoverElement ? 'button' : undefined}
       tabIndex={hoverElement ? 0 : undefined}
     >
-      <div className="mb-1 flex items-center justify-between gap-2 text-[8px] uppercase">
+      <div className="mb-1 flex items-center justify-between gap-2 text-[10px] uppercase">
         <span className={diagnostic.severity === 'error' ? 'text-destructive' : 'text-amber-200'}>
           {diagnostic.severity}
         </span>
         <span className="truncate text-muted-foreground">{diagnostic.code}</span>
       </div>
-      <p className="text-[9px] leading-4 text-muted-foreground">{diagnostic.message}</p>
+      <p className="text-[10px] leading-4 text-muted-foreground">{diagnostic.message}</p>
       {renderDiagnosticGuidance(diagnostic, onOpenWorkspacePanel)}
-      <span className="text-[8px] text-muted-foreground">
+      <span className="text-[10px] text-muted-foreground">
         segments {diagnostic.relatedSegmentCount} / clusters {diagnostic.relatedClusterCount}
       </span>
       {diagnostic.metrics.length > 0 && (
         <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
           {diagnostic.metrics.map((metric) => (
             <span
-              className="border border-border bg-background/60 px-1 text-[8px] text-muted-foreground"
+              className="border border-border bg-background/60 px-1 text-[10px] text-muted-foreground"
               data-upid-diagnostic-metric={metric.key}
               key={metric.key}
             >
@@ -1830,7 +1830,7 @@ function renderDiagnosticRow({
           {diagnostic.relatedRefs.map((ref, index) => (
             <button
               aria-label={`Select diagnostic affected geometry ${index + 1}`}
-              className="border border-border bg-background/60 px-1 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+              className="border border-border bg-background/60 px-1 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
               data-upid-diagnostic-ref
               data-upid-diagnostic-ref-index={index}
               data-upid-diagnostic-ref-operation={ref.operationId ?? undefined}
@@ -1865,7 +1865,7 @@ function renderDiagnosticGuidance(
 
   return (
     <div
-      className="mt-1 border border-border bg-background/45 px-2 py-1 text-[8px] leading-4 text-muted-foreground"
+      className="mt-1 border border-border bg-background/45 px-2 py-1 text-[10px] leading-4 text-muted-foreground"
       data-upid-diagnostic-guidance
       title={guidance.title}
     >
@@ -1878,7 +1878,7 @@ function renderDiagnosticGuidance(
           {guidance.actions.map((action) => (
             <button
               aria-label={action.label}
-              className="border border-border bg-background/70 px-1.5 py-0.5 text-[8px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              className="border border-border bg-background/70 px-1.5 py-0.5 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
               data-upid-diagnostic-guidance-action={action.panelId}
               disabled={!onOpenWorkspacePanel}
               key={action.panelId}
@@ -2074,11 +2074,11 @@ function renderCutSequenceRow({
         <span className="text-muted-foreground">{pathElement.orderIndex + 1}</span>
         <span className="min-w-0">
           <span className="block truncate text-[10px]">{label}</span>
-          <span className="block truncate text-[9px] text-muted-foreground">
+          <span className="block truncate text-[10px] text-muted-foreground">
             {pathElement.label} / {pathElement.closed ? 'closed contour' : 'open chain'} /{' '}
             {pathElement.direction}
           </span>
-          <span className="block truncate text-[9px] text-muted-foreground">
+          <span className="block truncate text-[10px] text-muted-foreground">
             {upidPathElementNestLabel(pathElement)}
           </span>
           {renderManualDecisionBadges(manualDecisions)}
@@ -2087,7 +2087,7 @@ function renderCutSequenceRow({
       <button
         aria-label="Select rapid travel for cut sequence operation"
         aria-pressed={rapidSelected}
-        className={`grid h-full content-center px-1 text-right text-[8px] leading-tight outline-none hover:bg-accent ${
+        className={`grid h-full content-center px-1 text-right text-[10px] leading-tight outline-none hover:bg-accent ${
           rapidSelected
             ? 'bg-sky-500/15 text-sky-100'
             : rapidHovered
@@ -2274,23 +2274,23 @@ function renderContourTreeNode({
               className="flex flex-col items-center gap-0.5 pt-0.5 text-center text-muted-foreground"
               data-upid-tree-depth-rail="contour"
             >
-              <span className="text-[8px] uppercase" data-upid-tree-depth-label="contour">
+              <span className="text-[10px] uppercase" data-upid-tree-depth-label="contour">
                 Contour
               </span>
-              <span className="text-[8px] uppercase">#{element.orderIndex + 1}</span>
+              <span className="text-[10px] uppercase">#{element.orderIndex + 1}</span>
               <span className="h-full min-h-6 border-l border-border/80" aria-hidden="true" />
             </span>
             <span className="min-w-0">
               <span className="flex min-w-0 flex-wrap items-center gap-1">
                 <span
-                  className="shrink-0 border border-sky-400/35 bg-sky-400/10 px-1 text-[8px] uppercase text-sky-100"
+                  className="shrink-0 border border-sky-400/35 bg-sky-400/10 px-1 text-[10px] uppercase text-sky-100"
                   data-upid-tree-kind-label
                   title="Contour row: selects the complete path operation and highlights the whole loop on the canvas."
                 >
                   Contour
                 </span>
                 <span
-                  className={`shrink-0 border px-1 text-[8px] uppercase ${
+                  className={`shrink-0 border px-1 text-[10px] uppercase ${
                     element.closed
                       ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'
                       : 'border-amber-400/40 bg-amber-400/10 text-amber-100'
@@ -2302,12 +2302,12 @@ function renderContourTreeNode({
                 <span className="truncate text-[10px] text-foreground">{label}</span>
               </span>
               <span
-                className="mt-0.5 block text-[8px] uppercase tracking-normal text-muted-foreground"
+                className="mt-0.5 block text-[10px] uppercase tracking-normal text-muted-foreground"
                 data-upid-tree-action-hint
               >
                 selects whole contour on canvas
               </span>
-              <span className="mt-1 flex flex-wrap gap-1 text-[8px] text-muted-foreground">
+              <span className="mt-1 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
                 <span className="border border-border bg-background/45 px-1" data-upid-contour-field="role">
                   Role <span className="text-foreground">{element.classification}</span>
                 </span>
@@ -2324,13 +2324,13 @@ function renderContourTreeNode({
                   Cut <span className="text-foreground">{element.metrics.cutLength.toFixed(3)}</span>
                 </span>
               </span>
-              <span className="mt-0.5 block truncate text-[9px] text-muted-foreground">
+              <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
                 Source {element.label} / direction {element.direction}
               </span>
-              <span className="block truncate text-[9px] text-muted-foreground">
+              <span className="block truncate text-[10px] text-muted-foreground">
                 {upidPathElementNestLabel(element)}
               </span>
-              <span className="block truncate text-[9px] text-muted-foreground">
+              <span className="block truncate text-[10px] text-muted-foreground">
                 {formatTreeMetrics(node.treeMetrics)}
               </span>
               {renderManualDecisionBadges(manualDecisions)}
@@ -2398,7 +2398,7 @@ function renderManualDecisionBadges(decisions: UpidManualDecisionKind[]) {
     <span className="mt-1 flex flex-wrap gap-1" data-upid-manual-decision-list>
       {decisions.map((decision) => (
         <span
-          className="border border-amber-400/40 bg-amber-400/10 px-1 text-[8px] uppercase text-amber-200"
+          className="border border-amber-400/40 bg-amber-400/10 px-1 text-[10px] uppercase text-amber-200"
           data-upid-manual-decision={decision}
           key={decision}
         >
@@ -2415,7 +2415,7 @@ function renderDiagnosticSummaryBadge(summary: UpidPathDiagnosticSummary) {
   return (
     <span className="mt-1 flex flex-wrap gap-1" data-upid-diagnostic-summary-badge>
       <span
-        className={`border px-1 text-[8px] uppercase ${
+        className={`border px-1 text-[10px] uppercase ${
           summary.severity === 'error'
             ? 'border-destructive/50 bg-destructive/10 text-destructive'
             : summary.severity === 'warning'
@@ -2529,7 +2529,7 @@ function renderLeadInRow(
     >
       <button
         aria-pressed={selected}
-        className={`grid w-full grid-cols-[28px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[9px] text-muted-foreground outline-none hover:bg-accent ${
+        className={`grid w-full grid-cols-[28px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent ${
           selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
         }`}
         data-upid-hovered={hovered ? 'true' : undefined}
@@ -2544,7 +2544,7 @@ function renderLeadInRow(
         type="button"
       >
         <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="lead-in">
-          <span className="text-[8px] uppercase" data-upid-tree-depth-label="lead-in">
+          <span className="text-[10px] uppercase" data-upid-tree-depth-label="lead-in">
             Pierce
           </span>
           <Flag className="size-3" />
@@ -2553,16 +2553,16 @@ function renderLeadInRow(
         <span className="min-w-0">
           <span className="flex min-w-0 flex-wrap items-center gap-1">
             <span
-              className="shrink-0 border border-amber-400/40 bg-amber-400/10 px-1 text-[8px] uppercase text-amber-100"
+              className="shrink-0 border border-amber-400/40 bg-amber-400/10 px-1 text-[10px] uppercase text-amber-100"
               data-upid-tree-kind-label
               title="Pierce lead-in row: selects the center-to-contour cut move."
             >
               Lead-in
             </span>
-            <span className="truncate text-[9px] text-muted-foreground">Center pierce cut</span>
+            <span className="truncate text-[10px] text-muted-foreground">Center pierce cut</span>
           </span>
           <span
-            className="mt-0.5 block text-[8px] uppercase tracking-normal text-muted-foreground"
+            className="mt-0.5 block text-[10px] uppercase tracking-normal text-muted-foreground"
             data-upid-tree-action-hint
           >
             selects pierce cut on canvas
@@ -2572,7 +2572,7 @@ function renderLeadInRow(
             {' -> '}
             {formatPoint(leadIn.to)}
           </span>
-          <span className="mt-1 grid gap-0.5 text-[8px]">
+          <span className="mt-1 grid gap-0.5 text-[10px]">
             <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-lead-in-field="from">
               <span className="uppercase text-muted-foreground">From</span>
               <span className="truncate text-foreground">{formatPoint(leadIn.from)}</span>
@@ -2635,7 +2635,7 @@ function renderSegmentRow(
     >
       <button
         aria-pressed={selected}
-        className={`grid w-full grid-cols-[28px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[9px] text-muted-foreground outline-none hover:bg-accent ${
+        className={`grid w-full grid-cols-[28px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent ${
           selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
         }`}
         data-upid-hovered={hovered ? 'true' : undefined}
@@ -2679,31 +2679,31 @@ function renderSegmentRow(
         type="button"
       >
         <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="segment">
-          <span className="text-[8px] uppercase" data-upid-tree-depth-label="segment">
+          <span className="text-[10px] uppercase" data-upid-tree-depth-label="segment">
             Segment
           </span>
-          <span className="text-[8px] uppercase">S{index + 1}</span>
+          <span className="text-[10px] uppercase">S{index + 1}</span>
           <span className="h-full min-h-5 border-l border-border/70" aria-hidden="true" />
         </span>
         <span className="min-w-0">
           <span className="flex min-w-0 flex-wrap items-center gap-1">
             <span
-              className="shrink-0 border border-cyan-400/35 bg-cyan-400/10 px-1 text-[8px] uppercase text-cyan-100"
+              className="shrink-0 border border-cyan-400/35 bg-cyan-400/10 px-1 text-[10px] uppercase text-cyan-100"
               data-upid-tree-kind-label
               title="Segment row: selects one line or arc inside the contour."
             >
               Segment
             </span>
             <span
-              className="shrink-0 border border-border bg-background/50 px-1 text-[8px] uppercase text-muted-foreground"
+              className="shrink-0 border border-border bg-background/50 px-1 text-[10px] uppercase text-muted-foreground"
               data-upid-segment-kind-label
             >
               {segmentKindLabel}
             </span>
-            <span className="truncate text-[9px] text-muted-foreground">#{index + 1}</span>
+            <span className="truncate text-[10px] text-muted-foreground">#{index + 1}</span>
           </span>
           <span
-            className="mt-0.5 block text-[8px] uppercase tracking-normal text-muted-foreground"
+            className="mt-0.5 block text-[10px] uppercase tracking-normal text-muted-foreground"
             data-upid-tree-action-hint
           >
             selects one segment on canvas
@@ -2713,7 +2713,7 @@ function renderSegmentRow(
             {' -> '}
             {formatPoint(end)}
           </span>
-          <span className="mt-1 grid gap-0.5 text-[8px]">
+          <span className="mt-1 grid gap-0.5 text-[10px]">
             <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-segment-field="from">
               <span className="uppercase text-muted-foreground">From</span>
               <span className="truncate text-foreground">{formatPoint(start)}</span>
@@ -2816,7 +2816,7 @@ function renderPointRow({
 
   return (
     <div
-      className={`grid w-full grid-cols-[34px_minmax(0,1fr)_20px] gap-1 border-l border-border/60 px-1.5 py-1 pl-5 text-left text-[8px] text-muted-foreground outline-none hover:bg-accent ${
+      className={`grid w-full grid-cols-[34px_minmax(0,1fr)_20px] gap-1 border-l border-border/60 px-1.5 py-1 pl-5 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-hovered={hovered ? 'true' : undefined}
@@ -2843,7 +2843,7 @@ function renderPointRow({
       onMouseLeave={() => onHoverPathElement(null)}
     >
       <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="endpoint">
-        <span className="text-[8px] uppercase" data-upid-tree-depth-label="endpoint">
+        <span className="text-[10px] uppercase" data-upid-tree-depth-label="endpoint">
           Endpoint
         </span>
         <span className="h-full min-h-5 border-l border-border/60" aria-hidden="true" />
@@ -2857,7 +2857,7 @@ function renderPointRow({
         <span className="min-w-0">
           <span className="flex min-w-0 flex-wrap items-center gap-1">
             <span
-              className="shrink-0 border border-violet-400/35 bg-violet-400/10 px-1 text-[8px] uppercase text-violet-100"
+              className="shrink-0 border border-violet-400/35 bg-violet-400/10 px-1 text-[10px] uppercase text-violet-100"
               data-upid-tree-kind-label
               title="Endpoint row: selects one start or end handle for this segment."
             >
@@ -2866,7 +2866,7 @@ function renderPointRow({
             <span className="uppercase text-muted-foreground" data-upid-point-role-label>{role.toUpperCase()}</span>
           </span>
           <span
-            className="mt-0.5 block text-[8px] uppercase tracking-normal text-muted-foreground"
+            className="mt-0.5 block text-[10px] uppercase tracking-normal text-muted-foreground"
             data-upid-tree-action-hint
           >
             selects a start/end handle

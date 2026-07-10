@@ -155,7 +155,7 @@ export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
               data-editor-panel-menu-group={group.id}
               key={group.id}
             >
-              <h3 className="px-1 py-0.5 text-[9px] font-semibold uppercase text-muted-foreground">
+              <h3 className="px-1 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
                 {group.title}
               </h3>
               {group.panels.map((panel) => {
