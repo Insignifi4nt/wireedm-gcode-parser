@@ -30,7 +30,7 @@ The editor header becomes one visual row with three groups:
 
 1. **Document identity** — an icon-only Back control, the truncated document title, and one compact document-context badge. The redundant eyebrow and second title line are removed. The full project/file path remains available through hover text.
 2. **Workspace shortcuts** — Tree, Actions, Sequence, Transform, Diagnostics, Inspect, Measure, and Machine remain in their existing order as 28px icon-only buttons. Each button keeps an accessible name and exposes `Show <panel>` or `Hide <panel>` hover text based on current placement. A separate compact Panels control opens the existing categorized panel menu for secondary panels and placement state.
-3. **Document commands** — Undo, Redo, Save, and Controls are icon-only with accessible names and hover text. Export Preview remains labeled because it is the explicit Path Project post boundary. Import Program is not rendered for `path-project`; it remains available for `empty-program` and `machine-program` contexts.
+3. **Document commands** — Undo, Redo, and Save remain labeled top-level buttons so their state and purpose stay immediately readable. Controls is icon-only with an accessible name and hover text. Export Preview remains labeled because it is the explicit Path Project post boundary. Import Program is not rendered for `path-project`; it remains available for `empty-program` and `machine-program` contexts.
 
 Visual separators and consistent 28px control sizes distinguish workspace navigation from document mutation commands. The document identity consumes flexible space; command groups do not wrap. At wide desktop widths all primary panel shortcuts are visible. At constrained laptop widths the direct shortcut group yields to the existing Panels menu so document commands remain reachable without horizontal scrolling.
 
@@ -60,7 +60,7 @@ Docking, floating, dragging, resizing, placement controls, row selection, row ho
 
 ## Accessibility and Interaction
 
-- Every icon-only button has an `aria-label` and hover text.
+- Every icon-only button has an `aria-label` and hover text; Undo, Redo, and Save retain visible labels.
 - The longer Contour Tree explanation is available on both hover and keyboard focus.
 - Disabled, active, show, and hide states continue to be communicated without relying on color alone.
 - Removing Path Project import chrome does not remove Machine Program import capability.
@@ -72,7 +72,7 @@ Add focused regression coverage for:
 - primary workspace shortcuts remaining directly accessible without visible text labels;
 - responsive fallback to the categorized Panels menu;
 - `Import Program` being absent from a Path Project and present in empty/machine-program contexts;
-- compact document identity and icon-only document commands;
+- compact document identity, labeled Undo/Redo/Save commands, and an icon-only Controls command;
 - removal of persistent Tree Map/help/legend content and presence of the combined hover/focus explanation;
 - Cut Sequence rows using the panel body instead of a nested capped scroller;
 - other primary workspace lists no longer adding local capped scrolling.
