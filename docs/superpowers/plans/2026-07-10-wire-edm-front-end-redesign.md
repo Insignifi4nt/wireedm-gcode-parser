@@ -28,6 +28,8 @@
 - Modify: `src/App.tsx`
 - Modify: `src/features/dashboard/DashboardPage.tsx`
 - Modify: `src/features/dashboard/DashboardHeader.tsx`
+- Modify: `src/__tests__/appWorkbenchDashboard.test.tsx`
+- Modify: `src/__tests__/appDxfProjects.test.tsx` (stale placeholder-copy assertion only)
 
 **Interfaces:**
 - Consumes: `WorkbenchAppController.handleImportDxfFile(file)`, `handleImportExternalProgram(file)`, and `handleOpenEditor()`.
@@ -59,7 +61,8 @@ it('opens an imported posted file in the Machine Program workspace', async () =>
   });
   await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
   await flushAsync();
-  expect(container.querySelector('[data-editor-context="machine-program"]')).not.toBeNull();
+  expect(container.textContent).toContain('sample.iso');
+  expect(container.querySelector('[data-editor-canvas-model="gcode"]')).not.toBeNull();
 });
 ```
 
@@ -67,7 +70,7 @@ it('opens an imported posted file in the Machine Program workspace', async () =>
 
 Run: `npm test -- --run src/__tests__/appFrontEndRedesign.test.tsx`
 
-Expected: FAIL because `StartWorkPanel`, explicit copy, direct posted-program import, and editor-context markers do not exist.
+Expected: FAIL because `StartWorkPanel`, explicit copy, and direct posted-program import do not exist.
 
 - [ ] **Step 3: Implement the explicit start actions**
 
@@ -92,12 +95,14 @@ Use labels `Import DXF as Path Project`, `Open Machine Program`, and `Open Edito
 
 Run: `npm test -- --run src/__tests__/appFrontEndRedesign.test.tsx src/__tests__/appWorkbenchDashboard.test.tsx src/__tests__/editorImportExport.test.tsx`
 
-Expected: New tests PASS; legacy tests may only fail where they still assert the old start-screen copy or placement.
+Expected: PASS. Update only stale placeholder-copy assertions in
+`appWorkbenchDashboard.test.tsx` and `appDxfProjects.test.tsx`; retain their
+storage and behavior contracts.
 
 - [ ] **Step 5: Commit the start-screen behavior**
 
 ```bash
-git add src/App.tsx src/features/dashboard/DashboardPage.tsx src/features/dashboard/DashboardHeader.tsx src/features/dashboard/StartWorkPanel.tsx src/__tests__/appFrontEndRedesign.test.tsx
+git add src/App.tsx src/features/dashboard/DashboardPage.tsx src/features/dashboard/DashboardHeader.tsx src/features/dashboard/StartWorkPanel.tsx src/__tests__/appFrontEndRedesign.test.tsx src/__tests__/appWorkbenchDashboard.test.tsx src/__tests__/appDxfProjects.test.tsx
 git commit -m "feat: clarify workbench document entry points"
 ```
 
