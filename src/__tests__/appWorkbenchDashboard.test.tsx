@@ -133,6 +133,23 @@ describe('App dashboard and workbench shell', () => {
     expect(text).not.toContain('Download Program');
   });
 
+  it('makes the project library the primary Workbench surface before any session activity', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const workbenchPage = container.querySelector('[data-workbench-page]');
+    const projectLibrary = container.querySelector('[data-project-library]');
+    const projectList = projectLibrary?.querySelector('[aria-label="Project list"]');
+
+    expect(workbenchPage).not.toBeNull();
+    expect(projectLibrary).not.toBeNull();
+    expect(projectList?.textContent).toContain('No projects yet');
+    expect(projectList?.textContent).toContain('Path Project');
+    expect(projectList?.textContent).toContain('Machine Program');
+    expect(container.textContent).not.toContain('Latest DXF Import');
+  });
+
   it('uses the full workbench width when there is no contextual rail', async () => {
     window.showDirectoryPicker = undefined;
 
@@ -403,6 +420,23 @@ describe('App dashboard and workbench shell', () => {
 
     const projectText = () =>
       container.querySelector('[aria-label="Project list"]')?.textContent ?? '';
+    const pathProjectRow = container.querySelector('[data-project-source="dxf"]');
+    const machineProgramRow = container.querySelector(
+      '[data-project-source="external-gcode"]'
+    );
+
+    expect(pathProjectRow).not.toBeNull();
+    expect(machineProgramRow).not.toBeNull();
+    expect(pathProjectRow?.textContent ?? '').toContain('Path Project');
+    expect(machineProgramRow?.textContent ?? '').toContain('Machine Program');
+    expect(machineProgramRow?.textContent ?? '').not.toContain('Rename');
+    expect(machineProgramRow?.textContent ?? '').not.toContain('Delete');
+    expect(
+      machineProgramRow?.querySelector('button[aria-label="Rename project new-gcode"]')
+    ).not.toBeNull();
+    expect(
+      machineProgramRow?.querySelector('button[aria-label="Delete project new-gcode"]')
+    ).not.toBeNull();
     expect(projectText()).toContain('Zeta repair');
     expect(projectText()).toContain('Alpha bracket');
     expect(projectText().indexOf('Zeta repair')).toBeLessThan(

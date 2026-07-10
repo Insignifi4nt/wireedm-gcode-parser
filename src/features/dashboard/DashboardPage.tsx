@@ -50,13 +50,16 @@ export function DashboardPage({
   }
 
   return (
-    <div className="grid h-full grid-rows-[auto_minmax(0,1fr)]">
+    <div
+      className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]"
+      data-workbench-page
+    >
       <DashboardHeader
         connectedWorkbench={connectedWorkbench}
         workbenchStatus={workbenchStatus}
       />
 
-      <section className="grid min-h-0 grid-cols-[minmax(0,1fr)_340px] gap-3 p-3">
+      <section className="grid min-h-0 content-start gap-3 overflow-auto p-3 min-[1180px]:grid-cols-[minmax(0,1fr)_340px] min-[1180px]:items-start">
         <ProjectListPanel
           onDeleteProject={(project) => setProjectAction({ kind: 'delete', project })}
           onOpenProject={onOpenProject}
@@ -64,7 +67,7 @@ export function DashboardPage({
           projects={projects}
         />
 
-        <div className="grid min-h-0 content-start gap-3">
+        <div className="grid content-start gap-3">
           <StartWorkPanel
             connected={Boolean(connectedWorkbench)}
             dxfErrorMessage={importErrorMessage}

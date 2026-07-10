@@ -47,6 +47,7 @@ export function ProjectActionDialog({
 
   const { kind, project } = action;
   const isRename = kind === 'rename';
+  const projectTypeLabel = project.sourceKind === 'dxf' ? 'Path Project' : 'Machine Program';
   const title = isRename ? 'Rename project' : 'Delete project';
   const submitLabel = isRename ? 'Rename' : 'Delete';
   const savingLabel = isRename ? 'Saving...' : 'Deleting...';
@@ -87,6 +88,7 @@ export function ProjectActionDialog({
         aria-label={title}
         aria-modal="true"
         className="grid w-full max-w-lg gap-4 border border-border bg-card p-4 shadow-2xl"
+        data-project-action-dialog={kind}
         onMouseDown={(event) => event.stopPropagation()}
         onSubmit={handleSubmit}
         role="dialog"
@@ -125,7 +127,11 @@ export function ProjectActionDialog({
           ) : (
             <p className="font-mono text-[11px] text-foreground">{project.name}</p>
           )}
-          <p className="font-mono text-[10px] text-muted-foreground">{project.path}</p>
+          <p className="flex flex-wrap items-center gap-x-2 font-mono text-[10px] text-muted-foreground">
+            <span>{projectTypeLabel}</span>
+            <span aria-hidden="true">/</span>
+            <span>{project.path}</span>
+          </p>
         </div>
 
         {errorMessage && (

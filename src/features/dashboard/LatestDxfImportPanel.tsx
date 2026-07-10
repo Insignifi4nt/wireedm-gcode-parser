@@ -1,21 +1,17 @@
-import type { ReactNode } from 'react';
-
 import { Button } from '@/components/ui/button';
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 
 interface LatestDxfImportPanelProps {
-  children?: ReactNode;
-  latestImport: ImportDxfProjectResult | null;
+  latestImport: ImportDxfProjectResult;
   onOpenLatestImportInEditor: () => void;
 }
 
 export function LatestDxfImportPanel({
-  children,
   latestImport,
   onOpenLatestImportInEditor
 }: LatestDxfImportPanelProps) {
-  const pathMessages = latestImport?.pathDiagnostics.map((diagnostic) => diagnostic.message) ?? [];
-  const allWarnings = latestImport ? [...latestImport.parseResult.warnings, ...pathMessages] : [];
+  const pathMessages = latestImport.pathDiagnostics.map((diagnostic) => diagnostic.message);
+  const allWarnings = [...latestImport.parseResult.warnings, ...pathMessages];
 
   return (
     <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-border bg-card">
@@ -23,46 +19,30 @@ export function LatestDxfImportPanel({
         <h3 className="font-mono text-xs font-semibold">Latest DXF Import</h3>
       </div>
       <div className="min-h-0 overflow-auto p-3 font-mono text-[11px]">
-        {latestImport ? (
-          <div className="space-y-3">
-            <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2">
-              <dt className="text-muted-foreground">Project</dt>
-              <dd className="truncate">{latestImport.project.name}</dd>
-              <dt className="text-muted-foreground">Entities</dt>
-              <dd>{latestImport.entityCount}</dd>
-              <dt className="text-muted-foreground">Warnings</dt>
-              <dd>{allWarnings.length}</dd>
-              <dt className="text-muted-foreground">Contours</dt>
-              <dd>{latestImport.pathDocument.contours.length}</dd>
-              <dt className="text-muted-foreground">Export</dt>
-              <dd className="truncate">
-                UPID on demand
-              </dd>
-            </dl>
-            {allWarnings.length > 0 && (
-              <div className="border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200">
-                {allWarnings.join('\n')}
-              </div>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={onOpenLatestImportInEditor} variant="default">
-                Open in Editor
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <dl className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-2">
-            <dt className="text-muted-foreground">Manifest</dt>
-            <dd>workbench.json</dd>
-            <dt className="text-muted-foreground">Profiles</dt>
-            <dd>Active machine profile</dd>
-            <dt className="text-muted-foreground">Folders</dt>
-            <dd>imports, exports, templates, machines, editor, projects</dd>
-            <dt className="text-muted-foreground">Posting</dt>
-            <dd>Export preview only</dd>
+        <div className="space-y-3">
+          <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-2">
+            <dt className="text-muted-foreground">Project</dt>
+            <dd className="truncate">{latestImport.project.name}</dd>
+            <dt className="text-muted-foreground">Entities</dt>
+            <dd>{latestImport.entityCount}</dd>
+            <dt className="text-muted-foreground">Warnings</dt>
+            <dd>{allWarnings.length}</dd>
+            <dt className="text-muted-foreground">Contours</dt>
+            <dd>{latestImport.pathDocument.contours.length}</dd>
+            <dt className="text-muted-foreground">Export</dt>
+            <dd className="truncate">UPID on demand</dd>
           </dl>
-        )}
-        {children}
+          {allWarnings.length > 0 && (
+            <div className="border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200">
+              {allWarnings.join('\n')}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onOpenLatestImportInEditor} variant="default">
+              Open in Editor
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

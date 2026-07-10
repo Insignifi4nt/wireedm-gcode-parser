@@ -123,6 +123,10 @@ describe('App DXF imports and project library', () => {
 
     expect(container.textContent).toContain('part');
     expect(container.textContent).toContain('1 project');
+    const pathProjectRow = container.querySelector('[data-project-source="dxf"]');
+    expect(pathProjectRow).not.toBeNull();
+    expect(pathProjectRow?.textContent ?? '').toContain('Path Project');
+    expect(container.textContent).toContain('Latest DXF Import');
     expect(container.textContent).toContain('UPID on demand');
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
 
@@ -338,6 +342,7 @@ describe('App DXF imports and project library', () => {
     expect(window.localStorage.getItem(`wire-edm-workbench:file:${projectPath}`)).toBeNull();
     expect(window.localStorage.getItem(`wire-edm-workbench:file:imports/${projectId}.dxf`)).toBeNull();
     expect(container.textContent).toContain('No projects yet');
+    expect(container.textContent).not.toContain('Latest DXF Import');
     expect(container.textContent).not.toContain('Manifest');
     expect(container.textContent).not.toContain('Open in Editor');
     expect(container.textContent).not.toContain('UPID on demand');

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchProjectIndexEntry } from '@/domain/storage/workbenchStorage';
@@ -29,9 +30,15 @@ export function ProjectListPanel({
       : `${visibleProjects.length} / ${projects.length} projects`;
 
   return (
-    <div className="min-h-0 border border-border bg-card">
+    <section
+      aria-labelledby="project-library-title"
+      className="min-h-0 border border-border bg-card"
+      data-project-library
+    >
       <div className="flex h-8 items-center justify-between border-b border-border px-3">
-        <h3 className="font-mono text-xs font-semibold">Projects</h3>
+        <h2 className="font-mono text-xs font-semibold" id="project-library-title">
+          Project Library
+        </h2>
         <span className="font-mono text-[10px] text-muted-foreground">{projectCountLabel}</span>
       </div>
       <div className="p-3 font-mono text-[11px]">
@@ -54,8 +61,8 @@ export function ProjectListPanel({
                 value={sourceFilter}
               >
                 <option value="all">All sources</option>
-                <option value="dxf">DXF</option>
-                <option value="external-gcode">External G-code</option>
+                <option value="dxf">Path Project</option>
+                <option value="external-gcode">Machine Program</option>
               </select>
               <select
                 aria-label="Project sort"
@@ -76,6 +83,7 @@ export function ProjectListPanel({
                 visibleProjects.map((project) => (
                   <div
                     className="grid grid-cols-[minmax(0,1fr)_84px_130px_auto] items-center gap-3 p-2"
+                    data-project-source={project.sourceKind}
                     key={project.id}
                   >
                     <div className="min-w-0">
@@ -84,7 +92,9 @@ export function ProjectListPanel({
                         {project.path}
                       </p>
                     </div>
-                    <span className="text-muted-foreground">{project.sourceKind.toUpperCase()}</span>
+                    <span className="text-muted-foreground">
+                      {getProjectSourceLabel(project.sourceKind)}
+                    </span>
                     <span className="truncate text-muted-foreground">{project.updatedAt}</span>
                     <div className="flex items-center gap-1">
                       <Button
@@ -98,21 +108,25 @@ export function ProjectListPanel({
                       </Button>
                       <Button
                         aria-label={`Rename project ${project.id}`}
+                        className="size-7 text-muted-foreground hover:text-foreground"
                         onClick={() => onRenameProject(project)}
-                        size="sm"
+                        size="icon"
+                        title="Rename project"
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                       >
-                        Rename
+                        <Pencil />
                       </Button>
                       <Button
                         aria-label={`Delete project ${project.id}`}
+                        className="size-7 text-muted-foreground hover:text-destructive"
                         onClick={() => onDeleteProject(project)}
-                        size="sm"
+                        size="icon"
+                        title="Delete project"
                         type="button"
-                        variant="danger"
+                        variant="ghost"
                       >
-                        Delete
+                        <Trash2 />
                       </Button>
                     </div>
                   </div>
@@ -129,13 +143,17 @@ export function ProjectListPanel({
             aria-label="Project list"
             className="border border-border bg-background/50 p-2 text-muted-foreground"
           >
-            No projects yet. Import a DXF or open an existing program to create a project in the
-            active workbench.
+            No projects yet. Import a DXF as a Path Project or open a Machine Program to add it to
+            the active workbench.
           </p>
         )}
       </div>
-    </div>
+    </section>
   );
+}
+
+function getProjectSourceLabel(sourceKind: WorkbenchProjectIndexEntry['sourceKind']) {
+  return sourceKind === 'dxf' ? 'Path Project' : 'Machine Program';
 }
 
 function getVisibleProjects(
