@@ -47,7 +47,14 @@ export function EditorStatusBar({
       data-editor-status-bar
     >
       <span>{DOCUMENT_CONTEXT_LABELS[documentContext]}</span>
-      <span data-editor-document-state={saveState.toLowerCase()}>{saveState}</span>
+      <span
+        aria-atomic="true"
+        aria-live="polite"
+        data-editor-document-state={saveState.toLowerCase()}
+        role="status"
+      >
+        {saveState}
+      </span>
       <span data-editor-status-selection>Selection {selectionSummary}</span>
       <span data-editor-status-cursor>
         Cursor X {formatCoordinate(previewCursorPoint?.x)} Y {formatCoordinate(previewCursorPoint?.y)}

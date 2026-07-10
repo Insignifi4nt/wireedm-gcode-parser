@@ -693,6 +693,9 @@ export function EditorPage({
   const diagnosticCount = pathDocumentDraft
     ? pathDocumentDraft.diagnostics.length
     : (draftParseResult?.errors.length ?? 0) + (draftParseResult?.warnings.length ?? 0);
+  const exportAvailable = isPathProject
+    ? Boolean(program?.project)
+    : documentContext === 'machine-program' && draftText.trim() !== '';
   const editorPanelToolbar = useMemo(
     () => (
       <EditorPanelToolbar
@@ -736,6 +739,7 @@ export function EditorPage({
       <EditorHeaderBar
         documentContext={documentContext}
         eyebrow={editorHeaderEyebrow}
+        exportAvailable={exportAvailable}
         exportLabel={
           isPathProject
             ? 'Open Path Project export preview'
@@ -776,7 +780,10 @@ export function EditorPage({
       editorHeaderTitle,
       editorHeaderTooltip,
       documentContext,
+      draftState,
       draftSignature,
+      draftText,
+      exportAvailable,
       guideHighlightTarget,
       hasUnsavedChanges,
       importErrorMessage,
@@ -784,11 +791,15 @@ export function EditorPage({
       isPathProject,
       isSaving,
       onBackToDashboard,
+      onDownloadEditorFile,
       onImportProgramFile,
+      onSaveEditorDraft,
       pathDocumentDraft,
       program?.filePath,
       redoStack,
       saveErrorMessage,
+      selectedPathElement,
+      selectedPathOperationId,
       undoStack
     ]
   );

@@ -17,6 +17,7 @@ const DOCUMENT_CONTEXT_LABELS: Record<EditorDocumentContext, string> = {
 interface EditorHeaderBarProps {
   documentContext: EditorDocumentContext;
   eyebrow?: string;
+  exportAvailable: boolean;
   exportLabel: string | null;
   filePath: string | undefined;
   guideHighlightTarget: EditorGuideTarget | null;
@@ -42,6 +43,7 @@ interface EditorHeaderBarProps {
 export function EditorHeaderBar({
   documentContext,
   eyebrow = 'Editor',
+  exportAvailable,
   exportLabel,
   filePath,
   guideHighlightTarget,
@@ -141,7 +143,7 @@ export function EditorHeaderBar({
           <Button
             aria-label={exportLabel}
             className="h-7 px-2 text-[10px]"
-            disabled={isSaving}
+            disabled={!exportAvailable || isSaving}
             onClick={onExport}
             size="sm"
             variant="outline"

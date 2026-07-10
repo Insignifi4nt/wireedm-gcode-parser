@@ -50,11 +50,20 @@ describe('EditorPage UPID draft boundary', () => {
 
     expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
     expect(container.textContent).toContain('Path Project');
+    expect(
+      container.querySelector('button[aria-label="Undo active document change"]')
+    ).not.toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Redo active document change"]')
+    ).not.toBeNull();
     expect(container.querySelector('button[aria-label="Save active document"]')).not.toBeNull();
     expect(
       container.querySelector('button[aria-label="Open Path Project export preview"]')
     ).not.toBeNull();
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain('Saved');
+
+    await clickElement('button[aria-label="Open Path Project export preview"]');
+    expect(container.querySelector('[data-upid-export-preview]')).not.toBeNull();
   });
 
   it('keeps technical path status visible without opening an inspector panel', async () => {
@@ -71,6 +80,12 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     const status = container.querySelector('[data-editor-status-bar]');
+    const documentState = status?.querySelector('[data-editor-document-state="saved"]');
+    expect(status?.getAttribute('role')).toBeNull();
+    expect(status?.getAttribute('aria-live')).toBeNull();
+    expect(documentState?.getAttribute('role')).toBe('status');
+    expect(documentState?.getAttribute('aria-live')).toBe('polite');
+    expect(documentState?.getAttribute('aria-atomic')).toBe('true');
     expect(status?.textContent).toContain('Selection None');
     expect(status?.textContent).toContain('Cursor X — Y —');
     expect(status?.textContent).toContain('Moves 5');
@@ -80,6 +95,104 @@ describe('EditorPage UPID draft boundary', () => {
     expect(status?.textContent).toContain('Diagnostics 0');
     expect(status?.textContent).toContain('Machine Default Wire EDM');
     expect(status?.textContent).toContain('Fit Unchecked');
+  });
+
+  it('keeps persistent header undo and redo snapshots aligned with later path selection', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement(
+      `[data-upid-cut-sequence-row][data-upid-operation-id="${firstOperation.id}"] [data-upid-cut-sequence-select]`
+    );
+    await clickElement('button[aria-label="Reverse path operation"]');
+    await clickElement(
+      `[data-upid-cut-sequence-row][data-upid-operation-id="${secondOperation.id}"] [data-upid-cut-sequence-select]`
+    );
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
+      `Selection Operation ${secondOperation.id}`
+    );
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
+      `Selection Operation ${firstOperation.id}`
+    );
+
+    await clickElement('button[aria-label="Redo active document change"]');
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
+      `Selection Operation ${secondOperation.id}`
+    );
+  });
+
+  it('uses the latest save callback from the persistent header', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    const firstSave = vi.fn();
+    const latestSave = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={firstSave}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-upid-cut-sequence-select]');
+    await clickElement('button[aria-label="Reverse path operation"]');
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={latestSave}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('button[aria-label="Save active document"]');
+    expect(firstSave).not.toHaveBeenCalled();
+    expect(latestSave).toHaveBeenCalledOnce();
+  });
+
+  it('reports Saving and disables every persistent document command while a path save runs', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+          saveStatus="saving"
+        />
+      );
+    });
+    await flushAsync();
+
+    const documentState = container.querySelector('[data-editor-document-state="saving"]');
+    expect(documentState?.textContent).toBe('Saving');
+    for (const ariaLabel of [
+      'Save active document',
+      'Undo active document change',
+      'Redo active document change',
+      'Open Path Project export preview'
+    ]) {
+      expect(
+        (container.querySelector(`button[aria-label="${ariaLabel}"]`) as HTMLButtonElement).disabled
+      ).toBe(true);
+    }
   });
 
   it('guards Back only after the active path draft is modified', async () => {
@@ -164,9 +277,10 @@ describe('EditorPage UPID draft boundary', () => {
 
     expect(container.textContent).toContain('Unsaved');
 
-    await clickElement('button[aria-label="Save Path Plan"]');
+    await clickElement('button[aria-label="Save active document"]');
 
     expect(onSaveEditorDraft).toHaveBeenCalledTimes(1);
+    expect(onSaveEditorDraft.mock.calls[0]?.[0]).not.toHaveProperty('text');
     expect(onSaveEditorDraft).toHaveBeenCalledWith({
       model: 'upid-document',
       pathDocument: expect.objectContaining({
@@ -200,17 +314,17 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('button[aria-label="Reverse path operation"]');
     expect(container.textContent).toContain('Unsaved');
 
-    await clickElement('button[aria-label="Undo"]');
+    await clickElement('button[aria-label="Undo active document change"]');
     expect(container.textContent).not.toContain('Unsaved');
     const saveButton = container.querySelector(
-      'button[aria-label="Save Path Plan"]'
+      'button[aria-label="Save active document"]'
     ) as HTMLButtonElement;
     expect(saveButton.disabled).toBe(true);
 
-    await clickElement('button[aria-label="Redo"]');
+    await clickElement('button[aria-label="Redo active document change"]');
     expect(container.textContent).toContain('Unsaved');
 
-    await clickElement('button[aria-label="Save Path Plan"]');
+    await clickElement('button[aria-label="Save active document"]');
 
     expect(onSaveEditorDraft).toHaveBeenCalledTimes(1);
     expect(onSaveEditorDraft).toHaveBeenCalledWith({
@@ -1044,11 +1158,13 @@ describe('EditorPage UPID draft boundary', () => {
 function EditorPageHarness({
   onBackToDashboard = noop,
   onSaveEditorDraft,
-  project
+  project,
+  saveStatus = 'idle'
 }: {
   onBackToDashboard?: () => void;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void;
   project: WorkbenchProject;
+  saveStatus?: 'error' | 'idle' | 'saving';
 }) {
   const [headerContent, setHeaderContent] = useState<ReactNode | null>(null);
   const [railContent, setRailContent] = useState<AppRailContent | null>(null);
@@ -1073,7 +1189,7 @@ function EditorPageHarness({
           text: ''
         }}
         saveErrorMessage={null}
-        saveStatus="idle"
+        saveStatus={saveStatus}
       />
     </AppRailProvider>
   );

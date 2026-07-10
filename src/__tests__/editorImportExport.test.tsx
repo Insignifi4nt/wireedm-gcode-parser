@@ -259,10 +259,10 @@ describe('Editor import, export, and parse feedback', () => {
       if (programEditor) setTextAreaValue(programEditor, updatedProgramText);
     });
 
-    const saveButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Save Program')
-    );
-    expect(saveButton).toBeDefined();
+    const saveButton = container.querySelector(
+      'button[aria-label="Save active document"]'
+    ) as HTMLButtonElement | null;
+    expect(saveButton).not.toBeNull();
 
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -384,13 +384,13 @@ describe('Editor import, export, and parse feedback', () => {
     const programEditor = container.querySelector(
       'textarea[aria-label="Program editor"]'
     ) as HTMLTextAreaElement | null;
-    const exportIsoButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Export ISO')
-    );
+    const exportIsoButton = container.querySelector(
+      'button[aria-label="Export normalized ISO"]'
+    ) as HTMLButtonElement | null;
 
     expect(programEditor?.value).toContain('G0 X0 Y0 ; rapid');
     expect(programEditor?.value).not.toContain('N10 G0 X0 Y0');
-    expect(exportIsoButton).toBeDefined();
+    expect(exportIsoButton).not.toBeNull();
 
     await act(async () => {
       exportIsoButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -402,6 +402,52 @@ describe('Editor import, export, and parse feedback', () => {
     });
     expect(programEditor?.value).toContain('G0 X0 Y0 ; rapid');
     expect(programEditor?.value).not.toContain('N10 G0 X0 Y0');
+  });
+
+  it('keeps persistent normalized export visible but disables it for an empty machine draft', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+
+    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Open Editor')
+    );
+    await act(async () => {
+      openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const fileInput = container.querySelector(
+      'input[aria-label="G-code program file"]'
+    ) as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['G0 X0 Y0\nG1 X5 Y5\nM30'], 'empty-export.nc')]
+    });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    let headerExport = container.querySelector(
+      'button[aria-label="Export normalized ISO"]'
+    ) as HTMLButtonElement | null;
+    expect(headerExport).not.toBeNull();
+    expect(headerExport?.disabled).toBe(false);
+
+    const programEditor = container.querySelector(
+      'textarea[aria-label="Program editor"]'
+    ) as HTMLTextAreaElement | null;
+    await act(async () => {
+      if (programEditor) setTextAreaValue(programEditor, '  \n  ');
+    });
+    await flushAsync();
+
+    headerExport = container.querySelector(
+      'button[aria-label="Export normalized ISO"]'
+    ) as HTMLButtonElement | null;
+    expect(headerExport).not.toBeNull();
+    expect(headerExport?.disabled).toBe(true);
   });
 
   it('guards header replacement imports only after the active machine draft is modified', async () => {
@@ -431,9 +477,23 @@ describe('Editor import, export, and parse feedback', () => {
     await flushAsync();
 
     expect(confirmDiscard).not.toHaveBeenCalled();
+    fileInput = container.querySelector(
+      'input[aria-label="G-code program file"]'
+    ) as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['G0 X1 Y1\nG1 X7 Y7\nM30'], 'clean-second.nc')]
+    });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(confirmDiscard).not.toHaveBeenCalled();
     const programEditor = container.querySelector(
       'textarea[aria-label="Program editor"]'
     ) as HTMLTextAreaElement | null;
+    expect(programEditor?.value).toContain('G1 X7 Y7');
     await act(async () => {
       if (programEditor) setTextAreaValue(programEditor, 'G0 X0 Y0\nG1 X99 Y99\nM30');
     });
@@ -443,7 +503,7 @@ describe('Editor import, export, and parse feedback', () => {
     ) as HTMLInputElement | null;
     Object.defineProperty(fileInput, 'files', {
       configurable: true,
-      value: [new File(['G0 X1 Y1\nG1 X7 Y7\nM30'], 'second.nc')]
+      value: [new File(['G0 X2 Y2\nG1 X8 Y8\nM30'], 'dirty-third.nc')]
     });
     await act(async () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
@@ -459,7 +519,7 @@ describe('Editor import, export, and parse feedback', () => {
     ) as HTMLInputElement | null;
     Object.defineProperty(fileInput, 'files', {
       configurable: true,
-      value: [new File(['G0 X1 Y1\nG1 X7 Y7\nM30'], 'second.nc')]
+      value: [new File(['G0 X2 Y2\nG1 X8 Y8\nM30'], 'dirty-third.nc')]
     });
     await act(async () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
@@ -469,7 +529,7 @@ describe('Editor import, export, and parse feedback', () => {
     const replacedProgramEditor = container.querySelector(
       'textarea[aria-label="Program editor"]'
     ) as HTMLTextAreaElement | null;
-    expect(replacedProgramEditor?.value).toContain('G1 X7 Y7');
+    expect(replacedProgramEditor?.value).toContain('G1 X8 Y8');
   });
 
   it('imports an external G-code program by dropping it into the editor', async () => {
@@ -527,9 +587,18 @@ describe('Editor import, export, and parse feedback', () => {
     await flushAsync();
     expect(confirmDiscard).not.toHaveBeenCalled();
 
+    await act(async () => {
+      container
+        .querySelector('[data-editor-drop-zone="true"]')
+        ?.dispatchEvent(createProgramDropEvent('clean-second-drop.nc', 'G0 X1 Y1\nG1 X6 Y6\nM30'));
+    });
+    await flushAsync();
+    expect(confirmDiscard).not.toHaveBeenCalled();
+
     const programEditor = container.querySelector(
       'textarea[aria-label="Program editor"]'
     ) as HTMLTextAreaElement | null;
+    expect(programEditor?.value).toContain('G1 X6 Y6');
     await act(async () => {
       if (programEditor) setTextAreaValue(programEditor, 'G0 X0 Y0\nG1 X88 Y88\nM30');
     });
@@ -540,7 +609,7 @@ describe('Editor import, export, and parse feedback', () => {
     await act(async () => {
       container
         .querySelector('[data-editor-drop-zone="true"]')
-        ?.dispatchEvent(createProgramDropEvent('second-drop.nc', 'G0 X1 Y1\nG1 X6 Y6\nM30'));
+        ?.dispatchEvent(createProgramDropEvent('dirty-third-drop.nc', 'G0 X2 Y2\nG1 X7 Y7\nM30'));
     });
     await flushAsync();
 
@@ -551,14 +620,14 @@ describe('Editor import, export, and parse feedback', () => {
     await act(async () => {
       container
         .querySelector('[data-editor-drop-zone="true"]')
-        ?.dispatchEvent(createProgramDropEvent('second-drop.nc', 'G0 X1 Y1\nG1 X6 Y6\nM30'));
+        ?.dispatchEvent(createProgramDropEvent('dirty-third-drop.nc', 'G0 X2 Y2\nG1 X7 Y7\nM30'));
     });
     await flushAsync();
 
     const replacedProgramEditor = container.querySelector(
       'textarea[aria-label="Program editor"]'
     ) as HTMLTextAreaElement | null;
-    expect(replacedProgramEditor?.value).toContain('G1 X6 Y6');
+    expect(replacedProgramEditor?.value).toContain('G1 X7 Y7');
   });
 
   it('shows editor parse warning details instead of only warning counts', async () => {
