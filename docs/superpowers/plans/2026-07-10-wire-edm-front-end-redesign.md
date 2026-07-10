@@ -435,6 +435,9 @@ git commit -m "feat: provide task-focused editor workspaces"
 - Modify: `src/features/editor/EditorHeaderBar.tsx`
 - Modify: `src/features/editor/EditorStatusBar.tsx`
 - Modify: `src/features/editor/EditorCanvasPanel.tsx`
+- Modify: `src/features/editor/EditorPage.tsx`
+- Modify: `src/features/editor/EditorPathNavigatorPanel.tsx`
+- Modify: `src/features/editor/EditorInspectorPanel.tsx`
 - Modify: `src/features/editor/EditorWorkspacePanels.tsx`
 - Modify: `e2e/app-shell.spec.ts`
 - Modify: `e2e/editor-layout.spec.ts`
@@ -455,6 +458,7 @@ await expect(page.getByRole('button', { name: /Import DXF as Path Project/i })).
 ```
 
 For editor context, assert canvas, visible default rail, status bar, and primary header commands fit without horizontal document overflow.
+Use deterministic browser-cache imports for these assertions so the 1024px editor checks cannot skip when an external workbench fixture is unavailable.
 
 - [ ] **Step 2: Run the browser assertions and verify current failure where applicable**
 
@@ -469,6 +473,7 @@ Update colors to a quiet graphite/cyan semantic palette, remove decorative body 
 - [ ] **Step 4: Apply density and responsive rules**
 
 Use 28-32px controls, 11-13px labels/body, square/minimally rounded surfaces, single separators instead of nested card borders, restrained action color, and compact status areas. Make the Workbench columns collapse below 1180px. At 1024px, keep editor regions usable and expose side-region collapse controls. Avoid a generic mobile redesign.
+Cap the default left/right editor tracks with CSS at the laptop breakpoint so the canvas remains at least 400px wide without overwriting user-resized state.
 
 - [ ] **Step 5: Capture and inspect screenshots**
 
@@ -495,7 +500,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit the visual system**
 
 ```bash
-git add src/index.css src/components/ui/button.tsx src/app/AppShell.tsx src/app/WorkbenchSettingsDialog.tsx src/app/MachineOutputSettingsPanel.tsx src/features/dashboard/StartWorkPanel.tsx src/features/dashboard/DashboardPage.tsx src/features/dashboard/ProjectListPanel.tsx src/features/dashboard/LatestDxfImportPanel.tsx src/features/editor/EditorHeaderBar.tsx src/features/editor/EditorStatusBar.tsx src/features/editor/EditorCanvasPanel.tsx src/features/editor/EditorWorkspacePanels.tsx e2e/app-shell.spec.ts e2e/editor-layout.spec.ts
+git add src/index.css src/components/ui/button.tsx src/app/AppShell.tsx src/app/WorkbenchSettingsDialog.tsx src/app/MachineOutputSettingsPanel.tsx src/features/dashboard/StartWorkPanel.tsx src/features/dashboard/DashboardPage.tsx src/features/dashboard/ProjectListPanel.tsx src/features/dashboard/LatestDxfImportPanel.tsx src/features/editor/EditorHeaderBar.tsx src/features/editor/EditorStatusBar.tsx src/features/editor/EditorCanvasPanel.tsx src/features/editor/EditorPage.tsx src/features/editor/EditorPathNavigatorPanel.tsx src/features/editor/EditorInspectorPanel.tsx src/features/editor/EditorWorkspacePanels.tsx e2e/app-shell.spec.ts e2e/editor-layout.spec.ts
 git commit -m "style: establish the technical workbench visual system"
 ```
 
