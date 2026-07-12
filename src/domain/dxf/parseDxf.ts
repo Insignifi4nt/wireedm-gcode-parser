@@ -73,7 +73,6 @@ interface InsertTransform {
   insertion: DxfPoint;
   scaleX: number;
   scaleY: number;
-  rotationRadians: number;
   rotationDegrees: number;
   determinant: number;
   uniformScale: number | null;
@@ -842,7 +841,6 @@ function createInsertTransform(
   row: number,
   column: number
 ): InsertTransform {
-  const rotationRadians = (insert.rotationDegrees * Math.PI) / 180;
   const determinant =
     insert.scaleX === 0 || insert.scaleY === 0
       ? 0
@@ -869,7 +867,6 @@ function createInsertTransform(
     insertion: insert.insertion,
     scaleX: insert.scaleX,
     scaleY: insert.scaleY,
-    rotationRadians,
     rotationDegrees: insert.rotationDegrees,
     determinant,
     uniformScale,
@@ -964,7 +961,7 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
   if (entity.type === 'lwpolyline') {
     if (
       transform.uniformScale == null &&
-      entity.vertices.some((vertex) => Math.abs(vertex.bulge) > 1e-12)
+      entity.vertices.some((vertex) => vertex.bulge !== 0)
     ) {
       return skippedTransformedEntity(entity.type, 'non-uniform INSERT scale would turn a bulge arc into an ellipse');
     }
@@ -987,7 +984,7 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
   if (entity.type === 'polyline') {
     if (
       transform.uniformScale == null &&
-      entity.vertices.some((vertex) => Math.abs(vertex.bulge) > 1e-12)
+      entity.vertices.some((vertex) => vertex.bulge !== 0)
     ) {
       return skippedTransformedEntity(entity.type, 'non-uniform INSERT scale would turn a bulge arc into an ellipse');
     }
@@ -1104,14 +1101,15 @@ function transformPoint(point: DxfPoint, transform: InsertTransform) {
 }
 
 function insertRotationComponents(transform: InsertTransform) {
-  const normalizedDegrees = ((transform.rotationDegrees % 360) + 360) % 360;
-  if (normalizedDegrees === 0) return { cos: 1, sin: 0 };
-  if (normalizedDegrees === 90) return { cos: 0, sin: 1 };
-  if (normalizedDegrees === 180) return { cos: -1, sin: 0 };
-  if (normalizedDegrees === 270) return { cos: 0, sin: -1 };
+  const reducedDegrees = transform.rotationDegrees % 360;
+  if (reducedDegrees === 0) return { cos: 1, sin: 0 };
+  if (reducedDegrees === 90 || reducedDegrees === -270) return { cos: 0, sin: 1 };
+  if (reducedDegrees === 180 || reducedDegrees === -180) return { cos: -1, sin: 0 };
+  if (reducedDegrees === 270 || reducedDegrees === -90) return { cos: 0, sin: -1 };
+  const reducedRadians = (reducedDegrees * Math.PI) / 180;
   return {
-    cos: Math.cos(transform.rotationRadians),
-    sin: Math.sin(transform.rotationRadians)
+    cos: Math.cos(reducedRadians),
+    sin: Math.sin(reducedRadians)
   };
 }
 

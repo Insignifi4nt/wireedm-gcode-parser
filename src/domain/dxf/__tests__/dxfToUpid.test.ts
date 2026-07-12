@@ -149,6 +149,63 @@ describe('dxfEntitiesToUpidDocument', () => {
     });
   });
 
+  it('keeps a tiny nonzero bulge over a huge chord as bounded finite arc geometry', () => {
+    const chordLength = 5e15;
+    const document = dxfEntitiesToUpidDocument([
+      {
+        type: 'lwpolyline',
+        layer: 'CUT',
+        closed: false,
+        vertices: [
+          { x: 0, y: 0, bulge: 1e-13 },
+          { x: chordLength, y: 0, bulge: 0 }
+        ]
+      }
+    ]);
+    const segment = document.segments[0];
+
+    expect(segment?.kind).toBe('arc');
+    if (!segment || segment.kind !== 'arc') return;
+
+    const encodedSagitta =
+      (Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y) / 2) *
+      Math.tan(Math.abs(segment.sweepRadians) / 4);
+    const numericOutput = segmentNumbers(segment);
+
+    expect(encodedSagitta).toBeCloseTo(250, 0);
+    expect(numericOutput.every(Number.isFinite)).toBe(true);
+    expect(Math.max(...numericOutput.map(Math.abs))).toBeLessThan(1e29);
+  });
+
+  it.each([
+    { label: 'center and radius', bulge: 1e-13 },
+    { label: 'path metrics', bulge: 1.3 }
+  ])('rejects a bulge arc when finite inputs overflow derived $label', ({ bulge }) => {
+    const document = dxfEntitiesToUpidDocument([
+      {
+        type: 'lwpolyline',
+        layer: 'CUT',
+        closed: false,
+        vertices: [
+          { x: 0, y: 0, bulge },
+          { x: 1e308, y: 0, bulge: 0 }
+        ]
+      },
+      line(0, 1, 1, 1)
+    ]);
+
+    expect(document.segments).toHaveLength(1);
+    expect(document.segments[0]?.kind).toBe('line');
+    expect(document.segments.flatMap(segmentNumbers).every(Number.isFinite)).toBe(true);
+    expect(document.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: 'warning',
+        code: 'invalid-arc',
+        details: expect.objectContaining({ sourceEntityIndex: 0, bulge })
+      })
+    );
+  });
+
   it('filters non-cut layers through the path-planning API with deterministic diagnostics', () => {
     const document = dxfEntitiesToUpidDocument(
       [lineOnLayer('CUT', 0, 0, 1, 0), lineOnLayer('CONSTRUCTION', 10, 0, 11, 0)],
@@ -295,6 +352,14 @@ function segmentNumbers(segment: ReturnType<typeof dxfEntitiesToUpidDocument>['s
 
   if (segment.kind === 'arc' || segment.kind === 'circle') {
     values.push(segment.center.x, segment.center.y, segment.radius);
+  }
+
+  if (segment.kind === 'arc') {
+    values.push(
+      segment.startAngleRadians,
+      segment.endAngleRadians,
+      segment.sweepRadians
+    );
   }
 
   return values;

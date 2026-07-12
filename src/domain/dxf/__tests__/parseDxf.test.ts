@@ -531,7 +531,7 @@ EOF
   });
 
   it('rotates an axis-aligned INSERT by 90 degrees without trigonometric residue', () => {
-    const result = parseDxf(rightAngleInsertDxf());
+    const result = parseDxf(rotatedLineInsertDxf(90));
     const line = result.entities[0];
 
     expect(line).toMatchObject({
@@ -541,6 +541,66 @@ EOF
     });
     expect(line?.type === 'line' && Object.is(line.end.x, -0)).toBe(false);
   });
+
+  it.each([
+    {
+      label: 'huge positive',
+      rotationDegrees: 1e20,
+      expectedEnd: { x: 0.17364817766692997, y: -0.9848077530122081 },
+      exact: false
+    },
+    {
+      label: 'huge negative',
+      rotationDegrees: -1e20,
+      expectedEnd: { x: 0.17364817766693041, y: 0.984807753012208 },
+      exact: false
+    },
+    {
+      label: 'large positive quadrant multiple',
+      rotationDegrees: 360_000_000_090,
+      expectedEnd: { x: 0, y: 1 },
+      exact: true
+    },
+    {
+      label: 'large negative quadrant multiple',
+      rotationDegrees: -360_000_000_090,
+      expectedEnd: { x: 0, y: -1 },
+      exact: true
+    }
+  ])(
+    'reduces INSERT rotation for $label before trigonometry',
+    ({ rotationDegrees, expectedEnd, exact }) => {
+      const result = parseDxf(rotatedLineInsertDxf(rotationDegrees));
+      const line = result.entities[0];
+
+      expect(line?.type).toBe('line');
+      if (!line || line.type !== 'line') return;
+
+      if (exact) {
+        expect(line.end).toEqual(expectedEnd);
+      } else {
+        expect(line.end.x).toBeCloseTo(expectedEnd.x, 14);
+        expect(line.end.y).toBeCloseTo(expectedEnd.y, 14);
+      }
+    }
+  );
+
+  it.each([
+    { label: 'positive', rotationDegrees: 1e-14, expectedY: 17453.292519943298 },
+    { label: 'negative', rotationDegrees: -1e-14, expectedY: -17453.292519943298 }
+  ])(
+    'preserves a tiny $label INSERT rotation remainder on huge coordinates',
+    ({ rotationDegrees, expectedY }) => {
+      const result = parseDxf(rotatedLineInsertDxf(rotationDegrees, 1e20));
+      const line = result.entities[0];
+
+      expect(line?.type).toBe('line');
+      if (!line || line.type !== 'line') return;
+
+      expect(line.end.x).toBe(1e20);
+      expect(line.end.y).toBeCloseTo(expectedY, 8);
+    }
+  );
 
   it.each([8, 16, 64])('rejects non-2D classic POLYLINE flag %i', (flag) => {
     const result = parseDxf(classicPolylineWithFlagDxf(flag));
@@ -763,6 +823,20 @@ EOF
       });
     }
   );
+
+  it.each(['LWPOLYLINE', 'POLYLINE'] as const)(
+    'rejects every nonzero bulge on a non-uniform INSERT for %s',
+    (entityType) => {
+      const result = parseDxf(nonUniformTinyBulgeInsertDxf(entityType));
+
+      expect(result.entities).toEqual([]);
+      expect(
+        result.warnings.some(
+          (warning) => warning.includes(entityType) && warning.includes('non-uniform')
+        )
+      ).toBe(true);
+    }
+  );
 });
 
 function blankLayerDxf() {
@@ -937,7 +1011,7 @@ function rotatedScaledInsertArrayDxf() {
   ].join('\n');
 }
 
-function rightAngleInsertDxf() {
+function rotatedLineInsertDxf(rotationDegrees: number, lineLength = 1) {
   return [
     '0',
     'SECTION',
@@ -958,7 +1032,7 @@ function rightAngleInsertDxf() {
     '20',
     '0',
     '11',
-    '1',
+    String(lineLength),
     '21',
     '0',
     '0',
@@ -978,7 +1052,7 @@ function rightAngleInsertDxf() {
     '20',
     '0',
     '50',
-    '90',
+    String(rotationDegrees),
     '0',
     'ENDSEC',
     '0',
@@ -1366,6 +1440,99 @@ function scaledCircleAndBulgeDxf(scaleX: number, scaleY: number) {
     String(scaleX),
     '42',
     String(scaleY),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function nonUniformTinyBulgeInsertDxf(entityType: 'LWPOLYLINE' | 'POLYLINE') {
+  const polylinePairs =
+    entityType === 'LWPOLYLINE'
+      ? [
+          '0',
+          'LWPOLYLINE',
+          '8',
+          'CUT',
+          '70',
+          '0',
+          '10',
+          '0',
+          '20',
+          '0',
+          '42',
+          '1e-13',
+          '10',
+          '5e15',
+          '20',
+          '0'
+        ]
+      : [
+          '0',
+          'POLYLINE',
+          '8',
+          'CUT',
+          '66',
+          '1',
+          '70',
+          '0',
+          '0',
+          'VERTEX',
+          '8',
+          'CUT',
+          '10',
+          '0',
+          '20',
+          '0',
+          '42',
+          '1e-13',
+          '0',
+          'VERTEX',
+          '8',
+          'CUT',
+          '10',
+          '5e15',
+          '20',
+          '0',
+          '0',
+          'SEQEND'
+        ];
+
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'BLOCKS',
+    '0',
+    'BLOCK',
+    '2',
+    'TINY_BULGE',
+    '10',
+    '0',
+    '20',
+    '0',
+    ...polylinePairs,
+    '0',
+    'ENDBLK',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'INSERT',
+    '2',
+    'TINY_BULGE',
+    '10',
+    '0',
+    '20',
+    '0',
+    '41',
+    '2',
+    '42',
+    '3',
     '0',
     'ENDSEC',
     '0',

@@ -326,7 +326,7 @@ function segmentsFromPolyline(
       continue;
     }
 
-    if (Math.abs(start.bulge) <= options.epsilon) {
+    if (start.bulge === 0) {
       segments.push(
         createLineSegment({
           id: options.nextId(),
@@ -340,27 +340,25 @@ function segmentsFromPolyline(
 
     const arc = arcFromBulge(start, end, start.bulge);
     if (!arc || arc.radius <= options.epsilon) {
-      diagnostics.push({
-        id: nextDiagnosticId(),
-        severity: 'warning',
-        code: 'invalid-arc',
-        message: `Skipped invalid ${options.sourceLabel} bulge arc ${index} at DXF entity index ${options.sourceEntityIndex}.`,
-        details: { sourceEntityIndex: options.sourceEntityIndex, sourceSubIndex: index, bulge: start.bulge }
-      });
+      diagnostics.push(invalidBulgeArcDiagnostic(options, index, start.bulge, nextDiagnosticId));
       continue;
     }
 
-    segments.push(
-      createArcSegment({
-        id: options.nextId(),
-        source,
-        start,
-        end,
-        center: arc.center,
-        radius: arc.radius,
-        clockwise: start.bulge < 0
-      })
-    );
+    const segment = createArcSegment({
+      id: options.nextId(),
+      source,
+      start,
+      end,
+      center: arc.center,
+      radius: arc.radius,
+      clockwise: start.bulge < 0
+    });
+    if (!arcSegmentHasFiniteGeometry(segment)) {
+      diagnostics.push(invalidBulgeArcDiagnostic(options, index, start.bulge, nextDiagnosticId));
+      continue;
+    }
+
+    segments.push(segment);
   }
 
   return { segments, diagnostics };
@@ -368,13 +366,14 @@ function segmentsFromPolyline(
 
 function arcFromBulge(start: DxfPoint, end: DxfPoint, bulge: number) {
   const chord = distance(start, end);
-  if (chord <= 0) return null;
+  if (!Number.isFinite(chord) || chord <= 0) return null;
 
   const includedAngle = 4 * Math.atan(Math.abs(bulge));
   const tanHalf = Math.tan(includedAngle / 2);
-  if (Math.abs(tanHalf) <= Number.EPSILON) return null;
+  if (!Number.isFinite(tanHalf) || Math.abs(tanHalf) <= Number.EPSILON) return null;
 
   const apothem = chord / (2 * tanHalf);
+  if (!Number.isFinite(apothem)) return null;
   const unit = normalizeVector({ x: end.x - start.x, y: end.y - start.y });
   const leftNormal = { x: -unit.y, y: unit.x };
   const midpoint = {
@@ -387,6 +386,48 @@ function arcFromBulge(start: DxfPoint, end: DxfPoint, bulge: number) {
     y: midpoint.y + sign * leftNormal.y * apothem
   };
   const radius = chord / (2 * Math.sin(includedAngle / 2));
+  if (
+    !Number.isFinite(center.x) ||
+    !Number.isFinite(center.y) ||
+    !Number.isFinite(radius)
+  ) {
+    return null;
+  }
 
   return { center, radius };
+}
+
+function arcSegmentHasFiniteGeometry(segment: ReturnType<typeof createArcSegment>) {
+  return [
+    segment.start.x,
+    segment.start.y,
+    segment.end.x,
+    segment.end.y,
+    segment.center.x,
+    segment.center.y,
+    segment.radius,
+    segment.startAngleRadians,
+    segment.endAngleRadians,
+    segment.sweepRadians,
+    segment.length,
+    segment.bounds.minX,
+    segment.bounds.minY,
+    segment.bounds.maxX,
+    segment.bounds.maxY
+  ].every(Number.isFinite);
+}
+
+function invalidBulgeArcDiagnostic(
+  options: LwPolylineBuildOptions,
+  index: number,
+  bulge: number,
+  nextDiagnosticId: () => string
+): PathDiagnostic {
+  return {
+    id: nextDiagnosticId(),
+    severity: 'warning',
+    code: 'invalid-arc',
+    message: `Skipped invalid ${options.sourceLabel} bulge arc ${index} at DXF entity index ${options.sourceEntityIndex}.`,
+    details: { sourceEntityIndex: options.sourceEntityIndex, sourceSubIndex: index, bulge }
+  };
 }
