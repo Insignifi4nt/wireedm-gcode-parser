@@ -6,6 +6,7 @@ export interface DxfPoint {
 export interface DxfInsertTransformSource {
   insertion: DxfPoint;
   localOffset?: DxfPoint;
+  blockBasePoint?: DxfPoint;
   rotationDegrees: number;
   scaleX: number;
   scaleY: number;
@@ -39,11 +40,17 @@ export interface DxfDrawingMetadata {
   };
 }
 
+export interface DxfApproximation {
+  sourceEntityType: string;
+  maxChordError: number;
+}
+
 export interface DxfLineEntity {
   type: 'line';
   handle?: string | null;
   layer: string | null;
   source?: DxfEntitySource;
+  approximation?: DxfApproximation;
   start: DxfPoint;
   end: DxfPoint;
 }
@@ -110,4 +117,8 @@ export interface DxfParseResult {
   units?: DxfDrawingUnits;
   unsupportedEntities: string[];
   warnings: string[];
+}
+
+export interface DxfParseOptions {
+  curveChordError?: number;
 }

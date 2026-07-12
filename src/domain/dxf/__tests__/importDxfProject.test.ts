@@ -53,12 +53,16 @@ describe('importDxfProject', () => {
     expect('generatedBody' in result).toBe(false);
     expect('generatedProgram' in result).toBe(false);
     expect(result.pathDocument.contours).toHaveLength(1);
-    expect(result.pathDiagnostics.map((diagnostic) => diagnostic.code)).toEqual(['open-chain']);
+    expect(result.pathDiagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      'units-assumed-millimeters',
+      'open-chain'
+    ]);
     expect('postDiagnostics' in result).toBe(false);
     expect(result.project.upid?.format).toBe('upid');
     expect(result.project.upid?.document).toBe(result.pathDocument);
     expect('postDiagnostics' in (result.project.upid ?? {})).toBe(false);
     expect(result.project.upid?.document.source).toMatchObject({
+      coordinateScaleToMillimeters: 1,
       fileName: 'Top Slot.dxf',
       importedAt: '2026-05-29T11:00:00.000Z',
       projectId: 'top-slot-2026-05-29'
@@ -160,6 +164,7 @@ describe('importDxfProject', () => {
               column: 0,
               row: 0,
               transform: {
+                blockBasePoint: { x: 0, y: 0 },
                 insertion: { x: 100, y: 200 },
                 rotationDegrees: 90,
                 scaleX: 1,
@@ -222,8 +227,43 @@ describe('importDxfProject', () => {
       source: 'dxf-insunits'
     });
     expect(result.pathDocument.source.units).toEqual(result.parseResult.units);
+    expect(result.pathDocument.source.coordinateScaleToMillimeters).toBe(1);
     expect(result.pathDocument.segments[0].start).toEqual({ x: 0, y: 0 });
     expect(result.pathDocument.segments[0].end).toEqual({ x: 10, y: 0 });
+  });
+
+  it('normalizes inch DXF coordinates to millimeters while retaining the original source units', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+
+    const result = await importDxfProject(workbench, {
+      fileName: 'inch-profile.dxf',
+      text: dxfWithInchUnits(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+
+    expect(result.parseResult.entities[0]).toMatchObject({
+      start: { x: 0, y: 0 },
+      end: { x: 1, y: 0 }
+    });
+    expect(result.pathDocument.source).toMatchObject({
+      coordinateScaleToMillimeters: 25.4,
+      units: {
+        code: 1,
+        label: 'inches',
+        scaleToMillimeters: 25.4,
+        source: 'dxf-insunits'
+      }
+    });
+    expect(result.pathDocument.segments[0]).toMatchObject({
+      start: { x: 0, y: 0 },
+      end: { x: 25.4, y: 0 }
+    });
+    expect(result.pathDiagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'units-assumed-millimeters'
+    );
   });
 
   it('keeps unsupported DXF warnings while still importing supported geometry', async () => {
@@ -396,6 +436,41 @@ function dxfWithMillimeterUnits() {
     '0',
     '11',
     '10',
+    '21',
+    '0',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function dxfWithInchUnits() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'HEADER',
+    '9',
+    '$INSUNITS',
+    '70',
+    '1',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'LINE',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '11',
+    '1',
     '21',
     '0',
     '0',

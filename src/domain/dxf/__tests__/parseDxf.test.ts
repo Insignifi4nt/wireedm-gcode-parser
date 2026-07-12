@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseDxf } from '../parseDxf';
+import type { DxfEntity, DxfPoint } from '../types';
 
 describe('parseDxf', () => {
   it('parses LINE, ARC, and CIRCLE entities from the ENTITIES section', () => {
@@ -470,4 +471,376 @@ EOF
     expect(result.unsupportedEntities).toEqual([]);
     expect(result.warnings).toEqual([]);
   });
+
+  it('preserves an explicit blank layer value without shifting later group-code pairs', () => {
+    const result = parseDxf(blankLayerDxf());
+
+    expect(result.entities).toHaveLength(1);
+    expect(result.entities[0]).toMatchObject({
+      type: 'line',
+      layer: '',
+      start: { x: 1, y: 2 },
+      end: { x: 3, y: 4 }
+    });
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('rejects a malformed LWPOLYLINE as a whole without emitting non-finite or partial geometry', () => {
+    const result = parseDxf(malformedPolylineDxf());
+
+    expect(result.entities).toHaveLength(1);
+    expect(result.entities[0]).toMatchObject({
+      type: 'line',
+      start: { x: 20, y: 0 },
+      end: { x: 25, y: 0 }
+    });
+    expect(
+      result.entities
+        .flatMap(entityPoints)
+        .every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    ).toBe(true);
+    expect(result.warnings).toContain('Rejected malformed DXF LWPOLYLINE geometry.');
+  });
+
+  it('subtracts a BLOCK base point before applying an INSERT transform and records it in provenance', () => {
+    const result = parseDxf(blockBasePointDxf());
+    const insertedLine = result.entities[0];
+
+    expect(insertedLine).toMatchObject({
+      type: 'line',
+      start: { x: 100, y: 200 },
+      end: { x: 105, y: 200 }
+    });
+    expect(insertedLine?.source?.insertChain[0].transform.blockBasePoint).toEqual({ x: 10, y: 20 });
+  });
+
+  it('rotates INSERT array spacing without scaling that spacing', () => {
+    const result = parseDxf(rotatedScaledInsertArrayDxf());
+
+    expect(result.entities).toHaveLength(2);
+    expect(result.entities[0]).toMatchObject({
+      type: 'line',
+      start: { x: 100, y: 200 },
+      end: { x: 100, y: 210 }
+    });
+    expect(result.entities[1]).toMatchObject({
+      type: 'line',
+      start: { x: 100, y: 210 },
+      end: { x: 100, y: 220 }
+    });
+  });
+
+  it.each([8, 16, 64])('rejects non-2D classic POLYLINE flag %i', (flag) => {
+    const result = parseDxf(classicPolylineWithFlagDxf(flag));
+
+    expect(result.entities).toEqual([]);
+    expect(result.warnings.some((warning) => warning.includes('POLYLINE') && warning.includes('non-2D'))).toBe(
+      true
+    );
+  });
+
+  it('rejects geometry on a tilted extrusion plane with an explicit warning', () => {
+    const result = parseDxf(tiltedExtrusionArcDxf());
+
+    expect(result.entities).toEqual([]);
+    expect(result.warnings.some((warning) => warning.includes('ARC') && warning.includes('tilted extrusion'))).toBe(
+      true
+    );
+  });
+
+  it('normalizes negative-Z planar OCS coordinates and bulge handedness deterministically', () => {
+    const result = parseDxf(negativeZPolylineDxf());
+
+    expect(result.entities).toEqual([
+      {
+        type: 'lwpolyline',
+        handle: null,
+        layer: 'CUT',
+        closed: false,
+        vertices: [
+          { x: -1, y: 2, bulge: -0.5 },
+          { x: -3, y: 4, bulge: 0 }
+        ]
+      }
+    ]);
+    expect(result.warnings).toEqual([]);
+  });
 });
+
+function blankLayerDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'LINE',
+    '8',
+    '',
+    '10',
+    '1',
+    '20',
+    '2',
+    '11',
+    '3',
+    '21',
+    '4',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function malformedPolylineDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'LWPOLYLINE',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '10',
+    'not-a-number',
+    '20',
+    '10',
+    '10',
+    '10',
+    '20',
+    '10',
+    '0',
+    'LINE',
+    '8',
+    'CUT',
+    '10',
+    '20',
+    '20',
+    '0',
+    '11',
+    '25',
+    '21',
+    '0',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function blockBasePointDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'BLOCKS',
+    '0',
+    'BLOCK',
+    '2',
+    'PROFILE',
+    '10',
+    '10',
+    '20',
+    '20',
+    '0',
+    'LINE',
+    '8',
+    'CUT',
+    '10',
+    '10',
+    '20',
+    '20',
+    '11',
+    '15',
+    '21',
+    '20',
+    '0',
+    'ENDBLK',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'INSERT',
+    '2',
+    'PROFILE',
+    '10',
+    '100',
+    '20',
+    '200',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function rotatedScaledInsertArrayDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'BLOCKS',
+    '0',
+    'BLOCK',
+    '2',
+    'ARRAY_ITEM',
+    '10',
+    '10',
+    '20',
+    '20',
+    '0',
+    'LINE',
+    '10',
+    '10',
+    '20',
+    '20',
+    '11',
+    '15',
+    '21',
+    '20',
+    '0',
+    'ENDBLK',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'INSERT',
+    '2',
+    'ARRAY_ITEM',
+    '10',
+    '100',
+    '20',
+    '200',
+    '41',
+    '2',
+    '42',
+    '2',
+    '50',
+    '90',
+    '70',
+    '2',
+    '44',
+    '10',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function classicPolylineWithFlagDxf(flag: number) {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'POLYLINE',
+    '8',
+    'CUT',
+    '70',
+    String(flag),
+    '0',
+    'VERTEX',
+    '10',
+    '0',
+    '20',
+    '0',
+    '0',
+    'VERTEX',
+    '10',
+    '1',
+    '20',
+    '0',
+    '0',
+    'SEQEND',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function tiltedExtrusionArcDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'ARC',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '40',
+    '5',
+    '50',
+    '0',
+    '51',
+    '90',
+    '210',
+    '0.5',
+    '220',
+    '0',
+    '230',
+    '0.866025403784',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function negativeZPolylineDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'LWPOLYLINE',
+    '8',
+    'CUT',
+    '10',
+    '1',
+    '20',
+    '2',
+    '42',
+    '0.5',
+    '10',
+    '3',
+    '20',
+    '4',
+    '210',
+    '0',
+    '220',
+    '0',
+    '230',
+    '-1',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function entityPoints(entity: DxfEntity): DxfPoint[] {
+  if (entity.type === 'line') return [entity.start, entity.end];
+  if (entity.type === 'arc') return [entity.center, entity.start, entity.end];
+  if (entity.type === 'circle') return [entity.center];
+  return entity.vertices;
+}

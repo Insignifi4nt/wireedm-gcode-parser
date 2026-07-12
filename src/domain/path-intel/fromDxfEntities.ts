@@ -31,6 +31,7 @@ export function createPathPlanningDocumentFromDxfEntities(
 ): PathPlanningDocument {
   const resolved = resolvePathPlanningOptions(options);
   const segmentBuild = pathSegmentsFromDxfEntities(entities, resolved);
+  const sourceDiagnostics = diagnosticsForSourceMetadata(sourceMetadata);
   const clusterResult = clusterSegmentEndpoints(segmentBuild.segments, resolved);
   const chainResult = buildChains(segmentBuild.segments, clusterResult, resolved);
   const contourResult = analyzeContours(chainResult.chains, segmentBuild.segments, resolved);
@@ -63,6 +64,7 @@ export function createPathPlanningDocumentFromDxfEntities(
     rootPathElementIds: pathElementTree.rootPathElementIds,
     plan,
     diagnostics: [
+      ...sourceDiagnostics,
       ...segmentBuild.diagnostics,
       ...clusterResult.diagnostics,
       ...chainResult.diagnostics,
@@ -85,11 +87,29 @@ export function pathSegmentsFromDxfEntities(
   const nextDiagnosticId = () => `diag_segment_${String(diagnostics.length + 1).padStart(4, '0')}`;
 
   entities.forEach((entity, sourceEntityIndex) => {
+    if (!layerPassesFilter(entity.layer, resolved)) {
+      diagnostics.push({
+        id: nextDiagnosticId(),
+        severity: 'info',
+        code: 'layer-filtered',
+        message: `Filtered DXF ${entity.type.toUpperCase()} at entity index ${sourceEntityIndex} from layer ${formatLayer(entity.layer)}.`,
+        details: {
+          sourceEntityIndex,
+          layer: entity.layer,
+          includeLayers: [...resolved.includeLayers],
+          excludeLayers: [...resolved.excludeLayers]
+        }
+      });
+      return;
+    }
+
+    const approximation = entity.type === 'line' ? entity.approximation : undefined;
     const baseSource: Omit<SegmentSourceRef, 'sourceSubIndex'> = {
       sourceEntityIndex,
-      sourceEntityType: entity.type,
+      sourceEntityType: approximation?.sourceEntityType ?? entity.type,
       layer: entity.layer,
-      exact: true,
+      exact: !approximation,
+      ...(approximation ? { approximation } : {}),
       ...(entity.handle ? { sourceEntityHandle: entity.handle } : {}),
       ...(entity.source ? { dxf: entity.source } : {})
     };
@@ -202,6 +222,48 @@ export function pathSegmentsFromDxfEntities(
   });
 
   return { segments, diagnostics };
+}
+
+function diagnosticsForSourceMetadata(
+  sourceMetadata: PathPlanningSourceMetadata
+): PathDiagnostic[] {
+  if (
+    sourceMetadata.coordinateScaleToMillimeters == null ||
+    sourceMetadata.units?.scaleToMillimeters != null
+  ) {
+    return [];
+  }
+
+  return [
+    {
+      id: 'diag_source_units_0001',
+      severity: 'warning',
+      code: 'units-assumed-millimeters',
+      message: sourceMetadata.units
+        ? `DXF units "${sourceMetadata.units.label}" have no known millimeter scale; coordinates were retained and assumed to be millimeters.`
+        : 'DXF units were not declared; coordinates were retained and assumed to be millimeters.',
+      details: {
+        coordinateScaleToMillimeters: sourceMetadata.coordinateScaleToMillimeters,
+        sourceUnitsCode: sourceMetadata.units?.code ?? null,
+        sourceUnitsLabel: sourceMetadata.units?.label ?? null
+      }
+    }
+  ];
+}
+
+function layerPassesFilter(
+  layer: string | null,
+  options: ReturnType<typeof resolvePathPlanningOptions>
+) {
+  const included =
+    options.includeLayers.length === 0 ||
+    (layer != null && options.includeLayers.includes(layer));
+  const excluded = layer != null && options.excludeLayers.includes(layer);
+  return included && !excluded;
+}
+
+function formatLayer(layer: string | null) {
+  return layer == null ? '(missing)' : `"${layer}"`;
 }
 
 interface LwPolylineBuildOptions {

@@ -1,4 +1,9 @@
-import type { DxfDrawingMetadata, DxfDrawingUnits, DxfEntitySource } from '@/domain/dxf/types';
+import type {
+  DxfApproximation,
+  DxfDrawingMetadata,
+  DxfDrawingUnits,
+  DxfEntitySource
+} from '@/domain/dxf/types';
 
 export interface Point2 {
   x: number;
@@ -29,11 +34,14 @@ export interface PathPlanningOptions {
   allowReverseClosedContours?: boolean;
   approximationMaxAngleRadians?: number;
   operationOrderStrategy?: OperationOrderStrategy;
+  includeLayers?: string[];
+  excludeLayers?: string[];
 }
 
 export type OperationOrderStrategy = 'inside-out-nearest' | 'nearest' | 'source-order';
 
 export interface PathPlanningSourceMetadata {
+  coordinateScaleToMillimeters?: number;
   drawing?: DxfDrawingMetadata;
   fileName?: string;
   importedAt?: string;
@@ -50,7 +58,9 @@ export const DEFAULT_PATH_PLANNING_OPTIONS: ResolvedPathPlanningOptions = {
   allowReverseOpenChains: false,
   allowReverseClosedContours: true,
   approximationMaxAngleRadians: Math.PI / 18,
-  operationOrderStrategy: 'inside-out-nearest'
+  operationOrderStrategy: 'inside-out-nearest',
+  includeLayers: [],
+  excludeLayers: []
 };
 
 export type DiagnosticSeverity = 'info' | 'warning' | 'error';
@@ -71,7 +81,9 @@ export interface PathDiagnostic {
     | 'degenerate-contour'
     | 'route-dependency-cycle'
     | 'post-bridged-gap'
-    | 'post-unexpected-gap';
+    | 'post-unexpected-gap'
+    | 'layer-filtered'
+    | 'units-assumed-millimeters';
   message: string;
   relatedSegmentIds?: SegmentId[];
   relatedClusterIds?: EndpointClusterId[];
@@ -108,6 +120,7 @@ export interface SegmentSourceRef {
   sourceSubIndex?: number;
   layer: string | null;
   exact: boolean;
+  approximation?: DxfApproximation;
   dxf?: DxfEntitySource;
   edit?: SegmentEditProvenance;
   note?: string;
