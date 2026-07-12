@@ -579,13 +579,16 @@ describe('path-intel DXF planning', () => {
       [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)],
       { endpointTolerance: DEFAULT_TOLERANCE }
     );
-    const body = pathPlanToGcodeBody(document.plan, document.segments, {
+    const posted = postPathPlanToGcode(document.plan, document.segments, {
       endpointTolerance: DEFAULT_TOLERANCE
     });
+    const body = posted.body;
 
+    expect(posted.status).toBe('ready');
     expect(document.plan.operations).toHaveLength(2);
     expect(countRapids(body)).toBe(2);
     expect(countCutMoves(body)).toBe(8);
+    expect(posted.moves.filter((move) => move.reason === 'operation-start')).toHaveLength(2);
     expect(document.plan.metrics.totalRapidLength).toBeGreaterThan(0);
   });
 
@@ -683,11 +686,383 @@ describe('path-intel DXF planning', () => {
       endpointTolerance: DEFAULT_TOLERANCE
     });
 
+    expect(posted.status).toBe('ready');
     expect(document.chains.filter((chain) => chain.closed)).toHaveLength(1);
     expect(document.contours[0].classification).toBe('exterior');
     expect(document.diagnostics.some((diagnostic) => diagnostic.code === 'endpoint-cluster-snap')).toBe(true);
     expect(posted.diagnostics.some((diagnostic) => diagnostic.code === 'post-bridged-gap')).toBe(true);
     expect(countRapids(posted.body)).toBe(1);
+  });
+
+  it('blocks an unexpected intra-operation gap atomically instead of inserting a rapid', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 10, 0),
+      line(10, 0, 20, 0)
+    ]);
+    const secondRef = document.plan.operations[0].segmentRefs[1];
+    const secondSegment = document.segments.find((segment) => segment.id === secondRef.segmentId)!;
+    secondSegment.start = { x: 12, y: 0 };
+
+    const posted = postPathPlanToGcode(document.plan, document.segments, {
+      endpointTolerance: 0.01,
+      coincidenceEpsilon: 0.000001
+    });
+
+    expect(posted.status).toBe('blocked');
+    expect(posted.body).toBe('');
+    expect(posted.moves).toEqual([]);
+    expect(posted.operations).toEqual([]);
+    expect(posted.metrics).toEqual({ rapidCount: 0, cutMoveCount: 0 });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'post-unexpected-gap', severity: 'error' })
+    );
+    expect(posted.diagnostics.find((diagnostic) => diagnostic.code === 'post-unexpected-gap')?.message)
+      .not.toContain('Inserted a rapid move');
+  });
+
+  it('does not let componentwise coincidence hide a diagonal gap beyond low-level tolerance', () => {
+    const epsilon = 0.00001;
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [
+        line(0, 0, 1, 0),
+        line(1 + 0.9 * epsilon, 0.9 * epsilon, 2, 0)
+      ],
+      { endpointTolerance: epsilon, coincidenceEpsilon: epsilon }
+    );
+
+    const posted = postPathPlanToGcode(document.plan, document.segments, {
+      endpointTolerance: epsilon,
+      coincidenceEpsilon: epsilon
+    });
+
+    expect(posted).toMatchObject({
+      status: 'blocked',
+      body: '',
+      moves: [],
+      operations: []
+    });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'post-unexpected-gap', severity: 'error' })
+    );
+  });
+
+  it('blocks missing segment refs and non-finite executable geometry without throwing', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([line(0, 0, 10, 0)]);
+    const missingPlan = structuredClone(document.plan);
+    missingPlan.operations[0].segmentRefs[0].segmentId = 'seg_missing';
+    const nonFiniteSegments = structuredClone(document.segments);
+    nonFiniteSegments[0].end.x = Number.NaN;
+
+    const missing = postPathPlanToGcode(missingPlan, document.segments);
+    const nonFinite = postPathPlanToGcode(document.plan, nonFiniteSegments);
+
+    expect(missing).toMatchObject({ status: 'blocked', body: '', moves: [], operations: [] });
+    expect(nonFinite).toMatchObject({ status: 'blocked', body: '', moves: [], operations: [] });
+    expect(missing.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'post-invalid-input', severity: 'error' })
+    );
+    expect(nonFinite.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'post-invalid-input', severity: 'error' })
+    );
+  });
+
+  it('formats every coordinate word at the normalized post precision', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(-0.0004, -0, 1.234567, -0.0004)
+    ]);
+
+    const precision3 = postPathPlanToGcode(document.plan, document.segments, {
+      coordinatePrecision: 3
+    });
+    const precision5 = postPathPlanToGcode(document.plan, document.segments, {
+      coordinatePrecision: 5
+    });
+    const precision0 = postPathPlanToGcode(document.plan, document.segments, {
+      coordinatePrecision: 0
+    });
+    const precision6 = postPathPlanToGcode(document.plan, document.segments, {
+      coordinatePrecision: 6
+    });
+    const invalid = postPathPlanToGcode(document.plan, document.segments, {
+      coordinatePrecision: 8
+    });
+
+    expect(precision3.body).toContain('X1.235 Y0.000');
+    expect(precision5.body).toContain('X1.23457 Y-0.00040');
+    expect(precision0.body).toContain('X1 Y0');
+    expect(precision6.body).toContain('X1.234567 Y-0.000400');
+    expect(invalid.body).toContain('X1.235 Y0.000');
+    expect([precision3, precision5, precision0, precision6, invalid].every(
+      (posted) => posted.status === 'ready'
+    )).toBe(true);
+    expect(precision3.body).not.toMatch(/(?:X|Y|I|J)-0(?:\.0+)?\b/);
+    expect(precision0.body).not.toMatch(/(?:X|Y|I|J)-0\b/);
+  });
+
+  it('formats absolute and incremental arc centers at the requested precision', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 1.234567, y: 2.345678 },
+        radius: 1,
+        startAngle: 0,
+        endAngle: 90,
+        clockwise: false,
+        start: { x: 2.234567, y: 2.345678 },
+        end: { x: 1.234567, y: 3.345678 }
+      }
+    ]);
+
+    const incremental = postPathPlanToGcode(document.plan, document.segments, {
+      arcCenterMode: 'incremental',
+      coordinatePrecision: 5
+    });
+    const absolute = postPathPlanToGcode(document.plan, document.segments, {
+      arcCenterMode: 'absolute',
+      coordinatePrecision: 5
+    });
+
+    expect(incremental.body).toContain('I-1.00000 J0.00000');
+    expect(absolute.body).toContain('I1.23457 J2.34568');
+  });
+
+  it('blocks incremental center subtraction overflow before interpolation', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 1,
+        startAngle: 0,
+        endAngle: 90,
+        clockwise: false,
+        start: { x: 1, y: 0 },
+        end: { x: 0, y: 1 }
+      }
+    ]);
+    const segments = structuredClone(document.segments);
+    const segment = segments[0];
+    if (segment.kind !== 'arc') throw new Error('Expected test arc.');
+    segment.center.x = Number.MAX_VALUE;
+    segment.start.x = -Number.MAX_VALUE;
+
+    const posted = postPathPlanToGcode(document.plan, segments, {
+      arcCenterMode: 'incremental'
+    });
+
+    expect(posted).toMatchObject({
+      status: 'blocked',
+      body: '',
+      moves: [],
+      operations: [],
+      metrics: { rapidCount: 0, cutMoveCount: 0 }
+    });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'post-invalid-input',
+        severity: 'error',
+        message: expect.stringContaining('arc-center offset')
+      })
+    );
+  });
+
+  it.each(['collapsed-center', 'radius-mismatch', 'invalid-clockwise'])(
+    'blocks finite but non-executable arc geometry: %s',
+    (variant) => {
+      const document = createPathPlanningDocumentFromDxfEntities([
+        {
+          type: 'arc',
+          layer: 'CUT',
+          center: { x: 0, y: 0 },
+          radius: 1,
+          startAngle: 0,
+          endAngle: 90,
+          clockwise: false,
+          start: { x: 1, y: 0 },
+          end: { x: 0, y: 1 }
+        }
+      ]);
+      const segments = structuredClone(document.segments);
+      const segment = segments[0];
+      if (segment.kind !== 'arc') throw new Error('Expected test arc.');
+      if (variant === 'collapsed-center') segment.center = { ...segment.start };
+      if (variant === 'radius-mismatch') segment.radius = 2;
+      if (variant === 'invalid-clockwise') segment.clockwise = 'yes' as never;
+
+      const posted = postPathPlanToGcode(document.plan, segments);
+
+      expect(posted).toMatchObject({
+        status: 'blocked',
+        body: '',
+        moves: [],
+        operations: [],
+        metrics: { rapidCount: 0, cutMoveCount: 0 }
+      });
+      expect(posted.diagnostics).toContainEqual(
+        expect.objectContaining({ code: 'post-invalid-input', severity: 'error' })
+      );
+    }
+  );
+
+  it('blocks an arc that collapses into zero-radius words at the selected precision', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 0.4,
+        startAngle: 0,
+        endAngle: 90,
+        clockwise: false,
+        start: { x: 0.4, y: 0 },
+        end: { x: 0, y: 0.4 }
+      }
+    ]);
+
+    const posted = postPathPlanToGcode(document.plan, document.segments, {
+      coordinatePrecision: 0
+    });
+
+    expect(posted).toMatchObject({
+      status: 'blocked',
+      body: '',
+      moves: [],
+      operations: [],
+      metrics: { rapidCount: 0, cutMoveCount: 0 }
+    });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'post-invalid-input', severity: 'error' })
+    );
+  });
+
+  it('blocks circle halves that collapse at the selected precision', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 0.4 }
+    ]);
+
+    const posted = postPathPlanToGcode(document.plan, document.segments, {
+      coordinatePrecision: 0
+    });
+
+    expect(posted).toMatchObject({
+      status: 'blocked',
+      body: '',
+      moves: [],
+      operations: [],
+      metrics: { rapidCount: 0, cutMoveCount: 0 }
+    });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'post-invalid-input', severity: 'error' })
+    );
+  });
+
+  it('blocks an arc whose rounded start and end radii disagree', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 1,
+        startAngle: 0,
+        endAngle: 53.13010235415598,
+        clockwise: false,
+        start: { x: 1, y: 0 },
+        end: { x: 0.6, y: 0.8 }
+      }
+    ]);
+
+    const posted = postPathPlanToGcode(document.plan, document.segments, {
+      coordinatePrecision: 0
+    });
+
+    expect(posted).toMatchObject({
+      status: 'blocked',
+      body: '',
+      moves: [],
+      operations: [],
+      metrics: { rapidCount: 0, cutMoveCount: 0 }
+    });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'post-invalid-input', severity: 'error' })
+    );
+  });
+
+  it('keeps ordinary decimal quantization inside the formatted arc-radius allowance', () => {
+    const endAngle = 42.65;
+    const endRadians = (endAngle * Math.PI) / 180;
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 1,
+        startAngle: 0,
+        endAngle,
+        clockwise: false,
+        start: { x: 1, y: 0 },
+        end: { x: Math.cos(endRadians), y: Math.sin(endRadians) }
+      }
+    ]);
+
+    expect(postPathPlanToGcode(document.plan, document.segments, {
+      coordinatePrecision: 3
+    }).status).toBe('ready');
+  });
+
+  it('blocks a raw-coincident join that rounds to a different machine arc start', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 0.499999, 0),
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 1.500001, y: 0 },
+        radius: 1,
+        startAngle: 180,
+        endAngle: 90,
+        clockwise: true,
+        start: { x: 0.500001, y: 0 },
+        end: { x: 1.500001, y: 1 }
+      }
+    ]);
+
+    const posted = postPathPlanToGcode(document.plan, document.segments, {
+      coordinatePrecision: 0
+    });
+
+    expect(posted).toMatchObject({
+      status: 'blocked',
+      body: '',
+      moves: [],
+      operations: [],
+      metrics: { rapidCount: 0, cutMoveCount: 0 }
+    });
+  });
+
+  it('blocks an arc whose stored sweep disagrees with its endpoints', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 1,
+        startAngle: 0,
+        endAngle: 90,
+        clockwise: false,
+        start: { x: 1, y: 0 },
+        end: { x: 0, y: 1 }
+      }
+    ]);
+    const segment = document.segments[0];
+    if (segment.kind !== 'arc') throw new Error('Expected test arc.');
+    segment.sweepRadians = (3 * Math.PI) / 2;
+
+    expect(postPathPlanToGcode(document.plan, document.segments)).toMatchObject({
+      status: 'blocked',
+      body: '',
+      moves: [],
+      operations: []
+    });
   });
 
   it('treats micron endpoint jitter as coincident instead of diagnostic repair', () => {

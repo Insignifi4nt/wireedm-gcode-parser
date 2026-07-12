@@ -64,7 +64,8 @@ describe('initializeWorkbenchDirectory', () => {
       projects: [],
       output: {
         extension: 'iso',
-        lineEnding: 'crlf'
+        lineEnding: 'crlf',
+        coordinatePrecision: 3
       },
       templates: {
         headerPath: 'templates/header.gcode',
@@ -121,6 +122,8 @@ describe('initializeWorkbenchDirectory', () => {
     expect(result.manifest.createdAt).toBe('2026-05-28T08:00:00.000Z');
     expect(result.manifest.updatedAt).toBe('2026-05-29T12:00:00.000Z');
     expect(result.manifest.output.extension).toBe('nc');
+    expect(result.manifest.output.coordinatePrecision).toBe(3);
+    expect(result.activeMachineProfile.output.coordinatePrecision).toBe(3);
     expect(result.manifest.projects).toHaveLength(1);
   });
 });

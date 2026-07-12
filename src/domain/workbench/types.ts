@@ -22,6 +22,7 @@ export interface OutputFormat {
   extension: OutputExtension;
   customExtension?: string;
   lineEnding: 'lf' | 'crlf';
+  coordinatePrecision: number;
 }
 
 export interface MachineWorkArea {

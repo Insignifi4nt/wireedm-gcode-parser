@@ -22,7 +22,8 @@ export function createDefaultMachineProfile(): MachineProfile {
     },
     output: {
       extension: 'iso',
-      lineEnding: 'crlf'
+      lineEnding: 'crlf',
+      coordinatePrecision: 3
     },
     workArea: {
       widthMm: null,

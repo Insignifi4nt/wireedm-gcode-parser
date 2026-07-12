@@ -86,6 +86,13 @@ export interface PathDiagnostic {
     | 'route-dependency-cycle'
     | 'post-bridged-gap'
     | 'post-unexpected-gap'
+    | 'post-invalid-input'
+    | 'upid-duplicate-id'
+    | 'upid-invalid-value'
+    | 'upid-missing-reference'
+    | 'upid-identity-mismatch'
+    | 'upid-discontinuity'
+    | 'upid-broken-closure'
     | 'layer-filtered'
     | 'units-assumed-millimeters';
   message: string;

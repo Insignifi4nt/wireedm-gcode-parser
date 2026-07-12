@@ -1,10 +1,10 @@
 import type { DxfDrawingUnits, DxfEntity } from '@/domain/dxf/types';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import {
-  pathPlanToGcodeBody,
   postPathPlanToGcode,
   type GcodePostedMove,
   type GcodePostedOperation,
+  type GcodePostResult,
   type GcodePostOptions
 } from '@/domain/path-intel/postGcode';
 import {
@@ -33,12 +33,14 @@ import {
   type UpidManualOrderDecision,
   type UpidManualStartDecision
 } from './manualDecisions';
+import { validateUpidDocument } from './validateUpidDocument';
 
 export const UPID_FORMAT_NAME = 'Universal Path Intelligence Document';
 
 export type UniversalPathIntelligenceDocument = PathPlanningDocument;
 
 export interface ComposeUpidGCodeExportInput {
+  coordinatePrecision?: number;
   footer: string;
   header: string;
   lineEnding?: 'lf' | 'crlf';
@@ -46,6 +48,8 @@ export interface ComposeUpidGCodeExportInput {
 
 export interface UpidGCodeExport {
   body: string;
+  blockingDiagnostics: PathDiagnostic[];
+  canDownload: boolean;
   diagnostics: PathDiagnostic[];
   documentTrace: UpidGCodeExportDocumentTrace;
   planning: UpidGCodeExportPlanning;
@@ -130,19 +134,21 @@ export function postUpidToGcodeBody(
   document: UniversalPathIntelligenceDocument,
   options: GcodePostOptions = {}
 ) {
-  return pathPlanToGcodeBody(document.plan, document.segments, {
-    ...document.options,
-    ...options
-  });
+  return postUpidToGcode(document, options).body;
 }
 
 export function postUpidToGcode(
   document: UniversalPathIntelligenceDocument,
   options: GcodePostOptions = {}
 ) {
+  const validation = validateUpidDocument(document);
+  if (!validation.valid) return blockedPost(validation.blockingDiagnostics);
+
   return postPathPlanToGcode(document.plan, document.segments, {
     ...document.options,
-    ...options
+    ...options,
+    endpointTolerance: effectiveDocumentEndpointTolerance(document),
+    coincidenceEpsilon: document.options.coincidenceEpsilon
   });
 }
 
@@ -151,10 +157,16 @@ export function composeUpidGCodeExport(
   input: ComposeUpidGCodeExportInput
 ): UpidGCodeExport {
   const post = postUpidToGcode(document, {
-    arcCenterMode: inferArcCenterModeFromHeader(input.header)
+    arcCenterMode: inferArcCenterModeFromHeader(input.header),
+    coordinatePrecision: input.coordinatePrecision
   });
   const body = post.body;
-  const diagnostics = [...document.diagnostics, ...post.diagnostics];
+  const documentDiagnostics = Array.isArray(document?.diagnostics) ? document.diagnostics : [];
+  const diagnostics = uniqueDiagnostics([...documentDiagnostics, ...post.diagnostics]);
+  const blockingDiagnostics =
+    post.status === 'blocked'
+      ? uniqueDiagnostics(post.diagnostics.filter((diagnostic) => diagnostic.severity === 'error'))
+      : [];
   const planning = summarizeExportPlanning(document);
   const program = composeGCodeProgramWithLineMap({
     header: input.header,
@@ -165,19 +177,52 @@ export function composeUpidGCodeExport(
 
   return {
     body,
+    blockingDiagnostics,
+    canDownload: post.status === 'ready',
     diagnostics,
     documentTrace: traceUpidDocumentForExport(document),
     planning,
     post,
     program,
-    programOperations: mapProgramOperations(document, post.operations, program),
+    programOperations:
+      post.status === 'ready' ? mapProgramOperations(document, post.operations, program) : [],
     summary: {
       ...planning,
       diagnosticCount: diagnostics.length,
-      operationCount: document.plan.operations.length,
+      operationCount: post.operations.length,
       postDiagnosticCount: post.diagnostics.length
     }
   };
+}
+
+function blockedPost(diagnostics: PathDiagnostic[]): GcodePostResult {
+  return {
+    status: 'blocked',
+    body: '',
+    diagnostics: uniqueDiagnostics(diagnostics),
+    metrics: { rapidCount: 0, cutMoveCount: 0 },
+    moves: [],
+    operations: []
+  };
+}
+
+function effectiveDocumentEndpointTolerance(document: UniversalPathIntelligenceDocument) {
+  return Math.max(
+    document.options.endpointTolerance,
+    document.options.coincidenceEpsilon,
+    ...document.endpointClusters
+      .filter((cluster) => cluster.method === 'within-tolerance')
+      .map((cluster) => cluster.toleranceUsed)
+  );
+}
+
+function uniqueDiagnostics(diagnostics: PathDiagnostic[]) {
+  const seen = new Set<string>();
+  return diagnostics.filter((diagnostic) => {
+    if (seen.has(diagnostic.id)) return false;
+    seen.add(diagnostic.id);
+    return true;
+  });
 }
 
 function inferArcCenterModeFromHeader(header: string): GcodePostOptions['arcCenterMode'] {
@@ -200,30 +245,40 @@ function inferArcCenterModeFromHeader(header: string): GcodePostOptions['arcCent
 function traceUpidDocumentForExport(
   document: UniversalPathIntelligenceDocument
 ): UpidGCodeExportDocumentTrace {
+  const source = document?.source ?? ({ kind: 'dxf-entities', entityCount: 0 } as const);
   return {
-    contourCount: document.contours.length,
-    fileName: document.source.fileName ?? null,
+    contourCount: Array.isArray(document?.contours) ? document.contours.length : 0,
+    fileName: source.fileName ?? null,
     format: UPID_FORMAT_NAME,
-    importedAt: document.source.importedAt ?? null,
-    operationCount: document.plan.operations.length,
-    pathElementCount: document.pathElements.length,
-    projectId: document.source.projectId ?? null,
-    schemaVersion: document.schemaVersion,
-    segmentCount: document.segments.length,
-    sourceEntityCount: document.source.entityCount,
-    sourceKind: document.source.kind,
-    sourceUnits: document.source.units ?? null
+    importedAt: source.importedAt ?? null,
+    operationCount: Array.isArray(document?.plan?.operations)
+      ? document.plan.operations.length
+      : 0,
+    pathElementCount: Array.isArray(document?.pathElements) ? document.pathElements.length : 0,
+    projectId: source.projectId ?? null,
+    schemaVersion: document?.schemaVersion ?? 1,
+    segmentCount: Array.isArray(document?.segments) ? document.segments.length : 0,
+    sourceEntityCount: Number.isInteger(source.entityCount) ? source.entityCount : 0,
+    sourceKind: source.kind === 'dxf-entities' ? source.kind : 'dxf-entities',
+    sourceUnits: source.units ?? null
   };
 }
 
 function summarizeExportPlanning(document: UniversalPathIntelligenceDocument): UpidGCodeExportPlanning {
-  const manualDecisionSummary = summarizeUpidManualDecisions(document.plan.operations);
+  const operations = Array.isArray(document?.plan?.operations) ? document.plan.operations : [];
+  const manualDecisionSummary = summarizeUpidManualDecisions(operations);
+  const operationOrderStrategy = document?.options?.operationOrderStrategy;
 
   return {
     manualDecisionCount: manualDecisionSummary.count,
     manualDecisionCounts: manualDecisionSummary.counts,
     manualOrderCount: manualDecisionSummary.counts.order,
-    operationOrderStrategy: document.options.operationOrderStrategy
+    operationOrderStrategy:
+      operationOrderStrategy === 'nearest' ||
+      operationOrderStrategy === 'source-order' ||
+      operationOrderStrategy === 'inside-out-nearest'
+        ? operationOrderStrategy
+        : 'inside-out-nearest'
   };
 }
 

@@ -24,7 +24,7 @@ export function normalizeMachineProfile(profile: Partial<MachineProfile> | null 
 export function machineProfileFromLegacySettings(input: {
   header: string;
   footer: string;
-  output: OutputFormat;
+  output: Partial<OutputFormat> & Pick<OutputFormat, 'extension' | 'lineEnding'>;
 }) {
   const fallback = createDefaultMachineProfile();
 
@@ -34,7 +34,7 @@ export function machineProfileFromLegacySettings(input: {
       header: input.header,
       footer: input.footer
     },
-    output: input.output
+    output: normalizeOutput(input.output)
   });
 }
 
@@ -62,10 +62,13 @@ export function activeMachineProfileFromList(
   );
 }
 
-export function normalizeOutput(output: OutputFormat): OutputFormat {
+export function normalizeOutput(
+  output: Partial<OutputFormat> & Pick<OutputFormat, 'extension' | 'lineEnding'>
+): OutputFormat {
   const normalized: OutputFormat = {
     extension: output.extension,
-    lineEnding: output.lineEnding
+    lineEnding: output.lineEnding,
+    coordinatePrecision: normalizeCoordinatePrecision(output.coordinatePrecision)
   };
 
   if (output.extension === 'custom') {
@@ -74,6 +77,12 @@ export function normalizeOutput(output: OutputFormat): OutputFormat {
   }
 
   return normalized;
+}
+
+export function normalizeCoordinatePrecision(value: unknown) {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 6
+    ? value
+    : 3;
 }
 
 function normalizeNullableLimit(value: number | null | undefined) {

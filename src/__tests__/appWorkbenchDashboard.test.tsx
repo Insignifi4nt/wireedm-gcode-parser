@@ -279,6 +279,9 @@ describe('App dashboard and workbench shell', () => {
     const lineEnding = container.querySelector(
       'select[aria-label="Line ending"]'
     ) as HTMLSelectElement | null;
+    const coordinatePrecision = container.querySelector(
+      'input[aria-label="Coordinate precision"]'
+    ) as HTMLInputElement | null;
     const customExtension = container.querySelector(
       'input[aria-label="Custom output extension"]'
     ) as HTMLInputElement | null;
@@ -296,6 +299,10 @@ describe('App dashboard and workbench shell', () => {
     expect(footerEditor).not.toBeNull();
     expect(outputExtension).not.toBeNull();
     expect(lineEnding).not.toBeNull();
+    expect(coordinatePrecision).not.toBeNull();
+    expect(coordinatePrecision?.min).toBe('0');
+    expect(coordinatePrecision?.max).toBe('6');
+    expect(coordinatePrecision?.step).toBe('1');
     expect(machineName).not.toBeNull();
     expect(workAreaWidth).not.toBeNull();
     expect(workAreaLength).not.toBeNull();
@@ -305,6 +312,7 @@ describe('App dashboard and workbench shell', () => {
       if (footerEditor) setTextAreaValue(footerEditor, 'CUSTOM FOOTER\n%');
       if (outputExtension) setSelectValue(outputExtension, 'custom');
       if (lineEnding) setSelectValue(lineEnding, 'lf');
+      if (coordinatePrecision) setInputValue(coordinatePrecision, '5');
       if (machineName) setInputValue(machineName, 'Shop Wire EDM');
       if (workAreaWidth) setInputValue(workAreaWidth, '320.5');
       if (workAreaLength) setInputValue(workAreaLength, '470');
@@ -338,7 +346,8 @@ describe('App dashboard and workbench shell', () => {
         output: {
           extension: 'custom',
           customExtension: '.CUT',
-          lineEnding: 'lf'
+          lineEnding: 'lf',
+          coordinatePrecision: 5
         },
         workArea: {
           widthMm: 320.5,
@@ -360,7 +369,8 @@ describe('App dashboard and workbench shell', () => {
     expect(manifest.output).toEqual({
       extension: 'custom',
       customExtension: 'cut',
-      lineEnding: 'lf'
+      lineEnding: 'lf',
+      coordinatePrecision: 5
     });
     expect(manifest.machineProfiles[0]).toMatchObject({
       name: 'Shop Wire EDM',
@@ -398,7 +408,8 @@ describe('App dashboard and workbench shell', () => {
     expect(project.machine.output).toEqual({
       extension: 'custom',
       customExtension: 'cut',
-      lineEnding: 'lf'
+      lineEnding: 'lf',
+      coordinatePrecision: 5
     });
     expect(project.machine.workArea).toEqual({
       widthMm: 320.5,
@@ -753,7 +764,8 @@ function createTemporaryWorkbench(): ConnectedWorkbench {
       },
       output: {
         extension: 'iso',
-        lineEnding: 'crlf'
+        lineEnding: 'crlf',
+        coordinatePrecision: 3
       },
       activeMachineProfileId: activeMachineProfile.id,
       machineProfiles: [activeMachineProfile],
@@ -788,7 +800,8 @@ function createDirectoryWorkbench(name: string): ConnectedWorkbench {
       },
       output: {
         extension: 'iso',
-        lineEnding: 'crlf'
+        lineEnding: 'crlf',
+        coordinatePrecision: 3
       },
       activeMachineProfileId: activeMachineProfile.id,
       machineProfiles: [activeMachineProfile],

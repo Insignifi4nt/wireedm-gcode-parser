@@ -4,7 +4,12 @@ import {
   pathSegmentsShareSweptLocus,
   spatialCellSizeForSegments
 } from './intersections';
-import { nextDown, nextUp, resolvePathPlanningOptions } from './segments';
+import {
+  nextDown,
+  nextUp,
+  normalizeAngle,
+  resolvePathPlanningOptions
+} from './segments';
 import { SpatialHash } from './spatialIndex';
 import type {
   PathDiagnostic,
@@ -33,7 +38,10 @@ export function sanitizePathSegments(
       diagnostics.push(nonFiniteGeometryDiagnostic(diagnostics.length, segment));
       continue;
     }
-    if (!pathSegmentHasExecutableCircularGeometry(segment, epsilon)) {
+    if (
+      !pathSegmentHasExecutableCircularGeometry(segment, epsilon) ||
+      !pathSegmentHasConsistentArcAngularGeometry(segment, epsilon)
+    ) {
       diagnostics.push(invalidCircularGeometryDiagnostic(diagnostics.length, segment));
       continue;
     }
@@ -127,7 +135,7 @@ function pathSegmentHasFiniteGeometry(segment: PathSegment) {
   );
 }
 
-function pathSegmentHasExecutableCircularGeometry(
+export function pathSegmentHasExecutableCircularGeometry(
   segment: PathSegment,
   epsilon: number
 ) {
@@ -151,6 +159,55 @@ function pathSegmentHasExecutableCircularGeometry(
   const endpointsCoincide =
     segment.start.x === segment.end.x && segment.start.y === segment.end.y;
   return !endpointsCoincide || fullTurn;
+}
+
+export function pathSegmentHasConsistentArcAngularGeometry(
+  segment: PathSegment,
+  epsilon: number
+) {
+  if (segment.kind !== 'arc') return true;
+  const fullTurn = 2 * Math.PI;
+  if (
+    typeof segment.clockwise !== 'boolean' ||
+    !Number.isFinite(segment.startAngleRadians) ||
+    !Number.isFinite(segment.endAngleRadians) ||
+    !Number.isFinite(segment.sweepRadians) ||
+    segment.sweepRadians === 0 ||
+    Math.abs(segment.sweepRadians) > fullTurn ||
+    (segment.clockwise ? segment.sweepRadians > 0 : segment.sweepRadians < 0) ||
+    segment.startAngleRadians < 0 ||
+    segment.startAngleRadians >= fullTurn ||
+    segment.endAngleRadians < 0 ||
+    segment.endAngleRadians >= fullTurn
+  ) {
+    return false;
+  }
+
+  const angularTolerance = Math.max(
+    128 * Number.EPSILON * fullTurn,
+    epsilon / segment.radius
+  );
+  const startFromPoint = normalizeAngle(
+    Math.atan2(
+      segment.start.y - segment.center.y,
+      segment.start.x - segment.center.x
+    )
+  );
+  const endFromPoint = normalizeAngle(
+    Math.atan2(segment.end.y - segment.center.y, segment.end.x - segment.center.x)
+  );
+  const endFromSweep = normalizeAngle(segment.startAngleRadians + segment.sweepRadians);
+
+  return (
+    angularDistance(segment.startAngleRadians, startFromPoint) <= angularTolerance &&
+    angularDistance(segment.endAngleRadians, endFromPoint) <= angularTolerance &&
+    angularDistance(segment.endAngleRadians, endFromSweep) <= angularTolerance
+  );
+}
+
+function angularDistance(left: number, right: number) {
+  const difference = Math.abs(normalizeAngle(left) - normalizeAngle(right));
+  return Math.min(difference, 2 * Math.PI - difference);
 }
 
 function radialPointMatchesRadius(

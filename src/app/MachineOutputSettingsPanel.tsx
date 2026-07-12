@@ -100,7 +100,7 @@ export function MachineOutputSettingsPanel({
             value={activeSettingsDraft.footer}
           />
         </label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <label className="grid gap-1 text-muted-foreground">
             Extension
             <select
@@ -136,6 +136,23 @@ export function MachineOutputSettingsPanel({
               <option value="crlf">CRLF</option>
               <option value="lf">LF</option>
             </select>
+          </label>
+          <label className="grid gap-1 text-muted-foreground">
+            Coordinate Precision
+            <input
+              aria-label="Coordinate precision"
+              className="technical-input technical-value px-2 text-[11px] outline-none"
+              disabled={settingsControlsDisabled}
+              inputMode="numeric"
+              min="0"
+              max="6"
+              onChange={(event) =>
+                updateSettingsDraft({ coordinatePrecision: event.currentTarget.value })
+              }
+              step="1"
+              type="number"
+              value={activeSettingsDraft.coordinatePrecision}
+            />
           </label>
         </div>
         {activeSettingsDraft.extension === 'custom' && (

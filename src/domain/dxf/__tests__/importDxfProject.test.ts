@@ -101,7 +101,8 @@ describe('importDxfProject', () => {
       },
       output: {
         extension: 'nc',
-        lineEnding: 'lf'
+        lineEnding: 'lf',
+        coordinatePrecision: 3
       },
       workArea: {
         widthMm: 30,

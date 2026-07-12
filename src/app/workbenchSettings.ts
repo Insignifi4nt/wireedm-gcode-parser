@@ -3,6 +3,7 @@ import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 import type { OutputExtension } from '@/domain/workbench/types';
 
 export interface SettingsDraft {
+  coordinatePrecision: string;
   customExtension: string;
   extension: OutputExtension;
   footer: string;
@@ -17,6 +18,7 @@ export interface SettingsDraft {
 export function settingsDraftFromWorkbench(workbench: ConnectedWorkbench | null): SettingsDraft {
   if (!workbench) {
     return {
+      coordinatePrecision: '3',
       customExtension: '',
       extension: 'iso',
       footer: '',
@@ -33,6 +35,7 @@ export function settingsDraftFromWorkbench(workbench: ConnectedWorkbench | null)
   const profile = workbench.activeMachineProfile;
 
   return {
+    coordinatePrecision: profile.output.coordinatePrecision.toString(),
     customExtension: output.customExtension ?? '',
     extension: output.extension,
     footer: workbench.footer,
@@ -47,6 +50,7 @@ export function settingsDraftFromWorkbench(workbench: ConnectedWorkbench | null)
       output.extension,
       output.customExtension ?? '',
       output.lineEnding,
+      profile.output.coordinatePrecision,
       profile.name,
       profile.workArea.widthMm ?? '',
       profile.workArea.lengthMm ?? ''
@@ -75,7 +79,8 @@ export function workbenchSettingsInputFromDraft(
       output: {
         extension: draft.extension,
         customExtension,
-        lineEnding: draft.lineEnding
+        lineEnding: draft.lineEnding,
+        coordinatePrecision: numberOrNaN(draft.coordinatePrecision)
       },
       workArea: {
         widthMm: numberOrNull(draft.workAreaWidthMm),
@@ -85,7 +90,8 @@ export function workbenchSettingsInputFromDraft(
     output: {
       extension: draft.extension,
       customExtension,
-      lineEnding: draft.lineEnding
+      lineEnding: draft.lineEnding,
+      coordinatePrecision: numberOrNaN(draft.coordinatePrecision)
     }
   };
 }
@@ -94,4 +100,8 @@ function numberOrNull(value: string) {
   if (value.trim() === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function numberOrNaN(value: string) {
+  return value.trim() === '' ? Number.NaN : Number(value);
 }

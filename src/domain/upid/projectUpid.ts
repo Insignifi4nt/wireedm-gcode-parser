@@ -6,6 +6,7 @@ import {
   type UpidGCodeExport,
   type UniversalPathIntelligenceDocument
 } from './upidDocument';
+import { validateUpidDocument } from './validateUpidDocument';
 
 const PROJECT_UPID_FORMAT = 'upid';
 const PROJECT_UPID_SCHEMA_VERSION = 1;
@@ -79,7 +80,8 @@ export function composeProjectUpidGCodeExport(
   const exportProgram = composeUpidGCodeExport(pathDocument, {
     header: machine.templates.header,
     footer: machine.templates.footer,
-    lineEnding: machine.output.lineEnding
+    lineEnding: machine.output.lineEnding,
+    coordinatePrecision: machine.output.coordinatePrecision
   });
 
   return {
@@ -98,6 +100,15 @@ function requireProjectUpidDocument(
   projectId: string,
   document: UniversalPathIntelligenceDocument
 ) {
+  const validation = validateUpidDocument(document);
+  if (!validation.structurallyValid) {
+    throw new Error(
+      `Invalid UPID document: ${validation.structuralDiagnostics
+        .map((diagnostic) => diagnostic.message)
+        .join('; ')}`
+    );
+  }
+
   const documentProjectId = document.source.projectId;
   if (typeof documentProjectId !== 'string') {
     throw new Error(`UPID document project identity is required for ${projectId}.`);

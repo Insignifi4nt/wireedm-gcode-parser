@@ -54,6 +54,7 @@ describe('UPID document boundary', () => {
 
     const posted = postUpidToGcode(document);
 
+    expect(posted.status).toBe('ready');
     expect(posted.body).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
     expect(posted.moves.map((move) => move.text)).toEqual(posted.body.split('\n'));
     expect(posted.operations).toHaveLength(1);
@@ -137,6 +138,8 @@ describe('UPID document boundary', () => {
         source: 'dxf-insunits'
       }
     });
+    expect(exportProgram.canDownload).toBe(true);
+    expect(exportProgram.blockingDiagnostics).toEqual([]);
     expect(exportProgram.body).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
     expect(exportProgram.program.text).toBe('%\nG90 G21\nG0 X0.000 Y0.000\nG1 X10.000 Y0.000\nM30\n%\n');
     expect(exportProgram.program.sections.body).toEqual({
@@ -460,6 +463,60 @@ describe('UPID document boundary', () => {
     ]);
   });
 
+  it.each([
+    {
+      label: 'branched',
+      entities: [line(-1, 0, 0, 0), line(0, 0, 1, 0), line(0, 0, 0, 1)]
+    },
+    {
+      label: 'duplicate',
+      entities: [line(0, 0, 1, 0), line(0, 0, 1, 0)]
+    }
+  ])('blocks a $label UPID document atomically', ({ entities }) => {
+    const document = createUpidFromDxfEntities(entities);
+
+    const posted = postUpidToGcode(document);
+
+    expect(posted.status).toBe('blocked');
+    expect(posted.body).toBe('');
+    expect(posted.moves).toEqual([]);
+    expect(posted.operations).toEqual([]);
+    expect(posted.metrics).toEqual({ rapidCount: 0, cutMoveCount: 0 });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: 'error' })
+    );
+    expect(postUpidToGcodeBody(document)).toBe('');
+  });
+
+  it('retains configured header/footer context for a blocked export without a downloadable body', () => {
+    const document = createUpidFromDxfEntities([
+      line(-1, 0, 1, 0),
+      line(0, -1, 0, 1)
+    ]);
+
+    const exportProgram = composeUpidGCodeExport(document, {
+      header: '%\nG90 G21 G17 G40',
+      footer: 'M30\n%',
+      lineEnding: 'lf'
+    });
+
+    expect(exportProgram.canDownload).toBe(false);
+    expect(exportProgram.body).toBe('');
+    expect(exportProgram.blockingDiagnostics).toContainEqual(
+      expect.objectContaining({ severity: 'error', code: 'intersecting-topology' })
+    );
+    expect(exportProgram.program.text).toBe('%\nG90 G21 G17 G40\nM30\n%\n');
+    expect(exportProgram.post.status).toBe('blocked');
+    expect(exportProgram.post.moves).toEqual([]);
+    expect(exportProgram.post.operations).toEqual([]);
+    expect(exportProgram.post.metrics).toEqual({ rapidCount: 0, cutMoveCount: 0 });
+    expect(exportProgram.programOperations).toEqual([]);
+    expect(exportProgram.summary.operationCount).toBe(0);
+    expect(new Set(exportProgram.diagnostics.map((diagnostic) => diagnostic.id)).size).toBe(
+      exportProgram.diagnostics.length
+    );
+  });
+
   it('stamps projectless UPID documents when attaching them to a project', () => {
     const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
     const projectDocument = projectUpidDocument(withProjectUpid(baseProject(), document));
@@ -512,6 +569,28 @@ describe('UPID document boundary', () => {
     expect(exportProgram.documentTrace.projectId).toBe('upid-project');
     expect(exportProgram.pathDocument).toBe(document);
     expect(exportProgram.program.text).toBe('G0 X0.000 Y0.000\r\nG1 X4.000 Y0.000\r\n');
+  });
+
+  it('passes project machine coordinate precision into UPID posting', () => {
+    const project = withProjectUpid(
+      {
+        ...baseProject(),
+        machine: {
+          ...baseProject().machine,
+          output: {
+            ...baseProject().machine.output,
+            coordinatePrecision: 5
+          }
+        }
+      },
+      createUpidFromDxfEntities([line(0, 0, 1.234567, 0)])
+    );
+    const document = projectUpidDocument(project)!;
+
+    const exportProgram = composeProjectUpidGCodeExport(project, document);
+
+    expect(exportProgram.body).toContain('X1.23457');
+    expect(exportProgram.fileName).toBe('upid-project.iso');
   });
 
   it('rejects project UPID exports for documents outside the current project', () => {
@@ -583,6 +662,38 @@ describe('UPID document boundary', () => {
       'Unsupported UPID document schema version: 2.'
     );
   });
+
+  it('rejects structurally corrupt stored UPID but loads topology-blocked state for inspection', () => {
+    const healthy = withProjectUpid(
+      baseProject(),
+      createUpidFromDxfEntities([line(0, 0, 4, 0)])
+    );
+    const corrupt = structuredClone(healthy);
+    corrupt.upid!.document.plan.operations[0].segmentRefs[0].segmentId = 'seg_missing';
+    const topologyBlocked = withProjectUpid(
+      baseProject(),
+      createUpidFromDxfEntities([
+        line(-1, 0, 0, 0),
+        line(0, 0, 1, 0),
+        line(0, 0, 0, 1)
+      ])
+    );
+
+    expect(() => projectUpidDocument(corrupt)).toThrow('Invalid UPID document:');
+    expect(projectUpidDocument(topologyBlocked)?.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: 'error', code: 'branching-topology' })
+    );
+  });
+
+  it('reports a structurally malformed stored source through the UPID validation error', () => {
+    const project = withProjectUpid(
+      baseProject(),
+      createUpidFromDxfEntities([line(0, 0, 4, 0)])
+    );
+    project.upid!.document.source = null as never;
+
+    expect(() => projectUpidDocument(project)).toThrow('Invalid UPID document:');
+  });
 });
 
 function baseProject() {
@@ -605,7 +716,8 @@ function baseProject() {
       },
       output: {
         extension: 'iso' as const,
-        lineEnding: 'crlf' as const
+        lineEnding: 'crlf' as const,
+        coordinatePrecision: 3
       },
       workArea: {
         widthMm: null,

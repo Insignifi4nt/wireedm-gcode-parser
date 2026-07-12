@@ -45,7 +45,8 @@ describe('updateWorkbenchSettings', () => {
       footer: 'CUSTOM FOOTER\n%',
       output: {
         extension: 'nc',
-        lineEnding: 'lf'
+        lineEnding: 'lf',
+        coordinatePrecision: 5
       },
       now: new Date('2026-05-29T11:00:00.000Z')
     });
@@ -56,7 +57,8 @@ describe('updateWorkbenchSettings', () => {
     expect(adapter.files.get(FOOTER_TEMPLATE_PATH)).toBe('CUSTOM FOOTER\n%');
     expect(manifest.output).toEqual({
       extension: 'nc',
-      lineEnding: 'lf'
+      lineEnding: 'lf',
+      coordinatePrecision: 5
     });
     expect(manifest.updatedAt).toBe('2026-05-29T11:00:00.000Z');
     expect(updated.header).toBe('%\nCUSTOM HEADER');
@@ -70,7 +72,8 @@ describe('updateWorkbenchSettings', () => {
       },
       output: {
         extension: 'nc',
-        lineEnding: 'lf'
+        lineEnding: 'lf',
+        coordinatePrecision: 5
       }
     });
   });
@@ -95,7 +98,8 @@ describe('updateWorkbenchSettings', () => {
     expect(updated.manifest.output).toEqual({
       extension: 'custom',
       customExtension: 'cut',
-      lineEnding: 'crlf'
+      lineEnding: 'crlf',
+      coordinatePrecision: 3
     });
   });
 
@@ -153,7 +157,8 @@ describe('updateWorkbenchSettings', () => {
     expect(updated.activeMachineProfile.name).toBe('Profile name only');
     expect(updated.activeMachineProfile.output).toEqual({
       extension: 'nc',
-      lineEnding: 'lf'
+      lineEnding: 'lf',
+      coordinatePrecision: 3
     });
   });
 });

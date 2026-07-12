@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
-import { settingsDraftFromWorkbench } from './workbenchSettings';
+import {
+  settingsDraftFromWorkbench,
+  workbenchSettingsInputFromDraft
+} from './workbenchSettings';
 
 describe('settingsDraftFromWorkbench', () => {
   it('keeps the same source key when only manifest updatedAt changes', () => {
@@ -29,6 +32,41 @@ describe('settingsDraftFromWorkbench', () => {
     );
 
     expect(secondaryCacheDraft.sourceKey).not.toBe(browserCacheDraft.sourceKey);
+  });
+
+  it('keys drafts by coordinate precision and saves it through both output paths', () => {
+    const workbench = createWorkbench('2026-07-12T10:00:00.000Z');
+    const initialDraft = settingsDraftFromWorkbench(workbench);
+    const higherPrecisionWorkbench = {
+      ...workbench,
+      manifest: {
+        ...workbench.manifest,
+        output: {
+          ...workbench.manifest.output,
+          coordinatePrecision: 5
+        }
+      },
+      activeMachineProfile: {
+        ...workbench.activeMachineProfile,
+        output: {
+          ...workbench.activeMachineProfile.output,
+          coordinatePrecision: 5
+        }
+      }
+    };
+    const higherPrecisionDraft = settingsDraftFromWorkbench(higherPrecisionWorkbench);
+
+    expect(initialDraft.coordinatePrecision).toBe('3');
+    expect(higherPrecisionDraft.coordinatePrecision).toBe('5');
+    expect(higherPrecisionDraft.sourceKey).not.toBe(initialDraft.sourceKey);
+    expect(
+      workbenchSettingsInputFromDraft(higherPrecisionWorkbench, higherPrecisionDraft)
+    ).toMatchObject({
+      machineProfile: {
+        output: { coordinatePrecision: 5 }
+      },
+      output: { coordinatePrecision: 5 }
+    });
   });
 });
 
