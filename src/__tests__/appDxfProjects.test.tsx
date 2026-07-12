@@ -95,7 +95,7 @@ describe('App DXF imports and project library', () => {
     );
     expect(container.querySelector('svg[aria-label="G-code path preview"]')).toBeNull();
     expect(container.querySelector('[data-upid-segment-row]')?.textContent).toContain(
-      '0.000, 0.000 -> 10.000, 0.000'
+      '0.000, 0.000 → 10.000, 0.000'
     );
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
     expect(container.textContent).toContain('2 path items');
@@ -189,7 +189,7 @@ describe('App DXF imports and project library', () => {
     expect(manifest.projects[0].path).toContain('projects/library-open-');
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-row]')?.textContent).toContain(
-      '0.000, 0.000 -> 10.000, 0.000'
+      '0.000, 0.000 → 10.000, 0.000'
     );
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
   });
@@ -373,14 +373,17 @@ describe('App DXF imports and project library', () => {
 
     const diagnostics = container.querySelector('[data-upid-diagnostics]');
     const diagnosticRows = [...container.querySelectorAll('[data-upid-diagnostic-row]')];
+    const diagnosticCodes = diagnosticRows.map((row) => row.getAttribute('data-upid-diagnostic-code'));
+    const openChainRow = diagnosticRows.find(
+      (row) => row.getAttribute('data-upid-diagnostic-code') === 'open-chain'
+    );
 
     expect(diagnostics).not.toBeNull();
     expect(diagnostics?.textContent).toContain('Path Diagnostics');
-    expect(diagnostics?.textContent).toContain('1 issue');
-    expect(diagnosticRows).toHaveLength(1);
-    expect(diagnosticRows[0].getAttribute('data-upid-diagnostic-code')).toBe('open-chain');
-    expect(diagnosticRows[0].getAttribute('data-upid-diagnostic-severity')).toBe('warning');
-    expect(diagnosticRows[0].textContent).toContain('open chain');
+    expect(diagnosticCodes).toContain('units-assumed-millimeters');
+    expect(diagnosticCodes).toContain('open-chain');
+    expect(openChainRow?.getAttribute('data-upid-diagnostic-severity')).toBe('warning');
+    expect(openChainRow?.textContent).toContain('open chain');
   });
 
   it('highlights UPID geometry related to a path diagnostic', async () => {
@@ -399,7 +402,9 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const diagnosticRow = container.querySelector('[data-upid-diagnostic-row]') as HTMLElement | null;
+    const diagnosticRow = container.querySelector(
+      '[data-upid-diagnostic-row][data-upid-diagnostic-code="open-chain"]'
+    ) as HTMLElement | null;
     const segmentRow = container.querySelector('[data-upid-segment-row]') as HTMLElement | null;
     const segmentId = segmentRow?.getAttribute('data-upid-segment-id');
     const previewSegment = container.querySelector(
@@ -442,7 +447,9 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const diagnosticRow = container.querySelector('[data-upid-diagnostic-row]') as HTMLElement | null;
+    const diagnosticRow = container.querySelector(
+      '[data-upid-diagnostic-row][data-upid-diagnostic-code="open-chain"]'
+    ) as HTMLElement | null;
     const segmentRow = container.querySelector('[data-upid-segment-row]') as HTMLElement | null;
     const segmentId = segmentRow?.getAttribute('data-upid-segment-id');
     const previewSegment = container.querySelector(
@@ -508,11 +515,12 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    expect(container.textContent).toContain('Editor');
+    expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
+    expect(container.textContent).toContain('Path Project');
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
     expect(container.querySelector('[data-preview-source="path-document"]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-row]')?.textContent).toContain(
-      '0.000, 0.000 -> 10.000, 0.000'
+      '0.000, 0.000 → 10.000, 0.000'
     );
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
   });
@@ -1094,18 +1102,40 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const contourRow = container.querySelector('[data-upid-contour-row]');
-    const segmentRow = container.querySelector('[data-upid-segment-row]');
-    const pointRow = container.querySelector('[data-upid-point-row]');
+    const contourRow = container.querySelector('[data-upid-contour-row]') as HTMLButtonElement | null;
+    const segmentRow = container.querySelector('[data-upid-segment-row]') as HTMLButtonElement | null;
 
     expect(contourRow?.querySelector('[data-upid-contour-node-summary]')?.textContent).toContain(
-      'Closed contour'
+      'Closed'
     );
-    expect(contourRow?.getAttribute('title')).toContain('Selects and highlights the whole contour');
+    expect(contourRow?.getAttribute('aria-label')).toBe('Select Exterior 1');
+    expect(contourRow?.getAttribute('data-upid-contour-order')).toBe('1');
+    expect(
+      container.querySelector('[data-upid-contour-field="order"]')?.textContent
+    ).toBe('01');
+    expect(contourRow?.getAttribute('title')).toContain('closed contour');
+    expect(contourRow?.getAttribute('title')).toContain('depth 0');
     expect(segmentRow?.querySelector('[data-upid-segment-kind-label]')?.textContent).toContain('LINE segment');
-    expect(segmentRow?.getAttribute('title')).toContain('Selects and highlights one segment');
+    expect(segmentRow?.getAttribute('aria-label')).toBe('Select segment 1 in Exterior 1');
+    expect(segmentRow?.getAttribute('title')).toContain('forward reference');
+    expect(container.querySelector('[data-upid-point-row]')).toBeNull();
+
+    const segmentDisclosure = container.querySelector(
+      'button[aria-label="Expand segment 1 details in Exterior 1"]'
+    ) as HTMLButtonElement | null;
+    expect(segmentDisclosure?.getAttribute('aria-expanded')).toBe('false');
+
+    await act(async () => {
+      segmentDisclosure?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const pointRow = container.querySelector('[data-upid-point-row]');
     expect(pointRow?.querySelector('[data-upid-point-role-label]')?.textContent).toMatch(/START|END/);
     expect(pointRow?.getAttribute('title')).toContain('Endpoint cluster');
+    expect(pointRow?.querySelector('button[data-upid-point-select]')?.getAttribute('aria-label')).toBe(
+      'Select start endpoint of segment 1 in Exterior 1'
+    );
   });
 
   it('shows canvas command hints for path construction modes', async () => {
@@ -1247,9 +1277,14 @@ describe('App DXF imports and project library', () => {
       '1',
       '2'
     ]);
-    expect(contourRows[0].textContent).toContain('depth 0');
-    expect(contourRows[1].textContent).toContain('depth 1');
-    expect(contourRows[2].textContent).toContain('depth 2');
+    expect(contourRows[0].getAttribute('title')).toContain('depth 0');
+    expect(contourRows[1].getAttribute('title')).toContain('depth 1');
+    expect(contourRows[2].getAttribute('title')).toContain('depth 2');
+    const nestedSections = [...container.querySelectorAll('[data-upid-nested-contours-section]')];
+    expect(nestedSections).toHaveLength(2);
+    expect(nestedSections[0].textContent).toContain('Nested contours');
+    expect(nestedSections[0].textContent).toContain('inside Exterior 1');
+    expect(nestedSections[1].textContent).toContain('inside Hole 1');
     const contourGroups = [...container.querySelectorAll('[data-upid-contour-group]')];
     expect(contourGroups.map((group) => group.getAttribute('data-upid-tree-depth'))).toEqual([
       '0',
@@ -1267,7 +1302,6 @@ describe('App DXF imports and project library', () => {
     const cutSequence = container.querySelector('[data-upid-cut-sequence]');
     const cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
     expect(cutSequence).not.toBeNull();
-    expect(cutSequence?.textContent).toContain('Cut Sequence');
     expect(cutSequenceRows).toHaveLength(3);
     expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-label'))).toEqual([
       'Island 1',
@@ -2052,11 +2086,11 @@ describe('App DXF imports and project library', () => {
         '[data-upid-cut-sequence-row][data-upid-selected="true"] [data-upid-manual-decision="direction"]'
       )
     ).not.toBeNull();
-    expect(
-      container.querySelector(
-        '[data-upid-contour-row][data-upid-selected="true"] [data-upid-manual-decision="direction"]'
-      )
-    ).not.toBeNull();
+    const selectedContourRow = container.querySelector(
+      '[data-upid-contour-row][data-upid-selected="true"]'
+    );
+    expect(selectedContourRow?.getAttribute('data-upid-contour-manual')).toContain('direction');
+    expect(selectedContourRow?.getAttribute('title')).toContain('direction reverse');
 
     const preview = container.querySelector(
       'svg[aria-label="UPID path preview"]'
@@ -2103,11 +2137,11 @@ describe('App DXF imports and project library', () => {
         '[data-upid-cut-sequence-row][data-upid-selected="true"] [data-upid-manual-decision="start"]'
       )
     ).not.toBeNull();
-    expect(
-      container.querySelector(
-        '[data-upid-contour-row][data-upid-selected="true"] [data-upid-manual-decision="start"]'
-      )
-    ).not.toBeNull();
+    const selectedContourWithStart = container.querySelector(
+      '[data-upid-contour-row][data-upid-selected="true"]'
+    );
+    expect(selectedContourWithStart?.getAttribute('data-upid-contour-manual')).toContain('start');
+    expect(selectedContourWithStart?.getAttribute('title')).toContain('manual direction reverse, start');
     const manualDecisionSummary = container.querySelector('[data-upid-path-manual-decisions]');
     expect(manualDecisionSummary?.getAttribute('data-upid-path-manual-decision-count')).toBe('2');
     expect(manualDecisionSummary?.getAttribute('data-upid-path-manual-decision-direction')).toBe('1');
@@ -2294,6 +2328,8 @@ describe('App DXF imports and project library', () => {
     const downloadButton = container.querySelector(
       'button[aria-label="Download UPID export program"]'
     ) as HTMLButtonElement | null;
+    expect(downloadButton?.disabled).toBe(false);
+    expect(downloadButton?.getAttribute('aria-disabled')).toBe('false');
 
     await act(async () => {
       downloadButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -2303,6 +2339,88 @@ describe('App DXF imports and project library', () => {
       fileName: expect.stringMatching(/^export-preview-\d{4}-\d{2}-\d{2}\.iso$/),
       text: expect.stringContaining('G1 X10.000 Y0.000')
     });
+  });
+
+  it('blocks unsafe UPID export while keeping diagnostics and machine context inspectable', async () => {
+    window.showDirectoryPicker = undefined;
+    const downloadGeneratedProgram = vi.fn();
+
+    await renderApp(context, { downloadGeneratedProgram });
+
+    const fileInput = container.querySelector('input[aria-label="DXF file"]') as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File([branchedMillimeterDxf()], 'branched-export.dxf')],
+      configurable: true
+    });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const preview = container.querySelector('[data-upid-export-preview]');
+    const blockedBanner = container.querySelector('[data-upid-export-blocked]');
+    const downloadButton = container.querySelector(
+      'button[aria-label="Download UPID export program"]'
+    ) as HTMLButtonElement | null;
+    const blockingRows = [...container.querySelectorAll('[data-upid-export-diagnostic-blocking="true"]')];
+    const branchRow = container.querySelector(
+      '[data-upid-export-diagnostic-row][data-upid-export-diagnostic-code="branching-topology"]'
+    ) as HTMLElement | null;
+
+    expect(preview?.getAttribute('data-upid-export-readiness')).toBe('blocked');
+    expect(blockedBanner).not.toBeNull();
+    expect(blockedBanner?.textContent).toContain('Export blocked');
+    expect(Number(blockedBanner?.getAttribute('data-upid-export-blocking-count'))).toBeGreaterThan(0);
+    expect(blockingRows.length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('[data-upid-export-blocking-message]')).toHaveLength(blockingRows.length);
+    expect(branchRow).not.toBeNull();
+    expect(branchRow?.textContent).toContain('branch');
+    expect(downloadButton?.disabled).toBe(true);
+    expect(downloadButton?.getAttribute('aria-disabled')).toBe('true');
+
+    await act(async () => {
+      downloadButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(downloadGeneratedProgram).not.toHaveBeenCalled();
+
+    expect(container.querySelector('[data-upid-export-operation-row]')).toBeNull();
+    expect(container.querySelector('[data-upid-export-move-row]')).toBeNull();
+    expect(container.querySelector('[data-upid-export-program-section="body"]')).toBeNull();
+    expect(container.querySelector('[data-upid-export-program-section="header"]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-export-program-section="footer"]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-export-gcode]')?.textContent).toContain('G90 G21 G17 G40');
+    expect(container.querySelector('[data-upid-export-gcode]')?.textContent).toContain('M30');
+
+    const tracedSegmentId = branchRow?.getAttribute('data-upid-export-diagnostic-segment');
+    expect(tracedSegmentId).toBeTruthy();
+    const workbookSegment = container.querySelector(
+      `[data-upid-segment-row][data-upid-segment-id="${tracedSegmentId}"]`
+    );
+    const canvasSegment = container.querySelector(
+      `svg[aria-label="UPID path preview"] path[data-preview-segment="${tracedSegmentId}"]`
+    );
+
+    await act(async () => {
+      branchRow?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    expect(workbookSegment?.getAttribute('data-upid-hovered')).toBe('true');
+    expect(canvasSegment?.getAttribute('data-preview-hovered')).toBe('true');
+
+    await act(async () => {
+      branchRow?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+      branchRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(workbookSegment?.getAttribute('data-upid-selected')).toBe('true');
+    expect(canvasSegment?.getAttribute('data-preview-selected')).toBe('true');
   });
 
   it('summarizes UPID planning decisions in the export preview', async () => {
@@ -2491,31 +2609,38 @@ describe('App DXF imports and project library', () => {
 
     const exportDiagnostics = container.querySelector('[data-upid-export-diagnostics]');
     const diagnosticRows = [...container.querySelectorAll('[data-upid-export-diagnostic-row]')];
+    const openChainRow = diagnosticRows.find(
+      (row) => row.getAttribute('data-upid-export-diagnostic-code') === 'open-chain'
+    ) as HTMLElement | undefined;
 
-    expect(container.querySelector('[data-upid-export-stat="diagnostics"]')?.textContent).toBe('1');
+    expect(container.querySelector('[data-upid-export-stat="diagnostics"]')?.textContent).toBe(
+      String(diagnosticRows.length)
+    );
     expect(exportDiagnostics).not.toBeNull();
-    expect(diagnosticRows).toHaveLength(1);
-    expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-code')).toBe('open-chain');
-    expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-related-clusters')).toBe('2');
-    expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-related-segments')).toBe('1');
-    expect(diagnosticRows[0].getAttribute('data-upid-export-diagnostic-severity')).toBe('warning');
-    expect(diagnosticRows[0].textContent).toContain('open chain');
+    expect(diagnosticRows.map((row) => row.getAttribute('data-upid-export-diagnostic-code'))).toContain(
+      'units-assumed-millimeters'
+    );
+    expect(openChainRow).toBeDefined();
+    expect(openChainRow?.getAttribute('data-upid-export-diagnostic-related-clusters')).toBe('2');
+    expect(openChainRow?.getAttribute('data-upid-export-diagnostic-related-segments')).toBe('1');
+    expect(openChainRow?.getAttribute('data-upid-export-diagnostic-severity')).toBe('warning');
+    expect(openChainRow?.textContent).toContain('open chain');
 
     const affectedRefs = [
-      ...diagnosticRows[0].querySelectorAll('[data-upid-export-diagnostic-ref]')
+      ...(openChainRow?.querySelectorAll('[data-upid-export-diagnostic-ref]') ?? [])
     ] as HTMLElement[];
     expect(affectedRefs).toHaveLength(2);
     expect(affectedRefs[0].getAttribute('data-upid-export-diagnostic-ref-point-role')).toBe('start');
     expect(affectedRefs[1].getAttribute('data-upid-export-diagnostic-ref-point-role')).toBe('end');
 
-    const tracedPathElementId = diagnosticRows[0].getAttribute('data-upid-export-diagnostic-path-element');
-    const tracedSegmentId = diagnosticRows[0].getAttribute('data-upid-export-diagnostic-segment');
+    const tracedPathElementId = openChainRow?.getAttribute('data-upid-export-diagnostic-path-element');
+    const tracedSegmentId = openChainRow?.getAttribute('data-upid-export-diagnostic-segment');
 
     expect(tracedPathElementId).toBeTruthy();
     expect(tracedSegmentId).toBeTruthy();
 
     await act(async () => {
-      diagnosticRows[0].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      openChainRow?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
     });
 
     expect(
@@ -2525,7 +2650,7 @@ describe('App DXF imports and project library', () => {
     ).toBe('true');
 
     await act(async () => {
-      diagnosticRows[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      openChainRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(
@@ -2610,8 +2735,9 @@ describe('App DXF imports and project library', () => {
       hoverToggle?.click();
     });
 
+    await expandSegmentDetails(container, 0);
     const pointRows = [...container.querySelectorAll('[data-upid-point-row]')];
-    expect(pointRows).toHaveLength(8);
+    expect(pointRows).toHaveLength(2);
 
     const endpointRow = pointRows.find(
       (row) => row.getAttribute('data-upid-point-role') === 'end'
@@ -2675,6 +2801,7 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
+    await expandSegmentDetails(container, 0);
     const targetPointRow = [...container.querySelectorAll('[data-upid-point-row]')].find((row) =>
       row.textContent?.includes('10.000, 0.000')
     ) as HTMLElement | undefined;
@@ -2691,7 +2818,7 @@ describe('App DXF imports and project library', () => {
 
     expect(container.querySelector('[data-upid-selected="start"]')?.textContent).toBe('10.000, 0.000');
     expect(container.querySelectorAll('[data-upid-segment-row]')).toHaveLength(4);
-    expect(container.querySelectorAll('[data-upid-point-row]')).toHaveLength(8);
+    expect(container.querySelectorAll('[data-upid-point-row]')).toHaveLength(2);
     expect(
       container.querySelector(
         '[data-upid-cut-sequence-row][data-upid-selected="true"] [data-upid-manual-decision="start"]'
@@ -2719,6 +2846,7 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
+    await expandSegmentDetails(container, 1);
     const targetPointRow = container.querySelector(
       '[data-upid-point-row][data-upid-segment-index="1"][data-upid-point-role="start"]'
     ) as HTMLElement | null;
@@ -2776,10 +2904,10 @@ describe('App DXF imports and project library', () => {
       configurable: true
     });
 
-    const targetPointRow = container.querySelector(
-      '[data-upid-point-row][data-upid-segment-index="1"][data-upid-point-role="start"]'
-    ) as HTMLElement | null;
-    const targetSegmentId = targetPointRow?.getAttribute('data-upid-segment-id');
+    const targetSegmentId = container
+      .querySelectorAll('[data-upid-segment-row]')
+      .item(1)
+      .getAttribute('data-upid-segment-id');
     expect(targetSegmentId).toBeTruthy();
 
     const endpointHandle = container.querySelector(
@@ -3099,6 +3227,8 @@ describe('App DXF imports and project library', () => {
     expect(existingStartSegmentId).toBeTruthy();
     expect(existingStartPointRole).toBeTruthy();
 
+    await expandSegmentDetailsForSegment(container, existingStartSegmentId!);
+
     const hoverToggle = container.querySelector(
       'input[aria-label="Toggle canvas hover assist"]'
     ) as HTMLInputElement | null;
@@ -3250,6 +3380,7 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
+    await expandSegmentDetails(container, 1);
     const targetPointRow = container.querySelector(
       '[data-upid-point-row][data-upid-segment-index="1"][data-upid-point-role="start"]'
     ) as HTMLElement | null;
@@ -3313,7 +3444,10 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     expect(container.querySelector('[data-editor-posted-body-preview]')).toBeNull();
-    expect(container.querySelector('[data-upid-contour-row]')?.textContent).toContain('reverse');
+    expect(container.querySelector('[data-upid-contour-row]')?.getAttribute('data-upid-contour-manual')).toContain(
+      'direction'
+    );
+    expect(container.querySelector('[data-upid-contour-row]')?.getAttribute('title')).toContain('direction reverse');
     expect(container.querySelector('textarea[aria-label="Program editor"]')).toBeNull();
     expect(container.textContent).toContain('Unsaved');
 
@@ -3407,7 +3541,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     expect(container.querySelector('[data-editor-posted-body-preview]')).toBeNull();
-    expect(container.querySelector('[data-upid-contour-row]')?.textContent).toContain('forward');
+    expect(container.querySelector('[data-upid-contour-row]')?.getAttribute('title')).toContain('direction forward');
   });
 
   it('exports translated imported circle contours with shifted arc endpoints and valid IJ offsets', async () => {
@@ -4515,6 +4649,49 @@ function rectangleMillimeterDxf() {
   ].join('\n');
 }
 
+function branchedMillimeterDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'HEADER',
+    '9',
+    '$INSUNITS',
+    '70',
+    '4',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    ...lineEntityDxf(-10, 0, 0, 0),
+    ...lineEntityDxf(0, 0, 10, 0),
+    ...lineEntityDxf(0, 0, 0, 10),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function lineEntityDxf(startX: number, startY: number, endX: number, endY: number) {
+  return [
+    '0',
+    'LINE',
+    '8',
+    'CUT',
+    '10',
+    String(startX),
+    '20',
+    String(startY),
+    '11',
+    String(endX),
+    '21',
+    String(endY)
+  ];
+}
+
 function insertedBlockRectangleDxf() {
   return [
     '0',
@@ -4636,6 +4813,31 @@ async function selectFirstCutSequence(container: HTMLElement) {
   await act(async () => {
     firstCutSequence?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
+}
+
+async function expandSegmentDetails(container: HTMLElement, segmentIndex: number) {
+  const disclosure = container.querySelector(
+    `button[aria-label^="Expand segment ${segmentIndex + 1} details in "]`
+  ) as HTMLButtonElement | null;
+  expect(disclosure).not.toBeNull();
+
+  await act(async () => {
+    disclosure?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  await flushAsync();
+}
+
+async function expandSegmentDetailsForSegment(container: HTMLElement, segmentId: string) {
+  const disclosure = container
+    .querySelector(`[data-upid-segment-row][data-upid-segment-id="${segmentId}"]`)
+    ?.closest('[data-upid-segment-group]')
+    ?.querySelector('button[aria-label^="Expand segment "]') as HTMLButtonElement | null;
+  expect(disclosure).not.toBeNull();
+
+  await act(async () => {
+    disclosure?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  await flushAsync();
 }
 
 async function openMachineOutputSettings(container: HTMLElement) {

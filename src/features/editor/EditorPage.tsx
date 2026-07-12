@@ -584,7 +584,9 @@ export function EditorPage({
     const exportProgram = composeProjectUpidGCodeExport(program.project, pathDocumentDraft);
 
     return {
+      blockingDiagnostics: exportProgram.blockingDiagnostics,
       body: exportProgram.body,
+      canDownload: exportProgram.canDownload,
       diagnostics: exportProgram.diagnostics,
       documentTrace: exportProgram.documentTrace,
       fileName: exportProgram.fileName,
@@ -2361,12 +2363,17 @@ export function EditorPage({
       />
       {exportPreviewOpen && upidExport && (
         <EditorUpidExportPreview
+          blockingDiagnostics={upidExport.blockingDiagnostics}
+          canDownload={upidExport.canDownload}
           fileName={upidExport.fileName}
           diagnostics={upidExport.diagnostics}
           documentTrace={upidExport.documentTrace}
           machineName={upidExport.machineName}
           onClose={() => setExportPreviewOpen(false)}
-          onDownload={() => onDownloadEditorFile(upidExport.fileName, upidExport.programText)}
+          onDownload={() => {
+            if (!upidExport.canDownload) return;
+            onDownloadEditorFile(upidExport.fileName, upidExport.programText);
+          }}
           onHoverPathElement={setHoveredPathElement}
           onSelectPathElement={handleSelectPathElement}
           operationCount={upidExport.operationCount}
