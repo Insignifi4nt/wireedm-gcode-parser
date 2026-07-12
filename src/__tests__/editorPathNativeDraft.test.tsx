@@ -70,7 +70,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-export-preview]')).not.toBeNull();
   });
 
-  it('suppresses inconsistent posted cuts at the blocked preview boundary', async () => {
+  it('derives blocked readiness from blocking diagnostics and suppresses inconsistent posted cuts', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
     const pathDocument = project.upid!.document;
     const readyExport = composeProjectUpidGCodeExport(project, pathDocument);
@@ -90,7 +90,7 @@ describe('EditorPage UPID draft boundary', () => {
       root.render(
         <EditorUpidExportPreview
           blockingDiagnostics={[blockingDiagnostic]}
-          canDownload={false}
+          canDownload
           diagnostics={[blockingDiagnostic]}
           documentTrace={readyExport.documentTrace}
           fileName={readyExport.fileName}
@@ -108,6 +108,11 @@ describe('EditorPage UPID draft boundary', () => {
     });
 
     expect(container.querySelector('[data-upid-export-readiness="blocked"]')).not.toBeNull();
+    expect(
+      container.querySelectorAll(
+        '[data-upid-export-diagnostic-row][data-upid-export-diagnostic-code="branching-topology"]'
+      )
+    ).toHaveLength(1);
     expect(container.querySelector('[data-upid-export-operation-row]')).toBeNull();
     expect(container.querySelector('[data-upid-export-move-row]')).toBeNull();
     expect(container.querySelector('[data-upid-export-stat="operations"]')?.textContent).toBe('0');
@@ -120,10 +125,135 @@ describe('EditorPage UPID draft boundary', () => {
     const downloadButton = container.querySelector(
       'button[aria-label="Download UPID export program"]'
     ) as HTMLButtonElement | null;
+    expect(downloadButton?.disabled).toBe(true);
+    expect(downloadButton?.getAttribute('aria-disabled')).toBe('true');
     await act(async () => {
       downloadButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(onDownload).not.toHaveBeenCalled();
+  });
+
+  it('projects blockers omitted from general diagnostics as selectable rows', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    const pathDocument = project.upid!.document;
+    const readyExport = composeProjectUpidGCodeExport(project, pathDocument);
+    const blockingDiagnostic = {
+      id: 'blocking-only-diagnostic',
+      severity: 'error',
+      code: 'branching-topology',
+      message: 'Blocking-only diagnostic remains inspectable.',
+      relatedSegmentIds: [pathDocument.segments[0].id]
+    } satisfies PathDiagnostic;
+    const onHoverPathElement = vi.fn();
+    const onSelectPathElement = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorUpidExportPreview
+          blockingDiagnostics={[blockingDiagnostic]}
+          canDownload={false}
+          diagnostics={[]}
+          documentTrace={readyExport.documentTrace}
+          fileName={readyExport.fileName}
+          machineName={readyExport.machineName}
+          onClose={vi.fn()}
+          onDownload={vi.fn()}
+          onHoverPathElement={onHoverPathElement}
+          onSelectPathElement={onSelectPathElement}
+          operationCount={readyExport.summary.operationCount}
+          pathDocument={pathDocument}
+          planning={readyExport.planning}
+          postMetrics={readyExport.post.metrics}
+          postedOperations={readyExport.programOperations}
+          programLines={readyExport.program.lines}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-upid-export-blocking-message]')?.textContent).toContain(
+      'Blocking-only diagnostic remains inspectable.'
+    );
+    const row = container.querySelector(
+      '[data-upid-export-diagnostic-row][data-upid-export-diagnostic-id="blocking-only-diagnostic"]'
+    );
+    const mainAction = row?.querySelector(
+      'button[data-upid-export-diagnostic-main]'
+    ) as HTMLButtonElement | null;
+    expect(row).not.toBeNull();
+    expect(mainAction).not.toBeNull();
+
+    await act(async () => {
+      mainAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(onSelectPathElement).toHaveBeenCalledWith(
+      expect.objectContaining({ segmentId: pathDocument.segments[0].id })
+    );
+  });
+
+  it('keeps export diagnostic main and affected-ref actions as semantic siblings', async () => {
+    const project = projectWithUpid(pathDocumentFromArc());
+    const pathDocument = project.upid!.document;
+    const readyExport = composeProjectUpidGCodeExport(project, pathDocument);
+    const openChainDiagnostic = pathDocument.diagnostics.find(
+      (diagnostic) => diagnostic.code === 'open-chain'
+    );
+    if (!openChainDiagnostic) throw new Error('Expected the open arc fixture to expose open-chain diagnostics.');
+    const onHoverPathElement = vi.fn();
+    const onSelectPathElement = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorUpidExportPreview
+          blockingDiagnostics={[]}
+          canDownload
+          diagnostics={[openChainDiagnostic]}
+          documentTrace={readyExport.documentTrace}
+          fileName={readyExport.fileName}
+          machineName={readyExport.machineName}
+          onClose={vi.fn()}
+          onDownload={vi.fn()}
+          onHoverPathElement={onHoverPathElement}
+          onSelectPathElement={onSelectPathElement}
+          operationCount={readyExport.summary.operationCount}
+          pathDocument={pathDocument}
+          planning={readyExport.planning}
+          postMetrics={readyExport.post.metrics}
+          postedOperations={readyExport.programOperations}
+          programLines={readyExport.program.lines}
+        />
+      );
+    });
+
+    const row = container.querySelector(
+      '[data-upid-export-diagnostic-row][data-upid-export-diagnostic-code="open-chain"]'
+    );
+    const mainAction = row?.querySelector(
+      'button[data-upid-export-diagnostic-main]'
+    ) as HTMLButtonElement | null;
+    const affectedRefs = [
+      ...(row?.querySelectorAll('button[data-upid-export-diagnostic-ref]') ?? [])
+    ] as HTMLButtonElement[];
+    expect(row?.getAttribute('role')).toBeNull();
+    expect(row?.getAttribute('tabindex')).toBeNull();
+    expect(mainAction).not.toBeNull();
+    expect(affectedRefs).toHaveLength(2);
+    expect(mainAction?.contains(affectedRefs[0])).toBe(false);
+    expect(affectedRefs[1].getAttribute('data-upid-export-diagnostic-ref-point-role')).toBe('end');
+
+    await act(async () => {
+      affectedRefs[1].dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    });
+    expect(onHoverPathElement.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ pointRole: 'end', segmentId: pathDocument.segments[0].id })
+    );
+
+    onSelectPathElement.mockClear();
+    await act(async () => {
+      mainAction?.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
+    });
+    expect(onSelectPathElement).toHaveBeenCalledWith(
+      expect.objectContaining({ segmentId: pathDocument.segments[0].id })
+    );
   });
 
   it('keeps technical path status visible without opening an inspector panel', async () => {
@@ -657,6 +787,9 @@ describe('EditorPage UPID draft boundary', () => {
       '[data-upid-point-row][data-upid-point-role="start"]'
     ) as HTMLElement | null;
     const endpointSelect = endpointRow?.querySelector('[data-upid-point-select]') as HTMLButtonElement | null;
+    const endpointSetStart = endpointRow?.querySelector(
+      'button[aria-label="Set path start to this point"]'
+    ) as HTMLButtonElement | null;
     const leadInRow = container.querySelector('[data-upid-tree-row-kind="lead-in"]') as HTMLButtonElement | null;
 
     expect(contourRow?.getAttribute('aria-label')).toBe('Select Exterior 1');
@@ -672,6 +805,20 @@ describe('EditorPage UPID draft boundary', () => {
     ] as const) {
       expect(row).not.toBeNull();
       expect(focusTarget).not.toBeNull();
+
+      await act(async () => {
+        row?.dispatchEvent(
+          new PointerEvent('pointerover', { bubbles: true, pointerType: 'pen' })
+        );
+      });
+      expect(row?.getAttribute('data-upid-hovered')).toBe('true');
+
+      await act(async () => {
+        row?.dispatchEvent(
+          new PointerEvent('pointerout', { bubbles: true, pointerType: 'pen' })
+        );
+      });
+      expect(row?.getAttribute('data-upid-hovered')).not.toBe('true');
 
       await act(async () => {
         row?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
@@ -693,6 +840,57 @@ describe('EditorPage UPID draft boundary', () => {
       });
       expect(row?.getAttribute('data-upid-hovered')).not.toBe('true');
     }
+
+    await act(async () => {
+      endpointSetStart?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    });
+    expect(endpointRow?.getAttribute('data-upid-hovered')).toBe('true');
+
+    await act(async () => {
+      endpointSetStart?.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    });
+    expect(endpointRow?.getAttribute('data-upid-hovered')).not.toBe('true');
+  });
+
+  it('associates rich endpoint help with selection and Set Start actions', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+    await clickElement('button[aria-label="Expand segment 1 details in Exterior 1"]');
+
+    const endpointRow = container.querySelector(
+      '[data-upid-point-row][data-upid-point-role="start"]'
+    );
+    const endpointSelect = endpointRow?.querySelector(
+      'button[data-upid-point-select]'
+    ) as HTMLButtonElement | null;
+    const setStart = endpointRow?.querySelector(
+      'button[aria-label="Set path start to this point"]'
+    ) as HTMLButtonElement | null;
+    const helpId = endpointSelect?.getAttribute('aria-describedby');
+
+    expect(helpId).not.toBeNull();
+    expect(helpId ?? '').toMatch(/^upid-endpoint-help-/);
+    expect(setStart?.getAttribute('aria-describedby')).toBe(helpId);
+    expect(endpointSelect?.getAttribute('title')).toContain('start endpoint of segment 1');
+
+    const help = helpId ? container.querySelector(`#${helpId}`) : null;
+    expect(help?.getAttribute('data-upid-point-help')).toBe('start');
+    expect(help?.textContent).toContain('Endpoint cluster');
+    expect(help?.textContent).toContain('0.000, 0.000');
+
+    await act(async () => {
+      setStart?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    });
+    expect(endpointRow?.getAttribute('data-upid-hovered')).toBe('true');
   });
 
   it('shows selected contour subtree metrics in the inspector', async () => {

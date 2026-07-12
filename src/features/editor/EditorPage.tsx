@@ -2371,7 +2371,7 @@ export function EditorPage({
           machineName={upidExport.machineName}
           onClose={() => setExportPreviewOpen(false)}
           onDownload={() => {
-            if (!upidExport.canDownload) return;
+            if (!upidExport.canDownload || upidExport.blockingDiagnostics.length > 0) return;
             onDownloadEditorFile(upidExport.fileName, upidExport.programText);
           }}
           onHoverPathElement={setHoveredPathElement}

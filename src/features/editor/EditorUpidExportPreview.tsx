@@ -58,8 +58,9 @@ export function EditorUpidExportPreview({
   onHoverPathElement,
   onSelectPathElement
 }: EditorUpidExportPreviewProps) {
-  const visiblePostedOperations = canDownload ? postedOperations : [];
-  const visibleProgramLines = canDownload
+  const exportReady = canDownload && blockingDiagnostics.length === 0;
+  const visiblePostedOperations = exportReady ? postedOperations : [];
+  const visibleProgramLines = exportReady
     ? programLines
     : programLines.filter((line) => line.section !== 'body');
   const tracedMovesByProgramLine = new Map(
@@ -67,7 +68,8 @@ export function EditorUpidExportPreview({
       operation.moves.map((move) => [move.programLineNumber, move] as const)
     )
   );
-  const projectedDiagnostics = diagnostics.map((diagnostic) =>
+  const visibleDiagnostics = stableDiagnosticUnion(diagnostics, blockingDiagnostics);
+  const projectedDiagnostics = visibleDiagnostics.map((diagnostic) =>
     projectUpidPathDiagnostic(pathDocument, diagnostic)
   );
   const blockingDiagnosticIds = new Set(blockingDiagnostics.map((diagnostic) => diagnostic.id));
@@ -77,7 +79,7 @@ export function EditorUpidExportPreview({
       aria-label="UPID Export Preview"
       className="absolute inset-3 z-20 grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/98 font-mono text-[10px] shadow-2xl"
       data-upid-export-preview
-      data-upid-export-readiness={canDownload ? 'ready' : 'blocked'}
+      data-upid-export-readiness={exportReady ? 'ready' : 'blocked'}
     >
       <div className="flex min-w-0 items-center justify-between gap-2 border-b border-border bg-card px-2 py-2">
         <div className="min-w-0">
@@ -114,12 +116,12 @@ export function EditorUpidExportPreview({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button
-            aria-disabled={!canDownload}
+            aria-disabled={!exportReady}
             aria-label="Download UPID export program"
             className="flex h-7 items-center gap-1 border border-border px-2 text-[10px] text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!canDownload}
+            disabled={!exportReady}
             onClick={() => {
-              if (!canDownload) return;
+              if (!exportReady) return;
               onDownload();
             }}
             type="button"
@@ -142,7 +144,7 @@ export function EditorUpidExportPreview({
         className="grid gap-2 border-b border-border bg-background/55 px-2 py-2"
         data-upid-export-summary
       >
-        {!canDownload && (
+        {!exportReady && (
           <div
             aria-live="polite"
             className="border border-destructive/60 bg-destructive/10 px-2 py-1.5 text-destructive"
@@ -173,19 +175,19 @@ export function EditorUpidExportPreview({
         <dl className="grid grid-cols-2 gap-1 md:grid-cols-7">
           <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
             <dt className="text-[10px] uppercase text-muted-foreground">Operations</dt>
-            <dd data-upid-export-stat="operations">{canDownload ? operationCount : 0}</dd>
+            <dd data-upid-export-stat="operations">{exportReady ? operationCount : 0}</dd>
           </div>
           <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
             <dt className="text-[10px] uppercase text-muted-foreground">Rapid</dt>
-            <dd data-upid-export-stat="rapid">{canDownload ? postMetrics.rapidCount : 0}</dd>
+            <dd data-upid-export-stat="rapid">{exportReady ? postMetrics.rapidCount : 0}</dd>
           </div>
           <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
             <dt className="text-[10px] uppercase text-muted-foreground">Cut</dt>
-            <dd data-upid-export-stat="cut">{canDownload ? postMetrics.cutMoveCount : 0}</dd>
+            <dd data-upid-export-stat="cut">{exportReady ? postMetrics.cutMoveCount : 0}</dd>
           </div>
           <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
             <dt className="text-[10px] uppercase text-muted-foreground">Diagnostics</dt>
-            <dd data-upid-export-stat="diagnostics">{diagnostics.length}</dd>
+            <dd data-upid-export-stat="diagnostics">{visibleDiagnostics.length}</dd>
           </div>
           <div className="min-w-0 border border-border bg-card/60 px-2 py-1">
             <dt className="text-[10px] uppercase text-muted-foreground">Planning</dt>
@@ -405,6 +407,22 @@ export function EditorUpidExportPreview({
   );
 }
 
+function stableDiagnosticUnion(
+  diagnostics: PathDiagnostic[],
+  blockingDiagnostics: PathDiagnostic[]
+) {
+  const seen = new Set<string>();
+  const union: PathDiagnostic[] = [];
+
+  for (const diagnostic of [...diagnostics, ...blockingDiagnostics]) {
+    if (seen.has(diagnostic.id)) continue;
+    seen.add(diagnostic.id);
+    union.push(diagnostic);
+  }
+
+  return union;
+}
+
 function formatOperationOrderStrategy(strategy: OperationOrderStrategy) {
   if (strategy === 'source-order') return 'Source order';
   if (strategy === 'nearest') return 'Nearest travel';
@@ -440,42 +458,8 @@ function renderExportDiagnosticRow({
   const selectDiagnostic = () => {
     if (traceRef) onSelectPathElement?.(traceRef);
   };
-
-  return (
-    <div
-      aria-label={traceRef ? `Select export diagnostic ${diagnostic.code}` : undefined}
-      aria-disabled={traceRef ? undefined : true}
-      className="grid w-full gap-0.5 border-b border-border px-2 py-1 text-left outline-none last:border-b-0 hover:bg-accent"
-      data-upid-export-diagnostic-code={diagnostic.code}
-      data-upid-export-diagnostic-blocking={blocking ? 'true' : undefined}
-      data-upid-export-diagnostic-id={diagnostic.id}
-      data-upid-export-diagnostic-operation={traceRef?.operationId ?? undefined}
-      data-upid-export-diagnostic-path-element={traceRef?.pathElementId ?? undefined}
-      data-upid-export-diagnostic-related-clusters={diagnostic.relatedClusterCount}
-      data-upid-export-diagnostic-related-segments={diagnostic.relatedSegmentCount}
-      data-upid-export-diagnostic-row
-      data-upid-export-diagnostic-segment={traceRef?.segmentId ?? undefined}
-      data-upid-export-diagnostic-severity={diagnostic.severity}
-      key={diagnostic.id}
-      onClick={selectDiagnostic}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') selectDiagnostic();
-      }}
-      onBlur={() => {
-        if (traceRef) onHoverPathElement?.(null);
-      }}
-      onFocus={() => {
-        if (traceRef) onHoverPathElement?.(traceRef);
-      }}
-      onMouseEnter={() => {
-        if (traceRef) onHoverPathElement?.(traceRef);
-      }}
-      onMouseLeave={() => {
-        if (traceRef) onHoverPathElement?.(null);
-      }}
-      role={traceRef ? 'button' : undefined}
-      tabIndex={traceRef ? 0 : undefined}
-    >
+  const content = (
+    <>
       <span className="flex min-w-0 items-center justify-between gap-2">
         <span className="uppercase text-amber-200">{diagnostic.severity}</span>
         <span className="truncate text-muted-foreground">{diagnostic.code}</span>
@@ -499,8 +483,53 @@ function renderExportDiagnosticRow({
           ))}
         </span>
       )}
+    </>
+  );
+
+  return (
+    <div
+      className="border-b border-border last:border-b-0"
+      data-upid-export-diagnostic-code={diagnostic.code}
+      data-upid-export-diagnostic-blocking={blocking ? 'true' : undefined}
+      data-upid-export-diagnostic-id={diagnostic.id}
+      data-upid-export-diagnostic-operation={traceRef?.operationId ?? undefined}
+      data-upid-export-diagnostic-path-element={traceRef?.pathElementId ?? undefined}
+      data-upid-export-diagnostic-related-clusters={diagnostic.relatedClusterCount}
+      data-upid-export-diagnostic-related-segments={diagnostic.relatedSegmentCount}
+      data-upid-export-diagnostic-row
+      data-upid-export-diagnostic-segment={traceRef?.segmentId ?? undefined}
+      data-upid-export-diagnostic-severity={diagnostic.severity}
+      key={diagnostic.id}
+    >
+      {traceRef ? (
+        <button
+          aria-label={`Select export diagnostic ${diagnostic.code}`}
+          className="grid w-full gap-0.5 px-2 py-1 text-left outline-none hover:bg-accent"
+          data-upid-export-diagnostic-main
+          onBlur={() => onHoverPathElement?.(null)}
+          onClick={selectDiagnostic}
+          onFocus={() => onHoverPathElement?.(traceRef)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            selectDiagnostic();
+          }}
+          onMouseEnter={() => onHoverPathElement?.(traceRef)}
+          onMouseLeave={() => onHoverPathElement?.(null)}
+          type="button"
+        >
+          {content}
+        </button>
+      ) : (
+        <div className="grid w-full gap-0.5 px-2 py-1 text-left" data-upid-export-diagnostic-main-disabled>
+          {content}
+        </div>
+      )}
       {diagnostic.relatedRefs.length > 0 && (
-        <span className="flex min-w-0 flex-wrap gap-1 pt-0.5">
+        <div
+          className="flex min-w-0 flex-wrap gap-1 border-t border-border/60 px-2 py-1"
+          data-upid-export-diagnostic-refs
+        >
           {diagnostic.relatedRefs.map((ref, index) => (
             <button
               aria-label={`Select export diagnostic affected geometry ${index + 1}`}
@@ -513,10 +542,7 @@ function renderExportDiagnosticRow({
               data-upid-export-diagnostic-ref-segment={ref.segmentId ?? undefined}
               data-upid-export-diagnostic-ref-travel={ref.travelRole ?? undefined}
               key={`${ref.operationId ?? ''}-${ref.pathElementId ?? ''}-${ref.segmentId ?? ''}-${ref.pointRole ?? ''}-${index}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onSelectPathElement?.(ref);
-              }}
+              onClick={() => onSelectPathElement?.(ref)}
               onBlur={() => onHoverPathElement?.(null)}
               onFocus={() => onHoverPathElement?.(ref)}
               onMouseEnter={() => onHoverPathElement?.(ref)}
@@ -526,7 +552,7 @@ function renderExportDiagnosticRow({
               {index + 1} {ref.segmentId ?? ref.pathElementId ?? ref.operationId ?? 'ref'}
             </button>
           ))}
-        </span>
+        </div>
       )}
     </div>
   );

@@ -2251,6 +2251,8 @@ function renderContourTreeNode({
             onFocus={() => onHoverPathElement(contourRef)}
             onMouseEnter={() => onHoverPathElement(contourRef)}
             onMouseLeave={() => onHoverPathElement(null)}
+            onPointerEnter={() => onHoverPathElement(contourRef)}
+            onPointerLeave={() => onHoverPathElement(null)}
             title={contourHelp}
             type="button"
           >
@@ -2577,6 +2579,8 @@ function renderLeadInRow(
         onFocus={() => onHoverPathElement(element)}
         onMouseEnter={() => onHoverPathElement(element)}
         onMouseLeave={() => onHoverPathElement(null)}
+        onPointerEnter={() => onHoverPathElement(element)}
+        onPointerLeave={() => onHoverPathElement(null)}
         title={`Lead-in cut for ${pathElement.displayName}: ${formatPoint(leadIn.from)} → ${formatPoint(leadIn.to)}; length ${length.toFixed(3)}. Selects and highlights the lead-in.`}
         type="button"
       >
@@ -2715,6 +2719,8 @@ function renderSegmentRow(
         onFocus={() => onHoverPathElement(element)}
         onMouseEnter={() => onHoverPathElement(element)}
         onMouseLeave={() => onHoverPathElement(null)}
+        onPointerEnter={() => onHoverPathElement(element)}
+        onPointerLeave={() => onHoverPathElement(null)}
         title={segmentHelp}
         type="button"
       >
@@ -2876,6 +2882,8 @@ function renderPointRow({
     ? `cluster ${endpointCluster.method} / gap ${endpointClusterGap} / ${endpointCluster.memberCount} ends`
     : null;
   const diagnosticSummary = summarizeUpidDiagnosticsForPathElementRef(pathDocument, element);
+  const endpointHelpId = `upid-endpoint-help-${pathElement.id}-${segment.id}-${index}-${role}`;
+  const endpointHelp = `${endpointCluster ? `Endpoint cluster ${endpointCluster.id}` : 'Unpaired endpoint'}: ${role} endpoint of segment ${index + 1} in ${pathElement.displayName} at ${formatPoint(point)}; ${endpointClusterSummary ?? 'no topology pairing'}; ${diagnosticSummary.count === 0 ? 'diagnostics clean' : `diagnostics ${diagnosticSummary.count}: ${diagnosticSummary.codes.join(', ')}`}.`;
 
   return (
     <div
@@ -2901,15 +2909,10 @@ function renderPointRow({
       data-upid-tree-row-action="select-endpoint"
       data-upid-tree-row-kind="endpoint"
       data-upid-tree-row-level="2"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          onHoverPathElement(null);
-        }
-      }}
-      onFocus={() => onHoverPathElement(element)}
       onMouseEnter={() => onHoverPathElement(element)}
       onMouseLeave={() => onHoverPathElement(null)}
-      title={`${endpointCluster ? `Endpoint cluster ${endpointCluster.id}` : 'Unpaired endpoint'}: ${role} endpoint of segment ${index + 1} in ${pathElement.displayName}; ${endpointClusterSummary ?? 'no topology pairing'}; ${diagnosticSummary.count === 0 ? 'diagnostics clean' : `diagnostics ${diagnosticSummary.count}: ${diagnosticSummary.codes.join(', ')}`}.`}
+      onPointerEnter={() => onHoverPathElement(element)}
+      onPointerLeave={() => onHoverPathElement(null)}
     >
       <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="endpoint">
         <span className="text-[10px] uppercase" data-upid-tree-depth-label="endpoint">
@@ -2918,11 +2921,15 @@ function renderPointRow({
         <span className="h-full min-h-5 border-l border-border/60" aria-hidden="true" />
       </span>
       <button
+        aria-describedby={endpointHelpId}
         aria-label={`Select ${role} endpoint of segment ${index + 1} in ${pathElement.displayName}`}
         aria-pressed={selected}
         className="min-w-0 text-left outline-none"
         data-upid-point-select
+        onBlur={() => onHoverPathElement(null)}
         onClick={() => onSelectPathElement(element)}
+        onFocus={() => onHoverPathElement(element)}
+        title={endpointHelp}
         type="button"
       >
         <span className="min-w-0">
@@ -2957,19 +2964,25 @@ function renderPointRow({
         </span>
       </button>
       <button
+        aria-describedby={endpointHelpId}
         aria-label="Set path start to this point"
         className="flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
         disabled={!pathElement.closed || isSaving}
+        onBlur={() => onHoverPathElement(null)}
         onClick={(event) => {
           event.stopPropagation();
           onSelectPathElement(element);
           onSetPathStartFromElement(element);
         }}
+        onFocus={() => onHoverPathElement(element)}
         title="Set start to this point"
         type="button"
       >
         <Flag className="size-3" />
       </button>
+      <span className="sr-only" data-upid-point-help={role} id={endpointHelpId}>
+        {endpointHelp}
+      </span>
     </div>
   );
 }

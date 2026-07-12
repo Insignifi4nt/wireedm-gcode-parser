@@ -1132,8 +1132,10 @@ describe('App DXF imports and project library', () => {
 
     const pointRow = container.querySelector('[data-upid-point-row]');
     expect(pointRow?.querySelector('[data-upid-point-role-label]')?.textContent).toMatch(/START|END/);
-    expect(pointRow?.getAttribute('title')).toContain('Endpoint cluster');
-    expect(pointRow?.querySelector('button[data-upid-point-select]')?.getAttribute('aria-label')).toBe(
+    const pointSelect = pointRow?.querySelector('button[data-upid-point-select]');
+    expect(pointSelect?.getAttribute('title')).toContain('Endpoint cluster');
+    expect(pointSelect?.getAttribute('aria-describedby')).toMatch(/^upid-endpoint-help-/);
+    expect(pointSelect?.getAttribute('aria-label')).toBe(
       'Select start endpoint of segment 1 in Exterior 1'
     );
   });
@@ -2375,6 +2377,9 @@ describe('App DXF imports and project library', () => {
     const branchRow = container.querySelector(
       '[data-upid-export-diagnostic-row][data-upid-export-diagnostic-code="branching-topology"]'
     ) as HTMLElement | null;
+    const branchMainAction = branchRow?.querySelector(
+      'button[data-upid-export-diagnostic-main]'
+    ) as HTMLButtonElement | null;
 
     expect(preview?.getAttribute('data-upid-export-readiness')).toBe('blocked');
     expect(blockedBanner).not.toBeNull();
@@ -2383,6 +2388,7 @@ describe('App DXF imports and project library', () => {
     expect(blockingRows.length).toBeGreaterThan(0);
     expect(container.querySelectorAll('[data-upid-export-blocking-message]')).toHaveLength(blockingRows.length);
     expect(branchRow).not.toBeNull();
+    expect(branchMainAction).not.toBeNull();
     expect(branchRow?.textContent).toContain('branch');
     expect(downloadButton?.disabled).toBe(true);
     expect(downloadButton?.getAttribute('aria-disabled')).toBe('true');
@@ -2410,14 +2416,14 @@ describe('App DXF imports and project library', () => {
     );
 
     await act(async () => {
-      branchRow?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      branchMainAction?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
     });
     expect(workbookSegment?.getAttribute('data-upid-hovered')).toBe('true');
     expect(canvasSegment?.getAttribute('data-preview-hovered')).toBe('true');
 
     await act(async () => {
-      branchRow?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
-      branchRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      branchMainAction?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+      branchMainAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(workbookSegment?.getAttribute('data-upid-selected')).toBe('true');
     expect(canvasSegment?.getAttribute('data-preview-selected')).toBe('true');
@@ -2612,6 +2618,9 @@ describe('App DXF imports and project library', () => {
     const openChainRow = diagnosticRows.find(
       (row) => row.getAttribute('data-upid-export-diagnostic-code') === 'open-chain'
     ) as HTMLElement | undefined;
+    const openChainMainAction = openChainRow?.querySelector(
+      'button[data-upid-export-diagnostic-main]'
+    ) as HTMLButtonElement | null;
 
     expect(container.querySelector('[data-upid-export-stat="diagnostics"]')?.textContent).toBe(
       String(diagnosticRows.length)
@@ -2621,6 +2630,7 @@ describe('App DXF imports and project library', () => {
       'units-assumed-millimeters'
     );
     expect(openChainRow).toBeDefined();
+    expect(openChainMainAction).not.toBeNull();
     expect(openChainRow?.getAttribute('data-upid-export-diagnostic-related-clusters')).toBe('2');
     expect(openChainRow?.getAttribute('data-upid-export-diagnostic-related-segments')).toBe('1');
     expect(openChainRow?.getAttribute('data-upid-export-diagnostic-severity')).toBe('warning');
@@ -2640,7 +2650,7 @@ describe('App DXF imports and project library', () => {
     expect(tracedSegmentId).toBeTruthy();
 
     await act(async () => {
-      openChainRow?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      openChainMainAction?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
     });
 
     expect(
@@ -2650,7 +2660,7 @@ describe('App DXF imports and project library', () => {
     ).toBe('true');
 
     await act(async () => {
-      openChainRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      openChainMainAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(
