@@ -41,6 +41,7 @@ export function settingsDraftFromWorkbench(workbench: ConnectedWorkbench | null)
     machineName: profile.name,
     sourceKey: [
       workbench.adapter.kind,
+      workbench.adapter.name,
       workbench.header,
       workbench.footer,
       output.extension,

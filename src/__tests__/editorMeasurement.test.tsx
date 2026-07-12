@@ -230,18 +230,55 @@ describe('Editor measurement points', () => {
     expect(container.querySelector('[data-measurement-point-row="1"]')).not.toBeNull();
   });
 
-  it('clears measurement points with Ctrl+Shift+C outside editor inputs', async () => {
+  it('keeps measurement points for Ctrl/Cmd+Shift+C browser shortcuts', async () => {
     window.showDirectoryPicker = undefined;
     await renderEditorWithMeasurementPoint(context, container);
 
-    const clearEvent = new KeyboardEvent('keydown', {
+    const controlShortcutEvent = new KeyboardEvent('keydown', {
       bubbles: true,
       cancelable: true,
       code: 'KeyC',
       ctrlKey: true,
-      key: 'c',
+      key: 'C',
       shiftKey: true
     });
+    const commandShortcutEvent = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      code: 'KeyC',
+      key: 'C',
+      metaKey: true,
+      shiftKey: true
+    });
+
+    await act(async () => {
+      window.dispatchEvent(controlShortcutEvent);
+    });
+
+    expect(controlShortcutEvent.defaultPrevented).toBe(false);
+    expect(container.querySelector('[data-measurement-point-row="1"]')).not.toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(commandShortcutEvent);
+    });
+
+    expect(commandShortcutEvent.defaultPrevented).toBe(false);
+    expect(container.querySelector('[data-measurement-point-row="1"]')).not.toBeNull();
+  });
+
+  it('clears measurement points with Alt/Option+Shift+C outside editor inputs', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderEditorWithMeasurementPoint(context, container);
+
+    const clearEvent = new KeyboardEvent('keydown', {
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+      code: 'KeyC',
+      key: 'ç',
+      shiftKey: true
+    });
+
     await act(async () => {
       window.dispatchEvent(clearEvent);
     });

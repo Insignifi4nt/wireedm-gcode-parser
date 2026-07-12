@@ -970,10 +970,11 @@ export function EditorPage({
         (event.ctrlKey || event.metaKey) &&
         (event.key.toLowerCase() === 'y' || (event.key.toLowerCase() === 'z' && event.shiftKey));
       const isClearPoints =
-        (event.ctrlKey || event.metaKey) &&
-        event.key.toLowerCase() === 'c' &&
+        event.altKey &&
         event.shiftKey &&
-        !event.altKey;
+        !event.ctrlKey &&
+        !event.metaKey &&
+        event.code === 'KeyC';
 
       if (isUndo) {
         event.preventDefault();

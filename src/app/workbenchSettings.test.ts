@@ -19,14 +19,25 @@ describe('settingsDraftFromWorkbench', () => {
 
     expect(refreshedDraft.sourceKey).toBe(initialDraft.sourceKey);
   });
+
+  it('uses adapter name to distinguish same-kind workbenches', () => {
+    const browserCacheDraft = settingsDraftFromWorkbench(
+      createWorkbench('2026-07-12T10:00:00.000Z', 'Browser cache')
+    );
+    const secondaryCacheDraft = settingsDraftFromWorkbench(
+      createWorkbench('2026-07-12T10:00:00.000Z', 'Secondary cache')
+    );
+
+    expect(secondaryCacheDraft.sourceKey).not.toBe(browserCacheDraft.sourceKey);
+  });
 });
 
-function createWorkbench(updatedAt: string): ConnectedWorkbench {
+function createWorkbench(updatedAt: string, adapterName = 'Browser cache'): ConnectedWorkbench {
   const activeMachineProfile = createDefaultMachineProfile();
 
   return {
     adapter: {
-      name: 'Browser cache',
+      name: adapterName,
       kind: 'browser-cache',
       ensureDirectory: async () => undefined,
       readText: async () => null,
@@ -35,7 +46,7 @@ function createWorkbench(updatedAt: string): ConnectedWorkbench {
     },
     manifest: {
       schemaVersion: 1,
-      name: 'Browser cache',
+      name: 'Workbench',
       createdAt: '2026-07-12T10:00:00.000Z',
       updatedAt,
       templates: {
