@@ -3,6 +3,8 @@ import {
   cross,
   distance,
   dot,
+  nextDown,
+  nextUp,
   normalizeAngle,
   pointOnArcAtParameter,
   pointOnCircle,
@@ -176,6 +178,7 @@ export function findPathSegmentIntersectionDiagnostics(
             candidate.segment,
             segment,
             intersection,
+            relation.points,
             allowedJunctions,
             epsilon
           )
@@ -276,16 +279,13 @@ function intersectLines(
       x: left.start.x + leftUnit.x * coordinate,
       y: left.start.y + leftUnit.y * coordinate
     };
-    return parameterizedPointIntersection(
-      [
-        {
-          point,
-          leftParameter: coordinate / leftLength,
-          rightParameter: dot(vector(right.start, point), rightUnit) / rightLength
-        }
-      ],
-      tolerance
-    );
+    return parameterizedPointIntersection([
+      {
+        point,
+        leftParameter: coordinate / leftLength,
+        rightParameter: dot(vector(right.start, point), rightUnit) / rightLength
+      }
+    ]);
   }
 
   const leftDistance = cross(offset, rightUnit) / denominator;
@@ -307,19 +307,16 @@ function intersectLines(
     x: right.start.x + rightUnit.x * rightDistance,
     y: right.start.y + rightUnit.y * rightDistance
   };
-  return parameterizedPointIntersection(
-    [
-      {
-        point: {
-          x: stableMidpoint(leftPoint.x, rightPoint.x),
-          y: stableMidpoint(leftPoint.y, rightPoint.y)
-        },
-        leftParameter: leftDistance / leftLength,
-        rightParameter: rightDistance / rightLength
-      }
-    ],
-    tolerance
-  );
+  return parameterizedPointIntersection([
+    {
+      point: {
+        x: stableMidpoint(leftPoint.x, rightPoint.x),
+        y: stableMidpoint(leftPoint.y, rightPoint.y)
+      },
+      leftParameter: leftDistance / leftLength,
+      rightParameter: rightDistance / rightLength
+    }
+  ]);
 }
 
 function intersectLineCircular(
@@ -420,7 +417,7 @@ function intersectLineCircular(
       rightParameter: circularParameterAtCandidate(circular, point, radial, epsilon)
     }));
 
-  return parameterizedPointIntersection(points, tolerance);
+  return parameterizedPointIntersection(points);
 }
 
 function intersectCircularSegments(
@@ -455,11 +452,40 @@ function intersectCircularSegments(
   const leftRadius = left.radius / scale;
   const rightRadius = right.radius / scale;
   const distanceScaled = centerDistance / scale;
+  const externalTangent = numbersAreNumericallyIndistinguishable(
+    left.radius + right.radius,
+    centerDistance
+  );
+  const leftInsideRightTangent =
+    right.radius >= left.radius &&
+    numbersAreNumericallyIndistinguishable(centerDistance + left.radius, right.radius);
+  const rightInsideLeftTangent =
+    left.radius >= right.radius &&
+    numbersAreNumericallyIndistinguishable(centerDistance + right.radius, left.radius);
+  const factors = [
+    leftRadius + rightRadius + distanceScaled,
+    leftRadius + rightRadius - distanceScaled,
+    distanceScaled + leftRadius - rightRadius,
+    distanceScaled - leftRadius + rightRadius
+  ];
+  if (externalTangent) factors[1] = 0;
+  if (leftInsideRightTangent) factors[2] = 0;
+  if (rightInsideLeftTangent) factors[3] = 0;
+  if (factors.some((factor) => factor < 0)) return noIntersection();
+  const [sumFactor, externalTangentFactor, leftInsideRightFactor, rightInsideLeftFactor] =
+    factors;
+  const halfChordSquared =
+    (sumFactor * externalTangentFactor * leftInsideRightFactor * rightInsideLeftFactor) /
+    (4 * distanceScaled * distanceScaled);
   const baseDistance =
-    (leftRadius * leftRadius - rightRadius * rightRadius + distanceScaled * distanceScaled) /
-    (2 * distanceScaled);
-  const halfChordSquared = leftRadius * leftRadius - baseDistance * baseDistance;
-  if (halfChordSquared < -ROUNDING_FACTOR * Number.EPSILON) return noIntersection();
+    leftInsideRightTangent && !externalTangent
+      ? -leftRadius
+      : externalTangent || rightInsideLeftTangent
+        ? leftRadius
+        :
+          (distanceScaled * distanceScaled +
+            (leftRadius - rightRadius) * (leftRadius + rightRadius)) /
+          (2 * distanceScaled);
 
   const centerUnit = {
     x: centerVector.x / centerDistance,
@@ -476,7 +502,7 @@ function intersectCircularSegments(
   const halfChord = scale * Math.sqrt(Math.max(0, halfChordSquared));
   const normal = { x: -centerUnit.y, y: centerUnit.x };
   const candidates =
-    halfChord <= tolerance
+    halfChord === 0
       ? [
           {
             point: base,
@@ -503,8 +529,7 @@ function intersectCircularSegments(
         point,
         leftParameter: circularParameterAtCandidate(left, point, leftRadial, epsilon),
         rightParameter: circularParameterAtCandidate(right, point, rightRadial, epsilon)
-      })),
-    tolerance
+      }))
   );
 
   function circularCandidate(sign: 1 | -1) {
@@ -588,7 +613,7 @@ function sameCircularSupportRelation(
       )
     };
   });
-  return parameterizedPointIntersection(points, epsilon);
+  return parameterizedPointIntersection(points);
 }
 
 function circularCoverage(segment: CircularPathSegment, epsilon: number) {
@@ -730,21 +755,23 @@ function isAllowedAdjacentEndpointTouch(
   left: PathSegment,
   right: PathSegment,
   intersection: ParameterizedIntersectionPoint,
+  intersections: ParameterizedIntersectionPoint[],
   allowedJunctions: Map<string, AdjacentJunction[]>,
   epsilon: number
 ) {
   return (allowedJunctions.get(segmentPairKey(left.id, right.id)) ?? []).some(
     (junction) => {
-      const leftEndpoint = junctionParameterForSegment(junction, left.id);
-      const rightEndpoint = junctionParameterForSegment(junction, right.id);
-      return (
-        intersection.leftParameter != null &&
-        intersection.rightParameter != null &&
-        leftEndpoint != null &&
-        rightEndpoint != null &&
-        parameterIsAtEndpoint(intersection.leftParameter, leftEndpoint, left, epsilon) &&
-        parameterIsAtEndpoint(intersection.rightParameter, rightEndpoint, right, epsilon)
-      );
+      const closest = intersections
+        .map((candidate) => ({
+          candidate,
+          score: adjacentEndpointContactScore(candidate, junction, left, right, epsilon)
+        }))
+        .filter(
+          (entry): entry is { candidate: ParameterizedIntersectionPoint; score: number } =>
+            entry.score != null
+        )
+        .sort((a, b) => a.score - b.score)[0];
+      return closest?.candidate === intersection;
     }
   );
 }
@@ -755,18 +782,38 @@ function junctionParameterForSegment(junction: AdjacentJunction, segmentId: stri
   return null;
 }
 
-function parameterIsAtEndpoint(
-  parameter: number,
-  endpoint: number,
-  segment: PathSegment,
+function adjacentEndpointContactScore(
+  intersection: ParameterizedIntersectionPoint,
+  junction: AdjacentJunction,
+  left: PathSegment,
+  right: PathSegment,
   epsilon: number
 ) {
-  if (segment.kind === 'circle' || !Number.isFinite(parameter)) return false;
-  const tolerance = Math.max(
+  const leftEndpoint = junctionParameterForSegment(junction, left.id);
+  const rightEndpoint = junctionParameterForSegment(junction, right.id);
+  if (
+    intersection.leftParameter == null ||
+    intersection.rightParameter == null ||
+    leftEndpoint == null ||
+    rightEndpoint == null ||
+    left.kind === 'circle' ||
+    right.kind === 'circle'
+  ) {
+    return null;
+  }
+  const leftTolerance = endpointParameterTolerance(left, epsilon);
+  const rightTolerance = endpointParameterTolerance(right, epsilon);
+  const leftScore = Math.abs(intersection.leftParameter - leftEndpoint) / leftTolerance;
+  const rightScore = Math.abs(intersection.rightParameter - rightEndpoint) / rightTolerance;
+  const score = Math.max(leftScore, rightScore);
+  return Number.isFinite(score) && score <= 1 ? score : null;
+}
+
+function endpointParameterTolerance(segment: PathSegment, epsilon: number) {
+  return Math.max(
     ROUNDING_FACTOR * Number.EPSILON,
     (Math.SQRT2 * epsilon) / Math.max(segment.length, Number.MIN_VALUE)
   );
-  return Math.abs(parameter - endpoint) <= tolerance;
 }
 
 function chainIdsBySegment(chains: PathChain[]) {
@@ -786,13 +833,14 @@ function segmentPairKey(leftId: string, rightId: string) {
 }
 
 function parameterizedPointIntersection(
-  points: ParameterizedIntersectionPoint[],
-  epsilon: number
+  points: ParameterizedIntersectionPoint[]
 ): DetailedSegmentIntersection {
   const unique: ParameterizedIntersectionPoint[] = [];
   for (const candidate of points) {
     if (!Number.isFinite(candidate.point.x) || !Number.isFinite(candidate.point.y)) continue;
-    if (unique.some(({ point }) => pointsWithin(point, candidate.point, epsilon))) continue;
+    if (unique.some((existing) => intersectionPointsAreNumericallyIdentical(existing, candidate))) {
+      continue;
+    }
     unique.push({
       ...candidate,
       point: {
@@ -805,6 +853,44 @@ function parameterizedPointIntersection(
     left.point.x - right.point.x || left.point.y - right.point.y
   );
   return unique.length > 0 ? { kind: 'points', points: unique } : noIntersection();
+}
+
+function intersectionPointsAreNumericallyIdentical(
+  left: ParameterizedIntersectionPoint,
+  right: ParameterizedIntersectionPoint
+) {
+  return (
+    numbersAreNumericallyIndistinguishable(left.point.x, right.point.x) &&
+    numbersAreNumericallyIndistinguishable(left.point.y, right.point.y) &&
+    parametersAreNumericallyIndistinguishable(left.leftParameter, right.leftParameter) &&
+    parametersAreNumericallyIndistinguishable(left.rightParameter, right.rightParameter)
+  );
+}
+
+function parametersAreNumericallyIndistinguishable(
+  left: number | null,
+  right: number | null
+) {
+  if (left == null || right == null) return left === right;
+  return numbersAreNumericallyIndistinguishable(left, right);
+}
+
+function numbersAreNumericallyIndistinguishable(left: number, right: number) {
+  if (left === right) return true;
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+  const difference = Math.abs(left - right);
+  const localComputationError =
+    ROUNDING_FACTOR * Number.EPSILON * Math.max(1, difference);
+  return difference <= Math.max(floatingStep(left), floatingStep(right), localComputationError);
+}
+
+function floatingStep(value: number) {
+  const upward = nextUp(value) - value;
+  const downward = value - nextDown(value);
+  return Math.max(
+    ...[upward, downward].filter((step) => Number.isFinite(step) && step >= 0),
+    0
+  );
 }
 
 function swapIntersectionParameters(

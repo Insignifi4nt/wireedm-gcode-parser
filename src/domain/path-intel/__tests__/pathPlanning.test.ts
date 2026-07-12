@@ -1351,6 +1351,199 @@ describe('path-intel DXF planning', () => {
     );
   });
 
+  it('keeps two near-tangent analytic roots distinct below modeling epsilon', () => {
+    const epsilon = 1e-5;
+    const lineY = 1 - 1e-12;
+    const lineSegment = createTestLineSegment('line_near_tangent_unit', -1, lineY, 1, lineY, 0);
+    const circle = createCircleSegment({
+      id: 'circle_near_tangent_unit',
+      source: testSegmentSource(1, 'circle'),
+      center: { x: 0, y: 0 },
+      radius: 1
+    });
+
+    const result = classifyPathSegmentIntersection(lineSegment, circle, epsilon);
+
+    expect(result.kind).toBe('points');
+    expect(result.points).toHaveLength(2);
+    expect(result.points[0].x).toBeCloseTo(-1.4141979e-6, 12);
+    expect(result.points[1].x).toBeCloseTo(1.4141979e-6, 12);
+  });
+
+  it('keeps two near-tangent circle-circle roots distinct below modeling epsilon', () => {
+    const left = createCircleSegment({
+      id: 'circle_near_tangent_left',
+      source: testSegmentSource(0, 'circle'),
+      center: { x: 0, y: 0 },
+      radius: 1
+    });
+    const right = createCircleSegment({
+      id: 'circle_near_tangent_right',
+      source: testSegmentSource(1, 'circle'),
+      center: { x: 2 - 1e-12, y: 0 },
+      radius: 1
+    });
+
+    const result = classifyPathSegmentIntersection(left, right, 1e-5);
+
+    expect(result.kind).toBe('points');
+    expect(result.points).toHaveLength(2);
+    expect(result.points[0].y).toBeLessThan(0);
+    expect(result.points[1].y).toBeGreaterThan(0);
+  });
+
+  it('keeps an exact unequal-radius circle-circle tangent as one point', () => {
+    const left = createCircleSegment({
+      id: 'circle_unequal_tangent_left',
+      source: testSegmentSource(0, 'circle'),
+      center: { x: 0, y: 0 },
+      radius: 1
+    });
+    const right = createCircleSegment({
+      id: 'circle_unequal_tangent_right',
+      source: testSegmentSource(1, 'circle'),
+      center: { x: 2.3, y: 0 },
+      radius: 1.3
+    });
+
+    const result = classifyPathSegmentIntersection(left, right, 1e-5);
+
+    expect(result.kind).toBe('points');
+    expect(result.points).toHaveLength(1);
+    expect(result.points[0].x).toBeCloseTo(1, 14);
+    expect(result.points[0].y).toBe(0);
+  });
+
+  it('keeps an exact widely unequal-radius circle-circle tangent as one point', () => {
+    const left = createCircleSegment({
+      id: 'circle_wide_tangent_left',
+      source: testSegmentSource(0, 'circle'),
+      center: { x: 0, y: 0 },
+      radius: 1
+    });
+    const right = createCircleSegment({
+      id: 'circle_wide_tangent_right',
+      source: testSegmentSource(1, 'circle'),
+      center: { x: 1001.1, y: 0 },
+      radius: 1000.1
+    });
+
+    const result = classifyPathSegmentIntersection(left, right, 1e-5);
+
+    expect(result.kind).toBe('points');
+    expect(result.points).toHaveLength(1);
+    expect(result.points[0].x).toBeCloseTo(1, 12);
+    expect(result.points[0].y).toBe(0);
+  });
+
+  it('selects the external tangent side for representable extreme radius disparity', () => {
+    const left = createCircleSegment({
+      id: 'circle_extreme_external_left',
+      source: testSegmentSource(0, 'circle'),
+      center: { x: 0, y: 0 },
+      radius: 1
+    });
+    const right = createCircleSegment({
+      id: 'circle_extreme_external_right',
+      source: testSegmentSource(1, 'circle'),
+      center: { x: 1e15 + 1, y: 0 },
+      radius: 1e15
+    });
+
+    const result = classifyPathSegmentIntersection(left, right, 1e-5);
+
+    expect(result.kind).toBe('points');
+    expect(result.points).toEqual([{ x: 1, y: 0 }]);
+  });
+
+  it('selects the internal tangent side for representable extreme radius disparity', () => {
+    const left = createCircleSegment({
+      id: 'circle_extreme_internal_left',
+      source: testSegmentSource(0, 'circle'),
+      center: { x: 0, y: 0 },
+      radius: 1
+    });
+    const right = createCircleSegment({
+      id: 'circle_extreme_internal_right',
+      source: testSegmentSource(1, 'circle'),
+      center: { x: 1e15 - 1, y: 0 },
+      radius: 1e15
+    });
+
+    const result = classifyPathSegmentIntersection(left, right, 1e-5);
+
+    expect(result.kind).toBe('points');
+    expect(result.points).toEqual([{ x: -1, y: 0 }]);
+  });
+
+  it('keeps an exact equal-radius circle-circle tangent as one point', () => {
+    const left = createCircleSegment({
+      id: 'circle_equal_tangent_left',
+      source: testSegmentSource(0, 'circle'),
+      center: { x: 0, y: 0 },
+      radius: 1
+    });
+    const right = createCircleSegment({
+      id: 'circle_equal_tangent_right',
+      source: testSegmentSource(1, 'circle'),
+      center: { x: 2, y: 0 },
+      radius: 1
+    });
+
+    const result = classifyPathSegmentIntersection(left, right, 1e-5);
+
+    expect(result.kind).toBe('points');
+    expect(result.points).toEqual([{ x: 1, y: 0 }]);
+  });
+
+  it('reports the second near-tangent root when the first is an adjacent arc endpoint', () => {
+    const epsilon = 1e-5;
+    const lineY = 1 - 1e-12;
+    const rootX = Math.sqrt(1 - lineY * lineY);
+    const endAngleDegrees = (Math.atan2(lineY, -rootX) * 180) / Math.PI;
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [
+        {
+          type: 'arc',
+          layer: 'CUT',
+          center: { x: 0, y: 0 },
+          radius: 1,
+          startAngle: 0,
+          endAngle: endAngleDegrees,
+          clockwise: false,
+          start: { x: 1, y: 0 },
+          end: { x: -rootX, y: lineY }
+        },
+        line(-rootX, lineY, 0.5, lineY)
+      ],
+      { coincidenceEpsilon: epsilon, endpointTolerance: epsilon }
+    );
+
+    expect(document.chains).toHaveLength(1);
+    expect(document.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'intersecting-topology',
+        severity: 'error',
+        relatedSegmentIds: ['seg_0001', 'seg_0002']
+      })
+    );
+  });
+
+  it('keeps a true analytic line-circle tangent as one point', () => {
+    const lineSegment = createTestLineSegment('line_true_tangent', -2, 1, 2, 1, 0);
+    const circle = createCircleSegment({
+      id: 'circle_true_tangent',
+      source: testSegmentSource(1, 'circle'),
+      center: { x: 0, y: 0 },
+      radius: 1
+    });
+
+    const result = classifyPathSegmentIntersection(lineSegment, circle, 1e-5);
+
+    expect(result.kind).toBe('points');
+    expect(result.points).toEqual([{ x: 0, y: 1 }]);
+  });
+
   it('reports partial collinear line overlap without removing either executable segment', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       line(0, 0, 10, 0),
