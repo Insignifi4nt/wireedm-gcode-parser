@@ -14,6 +14,7 @@ import { nextUp } from '@/domain/path-intel/segments';
 import {
   createUpidProjectRail,
   normalizeUpidPathElementSelection,
+  projectUpidPathDiagnostic,
   readUpidManualOverrideRows,
   readUpidEndpointTopologyRows,
   readUpidOperationPathElement,
@@ -546,6 +547,52 @@ describe('UPID project rail projection', () => {
       true
     );
   });
+
+  it.each([
+    {
+      severity: 'warning',
+      refs: { relatedSegmentIds: 42 }
+    },
+    {
+      severity: 'error',
+      refs: { relatedClusterIds: 42 }
+    }
+  ] as const)(
+    'projects malformed $severity diagnostic provenance without throwing',
+    ({ severity, refs }) => {
+      const document = createPathPlanningDocumentFromDxfEntities(
+        rectangleLines(0, 0, 10, 5)
+      );
+      const diagnostic = {
+        id: `diag_malformed_projection_${severity}`,
+        severity,
+        code: 'review-probe',
+        message: 'Malformed projection provenance review probe',
+        ...refs
+      } as never;
+      document.diagnostics.push(diagnostic);
+      const operation = document.plan.operations[0];
+      const pathElement = document.pathElements[0];
+
+      expect(() => createUpidProjectRail(document)).not.toThrow();
+      expect(() => projectUpidPathDiagnostic(document, diagnostic)).not.toThrow();
+      expect(() =>
+        readUpidPathElementDiagnostics(document, {
+          operationId: operation.id,
+          pathElementId: pathElement.id,
+          segmentId: operation.segmentRefs[0].segmentId
+        })
+      ).not.toThrow();
+      expect(projectUpidPathDiagnostic(document, diagnostic)).toMatchObject({
+        relatedChainCount: 0,
+        relatedClusterCount: 0,
+        relatedContourCount: 0,
+        relatedRefs: [],
+        relatedSegmentCount: 0,
+        selectRef: null
+      });
+    }
+  );
 
   it('projects diagnostics that affect the selected path geometry', () => {
     const document = createPathPlanningDocumentFromDxfEntities(gappedRectangle(0.004), {

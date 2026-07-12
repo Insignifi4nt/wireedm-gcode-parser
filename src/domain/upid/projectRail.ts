@@ -506,7 +506,7 @@ export function readUpidEndpointTopologyRows(document: PathPlanningDocument): Up
         kind: 'ambiguous-endpoint-cluster',
         minCandidateDistance:
           candidateDistances.length > 0 ? Math.min(...candidateDistances) : null,
-        relatedSegmentCount: diagnostic.relatedSegmentIds?.length ?? 0,
+        relatedSegmentCount: relatedDiagnosticIds(diagnostic, 'relatedSegmentIds').length,
         selectRef: upidPathElementRefForDiagnostic(document, diagnostic),
         severity: diagnostic.severity,
         toleranceUsed: readDiagnosticNumber(diagnostic, 'tolerance')
@@ -541,6 +541,20 @@ function readDiagnosticNumberArray(diagnostic: PathDiagnostic, key: string) {
     : [];
 }
 
+function relatedDiagnosticIds(
+  diagnostic: PathDiagnostic,
+  key:
+    | 'relatedSegmentIds'
+    | 'relatedClusterIds'
+    | 'relatedChainIds'
+    | 'relatedContourIds'
+) {
+  const value = diagnostic[key];
+  return Array.isArray(value)
+    ? value.filter((candidate): candidate is string => typeof candidate === 'string')
+    : [];
+}
+
 export function readUpidPathElementDiagnostics(
   document: PathPlanningDocument,
   elementRef: UpidPathElementRef
@@ -571,16 +585,20 @@ export function projectUpidPathDiagnostic(
   document: PathPlanningDocument,
   diagnostic: PathDiagnostic
 ): UpidSelectedPathDiagnostic {
+  const relatedChainIds = relatedDiagnosticIds(diagnostic, 'relatedChainIds');
+  const relatedClusterIds = relatedDiagnosticIds(diagnostic, 'relatedClusterIds');
+  const relatedContourIds = relatedDiagnosticIds(diagnostic, 'relatedContourIds');
+  const relatedSegmentIds = relatedDiagnosticIds(diagnostic, 'relatedSegmentIds');
   return {
     code: diagnostic.code,
     id: diagnostic.id,
     message: diagnostic.message,
     metrics: readUpidDiagnosticMetrics(diagnostic),
-    relatedChainCount: diagnostic.relatedChainIds?.length ?? 0,
-    relatedClusterCount: diagnostic.relatedClusterIds?.length ?? 0,
-    relatedContourCount: diagnostic.relatedContourIds?.length ?? 0,
+    relatedChainCount: relatedChainIds.length,
+    relatedClusterCount: relatedClusterIds.length,
+    relatedContourCount: relatedContourIds.length,
     relatedRefs: upidPathElementRefsForDiagnostic(document, diagnostic),
-    relatedSegmentCount: diagnostic.relatedSegmentIds?.length ?? 0,
+    relatedSegmentCount: relatedSegmentIds.length,
     selectRef: upidPathElementRefForDiagnostic(document, diagnostic),
     severity: diagnostic.severity
   };
@@ -639,7 +657,7 @@ function upidPathElementRefsForDiagnostic(
 ): UpidPathElementRef[] {
   const refs: UpidPathElementRef[] = [];
 
-  for (const clusterId of diagnostic.relatedClusterIds ?? []) {
+  for (const clusterId of relatedDiagnosticIds(diagnostic, 'relatedClusterIds')) {
     const cluster = document.endpointClusters.find((candidate) => candidate.id === clusterId);
     if (!cluster) continue;
 
@@ -650,13 +668,13 @@ function upidPathElementRefsForDiagnostic(
   }
 
   if (refs.length === 0) {
-    for (const segmentId of diagnostic.relatedSegmentIds ?? []) {
+    for (const segmentId of relatedDiagnosticIds(diagnostic, 'relatedSegmentIds')) {
       const ref = refForFirstRelatedSegment(document, [segmentId]);
       if (ref) refs.push(ref);
     }
   }
 
-  for (const contourId of diagnostic.relatedContourIds ?? []) {
+  for (const contourId of relatedDiagnosticIds(diagnostic, 'relatedContourIds')) {
     const ref = refForFirstRelatedOperation(
       document,
       [contourId],
@@ -665,7 +683,7 @@ function upidPathElementRefsForDiagnostic(
     if (ref) refs.push(ref);
   }
 
-  for (const chainId of diagnostic.relatedChainIds ?? []) {
+  for (const chainId of relatedDiagnosticIds(diagnostic, 'relatedChainIds')) {
     const ref = refForFirstRelatedOperation(
       document,
       [chainId],
@@ -702,13 +720,17 @@ function upidDiagnosticAffectsPathElement(
   elementRef: UpidPathElementRef,
   diagnostic: PathDiagnostic
 ) {
+  const relatedSegmentIds = relatedDiagnosticIds(diagnostic, 'relatedSegmentIds');
+  const relatedChainIds = relatedDiagnosticIds(diagnostic, 'relatedChainIds');
+  const relatedContourIds = relatedDiagnosticIds(diagnostic, 'relatedContourIds');
+  const relatedClusterIds = relatedDiagnosticIds(diagnostic, 'relatedClusterIds');
   const selectedElement = readPathElementForRef(document, elementRef);
   const selectedSegmentIds = new Set(selectedElement?.segmentRefs.map((ref) => ref.segmentId) ?? []);
   if (elementRef.segmentId) {
     selectedSegmentIds.add(elementRef.segmentId);
   }
 
-  if (diagnostic.relatedSegmentIds?.some((segmentId) => selectedSegmentIds.has(segmentId))) {
+  if (relatedSegmentIds.some((segmentId) => selectedSegmentIds.has(segmentId))) {
     return true;
   }
 
@@ -717,13 +739,13 @@ function upidDiagnosticAffectsPathElement(
   );
   if (
     selectedOperation?.chainId &&
-    diagnostic.relatedChainIds?.includes(selectedOperation.chainId)
+    relatedChainIds.includes(selectedOperation.chainId)
   ) {
     return true;
   }
   if (
     selectedOperation?.contourId &&
-    diagnostic.relatedContourIds?.includes(selectedOperation.contourId)
+    relatedContourIds.includes(selectedOperation.contourId)
   ) {
     return true;
   }
@@ -732,7 +754,7 @@ function upidDiagnosticAffectsPathElement(
     const selectedPoint = readUpidSelectedPathPoint(document, selectedElement, elementRef);
     if (
       selectedPoint?.endpointCluster &&
-      diagnostic.relatedClusterIds?.includes(selectedPoint.endpointCluster.id)
+      relatedClusterIds.includes(selectedPoint.endpointCluster.id)
     ) {
       return true;
     }
@@ -746,6 +768,8 @@ function upidDiagnosticAffectsPathElementRef(
   elementRef: UpidPathElementRef,
   diagnostic: PathDiagnostic
 ) {
+  const relatedClusterIds = relatedDiagnosticIds(diagnostic, 'relatedClusterIds');
+  const relatedSegmentIds = relatedDiagnosticIds(diagnostic, 'relatedSegmentIds');
   if (!elementRef.segmentId) {
     return upidDiagnosticAffectsPathElement(document, elementRef, diagnostic);
   }
@@ -759,11 +783,11 @@ function upidDiagnosticAffectsPathElementRef(
     const selectedPoint = readUpidSelectedPathPoint(document, selectedElement, elementRef);
     return Boolean(
       selectedPoint?.endpointCluster &&
-        diagnostic.relatedClusterIds?.includes(selectedPoint.endpointCluster.id)
+        relatedClusterIds.includes(selectedPoint.endpointCluster.id)
     );
   }
 
-  return Boolean(diagnostic.relatedSegmentIds?.includes(elementRef.segmentId));
+  return relatedSegmentIds.includes(elementRef.segmentId);
 }
 
 function summarizeUpidDiagnostics(diagnostics: PathDiagnostic[]): UpidPathDiagnosticSummary {
@@ -1262,19 +1286,22 @@ export function upidPathElementRefForDiagnostic(
   document: PathPlanningDocument,
   diagnostic: PathDiagnostic
 ): UpidPathElementRef | null {
-  const bySegment = refForFirstRelatedSegment(document, diagnostic.relatedSegmentIds ?? []);
+  const bySegment = refForFirstRelatedSegment(
+    document,
+    relatedDiagnosticIds(diagnostic, 'relatedSegmentIds')
+  );
   if (bySegment) return bySegment;
 
   const byContour = refForFirstRelatedOperation(
     document,
-    diagnostic.relatedContourIds ?? [],
+    relatedDiagnosticIds(diagnostic, 'relatedContourIds'),
     (operation, id) => operation.contourId === id
   );
   if (byContour) return byContour;
 
   return refForFirstRelatedOperation(
     document,
-    diagnostic.relatedChainIds ?? [],
+    relatedDiagnosticIds(diagnostic, 'relatedChainIds'),
     (operation, id) => operation.chainId === id
   );
 }

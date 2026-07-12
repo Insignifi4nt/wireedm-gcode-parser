@@ -1,4 +1,5 @@
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import { normalizeMachineProfile } from '@/domain/machine/machineProfiles';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 
 import { loadEditorProgram, type LoadedEditorProgram } from './loadEditorProgram';
@@ -23,6 +24,10 @@ export async function openWorkbenchProject(
   } catch {
     throw new Error(`Workbench project file is not valid JSON: ${projectPath}`);
   }
+  project = {
+    ...project,
+    machine: normalizeMachineProfile(project.machine)
+  };
 
   return {
     project,

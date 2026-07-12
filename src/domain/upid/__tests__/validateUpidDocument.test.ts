@@ -5,6 +5,10 @@ import { describe, expect, it } from 'vitest';
 
 import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
 import { parseDxf } from '@/domain/dxf/parseDxf';
+import {
+  reversePathOperation,
+  setClosedOperationStartNearPoint
+} from '@/domain/path-editor/pathDocumentOperations';
 import type { PathDiagnostic } from '@/domain/path-intel/types';
 
 import {
@@ -31,6 +35,162 @@ describe('validateUpidDocument', () => {
       valid: true,
       blockingDiagnostics: [],
       structuralDiagnostics: []
+    });
+  });
+
+  it.each([
+    {
+      label: 'duplicated rectangle traversal',
+      mutate: duplicateRectangleTraversal
+    },
+    {
+      label: 'uniquely identified cut graph sharing one chain',
+      mutate: addUniqueCutGraphSharingChain
+    }
+  ])('blocks $label before it can double-cut', ({ mutate }) => {
+    const document = closedDocument();
+    mutate(document);
+
+    const report = validateUpidDocument(document);
+    const post = postUpidToGcode(document);
+    const exportProgram = composeUpidGCodeExport(document, {
+      header: '%\nG90 G21 G17 G40',
+      footer: 'M30\n%',
+      lineEnding: 'lf'
+    });
+
+    expect(report.structurallyValid).toBe(false);
+    expect(post).toMatchObject({
+      status: 'blocked',
+      body: '',
+      moves: [],
+      operations: [],
+      metrics: { rapidCount: 0, cutMoveCount: 0 }
+    });
+    expect(post.metrics.cutMoveCount).not.toBe(8);
+    expect(exportProgram).toMatchObject({
+      body: '',
+      canDownload: false,
+      programOperations: []
+    });
+  });
+
+  it.each([
+    {
+      label: 'chain',
+      mutate: (document: UniversalPathIntelligenceDocument) => {
+        document.chains[0].segmentRefs.push({ ...document.chains[0].segmentRefs[0] });
+      }
+    },
+    {
+      label: 'operation',
+      mutate: (document: UniversalPathIntelligenceDocument) => {
+        document.plan.operations[0].segmentRefs.push({
+          ...document.plan.operations[0].segmentRefs[0]
+        });
+      }
+    },
+    {
+      label: 'path element',
+      mutate: (document: UniversalPathIntelligenceDocument) => {
+        document.pathElements[0].segmentRefs.push({
+          ...document.pathElements[0].segmentRefs[0]
+        });
+      }
+    }
+  ])('diagnoses a repeated segment ID inside a $label traversal', ({ mutate }) => {
+    const document = closedDocument();
+    mutate(document);
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'upid-identity-mismatch',
+        message: expect.stringContaining('repeats segment ID')
+      })
+    );
+  });
+
+  it('rejects segments orphaned from every chain', () => {
+    const document = twoOpenLinesDocument();
+    const orphanSegmentId = document.segments[1].id;
+    removeCutGraphForSegment(document, orphanSegmentId, { keepChain: false });
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'upid-missing-reference',
+        message: expect.stringContaining('not owned by any chain')
+      })
+    );
+  });
+
+  it('rejects chains referenced by no contour', () => {
+    const document = twoOpenLinesDocument();
+    const orphanChainId = document.chains[1].id;
+    const orphanSegmentId = document.chains[1].segmentRefs[0].segmentId;
+    removeCutGraphForSegment(document, orphanSegmentId, { keepChain: true });
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'upid-missing-reference',
+        message: expect.stringContaining(`Chain ${orphanChainId} is not referenced by any contour`)
+      })
+    );
+  });
+
+  it('rejects a segment owned by multiple chains', () => {
+    const document = twoOpenLinesDocument();
+    const sharedSegmentId = document.chains[0].segmentRefs[0].segmentId;
+    const secondChain = document.chains[1];
+    const secondOperation = document.plan.operations.find(
+      (operation) => operation.chainId === secondChain.id
+    )!;
+    const secondElement = document.pathElements.find(
+      (element) => element.chainId === secondChain.id
+    )!;
+    secondChain.segmentRefs[0].segmentId = sharedSegmentId;
+    secondOperation.segmentRefs[0].segmentId = sharedSegmentId;
+    secondElement.segmentRefs[0].segmentId = sharedSegmentId;
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'upid-identity-mismatch',
+        message: expect.stringContaining('owned by multiple chains')
+      })
+    );
+  });
+
+  it('rejects same-set operation refs that are not a valid chain traversal', () => {
+    const document = closedDocument();
+    const refs = document.plan.operations[0].segmentRefs;
+    const shuffled = [refs[0], refs[2], refs[1], refs[3]].map((ref) => ({ ...ref }));
+    document.plan.operations[0].segmentRefs = shuffled;
+    document.pathElements[0].segmentRefs = structuredClone(shuffled);
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'upid-identity-mismatch',
+        message: expect.stringContaining('valid traversal of chain')
+      })
+    );
+  });
+
+  it('accepts editor-supported reversal and split-start traversal edits', () => {
+    const document = closedDocument();
+    const operationId = document.plan.operations[0].id;
+    const reversed = reversePathOperation(document, operationId);
+    const edited = setClosedOperationStartNearPoint(
+      reversed!,
+      operationId,
+      { x: 5, y: 0 }
+    );
+
+    expect(validateUpidDocument(reversed)).toMatchObject({
+      structurallyValid: true,
+      valid: true
+    });
+    expect(validateUpidDocument(edited)).toMatchObject({
+      structurallyValid: true,
+      valid: true
     });
   });
 
@@ -183,6 +343,52 @@ describe('validateUpidDocument', () => {
       })
     );
   });
+
+  it.each([
+    {
+      field: 'relatedSegmentIds',
+      severity: 'warning',
+      value: 'seg_0001'
+    },
+    {
+      field: 'relatedClusterIds',
+      severity: 'error',
+      value: null
+    },
+    {
+      field: 'relatedChainIds',
+      severity: 'warning',
+      value: ['chain_0001', 7]
+    },
+    {
+      field: 'relatedContourIds',
+      severity: 'error',
+      value: 7
+    }
+  ] as const)(
+    'rejects malformed $severity diagnostic provenance in $field',
+    ({ field, severity, value }) => {
+      const document = closedDocument();
+      const diagnostic = {
+        id: `diag_malformed_${field}`,
+        severity,
+        code: 'review-probe',
+        message: 'Malformed provenance review probe',
+        [field]: value
+      } as unknown as PathDiagnostic;
+      document.diagnostics.push(diagnostic);
+
+      const report = validateUpidDocument(document);
+
+      expect(report.structurallyValid).toBe(false);
+      expect(report.structuralDiagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'upid-invalid-value',
+          message: expect.stringContaining(field)
+        })
+      );
+    }
+  );
 
   it.each([
     {
@@ -765,6 +971,125 @@ describe('validateUpidDocument', () => {
     expect(posted.body.split('\n').filter((line) => line.startsWith('G0 '))).toHaveLength(1);
   });
 });
+
+function duplicateRectangleTraversal(document: UniversalPathIntelligenceDocument) {
+  const chain = document.chains[0];
+  const operation = document.plan.operations[0];
+  const element = document.pathElements[0];
+  const doubledRefs = [...chain.segmentRefs, ...chain.segmentRefs].map((ref) => ({ ...ref }));
+
+  chain.segmentRefs = structuredClone(doubledRefs);
+  chain.metrics = {
+    ...chain.metrics,
+    cutLength: chain.metrics.cutLength * 2,
+    segmentCount: doubledRefs.length
+  };
+  operation.segmentRefs = structuredClone(doubledRefs);
+  operation.metrics = {
+    ...operation.metrics,
+    cutLength: operation.metrics.cutLength * 2,
+    segmentCount: doubledRefs.length
+  };
+  element.segmentRefs = structuredClone(doubledRefs);
+  if (element.metrics) {
+    element.metrics = {
+      ...element.metrics,
+      cutLength: element.metrics.cutLength * 2,
+      segmentCount: doubledRefs.length
+    };
+  }
+  document.plan.metrics.totalCutLength *= 2;
+}
+
+function addUniqueCutGraphSharingChain(document: UniversalPathIntelligenceDocument) {
+  const sourceContour = document.contours[0];
+  const sourceOperation = document.plan.operations[0];
+  const sourceElement = document.pathElements[0];
+  const contourId = 'contour_shared_chain';
+  const operationId = 'op_shared_chain';
+
+  document.contours.push({
+    ...structuredClone(sourceContour),
+    id: contourId,
+    label: 'Shared Chain Contour',
+    parentId: null,
+    childIds: []
+  });
+  document.plan.operations.push({
+    ...structuredClone(sourceOperation),
+    id: operationId,
+    contourId,
+    label: 'Shared Chain Operation',
+    displayName: 'Shared Chain Operation',
+    orderIndex: 1
+  });
+  document.pathElements.push({
+    ...structuredClone(sourceElement),
+    id: contourId,
+    contourId,
+    operationId,
+    label: 'Shared Chain Element',
+    displayName: 'Shared Chain Element',
+    parentId: null,
+    childIds: [],
+    orderIndex: 1
+  });
+  document.rootPathElementIds.push(contourId);
+  document.plan.metrics = {
+    operationCount: 2,
+    totalCutLength: document.plan.operations.reduce(
+      (total, operation) => total + operation.metrics.cutLength,
+      0
+    ),
+    totalRapidLength: document.plan.operations.reduce(
+      (total, operation) => total + operation.metrics.rapidInLength,
+      0
+    )
+  };
+}
+
+function twoOpenLinesDocument() {
+  return createUpidFromDxfEntities([
+    line(0, 0, 5, 0),
+    line(20, 0, 25, 0)
+  ]);
+}
+
+function removeCutGraphForSegment(
+  document: UniversalPathIntelligenceDocument,
+  segmentId: string,
+  options: { keepChain: boolean }
+) {
+  const chain = document.chains.find((candidate) =>
+    candidate.segmentRefs.some((ref) => ref.segmentId === segmentId)
+  )!;
+  const contour = document.contours.find((candidate) => candidate.chainId === chain.id)!;
+  const operation = document.plan.operations.find((candidate) => candidate.contourId === contour.id)!;
+  const element = document.pathElements.find((candidate) => candidate.contourId === contour.id)!;
+
+  if (!options.keepChain) {
+    document.chains = document.chains.filter((candidate) => candidate.id !== chain.id);
+  }
+  document.contours = document.contours.filter((candidate) => candidate.id !== contour.id);
+  document.plan.operations = document.plan.operations.filter(
+    (candidate) => candidate.id !== operation.id
+  );
+  document.pathElements = document.pathElements.filter(
+    (candidate) => candidate.id !== element.id
+  );
+  document.rootPathElementIds = document.rootPathElementIds.filter((id) => id !== element.id);
+  document.plan.metrics = {
+    operationCount: document.plan.operations.length,
+    totalCutLength: document.plan.operations.reduce(
+      (total, candidate) => total + candidate.metrics.cutLength,
+      0
+    ),
+    totalRapidLength: document.plan.operations.reduce(
+      (total, candidate) => total + candidate.metrics.rapidInLength,
+      0
+    )
+  };
+}
 
 function closedDocument() {
   return createUpidFromDxfEntities([

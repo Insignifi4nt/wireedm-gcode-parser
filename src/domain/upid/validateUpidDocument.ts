@@ -184,6 +184,7 @@ export function validateUpidDocument(document: unknown): UpidValidationReport {
   validateContourTree(contours, contourMap, context);
   validatePathElementTree(pathElements, pathElementMap, rootPathElementIds, context);
   validateIdentityAgreement(
+    segments,
     chains,
     contours,
     pathElements,
@@ -1021,6 +1022,7 @@ function validatePathElements(
 }
 
 function validateIdentityAgreement(
+  segments: PathSegment[],
   chains: PathChain[],
   contours: PathContour[],
   pathElements: PathElement[],
@@ -1030,10 +1032,56 @@ function validateIdentityAgreement(
   operationMap: Map<string, PathOperation>,
   context: ValidationContext
 ) {
-  void chains;
+  const chainIdsBySegmentId = new Map<string, Set<string>>();
+  const contourIdsByChainId = new Map<string, Set<string>>();
+  const operationIdsByChainId = new Map<string, Set<string>>();
+  const operationIdsByContourId = new Map<string, Set<string>>();
   const pathElementsByContourId = new Map<string, PathElement[]>();
   const pathElementsByOperationId = new Map<string, PathElement[]>();
+
+  for (const chain of chains) {
+    validateUniqueTraversalSegmentIds(
+      chain.segmentRefs,
+      `Chain ${chain.id}`,
+      context,
+      { relatedChainIds: [chain.id] }
+    );
+    for (const segmentId of uniqueSegmentIdsFromRefs(chain.segmentRefs)) {
+      addOwnership(chainIdsBySegmentId, segmentId, chain.id);
+    }
+  }
+  for (const contour of contours) {
+    if (typeof contour.chainId === 'string') {
+      addOwnership(contourIdsByChainId, contour.chainId, contour.id);
+    }
+  }
+  for (const operation of operations) {
+    validateUniqueTraversalSegmentIds(
+      operation.segmentRefs,
+      `Operation ${operation.id}`,
+      context,
+      {
+        relatedChainIds: [operation.chainId],
+        relatedContourIds: [operation.contourId]
+      }
+    );
+    if (typeof operation.chainId === 'string') {
+      addOwnership(operationIdsByChainId, operation.chainId, operation.id);
+    }
+    if (typeof operation.contourId === 'string') {
+      addOwnership(operationIdsByContourId, operation.contourId, operation.id);
+    }
+  }
   for (const element of pathElements) {
+    validateUniqueTraversalSegmentIds(
+      element.segmentRefs,
+      `Path element ${element.id}`,
+      context,
+      {
+        relatedChainIds: [element.chainId],
+        relatedContourIds: [element.contourId]
+      }
+    );
     const contourElements = pathElementsByContourId.get(element.contourId) ?? [];
     contourElements.push(element);
     pathElementsByContourId.set(element.contourId, contourElements);
@@ -1043,6 +1091,62 @@ function validateIdentityAgreement(
       pathElementsByOperationId.set(element.operationId, operationElements);
     }
   }
+
+  for (const segment of segments) {
+    if (typeof segment.id !== 'string' || segment.id.length === 0) continue;
+    const owners = chainIdsBySegmentId.get(segment.id) ?? new Set();
+    if (owners.size === 0) {
+      context.add(
+        'upid-missing-reference',
+        `Segment ${segment.id} is not owned by any chain.`,
+        { relatedSegmentIds: [segment.id] }
+      );
+    } else if (owners.size > 1) {
+      context.add(
+        'upid-identity-mismatch',
+        `Segment ${segment.id} is owned by multiple chains: ${[...owners].join(', ')}.`,
+        { relatedSegmentIds: [segment.id], relatedChainIds: [...owners] }
+      );
+    }
+  }
+
+  for (const chain of chains) {
+    if (typeof chain.id !== 'string' || chain.id.length === 0) continue;
+    const contourIds = contourIdsByChainId.get(chain.id) ?? new Set();
+    if (contourIds.size === 0) {
+      context.add(
+        'upid-missing-reference',
+        `Chain ${chain.id} is not referenced by any contour.`,
+        { relatedChainIds: [chain.id] }
+      );
+    } else if (contourIds.size > 1) {
+      context.add(
+        'upid-identity-mismatch',
+        `Chain ${chain.id} is referenced by multiple contours: ${[...contourIds].join(', ')}.`,
+        { relatedChainIds: [chain.id], relatedContourIds: [...contourIds] }
+      );
+    }
+  }
+
+  for (const [chainId, operationIds] of operationIdsByChainId) {
+    if (operationIds.size > 1) {
+      context.add(
+        'upid-identity-mismatch',
+        `Chain ${chainId} is owned by multiple operations: ${[...operationIds].join(', ')}.`,
+        { relatedChainIds: [chainId] }
+      );
+    }
+  }
+  for (const [contourId, operationIds] of operationIdsByContourId) {
+    if (operationIds.size > 1) {
+      context.add(
+        'upid-identity-mismatch',
+        `Contour ${contourId} is owned by multiple operations: ${[...operationIds].join(', ')}.`,
+        { relatedContourIds: [contourId] }
+      );
+    }
+  }
+
   for (const contour of contours) {
     const chain = chainMap.get(contour.chainId);
     const contourElements = pathElementsByContourId.get(contour.id) ?? [];
@@ -1080,10 +1184,13 @@ function validateIdentityAgreement(
         { relatedContourIds: [contour.id] }
       );
     }
-    if (!operation && chain && !sameRefs(element.segmentRefs, chain.segmentRefs)) {
+    if (
+      chain &&
+      !refsAreValidTraversalOf(element.segmentRefs, chain.segmentRefs, element.closed)
+    ) {
       context.add(
         'upid-identity-mismatch',
-        `Unplanned path element ${element.id} segment refs disagree with chain ${chain.id}.`,
+        `Path element ${element.id} is not a valid traversal of chain ${chain.id}.`,
         {
           relatedChainIds: [chain.id],
           relatedSegmentIds: segmentIdsFromRefs(element.segmentRefs)
@@ -1101,10 +1208,13 @@ function validateIdentityAgreement(
         `Operation ${operation.id} must map to exactly one path element.`
       );
     }
-    if (chain && !sameSegmentIds(operation.segmentRefs, chain.segmentRefs)) {
+    if (
+      chain &&
+      !refsAreValidTraversalOf(operation.segmentRefs, chain.segmentRefs, operation.closed)
+    ) {
       context.add(
         'upid-identity-mismatch',
-        `Operation ${operation.id} segment refs disagree with chain ${chain.id}.`,
+        `Operation ${operation.id} is not a valid traversal of chain ${chain.id}.`,
         { relatedChainIds: [chain.id], relatedSegmentIds: segmentIdsFromRefs(operation.segmentRefs) }
       );
     }
@@ -1479,6 +1589,24 @@ function validateDiagnostics(rawDiagnostics: unknown[], context: ValidationConte
       context.add('upid-invalid-value', `diagnostics[${index}] has invalid required fields.`);
       continue;
     }
+    for (const key of [
+      'relatedSegmentIds',
+      'relatedClusterIds',
+      'relatedChainIds',
+      'relatedContourIds'
+    ] as const) {
+      if (!(key in diagnostic)) continue;
+      const relatedIds = diagnostic[key];
+      if (
+        !Array.isArray(relatedIds) ||
+        relatedIds.some((relatedId) => typeof relatedId !== 'string')
+      ) {
+        context.add(
+          'upid-invalid-value',
+          `diagnostic ${diagnostic.id}.${key} must be an array of strings when present.`
+        );
+      }
+    }
     validateFiniteNestedNumbers(diagnostic.details, `diagnostic ${diagnostic.id}.details`, context);
     accepted.push(rawDiagnostic as PathDiagnostic);
   }
@@ -1597,21 +1725,107 @@ function sameRefs(left: OrientedSegmentRef[], right: OrientedSegmentRef[]) {
   );
 }
 
-function sameSegmentIds(left: OrientedSegmentRef[], right: OrientedSegmentRef[]) {
-  if (!Array.isArray(left) || !Array.isArray(right)) return false;
-  if (left.length !== right.length) return false;
-  const counts = new Map<string, number>();
-  for (const ref of left) {
-    if (!ref || typeof ref.segmentId !== 'string') return false;
-    counts.set(ref.segmentId, (counts.get(ref.segmentId) ?? 0) + 1);
+function validateUniqueTraversalSegmentIds(
+  value: unknown,
+  owner: string,
+  context: ValidationContext,
+  refs: Parameters<ValidationContext['add']>[2] = {}
+) {
+  if (!Array.isArray(value)) return;
+  const seen = new Set<string>();
+  const reported = new Set<string>();
+  for (const rawRef of value) {
+    const segmentId = record(rawRef)?.segmentId;
+    if (typeof segmentId !== 'string') continue;
+    if (seen.has(segmentId) && !reported.has(segmentId)) {
+      reported.add(segmentId);
+      context.add(
+        'upid-identity-mismatch',
+        `${owner} repeats segment ID ${segmentId}.`,
+        { ...refs, relatedSegmentIds: [segmentId] }
+      );
+    }
+    seen.add(segmentId);
   }
-  for (const ref of right) {
-    if (!ref || typeof ref.segmentId !== 'string') return false;
-    const remaining = counts.get(ref.segmentId) ?? 0;
-    if (remaining === 0) return false;
-    counts.set(ref.segmentId, remaining - 1);
+}
+
+function uniqueSegmentIdsFromRefs(value: unknown) {
+  return new Set(segmentIdsFromRefs(value));
+}
+
+function addOwnership(
+  ownership: Map<string, Set<string>>,
+  itemId: string,
+  ownerId: string
+) {
+  const owners = ownership.get(itemId) ?? new Set<string>();
+  owners.add(ownerId);
+  ownership.set(itemId, owners);
+}
+
+function refsAreValidTraversalOf(
+  candidateValue: unknown,
+  chainValue: unknown,
+  closed: boolean
+) {
+  if (!Array.isArray(candidateValue) || !Array.isArray(chainValue)) return false;
+  if (candidateValue.length === 0 || candidateValue.length !== chainValue.length) return false;
+  const candidate = candidateValue.map(validOrientedRef);
+  const chain = chainValue.map(validOrientedRef);
+  if (candidate.some((ref) => !ref) || chain.some((ref) => !ref)) return false;
+  const candidateRefs = candidate as OrientedSegmentRef[];
+  const chainRefs = chain as OrientedSegmentRef[];
+
+  if (!closed) {
+    return (
+      candidateRefs.every((ref, index) => sameOrientedRef(ref, chainRefs[index])) ||
+      candidateRefs.every((ref, index) =>
+        sameOrientedRef(ref, chainRefs[chainRefs.length - index - 1], true)
+      )
+    );
   }
-  return [...counts.values()].every((count) => count === 0);
+
+  const forwardStart = chainRefs.findIndex((ref) => sameOrientedRef(candidateRefs[0], ref));
+  if (
+    forwardStart >= 0 &&
+    candidateRefs.every((ref, index) =>
+      sameOrientedRef(ref, chainRefs[(forwardStart + index) % chainRefs.length])
+    )
+  ) {
+    return true;
+  }
+
+  const reverseStart = chainRefs.findIndex((ref) =>
+    sameOrientedRef(candidateRefs[0], ref, true)
+  );
+  return (
+    reverseStart >= 0 &&
+    candidateRefs.every((ref, index) =>
+      sameOrientedRef(
+        ref,
+        chainRefs[(reverseStart - index + chainRefs.length) % chainRefs.length],
+        true
+      )
+    )
+  );
+}
+
+function validOrientedRef(value: unknown): OrientedSegmentRef | null {
+  const ref = record(value);
+  return ref && typeof ref.segmentId === 'string' && typeof ref.reversed === 'boolean'
+    ? { segmentId: ref.segmentId, reversed: ref.reversed }
+    : null;
+}
+
+function sameOrientedRef(
+  left: OrientedSegmentRef,
+  right: OrientedSegmentRef,
+  reverse = false
+) {
+  return (
+    left.segmentId === right.segmentId &&
+    left.reversed === (reverse ? !right.reversed : right.reversed)
+  );
 }
 
 function segmentIdsFromRefs(value: unknown) {

@@ -3,7 +3,8 @@
 Date: 2026-07-12
 Branch: `codex/upid-correctness-safety`
 Start commit: `8b859ba`
-Commit: `fix: validate and gate UPID exports`
+Commit: `44d4ca7` (`fix: validate and gate UPID exports`)
+Follow-up commit: `fix: close UPID validation review gaps`
 
 ## Status
 
@@ -19,11 +20,14 @@ The protected Contour Workbook worktree files were not edited or staged by Task 
 - Indexed segment, endpoint-cluster, chain, contour, path-element, operation, and diagnostic IDs once and diagnosed duplicate IDs in every collection.
 - Validated schema, source/options values, executable and derived geometry, bounds, metrics, operation/override points, DXF/source numeric provenance, diagnostic IDs, manual refs, parent/child/root refs, and every live graph edge.
 - Validated endpoint ownership and cluster metrics, chain endpoint-cluster identity, chain/operation adjacency, closed-loop closure, operation endpoint agreement, and chain/contour/path-element/operation identity.
+- Enforced executable graph cardinality: each segment belongs to exactly one chain, each chain to exactly one contour, each contour to exactly one path element, and each operation to exactly one path element; duplicate operation ownership and repeated traversal refs are structural errors.
+- Compared operation/path-element refs against valid indexed chain traversals, accepting supported rotation/reversal while rejecting same-set shuffles and repeated cuts.
 - Kept validation passes indexed/linear; parent-cycle validation caches resolved paths and endpoint-cluster checks avoid global or per-cluster quadratic scans.
 - Made validation total for malformed persisted collection members, child lists, diagnostics, circular fields, and manual-start override arrays; corrupt input returns structural diagnostics instead of leaking `TypeError`.
 - Checked circular center/radius/endpoint executability plus stored arc angle/sweep agreement while preserving representable tiny/huge explicit sweeps.
 - Used the document healing envelope `max(endpointTolerance, coincidenceEpsilon, recorded within-tolerance toleranceUsed)` while rejecting inflated/stale cluster healing metadata.
 - Kept removed duplicate segment IDs in diagnostic provenance legal; historical diagnostic refs are not mistaken for missing live graph refs.
+- Validated every optional diagnostic `related*Ids` field as an array of strings and made project-rail projection total for malformed warning/error provenance.
 - De-duplicated diagnostics by ID so each existing error is blocking exactly once.
 - Kept projectless transient documents valid for direct domain APIs. Project wrappers still require/match `source.projectId`.
 - Made `projectUpidDocument` throw `Invalid UPID document: ...` for structural corruption before dereferencing project identity; topology-blocked documents still load for inspection.
@@ -46,6 +50,7 @@ The protected Contour Workbook worktree files were not edited or staged by Task 
 - Added required `OutputFormat.coordinatePrecision` and set the default machine to `3`.
 - Added normalization for integer precision `0..6`; absent, fractional, non-numeric, non-finite, negative, and over-range values all become `3` rather than being clamped or coerced.
 - Updated the workbench manifest output boundary so legacy manifests/profiles without precision normalize and persist as `3`.
+- Normalized the parsed project machine at the editor-open boundary so legacy project JSON receives precision `3` without losing templates, output format, work area, or notes.
 - Added precision to settings draft identity, save input, active machine output, imported-project profile fixtures, and project UPID export composition.
 - Added a labelled numeric settings control with `min=0`, `max=6`, and `step=1`.
 - Created one coordinate formatter per post and applied it to every X/Y/I/J word in absolute and incremental IJ modes.
@@ -127,6 +132,37 @@ Vite emitted only its existing advisory that the main minified chunk exceeds 500
 ## Pre-stage read-only review
 
 A single bounded read-only reviewer checked graph completeness, atomic blocking, numeric formatting, migration, malformed persisted input, and linearity. Every Important finding was put under RED tests and fixed. Its final live-tree verdict was **APPROVE**, with no Critical or Important findings; it independently reran path-intel 104/104 and verified atomic formatted-position blocking plus valid inter-operation `G0` positioning.
+
+## Committed-range review remediation
+
+The root committed-range review of `44d4ca7` found one Critical graph-cardinality issue, one Important diagnostic-provenance totality issue, and one Minor legacy project-load migration gap. A separate strict-TDD follow-up reproduced all three before implementation:
+
+- Two exact double-cut graphs—synchronized duplicated rectangle refs and uniquely identified contour/operation/path-element records sharing one chain—remained structurally valid and could post eight cuts.
+- Repeated, orphaned, and shared ownership controls lacked direct structural diagnostics; same-set shuffled refs were not rejected as an invalid traversal identity.
+- Four malformed warning/error `related*Ids` values remained structurally valid, and two project-rail projection probes threw `TypeError`.
+- A legacy project machine opened with `coordinatePrecision` still missing.
+
+The initial remediation run produced 16 expected failures and 96 passes across 112 tests. After implementation:
+
+- ownership/provenance/project-open slice: 112/112 passed;
+- Task 5 + editor-open focused matrix: 16 files, 307/307 passed;
+- explicit z18 DXF/UPID compatibility: 2/2 passed;
+- all `src/domain`: 35 files, 552/552 passed;
+- `npm run build` and `git diff --check`: passed.
+
+The valid editor reversal plus split-start control stayed structurally valid throughout, as did normal open paths and z18.
+
+The same bounded reviewer checked only these three remediation areas and returned **APPROVE** with no Critical, Important, or Minor findings. It confirmed indexed/linear ownership and traversal checks, complete safe handling of all four diagnostic `related*Ids` fields without live-ID requirements, and machine normalization before editor loading. Its fresh verification included the changed-area 112/112 slice, z18 2/2, build, and diff hygiene.
+
+### Follow-up files
+
+- `.superpowers/sdd/task-5-report.md`
+- `src/domain/editor/__tests__/openWorkbenchProject.test.ts`
+- `src/domain/editor/openWorkbenchProject.ts`
+- `src/domain/upid/__tests__/projectRail.test.ts`
+- `src/domain/upid/__tests__/validateUpidDocument.test.ts`
+- `src/domain/upid/projectRail.ts`
+- `src/domain/upid/validateUpidDocument.ts`
 
 ## Files intended for commit
 

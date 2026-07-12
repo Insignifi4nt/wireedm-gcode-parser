@@ -59,6 +59,61 @@ describe('openWorkbenchProject', () => {
       'Workbench project file not found'
     );
   });
+
+  it('normalizes a legacy stored machine while preserving its configured values', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'legacy-machine.dxf',
+      text: simpleLineDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const projectPath = imported.workbench.manifest.projects[0].path;
+    const legacyProject = JSON.parse(adapter.files.get(projectPath)!) as Record<string, any>;
+    legacyProject.machine = {
+      ...legacyProject.machine,
+      id: 'legacy-wire',
+      name: 'Legacy Wire',
+      templates: {
+        header: 'LEGACY HEADER',
+        footer: 'LEGACY FOOTER'
+      },
+      output: {
+        extension: 'nc',
+        lineEnding: 'lf'
+      },
+      workArea: {
+        widthMm: 640,
+        lengthMm: 480
+      },
+      notes: 'Keep this machine configuration.'
+    };
+    adapter.files.set(projectPath, JSON.stringify(legacyProject));
+
+    const opened = await openWorkbenchProject(imported.workbench, projectPath);
+
+    expect(opened.project.machine).toEqual({
+      id: 'legacy-wire',
+      name: 'Legacy Wire',
+      templates: {
+        header: 'LEGACY HEADER',
+        footer: 'LEGACY FOOTER'
+      },
+      output: {
+        extension: 'nc',
+        lineEnding: 'lf',
+        coordinatePrecision: 3
+      },
+      workArea: {
+        widthMm: 640,
+        lengthMm: 480
+      },
+      notes: 'Keep this machine configuration.'
+    });
+    expect(opened.editorProgram.project?.machine).toEqual(opened.project.machine);
+  });
 });
 
 function simpleLineDxf() {
