@@ -4,7 +4,15 @@ import type { DxfEntity } from '@/domain/dxf/types';
 
 import { createPathPlanningDocumentFromDxfEntities } from '../fromDxfEntities';
 import { pathPlanToGcodeBody, postPathPlanToGcode } from '../postGcode';
-import { createArcSegment } from '../segments';
+import {
+  createArcSegment,
+  createLineSegment,
+  pointOnArcAtParameter,
+  reversePathRefs,
+  segmentMap,
+  signedAreaOfSegmentRef,
+  signedAreaOfPath
+} from '../segments';
 
 const DEFAULT_TOLERANCE = 0.01;
 
@@ -57,6 +65,148 @@ describe('path-intel DXF planning', () => {
         sweepRadians
       })
     ).toThrow(RangeError);
+  });
+
+  it.each([
+    { label: '1e20 chord / positive 1e-16 bulge', chordLength: 1e20, bulge: 1e-16 },
+    { label: '1e20 chord / negative 1e-16 bulge', chordLength: 1e20, bulge: -1e-16 },
+    { label: '5e15 chord / positive 1e-13 bulge', chordLength: 5e15, bulge: 1e-13 },
+    { label: '5e15 chord / negative 1e-13 bulge', chordLength: 5e15, bulge: -1e-13 }
+  ])(
+    'computes cancellation-safe circular-segment area for $label',
+    ({ chordLength, bulge }) => {
+      const document = createPathPlanningDocumentFromDxfEntities([
+        closedBulgePolyline(
+          { x: 0, y: 0 },
+          { x: chordLength, y: 0 },
+          bulge
+        )
+      ]);
+      const contour = document.contours[0];
+      const expectedArea = (chordLength * chordLength * bulge) / 3;
+
+      expect(contour?.closed).toBe(true);
+      expect(contour?.signedArea).not.toBeNull();
+      expect(
+        Math.abs((contour!.signedArea! - expectedArea) / expectedArea)
+      ).toBeLessThan(1e-12);
+      expect(Math.sign(contour!.signedArea!)).toBe(Math.sign(bulge));
+      expect(document.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+        'degenerate-contour'
+      );
+
+      const segmentsById = segmentMap(document.segments);
+      const refs = document.chains[0].segmentRefs;
+      const reversedArea = signedAreaOfPath(reversePathRefs(refs), segmentsById);
+      expect(reversedArea).toBe(-contour!.signedArea!);
+    }
+  );
+
+  it.each([
+    { chordLength: 1e20, bulge: 1e-16, offset: 1e30 },
+    { chordLength: 5e15, bulge: -1e-13, offset: -1e25 }
+  ])(
+    'retains tiny circular-segment area at a huge finite offset ($offset)',
+    ({ chordLength, bulge, offset }) => {
+      const start = { x: offset, y: -offset };
+      const end = { x: offset + chordLength, y: -offset };
+      const actualChord = end.x - start.x;
+      const document = createPathPlanningDocumentFromDxfEntities([
+        closedBulgePolyline(start, end, bulge)
+      ]);
+      const area = document.contours[0]?.signedArea;
+      const expectedArea = (actualChord * actualChord * bulge) / 3;
+
+      expect(area).not.toBeNull();
+      expect(Math.abs((area! - expectedArea) / expectedArea)).toBeLessThan(1e-12);
+      expect(document.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+        'degenerate-contour'
+      );
+    }
+  );
+
+  it('preserves exact circle area sign when path references are reversed', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 1e20, y: -1e20 }, radius: 3 }
+    ]);
+    const segmentsById = segmentMap(document.segments);
+    const refs = document.chains[0].segmentRefs;
+
+    expect(signedAreaOfPath(refs, segmentsById)).toBe(Math.PI * 9);
+    expect(signedAreaOfPath(reversePathRefs(refs), segmentsById)).toBe(-Math.PI * 9);
+  });
+
+  it('retains a small multi-segment area residual with compensated summation', () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 2e16, y: 0 },
+      { x: 0, y: 1 },
+      { x: -2, y: 0 },
+      { x: 0, y: -1 },
+      { x: 2, y: 0 },
+      { x: 0, y: 1 },
+      { x: 2e16, y: 0 },
+      { x: 0, y: 0 }
+    ];
+    const segments = points.slice(0, -1).map((start, index) =>
+      createLineSegment({
+        id: `seg_compensated_${index}`,
+        source: {
+          sourceEntityIndex: index,
+          sourceEntityType: 'line',
+          layer: 'CUT',
+          exact: true
+        },
+        start,
+        end: points[index + 1]
+      })
+    );
+    const refs = segments.map((segment) => ({ segmentId: segment.id, reversed: false }));
+    const segmentsById = segmentMap(segments);
+    const origin = points[0];
+    const naiveArea = refs.reduce(
+      (total, ref) => total + signedAreaOfSegmentRef(ref, segmentsById, origin),
+      0
+    );
+
+    expect(naiveArea).toBe(0);
+    expect(signedAreaOfPath(refs, segmentsById)).toBe(4);
+  });
+
+  it('does not snap a representably near-quadrant rotation at huge radius', () => {
+    const quarterTurn = Math.PI / 2;
+    const nearQuarterTurn = quarterTurn + 4 * Number.EPSILON;
+    const radius = 1e30;
+    const sweepRadians = 2 * nearQuarterTurn;
+    const segment = createArcSegment({
+      id: 'seg_near_quadrant',
+      source: {
+        sourceEntityIndex: 0,
+        sourceEntityType: 'arc',
+        layer: 'CUT',
+        exact: true
+      },
+      start: { x: radius, y: 0 },
+      end: {
+        x: radius * Math.cos(sweepRadians),
+        y: radius * Math.sin(sweepRadians)
+      },
+      center: { x: 0, y: 0 },
+      radius,
+      clockwise: false,
+      sweepRadians
+    });
+    const midpoint = pointOnArcAtParameter(
+      segment,
+      { segmentId: segment.id, reversed: false },
+      0.5
+    );
+    const expectedOffsetMagnitude =
+      radius * Math.abs(Math.sin(nearQuarterTurn - quarterTurn));
+
+    expect(nearQuarterTurn).not.toBe(quarterTurn);
+    expect(midpoint.x).toBeLessThan(-expectedOffsetMagnitude / 2);
+    expect(Math.abs(midpoint.x)).toBeGreaterThan(expectedOffsetMagnitude / 2);
   });
 
   it('turns shuffled rectangle lines into one closed contour and one continuous cut', () => {
@@ -504,6 +654,22 @@ function closedPolylineEntity(layer: string, vertices: Array<{ x: number; y: num
     layer,
     closed: true,
     vertices: vertices.map((vertex) => ({ ...vertex, bulge: 0 }))
+  };
+}
+
+function closedBulgePolyline(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  bulge: number
+): DxfEntity {
+  return {
+    type: 'lwpolyline',
+    layer: 'CUT',
+    closed: true,
+    vertices: [
+      { ...start, bulge },
+      { ...end, bulge: 0 }
+    ]
   };
 }
 

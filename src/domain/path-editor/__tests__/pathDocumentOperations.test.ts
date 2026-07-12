@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { DxfEntity } from '@/domain/dxf/types';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
+import { arcParameterAtAngle } from '@/domain/path-intel/segments';
 
 import {
   constructMagnetizedPoint,
@@ -357,6 +358,69 @@ describe('pathDocumentOperations', () => {
     });
   });
 
+  it.each([1e-16, 1e-15])(
+    'preserves a bulge %s tiny arc sweep through translation, rotation, and reflection',
+    (bulge) => {
+      const document = createPathPlanningDocumentFromDxfEntities([tinyBulgePolyline(bulge, false)]);
+      const source = firstArc(document);
+      const translated = firstArc(translatePathDocument(document, { x: 7, y: -3 }));
+      const rotated = firstArc(rotatePathDocument(document, 37, { x: 0, y: 0 }));
+      const mirrored = firstArc(mirrorPathDocument(document, 'x', { x: 0, y: 0 }));
+
+      expect(source.sweepRadians).toBe(4 * Math.atan(bulge));
+      expect(translated.sweepRadians).toBe(source.sweepRadians);
+      expect(rotated.sweepRadians).toBe(source.sweepRadians);
+      expect(mirrored.sweepRadians).toBe(-source.sweepRadians);
+      expect(translated.clockwise).toBe(false);
+      expect(rotated.clockwise).toBe(false);
+      expect(mirrored.clockwise).toBe(true);
+      expect(translated.length).toBeCloseTo(1, 12);
+      expect(rotated.length).toBeCloseTo(1, 12);
+      expect(mirrored.length).toBeCloseTo(1, 12);
+    }
+  );
+
+  it.each([1e-16, 1e-15])(
+    'parameterizes equivalent cardinal tangent angles at the midpoint of a bulge %s tiny arc',
+    (bulge) => {
+      const document = createPathPlanningDocumentFromDxfEntities([tinyBulgePolyline(bulge, false)]);
+      const segment = firstArc(document);
+      const forward = { segmentId: segment.id, reversed: false };
+      const reversed = { segmentId: segment.id, reversed: true };
+
+      for (const angle of [-Math.PI / 2, (3 * Math.PI) / 2]) {
+        expect(arcParameterAtAngle(segment, forward, angle)).toBeCloseTo(0.5, 12);
+        expect(arcParameterAtAngle(segment, reversed, angle)).toBeCloseTo(0.5, 12);
+      }
+    }
+  );
+
+  it.each([
+    { bulge: 1e-16, reverse: false },
+    { bulge: 1e-15, reverse: false },
+    { bulge: 1e-16, reverse: true },
+    { bulge: 1e-15, reverse: true }
+  ])(
+    'constructs the midpoint tangent on a tiny bulge $bulge arc (reverse=$reverse)',
+    ({ bulge, reverse }) => {
+      const document = createPathPlanningDocumentFromDxfEntities([tinyBulgePolyline(bulge, false)]);
+      const operation = document.plan.operations[0];
+      const active = reverse ? reversePathOperation(document, operation.id)! : document;
+
+      const result = constructMagnetizedPoint(
+        active,
+        { x: 1e8, y: -bulge / 2 },
+        { x: 0.5, y: -bulge / 2 },
+        'tangent'
+      );
+
+      expect(result?.relation).toBe('tangent');
+      expect(result?.t).toBeCloseTo(0.5, 12);
+      expect(result?.point.x).toBeCloseTo(0.5, 12);
+      expect(result?.point.y).toBeCloseTo(-bulge / 2, 28);
+    }
+  );
+
   it('moves an arc segment center to an exact target coordinate', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       {
@@ -689,6 +753,49 @@ describe('pathDocumentOperations', () => {
     expect(body).toContain('G3 X0.000 Y0.000 I0.000 J-5.000');
   });
 
+  it.each([
+    { bulge: 1e-16, reverse: false },
+    { bulge: 1e-15, reverse: false },
+    { bulge: 1e-16, reverse: true }
+  ])(
+    'splits a tiny bulge $bulge arc at its stored midpoint parameter (reverse=$reverse)',
+    ({ bulge, reverse }) => {
+      const document = createPathPlanningDocumentFromDxfEntities([tinyBulgePolyline(bulge, true)]);
+      const sourceArc = firstArc(document);
+      const initialOperation = document.plan.operations[0];
+      const active = reverse ? reversePathOperation(document, initialOperation.id)! : document;
+      const operation = active.plan.operations[0];
+      const sourceRef = operation.segmentRefs.find((ref) => ref.segmentId === sourceArc.id);
+      expect(sourceRef).not.toBeUndefined();
+      const orientedSourceSweep = sourceRef!.reversed
+        ? -sourceArc.sweepRadians
+        : sourceArc.sweepRadians;
+
+      const edited = setClosedOperationStartNearPoint(active, operation.id, {
+        x: 0.5,
+        y: -bulge / 2
+      });
+      const createdIds = edited?.plan.operations[0].overrides?.start?.createdSegmentIds ?? [];
+      const splitArcs = createdIds.map((id) => edited?.segments.find((segment) => segment.id === id));
+
+      expect(createdIds).toHaveLength(2);
+      expect(splitArcs.every((segment) => segment?.kind === 'arc')).toBe(true);
+      const [first, second] = splitArcs;
+      if (first?.kind !== 'arc' || second?.kind !== 'arc') return;
+
+      expect(Math.sign(first.sweepRadians)).toBe(Math.sign(orientedSourceSweep));
+      expect(Math.sign(second.sweepRadians)).toBe(Math.sign(orientedSourceSweep));
+      expect(first.sweepRadians + second.sweepRadians).toBe(orientedSourceSweep);
+      expect(first.length + second.length).toBeCloseTo(sourceArc.length, 12);
+      expect(Math.abs(first.sweepRadians)).toBeLessThan(1e-12);
+      expect(Math.abs(second.sweepRadians)).toBeLessThan(1e-12);
+      expect(first.clockwise).toBe(orientedSourceSweep < 0);
+      expect(second.clockwise).toBe(orientedSourceSweep < 0);
+      expect(edited?.plan.operations[0].startPoint.x).toBeCloseTo(0.5, 12);
+      expect(edited?.plan.operations[0].startPoint.y).toBeCloseTo(-bulge / 2, 28);
+    }
+  );
+
   it('sets a circle start at the clicked point instead of the opposite split point', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
@@ -942,4 +1049,25 @@ function line(startX: number, startY: number, endX: number, endY: number): DxfEn
     start: { x: startX, y: startY },
     end: { x: endX, y: endY }
   };
+}
+
+function tinyBulgePolyline(bulge: number, closed: boolean): DxfEntity {
+  return {
+    type: 'lwpolyline',
+    layer: 'CUT',
+    closed,
+    vertices: [
+      { x: 0, y: 0, bulge },
+      { x: 1, y: 0, bulge: 0 }
+    ]
+  };
+}
+
+function firstArc(
+  document: ReturnType<typeof createPathPlanningDocumentFromDxfEntities> | null | undefined
+) {
+  const segment = document?.segments.find((candidate) => candidate.kind === 'arc');
+  expect(segment?.kind).toBe('arc');
+  if (!segment || segment.kind !== 'arc') throw new Error('Expected an arc segment.');
+  return segment;
 }

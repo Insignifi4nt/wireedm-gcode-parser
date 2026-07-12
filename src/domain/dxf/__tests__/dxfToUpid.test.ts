@@ -236,6 +236,68 @@ describe('dxfEntitiesToUpidDocument', () => {
   );
 
   it.each([
+    { label: '1e20 chord / positive 1e-16 bulge', chordLength: 1e20, bulge: 1e-16 },
+    { label: '1e20 chord / negative 1e-16 bulge', chordLength: 1e20, bulge: -1e-16 },
+    { label: '5e15 chord / positive 1e-13 bulge', chordLength: 5e15, bulge: 1e-13 },
+    { label: '5e15 chord / negative 1e-13 bulge', chordLength: 5e15, bulge: -1e-13 }
+  ])(
+    'bounds the cancellation-sensitive sagitta for $label',
+    ({ chordLength, bulge }) => {
+      const document = dxfEntitiesToUpidDocument([
+        bulgePolyline({ x: 0, y: 0 }, { x: chordLength, y: 0 }, bulge)
+      ]);
+      const segment = document.segments[0];
+      expect(segment?.kind).toBe('arc');
+      if (!segment || segment.kind !== 'arc') return;
+
+      const sagitta = (chordLength * Math.abs(bulge)) / 2;
+      const midpoint = stableArcSample(segment, 0.5);
+
+      expect(Math.abs(midpoint.y)).toBeGreaterThanOrEqual(sagitta * (1 - 1e-12));
+      if (bulge > 0) {
+        expect(segment.bounds.minY).toBeLessThanOrEqual(-sagitta * (1 - 1e-12));
+      } else {
+        expect(segment.bounds.maxY).toBeGreaterThanOrEqual(sagitta * (1 - 1e-12));
+      }
+      expectBoundsToContain(segment.bounds, midpoint);
+      expectBoundsToContain(segment.bounds, segment.start);
+      expectBoundsToContain(segment.bounds, segment.end);
+    }
+  );
+
+  it.each([
+    { label: '1e20 chord / positive 1e-16 bulge', chordLength: 1e20, bulge: 1e-16 },
+    { label: '1e20 chord / negative 1e-16 bulge', chordLength: 1e20, bulge: -1e-16 },
+    { label: '5e15 chord / positive 1e-13 bulge', chordLength: 5e15, bulge: 1e-13 },
+    { label: '5e15 chord / negative 1e-13 bulge', chordLength: 5e15, bulge: -1e-13 }
+  ])(
+    'contains dense stable samples for a 90-degree-rotated $label tiny bulge',
+    ({ chordLength, bulge }) => {
+      const document = dxfEntitiesToUpidDocument([
+        bulgePolyline({ x: 0, y: 0 }, { x: 0, y: chordLength }, bulge)
+      ]);
+      const segment = document.segments[0];
+      expect(segment?.kind).toBe('arc');
+      if (!segment || segment.kind !== 'arc') return;
+
+      const sagitta = (chordLength * Math.abs(bulge)) / 2;
+      const midpoint = stableArcSample(segment, 0.5);
+      if (bulge > 0) {
+        expect(segment.bounds.maxX).toBeGreaterThanOrEqual(sagitta * (1 - 1e-12));
+      } else {
+        expect(segment.bounds.minX).toBeLessThanOrEqual(-sagitta * (1 - 1e-12));
+      }
+
+      expectBoundsToContain(segment.bounds, segment.start);
+      expectBoundsToContain(segment.bounds, segment.end);
+      for (let index = 1; index < 100; index++) {
+        expectBoundsToContain(segment.bounds, stableArcSample(segment, index / 100));
+      }
+      expectBoundsToContain(segment.bounds, midpoint);
+    }
+  );
+
+  it.each([
     {
       label: 'positive',
       bulge: 5e15,
@@ -449,6 +511,44 @@ describe('dxfEntitiesToUpidDocument', () => {
 
 function line(startX: number, startY: number, endX: number, endY: number): DxfEntity {
   return lineOnLayer('CUT', startX, startY, endX, endY);
+}
+
+function bulgePolyline(start: { x: number; y: number }, end: { x: number; y: number }, bulge: number): DxfEntity {
+  return {
+    type: 'lwpolyline',
+    layer: 'CUT',
+    closed: false,
+    vertices: [
+      { ...start, bulge },
+      { ...end, bulge: 0 }
+    ]
+  };
+}
+
+function stableArcSample(
+  segment: Extract<ReturnType<typeof dxfEntitiesToUpidDocument>['segments'][number], { kind: 'arc' }>,
+  t: number
+) {
+  const delta = segment.sweepRadians * t;
+  const sinDelta = Math.sin(delta);
+  const sinHalf = Math.sin(delta / 2);
+  const cosDeltaMinusOne = -2 * sinHalf * sinHalf;
+  const radialX = segment.start.x - segment.center.x;
+  const radialY = segment.start.y - segment.center.y;
+  return {
+    x: segment.start.x + cosDeltaMinusOne * radialX - sinDelta * radialY,
+    y: segment.start.y + sinDelta * radialX + cosDeltaMinusOne * radialY
+  };
+}
+
+function expectBoundsToContain(
+  bounds: { minX: number; minY: number; maxX: number; maxY: number },
+  point: { x: number; y: number }
+) {
+  expect(point.x).toBeGreaterThanOrEqual(bounds.minX);
+  expect(point.x).toBeLessThanOrEqual(bounds.maxX);
+  expect(point.y).toBeGreaterThanOrEqual(bounds.minY);
+  expect(point.y).toBeLessThanOrEqual(bounds.maxY);
 }
 
 function lineOnLayer(
