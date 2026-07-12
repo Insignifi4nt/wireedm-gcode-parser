@@ -269,9 +269,12 @@ Store each BLOCK's group-10/20 base point. Transform local points as:
 
 ```ts
 const local = {
-  x: point.x - blockBasePoint.x + arrayOffset.x,
-  y: point.y - blockBasePoint.y + arrayOffset.y
+  x: point.x - blockBasePoint.x,
+  y: point.y - blockBasePoint.y
 };
+const geometryOffset = rotate({ x: local.x * scaleX, y: local.y * scaleY }, rotation);
+const arrayOffset = rotate({ x: column * columnSpacing, y: row * rowSpacing }, rotation);
+const world = add(insertion, geometryOffset, arrayOffset);
 ```
 
 Scale and rotate block-local geometry, rotate row/column array spacing without scaling it, then apply insertion once. For a planar negative-Z OCS normal, map `(x, y)` to `(-x, y)` and reverse arc/bulge handedness; reject normals with a non-zero X or Y component. Parse SPLINE degree, knots, control points, optional weights, flags, layer, and handle. Evaluate with de Boor and recursively subdivide each non-empty knot span until midpoint-to-chord deviation is at most `curveChordError` (or depth 20). Remove duplicate adjacent points. Emit approximate lines before INSERT expansion so normal provenance/transform logic applies.
