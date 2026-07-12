@@ -38,6 +38,31 @@ describe('validateUpidDocument', () => {
     });
   });
 
+  it('accepts legacy schema-v1 documents that predate layer-filter options', () => {
+    const legacy = closedDocument();
+    delete (legacy.options as Partial<typeof legacy.options>).includeLayers;
+    delete (legacy.options as Partial<typeof legacy.options>).excludeLayers;
+
+    expect(validateUpidDocument(legacy)).toMatchObject({
+      structurallyValid: true,
+      valid: true,
+      blockingDiagnostics: [],
+      structuralDiagnostics: []
+    });
+  });
+
+  it('still rejects explicitly malformed layer-filter options', () => {
+    const malformed = closedDocument();
+    malformed.options.includeLayers = [42] as never;
+
+    expect(validateUpidDocument(malformed).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'upid-invalid-value',
+        message: 'options.includeLayers must be an array of strings.'
+      })
+    );
+  });
+
   it.each([
     {
       label: 'duplicated rectangle traversal',

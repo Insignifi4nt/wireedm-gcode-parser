@@ -67,7 +67,10 @@ export function projectUpidDocument(project: WorkbenchProject | null | undefined
     );
   }
 
-  return requireProjectUpidDocument(project.id, upid.document as UniversalPathIntelligenceDocument);
+  return requireProjectUpidDocument(
+    project.id,
+    normalizeLegacyProjectUpidDocument(upid.document as UniversalPathIntelligenceDocument)
+  );
 }
 
 export function composeProjectUpidGCodeExport(
@@ -121,6 +124,26 @@ function requireProjectUpidDocument(
   }
 
   return document;
+}
+
+function normalizeLegacyProjectUpidDocument(
+  document: UniversalPathIntelligenceDocument
+): UniversalPathIntelligenceDocument {
+  const options = document?.options as
+    | Partial<UniversalPathIntelligenceDocument['options']>
+    | undefined;
+  if (!options || (options.includeLayers !== undefined && options.excludeLayers !== undefined)) {
+    return document;
+  }
+
+  return {
+    ...document,
+    options: {
+      ...document.options,
+      includeLayers: options.includeLayers === undefined ? [] : options.includeLayers,
+      excludeLayers: options.excludeLayers === undefined ? [] : options.excludeLayers
+    }
+  };
 }
 
 function stampProjectUpidDocument(

@@ -1,4 +1,8 @@
 import type { DxfDrawingUnits, DxfEntity } from '@/domain/dxf/types';
+import {
+  createGCodeInterpreterState,
+  interpretGCodeBlock
+} from '@/domain/editor/gcodeBlockInterpreter';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import {
   postPathPlanToGcode,
@@ -226,20 +230,11 @@ function uniqueDiagnostics(diagnostics: PathDiagnostic[]) {
 }
 
 function inferArcCenterModeFromHeader(header: string): GcodePostOptions['arcCenterMode'] {
-  let mode: GcodePostOptions['arcCenterMode'] = 'incremental';
-
-  for (const rawLine of header.split(/\r?\n/)) {
-    const line = rawLine
-      .toUpperCase()
-      .replace(/^N\d+(?:\s+|$)/, '')
-      .replace(/[;(].*$/, '')
-      .trim();
-
-    if (/\bG60\b/.test(line) || /\bG90\.1\b/.test(line)) mode = 'absolute';
-    if (/\bG91\.1\b/.test(line)) mode = 'incremental';
-  }
-
-  return mode;
+  const state = createGCodeInterpreterState();
+  header.split(/\r?\n/).forEach((line, index) => {
+    interpretGCodeBlock(state, line, index + 1);
+  });
+  return state.ijMode;
 }
 
 function traceUpidDocumentForExport(

@@ -463,6 +463,31 @@ describe('UPID document boundary', () => {
     ]);
   });
 
+  it('keeps export and parser arc-center semantics aligned for compact modal header words', () => {
+    const document = createUpidFromDxfEntities([
+      {
+        type: 'circle',
+        layer: 'HOLE',
+        center: { x: 30, y: 30 },
+        radius: 5
+      }
+    ]);
+
+    const exportProgram = composeUpidGCodeExport(document, {
+      header: '%\nG90.1G17',
+      footer: 'M02',
+      lineEnding: 'lf'
+    });
+    const parsed = parseGCodeProgram(exportProgram.program.text);
+
+    expect(exportProgram.body).toContain('G3 X25.000 Y30.000 I30.000 J30.000');
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.path.filter((point) => point.type === 'arc')).toEqual([
+      expect.objectContaining({ centerX: 30, centerY: 30 }),
+      expect.objectContaining({ centerX: 30, centerY: 30 })
+    ]);
+  });
+
   it.each([
     {
       label: 'branched',
@@ -532,6 +557,37 @@ describe('UPID document boundary', () => {
 
     expect(upid.document.source.projectId).toBe('upid-project');
     expect(document.source.projectId).toBeUndefined();
+  });
+
+  it('normalizes omitted schema-v1 layer filters at the project load boundary', () => {
+    const project = withProjectUpid(
+      baseProject(),
+      createUpidFromDxfEntities([line(0, 0, 4, 0)])
+    );
+    const storedOptions = project.upid!.document.options;
+    delete (storedOptions as Partial<typeof storedOptions>).includeLayers;
+    delete (storedOptions as Partial<typeof storedOptions>).excludeLayers;
+
+    const loaded = projectUpidDocument(project)!;
+
+    expect(loaded.options.includeLayers).toEqual([]);
+    expect(loaded.options.excludeLayers).toEqual([]);
+    expect(storedOptions).not.toHaveProperty('includeLayers');
+    expect(storedOptions).not.toHaveProperty('excludeLayers');
+  });
+
+  it('does not normalize an explicit malformed layer filter at the project load boundary', () => {
+    const project = withProjectUpid(
+      baseProject(),
+      createUpidFromDxfEntities([line(0, 0, 4, 0)])
+    );
+    const storedOptions = project.upid!.document.options;
+    storedOptions.includeLayers = null as never;
+    delete (storedOptions as Partial<typeof storedOptions>).excludeLayers;
+
+    expect(() => projectUpidDocument(project)).toThrow(
+      'options.includeLayers must be an array of strings.'
+    );
   });
 
   it('rejects attaching UPID state to external G-code projects', () => {

@@ -109,7 +109,7 @@ export function validateUpidDocument(document: unknown): UpidValidationReport {
     );
   }
   validateSource(root.source, context);
-  validateOptions(root.options, context);
+  validateOptions(root.options, root.schemaVersion, context);
 
   const segments = collection<PathSegment>(root, 'segments', context);
   const endpointClusters = collection<EndpointCluster>(root, 'endpointClusters', context);
@@ -274,7 +274,7 @@ function validateSource(value: unknown, context: ValidationContext) {
   }
 }
 
-function validateOptions(value: unknown, context: ValidationContext) {
+function validateOptions(value: unknown, schemaVersion: unknown, context: ValidationContext) {
   const options = record(value);
   if (!options) {
     context.add('upid-invalid-value', 'UPID options must be an object.');
@@ -299,6 +299,7 @@ function validateOptions(value: unknown, context: ValidationContext) {
     context.add('upid-invalid-value', 'options.operationOrderStrategy is unsupported.');
   }
   for (const key of ['includeLayers', 'excludeLayers'] as const) {
+    if (schemaVersion === 1 && options[key] === undefined) continue;
     const values = array(options[key]);
     if (!Array.isArray(options[key]) || values.some((item) => typeof item !== 'string')) {
       context.add('upid-invalid-value', `options.${key} must be an array of strings.`);
