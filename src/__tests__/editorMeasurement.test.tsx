@@ -209,49 +209,44 @@ describe('Editor measurement points', () => {
     expect(container.querySelector('[data-measurement-point-label="1"]')?.textContent).toBe('P1');
   });
 
-  it('clears measurement points with the old Ctrl+C shortcut outside editor inputs', async () => {
+  it('keeps measurement points and native copy behavior for Ctrl+C outside editor inputs', async () => {
     window.showDirectoryPicker = undefined;
-
-    await renderApp(context);
-
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
-    );
-
-    await act(async () => {
-      openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await flushAsync();
-
-    const pointXInput = container.querySelector(
-      'input[aria-label="Measurement point X"]'
-    ) as HTMLInputElement | null;
-    const pointYInput = container.querySelector(
-      'input[aria-label="Measurement point Y"]'
-    ) as HTMLInputElement | null;
-    const addPointButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Add Point')
-    );
-
-    await act(async () => {
-      if (pointXInput) setInputValue(pointXInput, '1.25');
-      if (pointYInput) setInputValue(pointYInput, '2.5');
-      addPointButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+    await renderEditorWithMeasurementPoint(context, container);
 
     expect(container.querySelector('[data-measurement-point-row="1"]')).not.toBeNull();
 
+    const copyEvent = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      code: 'KeyC',
+      ctrlKey: true,
+      key: 'c'
+    });
     await act(async () => {
-      window.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          bubbles: true,
-          code: 'KeyC',
-          ctrlKey: true,
-          key: 'c'
-        })
-      );
+      window.dispatchEvent(copyEvent);
     });
 
+    expect(copyEvent.defaultPrevented).toBe(false);
+    expect(container.querySelector('[data-measurement-point-row="1"]')).not.toBeNull();
+  });
+
+  it('clears measurement points with Ctrl+Shift+C outside editor inputs', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderEditorWithMeasurementPoint(context, container);
+
+    const clearEvent = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      code: 'KeyC',
+      ctrlKey: true,
+      key: 'c',
+      shiftKey: true
+    });
+    await act(async () => {
+      window.dispatchEvent(clearEvent);
+    });
+
+    expect(clearEvent.defaultPrevented).toBe(true);
     expect(container.querySelector('[data-measurement-point-row="1"]')).toBeNull();
   });
 
@@ -422,3 +417,35 @@ describe('Editor measurement points', () => {
     }
   });
 });
+
+async function renderEditorWithMeasurementPoint(
+  context: AppTestContext,
+  container: HTMLDivElement
+) {
+  await renderApp(context);
+
+  const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
+    button.textContent?.includes('Open Editor')
+  );
+
+  await act(async () => {
+    openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  await flushAsync();
+
+  const pointXInput = container.querySelector(
+    'input[aria-label="Measurement point X"]'
+  ) as HTMLInputElement | null;
+  const pointYInput = container.querySelector(
+    'input[aria-label="Measurement point Y"]'
+  ) as HTMLInputElement | null;
+  const addPointButton = [...container.querySelectorAll('button')].find((button) =>
+    button.textContent?.includes('Add Point')
+  );
+
+  await act(async () => {
+    if (pointXInput) setInputValue(pointXInput, '1.25');
+    if (pointYInput) setInputValue(pointYInput, '2.5');
+    addPointButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+}

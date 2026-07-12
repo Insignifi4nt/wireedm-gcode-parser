@@ -70,13 +70,13 @@ export async function connectRememberedWorkbenchDirectory(
 
   const createAdapter = options.createAdapter ?? createBrowserDirectoryAdapter;
   const handleStore = options.handleStore ?? createIndexedDbDirectoryHandleStore();
-  const directoryHandle = await handleStore.read();
-
-  if (!directoryHandle) {
-    return { status: 'missing' };
-  }
 
   try {
+    const directoryHandle = await handleStore.read();
+    if (!directoryHandle) {
+      return { status: 'missing' };
+    }
+
     const hasPermission = await hasReadWritePermission(directoryHandle);
     if (!hasPermission) {
       return { status: 'permission-needed' };

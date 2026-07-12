@@ -972,7 +972,7 @@ export function EditorPage({
       const isClearPoints =
         (event.ctrlKey || event.metaKey) &&
         event.key.toLowerCase() === 'c' &&
-        !event.shiftKey &&
+        event.shiftKey &&
         !event.altKey;
 
       if (isUndo) {
@@ -1275,12 +1275,14 @@ export function EditorPage({
   function handlePreviewPointClick(point: { x: number; y: number }) {
     if (isEditorMutationLocked) return;
 
-    if (!pathClickMode || !pathDocumentDraft || !selectedPathOperationId) {
+    if (!pathClickMode || !pathDocumentDraft) {
       if (canvasMouseMode === 'point') addMeasurementPoint(point.x, point.y);
       return;
     }
 
     if (pathClickMode === 'set-start') {
+      if (!selectedPathOperationId) return;
+
       const edited = pathMagneticSnapEnabled
         ? setClosedOperationStartNearPoint(pathDocumentDraft, selectedPathOperationId, point)
         : setClosedOperationStartAtExistingPointNearPoint(pathDocumentDraft, selectedPathOperationId, point);
