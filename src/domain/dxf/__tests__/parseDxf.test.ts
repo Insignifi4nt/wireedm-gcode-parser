@@ -565,6 +565,116 @@ EOF
     ]);
     expect(result.warnings).toEqual([]);
   });
+
+  it('rejects an ARC when finite source values overflow its computed endpoints', () => {
+    const result = parseDxf(overflowingArcDxf());
+
+    expect(result.entities).toEqual([]);
+    expect(
+      result.warnings.some(
+        (warning) => warning.includes('ARC') && warning.includes('malformed')
+      )
+    ).toBe(true);
+  });
+
+  it('skips INSERT geometry when point and radius scaling overflow', () => {
+    const result = parseDxf(overflowingInsertDxf());
+
+    expect(result.entities).toEqual([]);
+    expect(
+      result.warnings.some(
+        (warning) => warning.includes('LINE') && warning.includes('non-finite')
+      )
+    ).toBe(true);
+    expect(
+      result.warnings.some(
+        (warning) => warning.includes('CIRCLE') && warning.includes('non-finite')
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    ['different', 1],
+    ['non-finite', Number.POSITIVE_INFINITY]
+  ])('rejects a WCS LINE with %s endpoint Z geometry', (_label, endZ) => {
+    const result = parseDxf(wcsLineDxf({ startZ: 0, endZ }));
+
+    expect(result.entities).toEqual([]);
+    expect(result.warnings).toContain('Rejected malformed DXF LINE geometry.');
+  });
+
+  it('keeps WCS LINE XY coordinates unchanged for a constant plane and negative extrusion', () => {
+    const result = parseDxf(
+      wcsLineDxf({ startZ: 5, endZ: 5, normal: { x: 0, y: 0, z: -1 } })
+    );
+
+    expect(result.entities).toEqual([
+      {
+        type: 'line',
+        handle: null,
+        layer: 'CUT',
+        start: { x: 1, y: 2 },
+        end: { x: 3, y: 4 }
+      }
+    ]);
+  });
+
+  it('requires the DXF planar flag for WCS SPLINE geometry', () => {
+    const result = parseDxf(wcsSplineDxf({ flags: 0 }));
+
+    expect(result.entities).toEqual([]);
+    expect(result.unsupportedEntities).toEqual(['SPLINE']);
+  });
+
+  it.each([
+    ['different', [0, 1, 0] as [number, number, number]],
+    ['non-finite', [0, Number.POSITIVE_INFINITY, 0] as [number, number, number]]
+  ])('rejects WCS SPLINE control points with %s Z geometry', (_label, controlPointZ) => {
+    const result = parseDxf(wcsSplineDxf({ controlPointZ }));
+
+    expect(result.entities).toEqual([]);
+    expect(result.unsupportedEntities).toEqual(['SPLINE']);
+  });
+
+  it('rejects a WCS SPLINE with a tilted planar normal', () => {
+    const result = parseDxf(
+      wcsSplineDxf({ normal: { x: 0.5, y: 0, z: 0.866025403784 } })
+    );
+
+    expect(result.entities).toEqual([]);
+    expect(
+      result.warnings.some(
+        (warning) => warning.includes('SPLINE') && warning.includes('tilted extrusion')
+      )
+    ).toBe(true);
+  });
+
+  it('keeps WCS SPLINE XY coordinates unchanged for a negative planar normal', () => {
+    const result = parseDxf(wcsSplineDxf({ normal: { x: 0, y: 0, z: -1 } }));
+
+    expect(result.entities.length).toBeGreaterThan(1);
+    expect(result.entities[0]).toMatchObject({ start: { x: 1, y: 0 } });
+    expect(result.entities.at(-1)).toMatchObject({ end: { x: 3, y: 0 } });
+  });
+
+  it('continues to reflect negative-Z OCS ARC coordinates and handedness', () => {
+    const result = parseDxf(negativeZArcDxf());
+
+    expect(result.entities).toEqual([
+      {
+        type: 'arc',
+        handle: null,
+        layer: 'CUT',
+        center: { x: -2, y: 3 },
+        radius: 1,
+        startAngle: 180,
+        endAngle: 90,
+        clockwise: true,
+        start: { x: -3, y: 3 },
+        end: { x: -2, y: 4 }
+      }
+    ]);
+  });
 });
 
 function blankLayerDxf() {
@@ -825,6 +935,223 @@ function negativeZPolylineDxf() {
     '3',
     '20',
     '4',
+    '210',
+    '0',
+    '220',
+    '0',
+    '230',
+    '-1',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function overflowingArcDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'ARC',
+    '8',
+    'CUT',
+    '10',
+    '1e308',
+    '20',
+    '0',
+    '40',
+    '1e308',
+    '50',
+    '0',
+    '51',
+    '90',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function overflowingInsertDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'BLOCKS',
+    '0',
+    'BLOCK',
+    '2',
+    'OVERFLOW',
+    '10',
+    '0',
+    '20',
+    '0',
+    '0',
+    'LINE',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '11',
+    '9e307',
+    '21',
+    '0',
+    '0',
+    'CIRCLE',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '40',
+    '1e308',
+    '0',
+    'ENDBLK',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'INSERT',
+    '2',
+    'OVERFLOW',
+    '10',
+    '0',
+    '20',
+    '0',
+    '41',
+    '2',
+    '42',
+    '2',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function wcsLineDxf(options: {
+  startZ: number;
+  endZ: number;
+  normal?: { x: number; y: number; z: number };
+}) {
+  const normal = options.normal ?? { x: 0, y: 0, z: 1 };
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'LINE',
+    '8',
+    'CUT',
+    '10',
+    '1',
+    '20',
+    '2',
+    '30',
+    String(options.startZ),
+    '11',
+    '3',
+    '21',
+    '4',
+    '31',
+    String(options.endZ),
+    '210',
+    String(normal.x),
+    '220',
+    String(normal.y),
+    '230',
+    String(normal.z),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function wcsSplineDxf(options: {
+  flags?: number;
+  controlPointZ?: [number, number, number];
+  normal?: { x: number; y: number; z: number };
+} = {}) {
+  const normal = options.normal ?? { x: 0, y: 0, z: 1 };
+  const controlPointZ = options.controlPointZ ?? [0, 0, 0];
+  const controlPoints = [
+    [1, 0, controlPointZ[0]],
+    [2, 1, controlPointZ[1]],
+    [3, 0, controlPointZ[2]]
+  ];
+
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'SPLINE',
+    '8',
+    'CUT',
+    '70',
+    String(options.flags ?? 8),
+    '71',
+    '2',
+    '72',
+    '6',
+    '73',
+    '3',
+    '74',
+    '0',
+    ...[0, 0, 0, 1, 1, 1].flatMap((knot) => ['40', String(knot)]),
+    ...controlPoints.flatMap(([x, y, z]) => [
+      '10',
+      String(x),
+      '20',
+      String(y),
+      '30',
+      String(z)
+    ]),
+    '210',
+    String(normal.x),
+    '220',
+    String(normal.y),
+    '230',
+    String(normal.z),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function negativeZArcDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'ARC',
+    '8',
+    'CUT',
+    '10',
+    '2',
+    '20',
+    '3',
+    '40',
+    '1',
+    '50',
+    '0',
+    '51',
+    '90',
     '210',
     '0',
     '220',

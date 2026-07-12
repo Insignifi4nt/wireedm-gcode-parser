@@ -153,10 +153,15 @@ function scalePoint(point: DxfPoint, scale: number): DxfPoint {
 }
 
 function scaleNumber(value: number, scale: number) {
+  if (!Number.isFinite(value)) {
+    throw new Error('DXF unit normalization received a non-finite coordinate.');
+  }
+  if (scale === 1) return Object.is(value, -0) ? 0 : value;
+
   const scaled = value * scale;
   if (!Number.isFinite(scaled)) {
     throw new Error('DXF unit normalization produced a non-finite coordinate.');
   }
   if (Object.is(scaled, -0)) return 0;
-  return Number(scaled.toPrecision(15));
+  return scaled;
 }

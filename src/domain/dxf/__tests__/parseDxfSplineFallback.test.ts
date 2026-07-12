@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { approximateSpline } from '../approximateSpline';
 import { dxfEntitiesToUpidDocument } from '../dxfToUpid';
 import { parseDxf } from '../parseDxf';
 
@@ -77,6 +78,64 @@ describe('parseDxf spline fallback', () => {
     ).toBe(true);
   });
 
+  it('bounds a cubic inflection curve that crosses its midpoint chord', () => {
+    const maxChordError = 0.001;
+    const result = parseDxf(cubicInflectionSplineDxf(), { curveChordError: maxChordError });
+    const segments = result.entities.flatMap((entity) =>
+      entity.type === 'line' ? [{ start: entity.start, end: entity.end }] : []
+    );
+    let measuredMaxDeviation = 0;
+
+    for (let sample = 0; sample <= 10_000; sample++) {
+      const point = evaluateCubicInflection(sample / 10_000);
+      measuredMaxDeviation = Math.max(
+        measuredMaxDeviation,
+        distanceToPolyline(point, segments)
+      );
+    }
+
+    expect(measuredMaxDeviation).toBeLessThanOrEqual(maxChordError + 1e-12);
+    expect(segments.length).toBeGreaterThan(1);
+  });
+
+  it('fails instead of claiming a chord-error bound when subdivision depth is exhausted', () => {
+    const result = approximateSpline(
+      {
+        controlPoints: [
+          { x: 0, y: 0 },
+          { x: 0, y: 1 },
+          { x: 1, y: -1 },
+          { x: 1, y: 0 }
+        ],
+        degree: 3,
+        flags: 8,
+        knots: [0, 0, 0, 0, 1, 1, 1, 1]
+      },
+      { maxChordError: 1e-30 }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain('depth 20');
+  });
+
+  it('removes only truly duplicate SPLINE points without erasing small valid spans', () => {
+    const result = parseDxf(tinyLinearSplineDxf(), { curveChordError: 1e-12 });
+
+    expect(result.entities).toEqual([
+      {
+        type: 'line',
+        handle: null,
+        layer: 'CUT',
+        approximation: {
+          sourceEntityType: 'SPLINE',
+          maxChordError: 1e-12
+        },
+        start: { x: 0, y: 0 },
+        end: { x: 5e-10, y: 0 }
+      }
+    ]);
+  });
+
   it('evaluates optional rational SPLINE weights instead of treating the curve as non-rational', () => {
     const result = parseDxf(weightedSplineDxf(), { curveChordError: 0.01 });
     const points = result.entities.flatMap((entity) =>
@@ -116,6 +175,82 @@ describe('parseDxf spline fallback', () => {
     expect(
       document.segments.every(
         (segment) => segment.source.dxf?.insertChain.map((insert) => insert.blockName).join('/') === 'OUTER/CURVE'
+      )
+    ).toBe(true);
+  });
+
+  it('scales SPLINE approximation bounds through a uniform INSERT', () => {
+    const result = parseDxf(
+      nestedBlockSplineDxf({ innerScaleX: 2, innerScaleY: 2 }),
+      { curveChordError: 0.05 }
+    );
+
+    expect(result.entities.length).toBeGreaterThan(1);
+    expect(
+      result.entities.every(
+        (entity) =>
+          entity.type === 'line' && entity.approximation?.maxChordError === 0.1
+      )
+    ).toBe(true);
+
+    const document = dxfEntitiesToUpidDocument(result.entities, {}, {
+      units: {
+        source: 'dxf-insunits',
+        code: 1,
+        label: 'inches',
+        scaleToMillimeters: 25.4
+      }
+    });
+    for (const segment of document.segments) {
+      expect(segment.source.approximation?.maxChordError).toBeCloseTo(2.54, 12);
+    }
+  });
+
+  it('uses the maximum absolute XY scale for a non-uniform INSERT approximation bound', () => {
+    const result = parseDxf(
+      nestedBlockSplineDxf({ innerScaleX: 2, innerScaleY: 5 }),
+      { curveChordError: 0.05 }
+    );
+
+    expect(result.entities.length).toBeGreaterThan(1);
+    expect(
+      result.entities.every(
+        (entity) =>
+          entity.type === 'line' && entity.approximation?.maxChordError === 0.25
+      )
+    ).toBe(true);
+  });
+
+  it('accumulates SPLINE approximation bounds through nested INSERT scales', () => {
+    const result = parseDxf(
+      nestedBlockSplineDxf({
+        innerScaleX: 4,
+        innerScaleY: 0.5,
+        outerScaleX: 2,
+        outerScaleY: 3
+      }),
+      { curveChordError: 0.05 }
+    );
+
+    expect(result.entities.length).toBeGreaterThan(1);
+    for (const entity of result.entities) {
+      expect(entity.type === 'line' ? entity.approximation?.maxChordError : null).toBeCloseTo(
+        0.6,
+        12
+      );
+    }
+  });
+
+  it('rejects an INSERT when scaling makes approximation metadata non-finite', () => {
+    const result = parseDxf(
+      nestedBlockSplineDxf({ innerScaleX: 2, innerScaleY: 2 }),
+      { curveChordError: 1e308 }
+    );
+
+    expect(result.entities).toEqual([]);
+    expect(
+      result.warnings.some(
+        (warning) => warning.includes('LINE') && warning.includes('approximation bound')
       )
     ).toBe(true);
   });
@@ -329,6 +464,114 @@ function quadraticSplineDxf() {
   ]);
 }
 
+function cubicInflectionSplineDxf() {
+  return splineDocument([
+    '0',
+    'SPLINE',
+    '8',
+    'CUT',
+    '70',
+    '8',
+    '71',
+    '3',
+    '72',
+    '8',
+    '73',
+    '4',
+    '74',
+    '0',
+    ...[0, 0, 0, 0, 1, 1, 1, 1].flatMap((knot) => ['40', String(knot)]),
+    ...[
+      [0, 0],
+      [0, 1],
+      [1, -1],
+      [1, 0]
+    ].flatMap(([x, y]) => ['10', String(x), '20', String(y), '30', '0'])
+  ]);
+}
+
+function tinyLinearSplineDxf() {
+  return splineDocument([
+    '0',
+    'SPLINE',
+    '8',
+    'CUT',
+    '70',
+    '8',
+    '71',
+    '1',
+    '72',
+    '4',
+    '73',
+    '2',
+    '74',
+    '0',
+    ...[0, 0, 1, 1].flatMap((knot) => ['40', String(knot)]),
+    '10',
+    '0',
+    '20',
+    '0',
+    '30',
+    '0',
+    '10',
+    '5e-10',
+    '20',
+    '0',
+    '30',
+    '0'
+  ]);
+}
+
+function evaluateCubicInflection(parameter: number) {
+  const inverse = 1 - parameter;
+  const basis = [
+    inverse ** 3,
+    3 * inverse ** 2 * parameter,
+    3 * inverse * parameter ** 2,
+    parameter ** 3
+  ];
+  const controlPoints = [
+    { x: 0, y: 0 },
+    { x: 0, y: 1 },
+    { x: 1, y: -1 },
+    { x: 1, y: 0 }
+  ];
+
+  return controlPoints.reduce(
+    (point, controlPoint, index) => ({
+      x: point.x + controlPoint.x * basis[index],
+      y: point.y + controlPoint.y * basis[index]
+    }),
+    { x: 0, y: 0 }
+  );
+}
+
+function distanceToPolyline(
+  point: { x: number; y: number },
+  segments: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }>
+) {
+  return Math.min(...segments.map((segment) => distanceToSegment(point, segment.start, segment.end)));
+}
+
+function distanceToSegment(
+  point: { x: number; y: number },
+  start: { x: number; y: number },
+  end: { x: number; y: number }
+) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared === 0) return Math.hypot(point.x - start.x, point.y - start.y);
+  const parameter = Math.max(
+    0,
+    Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared)
+  );
+  return Math.hypot(
+    point.x - (start.x + parameter * dx),
+    point.y - (start.y + parameter * dy)
+  );
+}
+
 function weightedSplineDxf() {
   return splineDocument([
     '0',
@@ -382,7 +625,19 @@ function splineDocument(entityPairs: string[]) {
   return ['0', 'SECTION', '2', 'ENTITIES', ...entityPairs, '0', 'ENDSEC', '0', 'EOF'].join('\n');
 }
 
-function nestedBlockSplineDxf() {
+function nestedBlockSplineDxf(
+  options: {
+    innerScaleX?: number;
+    innerScaleY?: number;
+    outerScaleX?: number;
+    outerScaleY?: number;
+  } = {}
+) {
+  const innerScaleX = options.innerScaleX ?? 1;
+  const innerScaleY = options.innerScaleY ?? 1;
+  const outerScaleX = options.outerScaleX ?? 1;
+  const outerScaleY = options.outerScaleY ?? 1;
+
   return [
     '0',
     'SECTION',
@@ -456,6 +711,10 @@ function nestedBlockSplineDxf() {
     '0',
     '20',
     '0',
+    '41',
+    String(innerScaleX),
+    '42',
+    String(innerScaleY),
     '0',
     'ENDBLK',
     '0',
@@ -474,6 +733,10 @@ function nestedBlockSplineDxf() {
     '100',
     '20',
     '200',
+    '41',
+    String(outerScaleX),
+    '42',
+    String(outerScaleY),
     '0',
     'ENDSEC',
     '0',

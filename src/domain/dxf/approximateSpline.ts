@@ -22,9 +22,27 @@ interface HomogeneousPoint {
   weight: number;
 }
 
+interface HomogeneousSpline {
+  controlPoints: HomogeneousPoint[];
+  degree: number;
+  knots: number[];
+}
+
+type InternalResult = { ok: true } | { ok: false; reason: string };
+
 const MAX_SUBDIVISION_DEPTH = 20;
 const POINT_EPSILON = 1e-12;
 
+/**
+ * Produces a polyline with a conservative curve-to-chord bound.
+ *
+ * Each B-spline knot span is converted to a positive-weight rational Bézier
+ * span. A rational Bézier curve with positive weights lies inside the convex
+ * hull of its Cartesian control points, so the maximum control-point distance
+ * to the endpoint chord bounds the entire curve. Homogeneous de Casteljau
+ * subdivision shrinks that hull; if it still exceeds the requested bound at
+ * depth 20, approximation fails instead of returning an unproven polyline.
+ */
 export function approximateSpline(
   definition: DxfSplineDefinition,
   options: ApproximateSplineOptions
@@ -32,27 +50,19 @@ export function approximateSpline(
   const validationError = validateSpline(definition, options);
   if (validationError) return { ok: false, reason: validationError };
 
+  const spans = rationalBezierSpans(definition);
+  if (!spans.ok) return spans;
+
   const points: DxfPoint[] = [];
-  const finalSpanIndex = definition.controlPoints.length - 1;
-
-  for (let spanIndex = definition.degree; spanIndex <= finalSpanIndex; spanIndex++) {
-    const startParameter = definition.knots[spanIndex];
-    const endParameter = definition.knots[spanIndex + 1];
-    if (endParameter <= startParameter) continue;
-
-    const start = evaluateSpline(definition, startParameter);
-    const end = evaluateSpline(definition, endParameter);
-    if (!start || !end) {
-      return { ok: false, reason: 'SPLINE evaluation produced a non-finite point.' };
+  for (const controlPoints of spans.spans) {
+    const start = toCartesianPoint(controlPoints[0]);
+    if (!start) {
+      return { ok: false, reason: 'SPLINE Bézier span has a non-finite endpoint.' };
     }
-
     appendUniquePoint(points, start);
-    const subdivision = subdivideSpan(
-      definition,
-      startParameter,
-      endParameter,
-      start,
-      end,
+
+    const subdivision = subdivideBezier(
+      controlPoints,
       options.maxChordError,
       0,
       points
@@ -111,12 +121,8 @@ function validateSpline(
     if (definition.weights.length !== definition.controlPoints.length) {
       return 'SPLINE weight count does not match its control points.';
     }
-    if (
-      definition.weights.some(
-        (weight) => !Number.isFinite(weight) || Math.abs(weight) <= Number.EPSILON
-      )
-    ) {
-      return 'SPLINE contains an invalid rational weight.';
+    if (definition.weights.some((weight) => !Number.isFinite(weight) || weight <= 0)) {
+      return 'SPLINE rational weights must be positive finite numbers.';
     }
   }
 
@@ -124,118 +130,166 @@ function validateSpline(
   const domainEnd = definition.knots[definition.controlPoints.length];
   if (!(domainEnd > domainStart)) return 'SPLINE parameter domain is empty.';
 
+  const distinctKnots = uniqueKnots(definition.knots);
+  if (
+    distinctKnots.some(
+      (knot) => knotMultiplicity(definition.knots, knot) > definition.degree + 1
+    )
+  ) {
+    return 'SPLINE knot multiplicity exceeds its degree.';
+  }
+
+  const interiorKnots = distinctKnots.filter(
+    (knot) => knot > domainStart && knot < domainEnd
+  );
+  if (
+    interiorKnots.some(
+      (knot) => knotMultiplicity(definition.knots, knot) > definition.degree
+    )
+  ) {
+    return 'SPLINE contains a discontinuous interior knot.';
+  }
+
   return null;
 }
 
-function subdivideSpan(
-  definition: DxfSplineDefinition,
-  startParameter: number,
-  endParameter: number,
-  start: DxfPoint,
-  end: DxfPoint,
-  maxChordError: number,
-  depth: number,
-  points: DxfPoint[]
-): ApproximateSplineResult {
-  const midpointParameter = (startParameter + endParameter) / 2;
-  const midpoint = evaluateSpline(definition, midpointParameter);
-  if (!midpoint) {
-    return { ok: false, reason: 'SPLINE evaluation produced a non-finite midpoint.' };
-  }
-
-  if (
-    depth >= MAX_SUBDIVISION_DEPTH ||
-    distanceToChord(midpoint, start, end) <= maxChordError
-  ) {
-    appendUniquePoint(points, end);
-    return { ok: true, points };
-  }
-
-  const left = subdivideSpan(
-    definition,
-    startParameter,
-    midpointParameter,
-    start,
-    midpoint,
-    maxChordError,
-    depth + 1,
-    points
-  );
-  if (!left.ok) return left;
-
-  return subdivideSpan(
-    definition,
-    midpointParameter,
-    endParameter,
-    midpoint,
-    end,
-    maxChordError,
-    depth + 1,
-    points
-  );
-}
-
-function evaluateSpline(definition: DxfSplineDefinition, parameter: number): DxfPoint | null {
-  const span = findKnotSpan(definition, parameter);
-  const degree = definition.degree;
-  const working: HomogeneousPoint[] = [];
-
-  for (let index = 0; index <= degree; index++) {
-    const controlPointIndex = span - degree + index;
-    const point = definition.controlPoints[controlPointIndex];
-    const weight = definition.weights?.[controlPointIndex] ?? 1;
-    working.push({
+function rationalBezierSpans(
+  definition: DxfSplineDefinition
+): { ok: true; spans: HomogeneousPoint[][] } | { ok: false; reason: string } {
+  const homogeneousControlPoints: HomogeneousPoint[] = [];
+  for (let index = 0; index < definition.controlPoints.length; index++) {
+    const point = definition.controlPoints[index];
+    const weight = definition.weights?.[index] ?? 1;
+    const homogeneous = {
       x: point.x * weight,
       y: point.y * weight,
       weight
-    });
+    };
+    if (!isFiniteHomogeneousPoint(homogeneous)) {
+      return {
+        ok: false,
+        reason: 'SPLINE control point overflowed homogeneous coordinates.'
+      };
+    }
+    homogeneousControlPoints.push(homogeneous);
   }
 
-  for (let level = 1; level <= degree; level++) {
-    for (let index = degree; index >= level; index--) {
-      const leftKnotIndex = span - degree + index;
-      const rightKnotIndex = span + 1 + index - level;
-      const denominator =
-        definition.knots[rightKnotIndex] - definition.knots[leftKnotIndex];
-      const alpha =
-        Math.abs(denominator) <= Number.EPSILON
-          ? 0
-          : (parameter - definition.knots[leftKnotIndex]) / denominator;
-      working[index] = interpolateHomogeneous(working[index - 1], working[index], alpha);
+  let spline: HomogeneousSpline = {
+    controlPoints: homogeneousControlPoints,
+    degree: definition.degree,
+    knots: [...definition.knots]
+  };
+  const domainStart = definition.knots[definition.degree];
+  const domainEnd = definition.knots[definition.controlPoints.length];
+  const targets = [
+    { knot: domainStart, multiplicity: definition.degree + 1 },
+    ...uniqueKnots(definition.knots)
+      .filter((knot) => knot > domainStart && knot < domainEnd)
+      .map((knot) => ({ knot, multiplicity: definition.degree })),
+    { knot: domainEnd, multiplicity: definition.degree + 1 }
+  ];
+
+  for (const target of targets) {
+    while (knotMultiplicity(spline.knots, target.knot) < target.multiplicity) {
+      const insertion = insertKnotOnce(spline, target.knot);
+      if (!insertion.ok) return insertion;
+      spline = insertion.spline;
     }
   }
 
-  const result = working[degree];
-  if (
-    !Number.isFinite(result.x) ||
-    !Number.isFinite(result.y) ||
-    !Number.isFinite(result.weight) ||
-    Math.abs(result.weight) <= Number.EPSILON
-  ) {
-    return null;
+  const spans: HomogeneousPoint[][] = [];
+  const lastControlPointIndex = spline.controlPoints.length - 1;
+  for (let spanIndex = spline.degree; spanIndex <= lastControlPointIndex; spanIndex++) {
+    const start = spline.knots[spanIndex];
+    const end = spline.knots[spanIndex + 1];
+    if (end <= start || start < domainStart || end > domainEnd) continue;
+
+    const controlPoints = spline.controlPoints.slice(
+      spanIndex - spline.degree,
+      spanIndex + 1
+    );
+    if (controlPoints.length !== spline.degree + 1) {
+      return { ok: false, reason: 'SPLINE Bézier span extraction failed.' };
+    }
+    spans.push(controlPoints);
   }
 
-  const point = {
-    x: result.x / result.weight,
-    y: result.y / result.weight
-  };
-  return Number.isFinite(point.x) && Number.isFinite(point.y) ? point : null;
+  return spans.length > 0
+    ? { ok: true, spans }
+    : { ok: false, reason: 'SPLINE has no non-empty knot span.' };
 }
 
-function findKnotSpan(definition: DxfSplineDefinition, parameter: number) {
-  const finalSpanIndex = definition.controlPoints.length - 1;
-  const domainEnd = definition.knots[definition.controlPoints.length];
-  if (parameter >= domainEnd) return finalSpanIndex;
+function insertKnotOnce(
+  spline: HomogeneousSpline,
+  knot: number
+): { ok: true; spline: HomogeneousSpline } | { ok: false; reason: string } {
+  const span = findInsertionSpan(spline, knot);
+  const multiplicity = knotMultiplicity(spline.knots, knot);
+  if (multiplicity > spline.degree) {
+    return { ok: false, reason: 'SPLINE knot insertion exceeded degree.' };
+  }
 
-  let low = definition.degree;
-  let high = definition.controlPoints.length;
+  const lastControlPointIndex = spline.controlPoints.length - 1;
+  const controlPoints = new Array<HomogeneousPoint>(spline.controlPoints.length + 1);
+
+  for (let index = 0; index <= span - spline.degree; index++) {
+    controlPoints[index] = { ...spline.controlPoints[index] };
+  }
+
+  for (let index = span - multiplicity; index <= lastControlPointIndex; index++) {
+    controlPoints[index + 1] = { ...spline.controlPoints[index] };
+  }
+
+  for (
+    let index = span - spline.degree + 1;
+    index <= span - multiplicity;
+    index++
+  ) {
+    const denominator = spline.knots[index + spline.degree] - spline.knots[index];
+    if (!(denominator > 0) || !Number.isFinite(denominator)) {
+      return { ok: false, reason: 'SPLINE knot insertion has an invalid interval.' };
+    }
+    const alpha = (knot - spline.knots[index]) / denominator;
+    const point = interpolateHomogeneous(
+      spline.controlPoints[index - 1],
+      spline.controlPoints[index],
+      alpha
+    );
+    if (!point) {
+      return { ok: false, reason: 'SPLINE knot insertion produced non-finite geometry.' };
+    }
+    controlPoints[index] = point;
+  }
+
+  if (controlPoints.some((point) => !point || !isFiniteHomogeneousPoint(point))) {
+    return { ok: false, reason: 'SPLINE knot insertion left invalid control points.' };
+  }
+
+  return {
+    ok: true,
+    spline: {
+      controlPoints,
+      degree: spline.degree,
+      knots: [
+        ...spline.knots.slice(0, span + 1),
+        knot,
+        ...spline.knots.slice(span + 1)
+      ]
+    }
+  };
+}
+
+function findInsertionSpan(spline: HomogeneousSpline, knot: number) {
+  const lastControlPointIndex = spline.controlPoints.length - 1;
+  const domainEnd = spline.knots[lastControlPointIndex + 1];
+  if (knot >= domainEnd) return lastControlPointIndex;
+
+  let low = spline.degree;
+  let high = lastControlPointIndex + 1;
   let middle = Math.floor((low + high) / 2);
 
-  while (
-    parameter < definition.knots[middle] ||
-    parameter >= definition.knots[middle + 1]
-  ) {
-    if (parameter < definition.knots[middle]) high = middle;
+  while (knot < spline.knots[middle] || knot >= spline.knots[middle + 1]) {
+    if (knot < spline.knots[middle]) high = middle;
     else low = middle;
     middle = Math.floor((low + high) / 2);
   }
@@ -243,46 +297,140 @@ function findKnotSpan(definition: DxfSplineDefinition, parameter: number) {
   return middle;
 }
 
+function subdivideBezier(
+  controlPoints: HomogeneousPoint[],
+  maxChordError: number,
+  depth: number,
+  points: DxfPoint[]
+): InternalResult {
+  const cartesianControlPoints = controlPoints.map(toCartesianPoint);
+  if (cartesianControlPoints.some((point) => point == null)) {
+    return { ok: false, reason: 'SPLINE Bézier span produced non-finite geometry.' };
+  }
+  const cartesian = cartesianControlPoints as DxfPoint[];
+  const start = cartesian[0];
+  const end = cartesian[cartesian.length - 1];
+  const flatness = Math.max(
+    ...cartesian.map((point) => distanceToChord(point, start, end))
+  );
+  if (!Number.isFinite(flatness)) {
+    return { ok: false, reason: 'SPLINE chord-error bound is non-finite.' };
+  }
+
+  if (flatness <= maxChordError) {
+    appendUniquePoint(points, end);
+    return { ok: true };
+  }
+
+  if (depth >= MAX_SUBDIVISION_DEPTH) {
+    return {
+      ok: false,
+      reason: `SPLINE subdivision depth ${MAX_SUBDIVISION_DEPTH} cannot satisfy the chord-error bound.`
+    };
+  }
+
+  const split = splitBezierHalf(controlPoints);
+  if (!split) {
+    return { ok: false, reason: 'SPLINE Bézier subdivision produced non-finite geometry.' };
+  }
+  const left = subdivideBezier(split.left, maxChordError, depth + 1, points);
+  if (!left.ok) return left;
+  return subdivideBezier(split.right, maxChordError, depth + 1, points);
+}
+
+function splitBezierHalf(controlPoints: HomogeneousPoint[]) {
+  let level = controlPoints.map((point) => ({ ...point }));
+  const left = [{ ...level[0] }];
+  const right = [{ ...level[level.length - 1] }];
+
+  while (level.length > 1) {
+    const next: HomogeneousPoint[] = [];
+    for (let index = 0; index < level.length - 1; index++) {
+      const point = interpolateHomogeneous(level[index], level[index + 1], 0.5);
+      if (!point) return null;
+      next.push(point);
+    }
+    left.push({ ...next[0] });
+    right.unshift({ ...next[next.length - 1] });
+    level = next;
+  }
+
+  return { left, right };
+}
+
 function interpolateHomogeneous(
   start: HomogeneousPoint,
   end: HomogeneousPoint,
   alpha: number
-): HomogeneousPoint {
-  return {
-    x: start.x + (end.x - start.x) * alpha,
-    y: start.y + (end.y - start.y) * alpha,
-    weight: start.weight + (end.weight - start.weight) * alpha
+): HomogeneousPoint | null {
+  if (!Number.isFinite(alpha) || alpha < 0 || alpha > 1) return null;
+  const inverse = 1 - alpha;
+  const point = {
+    x: start.x * inverse + end.x * alpha,
+    y: start.y * inverse + end.y * alpha,
+    weight: start.weight * inverse + end.weight * alpha
   };
+  return isFiniteHomogeneousPoint(point) ? point : null;
+}
+
+function toCartesianPoint(point: HomogeneousPoint): DxfPoint | null {
+  if (!isFiniteHomogeneousPoint(point) || point.weight <= 0) return null;
+  const cartesian = {
+    x: point.x / point.weight,
+    y: point.y / point.weight
+  };
+  return Number.isFinite(cartesian.x) && Number.isFinite(cartesian.y)
+    ? cartesian
+    : null;
+}
+
+function isFiniteHomogeneousPoint(point: HomogeneousPoint) {
+  return (
+    Number.isFinite(point.x) &&
+    Number.isFinite(point.y) &&
+    Number.isFinite(point.weight) &&
+    point.weight > 0
+  );
 }
 
 function distanceToChord(point: DxfPoint, start: DxfPoint, end: DxfPoint) {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
-  const squaredLength = dx * dx + dy * dy;
-  if (squaredLength <= POINT_EPSILON * POINT_EPSILON) {
+  const length = Math.hypot(dx, dy);
+  if (!Number.isFinite(length)) return Number.POSITIVE_INFINITY;
+  if (length <= POINT_EPSILON) {
     return Math.hypot(point.x - start.x, point.y - start.y);
   }
 
-  const projection = Math.max(
-    0,
-    Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / squaredLength)
+  const offsetX = point.x - start.x;
+  const offsetY = point.y - start.y;
+  if (!Number.isFinite(offsetX) || !Number.isFinite(offsetY)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const unitX = dx / length;
+  const unitY = dy / length;
+  const projection = offsetX * unitX + offsetY * unitY;
+  if (!Number.isFinite(projection)) return Number.POSITIVE_INFINITY;
+  const clampedProjection = Math.max(0, Math.min(length, projection));
+  return Math.hypot(
+    offsetX - clampedProjection * unitX,
+    offsetY - clampedProjection * unitY
   );
-  const closest = {
-    x: start.x + projection * dx,
-    y: start.y + projection * dy
-  };
-  return Math.hypot(point.x - closest.x, point.y - closest.y);
 }
 
 function appendUniquePoint(points: DxfPoint[], point: DxfPoint) {
   const previous = points.at(-1);
-  if (
-    previous &&
-    Math.abs(previous.x - point.x) <= POINT_EPSILON &&
-    Math.abs(previous.y - point.y) <= POINT_EPSILON
-  ) {
+  if (previous && previous.x === point.x && previous.y === point.y) {
     return;
   }
 
   points.push({ x: point.x, y: point.y });
+}
+
+function uniqueKnots(knots: number[]) {
+  return knots.filter((knot, index) => index === 0 || knot !== knots[index - 1]);
+}
+
+function knotMultiplicity(knots: number[], knot: number) {
+  return knots.reduce((count, candidate) => count + (candidate === knot ? 1 : 0), 0);
 }

@@ -103,7 +103,8 @@ describe('dxfEntitiesToUpidDocument', () => {
     });
     expect(document.options.endpointTolerance).toBeCloseTo(0.254, 12);
     expect(document.options.coincidenceEpsilon).toBeCloseTo(0.00254, 12);
-    expect(document.options.startPoint).toEqual({ x: 50.8, y: 76.2 });
+    expect(document.options.startPoint?.x).toBeCloseTo(50.8, 12);
+    expect(document.options.startPoint?.y).toBeCloseTo(76.2, 12);
     expect(document.segments[0]).toMatchObject({
       kind: 'line',
       start: { x: 0, y: 0 },
@@ -133,6 +134,19 @@ describe('dxfEntitiesToUpidDocument', () => {
         code: 'units-assumed-millimeters'
       })
     );
+  });
+
+  it('preserves distinct large unitless coordinates without precision quantization', () => {
+    const startX = 1_234_567_890_123_456;
+    const endX = startX + 2;
+    const document = dxfEntitiesToUpidDocument([line(startX, 0, endX, 0)]);
+
+    expect(document.segments).toHaveLength(1);
+    expect(document.segments[0]).toMatchObject({
+      start: { x: startX, y: 0 },
+      end: { x: endX, y: 0 },
+      length: 2
+    });
   });
 
   it('filters non-cut layers through the path-planning API with deterministic diagnostics', () => {

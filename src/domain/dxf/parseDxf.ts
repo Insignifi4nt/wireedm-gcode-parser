@@ -22,6 +22,10 @@ interface DxfPair {
   value: string;
 }
 
+interface DxfPoint3 extends DxfPoint {
+  z: number;
+}
+
 interface EntityParseResult {
   entities: DxfEntity[];
   unsupportedEntities: Set<string>;
@@ -85,8 +89,11 @@ type TransformEntityResult =
 
 const IGNORED_LAYOUT_ENTITY_TYPES = new Set(['VIEWPORT']);
 const SUPPORTED_ENTITY_TYPES = new Set(['LINE', 'ARC', 'CIRCLE', 'LWPOLYLINE', 'POLYLINE', 'SPLINE']);
+const OCS_COORDINATE_ENTITY_TYPES = new Set(['ARC', 'CIRCLE', 'LWPOLYLINE', 'POLYLINE']);
 const DEFAULT_CURVE_CHORD_ERROR = 0.001;
 const PLANAR_NORMAL_EPSILON = 1e-12;
+// WCS entities may lie at any elevation, but all points must share one XY-parallel plane.
+const WCS_PLANAR_Z_EPSILON = 1e-9;
 const SPLINE_APPROXIMATION_WARNING = 'Flattened DXF SPLINE geometry into line segments.';
 
 export function parseDxf(text: string, options: DxfParseOptions = {}): DxfParseResult {
@@ -496,7 +503,10 @@ function parseEntity(
   if (entityType === 'SPLINE') entities = parseSpline(pairs, curveChordError);
 
   if (!entities) return null;
-  return negativeZ ? entities.map(reflectEntityAcrossYAxis) : entities;
+  const normalizedEntities = negativeZ && OCS_COORDINATE_ENTITY_TYPES.has(entityType)
+    ? entities.map(reflectEntityAcrossYAxis)
+    : entities;
+  return normalizedEntities.every(isFiniteDxfEntity) ? normalizedEntities : null;
 }
 
 function entityArray(entity: DxfEntity | null): DxfEntity[] | null {
@@ -507,17 +517,17 @@ function entityArray(entity: DxfEntity | null): DxfEntity[] | null {
 function parseLine(pairs: DxfPair[]): DxfLineEntity | null {
   const handle = stringValue(pairs, 5);
   const layer = stringValue(pairs, 8);
-  const start = pointFromCodes(pairs, 10, 20);
-  const end = pointFromCodes(pairs, 11, 21);
+  const start = wcsPointFromCodes(pairs, 10, 20, 30);
+  const end = wcsPointFromCodes(pairs, 11, 21, 31);
 
-  if (!start || !end) return null;
+  if (!start || !end || Math.abs(start.z - end.z) > WCS_PLANAR_Z_EPSILON) return null;
 
   return {
     type: 'line',
     handle,
     layer,
-    start,
-    end
+    start: { x: start.x, y: start.y },
+    end: { x: end.x, y: end.y }
   };
 }
 
@@ -530,6 +540,9 @@ function parseArc(pairs: DxfPair[]): DxfArcEntity | null {
   const endAngle = numberValue(pairs, 51);
 
   if (!center || radius == null || startAngle == null || endAngle == null) return null;
+  const start = pointOnCircle(center, radius, startAngle);
+  const end = pointOnCircle(center, radius, endAngle);
+  if (!start || !end) return null;
 
   return {
     type: 'arc',
@@ -540,8 +553,8 @@ function parseArc(pairs: DxfPair[]): DxfArcEntity | null {
     startAngle,
     endAngle,
     clockwise: false,
-    start: pointOnCircle(center, radius, startAngle),
-    end: pointOnCircle(center, radius, endAngle)
+    start,
+    end
   };
 }
 
@@ -685,11 +698,12 @@ function parseSpline(pairs: DxfPair[], curveChordError: number): DxfLineEntity[]
   const declaredKnotCount = integerValue(pairs, 72);
   const declaredControlPointCount = integerValue(pairs, 73);
   const knots = repeatedNumberValues(pairs, 40);
-  const controlPoints = repeatedPointsFromCodes(pairs, 10, 20);
+  const controlPoints = repeatedWcsControlPoints(pairs);
   const parsedWeights = repeatedNumberValues(pairs, 41);
 
   if (
     flags == null ||
+    (flags & 8) !== 8 ||
     degree == null ||
     declaredKnotCount == null ||
     declaredControlPointCount == null ||
@@ -719,7 +733,6 @@ function parseSpline(pairs: DxfPair[], curveChordError: number): DxfLineEntity[]
   for (let index = 0; index < approximation.points.length - 1; index++) {
     const start = approximation.points[index];
     const end = approximation.points[index + 1];
-    if (pointsEqual(start, end)) continue;
     entities.push({
       type: 'line',
       handle,
@@ -830,7 +843,10 @@ function createInsertTransform(
   column: number
 ): InsertTransform {
   const rotationRadians = (insert.rotationDegrees * Math.PI) / 180;
-  const determinant = insert.scaleX * insert.scaleY;
+  const determinant =
+    insert.scaleX === 0 || insert.scaleY === 0
+      ? 0
+      : Math.sign(insert.scaleX) * Math.sign(insert.scaleY);
   const uniformScale =
     Math.abs(Math.abs(insert.scaleX) - Math.abs(insert.scaleY)) <= 1e-9
       ? Math.abs(insert.scaleX)
@@ -867,17 +883,30 @@ function createInsertTransform(
 
 function transformEntity(entity: DxfEntity, transform: InsertTransform): TransformEntityResult {
   if (entity.type === 'line') {
-    return {
-      entity: withInsertedSource(
-        {
-          ...entity,
-          layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
-          start: transformPoint(entity.start, transform),
-          end: transformPoint(entity.end, transform)
-        },
-        transform.source
-      )
-    };
+    const approximation = transformedApproximation(entity, transform);
+    if (entity.approximation && !approximation) {
+      return skippedTransformedEntity(
+        entity.type,
+        'the transformed approximation bound is non-finite'
+      );
+    }
+
+    const start = transformPoint(entity.start, transform);
+    const end = transformPoint(entity.end, transform);
+    if (!start || !end) {
+      return skippedTransformedEntity(entity.type, 'the transform produced non-finite geometry');
+    }
+
+    return transformedEntityResult(
+      {
+        ...entity,
+        ...(approximation ? { approximation } : {}),
+        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+        start,
+        end
+      },
+      transform.source
+    );
   }
 
   if (entity.type === 'circle') {
@@ -885,17 +914,21 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
       return skippedTransformedEntity(entity.type, 'non-uniform INSERT scale would turn it into an ellipse');
     }
 
-    return {
-      entity: withInsertedSource(
-        {
-          ...entity,
-          layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
-          center: transformPoint(entity.center, transform),
-          radius: entity.radius * transform.uniformScale
-        },
-        transform.source
-      )
-    };
+    const center = transformPoint(entity.center, transform);
+    const radius = entity.radius * transform.uniformScale;
+    if (!center || !Number.isFinite(radius)) {
+      return skippedTransformedEntity(entity.type, 'the transform produced non-finite geometry');
+    }
+
+    return transformedEntityResult(
+      {
+        ...entity,
+        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+        center,
+        radius
+      },
+      transform.source
+    );
   }
 
   if (entity.type === 'arc') {
@@ -906,25 +939,27 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
     const center = transformPoint(entity.center, transform);
     const start = transformPoint(entity.start, transform);
     const end = transformPoint(entity.end, transform);
+    const radius = entity.radius * transform.uniformScale;
+    if (!center || !start || !end || !Number.isFinite(radius)) {
+      return skippedTransformedEntity(entity.type, 'the transform produced non-finite geometry');
+    }
     const startAngle = angleDegrees(center, start);
     const endAngle = angleDegrees(center, end);
 
-    return {
-      entity: withInsertedSource(
-        {
-          ...entity,
-          layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
-          center,
-          radius: entity.radius * transform.uniformScale,
-          start,
-          end,
-          startAngle,
-          endAngle,
-          clockwise: transform.determinant < 0 ? !entity.clockwise : entity.clockwise
-        },
-        transform.source
-      )
-    };
+    return transformedEntityResult(
+      {
+        ...entity,
+        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+        center,
+        radius,
+        start,
+        end,
+        startAngle,
+        endAngle,
+        clockwise: transform.determinant < 0 ? !entity.clockwise : entity.clockwise
+      },
+      transform.source
+    );
   }
 
   if (entity.type === 'lwpolyline') {
@@ -936,19 +971,18 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
     }
 
     const bulgeSign = transform.determinant < 0 ? -1 : 1;
-    return {
-      entity: withInsertedSource(
-        {
-          ...entity,
-          layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
-          vertices: entity.vertices.map((vertex) => ({
-            ...transformPoint(vertex, transform),
-            bulge: vertex.bulge * bulgeSign
-          }))
-        },
-        transform.source
-      )
-    };
+    const vertices = transformPolylineVertices(entity.vertices, transform, bulgeSign);
+    if (!vertices) {
+      return skippedTransformedEntity(entity.type, 'the transform produced non-finite geometry');
+    }
+    return transformedEntityResult(
+      {
+        ...entity,
+        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+        vertices
+      },
+      transform.source
+    );
   }
 
   if (entity.type === 'polyline') {
@@ -960,23 +994,61 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
     }
 
     const bulgeSign = transform.determinant < 0 ? -1 : 1;
-    return {
-      entity: withInsertedSource(
-        {
-          ...entity,
-          layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
-          vertices: entity.vertices.map((vertex) => ({
-            ...transformPoint(vertex, transform),
-            bulge: vertex.bulge * bulgeSign
-          }))
-        },
-        transform.source
-      )
-    };
+    const vertices = transformPolylineVertices(entity.vertices, transform, bulgeSign);
+    if (!vertices) {
+      return skippedTransformedEntity(entity.type, 'the transform produced non-finite geometry');
+    }
+    return transformedEntityResult(
+      {
+        ...entity,
+        layer: inheritedBlockLayer(entity.layer, transform.insertLayer),
+        vertices
+      },
+      transform.source
+    );
   }
 
   const exhaustiveEntity: never = entity;
   return skippedTransformedEntity(String(exhaustiveEntity), 'unsupported block geometry');
+}
+
+function transformedApproximation(
+  entity: DxfLineEntity,
+  transform: InsertTransform
+) {
+  if (!entity.approximation) return null;
+  const maximumScale = Math.max(Math.abs(transform.scaleX), Math.abs(transform.scaleY));
+  const maxChordError = entity.approximation.maxChordError * maximumScale;
+  if (!Number.isFinite(maxChordError)) return null;
+  return {
+    ...entity.approximation,
+    maxChordError
+  };
+}
+
+function transformedEntityResult<T extends DxfEntity>(
+  entity: T,
+  source: DxfInsertSource
+): TransformEntityResult {
+  const transformed = withInsertedSource(entity, source);
+  return isFiniteDxfEntity(transformed)
+    ? { entity: transformed }
+    : skippedTransformedEntity(entity.type, 'the transform produced non-finite geometry');
+}
+
+function transformPolylineVertices(
+  vertices: Array<DxfLwPolylineVertex | DxfPolylineVertex>,
+  transform: InsertTransform,
+  bulgeSign: number
+) {
+  const transformed: DxfLwPolylineVertex[] = [];
+  for (const vertex of vertices) {
+    const point = transformPoint(vertex, transform);
+    const bulge = vertex.bulge * bulgeSign;
+    if (!point || !Number.isFinite(bulge)) return null;
+    transformed.push({ ...point, bulge: Object.is(bulge, -0) ? 0 : bulge });
+  }
+  return transformed;
 }
 
 function skippedTransformedEntity(entityType: string, reason: string): TransformEntityResult {
@@ -1026,10 +1098,11 @@ function transformPoint(point: DxfPoint, transform: InsertTransform) {
     y: transform.localOffset.x * sin + transform.localOffset.y * cos
   };
 
-  return {
-    x: round(transform.insertion.x + geometryOffset.x + arrayOffset.x),
-    y: round(transform.insertion.y + geometryOffset.y + arrayOffset.y)
-  };
+  const x = transform.insertion.x + geometryOffset.x + arrayOffset.x;
+  const y = transform.insertion.y + geometryOffset.y + arrayOffset.y;
+  return Number.isFinite(x) && Number.isFinite(y)
+    ? { x: round(x), y: round(y) }
+    : null;
 }
 
 function inheritedBlockLayer(entityLayer: string | null, insertLayer: string | null) {
@@ -1137,6 +1210,17 @@ function pointFromCodes(pairs: DxfPair[], xCode: number, yCode: number): DxfPoin
   return { x, y };
 }
 
+function wcsPointFromCodes(
+  pairs: DxfPair[],
+  xCode: number,
+  yCode: number,
+  zCode: number
+): DxfPoint3 | null {
+  const point = pointFromCodes(pairs, xCode, yCode);
+  const z = optionalNumberValue(pairs, zCode, 0);
+  return point && z != null ? { ...point, z } : null;
+}
+
 function numberValue(pairs: DxfPair[], code: number) {
   const pair = pairs.find((candidate) => candidate.code === code);
   if (!pair) return null;
@@ -1176,37 +1260,46 @@ function repeatedNumberValues(pairs: DxfPair[], code: number): number[] | null {
   return values;
 }
 
-function repeatedPointsFromCodes(
-  pairs: DxfPair[],
-  xCode: number,
-  yCode: number
-): DxfPoint[] | null {
-  const points: DxfPoint[] = [];
-  let current: Partial<DxfPoint> | null = null;
+function repeatedWcsControlPoints(pairs: DxfPair[]): DxfPoint[] | null {
+  const points: DxfPoint3[] = [];
+  let current: Partial<DxfPoint3> | null = null;
 
   for (const pair of pairs) {
-    if (pair.code === xCode) {
+    if (pair.code === 10) {
       if (current) {
         if (current.x == null || current.y == null) return null;
-        points.push({ x: current.x, y: current.y });
+        points.push({ x: current.x, y: current.y, z: current.z ?? 0 });
       }
       const x = finitePairValue(pair);
       if (x == null) return null;
       current = { x };
-    } else if (pair.code === yCode) {
+    } else if (pair.code === 20) {
       if (!current) return null;
       const y = finitePairValue(pair);
       if (y == null || current.y != null) return null;
       current.y = y;
+    } else if (pair.code === 30) {
+      if (!current) return null;
+      const z = finitePairValue(pair);
+      if (z == null || current.z != null) return null;
+      current.z = z;
     }
   }
 
   if (current) {
     if (current.x == null || current.y == null) return null;
-    points.push({ x: current.x, y: current.y });
+    points.push({ x: current.x, y: current.y, z: current.z ?? 0 });
   }
 
-  return points;
+  const referenceZ = points[0]?.z;
+  if (
+    referenceZ == null ||
+    points.some((point) => Math.abs(point.z - referenceZ) > WCS_PLANAR_Z_EPSILON)
+  ) {
+    return null;
+  }
+
+  return points.map(({ x, y }) => ({ x, y }));
 }
 
 function finitePairValue(pair: DxfPair) {
@@ -1231,10 +1324,11 @@ function normalizeBlockName(blockName: string) {
 
 function pointOnCircle(center: DxfPoint, radius: number, angleDegrees: number) {
   const angle = (angleDegrees * Math.PI) / 180;
-  return {
-    x: round(center.x + radius * Math.cos(angle)),
-    y: round(center.y + radius * Math.sin(angle))
-  };
+  const x = center.x + radius * Math.cos(angle);
+  const y = center.y + radius * Math.sin(angle);
+  return Number.isFinite(x) && Number.isFinite(y)
+    ? { x: round(x), y: round(y) }
+    : null;
 }
 
 function round(value: number) {
@@ -1247,6 +1341,55 @@ function angleDegrees(center: DxfPoint, point: DxfPoint) {
 
 function pointsEqual(a: DxfPoint, b: DxfPoint) {
   return Math.abs(a.x - b.x) <= 1e-9 && Math.abs(a.y - b.y) <= 1e-9;
+}
+
+function isFiniteDxfEntity(entity: DxfEntity) {
+  if (!isFiniteEntitySource(entity.source)) return false;
+
+  if (entity.type === 'line') {
+    return (
+      isFinitePoint(entity.start) &&
+      isFinitePoint(entity.end) &&
+      (!entity.approximation || Number.isFinite(entity.approximation.maxChordError))
+    );
+  }
+  if (entity.type === 'circle') {
+    return isFinitePoint(entity.center) && Number.isFinite(entity.radius);
+  }
+  if (entity.type === 'arc') {
+    return (
+      isFinitePoint(entity.center) &&
+      isFinitePoint(entity.start) &&
+      isFinitePoint(entity.end) &&
+      Number.isFinite(entity.radius) &&
+      Number.isFinite(entity.startAngle) &&
+      Number.isFinite(entity.endAngle)
+    );
+  }
+  return entity.vertices.every(
+    (vertex) => isFinitePoint(vertex) && Number.isFinite(vertex.bulge)
+  );
+}
+
+function isFiniteEntitySource(source: DxfEntitySource | undefined) {
+  return (
+    !source ||
+    source.insertChain.every((insert) => {
+      const transform = insert.transform;
+      return (
+        Number.isFinite(transform.rotationDegrees) &&
+        Number.isFinite(transform.scaleX) &&
+        Number.isFinite(transform.scaleY) &&
+        isFinitePoint(transform.insertion) &&
+        (!transform.localOffset || isFinitePoint(transform.localOffset)) &&
+        (!transform.blockBasePoint || isFinitePoint(transform.blockBasePoint))
+      );
+    })
+  );
+}
+
+function isFinitePoint(point: DxfPoint) {
+  return Number.isFinite(point.x) && Number.isFinite(point.y);
 }
 
 function validCurveChordError(value: number | undefined) {
