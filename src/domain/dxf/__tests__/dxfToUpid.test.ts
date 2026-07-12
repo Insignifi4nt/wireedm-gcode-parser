@@ -3,6 +3,9 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
+import { approximateSegmentRef, orientedArcClockwise } from '@/domain/path-intel/segments';
+
 import { dxfEntitiesToUpidDocument } from '../dxfToUpid';
 import { parseDxf } from '../parseDxf';
 import type { DxfEntity } from '../types';
@@ -176,6 +179,61 @@ describe('dxfEntitiesToUpidDocument', () => {
     expect(numericOutput.every(Number.isFinite)).toBe(true);
     expect(Math.max(...numericOutput.map(Math.abs))).toBeLessThan(1e29);
   });
+
+  it.each([
+    { label: 'positive 1e-16', chordLength: 1, bulge: 1e-16 },
+    { label: 'negative 1e-16', chordLength: 1, bulge: -1e-16 },
+    { label: 'positive 1e-15', chordLength: 1, bulge: 1e-15 },
+    { label: 'negative 1e-15', chordLength: 1, bulge: -1e-15 },
+    { label: '1e20-chord positive 1e-16', chordLength: 1e20, bulge: 1e-16 }
+  ])(
+    'preserves a stable signed sweep for $label bulge geometry',
+    ({ chordLength, bulge }) => {
+      const document = dxfEntitiesToUpidDocument([
+        {
+          type: 'lwpolyline',
+          layer: 'CUT',
+          closed: false,
+          vertices: [
+            { x: 0, y: 0, bulge },
+            { x: chordLength, y: 0, bulge: 0 }
+          ]
+        }
+      ]);
+      const segment = document.segments[0];
+
+      expect(segment?.kind).toBe('arc');
+      if (!segment || segment.kind !== 'arc') return;
+
+      const expectedSweep = 4 * Math.atan(bulge);
+      const forwardRef = { segmentId: segment.id, reversed: false };
+      const reversedRef = { segmentId: segment.id, reversed: true };
+      const forwardPoints = approximateSegmentRef(segment, forwardRef, Math.PI / 18);
+      const reversedPoints = approximateSegmentRef(segment, reversedRef, Math.PI / 18);
+      const body = pathPlanToGcodeBody(document.plan, document.segments, {
+        endpointTolerance: 0
+      });
+      const expectedCommand = bulge < 0 ? 'G2' : 'G3';
+
+      expect(Math.abs((segment.sweepRadians - expectedSweep) / expectedSweep)).toBeLessThan(1e-12);
+      expect(Math.abs((segment.length - chordLength) / chordLength)).toBeLessThan(1e-12);
+      expect(segment.clockwise).toBe(bulge < 0);
+      expect(orientedArcClockwise(segment, reversedRef)).toBe(bulge > 0);
+      expect(segment.bounds.minX).toBeLessThanOrEqual(segment.start.x);
+      expect(segment.bounds.minY).toBeLessThanOrEqual(segment.start.y);
+      expect(segment.bounds.maxX).toBeGreaterThanOrEqual(segment.end.x);
+      expect(segment.bounds.maxY).toBeGreaterThanOrEqual(segment.end.y);
+      expect(forwardPoints[0]).toEqual(segment.start);
+      expect(forwardPoints.at(-1)).toEqual(segment.end);
+      expect(reversedPoints[0]).toEqual(segment.end);
+      expect(reversedPoints.at(-1)).toEqual(segment.start);
+      expect(body).toContain(
+        `${expectedCommand} X${chordLength.toFixed(3)} Y0.000`
+      );
+      expect(body.split('\n').filter((line) => /^G[23] /.test(line))).toHaveLength(1);
+      expect(segmentNumbers(segment).every(Number.isFinite)).toBe(true);
+    }
+  );
 
   it.each([
     {

@@ -29,6 +29,7 @@ export interface CreateArcSegmentInput {
   center: Point2;
   radius?: number;
   clockwise: boolean;
+  sweepRadians?: number;
 }
 
 export interface CreateCircleSegmentInput {
@@ -74,10 +75,17 @@ export function createArcSegment(input: CreateArcSegmentInput): ArcPathSegment {
   const startAngleRadians = normalizeAngle(
     Math.atan2(input.start.y - input.center.y, input.start.x - input.center.x)
   );
-  const endAngleRadians = normalizeAngle(
+  const inferredEndAngleRadians = normalizeAngle(
     Math.atan2(input.end.y - input.center.y, input.end.x - input.center.x)
   );
-  const sweepRadians = signedSweep(startAngleRadians, endAngleRadians, input.clockwise);
+  const sweepRadians =
+    input.sweepRadians == null
+      ? signedSweep(startAngleRadians, inferredEndAngleRadians, input.clockwise)
+      : validatedExplicitArcSweep(input.sweepRadians, input.clockwise);
+  const endAngleRadians =
+    input.sweepRadians == null
+      ? inferredEndAngleRadians
+      : normalizeAngle(startAngleRadians + sweepRadians);
 
   return {
     id: input.id,
@@ -93,8 +101,25 @@ export function createArcSegment(input: CreateArcSegmentInput): ArcPathSegment {
     sweepRadians,
     clockwise: input.clockwise,
     length: Math.abs(radius * sweepRadians),
-    bounds: arcBounds(input.center, radius, startAngleRadians, sweepRadians)
+    bounds: arcBounds(
+      input.center,
+      radius,
+      startAngleRadians,
+      sweepRadians,
+      input.start,
+      input.end
+    )
   };
+}
+
+function validatedExplicitArcSweep(sweepRadians: number, clockwise: boolean) {
+  const hasValidMagnitude =
+    Number.isFinite(sweepRadians) && sweepRadians !== 0 && Math.abs(sweepRadians) <= FULL_TURN;
+  const hasValidDirection = clockwise ? sweepRadians < 0 : sweepRadians > 0;
+  if (!hasValidMagnitude || !hasValidDirection) {
+    throw new RangeError('Explicit arc sweep must be finite, nonzero, at most one turn, and match its direction.');
+  }
+  return sweepRadians;
 }
 
 export function createCircleSegment(input: CreateCircleSegmentInput): CirclePathSegment {
@@ -202,11 +227,22 @@ export function pointOnCircle(center: Point2, radius: number, angle: number): Po
   };
 }
 
-export function arcBounds(center: Point2, radius: number, startAngle: number, sweepRadians: number): Bounds2 {
-  let bounds = boundsFromPoints([
-    pointOnCircle(center, radius, startAngle),
-    pointOnCircle(center, radius, startAngle + sweepRadians)
-  ]);
+export function arcBounds(
+  center: Point2,
+  radius: number,
+  startAngle: number,
+  sweepRadians: number,
+  exactStart?: Point2,
+  exactEnd?: Point2
+): Bounds2 {
+  let bounds = boundsFromPoints(
+    exactStart && exactEnd
+      ? [exactStart, exactEnd]
+      : [
+          pointOnCircle(center, radius, startAngle),
+          pointOnCircle(center, radius, startAngle + sweepRadians)
+        ]
+  );
 
   for (const angle of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
     if (angleIsOnSweep(angle, startAngle, sweepRadians)) {
@@ -360,11 +396,12 @@ export function approximateSegmentRef(segment: PathSegment, ref: OrientedSegment
   const startAngle = ref.reversed ? segment.endAngleRadians : segment.startAngleRadians;
   const sweep = ref.reversed ? -segment.sweepRadians : segment.sweepRadians;
   const count = Math.max(1, Math.ceil(Math.abs(sweep) / Math.max(maxAngleRadians, Math.PI / 90)));
-  const points: Point2[] = [];
+  const points: Point2[] = [orientedSegmentStart(segment, ref)];
 
-  for (let index = 0; index <= count; index++) {
+  for (let index = 1; index < count; index++) {
     points.push(pointOnCircle(segment.center, segment.radius, startAngle + (sweep * index) / count));
   }
+  points.push(orientedSegmentEnd(segment, ref));
 
   return points;
 }

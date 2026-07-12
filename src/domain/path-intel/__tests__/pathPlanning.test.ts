@@ -4,10 +4,61 @@ import type { DxfEntity } from '@/domain/dxf/types';
 
 import { createPathPlanningDocumentFromDxfEntities } from '../fromDxfEntities';
 import { pathPlanToGcodeBody, postPathPlanToGcode } from '../postGcode';
+import { createArcSegment } from '../segments';
 
 const DEFAULT_TOLERANCE = 0.01;
 
 describe('path-intel DXF planning', () => {
+  it('uses a validated explicit arc sweep without re-inferring it from endpoint angles', () => {
+    const sweepRadians = 4e-16;
+    const segment = createArcSegment({
+      id: 'seg_explicit',
+      source: {
+        sourceEntityIndex: 0,
+        sourceEntityType: 'lwpolyline',
+        layer: 'CUT',
+        exact: true
+      },
+      start: { x: 0, y: 0 },
+      end: { x: 1, y: 0 },
+      center: { x: 0.5, y: 2.5e15 },
+      radius: 2.5e15,
+      clockwise: false,
+      sweepRadians
+    });
+
+    expect(segment.sweepRadians).toBe(sweepRadians);
+    expect(segment.length).toBeCloseTo(1, 12);
+    expect(segment.bounds.minX).toBeLessThanOrEqual(0);
+    expect(segment.bounds.maxX).toBeGreaterThanOrEqual(1);
+  });
+
+  it.each([
+    { label: 'zero', sweepRadians: 0, clockwise: false },
+    { label: 'non-finite', sweepRadians: Number.POSITIVE_INFINITY, clockwise: false },
+    { label: 'over-full-turn', sweepRadians: 2 * Math.PI + 1e-12, clockwise: false },
+    { label: 'counterclockwise-negative', sweepRadians: -0.25, clockwise: false },
+    { label: 'clockwise-positive', sweepRadians: 0.25, clockwise: true }
+  ])('rejects a $label explicit arc sweep', ({ sweepRadians, clockwise }) => {
+    expect(() =>
+      createArcSegment({
+        id: 'seg_invalid_explicit',
+        source: {
+          sourceEntityIndex: 0,
+          sourceEntityType: 'arc',
+          layer: 'CUT',
+          exact: true
+        },
+        start: { x: 1, y: 0 },
+        end: { x: 0, y: 1 },
+        center: { x: 0, y: 0 },
+        radius: 1,
+        clockwise,
+        sweepRadians
+      })
+    ).toThrow(RangeError);
+  });
+
   it('turns shuffled rectangle lines into one closed contour and one continuous cut', () => {
     const document = createPathPlanningDocumentFromDxfEntities(shuffledRectangle(), {
       endpointTolerance: DEFAULT_TOLERANCE

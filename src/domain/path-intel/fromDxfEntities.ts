@@ -375,7 +375,8 @@ function segmentsFromPolyline(
       end,
       center: arc.center,
       radius: arc.radius,
-      clockwise: start.bulge < 0
+      clockwise: start.bulge < 0,
+      sweepRadians: arc.sweepRadians
     });
     if (!pathSegmentHasFiniteGeometry(segment)) {
       diagnostics.push(invalidBulgeArcDiagnostic(options, index, start.bulge, nextDiagnosticId));
@@ -397,7 +398,16 @@ function arcFromBulge(start: DxfPoint, end: DxfPoint, bulge: number) {
   const chordQuarter = chord / 4;
   const radius = chordQuarter * (absoluteBulge + 1 / absoluteBulge);
   const signedCenterOffset = chordQuarter * (1 / bulge - bulge);
-  if (!Number.isFinite(radius) || !Number.isFinite(signedCenterOffset)) return null;
+  const sweepRadians = 4 * Math.atan(bulge);
+  if (
+    !Number.isFinite(radius) ||
+    !Number.isFinite(signedCenterOffset) ||
+    !Number.isFinite(sweepRadians) ||
+    sweepRadians === 0 ||
+    Math.abs(sweepRadians) > 2 * Math.PI
+  ) {
+    return null;
+  }
 
   const unit = {
     x: (end.x - start.x) / chord,
@@ -421,7 +431,7 @@ function arcFromBulge(start: DxfPoint, end: DxfPoint, bulge: number) {
     return null;
   }
 
-  return { center, radius };
+  return { center, radius, sweepRadians };
 }
 
 function pathSegmentHasFiniteGeometry(segment: PathSegment) {
