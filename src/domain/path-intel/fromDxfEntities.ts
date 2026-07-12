@@ -1,4 +1,5 @@
 import type { DxfEntity, DxfLwPolylineVertex, DxfPoint, DxfPolylineVertex } from '@/domain/dxf/types';
+import { signedDxfArcSweepRadians } from '@/domain/dxf/arcSweep';
 
 import { buildChains } from './chains';
 import { analyzeContours } from './contours';
@@ -147,7 +148,26 @@ export function pathSegmentsFromDxfEntities(
     }
 
     if (entity.type === 'arc') {
-      if (entity.radius <= resolved.coincidenceEpsilon || pointsEqual(entity.start, entity.end, resolved.coincidenceEpsilon)) {
+      if (entity.radius <= resolved.coincidenceEpsilon) {
+        diagnostics.push(
+          invalidNativeArcDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type, entity.radius)
+        );
+        return;
+      }
+
+      const clockwise = Boolean(entity.clockwise);
+      const sweepRadians =
+        entity.sweepRadians ??
+        signedDxfArcSweepRadians(entity.startAngle, entity.endAngle, clockwise);
+      const hasValidSweep =
+        sweepRadians != null &&
+        sweepRadians !== 0 &&
+        Math.abs(sweepRadians) <= 2 * Math.PI &&
+        (clockwise ? sweepRadians < 0 : sweepRadians > 0);
+      const hasValidEndpoints =
+        !pointsEqual(entity.start, entity.end, resolved.coincidenceEpsilon) ||
+        (sweepRadians != null && Math.abs(sweepRadians) === 2 * Math.PI);
+      if (!hasValidSweep || !hasValidEndpoints) {
         diagnostics.push(
           invalidNativeArcDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type, entity.radius)
         );
@@ -161,7 +181,8 @@ export function pathSegmentsFromDxfEntities(
         end: entity.end,
         center: entity.center,
         radius: entity.radius,
-        clockwise: Boolean(entity.clockwise)
+        clockwise,
+        sweepRadians
       });
       if (!pathSegmentHasFiniteGeometry(segment)) {
         diagnostics.push(

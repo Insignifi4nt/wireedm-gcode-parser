@@ -15,6 +15,8 @@ import { DEFAULT_PATH_PLANNING_OPTIONS } from './types';
 const FULL_TURN = Math.PI * 2;
 const ANGULAR_ULP_FACTOR = 32;
 const SMALL_SWEEP_SERIES_LIMIT = 1e-3;
+const FLOAT64_STEP_BUFFER = new ArrayBuffer(8);
+const FLOAT64_STEP_VIEW = new DataView(FLOAT64_STEP_BUFFER);
 
 export interface CreateLineSegmentInput {
   id: SegmentId;
@@ -175,10 +177,10 @@ export function boundsFromPoints(points: Point2[]): Bounds2 {
 
   return points.reduce(
     (bounds, point) => ({
-      minX: Math.min(bounds.minX, point.x),
-      minY: Math.min(bounds.minY, point.y),
-      maxX: Math.max(bounds.maxX, point.x),
-      maxY: Math.max(bounds.maxY, point.y)
+      minX: normalizeSignedZero(Math.min(bounds.minX, point.x)),
+      minY: normalizeSignedZero(Math.min(bounds.minY, point.y)),
+      maxX: normalizeSignedZero(Math.max(bounds.maxX, point.x)),
+      maxY: normalizeSignedZero(Math.max(bounds.maxY, point.y))
     }),
     emptyBounds()
   );
@@ -195,11 +197,15 @@ export function emptyBounds(): Bounds2 {
 
 export function mergeBounds(a: Bounds2, b: Bounds2): Bounds2 {
   return {
-    minX: Math.min(a.minX, b.minX),
-    minY: Math.min(a.minY, b.minY),
-    maxX: Math.max(a.maxX, b.maxX),
-    maxY: Math.max(a.maxY, b.maxY)
+    minX: normalizeSignedZero(Math.min(a.minX, b.minX)),
+    minY: normalizeSignedZero(Math.min(a.minY, b.minY)),
+    maxX: normalizeSignedZero(Math.max(a.maxX, b.maxX)),
+    maxY: normalizeSignedZero(Math.max(a.maxY, b.maxY))
   };
+}
+
+function normalizeSignedZero(value: number) {
+  return value === 0 ? 0 : value;
 }
 
 export function boundsAreFinite(bounds: Bounds2) {
@@ -254,16 +260,20 @@ export function arcBounds(
 
     if (startRadial) {
       for (const cardinal of [
-        { x: 1, y: 0 },
-        { x: 0, y: 1 },
-        { x: -1, y: 0 },
-        { x: 0, y: -1 }
+        { radial: { x: 1, y: 0 }, extremum: 'maxX' as const },
+        { radial: { x: 0, y: 1 }, extremum: 'maxY' as const },
+        { radial: { x: -1, y: 0 }, extremum: 'minX' as const },
+        { radial: { x: 0, y: -1 }, extremum: 'minY' as const }
       ]) {
-        const delta = directedAngularDelta(startRadial, cardinal, sweepRadians);
-        if (angularDeltaIsOnSweep(delta, sweepRadians)) {
+        const delta = directedAngularDelta(startRadial, cardinal.radial, sweepRadians);
+        if (
+          angularDeltaIsOnSweep(delta, sweepRadians) &&
+          angularDeltaIsStrictlyInterior(delta, sweepRadians)
+        ) {
+          const point = pointFromExactArcStart(exactStart, center, delta);
           bounds = mergeBounds(
             bounds,
-            boundsFromPoints([pointFromExactArcStart(exactStart, center, delta)])
+            outwardRoundedExtremumBounds(point, cardinal.extremum)
           );
         }
       }
@@ -278,6 +288,41 @@ export function arcBounds(
   }
 
   return bounds;
+}
+
+function outwardRoundedExtremumBounds(
+  point: Point2,
+  extremum: 'minX' | 'minY' | 'maxX' | 'maxY'
+) {
+  const bounds = boundsFromPoints([point]);
+  // Cover both the analytic extremum evaluation and a later parameter round trip.
+  if (extremum === 'minX') bounds.minX = nextDown(nextDown(point.x));
+  if (extremum === 'minY') bounds.minY = nextDown(nextDown(point.y));
+  if (extremum === 'maxX') bounds.maxX = nextUp(nextUp(point.x));
+  if (extremum === 'maxY') bounds.maxY = nextUp(nextUp(point.y));
+  return bounds;
+}
+
+export function nextUp(value: number) {
+  if (Number.isNaN(value) || value === Number.POSITIVE_INFINITY) return value;
+  if (value === Number.NEGATIVE_INFINITY) return -Number.MAX_VALUE;
+  if (value === 0) return Number.MIN_VALUE;
+
+  FLOAT64_STEP_VIEW.setFloat64(0, value);
+  const bits = FLOAT64_STEP_VIEW.getBigUint64(0);
+  FLOAT64_STEP_VIEW.setBigUint64(0, bits + (value > 0 ? 1n : -1n));
+  return FLOAT64_STEP_VIEW.getFloat64(0);
+}
+
+export function nextDown(value: number) {
+  if (Number.isNaN(value) || value === Number.NEGATIVE_INFINITY) return value;
+  if (value === Number.POSITIVE_INFINITY) return Number.MAX_VALUE;
+  if (value === 0) return -Number.MIN_VALUE;
+
+  FLOAT64_STEP_VIEW.setFloat64(0, value);
+  const bits = FLOAT64_STEP_VIEW.getBigUint64(0);
+  FLOAT64_STEP_VIEW.setBigUint64(0, bits + (value > 0 ? -1n : 1n));
+  return FLOAT64_STEP_VIEW.getFloat64(0);
 }
 
 export function angleIsOnSweep(
@@ -554,6 +599,12 @@ function angularDeltaIsOnSweep(delta: number, sweepRadians: number) {
   return sweepRadians > 0
     ? delta >= -tolerance && delta <= sweepRadians + tolerance
     : delta <= tolerance && delta >= sweepRadians - tolerance;
+}
+
+function angularDeltaIsStrictlyInterior(delta: number, sweepRadians: number) {
+  return sweepRadians > 0
+    ? delta > 0 && delta < sweepRadians
+    : delta < 0 && delta > sweepRadians;
 }
 
 function angularUlpTolerance(...angles: number[]) {

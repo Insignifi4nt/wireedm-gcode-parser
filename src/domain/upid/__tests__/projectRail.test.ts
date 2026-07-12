@@ -9,6 +9,7 @@ import {
   setPathOperationClassification
 } from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
+import { nextUp } from '@/domain/path-intel/segments';
 
 import {
   createUpidProjectRail,
@@ -902,11 +903,12 @@ describe('UPID project rail projection', () => {
       }
     ]);
 
-    expect(summarizeUpidPathDocumentForEditor(document)).toEqual({
+    const summary = summarizeUpidPathDocumentForEditor(document);
+
+    expect(summary).toMatchObject({
       arcMoveCount: 3,
       bounds: {
         maxX: 35,
-        maxY: 20,
         minX: 0,
         minY: 0
       },
@@ -914,6 +916,8 @@ describe('UPID project rail projection', () => {
       pathCount: 6,
       rapidMoveCount: 2
     });
+    expect(summary.bounds.maxY).toBeGreaterThanOrEqual(20);
+    expect(summary.bounds.maxY).toBeLessThanOrEqual(nextUp(nextUp(20)));
   });
 
   it('reads selected segment and point details with DXF provenance', () => {

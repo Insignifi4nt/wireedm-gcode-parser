@@ -66,6 +66,44 @@ export function analyzeContours(
 
     const signedArea = signedAreaOfPath(chain.segmentRefs, segmentsById);
     const area = Math.abs(signedArea);
+    if (!Number.isFinite(signedArea) || !Number.isFinite(area)) {
+      const diagnostic: PathDiagnostic = {
+        id: `diag_contour_${String(diagnostics.length + 1).padStart(4, '0')}`,
+        severity: 'error',
+        code: 'non-finite-geometry',
+        message: `Closed chain ${chain.id} produced a non-finite contour area; geometric metrics and classification were suppressed.`,
+        relatedChainIds: [chain.id],
+        relatedSegmentIds: chain.segmentRefs.map((ref) => ref.segmentId),
+        relatedContourIds: [id],
+        details: {
+          metric: 'signed-area',
+          result: Number.isNaN(signedArea) ? 'nan' : 'infinite'
+        }
+      };
+      diagnostics.push(diagnostic);
+      diagnosticIds.push(diagnostic.id);
+
+      return {
+        id,
+        label: contourLabel(index),
+        provenance,
+        chainId: chain.id,
+        closed: true,
+        classification: 'ambiguous',
+        signedArea: null,
+        area: null,
+        orientation: null,
+        bounds,
+        containmentDepth: 0,
+        parentId: null,
+        childIds: [],
+        representativePoint: null,
+        approximatePolygon,
+        confidence: 0,
+        diagnosticIds
+      };
+    }
+
     const orientation = orientationFromArea(signedArea, resolved.coincidenceEpsilon);
     const representativePoint = polygonCentroidOrAverage(approximatePolygon, resolved.coincidenceEpsilon);
     const selfIntersects = hasSelfIntersection(approximatePolygon, resolved.coincidenceEpsilon);

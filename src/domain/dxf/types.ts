@@ -64,6 +64,7 @@ export interface DxfArcEntity {
   radius: number;
   startAngle: number;
   endAngle: number;
+  sweepRadians?: number;
   clockwise: boolean;
   start: DxfPoint;
   end: DxfPoint;

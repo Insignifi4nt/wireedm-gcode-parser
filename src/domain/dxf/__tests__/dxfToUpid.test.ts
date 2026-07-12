@@ -235,6 +235,171 @@ describe('dxfEntitiesToUpidDocument', () => {
     }
   );
 
+  it('conservatively bounds a rotated near-full bulge arc at every sampled cardinal', () => {
+    const rotation = Math.PI / 4 + 1e-12;
+    const document = dxfEntitiesToUpidDocument([
+      bulgePolyline(
+        { x: 0, y: 0 },
+        { x: Math.cos(rotation), y: Math.sin(rotation) },
+        5e15
+      )
+    ]);
+    const segment = document.segments[0];
+    expect(segment?.kind).toBe('arc');
+    if (!segment || segment.kind !== 'arc') return;
+
+    expectBoundsToContain(segment.bounds, segment.start);
+    expectBoundsToContain(segment.bounds, segment.end);
+    for (let index = 1; index < 4096; index++) {
+      expectBoundsToContain(segment.bounds, stableArcSample(segment, index / 4096));
+    }
+    for (const radial of [
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: -1, y: 0 },
+      { x: 0, y: -1 }
+    ]) {
+      const parameter = stableArcParameterAtRadial(segment, radial);
+      if (parameter > 0 && parameter < 1) {
+        expectBoundsToContain(
+          segment.bounds,
+          stableArcSample(segment, parameter),
+          `cardinal (${radial.x}, ${radial.y})`
+        );
+      }
+    }
+  });
+
+  it.each([
+    { startAngle: 45, endAngle: 45.00000000000001 },
+    { startAngle: 90, endAngle: 90.00000000000001 },
+    { startAngle: 180, endAngle: 180.00000000000003 }
+  ])(
+    'emits the authoritative native ARC sweep from $startAngle to $endAngle degrees',
+    ({ startAngle, endAngle }) => {
+      const radius = 1e20;
+      const parsed = parseDxf(nativeArcDxf(startAngle, endAngle, radius));
+      const document = dxfEntitiesToUpidDocument(parsed.entities);
+      const segment = document.segments[0];
+      expect(segment?.kind).toBe('arc');
+      if (!segment || segment.kind !== 'arc') return;
+
+      const expectedSweep = ((endAngle - startAngle) * Math.PI) / 180;
+      expect(segment.sweepRadians).toBe(expectedSweep);
+      expect(segment.length).toBe(radius * expectedSweep);
+    }
+  );
+
+  it('emits an equal-angle native ARC as one authoritative full turn', () => {
+    const radius = 5;
+    const parsed = parseDxf(nativeArcDxf(45, 45, radius));
+    const document = dxfEntitiesToUpidDocument(parsed.entities);
+    const segment = document.segments[0];
+
+    expect(segment?.kind).toBe('arc');
+    if (!segment || segment.kind !== 'arc') return;
+
+    expect(segment.sweepRadians).toBe(2 * Math.PI);
+    expect(segment.clockwise).toBe(false);
+    expect(segment.length).toBe(2 * Math.PI * radius);
+    expect(document.chains).toHaveLength(1);
+    expect(document.chains[0]).toMatchObject({ closed: true, kind: 'closed-contour' });
+    expect(document.contours[0]).toMatchObject({
+      closed: true,
+      classification: 'exterior',
+      signedArea: Math.PI * radius * radius,
+      area: Math.PI * radius * radius,
+      orientation: 'ccw'
+    });
+    expect(document.plan.operations[0]).toMatchObject({
+      closed: true,
+      classification: 'exterior'
+    });
+    expect(document.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('open-chain');
+  });
+
+  it('preserves native ARC sweep metadata while normalizing drawing units', () => {
+    const startAngle = 45;
+    const endAngle = 45.00000000000001;
+    const parsed = parseDxf(nativeArcDxf(startAngle, endAngle, 1e20));
+    const document = dxfEntitiesToUpidDocument(parsed.entities, {}, {
+      units: {
+        source: 'dxf-insunits',
+        code: 1,
+        label: 'inches',
+        scaleToMillimeters: 25.4
+      }
+    });
+    const segment = document.segments[0];
+    expect(segment?.kind).toBe('arc');
+    if (!segment || segment.kind !== 'arc') return;
+
+    expect(segment.radius).toBe(2.54e21);
+    expect(segment.sweepRadians).toBe(((endAngle - startAngle) * Math.PI) / 180);
+  });
+
+  it.each([
+    {
+      label: 'negative-Z OCS reflection',
+      dxf: nativeArcDxf(45, 45.00000000000001, 1e20, -1),
+      expectedSign: -1
+    },
+    {
+      label: 'ordinary uniform INSERT',
+      dxf: insertedNativeArcDxf(45, 45.00000000000001, 1),
+      expectedSign: 1
+    },
+    {
+      label: 'reflected uniform INSERT',
+      dxf: insertedNativeArcDxf(45, 45.00000000000001, -1),
+      expectedSign: -1
+    }
+  ])('emits the preserved native sweep after $label', ({ dxf, expectedSign }) => {
+    const expectedMagnitude = ((45.00000000000001 - 45) * Math.PI) / 180;
+    const parsed = parseDxf(dxf);
+    const document = dxfEntitiesToUpidDocument(parsed.entities);
+    const segment = document.segments[0];
+    expect(segment?.kind).toBe('arc');
+    if (!segment || segment.kind !== 'arc') return;
+
+    expect(segment.sweepRadians).toBe(expectedSign * expectedMagnitude);
+    expect(segment.clockwise).toBe(expectedSign < 0);
+    expect(segment.length).toBe(1e20 * expectedMagnitude);
+  });
+
+  it('normalizes signed zero in negative-Z exact-axis ARC bounds', () => {
+    const parsed = parseDxf(nativeArcDxf(0, 90, 1, -1));
+    const document = dxfEntitiesToUpidDocument(parsed.entities);
+    const segment = document.segments[0];
+    expect(segment?.kind).toBe('arc');
+    if (!segment || segment.kind !== 'arc') return;
+
+    expect(segment.bounds).toEqual({ minX: -1, minY: 0, maxX: 0, maxY: 1 });
+    expect(Object.values(segment.bounds).some((value) => Object.is(value, -0))).toBe(false);
+  });
+
+  it('derives a stable sweep for a legacy manual ARC without explicit metadata', () => {
+    const document = dxfEntitiesToUpidDocument([
+      {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 5,
+        startAngle: 0,
+        endAngle: 90,
+        clockwise: false,
+        start: { x: 5, y: 0 },
+        end: { x: 0, y: 5 }
+      }
+    ]);
+    const segment = document.segments[0];
+    expect(segment?.kind).toBe('arc');
+    if (!segment || segment.kind !== 'arc') return;
+
+    expect(segment.sweepRadians).toBe(Math.PI / 2);
+    expect(segment.length).toBe(5 * Math.PI / 2);
+  });
+
   it.each([
     { label: '1e20 chord / positive 1e-16 bulge', chordLength: 1e20, bulge: 1e-16 },
     { label: '1e20 chord / negative 1e-16 bulge', chordLength: 1e20, bulge: -1e-16 },
@@ -513,6 +678,96 @@ function line(startX: number, startY: number, endX: number, endY: number): DxfEn
   return lineOnLayer('CUT', startX, startY, endX, endY);
 }
 
+function nativeArcDxf(
+  startAngle: number,
+  endAngle: number,
+  radius: number,
+  extrusionZ?: number
+) {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'ARC',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '40',
+    String(radius),
+    '50',
+    String(startAngle),
+    '51',
+    String(endAngle),
+    ...(extrusionZ == null
+      ? []
+      : ['210', '0', '220', '0', '230', String(extrusionZ)]),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function insertedNativeArcDxf(startAngle: number, endAngle: number, scaleX: number) {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'BLOCKS',
+    '0',
+    'BLOCK',
+    '2',
+    'ARC_BLOCK',
+    '10',
+    '0',
+    '20',
+    '0',
+    '0',
+    'ARC',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '40',
+    '1e20',
+    '50',
+    String(startAngle),
+    '51',
+    String(endAngle),
+    '0',
+    'ENDBLK',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'INSERT',
+    '2',
+    'ARC_BLOCK',
+    '10',
+    '0',
+    '20',
+    '0',
+    '41',
+    String(scaleX),
+    '42',
+    '1',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
 function bulgePolyline(start: { x: number; y: number }, end: { x: number; y: number }, bulge: number): DxfEntity {
   return {
     type: 'lwpolyline',
@@ -541,14 +796,33 @@ function stableArcSample(
   };
 }
 
+function stableArcParameterAtRadial(
+  segment: Extract<ReturnType<typeof dxfEntitiesToUpidDocument>['segments'][number], { kind: 'arc' }>,
+  radial: { x: number; y: number }
+) {
+  const startX = segment.start.x - segment.center.x;
+  const startY = segment.start.y - segment.center.y;
+  const scale = Math.max(Math.abs(startX), Math.abs(startY));
+  const scaledX = startX / scale;
+  const scaledY = startY / scale;
+  const length = Math.hypot(scaledX, scaledY);
+  const unitX = scaledX / length;
+  const unitY = scaledY / length;
+  let delta = Math.atan2(unitX * radial.y - unitY * radial.x, unitX * radial.x + unitY * radial.y);
+  if (segment.sweepRadians > 0 && delta < 0) delta += 2 * Math.PI;
+  if (segment.sweepRadians < 0 && delta > 0) delta -= 2 * Math.PI;
+  return delta / segment.sweepRadians;
+}
+
 function expectBoundsToContain(
   bounds: { minX: number; minY: number; maxX: number; maxY: number },
-  point: { x: number; y: number }
+  point: { x: number; y: number },
+  label = 'arc sample'
 ) {
-  expect(point.x).toBeGreaterThanOrEqual(bounds.minX);
-  expect(point.x).toBeLessThanOrEqual(bounds.maxX);
-  expect(point.y).toBeGreaterThanOrEqual(bounds.minY);
-  expect(point.y).toBeLessThanOrEqual(bounds.maxY);
+  expect(point.x, `${label} x minimum`).toBeGreaterThanOrEqual(bounds.minX);
+  expect(point.x, `${label} x maximum`).toBeLessThanOrEqual(bounds.maxX);
+  expect(point.y, `${label} y minimum`).toBeGreaterThanOrEqual(bounds.minY);
+  expect(point.y, `${label} y maximum`).toBeLessThanOrEqual(bounds.maxY);
 }
 
 function lineOnLayer(

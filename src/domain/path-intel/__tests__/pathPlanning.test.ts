@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { DxfEntity } from '@/domain/dxf/types';
 
+import { analyzeContours } from '../contours';
 import { createPathPlanningDocumentFromDxfEntities } from '../fromDxfEntities';
 import { pathPlanToGcodeBody, postPathPlanToGcode } from '../postGcode';
 import {
   createArcSegment,
   createLineSegment,
+  nextDown,
+  nextUp,
   pointOnArcAtParameter,
   reversePathRefs,
   segmentMap,
@@ -136,6 +139,79 @@ describe('path-intel DXF planning', () => {
     expect(signedAreaOfPath(reversePathRefs(refs), segmentsById)).toBe(-Math.PI * 9);
   });
 
+  it.each([
+    {
+      label: 'circle',
+      entity: {
+        type: 'circle',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 1e200
+      } satisfies DxfEntity
+    },
+    {
+      label: 'closed huge-bulge polyline',
+      entity: closedBulgePolyline(
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        1e200
+      )
+    }
+  ])('keeps $label geometry inspectable when contour area overflows', ({ entity }) => {
+    const document = createPathPlanningDocumentFromDxfEntities([entity]);
+    const contour = document.contours[0];
+    const chain = document.chains[0];
+    const diagnostic = document.diagnostics.find(
+      (candidate) => candidate.code === 'non-finite-geometry'
+    );
+
+    expect(document.segments.every(pathSegmentNumbersAreFinite)).toBe(true);
+    expect(contour).toMatchObject({
+      closed: true,
+      classification: 'ambiguous',
+      signedArea: null,
+      area: null,
+      orientation: null,
+      representativePoint: null
+    });
+    expect(diagnostic).toMatchObject({
+      severity: 'error',
+      code: 'non-finite-geometry',
+      relatedChainIds: [chain.id],
+      relatedSegmentIds: chain.segmentRefs.map((ref) => ref.segmentId),
+      relatedContourIds: [contour.id]
+    });
+    expect(document.plan.operations).toHaveLength(1);
+    expect(document.plan.operations[0].classification).toBe('ambiguous');
+    expect(Object.values(document.plan.operations[0].metrics).every(Number.isFinite)).toBe(true);
+  });
+
+  it('keeps ordinary forward and reversed circle contour metrics finite', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 3 }
+    ]);
+    const chain = document.chains[0];
+    const reversed = analyzeContours(
+      [{ ...chain, segmentRefs: reversePathRefs(chain.segmentRefs) }],
+      document.segments,
+      document.options
+    );
+
+    expect(document.contours[0]).toMatchObject({
+      signedArea: Math.PI * 9,
+      area: Math.PI * 9,
+      orientation: 'ccw'
+    });
+    expect(reversed.contours[0]).toMatchObject({
+      signedArea: -Math.PI * 9,
+      area: Math.PI * 9,
+      orientation: 'cw'
+    });
+    expect(reversed.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'non-finite-geometry'
+    );
+  });
+
   it('retains a small multi-segment area residual with compensated summation', () => {
     const points = [
       { x: 0, y: 0 },
@@ -207,6 +283,94 @@ describe('path-intel DXF planning', () => {
     expect(nearQuarterTurn).not.toBe(quarterTurn);
     expect(midpoint.x).toBeLessThan(-expectedOffsetMagnitude / 2);
     expect(Math.abs(midpoint.x)).toBeGreaterThan(expectedOffsetMagnitude / 2);
+  });
+
+  it('steps to adjacent IEEE-754 values across zeros, subnormals, extremes, and infinities', () => {
+    expect(nextUp(0)).toBe(Number.MIN_VALUE);
+    expect(nextDown(0)).toBe(-Number.MIN_VALUE);
+    expect(nextUp(-0)).toBe(Number.MIN_VALUE);
+    expect(nextDown(-0)).toBe(-Number.MIN_VALUE);
+
+    expect(nextUp(Number.MIN_VALUE)).toBe(2 * Number.MIN_VALUE);
+    expect(Object.is(nextDown(Number.MIN_VALUE), 0)).toBe(true);
+    expect(Object.is(nextUp(-Number.MIN_VALUE), -0)).toBe(true);
+    expect(nextDown(-Number.MIN_VALUE)).toBe(-2 * Number.MIN_VALUE);
+
+    expect(nextUp(Number.MAX_VALUE)).toBe(Number.POSITIVE_INFINITY);
+    expect(nextDown(Number.NEGATIVE_INFINITY)).toBe(Number.NEGATIVE_INFINITY);
+    expect(nextDown(Number.POSITIVE_INFINITY)).toBe(Number.MAX_VALUE);
+    expect(nextUp(Number.NEGATIVE_INFINITY)).toBe(-Number.MAX_VALUE);
+    expect(nextUp(Number.POSITIVE_INFINITY)).toBe(Number.POSITIVE_INFINITY);
+    expect(nextDown(-Number.MAX_VALUE)).toBe(Number.NEGATIVE_INFINITY);
+  });
+
+  it('keeps exact axis arc endpoint bounds exact and free of signed zero', () => {
+    const segment = createArcSegment({
+      id: 'seg_exact_axis_bounds',
+      source: {
+        sourceEntityIndex: 0,
+        sourceEntityType: 'arc',
+        layer: 'CUT',
+        exact: true
+      },
+      start: { x: 1, y: 0 },
+      end: { x: 0, y: 1 },
+      center: { x: 0, y: 0 },
+      radius: 1,
+      clockwise: false,
+      sweepRadians: Math.PI / 2
+    });
+
+    expect(segment.bounds).toEqual({ minX: 0, minY: 0, maxX: 1, maxY: 1 });
+    expect(Object.values(segment.bounds).some((value) => Object.is(value, -0))).toBe(false);
+  });
+
+  it('bounds a near-start interior cardinal without endpoint-tolerance underflow', () => {
+    const radius = 1e30;
+    const delta = 1e-14;
+    const center = { x: -radius, y: 0 };
+    const stablePoint = (angle: number) => ({
+      x: radius * (-2 * Math.sin(angle / 2) ** 2),
+      y: radius * Math.sin(angle)
+    });
+    const segment = createArcSegment({
+      id: 'seg_near_start_cardinal_bounds',
+      source: {
+        sourceEntityIndex: 0,
+        sourceEntityType: 'arc',
+        layer: 'CUT',
+        exact: true
+      },
+      start: stablePoint(-delta),
+      end: stablePoint(-2 * delta),
+      center,
+      radius,
+      clockwise: false,
+      sweepRadians: 2 * Math.PI - delta
+    });
+
+    expect(segment.bounds.maxX).toBeGreaterThanOrEqual(0);
+  });
+
+  it('normalizes reflected signed zero in exact axis arc bounds', () => {
+    const segment = createArcSegment({
+      id: 'seg_reflected_exact_axis_bounds',
+      source: {
+        sourceEntityIndex: 0,
+        sourceEntityType: 'arc',
+        layer: 'CUT',
+        exact: true
+      },
+      start: { x: -1, y: 0 },
+      end: { x: -0, y: 1 },
+      center: { x: -0, y: 0 },
+      radius: 1,
+      clockwise: true,
+      sweepRadians: -Math.PI / 2
+    });
+
+    expect(segment.bounds).toEqual({ minX: -1, minY: 0, maxX: 0, maxY: 1 });
+    expect(Object.values(segment.bounds).some((value) => Object.is(value, -0))).toBe(false);
   });
 
   it('turns shuffled rectangle lines into one closed contour and one continuous cut', () => {
@@ -671,6 +835,27 @@ function closedBulgePolyline(
       { ...end, bulge: 0 }
     ]
   };
+}
+
+function pathSegmentNumbersAreFinite(
+  segment: ReturnType<typeof createPathPlanningDocumentFromDxfEntities>['segments'][number]
+) {
+  const values = [
+    segment.start.x,
+    segment.start.y,
+    segment.end.x,
+    segment.end.y,
+    segment.length,
+    segment.bounds.minX,
+    segment.bounds.minY,
+    segment.bounds.maxX,
+    segment.bounds.maxY
+  ];
+  if (segment.kind === 'arc' || segment.kind === 'circle') {
+    values.push(segment.center.x, segment.center.y, segment.radius);
+  }
+  if (segment.kind === 'arc') values.push(segment.sweepRadians);
+  return values.every(Number.isFinite);
 }
 
 function line(startX: number, startY: number, endX: number, endY: number): DxfEntity {

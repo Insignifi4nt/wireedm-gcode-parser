@@ -16,6 +16,7 @@ import type {
   DxfPolylineVertex
 } from './types';
 import { approximateSpline } from './approximateSpline';
+import { signedDxfArcSweepRadians } from './arcSweep';
 
 interface DxfPair {
   code: number;
@@ -539,6 +540,8 @@ function parseArc(pairs: DxfPair[]): DxfArcEntity | null {
   const endAngle = numberValue(pairs, 51);
 
   if (!center || radius == null || startAngle == null || endAngle == null) return null;
+  const sweepRadians = signedDxfArcSweepRadians(startAngle, endAngle, false);
+  if (sweepRadians == null) return null;
   const start = pointOnCircle(center, radius, startAngle);
   const end = pointOnCircle(center, radius, endAngle);
   if (!start || !end) return null;
@@ -551,6 +554,7 @@ function parseArc(pairs: DxfPair[]): DxfArcEntity | null {
     radius,
     startAngle,
     endAngle,
+    sweepRadians,
     clockwise: false,
     start,
     end
@@ -941,6 +945,7 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
     }
     const startAngle = angleDegrees(center, start);
     const endAngle = angleDegrees(center, end);
+    const orientationSign = transform.determinant < 0 ? -1 : 1;
 
     return transformedEntityResult(
       {
@@ -952,6 +957,9 @@ function transformEntity(entity: DxfEntity, transform: InsertTransform): Transfo
         end,
         startAngle,
         endAngle,
+        ...(entity.sweepRadians == null
+          ? {}
+          : { sweepRadians: entity.sweepRadians * orientationSign }),
         clockwise: transform.determinant < 0 ? !entity.clockwise : entity.clockwise
       },
       transform.source
@@ -1198,6 +1206,9 @@ function reflectEntityAcrossYAxis(entity: DxfEntity): DxfEntity {
       end,
       startAngle: angleDegrees(center, start),
       endAngle: angleDegrees(center, end),
+      ...(entity.sweepRadians == null
+        ? {}
+        : { sweepRadians: -entity.sweepRadians }),
       clockwise: !entity.clockwise
     };
   }
@@ -1394,7 +1405,8 @@ function isFiniteDxfEntity(entity: DxfEntity) {
       isFinitePoint(entity.end) &&
       Number.isFinite(entity.radius) &&
       Number.isFinite(entity.startAngle) &&
-      Number.isFinite(entity.endAngle)
+      Number.isFinite(entity.endAngle) &&
+      (entity.sweepRadians == null || Number.isFinite(entity.sweepRadians))
     );
   }
   return entity.vertices.every(

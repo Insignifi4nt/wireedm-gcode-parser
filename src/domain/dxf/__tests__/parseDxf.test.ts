@@ -66,6 +66,7 @@ EOF
       radius: 5,
       startAngle: 0,
       endAngle: 90,
+      sweepRadians: Math.PI / 2,
       clockwise: false,
       start: { x: 5, y: 0 },
       end: { x: 0, y: 5 }
@@ -77,6 +78,33 @@ EOF
       radius: 2.5
     });
     expect(result.warnings).toEqual([]);
+  });
+
+  it.each([
+    { startAngle: 45, endAngle: 45.00000000000001 },
+    { startAngle: 90, endAngle: 90.00000000000001 },
+    { startAngle: 180, endAngle: 180.00000000000003 }
+  ])(
+    'retains the raw directed native ARC sweep from $startAngle to $endAngle degrees',
+    ({ startAngle, endAngle }) => {
+      const result = parseDxf(nativeArcDxf(startAngle, endAngle));
+      const arc = result.entities[0];
+      expect(arc?.type).toBe('arc');
+      if (!arc || arc.type !== 'arc') return;
+
+      expect(arc.sweepRadians).toBe(((endAngle - startAngle) * Math.PI) / 180);
+      expect(arc.clockwise).toBe(false);
+    }
+  );
+
+  it('records equal native ARC angles as one full counterclockwise turn', () => {
+    const result = parseDxf(nativeArcDxf(45, 45));
+    const arc = result.entities[0];
+    expect(arc?.type).toBe('arc');
+    if (!arc || arc.type !== 'arc') return;
+
+    expect(arc.sweepRadians).toBe(2 * Math.PI);
+    expect(arc.clockwise).toBe(false);
   });
 
   it('expands LWPOLYLINE vertices with bulges and closed flags', () => {
@@ -777,12 +805,33 @@ EOF
         radius: 1,
         startAngle: 180,
         endAngle: 90,
+        sweepRadians: -Math.PI / 2,
         clockwise: true,
         start: { x: -3, y: 3 },
         end: { x: -2, y: 4 }
       }
     ]);
   });
+
+  it.each([
+    { label: 'ordinary', scaleX: 1, expectedSign: 1 },
+    { label: 'reflected', scaleX: -1, expectedSign: -1 }
+  ])(
+    'preserves a tiny native ARC sweep through a $label uniform INSERT',
+    ({ scaleX, expectedSign }) => {
+      const startAngle = 45;
+      const endAngle = 45.00000000000001;
+      const result = parseDxf(insertedNativeArcDxf(startAngle, endAngle, scaleX));
+      const arc = result.entities[0];
+      expect(arc?.type).toBe('arc');
+      if (!arc || arc.type !== 'arc') return;
+
+      expect(arc.sweepRadians).toBe(
+        expectedSign * (((endAngle - startAngle) * Math.PI) / 180)
+      );
+      expect(arc.clockwise).toBe(expectedSign < 0);
+    }
+  );
 
   it.each([
     { label: 'tiny unequal', scaleX: 1e-10, scaleY: 9e-10, uniform: false },
@@ -1340,6 +1389,88 @@ function wcsSplineDxf(options: {
     String(normal.y),
     '230',
     String(normal.z),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function nativeArcDxf(startAngle: number, endAngle: number, radius = 1e20) {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'ARC',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '40',
+    String(radius),
+    '50',
+    String(startAngle),
+    '51',
+    String(endAngle),
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function insertedNativeArcDxf(startAngle: number, endAngle: number, scaleX: number) {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'BLOCKS',
+    '0',
+    'BLOCK',
+    '2',
+    'ARC_BLOCK',
+    '10',
+    '0',
+    '20',
+    '0',
+    '0',
+    'ARC',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '40',
+    '1e20',
+    '50',
+    String(startAngle),
+    '51',
+    String(endAngle),
+    '0',
+    'ENDBLK',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'INSERT',
+    '2',
+    'ARC_BLOCK',
+    '10',
+    '0',
+    '20',
+    '0',
+    '41',
+    String(scaleX),
+    '42',
+    '1',
     '0',
     'ENDSEC',
     '0',
