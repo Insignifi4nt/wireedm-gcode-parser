@@ -554,9 +554,13 @@ describe('dxfEntitiesToUpidDocument', () => {
     expect(document.segments.flatMap(segmentNumbers).every(Number.isFinite)).toBe(true);
     expect(document.diagnostics).toContainEqual(
       expect.objectContaining({
-        severity: 'warning',
-        code: 'invalid-arc',
-        details: expect.objectContaining({ sourceEntityIndex: 0, bulge })
+        severity: 'error',
+        code: 'non-finite-geometry',
+        details: expect.objectContaining({
+          sourceEntityIndex: 0,
+          sourceEntityType: 'lwpolyline',
+          sourceSubIndex: 0
+        })
       })
     );
   });
@@ -593,9 +597,12 @@ describe('dxfEntitiesToUpidDocument', () => {
     expect(document.segments.flatMap(segmentNumbers).every(Number.isFinite)).toBe(true);
     expect(document.diagnostics).toContainEqual(
       expect.objectContaining({
-        severity: 'warning',
-        code: 'invalid-arc',
-        details: expect.objectContaining({ sourceEntityIndex: 0, radius: 1e308 })
+        severity: 'error',
+        code: 'non-finite-geometry',
+        details: expect.objectContaining({
+          sourceEntityIndex: 0,
+          sourceEntityType: entity.type
+        })
       })
     );
   });

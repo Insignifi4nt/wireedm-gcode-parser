@@ -214,18 +214,25 @@ describe('buildEditorPreviewGeometry', () => {
   it('matches path document circle preview paths to posted motion-line hints', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
-      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
     ]);
     expect(document.plan.operations).toHaveLength(2);
 
     const preview = buildEditorPathDocumentPreviewGeometry(document, {
-      lineHints: [4, 5, 6, 7, 8],
+      lineHints: [4, 5, 6, 7, 8, 9],
       padding: 1
     });
 
-    expect(preview.paths.map((path) => path.line)).toEqual([4, 5, 6, 7, 8]);
-    expect(preview.paths.map((path) => path.type)).toEqual(['rapid', 'arc', 'arc', 'arc', 'arc']);
-    expect(preview.paths.filter((path) => path.type === 'rapid')).toHaveLength(1);
+    expect(preview.paths.map((path) => path.line)).toEqual([4, 5, 6, 7, 8, 9]);
+    expect(preview.paths.map((path) => path.type)).toEqual([
+      'rapid',
+      'arc',
+      'arc',
+      'rapid',
+      'arc',
+      'arc'
+    ]);
+    expect(preview.paths.filter((path) => path.type === 'rapid')).toHaveLength(2);
     expect(preview.paths[1].segmentId).toBe(document.plan.operations[0].segmentRefs[0].segmentId);
     expect(preview.paths[2].segmentId).toBe(document.plan.operations[0].segmentRefs[0].segmentId);
   });

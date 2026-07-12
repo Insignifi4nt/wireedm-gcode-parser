@@ -3,10 +3,14 @@ import { describe, expect, it } from 'vitest';
 import type { DxfEntity } from '@/domain/dxf/types';
 
 import { analyzeContours } from '../contours';
+import { clusterSegmentEndpoints } from '../endpointClusters';
 import { createPathPlanningDocumentFromDxfEntities } from '../fromDxfEntities';
+import { classifyPathSegmentIntersection } from '../intersections';
 import { pathPlanToGcodeBody, postPathPlanToGcode } from '../postGcode';
+import { sanitizePathSegments } from '../sanitizeSegments';
 import {
   createArcSegment,
+  createCircleSegment,
   createLineSegment,
   nextDown,
   nextUp,
@@ -16,6 +20,7 @@ import {
   signedAreaOfSegmentRef,
   signedAreaOfPath
 } from '../segments';
+import { SpatialHash } from '../spatialIndex';
 
 const DEFAULT_TOLERANCE = 0.01;
 
@@ -778,6 +783,616 @@ describe('path-intel DXF planning', () => {
     expect(document.contours[0].classification).toBe('open-chain');
     expect(body).toBe(['G0 X0.000 Y0.000', 'G1 X0.005 Y0.000'].join('\n'));
   });
+
+  it('keeps every exact endpoint cluster within the configured complete-link diameter', () => {
+    const epsilon = 1e-6;
+    const samples = [
+      createTestLineSegment('seg_middle', 0.9e-6, 0, 100, 10, 0),
+      createTestLineSegment('seg_left', 0, 0, 110, 20, 1),
+      createTestLineSegment('seg_right', 1.8e-6, 0, 120, 30, 2)
+    ];
+
+    const result = clusterSegmentEndpoints(samples, {
+      coincidenceEpsilon: epsilon,
+      endpointTolerance: epsilon
+    });
+    const exactClusters = result.clusters.filter((cluster) => cluster.method === 'exact');
+
+    expect(exactClusters.every((cluster) => cluster.maxPairDistance <= epsilon)).toBe(true);
+    expect(
+      exactClusters.some((cluster) => {
+        const ids = new Set(cluster.members.map((member) => member.segmentId));
+        return ids.has('seg_left') && ids.has('seg_right');
+      })
+    ).toBe(false);
+  });
+
+  it('keeps exact-cluster centroids finite near the largest finite coordinates', () => {
+    const center = 1e308;
+    const delta = 2e293;
+    const segments = [
+      createTestLineSegment('seg_large_left', center - delta, 0, center, 0, 0),
+      createTestLineSegment('seg_large_right', center, 0, center + delta, 0, 1)
+    ];
+
+    const result = clusterSegmentEndpoints(segments, {
+      coincidenceEpsilon: 1e-6,
+      endpointTolerance: 1e-6
+    });
+
+    expect(
+      result.clusters.every(
+        (cluster) => Number.isFinite(cluster.point.x) && Number.isFinite(cluster.point.y)
+      )
+    ).toBe(true);
+    expect(
+      result.clusters.find((cluster) => cluster.members.length === 2)?.point
+    ).toEqual({ x: center, y: 0 });
+  });
+
+  it('queries point and bounds entries without expanding oversized bounds across every cell', () => {
+    const index = new SpatialHash<string>({ cellSize: 1, maxCellsPerBounds: 4 });
+
+    index.insertPoint({ x: 2, y: 2 }, 'point');
+    index.insertBounds(
+      { minX: -1_000_000, minY: -1_000_000, maxX: 1_000_000, maxY: 1_000_000 },
+      'oversized'
+    );
+
+    expect(index.queryPoint({ x: 500_000, y: 500_000 })).toEqual(['oversized']);
+    expect(index.queryBounds({ minX: 1, minY: 1, maxX: 3, maxY: 3 })).toEqual([
+      'point',
+      'oversized'
+    ]);
+    expect(
+      index.queryBounds({
+        minX: -2_000_000,
+        minY: -2_000_000,
+        maxX: 2_000_000,
+        maxY: 2_000_000
+      })
+    ).toEqual(['point', 'oversized']);
+  });
+
+  it('removes duplicate rectangles before planning and preserves first-source cut length', () => {
+    const rectangle = rectangleLines(0, 0, 10, 5);
+    const document = createPathPlanningDocumentFromDxfEntities([...rectangle, ...rectangle], {
+      endpointTolerance: DEFAULT_TOLERANCE
+    });
+    const duplicateDiagnostics = document.diagnostics.filter(
+      (diagnostic) => diagnostic.code === 'duplicate-segment'
+    );
+
+    expect(document.segments).toHaveLength(4);
+    expect(document.segments.map((segment) => segment.source.sourceEntityIndex)).toEqual([0, 1, 2, 3]);
+    expect(document.plan.metrics.totalCutLength).toBe(30);
+    expect(duplicateDiagnostics).toHaveLength(4);
+    expect(
+      duplicateDiagnostics.every(
+        (diagnostic) => diagnostic.severity === 'error' && diagnostic.relatedSegmentIds?.length === 2
+      )
+    ).toBe(true);
+  });
+
+  it('removes direction-independent reversed line duplicates', () => {
+    const rectangle = rectangleLines(0, 0, 10, 5);
+    const reversed = rectangle.map((entity) => {
+      if (entity.type !== 'line') throw new Error('Expected line fixture.');
+      return line(entity.end.x, entity.end.y, entity.start.x, entity.start.y);
+    });
+    const document = createPathPlanningDocumentFromDxfEntities([...rectangle, ...reversed]);
+
+    expect(document.segments).toHaveLength(4);
+    expect(document.diagnostics.filter((diagnostic) => diagnostic.code === 'duplicate-segment')).toHaveLength(4);
+  });
+
+  it('retains complete source and INSERT lineage for removed duplicates', () => {
+    const duplicateFromInsert = (
+      handle: string,
+      blockName: string,
+      insertionX: number,
+      approximate = false
+    ): DxfEntity => ({
+      ...line(0, 0, 10, 0),
+      handle,
+      ...(approximate
+        ? {
+            approximation: {
+              sourceEntityType: 'SPLINE',
+              maxChordError: 0.001
+            }
+          }
+        : {}),
+      source: {
+        blockName,
+        insertChain: [
+          {
+            blockName,
+            column: 0,
+            row: 0,
+            layer: 'CUT',
+            transform: {
+              insertion: { x: insertionX, y: 20 },
+              localOffset: { x: 1, y: 2 },
+              blockBasePoint: { x: 3, y: 4 },
+              rotationDegrees: 90,
+              scaleX: 2,
+              scaleY: 2
+            }
+          }
+        ]
+      }
+    });
+    const document = createPathPlanningDocumentFromDxfEntities([
+      duplicateFromInsert('A', 'PROFILE_A', 10),
+      duplicateFromInsert('B', 'PROFILE_B', 30, true)
+    ]);
+    const diagnostic = document.diagnostics.find(
+      (candidate) => candidate.code === 'duplicate-segment'
+    );
+
+    expect(document.segments).toHaveLength(1);
+    expect(diagnostic?.details).toMatchObject({
+      sources: [
+        {
+          segmentId: 'seg_0001',
+          layer: 'CUT',
+          source: {
+            sourceEntityIndex: 0,
+            sourceEntityHandle: 'A',
+            sourceEntityType: 'line',
+            layer: 'CUT',
+            exact: true,
+            dxf: {
+              blockName: 'PROFILE_A',
+              insertChain: [
+                {
+                  blockName: 'PROFILE_A',
+                  transform: {
+                    insertion: { x: 10, y: 20 },
+                    localOffset: { x: 1, y: 2 },
+                    blockBasePoint: { x: 3, y: 4 },
+                    rotationDegrees: 90,
+                    scaleX: 2,
+                    scaleY: 2
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          segmentId: 'seg_0002',
+          layer: 'CUT',
+          source: {
+            sourceEntityIndex: 1,
+            sourceEntityHandle: 'B',
+            sourceEntityType: 'SPLINE',
+            layer: 'CUT',
+            exact: false,
+            approximation: {
+              sourceEntityType: 'SPLINE',
+              maxChordError: 0.001
+            },
+            dxf: {
+              blockName: 'PROFILE_B',
+              insertChain: [
+                {
+                  blockName: 'PROFILE_B',
+                  transform: {
+                    insertion: { x: 30, y: 20 }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    });
+  });
+
+  it('deduplicates reversed arcs and circles by swept locus while preserving first sources', () => {
+    const arcForward = createTestArcSegment({
+      id: 'arc_forward',
+      sourceEntityIndex: 0,
+      start: { x: 1, y: 0 },
+      end: { x: 0, y: 1 },
+      center: { x: 0, y: 0 },
+      sweepRadians: Math.PI / 2
+    });
+    const arcReverse = createTestArcSegment({
+      id: 'arc_reverse',
+      sourceEntityIndex: 1,
+      start: { x: 0, y: 1 },
+      end: { x: 1, y: 0 },
+      center: { x: 0, y: 0 },
+      sweepRadians: -Math.PI / 2
+    });
+    const circleFirst = createCircleSegment({
+      id: 'circle_first',
+      source: testSegmentSource(2, 'circle'),
+      center: { x: 10, y: 0 },
+      radius: 2,
+      preferredStart: { x: 12, y: 0 }
+    });
+    const circleDuplicate = createCircleSegment({
+      id: 'circle_duplicate',
+      source: testSegmentSource(3, 'circle'),
+      center: { x: 10, y: 0 },
+      radius: 2,
+      preferredStart: { x: 10, y: 2 }
+    });
+
+    const result = sanitizePathSegments(
+      [arcForward, arcReverse, circleFirst, circleDuplicate],
+      { coincidenceEpsilon: 1e-6 }
+    );
+
+    expect(result.segments.map((segment) => segment.id)).toEqual(['arc_forward', 'circle_first']);
+    expect(result.diagnostics.filter((diagnostic) => diagnostic.code === 'duplicate-segment')).toHaveLength(2);
+  });
+
+  it('does not conflate distinct minor and major arcs with the same endpoints', () => {
+    const minor = createTestArcSegment({
+      id: 'arc_minor',
+      sourceEntityIndex: 0,
+      start: { x: 1, y: 0 },
+      end: { x: 0, y: 1 },
+      center: { x: 0, y: 0 },
+      sweepRadians: Math.PI / 2
+    });
+    const major = createTestArcSegment({
+      id: 'arc_major',
+      sourceEntityIndex: 1,
+      start: { x: 1, y: 0 },
+      end: { x: 0, y: 1 },
+      center: { x: 0, y: 0 },
+      sweepRadians: -(3 * Math.PI) / 2
+    });
+
+    const result = sanitizePathSegments([minor, major], { coincidenceEpsilon: 1e-6 });
+
+    expect(result.segments.map((segment) => segment.id)).toEqual(['arc_minor', 'arc_major']);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('duplicate-segment');
+  });
+
+  it('rejects non-finite manually supplied segment geometry before topology construction', () => {
+    const invalidLine = {
+      ...createTestLineSegment('line_non_finite', 0, 0, 1, 0, 0),
+      length: Number.POSITIVE_INFINITY
+    };
+    const validArc = createTestArcSegment({
+      id: 'arc_non_finite',
+      sourceEntityIndex: 1,
+      start: { x: 1, y: 0 },
+      end: { x: 0, y: 1 },
+      center: { x: 0, y: 0 },
+      sweepRadians: Math.PI / 2
+    });
+    const invalidArc = {
+      ...validArc,
+      center: { ...validArc.center, x: Number.NaN }
+    };
+    const validCircle = createCircleSegment({
+      id: 'circle_non_finite',
+      source: testSegmentSource(2, 'circle'),
+      center: { x: 10, y: 0 },
+      radius: 2
+    });
+    const invalidCircle = {
+      ...validCircle,
+      preferredStart: { ...validCircle.preferredStart, y: Number.NEGATIVE_INFINITY }
+    };
+
+    const result = sanitizePathSegments([invalidLine, invalidArc, invalidCircle]);
+
+    expect(result.segments).toEqual([]);
+    expect(result.diagnostics).toHaveLength(3);
+    expect(
+      result.diagnostics.every(
+        (diagnostic) => diagnostic.code === 'non-finite-geometry' && diagnostic.severity === 'error'
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    {
+      label: 'arc center',
+      entity: {
+        ...arcEntity({ x: 0, y: 0 }, 1, 0, 90, false),
+        center: { x: Number.NaN, y: 0 }
+      } as DxfEntity
+    },
+    {
+      label: 'arc sweep',
+      entity: {
+        ...arcEntity({ x: 0, y: 0 }, 1, 0, 90, false),
+        sweepRadians: Number.POSITIVE_INFINITY
+      } as DxfEntity
+    },
+    {
+      label: 'circle radius',
+      entity: {
+        type: 'circle',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: Number.POSITIVE_INFINITY
+      } satisfies DxfEntity
+    }
+  ])('rejects a non-finite DXF $label with the non-finite geometry error', ({ entity }) => {
+    const document = createPathPlanningDocumentFromDxfEntities([entity]);
+
+    expect(document.segments).toEqual([]);
+    expect(document.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'non-finite-geometry', severity: 'error' })
+    );
+  });
+
+  it('reports a T branch as a blocking topology error', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(-1, 0, 0, 0),
+      line(0, 0, 1, 0),
+      line(0, 0, 0, 1)
+    ]);
+
+    expect(document.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'branching-topology', severity: 'error' })
+    );
+  });
+
+  it.each([
+    {
+      label: 'line-line crossing',
+      entities: [line(-2, 0, 2, 0), line(0, -2, 0, 2)]
+    },
+    {
+      label: 'line-arc crossing',
+      entities: [
+        line(0, -2, 0, 2),
+        arcEntity({ x: 0, y: 0 }, 1, 180, 0, true)
+      ]
+    },
+    {
+      label: 'arc-arc crossing',
+      entities: [
+        arcEntity({ x: -0.5, y: 0 }, 1, 0, 180, false),
+        arcEntity({ x: 0.5, y: 0 }, 1, 0, 180, false)
+      ]
+    },
+    {
+      label: 'line-circle tangency',
+      entities: [
+        line(-2, 1, 2, 1),
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 1 } satisfies DxfEntity
+      ]
+    },
+    {
+      label: 'non-adjacent endpoint touch',
+      entities: [
+        line(1, 0, 2, 0),
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 1 } satisfies DxfEntity
+      ]
+    }
+  ])('reports analytic $label as an intersecting-topology error', ({ entities }) => {
+    const document = createPathPlanningDocumentFromDxfEntities(entities);
+    const diagnostic = document.diagnostics.find(
+      (candidate) => candidate.code === 'intersecting-topology'
+    );
+
+    expect(diagnostic).toMatchObject({
+      severity: 'error',
+      relatedSegmentIds: ['seg_0001', 'seg_0002']
+    });
+  });
+
+  it('allows the sole shared endpoint of genuinely adjacent segments', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 1, 0),
+      line(1, 0, 1, 1)
+    ]);
+
+    expect(document.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'intersecting-topology'
+    );
+    expect(document.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'open-chain', severity: 'warning' })
+    );
+  });
+
+  it('reports partial collinear line overlap without removing either executable segment', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 10, 0),
+      line(5, 0, 15, 0)
+    ]);
+
+    expect(document.segments).toHaveLength(2);
+    expect(document.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'overlapping-segment',
+        severity: 'error',
+        relatedSegmentIds: ['seg_0001', 'seg_0002']
+      })
+    );
+  });
+
+  it('reports partial co-circular arc overlap without conflating the arcs', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      arcEntity({ x: 0, y: 0 }, 2, 0, 180, false),
+      arcEntity({ x: 0, y: 0 }, 2, 90, 270, false)
+    ]);
+
+    expect(document.segments).toHaveLength(2);
+    expect(document.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'overlapping-segment',
+        severity: 'error',
+        relatedSegmentIds: ['seg_0001', 'seg_0002']
+      })
+    );
+    expect(document.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'duplicate-segment'
+    );
+  });
+
+  it('detects a co-circular arc touch across the zero-angle seam', () => {
+    const degrees = (value: number) => (value * Math.PI) / 180;
+    const beforeZero = createTestArcSegment({
+      id: 'arc_before_zero',
+      sourceEntityIndex: 0,
+      start: { x: Math.cos(degrees(350)), y: Math.sin(degrees(350)) },
+      end: { x: 1, y: 0 },
+      center: { x: 0, y: 0 },
+      sweepRadians: degrees(10)
+    });
+    const afterZero = createTestArcSegment({
+      id: 'arc_after_zero',
+      sourceEntityIndex: 1,
+      start: { x: 1, y: 0 },
+      end: { x: Math.cos(degrees(10)), y: Math.sin(degrees(10)) },
+      center: { x: 0, y: 0 },
+      sweepRadians: degrees(10)
+    });
+
+    expect(classifyPathSegmentIntersection(beforeZero, afterZero, 1e-6)).toMatchObject({
+      kind: 'points',
+      points: [{ x: 1, y: 0 }]
+    });
+  });
+
+  it('keeps circular intersection classification invariant under a large translation', () => {
+    const intersectingCircles = (offset: number) => [
+      createCircleSegment({
+        id: `circle_left_${offset}`,
+        source: testSegmentSource(0, 'circle'),
+        center: { x: offset, y: 0 },
+        radius: 100
+      }),
+      createCircleSegment({
+        id: `circle_right_${offset}`,
+        source: testSegmentSource(1, 'circle'),
+        center: { x: offset + 2, y: 0 },
+        radius: 100
+      })
+    ] as const;
+    const [originLeft, originRight] = intersectingCircles(0);
+    const [translatedLeft, translatedRight] = intersectingCircles(1e16);
+    const originResult = classifyPathSegmentIntersection(originLeft, originRight, 1e-6);
+    const translatedResult = classifyPathSegmentIntersection(
+      translatedLeft,
+      translatedRight,
+      1e-6
+    );
+
+    expect(originResult.kind).toBe('points');
+    expect(originResult.points).toHaveLength(2);
+    expect(translatedResult.kind).toBe('points');
+    expect(translatedResult.points).toHaveLength(2);
+  });
+
+  it('does not widen explicit arc sweeps when circular geometry is translated', () => {
+    const supportIntersectionAngle = Math.acos(0.01);
+    const sweepRadians = supportIntersectionAngle - 0.1;
+    const classifyAt = (offset: number) => {
+      const center = { x: offset, y: 0 };
+      const arc = createTestArcSegment({
+        id: `arc_sweep_${offset}`,
+        sourceEntityIndex: 0,
+        start: { x: offset + 100, y: 0 },
+        end: {
+          x: offset + 100 * Math.cos(sweepRadians),
+          y: 100 * Math.sin(sweepRadians)
+        },
+        center,
+        sweepRadians
+      });
+      const circle = createCircleSegment({
+        id: `circle_sweep_${offset}`,
+        source: testSegmentSource(1, 'circle'),
+        center: { x: offset + 2, y: 0 },
+        radius: 100
+      });
+      return classifyPathSegmentIntersection(arc, circle, 1e-6);
+    };
+
+    expect(classifyAt(0).kind).toBe('none');
+    expect(classifyAt(1e16).kind).toBe('none');
+  });
+
+  it.each(['circle', 'arc'] as const)(
+    'keeps a translated interior arc-%s intersection inside the explicit sweep',
+    (rightKind) => {
+      const theta = Math.acos(0.01);
+      const sweepRadians = theta + 0.004;
+      const classifyAt = (offset: number) => {
+        const left = createTestArcSegment({
+          id: `arc_local_left_${offset}`,
+          sourceEntityIndex: 0,
+          start: { x: offset + 100, y: 0 },
+          end: {
+            x: offset + 100 * Math.cos(sweepRadians),
+            y: 100 * Math.sin(sweepRadians)
+          },
+          center: { x: offset, y: 0 },
+          sweepRadians
+        });
+        const rightCenter = { x: offset + 2, y: 0 };
+        const right =
+          rightKind === 'circle'
+            ? createCircleSegment({
+                id: `circle_local_right_${offset}`,
+                source: testSegmentSource(1, 'circle'),
+                center: rightCenter,
+                radius: 100
+              })
+            : createTestArcSegment({
+                id: `arc_local_right_${offset}`,
+                sourceEntityIndex: 1,
+                start: { x: rightCenter.x - 100, y: 0 },
+                end: {
+                  x: rightCenter.x + 100 * Math.cos(Math.PI - sweepRadians),
+                  y: 100 * Math.sin(Math.PI - sweepRadians)
+                },
+                center: rightCenter,
+                sweepRadians: -sweepRadians
+              });
+        return classifyPathSegmentIntersection(left, right, 1e-6);
+      };
+
+      const originResult = classifyAt(0);
+      const translatedResult = classifyAt(1e16);
+
+      expect(originResult.kind).toBe('points');
+      expect(originResult.points).toHaveLength(1);
+      expect(translatedResult.kind).toBe('points');
+      expect(translatedResult.points).toHaveLength(1);
+    }
+  );
+
+  it('retains a finite line-line crossing near the largest finite coordinates', () => {
+    const center = 1e308;
+    const delta = 2e293;
+    const horizontal = createTestLineSegment(
+      'line_large_horizontal',
+      center - delta,
+      0,
+      center + delta,
+      0,
+      0
+    );
+    const vertical = createTestLineSegment(
+      'line_large_vertical',
+      center,
+      -delta,
+      center,
+      delta,
+      1
+    );
+
+    const result = classifyPathSegmentIntersection(horizontal, vertical, 1e-6);
+
+    expect(result.kind).toBe('points');
+    expect(result.points).toEqual([{ x: center, y: 0 }]);
+  });
 });
 
 function shuffledRectangle(): DxfEntity[] {
@@ -865,6 +1480,78 @@ function line(startX: number, startY: number, endX: number, endY: number): DxfEn
     start: { x: startX, y: startY },
     end: { x: endX, y: endY }
   };
+}
+
+function arcEntity(
+  center: { x: number; y: number },
+  radius: number,
+  startAngle: number,
+  endAngle: number,
+  clockwise: boolean
+): DxfEntity {
+  const pointAtDegrees = (angle: number) => {
+    const radians = (angle * Math.PI) / 180;
+    return {
+      x: center.x + radius * Math.cos(radians),
+      y: center.y + radius * Math.sin(radians)
+    };
+  };
+
+  return {
+    type: 'arc',
+    layer: 'CUT',
+    center,
+    radius,
+    startAngle,
+    endAngle,
+    clockwise,
+    start: pointAtDegrees(startAngle),
+    end: pointAtDegrees(endAngle)
+  };
+}
+
+function testSegmentSource(
+  sourceEntityIndex: number,
+  sourceEntityType: 'line' | 'arc' | 'circle'
+) {
+  return {
+    sourceEntityIndex,
+    sourceEntityType,
+    layer: 'CUT',
+    exact: true
+  } as const;
+}
+
+function createTestLineSegment(
+  id: string,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  sourceEntityIndex: number
+) {
+  return createLineSegment({
+    id,
+    source: testSegmentSource(sourceEntityIndex, 'line'),
+    start: { x: startX, y: startY },
+    end: { x: endX, y: endY }
+  });
+}
+
+function createTestArcSegment(input: {
+  id: string;
+  sourceEntityIndex: number;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  center: { x: number; y: number };
+  sweepRadians: number;
+}) {
+  return createArcSegment({
+    ...input,
+    source: testSegmentSource(input.sourceEntityIndex, 'arc'),
+    radius: Math.hypot(input.start.x - input.center.x, input.start.y - input.center.y),
+    clockwise: input.sweepRadians < 0
+  });
 }
 
 function countRapids(body: string) {

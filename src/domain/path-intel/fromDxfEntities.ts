@@ -6,6 +6,7 @@ import { analyzeContours } from './contours';
 import { clusterSegmentEndpoints } from './endpointClusters';
 import { buildPathElements } from './pathElements';
 import { planOperations } from './planOperations';
+import { sanitizePathSegments } from './sanitizeSegments';
 import {
   createArcSegment,
   createCircleSegment,
@@ -31,21 +32,22 @@ export function createPathPlanningDocumentFromDxfEntities(
 ): PathPlanningDocument {
   const resolved = resolvePathPlanningOptions(options);
   const segmentBuild = pathSegmentsFromDxfEntities(entities, resolved);
+  const sanitized = sanitizePathSegments(segmentBuild.segments, resolved);
   const sourceDiagnostics = diagnosticsForSourceMetadata(sourceMetadata);
-  const clusterResult = clusterSegmentEndpoints(segmentBuild.segments, resolved);
-  const chainResult = buildChains(segmentBuild.segments, clusterResult, resolved);
-  const contourResult = analyzeContours(chainResult.chains, segmentBuild.segments, resolved);
+  const clusterResult = clusterSegmentEndpoints(sanitized.segments, resolved);
+  const chainResult = buildChains(sanitized.segments, clusterResult, resolved);
+  const contourResult = analyzeContours(chainResult.chains, sanitized.segments, resolved);
   const plan = planOperations({
     chains: chainResult.chains,
     contours: contourResult.contours,
-    segments: segmentBuild.segments,
+    segments: sanitized.segments,
     options: resolved
   });
   const pathElementTree = buildPathElements(
     contourResult.contours,
     chainResult.chains,
     plan,
-    segmentBuild.segments
+    sanitized.segments
   );
 
   return {
@@ -56,7 +58,7 @@ export function createPathPlanningDocumentFromDxfEntities(
       ...sourceMetadata
     },
     options: resolved,
-    segments: segmentBuild.segments,
+    segments: sanitized.segments,
     endpointClusters: clusterResult.clusters,
     chains: chainResult.chains,
     contours: contourResult.contours,
@@ -66,6 +68,7 @@ export function createPathPlanningDocumentFromDxfEntities(
     diagnostics: [
       ...sourceDiagnostics,
       ...segmentBuild.diagnostics,
+      ...sanitized.diagnostics,
       ...clusterResult.diagnostics,
       ...chainResult.diagnostics,
       ...contourResult.diagnostics,
@@ -115,6 +118,17 @@ export function pathSegmentsFromDxfEntities(
     };
 
     if (entity.type === 'line') {
+      if (!pointsHaveFiniteCoordinates(entity.start, entity.end)) {
+        diagnostics.push(
+          nonFiniteGeometryDiagnostic(
+            nextDiagnosticId,
+            sourceEntityIndex,
+            baseSource.sourceEntityType
+          )
+        );
+        return;
+      }
+
       if (distance(entity.start, entity.end) <= resolved.coincidenceEpsilon) {
         diagnostics.push({
           id: nextDiagnosticId(),
@@ -148,6 +162,21 @@ export function pathSegmentsFromDxfEntities(
     }
 
     if (entity.type === 'arc') {
+      if (
+        !pointsHaveFiniteCoordinates(entity.start, entity.end, entity.center) ||
+        !numbersAreFinite(
+          entity.radius,
+          entity.startAngle,
+          entity.endAngle,
+          ...(entity.sweepRadians == null ? [] : [entity.sweepRadians])
+        )
+      ) {
+        diagnostics.push(
+          nonFiniteGeometryDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type)
+        );
+        return;
+      }
+
       if (entity.radius <= resolved.coincidenceEpsilon) {
         diagnostics.push(
           invalidNativeArcDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type, entity.radius)
@@ -186,7 +215,7 @@ export function pathSegmentsFromDxfEntities(
       });
       if (!pathSegmentHasFiniteGeometry(segment)) {
         diagnostics.push(
-          invalidNativeArcDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type, entity.radius)
+          nonFiniteGeometryDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type)
         );
         return;
       }
@@ -196,6 +225,13 @@ export function pathSegmentsFromDxfEntities(
     }
 
     if (entity.type === 'circle') {
+      if (!pointsHaveFiniteCoordinates(entity.center) || !numbersAreFinite(entity.radius)) {
+        diagnostics.push(
+          nonFiniteGeometryDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type)
+        );
+        return;
+      }
+
       if (entity.radius <= resolved.coincidenceEpsilon) {
         diagnostics.push(
           invalidNativeArcDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type, entity.radius)
@@ -211,7 +247,7 @@ export function pathSegmentsFromDxfEntities(
       });
       if (!pathSegmentHasFiniteGeometry(segment)) {
         diagnostics.push(
-          invalidNativeArcDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type, entity.radius)
+          nonFiniteGeometryDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type)
         );
         return;
       }
@@ -349,6 +385,21 @@ function segmentsFromPolyline(
       ...(options.source ? { dxf: options.source } : {})
     };
 
+    if (
+      !pointsHaveFiniteCoordinates(start, end) ||
+      !numbersAreFinite(start.bulge)
+    ) {
+      diagnostics.push(
+        nonFiniteGeometryDiagnostic(
+          nextDiagnosticId,
+          options.sourceEntityIndex,
+          options.sourceEntityType,
+          index
+        )
+      );
+      continue;
+    }
+
     if (distance(start, end) <= options.epsilon) {
       diagnostics.push({
         id: nextDiagnosticId(),
@@ -384,7 +435,18 @@ function segmentsFromPolyline(
     }
 
     const arc = arcFromBulge(start, end, start.bulge);
-    if (!arc || arc.radius <= options.epsilon) {
+    if (!arc) {
+      diagnostics.push(
+        nonFiniteGeometryDiagnostic(
+          nextDiagnosticId,
+          options.sourceEntityIndex,
+          options.sourceEntityType,
+          index
+        )
+      );
+      continue;
+    }
+    if (arc.radius <= options.epsilon) {
       diagnostics.push(invalidBulgeArcDiagnostic(options, index, start.bulge, nextDiagnosticId));
       continue;
     }
@@ -400,7 +462,14 @@ function segmentsFromPolyline(
       sweepRadians: arc.sweepRadians
     });
     if (!pathSegmentHasFiniteGeometry(segment)) {
-      diagnostics.push(invalidBulgeArcDiagnostic(options, index, start.bulge, nextDiagnosticId));
+      diagnostics.push(
+        nonFiniteGeometryDiagnostic(
+          nextDiagnosticId,
+          options.sourceEntityIndex,
+          options.sourceEntityType,
+          index
+        )
+      );
       continue;
     }
 
@@ -489,6 +558,14 @@ function pathSegmentHasFiniteGeometry(segment: PathSegment) {
     );
   }
 
+  return values.every(Number.isFinite);
+}
+
+function pointsHaveFiniteCoordinates(...points: DxfPoint[]) {
+  return points.every((point) => numbersAreFinite(point.x, point.y));
+}
+
+function numbersAreFinite(...values: number[]) {
   return values.every(Number.isFinite);
 }
 

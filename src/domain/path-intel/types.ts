@@ -71,6 +71,9 @@ export interface PathDiagnostic {
   code:
     | 'zero-length-segment'
     | 'non-finite-geometry'
+    | 'duplicate-segment'
+    | 'overlapping-segment'
+    | 'intersecting-topology'
     | 'invalid-arc'
     | 'invalid-polyline'
     | 'endpoint-cluster-snap'

@@ -1,4 +1,5 @@
-import { distance, endpointKey, getSegmentEnd, getSegmentStart, pointsEqual } from './segments';
+import { distance, endpointKey, getSegmentEnd, getSegmentStart } from './segments';
+import { SpatialHash } from './spatialIndex';
 import type {
   EndpointCluster,
   EndpointClusterMember,
@@ -25,6 +26,13 @@ interface EndpointGroup {
 interface NearCandidate {
   otherIndex: number;
   distance: number;
+  toleranceUsed: number;
+}
+
+interface JoinedPair {
+  left: number;
+  right: number;
+  toleranceUsed: number;
 }
 
 export function clusterSegmentEndpoints(
@@ -37,7 +45,12 @@ export function clusterSegmentEndpoints(
   const nearCandidates = buildNearCandidates(exactGroups, resolved.endpointTolerance, resolved.coincidenceEpsilon);
   const diagnostics: PathDiagnostic[] = [];
   const joinedPairs = chooseUniqueReciprocalPairs(exactGroups, nearCandidates, diagnostics, resolved.endpointTolerance);
-  const clusters = materializeClusters(exactGroups, joinedPairs, resolved.endpointTolerance, diagnostics);
+  const clusters = materializeClusters(
+    exactGroups,
+    joinedPairs,
+    resolved.coincidenceEpsilon,
+    diagnostics
+  );
   const endpointToCluster: Record<string, string> = {};
 
   clusters.forEach((cluster, index) => {
@@ -75,26 +88,38 @@ function collectEndpointSamples(segments: PathSegment[]): EndpointSample[] {
 
 function buildExactGroups(samples: EndpointSample[], epsilon: number) {
   const groups: EndpointGroup[] = [];
-  const used = new Set<number>();
+  const memberIndex = new SpatialHash<number>({
+    cellSize: positiveCellSize(epsilon),
+    maxCellsPerBounds: 16
+  });
 
-  for (let index = 0; index < samples.length; index++) {
-    if (used.has(index)) continue;
-    const members = [samples[index]];
-    used.add(index);
+  for (const sample of samples) {
+    const candidateGroupIndices = [
+      ...new Set(
+        memberIndex.queryBounds(expandPoint(sample.point, epsilon))
+      )
+    ].sort((left, right) => left - right);
+    const groupIndex = candidateGroupIndices.find((candidateIndex) =>
+      groups[candidateIndex].members.every(
+        (member) => distance(member.point, sample.point) <= epsilon
+      )
+    );
 
-    for (let otherIndex = index + 1; otherIndex < samples.length; otherIndex++) {
-      if (used.has(otherIndex)) continue;
-      if (pointsEqual(samples[index].point, samples[otherIndex].point, epsilon)) {
-        members.push(samples[otherIndex]);
-        used.add(otherIndex);
-      }
+    if (groupIndex == null) {
+      const nextIndex = groups.length;
+      groups.push({
+        id: `exact_${nextIndex}`,
+        members: [sample],
+        point: sample.point
+      });
+      memberIndex.insertPoint(sample.point, nextIndex);
+      continue;
     }
 
-    groups.push({
-      id: `exact_${groups.length}`,
-      members,
-      point: centroid(members.map((member) => member.point))
-    });
+    const group = groups[groupIndex];
+    group.members.push(sample);
+    group.point = centroid(group.members.map((member) => member.point));
+    memberIndex.insertPoint(sample.point, groupIndex);
   }
 
   return groups;
@@ -107,14 +132,39 @@ function buildNearCandidates(groups: EndpointGroup[], tolerance: number, epsilon
     candidates.set(index, []);
   }
 
+  const componentwiseCoincidenceTolerance = Math.SQRT2 * epsilon;
+  const searchTolerance = Math.max(tolerance, componentwiseCoincidenceTolerance);
+  if (searchTolerance <= epsilon || searchTolerance <= 0) return candidates;
+
+  const groupIndex = new SpatialHash<number>({
+    cellSize: positiveCellSize(searchTolerance),
+    maxCellsPerBounds: 16
+  });
+
   for (let index = 0; index < groups.length; index++) {
-    for (let otherIndex = index + 1; otherIndex < groups.length; otherIndex++) {
+    const nearbyIndices = groupIndex.queryBounds(
+      expandPoint(groups[index].point, searchTolerance)
+    );
+    for (const otherIndex of nearbyIndices) {
       const gap = distance(groups[index].point, groups[otherIndex].point);
       if (groupsShareSegment(groups[index], groups[otherIndex])) continue;
-      if (gap <= epsilon || gap > tolerance) continue;
-      candidates.get(index)?.push({ otherIndex, distance: gap });
-      candidates.get(otherIndex)?.push({ otherIndex: index, distance: gap });
+      if (gap <= epsilon) continue;
+      const withinEndpointTolerance = gap <= tolerance;
+      const withinComponentwiseCoincidence = pointsWithinComponentwiseEpsilon(
+        groups[index].point,
+        groups[otherIndex].point,
+        epsilon
+      );
+      if (!withinEndpointTolerance && !withinComponentwiseCoincidence) continue;
+      const toleranceUsed = withinEndpointTolerance
+        ? tolerance
+        : componentwiseCoincidenceTolerance;
+      candidates.get(index)?.push({ otherIndex, distance: gap, toleranceUsed });
+      candidates
+        .get(otherIndex)
+        ?.push({ otherIndex: index, distance: gap, toleranceUsed });
     }
+    groupIndex.insertPoint(groups[index].point, index);
   }
 
   for (const value of candidates.values()) {
@@ -122,6 +172,19 @@ function buildNearCandidates(groups: EndpointGroup[], tolerance: number, epsilon
   }
 
   return candidates;
+}
+
+function positiveCellSize(value: number) {
+  return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+function expandPoint(point: Point2, amount: number) {
+  return {
+    minX: point.x - amount,
+    minY: point.y - amount,
+    maxX: point.x + amount,
+    maxY: point.y + amount
+  };
 }
 
 function groupsShareSegment(left: EndpointGroup, right: EndpointGroup) {
@@ -135,7 +198,7 @@ function chooseUniqueReciprocalPairs(
   diagnostics: PathDiagnostic[],
   tolerance: number
 ) {
-  const pairs: Array<[number, number]> = [];
+  const pairs: JoinedPair[] = [];
   const used = new Set<number>();
 
   for (let index = 0; index < groups.length; index++) {
@@ -163,7 +226,11 @@ function chooseUniqueReciprocalPairs(
       continue;
     }
 
-    pairs.push([index, candidate.otherIndex]);
+    pairs.push({
+      left: index,
+      right: candidate.otherIndex,
+      toleranceUsed: Math.max(candidate.toleranceUsed, otherCandidates[0].toleranceUsed)
+    });
     used.add(index);
     used.add(candidate.otherIndex);
   }
@@ -173,18 +240,23 @@ function chooseUniqueReciprocalPairs(
 
 function materializeClusters(
   exactGroups: EndpointGroup[],
-  joinedPairs: Array<[number, number]>,
-  tolerance: number,
+  joinedPairs: JoinedPair[],
+  exactTolerance: number,
   diagnostics: PathDiagnostic[]
 ) {
   const consumed = new Set<number>();
   const clusters: EndpointCluster[] = [];
 
-  for (const [left, right] of joinedPairs) {
+  for (const { left, right, toleranceUsed } of joinedPairs) {
     consumed.add(left);
     consumed.add(right);
     const members = [...exactGroups[left].members, ...exactGroups[right].members];
-    const cluster = buildCluster(`ec_unsorted_${clusters.length}`, members, 'within-tolerance', tolerance);
+    const cluster = buildCluster(
+      `ec_unsorted_${clusters.length}`,
+      members,
+      'within-tolerance',
+      toleranceUsed
+    );
     diagnostics.push({
       id: `diag_cluster_${String(diagnostics.length + 1).padStart(4, '0')}`,
       severity: 'warning',
@@ -193,7 +265,7 @@ function materializeClusters(
       relatedSegmentIds: [...new Set(members.map((member) => member.ref.segmentId))],
       relatedClusterIds: [cluster.id],
       details: {
-        tolerance,
+        tolerance: toleranceUsed,
         maxPairDistance: cluster.maxPairDistance,
         point: cluster.point
       }
@@ -203,10 +275,21 @@ function materializeClusters(
 
   exactGroups.forEach((group, index) => {
     if (consumed.has(index)) return;
-    clusters.push(buildCluster(`ec_unsorted_${clusters.length}`, group.members, 'exact', tolerance));
+    clusters.push(
+      buildCluster(
+        `ec_unsorted_${clusters.length}`,
+        group.members,
+        'exact',
+        exactTolerance
+      )
+    );
   });
 
   return clusters.sort((a, b) => a.point.x - b.point.x || a.point.y - b.point.y || a.id.localeCompare(b.id));
+}
+
+function pointsWithinComponentwiseEpsilon(left: Point2, right: Point2, epsilon: number) {
+  return Math.abs(left.x - right.x) <= epsilon && Math.abs(left.y - right.y) <= epsilon;
 }
 
 function buildCluster(
@@ -268,13 +351,17 @@ function hasNearestTie(candidates: NearCandidate[]) {
 }
 
 function centroid(points: Point2[]): Point2 {
-  const total = points.reduce(
-    (sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }),
-    { x: 0, y: 0 }
-  );
+  const anchor = points[0] ?? { x: 0, y: 0 };
+  let meanOffsetX = 0;
+  let meanOffsetY = 0;
+  points.forEach((point, index) => {
+    const count = index + 1;
+    meanOffsetX += (point.x - anchor.x - meanOffsetX) / count;
+    meanOffsetY += (point.y - anchor.y - meanOffsetY) / count;
+  });
   return {
-    x: total.x / points.length,
-    y: total.y / points.length
+    x: anchor.x + meanOffsetX,
+    y: anchor.y + meanOffsetY
   };
 }
 
