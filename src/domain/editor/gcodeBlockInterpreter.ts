@@ -40,6 +40,7 @@ export interface GCodeBlockResult {
 const NUMBER_SOURCE = '[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[Ee][-+]?\\d+)?';
 const WORD_PATTERN = new RegExp(`([A-Z])\\s*(${NUMBER_SOURCE})`, 'gi');
 const POSITION_EPSILON = 1e-12;
+const SWEEP_RESOLUTION = Number.EPSILON * Math.PI * 4;
 
 export function createGCodeInterpreterState(): GCodeInterpreterState {
   return {
@@ -219,7 +220,7 @@ function stripComments(
   let hadComment = false;
 
   for (const character of rawLine) {
-    if (character === ';') {
+    if (character === ';' && depth === 0) {
       hadComment = true;
       break;
     }
@@ -384,6 +385,24 @@ function resolveRadiusCenter(
     center,
     sweep: directedSweep(start, end, center, clockwise)
   }));
+  const resolvedCandidates = candidates.map((center) => ({
+    x: normalized(center.x),
+    y: normalized(center.y)
+  }));
+  const candidatesCoincide =
+    resolvedCandidates[0].x === resolvedCandidates[1].x &&
+    resolvedCandidates[0].y === resolvedCandidates[1].y;
+  const sweepsAreIndistinguishable =
+    ranked.some((candidate) => candidate.sweep <= SWEEP_RESOLUTION) ||
+    Math.abs(ranked[0].sweep - ranked[1].sweep) <= SWEEP_RESOLUTION;
+
+  if (height > 0 && (candidatesCoincide || sweepsAreIndistinguishable)) {
+    issues.push(
+      errorIssue(lineNumber, 'Arc minor and major sweeps cannot be distinguished at this scale.')
+    );
+    return null;
+  }
+
   const desired = ranked.reduce((selected, candidate) => {
     if (signedRadius < 0) return candidate.sweep > selected.sweep ? candidate : selected;
     return candidate.sweep < selected.sweep ? candidate : selected;

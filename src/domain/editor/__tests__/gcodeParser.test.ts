@@ -7,6 +7,13 @@ describe('parseGCodeProgram', () => {
     expect(parseGCodeProgram('G1 X1 (note) Y2').path.at(-1)).toMatchObject({ x: 1, y: 2 });
   });
 
+  it('treats semicolons inside parenthesized comments as comment text', () => {
+    const result = parseGCodeProgram('G1 X1 (note; still note) Y2');
+
+    expect(result.path.at(-1)).toMatchObject({ x: 1, y: 2 });
+    expect(result.errors).toEqual([]);
+  });
+
   it('tracks G91 XY independently from incremental IJ mode', () => {
     const result = parseGCodeProgram('G91\nG0 X10\nG1 X1\nG1 X1');
     expect(result.path.map((point) => ('x' in point ? point.x : point.endX))).toEqual([
@@ -34,6 +41,30 @@ describe('parseGCodeProgram', () => {
     expect(major).toMatchObject({ centerX: 5 });
     expect('centerY' in minor! ? minor.centerY : Number.NaN).toBeCloseTo(-Math.sqrt(75), 9);
     expect('centerY' in major! ? major.centerY : Number.NaN).toBeCloseTo(Math.sqrt(75), 9);
+  });
+
+  it.each(['10000000000000000', '-10000000000000000'])(
+    'rejects numerically indistinguishable large signed-R arc geometry for R%s',
+    (radius) => {
+      const result = parseGCodeProgram(`G0 X0 Y0\nG2 X1 Y0 R${radius}`);
+
+      expect(result.path).toHaveLength(1);
+      expect(result.errors).toMatchObject([{ line: 2, type: 'error' }]);
+    }
+  );
+
+  it('preserves distinguishable large signed-R arc geometry', () => {
+    const minor = parseGCodeProgram('G0 X0 Y0\nG2 X1 Y0 R1000000000000');
+    const major = parseGCodeProgram('G0 X0 Y0\nG2 X1 Y0 R-1000000000000');
+    const minorArc = minor.path.at(-1);
+    const majorArc = major.path.at(-1);
+
+    expect(minor.errors).toEqual([]);
+    expect(major.errors).toEqual([]);
+    expect(minorArc).toMatchObject({ type: 'arc', centerX: 0.5 });
+    expect(majorArc).toMatchObject({ type: 'arc', centerX: 0.5 });
+    expect(minorArc && 'centerY' in minorArc ? minorArc.centerY : 0).toBeLessThan(0);
+    expect(majorArc && 'centerY' in majorArc ? majorArc.centerY : 0).toBeGreaterThan(0);
   });
 
   it('keeps IJ mode absolute when XY switches to incremental', () => {
