@@ -221,31 +221,37 @@ test('editor contour tree labels contours, segments, and endpoint handles clearl
 
   await showPanels(page, ['contour-tree']);
 
-  await expect(page.locator('[data-upid-contour-tree-help]')).toContainText(
-    'Hover or select any row to cross-highlight the canvas'
+  const helpButton = page.getByRole('button', { name: 'Contour Tree help' });
+  await helpButton.focus();
+  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+    'Hover or select a row to cross-highlight the canvas'
   );
-  await expect(page.locator('[data-upid-contour-tree-legend="contour"]')).toContainText('whole cut loop');
-  await expect(page.locator('[data-upid-contour-tree-legend="segment"]')).toContainText('line or arc');
-  await expect(page.locator('[data-upid-contour-tree-legend="endpoint"]')).toContainText('start/end handle');
+  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+    'whole cut loop'
+  );
+  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+    'start and end endpoint handles'
+  );
 
   const contourRow = page.locator('[data-upid-contour-row]').first();
   await expect(contourRow).toHaveAttribute('data-upid-tree-row-kind', 'contour');
   await expect(contourRow).toHaveAttribute('data-upid-tree-row-level', '0');
-  await expect(contourRow.locator('[data-upid-tree-kind-label]')).toContainText('Contour');
-  await expect(contourRow.locator('[data-upid-tree-action-hint]')).toContainText('selects whole contour');
-  await expect(contourRow.locator('[data-upid-contour-field="role"]')).toContainText('Role');
-  await expect(contourRow.locator('[data-upid-contour-field="order"]')).toContainText('Cut order');
-  await expect(contourRow.locator('[data-upid-contour-field="segments"]')).toContainText('Segments');
+  await expect(contourRow).toHaveAttribute('data-upid-contour-order', '1');
+  await expect(contourRow.locator('[data-upid-tree-action-hint]')).toContainText(/selects whole contour/i);
+  await expect(contourRow.locator('[data-upid-contour-field="role"]')).toContainText('exterior');
+  await expect(page.locator('[data-upid-contour-field="order"]').first()).toContainText('01');
+  await expect(contourRow.locator('[data-upid-contour-field="segments"]')).toContainText('4 steps');
 
   await contourRow.click();
   const segmentRow = page.locator('[data-upid-segment-row]').first();
   await expect(segmentRow).toHaveAttribute('data-upid-tree-row-kind', 'segment');
   await expect(segmentRow).toHaveAttribute('data-upid-tree-row-level', '1');
-  await expect(segmentRow.locator('[data-upid-tree-kind-label]')).toContainText('Segment');
-  await expect(segmentRow.locator('[data-upid-tree-action-hint]')).toContainText('selects one segment');
-  await expect(segmentRow.locator('[data-upid-segment-field="from"]')).toContainText('From');
-  await expect(segmentRow.locator('[data-upid-segment-field="to"]')).toContainText('To');
-  await expect(segmentRow.locator('[data-upid-segment-field="length"]')).toContainText('Length');
+  await expect(segmentRow.locator('[data-upid-tree-kind-label]')).toContainText('line');
+  await expect(segmentRow.locator('[data-upid-tree-action-hint]')).toContainText(/selects one segment/i);
+  await page.getByRole('button', { name: 'Expand segment 1 details in Exterior 1' }).click();
+  await expect(page.locator('[data-upid-segment-field="from"]').first()).toContainText('From');
+  await expect(page.locator('[data-upid-segment-field="to"]').first()).toContainText('To');
+  await expect(page.locator('[data-upid-segment-field="length"]').first()).toContainText('Length');
   const pointRow = page.locator('[data-upid-point-row]').first();
   await expect(pointRow).toHaveAttribute('data-upid-tree-row-kind', 'endpoint');
   await expect(pointRow).toHaveAttribute('data-upid-tree-row-level', '2');
@@ -269,22 +275,20 @@ test('editor contour tree exposes hierarchy rails and endpoint topology from the
   await showPanels(page, ['contour-tree']);
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);
 
-  const treeMap = page.locator('[data-upid-contour-tree-map]');
-  await expect(treeMap).toContainText('Contour');
-  await expect(treeMap).toContainText('Segment');
-  await expect(treeMap).toContainText('Endpoint');
-  await expect(treeMap.locator('[data-upid-contour-tree-map-step="topology"]')).toContainText(
-    'Endpoint Join Map'
+  await page.getByRole('button', { name: 'Contour Tree help' }).focus();
+  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+    'Inspect joins in Endpoint Topology from Panels or Diagnostics'
   );
-
-  await expect(page.locator('[data-upid-tree-depth-rail="contour"]').first()).toBeVisible();
-  await expect(page.locator('[data-upid-tree-depth-rail="segment"]').first()).toBeVisible();
+  await expect(page.locator('[data-upid-contour-group]').first()).toHaveAttribute('data-upid-tree-depth', '0');
+  await expect(page.locator('[data-upid-segment-row]').first()).toHaveAttribute(
+    'data-upid-tree-row-level',
+    '1'
+  );
+  await page.getByRole('button', { name: 'Expand segment 1 details in Exterior 1' }).click();
   await expect(page.locator('[data-upid-tree-depth-rail="endpoint"]').first()).toBeVisible();
-  await expect(page.locator('[data-upid-tree-depth-label="contour"]').first()).toContainText('Contour');
-  await expect(page.locator('[data-upid-tree-depth-label="segment"]').first()).toContainText('Segment');
   await expect(page.locator('[data-upid-tree-depth-label="endpoint"]').first()).toContainText('Endpoint');
 
-  await page.getByRole('button', { name: 'Open Endpoint Join Map from Contour Tree' }).click();
+  await showPanels(page, ['endpoint-topology']);
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
   await expect(page.locator('[data-upid-endpoint-topology-title]')).toContainText('Endpoint Join Map');
 });
@@ -337,6 +341,7 @@ test('editor contour tree rows cross-highlight and select canvas geometry', asyn
     )
   ).toHaveCount(1);
 
+  await page.getByRole('button', { name: 'Expand segment 1 details in Exterior 1' }).click();
   const endpointRow = page.locator('[data-upid-point-row][data-upid-point-role="start"]').first();
   await endpointRow.hover();
   await expect(
@@ -456,7 +461,9 @@ test('editor diagnostics explain what to inspect for an open chain', async ({ pa
     'repair or re-import'
   );
 
-  const diagnosticRow = page.locator('[data-upid-diagnostic-row]').first();
+  const diagnosticRow = page.locator(
+    '[data-upid-diagnostic-row][data-upid-diagnostic-code="open-chain"]'
+  );
   await expect(diagnosticRow).toHaveAttribute('data-upid-diagnostic-code', 'open-chain');
   await expect(diagnosticRow.locator('[data-upid-diagnostic-guidance]')).toContainText(
     'Open Endpoint Topology'
