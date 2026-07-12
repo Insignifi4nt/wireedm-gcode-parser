@@ -70,6 +70,7 @@ export interface PathDiagnostic {
   severity: DiagnosticSeverity;
   code:
     | 'zero-length-segment'
+    | 'non-finite-geometry'
     | 'invalid-arc'
     | 'invalid-polyline'
     | 'endpoint-cluster-snap'

@@ -178,8 +178,78 @@ describe('dxfEntitiesToUpidDocument', () => {
   });
 
   it.each([
+    {
+      label: 'positive',
+      bulge: 5e15,
+      expectedCenterY: -1.25e15,
+      clockwise: false,
+      sweepSign: 1
+    },
+    {
+      label: 'negative',
+      bulge: -5e15,
+      expectedCenterY: 1.25e15,
+      clockwise: true,
+      sweepSign: -1
+    }
+  ])(
+    'represents a large finite $label bulge with stable near-full-turn geometry',
+    ({ bulge, expectedCenterY, clockwise, sweepSign }) => {
+      const document = dxfEntitiesToUpidDocument([
+        {
+          type: 'lwpolyline',
+          layer: 'CUT',
+          closed: false,
+          vertices: [
+            { x: 0, y: 0, bulge },
+            { x: 1, y: 0, bulge: 0 }
+          ]
+        }
+      ]);
+      const segment = document.segments[0];
+
+      expect(segment?.kind).toBe('arc');
+      if (!segment || segment.kind !== 'arc') return;
+
+      expect(segment.radius).toBeCloseTo(1.25e15, 0);
+      expect(segment.center.x).toBeCloseTo(0.5, 12);
+      expect(segment.center.y).toBeCloseTo(expectedCenterY, 0);
+      expect(segment.clockwise).toBe(clockwise);
+      expect(Math.sign(segment.sweepRadians)).toBe(sweepSign);
+      expect(Math.abs(segment.sweepRadians)).toBeGreaterThan(6);
+      expect(Math.abs(segment.sweepRadians)).toBeLessThanOrEqual(2 * Math.PI);
+      expect(segmentNumbers(segment).every(Number.isFinite)).toBe(true);
+    }
+  );
+
+  it('normalizes a valid bulge chord independently of the global vector epsilon', () => {
+    const document = dxfEntitiesToUpidDocument([
+      {
+        type: 'lwpolyline',
+        layer: 'CUT',
+        closed: false,
+        vertices: [
+          { x: 0, y: 0, bulge: 0.5 },
+          { x: 5e-6, y: 0, bulge: 0 }
+        ]
+      }
+    ]);
+    const segment = document.segments[0];
+
+    expect(segment?.kind).toBe('arc');
+    if (!segment || segment.kind !== 'arc') return;
+
+    expect(segment.radius).toBeCloseTo(3.125e-6, 15);
+    expect(segment.center.x).toBeCloseTo(2.5e-6, 15);
+    expect(segment.center.y).toBeCloseTo(1.875e-6, 15);
+    expect(segment.sweepRadians).toBeCloseTo(4 * Math.atan(0.5), 12);
+    expect(segmentNumbers(segment).every(Number.isFinite)).toBe(true);
+  });
+
+  it.each([
     { label: 'center and radius', bulge: 1e-13 },
-    { label: 'path metrics', bulge: 1.3 }
+    { label: 'path metrics', bulge: 1.3 },
+    { label: 'stable-identity radius', bulge: 5e15 }
   ])('rejects a bulge arc when finite inputs overflow derived $label', ({ bulge }) => {
     const document = dxfEntitiesToUpidDocument([
       {
@@ -202,6 +272,70 @@ describe('dxfEntitiesToUpidDocument', () => {
         severity: 'warning',
         code: 'invalid-arc',
         details: expect.objectContaining({ sourceEntityIndex: 0, bulge })
+      })
+    );
+  });
+
+  it.each([
+    {
+      label: 'ARC length',
+      entity: {
+        type: 'arc',
+        layer: 'CUT',
+        center: { x: 0, y: 0 },
+        radius: 1e308,
+        startAngle: 0,
+        endAngle: 180,
+        clockwise: false,
+        start: { x: 1e308, y: 0 },
+        end: { x: -1e308, y: 0 }
+      } satisfies DxfEntity
+    },
+    {
+      label: 'CIRCLE bounds',
+      entity: {
+        type: 'circle',
+        layer: 'CUT',
+        center: { x: 1e308, y: 0 },
+        radius: 1e308
+      } satisfies DxfEntity
+    }
+  ])('rejects native $label when finite inputs create non-finite path geometry', ({ entity }) => {
+    const document = dxfEntitiesToUpidDocument([entity, line(0, 1, 1, 1)]);
+
+    expect(document.segments).toHaveLength(1);
+    expect(document.segments[0]?.kind).toBe('line');
+    expect(document.segments.flatMap(segmentNumbers).every(Number.isFinite)).toBe(true);
+    expect(document.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: 'warning',
+        code: 'invalid-arc',
+        details: expect.objectContaining({ sourceEntityIndex: 0, radius: 1e308 })
+      })
+    );
+  });
+
+  it('rejects a LINE whose finite endpoints create non-finite path geometry', () => {
+    const document = dxfEntitiesToUpidDocument([
+      line(-1e308, 0, 1e308, 0),
+      line(0, 1, 1, 1)
+    ]);
+
+    expect(document.segments).toHaveLength(1);
+    expect(document.segments[0]).toMatchObject({
+      kind: 'line',
+      start: { x: 0, y: 1 },
+      end: { x: 1, y: 1 }
+    });
+    expect(document.segments.flatMap(segmentNumbers).every(Number.isFinite)).toBe(true);
+    expect(document.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: 'error',
+        code: 'non-finite-geometry',
+        details: expect.objectContaining({
+          sourceEntityIndex: 0,
+          sourceEntityType: 'line'
+        })
       })
     );
   });

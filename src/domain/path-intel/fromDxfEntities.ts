@@ -10,7 +10,6 @@ import {
   createCircleSegment,
   createLineSegment,
   distance,
-  normalizeVector,
   pointsEqual,
   resolvePathPlanningOptions
 } from './segments';
@@ -126,63 +125,77 @@ export function pathSegmentsFromDxfEntities(
         return;
       }
 
-      segments.push(
-        createLineSegment({
-          id: nextId(),
-          source: baseSource,
-          start: entity.start,
-          end: entity.end
-        })
-      );
+      const segment = createLineSegment({
+        id: nextId(),
+        source: baseSource,
+        start: entity.start,
+        end: entity.end
+      });
+      if (!pathSegmentHasFiniteGeometry(segment)) {
+        diagnostics.push(
+          nonFiniteGeometryDiagnostic(
+            nextDiagnosticId,
+            sourceEntityIndex,
+            baseSource.sourceEntityType
+          )
+        );
+        return;
+      }
+
+      segments.push(segment);
       return;
     }
 
     if (entity.type === 'arc') {
       if (entity.radius <= resolved.coincidenceEpsilon || pointsEqual(entity.start, entity.end, resolved.coincidenceEpsilon)) {
-        diagnostics.push({
-          id: nextDiagnosticId(),
-          severity: 'warning',
-          code: 'invalid-arc',
-          message: `Skipped invalid ARC at DXF entity index ${sourceEntityIndex}.`,
-          details: { sourceEntityIndex, radius: entity.radius }
-        });
+        diagnostics.push(
+          invalidNativeArcDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type, entity.radius)
+        );
         return;
       }
 
-      segments.push(
-        createArcSegment({
-          id: nextId(),
-          source: baseSource,
-          start: entity.start,
-          end: entity.end,
-          center: entity.center,
-          radius: entity.radius,
-          clockwise: Boolean(entity.clockwise)
-        })
-      );
+      const segment = createArcSegment({
+        id: nextId(),
+        source: baseSource,
+        start: entity.start,
+        end: entity.end,
+        center: entity.center,
+        radius: entity.radius,
+        clockwise: Boolean(entity.clockwise)
+      });
+      if (!pathSegmentHasFiniteGeometry(segment)) {
+        diagnostics.push(
+          invalidNativeArcDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type, entity.radius)
+        );
+        return;
+      }
+
+      segments.push(segment);
       return;
     }
 
     if (entity.type === 'circle') {
       if (entity.radius <= resolved.coincidenceEpsilon) {
-        diagnostics.push({
-          id: nextDiagnosticId(),
-          severity: 'warning',
-          code: 'invalid-arc',
-          message: `Skipped invalid CIRCLE at DXF entity index ${sourceEntityIndex}.`,
-          details: { sourceEntityIndex, radius: entity.radius }
-        });
+        diagnostics.push(
+          invalidNativeArcDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type, entity.radius)
+        );
         return;
       }
 
-      segments.push(
-        createCircleSegment({
-          id: nextId(),
-          source: baseSource,
-          center: entity.center,
-          radius: entity.radius
-        })
-      );
+      const segment = createCircleSegment({
+        id: nextId(),
+        source: baseSource,
+        center: entity.center,
+        radius: entity.radius
+      });
+      if (!pathSegmentHasFiniteGeometry(segment)) {
+        diagnostics.push(
+          invalidNativeArcDiagnostic(nextDiagnosticId, sourceEntityIndex, entity.type, entity.radius)
+        );
+        return;
+      }
+
+      segments.push(segment);
       return;
     }
 
@@ -327,14 +340,25 @@ function segmentsFromPolyline(
     }
 
     if (start.bulge === 0) {
-      segments.push(
-        createLineSegment({
-          id: options.nextId(),
-          source,
-          start,
-          end
-        })
-      );
+      const segment = createLineSegment({
+        id: options.nextId(),
+        source,
+        start,
+        end
+      });
+      if (!pathSegmentHasFiniteGeometry(segment)) {
+        diagnostics.push(
+          nonFiniteGeometryDiagnostic(
+            nextDiagnosticId,
+            options.sourceEntityIndex,
+            options.sourceEntityType,
+            index
+          )
+        );
+        continue;
+      }
+
+      segments.push(segment);
       continue;
     }
 
@@ -353,7 +377,7 @@ function segmentsFromPolyline(
       radius: arc.radius,
       clockwise: start.bulge < 0
     });
-    if (!arcSegmentHasFiniteGeometry(segment)) {
+    if (!pathSegmentHasFiniteGeometry(segment)) {
       diagnostics.push(invalidBulgeArcDiagnostic(options, index, start.bulge, nextDiagnosticId));
       continue;
     }
@@ -368,24 +392,27 @@ function arcFromBulge(start: DxfPoint, end: DxfPoint, bulge: number) {
   const chord = distance(start, end);
   if (!Number.isFinite(chord) || chord <= 0) return null;
 
-  const includedAngle = 4 * Math.atan(Math.abs(bulge));
-  const tanHalf = Math.tan(includedAngle / 2);
-  if (!Number.isFinite(tanHalf) || Math.abs(tanHalf) <= Number.EPSILON) return null;
+  const absoluteBulge = Math.abs(bulge);
+  if (!Number.isFinite(absoluteBulge) || absoluteBulge === 0) return null;
+  const chordQuarter = chord / 4;
+  const radius = chordQuarter * (absoluteBulge + 1 / absoluteBulge);
+  const signedCenterOffset = chordQuarter * (1 / bulge - bulge);
+  if (!Number.isFinite(radius) || !Number.isFinite(signedCenterOffset)) return null;
 
-  const apothem = chord / (2 * tanHalf);
-  if (!Number.isFinite(apothem)) return null;
-  const unit = normalizeVector({ x: end.x - start.x, y: end.y - start.y });
+  const unit = {
+    x: (end.x - start.x) / chord,
+    y: (end.y - start.y) / chord
+  };
+  if (!Number.isFinite(unit.x) || !Number.isFinite(unit.y)) return null;
   const leftNormal = { x: -unit.y, y: unit.x };
   const midpoint = {
-    x: (start.x + end.x) / 2,
-    y: (start.y + end.y) / 2
+    x: start.x / 2 + end.x / 2,
+    y: start.y / 2 + end.y / 2
   };
-  const sign = Math.sign(bulge);
   const center = {
-    x: midpoint.x + sign * leftNormal.x * apothem,
-    y: midpoint.y + sign * leftNormal.y * apothem
+    x: midpoint.x + leftNormal.x * signedCenterOffset,
+    y: midpoint.y + leftNormal.y * signedCenterOffset
   };
-  const radius = chord / (2 * Math.sin(includedAngle / 2));
   if (
     !Number.isFinite(center.x) ||
     !Number.isFinite(center.y) ||
@@ -397,24 +424,41 @@ function arcFromBulge(start: DxfPoint, end: DxfPoint, bulge: number) {
   return { center, radius };
 }
 
-function arcSegmentHasFiniteGeometry(segment: ReturnType<typeof createArcSegment>) {
-  return [
+function pathSegmentHasFiniteGeometry(segment: PathSegment) {
+  const values = [
     segment.start.x,
     segment.start.y,
     segment.end.x,
     segment.end.y,
-    segment.center.x,
-    segment.center.y,
-    segment.radius,
-    segment.startAngleRadians,
-    segment.endAngleRadians,
-    segment.sweepRadians,
     segment.length,
     segment.bounds.minX,
     segment.bounds.minY,
     segment.bounds.maxX,
     segment.bounds.maxY
-  ].every(Number.isFinite);
+  ];
+
+  if (segment.kind === 'arc') {
+    values.push(
+      segment.center.x,
+      segment.center.y,
+      segment.radius,
+      segment.startAngleRadians,
+      segment.endAngleRadians,
+      segment.sweepRadians
+    );
+  }
+
+  if (segment.kind === 'circle') {
+    values.push(
+      segment.center.x,
+      segment.center.y,
+      segment.radius,
+      segment.preferredStart.x,
+      segment.preferredStart.y
+    );
+  }
+
+  return values.every(Number.isFinite);
 }
 
 function invalidBulgeArcDiagnostic(
@@ -429,5 +473,39 @@ function invalidBulgeArcDiagnostic(
     code: 'invalid-arc',
     message: `Skipped invalid ${options.sourceLabel} bulge arc ${index} at DXF entity index ${options.sourceEntityIndex}.`,
     details: { sourceEntityIndex: options.sourceEntityIndex, sourceSubIndex: index, bulge }
+  };
+}
+
+function invalidNativeArcDiagnostic(
+  nextDiagnosticId: () => string,
+  sourceEntityIndex: number,
+  sourceEntityType: 'arc' | 'circle',
+  radius: number
+): PathDiagnostic {
+  return {
+    id: nextDiagnosticId(),
+    severity: 'warning',
+    code: 'invalid-arc',
+    message: `Skipped invalid ${sourceEntityType.toUpperCase()} at DXF entity index ${sourceEntityIndex}.`,
+    details: { sourceEntityIndex, sourceEntityType, radius }
+  };
+}
+
+function nonFiniteGeometryDiagnostic(
+  nextDiagnosticId: () => string,
+  sourceEntityIndex: number,
+  sourceEntityType: string,
+  sourceSubIndex?: number
+): PathDiagnostic {
+  return {
+    id: nextDiagnosticId(),
+    severity: 'error',
+    code: 'non-finite-geometry',
+    message: `Skipped ${sourceEntityType.toUpperCase()} at DXF entity index ${sourceEntityIndex}; derived path geometry is non-finite.`,
+    details: {
+      sourceEntityIndex,
+      sourceEntityType,
+      ...(sourceSubIndex == null ? {} : { sourceSubIndex })
+    }
   };
 }
