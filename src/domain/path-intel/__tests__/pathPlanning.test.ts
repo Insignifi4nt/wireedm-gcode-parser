@@ -135,7 +135,7 @@ describe('path-intel DXF planning', () => {
 
   it('preserves exact circle area sign when path references are reversed', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
-      { type: 'circle', layer: 'CUT', center: { x: 1e20, y: -1e20 }, radius: 3 }
+      { type: 'circle', layer: 'CUT', center: { x: 1e12, y: -1e12 }, radius: 3 }
     ]);
     const segmentsById = segmentMap(document.segments);
     const refs = document.chains[0].segmentRefs;
@@ -718,8 +718,8 @@ describe('path-intel DXF planning', () => {
         layer: 'CUT',
         center: { x: -8.48521, y: 9.178846 },
         radius: 12.5,
-        startAngle: 308.331,
-        endAngle: 317.14,
+        startAngle: 307.248745,
+        endAngle: 312.751255,
         clockwise: false,
         start: { x: -0.919253095454, y: -0.771344757898 },
         end: { x: 0.000000373547, y: 0.0000004889 }
@@ -1097,6 +1097,117 @@ describe('path-intel DXF planning', () => {
 
   it.each([
     {
+      label: 'collapsed circle preferred start',
+      segment: createCircleSegment({
+        id: 'circle_collapsed',
+        source: testSegmentSource(0, 'circle'),
+        center: { x: 1e308, y: 0 },
+        radius: 1
+      })
+    },
+    {
+      label: 'radius-inconsistent circle preferred start',
+      segment: createCircleSegment({
+        id: 'circle_inconsistent',
+        source: testSegmentSource(1, 'circle'),
+        center: { x: 0, y: 0 },
+        radius: 2,
+        preferredStart: { x: 1, y: 0 }
+      })
+    },
+    {
+      label: 'orthogonal huge-coordinate ULP circle mismatch',
+      segment: createCircleSegment({
+        id: 'circle_orthogonal_ulp',
+        source: testSegmentSource(2, 'circle'),
+        center: { x: 1e308, y: 0 },
+        radius: 1,
+        preferredStart: { x: 1e308, y: 9e291 }
+      })
+    },
+    {
+      label: 'collapsed arc radial',
+      segment: createArcSegment({
+        id: 'arc_collapsed',
+        source: testSegmentSource(3, 'arc'),
+        center: { x: 1e308, y: 0 },
+        radius: 1,
+        start: { x: 1e308, y: 0 },
+        end: { x: 1e308, y: 1 },
+        clockwise: false,
+        sweepRadians: Math.PI / 2
+      })
+    },
+    {
+      label: 'radius-inconsistent arc endpoints',
+      segment: createArcSegment({
+        id: 'arc_inconsistent',
+        source: testSegmentSource(4, 'arc'),
+        center: { x: 0, y: 0 },
+        radius: 2,
+        start: { x: 1, y: 0 },
+        end: { x: 0, y: 1 },
+        clockwise: false,
+        sweepRadians: Math.PI / 2
+      })
+    }
+  ])('rejects finite but non-executable $label geometry', ({ segment }) => {
+    const result = sanitizePathSegments([segment], { coincidenceEpsilon: 1e-6 });
+
+    expect(result.segments).toEqual([]);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'invalid-arc',
+        severity: 'error',
+        relatedSegmentIds: [segment.id]
+      })
+    );
+  });
+
+  it('retains representable large circular geometry and true full-turn arc semantics', () => {
+    const center = { x: 1e308, y: 0 };
+    const radius = 2e293;
+    const largeCircle = createCircleSegment({
+      id: 'circle_large_valid',
+      source: testSegmentSource(0, 'circle'),
+      center,
+      radius
+    });
+    const largeArc = createArcSegment({
+      id: 'arc_large_valid',
+      source: testSegmentSource(1, 'arc'),
+      center,
+      radius,
+      start: { x: center.x - radius, y: 0 },
+      end: { x: center.x, y: radius },
+      clockwise: true,
+      sweepRadians: -Math.PI / 2
+    });
+    const fullTurn = createArcSegment({
+      id: 'arc_full_turn_valid',
+      source: testSegmentSource(2, 'arc'),
+      center: { x: 0, y: 0 },
+      radius: 10,
+      start: { x: 10, y: 0 },
+      end: { x: 10, y: 0 },
+      clockwise: false,
+      sweepRadians: 2 * Math.PI
+    });
+
+    const result = sanitizePathSegments([largeCircle, largeArc, fullTurn], {
+      coincidenceEpsilon: 1e-6
+    });
+
+    expect(result.segments.map((segment) => segment.id)).toEqual([
+      'circle_large_valid',
+      'arc_large_valid',
+      'arc_full_turn_valid'
+    ]);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain('invalid-arc');
+  });
+
+  it.each([
+    {
       label: 'arc center',
       entity: {
         ...arcEntity({ x: 0, y: 0 }, 1, 0, 90, false),
@@ -1196,6 +1307,47 @@ describe('path-intel DXF planning', () => {
     );
     expect(document.diagnostics).toContainEqual(
       expect.objectContaining({ code: 'open-chain', severity: 'warning' })
+    );
+  });
+
+  it('reports an interior crossing even when endpoint healing makes the segments adjacent', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [
+        line(0, 0, 1, 0),
+        line(0.9995, -0.0005, 0.9995, 1)
+      ],
+      { coincidenceEpsilon: 1e-5, endpointTolerance: 0.001 }
+    );
+
+    expect(document.chains).toHaveLength(1);
+    expect(document.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'intersecting-topology',
+        severity: 'error',
+        relatedSegmentIds: ['seg_0001', 'seg_0002']
+      })
+    );
+  });
+
+  it('preserves distinct near-tangent roots when one contact is interior to adjacent segments', () => {
+    const epsilon = 1e-5;
+    const radius = 1_000_000;
+    const lineY = radius - epsilon / 2;
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [
+        arcEntity({ x: 0, y: 0 }, radius, 0, 90, false),
+        line(0, lineY, 10, lineY)
+      ],
+      { coincidenceEpsilon: epsilon, endpointTolerance: epsilon }
+    );
+
+    expect(document.chains).toHaveLength(1);
+    expect(document.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'intersecting-topology',
+        severity: 'error',
+        relatedSegmentIds: ['seg_0001', 'seg_0002']
+      })
     );
   });
 
@@ -1367,6 +1519,78 @@ describe('path-intel DXF planning', () => {
       expect(translatedResult.points).toHaveLength(1);
     }
   );
+
+  it.each([
+    { label: 'translated', centerX: 1e16, scale: 1 },
+    { label: 'near-maximum scaled', centerX: 1e308, scale: 2e291 }
+  ])(
+    'keeps $label oblique line-circle and line-arc intersections equivalent to origin',
+    ({ centerX, scale }) => {
+      for (const rightKind of ['circle', 'arc'] as const) {
+        const origin = obliqueLineCircularScenario(0, scale, rightKind, true);
+        const transformed = obliqueLineCircularScenario(centerX, scale, rightKind, true);
+
+        const originResult = classifyPathSegmentIntersection(origin.line, origin.circular, 1e-6);
+        const transformedResult = classifyPathSegmentIntersection(
+          transformed.line,
+          transformed.circular,
+          1e-6
+        );
+
+        expect(originResult.kind).toBe('points');
+        expect(originResult.points).toHaveLength(1);
+        expect(transformedResult.kind).toBe(originResult.kind);
+        expect(transformedResult.points).toHaveLength(originResult.points.length);
+      }
+    }
+  );
+
+  it.each([
+    { label: 'translated', centerX: 1e16, scale: 1 },
+    { label: 'near-maximum scaled', centerX: 1e308, scale: 2e291 }
+  ])('keeps $label oblique line-arc exclusions equivalent to origin', ({ centerX, scale }) => {
+    const origin = obliqueLineCircularScenario(0, scale, 'arc', false);
+    const transformed = obliqueLineCircularScenario(centerX, scale, 'arc', false);
+
+    expect(classifyPathSegmentIntersection(origin.line, origin.circular, 1e-6).kind).toBe(
+      'none'
+    );
+    expect(
+      classifyPathSegmentIntersection(transformed.line, transformed.circular, 1e-6).kind
+    ).toBe('none');
+  });
+
+  it.each([
+    { label: 'translated', centerX: 1e16, scale: 1 },
+    { label: 'near-maximum scaled', centerX: 1e308, scale: 2e291 }
+  ])('keeps $label line-circle tangency equivalent to origin', ({ centerX, scale }) => {
+    const classifyAt = (offset: number) => {
+      const radius = 100 * scale;
+      const lineSegment = createTestLineSegment(
+        `line_tangent_${offset}`,
+        offset - 200 * scale,
+        radius,
+        offset + 200 * scale,
+        radius,
+        0
+      );
+      const circle = createCircleSegment({
+        id: `circle_tangent_${offset}`,
+        source: testSegmentSource(1, 'circle'),
+        center: { x: offset, y: 0 },
+        radius
+      });
+      return classifyPathSegmentIntersection(lineSegment, circle, 1e-6);
+    };
+
+    const originResult = classifyAt(0);
+    const transformedResult = classifyAt(centerX);
+
+    expect(originResult.kind).toBe('points');
+    expect(originResult.points).toHaveLength(1);
+    expect(transformedResult.kind).toBe(originResult.kind);
+    expect(transformedResult.points).toHaveLength(originResult.points.length);
+  });
 
   it('retains a finite line-line crossing near the largest finite coordinates', () => {
     const center = 1e308;
@@ -1552,6 +1776,46 @@ function createTestArcSegment(input: {
     radius: Math.hypot(input.start.x - input.center.x, input.start.y - input.center.y),
     clockwise: input.sweepRadians < 0
   });
+}
+
+function obliqueLineCircularScenario(
+  centerX: number,
+  scale: number,
+  rightKind: 'circle' | 'arc',
+  includeIntersection: boolean
+) {
+  const radius = 100 * scale;
+  const lineSegment = createTestLineSegment(
+    `line_oblique_${centerX}_${scale}`,
+    centerX - 200 * scale,
+    -200 * scale,
+    centerX - 90 * scale,
+    42 * scale,
+    0
+  );
+  const circular =
+    rightKind === 'circle'
+      ? createCircleSegment({
+          id: `circle_oblique_${centerX}_${scale}`,
+          source: testSegmentSource(1, 'circle'),
+          center: { x: centerX, y: 0 },
+          radius
+        })
+      : createArcSegment({
+          id: `arc_oblique_${centerX}_${scale}_${includeIntersection}`,
+          source: testSegmentSource(1, 'arc'),
+          center: { x: centerX, y: 0 },
+          radius,
+          start: {
+            x: centerX + (includeIntersection ? -radius : radius),
+            y: 0
+          },
+          end: { x: centerX, y: radius },
+          clockwise: includeIntersection,
+          sweepRadians: includeIntersection ? -Math.PI / 2 : Math.PI / 2
+        });
+
+  return { line: lineSegment, circular };
 }
 
 function countRapids(body: string) {

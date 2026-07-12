@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { clusterSegmentEndpoints } from '../endpointClusters';
+import { sanitizePathSegments } from '../sanitizeSegments';
 import { createLineSegment } from '../segments';
 import { SpatialHash } from '../spatialIndex';
 
@@ -70,6 +71,31 @@ describe('path-intel endpoint clustering performance', () => {
       );
 
       expect(fourThousandMs).toBeLessThan(5_000);
+      expect(growthRatio).toBeLessThan(8);
+    }
+  );
+
+  it(
+    'keeps equal mixed-size disjoint segment bounds sub-quadratic',
+    { timeout: 30_000 },
+    () => {
+      const oneThousand = mixedSizeLines(1_000);
+      const fourThousand = mixedSizeLines(4_000);
+      sanitizeMixedSizeLines(mixedSizeLines(100));
+      sanitizeMixedSizeLines(oneThousand);
+
+      const oneThousandMs = median(
+        [0, 1, 2, 3, 4].map(() => timeMixedSizeSanitization(oneThousand))
+      );
+      const fourThousandMs = median(
+        [0, 1, 2, 3, 4].map(() => timeMixedSizeSanitization(fourThousand))
+      );
+      const growthRatio = fourThousandMs / Math.max(oneThousandMs, 0.001);
+
+      console.info(
+        `[path-intel-mixed-size-performance] 1000=${oneThousandMs.toFixed(2)}ms 4000=${fourThousandMs.toFixed(2)}ms ratio=${growthRatio.toFixed(2)}x`
+      );
+
       expect(growthRatio).toBeLessThan(8);
     }
   );
@@ -144,4 +170,48 @@ function exerciseMixedLocationPoints(count: number) {
       throw new Error(`Unexpected mixed-location query result at entry ${entry}.`);
     }
   }
+}
+
+function timeMixedSizeSanitization(segments: ReturnType<typeof mixedSizeLines>) {
+  const start = performance.now();
+  sanitizeMixedSizeLines(segments);
+  return performance.now() - start;
+}
+
+function sanitizeMixedSizeLines(segments: ReturnType<typeof mixedSizeLines>) {
+  const result = sanitizePathSegments(segments, { coincidenceEpsilon: 1e-6 });
+  if (result.segments.length !== segments.length || result.diagnostics.length !== 0) {
+    throw new Error('Unexpected mixed-size sanitization result.');
+  }
+}
+
+function mixedSizeLines(count: number) {
+  const half = Math.floor(count / 2);
+  const large = Array.from({ length: half }, (_, index) =>
+    createLineSegment({
+      id: `mixed_large_${String(index).padStart(5, '0')}`,
+      source: {
+        sourceEntityIndex: index,
+        sourceEntityType: 'line',
+        layer: 'PERF',
+        exact: true
+      },
+      start: { x: index * 2e110, y: 0 },
+      end: { x: index * 2e110 + 1e110, y: 0 }
+    })
+  );
+  const small = Array.from({ length: count - half }, (_, index) =>
+    createLineSegment({
+      id: `mixed_small_${String(index).padStart(5, '0')}`,
+      source: {
+        sourceEntityIndex: half + index,
+        sourceEntityType: 'line',
+        layer: 'PERF',
+        exact: true
+      },
+      start: { x: -1_000_000 - index * 4, y: 0 },
+      end: { x: -999_999 - index * 4, y: 0 }
+    })
+  );
+  return [...large, ...small];
 }

@@ -4,7 +4,7 @@ import {
   pathSegmentsShareSweptLocus,
   spatialCellSizeForSegments
 } from './intersections';
-import { resolvePathPlanningOptions } from './segments';
+import { nextDown, nextUp, resolvePathPlanningOptions } from './segments';
 import { SpatialHash } from './spatialIndex';
 import type {
   PathDiagnostic,
@@ -31,6 +31,10 @@ export function sanitizePathSegments(
   for (const segment of segments) {
     if (!pathSegmentHasFiniteGeometry(segment)) {
       diagnostics.push(nonFiniteGeometryDiagnostic(diagnostics.length, segment));
+      continue;
+    }
+    if (!pathSegmentHasExecutableCircularGeometry(segment, epsilon)) {
+      diagnostics.push(invalidCircularGeometryDiagnostic(diagnostics.length, segment));
       continue;
     }
     candidates.push(segment);
@@ -123,12 +127,81 @@ function pathSegmentHasFiniteGeometry(segment: PathSegment) {
   );
 }
 
+function pathSegmentHasExecutableCircularGeometry(
+  segment: PathSegment,
+  epsilon: number
+) {
+  if (segment.kind === 'line') return true;
+  if (!Number.isFinite(segment.radius) || segment.radius <= 0) return false;
+
+  if (segment.kind === 'circle') {
+    return radialPointMatchesRadius(segment.center, segment.preferredStart, segment.radius, epsilon);
+  }
+
+  if (
+    !radialPointMatchesRadius(segment.center, segment.start, segment.radius, epsilon) ||
+    !radialPointMatchesRadius(segment.center, segment.end, segment.radius, epsilon)
+  ) {
+    return false;
+  }
+
+  const fullTurn =
+    Math.abs(Math.abs(segment.sweepRadians) - 2 * Math.PI) <=
+    64 * Number.EPSILON * 2 * Math.PI;
+  const endpointsCoincide =
+    segment.start.x === segment.end.x && segment.start.y === segment.end.y;
+  return !endpointsCoincide || fullTurn;
+}
+
+function radialPointMatchesRadius(
+  center: { x: number; y: number },
+  point: { x: number; y: number },
+  radius: number,
+  epsilon: number
+) {
+  const radialX = point.x - center.x;
+  const radialY = point.y - center.y;
+  const radialDistance = Math.hypot(radialX, radialY);
+  if (!Number.isFinite(radialDistance) || radialDistance === 0) return false;
+
+  const representationTolerance =
+    (Math.abs(radialX) / radialDistance) * halfFloatingStep(point.x) +
+    (Math.abs(radialY) / radialDistance) * halfFloatingStep(point.y);
+  const arithmeticTolerance =
+    64 * Number.EPSILON * Math.max(1, radius, radialDistance);
+  const tolerance = Math.max(epsilon, representationTolerance, arithmeticTolerance);
+  return Math.abs(radialDistance - radius) <= tolerance;
+}
+
+function halfFloatingStep(value: number) {
+  const upward = nextUp(value) - value;
+  const downward = value - nextDown(value);
+  const finiteSteps = [upward, downward].filter(
+    (step) => Number.isFinite(step) && step >= 0
+  );
+  return (finiteSteps.length > 0 ? Math.max(...finiteSteps) : 0) / 2;
+}
+
 function nonFiniteGeometryDiagnostic(index: number, segment: PathSegment): PathDiagnostic {
   return {
     id: `diag_sanitize_${String(index + 1).padStart(4, '0')}`,
     severity: 'error',
     code: 'non-finite-geometry',
     message: `Removed segment ${segment.id} because executable or derived geometry is non-finite.`,
+    relatedSegmentIds: [segment.id],
+    details: sourceDetails(segment)
+  };
+}
+
+function invalidCircularGeometryDiagnostic(
+  index: number,
+  segment: PathSegment
+): PathDiagnostic {
+  return {
+    id: `diag_sanitize_${String(index + 1).padStart(4, '0')}`,
+    severity: 'error',
+    code: 'invalid-arc',
+    message: `Removed segment ${segment.id} because its finite circular fields do not describe representable executable geometry.`,
     relatedSegmentIds: [segment.id],
     details: sourceDetails(segment)
   };

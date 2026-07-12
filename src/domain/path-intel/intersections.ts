@@ -4,8 +4,6 @@ import {
   distance,
   dot,
   normalizeAngle,
-  orientedSegmentEnd,
-  orientedSegmentStart,
   pointOnArcAtParameter,
   pointOnCircle,
   requiredSegment,
@@ -42,16 +40,39 @@ interface IndexedSegment {
 }
 
 interface AdjacentJunction {
-  leftPoint: Point2;
-  rightPoint: Point2;
-  tolerance: number;
+  leftSegmentId: string;
+  leftParameter: number;
+  rightSegmentId: string;
+  rightParameter: number;
 }
+
+interface ParameterizedIntersectionPoint {
+  point: Point2;
+  leftParameter: number | null;
+  rightParameter: number | null;
+}
+
+type DetailedSegmentIntersection =
+  | { kind: 'none'; points: [] }
+  | { kind: 'points'; points: ParameterizedIntersectionPoint[] }
+  | { kind: 'overlap'; points: [] };
 
 export function classifyPathSegmentIntersection(
   left: PathSegment,
   right: PathSegment,
   coincidenceEpsilon: number
 ): SegmentIntersection {
+  const relation = classifyDetailedPathSegmentIntersection(left, right, coincidenceEpsilon);
+  return relation.kind === 'points'
+    ? { kind: 'points', points: relation.points.map(({ point }) => point) }
+    : relation;
+}
+
+function classifyDetailedPathSegmentIntersection(
+  left: PathSegment,
+  right: PathSegment,
+  coincidenceEpsilon: number
+): DetailedSegmentIntersection {
   const epsilon = finiteNonNegative(coincidenceEpsilon);
 
   if (left.kind === 'line' && right.kind === 'line') {
@@ -63,7 +84,7 @@ export function classifyPathSegmentIntersection(
   }
 
   if (isCircular(left) && right.kind === 'line') {
-    return intersectLineCircular(right, left, epsilon);
+    return swapIntersectionParameters(intersectLineCircular(right, left, epsilon));
   }
 
   if (isCircular(left) && isCircular(right)) {
@@ -130,7 +151,7 @@ export function findPathSegmentIntersectionDiagnostics(
   const resolved = resolvePathPlanningOptions(options);
   const epsilon = resolved.coincidenceEpsilon;
   const diagnostics: PathDiagnostic[] = [];
-  const allowedJunctions = adjacentJunctions(chains, segments, epsilon);
+  const allowedJunctions = adjacentJunctions(chains, segments);
   const chainIdsBySegmentId = chainIdsBySegment(chains);
   const index = new SpatialHash<IndexedSegment>({
     cellSize: spatialCellSizeForSegments(segments, epsilon),
@@ -143,15 +164,20 @@ export function findPathSegmentIntersectionDiagnostics(
       .sort((left, right) => left.index - right.index);
 
     for (const candidate of candidates) {
-      const relation = classifyPathSegmentIntersection(candidate.segment, segment, epsilon);
+      const relation = classifyDetailedPathSegmentIntersection(
+        candidate.segment,
+        segment,
+        epsilon
+      );
       if (relation.kind !== 'points') continue;
       const disallowedPoints = relation.points.filter(
-        (point) =>
+        (intersection) =>
           !isAllowedAdjacentEndpointTouch(
             candidate.segment,
             segment,
-            point,
-            allowedJunctions
+            intersection,
+            allowedJunctions,
+            epsilon
           )
       );
       if (disallowedPoints.length === 0) continue;
@@ -166,7 +192,7 @@ export function findPathSegmentIntersectionDiagnostics(
         relatedChainIds: uniqueSorted(
           relatedSegmentIds.flatMap((segmentId) => chainIdsBySegmentId.get(segmentId) ?? [])
         ),
-        details: { points: disallowedPoints }
+        details: { points: disallowedPoints.map(({ point }) => point) }
       });
     }
 
@@ -185,8 +211,11 @@ export function spatialCellSizeForSegments(segments: PathSegment[], epsilon: num
     })
     .filter((span) => Number.isFinite(span) && span > 0)
     .sort((left, right) => left - right);
-  const median = spans[Math.floor(spans.length / 2)];
-  if (Number.isFinite(median) && median > 0) return median;
+  const epsilonFloor = Number.isFinite(epsilon) && epsilon > 0 ? epsilon : Number.MIN_VALUE;
+  const lowQuantile = spans[Math.floor(Math.max(0, spans.length - 1) * 0.1)];
+  if (Number.isFinite(lowQuantile) && lowQuantile > 0) {
+    return Math.max(epsilonFloor, lowQuantile);
+  }
   return Number.isFinite(epsilon) && epsilon > 0 ? epsilon : 1;
 }
 
@@ -204,7 +233,7 @@ function intersectLines(
   left: LinePathSegment,
   right: LinePathSegment,
   epsilon: number
-): SegmentIntersection {
+): DetailedSegmentIntersection {
   const leftVector = vector(left.start, left.end);
   const rightVector = vector(right.start, right.end);
   const leftLength = Math.hypot(leftVector.x, leftVector.y);
@@ -243,12 +272,20 @@ function intersectLines(
       leftLength,
       Math.max(0, stableMidpoint(overlapStart, overlapEnd))
     );
-    return pointIntersection([
-      {
-        x: left.start.x + leftUnit.x * coordinate,
-        y: left.start.y + leftUnit.y * coordinate
-      }
-    ], tolerance);
+    const point = {
+      x: left.start.x + leftUnit.x * coordinate,
+      y: left.start.y + leftUnit.y * coordinate
+    };
+    return parameterizedPointIntersection(
+      [
+        {
+          point,
+          leftParameter: coordinate / leftLength,
+          rightParameter: dot(vector(right.start, point), rightUnit) / rightLength
+        }
+      ],
+      tolerance
+    );
   }
 
   const leftDistance = cross(offset, rightUnit) / denominator;
@@ -270,11 +307,15 @@ function intersectLines(
     x: right.start.x + rightUnit.x * rightDistance,
     y: right.start.y + rightUnit.y * rightDistance
   };
-  return pointIntersection(
+  return parameterizedPointIntersection(
     [
       {
-        x: stableMidpoint(leftPoint.x, rightPoint.x),
-        y: stableMidpoint(leftPoint.y, rightPoint.y)
+        point: {
+          x: stableMidpoint(leftPoint.x, rightPoint.x),
+          y: stableMidpoint(leftPoint.y, rightPoint.y)
+        },
+        leftParameter: leftDistance / leftLength,
+        rightParameter: rightDistance / rightLength
       }
     ],
     tolerance
@@ -285,68 +326,108 @@ function intersectLineCircular(
   line: LinePathSegment,
   circular: CircularPathSegment,
   epsilon: number
-): SegmentIntersection {
+): DetailedSegmentIntersection {
   const lineVector = vector(line.start, line.end);
   const lineLength = Math.hypot(lineVector.x, lineVector.y);
   if (lineLength === 0 || circular.radius <= 0) return noIntersection();
 
-  const unit = { x: lineVector.x / lineLength, y: lineVector.y / lineLength };
-  const toCenter = vector(line.start, circular.center);
-  const projection = dot(toCenter, unit);
-  const closest = {
-    x: line.start.x + unit.x * projection,
-    y: line.start.y + unit.y * projection
+  const localStart = vector(circular.center, line.start);
+  const localEnd = vector(circular.center, line.end);
+  if (
+    ![localStart.x, localStart.y, localEnd.x, localEnd.y].every(Number.isFinite)
+  ) {
+    return noIntersection();
+  }
+  const scale = Math.max(
+    circular.radius,
+    Math.abs(localStart.x),
+    Math.abs(localStart.y),
+    Math.abs(localEnd.x),
+    Math.abs(localEnd.y)
+  );
+  if (!Number.isFinite(scale) || scale <= 0) return noIntersection();
+
+  const start = { x: localStart.x / scale, y: localStart.y / scale };
+  const delta = {
+    x: localEnd.x / scale - start.x,
+    y: localEnd.y / scale - start.y
   };
-  const centerDistance = distance(closest, circular.center);
+  const radius = circular.radius / scale;
+  const quadraticA = dot(delta, delta);
+  const quadraticB = 2 * dot(start, delta);
+  const quadraticC = dot(start, start) - radius * radius;
+  if (!Number.isFinite(quadraticA) || quadraticA <= 0) return noIntersection();
+
   const tolerance = linearTolerance(
     epsilon,
     lineLength,
     lineVector.x,
     lineVector.y,
-    toCenter.x,
-    toCenter.y,
-    projection,
-    centerDistance,
+    localStart.x,
+    localStart.y,
+    localEnd.x,
+    localEnd.y,
     circular.radius
   );
-  if (centerDistance > circular.radius + tolerance) return noIntersection();
+  const normalizedTolerance = tolerance / scale;
+  const closestParameter = -quadraticB / (2 * quadraticA);
+  const closest = {
+    x: start.x + delta.x * closestParameter,
+    y: start.y + delta.y * closestParameter
+  };
+  const closestDistance = Math.hypot(closest.x, closest.y);
+  if (closestDistance > radius + normalizedTolerance) return noIntersection();
 
-  const offsets =
-    Math.abs(centerDistance - circular.radius) <= tolerance
-      ? [0]
-      : [
-          -stableChordHalfLength(circular.radius, centerDistance),
-          stableChordHalfLength(circular.radius, centerDistance)
-        ];
-  const points = offsets
-    .map((offset) => ({ distanceAlongLine: projection + offset }))
+  const discriminant = quadraticB * quadraticB - 4 * quadraticA * quadraticC;
+  const discriminantScale = Math.max(
+    Math.abs(quadraticB * quadraticB),
+    Math.abs(4 * quadraticA * quadraticC),
+    Number.MIN_VALUE
+  );
+  const discriminantTolerance = ROUNDING_FACTOR * Number.EPSILON * discriminantScale;
+  if (discriminant < -discriminantTolerance) return noIntersection();
+  const roots = Math.abs(discriminant) <= discriminantTolerance
+    ? [closestParameter]
+    : stableQuadraticRoots(quadraticA, quadraticB, quadraticC, Math.max(0, discriminant));
+  const parameterTolerance = tolerance / Math.max(lineLength, Number.MIN_VALUE);
+  const points = roots
     .filter(
-      ({ distanceAlongLine }) =>
-        distanceAlongLine >= -tolerance && distanceAlongLine <= lineLength + tolerance
+      (parameter) =>
+        Number.isFinite(parameter) &&
+        parameter >= -parameterTolerance &&
+        parameter <= 1 + parameterTolerance
     )
-    .map(({ distanceAlongLine }) => ({
-      point: {
-        x: line.start.x + unit.x * distanceAlongLine,
-        y: line.start.y + unit.y * distanceAlongLine
-      },
-      radial: {
-        x: -toCenter.x + unit.x * distanceAlongLine,
-        y: -toCenter.y + unit.y * distanceAlongLine
-      }
-    }))
+    .map((parameter) => {
+      const radial = {
+        x: (start.x + delta.x * parameter) * scale,
+        y: (start.y + delta.y * parameter) * scale
+      };
+      return {
+        point: {
+          x: circular.center.x + radial.x,
+          y: circular.center.y + radial.y
+        },
+        radial,
+        parameter
+      };
+    })
     .filter(({ point, radial }) =>
       pointIsOnCircularSegment(point, circular, tolerance, epsilon, radial)
     )
-    .map(({ point }) => point);
+    .map(({ point, radial, parameter }) => ({
+      point,
+      leftParameter: parameter,
+      rightParameter: circularParameterAtCandidate(circular, point, radial, epsilon)
+    }));
 
-  return pointIntersection(points, tolerance);
+  return parameterizedPointIntersection(points, tolerance);
 }
 
 function intersectCircularSegments(
   left: CircularPathSegment,
   right: CircularPathSegment,
   epsilon: number
-): SegmentIntersection {
+): DetailedSegmentIntersection {
   if (sameCircularSupport(left, right, epsilon)) {
     return sameCircularSupportRelation(left, right, epsilon);
   }
@@ -411,14 +492,18 @@ function intersectCircularSegments(
           circularCandidate(-1)
         ];
 
-  return pointIntersection(
+  return parameterizedPointIntersection(
     candidates
       .filter(
         ({ point, leftRadial, rightRadial }) =>
           pointIsOnCircularSegment(point, left, tolerance, epsilon, leftRadial) &&
           pointIsOnCircularSegment(point, right, tolerance, epsilon, rightRadial)
       )
-      .map(({ point }) => point),
+      .map(({ point, leftRadial, rightRadial }) => ({
+        point,
+        leftParameter: circularParameterAtCandidate(left, point, leftRadial, epsilon),
+        rightParameter: circularParameterAtCandidate(right, point, rightRadial, epsilon)
+      })),
     tolerance
   );
 
@@ -446,7 +531,7 @@ function sameCircularSupportRelation(
   left: CircularPathSegment,
   right: CircularPathSegment,
   epsilon: number
-): SegmentIntersection {
+): DetailedSegmentIntersection {
   const leftCoverage = circularCoverage(left, epsilon);
   const rightCoverage = circularCoverage(right, epsilon);
   if (leftCoverage.full && rightCoverage.full) return overlapIntersection();
@@ -486,8 +571,24 @@ function sameCircularSupportRelation(
     touchingAngles.push(0);
   }
 
-  const points = touchingAngles.map((angle) => pointOnCircle(left.center, left.radius, angle));
-  return pointIntersection(points, epsilon);
+  const points = touchingAngles.map((angle) => {
+    const radial = {
+      x: left.radius * Math.cos(angle),
+      y: left.radius * Math.sin(angle)
+    };
+    const point = pointOnCircle(left.center, left.radius, angle);
+    return {
+      point,
+      leftParameter: circularParameterAtCandidate(left, point, radial, epsilon),
+      rightParameter: circularParameterAtCandidate(
+        right,
+        point,
+        vector(right.center, point),
+        epsilon
+      )
+    };
+  });
+  return parameterizedPointIntersection(points, epsilon);
 }
 
 function circularCoverage(segment: CircularPathSegment, epsilon: number) {
@@ -533,6 +634,24 @@ function pointIsOnCircularSegment(
   );
 }
 
+function circularParameterAtCandidate(
+  segment: CircularPathSegment,
+  point: Point2,
+  radial: Point2,
+  epsilon: number
+) {
+  if (segment.kind === 'circle') return null;
+  const parameter = arcParameterAtRadial(
+    segment,
+    { segmentId: segment.id, reversed: false },
+    radial
+  );
+  if (parameter != null) return parameter;
+  if (pointsWithinPerAxisRoundoff(point, segment.start, epsilon)) return 0;
+  if (pointsWithinPerAxisRoundoff(point, segment.end, epsilon)) return 1;
+  return null;
+}
+
 function sameCircularSupport(
   left: CircularPathSegment,
   right: CircularPathSegment,
@@ -549,15 +668,18 @@ function isFullCircularSegment(segment: CircularPathSegment, epsilon: number) {
   return Math.abs(FULL_TURN - Math.abs(segment.sweepRadians)) * segment.radius <= epsilon;
 }
 
-function stableChordHalfLength(radius: number, centerDistance: number) {
-  const ratio = centerDistance / radius;
-  return radius * Math.sqrt(Math.max(0, (1 - ratio) * (1 + ratio)));
+function stableQuadraticRoots(a: number, b: number, c: number, discriminant: number) {
+  if (!Number.isFinite(discriminant) || discriminant < 0) return [];
+  const squareRoot = Math.sqrt(discriminant);
+  if (squareRoot === 0) return [-b / (2 * a)];
+  const q = -0.5 * (b + (b < 0 ? -squareRoot : squareRoot));
+  if (q === 0) return [-b / (2 * a)];
+  return [q / a, c / q].sort((left, right) => left - right);
 }
 
 function adjacentJunctions(
   chains: PathChain[],
-  segments: PathSegment[],
-  epsilon: number
+  segments: PathSegment[]
 ) {
   const segmentsById = segmentMap(segments);
   const junctions = new Map<string, AdjacentJunction[]>();
@@ -568,8 +690,7 @@ function adjacentJunctions(
         chain.segmentRefs[index],
         chain.segmentRefs[index + 1],
         junctions,
-        segmentsById,
-        epsilon
+        segmentsById
       );
     }
     if (chain.closed && chain.segmentRefs.length > 1) {
@@ -577,8 +698,7 @@ function adjacentJunctions(
         chain.segmentRefs[chain.segmentRefs.length - 1],
         chain.segmentRefs[0],
         junctions,
-        segmentsById,
-        epsilon
+        segmentsById
       );
     }
   }
@@ -590,20 +710,18 @@ function addAdjacentJunction(
   leftRef: PathChain['segmentRefs'][number],
   rightRef: PathChain['segmentRefs'][number],
   junctions: Map<string, AdjacentJunction[]>,
-  segmentsById: Map<string, PathSegment>,
-  epsilon: number
+  segmentsById: Map<string, PathSegment>
 ) {
   if (leftRef.segmentId === rightRef.segmentId) return;
   const left = requiredSegment(segmentsById, leftRef.segmentId);
   const right = requiredSegment(segmentsById, rightRef.segmentId);
-  const leftPoint = orientedSegmentEnd(left, leftRef);
-  const rightPoint = orientedSegmentStart(right, rightRef);
   const key = segmentPairKey(left.id, right.id);
   const entries = junctions.get(key) ?? [];
   entries.push({
-    leftPoint,
-    rightPoint,
-    tolerance: epsilon + distance(leftPoint, rightPoint)
+    leftSegmentId: left.id,
+    leftParameter: leftRef.reversed ? 0 : 1,
+    rightSegmentId: right.id,
+    rightParameter: rightRef.reversed ? 1 : 0
   });
   junctions.set(key, entries);
 }
@@ -611,21 +729,44 @@ function addAdjacentJunction(
 function isAllowedAdjacentEndpointTouch(
   left: PathSegment,
   right: PathSegment,
-  point: Point2,
-  allowedJunctions: Map<string, AdjacentJunction[]>
+  intersection: ParameterizedIntersectionPoint,
+  allowedJunctions: Map<string, AdjacentJunction[]>,
+  epsilon: number
 ) {
   return (allowedJunctions.get(segmentPairKey(left.id, right.id)) ?? []).some(
-    (junction) =>
-      pointsWithin(junction.leftPoint, point, junction.tolerance) &&
-      pointsWithin(junction.rightPoint, point, junction.tolerance) &&
-      segmentHasEndpointAt(left, point, junction.tolerance) &&
-      segmentHasEndpointAt(right, point, junction.tolerance)
+    (junction) => {
+      const leftEndpoint = junctionParameterForSegment(junction, left.id);
+      const rightEndpoint = junctionParameterForSegment(junction, right.id);
+      return (
+        intersection.leftParameter != null &&
+        intersection.rightParameter != null &&
+        leftEndpoint != null &&
+        rightEndpoint != null &&
+        parameterIsAtEndpoint(intersection.leftParameter, leftEndpoint, left, epsilon) &&
+        parameterIsAtEndpoint(intersection.rightParameter, rightEndpoint, right, epsilon)
+      );
+    }
   );
 }
 
-function segmentHasEndpointAt(segment: PathSegment, point: Point2, epsilon: number) {
-  if (segment.kind === 'circle') return false;
-  return pointsWithin(segment.start, point, epsilon) || pointsWithin(segment.end, point, epsilon);
+function junctionParameterForSegment(junction: AdjacentJunction, segmentId: string) {
+  if (junction.leftSegmentId === segmentId) return junction.leftParameter;
+  if (junction.rightSegmentId === segmentId) return junction.rightParameter;
+  return null;
+}
+
+function parameterIsAtEndpoint(
+  parameter: number,
+  endpoint: number,
+  segment: PathSegment,
+  epsilon: number
+) {
+  if (segment.kind === 'circle' || !Number.isFinite(parameter)) return false;
+  const tolerance = Math.max(
+    ROUNDING_FACTOR * Number.EPSILON,
+    (Math.SQRT2 * epsilon) / Math.max(segment.length, Number.MIN_VALUE)
+  );
+  return Math.abs(parameter - endpoint) <= tolerance;
 }
 
 function chainIdsBySegment(chains: PathChain[]) {
@@ -644,28 +785,48 @@ function segmentPairKey(leftId: string, rightId: string) {
   return leftId < rightId ? `${leftId}|${rightId}` : `${rightId}|${leftId}`;
 }
 
-function pointIntersection(points: Point2[], epsilon: number): SegmentIntersection {
-  const unique = deduplicatePoints(points, epsilon);
+function parameterizedPointIntersection(
+  points: ParameterizedIntersectionPoint[],
+  epsilon: number
+): DetailedSegmentIntersection {
+  const unique: ParameterizedIntersectionPoint[] = [];
+  for (const candidate of points) {
+    if (!Number.isFinite(candidate.point.x) || !Number.isFinite(candidate.point.y)) continue;
+    if (unique.some(({ point }) => pointsWithin(point, candidate.point, epsilon))) continue;
+    unique.push({
+      ...candidate,
+      point: {
+        x: candidate.point.x === 0 ? 0 : candidate.point.x,
+        y: candidate.point.y === 0 ? 0 : candidate.point.y
+      }
+    });
+  }
+  unique.sort((left, right) =>
+    left.point.x - right.point.x || left.point.y - right.point.y
+  );
   return unique.length > 0 ? { kind: 'points', points: unique } : noIntersection();
 }
 
-function overlapIntersection(): SegmentIntersection {
+function swapIntersectionParameters(
+  relation: DetailedSegmentIntersection
+): DetailedSegmentIntersection {
+  if (relation.kind !== 'points') return relation;
+  return {
+    kind: 'points',
+    points: relation.points.map((candidate) => ({
+      point: candidate.point,
+      leftParameter: candidate.rightParameter,
+      rightParameter: candidate.leftParameter
+    }))
+  };
+}
+
+function overlapIntersection(): { kind: 'overlap'; points: [] } {
   return { kind: 'overlap', points: [] };
 }
 
-function noIntersection(): SegmentIntersection {
+function noIntersection(): { kind: 'none'; points: [] } {
   return { kind: 'none', points: [] };
-}
-
-function deduplicatePoints(points: Point2[], epsilon: number) {
-  const finite = points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
-  const unique: Point2[] = [];
-  for (const point of finite) {
-    if (!unique.some((candidate) => pointsWithin(candidate, point, epsilon))) {
-      unique.push({ x: point.x === 0 ? 0 : point.x, y: point.y === 0 ? 0 : point.y });
-    }
-  }
-  return unique.sort((left, right) => left.x - right.x || left.y - right.y);
 }
 
 function pointsWithin(left: Point2, right: Point2, epsilon: number) {
