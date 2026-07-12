@@ -847,10 +847,9 @@ function createInsertTransform(
     insert.scaleX === 0 || insert.scaleY === 0
       ? 0
       : Math.sign(insert.scaleX) * Math.sign(insert.scaleY);
-  const uniformScale =
-    Math.abs(Math.abs(insert.scaleX) - Math.abs(insert.scaleY)) <= 1e-9
-      ? Math.abs(insert.scaleX)
-      : null;
+  const absoluteScaleX = Math.abs(insert.scaleX);
+  const absoluteScaleY = Math.abs(insert.scaleY);
+  const uniformScale = absoluteScaleX === absoluteScaleY ? absoluteScaleX : null;
   const source: DxfInsertSource = {
     blockName: insert.blockName,
     column,
@@ -1087,8 +1086,7 @@ function transformPoint(point: DxfPoint, transform: InsertTransform) {
   const localY = point.y - transform.blockBasePoint.y;
   const scaledX = localX * transform.scaleX;
   const scaledY = localY * transform.scaleY;
-  const cos = Math.cos(transform.rotationRadians);
-  const sin = Math.sin(transform.rotationRadians);
+  const { cos, sin } = insertRotationComponents(transform);
   const geometryOffset = {
     x: scaledX * cos - scaledY * sin,
     y: scaledX * sin + scaledY * cos
@@ -1101,8 +1099,24 @@ function transformPoint(point: DxfPoint, transform: InsertTransform) {
   const x = transform.insertion.x + geometryOffset.x + arrayOffset.x;
   const y = transform.insertion.y + geometryOffset.y + arrayOffset.y;
   return Number.isFinite(x) && Number.isFinite(y)
-    ? { x: round(x), y: round(y) }
+    ? { x: normalizeSignedZero(x), y: normalizeSignedZero(y) }
     : null;
+}
+
+function insertRotationComponents(transform: InsertTransform) {
+  const normalizedDegrees = ((transform.rotationDegrees % 360) + 360) % 360;
+  if (normalizedDegrees === 0) return { cos: 1, sin: 0 };
+  if (normalizedDegrees === 90) return { cos: 0, sin: 1 };
+  if (normalizedDegrees === 180) return { cos: -1, sin: 0 };
+  if (normalizedDegrees === 270) return { cos: 0, sin: -1 };
+  return {
+    cos: Math.cos(transform.rotationRadians),
+    sin: Math.sin(transform.rotationRadians)
+  };
+}
+
+function normalizeSignedZero(value: number) {
+  return Object.is(value, -0) ? 0 : value;
 }
 
 function inheritedBlockLayer(entityLayer: string | null, insertLayer: string | null) {
@@ -1126,10 +1140,29 @@ function planarOcsOrientation(
     };
   }
 
+  const directionScale = Math.max(Math.abs(x), Math.abs(y), Math.abs(z));
+  if (!Number.isFinite(directionScale) || directionScale === 0) {
+    return {
+      ok: false,
+      warning: `Rejected malformed DXF ${entityType} extrusion normal.`
+    };
+  }
+
+  const scaledX = x / directionScale;
+  const scaledY = y / directionScale;
+  const scaledZ = z / directionScale;
+  const directionLength = Math.hypot(scaledX, scaledY, scaledZ);
+  const normalizedX = scaledX / directionLength;
+  const normalizedY = scaledY / directionLength;
+  const normalizedZ = scaledZ / directionLength;
+
   if (
-    Math.abs(x) > PLANAR_NORMAL_EPSILON ||
-    Math.abs(y) > PLANAR_NORMAL_EPSILON ||
-    Math.abs(z) <= PLANAR_NORMAL_EPSILON
+    !Number.isFinite(normalizedX) ||
+    !Number.isFinite(normalizedY) ||
+    !Number.isFinite(normalizedZ) ||
+    Math.abs(normalizedX) > PLANAR_NORMAL_EPSILON ||
+    Math.abs(normalizedY) > PLANAR_NORMAL_EPSILON ||
+    Math.abs(normalizedZ) <= PLANAR_NORMAL_EPSILON
   ) {
     return {
       ok: false,
@@ -1137,7 +1170,7 @@ function planarOcsOrientation(
     };
   }
 
-  return { ok: true, negativeZ: z < 0 };
+  return { ok: true, negativeZ: normalizedZ < 0 };
 }
 
 function reflectEntityAcrossYAxis(entity: DxfEntity): DxfEntity {

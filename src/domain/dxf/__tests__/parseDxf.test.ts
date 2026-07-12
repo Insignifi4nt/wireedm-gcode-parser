@@ -530,6 +530,18 @@ EOF
     });
   });
 
+  it('rotates an axis-aligned INSERT by 90 degrees without trigonometric residue', () => {
+    const result = parseDxf(rightAngleInsertDxf());
+    const line = result.entities[0];
+
+    expect(line).toMatchObject({
+      type: 'line',
+      start: { x: 0, y: 0 },
+      end: { x: 0, y: 1 }
+    });
+    expect(line?.type === 'line' && Object.is(line.end.x, -0)).toBe(false);
+  });
+
   it.each([8, 16, 64])('rejects non-2D classic POLYLINE flag %i', (flag) => {
     const result = parseDxf(classicPolylineWithFlagDxf(flag));
 
@@ -546,6 +558,42 @@ EOF
     expect(result.warnings.some((warning) => warning.includes('ARC') && warning.includes('tilted extrusion'))).toBe(
       true
     );
+  });
+
+  it('rejects a small-magnitude extrusion normal whose normalized direction is tilted', () => {
+    const result = parseDxf(
+      arcWithExtrusionNormalDxf({ x: 5e-13, y: 0, z: 2e-12 })
+    );
+
+    expect(result.entities).toEqual([]);
+    expect(
+      result.warnings.some(
+        (warning) => warning.includes('ARC') && warning.includes('tilted extrusion')
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    { label: 'positive Z', unitZ: 1, scaledZ: 1e-300 },
+    { label: 'negative Z', unitZ: -1, scaledZ: -1e-300 }
+  ])('treats a scaled $label extrusion normal like its unit direction', ({ unitZ, scaledZ }) => {
+    const unit = parseDxf(arcWithExtrusionNormalDxf({ x: 0, y: 0, z: unitZ }));
+    const scaled = parseDxf(
+      arcWithExtrusionNormalDxf({ x: 0, y: 0, z: scaledZ })
+    );
+
+    expect(scaled).toEqual(unit);
+  });
+
+  it('rejects a degenerate zero-length extrusion normal', () => {
+    const result = parseDxf(arcWithExtrusionNormalDxf({ x: 0, y: 0, z: 0 }));
+
+    expect(result.entities).toEqual([]);
+    expect(
+      result.warnings.some(
+        (warning) => warning.includes('ARC') && warning.includes('extrusion normal')
+      )
+    ).toBe(true);
   });
 
   it('normalizes negative-Z planar OCS coordinates and bulge handedness deterministically', () => {
@@ -675,6 +723,46 @@ EOF
       }
     ]);
   });
+
+  it.each([
+    { label: 'tiny unequal', scaleX: 1e-10, scaleY: 9e-10, uniform: false },
+    { label: 'huge unequal', scaleX: 1e10, scaleY: 9e10, uniform: false },
+    { label: 'reflected equal', scaleX: -2, scaleY: 2, uniform: true },
+    { label: 'ordinary equal', scaleX: 2, scaleY: 2, uniform: true }
+  ])(
+    'classifies $label INSERT scales exactly for circle and bulge geometry',
+    ({ scaleX, scaleY, uniform }) => {
+      const result = parseDxf(scaledCircleAndBulgeDxf(scaleX, scaleY));
+
+      if (!uniform) {
+        expect(result.entities).toEqual([]);
+        expect(
+          result.warnings.some(
+            (warning) => warning.includes('CIRCLE') && warning.includes('non-uniform')
+          )
+        ).toBe(true);
+        expect(
+          result.warnings.some(
+            (warning) => warning.includes('LWPOLYLINE') && warning.includes('non-uniform')
+          )
+        ).toBe(true);
+        return;
+      }
+
+      expect(result.entities).toHaveLength(2);
+      expect(result.entities[0]).toMatchObject({
+        type: 'circle',
+        radius: 1e11 * Math.abs(scaleX)
+      });
+      expect(result.entities[1]).toMatchObject({
+        type: 'lwpolyline',
+        vertices: [
+          { x: 0, y: 0, bulge: scaleX * scaleY < 0 ? -1 : 1 },
+          { x: scaleX, y: 0, bulge: 0 }
+        ]
+      });
+    }
+  );
 });
 
 function blankLayerDxf() {
@@ -849,6 +937,55 @@ function rotatedScaledInsertArrayDxf() {
   ].join('\n');
 }
 
+function rightAngleInsertDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'BLOCKS',
+    '0',
+    'BLOCK',
+    '2',
+    'AXIS_LINE',
+    '10',
+    '0',
+    '20',
+    '0',
+    '0',
+    'LINE',
+    '10',
+    '0',
+    '20',
+    '0',
+    '11',
+    '1',
+    '21',
+    '0',
+    '0',
+    'ENDBLK',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'INSERT',
+    '2',
+    'AXIS_LINE',
+    '10',
+    '0',
+    '20',
+    '0',
+    '50',
+    '90',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
 function classicPolylineWithFlagDxf(flag: number) {
   return [
     '0',
@@ -883,6 +1020,10 @@ function classicPolylineWithFlagDxf(flag: number) {
 }
 
 function tiltedExtrusionArcDxf() {
+  return arcWithExtrusionNormalDxf({ x: 0.5, y: 0, z: 0.866025403784 });
+}
+
+function arcWithExtrusionNormalDxf(normal: { x: number; y: number; z: number }) {
   return [
     '0',
     'SECTION',
@@ -903,11 +1044,11 @@ function tiltedExtrusionArcDxf() {
     '51',
     '90',
     '210',
-    '0.5',
+    String(normal.x),
     '220',
-    '0',
+    String(normal.y),
     '230',
-    '0.866025403784',
+    String(normal.z),
     '0',
     'ENDSEC',
     '0',
@@ -1158,6 +1299,73 @@ function negativeZArcDxf() {
     '0',
     '230',
     '-1',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function scaledCircleAndBulgeDxf(scaleX: number, scaleY: number) {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'BLOCKS',
+    '0',
+    'BLOCK',
+    '2',
+    'SCALED',
+    '10',
+    '0',
+    '20',
+    '0',
+    '0',
+    'CIRCLE',
+    '8',
+    'CUT',
+    '10',
+    '0',
+    '20',
+    '0',
+    '40',
+    '1e11',
+    '0',
+    'LWPOLYLINE',
+    '8',
+    'CUT',
+    '70',
+    '0',
+    '10',
+    '0',
+    '20',
+    '0',
+    '42',
+    '1',
+    '10',
+    '1',
+    '20',
+    '0',
+    '0',
+    'ENDBLK',
+    '0',
+    'ENDSEC',
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'INSERT',
+    '2',
+    'SCALED',
+    '10',
+    '0',
+    '20',
+    '0',
+    '41',
+    String(scaleX),
+    '42',
+    String(scaleY),
     '0',
     'ENDSEC',
     '0',

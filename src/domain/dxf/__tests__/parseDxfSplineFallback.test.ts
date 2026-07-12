@@ -241,6 +241,38 @@ describe('parseDxf spline fallback', () => {
     }
   });
 
+  it('keeps nested tiny-scale transform error within the declared SPLINE bound at 90 degrees', () => {
+    const result = parseDxf(
+      nestedBlockSplineDxf({
+        innerScaleX: 1e-6,
+        innerScaleY: 1e-6,
+        outerScaleX: 1e-6,
+        outerScaleY: 1e-6,
+        outerRotationDegrees: 90,
+        localCoordinateOffset: 0.4
+      }),
+      { curveChordError: 0.001 }
+    );
+    const first = result.entities[0];
+
+    expect(first?.type).toBe('line');
+    if (!first || first.type !== 'line') return;
+
+    const expectedStart = {
+      x: 100 - 0.4e-12,
+      y: 200 + 0.4e-12
+    };
+    const transformDisplacement = Math.hypot(
+      first.start.x - expectedStart.x,
+      first.start.y - expectedStart.y
+    );
+
+    expect(first.approximation?.maxChordError).toBeCloseTo(1e-15, 15);
+    expect(transformDisplacement).toBeLessThanOrEqual(
+      first.approximation?.maxChordError ?? Number.NaN
+    );
+  });
+
   it('rejects an INSERT when scaling makes approximation metadata non-finite', () => {
     const result = parseDxf(
       nestedBlockSplineDxf({ innerScaleX: 2, innerScaleY: 2 }),
@@ -631,12 +663,16 @@ function nestedBlockSplineDxf(
     innerScaleY?: number;
     outerScaleX?: number;
     outerScaleY?: number;
+    outerRotationDegrees?: number;
+    localCoordinateOffset?: number;
   } = {}
 ) {
   const innerScaleX = options.innerScaleX ?? 1;
   const innerScaleY = options.innerScaleY ?? 1;
   const outerScaleX = options.outerScaleX ?? 1;
   const outerScaleY = options.outerScaleY ?? 1;
+  const outerRotationDegrees = options.outerRotationDegrees ?? 0;
+  const localCoordinateOffset = options.localCoordinateOffset ?? 0;
 
   return [
     '0',
@@ -679,18 +715,11 @@ function nestedBlockSplineDxf(
     '1',
     '40',
     '1',
-    '10',
-    '10',
-    '20',
-    '20',
-    '10',
-    '12.5',
-    '20',
-    '25',
-    '10',
-    '15',
-    '20',
-    '20',
+    ...[
+      [10 + localCoordinateOffset, 20 + localCoordinateOffset],
+      [12.5 + localCoordinateOffset, 25 + localCoordinateOffset],
+      [15 + localCoordinateOffset, 20 + localCoordinateOffset]
+    ].flatMap(([x, y]) => ['10', String(x), '20', String(y)]),
     '0',
     'ENDBLK',
     '0',
@@ -737,6 +766,8 @@ function nestedBlockSplineDxf(
     String(outerScaleX),
     '42',
     String(outerScaleY),
+    '50',
+    String(outerRotationDegrees),
     '0',
     'ENDSEC',
     '0',
