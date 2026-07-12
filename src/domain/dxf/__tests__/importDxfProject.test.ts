@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { initializeWorkbenchDirectory, type WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 
 import { importDxfProject } from '../importDxfProject';
 
@@ -280,6 +281,31 @@ describe('importDxfProject', () => {
     });
 
     expect(result.parseResult.warnings).toEqual(['Unsupported DXF entity: SPLINE']);
+    expect(result.pathDocument.source.importWarnings).toEqual([
+      'Unsupported DXF entity: SPLINE'
+    ]);
+    expect(result.pathDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'dxf-import-warning',
+          severity: 'warning',
+          message: 'Unsupported DXF entity: SPLINE'
+        })
+      ])
+    );
+    const exportResult = composeUpidGCodeExport(result.pathDocument, {
+      header: 'G90 G90.1 G17',
+      footer: 'M30'
+    });
+    expect(exportResult.canDownload).toBe(true);
+    expect(exportResult.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'dxf-import-warning',
+          message: 'Unsupported DXF entity: SPLINE'
+        })
+      ])
+    );
     expect('generatedBody' in result).toBe(false);
     expect(result.entityCount).toBe(1);
   });

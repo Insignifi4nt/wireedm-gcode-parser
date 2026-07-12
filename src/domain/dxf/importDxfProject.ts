@@ -64,6 +64,7 @@ export async function importDxfProject(
   const pathDocument = dxfEntitiesToUpidDocument(parseResult.entities, {}, {
     fileName: input.fileName,
     importedAt: timestamp,
+    importWarnings: parseResult.warnings,
     projectId: project.id,
     ...(parseResult.drawing ? { drawing: parseResult.drawing } : {}),
     ...(parseResult.units ? { units: parseResult.units } : {})

@@ -63,6 +63,23 @@ describe('validateUpidDocument', () => {
     );
   });
 
+  it('accepts persisted DXF import warnings and rejects malformed warning provenance', () => {
+    const valid = closedDocument();
+    valid.source.importWarnings = ['Unsupported DXF entity: ELLIPSE'];
+
+    expect(validateUpidDocument(valid).structurallyValid).toBe(true);
+
+    const malformed = closedDocument();
+    malformed.source.importWarnings = [42] as never;
+
+    expect(validateUpidDocument(malformed).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'upid-invalid-value',
+        message: 'source.importWarnings[0] must be a string.'
+      })
+    );
+  });
+
   it.each([
     {
       label: 'duplicated rectangle traversal',

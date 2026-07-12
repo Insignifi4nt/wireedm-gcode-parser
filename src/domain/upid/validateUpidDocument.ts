@@ -229,6 +229,20 @@ function validateSource(value: unknown, context: ValidationContext) {
   finiteInteger(source.entityCount, 'source.entityCount', context, 0);
   optionalString(source.fileName, 'source.fileName', context);
   optionalString(source.projectId, 'source.projectId', context, true);
+  if (source.importWarnings != null) {
+    if (!Array.isArray(source.importWarnings)) {
+      context.add('upid-invalid-value', 'source.importWarnings must be an array when present.');
+    } else {
+      source.importWarnings.forEach((warning, index) => {
+        if (typeof warning !== 'string') {
+          context.add(
+            'upid-invalid-value',
+            `source.importWarnings[${index}] must be a string.`
+          );
+        }
+      });
+    }
+  }
   if (source.importedAt != null) {
     if (typeof source.importedAt !== 'string' || Number.isNaN(Date.parse(source.importedAt))) {
       context.add('upid-invalid-value', 'source.importedAt must be a valid date string.');

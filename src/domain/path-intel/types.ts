@@ -45,6 +45,7 @@ export interface PathPlanningSourceMetadata {
   drawing?: DxfDrawingMetadata;
   fileName?: string;
   importedAt?: string;
+  importWarnings?: string[];
   projectId?: string;
   units?: DxfDrawingUnits;
 }
@@ -94,6 +95,7 @@ export interface PathDiagnostic {
     | 'upid-discontinuity'
     | 'upid-broken-closure'
     | 'layer-filtered'
+    | 'dxf-import-warning'
     | 'units-assumed-millimeters';
   message: string;
   relatedSegmentIds?: SegmentId[];

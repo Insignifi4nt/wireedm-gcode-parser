@@ -4,6 +4,7 @@ import type { DxfEntity } from '@/domain/dxf/types';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
 import { arcParameterAtAngle } from '@/domain/path-intel/segments';
+import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 
 import {
   constructMagnetizedPoint,
@@ -322,6 +323,59 @@ describe('pathDocumentOperations', () => {
       { minX: 0, minY: 0, maxX: 10, maxY: 5 },
       { minX: 25, minY: 15, maxX: 35, maxY: 25 }
     ]));
+  });
+
+  it('keeps lossy import diagnostics blocking after translating sanitized geometry', () => {
+    const duplicate = {
+      type: 'line' as const,
+      layer: 'CUT',
+      start: { x: 0, y: 0 },
+      end: { x: 5, y: 0 }
+    };
+    const document = createPathPlanningDocumentFromDxfEntities([duplicate, duplicate]);
+
+    expect(document.diagnostics.map((diagnostic) => diagnostic.code)).toContain('duplicate-segment');
+
+    const translated = translatePathDocument(document, { x: 10, y: 20 });
+    const exportResult = composeUpidGCodeExport(translated!, {
+      header: 'G90 G90.1 G17',
+      footer: 'M30'
+    });
+
+    expect(translated?.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'duplicate-segment'
+    );
+    expect(exportResult.canDownload).toBe(false);
+    expect(exportResult.body).toBe('');
+    expect(exportResult.blockingDiagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'duplicate-segment'
+    );
+  });
+
+  it('recomputes duplicate diagnostics introduced and then resolved by geometry edits', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 5, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 15, y: 0 } }
+    ]);
+    const movedSegmentId = document.segments[1].id;
+
+    const duplicated = translatePathSegment(document, movedSegmentId, { x: -10, y: 0 });
+    expect(duplicated?.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      'duplicate-segment'
+    );
+    expect(
+      composeUpidGCodeExport(duplicated!, { header: 'G90 G90.1 G17', footer: 'M30' })
+        .canDownload
+    ).toBe(false);
+
+    const restored = translatePathSegment(duplicated!, movedSegmentId, { x: 10, y: 0 });
+    expect(restored?.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+      'duplicate-segment'
+    );
+    expect(
+      composeUpidGCodeExport(restored!, { header: 'G90 G90.1 G17', footer: 'M30' })
+        .canDownload
+    ).toBe(true);
   });
 
   it('translates an arc segment by moving its endpoints and center as one geometry', () => {

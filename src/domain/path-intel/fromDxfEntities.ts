@@ -297,15 +297,21 @@ export function pathSegmentsFromDxfEntities(
 function diagnosticsForSourceMetadata(
   sourceMetadata: PathPlanningSourceMetadata
 ): PathDiagnostic[] {
-  if (
-    sourceMetadata.coordinateScaleToMillimeters == null ||
-    sourceMetadata.units?.scaleToMillimeters != null
-  ) {
-    return [];
-  }
+  const diagnostics: PathDiagnostic[] = (sourceMetadata.importWarnings ?? []).map(
+    (message, index) => ({
+      id: `diag_source_import_${String(index + 1).padStart(4, '0')}`,
+      severity: 'warning',
+      code: 'dxf-import-warning',
+      message,
+      details: { sourceWarningIndex: index }
+    })
+  );
 
-  return [
-    {
+  if (
+    sourceMetadata.coordinateScaleToMillimeters != null &&
+    sourceMetadata.units?.scaleToMillimeters == null
+  ) {
+    diagnostics.push({
       id: 'diag_source_units_0001',
       severity: 'warning',
       code: 'units-assumed-millimeters',
@@ -317,8 +323,10 @@ function diagnosticsForSourceMetadata(
         sourceUnitsCode: sourceMetadata.units?.code ?? null,
         sourceUnitsLabel: sourceMetadata.units?.label ?? null
       }
-    }
-  ];
+    });
+  }
+
+  return diagnostics;
 }
 
 function layerPassesFilter(

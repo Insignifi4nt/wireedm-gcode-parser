@@ -4,6 +4,7 @@ import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
 import { buildPathElements } from '@/domain/path-intel/pathElements';
 import { buildContourDisplayNames } from '@/domain/path-intel/pathNaming';
 import { planOperations } from '@/domain/path-intel/planOperations';
+import { sanitizePathSegments } from '@/domain/path-intel/sanitizeSegments';
 import {
   arcParameterAtPoint,
   arcParameterAtRadial,
@@ -37,6 +38,7 @@ import type {
   OrientedSegmentRef,
   OperationOrderStrategy,
   PathChain,
+  PathDiagnostic,
   PathElementId,
   PathOperation,
   PathPlanningDocument,
@@ -935,6 +937,14 @@ function refreshDocumentAfterSegmentGeometryEdit(
   const previousOperations = document.plan.operations.map((operation) => structuredClone(operation));
   const previousOperationsByContourId = new Map(previousOperations.map((operation) => [operation.contourId, operation]));
   const manualClassificationsByContourId = manualClassifications(document);
+  const persistentDiagnostics = persistentImportDiagnostics(document.diagnostics);
+  const sanitationDiagnostics = sanitizePathSegments(
+    document.segments,
+    document.options
+  ).diagnostics.map((diagnostic, index) => ({
+    ...diagnostic,
+    id: `diag_edit_sanitize_${String(index + 1).padStart(4, '0')}`
+  }));
 
   const clusterResult = clusterSegmentEndpoints(document.segments, document.options);
   const chainResult = buildChains(document.segments, clusterResult, document.options);
@@ -979,6 +989,8 @@ function refreshDocumentAfterSegmentGeometryEdit(
     operations: orderedOperations
   };
   document.diagnostics = [
+    ...persistentDiagnostics,
+    ...sanitationDiagnostics,
     ...clusterResult.diagnostics,
     ...chainResult.diagnostics,
     ...contourResult.diagnostics,
@@ -990,6 +1002,25 @@ function refreshDocumentAfterSegmentGeometryEdit(
   }
 
   refreshPlan(document);
+}
+
+const PERSISTENT_IMPORT_DIAGNOSTIC_CODES = new Set<PathDiagnostic['code']>([
+  'zero-length-segment',
+  'non-finite-geometry',
+  'duplicate-segment',
+  'invalid-arc',
+  'invalid-polyline',
+  'layer-filtered',
+  'dxf-import-warning',
+  'units-assumed-millimeters'
+]);
+
+function persistentImportDiagnostics(diagnostics: PathDiagnostic[]) {
+  return diagnostics.filter(
+    (diagnostic) =>
+      PERSISTENT_IMPORT_DIAGNOSTIC_CODES.has(diagnostic.code) &&
+      !diagnostic.id.startsWith('diag_edit_sanitize_')
+  );
 }
 
 function restoreGeometryEditOperationState(
