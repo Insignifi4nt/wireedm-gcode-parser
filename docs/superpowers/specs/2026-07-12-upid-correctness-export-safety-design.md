@@ -47,7 +47,7 @@ The modal interpreter tracks XY distance mode separately from IJ centre mode. It
 
 The pair tokenizer retains blank value records and only trims the group-code line. Numeric readers accept finite values only. A malformed required coordinate rejects that entity and produces a warning; no non-finite coordinate may enter a `DxfEntity`.
 
-BLOCK definitions retain their base point. INSERT expansion subtracts the BLOCK base point before array offset, scale, rotation, and insertion translation. This applies recursively and is recorded in insert provenance.
+BLOCK definitions retain their base point. INSERT expansion subtracts the BLOCK base point, scales and rotates block-local geometry, rotates array row/column spacing without scaling that spacing, and finally applies the insertion translation. This applies recursively and is recorded in insert provenance.
 
 SPLINE fallback is parsed and flattened by the app with adaptive subdivision bounded by a configured chord error. It works in ENTITIES and referenced BLOCKs. Every derived line retains handle, layer, block/insert lineage, original entity type, and approximation metadata. UPID source refs set `exact: false` for these lines. Unsupported entities that cannot be approximated remain warnings and never masquerade as cut geometry.
 
