@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
+
 import { clusterSegmentEndpoints } from '../endpointClusters';
 import { sanitizePathSegments } from '../sanitizeSegments';
 import { createLineSegment } from '../segments';
@@ -96,6 +99,32 @@ describe('path-intel endpoint clustering performance', () => {
         `[path-intel-mixed-size-performance] 1000=${oneThousandMs.toFixed(2)}ms 4000=${fourThousandMs.toFixed(2)}ms ratio=${growthRatio.toFixed(2)}x`
       );
 
+      expect(growthRatio).toBeLessThan(8);
+    }
+  );
+
+  it(
+    'keeps live validation of 4,000 disjoint G40 open paths sub-quadratic',
+    { timeout: 30_000 },
+    () => {
+      const oneThousand = disjointOpenDocument(1_000);
+      const fourThousand = disjointOpenDocument(4_000);
+      validateDisjointOpenDocument(disjointOpenDocument(100));
+      validateDisjointOpenDocument(oneThousand);
+
+      const oneThousandMs = median(
+        [0, 1, 2].map(() => timeDisjointOpenValidation(oneThousand))
+      );
+      const fourThousandMs = median(
+        [0, 1, 2].map(() => timeDisjointOpenValidation(fourThousand))
+      );
+      const growthRatio = fourThousandMs / Math.max(oneThousandMs, 0.001);
+
+      console.info(
+        `[upid-live-validation-performance] 1000=${oneThousandMs.toFixed(2)}ms 4000=${fourThousandMs.toFixed(2)}ms ratio=${growthRatio.toFixed(2)}x`
+      );
+
+      expect(fourThousandMs).toBeLessThan(10_000);
       expect(growthRatio).toBeLessThan(8);
     }
   );
@@ -214,4 +243,29 @@ function mixedSizeLines(count: number) {
     })
   );
   return [...large, ...small];
+}
+
+function disjointOpenDocument(count: number) {
+  return createUpidFromDxfEntities(
+    Array.from({ length: count }, (_, index) => ({
+      type: 'line' as const,
+      layer: 'PERF',
+      start: { x: index * 3, y: 0 },
+      end: { x: index * 3 + 1, y: 0 }
+    })),
+    { operationOrderStrategy: 'source-order' }
+  );
+}
+
+function timeDisjointOpenValidation(document: ReturnType<typeof disjointOpenDocument>) {
+  const start = performance.now();
+  validateDisjointOpenDocument(document);
+  return performance.now() - start;
+}
+
+function validateDisjointOpenDocument(document: ReturnType<typeof disjointOpenDocument>) {
+  const report = validateUpidDocument(document);
+  if (!report.structurallyValid || !report.valid) {
+    throw new Error('Unexpected invalid disjoint G40 open-path document.');
+  }
 }

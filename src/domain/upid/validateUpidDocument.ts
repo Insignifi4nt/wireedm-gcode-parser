@@ -1,8 +1,12 @@
 import {
+  arcBounds,
+  boundsFromPoints,
   distance,
   orientedSegmentEnd,
   orientedSegmentStart
 } from '@/domain/path-intel/segments';
+import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
+import { findPathSegmentIntersectionDiagnostics } from '@/domain/path-intel/intersections';
 import type {
   Bounds2,
   EndpointCluster,
@@ -15,12 +19,14 @@ import type {
   PathOperation,
   PathOperationOverrides,
   PathPlanningDocument,
+  PathPlanningOptions,
   PathSegment,
   Point2
 } from '@/domain/path-intel/types';
 import {
   pathSegmentHasConsistentArcAngularGeometry,
-  pathSegmentHasExecutableCircularGeometry
+  pathSegmentHasExecutableCircularGeometry,
+  sanitizePathSegments
 } from '@/domain/path-intel/sanitizeSegments';
 
 export interface UpidValidationReport {
@@ -124,6 +130,7 @@ export function validateUpidDocument(document: unknown): UpidValidationReport {
     : [];
 
   const segmentMap = idMap(segments, 'segments', context);
+  const allSegmentIds = new Set(segmentMap.keys());
   const clusterMap = idMap(endpointClusters, 'endpoint clusters', context);
   const chainMap = idMap(chains, 'chains', context);
   const contourMap = idMap(contours, 'contours', context);
@@ -174,6 +181,7 @@ export function validateUpidDocument(document: unknown): UpidValidationReport {
     pathElementMap,
     rootPathElementIds,
     segmentMap,
+    allSegmentIds,
     chainMap,
     contourMap,
     operationMap,
@@ -196,17 +204,33 @@ export function validateUpidDocument(document: unknown): UpidValidationReport {
   );
   validatePlan(planRecord, operations, acceptedDiagnostics, context);
 
-  return report(acceptedDiagnostics, structuralDiagnostics);
+  const liveBlockingDiagnostics =
+    structuralDiagnostics.length === 0
+      ? validateLiveGeometrySafety(
+          segments,
+          root.options,
+          acceptedDiagnostics,
+          reservedDiagnosticIds
+        )
+      : [];
+
+  return report(acceptedDiagnostics, structuralDiagnostics, liveBlockingDiagnostics);
 }
 
 function report(
   documentDiagnostics: PathDiagnostic[],
-  structuralDiagnostics: PathDiagnostic[]
+  structuralDiagnostics: PathDiagnostic[],
+  liveBlockingDiagnostics: PathDiagnostic[] = []
 ): UpidValidationReport {
-  const diagnostics = uniqueDiagnostics([...documentDiagnostics, ...structuralDiagnostics]);
+  const diagnostics = uniqueDiagnostics([
+    ...documentDiagnostics,
+    ...structuralDiagnostics,
+    ...liveBlockingDiagnostics
+  ]);
   const blockingDiagnostics = uniqueDiagnostics([
     ...structuralDiagnostics,
-    ...documentDiagnostics.filter((diagnostic) => diagnostic.severity === 'error')
+    ...documentDiagnostics.filter((diagnostic) => diagnostic.severity === 'error'),
+    ...liveBlockingDiagnostics
   ]);
   return {
     valid: blockingDiagnostics.length === 0,
@@ -215,6 +239,163 @@ function report(
     blockingDiagnostics,
     structuralDiagnostics: [...structuralDiagnostics]
   };
+}
+
+function validateLiveGeometrySafety(
+  segments: PathSegment[],
+  optionsValue: unknown,
+  documentDiagnostics: PathDiagnostic[],
+  reservedDiagnosticIds: Set<string>
+) {
+  const options = liveGeometryOptions(optionsValue);
+  const geometry = segments.map(normalizeSegmentDerivedGeometry);
+  const sanitized = sanitizePathSegments(geometry, options);
+  const endpointClusters = clusterSegmentEndpoints(sanitized.segments, options);
+  const endpointTopology = auditLiveEndpointTopology(endpointClusters.clusters);
+  const intersections = findPathSegmentIntersectionDiagnostics(
+    sanitized.segments,
+    endpointTopology.junctionChains,
+    options
+  );
+  const candidates = [
+    ...sanitized.diagnostics,
+    ...endpointClusters.diagnostics,
+    ...endpointTopology.diagnostics,
+    ...intersections
+  ].filter((diagnostic) => diagnostic.severity === 'error');
+  const recordedErrorKeys = new Set(
+    documentDiagnostics
+      .filter((diagnostic) => diagnostic.severity === 'error')
+      .map(liveGeometryDiagnosticKey)
+  );
+  let nextDiagnosticNumber = 1;
+
+  return candidates
+    .filter((diagnostic) => !recordedErrorKeys.has(liveGeometryDiagnosticKey(diagnostic)))
+    .map((diagnostic) => {
+      let id = `diag_upid_live_${String(nextDiagnosticNumber++).padStart(4, '0')}`;
+      while (reservedDiagnosticIds.has(id)) {
+        id = `diag_upid_live_${String(nextDiagnosticNumber++).padStart(4, '0')}`;
+      }
+      reservedDiagnosticIds.add(id);
+      return remapLiveGeometryDiagnostic(diagnostic, id);
+    });
+}
+
+function auditLiveEndpointTopology(clusters: EndpointCluster[]) {
+  const diagnostics: PathDiagnostic[] = [];
+  const junctionChains: PathChain[] = [];
+
+  for (const cluster of clusters) {
+    if (cluster.members.length > 2) {
+      const relatedSegmentIds = [
+        ...new Set(cluster.members.map((member) => member.segmentId))
+      ].sort();
+      diagnostics.push({
+        id: `diag_live_branch_${String(diagnostics.length + 1).padStart(4, '0')}`,
+        severity: 'error',
+        code: 'branching-topology',
+        message: `Live geometry forms a branching endpoint shared by ${cluster.members.length} segment endpoints; continuation needs review.`,
+        relatedSegmentIds,
+        relatedClusterIds: [cluster.id],
+        details: { degree: cluster.members.length }
+      });
+      continue;
+    }
+    if (cluster.members.length !== 2) continue;
+
+    const [left, right] = cluster.members;
+    junctionChains.push({
+      id: `live_junction_${String(junctionChains.length + 1).padStart(4, '0')}`,
+      kind: 'open-chain',
+      segmentRefs: [
+        { segmentId: left.segmentId, reversed: left.side === 'start' },
+        { segmentId: right.segmentId, reversed: right.side === 'end' }
+      ],
+      closed: false,
+      startClusterId: null,
+      endClusterId: null,
+      metrics: { segmentCount: 2, cutLength: 0, gapLength: 0 },
+      diagnosticIds: []
+    });
+  }
+
+  return { diagnostics, junctionChains };
+}
+
+function remapLiveGeometryDiagnostic(
+  diagnostic: PathDiagnostic,
+  id: string
+): PathDiagnostic {
+  const relatedSegmentIds = diagnostic.relatedSegmentIds
+    ? [...new Set(diagnostic.relatedSegmentIds)]
+    : undefined;
+  return {
+    id,
+    severity: 'error',
+    code: diagnostic.code,
+    message: diagnostic.message,
+    ...(relatedSegmentIds && relatedSegmentIds.length > 0 ? { relatedSegmentIds } : {}),
+    ...(diagnostic.details ? { details: diagnostic.details } : {})
+  };
+}
+
+function liveGeometryOptions(value: unknown): PathPlanningOptions {
+  const options = record(value);
+  return {
+    endpointTolerance: finiteNonNegative(options?.endpointTolerance) ?? 0,
+    coincidenceEpsilon: finiteNonNegative(options?.coincidenceEpsilon) ?? 0
+  };
+}
+
+function normalizeSegmentDerivedGeometry(segment: PathSegment): PathSegment {
+  if (segment.kind === 'line') {
+    return {
+      ...segment,
+      start: { ...segment.start },
+      end: { ...segment.end },
+      length: distance(segment.start, segment.end),
+      bounds: boundsFromPoints([segment.start, segment.end])
+    };
+  }
+  if (segment.kind === 'arc') {
+    return {
+      ...segment,
+      start: { ...segment.start },
+      end: { ...segment.end },
+      center: { ...segment.center },
+      length: Math.abs(segment.radius * segment.sweepRadians),
+      bounds: arcBounds(
+        segment.center,
+        segment.radius,
+        segment.startAngleRadians,
+        segment.sweepRadians,
+        segment.start,
+        segment.end
+      )
+    };
+  }
+  return {
+    ...segment,
+    start: { ...segment.start },
+    end: { ...segment.end },
+    center: { ...segment.center },
+    preferredStart: { ...segment.preferredStart },
+    length: 2 * Math.PI * segment.radius,
+    bounds: {
+      minX: segment.center.x - segment.radius,
+      minY: segment.center.y - segment.radius,
+      maxX: segment.center.x + segment.radius,
+      maxY: segment.center.y + segment.radius
+    }
+  };
+}
+
+function liveGeometryDiagnosticKey(diagnostic: PathDiagnostic) {
+  return [
+    diagnostic.code,
+    [...(diagnostic.relatedSegmentIds ?? [])].sort().join(',')
+  ].join('|');
 }
 
 function validateSource(value: unknown, context: ValidationContext) {
@@ -912,6 +1093,7 @@ function validatePathElements(
   pathElementMap: Map<string, PathElement>,
   rootIds: string[],
   segmentMap: Map<string, PathSegment>,
+  allSegmentIds: Set<string>,
   chainMap: Map<string, PathChain>,
   contourMap: Map<string, PathContour>,
   operationMap: Map<string, PathOperation>,
@@ -944,7 +1126,13 @@ function validatePathElements(
         `Path element ${element.id} references missing operation ${element.operationId}.`
       );
     }
-    validateSegmentRefs(element.segmentRefs, `path element ${element.id}`, segmentMap, new Set(segmentMap.keys()), context);
+    validateSegmentRefs(
+      element.segmentRefs,
+      `path element ${element.id}`,
+      segmentMap,
+      allSegmentIds,
+      context
+    );
     if (element.parentId !== null && !pathElementMap.has(element.parentId)) {
       context.add('upid-missing-reference', `Path element ${element.id} references missing parent ${element.parentId}.`);
     }

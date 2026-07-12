@@ -51,6 +51,274 @@ describe('validateUpidDocument', () => {
     });
   });
 
+  it('blocks overlaid duplicate circle graphs when legacy diagnostics are empty', () => {
+    const legacy = createUpidFromDxfEntities([
+      circle(0, 0, 5),
+      circle(20, 0, 5)
+    ]);
+    const [first, second] = legacy.segments;
+    if (first.kind !== 'circle' || second.kind !== 'circle') {
+      throw new Error('Expected two native circle segments.');
+    }
+
+    second.center = { ...first.center };
+    second.preferredStart = { ...first.preferredStart };
+    second.start = { ...first.start };
+    second.end = { ...first.end };
+    second.bounds = { ...first.bounds };
+
+    const firstContour = legacy.contours.find((contour) =>
+      legacy.chains
+        .find((chain) => chain.id === contour.chainId)
+        ?.segmentRefs.some((ref) => ref.segmentId === first.id)
+    )!;
+    const secondContour = legacy.contours.find((contour) =>
+      legacy.chains
+        .find((chain) => chain.id === contour.chainId)
+        ?.segmentRefs.some((ref) => ref.segmentId === second.id)
+    )!;
+    secondContour.bounds = { ...firstContour.bounds };
+    secondContour.representativePoint = firstContour.representativePoint
+      ? { ...firstContour.representativePoint }
+      : null;
+    secondContour.approximatePolygon = firstContour.approximatePolygon.map((point) => ({
+      ...point
+    }));
+
+    const secondOperation = legacy.plan.operations.find((operation) =>
+      operation.segmentRefs.some((ref) => ref.segmentId === second.id)
+    )!;
+    secondOperation.startPoint = { ...second.start };
+    secondOperation.endPoint = { ...second.end };
+    secondOperation.metrics.rapidInLength = 0;
+    const secondElement = legacy.pathElements.find(
+      (element) => element.operationId === secondOperation.id
+    )!;
+    secondElement.bounds = { ...secondContour.bounds };
+    if (secondElement.metrics) {
+      secondElement.metrics.rapidInLength = secondOperation.metrics.rapidInLength;
+    }
+    secondElement.points = secondElement.points.map((point) =>
+      point.source === 'operation'
+        ? {
+            ...point,
+            point: point.role === 'start' ? { ...second.start } : { ...second.end }
+          }
+        : secondContour.representativePoint
+          ? { ...point, point: { ...secondContour.representativePoint } }
+          : point
+    );
+    legacy.plan.metrics.totalRapidLength = legacy.plan.operations.reduce(
+      (total, operation) => total + operation.metrics.rapidInLength,
+      0
+    );
+
+    delete (legacy.options as Partial<typeof legacy.options>).includeLayers;
+    delete (legacy.options as Partial<typeof legacy.options>).excludeLayers;
+    legacy.diagnostics = [];
+    legacy.plan.diagnostics = [];
+    legacy.chains.forEach((chain) => { chain.diagnosticIds = []; });
+    legacy.contours.forEach((contour) => { contour.diagnosticIds = []; });
+    legacy.pathElements.forEach((element) => { element.diagnosticIds = []; });
+
+    const beforeValidation = structuredClone(legacy);
+    const report = validateUpidDocument(legacy);
+    const post = postUpidToGcode(legacy);
+    const exportProgram = composeUpidGCodeExport(legacy, {
+      header: '%\nG90 G21 G17 G40',
+      footer: 'M30\n%',
+      lineEnding: 'lf'
+    });
+
+    expect(report.structurallyValid).toBe(true);
+    expect(report.valid).toBe(false);
+    expect(report.blockingDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'duplicate-segment',
+        severity: 'error',
+        relatedSegmentIds: expect.arrayContaining([first.id, second.id])
+      })
+    );
+    expect(post).toMatchObject({ status: 'blocked', body: '', moves: [] });
+    expect(exportProgram).toMatchObject({ canDownload: false, body: '' });
+    expect(legacy).toEqual(beforeValidation);
+  });
+
+  it('recomputes T-branch safety when a legacy document only records an old warning', () => {
+    const legacy = createUpidFromDxfEntities([
+      line(-1, 0, 0, 0),
+      line(0, 0, 1, 0),
+      line(0, 0, 0, 1)
+    ]);
+    legacy.diagnostics = legacy.diagnostics
+      .filter((diagnostic) => diagnostic.code !== 'intersecting-topology')
+      .map((diagnostic) =>
+        diagnostic.code === 'branching-topology'
+          ? { ...diagnostic, severity: 'warning' as const }
+          : diagnostic
+      );
+    const retainedDiagnosticIds = new Set(
+      legacy.diagnostics.map((diagnostic) => diagnostic.id)
+    );
+    legacy.plan.diagnostics = legacy.plan.diagnostics.filter((diagnostic) =>
+      retainedDiagnosticIds.has(diagnostic.id)
+    );
+    legacy.chains.forEach((chain) => {
+      chain.diagnosticIds = chain.diagnosticIds.filter((id) => retainedDiagnosticIds.has(id));
+    });
+    legacy.contours.forEach((contour) => {
+      contour.diagnosticIds = contour.diagnosticIds.filter((id) => retainedDiagnosticIds.has(id));
+    });
+    legacy.pathElements.forEach((element) => {
+      element.diagnosticIds = element.diagnosticIds.filter((id) => retainedDiagnosticIds.has(id));
+    });
+    legacy.diagnostics.push({
+      id: 'diag_upid_live_0001',
+      severity: 'info',
+      code: 'layer-filtered',
+      message: 'Legacy diagnostic intentionally reserves the first live-audit ID.'
+    });
+    delete (legacy.options as Partial<typeof legacy.options>).includeLayers;
+    delete (legacy.options as Partial<typeof legacy.options>).excludeLayers;
+
+    const beforeValidation = structuredClone(legacy);
+    const report = validateUpidDocument(legacy);
+    const post = postUpidToGcode(legacy);
+
+    expect(report.structurallyValid).toBe(true);
+    expect(report.valid).toBe(false);
+    expect(report.blockingDiagnostics).toContainEqual(
+      expect.objectContaining({ code: 'branching-topology', severity: 'error' })
+    );
+    const liveBranch = report.blockingDiagnostics.find(
+      (diagnostic) => diagnostic.code === 'branching-topology' && diagnostic.severity === 'error'
+    )!;
+    expect(liveBranch.id).toBe('diag_upid_live_0002');
+    expect(liveBranch.relatedClusterIds).toBeUndefined();
+    expect(liveBranch.relatedChainIds).toBeUndefined();
+    expect(liveBranch.relatedContourIds).toBeUndefined();
+    expect(liveBranch.relatedSegmentIds?.every((segmentId) =>
+      legacy.segments.some((segment) => segment.id === segmentId)
+    )).toBe(true);
+    expect(post).toMatchObject({ status: 'blocked', body: '', moves: [] });
+    expect(legacy).toEqual(beforeValidation);
+  });
+
+  it('keeps multiple disjoint legacy G40 open centrelines valid', () => {
+    const legacy = createUpidFromDxfEntities([
+      line(0, 0, 5, 0),
+      line(10, 0, 15, 0),
+      line(20, 0, 25, 0)
+    ]);
+    delete (legacy.options as Partial<typeof legacy.options>).includeLayers;
+    delete (legacy.options as Partial<typeof legacy.options>).excludeLayers;
+
+    expect(validateUpidDocument(legacy)).toMatchObject({
+      structurallyValid: true,
+      valid: true,
+      blockingDiagnostics: []
+    });
+    expect(postUpidToGcode(legacy).status).toBe('ready');
+  });
+
+  it('blocks non-finite executable geometry revealed by canonical derived metrics', () => {
+    const legacy = createUpidFromDxfEntities([line(0, 0, 1, 0)]);
+    const segment = legacy.segments[0];
+    segment.start = { x: -Number.MAX_VALUE, y: 0 };
+    segment.end = { x: Number.MAX_VALUE, y: 0 };
+    segment.length = 1;
+    segment.bounds = {
+      minX: -Number.MAX_VALUE,
+      minY: 0,
+      maxX: Number.MAX_VALUE,
+      maxY: 0
+    };
+    for (const cluster of legacy.endpointClusters) {
+      for (const member of cluster.members) {
+        member.point = member.side === 'start' ? { ...segment.start } : { ...segment.end };
+      }
+      cluster.point = { ...cluster.members[0].point };
+      cluster.radius = 0;
+      cluster.maxPairDistance = 0;
+    }
+    legacy.contours[0].bounds = { ...segment.bounds };
+    legacy.contours[0].approximatePolygon = [{ ...segment.start }, { ...segment.end }];
+    legacy.plan.operations[0].startPoint = { ...segment.start };
+    legacy.plan.operations[0].endPoint = { ...segment.end };
+    legacy.pathElements[0].bounds = { ...segment.bounds };
+    legacy.pathElements[0].points = legacy.pathElements[0].points.map((point) => ({
+      ...point,
+      point: point.role === 'start' ? { ...segment.start } : { ...segment.end }
+    }));
+    legacy.diagnostics = legacy.diagnostics.filter(
+      (diagnostic) => diagnostic.code !== 'non-finite-geometry'
+    );
+
+    const beforeValidation = structuredClone(legacy);
+    const report = validateUpidDocument(legacy);
+
+    expect(report.structurallyValid).toBe(true);
+    expect(report.valid).toBe(false);
+    expect(report.blockingDiagnostics).toContainEqual(
+      expect.objectContaining({ code: 'non-finite-geometry', severity: 'error' })
+    );
+    expect(postUpidToGcode(legacy)).toMatchObject({ status: 'blocked', body: '' });
+    expect(legacy).toEqual(beforeValidation);
+  });
+
+  it.each([
+    {
+      label: 'positive-length overlap',
+      entities: [line(0, 0, 2, 0), line(1, 0, 3, 0)],
+      code: 'overlapping-segment' as const,
+      staleBounds: true
+    },
+    {
+      label: 'interior intersection',
+      entities: [line(-1, 0, 1, 0), line(0, -1, 0, 1)],
+      code: 'intersecting-topology' as const,
+      staleBounds: false
+    }
+  ])('blocks live $label geometry after its persisted diagnostic is removed', ({ entities, code, staleBounds }) => {
+    const legacy = createUpidFromDxfEntities(entities);
+    legacy.diagnostics = legacy.diagnostics.filter((diagnostic) => diagnostic.code !== code);
+    const retainedDiagnosticIds = new Set(
+      legacy.diagnostics.map((diagnostic) => diagnostic.id)
+    );
+    legacy.plan.diagnostics = legacy.plan.diagnostics.filter((diagnostic) =>
+      retainedDiagnosticIds.has(diagnostic.id)
+    );
+    legacy.chains.forEach((chain) => {
+      chain.diagnosticIds = chain.diagnosticIds.filter((id) => retainedDiagnosticIds.has(id));
+    });
+    legacy.contours.forEach((contour) => {
+      contour.diagnosticIds = contour.diagnosticIds.filter((id) => retainedDiagnosticIds.has(id));
+    });
+    legacy.pathElements.forEach((element) => {
+      element.diagnosticIds = element.diagnosticIds.filter((id) => retainedDiagnosticIds.has(id));
+    });
+    if (staleBounds) {
+      legacy.segments[1].bounds = {
+        minX: 100,
+        minY: 100,
+        maxX: 101,
+        maxY: 101
+      };
+    }
+
+    const beforeValidation = structuredClone(legacy);
+    const report = validateUpidDocument(legacy);
+    const post = postUpidToGcode(legacy);
+
+    expect(report.structurallyValid).toBe(true);
+    expect(report.valid).toBe(false);
+    expect(report.blockingDiagnostics).toContainEqual(
+      expect.objectContaining({ code, severity: 'error' })
+    );
+    expect(post).toMatchObject({ status: 'blocked', body: '', moves: [] });
+    expect(legacy).toEqual(beforeValidation);
+  });
+
   it('still rejects explicitly malformed layer-filter options', () => {
     const malformed = closedDocument();
     malformed.options.includeLayers = [42] as never;
@@ -1148,5 +1416,14 @@ function line(startX: number, startY: number, endX: number, endY: number) {
     layer: 'CUT',
     start: { x: startX, y: startY },
     end: { x: endX, y: endY }
+  };
+}
+
+function circle(centerX: number, centerY: number, radius: number) {
+  return {
+    type: 'circle' as const,
+    layer: 'CUT',
+    center: { x: centerX, y: centerY },
+    radius
   };
 }
