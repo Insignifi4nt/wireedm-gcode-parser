@@ -11,9 +11,15 @@ const PATH_SHORTCUT_IDS = [
   'machine'
 ];
 
+async function openReadyWorkbench(page: import('@playwright/test').Page) {
+  await page.goto('/');
+  await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
+  await expect(page.locator('input[aria-label="Machine program file"]')).toBeEnabled();
+}
+
 test('machine program editor uses one header and an open resizable inspector', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
   await page.locator('input[aria-label="Machine program file"]').setInputFiles({
     name: 'layout-program.nc',
     mimeType: 'text/plain',
@@ -57,7 +63,7 @@ test('machine program editor uses one header and an open resizable inspector', a
 
 test('machine program line commands stay fully visible at desktop and laptop widths', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
   await page.locator('input[aria-label="Machine program file"]').setInputFiles({
     name: 'visible-line-commands.nc',
     mimeType: 'text/plain',
@@ -71,7 +77,7 @@ test('machine program line commands stay fully visible at desktop and laptop wid
 
 test('path editor keeps direct shortcuts at 1440 and essential controls at 1024', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
   await page.locator('input[aria-label="DXF file"]').setInputFiles({
     name: 'laptop-layout.dxf',
     mimeType: 'application/dxf',
@@ -187,7 +193,7 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
 
 test('left and right docks expose symmetric collapsed controls', async ({ page }) => {
   await page.setViewportSize({ width: 1708, height: 874 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
   await page.locator('input[aria-label="DXF file"]').setInputFiles({
     name: 'symmetric-docks.dxf',
     mimeType: 'application/dxf',
@@ -248,7 +254,7 @@ for (const viewport of [
     page
   }) => {
     await page.setViewportSize(viewport);
-    await page.goto('/');
+    await openReadyWorkbench(page);
     await page.locator('input[aria-label="DXF file"]').setInputFiles({
       name: `stable-contour-tree-${viewport.width}.dxf`,
       mimeType: 'application/dxf',

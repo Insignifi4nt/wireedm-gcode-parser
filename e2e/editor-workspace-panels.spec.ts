@@ -15,9 +15,15 @@ const WORKSPACE_PANEL_TITLES = [
   ['measurement', 'Measurement']
 ] as const;
 
+async function openReadyWorkbench(page: import('@playwright/test').Page) {
+  await page.goto('/');
+  await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
+  await expect(page.locator('input[aria-label="Machine program file"]')).toBeEnabled();
+}
+
 test('editor exposes functional groups as dockable and floating workspace panels', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -150,7 +156,7 @@ test('editor exposes functional groups as dockable and floating workspace panels
 
 test('every workspace panel exposes keyboard placement commands', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
   await page.locator('input[aria-label="DXF file"]').setInputFiles({
     name: 'workspace-command-inventory.dxf',
     mimeType: 'application/dxf',
@@ -169,7 +175,7 @@ test('every workspace panel exposes keyboard placement commands', async ({ page 
 
 test('editor panel menu explains endpoint topology before opening it', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -209,7 +215,7 @@ test('editor panel menu explains endpoint topology before opening it', async ({ 
 
 test('editor contour tree labels contours, segments, and endpoint handles clearly', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -262,7 +268,7 @@ test('editor contour tree labels contours, segments, and endpoint handles clearl
 
 test('editor contour tree exposes hierarchy rails and endpoint topology from the tree context', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -295,7 +301,7 @@ test('editor contour tree exposes hierarchy rails and endpoint topology from the
 
 test('editor contour tree rows cross-highlight and select canvas geometry', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -361,7 +367,7 @@ test('editor contour tree rows cross-highlight and select canvas geometry', asyn
 
 test('editor opens contour tree and endpoint topology without covering each other', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -391,7 +397,7 @@ test('editor opens contour tree and endpoint topology without covering each othe
 
 test('editor opens common floating workspace panels in readable non-overlapping positions', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -439,7 +445,7 @@ test('editor opens common floating workspace panels in readable non-overlapping 
 
 test('editor diagnostics explain what to inspect for an open chain', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -517,7 +523,7 @@ test('editor diagnostics explain what to inspect for an open chain', async ({ pa
 
 test('editor translates selected path geometry through the Transform panel', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -552,7 +558,7 @@ test('editor translates selected path geometry through the Transform panel', asy
 
 test('editor moves a selected contour center to a precise coordinate', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -588,7 +594,7 @@ test('editor moves a selected contour center to a precise coordinate', async ({ 
 
 test('editor transform panel shows DXF source placement metadata', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -614,7 +620,7 @@ test('editor transform panel shows DXF source placement metadata', async ({ page
 
 test('editor moves a selected arc center to a chosen measurement point', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -649,7 +655,7 @@ test('editor moves a selected arc center to a chosen measurement point', async (
 
 test('editor drags a selected arc center directly on the canvas', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -689,7 +695,7 @@ test('editor drags a selected arc center directly on the canvas', async ({ page 
 
 test('editor drags selected contour geometry directly on the canvas', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -722,7 +728,7 @@ test('editor drags selected contour geometry directly on the canvas', async ({ p
 
 test('editor defaults canvas clicks to select mode before explicit point placement', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -752,7 +758,7 @@ test('editor defaults canvas clicks to select mode before explicit point placeme
 
 test('editor command hint guides CAD construction modes step by step', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
@@ -789,7 +795,7 @@ test('editor command hint guides CAD construction modes step by step', async ({ 
 
 test('editor rectangle-selects path geometry from a blank canvas drag in select mode', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page
     .locator('input[aria-label="DXF file"]')
