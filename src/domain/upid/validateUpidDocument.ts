@@ -509,19 +509,177 @@ function validateSource(value: unknown, context: ValidationContext) {
     context.add('upid-invalid-value', 'source.units must be an object when present.');
   }
   if (units) {
-    if (units.source !== 'dxf-insunits') {
-      context.add('upid-invalid-value', 'source.units.source is unsupported.');
+    validateDxfUnits(units, 'source.units', context);
+  }
+  const unitDeclaration = source.unitDeclaration == null
+    ? null
+    : record(source.unitDeclaration);
+  if (source.unitDeclaration != null && !unitDeclaration) {
+    context.add('upid-invalid-value', 'source.unitDeclaration must be an object when present.');
+  }
+  if (unitDeclaration) {
+    validateDxfUnitDeclaration(unitDeclaration, units, context);
+  }
+  if (appliedUnits) {
+    validateAppliedDxfUnitInvariants(appliedUnits, unitDeclaration, context);
+  }
+}
+
+function validateDxfUnits(
+  units: Record<string, any>,
+  path: string,
+  context: ValidationContext
+) {
+  if (units.source !== 'dxf-insunits') {
+    context.add('upid-invalid-value', `${path}.source is unsupported.`);
+  }
+  finiteInteger(units.code, `${path}.code`, context, 0);
+  if (typeof units.label !== 'string' || units.label.length === 0) {
+    context.add('upid-invalid-value', `${path}.label must be a non-empty string.`);
+  }
+  if (units.scaleToMillimeters != null) {
+    finiteNumber(units.scaleToMillimeters, `${path}.scaleToMillimeters`, context, {
+      positive: true
+    });
+  }
+}
+
+function validateDxfUnitDeclaration(
+  declaration: Record<string, any>,
+  sourceUnits: Record<string, any> | null,
+  context: ValidationContext
+) {
+  const status = declaration.status;
+  if (!['missing', 'malformed', 'unitless', 'unknown', 'recognized'].includes(status)) {
+    context.add('upid-invalid-value', 'source.unitDeclaration.status is unsupported.');
+    return;
+  }
+  if (status === 'missing' || status === 'malformed') {
+    if (status === 'malformed' && declaration.rawValue !== null && typeof declaration.rawValue !== 'string') {
+      context.add(
+        'upid-invalid-value',
+        'source.unitDeclaration.rawValue must be a string or null for malformed declarations.'
+      );
     }
-    finiteInteger(units.code, 'source.units.code', context, 0);
-    if (typeof units.label !== 'string') {
-      context.add('upid-invalid-value', 'source.units.label must be a string.');
+    if (sourceUnits) {
+      context.add(
+        'upid-invalid-value',
+        `source.unitDeclaration status ${status} cannot accompany source.units.`
+      );
     }
-    if (units.scaleToMillimeters != null) {
-      finiteNumber(units.scaleToMillimeters, 'source.units.scaleToMillimeters', context, {
-        positive: true
-      });
+    return;
+  }
+
+  const declarationUnits = record(declaration.units);
+  if (!declarationUnits) {
+    context.add(
+      'upid-invalid-value',
+      `source.unitDeclaration.units is required for status ${status}.`
+    );
+    return;
+  }
+  validateDxfUnits(declarationUnits, 'source.unitDeclaration.units', context);
+  if (!sourceUnits || !sameDxfUnits(declarationUnits, sourceUnits)) {
+    context.add(
+      'upid-invalid-value',
+      'source.unitDeclaration.units must match source.units.'
+    );
+  }
+  if (
+    status === 'recognized' &&
+    (declarationUnits.code === 0 || declarationUnits.scaleToMillimeters == null)
+  ) {
+    context.add(
+      'upid-invalid-value',
+      'Recognized source.unitDeclaration units require a millimeter scale.'
+    );
+  }
+  if (
+    status === 'unitless' &&
+    (declarationUnits.code !== 0 || declarationUnits.scaleToMillimeters != null)
+  ) {
+    context.add('upid-invalid-value', 'Unitless source.unitDeclaration units are inconsistent.');
+  }
+  if (
+    status === 'unknown' &&
+    (declarationUnits.code === 0 || declarationUnits.scaleToMillimeters != null)
+  ) {
+    context.add('upid-invalid-value', 'Unknown source.unitDeclaration units cannot have a scale.');
+  }
+}
+
+function validateAppliedDxfUnitInvariants(
+  applied: Record<string, any>,
+  declaration: Record<string, any> | null,
+  context: ValidationContext
+) {
+  if (applied.suggestion != null && applied.basis !== 'user-confirmed') {
+    context.add(
+      'upid-invalid-value',
+      'source.appliedUnits.suggestion is only valid for user-confirmed units.'
+    );
+  }
+  if (applied.basis === 'user-confirmed') {
+    if (applied.confirmed !== true) {
+      context.add('upid-invalid-value', 'User-confirmed source.appliedUnits must be confirmed.');
+    }
+    if (
+      typeof applied.confirmedAt !== 'string' ||
+      Number.isNaN(Date.parse(applied.confirmedAt))
+    ) {
+      context.add(
+        'upid-invalid-value',
+        'User-confirmed source.appliedUnits require a valid confirmation timestamp.'
+      );
+    }
+    const namedUnitIsConsistent =
+      (applied.label === 'millimeters' && applied.scaleToMillimeters === 1) ||
+      (applied.label === 'inches' && applied.scaleToMillimeters === 25.4);
+    if (!namedUnitIsConsistent) {
+      context.add(
+        'upid-invalid-value',
+        'User-confirmed source.appliedUnits label and scale are inconsistent.'
+      );
+    }
+    return;
+  }
+  if (applied.basis === 'legacy-assumed') {
+    if (
+      applied.confirmed !== false ||
+      applied.scaleToMillimeters !== 1 ||
+      applied.label !== 'millimeters' ||
+      applied.confirmedAt != null
+    ) {
+      context.add(
+        'upid-invalid-value',
+        'Legacy-assumed source.appliedUnits must be unconfirmed millimeters without a timestamp.'
+      );
+    }
+    return;
+  }
+  if (applied.basis === 'dxf-declared') {
+    const declarationUnits = declaration?.status === 'recognized'
+      ? record(declaration.units)
+      : null;
+    if (
+      applied.confirmed !== true ||
+      !declarationUnits ||
+      applied.scaleToMillimeters !== declarationUnits.scaleToMillimeters ||
+      applied.label !== declarationUnits.label
+    ) {
+      context.add(
+        'upid-invalid-value',
+        'DXF-declared source.appliedUnits must match a recognized unit declaration.'
+      );
     }
   }
+}
+
+function sameDxfUnits(left: Record<string, any>, right: Record<string, any>) {
+  return left.source === right.source &&
+    left.code === right.code &&
+    left.label === right.label &&
+    left.scaleToMillimeters === right.scaleToMillimeters;
 }
 
 function validateOptions(value: unknown, schemaVersion: unknown, context: ValidationContext) {

@@ -58,6 +58,43 @@ describe('importDxfProject', () => {
     expect(adapter.calls).toEqual([]);
   });
 
+  it('rejects selected-machine or reviewed-candidate semantic drift before storage activity', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-07-13T08:00:00.000Z')
+    });
+    const preparation = prepareDxfProjectImport(workbench, {
+      fileName: 'drift-check.dxf',
+      text: dxfWithInchUnits(),
+      now: new Date('2026-07-13T09:00:00.000Z')
+    });
+    const decision = {
+      ...preparation.defaultSelection,
+      confirmed: true,
+      declaredUnitOverrideAcknowledged: false
+    };
+    workbench.manifest.machineProfiles[0].notes = 'Changed after review';
+    adapter.calls.length = 0;
+
+    await expect(commitDxfProjectImport(workbench, preparation, decision)).rejects.toThrow(
+      'Selected machine profile changed after DXF import review.'
+    );
+    expect(adapter.calls).toEqual([]);
+
+    workbench.manifest.machineProfiles[0] = structuredClone(
+      preparation.machineProfiles[0]
+    );
+    preparation.unitCandidates[0] = {
+      ...preparation.unitCandidates[0],
+      label: 'reviewed-as-a-different-unit'
+    };
+
+    await expect(commitDxfProjectImport(workbench, preparation, decision)).rejects.toThrow(
+      'Selected DXF unit candidate changed after import review.'
+    );
+    expect(adapter.calls).toEqual([]);
+  });
+
   it('requires acknowledgement for a declared-unit override and applies the reviewed unit exactly once', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {
@@ -219,6 +256,43 @@ describe('importDxfProject', () => {
       declaredUnitOverrideAcknowledged: false
     });
     expect(result.project.id).toBe('late-collision-2026-07-13-2');
+  });
+
+  it('serializes simultaneous commits so project IDs and manifest entries cannot overwrite', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-07-13T08:00:00.000Z')
+    });
+    const preparation = prepareDxfProjectImport(workbench, {
+      fileName: 'simultaneous.dxf',
+      text: simpleSlotDxf(),
+      now: new Date('2026-07-13T09:00:00.000Z')
+    });
+    const decision = {
+      ...preparation.defaultSelection,
+      confirmed: true,
+      declaredUnitOverrideAcknowledged: false
+    };
+
+    const results = await Promise.all([
+      commitDxfProjectImport(workbench, preparation, decision),
+      commitDxfProjectImport(workbench, preparation, decision)
+    ]);
+
+    expect(results.map(({ project }) => project.id)).toEqual([
+      'simultaneous-2026-07-13',
+      'simultaneous-2026-07-13-2'
+    ]);
+    expect(adapter.files.has('imports/simultaneous-2026-07-13.dxf')).toBe(true);
+    expect(adapter.files.has('imports/simultaneous-2026-07-13-2.dxf')).toBe(true);
+    expect(adapter.files.has('projects/simultaneous-2026-07-13/project.json')).toBe(true);
+    expect(adapter.files.has('projects/simultaneous-2026-07-13-2/project.json')).toBe(true);
+    expect(JSON.parse(adapter.files.get('workbench.json') || '{}').projects.map(
+      ({ id }: { id: string }) => id
+    )).toEqual([
+      'simultaneous-2026-07-13',
+      'simultaneous-2026-07-13-2'
+    ]);
   });
 
   it('imports a DXF into source, UPID project, and manifest files without generated G-code artifacts', async () => {

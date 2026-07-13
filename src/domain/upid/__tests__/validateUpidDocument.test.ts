@@ -66,6 +66,140 @@ describe('validateUpidDocument', () => {
     expect(validateUpidDocument(document).structuralDiagnostics).toEqual([]);
   });
 
+  it('accepts internally consistent declared and legacy-assumed provenance', () => {
+    const declared = closedDocument();
+    setDeclaredInchProvenance(declared);
+    const legacyAssumed = closedDocument();
+    legacyAssumed.source.coordinateScaleToMillimeters = 1;
+    legacyAssumed.source.unitDeclaration = { status: 'missing' };
+    legacyAssumed.source.appliedUnits = {
+      label: 'millimeters',
+      scaleToMillimeters: 1,
+      basis: 'legacy-assumed',
+      confirmed: false
+    };
+
+    expect(validateUpidDocument(declared).structuralDiagnostics).toEqual([]);
+    expect(validateUpidDocument(legacyAssumed).structuralDiagnostics).toEqual([]);
+  });
+
+  it.each([
+    ['an unsupported declaration status', (document: UniversalPathIntelligenceDocument) => {
+      document.source.unitDeclaration = { status: 'guessed' } as never;
+    }],
+    ['recognized units missing from the declaration', (document: UniversalPathIntelligenceDocument) => {
+      document.source.unitDeclaration = { status: 'recognized' } as never;
+    }],
+    ['a recognized declaration using the unitless code', (document: UniversalPathIntelligenceDocument) => {
+      document.source.units!.code = 0;
+      if (document.source.unitDeclaration?.status === 'recognized') {
+        document.source.unitDeclaration.units.code = 0;
+      }
+    }],
+    ['an unknown declaration using the unitless code', (document: UniversalPathIntelligenceDocument) => {
+      const unitless = {
+        source: 'dxf-insunits' as const,
+        code: 0,
+        label: 'unitless',
+        scaleToMillimeters: null
+      };
+      document.source.units = structuredClone(unitless);
+      document.source.unitDeclaration = {
+        status: 'unknown',
+        units: structuredClone(unitless)
+      };
+      document.source.appliedUnits = {
+        label: 'inches',
+        scaleToMillimeters: 25.4,
+        basis: 'user-confirmed',
+        confirmed: true,
+        confirmedAt: '2026-07-13T09:00:00.000Z'
+      };
+    }],
+    ['a malformed declaration with a non-string raw value', (document: UniversalPathIntelligenceDocument) => {
+      document.source.unitDeclaration = { status: 'malformed', rawValue: 4 } as never;
+    }],
+    ['declaration units that disagree with raw source units', (document: UniversalPathIntelligenceDocument) => {
+      if (document.source.unitDeclaration?.status === 'recognized') {
+        document.source.unitDeclaration.units.label = 'inch-ish';
+      }
+    }],
+    ['an explicit missing declaration alongside raw source units', (document: UniversalPathIntelligenceDocument) => {
+      document.source.unitDeclaration = { status: 'missing' };
+    }]
+  ])('rejects source unit provenance with %s', (_label, mutate) => {
+    const document = closedDocument();
+    setDeclaredInchProvenance(document);
+    mutate(document);
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({ code: 'upid-invalid-value' })
+    );
+  });
+
+  it.each([
+    ['a user-confirmed label inconsistent with its scale', (document: UniversalPathIntelligenceDocument) => {
+      document.source.appliedUnits!.label = 'millimeters';
+    }],
+    ['an unconfirmed user choice', (document: UniversalPathIntelligenceDocument) => {
+      document.source.appliedUnits!.confirmed = false;
+    }],
+    ['a user choice without a confirmation timestamp', (document: UniversalPathIntelligenceDocument) => {
+      delete document.source.appliedUnits!.confirmedAt;
+    }],
+    ['a confirmed legacy assumption', (document: UniversalPathIntelligenceDocument) => {
+      document.source.appliedUnits = {
+        label: 'millimeters', scaleToMillimeters: 1,
+        basis: 'legacy-assumed', confirmed: true
+      };
+      document.source.coordinateScaleToMillimeters = 1;
+    }],
+    ['a non-millimeter legacy assumption', (document: UniversalPathIntelligenceDocument) => {
+      document.source.appliedUnits = {
+        label: 'inches', scaleToMillimeters: 25.4,
+        basis: 'legacy-assumed', confirmed: false
+      };
+    }],
+    ['a suggestion on legacy provenance', (document: UniversalPathIntelligenceDocument) => {
+      document.source.appliedUnits = {
+        label: 'millimeters', scaleToMillimeters: 1,
+        basis: 'legacy-assumed', confirmed: false,
+        suggestion: { kind: 'machine-profile', profileId: 'shop-machine' }
+      };
+      document.source.coordinateScaleToMillimeters = 1;
+    }],
+    ['declared provenance without a recognized declaration', (document: UniversalPathIntelligenceDocument) => {
+      setDeclaredInchProvenance(document);
+      document.source.unitDeclaration = { status: 'missing' };
+      delete document.source.units;
+    }],
+    ['declared provenance with a mismatched label', (document: UniversalPathIntelligenceDocument) => {
+      setDeclaredInchProvenance(document);
+      document.source.appliedUnits!.label = 'inch-ish';
+    }],
+    ['a suggestion on declared provenance', (document: UniversalPathIntelligenceDocument) => {
+      setDeclaredInchProvenance(document);
+      document.source.appliedUnits!.suggestion = {
+        kind: 'machine-profile', profileId: 'shop-machine'
+      };
+    }]
+  ])('rejects inconsistent applied-unit provenance with %s', (_label, mutate) => {
+    const document = closedDocument();
+    document.source.coordinateScaleToMillimeters = 25.4;
+    document.source.appliedUnits = {
+      label: 'inches',
+      scaleToMillimeters: 25.4,
+      basis: 'user-confirmed',
+      confirmed: true,
+      confirmedAt: '2026-07-13T09:00:00.000Z'
+    };
+    mutate(document);
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({ code: 'upid-invalid-value' })
+    );
+  });
+
   it.each([
     ['a missing label', (document: UniversalPathIntelligenceDocument) => {
       delete (document.source.appliedUnits! as { label?: string }).label;
@@ -1566,6 +1700,27 @@ function closedDocument() {
     line(10, 5, 0, 5),
     line(0, 5, 0, 0)
   ]);
+}
+
+function setDeclaredInchProvenance(document: UniversalPathIntelligenceDocument) {
+  const units = {
+    source: 'dxf-insunits' as const,
+    code: 1,
+    label: 'inches',
+    scaleToMillimeters: 25.4
+  };
+  document.source.units = structuredClone(units);
+  document.source.unitDeclaration = {
+    status: 'recognized',
+    units: structuredClone(units)
+  };
+  document.source.coordinateScaleToMillimeters = 25.4;
+  document.source.appliedUnits = {
+    label: 'inches',
+    scaleToMillimeters: 25.4,
+    basis: 'dxf-declared',
+    confirmed: true
+  };
 }
 
 function line(startX: number, startY: number, endX: number, endY: number) {
