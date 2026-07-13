@@ -375,17 +375,31 @@ function postGenericExplicitLinear(
     blocks,
     programOwned: false
   };
-  const auditIssue = auditGenericExplicitLinearPost(result);
+  const auditIssue = auditGenericExplicitLinearPost(
+    result,
+    [...readinessByOperationId].map(([operationId, readiness]) => ({
+      operationId,
+      code: readiness.resolution.code,
+      dIndex: machine.compensation.offsetSelection.index
+    }))
+  );
   return auditIssue
     ? blockedReason('post-audit-failed', auditIssue)
     : result;
+}
+
+export interface GenericExplicitLinearLifecycleExpectation {
+  operationId: string;
+  code: 'G41' | 'G42';
+  dIndex: number;
 }
 
 export function auditGenericExplicitLinearPost(
   result: Pick<
     UpidMachinePostResult,
     'body' | 'blocks' | 'moves' | 'operations' | 'metrics'
-  >
+  >,
+  expectedLifecycles: GenericExplicitLinearLifecycleExpectation[]
 ) {
   const lines = result.body ? result.body.split('\n') : [];
   if (lines.length !== result.blocks.length) {
@@ -437,6 +451,48 @@ export function auditGenericExplicitLinearPost(
   }
   if (compensation !== 'G40') {
     return 'The generic post ends with controller compensation active.';
+  }
+
+  const expectedByOperationId = new Map(
+    expectedLifecycles.map((expected) => [expected.operationId, expected])
+  );
+  if (expectedByOperationId.size !== expectedLifecycles.length) {
+    return 'The generic post audit received duplicate lifecycle expectations.';
+  }
+  for (const expected of expectedLifecycles) {
+    const operationBlocks = result.blocks.filter(
+      (block) => block.operationId === expected.operationId
+    );
+    const activations = operationBlocks.filter(
+      (block) => block.kind === 'lead-in' && block.compensationAfter !== 'G40'
+    );
+    const cancellations = operationBlocks.filter(
+      (block) => block.kind === 'lead-out' && block.compensationBefore !== 'G40'
+    );
+    if (
+      activations.length !== 1 ||
+      activations[0].compensationBefore !== 'G40' ||
+      activations[0].compensationAfter !== expected.code ||
+      !activations[0].text.startsWith(`${expected.code} D${expected.dIndex} G1 `)
+    ) {
+      return `Operation ${expected.operationId} must activate exactly once with ${expected.code} D${expected.dIndex}.`;
+    }
+    if (
+      cancellations.length !== 1 ||
+      cancellations[0].compensationBefore !== expected.code ||
+      cancellations[0].compensationAfter !== 'G40'
+    ) {
+      return `Operation ${expected.operationId} must cancel ${expected.code} exactly once with its lead-out.`;
+    }
+  }
+  if (
+    result.blocks.some(
+      (block) =>
+        (block.compensationBefore !== 'G40' || block.compensationAfter !== 'G40') &&
+        (!block.operationId || !expectedByOperationId.has(block.operationId))
+    )
+  ) {
+    return 'The generic post contains an unexpected compensated operation lifecycle.';
   }
 
   const motionBlocks = result.blocks.filter((block) => block.command !== null);

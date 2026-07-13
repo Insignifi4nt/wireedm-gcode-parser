@@ -77,9 +77,25 @@ export function stripGcodeComments(source: string) {
 }
 
 export function inferTemplateArcCenterMode(header: string): 'absolute' | 'incremental' {
+  return inspectTemplateModalState(header).ijMode;
+}
+
+export function inspectTemplateModalState(header: string) {
   const state = createGCodeInterpreterState();
+  let hasExplicitXyMode = false;
   header.split(/\r?\n/).forEach((line, index) => {
-    interpretGCodeBlock(state, line, index + 1);
+    const result = interpretGCodeBlock(state, line, index + 1);
+    if (
+      result.words.some(
+        (word) => word.letter === 'G' && (word.value === 90 || word.value === 91)
+      )
+    ) {
+      hasExplicitXyMode = true;
+    }
   });
-  return state.ijMode;
+  return {
+    xyMode: state.xyMode,
+    ijMode: state.ijMode,
+    hasExplicitXyMode
+  };
 }

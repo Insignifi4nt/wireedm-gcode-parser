@@ -221,7 +221,7 @@ describe('postUpidForMachine', () => {
   it('supports generic absolute arc centres when the snapshotted managed header selects G90.1', () => {
     const editable = verifiedGenericExplicitMachine();
     editable.controller.arcCenterMode = 'absolute';
-    editable.templates.header = 'G90.1';
+    editable.templates.header = 'G90 G90.1';
     const machine = markMachineProfileUserVerified(editable);
     const document = initializeProjectCompensationIntents(
       createUpidFromDxfEntities([
@@ -236,6 +236,27 @@ describe('postUpidForMachine', () => {
     expect(posted.body).toContain('I10.000 J20.000');
   });
 
+  it('fails closed when a verified generic template selects incremental XY distance mode', () => {
+    const editable = verifiedGenericExplicitMachine();
+    editable.templates.header = 'G91';
+    const machine = markMachineProfileUserVerified(editable);
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted).toMatchObject({
+      status: 'blocked', body: '', blocks: [], moves: [], operations: []
+    });
+    expect(posted.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({ reason: 'unsupported-generic-post-envelope' })
+    }));
+  });
+
   it('audits structured generic modal state and rejects a rapid marked under active compensation', () => {
     const machine = verifiedGenericExplicitMachine();
     const document = initializeProjectCompensationIntents(
@@ -246,16 +267,34 @@ describe('postUpidForMachine', () => {
     );
     const posted = postUpidForMachine(document, machine);
     const audit = (machinePostModule as typeof machinePostModule & {
-      auditGenericExplicitLinearPost?: (result: typeof posted) => string | null;
+      auditGenericExplicitLinearPost?: (
+        result: typeof posted,
+        expected: Array<{ operationId: string; code: 'G41' | 'G42'; dIndex: number }>
+      ) => string | null;
     }).auditGenericExplicitLinearPost;
+    const expected = [{
+      operationId: document.plan.operations[0].id,
+      code: 'G42' as const,
+      dIndex: 0
+    }];
 
     expect(audit).toBeTypeOf('function');
-    expect(audit!(posted)).toBeNull();
+    expect(audit!(posted, expected)).toBeNull();
     const invalid = structuredClone(posted);
     const rapid = invalid.blocks.find((block) => block.kind === 'rapid')!;
     rapid.compensationBefore = 'G42';
     rapid.compensationAfter = 'G42';
-    expect(audit!(invalid)).toContain('rapid');
+    expect(audit!(invalid, expected)).toContain('rapid');
+
+    const wrongRegister = structuredClone(posted);
+    const leadIn = wrongRegister.blocks.find((block) => block.kind === 'lead-in')!;
+    leadIn.text = leadIn.text.replace('D0', 'D99');
+    wrongRegister.moves.find((move) => move.bodyLineIndex === leadIn.bodyLineIndex)!.text = leadIn.text;
+    wrongRegister.body = wrongRegister.body.replace('D0', 'D99');
+    wrongRegister.operations[0].moves.find(
+      (move) => move.bodyLineIndex === leadIn.bodyLineIndex
+    )!.text = leadIn.text;
+    expect(audit!(wrongRegister, expected)).toContain('D0');
   });
 
   it('maps generic structured blocks and operation ranges through composed header lines', () => {
@@ -823,7 +862,7 @@ function verifiedGenericExplicitMachine() {
     validationLeadLengthMm: 2,
     expectedMaximumOffsetMm: 0.25
   };
-  machine.templates = { header: '', footer: '' };
+  machine.templates = { header: 'G90', footer: '' };
   return markMachineProfileUserVerified(machine, new Date('2026-07-13T00:00:00.000Z'));
 }
 

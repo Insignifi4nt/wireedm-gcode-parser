@@ -86,6 +86,33 @@ describe('validateCompensatedExport', () => {
     });
   });
 
+  it.each(['G91', 'G90G91', 'N10G091'])(
+    'blocks generic compensated posting when the managed header ends in incremental XY mode via %s',
+    (header) => {
+      const document = finishedCircle();
+      const operation = document.plan.operations[0];
+      const machine = verifiedExplicitMachine((profile) => {
+        profile.templates.header = header;
+      });
+
+      expect(validateCompensatedExport({ document, operation, machine })).toMatchObject({
+        status: 'blocked', reason: 'unsupported-generic-post-envelope'
+      });
+    }
+  );
+
+  it('ignores commented G91 while requiring an executable final G90 for generic compensation', () => {
+    const document = finishedCircle();
+    const operation = document.plan.operations[0];
+    const machine = verifiedExplicitMachine((profile) => {
+      profile.templates.header = '(G91)\n; G91\nG90';
+    });
+
+    expect(validateCompensatedExport({ document, operation, machine })).toMatchObject({
+      status: 'ready', strategy: 'explicit-linear'
+    });
+  });
+
   it('bypasses explicit leads for the verified native Robofil lifecycle', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     const document = initializeProjectCompensationIntents(baseCircle(), machine);
@@ -179,7 +206,7 @@ function explicitMachine() {
     validationLeadLengthMm: 2,
     expectedMaximumOffsetMm: 0.25
   };
-  machine.templates = { header: '', footer: '' };
+  machine.templates = { header: 'G90', footer: '' };
   machine.output.coordinatePrecision = 3;
   return machine;
 }

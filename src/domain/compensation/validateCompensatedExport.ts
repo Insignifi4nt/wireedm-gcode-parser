@@ -1,7 +1,7 @@
 import { machineProfileHasCurrentVerification } from '@/domain/machine/machineProfiles';
 import type { PathDiagnostic, PathOperation, PathPlanningDocument } from '@/domain/path-intel/types';
 import {
-  inferTemplateArcCenterMode,
+  inspectTemplateModalState,
   validateTemplateModalPolicy
 } from '@/domain/post/templateModalPolicy';
 import { verifiedRobofilPostEnvelopeIsReady } from '@/domain/post/verifiedRobofilPostEnvelope';
@@ -157,6 +157,7 @@ export function validateCompensatedExport({
 }
 
 function matchesGenericExplicitLinearEnvelope(machine: MachineProfile) {
+  const templateModalState = inspectTemplateModalState(machine.templates.header);
   return (
     (machine.controller.family === 'generic-iso' || machine.controller.family === 'custom') &&
     machine.controller.postVersion === 1 &&
@@ -167,7 +168,9 @@ function matchesGenericExplicitLinearEnvelope(machine: MachineProfile) {
     machine.controller.workOffsetCode === 'template-managed' &&
     machine.controller.programEnd === 'template-managed' &&
     machine.compensation.preActivationCodes.length === 0 &&
-    inferTemplateArcCenterMode(machine.templates.header) ===
+    templateModalState.hasExplicitXyMode &&
+    templateModalState.xyMode === 'absolute' &&
+    templateModalState.ijMode ===
       (machine.controller.arcCenterMode === 'absolute' ? 'absolute' : 'incremental')
   );
 }

@@ -75,13 +75,23 @@ Focused RED cycles reproduced the intended missing behavior before each producti
 5. Early generic program ownership: 1 expected failure in 39 tests because blocked composition retained executable templates.
 6. Mixed centreline radial lead-in: 1 expected failure in 40 tests because the audit initially treated every lead-in as compensation activation.
 7. Managed absolute-I/J mismatch: 1 expected failure in 42 tests because a declared absolute mode without G90.1 silently posted incremental I/J.
+8. Read-only review RED: 2 expected focused failures proved that a verified G91 header posted absolute-valued XY as incremental motion and that a coordinated D0-to-D99 trace mutation passed the original consistency-only audit.
 
 Every cycle was made green before the next behavior was added.
 
+## Review remediation
+
+The bounded read-only review returned one Critical and one Important finding. Both were reproduced before their fixes:
+
+- Generic explicit compensation now requires an executable final G90 in its managed header, rejects G91 including compact and numbered variants, ignores commented G91, and separately requires the interpreted I/J mode to match the snapshotted arc-centre policy. The body golden remains unchanged and legacy centreline posting is untouched.
+- The final audit now receives the exact expected operation ID, derived G41/G42 code, and D index for every compensated operation. It requires exactly one matching activation and cancellation and rejects missing, duplicate, wrong-register, wrong-side, and unexpected compensated lifecycles.
+
+The same reviewer rechecked only those findings and returned **APPROVE**, with no remaining Critical or Important findings. Its fresh focused run passed 94/94 and diff hygiene passed.
+
 ## Verification
 
-- Compensation/post/UPID/path-planning/real-z39 focus: 14 files, 410 tests passed.
-- Full Vitest: 61 files, 1041 tests passed.
+- Compensation/post/UPID/path-planning/real-z39 focus: 14 files, 415 tests passed.
+- Full Vitest: 61 files, 1051 tests passed.
 - Production TypeScript and Vite build: passed.
 - `git diff --check`: passed.
 - The only build notice is the existing non-failing large-chunk advisory. Full Vitest retains the existing React `act(...)` warnings in machine-profile dashboard tests.
