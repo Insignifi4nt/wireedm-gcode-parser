@@ -13,7 +13,8 @@ import type {
   DxfParseResult,
   DxfPoint,
   DxfPolylineEntity,
-  DxfPolylineVertex
+  DxfPolylineVertex,
+  DxfUnitDeclaration
 } from './types';
 import { approximateSpline } from './approximateSpline';
 import { signedDxfArcSweepRadians } from './arcSweep';
@@ -99,7 +100,8 @@ const SPLINE_APPROXIMATION_WARNING = 'Flattened DXF SPLINE geometry into line se
 export function parseDxf(text: string, options: DxfParseOptions = {}): DxfParseResult {
   const curveChordError = validCurveChordError(options.curveChordError);
   const pairs = toPairs(text);
-  const units = parseDrawingUnits(pairs);
+  const unitDeclaration = parseDrawingUnitDeclaration(pairs);
+  const units = 'units' in unitDeclaration ? unitDeclaration.units : undefined;
   const drawing = parseDrawingMetadata(pairs);
   const blockResult = parseBlockDefinitions(pairs, curveChordError);
   const entityPairs = getSectionPairs(pairs, 'ENTITIES');
@@ -115,6 +117,7 @@ export function parseDxf(text: string, options: DxfParseOptions = {}): DxfParseR
   return {
     entities: entityResult.entities,
     ...(drawing ? { drawing } : {}),
+    unitDeclaration,
     ...(units ? { units } : {}),
     unsupportedEntities: unsupported,
     warnings: preserveWarningMultiplicity([
@@ -167,7 +170,7 @@ function pairsUntilNextHeaderVariable(pairs: DxfPair[], startIndex: number) {
   return variablePairs;
 }
 
-function parseDrawingUnits(pairs: DxfPair[]): DxfDrawingUnits | undefined {
+function parseDrawingUnitDeclaration(pairs: DxfPair[]): DxfUnitDeclaration {
   const headerPairs = getSectionPairs(pairs, 'HEADER');
 
   for (let index = 0; index < headerPairs.length; index++) {
@@ -178,14 +181,20 @@ function parseDrawingUnits(pairs: DxfPair[]): DxfDrawingUnits | undefined {
     const valuePair = pairsUntilNextHeaderVariable(headerPairs, index + 1).find(
       (candidate) => candidate.code === 70
     );
-    if (!valuePair) return undefined;
+    if (!valuePair) return { status: 'malformed', rawValue: null };
 
     const code = finitePairValue(valuePair);
-    if (code == null || !Number.isInteger(code)) return undefined;
-    return dxfUnitsFromInsunitsCode(code);
+    if (code == null || !Number.isSafeInteger(code) || code < 0) {
+      return { status: 'malformed', rawValue: valuePair.value };
+    }
+
+    const units = dxfUnitsFromInsunitsCode(code);
+    if (code === 0) return { status: 'unitless', units };
+    if (units.scaleToMillimeters == null) return { status: 'unknown', units };
+    return { status: 'recognized', units };
   }
 
-  return undefined;
+  return { status: 'missing' };
 }
 
 function dxfUnitsFromInsunitsCode(code: number): DxfDrawingUnits {

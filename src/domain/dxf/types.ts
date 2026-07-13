@@ -32,6 +32,26 @@ export interface DxfDrawingUnits {
   scaleToMillimeters: number | null;
 }
 
+export type DxfUnitDeclaration =
+  | { status: 'missing' }
+  | { status: 'malformed'; rawValue: string | null }
+  | {
+      status: 'unitless' | 'unknown' | 'recognized';
+      units: DxfDrawingUnits;
+    };
+
+export interface AppliedDxfUnits {
+  label: string;
+  scaleToMillimeters: number;
+  basis: 'dxf-declared' | 'user-confirmed' | 'legacy-assumed';
+  confirmed: boolean;
+  confirmedAt?: string;
+  suggestion?: {
+    kind: 'machine-profile';
+    profileId: string;
+  };
+}
+
 export interface DxfDrawingMetadata {
   basePoint?: DxfPoint;
   extents?: {
@@ -115,6 +135,7 @@ export type DxfEntity =
 export interface DxfParseResult {
   entities: DxfEntity[];
   drawing?: DxfDrawingMetadata;
+  unitDeclaration: DxfUnitDeclaration;
   units?: DxfDrawingUnits;
   unsupportedEntities: string[];
   warnings: string[];

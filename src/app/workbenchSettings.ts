@@ -39,6 +39,7 @@ export interface SettingsDraft {
   planeCode: MachineControllerPolicy['planeCode'];
   postVersion: string;
   preActivationCodes: string;
+  preferredDxfImportUnit: MachineProfile['preferredDxfImportUnit'];
   profileId: string;
   programEnd: MachineControllerPolicy['programEnd'];
   sourceKey: string;
@@ -165,6 +166,7 @@ function settingsDraftFromProfile(profile: MachineProfile, sourceKey: string): S
     planeCode: profile.controller.planeCode,
     postVersion: profile.controller.postVersion.toString(),
     preActivationCodes: profile.compensation.preActivationCodes.join('\n'),
+    preferredDxfImportUnit: profile.preferredDxfImportUnit,
     profileId: profile.id,
     programEnd: profile.controller.programEnd,
     sourceKey,
@@ -194,6 +196,7 @@ function profileCandidateFromSettingsDraft(
     ...sourceProfile,
     id: draft.profileId,
     name: draft.machineName,
+    preferredDxfImportUnit: draft.preferredDxfImportUnit,
     controller: {
       family: draft.controllerFamily,
       postVersion: numberOrNaN(draft.postVersion),
@@ -275,6 +278,7 @@ function emptySettingsDraft(): SettingsDraft {
     planeCode: 'omit',
     postVersion: '1',
     preActivationCodes: '',
+    preferredDxfImportUnit: null,
     profileId: '',
     programEnd: 'template-managed',
     sourceKey: 'none',

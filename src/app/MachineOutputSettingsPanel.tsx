@@ -311,6 +311,18 @@ export function MachineOutputSettingsPanel({
           <SelectField ariaLabel="Line ending" disabled={settingsControlsDisabled} label="Line ending" onChange={(lineEnding) => updateSettingsDraft({ lineEnding: lineEnding as SettingsDraft['lineEnding'] })} options={LINE_ENDING_OPTIONS} value={activeSettingsDraft.lineEnding} />
           <NumberField ariaLabel="Coordinate precision" disabled={settingsControlsDisabled} label="Coordinate precision" max="6" min="0" onChange={(coordinatePrecision) => updateSettingsDraft({ coordinatePrecision })} step="1" value={activeSettingsDraft.coordinatePrecision} />
         </div>
+        <SelectField
+          ariaLabel="Preferred DXF import unit"
+          disabled={settingsControlsDisabled}
+          label="Preferred DXF import unit"
+          onChange={(preferredDxfImportUnit) => updateSettingsDraft({
+            preferredDxfImportUnit: preferredDxfImportUnit === ''
+              ? null
+              : preferredDxfImportUnit as NonNullable<SettingsDraft['preferredDxfImportUnit']>
+          })}
+          options={PREFERRED_DXF_IMPORT_UNIT_OPTIONS}
+          value={activeSettingsDraft.preferredDxfImportUnit ?? ''}
+        />
         {activeSettingsDraft.extension === 'custom' && <TextField ariaLabel="Custom output extension" disabled={settingsControlsDisabled} label="Custom extension" onChange={(customExtension) => updateSettingsDraft({ customExtension })} value={activeSettingsDraft.customExtension} />}
         <div className="grid grid-cols-2 gap-2">
           <NumberField ariaLabel="Machine max width" disabled={settingsControlsDisabled} label="Max width mm" min="0" onChange={(workAreaWidthMm) => updateSettingsDraft({ workAreaWidthMm })} placeholder="unset" step="any" value={activeSettingsDraft.workAreaWidthMm} />
@@ -362,3 +374,8 @@ const CANCELLATION_OPTIONS = [['linear-lead-out', 'Linear lead out'], ['charmill
 const LIFECYCLE_OPTIONS = [['operation', 'Per operation'], ['program', 'Whole program']] as const;
 const OUTPUT_EXTENSION_OPTIONS = [['iso', '.iso'], ['nc', '.nc'], ['gcode', '.gcode'], ['custom', 'Custom']] as const;
 const LINE_ENDING_OPTIONS = [['crlf', 'CRLF'], ['lf', 'LF']] as const;
+const PREFERRED_DXF_IMPORT_UNIT_OPTIONS = [
+  ['', 'Automatic / ask on import'],
+  ['millimeters', 'Millimeters'],
+  ['inches', 'Inches']
+] as const;

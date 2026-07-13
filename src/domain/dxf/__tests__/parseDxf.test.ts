@@ -312,6 +312,89 @@ EOF
     });
   });
 
+  it.each([
+    {
+      label: 'millimeters',
+      declaration: '70\n4',
+      expected: {
+        status: 'recognized',
+        units: {
+          code: 4,
+          label: 'millimeters',
+          scaleToMillimeters: 1,
+          source: 'dxf-insunits'
+        }
+      }
+    },
+    {
+      label: 'inches',
+      declaration: '70\n1',
+      expected: {
+        status: 'recognized',
+        units: {
+          code: 1,
+          label: 'inches',
+          scaleToMillimeters: 25.4,
+          source: 'dxf-insunits'
+        }
+      }
+    },
+    {
+      label: 'unitless',
+      declaration: '70\n0',
+      expected: {
+        status: 'unitless',
+        units: {
+          code: 0,
+          label: 'unitless',
+          scaleToMillimeters: null,
+          source: 'dxf-insunits'
+        }
+      }
+    },
+    {
+      label: 'unknown positive code',
+      declaration: '70\n99',
+      expected: {
+        status: 'unknown',
+        units: {
+          code: 99,
+          label: 'unknown-99',
+          scaleToMillimeters: null,
+          source: 'dxf-insunits'
+        }
+      }
+    }
+  ])('retains $label INSUNITS declaration status', ({ declaration, expected }) => {
+    expect(parseDxf(dxfWithInsunitsDeclaration(declaration)).unitDeclaration).toEqual(expected);
+  });
+
+  it('distinguishes a missing INSUNITS declaration from malformed declarations', () => {
+    expect(parseDxf(dxfWithInsunitsDeclaration(null)).unitDeclaration).toEqual({
+      status: 'missing'
+    });
+    expect(parseDxf(dxfWithInsunitsDeclaration('280\n1')).unitDeclaration).toEqual({
+      status: 'malformed',
+      rawValue: null
+    });
+  });
+
+  it.each([
+    ['nonnumeric', 'not-a-code'],
+    ['noninteger', '4.5'],
+    ['negative', '-1'],
+    ['unsafe integer', '9007199254740992'],
+    ['blank', '']
+  ])('retains the raw group-70 value for a malformed $label INSUNITS declaration', (
+    _label,
+    rawValue
+  ) => {
+    expect(parseDxf(dxfWithInsunitsDeclaration(`70\n${rawValue}`)).unitDeclaration).toEqual({
+      status: 'malformed',
+      rawValue
+    });
+  });
+
   it('preserves DXF base point and drawing extents metadata without moving geometry', () => {
     const result = parseDxf(`
 0
@@ -887,6 +970,36 @@ EOF
     }
   );
 });
+
+function dxfWithInsunitsDeclaration(declaration: string | null) {
+  return `
+0
+SECTION
+2
+HEADER
+${declaration === null ? '' : `9\n$INSUNITS\n${declaration}`}
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+10
+0
+20
+0
+11
+10
+21
+0
+0
+ENDSEC
+0
+EOF
+`;
+}
 
 function blankLayerDxf() {
   return [

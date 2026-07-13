@@ -130,6 +130,10 @@ describe('settingsDraftFromWorkbench', () => {
     expect(applySettingsDraftPatch(profile, draft, { machineName: 'Shop Robofil' }).verificationStatus)
       .toBe('user-verified');
     expect(
+      applySettingsDraftPatch(profile, draft, { preferredDxfImportUnit: 'inches' })
+        .verificationStatus
+    ).toBe('user-verified');
+    expect(
       applySettingsDraftPatch(profile, draft, { expectedMaximumOffsetMm: '0.75' })
         .verificationStatus
     ).toBe('user-verified');
@@ -137,6 +141,22 @@ describe('settingsDraftFromWorkbench', () => {
       .toBe('unverified');
     expect(applySettingsDraftPatch(profile, draft, { header: 'G60' }).verificationStatus)
       .toBe('unverified');
+  });
+
+  it('round-trips the preferred DXF import unit independently from output units', () => {
+    const workbench = createWorkbench('2026-07-12T10:00:00.000Z');
+    const draft = settingsDraftFromWorkbench(workbench);
+    const input = workbenchSettingsInputFromDraft(workbench, {
+      ...draft,
+      preferredDxfImportUnit: 'inches'
+    });
+
+    expect(draft.preferredDxfImportUnit).toBeNull();
+    expect(input.machineProfile?.preferredDxfImportUnit).toBe('inches');
+    expect(input.machineProfile?.controller.unitsCode).toBe(
+      workbench.activeMachineProfile.controller.unitsCode
+    );
+    expect(input.machineProfile?.output).toEqual(workbench.activeMachineProfile.output);
   });
 
   it('uses the shared helper when verification is explicitly acknowledged', () => {

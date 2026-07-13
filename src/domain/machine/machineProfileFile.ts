@@ -104,6 +104,13 @@ function reconstructProfile(value: unknown, resetVerification: boolean): Machine
 
   const name = requireString(source.name, 'name', MAX_NAME_LENGTH);
   if (name.trim().length === 0) invalidProfile('name must not be blank.');
+  const preferredDxfImportUnit = source.preferredDxfImportUnit == null
+    ? null
+    : requireEnum(
+      source.preferredDxfImportUnit,
+      ['millimeters', 'inches'] as const,
+      'preferred DXF import unit'
+    );
 
   const controller = requireRecord(source.controller, 'controller');
   const controllerFamily = requireEnum(
@@ -226,6 +233,7 @@ function reconstructProfile(value: unknown, resetVerification: boolean): Machine
   const profile: MachineProfile = {
     id,
     name: name.trim(),
+    preferredDxfImportUnit,
     controller: {
       family: controllerFamily,
       postVersion,

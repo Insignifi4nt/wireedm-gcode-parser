@@ -19,6 +19,9 @@ export function normalizeMachineProfile(profile: Partial<MachineProfile> | null 
   const normalizedWithoutVerification: MachineProfile = {
     id: profile?.id?.trim() || fallback.id,
     name: profile?.name?.trim() || fallback.name,
+    preferredDxfImportUnit: normalizePreferredDxfImportUnit(
+      profile?.preferredDxfImportUnit
+    ),
     controller: { ...controller, verification: unverified() },
     compensation,
     templates: {
@@ -307,6 +310,10 @@ export function normalizeCoordinatePrecision(value: unknown) {
 function normalizeNullableLimit(value: number | null | undefined) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
   return value;
+}
+
+function normalizePreferredDxfImportUnit(value: unknown): MachineProfile['preferredDxfImportUnit'] {
+  return value === 'millimeters' || value === 'inches' ? value : null;
 }
 
 function normalizeController(

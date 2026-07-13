@@ -56,6 +56,7 @@ function legacyVerificationFingerprint(
 describe('portable machine profile files', () => {
   it('round-trips one versioned portable profile and resets imported verification', () => {
     const verifiedRobofil = createVerifiedCharmillesRobofil100Profile('robofil-local', now);
+    verifiedRobofil.preferredDxfImportUnit = 'inches';
     const text = serializeMachineProfileFile(verifiedRobofil, now);
     const parsed = parseMachineProfileFile(text);
 
@@ -65,6 +66,7 @@ describe('portable machine profile files', () => {
       exportedAt: now.toISOString()
     });
     expect(parsed.id).toBe(verifiedRobofil.id);
+    expect(parsed.preferredDxfImportUnit).toBe('inches');
     expect(parsed.controller.verification.status).toBe('unverified');
     expect(parsed).toMatchObject({
       controller: {
@@ -101,6 +103,7 @@ describe('portable machine profile files', () => {
     const profile = createBlankMachineProfile() as unknown as Record<string, unknown>;
     const controller = profile.controller as Record<string, unknown>;
     const compensation = profile.compensation as Record<string, unknown>;
+    delete profile.preferredDxfImportUnit;
     for (const key of ['postVersion', 'unitsCode', 'planeCode', 'workOffsetCode', 'distanceMode', 'arcCenterMode']) {
       delete controller[key];
     }
@@ -109,6 +112,7 @@ describe('portable machine profile files', () => {
     expect(parseMachineProfileFile(JSON.stringify(portableDocument(
       profile as unknown as ReturnType<typeof createBlankMachineProfile>
     )))).toMatchObject({
+      preferredDxfImportUnit: null,
       controller: {
         postVersion: 1,
         unitsCode: 'omit',
@@ -120,6 +124,15 @@ describe('portable machine profile files', () => {
       },
       compensation: { lifecycleScope: 'operation', preActivationCodes: [] }
     });
+  });
+
+  it('rejects an invalid preferred DXF import unit at the portable boundary', () => {
+    const profile = createBlankMachineProfile() as unknown as Record<string, unknown>;
+    profile.preferredDxfImportUnit = 'feet';
+
+    expect(() => parseMachineProfileFile(JSON.stringify(portableDocument(
+      profile as unknown as ReturnType<typeof createBlankMachineProfile>
+    )))).toThrow(/preferred DXF import unit/i);
   });
 
   it('round-trips multibyte template content while the portable file remains under 256 KiB', () => {

@@ -16,6 +16,7 @@ export function createDefaultMachineProfile(): MachineProfile {
   return {
     id: 'default-wire-machine',
     name: 'Default Wire EDM',
+    preferredDxfImportUnit: null,
     controller: {
       family: 'generic-iso',
       postVersion: 1,

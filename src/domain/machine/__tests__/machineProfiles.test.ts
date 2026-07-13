@@ -51,6 +51,7 @@ describe('machine profile policies', () => {
     expect(createBlankMachineProfile('new-wire-machine')).toMatchObject({
       id: 'new-wire-machine',
       name: 'Untitled Wire EDM',
+      preferredDxfImportUnit: null,
       controller: { family: 'custom', verification: { status: 'unverified' } },
       compensation: { supported: false, enabledByDefault: false },
       templates: { header: '', footer: '' }
@@ -64,8 +65,10 @@ describe('machine profile policies', () => {
     >;
     delete (legacyProfile as Partial<MachineProfile>).controller;
     delete (legacyProfile as Partial<MachineProfile>).compensation;
+    delete (legacyProfile as Partial<MachineProfile>).preferredDxfImportUnit;
 
     expect(normalizeMachineProfile(legacyProfile)).toMatchObject({
+      preferredDxfImportUnit: null,
       controller: {
         family: 'generic-iso',
         postVersion: 1,
@@ -108,6 +111,23 @@ describe('machine profile policies', () => {
 
     expect(normalizeMachineProfile({ ...verified, name: 'Shop Robofil' }).controller.verification)
       .toEqual(verified.controller.verification);
+  });
+
+  it('keeps the DXF import preference outside controller verification', () => {
+    const verified = createVerifiedCharmillesRobofil100Profile(
+      'robofil-local',
+      new Date('2026-07-13T09:30:00.000Z')
+    );
+    const changed = normalizeMachineProfile({
+      ...verified,
+      preferredDxfImportUnit: 'inches'
+    });
+
+    expect(machineProfileVerificationFingerprint(verified)).not.toContain(
+      'preferredDxfImportUnit'
+    );
+    expect(changed.preferredDxfImportUnit).toBe('inches');
+    expect(changed.controller.verification).toEqual(verified.controller.verification);
   });
 
   it('treats enabled-by-default as an initialization preference outside the safety fingerprint', () => {

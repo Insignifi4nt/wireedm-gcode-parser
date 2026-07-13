@@ -288,6 +288,9 @@ describe('App dashboard and workbench shell', () => {
     const coordinatePrecision = container.querySelector(
       'input[aria-label="Coordinate precision"]'
     ) as HTMLInputElement | null;
+    const preferredDxfImportUnit = container.querySelector(
+      'select[aria-label="Preferred DXF import unit"]'
+    ) as HTMLSelectElement | null;
     const customExtension = container.querySelector(
       'input[aria-label="Custom output extension"]'
     ) as HTMLInputElement | null;
@@ -306,6 +309,7 @@ describe('App dashboard and workbench shell', () => {
     expect(outputExtension).not.toBeNull();
     expect(lineEnding).not.toBeNull();
     expect(coordinatePrecision).not.toBeNull();
+    expect(preferredDxfImportUnit?.value).toBe('');
     expect(coordinatePrecision?.min).toBe('0');
     expect(coordinatePrecision?.max).toBe('6');
     expect(coordinatePrecision?.step).toBe('1');
@@ -319,6 +323,7 @@ describe('App dashboard and workbench shell', () => {
       if (outputExtension) setSelectValue(outputExtension, 'custom');
       if (lineEnding) setSelectValue(lineEnding, 'lf');
       if (coordinatePrecision) setInputValue(coordinatePrecision, '5');
+      if (preferredDxfImportUnit) setSelectValue(preferredDxfImportUnit, 'inches');
       if (machineName) setInputValue(machineName, 'Shop Wire EDM');
       if (workAreaWidth) setInputValue(workAreaWidth, '320.5');
       if (workAreaLength) setInputValue(workAreaLength, '470');
@@ -417,6 +422,7 @@ describe('App dashboard and workbench shell', () => {
       lineEnding: 'lf',
       coordinatePrecision: 5
     });
+    expect(project.machine.preferredDxfImportUnit).toBe('inches');
     expect(project.machine.workArea).toEqual({
       widthMm: 320.5,
       lengthMm: 470

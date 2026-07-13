@@ -97,6 +97,7 @@ describe('openWorkbenchProject', () => {
     expect(opened.project.machine).toEqual({
       id: 'legacy-wire',
       name: 'Legacy Wire',
+      preferredDxfImportUnit: null,
       controller: {
         family: 'generic-iso',
         postVersion: 1,

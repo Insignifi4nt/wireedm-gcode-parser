@@ -65,6 +65,7 @@ export interface MachineCompensationPolicy {
 export interface MachineProfile {
   id: string;
   name: string;
+  preferredDxfImportUnit: 'millimeters' | 'inches' | null;
   controller: MachineControllerPolicy;
   compensation: MachineCompensationPolicy;
   templates: GCodeTemplateSet;

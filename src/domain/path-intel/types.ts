@@ -1,8 +1,10 @@
 import type {
+  AppliedDxfUnits,
   DxfApproximation,
   DxfDrawingMetadata,
   DxfDrawingUnits,
-  DxfEntitySource
+  DxfEntitySource,
+  DxfUnitDeclaration
 } from '@/domain/dxf/types';
 
 export interface Point2 {
@@ -41,12 +43,14 @@ export interface PathPlanningOptions {
 export type OperationOrderStrategy = 'inside-out-nearest' | 'nearest' | 'source-order';
 
 export interface PathPlanningSourceMetadata {
+  appliedUnits?: AppliedDxfUnits;
   coordinateScaleToMillimeters?: number;
   drawing?: DxfDrawingMetadata;
   fileName?: string;
   importedAt?: string;
   importWarnings?: string[];
   projectId?: string;
+  unitDeclaration?: DxfUnitDeclaration;
   units?: DxfDrawingUnits;
 }
 
