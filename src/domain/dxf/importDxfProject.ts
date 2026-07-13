@@ -1,4 +1,5 @@
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
+import { normalizeMachineProfile } from '@/domain/machine/machineProfiles';
 import {
   WORKBENCH_MANIFEST_FILE,
   type ConnectedWorkbench,
@@ -79,7 +80,7 @@ export async function importDxfProject(
   const projectDirectory = `projects/${project.id}`;
   const projectPath = `${projectDirectory}/project.json`;
 
-  project.machine = { ...machineProfile };
+  project.machine = normalizeMachineProfile(machineProfile);
   project.upid = createProjectUpid(project, pathDocument);
   project.source.files = [
     {

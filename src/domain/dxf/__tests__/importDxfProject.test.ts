@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
 import { initializeWorkbenchDirectory, type WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
 import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 
@@ -139,6 +140,56 @@ describe('importDxfProject', () => {
     expect('generatedProgram' in result).toBe(false);
     expect('generated' in result.project).toBe(false);
     expect(result.project.editor.activeFilePath).toBeNull();
+  });
+
+  it('snapshots every nested active-machine policy without sharing library references', async () => {
+    const adapter = new MemoryWorkbenchAdapter('Profile snapshot');
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const libraryProfile = createVerifiedCharmillesRobofil100Profile(
+      'shop-robofil',
+      new Date('2026-07-13T09:30:00.000Z')
+    );
+    workbench.activeMachineProfile = libraryProfile;
+    workbench.manifest = {
+      ...workbench.manifest,
+      activeMachineProfileId: libraryProfile.id,
+      machineProfiles: [libraryProfile],
+      output: libraryProfile.output
+    };
+
+    const result = await importDxfProject(workbench, {
+      fileName: 'snapshotted-machine.dxf',
+      text: simpleSlotDxf(),
+      now: new Date('2026-07-13T10:00:00.000Z')
+    });
+    const snapshotBeforeLibraryEdit = JSON.parse(
+      JSON.stringify(result.project.machine)
+    );
+
+    expect(result.project.machine).not.toBe(libraryProfile);
+    expect(result.project.machine.controller).not.toBe(libraryProfile.controller);
+    expect(result.project.machine.controller.verification)
+      .not.toBe(libraryProfile.controller.verification);
+    expect(result.project.machine.compensation).not.toBe(libraryProfile.compensation);
+    expect(result.project.machine.compensation.preActivationCodes)
+      .not.toBe(libraryProfile.compensation.preActivationCodes);
+    expect(result.project.machine.templates).not.toBe(libraryProfile.templates);
+    expect(result.project.machine.output).not.toBe(libraryProfile.output);
+    expect(result.project.machine.workArea).not.toBe(libraryProfile.workArea);
+    expect(result.project.machine.controller.verification)
+      .toEqual(libraryProfile.controller.verification);
+
+    libraryProfile.controller.arcCenterMode = 'incremental-from-start';
+    libraryProfile.controller.verification.status = 'unverified';
+    libraryProfile.compensation.offsetSelection.index = 8;
+    libraryProfile.compensation.preActivationCodes[0] = 'G61';
+    libraryProfile.templates.header = 'LIBRARY HEADER EDIT';
+    libraryProfile.output.coordinatePrecision = 6;
+    libraryProfile.workArea.widthMm = 900;
+
+    expect(result.project.machine).toEqual(snapshotBeforeLibraryEdit);
   });
 
   it('imports geometry stored inside a DXF BLOCK through INSERT into the UPID document', async () => {
