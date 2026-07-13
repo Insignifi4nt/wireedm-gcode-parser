@@ -38,3 +38,54 @@ The initial bounded read-only review reported zero Critical findings and two Imp
 ## Residual caveat
 
 No live desktop/narrow-width browser layout pass was performed in Task 6. Automated interaction, accessibility semantics, TypeScript, and composition are covered, but final density, overflow, tooltip placement, and viewport behavior remain a visual check for integrated verification. The existing Vite bundle-size advisory is unchanged.
+
+---
+
+# Compensation Task 6 Report — Structured generic explicit-linear post
+
+Date: 2026-07-13
+
+This section records the later compensation/posting Task 6 and is intentionally separate from the completed Contour Workbook report above.
+
+## Status
+
+Implementation and verification are complete under strict RED-GREEN TDD. A bounded read-only review was requested before handoff.
+
+## Delivered behavior
+
+- Added a generic/custom post-version-1 explicit-linear lifecycle that consumes Task 5 readiness and transition geometry.
+- Emits G40 operation boundaries, safe G0 positioning, derived G41/G42 plus the selected integer D register on the tangent G1 lead-in, canonical contour geometry, and G40 on the tangent G1 lead-out.
+- Applies automatic safe-start rotation to an export-local operation clone. The UPID refs and semantic kept-material intent remain unchanged; reversal derives the opposite controller side.
+- Supports mixed compensated and centreline operations under the operation-scoped lifecycle, including existing centreline radial lead-ins, while every rapid remains in G40.
+- Adds `lead-out`, `compensation-cancellation`, and `operation-boundary` structured block roles. Generated motions participate in moves, operation ranges, metrics, and final program line mapping.
+- Adds a final structured audit for contiguous body/block mapping, modal continuity, no rapid under compensation, activation/cancellation form, G40 termination, motion traces, metrics, and operation ranges.
+- Generic compensated failures own composition and return empty executable body/blocks/moves/operations, including failures found before structural validation completes.
+- Unsupported generic policies fail closed: non-version-1, compact formatting, structured origin/end fields, executable pre-activation codes, and a declared arc-centre mode not selected by its managed header.
+- Reused the canonical path renderer and exported point-word formatter, preserving its precision, negative-zero, and arc geometry behavior.
+- The no-compensation generic route remains unchanged. The verified Robofil post route and z39 physical envelope remain unchanged.
+
+## TDD evidence
+
+Focused RED cycles reproduced the intended missing behavior before each production change:
+
+1. Smooth explicit circle: 1 expected failure in 25 tests (`blocked` instead of `ready`).
+2. Mixed compensated/centreline operations: 1 expected failure in 27 tests (`unsupported-operation-count`).
+3. Unsupported generic policies: 5 expected failures in 34 tests because edited policies posted as ready.
+4. Structured modal audit: 1 expected failure in 35 tests because the audit API did not exist.
+5. Early generic program ownership: 1 expected failure in 39 tests because blocked composition retained executable templates.
+6. Mixed centreline radial lead-in: 1 expected failure in 40 tests because the audit initially treated every lead-in as compensation activation.
+7. Managed absolute-I/J mismatch: 1 expected failure in 42 tests because a declared absolute mode without G90.1 silently posted incremental I/J.
+
+Every cycle was made green before the next behavior was added.
+
+## Verification
+
+- Compensation/post/UPID/path-planning/real-z39 focus: 14 files, 410 tests passed.
+- Full Vitest: 61 files, 1041 tests passed.
+- Production TypeScript and Vite build: passed.
+- `git diff --check`: passed.
+- The only build notice is the existing non-failing large-chunk advisory. Full Vitest retains the existing React `act(...)` warnings in machine-profile dashboard tests.
+
+## Commit
+
+Committed separately as `feat: post safe compensated wire paths`; the immutable hash is reported in the task handoff.

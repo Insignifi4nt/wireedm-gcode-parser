@@ -1,3 +1,7 @@
+import {
+  createGCodeInterpreterState,
+  interpretGCodeBlock
+} from '@/domain/editor/gcodeBlockInterpreter';
 import type { MachineProfile } from '@/domain/workbench/types';
 
 export interface TemplateModalPolicyInput {
@@ -70,4 +74,12 @@ export function stripGcodeComments(source: string) {
     result = result.replace(/\([^()]*\)/g, '');
   } while (result !== previous);
   return result.replace(/;.*$/gm, '');
+}
+
+export function inferTemplateArcCenterMode(header: string): 'absolute' | 'incremental' {
+  const state = createGCodeInterpreterState();
+  header.split(/\r?\n/).forEach((line, index) => {
+    interpretGCodeBlock(state, line, index + 1);
+  });
+  return state.ijMode;
 }

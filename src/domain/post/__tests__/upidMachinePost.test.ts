@@ -25,8 +25,325 @@ import {
   deriveVerifiedRobofilPreviewPostBlocks,
   postUpidForMachine
 } from '../upidMachinePost';
+import * as machinePostModule from '../upidMachinePost';
 
 describe('postUpidForMachine', () => {
+  it('posts a smooth generic compensated circle with explicit linear activation and cancellation', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('ready');
+    expect(posted.body.split('\n')).toEqual([
+      'G40',
+      'G0 X5.000 Y-2.000',
+      'G42 D0 G1 X5.000 Y0.000',
+      'G3 X-5.000 Y0.000 I-5.000 J0.000',
+      'G3 X5.000 Y0.000 I5.000 J0.000',
+      'G40 G1 X5.000 Y2.000'
+    ]);
+    expect(posted.metrics).toEqual({ rapidCount: 1, cutMoveCount: 4 });
+    expect(posted.blocks.map((block) => block.kind)).toEqual([
+      'operation-boundary',
+      'rapid',
+      'lead-in',
+      'contour',
+      'contour',
+      'lead-out'
+    ]);
+  });
+
+  it('derives the opposite generic compensation side after reversal and formats the selected D index', () => {
+    const editable = verifiedGenericExplicitMachine();
+    editable.compensation.offsetSelection.index = 7;
+    const machine = markMachineProfileUserVerified(editable);
+    const forward = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const operation = forward.plan.operations[0];
+    const reversed = reversePathOperation(forward, operation.id)!;
+
+    const before = postUpidForMachine(forward, machine);
+    const after = postUpidForMachine(reversed, machine);
+
+    expect(before.status).toBe('ready');
+    expect(after.status).toBe('ready');
+    expect(before.body).toContain('G42 D7 G1');
+    expect(after.body).toContain('G41 D7 G1');
+    expect(reversed.plan.operations[0].compensationIntent).toEqual(operation.compensationIntent);
+  });
+
+  it('posts mixed compensated and centreline operations with G40 boundaries and consistent traces', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+        { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 3 }
+      ]),
+      machine
+    );
+    const centrelineId = initialized.plan.operations[1].id;
+    const document = setManualCompensationIntent(initialized, centrelineId, 'centerline')!;
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('ready');
+    expect(posted.operations).toHaveLength(2);
+    expect(posted.metrics).toEqual({ rapidCount: 2, cutMoveCount: 6 });
+    expect(posted.body.match(/^G40$/gm)).toHaveLength(2);
+    expect(posted.body.match(/^G0\b/gm)).toHaveLength(2);
+    expect(posted.body.match(/G4[12] D0 G1/g)).toHaveLength(1);
+    expect(posted.blocks.filter((block) => block.kind === 'operation-boundary')).toHaveLength(2);
+    expect(posted.blocks.filter((block) => block.operationId === centrelineId)).toSatisfy(
+      (blocks: typeof posted.blocks) => blocks.every(
+        (block) => block.compensationBefore === 'G40' && block.compensationAfter === 'G40'
+      )
+    );
+    expect(posted.blocks.map((block) => block.bodyLineIndex)).toEqual(
+      posted.body.split('\n').map((_, index) => index)
+    );
+  });
+
+  it('preserves a centreline radial lead-in inside a mixed explicit-linear document', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+        { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 3 }
+      ]),
+      machine
+    );
+    const centrelineId = initialized.plan.operations[1].id;
+    const centreline = setManualCompensationIntent(initialized, centrelineId, 'centerline')!;
+    const document = setCircleOperationCenterPierceLeadIn(centreline, centrelineId)!;
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('ready');
+    expect(posted.blocks).toContainEqual(expect.objectContaining({
+      kind: 'lead-in',
+      operationId: centrelineId,
+      compensationBefore: 'G40',
+      compensationAfter: 'G40'
+    }));
+  });
+
+  it('uses an export-local safe-start rotation without mutating the UPID operation refs', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(smoothAlternateStartEntities()),
+      machine
+    );
+    const operation = document.plan.operations[0];
+    const originalRefs = structuredClone(operation.segmentRefs);
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('ready');
+    const firstContour = posted.blocks.find((block) => block.kind === 'contour');
+    expect(firstContour?.segmentId).not.toBe(originalRefs[0].segmentId);
+    expect(document.plan.operations[0].segmentRefs).toEqual(originalRefs);
+    expect(posted.operations[0].moves.filter((move) => move.segmentId)[0].segmentId)
+      .toBe(firstContour?.segmentId);
+  });
+
+  it('keeps a sharp square blocked and returns no executable partial generic trace', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(clockwiseRectangle(0, 0, 10, 5)),
+      machine
+    );
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted).toMatchObject({
+      status: 'blocked',
+      body: '',
+      moves: [],
+      operations: [],
+      blocks: [],
+      programOwned: true
+    });
+    expect(posted.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({ reason: 'no-safe-candidate' })
+    }));
+  });
+
+  it.each([
+    ['post version', (machine: ReturnType<typeof verifiedGenericExplicitMachine>) => {
+      machine.controller.postVersion = 2;
+    }],
+    ['compact formatting', (machine: ReturnType<typeof verifiedGenericExplicitMachine>) => {
+      machine.controller.blockFormatting = 'compact';
+    }],
+    ['structured G92 origin', (machine: ReturnType<typeof verifiedGenericExplicitMachine>) => {
+      machine.controller.coordinateSystem = 'wire-position-g92';
+    }],
+    ['structured program end', (machine: ReturnType<typeof verifiedGenericExplicitMachine>) => {
+      machine.controller.programEnd = 'M30';
+    }],
+    ['unimplemented pre-activation code', (machine: ReturnType<typeof verifiedGenericExplicitMachine>) => {
+      machine.compensation.preActivationCodes = ['G60'];
+    }],
+    ['arc-center mode missing from its managed template', (machine: ReturnType<typeof verifiedGenericExplicitMachine>) => {
+      machine.controller.arcCenterMode = 'absolute';
+    }]
+  ])('fails closed when the generic version-1 post cannot honor %s', (_label, edit) => {
+    const editable = verifiedGenericExplicitMachine();
+    edit(editable);
+    const machine = markMachineProfileUserVerified(editable);
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted).toMatchObject({
+      status: 'blocked', body: '', blocks: [], moves: [], operations: []
+    });
+    expect(posted.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({ reason: 'unsupported-generic-post-envelope' })
+    }));
+  });
+
+  it('supports generic absolute arc centres when the snapshotted managed header selects G90.1', () => {
+    const editable = verifiedGenericExplicitMachine();
+    editable.controller.arcCenterMode = 'absolute';
+    editable.templates.header = 'G90.1';
+    const machine = markMachineProfileUserVerified(editable);
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+      ]),
+      machine
+    );
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('ready');
+    expect(posted.body).toContain('I10.000 J20.000');
+  });
+
+  it('audits structured generic modal state and rejects a rapid marked under active compensation', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const posted = postUpidForMachine(document, machine);
+    const audit = (machinePostModule as typeof machinePostModule & {
+      auditGenericExplicitLinearPost?: (result: typeof posted) => string | null;
+    }).auditGenericExplicitLinearPost;
+
+    expect(audit).toBeTypeOf('function');
+    expect(audit!(posted)).toBeNull();
+    const invalid = structuredClone(posted);
+    const rapid = invalid.blocks.find((block) => block.kind === 'rapid')!;
+    rapid.compensationBefore = 'G42';
+    rapid.compensationAfter = 'G42';
+    expect(audit!(invalid)).toContain('rapid');
+  });
+
+  it('maps generic structured blocks and operation ranges through composed header lines', () => {
+    const editable = verifiedGenericExplicitMachine();
+    editable.templates = { header: 'G90\nG21', footer: 'M30' };
+    const machine = markMachineProfileUserVerified(editable);
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+
+    const exported = composeUpidGCodeExport(document, { machine });
+
+    expect(exported.canDownload).toBe(true);
+    expect(exported.programBlocks.map((block) => block.programLineNumber)).toEqual([
+      3, 4, 5, 6, 7, 8
+    ]);
+    expect(exported.programOperations[0]).toMatchObject({
+      programLineStart: 3,
+      programLineEnd: 8,
+      programLineRange: '3-8'
+    });
+    expect(exported.program.lines.at(-1)).toMatchObject({
+      lineNumber: 9, section: 'footer', text: 'M30'
+    });
+  });
+
+  it('suppresses all executable composition when a generic compensation template conflicts', () => {
+    const editable = verifiedGenericExplicitMachine();
+    editable.templates.header = 'G90 G41 D0';
+    const machine = markMachineProfileUserVerified(editable);
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+
+    const exported = composeUpidGCodeExport(document, { machine });
+
+    expect(exported.canDownload).toBe(false);
+    expect(exported.post).toMatchObject({
+      status: 'blocked', programOwned: true, body: '', blocks: [], moves: [], operations: []
+    });
+    expect(exported.program.lines).toEqual([]);
+    expect(exported.programBlocks).toEqual([]);
+    expect(exported.programOperations).toEqual([]);
+  });
+
+  it('owns structurally blocked generic compensated composition before validation can leak templates', () => {
+    const editable = verifiedGenericExplicitMachine();
+    editable.templates = { header: 'G90', footer: 'M30' };
+    const machine = markMachineProfileUserVerified(editable);
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    document.plan.operations[0].startPoint = { x: 99, y: 99 };
+
+    const exported = composeUpidGCodeExport(document, { machine });
+
+    expect(exported.post).toMatchObject({
+      status: 'blocked', programOwned: true, body: '', blocks: [], moves: [], operations: []
+    });
+    expect(exported.program.lines).toEqual([]);
+  });
+
+  it('fails atomically when a later generic compensated operation has no safe transition', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: -20, y: 0 }, radius: 3 },
+        ...clockwiseRectangle(0, 0, 10, 5)
+      ]),
+      machine
+    );
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted).toMatchObject({
+      status: 'blocked', body: '', blocks: [], moves: [], operations: []
+    });
+  });
+
   it('posts the verified single-contour Robofil lifecycle as traceable blocks', () => {
     const machine = createVerifiedCharmillesRobofil100Profile(
       'robofil-snapshot',
@@ -490,4 +807,50 @@ function line(startX: number, startY: number, endX: number, endY: number) {
     start: { x: startX, y: startY },
     end: { x: endX, y: endY }
   };
+}
+
+function verifiedGenericExplicitMachine() {
+  const machine = createDefaultMachineProfile();
+  machine.id = 'verified-generic-explicit';
+  machine.compensation = {
+    supported: true,
+    enabledByDefault: true,
+    offsetSelection: { address: 'D', index: 0 },
+    activation: 'linear-lead',
+    cancellation: 'linear-lead-out',
+    lifecycleScope: 'operation',
+    preActivationCodes: [],
+    validationLeadLengthMm: 2,
+    expectedMaximumOffsetMm: 0.25
+  };
+  machine.templates = { header: '', footer: '' };
+  return markMachineProfileUserVerified(machine, new Date('2026-07-13T00:00:00.000Z'));
+}
+
+function smoothAlternateStartEntities() {
+  return [
+    {
+      type: 'arc' as const,
+      layer: 'CUT',
+      center: { x: 0, y: 0 },
+      radius: 5,
+      startAngle: 0,
+      endAngle: 90,
+      clockwise: false,
+      start: { x: 5, y: 0 },
+      end: { x: 0, y: 5 }
+    },
+    {
+      type: 'arc' as const,
+      layer: 'CUT',
+      center: { x: 0, y: 0 },
+      radius: 5,
+      startAngle: 90,
+      endAngle: 180,
+      clockwise: false,
+      start: { x: 0, y: 5 },
+      end: { x: -5, y: 0 }
+    },
+    line(-5, 0, 5, 0)
+  ];
 }

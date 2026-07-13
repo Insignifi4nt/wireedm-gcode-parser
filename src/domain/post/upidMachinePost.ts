@@ -1,10 +1,8 @@
+import { validateCompensatedExport } from '@/domain/compensation/validateCompensatedExport';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
 import { machineProfileHasCurrentVerification } from '@/domain/machine/machineProfiles';
 import {
-  createGCodeInterpreterState,
-  interpretGCodeBlock
-} from '@/domain/editor/gcodeBlockInterpreter';
-import {
+  formatGcodePointWords,
   preflightPathPlanToGcode,
   postPathPlanToGcode,
   type GcodePostResult,
@@ -15,7 +13,11 @@ import type { PathDiagnostic, PathPlanningDocument, Point2 } from '@/domain/path
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 import type { MachineProfile } from '@/domain/workbench/types';
 
-import { stripGcodeComments, validateTemplateModalPolicy } from './templateModalPolicy';
+import {
+  inferTemplateArcCenterMode,
+  stripGcodeComments,
+  validateTemplateModalPolicy
+} from './templateModalPolicy';
 import {
   matchesVerifiedRobofilPostEnvelope,
   verifiedRobofilPostEnvelopeIsReady
@@ -29,7 +31,10 @@ export type GcodePostedBlockKind =
   | 'rapid'
   | 'compensation-activation'
   | 'lead-in'
+  | 'lead-out'
   | 'contour'
+  | 'compensation-cancellation'
+  | 'operation-boundary'
   | 'program-end';
 
 export interface GcodePostedBlock {
@@ -117,11 +122,17 @@ export function postUpidForMachine(
   machine: MachineProfile,
   _options: UpidMachinePostOptions = {}
 ): UpidMachinePostResult {
+  const structuredCompensationRequested =
+    Array.isArray(document?.plan?.operations) &&
+    document.plan.operations.some(
+      (operation) => operation?.compensationIntent?.mode === 'controller'
+    );
   const validation = validateUpidDocument(document);
   if (!validation.valid) {
     return blockedMachinePost(
       validation.blockingDiagnostics,
-      machine.controller.family === 'charmilles-robofil-classic'
+      machine.controller.family === 'charmilles-robofil-classic' ||
+        structuredCompensationRequested
     );
   }
 
@@ -157,14 +168,316 @@ export function postUpidForMachine(
     return machineResultFromGenericPost(posted);
   }
 
+  if (machine.compensation.activation === 'linear-lead') {
+    return postGenericExplicitLinear(document, machine, compensatedOperations);
+  }
+
   if (machine.controller.family !== 'charmilles-robofil-classic') {
-    return blockedReason(
-      'generic-compensation-not-supported',
-      'Generic explicit-linear controller compensation is not supported by this milestone.'
-    );
+    return blockedReason('unsupported-compensation-lifecycle', 'The selected native compensation lifecycle is unsupported.');
   }
 
   return postVerifiedRobofil(document, machine, compensatedOperations);
+}
+
+function postGenericExplicitLinear(
+  document: PathPlanningDocument,
+  machine: MachineProfile,
+  compensatedOperations: PathPlanningDocument['plan']['operations']
+): UpidMachinePostResult {
+  const readinessByOperationId = new Map<
+    string,
+    Extract<ReturnType<typeof validateCompensatedExport>, { status: 'ready' }>
+  >();
+  for (const operation of compensatedOperations) {
+    const readiness = validateCompensatedExport({ document, operation, machine });
+    if (readiness.status === 'blocked') return blockedMachinePost(readiness.diagnostics, true);
+    if (readiness.strategy !== 'explicit-linear' || !readiness.transition) {
+      return blockedReason('unsupported-compensation-lifecycle', 'The selected lifecycle is not explicit-linear.');
+    }
+    readinessByOperationId.set(operation.id, readiness);
+  }
+
+  const lines: string[] = [];
+  const moves: GcodePostedMove[] = [];
+  const operations: GcodePostedOperation[] = [];
+  const blocks: GcodePostedBlock[] = [];
+  const diagnostics: PathDiagnostic[] = [];
+  let currentPosition: Point2 | null = null;
+
+  const appendBoundary = (operationId: string) => {
+    lines.push('G40');
+    blocks.push({
+      bodyLineIndex: lines.length - 1,
+      kind: 'operation-boundary',
+      text: 'G40',
+      operationId,
+      segmentId: null,
+      startPoint: null,
+      endPoint: null,
+      command: null,
+      compensationBefore: 'G40',
+      compensationAfter: 'G40'
+    });
+  };
+
+  const appendMove = (
+    move: GcodePostedMove,
+    kind: GcodePostedBlockKind,
+    compensationBefore: 'G40' | 'G41' | 'G42' = 'G40',
+    compensationAfter: 'G40' | 'G41' | 'G42' = compensationBefore
+  ) => {
+    const posted = { ...move, bodyLineIndex: lines.length };
+    lines.push(posted.text);
+    moves.push(posted);
+    blocks.push({
+      bodyLineIndex: posted.bodyLineIndex,
+      kind,
+      text: posted.text,
+      operationId: posted.operationId,
+      segmentId: posted.segmentId,
+      startPoint: posted.startPoint,
+      endPoint: posted.endPoint,
+      command: posted.command,
+      compensationBefore,
+      compensationAfter
+    });
+    currentPosition = posted.endPoint;
+    return posted;
+  };
+
+  for (const operation of document.plan.operations) {
+    const operationLineStart = lines.length;
+    const operationMoves: GcodePostedMove[] = [];
+    appendBoundary(operation.id);
+    const readiness = readinessByOperationId.get(operation.id);
+
+    if (readiness) {
+      const transition = readiness.transition!;
+      const leadInWords = formatGcodePointWords(transition.leadIn.start, machine.output.coordinatePrecision);
+      const leadOutWords = formatGcodePointWords(transition.leadOut.end, machine.output.coordinatePrecision);
+      if (!leadInWords || !leadOutWords) {
+        return blockedReason('post-formatting-failed', 'The generated compensation transition cannot be formatted.');
+      }
+      operationMoves.push(appendMove({
+        bodyLineIndex: -1,
+        command: 'G0',
+        contourId: operation.contourId,
+        endPoint: transition.leadIn.start,
+        kind: 'rapid',
+        operationId: operation.id,
+        reason: 'operation-start',
+        segmentId: null,
+        startPoint: currentPosition,
+        text: `G0 ${leadInWords}`
+      }, 'rapid'));
+
+      const derivedOperation = {
+        ...operation,
+        segmentRefs: transition.effectiveRefs.map((ref) => ({ ...ref })),
+        startPoint: { ...transition.startPoint },
+        endPoint: { ...transition.startPoint }
+      };
+      const geometry = postPathPlanToGcode(
+        { ...document.plan, operations: [derivedOperation] },
+        document.segments,
+        {
+          ...document.options,
+          arcCenterMode: machineArcCenterMode(machine),
+          coordinatePrecision: machine.output.coordinatePrecision,
+          endpointTolerance: effectiveDocumentEndpointTolerance(document),
+          coincidenceEpsilon: document.options.coincidenceEpsilon,
+          initialPosition: transition.leadIn.start,
+          operationStartMode: 'linear'
+        }
+      );
+      if (geometry.status === 'blocked') return blockedMachinePost(geometry.diagnostics, true);
+      diagnostics.push(...geometry.diagnostics);
+      const approach = geometry.moves[0];
+      if (!approach || approach.reason !== 'operation-start-approach') {
+        return blockedReason('post-audit-failed', 'The explicit compensation lead-in was not rendered canonically.');
+      }
+      const code = readiness.resolution.code;
+      geometry.moves.forEach((move, index) => {
+        const posted = appendMove({
+          ...move,
+          bodyLineIndex: -1,
+          text: index === 0
+            ? `${code} D${machine.compensation.offsetSelection.index} ${move.text}`
+            : move.text
+        }, index === 0 ? 'lead-in' : 'contour', index === 0 ? 'G40' : code, code);
+        operationMoves.push(posted);
+      });
+      operationMoves.push(appendMove({
+        bodyLineIndex: -1,
+        command: 'G1',
+        contourId: operation.contourId,
+        endPoint: transition.leadOut.end,
+        kind: 'cut',
+        operationId: operation.id,
+        reason: 'compensation-lead-out',
+        segmentId: null,
+        startPoint: transition.leadOut.start,
+        text: `G40 G1 ${leadOutWords}`
+      }, 'lead-out', code, 'G40'));
+    } else {
+      const geometry = postPathPlanToGcode(
+        { ...document.plan, operations: [operation] },
+        document.segments,
+        {
+          ...document.options,
+          arcCenterMode: machineArcCenterMode(machine),
+          coordinatePrecision: machine.output.coordinatePrecision,
+          endpointTolerance: effectiveDocumentEndpointTolerance(document),
+          coincidenceEpsilon: document.options.coincidenceEpsilon,
+          ...(currentPosition ? { initialPosition: currentPosition } : {})
+        }
+      );
+      if (geometry.status === 'blocked') return blockedMachinePost(geometry.diagnostics, true);
+      diagnostics.push(...geometry.diagnostics);
+      geometry.moves.forEach((move) => {
+        operationMoves.push(appendMove(
+          { ...move, bodyLineIndex: -1 },
+          move.kind === 'rapid'
+            ? 'rapid'
+            : move.reason === 'manual-lead-in'
+              ? 'lead-in'
+              : 'contour'
+        ));
+      });
+    }
+
+    operations.push({
+      bodyLineStart: operationLineStart,
+      bodyLineEnd: lines.length - 1,
+      classification: operation.classification,
+      closed: operation.closed,
+      contourId: operation.contourId,
+      cutMoveCount: operationMoves.filter((move) => move.kind === 'cut').length,
+      direction: operation.direction,
+      displayName: operation.displayName,
+      moves: operationMoves,
+      operationId: operation.id,
+      orderIndex: operation.orderIndex,
+      rapidCount: operationMoves.filter((move) => move.kind === 'rapid').length
+    });
+  }
+
+  const result: UpidMachinePostResult = {
+    status: 'ready',
+    body: lines.join('\n'),
+    diagnostics,
+    metrics: {
+      rapidCount: moves.filter((move) => move.kind === 'rapid').length,
+      cutMoveCount: moves.filter((move) => move.kind === 'cut').length
+    },
+    moves,
+    operations,
+    blocks,
+    programOwned: false
+  };
+  const auditIssue = auditGenericExplicitLinearPost(result);
+  return auditIssue
+    ? blockedReason('post-audit-failed', auditIssue)
+    : result;
+}
+
+export function auditGenericExplicitLinearPost(
+  result: Pick<
+    UpidMachinePostResult,
+    'body' | 'blocks' | 'moves' | 'operations' | 'metrics'
+  >
+) {
+  const lines = result.body ? result.body.split('\n') : [];
+  if (lines.length !== result.blocks.length) {
+    return 'The generic structured block count does not match the executable body.';
+  }
+
+  let compensation: 'G40' | 'G41' | 'G42' = 'G40';
+  for (const [index, block] of result.blocks.entries()) {
+    if (block.bodyLineIndex !== index || block.text !== lines[index]) {
+      return 'The generic structured block line map is not contiguous.';
+    }
+    if (
+      block.kind === 'rapid' &&
+      (block.compensationBefore !== 'G40' || block.compensationAfter !== 'G40')
+    ) {
+      return 'The generic post contains a rapid while controller compensation is active.';
+    }
+    if (block.compensationBefore !== compensation) {
+      return 'The generic structured blocks contain a discontinuous compensation modal state.';
+    }
+    if (
+      block.kind === 'operation-boundary' &&
+      (block.compensationBefore !== 'G40' || block.compensationAfter !== 'G40')
+    ) {
+      return 'A generic operation boundary is not in G40.';
+    }
+    if (
+      block.kind === 'lead-in' &&
+      (block.compensationBefore !== 'G40' || block.compensationAfter !== 'G40') &&
+      (
+        block.compensationBefore !== 'G40' ||
+        block.compensationAfter === 'G40' ||
+        !/^G4[12] D\d+ G1\b/.test(block.text)
+      )
+    ) {
+      return 'The generic compensation activation lead-in is malformed.';
+    }
+    if (
+      block.kind === 'lead-out' &&
+      (
+        block.compensationBefore === 'G40' ||
+        block.compensationAfter !== 'G40' ||
+        !/^G40 G1\b/.test(block.text)
+      )
+    ) {
+      return 'The generic compensation cancellation lead-out is malformed.';
+    }
+    compensation = block.compensationAfter;
+  }
+  if (compensation !== 'G40') {
+    return 'The generic post ends with controller compensation active.';
+  }
+
+  const motionBlocks = result.blocks.filter((block) => block.command !== null);
+  if (
+    motionBlocks.length !== result.moves.length ||
+    motionBlocks.some((block, index) => {
+      const move = result.moves[index];
+      return !move ||
+        move.bodyLineIndex !== block.bodyLineIndex ||
+        move.text !== block.text ||
+        move.command !== block.command;
+    })
+  ) {
+    return 'The generic motion trace is inconsistent with its structured blocks.';
+  }
+  const rapidCount = result.moves.filter((move) => move.kind === 'rapid').length;
+  const cutMoveCount = result.moves.filter((move) => move.kind === 'cut').length;
+  if (
+    result.metrics.rapidCount !== rapidCount ||
+    result.metrics.cutMoveCount !== cutMoveCount
+  ) {
+    return 'The generic post metrics are inconsistent with its motion trace.';
+  }
+
+  for (const operation of result.operations) {
+    const startBlock = result.blocks[operation.bodyLineStart];
+    const endBlock = result.blocks[operation.bodyLineEnd];
+    const expectedMoves = result.moves.filter((move) => move.operationId === operation.operationId);
+    if (
+      startBlock?.kind !== 'operation-boundary' ||
+      startBlock.operationId !== operation.operationId ||
+      endBlock?.operationId !== operation.operationId ||
+      operation.moves.length !== expectedMoves.length ||
+      operation.moves.some((move, index) => move.bodyLineIndex !== expectedMoves[index]?.bodyLineIndex) ||
+      operation.rapidCount !== expectedMoves.filter((move) => move.kind === 'rapid').length ||
+      operation.cutMoveCount !== expectedMoves.filter((move) => move.kind === 'cut').length
+    ) {
+      return 'A generic operation range or motion trace is inconsistent.';
+    }
+  }
+  return null;
 }
 
 function postVerifiedRobofil(
@@ -459,11 +772,7 @@ function machineArcCenterMode(machine: MachineProfile): 'absolute' | 'incrementa
     return machine.controller.arcCenterMode === 'absolute' ? 'absolute' : 'incremental';
   }
 
-  const state = createGCodeInterpreterState();
-  machine.templates.header.split(/\r?\n/).forEach((line, index) => {
-    interpretGCodeBlock(state, line, index + 1);
-  });
-  return state.ijMode;
+  return inferTemplateArcCenterMode(machine.templates.header);
 }
 
 function blockedReason(

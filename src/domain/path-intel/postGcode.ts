@@ -30,6 +30,7 @@ export type GcodePostedMoveReason =
   | 'manual-lead-in'
   | 'segment-cut'
   | 'gap-bridge'
+  | 'compensation-lead-out'
   | 'unexpected-gap';
 
 export type GcodeArcCenterMode = 'absolute' | 'incremental';
@@ -764,6 +765,10 @@ function pointsWithinTolerance(a: Point2, b: Point2, tolerance: number) {
 function xy(point: Point2, formatter: CoordinateFormatter) {
   const formatted = formattedPoint(point, formatter);
   return formatted ? `X${formatted.x} Y${formatted.y}` : null;
+}
+
+export function formatGcodePointWords(point: Point2, coordinatePrecision?: number) {
+  return xy(point, createCoordinateFormatter(coordinatePrecision));
 }
 
 function ij(

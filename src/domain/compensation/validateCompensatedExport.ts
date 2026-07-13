@@ -1,6 +1,9 @@
 import { machineProfileHasCurrentVerification } from '@/domain/machine/machineProfiles';
 import type { PathDiagnostic, PathOperation, PathPlanningDocument } from '@/domain/path-intel/types';
-import { validateTemplateModalPolicy } from '@/domain/post/templateModalPolicy';
+import {
+  inferTemplateArcCenterMode,
+  validateTemplateModalPolicy
+} from '@/domain/post/templateModalPolicy';
 import { verifiedRobofilPostEnvelopeIsReady } from '@/domain/post/verifiedRobofilPostEnvelope';
 import type { MachineProfile } from '@/domain/workbench/types';
 
@@ -28,6 +31,7 @@ export type CompensatedExportBlockedReason =
   | 'compensation-resolution-blocked'
   | 'template-modal-conflict'
   | 'unsafe-radial-lead'
+  | 'unsupported-generic-post-envelope'
   | 'unsupported-robofil-post-envelope'
   | 'unsupported-operation-count'
   | 'unsupported-compensation-lifecycle'
@@ -125,6 +129,12 @@ export function validateCompensatedExport({
   ) {
     return blocked('unsupported-compensation-lifecycle', 'Explicit linear compensation requires operation-scoped linear activation and cancellation.');
   }
+  if (!matchesGenericExplicitLinearEnvelope(machine)) {
+    return blocked(
+      'unsupported-generic-post-envelope',
+      'This generic snapshot is outside the supported explicit-linear post-version-1 envelope.'
+    );
+  }
 
   const transition = generateLinearCompensationTransition({
     document,
@@ -144,6 +154,22 @@ export function validateCompensatedExport({
     transition,
     diagnostics: []
   };
+}
+
+function matchesGenericExplicitLinearEnvelope(machine: MachineProfile) {
+  return (
+    (machine.controller.family === 'generic-iso' || machine.controller.family === 'custom') &&
+    machine.controller.postVersion === 1 &&
+    machine.controller.blockFormatting === 'spaced' &&
+    machine.controller.coordinateSystem === 'template-managed' &&
+    machine.controller.unitsCode === 'omit' &&
+    machine.controller.planeCode === 'omit' &&
+    machine.controller.workOffsetCode === 'template-managed' &&
+    machine.controller.programEnd === 'template-managed' &&
+    machine.compensation.preActivationCodes.length === 0 &&
+    inferTemplateArcCenterMode(machine.templates.header) ===
+      (machine.controller.arcCenterMode === 'absolute' ? 'absolute' : 'incremental')
+  );
 }
 
 function blocked(
