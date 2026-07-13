@@ -5,8 +5,10 @@ import type { MachineProfile } from '@/domain/workbench/types';
 import {
   FOOTER_TEMPLATE_PATH,
   HEADER_TEMPLATE_PATH,
+  WORKBENCH_MANIFEST_FILE,
   writeWorkbenchManifest,
   type ConnectedWorkbench,
+  type WorkbenchStorageAdapter,
   type WorkbenchManifest
 } from './workbenchStorage';
 
@@ -86,17 +88,11 @@ export async function updateMachineProfileLibrary(
     projects: workbench.manifest.projects
   };
 
-  if (writesActiveMirrors) {
-    await workbench.adapter.writeText(
-      HEADER_TEMPLATE_PATH,
-      activeMachineProfile.templates.header
-    );
-    await workbench.adapter.writeText(
-      FOOTER_TEMPLATE_PATH,
-      activeMachineProfile.templates.footer
-    );
-  }
-  await writeWorkbenchManifest(workbench.adapter, manifest);
+  await persistMachineProfileLibrary(
+    workbench.adapter,
+    manifest,
+    writesActiveMirrors ? activeMachineProfile : null
+  );
 
   return {
     ...workbench,
@@ -105,6 +101,72 @@ export async function updateMachineProfileLibrary(
     header: writesActiveMirrors ? activeMachineProfile.templates.header : workbench.header,
     footer: writesActiveMirrors ? activeMachineProfile.templates.footer : workbench.footer
   };
+}
+
+interface PersistedFileSnapshot {
+  path: string;
+  contents: string | null;
+}
+
+async function persistMachineProfileLibrary(
+  adapter: WorkbenchStorageAdapter,
+  manifest: WorkbenchManifest,
+  activeMachineProfile: MachineProfile | null
+) {
+  const paths = activeMachineProfile
+    ? [WORKBENCH_MANIFEST_FILE, HEADER_TEMPLATE_PATH, FOOTER_TEMPLATE_PATH]
+    : [WORKBENCH_MANIFEST_FILE];
+  const snapshots = await Promise.all(
+    paths.map(async (path): Promise<PersistedFileSnapshot> => ({
+      path,
+      contents: await adapter.readText(path)
+    }))
+  );
+
+  try {
+    if (activeMachineProfile) {
+      await adapter.writeText(
+        HEADER_TEMPLATE_PATH,
+        activeMachineProfile.templates.header
+      );
+      await adapter.writeText(
+        FOOTER_TEMPLATE_PATH,
+        activeMachineProfile.templates.footer
+      );
+    }
+    await writeWorkbenchManifest(adapter, manifest);
+  } catch (writeError) {
+    const recoveryErrors = await restoreSnapshots(adapter, snapshots);
+    if (recoveryErrors.length > 0) {
+      throw new Error(
+        `Machine profile library update failed: ${errorMessage(writeError)}; recovery failed: ${recoveryErrors.join('; ')}`
+      );
+    }
+    throw writeError;
+  }
+}
+
+async function restoreSnapshots(
+  adapter: WorkbenchStorageAdapter,
+  snapshots: PersistedFileSnapshot[]
+) {
+  const recoveryErrors: string[] = [];
+  for (const snapshot of snapshots) {
+    try {
+      if (snapshot.contents === null) {
+        await adapter.deleteText(snapshot.path);
+      } else {
+        await adapter.writeText(snapshot.path, snapshot.contents);
+      }
+    } catch (error) {
+      recoveryErrors.push(`${snapshot.path}: ${errorMessage(error)}`);
+    }
+  }
+  return recoveryErrors;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function addMachineProfile(

@@ -33,6 +33,8 @@ class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
   readonly files = new Map<string, string>();
   readonly writes: string[] = [];
+  readonly writeAttempts = new Map<string, number>();
+  readonly failedWriteAttempts = new Map<string, Set<number>>();
 
   constructor(readonly name = 'profile-library') {}
 
@@ -43,12 +45,21 @@ class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
   }
 
   async writeText(path: string, contents: string) {
+    const attempt = (this.writeAttempts.get(path) ?? 0) + 1;
+    this.writeAttempts.set(path, attempt);
     this.writes.push(path);
+    if (this.failedWriteAttempts.get(path)?.has(attempt)) {
+      throw new Error(`Injected write failure for ${path} on attempt ${attempt}.`);
+    }
     this.files.set(path, contents);
   }
 
   async deleteText(path: string) {
     this.files.delete(path);
+  }
+
+  failWrite(path: string, ...attempts: number[]) {
+    this.failedWriteAttempts.set(path, new Set(attempts));
   }
 }
 
@@ -115,8 +126,18 @@ function connectedWorkbench(
   });
   adapter.files.set(projectEntry.path, JSON.stringify(project));
   adapter.writes.length = 0;
+  adapter.writeAttempts.clear();
 
   return workbench;
+}
+
+function connectedStateSnapshot(workbench: ConnectedWorkbench) {
+  return {
+    manifest: JSON.stringify(workbench.manifest),
+    activeMachineProfile: JSON.stringify(workbench.activeMachineProfile),
+    header: workbench.header,
+    footer: workbench.footer
+  };
 }
 
 describe('machine profile library persistence', () => {
@@ -211,6 +232,74 @@ describe('machine profile library persistence', () => {
       FOOTER_TEMPLATE_PATH,
       WORKBENCH_MANIFEST_FILE
     ]);
+  });
+
+  it('rolls back the header when the footer mirror write fails', async () => {
+    const active = profile({ id: 'active-machine', name: 'Active machine' });
+    const selected = profile({
+      id: 'selected-machine',
+      name: 'Selected machine',
+      templates: { header: 'SELECTED HEADER', footer: 'SELECTED FOOTER' }
+    });
+    const before = connectedWorkbench([active, selected], active.id);
+    const adapter = before.adapter as MemoryWorkbenchAdapter;
+    const manifestBefore = adapter.files.get(WORKBENCH_MANIFEST_FILE);
+    const connectedBefore = connectedStateSnapshot(before);
+    adapter.failWrite(FOOTER_TEMPLATE_PATH, 1);
+
+    await expect(setActiveMachineProfile(before, selected.id, now)).rejects.toThrow(
+      `Injected write failure for ${FOOTER_TEMPLATE_PATH}`
+    );
+
+    expect(adapter.files.get(HEADER_TEMPLATE_PATH)).toBe(active.templates.header);
+    expect(adapter.files.get(FOOTER_TEMPLATE_PATH)).toBe(active.templates.footer);
+    expect(adapter.files.get(WORKBENCH_MANIFEST_FILE)).toBe(manifestBefore);
+    expect(connectedStateSnapshot(before)).toEqual(connectedBefore);
+  });
+
+  it('rolls back both compatibility mirrors when the manifest commit fails', async () => {
+    const active = profile({ id: 'active-machine', name: 'Active machine' });
+    const selected = profile({
+      id: 'selected-machine',
+      name: 'Selected machine',
+      templates: { header: 'SELECTED HEADER', footer: 'SELECTED FOOTER' }
+    });
+    const before = connectedWorkbench([active, selected], active.id);
+    const adapter = before.adapter as MemoryWorkbenchAdapter;
+    const manifestBefore = adapter.files.get(WORKBENCH_MANIFEST_FILE);
+    const connectedBefore = connectedStateSnapshot(before);
+    adapter.failWrite(WORKBENCH_MANIFEST_FILE, 1);
+
+    await expect(setActiveMachineProfile(before, selected.id, now)).rejects.toThrow(
+      `Injected write failure for ${WORKBENCH_MANIFEST_FILE}`
+    );
+
+    expect(adapter.files.get(HEADER_TEMPLATE_PATH)).toBe(active.templates.header);
+    expect(adapter.files.get(FOOTER_TEMPLATE_PATH)).toBe(active.templates.footer);
+    expect(adapter.files.get(WORKBENCH_MANIFEST_FILE)).toBe(manifestBefore);
+    expect(connectedStateSnapshot(before)).toEqual(connectedBefore);
+  });
+
+  it('reports rollback failures while preserving the old manifest as reconnect authority', async () => {
+    const active = profile({ id: 'active-machine', name: 'Active machine' });
+    const selected = profile({
+      id: 'selected-machine',
+      name: 'Selected machine',
+      templates: { header: 'SELECTED HEADER', footer: 'SELECTED FOOTER' }
+    });
+    const before = connectedWorkbench([active, selected], active.id);
+    const adapter = before.adapter as MemoryWorkbenchAdapter;
+    const manifestBefore = adapter.files.get(WORKBENCH_MANIFEST_FILE);
+    adapter.failWrite(FOOTER_TEMPLATE_PATH, 1);
+    adapter.failWrite(HEADER_TEMPLATE_PATH, 2);
+
+    await expect(setActiveMachineProfile(before, selected.id, now)).rejects.toThrow(
+      /recovery failed.*header\.gcode/i
+    );
+
+    expect(adapter.files.get(WORKBENCH_MANIFEST_FILE)).toBe(manifestBefore);
+    expect(JSON.parse(manifestBefore ?? '{}').activeMachineProfileId).toBe(active.id);
+    expect(before.activeMachineProfile.id).toBe(active.id);
   });
 
   it('deletes the active profile using the first remaining profile as deterministic fallback', async () => {
