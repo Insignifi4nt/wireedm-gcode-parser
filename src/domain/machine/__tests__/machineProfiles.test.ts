@@ -110,6 +110,31 @@ describe('machine profile policies', () => {
       .toEqual(verified.controller.verification);
   });
 
+  it('treats enabled-by-default as an initialization preference outside the safety fingerprint', () => {
+    const verified = createVerifiedCharmillesRobofil100Profile();
+    const changed = structuredClone(verified);
+    changed.compensation.enabledByDefault = false;
+
+    expect(machineProfileVerificationFingerprint(verified)).not.toContain('enabledByDefault');
+    expect(normalizeMachineProfile(changed).controller.verification).toEqual(
+      verified.controller.verification
+    );
+  });
+
+  it('migrates the prior enabled-by-default fingerprint without losing verification', () => {
+    const verified = createVerifiedCharmillesRobofil100Profile();
+    verified.controller.verification.verifiedFingerprint = legacyVerificationFingerprint(verified);
+
+    const migrated = normalizeMachineProfile(verified);
+
+    expect(migrated.controller.verification).toMatchObject({
+      status: 'user-verified',
+      verifiedAt: verified.controller.verification.verifiedAt,
+      verifiedFingerprint: machineProfileVerificationFingerprint(migrated)
+    });
+    expect(migrated.controller.verification.verifiedFingerprint).not.toContain('enabledByDefault');
+  });
+
   it.each([
     ['post version', (profile: MachineProfile) => { profile.controller.postVersion = 2; }],
     ['units emission', (profile: MachineProfile) => { profile.controller.unitsCode = 'G21'; }],
@@ -154,6 +179,31 @@ describe('machine profile policies', () => {
     expect(second.controller.verification.status).toBe('unverified');
   });
 });
+
+function legacyVerificationFingerprint(profile: MachineProfile) {
+  return JSON.stringify({
+    family: profile.controller.family,
+    postVersion: profile.controller.postVersion,
+    blockFormatting: profile.controller.blockFormatting,
+    coordinateSystem: profile.controller.coordinateSystem,
+    unitsCode: profile.controller.unitsCode,
+    planeCode: profile.controller.planeCode,
+    workOffsetCode: profile.controller.workOffsetCode,
+    distanceMode: profile.controller.distanceMode,
+    arcCenterMode: profile.controller.arcCenterMode,
+    programEnd: profile.controller.programEnd,
+    supported: profile.compensation.supported,
+    enabledByDefault: profile.compensation.enabledByDefault,
+    offsetSelection: profile.compensation.offsetSelection,
+    activation: profile.compensation.activation,
+    cancellation: profile.compensation.cancellation,
+    lifecycleScope: profile.compensation.lifecycleScope,
+    preActivationCodes: profile.compensation.preActivationCodes,
+    templates: profile.templates,
+    lineEnding: profile.output.lineEnding,
+    coordinatePrecision: profile.output.coordinatePrecision
+  });
+}
 
 describe('machine profile output precision', () => {
   it('uses three decimal places for the default machine and legacy profiles', () => {

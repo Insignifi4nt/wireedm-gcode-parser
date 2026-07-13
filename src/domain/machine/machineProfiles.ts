@@ -39,7 +39,8 @@ export function normalizeMachineProfile(profile: Partial<MachineProfile> | null 
       ...controller,
       verification: normalizeVerification(
         controller.verification,
-        machineProfileVerificationFingerprint(normalizedWithoutVerification)
+        machineProfileVerificationFingerprint(normalizedWithoutVerification),
+        legacyMachineProfileVerificationFingerprint(normalizedWithoutVerification)
       )
     }
   };
@@ -164,6 +165,39 @@ export function createVerifiedCharmillesRobofil100Profile(
 }
 
 export function machineProfileVerificationFingerprint(profile: MachineProfile): string {
+  return JSON.stringify({
+    family: profile.controller.family,
+    postVersion: profile.controller.postVersion,
+    blockFormatting: profile.controller.blockFormatting,
+    coordinateSystem: profile.controller.coordinateSystem,
+    unitsCode: profile.controller.unitsCode,
+    planeCode: profile.controller.planeCode,
+    workOffsetCode: profile.controller.workOffsetCode,
+    distanceMode: profile.controller.distanceMode,
+    arcCenterMode: profile.controller.arcCenterMode,
+    programEnd: profile.controller.programEnd,
+    supported: profile.compensation.supported,
+    offsetSelection: profile.compensation.offsetSelection,
+    activation: profile.compensation.activation,
+    cancellation: profile.compensation.cancellation,
+    lifecycleScope: profile.compensation.lifecycleScope,
+    preActivationCodes: profile.compensation.preActivationCodes,
+    templates: profile.templates,
+    lineEnding: profile.output.lineEnding,
+    coordinatePrecision: profile.output.coordinatePrecision
+  });
+}
+
+export function machineProfileHasCurrentVerification(profile: MachineProfile) {
+  const verification = profile.controller.verification;
+  if (verification.status !== 'user-verified' || !verification.verifiedAt) return false;
+  return (
+    verification.verifiedFingerprint === machineProfileVerificationFingerprint(profile) ||
+    verification.verifiedFingerprint === legacyMachineProfileVerificationFingerprint(profile)
+  );
+}
+
+function legacyMachineProfileVerificationFingerprint(profile: MachineProfile): string {
   return JSON.stringify({
     family: profile.controller.family,
     postVersion: profile.controller.postVersion,
@@ -362,12 +396,14 @@ function isSafePreActivationCode(value: unknown): value is string {
 
 function normalizeVerification(
   verification: MachineProfileVerification,
-  currentFingerprint: string
+  currentFingerprint: string,
+  legacyFingerprint: string
 ): MachineProfileVerification {
   if (
     verification.status !== 'user-verified' ||
     !verification.verifiedAt ||
-    verification.verifiedFingerprint !== currentFingerprint
+    (verification.verifiedFingerprint !== currentFingerprint &&
+      verification.verifiedFingerprint !== legacyFingerprint)
   ) {
     return unverified();
   }
@@ -375,7 +411,7 @@ function normalizeVerification(
   return {
     status: 'user-verified',
     verifiedAt: verification.verifiedAt,
-    verifiedFingerprint: verification.verifiedFingerprint
+    verifiedFingerprint: currentFingerprint
   };
 }
 

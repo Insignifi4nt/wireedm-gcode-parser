@@ -4,6 +4,7 @@ import {
   createBlankMachineProfile,
   createCharmillesRobofilClassicProfile,
   createVerifiedCharmillesRobofil100Profile,
+  machineProfileVerificationFingerprint,
   markMachineProfileUserVerified
 } from '../machineProfiles';
 import {
@@ -21,6 +22,35 @@ function portableDocument(profile: ReturnType<typeof createBlankMachineProfile>)
     exportedAt: now.toISOString(),
     profile
   };
+}
+
+function legacyVerificationFingerprint(
+  profile: ReturnType<typeof createVerifiedCharmillesRobofil100Profile>
+) {
+  const current = JSON.parse(machineProfileVerificationFingerprint(profile));
+  const {
+    offsetSelection,
+    activation,
+    cancellation,
+    lifecycleScope,
+    preActivationCodes,
+    templates,
+    lineEnding,
+    coordinatePrecision,
+    ...prefix
+  } = current;
+  return JSON.stringify({
+    ...prefix,
+    enabledByDefault: profile.compensation.enabledByDefault,
+    offsetSelection,
+    activation,
+    cancellation,
+    lifecycleScope,
+    preActivationCodes,
+    templates,
+    lineEnding,
+    coordinatePrecision
+  });
 }
 
 describe('portable machine profile files', () => {
@@ -51,6 +81,20 @@ describe('portable machine profile files', () => {
         preActivationCodes: ['G60']
       }
     });
+  });
+
+  it('upgrades the prior enabled-by-default fingerprint while serializing local profiles', () => {
+    const profile = createVerifiedCharmillesRobofil100Profile('robofil-local', now);
+    profile.controller.verification.verifiedFingerprint = legacyVerificationFingerprint(profile);
+
+    const serialized = JSON.parse(serializeMachineProfileFile(profile, now));
+
+    expect(serialized.profile.controller.verification).toMatchObject({
+      status: 'user-verified',
+      verifiedFingerprint: machineProfileVerificationFingerprint(profile)
+    });
+    expect(serialized.profile.controller.verification.verifiedFingerprint)
+      .not.toContain('enabledByDefault');
   });
 
   it('migrates an older schema-version-1 portable profile to conservative post defaults', () => {

@@ -99,6 +99,41 @@ describe('validateCompensatedExport', () => {
     });
   });
 
+  it('requires the exact physically verified Robofil version-1 envelope', () => {
+    const sourceMachine = createVerifiedCharmillesRobofil100Profile();
+    const document = initializeProjectCompensationIntents(baseCircle(), sourceMachine);
+    const operation = document.plan.operations[0];
+    const emitsG21 = structuredClone(sourceMachine);
+    emitsG21.controller.unitsCode = 'G21';
+    const reverifiedG21 = markMachineProfileUserVerified(emitsG21);
+    const operationG39 = structuredClone(sourceMachine);
+    operationG39.compensation.lifecycleScope = 'operation';
+    operationG39.compensation.cancellation = 'charmilles-g39';
+    const reverifiedOperationG39 = markMachineProfileUserVerified(operationG39);
+
+    expect(validateCompensatedExport({ document, operation, machine: reverifiedG21 }))
+      .toMatchObject({ status: 'blocked', reason: 'unsupported-robofil-post-envelope' });
+    expect(validateCompensatedExport({ document, operation, machine: reverifiedOperationG39 }))
+      .toMatchObject({ status: 'blocked', reason: 'unsupported-robofil-post-envelope' });
+  });
+
+  it('enforces the verified Robofil single-operation program scope', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const document = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+        { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 3 }
+      ]),
+      machine
+    );
+
+    expect(validateCompensatedExport({
+      document,
+      operation: document.plan.operations[0],
+      machine
+    })).toMatchObject({ status: 'blocked', reason: 'unsupported-operation-count' });
+  });
+
   it('rejects a circle-center radial override before either controller lifecycle posts', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     const initialized = initializeProjectCompensationIntents(baseCircle(), machine);

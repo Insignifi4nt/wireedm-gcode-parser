@@ -239,3 +239,30 @@ The focused transition/readiness/template command passes 55/55 tests.
 - `npm run build`: passed after the Task 5 implementation; Vite emitted only the existing chunk-size advisory.
 - A concurrent full `npm test -- --run` completed with 988/989 passing. Its sole failure is the in-progress Task 7 preview regression `keeps pure preview metadata empty when fixed precision blocks real Robofil geometry`; it observed `missing-intent` instead of the expected coordinate-precision diagnostic in files owned by the Task 7 agent. Task 5 does not edit or stage those files.
 - Final Task 5 focused GREEN and diff hygiene remain required immediately before the separate commit.
+
+## Review-fix TDD cycle
+
+The committed-range review found two Important readiness/verification gaps and requested formal edge coverage. Before production fixes, the five-file review slice failed 6 tests with 115 passes:
+
+- reverified G21 and hypothetical operation/G39 native policies incorrectly returned `ready`;
+- a second Robofil operation incorrectly returned `ready`;
+- `enabledByDefault` remained in the safety fingerprint;
+- the prior fingerprint was not upgraded during normalization/serialization;
+- disabling automatic defaulting invalidated an otherwise manually compensated verified Robofil post.
+
+The formal reversal/non-mutation, self-contour collision, overlap, and non-incident endpoint-contact tests already passed against the pure generator and now permanently bind those edge behaviors.
+
+The fix:
+
+- extracts one shared exact physically verified Robofil-v1 envelope predicate used by preview, real posting, and compensated-export readiness;
+- enforces exactly one operation for native program-scoped readiness;
+- removes initialization-only `enabledByDefault` from the safety fingerprint;
+- accepts the prior fingerprint during normalization and immediately rewrites it to the new canonical identity, preserving the current Windows local profile's verified status on reconnect;
+- keeps manual compensated posting verified when automatic initialization is disabled;
+- closes the public blocked-reason union.
+
+Review-fix verification:
+
+- focused machine/profile/transition/readiness/post slice: 5 files, 121/121 tests passed;
+- full Vitest: 60 files, 999/999 tests passed;
+- `npm run build`: passed; only the existing Vite chunk-size advisory remains.

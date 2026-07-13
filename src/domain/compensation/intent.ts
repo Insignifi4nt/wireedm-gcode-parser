@@ -1,5 +1,5 @@
 import {
-  machineProfileVerificationFingerprint,
+  machineProfileHasCurrentVerification,
   normalizeMachineProfile
 } from '@/domain/machine/machineProfiles';
 import {
@@ -111,12 +111,10 @@ export function machineSnapshotAuthorizesAutomaticCompensation(
 ) {
   if (!projectMachineSnapshot) return false;
   const machine = normalizeMachineProfile(projectMachineSnapshot);
-  const verification = machine.controller.verification;
   return (
     machine.compensation.supported &&
     machine.compensation.enabledByDefault &&
-    verification.status === 'user-verified' &&
-    verification.verifiedFingerprint === machineProfileVerificationFingerprint(machine)
+    machineProfileHasCurrentVerification(machine)
   );
 }
 

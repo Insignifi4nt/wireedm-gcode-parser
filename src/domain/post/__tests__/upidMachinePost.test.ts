@@ -7,7 +7,8 @@ import {
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
 import {
   createVerifiedCharmillesRobofil100Profile,
-  markMachineProfileUserVerified
+  markMachineProfileUserVerified,
+  normalizeMachineProfile
 } from '@/domain/machine/machineProfiles';
 import {
   reversePathOperation,
@@ -82,6 +83,20 @@ describe('postUpidForMachine', () => {
     expect(reversed.plan.operations[0].compensationIntent).toEqual(operation.compensationIntent);
     expect(before.body).toContain('\nG41 D0\n');
     expect(after.body).toContain('\nG42 D0\n');
+  });
+
+  it('keeps a manually compensated Robofil job verified when automatic defaulting is disabled', () => {
+    const sourceMachine = createVerifiedCharmillesRobofil100Profile();
+    const document = compensatedRectangle(sourceMachine, 'G41');
+    const changed = structuredClone(sourceMachine);
+    changed.compensation.enabledByDefault = false;
+    const machine = normalizeMachineProfile(changed);
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(machine.controller.verification.status).toBe('user-verified');
+    expect(posted.status).toBe('ready');
+    expect(posted.body).toContain('\nG41 D0\n');
   });
 
   it('approaches a translated contour linearly from the G92 origin before cutting its first segment', () => {

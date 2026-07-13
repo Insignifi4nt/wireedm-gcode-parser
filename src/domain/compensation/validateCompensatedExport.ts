@@ -1,10 +1,12 @@
-import { machineProfileVerificationFingerprint } from '@/domain/machine/machineProfiles';
+import { machineProfileHasCurrentVerification } from '@/domain/machine/machineProfiles';
 import type { PathDiagnostic, PathOperation, PathPlanningDocument } from '@/domain/path-intel/types';
 import { validateTemplateModalPolicy } from '@/domain/post/templateModalPolicy';
+import { verifiedRobofilPostEnvelopeIsReady } from '@/domain/post/verifiedRobofilPostEnvelope';
 import type { MachineProfile } from '@/domain/workbench/types';
 
 import {
   generateLinearCompensationTransition,
+  type LinearTransitionBlockedReason,
   type LinearTransitionResult
 } from './linearTransitionGeometry';
 import {
@@ -18,6 +20,19 @@ export interface ValidateCompensatedExportInput {
   machine: MachineProfile;
 }
 
+export type CompensatedExportBlockedReason =
+  | 'unsupported-machine-profile'
+  | 'invalid-offset-selection'
+  | 'unverified-machine-profile'
+  | 'units-mode-conflict'
+  | 'compensation-resolution-blocked'
+  | 'template-modal-conflict'
+  | 'unsafe-radial-lead'
+  | 'unsupported-robofil-post-envelope'
+  | 'unsupported-operation-count'
+  | 'unsupported-compensation-lifecycle'
+  | LinearTransitionBlockedReason;
+
 export type CompensatedExportReadiness =
   | {
       status: 'ready';
@@ -28,7 +43,7 @@ export type CompensatedExportReadiness =
     }
   | {
       status: 'blocked';
-      reason: string;
+      reason: CompensatedExportBlockedReason;
       diagnostics: PathDiagnostic[];
     };
 
@@ -48,11 +63,7 @@ export function validateCompensatedExport({
   ) {
     return blocked('invalid-offset-selection', 'Controller compensation requires a valid non-negative D-table index.');
   }
-  const verification = machine.controller.verification;
-  if (
-    verification.status !== 'user-verified' ||
-    verification.verifiedFingerprint !== machineProfileVerificationFingerprint(machine)
-  ) {
+  if (!machineProfileHasCurrentVerification(machine)) {
     return blocked('unverified-machine-profile', 'Controller compensation requires a current user-verified machine snapshot.');
   }
   if (machine.controller.unitsCode === 'G20') {
@@ -83,15 +94,28 @@ export function validateCompensatedExport({
   }
 
   if (machine.compensation.activation === 'charmilles-g38') {
-    const validNativeLifecycle =
-      machine.controller.family === 'charmilles-robofil-classic' &&
-      ((machine.compensation.lifecycleScope === 'program' &&
-        machine.compensation.cancellation === 'program-end') ||
-        (machine.compensation.lifecycleScope === 'operation' &&
-          machine.compensation.cancellation === 'charmilles-g39'));
-    return validNativeLifecycle
-      ? { status: 'ready', strategy: 'controller-native', resolution, transition: null, diagnostics: [] }
-      : blocked('unsupported-compensation-lifecycle', 'The native controller transition lifecycle is inconsistent.');
+    if (!verifiedRobofilPostEnvelopeIsReady(machine)) {
+      return blocked(
+        'unsupported-robofil-post-envelope',
+        'This native transition is outside the physically verified Robofil post-version-1 envelope.'
+      );
+    }
+    if (
+      document.plan.operations.length !== 1 ||
+      document.plan.operations[0]?.id !== operation.id
+    ) {
+      return blocked(
+        'unsupported-operation-count',
+        'The verified program-scoped Robofil lifecycle supports exactly one compensated operation.'
+      );
+    }
+    return {
+      status: 'ready',
+      strategy: 'controller-native',
+      resolution,
+      transition: null,
+      diagnostics: []
+    };
   }
 
   if (
@@ -122,7 +146,11 @@ export function validateCompensatedExport({
   };
 }
 
-function blocked(reason: string, message: string, details: Record<string, unknown> = {}) {
+function blocked(
+  reason: CompensatedExportBlockedReason,
+  message: string,
+  details: Record<string, unknown> = {}
+): Extract<CompensatedExportReadiness, { status: 'blocked' }> {
   return {
     status: 'blocked' as const,
     reason,

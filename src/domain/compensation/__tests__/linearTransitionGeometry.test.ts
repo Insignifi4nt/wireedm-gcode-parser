@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DxfEntity } from '@/domain/dxf/types';
+import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import {
   createArcSegment,
@@ -94,6 +95,27 @@ describe('generateLinearCompensationTransition', () => {
     expect(distance(result.leadOut.start, result.leadOut.end)).toBeCloseTo(2);
   });
 
+  it('reverses transition tangents without mutating either input document', () => {
+    const forward = circleDocument();
+    const operationId = closedOperation(forward).id;
+    const reversed = reversePathOperation(forward, operationId)!;
+    const forwardBefore = structuredClone(forward);
+    const reversedBefore = structuredClone(reversed);
+
+    const before = transition(forward, closedOperation(forward));
+    const after = transition(reversed, closedOperation(reversed));
+
+    expect(forward).toEqual(forwardBefore);
+    expect(reversed).toEqual(reversedBefore);
+    expect(before).toMatchObject({ status: 'ready' });
+    expect(after).toMatchObject({ status: 'ready' });
+    if (before.status !== 'ready' || after.status !== 'ready') {
+      throw new Error('Expected reversal-safe transitions.');
+    }
+    expect(after.leadIn.start).toEqual(before.leadOut.end);
+    expect(after.leadOut.end).toEqual(before.leadIn.start);
+  });
+
   it('blocks a sharp manual start instead of relocating it', () => {
     const document = rectangleDocument();
     const operation = closedOperation(document);
@@ -140,6 +162,37 @@ describe('generateLinearCompensationTransition', () => {
     expect(transition(document, closedOperation(document))).toEqual({
       status: 'blocked',
       reason: 'collision'
+    });
+  });
+
+  it('blocks a tangent lead that re-enters a non-incident segment of its own contour', () => {
+    const document = selfCollisionDocument();
+    const operation = closedOperation(document);
+    rotateOperationToPoint(document, operation, { x: 0, y: 5 });
+
+    expect(generateLinearCompensationTransition({
+      document,
+      operation,
+      leadLengthMm: 10,
+      expectedMaximumOffsetMm: 0.25,
+      coordinatePrecision: 3,
+      workArea: { widthMm: null, lengthMm: null }
+    })).toEqual({ status: 'blocked', reason: 'collision' });
+  });
+
+  it('blocks overlapping leads and non-incident contacts at the intended start point', () => {
+    const overlap = splitRectangleDocument();
+    const overlapOperation = closedOperation(overlap);
+    rotateOperationToPoint(overlap, overlapOperation, { x: 5, y: 0 });
+    const externalContact = circleDocument([
+      lineEntity({ x: 5, y: 0 }, { x: 7, y: 0 })
+    ]);
+
+    expect(transition(overlap, overlapOperation)).toEqual({
+      status: 'blocked', reason: 'collision'
+    });
+    expect(transition(externalContact, closedOperation(externalContact))).toEqual({
+      status: 'blocked', reason: 'collision'
     });
   });
 
@@ -249,6 +302,32 @@ function smoothCandidateDocument() {
   ]);
 }
 
+function splitRectangleDocument() {
+  return createPathPlanningDocumentFromDxfEntities(rectanglePoints([
+    { x: 0, y: 0 }, { x: 5, y: 0 }, { x: 10, y: 0 },
+    { x: 10, y: 10 }, { x: 0, y: 10 }
+  ]));
+}
+
+function selfCollisionDocument() {
+  return createPathPlanningDocumentFromDxfEntities([
+    {
+      type: 'arc', layer: 'CUT', center: { x: 0, y: 4 }, radius: 1,
+      startAngle: 90, endAngle: 0, clockwise: true,
+      start: { x: 0, y: 5 }, end: { x: 1, y: 4 }
+    },
+    lineEntity({ x: 1, y: 4 }, { x: 1, y: 0 }),
+    lineEntity({ x: 1, y: 0 }, { x: 5, y: 0 }),
+    lineEntity({ x: 5, y: 0 }, { x: 5, y: 6 }),
+    lineEntity({ x: 5, y: 6 }, { x: -1, y: 6 }),
+    {
+      type: 'arc', layer: 'CUT', center: { x: 0, y: 6 }, radius: 1,
+      startAngle: 180, endAngle: 270, clockwise: false,
+      start: { x: -1, y: 6 }, end: { x: 0, y: 5 }
+    }
+  ]);
+}
+
 function rectanglePoints(points: Point2[]): DxfEntity[] {
   return points.map((point, index) => lineEntity(point, points[(index + 1) % points.length]));
 }
@@ -279,6 +358,22 @@ function rotateOperationToSharpStart(document: PathPlanningDocument, operation: 
     operation.segmentRefs[0]
   );
   operation.endPoint = { ...operation.startPoint };
+}
+
+function rotateOperationToPoint(
+  document: PathPlanningDocument,
+  operation: PathOperation,
+  point: Point2
+) {
+  const segmentsById = segmentMap(document.segments);
+  const index = operation.segmentRefs.findIndex((ref) => {
+    const start = orientedSegmentStart(segmentsById.get(ref.segmentId)!, ref);
+    return distance(start, point) < 1e-9;
+  });
+  if (index < 0) throw new Error('Expected fixture start point.');
+  operation.segmentRefs = rotatePathRefs(operation.segmentRefs, index);
+  operation.startPoint = { ...point };
+  operation.endPoint = { ...point };
 }
 
 function distance(left: Point2, right: Point2) {

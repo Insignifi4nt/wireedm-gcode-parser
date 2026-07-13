@@ -1,6 +1,5 @@
-import { machineSnapshotAuthorizesAutomaticCompensation } from '@/domain/compensation/intent';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
-import { machineProfileVerificationFingerprint } from '@/domain/machine/machineProfiles';
+import { machineProfileHasCurrentVerification } from '@/domain/machine/machineProfiles';
 import {
   createGCodeInterpreterState,
   interpretGCodeBlock
@@ -17,6 +16,12 @@ import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 import type { MachineProfile } from '@/domain/workbench/types';
 
 import { stripGcodeComments, validateTemplateModalPolicy } from './templateModalPolicy';
+import {
+  matchesVerifiedRobofilPostEnvelope,
+  verifiedRobofilPostEnvelopeIsReady
+} from './verifiedRobofilPostEnvelope';
+
+export { verifiedRobofilPostEnvelopeIsReady } from './verifiedRobofilPostEnvelope';
 
 export type GcodePostedBlockKind =
   | 'template'
@@ -53,10 +58,6 @@ export type VerifiedRobofilPreviewPostBlock = Pick<
   GcodePostedBlock,
   'bodyLineIndex' | 'kind' | 'operationId' | 'startPoint' | 'endPoint'
 >;
-
-export function verifiedRobofilPostEnvelopeIsReady(machine: MachineProfile) {
-  return hasCurrentRobofilVerification(machine) && matchesVerifiedRobofilEnvelope(machine);
-}
 
 export function deriveVerifiedRobofilPreviewPostBlocks(
   document: PathPlanningDocument,
@@ -131,7 +132,7 @@ export function postUpidForMachine(
     machine.controller.family === 'charmilles-robofil-classic' &&
     compensatedOperations.length === 0
   ) {
-    if (!hasCurrentRobofilVerification(machine)) {
+    if (!machineProfileHasCurrentVerification(machine)) {
       return blockedReason(
         'unverified-machine-profile',
         'Robofil compensated posting requires a current user-verified project machine snapshot.'
@@ -171,13 +172,13 @@ function postVerifiedRobofil(
   machine: MachineProfile,
   compensatedOperations: PathPlanningDocument['plan']['operations']
 ): UpidMachinePostResult {
-  if (!hasCurrentRobofilVerification(machine)) {
+  if (!machineProfileHasCurrentVerification(machine)) {
     return blockedReason(
       'unverified-machine-profile',
       'Robofil compensated posting requires a current user-verified project machine snapshot.'
     );
   }
-  if (!matchesVerifiedRobofilEnvelope(machine)) {
+  if (!matchesVerifiedRobofilPostEnvelope(machine)) {
     return blockedReason(
       'unsupported-robofil-post-envelope',
       'This Robofil snapshot is outside the physically verified post-version-1 envelope.'
@@ -327,39 +328,6 @@ function postVerifiedRobofil(
     blocks,
     programOwned: true
   };
-}
-
-function hasCurrentRobofilVerification(machine: MachineProfile) {
-  const verification = machine.controller.verification;
-  return (
-    machineSnapshotAuthorizesAutomaticCompensation(machine) &&
-    verification.status === 'user-verified' &&
-    verification.verifiedFingerprint === machineProfileVerificationFingerprint(machine)
-  );
-}
-
-function matchesVerifiedRobofilEnvelope(machine: MachineProfile) {
-  return (
-    machine.controller.family === 'charmilles-robofil-classic' &&
-    machine.controller.postVersion === 1 &&
-    machine.controller.blockFormatting === 'spaced' &&
-    machine.controller.coordinateSystem === 'wire-position-g92' &&
-    machine.controller.unitsCode === 'omit' &&
-    machine.controller.planeCode === 'omit' &&
-    machine.controller.workOffsetCode === 'omit' &&
-    machine.controller.distanceMode === 'G90' &&
-    machine.controller.arcCenterMode === 'absolute' &&
-    machine.controller.programEnd === 'M02' &&
-    machine.compensation.activation === 'charmilles-g38' &&
-    machine.compensation.cancellation === 'program-end' &&
-    machine.compensation.lifecycleScope === 'program' &&
-    machine.compensation.offsetSelection.address === 'D' &&
-    machine.compensation.offsetSelection.index === 0 &&
-    machine.compensation.preActivationCodes.length === 1 &&
-    machine.compensation.preActivationCodes[0] === 'G60' &&
-    machine.output.coordinatePrecision === 3 &&
-    machine.output.lineEnding === 'crlf'
-  );
 }
 
 function auditVerifiedRobofilProgram(input: {
