@@ -30,13 +30,46 @@ export interface MachineWorkArea {
   lengthMm: number | null;
 }
 
+export interface MachineProfileVerification {
+  status: 'unverified' | 'user-verified';
+  verifiedAt?: string;
+  verifiedFingerprint?: string;
+}
+
+export interface MachineControllerPolicy {
+  family: 'generic-iso' | 'charmilles-robofil-classic' | 'custom';
+  verification: MachineProfileVerification;
+  blockFormatting: 'spaced' | 'compact';
+  coordinateSystem: 'template-managed' | 'work-offset' | 'wire-position-g92';
+  programEnd: 'M02' | 'M30' | 'template-managed';
+}
+
+export interface MachineCompensationPolicy {
+  supported: boolean;
+  enabledByDefault: boolean;
+  offsetSelection: { address: 'D'; index: number };
+  activation: 'linear-lead' | 'charmilles-g38';
+  cancellation: 'linear-lead-out' | 'charmilles-g39';
+  validationLeadLengthMm: number;
+  expectedMaximumOffsetMm: number | null;
+}
+
 export interface MachineProfile {
   id: string;
   name: string;
+  controller: MachineControllerPolicy;
+  compensation: MachineCompensationPolicy;
   templates: GCodeTemplateSet;
   output: OutputFormat;
   workArea: MachineWorkArea;
   notes: string;
+}
+
+export interface PortableMachineProfileDocument {
+  format: 'wire-edm-machine-profile';
+  schemaVersion: 1;
+  exportedAt: string;
+  profile: MachineProfile;
 }
 
 export interface EditorSessionState {

@@ -4,10 +4,74 @@ import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import type { MachineProfile, OutputFormat } from '@/domain/workbench/types';
 
 import {
+  createBlankMachineProfile,
+  createCharmillesRobofilClassicProfile,
+  machineProfileVerificationFingerprint,
+  markMachineProfileUserVerified,
   normalizeCoordinatePrecision,
   normalizeMachineProfile,
   normalizeOutput
 } from '../machineProfiles';
+
+describe('machine profile policies', () => {
+  it('creates a blank editable G40-only machine profile', () => {
+    expect(createBlankMachineProfile('new-wire-machine')).toMatchObject({
+      id: 'new-wire-machine',
+      name: 'Untitled Wire EDM',
+      controller: { family: 'custom', verification: { status: 'unverified' } },
+      compensation: { supported: false, enabledByDefault: false },
+      templates: { header: '', footer: '' }
+    });
+  });
+
+  it('normalizes legacy profiles without enabling compensation', () => {
+    const legacyProfile = createDefaultMachineProfile() as unknown as Omit<
+      MachineProfile,
+      'controller' | 'compensation'
+    >;
+    delete (legacyProfile as Partial<MachineProfile>).controller;
+    delete (legacyProfile as Partial<MachineProfile>).compensation;
+
+    expect(normalizeMachineProfile(legacyProfile).compensation).toMatchObject({
+      supported: false,
+      enabledByDefault: false
+    });
+  });
+
+  it('resets verification when controller-sensitive settings change', () => {
+    const now = new Date('2026-07-13T09:30:00.000Z');
+    const verified = markMachineProfileUserVerified(createCharmillesRobofilClassicProfile(), now);
+
+    expect(verified.controller.verification).toEqual({
+      status: 'user-verified',
+      verifiedAt: now.toISOString(),
+      verifiedFingerprint: machineProfileVerificationFingerprint(verified)
+    });
+    expect(normalizeMachineProfile({
+      ...verified,
+      compensation: { ...verified.compensation, offsetSelection: { address: 'D', index: 1 } }
+    }).controller.verification.status).toBe('unverified');
+  });
+
+  it('preserves verification across non-controller-sensitive edits', () => {
+    const verified = markMachineProfileUserVerified(
+      createCharmillesRobofilClassicProfile(),
+      new Date('2026-07-13T09:30:00.000Z')
+    );
+
+    expect(normalizeMachineProfile({ ...verified, name: 'Shop Robofil' }).controller.verification)
+      .toEqual(verified.controller.verification);
+  });
+
+  it('does not share mutable verification state between profiles', () => {
+    const first = createBlankMachineProfile('first-machine');
+    const second = createBlankMachineProfile('second-machine');
+
+    first.controller.verification.status = 'user-verified';
+
+    expect(second.controller.verification.status).toBe('unverified');
+  });
+});
 
 describe('machine profile output precision', () => {
   it('uses three decimal places for the default machine and legacy profiles', () => {

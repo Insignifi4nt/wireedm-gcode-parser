@@ -97,6 +97,22 @@ describe('openWorkbenchProject', () => {
     expect(opened.project.machine).toEqual({
       id: 'legacy-wire',
       name: 'Legacy Wire',
+      controller: {
+        family: 'generic-iso',
+        verification: { status: 'unverified' },
+        blockFormatting: 'spaced',
+        coordinateSystem: 'template-managed',
+        programEnd: 'template-managed'
+      },
+      compensation: {
+        supported: false,
+        enabledByDefault: false,
+        offsetSelection: { address: 'D', index: 0 },
+        activation: 'linear-lead',
+        cancellation: 'linear-lead-out',
+        validationLeadLengthMm: 2,
+        expectedMaximumOffsetMm: null
+      },
       templates: {
         header: 'LEGACY HEADER',
         footer: 'LEGACY FOOTER'

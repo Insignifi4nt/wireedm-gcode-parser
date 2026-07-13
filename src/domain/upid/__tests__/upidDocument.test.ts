@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
+import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import {
   movePathOperation,
   reversePathOperation,
@@ -764,6 +765,7 @@ function baseProject() {
       files: []
     },
     machine: {
+      ...createDefaultMachineProfile(),
       id: 'machine',
       name: 'Machine',
       templates: {

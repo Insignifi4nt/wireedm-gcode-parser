@@ -16,6 +16,22 @@ export function createDefaultMachineProfile(): MachineProfile {
   return {
     id: 'default-wire-machine',
     name: 'Default Wire EDM',
+    controller: {
+      family: 'generic-iso',
+      verification: { status: 'unverified' },
+      blockFormatting: 'spaced',
+      coordinateSystem: 'template-managed',
+      programEnd: 'template-managed'
+    },
+    compensation: {
+      supported: false,
+      enabledByDefault: false,
+      offsetSelection: { address: 'D', index: 0 },
+      activation: 'linear-lead',
+      cancellation: 'linear-lead-out',
+      validationLeadLengthMm: 2,
+      expectedMaximumOffsetMm: null
+    },
     templates: {
       header: DEFAULT_HEADER_TEMPLATE,
       footer: DEFAULT_FOOTER_TEMPLATE
