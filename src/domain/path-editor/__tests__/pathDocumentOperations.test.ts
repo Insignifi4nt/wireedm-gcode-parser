@@ -6,6 +6,7 @@ import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
 import { arcParameterAtAngle } from '@/domain/path-intel/segments';
 import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
+import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
 
 import {
   constructMagnetizedPoint,
@@ -1108,7 +1109,7 @@ describe('pathDocumentOperations', () => {
     });
   });
 
-  it('refreshes automatic intent when a contour role changes', () => {
+  it('removes automatic intent on a classification edit without an authorized machine snapshot', () => {
     const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
     document.geometryBasis = 'finished-contour';
     document.plan.operations[0].compensationIntent = {
@@ -1118,7 +1119,35 @@ describe('pathDocumentOperations', () => {
     };
 
     const hole = setPathOperationClassification(document, document.plan.operations[0].id, 'hole');
-    const ambiguous = setPathOperationClassification(hole!, document.plan.operations[0].id, 'ambiguous');
+
+    expect(hole?.plan.operations[0].compensationIntent).toBeUndefined();
+  });
+
+  it('refreshes automatic intent only with an authorized project machine snapshot', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    document.geometryBasis = 'finished-contour';
+    document.plan.operations[0].compensationIntent = {
+      mode: 'controller',
+      keptMaterial: 'inside',
+      source: 'automatic'
+    };
+    const machine = createVerifiedCharmillesRobofil100Profile(
+      'project-machine',
+      new Date('2026-07-13T10:00:00Z')
+    );
+
+    const hole = setPathOperationClassification(
+      document,
+      document.plan.operations[0].id,
+      'hole',
+      machine
+    );
+    const ambiguous = setPathOperationClassification(
+      hole!,
+      document.plan.operations[0].id,
+      'ambiguous',
+      machine
+    );
 
     expect(hole?.plan.operations[0].compensationIntent).toEqual({
       mode: 'controller',
@@ -1126,6 +1155,25 @@ describe('pathDocumentOperations', () => {
       source: 'automatic'
     });
     expect(ambiguous?.plan.operations[0].compensationIntent).toBeUndefined();
+  });
+
+  it('removes automatic intent when the supplied machine verification fingerprint is stale', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    document.geometryBasis = 'finished-contour';
+    document.plan.operations[0].compensationIntent = {
+      mode: 'controller', keptMaterial: 'inside', source: 'automatic'
+    };
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    machine.compensation.offsetSelection.index = 7;
+
+    const changed = setPathOperationClassification(
+      document,
+      document.plan.operations[0].id,
+      'hole',
+      machine
+    );
+
+    expect(changed?.plan.operations[0].compensationIntent).toBeUndefined();
   });
 });
 

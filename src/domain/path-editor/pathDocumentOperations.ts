@@ -1,5 +1,9 @@
 import { analyzeContours } from '@/domain/path-intel/contours';
-import { suggestCompensationIntent } from '@/domain/compensation/intent';
+import {
+  machineSnapshotAuthorizesAutomaticCompensation,
+  suggestCompensationIntent
+} from '@/domain/compensation/intent';
+import type { MachineProfile } from '@/domain/workbench/types';
 import { buildChains } from '@/domain/path-intel/chains';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
 import { buildPathElements } from '@/domain/path-intel/pathElements';
@@ -134,7 +138,8 @@ export function setPathOperationOrderStrategy(
 export function setPathOperationClassification(
   document: PathPlanningDocument,
   operationId: string,
-  classification: ContourClassification
+  classification: ContourClassification,
+  projectMachineSnapshot?: MachineProfile
 ) {
   const next = cloneDocument(document);
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
@@ -154,7 +159,11 @@ export function setPathOperationClassification(
   if (contour) contour.classification = classification;
 
   if (operation.compensationIntent?.source === 'automatic') {
-    operation.compensationIntent = suggestCompensationIntent({ document: next, operation });
+    operation.compensationIntent = machineSnapshotAuthorizesAutomaticCompensation(
+      projectMachineSnapshot
+    )
+      ? suggestCompensationIntent({ document: next, operation })
+      : undefined;
   }
 
   refreshOperationDisplayNames(next);

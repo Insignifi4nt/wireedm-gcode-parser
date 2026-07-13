@@ -2,7 +2,13 @@ import {
   machineProfileVerificationFingerprint,
   normalizeMachineProfile
 } from '@/domain/machine/machineProfiles';
-import { segmentMap, signedAreaOfPath } from '@/domain/path-intel/segments';
+import {
+  orientedSegmentEnd,
+  orientedSegmentStart,
+  pointsEqual,
+  segmentMap,
+  signedAreaOfPath
+} from '@/domain/path-intel/segments';
 import type {
   ClosedContourCompensationIntent,
   PathDiagnostic,
@@ -74,13 +80,9 @@ export function initializeProjectCompensationIntents(
   projectMachineSnapshot: MachineProfile
 ): PathPlanningDocument {
   const next = structuredClone(document);
-  const machine = normalizeMachineProfile(projectMachineSnapshot);
-  const verification = machine.controller.verification;
-  const compensationEnabled =
-    machine.compensation.supported &&
-    machine.compensation.enabledByDefault &&
-    verification.status === 'user-verified' &&
-    verification.verifiedFingerprint === machineProfileVerificationFingerprint(machine);
+  const compensationEnabled = machineSnapshotAuthorizesAutomaticCompensation(
+    projectMachineSnapshot
+  );
 
   next.geometryBasis = compensationEnabled ? 'finished-contour' : 'wire-centre';
   next.plan.operations.forEach((operation) => {
@@ -102,6 +104,20 @@ export function initializeProjectCompensationIntents(
   });
 
   return next;
+}
+
+export function machineSnapshotAuthorizesAutomaticCompensation(
+  projectMachineSnapshot: MachineProfile | null | undefined
+) {
+  if (!projectMachineSnapshot) return false;
+  const machine = normalizeMachineProfile(projectMachineSnapshot);
+  const verification = machine.controller.verification;
+  return (
+    machine.compensation.supported &&
+    machine.compensation.enabledByDefault &&
+    verification.status === 'user-verified' &&
+    verification.verifiedFingerprint === machineProfileVerificationFingerprint(machine)
+  );
 }
 
 export function setManualCompensationIntent(
@@ -131,6 +147,7 @@ export function operationHasEligibleClosedTopology(
   const chain = document.chains.find((candidate) => candidate.id === operation.chainId);
   const contour = document.contours.find((candidate) => candidate.id === operation.contourId);
   if (!chain?.closed || !contour?.closed || chain.kind !== 'closed-contour') return false;
+  if (!orientedRefsFormContinuousClosedPath(document, operation)) return false;
 
   const associatedDiagnosticIds = new Set([...chain.diagnosticIds, ...contour.diagnosticIds]);
   const operationSegmentIds = new Set(operation.segmentRefs.map((ref) => ref.segmentId));
@@ -141,4 +158,36 @@ export function operationHasEligibleClosedTopology(
     if (diagnostic.relatedContourIds?.includes(operation.contourId)) return true;
     return diagnostic.relatedSegmentIds?.some((id) => operationSegmentIds.has(id)) ?? false;
   });
+}
+
+function orientedRefsFormContinuousClosedPath(
+  document: PathPlanningDocument,
+  operation: PathOperation
+) {
+  const segmentsById = segmentMap(document.segments);
+  const tolerance = Number.isFinite(document.options.coincidenceEpsilon)
+    ? Math.max(0, document.options.coincidenceEpsilon)
+    : 0;
+
+  for (let index = 0; index < operation.segmentRefs.length; index++) {
+    const currentRef = operation.segmentRefs[index];
+    const nextRef = operation.segmentRefs[(index + 1) % operation.segmentRefs.length];
+    const current = segmentsById.get(currentRef.segmentId);
+    const next = segmentsById.get(nextRef.segmentId);
+    if (!current || !next) return false;
+
+    const end = orientedSegmentEnd(current, currentRef);
+    const start = orientedSegmentStart(next, nextRef);
+    if (
+      !Number.isFinite(end.x) ||
+      !Number.isFinite(end.y) ||
+      !Number.isFinite(start.x) ||
+      !Number.isFinite(start.y) ||
+      !pointsEqual(end, start, tolerance)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }

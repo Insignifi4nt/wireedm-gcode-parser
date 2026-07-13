@@ -582,22 +582,51 @@ describe('UPID document boundary', () => {
   });
 
   it('normalizes legacy documents to wire-centre without inventing compensation intent', () => {
-    const legacy = createUpidFromDxfEntities(rectangle(0, 0, 10, 5));
+    const legacy = createUpidFromDxfEntities([
+      ...rectangle(0, 0, 10, 5),
+      ...rectangle(20, 0, 30, 5)
+    ]);
     delete (legacy as Partial<typeof legacy>).geometryBasis;
     legacy.plan.operations[0].compensationIntent = {
       mode: 'controller',
       keptMaterial: 'inside',
       source: 'automatic'
     };
-    legacy.pathElements[0].compensationIntent = structuredClone(
+    const automaticElement = legacy.pathElements.find(
+      (element) => element.operationId === legacy.plan.operations[0].id
+    )!;
+    automaticElement.compensationIntent = structuredClone(
       legacy.plan.operations[0].compensationIntent
     );
+    legacy.plan.operations[1].compensationIntent = {
+      mode: 'controller',
+      keptMaterial: 'outside',
+      source: 'manual'
+    };
+    const manualElement = legacy.pathElements.find(
+      (element) => element.operationId === legacy.plan.operations[1].id
+    )!;
+    manualElement.compensationIntent = structuredClone(
+      legacy.plan.operations[1].compensationIntent
+    );
+    const before = structuredClone(legacy);
 
     const normalized = normalizeLegacyProjectUpidDocument(legacy);
 
     expect(normalized.geometryBasis).toBe('wire-centre');
     expect(normalized.plan.operations[0].compensationIntent).toBeUndefined();
-    expect(normalized.pathElements[0].compensationIntent).toBeUndefined();
+    expect(normalized.pathElements.find(
+      (element) => element.operationId === normalized.plan.operations[0].id
+    )?.compensationIntent).toBeUndefined();
+    expect(normalized.plan.operations[1].compensationIntent).toEqual({
+      mode: 'controller',
+      keptMaterial: 'outside',
+      source: 'manual'
+    });
+    expect(normalized.pathElements.find(
+      (element) => element.operationId === normalized.plan.operations[1].id
+    )?.compensationIntent).toEqual(normalized.plan.operations[1].compensationIntent);
+    expect(legacy).toEqual(before);
     expect(legacy).not.toHaveProperty('geometryBasis');
   });
 

@@ -67,3 +67,28 @@ The brief's minimum compatibility surface required these additional focused file
 - `git diff --check`: passed.
 
 Vite continues to report its existing non-failing large-chunk advisory. No Task 4 correctness concern remains known. Structured compensated posting, transition safety, and emitted G41/G42 text remain deliberately deferred to the later post task.
+
+## Review fixes
+
+The Task 4 review identified four persistence/safety gaps. Each fix was developed in its own RED-GREEN cycle.
+
+### RED evidence
+
+- Classification authorization: two regression tests failed because a three-argument classification edit refreshed an existing automatic decision without a machine snapshot, and a supplied profile with a stale verification fingerprint was also ignored.
+- Final-ref continuity: automatic suggestion accepted permuted line refs, while the resolver returned `ready` for permuted lines, a disconnected translated line, and a gapped arc. Every fixture retained finite nonzero signed area and stale cached closed flags.
+- Mirrored semantic identity: five validation regressions failed because operation-only intent, path-element-only intent, differing source, differing kept material, and differing mode all remained structurally accepted.
+- Legacy manual preservation: migration removed an explicit manual keep-outside intent together with the stray automatic intent.
+
+### Implemented review corrections
+
+- Added the explicit `machineSnapshotAuthorizesAutomaticCompensation` gate. `setPathOperationClassification` accepts an optional project machine snapshot for compatibility, refreshes automatic intent only when that snapshot is supported, enabled, and currently fingerprint-verified, and otherwise removes the automatic intent. Absence never authors automatic intent.
+- Eligibility now independently walks final oriented refs and compares every segment end to the next segment start, including last-to-first closure, using the planner's configured coincidence epsilon. Missing, non-finite, permuted, disconnected, or out-of-tolerance geometry fails closed regardless of cached flags and diagnostics.
+- Structural validation now requires exact semantic agreement between each operation and matching path element for intent presence, mode, source, and kept material.
+- Absent-basis migration still synthesizes `wire-centre` and removes stray automatic intent, but preserves explicit manual and legacy centerline decisions without mutating the stored record.
+
+### Review-fix verification
+
+- Focused compensation/path-editor/UPID/manual/save: 7 files, 234 tests passed.
+- Full Vitest: 54 files, 882 tests passed.
+- Production build: TypeScript and Vite passed.
+- The only build notice remains Vite's non-failing large-chunk advisory.

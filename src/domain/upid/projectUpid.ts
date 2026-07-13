@@ -146,9 +146,9 @@ export function normalizeLegacyProjectUpidDocument(
       ? {
           plan: {
             ...document.plan,
-            operations: document.plan.operations.map(withoutCompensationIntent)
+            operations: document.plan.operations.map(withoutAutomaticCompensationIntent)
           },
-          pathElements: document.pathElements.map(withoutCompensationIntent)
+          pathElements: document.pathElements.map(withoutAutomaticCompensationIntent)
         }
       : {}),
     ...(!options || hasLayerFilters
@@ -163,7 +163,11 @@ export function normalizeLegacyProjectUpidDocument(
   };
 }
 
-function withoutCompensationIntent<T extends { compensationIntent?: unknown }>(value: T): T {
+function withoutAutomaticCompensationIntent<T extends { compensationIntent?: unknown }>(
+  value: T
+): T {
+  const intent = value.compensationIntent as { source?: unknown } | undefined;
+  if (intent?.source !== 'automatic') return value;
   const { compensationIntent: _ignored, ...rest } = value;
   return rest as T;
 }

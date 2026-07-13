@@ -62,6 +62,17 @@ describe('compensation intent', () => {
       .toBeUndefined();
   });
 
+  it('rejects automatic intent when final oriented refs are no longer continuous', () => {
+    const document = eligibleContour('exterior');
+    const refs = document.plan.operations[0].segmentRefs;
+    document.plan.operations[0].segmentRefs = [refs[0], refs[2], refs[1], refs[3]];
+
+    expect(document.plan.operations[0].closed).toBe(true);
+    expect(document.chains[0].closed).toBe(true);
+    expect(suggestCompensationIntent({ document, operation: document.plan.operations[0] }))
+      .toBeUndefined();
+  });
+
   it('initializes only with a supported, enabled, validly verified project machine snapshot', () => {
     const profile = createVerifiedCharmillesRobofil100Profile('project-machine', new Date('2026-07-13T10:00:00Z'));
     const document = createPathPlanningDocumentFromDxfEntities(rectangle());

@@ -1231,6 +1231,19 @@ function validatePathElements(
       `path element ${element.id}.compensationIntent`,
       context
     );
+    if (
+      operation &&
+      !compensationIntentsSemanticallyEqual(
+        operation.compensationIntent,
+        element.compensationIntent
+      )
+    ) {
+      context.add(
+        'upid-identity-mismatch',
+        `Path element ${element.id} compensation intent disagrees with operation ${operation.id}.`,
+        { relatedContourIds: [element.contourId] }
+      );
+    }
     validateProvenance(element.provenance, `path element ${element.id}.provenance`, segmentMap, context, operationMap);
     if (operation) validateOverrides(element.overrides, operation, segmentMap, tolerance, context);
     validateDiagnosticIds(element.diagnosticIds, `path element ${element.id}`, diagnosticMap, context);
@@ -1656,6 +1669,24 @@ function validateCompensationIntent(
 function hasOnlyKeys(value: Record<string, unknown>, keys: string[]) {
   const allowed = new Set(keys);
   return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function compensationIntentsSemanticallyEqual(left: unknown, right: unknown) {
+  if (left === undefined || right === undefined) return left === right;
+  const leftIntent = record(left);
+  const rightIntent = record(right);
+  if (!leftIntent || !rightIntent) return false;
+  if (leftIntent.mode !== rightIntent.mode || leftIntent.source !== rightIntent.source) {
+    return false;
+  }
+  if (leftIntent.mode === 'controller' || rightIntent.mode === 'controller') {
+    return (
+      leftIntent.mode === 'controller' &&
+      rightIntent.mode === 'controller' &&
+      leftIntent.keptMaterial === rightIntent.keptMaterial
+    );
+  }
+  return leftIntent.mode === 'centerline' && rightIntent.mode === 'centerline';
 }
 
 function manualStartSourceExists(

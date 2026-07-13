@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
-import { reversePathRefs, rotatePathRefs } from '@/domain/path-intel/segments';
+import {
+  reversePathRefs,
+  rotatePathRefs,
+  segmentMap,
+  signedAreaOfPath
+} from '@/domain/path-intel/segments';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 
 import { resolveControllerCompensation } from '../resolveControllerCompensation';
@@ -144,6 +149,53 @@ describe('resolveControllerCompensation', () => {
     document.plan.operations[0].compensationIntent = { mode: 'centerline', source: 'manual' };
 
     expect(resolve(document)).toEqual({ status: 'blocked', reason: 'missing-intent' });
+  });
+
+  it.each([
+    ['permuted line refs', () => {
+      const document = rectangleDocument();
+      const refs = document.plan.operations[0].segmentRefs;
+      document.plan.operations[0].segmentRefs = [refs[0], refs[2], refs[1], refs[3]];
+      return document;
+    }],
+    ['disconnected line', () => {
+      const document = rectangleDocument();
+      const segment = document.segments[1];
+      segment.start = { x: segment.start.x + 2, y: segment.start.y + 1 };
+      segment.end = { x: segment.end.x + 2, y: segment.end.y + 1 };
+      return document;
+    }],
+    ['gapped arc', () => {
+      const document = arcDocument();
+      document.segments[1].start = { x: -4.5, y: 0 };
+      return document;
+    }]
+  ] as const)('blocks nonzero-area final geometry with %s despite cached closed flags', (_label, create) => {
+    const document = create();
+    document.plan.operations[0].compensationIntent = {
+      mode: 'controller', keptMaterial: 'inside', source: 'manual'
+    };
+    const area = signedAreaOfPath(
+      document.plan.operations[0].segmentRefs,
+      segmentMap(document.segments)
+    );
+
+    expect(area).not.toBe(0);
+    expect(Number.isFinite(area)).toBe(true);
+    expect(document.plan.operations[0].closed).toBe(true);
+    expect(document.chains[0].closed).toBe(true);
+    expect(resolve(document)).toEqual({ status: 'blocked', reason: 'ineligible-topology' });
+  });
+
+  it('accepts endpoint differences within the configured planner coincidence tolerance', () => {
+    const document = rectangleDocument();
+    document.options.coincidenceEpsilon = 0.00001;
+    document.segments[1].start = { x: 10.000005, y: 0 };
+    document.plan.operations[0].compensationIntent = {
+      mode: 'controller', keptMaterial: 'inside', source: 'manual'
+    };
+
+    expect(resolve(document)).toMatchObject({ status: 'ready' });
   });
 });
 

@@ -59,6 +59,9 @@ describe('validateUpidDocument', () => {
       keptMaterial: 'inside',
       source: 'manual'
     };
+    document.pathElements[0].compensationIntent = structuredClone(
+      document.plan.operations[0].compensationIntent
+    );
 
     expect(validateUpidDocument(document)).toMatchObject({
       structurallyValid: true,
@@ -92,6 +95,53 @@ describe('validateUpidDocument', () => {
 
     expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
       expect.objectContaining({ code: 'upid-invalid-value' })
+    );
+  });
+
+  it.each([
+    ['operation-only intent', (document: UniversalPathIntelligenceDocument) => {
+      document.plan.operations[0].compensationIntent = {
+        mode: 'controller', keptMaterial: 'inside', source: 'manual'
+      };
+    }],
+    ['path-element-only intent', (document: UniversalPathIntelligenceDocument) => {
+      document.pathElements[0].compensationIntent = {
+        mode: 'controller', keptMaterial: 'inside', source: 'manual'
+      };
+    }],
+    ['different decision source', (document: UniversalPathIntelligenceDocument) => {
+      document.plan.operations[0].compensationIntent = {
+        mode: 'controller', keptMaterial: 'inside', source: 'manual'
+      };
+      document.pathElements[0].compensationIntent = {
+        mode: 'controller', keptMaterial: 'inside', source: 'automatic'
+      };
+    }],
+    ['different kept material', (document: UniversalPathIntelligenceDocument) => {
+      document.plan.operations[0].compensationIntent = {
+        mode: 'controller', keptMaterial: 'inside', source: 'manual'
+      };
+      document.pathElements[0].compensationIntent = {
+        mode: 'controller', keptMaterial: 'outside', source: 'manual'
+      };
+    }],
+    ['different intent mode', (document: UniversalPathIntelligenceDocument) => {
+      document.plan.operations[0].compensationIntent = {
+        mode: 'controller', keptMaterial: 'inside', source: 'manual'
+      };
+      document.pathElements[0].compensationIntent = {
+        mode: 'centerline', source: 'manual'
+      };
+    }]
+  ])('rejects %s between an operation and its path element', (_label, mutate) => {
+    const document = closedDocument();
+    mutate(document);
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'upid-identity-mismatch',
+        message: expect.stringContaining('compensation intent')
+      })
     );
   });
 
