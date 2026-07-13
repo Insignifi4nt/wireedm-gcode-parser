@@ -2767,6 +2767,62 @@ describe('App DXF imports and project library', () => {
     expect(canvasSegment?.getAttribute('data-preview-selected')).toBe('true');
   });
 
+  it('binds G20 UPID diagnostics to blocked preview and download gating', async () => {
+    window.showDirectoryPicker = undefined;
+    const downloadGeneratedProgram = vi.fn();
+    const workbench = await connectCachedWorkbench();
+    const g20Machine = structuredClone(workbench.activeMachineProfile);
+    g20Machine.id = 'g20-upid-preview-machine';
+    g20Machine.name = 'G20 UPID Preview Machine';
+    g20Machine.controller.unitsCode = 'G20';
+    workbench.activeMachineProfile = g20Machine;
+    workbench.header = g20Machine.templates.header;
+    workbench.footer = g20Machine.templates.footer;
+    workbench.manifest = {
+      ...workbench.manifest,
+      activeMachineProfileId: g20Machine.id,
+      machineProfiles: [g20Machine],
+      output: g20Machine.output
+    };
+
+    await renderApp(context, {
+      connectCachedWorkbench: async () => workbench,
+      downloadGeneratedProgram
+    });
+    await prepareDxfImport(
+      container,
+      new File([rectangleMillimeterDxf()], 'g20-preview.dxf')
+    );
+    await confirmPendingDxfImport(container);
+
+    const openPreviewButton = container.querySelector(
+      'button[aria-label="Open UPID export preview"]'
+    ) as HTMLButtonElement;
+    await act(async () => openPreviewButton.click());
+
+    const preview = container.querySelector('[data-upid-export-preview]');
+    const downloadButton = container.querySelector(
+      'button[aria-label="Download UPID export program"]'
+    ) as HTMLButtonElement;
+    const blockingMessage = container.querySelector(
+      '[data-upid-export-blocking-code="post-inch-units-unsupported"]'
+    );
+
+    expect(preview?.getAttribute('data-upid-export-readiness')).toBe('blocked');
+    expect(blockingMessage?.textContent).toContain('G20 inch output is unavailable');
+    expect(downloadButton.disabled).toBe(true);
+    expect(downloadButton.getAttribute('aria-disabled')).toBe('true');
+    expect(container.querySelector('[data-upid-export-program-section="body"]')).toBeNull();
+    expect(container.querySelector('[data-upid-export-operation-row]')).toBeNull();
+    expect(container.querySelector('[data-upid-export-move-row]')).toBeNull();
+    expect(container.querySelector('[data-upid-export-stat="operations"]')?.textContent).toBe('0');
+    expect(container.querySelector('[data-upid-export-stat="rapid"]')?.textContent).toBe('0');
+    expect(container.querySelector('[data-upid-export-stat="cut"]')?.textContent).toBe('0');
+
+    await act(async () => downloadButton.click());
+    expect(downloadGeneratedProgram).not.toHaveBeenCalled();
+  });
+
   it('summarizes UPID planning decisions in the export preview', async () => {
     window.showDirectoryPicker = undefined;
 
