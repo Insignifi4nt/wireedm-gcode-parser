@@ -97,7 +97,47 @@ export function pathPlanToGcodeBody(
   return postPathPlanToGcode(plan, segments, options).body;
 }
 
+export interface GcodePostPreflightResult {
+  diagnostics: PathDiagnostic[];
+  operationStartApproaches: Array<Pick<
+    GcodePostedMove,
+    'bodyLineIndex' | 'operationId' | 'startPoint' | 'endPoint'
+  >>;
+  status: GcodePostResult['status'];
+}
+
+export function preflightPathPlanToGcode(
+  plan: OperationPlan,
+  segments: PathSegment[],
+  options: GcodePostOptions = {}
+): GcodePostPreflightResult {
+  const projection = projectPathPlanToGcode(plan, segments, options);
+  return {
+    status: projection.status,
+    diagnostics: projection.diagnostics,
+    operationStartApproaches:
+      projection.status === 'ready'
+        ? projection.moves
+            .filter((move) => move.reason === 'operation-start-approach')
+            .map(({ bodyLineIndex, operationId, startPoint, endPoint }) => ({
+              bodyLineIndex,
+              operationId,
+              startPoint,
+              endPoint
+            }))
+        : []
+  };
+}
+
 export function postPathPlanToGcode(
+  plan: OperationPlan,
+  segments: PathSegment[],
+  options: GcodePostOptions = {}
+): GcodePostResult {
+  return projectPathPlanToGcode(plan, segments, options);
+}
+
+function projectPathPlanToGcode(
   plan: OperationPlan,
   segments: PathSegment[],
   options: GcodePostOptions = {}

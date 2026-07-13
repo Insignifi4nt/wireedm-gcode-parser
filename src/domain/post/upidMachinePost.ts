@@ -6,6 +6,7 @@ import {
   interpretGCodeBlock
 } from '@/domain/editor/gcodeBlockInterpreter';
 import {
+  preflightPathPlanToGcode,
   postPathPlanToGcode,
   type GcodePostResult,
   type GcodePostedMove,
@@ -84,23 +85,32 @@ export function deriveVerifiedRobofilPreviewPostBlocks(
     return [];
   }
 
-  const origin = { x: 0, y: 0 };
-  if (
-    Math.hypot(operation.startPoint.x - origin.x, operation.startPoint.y - origin.y) <=
-    document.options.coincidenceEpsilon
-  ) {
-    return [];
-  }
+  const geometry = preflightPathPlanToGcode(document.plan, document.segments, {
+    ...document.options,
+    arcCenterMode:
+      machine.controller.arcCenterMode === 'absolute' ? 'absolute' : 'incremental',
+    coordinatePrecision: machine.output.coordinatePrecision,
+    endpointTolerance: effectiveDocumentEndpointTolerance(document),
+    coincidenceEpsilon: document.options.coincidenceEpsilon,
+    initialPosition: { x: 0, y: 0 },
+    operationStartMode: 'linear'
+  });
+  if (geometry.status === 'blocked') return [];
 
-  return [{
-    bodyLineIndex:
-      templateLines(machine.templates.header).length +
-      verifiedRobofilStructuredPrefix(machine, resolution.code).length,
-    kind: 'lead-in',
-    operationId: operation.id,
-    startPoint: origin,
-    endPoint: operation.startPoint
-  }];
+  const prefixLineCount =
+    templateLines(machine.templates.header).length +
+    verifiedRobofilStructuredPrefix(machine, resolution.code).length;
+  return geometry.operationStartApproaches.flatMap((approach) =>
+    approach.operationId && approach.startPoint
+      ? [{
+          bodyLineIndex: prefixLineCount + approach.bodyLineIndex,
+          kind: 'lead-in' as const,
+          operationId: approach.operationId,
+          startPoint: approach.startPoint,
+          endPoint: approach.endPoint
+        }]
+      : []
+  );
 }
 
 export function postUpidForMachine(

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { initializeProjectCompensationIntents } from '@/domain/compensation/intent';
+import {
+  initializeProjectCompensationIntents,
+  setManualCompensationIntent
+} from '@/domain/compensation/intent';
 import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
 import {
   setCircleOperationCenterPierceLeadIn,
@@ -413,6 +416,46 @@ describe('buildEditorPreviewGeometry', () => {
 
     expect(deriveVerifiedRobofilPreviewTransitions(wireCentre, machine)).toEqual([]);
     expect(deriveVerifiedRobofilPreviewTransitions(missingIntent, machine)).toEqual([]);
+  });
+
+  it('suppresses a verified Robofil approach when fixed precision blocks the contour geometry', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const source = createPathPlanningDocumentFromDxfEntities(
+      [{ type: 'circle', layer: 'CUT', center: { x: 1, y: 1 }, radius: 0.0004 }],
+      { coincidenceEpsilon: 1e-12 }
+    );
+    source.geometryBasis = 'finished-contour';
+    const document = setManualCompensationIntent(
+      source,
+      source.plan.operations[0].id,
+      'inside'
+    )!;
+
+    expect(deriveVerifiedRobofilPreviewTransitions(document, machine)).toEqual([]);
+  });
+
+  it('keeps the posted approach when raw-coincident points format to distinct machine coordinates', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const source = createPathPlanningDocumentFromDxfEntities(
+      [
+        line(0.0006, 0, 10.0006, 0),
+        line(10.0006, 0, 10.0006, 5),
+        line(10.0006, 5, 0.0006, 5),
+        line(0.0006, 5, 0.0006, 0)
+      ],
+      { coincidenceEpsilon: 0.001 }
+    );
+    const document = initializeProjectCompensationIntents(source, machine);
+
+    expect(deriveVerifiedRobofilPreviewTransitions(document, machine)).toEqual([
+      {
+        kind: 'lead-in',
+        operationId: document.plan.operations[0].id,
+        programLineNumber: 6,
+        startPoint: { x: 0, y: 0 },
+        endPoint: { x: 0.0006, y: 0 }
+      }
+    ]);
   });
 
   it('uses stable synthetic line ids when path document preview has stale line hints', () => {

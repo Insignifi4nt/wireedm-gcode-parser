@@ -94,3 +94,12 @@ Follow-up TDD evidence:
 The first follow-up implementation briefly called `postUpidForMachine` while deriving canvas transitions. Completion review correctly identified two consequences: blocked wire-centre/missing-intent Robofil documents could fall back to synthetic travel, and fixing that solely by posting every render would violate the explicit-export-only posting boundary.
 
 A second RED cycle captured both problems: verified wire-centre/missing-intent preview derivation returned `undefined` instead of an empty transition list, and a verified editor review invoked the full machine poster three times before export preview opened. The final implementation uses a pure `deriveVerifiedRobofilPreviewPostBlocks` preflight. It shares the structured Robofil prefix calculation with the real post, returns the same approach block index/points as a ready post, returns an empty list for blocked verified states, and never runs the full poster during editor review. Focused verification passed 4 files/143 tests before the final metadata-equality assertion was added.
+
+Corrective re-review then found two subtler projection cases: fixed three-decimal geometry can be blocked after document validation, and raw-coincident entry points can still format to distinct machine coordinates. A shared `preflightPathPlanToGcode` projection now drives both decisions with the exact production formatting/topology checks while exposing no program body. Regressions cover a non-degenerate sub-precision circle rejected by the real post and a raw-coincident/formatted-distinct origin approach, while the editor-render poster spy remains at zero calls.
+
+Final combined gates after the Task 5 work landed:
+
+- Full Vitest: 60 files, 989 tests passed.
+- Production build: TypeScript and Vite passed.
+- Full Playwright: 29 passed, 1 existing environment-dependent test skipped.
+- The only remaining output is the existing Vite chunk-size advisory and pre-existing React `act(...)` warnings described above.

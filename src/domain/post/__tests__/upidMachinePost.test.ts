@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { initializeProjectCompensationIntents } from '@/domain/compensation/intent';
+import {
+  initializeProjectCompensationIntents,
+  setManualCompensationIntent
+} from '@/domain/compensation/intent';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
 import {
   createVerifiedCharmillesRobofil100Profile,
@@ -151,6 +154,30 @@ describe('postUpidForMachine', () => {
         details: expect.objectContaining({ reason: 'unsafe-controller-compensation-lead-in' })
       })
     );
+  });
+
+  it('keeps pure preview metadata empty when fixed precision blocks real Robofil geometry', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const source = createUpidFromDxfEntities(
+      [{ type: 'circle', layer: 'CUT', center: { x: 1, y: 1 }, radius: 0.0004 }],
+      { coincidenceEpsilon: 1e-12 }
+    );
+    source.geometryBasis = 'finished-contour';
+    const document = setManualCompensationIntent(
+      source,
+      source.plan.operations[0].id,
+      'inside'
+    )!;
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('blocked');
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('coordinate precision')
+      })
+    );
+    expect(deriveVerifiedRobofilPreviewPostBlocks(document, machine)).toEqual([]);
   });
 
   it('blocks a second compensated operation atomically', () => {
