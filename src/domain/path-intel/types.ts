@@ -92,6 +92,7 @@ export interface PathDiagnostic {
     | 'post-bridged-gap'
     | 'post-unexpected-gap'
     | 'post-invalid-input'
+    | 'post-inch-units-unsupported'
     | 'upid-duplicate-id'
     | 'upid-invalid-value'
     | 'upid-missing-reference'

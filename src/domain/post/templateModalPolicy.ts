@@ -1,6 +1,7 @@
 import {
   createGCodeInterpreterState,
-  interpretGCodeBlock
+  interpretGCodeBlock,
+  type GCodeWord
 } from '@/domain/editor/gcodeBlockInterpreter';
 import type { MachineProfile } from '@/domain/workbench/types';
 
@@ -22,6 +23,10 @@ export interface TemplateModalPolicyResult {
   diagnostics: TemplateModalPolicyDiagnostic[];
 }
 
+export interface ExecutableGCodeWord extends GCodeWord {
+  lineNumber: number;
+}
+
 export function validateTemplateModalPolicy({
   machine,
   header,
@@ -32,24 +37,30 @@ export function validateTemplateModalPolicy({
     ['header', header],
     ['footer', footer]
   ] as const) {
+    if (machine.controller.family !== 'charmilles-robofil-classic') {
+      for (const match of scanExecutableGCodeWords(source)) {
+        if (
+          match.letter !== 'G' ||
+          (match.value !== 20 && match.value !== 41 && match.value !== 42)
+        ) {
+          continue;
+        }
+        const word = `G${match.value}`;
+        diagnostics.push({
+          section,
+          lineNumber: match.lineNumber,
+          word,
+          message: `${word} conflicts with structured millimetre controller compensation.`
+        });
+      }
+      continue;
+    }
+
     stripGcodeComments(source)
       .split(/\r?\n/)
       .forEach((rawLine, index) => {
         const residue = rawLine.trim();
         if (!residue) return;
-        if (machine.controller.family !== 'charmilles-robofil-classic') {
-          for (const match of residue.matchAll(/G0*(\d+(?:\.\d+)?)/gi)) {
-            const word = `G${Number(match[1])}`;
-            if (!['G20', 'G41', 'G42'].includes(word)) continue;
-            diagnostics.push({
-              section,
-              lineNumber: index + 1,
-              word,
-              message: `${word} conflicts with structured millimetre controller compensation.`
-            });
-          }
-          return;
-        }
         const modalWord = residue.toUpperCase().match(/([GM])0*(\d+(?:\.\d+)?)/);
         const word = modalWord
           ? `${modalWord[1]}${Number(modalWord[2])}`
@@ -64,6 +75,16 @@ export function validateTemplateModalPolicy({
   }
 
   return { valid: diagnostics.length === 0, diagnostics };
+}
+
+export function scanExecutableGCodeWords(source: string): ExecutableGCodeWord[] {
+  const state = createGCodeInterpreterState();
+  return source.split(/\r?\n/).flatMap((line, index) =>
+    interpretGCodeBlock(state, line, index + 1).words.map((word) => ({
+      ...word,
+      lineNumber: index + 1
+    }))
+  );
 }
 
 export function stripGcodeComments(source: string) {

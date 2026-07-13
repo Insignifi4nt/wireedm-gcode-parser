@@ -23,6 +23,7 @@ import {
   type GcodePostedBlock,
   type UpidMachinePostResult
 } from '@/domain/post/upidMachinePost';
+import { scanExecutableGCodeWords } from '@/domain/post/templateModalPolicy';
 import type { MachineProfile } from '@/domain/workbench/types';
 import type {
   OperationOrderStrategy,
@@ -176,7 +177,7 @@ export function composeUpidGCodeExport(
   const machine = input.machine;
   const header = machine ? machine.templates.header : input.header ?? '';
   const footer = machine ? machine.templates.footer : input.footer ?? '';
-  const post = machine
+  const candidatePost = machine
     ? postUpidForMachine(document, machine)
     : machineResultFromGenericPost(
         postUpidToGcode(document, {
@@ -184,6 +185,15 @@ export function composeUpidGCodeExport(
           coordinatePrecision: input.coordinatePrecision
         })
       );
+  const inchUnitSources = unsupportedInchUnitSources({
+    body: candidatePost.body,
+    footer,
+    header,
+    machine
+  });
+  const post = inchUnitSources.length > 0
+    ? blockPostForUnsupportedInchUnits(candidatePost, inchUnitSources)
+    : candidatePost;
   const body = post.body;
   const documentDiagnostics = Array.isArray(document?.diagnostics) ? document.diagnostics : [];
   const diagnostics = uniqueDiagnostics([...documentDiagnostics, ...post.diagnostics]);
@@ -220,6 +230,58 @@ export function composeUpidGCodeExport(
       operationCount: post.operations.length,
       postDiagnosticCount: post.diagnostics.length
     }
+  };
+}
+
+function unsupportedInchUnitSources(input: {
+  body: string;
+  footer: string;
+  header: string;
+  machine?: MachineProfile;
+}) {
+  const sources: string[] = [];
+  if (input.machine?.controller.unitsCode === 'G20') {
+    sources.push('machine.controller.unitsCode');
+  }
+  for (const [section, source] of [
+    ['header', input.header],
+    ['body', input.body],
+    ['footer', input.footer]
+  ] as const) {
+    for (const word of scanExecutableGCodeWords(source)) {
+      if (word.letter === 'G' && word.value === 20) {
+        sources.push(`${section}:${word.lineNumber}`);
+      }
+    }
+  }
+  return [...new Set(sources)];
+}
+
+function blockPostForUnsupportedInchUnits(
+  post: UpidMachinePostResult,
+  sources: string[]
+): UpidMachinePostResult {
+  const diagnostic: PathDiagnostic = {
+    id: 'diag_post_units_g20_unsupported',
+    severity: 'error',
+    code: 'post-inch-units-unsupported',
+    message: 'G20 inch output is unavailable because UPID coordinates are currently posted in millimetres.',
+    details: {
+      coordinateUnits: 'millimeters',
+      requestedUnits: 'inches',
+      sources
+    }
+  };
+
+  return {
+    ...post,
+    status: 'blocked',
+    body: '',
+    diagnostics: uniqueDiagnostics([...post.diagnostics, diagnostic]),
+    metrics: { rapidCount: 0, cutMoveCount: 0 },
+    moves: [],
+    operations: [],
+    blocks: []
   };
 }
 

@@ -5,9 +5,29 @@ import {
   createVerifiedCharmillesRobofil100Profile
 } from '@/domain/machine/machineProfiles';
 
-import { validateTemplateModalPolicy } from '../templateModalPolicy';
+import {
+  scanExecutableGCodeWords,
+  validateTemplateModalPolicy
+} from '../templateModalPolicy';
 
 describe('validateTemplateModalPolicy', () => {
+  it('scans exact compact and zero-padded executable G20 words with source lines', () => {
+    expect(
+      scanExecutableGCodeWords('G90G20G40\nN20 G020 X1')
+        .filter((match) => match.letter === 'G' && match.value === 20)
+    ).toEqual([
+      { letter: 'G', lineNumber: 1, value: 20 },
+      { letter: 'G', lineNumber: 2, value: 20 }
+    ]);
+  });
+
+  it('does not scan comment copies or larger G words as G20', () => {
+    expect(
+      scanExecutableGCodeWords('(G20) G200 G21\n; G20\nG21 ; G20')
+        .filter((match) => match.letter === 'G' && match.value === 20)
+    ).toEqual([]);
+  });
+
   it.each(['G21', 'G17', 'G54', 'G40', 'M30', 'G41 D0', 'G42D0'])(
     'rejects the real conflicting Robofil word in %s',
     (word) => {

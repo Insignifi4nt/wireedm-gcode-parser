@@ -549,6 +549,90 @@ describe('UPID document boundary', () => {
     );
   });
 
+  it.each([
+    { label: 'header G20', header: 'G20', footer: 'M30' },
+    { label: 'compact header G90G20G40', header: 'G90G20G40', footer: 'M30' },
+    { label: 'zero-padded header N10G020', header: 'N10G020', footer: 'M30' },
+    { label: 'footer G20', header: 'G21', footer: 'G20' }
+  ])(
+    'blocks canonical-millimetre UPID output for executable $label',
+    ({ footer, header }) => {
+      const document = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
+
+      const exportProgram = composeUpidGCodeExport(document, {
+        header,
+        footer,
+        lineEnding: 'lf'
+      });
+
+      expect(exportProgram.canDownload).toBe(false);
+      expect(exportProgram.blockingDiagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'post-inch-units-unsupported',
+          severity: 'error'
+        })
+      );
+      expect(exportProgram.body).toBe('');
+      expect(exportProgram.post).toMatchObject({
+        status: 'blocked',
+        blocks: [],
+        moves: [],
+        operations: [],
+        metrics: { rapidCount: 0, cutMoveCount: 0 }
+      });
+      expect(exportProgram.programOperations).toEqual([]);
+      expect(exportProgram.program.text).toBe(`${header}\n${footer}\n`);
+    }
+  );
+
+  it.each(['(G20) G21', '; G20\nG21', 'G200 G21'])(
+    'does not false-positive on non-executable G20 text in %s',
+    (header) => {
+      const document = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
+
+      const exportProgram = composeUpidGCodeExport(document, {
+        header,
+        footer: '',
+        lineEnding: 'lf'
+      });
+
+      expect(exportProgram.canDownload).toBe(true);
+      expect(exportProgram.blockingDiagnostics).toEqual([]);
+      expect(exportProgram.body).toContain('G1 X10.000 Y0.000');
+    }
+  );
+
+  it('blocks a project profile that requests G20 even when its templates emit G21', () => {
+    const machine = createDefaultMachineProfile();
+    machine.controller.unitsCode = 'G20';
+    machine.templates = { header: 'G90 G21', footer: 'M30' };
+    const document = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
+
+    const exportProgram = composeUpidGCodeExport(document, { machine });
+
+    expect(exportProgram.canDownload).toBe(false);
+    expect(exportProgram.blockingDiagnostics).toContainEqual(
+      expect.objectContaining({ code: 'post-inch-units-unsupported' })
+    );
+    expect(exportProgram.body).toBe('');
+    expect(exportProgram.post.blocks).toEqual([]);
+  });
+
+  it('keeps an inch DXF-import preference independent from millimetre UPID output', () => {
+    const machine = createDefaultMachineProfile();
+    machine.preferredDxfImportUnit = 'inches';
+    machine.controller.unitsCode = 'G21';
+    machine.templates = { header: 'G90 G21', footer: 'M30' };
+    const document = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
+
+    const exportProgram = composeUpidGCodeExport(document, { machine });
+
+    expect(exportProgram.canDownload).toBe(true);
+    expect(exportProgram.blockingDiagnostics).toEqual([]);
+    expect(exportProgram.body).toContain('G1 X10.000 Y0.000');
+    expect(exportProgram.program.text).not.toContain('X254.000');
+  });
+
   it('keeps structurally invalid Robofil composition executable-empty before intent checks', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     machine.templates.header = 'G28 X100 Y100';

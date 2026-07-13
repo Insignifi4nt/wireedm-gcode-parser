@@ -409,6 +409,52 @@ describe('Editor import, export, and parse feedback', () => {
     expect(programEditor?.value).not.toContain('N10 G0 X0 Y0');
   });
 
+  it('keeps G20 available in the external machine-program text workflow', async () => {
+    window.showDirectoryPicker = undefined;
+    const downloadGeneratedProgram = vi.fn();
+
+    await renderApp(context, { downloadGeneratedProgram });
+    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Open Editor')
+    );
+    await act(async () => {
+      openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const fileInput = container.querySelector(
+      'input[aria-label="G-code program file"]'
+    ) as HTMLInputElement | null;
+    Object.defineProperty(fileInput, 'files', {
+      value: [new File(['G20\nG0 X0 Y0\nG1 X1 Y0\nM30'], 'inch-source.nc')],
+      configurable: true
+    });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const programEditor = container.querySelector(
+      'textarea[aria-label="Program editor"]'
+    ) as HTMLTextAreaElement | null;
+    const exportIsoButton = container.querySelector(
+      'button[aria-label="Export normalized ISO"]'
+    ) as HTMLButtonElement | null;
+
+    expect(programEditor?.value).toContain('G20');
+    expect(container.querySelector('button[aria-label="Open UPID export preview"]')).toBeNull();
+    expect(exportIsoButton).not.toBeNull();
+
+    await act(async () => {
+      exportIsoButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(downloadGeneratedProgram).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('G20') })
+    );
+    expect(programEditor?.value).toBe('G20\nG0 X0 Y0\nG1 X1 Y0\nM30');
+  });
+
   it('keeps persistent normalized export visible but disables it for an empty machine draft', async () => {
     window.showDirectoryPicker = undefined;
 
