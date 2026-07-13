@@ -2,7 +2,20 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const composeUpidGCodeExportSpy = vi.hoisted(() => vi.fn());
+const postUpidForMachineSpy = vi.hoisted(() => vi.fn());
 const parseGCodeProgramSpy = vi.hoisted(() => vi.fn());
+
+vi.mock('@/domain/post/upidMachinePost', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/domain/post/upidMachinePost')>();
+
+  return {
+    ...actual,
+    postUpidForMachine: (...args: Parameters<typeof actual.postUpidForMachine>) => {
+      postUpidForMachineSpy(...args);
+      return actual.postUpidForMachine(...args);
+    }
+  };
+});
 
 vi.mock('@/domain/upid/upidDocument', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/domain/upid/upidDocument')>();
@@ -53,6 +66,7 @@ describe('App DXF imports and project library', () => {
 
   beforeEach(() => {
     composeUpidGCodeExportSpy.mockClear();
+    postUpidForMachineSpy.mockClear();
     parseGCodeProgramSpy.mockClear();
     enableAutoOpenEditorWorkspacePanels();
     context = createAppTestContext();
@@ -2173,6 +2187,7 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-export-preview]')).toBeNull();
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
     expect(composeUpidGCodeExportSpy).not.toHaveBeenCalled();
+    expect(postUpidForMachineSpy).not.toHaveBeenCalled();
 
     const openPreviewButton = container.querySelector(
       'button[aria-label="Open UPID export preview"]'
@@ -2187,6 +2202,7 @@ describe('App DXF imports and project library', () => {
     const exportSummary = container.querySelector('[data-upid-export-summary]');
     const exportCode = container.querySelector('[data-upid-export-gcode]');
     expect(composeUpidGCodeExportSpy).toHaveBeenCalledTimes(1);
+    expect(postUpidForMachineSpy).toHaveBeenCalledTimes(1);
     expect(exportPreview).not.toBeNull();
     expect(exportPreview?.textContent).toContain('UPID Export Preview');
     expect(exportPreview?.textContent).toContain('Default Wire EDM');

@@ -29,10 +29,8 @@ import type {
   Point2,
   SegmentId
 } from '@/domain/path-intel/types';
-import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
 import {
-  postUpidForMachine,
-  verifiedRobofilPostEnvelopeIsReady
+  deriveVerifiedRobofilPreviewPostBlocks
 } from '@/domain/post/upidMachinePost';
 import type { MachineProfile } from '@/domain/workbench/types';
 
@@ -102,22 +100,7 @@ export function deriveVerifiedRobofilPreviewTransitions(
   document: PathPlanningDocument,
   machine: MachineProfile
 ): PostedPreviewTransition[] | undefined {
-  if (
-    machine.controller.family !== 'charmilles-robofil-classic' ||
-    !verifiedRobofilPostEnvelopeIsReady(machine) ||
-    document.plan.operations.length !== 1
-  ) {
-    return undefined;
-  }
-
-  const operation = document.plan.operations[0];
-  if (resolveControllerCompensation({ document, operation }).status !== 'ready') {
-    return undefined;
-  }
-  const posted = postUpidForMachine(document, machine);
-  if (posted.status === 'blocked') return [];
-
-  return posted.blocks.flatMap((block) => {
+  return deriveVerifiedRobofilPreviewPostBlocks(document, machine)?.flatMap((block) => {
     if (
       block.kind !== 'lead-in' ||
       !block.operationId ||

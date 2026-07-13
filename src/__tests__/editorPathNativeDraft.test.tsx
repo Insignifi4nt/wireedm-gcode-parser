@@ -2,6 +2,20 @@ import { act, useState, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const postUpidForMachineSpy = vi.hoisted(() => vi.fn());
+
+vi.mock('@/domain/post/upidMachinePost', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/domain/post/upidMachinePost')>();
+
+  return {
+    ...actual,
+    postUpidForMachine: (...args: Parameters<typeof actual.postUpidForMachine>) => {
+      postUpidForMachineSpy(...args);
+      return actual.postUpidForMachine(...args);
+    }
+  };
+});
+
 import { AppRailProvider, type AppRailContent } from '@/app/AppRailContext';
 import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
 import { parseDxf } from '@/domain/dxf/parseDxf';
@@ -35,6 +49,7 @@ describe('EditorPage UPID draft boundary', () => {
   let root: Root;
 
   beforeEach(() => {
+    postUpidForMachineSpy.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
     autoOpenedPanelToolbars = new WeakSet<Element>();
@@ -108,6 +123,7 @@ describe('EditorPage UPID draft boundary', () => {
     const codeAfter = container.querySelector('[data-testid="compensation-code"]')?.textContent;
     expect(codeAfter).toContain('G41 D0');
     expect(codeAfter).not.toBe(codeBefore);
+    expect(postUpidForMachineSpy).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="compensation-kept-material"]')?.textContent).toContain('inside');
   });
 

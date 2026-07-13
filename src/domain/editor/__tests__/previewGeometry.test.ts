@@ -398,6 +398,23 @@ describe('buildEditorPreviewGeometry', () => {
     expect(deriveVerifiedRobofilPreviewTransitions(document, machine)).toEqual([]);
   });
 
+  it('suppresses synthetic transitions for verified Robofil wire-centre and missing-intent blockers', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const wireCentre = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 10, 0),
+      line(10, 0, 10, 5),
+      line(10, 5, 0, 5),
+      line(0, 5, 0, 0)
+    ]);
+    const missingIntent = {
+      ...wireCentre,
+      geometryBasis: 'finished-contour' as const
+    };
+
+    expect(deriveVerifiedRobofilPreviewTransitions(wireCentre, machine)).toEqual([]);
+    expect(deriveVerifiedRobofilPreviewTransitions(missingIntent, machine)).toEqual([]);
+  });
+
   it('uses stable synthetic line ids when path document preview has stale line hints', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       line(0, 0, 10, 0),

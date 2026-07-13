@@ -88,3 +88,9 @@ Follow-up TDD evidence:
 - Production build: TypeScript and Vite passed.
 - Full Playwright: 29 passed, 1 existing environment-dependent test skipped.
 - `git diff --check`: passed.
+
+### Completion-review correction
+
+The first follow-up implementation briefly called `postUpidForMachine` while deriving canvas transitions. Completion review correctly identified two consequences: blocked wire-centre/missing-intent Robofil documents could fall back to synthetic travel, and fixing that solely by posting every render would violate the explicit-export-only posting boundary.
+
+A second RED cycle captured both problems: verified wire-centre/missing-intent preview derivation returned `undefined` instead of an empty transition list, and a verified editor review invoked the full machine poster three times before export preview opened. The final implementation uses a pure `deriveVerifiedRobofilPreviewPostBlocks` preflight. It shares the structured Robofil prefix calculation with the real post, returns the same approach block index/points as a ready post, returns an empty list for blocked verified states, and never runs the full poster during editor review. Focused verification passed 4 files/143 tests before the final metadata-equality assertion was added.

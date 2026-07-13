@@ -17,7 +17,10 @@ import {
   postUpidToGcode
 } from '@/domain/upid/upidDocument';
 
-import { postUpidForMachine } from '../upidMachinePost';
+import {
+  deriveVerifiedRobofilPreviewPostBlocks,
+  postUpidForMachine
+} from '../upidMachinePost';
 
 describe('postUpidForMachine', () => {
   it('posts the verified single-contour Robofil lifecycle as traceable blocks', () => {
@@ -107,6 +110,15 @@ describe('postUpidForMachine', () => {
       text: approach.text,
       operationId: operation.id
     });
+    expect(deriveVerifiedRobofilPreviewPostBlocks(document, machine)).toEqual([
+      {
+        bodyLineIndex: posted.blocks[5].bodyLineIndex,
+        kind: posted.blocks[5].kind,
+        operationId: posted.blocks[5].operationId,
+        startPoint: posted.blocks[5].startPoint,
+        endPoint: posted.blocks[5].endPoint
+      }
+    ]);
     expect(posted.blocks[6]).toMatchObject({
       kind: 'contour',
       segmentId: operation.segmentRefs[0].segmentId

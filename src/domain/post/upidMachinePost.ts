@@ -48,8 +48,59 @@ export interface UpidMachinePostResult extends GcodePostResult {
   programOwned: boolean;
 }
 
+export type VerifiedRobofilPreviewPostBlock = Pick<
+  GcodePostedBlock,
+  'bodyLineIndex' | 'kind' | 'operationId' | 'startPoint' | 'endPoint'
+>;
+
 export function verifiedRobofilPostEnvelopeIsReady(machine: MachineProfile) {
   return hasCurrentRobofilVerification(machine) && matchesVerifiedRobofilEnvelope(machine);
+}
+
+export function deriveVerifiedRobofilPreviewPostBlocks(
+  document: PathPlanningDocument,
+  machine: MachineProfile
+): VerifiedRobofilPreviewPostBlock[] | undefined {
+  if (
+    machine.controller.family !== 'charmilles-robofil-classic' ||
+    !verifiedRobofilPostEnvelopeIsReady(machine) ||
+    document.plan.operations.length !== 1
+  ) {
+    return undefined;
+  }
+  if (!validateUpidDocument(document).valid) return [];
+
+  const operation = document.plan.operations[0];
+  const resolution = resolveControllerCompensation({ document, operation });
+  if (
+    resolution.status === 'blocked' ||
+    operation.overrides?.leadIn?.source === 'circle-center' ||
+    !validateTemplateModalPolicy({
+      machine,
+      header: machine.templates.header,
+      footer: machine.templates.footer
+    }).valid
+  ) {
+    return [];
+  }
+
+  const origin = { x: 0, y: 0 };
+  if (
+    Math.hypot(operation.startPoint.x - origin.x, operation.startPoint.y - origin.y) <=
+    document.options.coincidenceEpsilon
+  ) {
+    return [];
+  }
+
+  return [{
+    bodyLineIndex:
+      templateLines(machine.templates.header).length +
+      verifiedRobofilStructuredPrefix(machine, resolution.code).length,
+    kind: 'lead-in',
+    operationId: operation.id,
+    startPoint: origin,
+    endPoint: operation.startPoint
+  }];
 }
 
 export function postUpidForMachine(
@@ -183,13 +234,7 @@ function postVerifiedRobofil(
   const headerLines = templateLines(machine.templates.header);
   const footerLines = templateLines(machine.templates.footer);
   const dIndex = machine.compensation.offsetSelection.index;
-  const structuredPrefix = [
-    'G92 X0 Y0',
-    ...machine.compensation.preActivationCodes,
-    'G38',
-    `${resolution.code} D${dIndex}`,
-    machine.controller.distanceMode
-  ];
+  const structuredPrefix = verifiedRobofilStructuredPrefix(machine, resolution.code);
   const prefixLines = [...headerLines, ...structuredPrefix];
   const contourLines = geometry.body ? geometry.body.split('\n') : [];
   const lines = [...prefixLines, ...contourLines, ...footerLines, 'M02'];
@@ -414,6 +459,19 @@ function effectiveDocumentEndpointTolerance(document: PathPlanningDocument) {
 function templateLines(source: string) {
   const trimmed = source.trim();
   return trimmed ? trimmed.split(/\r?\n/) : [];
+}
+
+function verifiedRobofilStructuredPrefix(
+  machine: MachineProfile,
+  compensationCode: 'G41' | 'G42'
+) {
+  return [
+    'G92 X0 Y0',
+    ...machine.compensation.preActivationCodes,
+    'G38',
+    `${compensationCode} D${machine.compensation.offsetSelection.index}`,
+    machine.controller.distanceMode
+  ];
 }
 
 function stripComments(line: string) {
