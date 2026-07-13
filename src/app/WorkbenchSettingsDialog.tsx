@@ -151,7 +151,7 @@ export function WorkbenchSettingsDialog({
       <div
         aria-label="Workbench settings"
         aria-modal="true"
-        className="grid max-h-[86vh] w-full max-w-4xl grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1"
+        className="grid h-[86vh] w-full max-w-4xl grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1"
         onMouseDown={(event) => event.stopPropagation()}
         ref={dialogRef}
         role="dialog"
@@ -171,7 +171,7 @@ export function WorkbenchSettingsDialog({
             <button
               aria-current={activeSection === 'storage' ? 'page' : undefined}
               aria-label="Storage settings"
-              className={`flex h-8 items-center gap-2 rounded-[2px] border px-3 text-left text-[11px] outline-none transition ${
+              className={`flex h-8 items-center gap-2 whitespace-nowrap rounded-[2px] border px-3 text-left text-[10px] outline-none transition ${
                 activeSection === 'storage'
                   ? 'border-primary/40 bg-accent text-foreground'
                   : 'border-transparent text-muted-foreground hover:border-border hover:bg-accent/50 hover:text-foreground'
@@ -185,7 +185,7 @@ export function WorkbenchSettingsDialog({
             <button
               aria-current={activeSection === 'machine-output' ? 'page' : undefined}
               aria-label="Machine & Output settings"
-              className={`flex h-8 items-center gap-2 rounded-[2px] border px-3 text-left text-[11px] outline-none transition ${
+              className={`flex h-8 items-center gap-2 whitespace-nowrap rounded-[2px] border px-3 text-left text-[10px] outline-none transition ${
                 activeSection === 'machine-output'
                   ? 'border-primary/40 bg-accent text-foreground'
                   : 'border-transparent text-muted-foreground hover:border-border hover:bg-accent/50 hover:text-foreground'
