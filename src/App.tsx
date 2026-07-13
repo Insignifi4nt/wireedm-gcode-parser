@@ -3,6 +3,7 @@ import { type AppServices } from '@/app/appServices';
 import { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import { StatusToastList } from '@/components/StatusToasts';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
+import { DxfImportConfirmationDialog } from '@/features/dashboard/DxfImportConfirmationDialog';
 import { EditorPage } from '@/features/editor/EditorPage';
 
 interface AppProps {
@@ -43,10 +44,11 @@ export default function App({ services }: AppProps = {}) {
           interactionLocked={app.workbenchInteractionLocked}
           importErrorMessage={app.editorImportErrorMessage}
           importStatus={app.editorImportStatus}
-          key={app.loadedEditorProgram?.filePath ?? 'empty-editor'}
+          key={`${app.loadedEditorProgram?.filePath ?? 'empty-editor'}:${app.editorProgramRevision}`}
           onBackToDashboard={app.handleBackToDashboard}
           onDownloadEditorFile={app.handleDownloadEditorFile}
           onImportProgramFile={app.handleImportExternalProgram}
+          onReimportDxfUnits={app.handlePrepareDxfReimport}
           onSaveEditorDraft={app.handleSaveEditorDraft}
           onStatusMessage={app.showStatusToast}
           program={app.loadedEditorProgram}
@@ -76,6 +78,34 @@ export default function App({ services }: AppProps = {}) {
           programImportErrorMessage={app.editorImportErrorMessage}
           programImportStatus={app.editorImportStatus}
           workbenchStatus={app.workbenchStatus}
+        />
+      )}
+      {app.pendingDxfReimport && (
+        <DxfImportConfirmationDialog
+          declaredUnitOverrideAcknowledged={
+            app.pendingDxfReimport.declaredUnitOverrideAcknowledged
+          }
+          errorMessage={app.dxfReimportErrorMessage}
+          machineProfileLocked
+          mode="reimport"
+          onCancel={app.handleCancelDxfReimport}
+          onConfirm={app.handleConfirmDxfReimport}
+          onMachineProfileChange={() => undefined}
+          onOverrideAcknowledgedChange={
+            app.handleDxfReimportOverrideAcknowledgedChange
+          }
+          onRebuildAcknowledgedChange={
+            app.handleDxfReimportRebuildAcknowledgedChange
+          }
+          onUnitCandidateChange={app.handleDxfReimportUnitCandidateChange}
+          preparation={app.pendingDxfReimport.preparation}
+          preview={app.pendingDxfReimport.preview}
+          previewErrorMessage={app.pendingDxfReimport.previewErrorMessage}
+          rebuildAcknowledged={app.pendingDxfReimport.rebuildAcknowledged}
+          rebuildRequired={app.pendingDxfReimport.rebuildRequired}
+          selection={app.pendingDxfReimport.selection}
+          submitting={app.dxfReimportStatus === 'importing'}
+          unitCandidates={app.pendingDxfReimport.unitCandidates}
         />
       )}
     </AppShell>

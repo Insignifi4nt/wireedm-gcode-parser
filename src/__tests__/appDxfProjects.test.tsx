@@ -213,6 +213,103 @@ describe('App DXF imports and project library', () => {
     expect(importButton().disabled).toBe(true);
   });
 
+  it('reimports different units from persisted raw DXF without replacing project identity or machine', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+    await prepareDxfImport(
+      container,
+      new File([declaredInchLineDxf()], 'reimport-source.dxf')
+    );
+    await confirmPendingDxfImport(container);
+
+    const manifestBefore = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const projectPath = manifestBefore.projects[0].path;
+    const projectBefore = JSON.parse(
+      window.localStorage.getItem(`wire-edm-workbench:file:${projectPath}`) || '{}'
+    );
+    const rawPath = projectBefore.source.files[0].path;
+    const rawBefore = window.localStorage.getItem(`wire-edm-workbench:file:${rawPath}`);
+    const reimportButton = container.querySelector(
+      'button[aria-label="Re-import with different units"]'
+    ) as HTMLButtonElement;
+
+    await act(async () => reimportButton.click());
+    await flushAsync();
+
+    expect(
+      container.querySelector('[role="dialog"][aria-label="Review DXF unit re-import"]')
+    ).not.toBeNull();
+    const machineSelect = container.querySelector(
+      'select[aria-label="Machine profile"]'
+    ) as HTMLSelectElement;
+    const unitsSelect = container.querySelector(
+      'select[aria-label="DXF units"]'
+    ) as HTMLSelectElement;
+    expect(machineSelect.disabled).toBe(true);
+    await act(async () => setSelectValue(unitsSelect, 'millimeters'));
+    await act(async () => {
+      (container.querySelector(
+        'input[aria-label="Override declared DXF units"]'
+      ) as HTMLInputElement).click();
+      (container.querySelector(
+        'input[aria-label="Rebuild path geometry from raw DXF"]'
+      ) as HTMLInputElement).click();
+    });
+    const confirm = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Re-import and open'
+    ) as HTMLButtonElement;
+    await act(async () => confirm.click());
+    await flushAsync();
+
+    const manifestAfter = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const projectAfter = JSON.parse(
+      window.localStorage.getItem(`wire-edm-workbench:file:${projectPath}`) || '{}'
+    );
+    expect(manifestAfter.projects).toHaveLength(1);
+    expect(manifestAfter.projects[0].id).toBe(manifestBefore.projects[0].id);
+    expect(projectAfter.id).toBe(projectBefore.id);
+    expect(projectAfter.name).toBe(projectBefore.name);
+    expect(projectAfter.createdAt).toBe(projectBefore.createdAt);
+    expect(projectAfter.machine).toEqual(projectBefore.machine);
+    expect(projectAfter.source.files).toEqual(projectBefore.source.files);
+    expect(projectAfter.upid.document.source.appliedUnits).toMatchObject({
+      label: 'millimeters',
+      scaleToMillimeters: 1,
+      basis: 'user-confirmed'
+    });
+    expect(projectAfter.upid.document.segments[0].end.x).toBe(1);
+    expect(window.localStorage.getItem(`wire-edm-workbench:file:${rawPath}`)).toBe(rawBefore);
+    expect(container.querySelector('[data-editor-status-units]')?.textContent).toContain(
+      'millimeters ×1'
+    );
+  });
+
+  it('disables raw DXF unit reimport while the editor has unsaved path changes', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+    await prepareDxfImport(container, new File([rectangleMillimeterDxf()], 'unsaved-units.dxf'));
+    await confirmPendingDxfImport(container);
+    const reimportButton = container.querySelector(
+      'button[aria-label="Re-import with different units"]'
+    ) as HTMLButtonElement;
+    expect(reimportButton.disabled).toBe(false);
+
+    await selectFirstCutSequence(container);
+    await act(async () => {
+      (container.querySelector(
+        'button[aria-label="Reverse path operation"]'
+      ) as HTMLButtonElement).click();
+    });
+    await flushAsync();
+
+    expect(reimportButton.disabled).toBe(true);
+    expect(reimportButton.title).toContain('Save or undo');
+  });
+
   it('keeps a failed confirmed commit in the review dialog for correction or retry', async () => {
     window.showDirectoryPicker = undefined;
     const commitDxfProjectImport = vi.fn(async () => {
@@ -2397,6 +2494,15 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
     expect(composeUpidGCodeExportSpy).not.toHaveBeenCalled();
     expect(postUpidForMachineSpy).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-editor-dxf-unit-provenance]')?.textContent).toContain(
+      'Declared by DXF'
+    );
+    expect(container.querySelector('[data-editor-dxf-unit-provenance]')?.textContent).toContain(
+      'millimeters ×1'
+    );
+    expect(container.querySelector('[data-editor-status-units]')?.textContent).toContain(
+      'millimeters ×1'
+    );
 
     const openPreviewButton = container.querySelector(
       'button[aria-label="Open UPID export preview"]'
@@ -2429,9 +2535,15 @@ describe('App DXF imports and project library', () => {
     expect(exportTrace?.getAttribute('data-upid-export-document-units-code')).toBe('4');
     expect(exportTrace?.getAttribute('data-upid-export-document-units-scale')).toBe('1');
     expect(exportTrace?.getAttribute('data-upid-export-document-units-source')).toBe('dxf-insunits');
+    expect(exportTrace?.getAttribute('data-upid-export-document-unit-declaration')).toBe('recognized');
+    expect(exportTrace?.getAttribute('data-upid-export-document-applied-units')).toBe('millimeters');
+    expect(exportTrace?.getAttribute('data-upid-export-document-applied-scale')).toBe('1');
+    expect(exportTrace?.getAttribute('data-upid-export-document-applied-basis')).toBe('dxf-declared');
+    expect(exportTrace?.getAttribute('data-upid-export-document-applied-confirmed')).toBe('true');
     expect(exportTrace?.textContent).toContain('UPID v1');
     expect(exportTrace?.textContent).toContain('export-preview.dxf');
     expect(exportTrace?.textContent).toContain('millimeters');
+    expect(exportTrace?.textContent).toContain('Declared by DXF');
     expect(exportSummary).not.toBeNull();
     expect(container.querySelector('[data-upid-export-stat="operations"]')?.textContent).toBe('1');
     expect(container.querySelector('[data-upid-export-stat="rapid"]')?.textContent).toBe('1');

@@ -112,10 +112,27 @@ export function EditorUpidExportPreview({
               documentTrace.sourceUnits?.scaleToMillimeters ?? undefined
             }
             data-upid-export-document-units-source={documentTrace.sourceUnits?.source ?? undefined}
+            data-upid-export-document-unit-declaration={documentTrace.unitDeclaration?.status ?? undefined}
+            data-upid-export-document-applied-units={documentTrace.appliedUnits?.label ?? undefined}
+            data-upid-export-document-applied-scale={
+              documentTrace.appliedUnits?.scaleToMillimeters ?? undefined
+            }
+            data-upid-export-document-applied-basis={documentTrace.appliedUnits?.basis ?? undefined}
+            data-upid-export-document-applied-confirmed={
+              documentTrace.appliedUnits ? String(documentTrace.appliedUnits.confirmed) : undefined
+            }
           >
             UPID v{documentTrace.schemaVersion} / {documentTrace.sourceKind}
             {documentTrace.fileName ? ` / ${documentTrace.fileName}` : ''}
             {documentTrace.sourceUnits ? ` / ${documentTrace.sourceUnits.label}` : ''}
+            {documentTrace.unitDeclaration
+              ? ` / ${formatUnitDeclaration(documentTrace.unitDeclaration.status)}`
+              : ''}
+            {documentTrace.appliedUnits
+              ? ` → ${documentTrace.appliedUnits.label} ×${formatScale(
+                  documentTrace.appliedUnits.scaleToMillimeters
+                )}`
+              : ''}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -436,6 +453,20 @@ export function EditorUpidExportPreview({
       </div>
     </section>
   );
+}
+
+function formatUnitDeclaration(
+  status: NonNullable<UpidGCodeExportDocumentTrace['unitDeclaration']>['status']
+) {
+  if (status === 'recognized') return 'Declared by DXF';
+  if (status === 'unitless') return 'Unitless DXF';
+  if (status === 'unknown') return 'Unknown DXF units';
+  if (status === 'malformed') return 'Malformed DXF units';
+  return 'Units not declared';
+}
+
+function formatScale(value: number) {
+  return Number.isInteger(value) ? String(value) : String(value);
 }
 
 function formatPostedBlockKind(kind: UpidGCodeProgramBlock['kind']) {

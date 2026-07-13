@@ -16,6 +16,7 @@ export interface DxfImportConfirmationDialogProps {
   onConfirm: () => void | Promise<void>;
   onMachineProfileChange: (profileId: string) => void;
   onOverrideAcknowledgedChange: (acknowledged: boolean) => void;
+  onRebuildAcknowledgedChange?: (acknowledged: boolean) => void;
   onUnitCandidateChange: (candidateId: string) => void;
   preparation: DxfImportPreparation;
   preview: DxfImportPreview | null;
@@ -23,6 +24,10 @@ export interface DxfImportConfirmationDialogProps {
   selection: DxfImportSelection;
   submitting: boolean;
   unitCandidates: DxfImportUnitCandidate[];
+  mode?: 'import' | 'reimport';
+  machineProfileLocked?: boolean;
+  rebuildAcknowledged?: boolean;
+  rebuildRequired?: boolean;
 }
 
 export function DxfImportConfirmationDialog({
@@ -32,14 +37,20 @@ export function DxfImportConfirmationDialog({
   onConfirm,
   onMachineProfileChange,
   onOverrideAcknowledgedChange,
+  onRebuildAcknowledgedChange,
   onUnitCandidateChange,
   preparation,
   preview,
   previewErrorMessage,
   selection,
   submitting,
-  unitCandidates
+  unitCandidates,
+  mode = 'import',
+  machineProfileLocked = false,
+  rebuildAcknowledged = false,
+  rebuildRequired = false
 }: DxfImportConfirmationDialogProps) {
+  const reimport = mode === 'reimport';
   const dialogRef = useRef<HTMLFormElement | null>(null);
   const unitSelectRef = useRef<HTMLSelectElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -127,7 +138,8 @@ export function DxfImportConfirmationDialog({
         : 'Not declared';
   const confirmationBlocked =
     submitting || !preview || Boolean(previewErrorMessage) ||
-    (overridesDeclaration && !declaredUnitOverrideAcknowledged);
+    (overridesDeclaration && !declaredUnitOverrideAcknowledged) ||
+    (rebuildRequired && !rebuildAcknowledged);
   const displayError = previewErrorMessage ?? errorMessage;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -148,7 +160,7 @@ export function DxfImportConfirmationDialog({
       ref={overlayRef}
     >
       <form
-        aria-label="Review DXF import"
+        aria-label={reimport ? 'Review DXF unit re-import' : 'Review DXF import'}
         aria-modal="true"
         className="grid max-h-[88vh] w-full max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border border-border bg-card shadow-2xl"
         onMouseDown={(event) => event.stopPropagation()}
@@ -159,13 +171,15 @@ export function DxfImportConfirmationDialog({
       >
         <header className="flex items-start justify-between gap-4 border-b border-border p-4">
           <div className="min-w-0">
-            <h2 className="font-mono text-base font-semibold">Review DXF Import</h2>
+            <h2 className="font-mono text-base font-semibold">
+              {reimport ? 'Re-import DXF with Different Units' : 'Review DXF Import'}
+            </h2>
             <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
               {preparation.fileName}
             </p>
           </div>
           <button
-            aria-label="Close DXF import review"
+            aria-label={reimport ? 'Close DXF unit re-import review' : 'Close DXF import review'}
             className="flex size-7 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground disabled:opacity-45"
             disabled={submitting}
             onClick={onCancel}
@@ -231,7 +245,7 @@ export function DxfImportConfirmationDialog({
                 <select
                   aria-label="Machine profile"
                   className="h-8 border border-border bg-background px-2 text-foreground outline-none focus:border-ring"
-                  disabled={submitting}
+                  disabled={submitting || machineProfileLocked}
                   onChange={(event) => onMachineProfileChange(event.currentTarget.value)}
                   value={selection.machineProfileId}
                 >
@@ -262,6 +276,25 @@ export function DxfImportConfirmationDialog({
               </div>
             </section>
 
+            {reimport && rebuildRequired && (
+              <label className="flex items-start gap-2 border border-amber-500/50 bg-amber-500/10 p-3 text-amber-200">
+                <input
+                  aria-label="Rebuild path geometry from raw DXF"
+                  checked={rebuildAcknowledged}
+                  className="mt-0.5"
+                  disabled={submitting}
+                  onChange={(event) =>
+                    onRebuildAcknowledgedChange?.(event.currentTarget.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  Rebuild the path from the persisted raw DXF. Existing saved geometry-derived
+                  edits, starts, directions, leads, and compensation decisions will be replaced.
+                </span>
+              </label>
+            )}
+
             {displayError && (
               <p className="border border-destructive bg-destructive/10 p-2 text-destructive" role="alert">
                 {displayError}
@@ -275,7 +308,9 @@ export function DxfImportConfirmationDialog({
             Cancel
           </Button>
           <Button disabled={confirmationBlocked} type="submit">
-            {submitting ? 'Importing...' : 'Import and open'}
+            {submitting
+              ? reimport ? 'Re-importing...' : 'Importing...'
+              : reimport ? 'Re-import and open' : 'Import and open'}
           </Button>
         </footer>
       </form>

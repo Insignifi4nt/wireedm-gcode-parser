@@ -10,6 +10,10 @@ import {
   type DxfImportPreparation
 } from '@/domain/dxf/prepareDxfProjectImport';
 import {
+  commitDxfProjectReimport,
+  prepareDxfProjectReimport
+} from '@/domain/dxf/reimportDxfProjectUnits';
+import {
   importExternalProgram,
   type ImportExternalProgramInput,
   type ImportExternalProgramResult
@@ -72,6 +76,8 @@ export interface AppServices {
     preparation: DxfImportPreparation,
     decision: DxfImportDecision
   ) => Promise<ImportDxfProjectResult>;
+  prepareDxfProjectReimport: typeof prepareDxfProjectReimport;
+  commitDxfProjectReimport: typeof commitDxfProjectReimport;
   importExternalProgram: (
     workbench: ConnectedWorkbench,
     input: ImportExternalProgramInput
@@ -118,6 +124,8 @@ export const defaultAppServices: AppServices = {
   previewDxfProjectImport,
   unitCandidatesForDxfImport,
   commitDxfProjectImport,
+  prepareDxfProjectReimport,
+  commitDxfProjectReimport,
   importExternalProgram,
   loadEditorProgram,
   openWorkbenchProject,

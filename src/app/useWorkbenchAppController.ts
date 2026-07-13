@@ -8,6 +8,10 @@ import type {
   DxfImportPreview,
   DxfImportSelection
 } from '@/domain/dxf/prepareDxfProjectImport';
+import {
+  dxfProjectReimportRequiresRebuild,
+  type DxfProjectReimportPreparation
+} from '@/domain/dxf/reimportDxfProjectUnits';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import {
@@ -36,8 +40,20 @@ export interface PendingDxfImport {
   selection: DxfImportSelection;
   unitCandidates: DxfImportUnitCandidate[];
 }
+export interface PendingDxfReimport {
+  declaredUnitOverrideAcknowledged: boolean;
+  preparation: DxfProjectReimportPreparation;
+  preview: DxfImportPreview | null;
+  previewErrorMessage: string | null;
+  project: NonNullable<LoadedEditorProgram['project']>;
+  rebuildAcknowledged: boolean;
+  rebuildRequired: boolean;
+  selection: DxfImportSelection;
+  unitCandidates: DxfImportUnitCandidate[];
+}
 type WorkbenchOperationKind =
   | 'dxf-import'
+  | 'dxf-reimport'
   | 'editor-import'
   | 'editor-save'
   | 'project-delete'
@@ -60,6 +76,10 @@ export interface WorkbenchAppController {
   importErrorMessage: string | null;
   importStatus: ImportStatus;
   pendingDxfImport: PendingDxfImport | null;
+  pendingDxfReimport: PendingDxfReimport | null;
+  dxfReimportStatus: ImportStatus;
+  dxfReimportErrorMessage: string | null;
+  editorProgramRevision: number;
   storageActionLabel: string | null;
   storageWarningMessage: string | null;
   latestImport: ImportDxfProjectResult | null;
@@ -79,6 +99,12 @@ export interface WorkbenchAppController {
   handleDxfImportMachineProfileChange: (profileId: string) => void;
   handleDxfImportOverrideAcknowledgedChange: (acknowledged: boolean) => void;
   handleDxfImportUnitCandidateChange: (candidateId: string) => void;
+  handlePrepareDxfReimport: () => Promise<void>;
+  handleCancelDxfReimport: () => void;
+  handleConfirmDxfReimport: () => Promise<void>;
+  handleDxfReimportOverrideAcknowledgedChange: (acknowledged: boolean) => void;
+  handleDxfReimportRebuildAcknowledgedChange: (acknowledged: boolean) => void;
+  handleDxfReimportUnitCandidateChange: (candidateId: string) => void;
   handleImportExternalProgram: (file: File) => Promise<void>;
   handleOpenEditor: () => void;
   handleOpenLatestImportInEditor: () => Promise<void>;
@@ -114,6 +140,10 @@ export function useWorkbenchAppController(
   const [importStatus, setImportStatus] = useState<ImportStatus>('idle');
   const [importErrorMessage, setImportErrorMessage] = useState<string | null>(null);
   const [pendingDxfImport, setPendingDxfImport] = useState<PendingDxfImport | null>(null);
+  const [pendingDxfReimport, setPendingDxfReimport] = useState<PendingDxfReimport | null>(null);
+  const [dxfReimportStatus, setDxfReimportStatus] = useState<ImportStatus>('idle');
+  const [dxfReimportErrorMessage, setDxfReimportErrorMessage] = useState<string | null>(null);
+  const [editorProgramRevision, setEditorProgramRevision] = useState(0);
   const [editorImportStatus, setEditorImportStatus] = useState<ImportStatus>('idle');
   const [editorImportErrorMessage, setEditorImportErrorMessage] = useState<string | null>(null);
   const [editorSaveStatus, setEditorSaveStatus] = useState<SaveStatus>('idle');
@@ -544,6 +574,159 @@ export function useWorkbenchAppController(
     }
   }
 
+  function buildPendingDxfReimport(
+    project: NonNullable<LoadedEditorProgram['project']>,
+    preparation: DxfProjectReimportPreparation,
+    selection: DxfImportSelection,
+    declaredUnitOverrideAcknowledged = false,
+    rebuildAcknowledged = false
+  ): PendingDxfReimport {
+    const unitCandidates = appServices.unitCandidatesForDxfImport(
+      preparation,
+      selection.machineProfileId
+    );
+    try {
+      const preview = appServices.previewDxfProjectImport(preparation, selection);
+      return {
+        declaredUnitOverrideAcknowledged,
+        preparation,
+        preview,
+        previewErrorMessage: null,
+        project,
+        rebuildAcknowledged,
+        rebuildRequired: dxfProjectReimportRequiresRebuild(project, preview.unitCandidate),
+        selection,
+        unitCandidates
+      };
+    } catch (error) {
+      return {
+        declaredUnitOverrideAcknowledged,
+        preparation,
+        preview: null,
+        previewErrorMessage:
+          error instanceof Error ? error.message : 'Could not preview the revised DXF units.',
+        project,
+        rebuildAcknowledged,
+        rebuildRequired: true,
+        selection,
+        unitCandidates
+      };
+    }
+  }
+
+  async function handlePrepareDxfReimport() {
+    const project = loadedEditorProgram?.project;
+    if (
+      !connectedWorkbench ||
+      !project ||
+      loadedEditorProgram.model !== 'upid-document' ||
+      pendingDxfReimport
+    ) return;
+    const operationId = beginWorkbenchOperation('dxf-reimport');
+    if (operationId === null) return;
+    const workbench = connectedWorkbench;
+    setDxfReimportStatus('importing');
+    setDxfReimportErrorMessage(null);
+    try {
+      const preparation = await appServices.prepareDxfProjectReimport(workbench, project);
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      setPendingDxfReimport(
+        buildPendingDxfReimport(project, preparation, preparation.defaultSelection)
+      );
+      setDxfReimportStatus('idle');
+    } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      const message = error instanceof Error ? error.message : 'Could not read the persisted raw DXF.';
+      setDxfReimportStatus('error');
+      setDxfReimportErrorMessage(message);
+      showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
+    }
+  }
+
+  function handleDxfReimportUnitCandidateChange(candidateId: string) {
+    setDxfReimportErrorMessage(null);
+    setPendingDxfReimport((current) => {
+      if (!current || !current.unitCandidates.some(({ id }) => id === candidateId)) return current;
+      return buildPendingDxfReimport(current.project, current.preparation, {
+        ...current.selection,
+        unitCandidateId: candidateId
+      });
+    });
+  }
+
+  function handleDxfReimportOverrideAcknowledgedChange(acknowledged: boolean) {
+    setPendingDxfReimport((current) => current
+      ? { ...current, declaredUnitOverrideAcknowledged: acknowledged }
+      : current
+    );
+  }
+
+  function handleDxfReimportRebuildAcknowledgedChange(acknowledged: boolean) {
+    setPendingDxfReimport((current) => current
+      ? { ...current, rebuildAcknowledged: acknowledged }
+      : current
+    );
+  }
+
+  function handleCancelDxfReimport() {
+    if (workbenchOperationRef.current !== null) return;
+    setPendingDxfReimport(null);
+    setDxfReimportStatus('idle');
+    setDxfReimportErrorMessage(null);
+  }
+
+  async function handleConfirmDxfReimport() {
+    if (!connectedWorkbench || !pendingDxfReimport || dxfReimportStatus === 'importing') return;
+    const operationId = beginWorkbenchOperation('dxf-reimport');
+    if (operationId === null) return;
+    const workbench = connectedWorkbench;
+    const pending = pendingDxfReimport;
+    setDxfReimportStatus('importing');
+    setDxfReimportErrorMessage(null);
+    try {
+      const result = await appServices.commitDxfProjectReimport(
+        workbench,
+        pending.project,
+        pending.preparation,
+        {
+          ...pending.selection,
+          confirmed: true,
+          declaredUnitOverrideAcknowledged: pending.declaredUnitOverrideAcknowledged,
+          rebuildAcknowledged: pending.rebuildAcknowledged
+        }
+      );
+      const editorProgram = await appServices.loadEditorProgram(result.workbench, result.project);
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      setConnectedWorkbench(result.workbench);
+      setLoadedEditorProgram(editorProgram);
+      setEditorProgramRevision((current) => current + 1);
+      setLatestImport((current) => current?.project.id === result.project.id
+        ? {
+            ...current,
+            workbench: result.workbench,
+            project: result.project,
+            pathDocument: result.pathDocument,
+            pathDiagnostics: result.pathDocument.diagnostics
+          }
+        : current
+      );
+      setPendingDxfReimport(null);
+      setDxfReimportStatus('idle');
+      resetEditorLoadState();
+      showStatusToast('DXF units revised from the persisted raw source.', 'success');
+    } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      const message = error instanceof Error ? error.message : 'Could not revise DXF units.';
+      setDxfReimportStatus('error');
+      setDxfReimportErrorMessage(message);
+      showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
+    }
+  }
+
   function handleDownloadEditorFile(fileName: string, text: string) {
     appServices.downloadGeneratedProgram({ fileName, text });
     showStatusToast(`Downloaded ${fileName}.`, 'success');
@@ -830,6 +1013,10 @@ export function useWorkbenchAppController(
     importErrorMessage,
     importStatus,
     pendingDxfImport,
+    pendingDxfReimport,
+    dxfReimportStatus,
+    dxfReimportErrorMessage,
+    editorProgramRevision,
     storageActionLabel,
     storageWarningMessage,
     latestImport,
@@ -858,6 +1045,12 @@ export function useWorkbenchAppController(
     handleDxfImportMachineProfileChange,
     handleDxfImportOverrideAcknowledgedChange,
     handleDxfImportUnitCandidateChange,
+    handlePrepareDxfReimport,
+    handleCancelDxfReimport,
+    handleConfirmDxfReimport,
+    handleDxfReimportOverrideAcknowledgedChange,
+    handleDxfReimportRebuildAcknowledgedChange,
+    handleDxfReimportUnitCandidateChange,
     handleImportExternalProgram,
     handleOpenEditor: () => {
       if (workbenchOperationRef.current !== null) return;

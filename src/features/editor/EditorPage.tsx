@@ -145,6 +145,7 @@ interface EditorPageProps {
   onBackToDashboard: () => void;
   onDownloadEditorFile: (fileName: string, text: string) => void;
   onImportProgramFile: (file: File) => void | Promise<void>;
+  onReimportDxfUnits?: () => void | Promise<void>;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void | Promise<void>;
   onStatusMessage?: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void;
 }
@@ -480,6 +481,7 @@ export function EditorPage({
   onBackToDashboard,
   onDownloadEditorFile,
   onImportProgramFile,
+  onReimportDxfUnits,
   onSaveEditorDraft,
   onStatusMessage
 }: EditorPageProps) {
@@ -575,6 +577,11 @@ export function EditorPage({
     : draftParseResult && pathCount > 0
       ? formatBounds(draftParseResult.bounds)
       : '-';
+  const dxfUnitSummary = pathDocumentDraft?.source.appliedUnits
+    ? `${pathDocumentDraft.source.appliedUnits.label} ×${formatUnitScale(
+        pathDocumentDraft.source.appliedUnits.scaleToMillimeters
+      )}`
+    : null;
   const machineFit = useMemo(
     () =>
       program
@@ -2018,6 +2025,10 @@ export function EditorPage({
           measurementPoints={measurementPoints}
           machineFit={machineFit}
           machineProfile={program?.project?.machine ?? null}
+          canReimportDxfUnits={Boolean(pathDocumentDraft && onReimportDxfUnits && !hasUnsavedChanges)}
+          reimportDxfUnitsDisabledReason={
+            hasUnsavedChanges ? 'Save or undo path changes before re-importing DXF units.' : null
+          }
           onAddMeasurementPoint={handleAddMeasurementPoint}
           onClearMeasurementPoints={() => setMeasurementPoints([])}
           onDeleteMeasurementPoint={(pointId) =>
@@ -2028,6 +2039,7 @@ export function EditorPage({
           onExportMeasurementPoints={handleExportMeasurementPoints}
           onHoverPathElement={setHoveredPathElement}
           onInsertMeasurementPoints={handleInsertMeasurementPoints}
+          onReimportDxfUnits={onReimportDxfUnits}
           onPointXDraftChange={setPointXDraft}
           onPointYDraftChange={setPointYDraft}
           onSelectPathElement={handleSelectPathElement}
@@ -2400,6 +2412,7 @@ export function EditorPage({
         previewCursorPoint={previewCursorPoint}
         segmentCount={pathDocumentDraft?.segments.length ?? null}
         selectionSummary={editorSelectionSummary}
+        unitSummary={dxfUnitSummary}
       />
       {exportPreviewOpen && upidExport && (
         <EditorUpidExportPreview
@@ -2435,4 +2448,8 @@ function nextMeasurementPointId(currentLength: number) {
 
 function formatCoordinateDraft(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(3);
+}
+
+function formatUnitScale(value: number) {
+  return Number.isInteger(value) ? String(value) : String(value);
 }

@@ -210,6 +210,52 @@ describe('DxfImportConfirmationDialog', () => {
     expect(button('Importing...')?.disabled).toBe(true);
   });
 
+  it('locks the project machine and requires destructive acknowledgement in reimport mode', async () => {
+    const selected = machine('project-machine', null);
+    const preparation = prepareDxfProjectImport(workbench([selected], selected.id), {
+      fileName: 'persisted-raw.dxf',
+      text: lineDxf({ unitsCode: 1 })
+    });
+    const selection = {
+      machineProfileId: selected.id,
+      unitCandidateId: 'millimeters'
+    };
+    const preview = previewDxfProjectImport(preparation, selection);
+    const onRebuildAcknowledgedChange = vi.fn();
+
+    await renderDialog({
+      mode: 'reimport',
+      machineProfileLocked: true,
+      rebuildRequired: true,
+      rebuildAcknowledged: false,
+      preparation,
+      preview,
+      selection,
+      unitCandidates: preview.unitCandidates,
+      declaredUnitOverrideAcknowledged: true,
+      onRebuildAcknowledgedChange
+    });
+
+    expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe(
+      'Review DXF unit re-import'
+    );
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      'Re-import DXF with Different Units'
+    );
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      'saved geometry-derived edits'
+    );
+    expect(select('Machine profile')?.disabled).toBe(true);
+    expect(button('Re-import and open')?.disabled).toBe(true);
+    const acknowledgement = container.querySelector(
+      'input[aria-label="Rebuild path geometry from raw DXF"]'
+    ) as HTMLInputElement;
+
+    await act(async () => acknowledgement.click());
+
+    expect(onRebuildAcknowledgedChange).toHaveBeenCalledWith(true);
+  });
+
   async function renderDialog(overrides: Partial<ComponentProps<typeof DxfImportConfirmationDialog>> & Pick<ComponentProps<typeof DxfImportConfirmationDialog>, 'preparation' | 'preview' | 'selection' | 'unitCandidates'>) {
     await act(async () => {
       root.render(
@@ -222,6 +268,7 @@ describe('DxfImportConfirmationDialog', () => {
             onConfirm={vi.fn()}
             onMachineProfileChange={vi.fn()}
             onOverrideAcknowledgedChange={vi.fn()}
+            onRebuildAcknowledgedChange={vi.fn()}
             onUnitCandidateChange={vi.fn()}
             previewErrorMessage={null}
             submitting={false}

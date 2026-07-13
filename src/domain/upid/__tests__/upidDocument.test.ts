@@ -108,6 +108,23 @@ describe('UPID document boundary', () => {
         fileName: 'trace-source.dxf',
         importedAt: '2026-05-31T10:00:00.000Z',
         projectId: 'trace-project',
+        coordinateScaleToMillimeters: 1,
+        unitDeclaration: {
+          status: 'recognized',
+          units: {
+            code: 4,
+            label: 'millimeters',
+            scaleToMillimeters: 1,
+            source: 'dxf-insunits'
+          }
+        },
+        appliedUnits: {
+          label: 'millimeters',
+          scaleToMillimeters: 1,
+          basis: 'user-confirmed',
+          confirmed: true,
+          confirmedAt: '2026-05-31T10:00:00.000Z'
+        },
         units: {
           code: 4,
           label: 'millimeters',
@@ -135,6 +152,22 @@ describe('UPID document boundary', () => {
       segmentCount: 1,
       sourceEntityCount: 1,
       sourceKind: 'dxf-entities',
+      unitDeclaration: {
+        status: 'recognized',
+        units: {
+          code: 4,
+          label: 'millimeters',
+          scaleToMillimeters: 1,
+          source: 'dxf-insunits'
+        }
+      },
+      appliedUnits: {
+        label: 'millimeters',
+        scaleToMillimeters: 1,
+        basis: 'user-confirmed',
+        confirmed: true,
+        confirmedAt: '2026-05-31T10:00:00.000Z'
+      },
       sourceUnits: {
         code: 4,
         label: 'millimeters',
@@ -142,6 +175,8 @@ describe('UPID document boundary', () => {
         source: 'dxf-insunits'
       }
     });
+    expect(exportProgram.documentTrace.appliedUnits).not.toBe(document.source.appliedUnits);
+    expect(exportProgram.documentTrace.unitDeclaration).not.toBe(document.source.unitDeclaration);
     expect(exportProgram.canDownload).toBe(true);
     expect(exportProgram.blockingDiagnostics).toEqual([]);
     expect(exportProgram.body).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');

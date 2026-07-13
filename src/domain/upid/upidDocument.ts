@@ -1,4 +1,9 @@
-import type { DxfDrawingUnits, DxfEntity } from '@/domain/dxf/types';
+import type {
+  AppliedDxfUnits,
+  DxfDrawingUnits,
+  DxfEntity,
+  DxfUnitDeclaration
+} from '@/domain/dxf/types';
 import {
   createGCodeInterpreterState,
   interpretGCodeBlock
@@ -74,6 +79,7 @@ export interface UpidGCodeExport {
 }
 
 export interface UpidGCodeExportDocumentTrace {
+  appliedUnits: AppliedDxfUnits | null;
   contourCount: number;
   fileName: string | null;
   format: typeof UPID_FORMAT_NAME;
@@ -86,6 +92,7 @@ export interface UpidGCodeExportDocumentTrace {
   sourceEntityCount: number;
   sourceKind: UniversalPathIntelligenceDocument['source']['kind'];
   sourceUnits: DxfDrawingUnits | null;
+  unitDeclaration: DxfUnitDeclaration | null;
 }
 
 export interface UpidGCodeExportPlanning {
@@ -328,6 +335,7 @@ function traceUpidDocumentForExport(
 ): UpidGCodeExportDocumentTrace {
   const source = document?.source ?? ({ kind: 'dxf-entities', entityCount: 0 } as const);
   return {
+    appliedUnits: source.appliedUnits ? structuredClone(source.appliedUnits) : null,
     contourCount: Array.isArray(document?.contours) ? document.contours.length : 0,
     fileName: source.fileName ?? null,
     format: UPID_FORMAT_NAME,
@@ -341,7 +349,8 @@ function traceUpidDocumentForExport(
     segmentCount: Array.isArray(document?.segments) ? document.segments.length : 0,
     sourceEntityCount: Number.isInteger(source.entityCount) ? source.entityCount : 0,
     sourceKind: source.kind === 'dxf-entities' ? source.kind : 'dxf-entities',
-    sourceUnits: source.units ?? null
+    sourceUnits: source.units ? { ...source.units } : null,
+    unitDeclaration: source.unitDeclaration ? structuredClone(source.unitDeclaration) : null
   };
 }
 
