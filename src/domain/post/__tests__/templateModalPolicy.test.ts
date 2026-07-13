@@ -115,15 +115,36 @@ describe('validateTemplateModalPolicy', () => {
     expect(result).toEqual({ valid: true, diagnostics: [] });
   });
 
-  it('does not impose the Robofil forbidden-word policy on a custom profile', () => {
+  it('does not impose Robofil-only setup restrictions on a custom profile', () => {
     const machine = createBlankMachineProfile();
 
     const result = validateTemplateModalPolicy({
       machine,
-      header: 'G21 G17 G54 G40 G41 D0',
-      footer: 'G42 D0 M30'
+      header: 'G21 G17 G54 G40 D0',
+      footer: 'M30'
     });
 
     expect(result).toEqual({ valid: true, diagnostics: [] });
+  });
+
+  it.each(['G41 D0', 'G42D0', 'G20', 'N10G041', 'G90G42D7'])(
+    'rejects the exact generic structured-compensation conflict in %s',
+    (header) => {
+      const machine = createBlankMachineProfile();
+
+      expect(validateTemplateModalPolicy({ machine, header, footer: '' })).toMatchObject({
+        valid: false
+      });
+    }
+  );
+
+  it('does not mistake generic comments or larger modal words for compensation conflicts', () => {
+    const machine = createBlankMachineProfile();
+
+    expect(validateTemplateModalPolicy({
+      machine,
+      header: '(G41) G200 G21 G40',
+      footer: '; G42 G20'
+    })).toEqual({ valid: true, diagnostics: [] });
   });
 });

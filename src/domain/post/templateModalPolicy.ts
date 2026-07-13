@@ -23,10 +23,6 @@ export function validateTemplateModalPolicy({
   header,
   footer
 }: TemplateModalPolicyInput): TemplateModalPolicyResult {
-  if (machine.controller.family !== 'charmilles-robofil-classic') {
-    return { valid: true, diagnostics: [] };
-  }
-
   const diagnostics: TemplateModalPolicyDiagnostic[] = [];
   for (const [section, source] of [
     ['header', header],
@@ -37,6 +33,19 @@ export function validateTemplateModalPolicy({
       .forEach((rawLine, index) => {
         const residue = rawLine.trim();
         if (!residue) return;
+        if (machine.controller.family !== 'charmilles-robofil-classic') {
+          for (const match of residue.matchAll(/G0*(\d+(?:\.\d+)?)/gi)) {
+            const word = `G${Number(match[1])}`;
+            if (!['G20', 'G41', 'G42'].includes(word)) continue;
+            diagnostics.push({
+              section,
+              lineNumber: index + 1,
+              word,
+              message: `${word} conflicts with structured millimetre controller compensation.`
+            });
+          }
+          return;
+        }
         const modalWord = residue.toUpperCase().match(/([GM])0*(\d+(?:\.\d+)?)/);
         const word = modalWord
           ? `${modalWord[1]}${Number(modalWord[2])}`

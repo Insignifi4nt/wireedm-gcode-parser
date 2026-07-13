@@ -196,3 +196,46 @@ The storage files are a narrow Task 5 addition beyond the plan's initial file li
 - The repository-wide app/UI visibility run passed 145/165 tests. Its 20 failures are confined to `src/__tests__/editorPathNativeDraft.test.tsx` and `src/__tests__/appDxfProjects.test.tsx`, covering the already-protected/in-progress Contour Workbook glyph, disclosure, diagnostic-count, hover, selection, and inspector expectations owned by Task 6. Task 5 did not change the protected UI/test files. The Task 5 dashboard/settings component test is green.
 - Machine-specific thread/cut/stop/rethread lifecycle commands remain intentionally absent.
 - Current output remains G40 wire-centre geometry; Task 5 does not add G41/G42, compensation registers, feed, or automatic lead moves.
+
+---
+
+# 2026-07-13 Compensation Task 5: Exact transitions and readiness
+
+## Status
+
+Implementation is complete under the separately bound `.superpowers/sdd/task-5-brief.md`. This appended section preserves the earlier, unrelated Task 5 audit record above.
+
+## Implementation
+
+- Added strict finite oriented endpoint tangents for lines, arcs, and transformed/reversed circles.
+- Added a pure deterministic explicit-linear transition generator with smooth-start enforcement, manual-start fail-closed behavior, automatic endpoint rotation, exact centreline intersection checks, conservative maximum-offset corridor checks, work-area extent checks, and formatted-coordinate collapse checks.
+- Added profile/readiness validation for support, current verification, D selection, millimetre output, resolved kept-material intent, template policy, radial lead rejection, compatible lifecycle, and transition safety.
+- Preserved verified Robofil controller-native G38/program-end behavior by returning native readiness without generating explicit leads or a fabricated lead-out.
+- Extended generic template policy to reject executable exact G20/G41/G42 words while preserving comments, G200, G21, and G40; the stricter Robofil comments-only policy is unchanged.
+- Resolved the plan's sharp-square inconsistency in favor of safety. Explicit-linear sharp starts block; Task 6 must use a smooth fixture or implement a separately reviewed split.
+
+## TDD evidence
+
+Focused RED command:
+
+```bash
+npm test -- --run src/domain/compensation/__tests__/linearTransitionGeometry.test.ts src/domain/compensation/__tests__/validateCompensatedExport.test.ts src/domain/post/__tests__/templateModalPolicy.test.ts
+```
+
+Observed exit `1` before production implementation:
+
+- the transition and readiness suites failed to resolve the deliberately missing modules;
+- all five new generic exact-word modal tests failed because the existing policy returned `valid: true`;
+- the 33 pre-existing Robofil template-policy tests passed.
+
+A second focused RED cycle removed an untested units-policy branch and introduced the direct profile `G20` assertion. It failed with `status: ready` instead of `units-mode-conflict` before the branch was restored.
+
+## Current focused GREEN
+
+The focused transition/readiness/template command passes 55/55 tests.
+
+## Verification
+
+- `npm run build`: passed after the Task 5 implementation; Vite emitted only the existing chunk-size advisory.
+- A concurrent full `npm test -- --run` completed with 988/989 passing. Its sole failure is the in-progress Task 7 preview regression `keeps pure preview metadata empty when fixed precision blocks real Robofil geometry`; it observed `missing-intent` instead of the expected coordinate-precision diagnostic in files owned by the Task 7 agent. Task 5 does not edit or stage those files.
+- Final Task 5 focused GREEN and diff hygiene remain required immediately before the separate commit.
