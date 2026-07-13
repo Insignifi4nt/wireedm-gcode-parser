@@ -37,6 +37,24 @@ describe('portable machine profile files', () => {
     expect(parsed.controller.verification.status).toBe('unverified');
   });
 
+  it('round-trips multibyte template content while the portable file remains under 256 KiB', () => {
+    const profile = createBlankMachineProfile('multibyte-machine');
+    profile.templates.header = `(${'電'.repeat(1_000)})`;
+
+    const text = serializeMachineProfileFile(profile, now);
+
+    expect(new TextEncoder().encode(text).byteLength).toBeLessThanOrEqual(256 * 1024);
+    expect(parseMachineProfileFile(text).templates.header).toBe(profile.templates.header);
+  });
+
+  it('rejects serialization when multibyte content makes the final portable file exceed 256 KiB', () => {
+    const profile = createBlankMachineProfile('oversize-multibyte-machine');
+    profile.templates.header = '🙂'.repeat(32_768);
+    profile.templates.footer = '🙂'.repeat(32_768);
+
+    expect(() => serializeMachineProfileFile(profile, now)).toThrow(/256 KiB/i);
+  });
+
   it('rejects files larger than 256 KiB before parsing', () => {
     expect(() => parseMachineProfileFile(' '.repeat(256 * 1024 + 1))).toThrow(/256 KiB/i);
   });
@@ -51,6 +69,20 @@ describe('portable machine profile files', () => {
       ...portableDocument(createBlankMachineProfile()),
       format: 'other-profile'
     }))).toThrow(/format/i);
+  });
+
+  it('rejects non-canonical exportedAt timestamps', () => {
+    expect(() => parseMachineProfileFile(JSON.stringify({
+      ...portableDocument(createBlankMachineProfile()),
+      exportedAt: '0'
+    }))).toThrow(/exportedAt/i);
+  });
+
+  it('rejects non-canonical imported verification timestamps', () => {
+    const profile = markMachineProfileUserVerified(createCharmillesRobofilClassicProfile(), now);
+    profile.controller.verification.verifiedAt = '0';
+
+    expect(() => parseMachineProfileFile(JSON.stringify(portableDocument(profile)))).toThrow(/verifiedAt/i);
   });
 
   it('rejects NUL template content', () => {

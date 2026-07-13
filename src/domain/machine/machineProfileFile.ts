@@ -15,6 +15,7 @@ const MAX_TEMPLATE_LENGTH = 64 * 1024;
 const MAX_NOTES_LENGTH = 16 * 1024;
 const PROFILE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 const CUSTOM_EXTENSION_PATTERN = /^[a-z0-9][a-z0-9_-]{0,15}$/;
+const CANONICAL_ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 export type MachineProfileImportPlan =
   | { kind: 'already-installed'; profile: MachineProfile }
@@ -32,13 +33,13 @@ export function serializeMachineProfileFile(
     profile: reconstructProfile(profile, false)
   };
 
-  return `${JSON.stringify(document, null, 2)}\n`;
+  const text = `${JSON.stringify(document, null, 2)}\n`;
+  enforceFileSize(text);
+  return text;
 }
 
 export function parseMachineProfileFile(text: string): MachineProfile {
-  if (new TextEncoder().encode(text).byteLength > MAX_FILE_BYTES) {
-    throw new Error('Machine profile file exceeds the 256 KiB limit.');
-  }
+  enforceFileSize(text);
 
   let parsed: unknown;
   try {
@@ -324,10 +325,21 @@ function requireNullablePositiveFinite(value: unknown, label: string): number | 
 }
 
 function requireIsoTimestamp(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) {
+  if (
+    typeof value !== 'string' ||
+    !CANONICAL_ISO_TIMESTAMP_PATTERN.test(value) ||
+    !Number.isFinite(Date.parse(value)) ||
+    new Date(value).toISOString() !== value
+  ) {
     invalidProfile(`${label} must be an ISO timestamp.`);
   }
   return value as string;
+}
+
+function enforceFileSize(text: string) {
+  if (new TextEncoder().encode(text).byteLength > MAX_FILE_BYTES) {
+    throw new Error('Machine profile file exceeds the 256 KiB limit.');
+  }
 }
 
 function invalidProfile(message: string): never {
