@@ -12,6 +12,7 @@ import {
   dxfProjectReimportRequiresRebuild,
   type DxfProjectReimportPreparation
 } from '@/domain/dxf/reimportDxfProjectUnits';
+import { upidEditorDocumentPath } from '@/domain/editor/editorProjectPaths';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import {
@@ -697,11 +698,8 @@ export function useWorkbenchAppController(
           rebuildAcknowledged: pending.rebuildAcknowledged
         }
       );
-      const editorProgram = await appServices.loadEditorProgram(result.workbench, result.project);
       if (!isCurrentWorkbenchOperation(operationId)) return;
       setConnectedWorkbench(result.workbench);
-      setLoadedEditorProgram(editorProgram);
-      setEditorProgramRevision((current) => current + 1);
       setLatestImport((current) => current?.project.id === result.project.id
         ? {
             ...current,
@@ -714,8 +712,35 @@ export function useWorkbenchAppController(
       );
       setPendingDxfReimport(null);
       setDxfReimportStatus('idle');
-      resetEditorLoadState();
-      showStatusToast('DXF units revised from the persisted raw source.', 'success');
+      setDxfReimportErrorMessage(null);
+
+      try {
+        const editorProgram = await appServices.loadEditorProgram(result.workbench, result.project);
+        if (!isCurrentWorkbenchOperation(operationId)) return;
+        setLoadedEditorProgram(editorProgram);
+        setEditorProgramRevision((current) => current + 1);
+        resetEditorLoadState();
+        showStatusToast('DXF units revised from the persisted raw source.', 'success');
+      } catch (error) {
+        if (!isCurrentWorkbenchOperation(operationId)) return;
+        const detail = error instanceof Error
+          ? error.message
+          : 'Could not reload the revised project.';
+        const message = `DXF units were saved, but the editor reload failed: ${detail}`;
+        setLoadedEditorProgram({
+          filePath: upidEditorDocumentPath(result.workbench, result.project),
+          model: 'upid-document',
+          parseResult: null,
+          pathDocument: result.pathDocument,
+          project: result.project,
+          text: ''
+        });
+        setEditorProgramRevision((current) => current + 1);
+        resetEditorLoadState();
+        setDxfReimportStatus('error');
+        setDxfReimportErrorMessage(message);
+        showStatusToast(message, 'error');
+      }
     } catch (error) {
       if (!isCurrentWorkbenchOperation(operationId)) return;
       const message = error instanceof Error ? error.message : 'Could not revise DXF units.';

@@ -26,3 +26,19 @@
 - `npm run build`: passed; only the existing Vite chunk-size advisory remains.
 - `npm run test:e2e`: 29 passed, 1 expected environment-dependent skip.
 - `git diff --check`: passed.
+
+## Review-hardening follow-up
+
+- Count all DXF source references before validating their paths, so one usable source plus one malformed source is rejected as ambiguous.
+- Snapshot the exact persisted project bytes during review and compare them again at commit and immediately before the first write.
+- Reject project deletion, malformed JSON, semantic edits, and byte-only rewrites made outside the app after review; retain the existing rollback behavior for write failures.
+- Finalize a successful reimport in controller state before reloading the editor. If reload fails, keep the newly persisted UPID visible, close the review dialog, and report that persistence succeeded without allowing a duplicate commit.
+- Observed the new domain and controller regression tests fail before these guards were implemented, then pass afterward.
+
+### Fresh verification after review fixes
+
+- Focused tests: 2 files, 92 tests passed.
+- `npm test -- --run`: 63 files, 1131 tests passed.
+- `npm run build`: passed; only the existing Vite chunk-size advisory remains.
+- `npm run test:e2e`: 33 passed, 1 expected environment-dependent skip.
+- `git diff --check`: passed.

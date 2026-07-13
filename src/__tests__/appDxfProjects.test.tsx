@@ -42,7 +42,9 @@ vi.mock('@/domain/editor/gcodeParser', async (importOriginal) => {
 });
 
 import { saveEditorProgram as saveEditorProgramService } from '@/domain/editor/saveEditorProgram';
+import { loadEditorProgram as loadEditorProgramService } from '@/domain/editor/loadEditorProgram';
 import { commitDxfProjectImport as commitDxfProjectImportService } from '@/domain/dxf/importDxfProject';
+import { commitDxfProjectReimport as commitDxfProjectReimportService } from '@/domain/dxf/reimportDxfProjectUnits';
 import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
@@ -308,6 +310,64 @@ describe('App DXF imports and project library', () => {
 
     expect(reimportButton.disabled).toBe(true);
     expect(reimportButton.title).toContain('Save or undo');
+  });
+
+  it('finalizes a committed unit reimport before handling an editor reload failure', async () => {
+    window.showDirectoryPicker = undefined;
+    const commitDxfProjectReimport = vi.fn(commitDxfProjectReimportService);
+    const loadEditorProgram = vi.fn(async (...args: Parameters<typeof loadEditorProgramService>) => {
+      const project = args[1];
+      if (
+        project.upid?.document.source.appliedUnits?.basis === 'user-confirmed' &&
+        project.upid.document.source.units?.label === 'inches'
+      ) {
+        throw new Error('Simulated reimport editor reload failure.');
+      }
+      return loadEditorProgramService(...args);
+    });
+    await renderApp(context, { commitDxfProjectReimport, loadEditorProgram });
+    await prepareDxfImport(
+      container,
+      new File([declaredInchLineDxf()], 'reload-failure.dxf')
+    );
+    await confirmPendingDxfImport(container);
+
+    await act(async () => {
+      (container.querySelector(
+        'button[aria-label="Re-import with different units"]'
+      ) as HTMLButtonElement).click();
+    });
+    await flushAsync();
+    await act(async () => setSelectValue(
+      container.querySelector('select[aria-label="DXF units"]') as HTMLSelectElement,
+      'millimeters'
+    ));
+    await act(async () => {
+      (container.querySelector(
+        'input[aria-label="Override declared DXF units"]'
+      ) as HTMLInputElement).click();
+      (container.querySelector(
+        'input[aria-label="Rebuild path geometry from raw DXF"]'
+      ) as HTMLInputElement).click();
+    });
+    await act(async () => {
+      ([...container.querySelectorAll('button')].find(
+        (button) => button.textContent?.trim() === 'Re-import and open'
+      ) as HTMLButtonElement).click();
+    });
+    await flushAsync();
+
+    expect(commitDxfProjectReimport).toHaveBeenCalledTimes(1);
+    expect(
+      container.querySelector('[role="dialog"][aria-label="Review DXF unit re-import"]')
+    ).toBeNull();
+    expect(container.textContent).toContain('Simulated reimport editor reload failure.');
+    expect(container.querySelector('[data-editor-status-units]')?.textContent).toContain(
+      'millimeters ×1'
+    );
+    expect(container.querySelector(
+      'button[aria-label="Re-import with different units"]'
+    )).not.toBeNull();
   });
 
   it('keeps a failed confirmed commit in the review dialog for correction or retry', async () => {

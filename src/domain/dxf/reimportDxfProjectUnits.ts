@@ -28,6 +28,7 @@ export interface DxfProjectReimportPreparation extends DxfImportPreparation {
   rawSource: WorkbenchFileRef;
   reviewedProjectJson: string;
   reviewedProjectEntryJson: string;
+  reviewedStoredProjectText: string;
 }
 
 export interface DxfProjectReimportDecision extends DxfImportDecision {
@@ -58,13 +59,14 @@ export async function prepareDxfProjectReimport(
   if (project.source.kind !== 'dxf' || !project.upid) {
     throw new Error('Only DXF UPID projects can be re-imported with different units.');
   }
-  const sourceFiles = project.source.files.filter(
-    (file) => file.kind === 'dxf' && file.path.trim().length > 0
-  );
+  const sourceFiles = project.source.files.filter((file) => file.kind === 'dxf');
   if (sourceFiles.length !== 1) {
     throw new Error('Project must reference exactly one persisted raw DXF for unit re-import.');
   }
   const rawSource = structuredClone(sourceFiles[0]);
+  if (rawSource.path.trim().length === 0) {
+    throw new Error('Project must reference exactly one persisted raw DXF with a usable path.');
+  }
   let text: string | null;
   try {
     text = await workbench.adapter.readText(rawSource.path);
@@ -79,6 +81,15 @@ export async function prepareDxfProjectReimport(
   const projectEntry = workbench.manifest.projects.find(({ id }) => id === project.id);
   if (!projectEntry) {
     throw new Error(`Project index entry not found: ${project.id}.`);
+  }
+  const storedProjectText = await workbench.adapter.readText(projectEntry.path);
+  if (storedProjectText === null) {
+    throw new Error(`Persisted project is unavailable: ${projectEntry.path}.`);
+  }
+  const reviewedProject = canonicalProjectForReview(project);
+  const storedProject = parseStoredProjectForReview(storedProjectText, projectEntry.path);
+  if (JSON.stringify(storedProject) !== JSON.stringify(reviewedProject)) {
+    throw new Error('Persisted project does not match the project opened for unit review.');
   }
   const machine = normalizeMachineProfile(structuredClone(project.machine));
   const lockedWorkbench: ConnectedWorkbench = {
@@ -104,8 +115,9 @@ export async function prepareDxfProjectReimport(
     projectId: project.id,
     projectPath: projectEntry.path,
     rawSource,
-    reviewedProjectJson: JSON.stringify(project),
-    reviewedProjectEntryJson: JSON.stringify(projectEntry)
+    reviewedProjectJson: JSON.stringify(reviewedProject),
+    reviewedProjectEntryJson: JSON.stringify(projectEntry),
+    reviewedStoredProjectText: storedProjectText
   };
 }
 
@@ -118,7 +130,10 @@ export async function commitDxfProjectReimport(
   if (!decision.confirmed) {
     throw new Error('DXF unit re-import must be confirmed before it can be committed.');
   }
-  if (preparation.projectId !== project.id || preparation.reviewedProjectJson !== JSON.stringify(project)) {
+  if (
+    preparation.projectId !== project.id ||
+    preparation.reviewedProjectJson !== JSON.stringify(canonicalProjectForReview(project))
+  ) {
     throw new Error('Project changed after unit review; review the raw DXF again.');
   }
   const projectEntry = workbench.manifest.projects.find(({ id }) => id === project.id);
@@ -128,6 +143,25 @@ export async function commitDxfProjectReimport(
     JSON.stringify(projectEntry) !== preparation.reviewedProjectEntryJson
   ) {
     throw new Error('Project index changed after unit review; review the raw DXF again.');
+  }
+  const currentStoredProjectText = await workbench.adapter.readText(preparation.projectPath);
+  if (currentStoredProjectText === null) {
+    throw new Error('Persisted project changed after unit review; review it again.');
+  }
+  let currentStoredProject: WorkbenchProject;
+  try {
+    currentStoredProject = parseStoredProjectForReview(
+      currentStoredProjectText,
+      preparation.projectPath
+    );
+  } catch {
+    throw new Error('Persisted project changed after unit review; review it again.');
+  }
+  if (
+    currentStoredProjectText !== preparation.reviewedStoredProjectText ||
+    JSON.stringify(currentStoredProject) !== preparation.reviewedProjectJson
+  ) {
+    throw new Error('Persisted project changed after unit review; review it again.');
   }
   if (
     decision.machineProfileId !== project.machine.id ||
@@ -197,7 +231,13 @@ export async function commitDxfProjectReimport(
     )
   };
 
-  await persistReplacement(workbench, preparation.projectPath, updatedProject, updatedManifest);
+  await persistReplacement(
+    workbench,
+    preparation.projectPath,
+    preparation.reviewedStoredProjectText,
+    updatedProject,
+    updatedManifest
+  );
 
   return {
     mode: metadataOnly ? 'metadata-only' : 'rebuilt',
@@ -295,6 +335,7 @@ function rebuildPathDocument(
 async function persistReplacement(
   workbench: ConnectedWorkbench,
   projectPath: string,
+  expectedProjectText: string,
   project: WorkbenchProject,
   manifest: WorkbenchManifest
 ) {
@@ -302,6 +343,9 @@ async function persistReplacement(
     snapshot(workbench, projectPath),
     snapshot(workbench, WORKBENCH_MANIFEST_FILE)
   ]);
+  if (snapshots[0].contents !== expectedProjectText) {
+    throw new Error('Persisted project changed after unit review; review it again.');
+  }
   try {
     await workbench.adapter.writeText(projectPath, JSON.stringify(project, null, 2));
     await workbench.adapter.writeText(
@@ -333,4 +377,29 @@ async function snapshot(workbench: ConnectedWorkbench, path: string) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function parseStoredProjectForReview(text: string, path: string) {
+  let project: WorkbenchProject;
+  try {
+    project = JSON.parse(text) as WorkbenchProject;
+  } catch {
+    throw new Error(`Persisted project is not valid JSON: ${path}.`);
+  }
+  return canonicalProjectForReview(project);
+}
+
+function canonicalProjectForReview(project: WorkbenchProject): WorkbenchProject {
+  const normalized: WorkbenchProject = {
+    ...structuredClone(project),
+    machine: normalizeMachineProfile(project.machine)
+  };
+  const document = projectUpidDocument(normalized);
+  if (document && normalized.upid) {
+    normalized.upid = {
+      ...normalized.upid,
+      document
+    };
+  }
+  return normalized;
 }

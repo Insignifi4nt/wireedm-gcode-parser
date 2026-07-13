@@ -56,12 +56,14 @@ describe('DXF project unit reimport', () => {
       new Date('2026-07-13T08:00:00.000Z')
     );
     project.machine.preferredDxfImportUnit = 'millimeters';
+    persistProjectSnapshot(adapter, workbench, project);
     workbench.manifest.machineProfiles = [{
       ...project.machine,
       name: 'Changed library profile',
       preferredDxfImportUnit: 'inches'
     }];
     const rawPath = project.source.files[0].path;
+    const projectPath = workbench.manifest.projects[0].path;
     adapter.reads.length = 0;
     adapter.writes.length = 0;
 
@@ -69,7 +71,7 @@ describe('DXF project unit reimport', () => {
       now: new Date('2026-07-13T12:00:00.000Z')
     });
 
-    expect(adapter.reads).toEqual([rawPath]);
+    expect(adapter.reads).toEqual([rawPath, projectPath]);
     expect(adapter.writes).toEqual([]);
     expect(preparation.projectId).toBe(project.id);
     expect(preparation.machineProfiles).toEqual([project.machine]);
@@ -80,7 +82,8 @@ describe('DXF project unit reimport', () => {
 
   it.each([
     ['missing', []],
-    ['ambiguous', [sourceRef('a.dxf'), sourceRef('b.dxf')]]
+    ['ambiguous', [sourceRef('a.dxf'), sourceRef('b.dxf')]],
+    ['valid plus blank', [sourceRef('a.dxf'), { ...sourceRef('blank.dxf'), path: '  ' }]]
   ])('rejects a $label raw DXF reference', async (_label, sourceFiles) => {
     const { project, workbench } = await importedProject(unitlessDxf());
     project.source.files = sourceFiles;
@@ -117,6 +120,7 @@ describe('DXF project unit reimport', () => {
     project.name = 'Urgent preserved name';
     project.editor.pinnedLineNumbers = [7, 11];
     project.machine.notes = 'Pinned controller snapshot';
+    persistProjectSnapshot(adapter, workbench, project);
     const projectBefore = structuredClone(project);
     const workbenchBefore = structuredClone(workbench.manifest);
     const rawPath = project.source.files[0].path;
@@ -204,6 +208,7 @@ describe('DXF project unit reimport', () => {
     const { adapter, project, workbench } = await importedProject(unitlessDxf());
     project.upid!.document.plan.operations[0].displayName = 'Operator edit';
     project.upid!.document.pathElements[0].displayName = 'Operator edit';
+    persistProjectSnapshot(adapter, workbench, project);
     const documentBefore = structuredClone(project.upid!.document);
     const preparation = await prepareDxfProjectReimport(workbench, project, {
       now: new Date('2026-07-13T12:30:00.000Z')
@@ -270,6 +275,50 @@ describe('DXF project unit reimport', () => {
     expect(adapter.writes).toEqual([]);
   });
 
+  it.each([
+    ['deleted', null],
+    ['malformed', '{not-json'],
+    ['semantically changed', 'semantic-change']
+  ])('rejects a $label project file changed after review before persistence', async (
+    _label,
+    replacement
+  ) => {
+    const { adapter, project, workbench } = await importedProject(unitlessDxf());
+    const preparation = await prepareDxfProjectReimport(workbench, project);
+    const projectPath = workbench.manifest.projects[0].path;
+    if (replacement === null) adapter.files.delete(projectPath);
+    else if (replacement === 'semantic-change') {
+      adapter.files.set(projectPath, JSON.stringify({ ...project, name: 'Externally changed' }));
+    } else adapter.files.set(projectPath, replacement);
+    adapter.writes.length = 0;
+
+    await expect(commitDxfProjectReimport(workbench, project, preparation, {
+      machineProfileId: project.machine.id,
+      unitCandidateId: 'millimeters',
+      confirmed: true,
+      declaredUnitOverrideAcknowledged: false,
+      rebuildAcknowledged: false
+    })).rejects.toThrow(/persisted project changed after unit review/i);
+    expect(adapter.writes).toEqual([]);
+  });
+
+  it('rejects a byte-level project rewrite even when parsed project semantics match', async () => {
+    const { adapter, project, workbench } = await importedProject(unitlessDxf());
+    const preparation = await prepareDxfProjectReimport(workbench, project);
+    const projectPath = workbench.manifest.projects[0].path;
+    adapter.files.set(projectPath, JSON.stringify(project));
+    adapter.writes.length = 0;
+
+    await expect(commitDxfProjectReimport(workbench, project, preparation, {
+      machineProfileId: project.machine.id,
+      unitCandidateId: 'millimeters',
+      confirmed: true,
+      declaredUnitOverrideAcknowledged: false,
+      rebuildAcknowledged: false
+    })).rejects.toThrow(/persisted project changed after unit review/i);
+    expect(adapter.writes).toEqual([]);
+  });
+
   it('rolls project and manifest back when the manifest write fails', async () => {
     const { adapter, project, workbench } = await importedProject(inchDxf());
     const preparation = await prepareDxfProjectReimport(workbench, project);
@@ -316,6 +365,17 @@ function sourceRef(path: string) {
     kind: 'dxf' as const,
     createdAt: '2026-07-13T09:00:00.000Z'
   };
+}
+
+function persistProjectSnapshot(
+  adapter: MemoryAdapter,
+  workbench: Awaited<ReturnType<typeof importedProject>>['workbench'],
+  project: Awaited<ReturnType<typeof importedProject>>['project']
+) {
+  adapter.files.set(
+    workbench.manifest.projects.find(({ id }) => id === project.id)!.path,
+    JSON.stringify(project, null, 2)
+  );
 }
 
 function inchDxf() {
