@@ -327,6 +327,97 @@ git commit -m "feat: model verified Robofil post policy"
 
 ---
 
+### Task 10: Urgent verified Robofil single-contour post milestone
+
+Execute this immediately after Task 4 and before generic transition Task 5. It lands the physically proven gear dialect in its own commit; generic explicit-linear transitions and multi-controller UI follow separately.
+
+**Files:**
+- Modify: `src/domain/path-intel/postGcode.ts`
+- Create: `src/domain/post/templateModalPolicy.ts`
+- Create: `src/domain/post/__tests__/templateModalPolicy.test.ts`
+- Create: `src/domain/post/upidMachinePost.ts`
+- Create: `src/domain/post/__tests__/upidMachinePost.test.ts`
+- Modify: `src/domain/upid/upidDocument.ts`
+- Modify: `src/domain/upid/projectUpid.ts`
+- Modify: `src/domain/upid/__tests__/upidDocument.test.ts`
+- Modify: `src/domain/upid/__tests__/validateUpidDocument.test.ts`
+- Add: `DXF-test-subjects/z39motocicleta.dxf`
+- Create: `src/domain/dxf/__tests__/z39RobofilPost.test.ts`
+
+**Interfaces:**
+- Produces an additive `GcodePostedBlock`/trace model and `postUpidForMachine(document, machine, options)`.
+- Preserves the existing generic centreline `postPathPlanToGcode` and its incremental-I/J default.
+- Uses only the passed project machine snapshot; it never consults the mutable workbench library.
+- Supports the verified Robofil policy now. Generic explicit-linear compensation may return a typed not-yet-supported diagnostic until Task 5/6 extends it.
+
+- [ ] **Step 1: Write failing profile-driven post and modal-policy tests**
+
+For one finished-contour compensated operation using `createVerifiedCharmillesRobofil100Profile`, require structured blocks in this order:
+
+```gcode
+G92 X0 Y0
+G60
+G38
+G41 D0
+G90
+G1 X...
+G3 X... Y... I<absolute-center-x> J<absolute-center-y>
+...
+M02
+```
+
+Reverse the same final refs and require `G42 D0` while kept material remains unchanged. Assert no `G0` is inserted before the contour, no G21/G17/G54/G40/M30 appears, no footer follows M02, and a second compensated operation blocks with an empty executable body. An unverified or stale-fingerprint copy blocks. `D0` is emitted exactly as a register selector and no offset value appears.
+
+Profile-specific template parsing must reject real conflicting Robofil tokens G21, G17, G54, G40, M30, and literal G41/G42 while ignoring comments and larger unrelated words. The same words remain legal when allowed by a generic/custom profile; do not create a global forbidden-word list.
+
+- [ ] **Step 2: Write the real z39 RED acceptance**
+
+Copy `/mnt/c/Users/cristian/Downloads/z39motocicleta.dxf` into the repository fixture path. Build its one 156-segment exterior operation, set reviewed `geometryBasis: 'finished-contour'`, initialize keep-inside intent from the verified project snapshot, and assert:
+
+- contour length approximately `178.6370073617` mm and signed area approximately `1216.8884828110` mm²;
+- one compensated operation and no rapid block;
+- 78 G3 blocks use the absolute arc centres from canonical segment geometry, not start-relative offsets;
+- at three decimals, every formatted arc has finite centre/radius and maximum start/end radius mismatch no greater than `0.001106` mm plus `1e-9` numeric slack;
+- output uses CRLF at composition, starts with the verified five-block prologue, ends with M02 only, and contains none of G21/G17/G54/G40/M30;
+- reversal derives the opposite G code without changing XY/I/J contour geometry except traversal/order as expected.
+
+The locally available failed references in `C:\Users\cristian\Downloads` may be read for regression analysis, but must not become the expected dialect. Do not access the unplugged `D:` drive.
+
+- [ ] **Step 3: Run focused tests and verify RED**
+
+```bash
+npm test -- --run src/domain/post src/domain/dxf/__tests__/z39RobofilPost.test.ts src/domain/upid/__tests__/upidDocument.test.ts
+```
+
+Expected: FAIL because the machine-aware post and profile-specific validator do not exist.
+
+- [ ] **Step 4: Implement the verified machine post additively**
+
+Reuse existing canonical segment rendering and pass `arcCenterMode: 'absolute'` only when the snapshot requests it. The Robofil program-level lifecycle establishes the wire position with G92, emits configured pre-activation blocks, G38, derived compensation/D selection, then G90 before the first contour G1/G2/G3. Suppress the generic operation-start G0 rather than posting an unverified rapid under active compensation. Represent setup, activation, contour, and program-end as traceable typed blocks. Run a final profile-specific audit before returning `ready`; on any violation return diagnostics and an empty body.
+
+- [ ] **Step 5: Wire UPID/project composition without changing external G-code cleanup**
+
+Machine-aware UPID composition uses the snapshotted `project.machine`, output precision, and line ending. The legacy centreline path remains byte-compatible. Line maps include modal blocks as well as moves. External `.gcode/.nc/.iso/.txt` files retain their source-preserving path.
+
+- [ ] **Step 6: Run focused, full, and build verification**
+
+```bash
+npm test -- --run src/domain/post src/domain/dxf/__tests__/z39RobofilPost.test.ts src/domain/upid
+npm test -- --run
+npm run build
+```
+
+Expected: PASS.
+
+- [ ] **Step 7: Commit Task 10**
+
+```bash
+git add src/domain/path-intel/postGcode.ts src/domain/post src/domain/upid/upidDocument.ts src/domain/upid/projectUpid.ts src/domain/upid/__tests__/upidDocument.test.ts src/domain/upid/__tests__/validateUpidDocument.test.ts DXF-test-subjects/z39motocicleta.dxf src/domain/dxf/__tests__/z39RobofilPost.test.ts
+git commit -m "feat: post verified Robofil gear programs"
+```
+
+---
+
 ### Task 3: Selectable/editable profile UI and import/export
 
 **Files:**
