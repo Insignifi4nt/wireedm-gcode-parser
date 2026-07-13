@@ -62,13 +62,11 @@ export function deriveVerifiedRobofilPreviewPostBlocks(
   document: PathPlanningDocument,
   machine: MachineProfile
 ): VerifiedRobofilPreviewPostBlock[] | undefined {
+  if (machine.controller.family !== 'charmilles-robofil-classic') return undefined;
   if (
-    machine.controller.family !== 'charmilles-robofil-classic' ||
     !verifiedRobofilPostEnvelopeIsReady(machine) ||
     document.plan.operations.length !== 1
-  ) {
-    return undefined;
-  }
+  ) return [];
   if (!validateUpidDocument(document).valid) return [];
 
   const operation = document.plan.operations[0];

@@ -4,12 +4,16 @@ import {
   initializeProjectCompensationIntents,
   setManualCompensationIntent
 } from '@/domain/compensation/intent';
-import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
+import {
+  createVerifiedCharmillesRobofil100Profile,
+  markMachineProfileUserVerified
+} from '@/domain/machine/machineProfiles';
 import {
   setCircleOperationCenterPierceLeadIn,
   translatePathDocument
 } from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
+import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 
 import { parseGCodeProgram } from '../gcodeParser';
 import {
@@ -382,6 +386,9 @@ describe('buildEditorPreviewGeometry', () => {
         document,
         { ...machine, controller: { ...machine.controller, verification: { status: 'unverified' } } }
       )
+    ).toEqual([]);
+    expect(
+      deriveVerifiedRobofilPreviewTransitions(document, createDefaultMachineProfile())
     ).toBeUndefined();
   });
 
@@ -416,6 +423,42 @@ describe('buildEditorPreviewGeometry', () => {
 
     expect(deriveVerifiedRobofilPreviewTransitions(wireCentre, machine)).toEqual([]);
     expect(deriveVerifiedRobofilPreviewTransitions(missingIntent, machine)).toEqual([]);
+  });
+
+  it('suppresses generic fallback for verified Robofil multi-operation and unsupported-envelope blockers', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const multiOperation = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities([
+        line(5, 0, 10, 0),
+        line(10, 0, 10, 5),
+        line(10, 5, 5, 5),
+        line(5, 5, 5, 0),
+        line(20, 0, 25, 0),
+        line(25, 0, 25, 5),
+        line(25, 5, 20, 5),
+        line(20, 5, 20, 0)
+      ]),
+      machine
+    );
+    const unsupportedEnvelope = markMachineProfileUserVerified({
+      ...machine,
+      output: { ...machine.output, coordinatePrecision: 4 }
+    });
+    const singleOperation = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities([
+        line(5, 0, 10, 0),
+        line(10, 0, 10, 5),
+        line(10, 5, 5, 5),
+        line(5, 5, 5, 0)
+      ]),
+      unsupportedEnvelope
+    );
+
+    expect(multiOperation.plan.operations).toHaveLength(2);
+    expect(deriveVerifiedRobofilPreviewTransitions(multiOperation, machine)).toEqual([]);
+    expect(
+      deriveVerifiedRobofilPreviewTransitions(singleOperation, unsupportedEnvelope)
+    ).toEqual([]);
   });
 
   it('suppresses a verified Robofil approach when fixed precision blocks the contour geometry', () => {

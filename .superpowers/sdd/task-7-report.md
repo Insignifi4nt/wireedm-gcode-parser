@@ -103,3 +103,7 @@ Final combined gates after the Task 5 work landed:
 - Production build: TypeScript and Vite passed.
 - Full Playwright: 29 passed, 1 existing environment-dependent test skipped.
 - The only remaining output is the existing Vite chunk-size advisory and pre-existing React `act(...)` warnings described above.
+
+### Final preview-ownership correction
+
+Final re-review identified that `undefined` still enabled generic fallback for Robofil multi-operation, unverified, and reverified-but-unsupported-envelope states even though the Robofil post owns and blocks those cases. The preview boundary now returns `undefined` only for a genuinely non-Robofil controller family. Every Robofil-family readiness, envelope, operation-count, validation, compensation, template, and geometry blocker returns an empty transition list. RED regressions covered a verified two-operation document and a currently reverified four-decimal profile outside the supported envelope; a generic default-machine assertion preserves the intended fallback boundary. Focused integration passed 4 files/147 tests. Final full Vitest passed 60 files/990 tests and the production build passed.
