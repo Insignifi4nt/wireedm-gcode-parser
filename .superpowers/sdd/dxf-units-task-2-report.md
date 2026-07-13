@@ -59,3 +59,9 @@ The focused command passes 2 files and 13/13 tests, covering:
 - No import dialog/controller state was added.
 - No Task 1 file was changed by Task 2.
 - No Windows persistence was touched and `D:` was not accessed.
+
+## Review fix
+
+The task review identified that finite min/max coordinates can still subtract to an infinite width or length. Before the fix, opposite `Number.MAX_VALUE` extrema returned an `unchecked` fit with `widthMm: Infinity`, and preview accepted it. Two regression tests failed on that exact behavior. `evaluateMachineFitBounds` now checks the derived spans for finiteness before rounding; invalid spans return no measured bounds, so DXF preview fails closed with its existing invalid-bounds error.
+
+The review also requested explicit equivalence coverage. Added tests prove malformed and unknown `$INSUNITS` declarations do not become declared candidates, and a recognized feet declaration previews a two-unit segment as 609.6 mm. The expanded focused suite passes 18/18.

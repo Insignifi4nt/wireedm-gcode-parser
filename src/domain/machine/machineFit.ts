@@ -35,9 +35,13 @@ export function evaluateMachineFitBounds(input: {
 }): MachineFitResult {
   if (!validBounds(input.bounds)) return unchecked();
 
+  const widthMm = input.bounds.maxX - input.bounds.minX;
+  const lengthMm = input.bounds.maxY - input.bounds.minY;
+  if (!Number.isFinite(widthMm) || !Number.isFinite(lengthMm)) return unchecked();
+
   const size = {
-    widthMm: round(input.bounds.maxX - input.bounds.minX),
-    lengthMm: round(input.bounds.maxY - input.bounds.minY)
+    widthMm: round(widthMm),
+    lengthMm: round(lengthMm)
   };
   const widthLimit = input.profile?.workArea?.widthMm ?? null;
   const lengthLimit = input.profile?.workArea?.lengthMm ?? null;

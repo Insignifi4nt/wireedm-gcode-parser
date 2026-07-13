@@ -80,6 +80,42 @@ describe('prepareDxfProjectImport', () => {
     ]);
   });
 
+  it.each([
+    ['malformed', lineDxf({ unitsRawValue: 'not-a-code' })],
+    ['unknown', lineDxf({ unitsCode: 99 })]
+  ])('does not treat a $label INSUNITS declaration as a declared candidate', (
+    _label,
+    text
+  ) => {
+    const selectedMachine = machine('inch-machine', 'inches');
+    const prepared = prepareDxfProjectImport(
+      createWorkbench([selectedMachine], selectedMachine.id),
+      { fileName: 'unresolved-units.dxf', text }
+    );
+
+    expect(prepared.unitCandidates.map(({ id, source }) => [id, source])).toEqual([
+      ['inches', 'machine-suggestion'],
+      ['millimeters', 'fallback']
+    ]);
+  });
+
+  it('previews an additional recognized finite DXF unit in millimeters', () => {
+    const selectedMachine = machine('selected-machine', null);
+    const prepared = prepareDxfProjectImport(
+      createWorkbench([selectedMachine], selectedMachine.id),
+      { fileName: 'declared-feet.dxf', text: lineDxf({ unitsCode: 2, endX: 2 }) }
+    );
+
+    expect(previewDxfProjectImport(prepared, {
+      machineProfileId: selectedMachine.id,
+      unitCandidateId: 'dxf-insunits-2'
+    })).toMatchObject({
+      boundsMm: { minX: 0, minY: 0, maxX: 609.6, maxY: 0 },
+      sizeMm: { widthMm: 609.6, lengthMm: 0 },
+      unitCandidate: { source: 'dxf-declared', scaleToMillimeters: 304.8 }
+    });
+  });
+
   it('prepares and previews without any adapter activity', () => {
     const selectedMachine = machine('inch-machine', 'inches', {
       widthMm: 250,
@@ -166,6 +202,19 @@ describe('prepareDxfProjectImport', () => {
       unitCandidateId: 'dxf-insunits-20'
     })).toThrow(/non-finite coordinate/i);
   });
+
+  it('fails preview when finite supported extrema produce a non-finite span', () => {
+    const selectedMachine = machine('selected-machine', null);
+    const prepared = prepareDxfProjectImport(
+      createWorkbench([selectedMachine], selectedMachine.id),
+      { fileName: 'overflow-span.dxf', text: extremeSpanDxf() }
+    );
+
+    expect(() => previewDxfProjectImport(prepared, {
+      machineProfileId: selectedMachine.id,
+      unitCandidateId: 'millimeters'
+    })).toThrow(/invalid millimeter bounds/i);
+  });
 });
 
 function machine(
@@ -231,15 +280,19 @@ function lineDxf({
   endX = 10,
   endY = 0,
   extents,
-  unitsCode
+  unitsCode,
+  unitsRawValue
 }: {
   endX?: number;
   endY?: number;
   extents?: { minX: number; minY: number; maxX: number; maxY: number };
   unitsCode?: number;
+  unitsRawValue?: string;
 }) {
   const headerVariables = [
-    ...(unitsCode === undefined ? [] : ['9', '$INSUNITS', '70', String(unitsCode)]),
+    ...(unitsCode === undefined && unitsRawValue === undefined
+      ? []
+      : ['9', '$INSUNITS', '70', unitsRawValue ?? String(unitsCode)]),
     ...(extents === undefined
       ? []
       : [
@@ -255,6 +308,19 @@ function lineDxf({
     '0', 'SECTION', '2', 'ENTITIES',
     '0', 'LINE', '8', 'CUT',
     '10', '0', '20', '0', '11', String(endX), '21', String(endY),
+    '0', 'ENDSEC', '0', 'EOF'
+  ].join('\n');
+}
+
+function extremeSpanDxf() {
+  const maximum = Number.MAX_VALUE;
+  const half = maximum / 2;
+  return [
+    '0', 'SECTION', '2', 'ENTITIES',
+    '0', 'LINE', '8', 'CUT',
+    '10', String(-maximum), '20', '0', '11', String(-half), '21', '0',
+    '0', 'LINE', '8', 'CUT',
+    '10', String(half), '20', '0', '11', String(maximum), '21', '0',
     '0', 'ENDSEC', '0', 'EOF'
   ].join('\n');
 }

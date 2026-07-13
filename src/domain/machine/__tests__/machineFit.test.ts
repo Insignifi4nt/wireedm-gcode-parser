@@ -94,6 +94,18 @@ describe('evaluateMachineFit', () => {
       profile: createDefaultMachineProfile()
     })).toEqual({ status: 'unchecked', bounds: null, issues: [] });
   });
+
+  it('rejects finite extrema whose derived span overflows', () => {
+    expect(evaluateMachineFitBounds({
+      bounds: {
+        minX: -Number.MAX_VALUE,
+        minY: 0,
+        maxX: Number.MAX_VALUE,
+        maxY: 10
+      },
+      profile: createDefaultMachineProfile()
+    })).toEqual({ status: 'unchecked', bounds: null, issues: [] });
+  });
 });
 
 function rectangleLines(minX: number, minY: number, maxX: number, maxY: number): DxfEntity[] {
