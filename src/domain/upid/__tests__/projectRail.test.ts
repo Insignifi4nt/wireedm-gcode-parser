@@ -52,6 +52,7 @@ describe('UPID project rail projection', () => {
       contourCount: 2,
       manualDecisionCount: 0,
       manualDecisionCounts: {
+        compensation: 0,
         direction: 0,
         'lead-in': 0,
         order: 0,
@@ -513,6 +514,7 @@ describe('UPID project rail projection', () => {
     expect(rail.manualOrderActive).toBe(true);
     expect(rail.summary.manualDecisionCount).toBe(3);
     expect(rail.summary.manualDecisionCounts).toEqual({
+      compensation: 0,
       direction: 1,
       'lead-in': 0,
       order: 2,

@@ -114,6 +114,9 @@ export function validateUpidDocument(document: unknown): UpidValidationReport {
       `UPID schema version ${String(root.schemaVersion)} is unsupported.`
     );
   }
+  if (root.geometryBasis !== 'finished-contour' && root.geometryBasis !== 'wire-centre') {
+    context.add('upid-invalid-value', 'UPID geometryBasis must be finished-contour or wire-centre.');
+  }
   validateSource(root.source, context);
   validateOptions(root.options, root.schemaVersion, context);
 
@@ -1063,6 +1066,11 @@ function validateOperations(
     if (!CONTOUR_CLASSIFICATIONS.has(String(operation.classification))) {
       context.add('upid-invalid-value', `Operation ${operation.id} classification is unsupported.`);
     }
+    validateCompensationIntent(
+      operation.compensationIntent,
+      `operation ${operation.id}.compensationIntent`,
+      context
+    );
     validateProvenance(operation.provenance, `operation ${operation.id}.provenance`, segmentMap, context, operationMap);
     validateOverrides(operation.overrides, operation, segmentMap, tolerance, context);
     validateContinuity(resolved, operation.closed, `Operation ${operation.id}`, tolerance, context);
@@ -1218,6 +1226,11 @@ function validatePathElements(
       finiteNumber(element.metrics.rapidInLength, `path element ${element.id}.metrics.rapidInLength`, context, { nonNegative: true });
       finiteInteger(element.metrics.segmentCount, `path element ${element.id}.metrics.segmentCount`, context, 0);
     }
+    validateCompensationIntent(
+      element.compensationIntent,
+      `path element ${element.id}.compensationIntent`,
+      context
+    );
     validateProvenance(element.provenance, `path element ${element.id}.provenance`, segmentMap, context, operationMap);
     if (operation) validateOverrides(element.overrides, operation, segmentMap, tolerance, context);
     validateDiagnosticIds(element.diagnosticIds, `path element ${element.id}`, diagnosticMap, context);
@@ -1608,6 +1621,41 @@ function validateOverrides(
   if (overrides.classification && overrides.classification.classification !== operation.classification) {
     context.add('upid-identity-mismatch', `Operation ${operation.id} classification override disagrees with operation classification.`);
   }
+}
+
+function validateCompensationIntent(
+  value: unknown,
+  path: string,
+  context: ValidationContext
+) {
+  if (value === undefined) return;
+  const intent = record(value);
+  if (!intent) {
+    context.add('upid-invalid-value', `${path} must be an object when present.`);
+    return;
+  }
+
+  if (intent.mode === 'controller') {
+    const valid =
+      (intent.keptMaterial === 'inside' || intent.keptMaterial === 'outside') &&
+      (intent.source === 'automatic' || intent.source === 'manual') &&
+      hasOnlyKeys(intent, ['mode', 'keptMaterial', 'source']);
+    if (!valid) context.add('upid-invalid-value', `${path} has an invalid controller intent shape.`);
+    return;
+  }
+
+  const validCenterline =
+    intent.mode === 'centerline' &&
+    (intent.source === 'manual' || intent.source === 'legacy') &&
+    hasOnlyKeys(intent, ['mode', 'source']);
+  if (!validCenterline) {
+    context.add('upid-invalid-value', `${path} has an invalid centerline intent shape.`);
+  }
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, keys: string[]) {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
 }
 
 function manualStartSourceExists(

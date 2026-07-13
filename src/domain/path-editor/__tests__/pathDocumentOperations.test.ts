@@ -5,6 +5,7 @@ import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/f
 import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
 import { arcParameterAtAngle } from '@/domain/path-intel/segments';
 import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
+import { setManualCompensationIntent } from '@/domain/compensation/intent';
 
 import {
   constructMagnetizedPoint,
@@ -1084,6 +1085,47 @@ describe('pathDocumentOperations', () => {
 
     expect(reversed?.contours[0].orientation).toBe('cw');
     expect(reversed?.contours[0].signedArea).toBeLessThan(0);
+  });
+
+  it('preserves manual kept-material intent through classification, reversal, and start rotation', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    document.geometryBasis = 'finished-contour';
+    const operationId = document.plan.operations[0].id;
+    const manual = setManualCompensationIntent(document, operationId, 'outside');
+    const changed = setPathOperationClassification(manual!, operationId, 'exterior');
+    const reversed = reversePathOperation(changed!, operationId);
+    const rotated = setClosedOperationStartAtSegmentEndpoint(
+      reversed!,
+      operationId,
+      reversed!.plan.operations[0].segmentRefs[1].segmentId,
+      'start'
+    );
+
+    expect(rotated?.plan.operations[0].compensationIntent).toEqual({
+      mode: 'controller',
+      keptMaterial: 'outside',
+      source: 'manual'
+    });
+  });
+
+  it('refreshes automatic intent when a contour role changes', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    document.geometryBasis = 'finished-contour';
+    document.plan.operations[0].compensationIntent = {
+      mode: 'controller',
+      keptMaterial: 'inside',
+      source: 'automatic'
+    };
+
+    const hole = setPathOperationClassification(document, document.plan.operations[0].id, 'hole');
+    const ambiguous = setPathOperationClassification(hole!, document.plan.operations[0].id, 'ambiguous');
+
+    expect(hole?.plan.operations[0].compensationIntent).toEqual({
+      mode: 'controller',
+      keptMaterial: 'outside',
+      source: 'automatic'
+    });
+    expect(ambiguous?.plan.operations[0].compensationIntent).toBeUndefined();
   });
 });
 

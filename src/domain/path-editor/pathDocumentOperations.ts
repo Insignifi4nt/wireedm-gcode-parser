@@ -1,4 +1,5 @@
 import { analyzeContours } from '@/domain/path-intel/contours';
+import { suggestCompensationIntent } from '@/domain/compensation/intent';
 import { buildChains } from '@/domain/path-intel/chains';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
 import { buildPathElements } from '@/domain/path-intel/pathElements';
@@ -151,6 +152,10 @@ export function setPathOperationClassification(
 
   const contour = next.contours.find((candidate) => candidate.id === operation.contourId);
   if (contour) contour.classification = classification;
+
+  if (operation.compensationIntent?.source === 'automatic') {
+    operation.compensationIntent = suggestCompensationIntent({ document: next, operation });
+  }
 
   refreshOperationDisplayNames(next);
   refreshPathElements(next);
@@ -1049,6 +1054,9 @@ function restoreGeometryEditOperationState(
   const restored: PathOperation = {
     ...operation,
     id: previous.id,
+    ...(previous.compensationIntent
+      ? { compensationIntent: structuredClone(previous.compensationIntent) }
+      : {}),
     ...(overrides ? { overrides } : {})
   };
 
@@ -1506,6 +1514,9 @@ function restoreManualOperationState(
   const restored: PathOperation = {
     ...operation,
     id: previous.id,
+    ...(previous.compensationIntent
+      ? { compensationIntent: structuredClone(previous.compensationIntent) }
+      : {}),
     ...(preservedOverrides ? { overrides: preservedOverrides } : {})
   };
 

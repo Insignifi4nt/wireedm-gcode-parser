@@ -4,11 +4,18 @@ import type {
   ManualLeadInOverride,
   ManualOrderOverride,
   ManualStartOverride,
+  ClosedContourCompensationIntent,
   PathElement,
   PathOperation
 } from '@/domain/path-intel/types';
 
-export type UpidManualDecisionKind = 'order' | 'role' | 'direction' | 'start' | 'lead-in';
+export type UpidManualDecisionKind =
+  | 'compensation'
+  | 'order'
+  | 'role'
+  | 'direction'
+  | 'start'
+  | 'lead-in';
 
 export type UpidManualDecisionCounts = Record<UpidManualDecisionKind, number>;
 
@@ -42,7 +49,12 @@ export interface UpidManualLeadInDecision {
   to: ManualLeadInOverride['to'];
 }
 
+export type UpidManualCompensationDecision =
+  | { mode: 'controller'; keptMaterial: 'inside' | 'outside'; source: 'manual' }
+  | { mode: 'centerline'; source: 'manual' };
+
 export interface UpidManualDecisionDetails {
+  compensation: UpidManualCompensationDecision | null;
   classification: UpidManualClassificationDecision | null;
   direction: UpidManualDirectionDecision | null;
   leadIn: UpidManualLeadInDecision | null;
@@ -55,18 +67,21 @@ export interface UpidManualDecisionSummary {
   counts: UpidManualDecisionCounts;
 }
 
-type UpidManualDecisionSource = Pick<PathElement | PathOperation, 'overrides'> | null | undefined;
+type UpidManualDecisionSource =
+  | Pick<PathElement | PathOperation, 'compensationIntent' | 'overrides'>
+  | null
+  | undefined;
 
 export function upidManualDecisionKinds(source: UpidManualDecisionSource): UpidManualDecisionKind[] {
   const overrides = source?.overrides;
-  if (!overrides) return [];
 
   const decisions: UpidManualDecisionKind[] = [];
-  if (overrides.order) decisions.push('order');
-  if (overrides.classification) decisions.push('role');
-  if (overrides.direction) decisions.push('direction');
-  if (overrides.start) decisions.push('start');
-  if (overrides.leadIn) decisions.push('lead-in');
+  if (source?.compensationIntent?.source === 'manual') decisions.push('compensation');
+  if (overrides?.order) decisions.push('order');
+  if (overrides?.classification) decisions.push('role');
+  if (overrides?.direction) decisions.push('direction');
+  if (overrides?.start) decisions.push('start');
+  if (overrides?.leadIn) decisions.push('lead-in');
   return decisions;
 }
 
@@ -93,6 +108,7 @@ export function readUpidManualDecisionDetails(
   const overrides = source?.overrides;
 
   return {
+    compensation: readUpidManualCompensationDecision(source?.compensationIntent),
     classification: readUpidManualClassificationDecision(overrides?.classification),
     direction: readUpidManualDirectionDecision(overrides?.direction),
     leadIn: readUpidManualLeadInDecision(overrides?.leadIn),
@@ -101,8 +117,18 @@ export function readUpidManualDecisionDetails(
   };
 }
 
+function readUpidManualCompensationDecision(
+  intent: ClosedContourCompensationIntent | undefined
+): UpidManualCompensationDecision | null {
+  if (intent?.source !== 'manual') return null;
+  return intent.mode === 'controller'
+    ? { mode: 'controller', keptMaterial: intent.keptMaterial, source: 'manual' }
+    : { mode: 'centerline', source: 'manual' };
+}
+
 function createEmptyUpidManualDecisionCounts(): UpidManualDecisionCounts {
   return {
+    compensation: 0,
     direction: 0,
     'lead-in': 0,
     order: 0,

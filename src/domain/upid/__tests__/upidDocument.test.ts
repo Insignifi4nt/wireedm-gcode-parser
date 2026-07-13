@@ -13,6 +13,7 @@ import {
 import {
   composeProjectUpidGCodeExport,
   createProjectUpid,
+  normalizeLegacyProjectUpidDocument,
   projectUpidDocument,
   withProjectUpid
 } from '../projectUpid';
@@ -305,6 +306,7 @@ describe('UPID document boundary', () => {
 
     expect(exportProgram.planning.manualDecisionCount).toBe(4);
     expect(exportProgram.planning.manualDecisionCounts).toEqual({
+      compensation: 0,
       direction: 1,
       'lead-in': 0,
       order: 2,
@@ -342,6 +344,7 @@ describe('UPID document boundary', () => {
     expect(exportProgram.planning).toEqual({
       manualDecisionCount: 0,
       manualDecisionCounts: {
+        compensation: 0,
         direction: 0,
         'lead-in': 0,
         order: 0,
@@ -355,6 +358,7 @@ describe('UPID document boundary', () => {
       diagnosticCount: exportProgram.diagnostics.length,
       manualDecisionCount: 0,
       manualDecisionCounts: {
+        compensation: 0,
         direction: 0,
         'lead-in': 0,
         order: 0,
@@ -575,6 +579,26 @@ describe('UPID document boundary', () => {
     expect(loaded.options.excludeLayers).toEqual([]);
     expect(storedOptions).not.toHaveProperty('includeLayers');
     expect(storedOptions).not.toHaveProperty('excludeLayers');
+  });
+
+  it('normalizes legacy documents to wire-centre without inventing compensation intent', () => {
+    const legacy = createUpidFromDxfEntities(rectangle(0, 0, 10, 5));
+    delete (legacy as Partial<typeof legacy>).geometryBasis;
+    legacy.plan.operations[0].compensationIntent = {
+      mode: 'controller',
+      keptMaterial: 'inside',
+      source: 'automatic'
+    };
+    legacy.pathElements[0].compensationIntent = structuredClone(
+      legacy.plan.operations[0].compensationIntent
+    );
+
+    const normalized = normalizeLegacyProjectUpidDocument(legacy);
+
+    expect(normalized.geometryBasis).toBe('wire-centre');
+    expect(normalized.plan.operations[0].compensationIntent).toBeUndefined();
+    expect(normalized.pathElements[0].compensationIntent).toBeUndefined();
+    expect(legacy).not.toHaveProperty('geometryBasis');
   });
 
   it('does not normalize an explicit malformed layer filter at the project load boundary', () => {

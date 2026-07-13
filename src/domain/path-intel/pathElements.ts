@@ -51,6 +51,7 @@ export function buildPathElements(
       orderIndex: operation?.orderIndex ?? null,
       direction: operation?.direction ?? null,
       metrics: operation?.metrics ?? null,
+      compensationIntent: operation?.compensationIntent,
       overrides: operation?.overrides,
       bounds: contour.bounds,
       confidence: contour.confidence

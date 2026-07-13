@@ -126,24 +126,46 @@ function requireProjectUpidDocument(
   return document;
 }
 
-function normalizeLegacyProjectUpidDocument(
+export function normalizeLegacyProjectUpidDocument(
   document: UniversalPathIntelligenceDocument
 ): UniversalPathIntelligenceDocument {
   const options = document?.options as
     | Partial<UniversalPathIntelligenceDocument['options']>
     | undefined;
-  if (!options || (options.includeLayers !== undefined && options.excludeLayers !== undefined)) {
+  const hasLayerFilters =
+    options?.includeLayers !== undefined && options.excludeLayers !== undefined;
+  const hasGeometryBasis = document.geometryBasis !== undefined;
+  if ((!options || hasLayerFilters) && hasGeometryBasis) {
     return document;
   }
 
   return {
     ...document,
-    options: {
-      ...document.options,
-      includeLayers: options.includeLayers === undefined ? [] : options.includeLayers,
-      excludeLayers: options.excludeLayers === undefined ? [] : options.excludeLayers
-    }
+    geometryBasis: document.geometryBasis ?? 'wire-centre',
+    ...(!hasGeometryBasis
+      ? {
+          plan: {
+            ...document.plan,
+            operations: document.plan.operations.map(withoutCompensationIntent)
+          },
+          pathElements: document.pathElements.map(withoutCompensationIntent)
+        }
+      : {}),
+    ...(!options || hasLayerFilters
+      ? {}
+      : {
+          options: {
+            ...document.options,
+            includeLayers: options.includeLayers === undefined ? [] : options.includeLayers,
+            excludeLayers: options.excludeLayers === undefined ? [] : options.excludeLayers
+          }
+        })
   };
+}
+
+function withoutCompensationIntent<T extends { compensationIntent?: unknown }>(value: T): T {
+  const { compensationIntent: _ignored, ...rest } = value;
+  return rest as T;
 }
 
 function stampProjectUpidDocument(

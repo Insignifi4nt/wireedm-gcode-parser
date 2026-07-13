@@ -51,6 +51,50 @@ describe('validateUpidDocument', () => {
     });
   });
 
+  it('accepts legal compensation state without treating export readiness as structural validity', () => {
+    const document = closedDocument();
+    document.geometryBasis = 'finished-contour';
+    document.plan.operations[0].compensationIntent = {
+      mode: 'controller',
+      keptMaterial: 'inside',
+      source: 'manual'
+    };
+
+    expect(validateUpidDocument(document)).toMatchObject({
+      structurallyValid: true,
+      valid: true,
+      structuralDiagnostics: []
+    });
+  });
+
+  it.each([
+    ['geometry basis', (document: UniversalPathIntelligenceDocument) => {
+      document.geometryBasis = 'tool-offset' as never;
+    }],
+    ['controller kept material', (document: UniversalPathIntelligenceDocument) => {
+      document.plan.operations[0].compensationIntent = {
+        mode: 'controller', keptMaterial: 'both', source: 'manual'
+      } as never;
+    }],
+    ['intent source', (document: UniversalPathIntelligenceDocument) => {
+      document.plan.operations[0].compensationIntent = {
+        mode: 'centerline', source: 'automatic'
+      } as never;
+    }],
+    ['persisted literal code', (document: UniversalPathIntelligenceDocument) => {
+      document.plan.operations[0].compensationIntent = {
+        mode: 'controller', keptMaterial: 'inside', source: 'manual', code: 'G41'
+      } as never;
+    }]
+  ])('rejects an invalid %s shape structurally', (_label, mutate) => {
+    const document = closedDocument();
+    mutate(document);
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({ code: 'upid-invalid-value' })
+    );
+  });
+
   it('blocks overlaid duplicate circle graphs when legacy diagnostics are empty', () => {
     const legacy = createUpidFromDxfEntities([
       circle(0, 0, 5),

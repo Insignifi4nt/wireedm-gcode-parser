@@ -242,6 +242,18 @@ export interface ChainBuildResult {
 
 export type ContourClassification = 'exterior' | 'hole' | 'island' | 'ambiguous' | 'open-chain';
 export type ContourOrientation = 'ccw' | 'cw' | 'degenerate';
+export type PathGeometryBasis = 'finished-contour' | 'wire-centre';
+
+export type ClosedContourCompensationIntent =
+  | {
+      mode: 'controller';
+      keptMaterial: 'inside' | 'outside';
+      source: 'automatic' | 'manual';
+    }
+  | {
+      mode: 'centerline';
+      source: 'manual' | 'legacy';
+    };
 
 export interface PathContour {
   id: ContourId;
@@ -332,6 +344,7 @@ export interface PathOperation {
   endPoint: Point2;
   direction: 'forward' | 'reverse';
   metrics: PathOperationMetrics;
+  compensationIntent?: ClosedContourCompensationIntent;
   overrides?: PathOperationOverrides;
 }
 
@@ -377,6 +390,7 @@ export interface PathElement {
   orderIndex: number | null;
   direction: PathOperation['direction'] | null;
   metrics: PathOperationMetrics | null;
+  compensationIntent?: ClosedContourCompensationIntent;
   overrides?: PathOperationOverrides;
   bounds: Bounds2;
   confidence: number;
@@ -394,6 +408,7 @@ export interface SegmentBuildResult {
 
 export interface PathPlanningDocument {
   schemaVersion: 1;
+  geometryBasis: PathGeometryBasis;
   source: {
     kind: 'dxf-entities';
     entityCount: number;
