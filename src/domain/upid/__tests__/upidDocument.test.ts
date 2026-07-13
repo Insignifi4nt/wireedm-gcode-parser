@@ -656,6 +656,56 @@ describe('UPID document boundary', () => {
     expect(legacy).not.toHaveProperty('geometryBasis');
   });
 
+  it('clone-synthesizes declared applied units for legacy project documents without touching geometry', () => {
+    const legacy = createUpidFromDxfEntities([line(0, 0, 25.4, 0)], {}, {
+      coordinateScaleToMillimeters: 25.4,
+      units: {
+        source: 'dxf-insunits',
+        code: 1,
+        label: 'inches',
+        scaleToMillimeters: 25.4
+      }
+    });
+    const storedBefore = structuredClone(legacy);
+    const storedSegments = legacy.segments;
+
+    const normalized = normalizeLegacyProjectUpidDocument(legacy);
+
+    expect(normalized).not.toBe(legacy);
+    expect(normalized.source).not.toBe(legacy.source);
+    expect(normalized.source.appliedUnits).toEqual({
+      label: 'inches',
+      scaleToMillimeters: 25.4,
+      basis: 'dxf-declared',
+      confirmed: true
+    });
+    expect(normalized.source.unitDeclaration).toEqual({
+      status: 'recognized',
+      units: legacy.source.units
+    });
+    expect(normalized.segments).toBe(storedSegments);
+    expect(legacy).toEqual(storedBefore);
+    expect(legacy.source.appliedUnits).toBeUndefined();
+  });
+
+  it('clone-synthesizes an explicit unconfirmed millimeter assumption for unitless legacy documents', () => {
+    const legacy = createUpidFromDxfEntities([line(0, 0, 4, 0)], {}, {
+      coordinateScaleToMillimeters: 1
+    });
+    const storedBefore = structuredClone(legacy);
+
+    const normalized = normalizeLegacyProjectUpidDocument(legacy);
+
+    expect(normalized.source.appliedUnits).toEqual({
+      label: 'millimeters',
+      scaleToMillimeters: 1,
+      basis: 'legacy-assumed',
+      confirmed: false
+    });
+    expect(normalized.source.unitDeclaration).toEqual({ status: 'missing' });
+    expect(legacy).toEqual(storedBefore);
+  });
+
   it('does not normalize an explicit malformed layer filter at the project load boundary', () => {
     const project = withProjectUpid(
       baseProject(),

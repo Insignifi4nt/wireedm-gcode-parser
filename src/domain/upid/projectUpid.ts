@@ -1,4 +1,5 @@
 import { buildOutputFilename } from '@/domain/post/gcodeTemplates';
+import type { AppliedDxfUnits, DxfUnitDeclaration } from '@/domain/dxf/types';
 import type { WorkbenchProject, WorkbenchUpidState } from '@/domain/workbench/types';
 
 import {
@@ -132,7 +133,8 @@ export function normalizeLegacyProjectUpidDocument(
   const hasLayerFilters =
     options?.includeLayers !== undefined && options.excludeLayers !== undefined;
   const hasGeometryBasis = document.geometryBasis !== undefined;
-  if ((!options || hasLayerFilters) && hasGeometryBasis) {
+  const sourceMigration = legacyDxfUnitMetadata(document);
+  if ((!options || hasLayerFilters) && hasGeometryBasis && !sourceMigration) {
     return document;
   }
 
@@ -156,8 +158,86 @@ export function normalizeLegacyProjectUpidDocument(
             includeLayers: options.includeLayers === undefined ? [] : options.includeLayers,
             excludeLayers: options.excludeLayers === undefined ? [] : options.excludeLayers
           }
-        })
+        }),
+    ...(sourceMigration
+      ? {
+          source: {
+            ...document.source,
+            ...sourceMigration
+          }
+        }
+      : {})
   };
+}
+
+function legacyDxfUnitMetadata(
+  document: UniversalPathIntelligenceDocument
+): {
+  appliedUnits?: AppliedDxfUnits;
+  unitDeclaration?: DxfUnitDeclaration;
+} | null {
+  const source = document.source;
+  if (!source || typeof source !== 'object') return null;
+  const unitDeclaration = source.unitDeclaration ?? legacyUnitDeclaration(source.units);
+  const appliedUnits = source.appliedUnits ?? legacyAppliedUnits(
+    source.units,
+    source.coordinateScaleToMillimeters
+  );
+  if (unitDeclaration === source.unitDeclaration && appliedUnits === source.appliedUnits) {
+    return null;
+  }
+  return {
+    ...(source.unitDeclaration ? {} : { unitDeclaration }),
+    ...(source.appliedUnits || !appliedUnits ? {} : { appliedUnits })
+  };
+}
+
+function legacyUnitDeclaration(
+  units: UniversalPathIntelligenceDocument['source']['units']
+): DxfUnitDeclaration {
+  if (!units) return { status: 'missing' };
+  if (units.code === 0) return { status: 'unitless', units: { ...units } };
+  if (
+    units.scaleToMillimeters != null &&
+    Number.isFinite(units.scaleToMillimeters) &&
+    units.scaleToMillimeters > 0
+  ) {
+    return { status: 'recognized', units: { ...units } };
+  }
+  return { status: 'unknown', units: { ...units } };
+}
+
+function legacyAppliedUnits(
+  units: UniversalPathIntelligenceDocument['source']['units'],
+  coordinateScaleToMillimeters: number | undefined
+): AppliedDxfUnits | undefined {
+  const rawScale = units?.scaleToMillimeters;
+  if (
+    units &&
+    rawScale != null &&
+    Number.isFinite(rawScale) &&
+    rawScale > 0 &&
+    coordinateScaleToMillimeters === rawScale
+  ) {
+    return {
+      label: units.label,
+      scaleToMillimeters: rawScale,
+      basis: 'dxf-declared',
+      confirmed: true
+    };
+  }
+  if (
+    coordinateScaleToMillimeters === 1 &&
+    (!units || units.scaleToMillimeters == null)
+  ) {
+    return {
+      label: 'millimeters',
+      scaleToMillimeters: 1,
+      basis: 'legacy-assumed',
+      confirmed: false
+    };
+  }
+  return undefined;
 }
 
 function withoutAutomaticCompensationIntent<T extends { compensationIntent?: unknown }>(

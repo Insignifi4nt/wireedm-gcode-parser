@@ -4,33 +4,223 @@ import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/mach
 import { initializeWorkbenchDirectory, type WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
 import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 
-import { importDxfProject } from '../importDxfProject';
+import { commitDxfProjectImport, importDxfProject } from '../importDxfProject';
+import { prepareDxfProjectImport } from '../prepareDxfProjectImport';
 
 class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
   readonly directories = new Set<string>();
   readonly files = new Map<string, string>();
+  readonly calls: Array<{ method: string; path: string }> = [];
 
   constructor(readonly name = 'cache-workbench') {}
 
   async ensureDirectory(path: string) {
+    this.calls.push({ method: 'ensureDirectory', path });
     this.directories.add(path);
   }
 
   async readText(path: string) {
+    this.calls.push({ method: 'readText', path });
     return this.files.get(path) ?? null;
   }
 
   async writeText(path: string, contents: string) {
+    this.calls.push({ method: 'writeText', path });
     this.files.set(path, contents);
   }
 
   async deleteText(path: string) {
+    this.calls.push({ method: 'deleteText', path });
     this.files.delete(path);
   }
 }
 
 describe('importDxfProject', () => {
+  it('rejects an unconfirmed reviewed import before any storage activity', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-07-13T08:00:00.000Z')
+    });
+    const preparation = prepareDxfProjectImport(workbench, {
+      fileName: 'urgent-gear.dxf',
+      text: simpleSlotDxf(),
+      now: new Date('2026-07-13T09:00:00.000Z')
+    });
+    adapter.calls.length = 0;
+
+    await expect(commitDxfProjectImport(workbench, preparation, {
+      ...preparation.defaultSelection,
+      confirmed: false,
+      declaredUnitOverrideAcknowledged: false
+    })).rejects.toThrow('DXF import must be confirmed before it can be committed.');
+
+    expect(adapter.calls).toEqual([]);
+  });
+
+  it('requires acknowledgement for a declared-unit override and applies the reviewed unit exactly once', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-07-13T08:00:00.000Z')
+    });
+    const preparation = prepareDxfProjectImport(workbench, {
+      fileName: 'declared-inch.dxf',
+      text: dxfWithInchUnits(),
+      now: new Date('2026-07-13T09:00:00.000Z')
+    });
+    const decision = {
+      machineProfileId: preparation.defaultSelection.machineProfileId,
+      unitCandidateId: 'millimeters',
+      confirmed: true,
+      declaredUnitOverrideAcknowledged: false
+    };
+    adapter.calls.length = 0;
+
+    await expect(commitDxfProjectImport(workbench, preparation, decision)).rejects.toThrow(
+      'Changing declared DXF units requires explicit acknowledgement.'
+    );
+    expect(adapter.calls).toEqual([]);
+
+    const result = await commitDxfProjectImport(workbench, preparation, {
+      ...decision,
+      declaredUnitOverrideAcknowledged: true
+    });
+
+    expect(result.parseResult.entities[0]).toMatchObject({
+      start: { x: 0, y: 0 },
+      end: { x: 1, y: 0 }
+    });
+    expect(result.pathDocument.segments[0]).toMatchObject({
+      start: { x: 0, y: 0 },
+      end: { x: 1, y: 0 }
+    });
+    expect(result.pathDocument.source).toMatchObject({
+      units: {
+        code: 1,
+        label: 'inches',
+        scaleToMillimeters: 25.4
+      },
+      unitDeclaration: {
+        status: 'recognized',
+        units: { code: 1, label: 'inches', scaleToMillimeters: 25.4 }
+      },
+      appliedUnits: {
+        label: 'millimeters',
+        scaleToMillimeters: 1,
+        basis: 'user-confirmed',
+        confirmed: true,
+        confirmedAt: '2026-07-13T09:00:00.000Z'
+      },
+      coordinateScaleToMillimeters: 1
+    });
+    expect(result.pathDocument.source.importWarnings).toContain(
+      'Declared DXF units "inches" were overridden with confirmed units "millimeters".'
+    );
+    expect(result.pathDiagnostics.map(({ code }) => code)).toContain('dxf-import-warning');
+    expect(result.pathDiagnostics.map(({ code }) => code)).not.toContain(
+      'units-assumed-millimeters'
+    );
+    expect(adapter.calls.filter(({ method }) => method === 'writeText')).toEqual([
+      { method: 'writeText', path: 'imports/declared-inch-2026-07-13.dxf' },
+      { method: 'writeText', path: 'projects/declared-inch-2026-07-13/project.json' },
+      { method: 'writeText', path: 'workbench.json' }
+    ]);
+  });
+
+  it('resolves and deeply snapshots the selected current machine without changing the default', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-07-13T08:00:00.000Z')
+    });
+    const defaultProfile = workbench.activeMachineProfile;
+    const selectedProfile = createVerifiedCharmillesRobofil100Profile(
+      'selected-robofil',
+      new Date('2026-07-13T08:30:00.000Z')
+    );
+    selectedProfile.preferredDxfImportUnit = 'millimeters';
+    workbench.manifest = {
+      ...workbench.manifest,
+      activeMachineProfileId: defaultProfile.id,
+      machineProfiles: [defaultProfile, selectedProfile]
+    };
+    const preparation = prepareDxfProjectImport(workbench, {
+      fileName: 'selected-machine.dxf',
+      text: simpleSlotDxf(),
+      now: new Date('2026-07-13T09:00:00.000Z')
+    });
+
+    const result = await commitDxfProjectImport(workbench, preparation, {
+      machineProfileId: selectedProfile.id,
+      unitCandidateId: 'millimeters',
+      confirmed: true,
+      declaredUnitOverrideAcknowledged: false
+    });
+    const snapshot = structuredClone(result.project.machine);
+
+    expect(result.project.machine).toEqual(selectedProfile);
+    expect(result.project.machine).not.toBe(selectedProfile);
+    expect(result.project.machine.controller).not.toBe(selectedProfile.controller);
+    expect(result.workbench.manifest.activeMachineProfileId).toBe(defaultProfile.id);
+    expect(result.workbench.activeMachineProfile.id).toBe(defaultProfile.id);
+
+    selectedProfile.controller.arcCenterMode = 'incremental-from-start';
+    selectedProfile.compensation.preActivationCodes[0] = 'G61';
+    expect(result.project.machine).toEqual(snapshot);
+  });
+
+  it('rejects a machine removed after review before writing and allocates the project ID at commit time', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-07-13T08:00:00.000Z')
+    });
+    const selectedProfile = createVerifiedCharmillesRobofil100Profile(
+      'temporary-machine',
+      new Date('2026-07-13T08:30:00.000Z')
+    );
+    selectedProfile.preferredDxfImportUnit = 'millimeters';
+    workbench.manifest = {
+      ...workbench.manifest,
+      machineProfiles: [...workbench.manifest.machineProfiles, selectedProfile]
+    };
+    const preparation = prepareDxfProjectImport(workbench, {
+      fileName: 'late-collision.dxf',
+      text: simpleSlotDxf(),
+      now: new Date('2026-07-13T09:00:00.000Z')
+    });
+    adapter.calls.length = 0;
+
+    workbench.manifest = {
+      ...workbench.manifest,
+      machineProfiles: workbench.manifest.machineProfiles.filter(
+        ({ id }) => id !== selectedProfile.id
+      )
+    };
+    await expect(commitDxfProjectImport(workbench, preparation, {
+      machineProfileId: selectedProfile.id,
+      unitCandidateId: 'millimeters',
+      confirmed: true,
+      declaredUnitOverrideAcknowledged: false
+    })).rejects.toThrow('Selected machine profile is no longer available: temporary-machine.');
+    expect(adapter.calls).toEqual([]);
+
+    workbench.manifest = {
+      ...workbench.manifest,
+      projects: [{
+        id: 'late-collision-2026-07-13',
+        name: 'Existing',
+        path: 'projects/existing/project.json',
+        sourceKind: 'dxf',
+        updatedAt: '2026-07-13T08:45:00.000Z'
+      }]
+    };
+    const result = await commitDxfProjectImport(workbench, preparation, {
+      ...preparation.defaultSelection,
+      confirmed: true,
+      declaredUnitOverrideAcknowledged: false
+    });
+    expect(result.project.id).toBe('late-collision-2026-07-13-2');
+  });
+
   it('imports a DXF into source, UPID project, and manifest files without generated G-code artifacts', async () => {
     const adapter = new MemoryWorkbenchAdapter('Browser cache');
     const workbench = await initializeWorkbenchDirectory(adapter, {

@@ -43,7 +43,9 @@ export function normalizeDxfGeometry(
 }
 
 function knownUnitScale(sourceMetadata: PathPlanningSourceMetadata) {
-  const scale = sourceMetadata.units?.scaleToMillimeters;
+  const scale =
+    sourceMetadata.appliedUnits?.scaleToMillimeters ??
+    sourceMetadata.units?.scaleToMillimeters;
   return scale != null && Number.isFinite(scale) && scale > 0 ? scale : null;
 }
 

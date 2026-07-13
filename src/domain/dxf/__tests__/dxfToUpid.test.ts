@@ -123,6 +123,56 @@ describe('dxfEntitiesToUpidDocument', () => {
     );
   });
 
+  it('uses confirmed applied units ahead of the raw declaration without mutating raw entities', () => {
+    const parsed = parseDxf(inchGeometryDxf());
+    const rawEntities = structuredClone(parsed.entities);
+    const document = dxfEntitiesToUpidDocument(parsed.entities, {}, {
+      units: parsed.units,
+      unitDeclaration: parsed.unitDeclaration,
+      appliedUnits: {
+        label: 'millimeters',
+        scaleToMillimeters: 1,
+        basis: 'user-confirmed',
+        confirmed: true,
+        confirmedAt: '2026-07-13T09:00:00.000Z'
+      }
+    });
+
+    expect(document.segments[0]).toMatchObject({
+      kind: 'line',
+      start: { x: 0, y: 0 },
+      end: { x: 1, y: 0 }
+    });
+    expect(document.source.units).toEqual(parsed.units);
+    expect(document.source.unitDeclaration).toEqual(parsed.unitDeclaration);
+    expect(document.source.coordinateScaleToMillimeters).toBe(1);
+    expect(document.source.appliedUnits).toMatchObject({
+      scaleToMillimeters: 1,
+      basis: 'user-confirmed',
+      confirmed: true
+    });
+    expect(document.diagnostics.map(({ code }) => code)).not.toContain(
+      'units-assumed-millimeters'
+    );
+    expect(parsed.entities).toEqual(rawEntities);
+  });
+
+  it('does not warn that confirmed unitless millimeters were merely assumed', () => {
+    const document = dxfEntitiesToUpidDocument([line(0, 0, 1, 0)], {}, {
+      appliedUnits: {
+        label: 'millimeters',
+        scaleToMillimeters: 1,
+        basis: 'user-confirmed',
+        confirmed: true,
+        confirmedAt: '2026-07-13T09:00:00.000Z'
+      }
+    });
+
+    expect(document.diagnostics.map(({ code }) => code)).not.toContain(
+      'units-assumed-millimeters'
+    );
+  });
+
   it('retains unitless coordinates and records an assumed-millimeters diagnostic', () => {
     const document = dxfEntitiesToUpidDocument([line(0, 0, 1, 0)]);
 

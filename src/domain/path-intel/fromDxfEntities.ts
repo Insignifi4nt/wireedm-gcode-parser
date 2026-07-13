@@ -310,7 +310,8 @@ function diagnosticsForSourceMetadata(
 
   if (
     sourceMetadata.coordinateScaleToMillimeters != null &&
-    sourceMetadata.units?.scaleToMillimeters == null
+    sourceMetadata.units?.scaleToMillimeters == null &&
+    sourceMetadata.appliedUnits?.confirmed !== true
   ) {
     diagnostics.push({
       id: 'diag_source_units_0001',

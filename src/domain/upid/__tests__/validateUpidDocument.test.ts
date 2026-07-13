@@ -51,6 +51,70 @@ describe('validateUpidDocument', () => {
     });
   });
 
+  it('accepts valid applied DXF unit provenance that agrees with the coordinate scale', () => {
+    const document = closedDocument();
+    document.source.coordinateScaleToMillimeters = 25.4;
+    document.source.appliedUnits = {
+      label: 'inches',
+      scaleToMillimeters: 25.4,
+      basis: 'user-confirmed',
+      confirmed: true,
+      confirmedAt: '2026-07-13T09:00:00.000Z',
+      suggestion: { kind: 'machine-profile', profileId: 'shop-machine' }
+    };
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toEqual([]);
+  });
+
+  it.each([
+    ['a missing label', (document: UniversalPathIntelligenceDocument) => {
+      delete (document.source.appliedUnits! as { label?: string }).label;
+    }],
+    ['a non-finite scale', (document: UniversalPathIntelligenceDocument) => {
+      document.source.appliedUnits!.scaleToMillimeters = Number.POSITIVE_INFINITY;
+    }],
+    ['an unsupported basis', (document: UniversalPathIntelligenceDocument) => {
+      document.source.appliedUnits!.basis = 'guessed' as never;
+    }],
+    ['a non-boolean confirmation', (document: UniversalPathIntelligenceDocument) => {
+      document.source.appliedUnits!.confirmed = 'yes' as never;
+    }],
+    ['an invalid confirmation time', (document: UniversalPathIntelligenceDocument) => {
+      document.source.appliedUnits!.confirmedAt = 'not-a-date';
+    }],
+    ['an invalid suggestion profile', (document: UniversalPathIntelligenceDocument) => {
+      document.source.appliedUnits!.suggestion = {
+        kind: 'machine-profile',
+        profileId: ''
+      };
+    }],
+    ['an invalid suggestion kind', (document: UniversalPathIntelligenceDocument) => {
+      document.source.appliedUnits!.suggestion = {
+        kind: 'user-setting',
+        profileId: 'shop-machine'
+      } as never;
+    }],
+    ['a coordinate-scale disagreement', (document: UniversalPathIntelligenceDocument) => {
+      document.source.coordinateScaleToMillimeters = 1;
+    }]
+  ])('rejects applied DXF units with %s', (_label, mutate) => {
+    const document = closedDocument();
+    document.source.coordinateScaleToMillimeters = 25.4;
+    document.source.appliedUnits = {
+      label: 'inches',
+      scaleToMillimeters: 25.4,
+      basis: 'user-confirmed',
+      confirmed: true,
+      confirmedAt: '2026-07-13T09:00:00.000Z',
+      suggestion: { kind: 'machine-profile', profileId: 'shop-machine' }
+    };
+    mutate(document);
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({ code: 'upid-invalid-value' })
+    );
+  });
+
   it('accepts legal compensation state without treating export readiness as structural validity', () => {
     const document = closedDocument();
     document.geometryBasis = 'finished-contour';

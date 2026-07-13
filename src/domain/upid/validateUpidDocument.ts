@@ -437,6 +437,58 @@ function validateSource(value: unknown, context: ValidationContext) {
       positive: true
     });
   }
+  const appliedUnits = source.appliedUnits == null ? null : record(source.appliedUnits);
+  if (source.appliedUnits != null && !appliedUnits) {
+    context.add('upid-invalid-value', 'source.appliedUnits must be an object when present.');
+  }
+  if (appliedUnits) {
+    if (typeof appliedUnits.label !== 'string' || appliedUnits.label.length === 0) {
+      context.add('upid-invalid-value', 'source.appliedUnits.label must be a non-empty string.');
+    }
+    const validScale = finiteNumber(
+      appliedUnits.scaleToMillimeters,
+      'source.appliedUnits.scaleToMillimeters',
+      context,
+      { positive: true }
+    );
+    if (!['dxf-declared', 'user-confirmed', 'legacy-assumed'].includes(appliedUnits.basis)) {
+      context.add('upid-invalid-value', 'source.appliedUnits.basis is unsupported.');
+    }
+    if (typeof appliedUnits.confirmed !== 'boolean') {
+      context.add('upid-invalid-value', 'source.appliedUnits.confirmed must be boolean.');
+    }
+    if (
+      appliedUnits.confirmedAt != null &&
+      (typeof appliedUnits.confirmedAt !== 'string' ||
+        Number.isNaN(Date.parse(appliedUnits.confirmedAt)))
+    ) {
+      context.add('upid-invalid-value', 'source.appliedUnits.confirmedAt must be a valid date string.');
+    }
+    const suggestion = appliedUnits.suggestion == null ? null : record(appliedUnits.suggestion);
+    if (appliedUnits.suggestion != null && !suggestion) {
+      context.add('upid-invalid-value', 'source.appliedUnits.suggestion must be an object when present.');
+    }
+    if (suggestion) {
+      if (suggestion.kind !== 'machine-profile') {
+        context.add('upid-invalid-value', 'source.appliedUnits.suggestion.kind is unsupported.');
+      }
+      optionalString(
+        suggestion.profileId,
+        'source.appliedUnits.suggestion.profileId',
+        context,
+        true
+      );
+    }
+    if (
+      validScale &&
+      source.coordinateScaleToMillimeters !== appliedUnits.scaleToMillimeters
+    ) {
+      context.add(
+        'upid-invalid-value',
+        'source.appliedUnits.scaleToMillimeters must equal source.coordinateScaleToMillimeters.'
+      );
+    }
+  }
   const drawing = source.drawing == null ? null : record(source.drawing);
   if (source.drawing != null && !drawing) {
     context.add('upid-invalid-value', 'source.drawing must be an object when present.');
