@@ -23,20 +23,27 @@ export function evaluateMachineFit(input: {
   document: PathPlanningDocument | null | undefined;
   profile: MachineProfile | null | undefined;
 }): MachineFitResult {
-  const widthLimit = input.profile?.workArea?.widthMm ?? null;
-  const lengthLimit = input.profile?.workArea?.lengthMm ?? null;
-
-  if (!input.document || (!widthLimit && !lengthLimit)) {
-    return { status: 'unchecked', bounds: null, issues: [] };
-  }
+  if (!input.document) return unchecked();
 
   const bounds = documentBounds(input.document);
-  if (!bounds) return { status: 'unchecked', bounds: null, issues: [] };
+  return evaluateMachineFitBounds({ bounds, profile: input.profile });
+}
+
+export function evaluateMachineFitBounds(input: {
+  bounds: Bounds2 | null | undefined;
+  profile: MachineProfile | null | undefined;
+}): MachineFitResult {
+  if (!validBounds(input.bounds)) return unchecked();
 
   const size = {
-    widthMm: round(bounds.maxX - bounds.minX),
-    lengthMm: round(bounds.maxY - bounds.minY)
+    widthMm: round(input.bounds.maxX - input.bounds.minX),
+    lengthMm: round(input.bounds.maxY - input.bounds.minY)
   };
+  const widthLimit = input.profile?.workArea?.widthMm ?? null;
+  const lengthLimit = input.profile?.workArea?.lengthMm ?? null;
+  if (!widthLimit && !lengthLimit) {
+    return { status: 'unchecked', bounds: size, issues: [] };
+  }
   const issues: MachineFitIssue[] = [];
 
   if (widthLimit && size.widthMm > widthLimit) {
@@ -51,6 +58,19 @@ export function evaluateMachineFit(input: {
     bounds: size,
     issues
   };
+}
+
+function validBounds(bounds: Bounds2 | null | undefined): bounds is Bounds2 {
+  return Boolean(
+    bounds &&
+    [bounds.minX, bounds.minY, bounds.maxX, bounds.maxY].every(Number.isFinite) &&
+    bounds.maxX >= bounds.minX &&
+    bounds.maxY >= bounds.minY
+  );
+}
+
+function unchecked(): MachineFitResult {
+  return { status: 'unchecked', bounds: null, issues: [] };
 }
 
 function documentBounds(document: PathPlanningDocument): Bounds2 | null {
