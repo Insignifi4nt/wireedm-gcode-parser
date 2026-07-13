@@ -18,30 +18,6 @@ export interface TemplateModalPolicyResult {
   diagnostics: TemplateModalPolicyDiagnostic[];
 }
 
-const ROBOFIL_CONFLICTS = new Set([
-  'G0',
-  'G1',
-  'G2',
-  'G3',
-  'G17',
-  'G20',
-  'G21',
-  'G38',
-  'G39',
-  'G40',
-  'G41',
-  'G42',
-  'G54',
-  'G60',
-  'G90',
-  'G90.1',
-  'G91',
-  'G91.1',
-  'G92',
-  'M2',
-  'M30'
-]);
-
 export function validateTemplateModalPolicy({
   machine,
   header,
@@ -59,17 +35,18 @@ export function validateTemplateModalPolicy({
     stripGcodeComments(source)
       .split(/\r?\n/)
       .forEach((rawLine, index) => {
-        const line = rawLine.toUpperCase();
-        for (const match of line.matchAll(/([GM])0*(\d+(?:\.\d+)?)/g)) {
-          const word = `${match[1]}${Number(match[2])}`;
-          if (!ROBOFIL_CONFLICTS.has(word)) continue;
-          diagnostics.push({
-            section,
-            lineNumber: index + 1,
-            word,
-            message: `${word} conflicts with the structured Robofil post policy.`
-          });
-        }
+        const residue = rawLine.trim();
+        if (!residue) return;
+        const modalWord = residue.toUpperCase().match(/([GM])0*(\d+(?:\.\d+)?)/);
+        const word = modalWord
+          ? `${modalWord[1]}${Number(modalWord[2])}`
+          : residue.split(/\s+/, 1)[0];
+        diagnostics.push({
+          section,
+          lineNumber: index + 1,
+          word,
+          message: `Executable template residue ${JSON.stringify(residue)} conflicts with the structured Robofil post policy.`
+        });
       });
   }
 

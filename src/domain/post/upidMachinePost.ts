@@ -54,7 +54,12 @@ export function postUpidForMachine(
   _options: UpidMachinePostOptions = {}
 ): UpidMachinePostResult {
   const validation = validateUpidDocument(document);
-  if (!validation.valid) return blockedMachinePost(validation.blockingDiagnostics, false);
+  if (!validation.valid) {
+    return blockedMachinePost(
+      validation.blockingDiagnostics,
+      machine.controller.family === 'charmilles-robofil-classic'
+    );
+  }
 
   const compensatedOperations = document.plan.operations.filter(
     (operation) => operation.compensationIntent?.mode === 'controller'

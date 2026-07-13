@@ -549,6 +549,30 @@ describe('UPID document boundary', () => {
     );
   });
 
+  it('keeps structurally invalid Robofil composition executable-empty before intent checks', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    machine.templates.header = 'G28 X100 Y100';
+    machine.templates.footer = 'M99';
+    const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
+    document.plan.operations[0].segmentRefs[0].segmentId = 'seg_missing';
+
+    const exportProgram = composeUpidGCodeExport(document, { machine });
+
+    expect(exportProgram.canDownload).toBe(false);
+    expect(exportProgram.body).toBe('');
+    expect(exportProgram.post).toMatchObject({
+      status: 'blocked',
+      programOwned: true,
+      blocks: [],
+      moves: [],
+      operations: []
+    });
+    expect(exportProgram.program.lines).toEqual([]);
+    expect(exportProgram.program.text.trim()).toBe('');
+    expect(exportProgram.program.text).not.toContain('G28');
+    expect(exportProgram.program.text).not.toContain('M99');
+  });
+
   it('stamps projectless UPID documents when attaching them to a project', () => {
     const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
     const projectDocument = projectUpidDocument(withProjectUpid(baseProject(), document));
