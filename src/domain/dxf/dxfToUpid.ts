@@ -6,7 +6,7 @@ import type { DxfEntity } from './types';
 
 export const DEFAULT_DXF_UPID_OPTIONS: PathPlanningOptions = {
   endpointTolerance: 0,
-  coincidenceEpsilon: 0.000001,
+  coincidenceEpsilon: 0.000002,
   allowReverseOpenChains: false
 };
 

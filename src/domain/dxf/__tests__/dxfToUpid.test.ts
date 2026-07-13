@@ -31,14 +31,14 @@ describe('dxfEntitiesToUpidDocument', () => {
     expect(document.segments).toHaveLength(1);
     expect(document.plan.operations).toHaveLength(1);
     expect(document.options.endpointTolerance).toBe(0);
-    expect(document.options.coincidenceEpsilon).toBe(0.000001);
+    expect(document.options.coincidenceEpsilon).toBe(0.000002);
   });
 
-  it('treats sub-micron CAD endpoint noise as coincident at the DXF import boundary', () => {
+  it('treats CATIA-scale arc and line endpoint rounding as coincident at the DXF import boundary', () => {
     const document = dxfEntitiesToUpidDocument([
       line(0, 0, 10, 0),
-      line(10.0000002, 0, 10, 10),
-      line(10, 10.0000002, 0, 10),
+      line(10.0000015, 0, 10, 10),
+      line(10, 10.0000015, 0, 10),
       line(0, 10, 0, 0)
     ]);
 
