@@ -32,13 +32,23 @@ export interface DxfDrawingUnits {
   scaleToMillimeters: number | null;
 }
 
+export type DxfUnitDeclarationStatus =
+  | 'missing'
+  | 'malformed'
+  | 'unitless'
+  | 'unknown'
+  | 'recognized';
+
+type DxfUnitDeclarationWithStatus<Status extends DxfUnitDeclarationStatus> = {
+  status: Status;
+};
+
 export type DxfUnitDeclaration =
-  | { status: 'missing' }
-  | { status: 'malformed'; rawValue: string | null }
-  | {
-      status: 'unitless' | 'unknown' | 'recognized';
+  | DxfUnitDeclarationWithStatus<'missing'>
+  | (DxfUnitDeclarationWithStatus<'malformed'> & { rawValue: string | null })
+  | (DxfUnitDeclarationWithStatus<'unitless' | 'unknown' | 'recognized'> & {
       units: DxfDrawingUnits;
-    };
+    });
 
 export interface AppliedDxfUnits {
   label: string;

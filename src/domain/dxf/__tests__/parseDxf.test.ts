@@ -1,9 +1,27 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseDxf } from '../parseDxf';
-import type { DxfEntity, DxfPoint } from '../types';
+import type { DxfEntity, DxfPoint, DxfUnitDeclarationStatus } from '../types';
+
+const DXF_UNIT_DECLARATION_STATUSES: DxfUnitDeclarationStatus[] = [
+  'missing',
+  'malformed',
+  'unitless',
+  'unknown',
+  'recognized'
+];
 
 describe('parseDxf', () => {
+  it('exports the complete DXF unit declaration status vocabulary', () => {
+    expect(DXF_UNIT_DECLARATION_STATUSES).toEqual([
+      'missing',
+      'malformed',
+      'unitless',
+      'unknown',
+      'recognized'
+    ]);
+  });
+
   it('parses LINE, ARC, and CIRCLE entities from the ENTITIES section', () => {
     const result = parseDxf(`
 0

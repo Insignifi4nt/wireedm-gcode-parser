@@ -55,3 +55,7 @@ The legacy stored-machine focused test passed 3/3 after its additive expectation
 - No preparation, preview, confirmation, import persistence, geometry reinterpretation, or G20-output behavior was added.
 - No storage adapter or Windows persistence was touched.
 - `D:` was not accessed.
+
+## Review follow-up
+
+The task review passed specification and code quality with one P3 documentation finding: the status vocabulary existed only inline in `DxfUnitDeclaration`. A compile-first RED test imported the requested public `DxfUnitDeclarationStatus` alias and `npm run build` failed with TS2724 before implementation. The follow-up exports the five-value alias and constructs the discriminated declaration union through a status-constrained helper, keeping one documented source of truth.
