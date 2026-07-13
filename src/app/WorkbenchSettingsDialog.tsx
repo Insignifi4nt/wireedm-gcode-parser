@@ -6,11 +6,14 @@ import { BROWSER_WORKBENCH_NAMESPACE } from '@/domain/storage/connectCachedWorkb
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
-import { MachineOutputSettingsPanel } from './MachineOutputSettingsPanel';
+import {
+  MachineOutputSettingsPanel,
+  type MachineProfileSettingsActions
+} from './MachineOutputSettingsPanel';
 
 type WorkbenchStatus = 'initializing' | 'ready' | 'connecting-storage' | 'error';
 
-interface WorkbenchSettingsDialogProps {
+interface WorkbenchSettingsDialogProps extends MachineProfileSettingsActions {
   connectedWorkbench: ConnectedWorkbench | null;
   errorMessage: string | null;
   interactionLocked: boolean;
@@ -32,7 +35,15 @@ export function WorkbenchSettingsDialog({
   interactionLocked,
   onClose,
   onConnectWorkbench,
+  onAcknowledgeMachineProfile,
+  onCreateBlankMachineProfile,
+  onDeleteMachineProfile,
+  onDuplicateMachineProfile,
+  onExportMachineProfile,
+  onImportMachineProfileFile,
+  onSaveMachineProfile,
   onSaveWorkbenchSettings,
+  onSetDefaultMachineProfile,
   open,
   settingsErrorMessage,
   settingsStatus,
@@ -265,7 +276,15 @@ export function WorkbenchSettingsDialog({
               <MachineOutputSettingsPanel
                 connectedWorkbench={connectedWorkbench}
                 interactionLocked={interactionLocked}
+                onAcknowledgeMachineProfile={onAcknowledgeMachineProfile}
+                onCreateBlankMachineProfile={onCreateBlankMachineProfile}
+                onDeleteMachineProfile={onDeleteMachineProfile}
+                onDuplicateMachineProfile={onDuplicateMachineProfile}
+                onExportMachineProfile={onExportMachineProfile}
+                onImportMachineProfileFile={onImportMachineProfileFile}
+                onSaveMachineProfile={onSaveMachineProfile}
                 onSaveWorkbenchSettings={onSaveWorkbenchSettings}
+                onSetDefaultMachineProfile={onSetDefaultMachineProfile}
                 settingsErrorMessage={settingsErrorMessage}
                 settingsStatus={settingsStatus}
               />

@@ -1,11 +1,16 @@
 export interface DownloadProgramFileInput {
   fileName: string;
+  mimeType?: string;
   text: string;
 }
 
-export function downloadProgramFile({ fileName, text }: DownloadProgramFileInput) {
+export function downloadProgramFile({
+  fileName,
+  mimeType = 'text/plain;charset=utf-8',
+  text
+}: DownloadProgramFileInput) {
   const blob = new Blob([text], {
-    type: 'text/plain;charset=utf-8'
+    type: mimeType
   });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
