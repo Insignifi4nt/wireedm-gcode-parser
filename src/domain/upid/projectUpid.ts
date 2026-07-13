@@ -81,10 +81,7 @@ export function composeProjectUpidGCodeExport(
   const pathDocument = requireProjectUpidDocument(project.id, document);
   const machine = project.machine;
   const exportProgram = composeUpidGCodeExport(pathDocument, {
-    header: machine.templates.header,
-    footer: machine.templates.footer,
-    lineEnding: machine.output.lineEnding,
-    coordinatePrecision: machine.output.coordinatePrecision
+    machine
   });
 
   return {

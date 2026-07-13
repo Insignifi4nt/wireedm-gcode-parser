@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
+import { initializeProjectCompensationIntents } from '@/domain/compensation/intent';
+import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import {
   movePathOperation,
@@ -701,6 +703,40 @@ describe('UPID document boundary', () => {
 
     expect(exportProgram.body).toContain('X1.23457');
     expect(exportProgram.fileName).toBe('upid-project.iso');
+  });
+
+  it('composes verified Robofil modal blocks from only the project machine snapshot', () => {
+    const libraryProfile = createVerifiedCharmillesRobofil100Profile(
+      'robofil-project-snapshot',
+      new Date('2026-07-13T00:00:00.000Z')
+    );
+    const project = {
+      ...baseProject(),
+      machine: structuredClone(libraryProfile)
+    };
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(rectangle(0, 0, 10, 5)),
+      project.machine
+    );
+    const attached = withProjectUpid(project, initialized);
+    const document = projectUpidDocument(attached)!;
+
+    libraryProfile.compensation.preActivationCodes = ['G61'];
+    const exportProgram = composeProjectUpidGCodeExport(attached, document);
+
+    expect(exportProgram.canDownload).toBe(true);
+    expect(exportProgram.program.text).toMatch(
+      /^G92 X0 Y0\r\nG60\r\nG38\r\nG4[12] D0\r\nG90\r\nG1 /
+    );
+    expect(exportProgram.program.text).not.toContain('G61');
+    expect(exportProgram.program.text.endsWith('M02\r\n')).toBe(true);
+    expect(exportProgram.programBlocks.slice(0, 5)).toEqual([
+      expect.objectContaining({ programLineNumber: 1, kind: 'setup', text: 'G92 X0 Y0' }),
+      expect.objectContaining({ programLineNumber: 2, kind: 'setup', text: 'G60' }),
+      expect.objectContaining({ programLineNumber: 3, kind: 'compensation-activation', text: 'G38' }),
+      expect.objectContaining({ programLineNumber: 4, kind: 'compensation-activation' }),
+      expect.objectContaining({ programLineNumber: 5, kind: 'setup', text: 'G90' })
+    ]);
   });
 
   it('rejects project UPID exports for documents outside the current project', () => {

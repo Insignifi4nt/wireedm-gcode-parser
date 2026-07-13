@@ -17,6 +17,13 @@ import {
   programLineForBodyLine,
   type GCodeProgramComposition
 } from '@/domain/post/gcodeTemplates';
+import {
+  machineResultFromGenericPost,
+  postUpidForMachine,
+  type GcodePostedBlock,
+  type UpidMachinePostResult
+} from '@/domain/post/upidMachinePost';
+import type { MachineProfile } from '@/domain/workbench/types';
 import type {
   OperationOrderStrategy,
   PathDiagnostic,
@@ -45,9 +52,10 @@ export type UniversalPathIntelligenceDocument = PathPlanningDocument;
 
 export interface ComposeUpidGCodeExportInput {
   coordinatePrecision?: number;
-  footer: string;
-  header: string;
+  footer?: string;
+  header?: string;
   lineEnding?: 'lf' | 'crlf';
+  machine?: MachineProfile;
 }
 
 export interface UpidGCodeExport {
@@ -57,8 +65,9 @@ export interface UpidGCodeExport {
   diagnostics: PathDiagnostic[];
   documentTrace: UpidGCodeExportDocumentTrace;
   planning: UpidGCodeExportPlanning;
-  post: ReturnType<typeof postUpidToGcode>;
+  post: UpidMachinePostResult;
   program: GCodeProgramComposition;
+  programBlocks: UpidGCodeProgramBlock[];
   programOperations: UpidGCodeProgramOperation[];
   summary: UpidGCodeExportSummary;
 }
@@ -96,6 +105,10 @@ export interface UpidGCodeProgramMove extends GcodePostedMove {
   programLineNumber: number;
   segmentIndex: number | null;
   segmentOrdinal: number | null;
+}
+
+export interface UpidGCodeProgramBlock extends GcodePostedBlock {
+  programLineNumber: number;
 }
 
 export interface UpidGCodeProgramOperation extends Omit<GcodePostedOperation, 'moves'> {
@@ -160,10 +173,19 @@ export function composeUpidGCodeExport(
   document: UniversalPathIntelligenceDocument,
   input: ComposeUpidGCodeExportInput
 ): UpidGCodeExport {
-  const post = postUpidToGcode(document, {
-    arcCenterMode: inferArcCenterModeFromHeader(input.header),
-    coordinatePrecision: input.coordinatePrecision
-  });
+  const machine = input.machine;
+  const header = input.header ?? machine?.templates.header ?? '';
+  const footer = input.footer ?? machine?.templates.footer ?? '';
+  const post = machine
+    ? postUpidForMachine(document, machine, {
+        coordinatePrecision: input.coordinatePrecision ?? machine.output.coordinatePrecision
+      })
+    : machineResultFromGenericPost(
+        postUpidToGcode(document, {
+          arcCenterMode: inferArcCenterModeFromHeader(header),
+          coordinatePrecision: input.coordinatePrecision
+        })
+      );
   const body = post.body;
   const documentDiagnostics = Array.isArray(document?.diagnostics) ? document.diagnostics : [];
   const diagnostics = uniqueDiagnostics([...documentDiagnostics, ...post.diagnostics]);
@@ -173,10 +195,10 @@ export function composeUpidGCodeExport(
       : [];
   const planning = summarizeExportPlanning(document);
   const program = composeGCodeProgramWithLineMap({
-    header: input.header,
+    header: post.programOwned ? '' : header,
     body,
-    footer: input.footer,
-    lineEnding: input.lineEnding
+    footer: post.programOwned ? '' : footer,
+    lineEnding: input.lineEnding ?? machine?.output.lineEnding
   });
 
   return {
@@ -188,6 +210,10 @@ export function composeUpidGCodeExport(
     planning,
     post,
     program,
+    programBlocks: post.blocks.map((block) => ({
+      ...block,
+      programLineNumber: programLineForBodyLine(program.sections.body, block.bodyLineIndex)
+    })),
     programOperations:
       post.status === 'ready' ? mapProgramOperations(document, post.operations, program) : [],
     summary: {

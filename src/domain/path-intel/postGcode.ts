@@ -36,6 +36,7 @@ export type GcodeArcCenterMode = 'absolute' | 'incremental';
 export interface GcodePostOptions extends PathPlanningOptions {
   arcCenterMode?: GcodeArcCenterMode;
   coordinatePrecision?: number;
+  suppressOperationStartRapid?: boolean;
 }
 
 export interface GcodePostedMove {
@@ -203,10 +204,10 @@ export function postPathPlanToGcode(
     if (!formattedEntryPoint) {
       return block('Cannot post a non-finite or unformattable operation entry point.');
     }
-    if (
+    const needsOperationStartRapid =
       !pointsEqualNullable(currentPosition, entryPoint, coincidenceEpsilon) ||
-      !formattedPointsEqualNullable(currentFormattedPosition, formattedEntryPoint)
-    ) {
+      !formattedPointsEqualNullable(currentFormattedPosition, formattedEntryPoint);
+    if (!options.suppressOperationStartRapid && needsOperationStartRapid) {
       appendOperationMove({
         command: 'G0',
         endPoint: entryPoint,
