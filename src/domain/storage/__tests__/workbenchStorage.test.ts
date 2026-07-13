@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
+
 import { initializeWorkbenchDirectory, type WorkbenchStorageAdapter } from '../workbenchStorage';
 
 class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
@@ -125,5 +127,47 @@ describe('initializeWorkbenchDirectory', () => {
     expect(result.manifest.output.coordinatePrecision).toBe(3);
     expect(result.activeMachineProfile.output.coordinatePrecision).toBe(3);
     expect(result.manifest.projects).toHaveLength(1);
+  });
+
+  it('normalizes older profile snapshots to conservative version-1 post policy fields', async () => {
+    const adapter = new MemoryWorkbenchAdapter('machine-jobs');
+    const legacyProfile = createDefaultMachineProfile() as unknown as Record<string, unknown>;
+    const controller = legacyProfile.controller as Record<string, unknown>;
+    const compensation = legacyProfile.compensation as Record<string, unknown>;
+    for (const key of ['postVersion', 'unitsCode', 'planeCode', 'workOffsetCode', 'distanceMode', 'arcCenterMode']) {
+      delete controller[key];
+    }
+    for (const key of ['lifecycleScope', 'preActivationCodes']) delete compensation[key];
+    adapter.files.set('workbench.json', JSON.stringify({
+      schemaVersion: 1,
+      name: 'machine-jobs',
+      createdAt: '2026-05-28T08:00:00.000Z',
+      updatedAt: '2026-05-28T08:00:00.000Z',
+      templates: { headerPath: 'templates/header.gcode', footerPath: 'templates/footer.gcode' },
+      output: { extension: 'iso', lineEnding: 'crlf' },
+      activeMachineProfileId: 'default-wire-machine',
+      machineProfiles: [legacyProfile],
+      projects: []
+    }));
+
+    const result = await initializeWorkbenchDirectory(adapter);
+
+    expect(result.activeMachineProfile).toMatchObject({
+      controller: {
+        postVersion: 1,
+        verification: { status: 'unverified' },
+        unitsCode: 'omit',
+        planeCode: 'omit',
+        workOffsetCode: 'template-managed',
+        distanceMode: 'G90',
+        arcCenterMode: 'incremental-from-start'
+      },
+      compensation: {
+        supported: false,
+        enabledByDefault: false,
+        lifecycleScope: 'operation',
+        preActivationCodes: []
+      }
+    });
   });
 });

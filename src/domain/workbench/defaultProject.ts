@@ -18,9 +18,15 @@ export function createDefaultMachineProfile(): MachineProfile {
     name: 'Default Wire EDM',
     controller: {
       family: 'generic-iso',
+      postVersion: 1,
       verification: { status: 'unverified' },
       blockFormatting: 'spaced',
       coordinateSystem: 'template-managed',
+      unitsCode: 'omit',
+      planeCode: 'omit',
+      workOffsetCode: 'template-managed',
+      distanceMode: 'G90',
+      arcCenterMode: 'incremental-from-start',
       programEnd: 'template-managed'
     },
     compensation: {
@@ -29,6 +35,8 @@ export function createDefaultMachineProfile(): MachineProfile {
       offsetSelection: { address: 'D', index: 0 },
       activation: 'linear-lead',
       cancellation: 'linear-lead-out',
+      lifecycleScope: 'operation',
+      preActivationCodes: [],
       validationLeadLengthMm: 2,
       expectedMaximumOffsetMm: null
     },

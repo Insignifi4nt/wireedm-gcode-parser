@@ -38,9 +38,15 @@ export interface MachineProfileVerification {
 
 export interface MachineControllerPolicy {
   family: 'generic-iso' | 'charmilles-robofil-classic' | 'custom';
+  postVersion: number;
   verification: MachineProfileVerification;
   blockFormatting: 'spaced' | 'compact';
   coordinateSystem: 'template-managed' | 'work-offset' | 'wire-position-g92';
+  unitsCode: 'G20' | 'G21' | 'omit';
+  planeCode: 'G17' | 'omit';
+  workOffsetCode: 'G54' | 'omit' | 'template-managed';
+  distanceMode: 'G90';
+  arcCenterMode: 'incremental-from-start' | 'absolute';
   programEnd: 'M02' | 'M30' | 'template-managed';
 }
 
@@ -49,7 +55,9 @@ export interface MachineCompensationPolicy {
   enabledByDefault: boolean;
   offsetSelection: { address: 'D'; index: number };
   activation: 'linear-lead' | 'charmilles-g38';
-  cancellation: 'linear-lead-out' | 'charmilles-g39';
+  cancellation: 'linear-lead-out' | 'charmilles-g39' | 'program-end';
+  lifecycleScope: 'operation' | 'program';
+  preActivationCodes: string[];
   validationLeadLengthMm: number;
   expectedMaximumOffsetMm: number | null;
 }

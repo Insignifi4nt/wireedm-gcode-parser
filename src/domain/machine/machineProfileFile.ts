@@ -13,6 +13,8 @@ const MAX_ID_LENGTH = 64;
 const MAX_NAME_LENGTH = 120;
 const MAX_TEMPLATE_LENGTH = 64 * 1024;
 const MAX_NOTES_LENGTH = 16 * 1024;
+const MAX_PRE_ACTIVATION_CODES = 16;
+const MAX_PRE_ACTIVATION_CODE_LENGTH = 64;
 const PROFILE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 const CUSTOM_EXTENSION_PATTERN = /^[a-z0-9][a-z0-9_-]{0,15}$/;
 const CANONICAL_ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -109,6 +111,9 @@ function reconstructProfile(value: unknown, resetVerification: boolean): Machine
     ['generic-iso', 'charmilles-robofil-classic', 'custom'] as const,
     'controller family'
   );
+  const postVersion = controller.postVersion === undefined
+    ? 1
+    : requirePositiveSafeInteger(controller.postVersion, 'post version');
   const blockFormatting = requireEnum(
     controller.blockFormatting,
     ['spaced', 'compact'] as const,
@@ -119,6 +124,29 @@ function reconstructProfile(value: unknown, resetVerification: boolean): Machine
     ['template-managed', 'work-offset', 'wire-position-g92'] as const,
     'coordinate system'
   );
+  const unitsCode = controller.unitsCode === undefined
+    ? 'omit'
+    : requireEnum(controller.unitsCode, ['G20', 'G21', 'omit'] as const, 'units code');
+  const planeCode = controller.planeCode === undefined
+    ? 'omit'
+    : requireEnum(controller.planeCode, ['G17', 'omit'] as const, 'plane code');
+  const workOffsetCode = controller.workOffsetCode === undefined
+    ? 'template-managed'
+    : requireEnum(
+      controller.workOffsetCode,
+      ['G54', 'omit', 'template-managed'] as const,
+      'work-offset code'
+    );
+  const distanceMode = controller.distanceMode === undefined
+    ? 'G90'
+    : requireEnum(controller.distanceMode, ['G90'] as const, 'distance mode');
+  const arcCenterMode = controller.arcCenterMode === undefined
+    ? 'incremental-from-start'
+    : requireEnum(
+      controller.arcCenterMode,
+      ['incremental-from-start', 'absolute'] as const,
+      'arc-centre mode'
+    );
   const programEnd = requireEnum(
     controller.programEnd,
     ['M02', 'M30', 'template-managed'] as const,
@@ -147,9 +175,19 @@ function reconstructProfile(value: unknown, resetVerification: boolean): Machine
   );
   const cancellation = requireEnum(
     compensation.cancellation,
-    ['linear-lead-out', 'charmilles-g39'] as const,
+    ['linear-lead-out', 'charmilles-g39', 'program-end'] as const,
     'compensation cancellation'
   );
+  const lifecycleScope = compensation.lifecycleScope === undefined
+    ? 'operation'
+    : requireEnum(
+      compensation.lifecycleScope,
+      ['operation', 'program'] as const,
+      'compensation lifecycle scope'
+    );
+  const preActivationCodes = compensation.preActivationCodes === undefined
+    ? []
+    : requirePreActivationCodes(compensation.preActivationCodes);
   const validationLeadLengthMm = requirePositiveFinite(
     compensation.validationLeadLengthMm,
     'validation lead length'
@@ -190,9 +228,15 @@ function reconstructProfile(value: unknown, resetVerification: boolean): Machine
     name: name.trim(),
     controller: {
       family: controllerFamily,
+      postVersion,
       verification,
       blockFormatting,
       coordinateSystem,
+      unitsCode,
+      planeCode,
+      workOffsetCode,
+      distanceMode,
+      arcCenterMode,
       programEnd
     },
     compensation: {
@@ -201,6 +245,8 @@ function reconstructProfile(value: unknown, resetVerification: boolean): Machine
       offsetSelection: { address: 'D', index: offsetIndex },
       activation,
       cancellation,
+      lifecycleScope,
+      preActivationCodes,
       validationLeadLengthMm,
       expectedMaximumOffsetMm
     },
@@ -303,6 +349,33 @@ function requireNonNegativeInteger(value: unknown, label: string): number {
     invalidProfile(`${label} must be a non-negative integer.`);
   }
   return value;
+}
+
+function requirePositiveSafeInteger(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    invalidProfile(`${label} must be a positive integer.`);
+  }
+  return value;
+}
+
+function requirePreActivationCodes(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > MAX_PRE_ACTIVATION_CODES) {
+    invalidProfile(`pre-activation codes must contain at most ${MAX_PRE_ACTIVATION_CODES} blocks.`);
+  }
+
+  return value.map((block) => {
+    if (
+      typeof block !== 'string' ||
+      block.length === 0 ||
+      block.length > MAX_PRE_ACTIVATION_CODE_LENGTH ||
+      !/^[\x20-\x7e]+$/.test(block)
+    ) {
+      invalidProfile(
+        `each pre-activation code must be one printable line of at most ${MAX_PRE_ACTIVATION_CODE_LENGTH} characters.`
+      );
+    }
+    return block;
+  });
 }
 
 function requireIntegerInRange(value: unknown, minimum: number, maximum: number, label: string): number {

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createBlankMachineProfile,
   createCharmillesRobofilClassicProfile,
+  createVerifiedCharmillesRobofil100Profile,
   markMachineProfileUserVerified
 } from '../machineProfiles';
 import {
@@ -24,7 +25,7 @@ function portableDocument(profile: ReturnType<typeof createBlankMachineProfile>)
 
 describe('portable machine profile files', () => {
   it('round-trips one versioned portable profile and resets imported verification', () => {
-    const verifiedRobofil = markMachineProfileUserVerified(createCharmillesRobofilClassicProfile(), now);
+    const verifiedRobofil = createVerifiedCharmillesRobofil100Profile('robofil-local', now);
     const text = serializeMachineProfileFile(verifiedRobofil, now);
     const parsed = parseMachineProfileFile(text);
 
@@ -35,6 +36,46 @@ describe('portable machine profile files', () => {
     });
     expect(parsed.id).toBe(verifiedRobofil.id);
     expect(parsed.controller.verification.status).toBe('unverified');
+    expect(parsed).toMatchObject({
+      controller: {
+        postVersion: 1,
+        unitsCode: 'omit',
+        planeCode: 'omit',
+        workOffsetCode: 'omit',
+        distanceMode: 'G90',
+        arcCenterMode: 'absolute'
+      },
+      compensation: {
+        cancellation: 'program-end',
+        lifecycleScope: 'program',
+        preActivationCodes: ['G60']
+      }
+    });
+  });
+
+  it('migrates an older schema-version-1 portable profile to conservative post defaults', () => {
+    const profile = createBlankMachineProfile() as unknown as Record<string, unknown>;
+    const controller = profile.controller as Record<string, unknown>;
+    const compensation = profile.compensation as Record<string, unknown>;
+    for (const key of ['postVersion', 'unitsCode', 'planeCode', 'workOffsetCode', 'distanceMode', 'arcCenterMode']) {
+      delete controller[key];
+    }
+    for (const key of ['lifecycleScope', 'preActivationCodes']) delete compensation[key];
+
+    expect(parseMachineProfileFile(JSON.stringify(portableDocument(
+      profile as unknown as ReturnType<typeof createBlankMachineProfile>
+    )))).toMatchObject({
+      controller: {
+        postVersion: 1,
+        unitsCode: 'omit',
+        planeCode: 'omit',
+        workOffsetCode: 'template-managed',
+        distanceMode: 'G90',
+        arcCenterMode: 'incremental-from-start',
+        verification: { status: 'unverified' }
+      },
+      compensation: { lifecycleScope: 'operation', preActivationCodes: [] }
+    });
   });
 
   it('round-trips multibyte template content while the portable file remains under 256 KiB', () => {
@@ -126,6 +167,24 @@ describe('portable machine profile files', () => {
     { label: 'invalid controller family', mutate: (profile: Record<string, unknown>) => {
       ((profile.controller as Record<string, unknown>)).family = 'unknown';
     } },
+    { label: 'invalid post version', mutate: (profile: Record<string, unknown>) => {
+      ((profile.controller as Record<string, unknown>)).postVersion = 0;
+    } },
+    { label: 'invalid units code', mutate: (profile: Record<string, unknown>) => {
+      ((profile.controller as Record<string, unknown>)).unitsCode = 'G70';
+    } },
+    { label: 'invalid plane code', mutate: (profile: Record<string, unknown>) => {
+      ((profile.controller as Record<string, unknown>)).planeCode = 'G18';
+    } },
+    { label: 'invalid work-offset code', mutate: (profile: Record<string, unknown>) => {
+      ((profile.controller as Record<string, unknown>)).workOffsetCode = 'G55';
+    } },
+    { label: 'invalid distance mode', mutate: (profile: Record<string, unknown>) => {
+      ((profile.controller as Record<string, unknown>)).distanceMode = 'G91';
+    } },
+    { label: 'invalid arc-centre mode', mutate: (profile: Record<string, unknown>) => {
+      ((profile.controller as Record<string, unknown>)).arcCenterMode = 'radius';
+    } },
     { label: 'invalid D index', mutate: (profile: Record<string, unknown>) => {
       (((profile.compensation as Record<string, unknown>).offsetSelection) as Record<string, unknown>).index = -1;
     } },
@@ -134,6 +193,21 @@ describe('portable machine profile files', () => {
     } },
     { label: 'invalid offset envelope', mutate: (profile: Record<string, unknown>) => {
       (profile.compensation as Record<string, unknown>).expectedMaximumOffsetMm = -0.5;
+    } },
+    { label: 'invalid lifecycle scope', mutate: (profile: Record<string, unknown>) => {
+      (profile.compensation as Record<string, unknown>).lifecycleScope = 'document';
+    } },
+    { label: 'multiline pre-activation block', mutate: (profile: Record<string, unknown>) => {
+      (profile.compensation as Record<string, unknown>).preActivationCodes = ['G60\nG61'];
+    } },
+    { label: 'non-printable pre-activation block', mutate: (profile: Record<string, unknown>) => {
+      (profile.compensation as Record<string, unknown>).preActivationCodes = ['G60\u0007'];
+    } },
+    { label: 'overlong pre-activation block', mutate: (profile: Record<string, unknown>) => {
+      (profile.compensation as Record<string, unknown>).preActivationCodes = ['G'.repeat(65)];
+    } },
+    { label: 'too many pre-activation blocks', mutate: (profile: Record<string, unknown>) => {
+      (profile.compensation as Record<string, unknown>).preActivationCodes = Array(17).fill('G60');
     } }
   ])('rejects $label', ({ mutate }) => {
     const profile = createCharmillesRobofilClassicProfile() as unknown as Record<string, unknown>;
@@ -148,12 +222,16 @@ describe('portable machine profile files', () => {
     const document = portableDocument(createBlankMachineProfile()) as Record<string, unknown>;
     const profile = document.profile as ReturnType<typeof createBlankMachineProfile> & { injected?: string };
     profile.injected = 'discard me';
+    (profile.controller as typeof profile.controller & { injected?: string }).injected = 'discard me';
+    (profile.compensation as typeof profile.compensation & { injected?: string }).injected = 'discard me';
     (profile.output as typeof profile.output & { injected?: string }).injected = 'discard me';
     document.injected = 'discard me';
 
     const parsed = parseMachineProfileFile(JSON.stringify(document));
 
     expect(parsed).not.toHaveProperty('injected');
+    expect(parsed.controller).not.toHaveProperty('injected');
+    expect(parsed.compensation).not.toHaveProperty('injected');
     expect(parsed.output).not.toHaveProperty('injected');
   });
 

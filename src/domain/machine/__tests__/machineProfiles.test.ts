@@ -6,6 +6,7 @@ import type { MachineProfile, OutputFormat } from '@/domain/workbench/types';
 import {
   createBlankMachineProfile,
   createCharmillesRobofilClassicProfile,
+  createVerifiedCharmillesRobofil100Profile,
   machineProfileVerificationFingerprint,
   markMachineProfileUserVerified,
   normalizeCoordinatePrecision,
@@ -14,6 +15,38 @@ import {
 } from '../machineProfiles';
 
 describe('machine profile policies', () => {
+  it('creates the physically verified Robofil 100 version-1 post policy', () => {
+    const verifiedAt = new Date('2026-07-13T09:30:00.000Z');
+
+    expect(createVerifiedCharmillesRobofil100Profile('robofil-local', verifiedAt)).toMatchObject({
+      id: 'robofil-local',
+      name: 'Charmilles Robofil 100 / Classic (verified 2026-07-13)',
+      controller: {
+        family: 'charmilles-robofil-classic',
+        postVersion: 1,
+        verification: { status: 'user-verified', verifiedAt: verifiedAt.toISOString() },
+        coordinateSystem: 'wire-position-g92',
+        unitsCode: 'omit',
+        planeCode: 'omit',
+        workOffsetCode: 'omit',
+        distanceMode: 'G90',
+        arcCenterMode: 'absolute',
+        programEnd: 'M02'
+      },
+      compensation: {
+        supported: true,
+        enabledByDefault: true,
+        offsetSelection: { address: 'D', index: 0 },
+        activation: 'charmilles-g38',
+        cancellation: 'program-end',
+        lifecycleScope: 'program',
+        preActivationCodes: ['G60']
+      },
+      templates: { header: '', footer: '' },
+      output: { extension: 'iso', lineEnding: 'crlf', coordinatePrecision: 3 }
+    });
+  });
+
   it('creates a blank editable G40-only machine profile', () => {
     expect(createBlankMachineProfile('new-wire-machine')).toMatchObject({
       id: 'new-wire-machine',
@@ -32,9 +65,23 @@ describe('machine profile policies', () => {
     delete (legacyProfile as Partial<MachineProfile>).controller;
     delete (legacyProfile as Partial<MachineProfile>).compensation;
 
-    expect(normalizeMachineProfile(legacyProfile).compensation).toMatchObject({
-      supported: false,
-      enabledByDefault: false
+    expect(normalizeMachineProfile(legacyProfile)).toMatchObject({
+      controller: {
+        family: 'generic-iso',
+        postVersion: 1,
+        verification: { status: 'unverified' },
+        unitsCode: 'omit',
+        planeCode: 'omit',
+        workOffsetCode: 'template-managed',
+        distanceMode: 'G90',
+        arcCenterMode: 'incremental-from-start'
+      },
+      compensation: {
+        supported: false,
+        enabledByDefault: false,
+        lifecycleScope: 'operation',
+        preActivationCodes: []
+      }
     });
   });
 
@@ -60,6 +107,41 @@ describe('machine profile policies', () => {
     );
 
     expect(normalizeMachineProfile({ ...verified, name: 'Shop Robofil' }).controller.verification)
+      .toEqual(verified.controller.verification);
+  });
+
+  it.each([
+    ['post version', (profile: MachineProfile) => { profile.controller.postVersion = 2; }],
+    ['units emission', (profile: MachineProfile) => { profile.controller.unitsCode = 'G21'; }],
+    ['plane emission', (profile: MachineProfile) => { profile.controller.planeCode = 'G17'; }],
+    ['work-offset emission', (profile: MachineProfile) => { profile.controller.workOffsetCode = 'G54'; }],
+    ['arc-centre mode', (profile: MachineProfile) => { profile.controller.arcCenterMode = 'incremental-from-start'; }],
+    ['lifecycle scope', (profile: MachineProfile) => { profile.compensation.lifecycleScope = 'operation'; }],
+    ['pre-activation code', (profile: MachineProfile) => { profile.compensation.preActivationCodes = ['G61']; }],
+    ['D index', (profile: MachineProfile) => { profile.compensation.offsetSelection.index = 1; }],
+    ['header', (profile: MachineProfile) => { profile.templates.header = '%'; }],
+    ['footer', (profile: MachineProfile) => { profile.templates.footer = '%'; }],
+    ['line ending', (profile: MachineProfile) => { profile.output.lineEnding = 'lf'; }],
+    ['precision', (profile: MachineProfile) => { profile.output.coordinatePrecision = 4; }]
+  ])('resets verification after changing %s', (_label, mutate) => {
+    const verified = createVerifiedCharmillesRobofil100Profile();
+    const changed = JSON.parse(JSON.stringify(verified)) as MachineProfile;
+    mutate(changed);
+
+    expect(normalizeMachineProfile(changed).controller.verification.status).toBe('unverified');
+  });
+
+  it.each([
+    ['ID', (profile: MachineProfile) => { profile.id = 'shop-robofil'; }],
+    ['name', (profile: MachineProfile) => { profile.name = 'Shop Robofil'; }],
+    ['notes', (profile: MachineProfile) => { profile.notes = 'Local note'; }],
+    ['extension', (profile: MachineProfile) => { profile.output.extension = 'nc'; }]
+  ])('preserves verification after changing only %s', (_label, mutate) => {
+    const verified = createVerifiedCharmillesRobofil100Profile();
+    const changed = JSON.parse(JSON.stringify(verified)) as MachineProfile;
+    mutate(changed);
+
+    expect(normalizeMachineProfile(changed).controller.verification)
       .toEqual(verified.controller.verification);
   });
 

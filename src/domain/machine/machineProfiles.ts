@@ -52,9 +52,15 @@ export function createBlankMachineProfile(id = 'untitled-wire-machine'): Machine
     name: 'Untitled Wire EDM',
     controller: {
       family: 'custom',
+      postVersion: 1,
       verification: unverified(),
       blockFormatting: 'spaced',
       coordinateSystem: 'template-managed',
+      unitsCode: 'omit',
+      planeCode: 'omit',
+      workOffsetCode: 'template-managed',
+      distanceMode: 'G90',
+      arcCenterMode: 'incremental-from-start',
       programEnd: 'template-managed'
     },
     compensation: {
@@ -63,6 +69,8 @@ export function createBlankMachineProfile(id = 'untitled-wire-machine'): Machine
       offsetSelection: { address: 'D', index: 0 },
       activation: 'linear-lead',
       cancellation: 'linear-lead-out',
+      lifecycleScope: 'operation',
+      preActivationCodes: [],
       validationLeadLengthMm: 2,
       expectedMaximumOffsetMm: null
     },
@@ -81,9 +89,15 @@ export function createCharmillesRobofilClassicProfile(
     name: 'Charmilles Robofil Classic',
     controller: {
       family: 'charmilles-robofil-classic',
+      postVersion: 1,
       verification: unverified(),
       blockFormatting: 'spaced',
       coordinateSystem: 'wire-position-g92',
+      unitsCode: 'omit',
+      planeCode: 'omit',
+      workOffsetCode: 'template-managed',
+      distanceMode: 'G90',
+      arcCenterMode: 'incremental-from-start',
       programEnd: 'M30'
     },
     compensation: {
@@ -92,6 +106,8 @@ export function createCharmillesRobofilClassicProfile(
       offsetSelection: { address: 'D', index: 0 },
       activation: 'linear-lead',
       cancellation: 'linear-lead-out',
+      lifecycleScope: 'operation',
+      preActivationCodes: [],
       validationLeadLengthMm: 2,
       expectedMaximumOffsetMm: 0.5
     },
@@ -103,15 +119,72 @@ export function createCharmillesRobofilClassicProfile(
   });
 }
 
+export function createVerifiedCharmillesRobofil100Profile(
+  id = 'charmilles-robofil-100-verified',
+  verifiedAt: Date = new Date()
+): MachineProfile {
+  const profile = normalizeMachineProfile({
+    ...createDefaultMachineProfile(),
+    id,
+    name: 'Charmilles Robofil 100 / Classic (verified 2026-07-13)',
+    controller: {
+      family: 'charmilles-robofil-classic',
+      postVersion: 1,
+      verification: unverified(),
+      blockFormatting: 'spaced',
+      coordinateSystem: 'wire-position-g92',
+      unitsCode: 'omit',
+      planeCode: 'omit',
+      workOffsetCode: 'omit',
+      distanceMode: 'G90',
+      arcCenterMode: 'absolute',
+      programEnd: 'M02'
+    },
+    compensation: {
+      supported: true,
+      enabledByDefault: true,
+      offsetSelection: { address: 'D', index: 0 },
+      activation: 'charmilles-g38',
+      cancellation: 'program-end',
+      lifecycleScope: 'program',
+      preActivationCodes: ['G60'],
+      validationLeadLengthMm: 2,
+      expectedMaximumOffsetMm: 0.5
+    },
+    templates: { header: '', footer: '' },
+    output: {
+      extension: 'iso',
+      lineEnding: 'crlf',
+      coordinatePrecision: 3
+    },
+    notes: 'Physically verified on the local Charmilles Robofil 100 on 2026-07-13; confirm D0 before every job.'
+  });
+
+  return markMachineProfileUserVerified(profile, verifiedAt);
+}
+
 export function machineProfileVerificationFingerprint(profile: MachineProfile): string {
   return JSON.stringify({
     family: profile.controller.family,
+    postVersion: profile.controller.postVersion,
     blockFormatting: profile.controller.blockFormatting,
     coordinateSystem: profile.controller.coordinateSystem,
+    unitsCode: profile.controller.unitsCode,
+    planeCode: profile.controller.planeCode,
+    workOffsetCode: profile.controller.workOffsetCode,
+    distanceMode: profile.controller.distanceMode,
+    arcCenterMode: profile.controller.arcCenterMode,
     programEnd: profile.controller.programEnd,
+    supported: profile.compensation.supported,
+    enabledByDefault: profile.compensation.enabledByDefault,
     offsetSelection: profile.compensation.offsetSelection,
     activation: profile.compensation.activation,
-    cancellation: profile.compensation.cancellation
+    cancellation: profile.compensation.cancellation,
+    lifecycleScope: profile.compensation.lifecycleScope,
+    preActivationCodes: profile.compensation.preActivationCodes,
+    templates: profile.templates,
+    lineEnding: profile.output.lineEnding,
+    coordinatePrecision: profile.output.coordinatePrecision
   });
 }
 
@@ -212,6 +285,9 @@ function normalizeController(
     family: ['generic-iso', 'charmilles-robofil-classic', 'custom'].includes(controller.family)
       ? controller.family
       : fallback.family,
+    postVersion: Number.isSafeInteger(controller.postVersion) && controller.postVersion > 0
+      ? controller.postVersion
+      : fallback.postVersion,
     verification: controller.verification ?? unverified(),
     blockFormatting: ['spaced', 'compact'].includes(controller.blockFormatting)
       ? controller.blockFormatting
@@ -219,6 +295,19 @@ function normalizeController(
     coordinateSystem: ['template-managed', 'work-offset', 'wire-position-g92'].includes(controller.coordinateSystem)
       ? controller.coordinateSystem
       : fallback.coordinateSystem,
+    unitsCode: ['G20', 'G21', 'omit'].includes(controller.unitsCode)
+      ? controller.unitsCode
+      : fallback.unitsCode,
+    planeCode: ['G17', 'omit'].includes(controller.planeCode)
+      ? controller.planeCode
+      : fallback.planeCode,
+    workOffsetCode: ['G54', 'omit', 'template-managed'].includes(controller.workOffsetCode)
+      ? controller.workOffsetCode
+      : fallback.workOffsetCode,
+    distanceMode: controller.distanceMode === 'G90' ? 'G90' : fallback.distanceMode,
+    arcCenterMode: ['incremental-from-start', 'absolute'].includes(controller.arcCenterMode)
+      ? controller.arcCenterMode
+      : fallback.arcCenterMode,
     programEnd: ['M02', 'M30', 'template-managed'].includes(controller.programEnd)
       ? controller.programEnd
       : fallback.programEnd
@@ -244,9 +333,13 @@ function normalizeCompensation(
     activation: ['linear-lead', 'charmilles-g38'].includes(compensation.activation)
       ? compensation.activation
       : fallback.activation,
-    cancellation: ['linear-lead-out', 'charmilles-g39'].includes(compensation.cancellation)
+    cancellation: ['linear-lead-out', 'charmilles-g39', 'program-end'].includes(compensation.cancellation)
       ? compensation.cancellation
       : fallback.cancellation,
+    lifecycleScope: ['operation', 'program'].includes(compensation.lifecycleScope)
+      ? compensation.lifecycleScope
+      : fallback.lifecycleScope,
+    preActivationCodes: normalizePreActivationCodes(compensation.preActivationCodes),
     validationLeadLengthMm: isPositiveFinite(compensation.validationLeadLengthMm)
       ? compensation.validationLeadLengthMm
       : fallback.validationLeadLengthMm,
@@ -256,6 +349,15 @@ function normalizeCompensation(
         ? compensation.expectedMaximumOffsetMm
         : fallback.expectedMaximumOffsetMm
   };
+}
+
+function normalizePreActivationCodes(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 16) return [];
+  return value.every(isSafePreActivationCode) ? [...value] : [];
+}
+
+function isSafePreActivationCode(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 64 && /^[\x20-\x7e]+$/.test(value);
 }
 
 function normalizeVerification(
