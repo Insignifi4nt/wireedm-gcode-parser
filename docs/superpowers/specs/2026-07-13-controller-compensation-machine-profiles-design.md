@@ -6,7 +6,7 @@ Date: 2026-07-13
 
 Add dimensionally correct controller-side wire compensation to UPID output while turning the existing single-profile settings form into a reusable machine-profile library. Closed DXF contours should use compensation by default when the selected profile supports it, but every decision must remain reviewable and unsafe or unresolved output must fail closed.
 
-The first target is a Charmilles Robofil 100 using an editable “Charmilles Robofil Classic” preset with offset-table selection `D0`. The design must remain controller-neutral so later Charmilles, Fanuc, Mitsubishi, and custom posts do not require changing UPID geometry semantics.
+The first target is a Charmilles Robofil 100 using an editable, versioned “Charmilles Robofil 100 / Classic” preset with offset-table selection `D0`. A corrected z39 program using the profile described below was physically run successfully on the user's Robofil 100 on 2026-07-13. These verified values populate only that preset; the design remains controller-neutral so later Charmilles, Fanuc, Mitsubishi, and custom posts do not require changing UPID geometry semantics.
 
 ## Product Decisions
 
@@ -19,7 +19,9 @@ The first target is a Charmilles Robofil 100 using an editable “Charmilles Rob
 - `ambiguous`, degenerate, intersecting, or open geometry never receives automatic closed-contour compensation.
 - Every operation can be overridden to `keep-inside`, `keep-outside`, or `centerline`.
 - D selects a controller offset-table entry only. The app does not write the wire radius, spark gap, or offset-table value into the controller.
-- The Robofil preset initially selects `D0`. Its index and formatting remain editable.
+- The verified Robofil preset selects `D0`. Its index and formatting remain editable.
+- Program setup words, unit/plane/work-offset emission, arc-centre convention, compensation lifecycle, program end, precision, and line endings are profile/post settings. None are global G-code assumptions.
+- A project posts from its snapshotted profile version, never from the mutable library profile.
 - Machine profiles live in a reusable workbench library. A normalized snapshot is copied into each project so later library edits cannot silently change an existing job.
 - Machine profiles can be serialized as portable versioned JSON documents. Folder-backed workbenches remain directly editable through `workbench.json`; exported artifacts may also be kept under `machines/` and imported deliberately.
 - Users can create a valid blank profile, then configure or import controller details. Blank profiles are unverified and G40-only until compensation support is configured.
@@ -30,11 +32,11 @@ The first target is a Charmilles Robofil 100 using an editable “Charmilles Rob
 1. G41/G42 is computed from the final `PathOperation.segmentRefs`, not `PathOperation.direction` or persisted contour-orientation metadata.
 2. Reversing a compensated path flips G41/G42 while preserving the same kept-material region.
 3. Rotating the start point without reversing traversal does not change the compensation side.
-4. G40 is active before every rapid and between operations.
+4. Rapid and operation-boundary modal rules come from the selected post policy. Generic ISO requires G40 before rapid; the verified Robofil program-level G38 lifecycle forbids inserting generic G40 and blocks unsupported multi-operation output rather than guessing a reset sequence.
 5. Controller compensation cannot be combined with already-offset geometry.
 6. Compensation cannot activate directly on an unvalidated sharp corner or cancel without a validated transition.
 7. A compensated operation cannot post without a resolved machining intent, executable winding, D-table selection, supported transition strategy, and verified controller policy.
-8. Free-form header or footer compensation commands cannot compete with operation-level compensation.
+8. Free-form header or footer commands cannot compete with structured post policy. Validation is preset-specific: a Robofil snapshot rejects generic G21/G17/G54/G40/M30 and literal G41/G42, while other profiles validate against their own configured rules.
 9. Profile changes that affect controller syntax or compensation lifecycle invalidate the profile’s verification acknowledgement.
 10. No output is described as machine-ready merely because its geometry post succeeds; controller setup and offset-table values remain operator responsibilities.
 11. Automatic transitions require a finite positive conservative maximum offset for collision-envelope validation. A D index without a known validation envelope is insufficient.
@@ -123,6 +125,7 @@ interface MachineProfile {
   name: string;
   controller: {
     family: 'generic-iso' | 'charmilles-robofil-classic' | 'custom';
+    postVersion: number;
     verification: {
       status: 'unverified' | 'user-verified';
       verifiedAt?: string;
@@ -130,6 +133,11 @@ interface MachineProfile {
     };
     blockFormatting: 'spaced' | 'compact';
     coordinateSystem: 'template-managed' | 'work-offset' | 'wire-position-g92';
+    unitsCode: 'G20' | 'G21' | 'omit';
+    planeCode: 'G17' | 'omit';
+    workOffsetCode: 'G54' | 'omit' | 'template-managed';
+    distanceMode: 'G90';
+    arcCenterMode: 'incremental-from-start' | 'absolute';
     programEnd: 'M02' | 'M30' | 'template-managed';
   };
   compensation: {
@@ -140,7 +148,9 @@ interface MachineProfile {
       index: number;
     };
     activation: 'linear-lead' | 'charmilles-g38';
-    cancellation: 'linear-lead-out' | 'charmilles-g39';
+    cancellation: 'linear-lead-out' | 'charmilles-g39' | 'program-end';
+    lifecycleScope: 'operation' | 'program';
+    preActivationCodes: string[];
     validationLeadLengthMm: number;
     expectedMaximumOffsetMm: number | null;
   };
@@ -151,27 +161,29 @@ interface MachineProfile {
 }
 ```
 
-Exact field decomposition may be split into focused types, but these concepts and ownership rules are required. `validationLeadLengthMm` and `expectedMaximumOffsetMm` validate geometry only; they are never emitted as D values.
+Exact field decomposition may be split into focused types, but these concepts and ownership rules are required. The portable profile schema is versioned and old profiles normalize to explicit generic defaults. `validationLeadLengthMm` and `expectedMaximumOffsetMm` validate geometry only; they are never emitted as D values. Arc output converts UPID's canonical arc centre into the profile's configured I/J convention at post time.
 
 For automatic explicit leads, `expectedMaximumOffsetMm` is required and positive. `null` is allowed only for centreline output or a controller-native strategy whose physical transition remains blocked pending controller verification.
 
 The initial output-unit contract remains millimetres. Supporting G20 requires coordinate conversion in the post and is outside this specification.
 
-### Robofil preset
+### Robofil 100 / Classic verified preset
 
-The built-in preset is named “Charmilles Robofil Classic,” not “Robofil 100 verified.” It provides:
+The editable built-in preset is named “Charmilles Robofil 100 / Classic (verified 2026-07-13).” It records local physical-machine verification evidence rather than claiming universal manufacturer coverage. It provides:
 
-- compensation supported and enabled by default after verification;
-- offset-table selection `D0`;
-- editable compact or spaced blocks;
-- both explicit-linear and optional G38/G39 strategies;
-- no hardcoded G54 assumption;
-- editable M02/M30 and coordinate-system policy;
-- an unverified initial status.
+- a versioned profile snapshot and `user-verified` status tied to the controller-sensitive fingerprint;
+- compensation supported and enabled by default;
+- `G92 X0 Y0`, `G60`, `G38`, derived `G41`/`G42 D0`, then `G90` in the structured program prologue;
+- `D0` as an editable table selection, never an offset value;
+- omitted `G21`, `G17`, `G54`, `G40`, and `M30`;
+- absolute arc-centre I/J under G90;
+- `M02` as the only program end;
+- CRLF and three-decimal output;
+- a program-scoped compensation lifecycle. Until a multi-contour reset/rethread sequence is verified, this dialect blocks more than one compensated operation rather than inventing G39/G40 behavior.
 
 The local editable Robofil profile may begin with conservative validation-only defaults such as a 2 mm lead and 0.5 mm maximum offset envelope. These values remain user-editable and are never written into D0.
 
-Available Charmilles documentation supports G40/G41/G42, D-table selection, G92 part coordinates, and M02/M30 on related Robofil controls. Older Robofil training material also documents G38/G39. Because no exact Robofil 100 programming manual or proven machine program has been supplied, the preset must not claim exact-controller verification. A graphics/dry-run check followed by explicit user acknowledgement changes the profile to user-verified. Editing dialect, coordinate system, program-end code, D selection, activation, cancellation, or block formatting resets that acknowledgement.
+Evidence consists of 19 historical ISO programs from the user's machine workflow plus a corrected z39 gear program that cut successfully on the physical Robofil 100. All 19 historical files contained G92, G60, G38, G41/G42 D0, G90, and M02; none contained G21, G17, G54, or M30. The failed generic export raised E205 “Invalid word D or E” after using the wrong dialect and G41 without D0. Editing dialect, setup emission, arc-centre mode, coordinate system, program end, D selection, lifecycle, precision, line endings, or block formatting resets the verification acknowledgement.
 
 ## Transition Geometry
 
@@ -203,21 +215,23 @@ If the operation has a manual start, the generator does not silently move it. An
 
 The existing circle-centre radial lead-in is centreline-only. It meets the circle at a sharp tangent discontinuity and therefore blocks controller-compensated posting until replaced by safe transition geometry.
 
-### Charmilles native-transition strategy
+### Charmilles program-level G38 strategy
 
 Profiles may instead emit structured controller transitions:
 
 ```gcode
-G40
-G0 X... Y...
-G38 G41 D0
+G92 X0 Y0
+G60
+G38
+G41 D0
+G90
 ... contour ...
-G39 G40
+M02
 ```
 
-The exact block layout is produced by the selected dialect and formatting policy. Native transitions are represented explicitly in the posted block model and preview; they are not disguised as zero-length moves. When the actual D-table value is unknown, the preview labels the physical transition envelope as estimated. The strategy remains blocked until the machine profile is user-verified.
+The exact block layout is produced by the selected snapshotted profile. Native setup/activation blocks are represented explicitly in the posted block model and preview; they are not disguised as zero-length moves. `G41` or `G42` is still derived from kept-material intent and final winding. The D-table value remains external machine state.
 
-Native G38/G39 output is not part of the first physical milestone. Adjacent-controller documentation is insufficient to enable it for the Robofil 100; the initial compensated post implements explicit linear transitions and keeps native transitions blocked until exact-controller evidence or graphics verification is recorded.
+This verified preset does not infer G39 or G40 cancellation. Its successful single-contour lifecycle ends with M02. Generic explicit-linear and future Charmilles operation-scoped lifecycle policies remain separate editable configurations.
 
 ## Structured Post
 
@@ -237,24 +251,24 @@ For each operation the post:
 
 1. validates the machine snapshot and header/footer modal state;
 2. requires a finished-contour geometry basis for controller compensation;
-3. ensures G40 before any rapid;
+3. applies the selected profile's rapid/modal policy;
 4. resolves automatic/manual compensation intent;
 5. computes actual winding from final refs;
 6. resolves G41/G42 and D selection;
 7. validates or generates transitions and their physical offset envelope;
 8. emits the operation through the selected dialect;
-9. confirms compensation cancellation before the next operation;
+9. confirms the configured cancellation or program-end lifecycle and blocks unsupported additional operations;
 10. records traceable blocks and diagnostics for the export preview.
 
-Centreline operations retain the existing G40 path. A mixed document may contain centreline and compensated operations as long as each boundary returns to G40.
+Centreline operations retain the existing generic G40 path unless their selected post says otherwise. A mixed document is allowed only when the selected lifecycle defines safe operation boundaries; the verified Robofil program-level profile initially supports a single compensated operation.
 
 ## Header and Footer Policy
 
 Free-form templates remain supported for setup commands and user comments, but the export validator interprets their modal words.
 
-- G41 or G42 in a header/footer is a blocking conflict for a UPID operation-level post.
-- A header may contain G40; duplicate cancellation is harmless but normalized preview should make it visible.
-- G20 is blocked while the post emits millimetre coordinates; G21 is accepted.
+- G41 or G42 in a header/footer is a blocking conflict because the structured post derives the side.
+- Generic ISO may accept header G40/G21/G17/G54/M30 according to its profile. The verified Robofil preset rejects them because its structured policy omits or replaces them.
+- G20 is blocked while the post emits millimetre coordinates unless a future profile also implements coordinate conversion; omission of a units word is valid for the verified Robofil preset.
 - Controller-sensitive coordinate-system and end-code choices are compared with the structured profile and produce a blocking conflict when contradictory.
 - External imported G-code keeps its existing source-preserving pipeline and is not rewritten by these rules.
 
@@ -334,22 +348,23 @@ Implementation is test-driven. Acceptance requires:
 - a blank profile remains valid, editable, unverified, and G40-only;
 - project snapshots remain stable after library edits;
 - verification resets after every controller-sensitive edit;
-- explicit-linear golden post tests using D0, plus tests that keep unverified Charmilles-native G38/G39 output blocked until a later verified dialect milestone;
-- G40 before every rapid and after every compensated operation;
+- generic explicit-linear golden post tests plus a verified Robofil golden program using G92/G60/G38, derived G41/G42 D0, G90, absolute I/J, and M02;
+- profile-specific modal audits: generic G40 boundaries and Robofil rejection of unsupported rapids/additional compensated operations;
 - safe tangent lead generation plus intersection, sharp-corner, bounds, and precision failures;
-- header/footer G41/G42 and G20 conflicts block output;
+- header/footer literal G41/G42 and G20 conflicts block output; verified Robofil also rejects G21/G17/G54/G40/M30 conflicts without imposing that rule on other profiles;
 - reversed gear output changes compensation side while retaining the same kept-inside intent;
 - finished-contour basis enables compensation while legacy/wire-centre basis remains G40;
 - automatic leads reject a missing or non-positive maximum offset envelope;
 - editor controls, preview trace, persistence, and download gating tests;
 - full Vitest suite, production build, and relevant Playwright flows pass.
 
-Before first physical use on the Robofil 100, the generated program must pass the controller’s graphics/verification mode with the intended D0 table value confirmed by the operator.
+The z39 reference acceptance converts all 78 arc centres to absolute I/J, preserves CRLF and three decimals, and allows at most the observed 0.001106 mm start/end radius mismatch from coordinate rounding. The generated program must still be reviewed against the intended D0 table value before each physical job.
 
 ## Research References
 
 - [Charmilles Robofil programming manual for CT-Millennium controls](https://www.scribd.com/document/459168666/FIX40-cc-SL-program-vH-en-pdf): G40/G41/G42, D-table selection, G92 part coordinates, M02/M30 examples, and compensated linear transitions.
 - [Classic Robofil 290 training material](https://es.scribd.com/document/657758974/manual-charmilles-robofil-290): legacy G38/G39 transition descriptions and `G41Dd`/`G42Dd` syntax. This is adjacent controller evidence, not proof of Robofil 100 behavior.
+- Local physical-machine evidence, 2026-07-13: 19 historical ISO files and a corrected z39 program successfully cut on the user's Charmilles Robofil 100. The removable `D:` source is now unplugged and must not be accessed.
 
 ## Delivery Boundaries
 
@@ -358,7 +373,7 @@ Implementation uses separate, reviewable commits:
 1. Machine-profile library domain and Robofil preset.
    This includes portable files, blank-profile creation, import/export, and the selected Windows workbench profile.
 2. Compensation intent, suggestions, resolver, persistence, and validation.
-3. Structured compensated post, explicit-linear safe transitions, review UI, and Robofil output. This is the first compensation-ready milestone.
-4. Native G38/G39, additional controller presets, and lead optimization only after the first milestone is verified.
+3. Structured compensated post, generic explicit-linear transitions, verified Robofil program-level G38 output, absolute-I/J conversion, and review UI. This is the first compensation-ready milestone.
+4. Verified multi-contour Charmilles lifecycle, additional controller presets, and lead optimization after the first milestone.
 
 The DXF unit-confirmation workflow is specified and delivered separately so it cannot delay the compensation-ready milestone.

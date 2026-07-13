@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build portable reusable machine profiles and reversal-safe controller compensation, then produce reviewed G41/G42 output for the real z39 gear using explicit validated leads and D0 table selection.
+**Goal:** Build portable reusable machine profiles and reversal-safe controller compensation, then reproduce the physically verified Robofil 100 z39 dialect from a project-snapshotted editable profile: G92/G60/G38, derived G41/G42 D0, G90, absolute I/J, M02, CRLF, and three decimals.
 
-**Architecture:** Machine profiles own controller/post policy and are snapshotted into projects. UPID operations own semantic kept-material intent and a document-level geometry basis; a pure resolver derives actual winding and G41/G42 from final oriented refs. A machine-aware post generates validated explicit-linear transitions and structured trace blocks while preserving the existing G40 centreline post for legacy documents.
+**Architecture:** Machine profiles own versioned controller/post policy and are snapshotted into projects. UPID operations own semantic kept-material intent and a document-level geometry basis; a pure resolver derives actual winding and G41/G42 from final oriented refs. A machine-aware post converts canonical geometry into the snapshot's arc-centre convention and lifecycle. Generic explicit-linear/G40 behavior and the verified Robofil program-level G38 lifecycle are separate policies.
 
 **Tech Stack:** TypeScript, React, Vite, Vitest, Playwright, local-first storage adapters.
 
@@ -18,13 +18,15 @@
 - Reversal must flip G41/G42 without changing kept-material intent.
 - D selects a controller table entry only; never emit or mutate the table value.
 - Automatic explicit leads require a finite positive lead length and conservative maximum-offset envelope.
-- G40 must be active before every rapid and after every compensated operation.
-- G20, header/footer G41/G42 conflicts, unsafe leads, and unresolved compensation block export.
-- Native G38/G39 remains blocked/deferred until exact-controller verification.
+- Rapid/cancellation invariants are profile-specific: generic ISO uses G40 boundaries; the verified Robofil program-level lifecycle omits G40 and blocks unsupported rapids or additional compensated operations.
+- G20, header/footer literal G41/G42, unsafe transitions, and unresolved compensation block export. The Robofil preset additionally rejects conflicting G21/G17/G54/G40/M30 without making those words globally invalid.
+- The verified Robofil preset emits G92 X0 Y0, G60, G38, derived G41/G42 D0, then G90; omits G21/G17/G54/G40/M30; uses absolute I/J; and ends only with M02.
+- All setup words, arc-centre mode, lifecycle, end code, precision, and line endings are editable versioned profile policy and are read from the project snapshot.
 - Existing external G-code remains source-preserving and is never reposted.
 - Machine-profile import resets controller verification and never changes project snapshots.
 - Keep browser-cache and directory-backed workbenches supported.
 - Use test-driven development and separate reviewable commits.
+- Do not access the unplugged `D:` drive; the durable evidence is this specification and checked-in regression fixtures only.
 
 ---
 
@@ -240,6 +242,91 @@ git commit -m "feat: persist machine profile libraries safely"
 
 ---
 
+### Task 9: Expand the versioned post policy from verified Robofil 100 evidence
+
+Execute this task immediately after Task 2 and before Task 3. Task 1 predated the physical-machine evidence; this is an additive schema/preset correction, not a global dialect change.
+
+**Files:**
+- Modify: `src/domain/workbench/types.ts`
+- Modify: `src/domain/workbench/defaultProject.ts`
+- Modify: `src/domain/machine/machineProfiles.ts`
+- Modify: `src/domain/machine/machineProfileFile.ts`
+- Modify: `src/domain/machine/__tests__/machineProfiles.test.ts`
+- Modify: `src/domain/machine/__tests__/machineProfileFile.test.ts`
+- Modify: `src/domain/storage/__tests__/workbenchStorage.test.ts`
+
+**Interfaces:**
+- Adds editable/versioned controller policy for `postVersion`, units-code emission, plane-code emission, work-offset emission, distance mode, arc-centre mode, lifecycle scope, pre-activation codes, and program-end cancellation.
+- Produces `createVerifiedCharmillesRobofil100Profile(id?, verifiedAt?): MachineProfile` while keeping generic/legacy normalization safe and preserving the blank profile.
+- Extends the verification fingerprint to every setting that can change emitted controller text: controller setup fields, compensation lifecycle/D selection, header/footer, line ending, and coordinate precision. Output extension remains outside the fingerprint because it does not change program text.
+
+- [ ] **Step 1: Write failing verified-preset and migration tests**
+
+Assert the new preset is snapshottable and contains:
+
+```ts
+expect(createVerifiedCharmillesRobofil100Profile('robofil-local', verifiedAt)).toMatchObject({
+  id: 'robofil-local',
+  name: 'Charmilles Robofil 100 / Classic (verified 2026-07-13)',
+  controller: {
+    family: 'charmilles-robofil-classic',
+    postVersion: 1,
+    verification: { status: 'user-verified' },
+    coordinateSystem: 'wire-position-g92',
+    unitsCode: 'omit',
+    planeCode: 'omit',
+    workOffsetCode: 'omit',
+    distanceMode: 'G90',
+    arcCenterMode: 'absolute',
+    programEnd: 'M02'
+  },
+  compensation: {
+    supported: true,
+    enabledByDefault: true,
+    offsetSelection: { address: 'D', index: 0 },
+    activation: 'charmilles-g38',
+    cancellation: 'program-end',
+    lifecycleScope: 'program',
+    preActivationCodes: ['G60']
+  },
+  templates: { header: '', footer: '' },
+  output: { extension: 'iso', lineEnding: 'crlf', coordinatePrecision: 3 }
+});
+```
+
+Also prove legacy profiles normalize to generic version-1 defaults without becoming verified or compensation-capable; strict portable parsing accepts valid new fields, rejects invalid enums/unsafe multiline pre-activation blocks, strips unknown keys, resets imported verification, and round-trips the preset. Editing arc-centre mode, setup emission, lifecycle, D index, templates, line ending, or precision resets verification; changing only ID/name/notes/extension does not.
+
+- [ ] **Step 2: Run focused tests and verify RED**
+
+```bash
+npm test -- --run src/domain/machine/__tests__/machineProfiles.test.ts src/domain/machine/__tests__/machineProfileFile.test.ts src/domain/storage/__tests__/workbenchStorage.test.ts
+```
+
+Expected: FAIL because the verified policy fields/preset do not exist.
+
+- [ ] **Step 3: Implement additive normalization, strict codec reconstruction, and verified preset**
+
+Keep the portable wrapper at schema version 1 because the new profile fields are additive and legacy normalization is explicit. Pre-activation blocks are profile data, limited to 16 single-line printable blocks of at most 64 characters; they are parsed/validated again by the post and never concatenated unsafely. Use the fingerprint helper to create the verified record—never hard-code its fingerprint.
+
+- [ ] **Step 4: Run focused tests, full suite, and build**
+
+```bash
+npm test -- --run src/domain/machine/__tests__/machineProfiles.test.ts src/domain/machine/__tests__/machineProfileFile.test.ts src/domain/storage/__tests__/workbenchStorage.test.ts
+npm test -- --run
+npm run build
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit Task 9**
+
+```bash
+git add src/domain/workbench/types.ts src/domain/workbench/defaultProject.ts src/domain/machine/machineProfiles.ts src/domain/machine/machineProfileFile.ts src/domain/machine/__tests__/machineProfiles.test.ts src/domain/machine/__tests__/machineProfileFile.test.ts src/domain/storage/__tests__/workbenchStorage.test.ts
+git commit -m "feat: model verified Robofil post policy"
+```
+
+---
+
 ### Task 3: Selectable/editable profile UI and import/export
 
 **Files:**
@@ -298,16 +385,24 @@ export interface SettingsDraft {
   profileId: string;
   machineName: string;
   controllerFamily: MachineControllerPolicy['family'];
+  postVersion: string;
   verificationStatus: MachineProfileVerification['status'];
   compensationSupported: boolean;
   compensationEnabledByDefault: boolean;
   dRegisterIndex: string;
   activation: MachineCompensationPolicy['activation'];
   cancellation: MachineCompensationPolicy['cancellation'];
+  lifecycleScope: MachineCompensationPolicy['lifecycleScope'];
+  preActivationCodes: string;
   validationLeadLengthMm: string;
   expectedMaximumOffsetMm: string;
   blockFormatting: MachineControllerPolicy['blockFormatting'];
   coordinateSystem: MachineControllerPolicy['coordinateSystem'];
+  unitsCode: MachineControllerPolicy['unitsCode'];
+  planeCode: MachineControllerPolicy['planeCode'];
+  workOffsetCode: MachineControllerPolicy['workOffsetCode'];
+  distanceMode: MachineControllerPolicy['distanceMode'];
+  arcCenterMode: MachineControllerPolicy['arcCenterMode'];
   programEnd: MachineControllerPolicy['programEnd'];
   // existing template/output/work-area fields remain
 }
@@ -559,7 +654,8 @@ git commit -m "feat: validate compensation transitions"
 **Interfaces:**
 - Produces: `GcodePostedBlock` union and `postUpidForMachine(document, machine, options)`.
 - Preserves: existing `moves`, metrics, centreline `postPathPlanToGcode`, and line maps.
-- Explicit-linear lifecycle only; native G38/G39 returns a blocking diagnostic.
+- Produces both generic explicit-linear lifecycle and the verified, profile-selected Robofil single-operation G38 lifecycle.
+- Converts canonical arc centres to incremental or absolute I/J according to the project-snapshotted profile.
 
 - [ ] **Step 1: Write failing golden post tests**
 
@@ -584,7 +680,21 @@ it('audits that no rapid occurs while compensation is active', () => {
 });
 ```
 
-Also test reverse G41/G42 swap, D formatting, mixed centreline/compensated operations, native strategy blocked, unverified profile blocked, G20/header compensation blocked, body empty on failure, and compatibility centreline output unchanged.
+Also test reverse G41/G42 swap, D formatting, mixed centreline/compensated operations, an unverified Robofil copy blocked, G20/header compensation blocked, body empty on failure, and compatibility centreline output unchanged.
+
+Add a verified Robofil golden case with this exact structured sequence and no forbidden generic words:
+
+```gcode
+G92 X0 Y0
+G60
+G38
+G41 D0
+G90
+... contour with absolute I/J ...
+M02
+```
+
+Reverse must derive `G42 D0` without changing kept-material intent. Assert omission of G21, G17, G54, G40, and M30, CRLF composition, three decimals, M02-only ending, and blocking of a second compensated operation until a verified multi-operation lifecycle exists.
 
 - [ ] **Step 2: Run focused post tests and verify RED**
 
@@ -610,7 +720,7 @@ export interface GcodePostedBlock {
 }
 ```
 
-Keep existing moves as the motion-block subset. After rendering, audit the complete block sequence for G0-under-compensation, unmatched activation/cancellation, non-G40 operation boundaries, and metrics/line-map consistency.
+Keep existing moves as the motion-block subset. After rendering, audit against the selected lifecycle: generic G0-under-compensation/unmatched activation/non-G40 boundaries, or Robofil program-scope ordering, single-operation limit, forbidden generic words, and M02 ending. Audit metrics/line-map consistency for both.
 
 - [ ] **Step 4: Run post, UPID, and validation tests**
 
@@ -729,30 +839,38 @@ Use the exact normalized schema from Task 1. Required settings:
 ```json
 {
   "id": "charmilles-robofil-100-local",
-  "name": "Charmilles Robofil 100 (Local)",
+  "name": "Charmilles Robofil 100 / Classic (verified 2026-07-13)",
   "controller": {
     "family": "charmilles-robofil-classic",
-    "verification": { "status": "unverified" },
+    "postVersion": 1,
+    "verification": { "status": "user-verified", "verifiedAt": "2026-07-13T00:00:00.000Z", "verifiedFingerprint": "generated-by-profile-codec" },
     "blockFormatting": "spaced",
-    "coordinateSystem": "template-managed",
-    "programEnd": "M30"
+    "coordinateSystem": "wire-position-g92",
+    "unitsCode": "omit",
+    "planeCode": "omit",
+    "workOffsetCode": "omit",
+    "distanceMode": "G90",
+    "arcCenterMode": "absolute",
+    "programEnd": "M02"
   },
   "compensation": {
     "supported": true,
     "enabledByDefault": true,
     "offsetSelection": { "address": "D", "index": 0 },
-    "activation": "linear-lead",
-    "cancellation": "linear-lead-out",
+    "activation": "charmilles-g38",
+    "cancellation": "program-end",
+    "lifecycleScope": "program",
+    "preActivationCodes": ["G60"],
     "validationLeadLengthMm": 2,
     "expectedMaximumOffsetMm": 0.5
   },
   "templates": {
-    "header": "%\nG90 G21 G17 G40\nG54",
-    "footer": "G40\nM30\n%"
+    "header": "",
+    "footer": ""
   },
   "output": { "extension": "iso", "lineEnding": "crlf", "coordinatePrecision": 3 },
   "workArea": { "widthMm": null, "lengthMm": null },
-  "notes": "Local editable Robofil 100 profile. Header/origin policy and D0 must be verified in controller graphics mode before physical cutting."
+  "notes": "Physically verified on the local Robofil 100 with the z39 gear on 2026-07-13. D0 remains controller table state; confirm its value for each job. Multi-contour compensation remains blocked pending a verified lifecycle."
 }
 ```
 
@@ -760,7 +878,7 @@ Do not change `activeMachineProfileId` or compatibility template/output mirrors 
 
 - [ ] **Step 3: Export the same profile artifact and reconnect through the app**
 
-Serialize with the Task 1 codec, write the optional `machines/` artifact, reconnect the directory-backed workbench, select the profile, and confirm fields render exactly. The profile remains unverified until the user acknowledges machine graphics verification.
+Serialize with the final codec, compute the verification fingerprint instead of inserting the placeholder above, write the optional `machines/` artifact, reconnect the directory-backed workbench, select the profile, and confirm fields render exactly. Keep it inactive by default so the existing active profile and compatibility mirrors do not change.
 
 - [ ] **Step 4: Run complete verification**
 
@@ -772,8 +890,8 @@ git diff --check
 git status --short
 ```
 
-Also post the real z39 fixture at precision 3 and inspect that the resolved code, D0, explicit lead/cancel blocks, and G40 modal audit match the automated acceptance test.
+Also post the real z39 fixture at precision 3 and inspect G92/G60/G38, derived G41/G42 D0, G90, all 78 absolute arc centres, omission of G21/G17/G54/G40/M30, CRLF, and M02-only ending. Confirm maximum formatted start/end arc-radius mismatch is no worse than the observed 0.001106 mm rounding reference.
 
 - [ ] **Step 5: Record the physical-machine handoff**
 
-Report the exact generated sequence and instruct the operator to confirm the D0 table value and run Charmilles graphics/verification mode. Do not mark the profile user-verified or claim physical readiness before that external check.
+Report the exact generated sequence and remind the operator to confirm the D0 table value for the job. The preset may record the supplied successful physical verification, but any controller-sensitive edit resets that acknowledgement.
