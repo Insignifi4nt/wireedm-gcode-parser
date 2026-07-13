@@ -1,8 +1,14 @@
 import {
-  importDxfProject,
-  type ImportDxfProjectInput,
+  commitDxfProjectImport,
+  type DxfImportDecision,
   type ImportDxfProjectResult
 } from '@/domain/dxf/importDxfProject';
+import {
+  prepareDxfProjectImport,
+  previewDxfProjectImport,
+  unitCandidatesForDxfImport,
+  type DxfImportPreparation
+} from '@/domain/dxf/prepareDxfProjectImport';
 import {
   importExternalProgram,
   type ImportExternalProgramInput,
@@ -58,9 +64,13 @@ export interface AppServices {
   connectCachedWorkbench: () => Promise<ConnectedWorkbench>;
   connectRememberedWorkbenchDirectory: typeof connectRememberedWorkbenchDirectory;
   connectWorkbenchDirectory: () => Promise<ConnectedWorkbench>;
-  importDxfProject: (
+  prepareDxfProjectImport: typeof prepareDxfProjectImport;
+  previewDxfProjectImport: typeof previewDxfProjectImport;
+  unitCandidatesForDxfImport: typeof unitCandidatesForDxfImport;
+  commitDxfProjectImport: (
     workbench: ConnectedWorkbench,
-    input: ImportDxfProjectInput
+    preparation: DxfImportPreparation,
+    decision: DxfImportDecision
   ) => Promise<ImportDxfProjectResult>;
   importExternalProgram: (
     workbench: ConnectedWorkbench,
@@ -104,7 +114,10 @@ export const defaultAppServices: AppServices = {
   connectCachedWorkbench,
   connectRememberedWorkbenchDirectory,
   connectWorkbenchDirectory,
-  importDxfProject,
+  prepareDxfProjectImport,
+  previewDxfProjectImport,
+  unitCandidatesForDxfImport,
+  commitDxfProjectImport,
   importExternalProgram,
   loadEditorProgram,
   openWorkbenchProject,

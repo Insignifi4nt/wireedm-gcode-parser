@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   cleanupAppTestContext,
+  confirmPendingDxfImport,
   createAppTestContext,
   enableAutoOpenEditorWorkspacePanels,
   flushAsync,
@@ -42,6 +43,7 @@ describe('Editor density cleanup', () => {
       input?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
   }
 
   it('keeps primary panels directly accessible in a compact Path Project header', async () => {

@@ -13,6 +13,7 @@ import type { MachineProfile } from '@/domain/workbench/types';
 
 import {
   cleanupAppTestContext,
+  confirmPendingDxfImport,
   createAppTestContext,
   flushAsync,
   renderApp,
@@ -403,6 +404,7 @@ describe('App dashboard and workbench shell', () => {
       dxfInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const importManifest = JSON.parse(
       window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'

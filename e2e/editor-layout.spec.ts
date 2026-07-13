@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { confirmPendingDxfImport } from './dxf-import';
+
 const PATH_SHORTCUT_IDS = [
   'contour-tree',
   'path-actions',
@@ -83,6 +85,7 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
     mimeType: 'application/dxf',
     buffer: Buffer.from(rectangleDxf())
   });
+  await confirmPendingDxfImport(page);
 
   const appHeader = page.locator('[data-app-header]');
   const canvas = page.locator('[data-editor-canvas-panel]');
@@ -199,6 +202,7 @@ test('left and right docks expose symmetric collapsed controls', async ({ page }
     mimeType: 'application/dxf',
     buffer: Buffer.from(rectangleDxf())
   });
+  await confirmPendingDxfImport(page);
 
   const expandedLeftBox = await page
     .locator('[data-editor-panel-dock-zone="left"]')
@@ -260,6 +264,7 @@ for (const viewport of [
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+    await confirmPendingDxfImport(page);
 
     const contourTree = page.locator(
       '[data-app-rail-expanded-content] [data-editor-workspace-panel="contour-tree"]'

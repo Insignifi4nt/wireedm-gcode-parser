@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { confirmPendingDxfImport } from './dxf-import';
+
 const WORKSPACE_PANEL_TITLES = [
   ['path-summary', 'Path Summary'],
   ['path-actions', 'Path Actions'],
@@ -32,6 +34,7 @@ test('editor exposes functional groups as dockable and floating workspace panels
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await expect(page.locator('[data-editor-workspace-panel="contour-tree"]')).toHaveAttribute(
     'data-editor-workspace-panel-placement',
@@ -162,6 +165,7 @@ test('every workspace panel exposes keyboard placement commands', async ({ page 
     mimeType: 'application/dxf',
     buffer: Buffer.from(rectangleDxf())
   });
+  await confirmPendingDxfImport(page);
 
   for (const [panelId, title] of WORKSPACE_PANEL_TITLES) {
     await showPanels(page, [panelId]);
@@ -184,6 +188,7 @@ test('editor panel menu explains endpoint topology before opening it', async ({ 
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await page.locator('[data-editor-panel-toolbar] summary').click();
   const topologyItem = page.locator('[data-editor-panel-menu-item="endpoint-topology"]');
@@ -224,6 +229,7 @@ test('editor contour tree labels contours, segments, and endpoint handles clearl
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['contour-tree']);
 
@@ -277,6 +283,7 @@ test('editor contour tree exposes hierarchy rails and endpoint topology from the
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['contour-tree']);
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);
@@ -310,6 +317,7 @@ test('editor contour tree rows cross-highlight and select canvas geometry', asyn
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['contour-tree']);
 
@@ -376,6 +384,7 @@ test('editor opens contour tree and endpoint topology without covering each othe
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await hidePanels(page, ['contour-tree']);
   await showPanels(page, ['contour-tree', 'endpoint-topology']);
@@ -406,6 +415,7 @@ test('editor opens common floating workspace panels in readable non-overlapping 
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await hidePanels(page, ['contour-tree']);
   await showPanels(page, ['path-transform', 'contour-tree', 'statistics']);
@@ -454,6 +464,7 @@ test('editor diagnostics explain what to inspect for an open chain', async ({ pa
       mimeType: 'application/dxf',
       buffer: Buffer.from(simpleLineDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['path-diagnostics']);
 
@@ -532,6 +543,7 @@ test('editor translates selected path geometry through the Transform panel', asy
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['path-transform', 'contour-tree', 'statistics']);
   await page.locator('[data-upid-contour-row]').first().click();
@@ -567,6 +579,7 @@ test('editor moves a selected contour center to a precise coordinate', async ({ 
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['path-transform', 'contour-tree', 'statistics']);
   await expect(page.locator('[data-upid-transform-document-center]')).toHaveText('5.000, 5.000');
@@ -603,6 +616,7 @@ test('editor transform panel shows DXF source placement metadata', async ({ page
       mimeType: 'application/dxf',
       buffer: Buffer.from(placedRectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['path-transform']);
 
@@ -629,6 +643,7 @@ test('editor moves a selected arc center to a chosen measurement point', async (
       mimeType: 'application/dxf',
       buffer: Buffer.from(arcDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['path-transform', 'contour-tree', 'measurement']);
   await page.getByLabel('Measurement point X').fill('12');
@@ -664,6 +679,7 @@ test('editor drags a selected arc center directly on the canvas', async ({ page 
       mimeType: 'application/dxf',
       buffer: Buffer.from(arcDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['contour-tree']);
   await page.locator('[data-upid-segment-row]').first().click();
@@ -704,6 +720,7 @@ test('editor drags selected contour geometry directly on the canvas', async ({ p
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['contour-tree', 'statistics']);
   await page.locator('[data-upid-contour-row]').first().click();
@@ -737,6 +754,7 @@ test('editor defaults canvas clicks to select mode before explicit point placeme
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['measurement']);
 
@@ -767,6 +785,7 @@ test('editor command hint guides CAD construction modes step by step', async ({ 
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await showPanels(page, ['path-actions', 'measurement', 'contour-tree']);
 
@@ -804,6 +823,7 @@ test('editor rectangle-selects path geometry from a blank canvas drag in select 
       mimeType: 'application/dxf',
       buffer: Buffer.from(rectangleDxf())
     });
+  await confirmPendingDxfImport(page);
 
   await expect(page.locator('[data-editor-preview-mouse-mode-select]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('[data-preview-selected="true"][data-preview-source="path-document"]')).toHaveCount(0);

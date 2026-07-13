@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { StatusToast, StatusToastType } from '@/components/StatusToasts';
+import type { DxfImportUnitCandidate } from '@/domain/dxf/dxfImportUnits';
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
+import type {
+  DxfImportPreparation,
+  DxfImportPreview,
+  DxfImportSelection
+} from '@/domain/dxf/prepareDxfProjectImport';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import {
@@ -22,6 +28,14 @@ export type ImportStatus = 'idle' | 'importing' | 'error';
 export type SaveStatus = 'idle' | 'saving' | 'error';
 export type SettingsStatus = 'idle' | 'saving' | 'saved' | 'error';
 export type ActiveView = 'dashboard' | 'editor';
+export interface PendingDxfImport {
+  declaredUnitOverrideAcknowledged: boolean;
+  preparation: DxfImportPreparation;
+  preview: DxfImportPreview | null;
+  previewErrorMessage: string | null;
+  selection: DxfImportSelection;
+  unitCandidates: DxfImportUnitCandidate[];
+}
 type WorkbenchOperationKind =
   | 'dxf-import'
   | 'editor-import'
@@ -45,6 +59,7 @@ export interface WorkbenchAppController {
   errorMessage: string | null;
   importErrorMessage: string | null;
   importStatus: ImportStatus;
+  pendingDxfImport: PendingDxfImport | null;
   storageActionLabel: string | null;
   storageWarningMessage: string | null;
   latestImport: ImportDxfProjectResult | null;
@@ -59,6 +74,11 @@ export interface WorkbenchAppController {
   handleConnectWorkbench: () => Promise<void>;
   handleDownloadEditorFile: (fileName: string, text: string) => void;
   handleImportDxfFile: (file: File) => Promise<void>;
+  handleCancelDxfImport: () => void;
+  handleConfirmDxfImport: () => Promise<void>;
+  handleDxfImportMachineProfileChange: (profileId: string) => void;
+  handleDxfImportOverrideAcknowledgedChange: (acknowledged: boolean) => void;
+  handleDxfImportUnitCandidateChange: (candidateId: string) => void;
   handleImportExternalProgram: (file: File) => Promise<void>;
   handleOpenEditor: () => void;
   handleOpenLatestImportInEditor: () => Promise<void>;
@@ -93,6 +113,7 @@ export function useWorkbenchAppController(
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState<ImportStatus>('idle');
   const [importErrorMessage, setImportErrorMessage] = useState<string | null>(null);
+  const [pendingDxfImport, setPendingDxfImport] = useState<PendingDxfImport | null>(null);
   const [editorImportStatus, setEditorImportStatus] = useState<ImportStatus>('idle');
   const [editorImportErrorMessage, setEditorImportErrorMessage] = useState<string | null>(null);
   const [editorSaveStatus, setEditorSaveStatus] = useState<SaveStatus>('idle');
@@ -358,7 +379,7 @@ export function useWorkbenchAppController(
   }
 
   async function handleImportDxfFile(file: File) {
-    if (!connectedWorkbench || importStatus === 'importing') return;
+    if (!connectedWorkbench || importStatus === 'importing' || pendingDxfImport) return;
     const operationId = beginWorkbenchOperation('dxf-import');
     if (operationId === null) return;
 
@@ -367,19 +388,151 @@ export function useWorkbenchAppController(
 
     try {
       const text = await file.text();
-      const result = await appServices.importDxfProject(connectedWorkbench, {
+      const preparation = appServices.prepareDxfProjectImport(connectedWorkbench, {
         fileName: file.name,
         text
       });
-      const editorProgram = await appServices.loadEditorProgram(result.workbench, result.project);
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      setPendingDxfImport(buildPendingDxfImport(preparation, preparation.defaultSelection));
+      setImportStatus('idle');
+    } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      setImportStatus('error');
+      const message = error instanceof Error ? error.message : 'Could not import DXF.';
+      setImportErrorMessage(message);
+      showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
+    }
+  }
+
+  function buildPendingDxfImport(
+    preparation: DxfImportPreparation,
+    selection: DxfImportSelection,
+    declaredUnitOverrideAcknowledged = false
+  ): PendingDxfImport {
+    const unitCandidates = appServices.unitCandidatesForDxfImport(
+      preparation,
+      selection.machineProfileId
+    );
+    try {
+      return {
+        declaredUnitOverrideAcknowledged,
+        preparation,
+        preview: appServices.previewDxfProjectImport(preparation, selection),
+        previewErrorMessage: null,
+        selection,
+        unitCandidates
+      };
+    } catch (error) {
+      return {
+        declaredUnitOverrideAcknowledged,
+        preparation,
+        preview: null,
+        previewErrorMessage:
+          error instanceof Error ? error.message : 'Could not preview the reviewed DXF units.',
+        selection,
+        unitCandidates
+      };
+    }
+  }
+
+  function handleDxfImportUnitCandidateChange(candidateId: string) {
+    setImportErrorMessage(null);
+    setPendingDxfImport((current) => {
+      if (!current || !current.unitCandidates.some(({ id }) => id === candidateId)) return current;
+      return buildPendingDxfImport(current.preparation, {
+        ...current.selection,
+        unitCandidateId: candidateId
+      });
+    });
+  }
+
+  function handleDxfImportMachineProfileChange(profileId: string) {
+    setImportErrorMessage(null);
+    setPendingDxfImport((current) => {
+      if (!current) return current;
+      try {
+        const unitCandidates = appServices.unitCandidatesForDxfImport(
+          current.preparation,
+          profileId
+        );
+        const unitCandidateId = unitCandidates.some(
+          ({ id }) => id === current.selection.unitCandidateId
+        )
+          ? current.selection.unitCandidateId
+          : unitCandidates[0]?.id;
+        if (!unitCandidateId) return current;
+        return buildPendingDxfImport(
+          current.preparation,
+          { machineProfileId: profileId, unitCandidateId },
+          unitCandidateId === current.selection.unitCandidateId
+            ? current.declaredUnitOverrideAcknowledged
+            : false
+        );
+      } catch (error) {
+        return {
+          ...current,
+          preview: null,
+          previewErrorMessage:
+            error instanceof Error ? error.message : 'Could not select the machine profile.'
+        };
+      }
+    });
+  }
+
+  function handleDxfImportOverrideAcknowledgedChange(acknowledged: boolean) {
+    setPendingDxfImport((current) => current
+      ? { ...current, declaredUnitOverrideAcknowledged: acknowledged }
+      : current
+    );
+  }
+
+  function handleCancelDxfImport() {
+    if (workbenchOperationRef.current !== null) return;
+    setPendingDxfImport(null);
+    setImportStatus('idle');
+    setImportErrorMessage(null);
+  }
+
+  async function handleConfirmDxfImport() {
+    if (!connectedWorkbench || !pendingDxfImport || importStatus === 'importing') return;
+    const operationId = beginWorkbenchOperation('dxf-import');
+    if (operationId === null) return;
+    const workbench = connectedWorkbench;
+    const pending = pendingDxfImport;
+
+    setImportStatus('importing');
+    setImportErrorMessage(null);
+
+    try {
+      const result = await appServices.commitDxfProjectImport(workbench, pending.preparation, {
+        ...pending.selection,
+        confirmed: true,
+        declaredUnitOverrideAcknowledged: pending.declaredUnitOverrideAcknowledged
+      });
       if (!isCurrentWorkbenchOperation(operationId)) return;
       setConnectedWorkbench(result.workbench);
       setLatestImport(result);
-      setLoadedEditorProgram(editorProgram);
-      resetEditorLoadState();
-      setActiveView('editor');
-      setImportStatus('idle');
-      showStatusToast(`DXF imported and opened: ${file.name}`, 'success');
+      setPendingDxfImport(null);
+
+      try {
+        const editorProgram = await appServices.loadEditorProgram(result.workbench, result.project);
+        if (!isCurrentWorkbenchOperation(operationId)) return;
+        setLoadedEditorProgram(editorProgram);
+        resetEditorLoadState();
+        setActiveView('editor');
+        setImportStatus('idle');
+        showStatusToast(`DXF imported and opened: ${pending.preparation.fileName}`, 'success');
+      } catch (error) {
+        if (!isCurrentWorkbenchOperation(operationId)) return;
+        setImportStatus('error');
+        const detail = error instanceof Error ? error.message : 'Could not open the imported project.';
+        const message = `DXF was imported, but the editor could not open it: ${detail}`;
+        setImportErrorMessage(message);
+        setActiveView('dashboard');
+        showStatusToast(message, 'error');
+      }
     } catch (error) {
       if (!isCurrentWorkbenchOperation(operationId)) return;
       setImportStatus('error');
@@ -676,6 +829,7 @@ export function useWorkbenchAppController(
     errorMessage,
     importErrorMessage,
     importStatus,
+    pendingDxfImport,
     storageActionLabel,
     storageWarningMessage,
     latestImport,
@@ -699,6 +853,11 @@ export function useWorkbenchAppController(
     handleExportMachineProfile,
     handleImportMachineProfileFile,
     handleImportDxfFile,
+    handleCancelDxfImport,
+    handleConfirmDxfImport,
+    handleDxfImportMachineProfileChange,
+    handleDxfImportOverrideAcknowledgedChange,
+    handleDxfImportUnitCandidateChange,
     handleImportExternalProgram,
     handleOpenEditor: () => {
       if (workbenchOperationRef.current !== null) return;

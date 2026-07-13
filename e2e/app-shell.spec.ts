@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { confirmPendingDxfImport } from './dxf-import';
+
 async function openReadyWorkbench(page: import('@playwright/test').Page) {
   await page.goto('/');
   await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
@@ -48,6 +50,7 @@ test('keeps the 1024px workbench in one readable column without clipping', async
     mimeType: 'application/dxf',
     buffer: Buffer.from(rectangleDxf())
   });
+  await confirmPendingDxfImport(page);
   await page.getByRole('button', { name: /dashboard/i }).click();
   const machineProgramInput = page.locator('input[aria-label="Machine program file"]');
   await expect(machineProgramInput).toBeEnabled();

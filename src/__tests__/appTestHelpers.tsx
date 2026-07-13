@@ -121,6 +121,35 @@ export async function flushAsync() {
   });
 }
 
+export async function prepareDxfImport(container: HTMLElement, file: File) {
+  const input = container.querySelector(
+    'input[aria-label="DXF file"]'
+  ) as HTMLInputElement | null;
+  if (!input) throw new Error('DXF file input is not available.');
+
+  Object.defineProperty(input, 'files', {
+    configurable: true,
+    value: [file]
+  });
+  await act(async () => {
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await flushAsync();
+}
+
+export async function confirmPendingDxfImport(container: HTMLElement) {
+  const dialog = container.querySelector(
+    '[role="dialog"][aria-label="Review DXF import"]'
+  );
+  const button = [...(dialog?.querySelectorAll('button') ?? [])].find(
+    (candidate) => candidate.textContent?.trim() === 'Import and open'
+  ) as HTMLButtonElement | undefined;
+  if (!button) throw new Error('DXF import confirmation is not available.');
+
+  await act(async () => button.click());
+  await flushAsync();
+}
+
 function openEditorWorkspacePanelsOnce() {
   for (const button of document.querySelectorAll('button[aria-label^="Expand "]')) {
     const label = button.getAttribute('aria-label') ?? '';

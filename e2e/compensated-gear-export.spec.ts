@@ -4,6 +4,7 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 
 import { createVerifiedCharmillesRobofil100Profile } from '../src/domain/machine/machineProfiles';
+import { confirmPendingDxfImport } from './dxf-import';
 
 const gearFixture = path.resolve('DXF-test-subjects/z39motocicleta.dxf');
 
@@ -29,6 +30,7 @@ test('reviews and exports the real z39 gear with reversal-safe Robofil compensat
   await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
 
   await page.locator('input[aria-label="DXF file"]').setInputFiles(gearFixture);
+  await confirmPendingDxfImport(page, 'millimeters');
   await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'z39motocicleta' })).toBeVisible();
 

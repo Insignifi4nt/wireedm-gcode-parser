@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   cleanupAppTestContext,
+  confirmPendingDxfImport,
   createAppTestContext,
   enableAutoOpenEditorWorkspacePanels,
   flushAsync,
@@ -43,6 +44,7 @@ describe('Editor construction regressions', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     expect(
       container.querySelector('[data-upid-cut-sequence-row][data-upid-selected="true"]')

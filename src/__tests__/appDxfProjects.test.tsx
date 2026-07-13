@@ -42,7 +42,10 @@ vi.mock('@/domain/editor/gcodeParser', async (importOriginal) => {
 });
 
 import { saveEditorProgram as saveEditorProgramService } from '@/domain/editor/saveEditorProgram';
+import { commitDxfProjectImport as commitDxfProjectImportService } from '@/domain/dxf/importDxfProject';
+import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
 
 import {
   FakeDirectoryHandle,
@@ -51,7 +54,9 @@ import {
   dispatchTouchEvent,
   enableAutoOpenEditorWorkspacePanels,
   flushAsync,
+  confirmPendingDxfImport,
   parseSvgViewBox,
+  prepareDxfImport,
   renderApp,
   setInputValue,
   setSelectValue,
@@ -77,6 +82,177 @@ describe('App DXF imports and project library', () => {
     cleanupAppTestContext(context);
   });
 
+  it('prepares a DXF for explicit review without writing or opening the editor, and cancel stays write-free', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+    const manifestBefore = window.localStorage.getItem('wire-edm-workbench:file:workbench.json');
+
+    await prepareDxfImport(container, new File([simpleLineDxf()], 'review-first.dxf'));
+
+    expect(container.querySelector('[role="dialog"][aria-label="Review DXF import"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-context="path-project"]')).toBeNull();
+    expect(window.localStorage.getItem('wire-edm-workbench:file:workbench.json')).toBe(
+      manifestBefore
+    );
+    expect(Object.keys(window.localStorage).some((key) => key.includes('review-first'))).toBe(false);
+
+    const cancel = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Cancel'
+    );
+    await act(async () => cancel?.click());
+    await flushAsync();
+
+    expect(container.querySelector('[role="dialog"][aria-label="Review DXF import"]')).toBeNull();
+    expect(window.localStorage.getItem('wire-edm-workbench:file:workbench.json')).toBe(
+      manifestBefore
+    );
+    expect(Object.keys(window.localStorage).some((key) => key.includes('review-first'))).toBe(false);
+  });
+
+  it('commits one confirmed millimeter decision and opens the reviewed project', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+
+    await prepareDxfImport(container, new File([simpleLineDxf()], 'confirmed-mm.dxf'));
+    expect((container.querySelector('select[aria-label="DXF units"]') as HTMLSelectElement).value).toBe(
+      'millimeters'
+    );
+    await confirmPendingDxfImport(container);
+
+    expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
+    const manifest = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const project = JSON.parse(
+      window.localStorage.getItem(`wire-edm-workbench:file:${manifest.projects[0].path}`) || '{}'
+    );
+    expect(manifest.projects).toHaveLength(1);
+    expect(project.upid.document.source.appliedUnits).toMatchObject({
+      label: 'millimeters',
+      scaleToMillimeters: 1,
+      basis: 'user-confirmed',
+      confirmed: true
+    });
+  });
+
+  it('recomputes unit size and fit for a one-off machine selection without changing the default', async () => {
+    window.showDirectoryPicker = undefined;
+    const workbench = await connectCachedWorkbench();
+    const defaultMachineId = workbench.manifest.activeMachineProfileId;
+    const selected = createVerifiedCharmillesRobofil100Profile(
+      'one-off-inch-machine',
+      new Date('2026-07-13T10:00:00.000Z')
+    );
+    selected.preferredDxfImportUnit = 'inches';
+    selected.workArea = { widthMm: 200, lengthMm: 200 };
+    workbench.manifest = {
+      ...workbench.manifest,
+      machineProfiles: [...workbench.manifest.machineProfiles, selected]
+    };
+    await renderApp(context, { connectCachedWorkbench: async () => workbench });
+
+    await prepareDxfImport(container, new File([simpleLineDxf()], 'one-off-machine.dxf'));
+    const machineSelect = container.querySelector(
+      'select[aria-label="Machine profile"]'
+    ) as HTMLSelectElement;
+    const unitsSelect = container.querySelector(
+      'select[aria-label="DXF units"]'
+    ) as HTMLSelectElement;
+    await act(async () => setSelectValue(machineSelect, selected.id));
+    await act(async () => setSelectValue(unitsSelect, 'inches'));
+
+    expect(container.querySelector('[data-testid="dxf-import-size"]')?.textContent).toContain(
+      '254.000 × 0.000 mm'
+    );
+    expect(container.querySelector('[data-dxf-import-machine-fit="too-large"]')).not.toBeNull();
+    await confirmPendingDxfImport(container);
+
+    const manifest = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const project = JSON.parse(
+      window.localStorage.getItem(`wire-edm-workbench:file:${manifest.projects[0].path}`) || '{}'
+    );
+    expect(manifest.activeMachineProfileId).toBe(defaultMachineId);
+    expect(project.machine.id).toBe(selected.id);
+    expect(project.upid.document.source.appliedUnits).toMatchObject({
+      label: 'inches',
+      scaleToMillimeters: 25.4,
+      suggestion: { kind: 'machine-profile', profileId: selected.id }
+    });
+  });
+
+  it('requires and resets acknowledgement when overriding declared DXF units', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+
+    await prepareDxfImport(
+      container,
+      new File([declaredInchLineDxf()], 'declared-override.dxf')
+    );
+    const unitsSelect = container.querySelector(
+      'select[aria-label="DXF units"]'
+    ) as HTMLSelectElement;
+    const importButton = () => [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Import and open'
+    ) as HTMLButtonElement;
+    await act(async () => setSelectValue(unitsSelect, 'millimeters'));
+    let acknowledgement = container.querySelector(
+      'input[aria-label="Override declared DXF units"]'
+    ) as HTMLInputElement;
+    expect(importButton().disabled).toBe(true);
+    await act(async () => acknowledgement.click());
+    expect(importButton().disabled).toBe(false);
+
+    await act(async () => setSelectValue(unitsSelect, 'inches'));
+    await act(async () => setSelectValue(unitsSelect, 'millimeters'));
+    acknowledgement = container.querySelector(
+      'input[aria-label="Override declared DXF units"]'
+    ) as HTMLInputElement;
+    expect(acknowledgement.checked).toBe(false);
+    expect(importButton().disabled).toBe(true);
+  });
+
+  it('keeps a failed confirmed commit in the review dialog for correction or retry', async () => {
+    window.showDirectoryPicker = undefined;
+    const commitDxfProjectImport = vi.fn(async () => {
+      throw new Error('Simulated reviewed commit failure.');
+    });
+    await renderApp(context, { commitDxfProjectImport });
+
+    await prepareDxfImport(container, new File([simpleLineDxf()], 'retry-review.dxf'));
+    await confirmPendingDxfImport(container);
+
+    expect(commitDxfProjectImport).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[role="dialog"][aria-label="Review DXF import"]')).not.toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'Simulated reviewed commit failure.'
+    );
+    expect(container.querySelector('[data-editor-context="path-project"]')).toBeNull();
+  });
+
+  it('closes a successfully committed review when editor loading fails without allowing a duplicate commit', async () => {
+    window.showDirectoryPicker = undefined;
+    const commitDxfProjectImport = vi.fn(commitDxfProjectImportService);
+    const loadEditorProgram = vi.fn(async () => {
+      throw new Error('Simulated editor load failure.');
+    });
+    await renderApp(context, { commitDxfProjectImport, loadEditorProgram });
+
+    await prepareDxfImport(container, new File([simpleLineDxf()], 'committed-not-opened.dxf'));
+    await confirmPendingDxfImport(container);
+
+    expect(commitDxfProjectImport).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[role="dialog"][aria-label="Review DXF import"]')).toBeNull();
+    expect(container.querySelector('[data-editor-context="path-project"]')).toBeNull();
+    expect(container.textContent).toContain('Latest DXF Import');
+    expect(container.textContent).toContain('DXF was imported, but the editor could not open it');
+    const manifest = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    expect(manifest.projects).toHaveLength(1);
+  });
+
   it('imports a DXF through the browser cache workbench and opens the UPID path project in the editor', async () => {
     window.showDirectoryPicker = undefined;
     const downloadGeneratedProgram = vi.fn();
@@ -95,6 +271,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-document-identity]')?.textContent).toContain('part');
@@ -170,6 +347,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const dashboardButton = container.querySelector(
       'button[aria-label="Back to Dashboard"]'
@@ -223,6 +401,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const dashboardButton = container.querySelector(
       'button[aria-label="Back to Dashboard"]'
@@ -317,6 +496,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const dashboardButton = container.querySelector(
       'button[aria-label="Back to Dashboard"]'
@@ -384,6 +564,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const diagnostics = container.querySelector('[data-upid-diagnostics]');
     const diagnosticRows = [...container.querySelectorAll('[data-upid-diagnostic-row]')];
@@ -394,7 +575,7 @@ describe('App DXF imports and project library', () => {
 
     expect(diagnostics).not.toBeNull();
     expect(diagnostics?.textContent).toContain('Path Diagnostics');
-    expect(diagnosticCodes).toContain('units-assumed-millimeters');
+    expect(diagnosticCodes).not.toContain('units-assumed-millimeters');
     expect(diagnosticCodes).toContain('open-chain');
     expect(openChainRow?.getAttribute('data-upid-diagnostic-severity')).toBe('warning');
     expect(openChainRow?.textContent).toContain('open chain');
@@ -415,6 +596,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const diagnosticRow = container.querySelector(
       '[data-upid-diagnostic-row][data-upid-diagnostic-code="open-chain"]'
@@ -460,6 +642,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const diagnosticRow = container.querySelector(
       '[data-upid-diagnostic-row][data-upid-diagnostic-code="open-chain"]'
@@ -500,6 +683,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const manifest = JSON.parse(
       window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
@@ -554,6 +738,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const manifest = JSON.parse(
       window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
@@ -631,6 +816,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const machineWarning = container.querySelector('[data-editor-machine-fit="too-large"]');
     expect(machineWarning).not.toBeNull();
@@ -655,6 +841,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     expect(container.querySelector('[data-editor-project-rail]')).not.toBeNull();
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
@@ -739,6 +926,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     for (let cycle = 0; cycle < 2; cycle += 1) {
       const contourTree = container.querySelector(
@@ -793,6 +981,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const hoverAssistToggle = container.querySelector(
       'input[aria-label="Toggle canvas hover assist"]'
@@ -898,6 +1087,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const pathActionsMenuItem = container.querySelector(
       'button[data-editor-panel-menu-item="path-actions"]'
@@ -979,6 +1169,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const expectedPanels = [
       ['path-summary', 'Path Summary'],
@@ -1069,6 +1260,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const contourRow = container.querySelector('[data-upid-contour-row]') as HTMLElement | null;
     await act(async () => {
@@ -1115,6 +1307,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const contourRow = container.querySelector('[data-upid-contour-row]') as HTMLButtonElement | null;
     const segmentRow = container.querySelector('[data-upid-segment-row]') as HTMLButtonElement | null;
@@ -1169,6 +1362,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
       'Select mode'
@@ -1204,6 +1398,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     expect(container.querySelector('[data-upid-cut-sequence-row][data-upid-selected="true"]')).toBeNull();
     expect(container.querySelector('[data-upid-contour-row][data-upid-selected="true"]')).toBeNull();
@@ -1226,6 +1421,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const contourRow = container.querySelector('[data-upid-contour-row]') as HTMLElement | null;
     await act(async () => {
@@ -1260,6 +1456,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const contourRows = [...container.querySelectorAll('[data-upid-contour-row]')];
     expect(contourRows).toHaveLength(3);
@@ -1396,6 +1593,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     let cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
     expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-path-element-id'))).toEqual([
@@ -1488,6 +1686,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const sourceSummary = container.querySelector('[data-upid-source-summary]');
@@ -1538,6 +1737,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const roleSelect = container.querySelector(
@@ -1575,6 +1775,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const roleSelect = container.querySelector(
@@ -1674,6 +1875,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const reverseButton = container.querySelector(
@@ -1732,6 +1934,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const reverseButton = container.querySelector(
@@ -1804,6 +2007,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     let cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
     expect(cutSequenceRows.map((row) => row.getAttribute('data-upid-cut-sequence-role'))).toEqual([
@@ -1880,6 +2084,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const hoverToggle = container.querySelector(
       'input[aria-label="Toggle canvas hover assist"]'
@@ -1951,6 +2156,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const contourRow = container.querySelector('[data-upid-contour-row]') as HTMLElement | null;
     const operationId = contourRow?.getAttribute('data-upid-operation-id');
@@ -2018,6 +2224,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
@@ -2082,6 +2289,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const reverseButton = container.querySelector(
@@ -2183,6 +2391,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     expect(container.querySelector('[data-upid-export-preview]')).toBeNull();
     expect(container.textContent).not.toContain('G1 X10.000 Y0.000');
@@ -2375,6 +2584,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const openPreviewButton = container.querySelector(
       'button[aria-label="Open UPID export preview"]'
@@ -2460,6 +2670,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     let cutSequenceRows = [...container.querySelectorAll('[data-upid-cut-sequence-row]')];
     const moveDownButton = cutSequenceRows[0].querySelector(
@@ -2507,6 +2718,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     let cutSequenceRow = container.querySelector('[data-upid-cut-sequence-row]') as HTMLElement | null;
     const operationId = cutSequenceRow?.getAttribute('data-upid-operation-id');
@@ -2585,6 +2797,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const openPreviewButton = container.querySelector(
       'button[aria-label="Open UPID export preview"]'
@@ -2620,6 +2833,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const openPreviewButton = container.querySelector(
       'button[aria-label="Open UPID export preview"]'
@@ -2642,7 +2856,7 @@ describe('App DXF imports and project library', () => {
       String(diagnosticRows.length)
     );
     expect(exportDiagnostics).not.toBeNull();
-    expect(diagnosticRows.map((row) => row.getAttribute('data-upid-export-diagnostic-code'))).toContain(
+    expect(diagnosticRows.map((row) => row.getAttribute('data-upid-export-diagnostic-code'))).not.toContain(
       'units-assumed-millimeters'
     );
     expect(openChainRow).toBeDefined();
@@ -2705,6 +2919,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const hoverToggle = container.querySelector(
       'input[aria-label="Toggle canvas hover assist"]'
@@ -2753,6 +2968,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const hoverToggle = container.querySelector(
       'input[aria-label="Toggle canvas hover assist"]'
@@ -2826,6 +3042,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     await expandSegmentDetails(container, 0);
     const targetPointRow = [...container.querySelectorAll('[data-upid-point-row]')].find((row) =>
@@ -2871,6 +3088,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     await expandSegmentDetails(container, 1);
     const targetPointRow = container.querySelector(
@@ -2909,6 +3127,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
@@ -2977,6 +3196,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const segmentRow = container.querySelector('[data-upid-segment-row]') as HTMLElement | null;
     const segmentId = segmentRow?.getAttribute('data-upid-segment-id');
@@ -3017,6 +3237,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['contour-tree', 'cut-sequence', 'path-actions', 'path-hover-assist']);
     await selectFirstCutSequence(container);
 
@@ -3124,6 +3345,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
@@ -3208,6 +3430,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
@@ -3325,6 +3548,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const preview = container.querySelector(
@@ -3405,6 +3629,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     await expandSegmentDetails(container, 1);
     const targetPointRow = container.querySelector(
@@ -3457,6 +3682,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const reverseButton = container.querySelector(
@@ -3586,6 +3812,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['path-transform']);
     await selectFirstCutSequence(container);
 
@@ -3655,6 +3882,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['contour-tree', 'path-actions']);
     await selectFirstCutSequence(container);
 
@@ -3734,6 +3962,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['path-transform']);
 
     const rotateDocumentButton = container.querySelector(
@@ -3773,6 +4002,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['path-transform']);
 
     const translateXInput = container.querySelector(
@@ -3818,6 +4048,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['path-transform']);
 
     expect(container.querySelector('[data-upid-transform-source-extents]')?.textContent).toBe(
@@ -3846,6 +4077,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['path-transform', 'cut-sequence']);
 
     const documentTargetButton = container.querySelector(
@@ -3902,6 +4134,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['path-transform']);
 
     const referenceSelect = container.querySelector(
@@ -3955,6 +4188,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['path-transform']);
 
     const referenceSelect = container.querySelector(
@@ -4019,6 +4253,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['path-transform', 'cut-sequence']);
     await selectFirstCutSequence(container);
     await flushAsync();
@@ -4095,6 +4330,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['path-transform', 'measurement']);
 
     const measurementXInput = document.querySelector(
@@ -4171,6 +4407,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     expect(container.querySelector('button[aria-label="Reverse path operation"]')).not.toBeNull();
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
@@ -4195,6 +4432,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const pointXInput = container.querySelector(
       'input[aria-label="Measurement point X"]'
@@ -4266,6 +4504,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     expect(container.querySelector('[data-editor-posted-body-row]')).toBeNull();
     expect(container.querySelector('[data-upid-path-navigator]')).not.toBeNull();
@@ -4288,6 +4527,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await showWorkspacePanels(container, ['contour-tree', 'cut-sequence', 'measurement', 'path-actions', 'statistics']);
     expect(document.querySelector('[data-editor-workspace-panel="measurement"]')).not.toBeNull();
     await selectFirstCutSequence(container);
@@ -4439,6 +4679,7 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
 
     const tangentButton = container.querySelector(
@@ -4492,11 +4733,23 @@ describe('App DXF imports and project library', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     expect(container.querySelector('[data-preview-source="path-document"]')).not.toBeNull();
     expect(container.querySelector('[data-preview-source="gcode"]')).toBeNull();
   });
 });
+
+function declaredInchLineDxf() {
+  return [
+    '0', 'SECTION', '2', 'HEADER',
+    '9', '$INSUNITS', '70', '1',
+    '0', 'ENDSEC',
+    '0', 'SECTION', '2', 'ENTITIES',
+    '0', 'LINE', '10', '0', '20', '0', '11', '1', '21', '0',
+    '0', 'ENDSEC', '0', 'EOF'
+  ].join('\n');
+}
 
 function rectangleDxf() {
   return [
