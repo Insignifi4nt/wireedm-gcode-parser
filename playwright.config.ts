@@ -6,15 +6,15 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   retries: process.env.CI ? 2 : 0,
   use: {
-    baseURL: 'http://127.0.0.1:3000',
+    baseURL: 'http://127.0.0.1:3107',
     screenshot: 'only-on-failure',
     trace: 'on-first-retry',
     video: 'retain-on-failure'
   },
   webServer: {
-    command: 'npm run dev -- --host 127.0.0.1',
-    reuseExistingServer: !process.env.CI,
-    url: 'http://127.0.0.1:3000'
+    command: 'npm run dev -- --host 127.0.0.1 --port 3107 --strictPort',
+    reuseExistingServer: false,
+    url: 'http://127.0.0.1:3107'
   },
   projects: [
     {

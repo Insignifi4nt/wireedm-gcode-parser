@@ -5,7 +5,7 @@ import type { DxfEntity } from '@/domain/dxf/types';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import type { MachineProfile } from '@/domain/workbench/types';
 
-import { evaluateMachineFit } from '../machineFit';
+import { evaluateMachineFit, evaluateMachineFitBounds } from '../machineFit';
 
 describe('evaluateMachineFit', () => {
   it('passes when machine profile has no work area limits', () => {
@@ -55,6 +55,56 @@ describe('evaluateMachineFit', () => {
         }
       ]
     });
+  });
+
+  it('evaluates finite raw bounds without requiring a path document', () => {
+    const profile = {
+      ...createDefaultMachineProfile(),
+      workArea: { widthMm: 15, lengthMm: 12 }
+    };
+
+    expect(evaluateMachineFitBounds({
+      bounds: { minX: -5, minY: 2, maxX: 15, maxY: 12 },
+      profile
+    })).toEqual({
+      status: 'too-large',
+      bounds: { widthMm: 20, lengthMm: 10 },
+      issues: [{ axis: 'width', actualMm: 20, limitMm: 15 }]
+    });
+  });
+
+  it('returns measured size while fit is unchecked when a machine has no work-area limits', () => {
+    expect(evaluateMachineFitBounds({
+      bounds: { minX: 0, minY: 0, maxX: 20, maxY: 10 },
+      profile: createDefaultMachineProfile()
+    })).toEqual({
+      status: 'unchecked',
+      bounds: { widthMm: 20, lengthMm: 10 },
+      issues: []
+    });
+  });
+
+  it('rejects non-finite or inverted raw bounds as unchecked', () => {
+    expect(evaluateMachineFitBounds({
+      bounds: { minX: 0, minY: 0, maxX: Number.POSITIVE_INFINITY, maxY: 10 },
+      profile: createDefaultMachineProfile()
+    })).toEqual({ status: 'unchecked', bounds: null, issues: [] });
+    expect(evaluateMachineFitBounds({
+      bounds: { minX: 10, minY: 0, maxX: 0, maxY: 10 },
+      profile: createDefaultMachineProfile()
+    })).toEqual({ status: 'unchecked', bounds: null, issues: [] });
+  });
+
+  it('rejects finite extrema whose derived span overflows', () => {
+    expect(evaluateMachineFitBounds({
+      bounds: {
+        minX: -Number.MAX_VALUE,
+        minY: 0,
+        maxX: Number.MAX_VALUE,
+        maxY: 10
+      },
+      profile: createDefaultMachineProfile()
+    })).toEqual({ status: 'unchecked', bounds: null, issues: [] });
   });
 });
 

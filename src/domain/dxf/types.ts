@@ -6,6 +6,7 @@ export interface DxfPoint {
 export interface DxfInsertTransformSource {
   insertion: DxfPoint;
   localOffset?: DxfPoint;
+  blockBasePoint?: DxfPoint;
   rotationDegrees: number;
   scaleX: number;
   scaleY: number;
@@ -31,6 +32,36 @@ export interface DxfDrawingUnits {
   scaleToMillimeters: number | null;
 }
 
+export type DxfUnitDeclarationStatus =
+  | 'missing'
+  | 'malformed'
+  | 'unitless'
+  | 'unknown'
+  | 'recognized';
+
+type DxfUnitDeclarationWithStatus<Status extends DxfUnitDeclarationStatus> = {
+  status: Status;
+};
+
+export type DxfUnitDeclaration =
+  | DxfUnitDeclarationWithStatus<'missing'>
+  | (DxfUnitDeclarationWithStatus<'malformed'> & { rawValue: string | null })
+  | (DxfUnitDeclarationWithStatus<'unitless' | 'unknown' | 'recognized'> & {
+      units: DxfDrawingUnits;
+    });
+
+export interface AppliedDxfUnits {
+  label: string;
+  scaleToMillimeters: number;
+  basis: 'dxf-declared' | 'user-confirmed' | 'legacy-assumed';
+  confirmed: boolean;
+  confirmedAt?: string;
+  suggestion?: {
+    kind: 'machine-profile';
+    profileId: string;
+  };
+}
+
 export interface DxfDrawingMetadata {
   basePoint?: DxfPoint;
   extents?: {
@@ -39,11 +70,17 @@ export interface DxfDrawingMetadata {
   };
 }
 
+export interface DxfApproximation {
+  sourceEntityType: string;
+  maxChordError: number;
+}
+
 export interface DxfLineEntity {
   type: 'line';
   handle?: string | null;
   layer: string | null;
   source?: DxfEntitySource;
+  approximation?: DxfApproximation;
   start: DxfPoint;
   end: DxfPoint;
 }
@@ -57,6 +94,7 @@ export interface DxfArcEntity {
   radius: number;
   startAngle: number;
   endAngle: number;
+  sweepRadians?: number;
   clockwise: boolean;
   start: DxfPoint;
   end: DxfPoint;
@@ -107,7 +145,12 @@ export type DxfEntity =
 export interface DxfParseResult {
   entities: DxfEntity[];
   drawing?: DxfDrawingMetadata;
+  unitDeclaration: DxfUnitDeclaration;
   units?: DxfDrawingUnits;
   unsupportedEntities: string[];
   warnings: string[];
+}
+
+export interface DxfParseOptions {
+  curveChordError?: number;
 }

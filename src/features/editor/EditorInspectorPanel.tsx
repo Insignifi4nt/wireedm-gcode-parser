@@ -68,12 +68,15 @@ interface EditorInspectorPanelProps {
   selectedPathOperationId: string | null;
   structure: GCodeStructure | null;
   canInsertMeasurementPoints?: boolean;
+  canReimportDxfUnits?: boolean;
+  reimportDxfUnitsDisabledReason?: string | null;
   onAddMeasurementPoint: () => void;
   onClearMeasurementPoints: () => void;
   onDeleteMeasurementPoint: (pointId: string) => void;
   onExportMeasurementPoints: (format: MeasurementExportFormat) => void;
   onHoverPathElement?: (element: EditorPathElementRef | null) => void;
   onInsertMeasurementPoints: () => void;
+  onReimportDxfUnits?: () => void | Promise<void>;
   onPointXDraftChange: (value: string) => void;
   onPointYDraftChange: (value: string) => void;
   onSelectPathElement?: (element: EditorPathElementRef) => void;
@@ -107,12 +110,15 @@ export function EditorInspectorPanel({
   selectedPathOperationId,
   structure,
   canInsertMeasurementPoints = true,
+  canReimportDxfUnits = false,
+  reimportDxfUnitsDisabledReason = null,
   onAddMeasurementPoint,
   onClearMeasurementPoints,
   onDeleteMeasurementPoint,
   onExportMeasurementPoints,
   onHoverPathElement,
   onInsertMeasurementPoints,
+  onReimportDxfUnits,
   onPointXDraftChange,
   onPointYDraftChange,
   onSelectPathElement,
@@ -924,6 +930,54 @@ export function EditorInspectorPanel({
             <dt className="text-muted-foreground">Max L</dt>
             <dd data-editor-machine="max-length">{formatLimit(machineProfile.workArea?.lengthMm ?? null)}</dd>
           </dl>
+          {pathDocument?.source.appliedUnits && (
+            <div
+              className="mt-3 border-t border-border pt-3"
+              data-editor-dxf-unit-provenance
+            >
+              <h4 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">
+                DXF unit provenance
+              </h4>
+              <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+                <dt className="text-muted-foreground">Raw</dt>
+                <dd data-editor-dxf-unit-raw>
+                  {formatDxfUnitDeclaration(pathDocument.source.unitDeclaration)}
+                </dd>
+                <dt className="text-muted-foreground">Applied</dt>
+                <dd data-editor-dxf-unit-applied>
+                  {pathDocument.source.appliedUnits.label} ×{formatUnitScale(
+                    pathDocument.source.appliedUnits.scaleToMillimeters
+                  )}
+                </dd>
+                <dt className="text-muted-foreground">Decision</dt>
+                <dd data-editor-dxf-unit-basis>
+                  {formatAppliedUnitBasis(pathDocument.source.appliedUnits.basis)}
+                </dd>
+                <dt className="text-muted-foreground">Confirmed</dt>
+                <dd data-editor-dxf-unit-confirmed>
+                  {pathDocument.source.appliedUnits.confirmed ? 'Yes' : 'No'}
+                </dd>
+              </dl>
+              {isDeclaredUnitOverride(pathDocument) && (
+                <p className="mt-2 border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200">
+                  Applied units override the DXF declaration.
+                </p>
+              )}
+              {onReimportDxfUnits && (
+                <Button
+                  aria-label="Re-import with different units"
+                  className="mt-2 h-7 w-full text-[10px]"
+                  disabled={!canReimportDxfUnits}
+                  onClick={() => void onReimportDxfUnits()}
+                  title={reimportDxfUnitsDisabledReason ?? 'Rebuild from the persisted raw DXF with reviewed units'}
+                  type="button"
+                  variant="outline"
+                >
+                  Re-import with Different Units
+                </Button>
+              )}
+            </div>
+          )}
           {machineFit?.status === 'too-large' && (
             <div
               className="mt-2 border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200"
@@ -1152,6 +1206,34 @@ function formatCursorCoordinate(value: number | undefined) {
 
 function formatLimit(value: number | null) {
   return typeof value === 'number' ? `${value.toFixed(3)} mm` : '-';
+}
+
+function formatDxfUnitDeclaration(
+  declaration: PathPlanningDocument['source']['unitDeclaration']
+) {
+  if (!declaration) return 'Legacy / not recorded';
+  if (declaration.status === 'recognized') return `Declared by DXF: ${declaration.units.label}`;
+  if (declaration.status === 'unitless') return 'Unitless DXF declaration';
+  if (declaration.status === 'unknown') return `Unknown DXF unit code ${declaration.units.code}`;
+  if (declaration.status === 'malformed') return 'Malformed DXF declaration';
+  return 'Not declared';
+}
+
+function formatAppliedUnitBasis(basis: NonNullable<PathPlanningDocument['source']['appliedUnits']>['basis']) {
+  if (basis === 'dxf-declared') return 'Declared by DXF';
+  if (basis === 'user-confirmed') return 'User confirmed';
+  return 'Legacy assumed';
+}
+
+function formatUnitScale(scale: number) {
+  return Number.isInteger(scale) ? String(scale) : String(scale);
+}
+
+function isDeclaredUnitOverride(document: PathPlanningDocument) {
+  const declaration = document.source.unitDeclaration;
+  const applied = document.source.appliedUnits;
+  return declaration?.status === 'recognized' && applied != null &&
+    declaration.units.scaleToMillimeters !== applied.scaleToMillimeters;
 }
 
 function formatPoint(point: { x: number; y: number }) {

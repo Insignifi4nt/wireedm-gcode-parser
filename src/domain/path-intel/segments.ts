@@ -13,6 +13,10 @@ import type {
 import { DEFAULT_PATH_PLANNING_OPTIONS } from './types';
 
 const FULL_TURN = Math.PI * 2;
+const ANGULAR_ULP_FACTOR = 32;
+const SMALL_SWEEP_SERIES_LIMIT = 1e-3;
+const FLOAT64_STEP_BUFFER = new ArrayBuffer(8);
+const FLOAT64_STEP_VIEW = new DataView(FLOAT64_STEP_BUFFER);
 
 export interface CreateLineSegmentInput {
   id: SegmentId;
@@ -29,6 +33,7 @@ export interface CreateArcSegmentInput {
   center: Point2;
   radius?: number;
   clockwise: boolean;
+  sweepRadians?: number;
 }
 
 export interface CreateCircleSegmentInput {
@@ -74,10 +79,17 @@ export function createArcSegment(input: CreateArcSegmentInput): ArcPathSegment {
   const startAngleRadians = normalizeAngle(
     Math.atan2(input.start.y - input.center.y, input.start.x - input.center.x)
   );
-  const endAngleRadians = normalizeAngle(
+  const inferredEndAngleRadians = normalizeAngle(
     Math.atan2(input.end.y - input.center.y, input.end.x - input.center.x)
   );
-  const sweepRadians = signedSweep(startAngleRadians, endAngleRadians, input.clockwise);
+  const sweepRadians =
+    input.sweepRadians == null
+      ? signedSweep(startAngleRadians, inferredEndAngleRadians, input.clockwise)
+      : validatedExplicitArcSweep(input.sweepRadians, input.clockwise);
+  const endAngleRadians =
+    input.sweepRadians == null
+      ? inferredEndAngleRadians
+      : normalizeAngle(startAngleRadians + sweepRadians);
 
   return {
     id: input.id,
@@ -93,8 +105,25 @@ export function createArcSegment(input: CreateArcSegmentInput): ArcPathSegment {
     sweepRadians,
     clockwise: input.clockwise,
     length: Math.abs(radius * sweepRadians),
-    bounds: arcBounds(input.center, radius, startAngleRadians, sweepRadians)
+    bounds: arcBounds(
+      input.center,
+      radius,
+      startAngleRadians,
+      sweepRadians,
+      input.start,
+      input.end
+    )
   };
+}
+
+function validatedExplicitArcSweep(sweepRadians: number, clockwise: boolean) {
+  const hasValidMagnitude =
+    Number.isFinite(sweepRadians) && sweepRadians !== 0 && Math.abs(sweepRadians) <= FULL_TURN;
+  const hasValidDirection = clockwise ? sweepRadians < 0 : sweepRadians > 0;
+  if (!hasValidMagnitude || !hasValidDirection) {
+    throw new RangeError('Explicit arc sweep must be finite, nonzero, at most one turn, and match its direction.');
+  }
+  return sweepRadians;
 }
 
 export function createCircleSegment(input: CreateCircleSegmentInput): CirclePathSegment {
@@ -148,10 +177,10 @@ export function boundsFromPoints(points: Point2[]): Bounds2 {
 
   return points.reduce(
     (bounds, point) => ({
-      minX: Math.min(bounds.minX, point.x),
-      minY: Math.min(bounds.minY, point.y),
-      maxX: Math.max(bounds.maxX, point.x),
-      maxY: Math.max(bounds.maxY, point.y)
+      minX: normalizeSignedZero(Math.min(bounds.minX, point.x)),
+      minY: normalizeSignedZero(Math.min(bounds.minY, point.y)),
+      maxX: normalizeSignedZero(Math.max(bounds.maxX, point.x)),
+      maxY: normalizeSignedZero(Math.max(bounds.maxY, point.y))
     }),
     emptyBounds()
   );
@@ -168,11 +197,15 @@ export function emptyBounds(): Bounds2 {
 
 export function mergeBounds(a: Bounds2, b: Bounds2): Bounds2 {
   return {
-    minX: Math.min(a.minX, b.minX),
-    minY: Math.min(a.minY, b.minY),
-    maxX: Math.max(a.maxX, b.maxX),
-    maxY: Math.max(a.maxY, b.maxY)
+    minX: normalizeSignedZero(Math.min(a.minX, b.minX)),
+    minY: normalizeSignedZero(Math.min(a.minY, b.minY)),
+    maxX: normalizeSignedZero(Math.max(a.maxX, b.maxX)),
+    maxY: normalizeSignedZero(Math.max(a.maxY, b.maxY))
   };
+}
+
+function normalizeSignedZero(value: number) {
+  return value === 0 ? 0 : value;
 }
 
 export function boundsAreFinite(bounds: Bounds2) {
@@ -202,11 +235,51 @@ export function pointOnCircle(center: Point2, radius: number, angle: number): Po
   };
 }
 
-export function arcBounds(center: Point2, radius: number, startAngle: number, sweepRadians: number): Bounds2 {
-  let bounds = boundsFromPoints([
-    pointOnCircle(center, radius, startAngle),
-    pointOnCircle(center, radius, startAngle + sweepRadians)
-  ]);
+export function arcBounds(
+  center: Point2,
+  radius: number,
+  startAngle: number,
+  sweepRadians: number,
+  exactStart?: Point2,
+  exactEnd?: Point2
+): Bounds2 {
+  let bounds = boundsFromPoints(
+    exactStart && exactEnd
+      ? [exactStart, exactEnd]
+      : [
+          pointOnCircle(center, radius, startAngle),
+          pointOnCircle(center, radius, startAngle + sweepRadians)
+        ]
+  );
+
+  if (exactStart && exactEnd) {
+    const startRadial = normalizedDirection({
+      x: exactStart.x - center.x,
+      y: exactStart.y - center.y
+    });
+
+    if (startRadial) {
+      for (const cardinal of [
+        { radial: { x: 1, y: 0 }, extremum: 'maxX' as const },
+        { radial: { x: 0, y: 1 }, extremum: 'maxY' as const },
+        { radial: { x: -1, y: 0 }, extremum: 'minX' as const },
+        { radial: { x: 0, y: -1 }, extremum: 'minY' as const }
+      ]) {
+        const delta = directedAngularDelta(startRadial, cardinal.radial, sweepRadians);
+        if (
+          angularDeltaIsOnSweep(delta, sweepRadians) &&
+          angularDeltaIsStrictlyInterior(delta, sweepRadians)
+        ) {
+          const point = pointFromExactArcStart(exactStart, center, delta);
+          bounds = mergeBounds(
+            bounds,
+            outwardRoundedExtremumBounds(point, cardinal.extremum)
+          );
+        }
+      }
+      return bounds;
+    }
+  }
 
   for (const angle of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
     if (angleIsOnSweep(angle, startAngle, sweepRadians)) {
@@ -215,6 +288,41 @@ export function arcBounds(center: Point2, radius: number, startAngle: number, sw
   }
 
   return bounds;
+}
+
+function outwardRoundedExtremumBounds(
+  point: Point2,
+  extremum: 'minX' | 'minY' | 'maxX' | 'maxY'
+) {
+  const bounds = boundsFromPoints([point]);
+  // Cover both the analytic extremum evaluation and a later parameter round trip.
+  if (extremum === 'minX') bounds.minX = nextDown(nextDown(point.x));
+  if (extremum === 'minY') bounds.minY = nextDown(nextDown(point.y));
+  if (extremum === 'maxX') bounds.maxX = nextUp(nextUp(point.x));
+  if (extremum === 'maxY') bounds.maxY = nextUp(nextUp(point.y));
+  return bounds;
+}
+
+export function nextUp(value: number) {
+  if (Number.isNaN(value) || value === Number.POSITIVE_INFINITY) return value;
+  if (value === Number.NEGATIVE_INFINITY) return -Number.MAX_VALUE;
+  if (value === 0) return Number.MIN_VALUE;
+
+  FLOAT64_STEP_VIEW.setFloat64(0, value);
+  const bits = FLOAT64_STEP_VIEW.getBigUint64(0);
+  FLOAT64_STEP_VIEW.setBigUint64(0, bits + (value > 0 ? 1n : -1n));
+  return FLOAT64_STEP_VIEW.getFloat64(0);
+}
+
+export function nextDown(value: number) {
+  if (Number.isNaN(value) || value === Number.NEGATIVE_INFINITY) return value;
+  if (value === Number.POSITIVE_INFINITY) return Number.MAX_VALUE;
+  if (value === 0) return -Number.MIN_VALUE;
+
+  FLOAT64_STEP_VIEW.setFloat64(0, value);
+  const bits = FLOAT64_STEP_VIEW.getBigUint64(0);
+  FLOAT64_STEP_VIEW.setBigUint64(0, bits + (value > 0 ? -1n : 1n));
+  return FLOAT64_STEP_VIEW.getFloat64(0);
 }
 
 export function angleIsOnSweep(
@@ -252,6 +360,83 @@ export function orientedSegmentEnd(segment: PathSegment, ref: OrientedSegmentRef
 
 export function orientedArcClockwise(segment: ArcPathSegment, ref: OrientedSegmentRef) {
   return ref.reversed ? !segment.clockwise : segment.clockwise;
+}
+
+export function orientedArcSweep(segment: ArcPathSegment, ref: OrientedSegmentRef) {
+  return ref.reversed ? -segment.sweepRadians : segment.sweepRadians;
+}
+
+export function arcParameterAtAngle(
+  segment: ArcPathSegment,
+  ref: OrientedSegmentRef,
+  angleRadians: number
+) {
+  if (!Number.isFinite(angleRadians)) return null;
+  const exactQuadrant = exactQuadrantTrig(angleRadians);
+  return arcParameterAtRadial(segment, ref, {
+    x: exactQuadrant ? exactQuadrant.cosMinusOne + 1 : Math.cos(angleRadians),
+    y: exactQuadrant?.sin ?? Math.sin(angleRadians)
+  });
+}
+
+export function arcParameterAtRadial(
+  segment: ArcPathSegment,
+  ref: OrientedSegmentRef,
+  radial: Point2
+) {
+  const targetRadial = normalizedDirection(radial);
+  return targetRadial ? arcParameterForTargetRadial(segment, ref, targetRadial) : null;
+}
+
+export function arcParameterAtPoint(
+  segment: ArcPathSegment,
+  ref: OrientedSegmentRef,
+  point: Point2
+) {
+  return arcParameterAtRadial(segment, ref, {
+    x: point.x - segment.center.x,
+    y: point.y - segment.center.y
+  });
+}
+
+function arcParameterForTargetRadial(
+  segment: ArcPathSegment,
+  ref: OrientedSegmentRef,
+  targetRadial: Point2
+) {
+  const start = orientedSegmentStart(segment, ref);
+  const startRadial = normalizedDirection({
+    x: start.x - segment.center.x,
+    y: start.y - segment.center.y
+  });
+  if (!startRadial) return null;
+
+  const sweep = orientedArcSweep(segment, ref);
+  const delta = directedAngularDelta(startRadial, targetRadial, sweep);
+  if (!angularDeltaIsOnSweep(delta, sweep)) return null;
+
+  const parameter = delta / sweep;
+  return Number.isFinite(parameter) ? Math.min(1, Math.max(0, parameter)) : null;
+}
+
+export function pointOnArcAtParameter(
+  segment: ArcPathSegment,
+  ref: OrientedSegmentRef,
+  parameter: number
+) {
+  if (!Number.isFinite(parameter)) {
+    throw new RangeError('Arc parameter must be finite.');
+  }
+
+  const clamped = Math.min(1, Math.max(0, parameter));
+  if (clamped === 0) return orientedSegmentStart(segment, ref);
+  if (clamped === 1) return orientedSegmentEnd(segment, ref);
+
+  return pointFromExactArcStart(
+    orientedSegmentStart(segment, ref),
+    segment.center,
+    orientedArcSweep(segment, ref) * clamped
+  );
 }
 
 export function orientedCircleClockwise(_segment: CirclePathSegment, ref: OrientedSegmentRef) {
@@ -296,10 +481,29 @@ export function pathBounds(refs: OrientedSegmentRef[], segmentsById: Map<Segment
 }
 
 export function signedAreaOfPath(refs: OrientedSegmentRef[], segmentsById: Map<SegmentId, PathSegment>) {
-  return refs.reduce((total, ref) => total + signedAreaOfSegmentRef(ref, segmentsById), 0);
+  const firstRef = refs[0];
+  if (!firstRef) return 0;
+
+  const origin = orientedSegmentStart(requiredSegment(segmentsById, firstRef.segmentId), firstRef);
+  let total = 0;
+  let compensation = 0;
+
+  for (const ref of refs) {
+    const area = signedAreaOfSegmentRef(ref, segmentsById, origin);
+    const adjusted = area - compensation;
+    const next = total + adjusted;
+    compensation = next - total - adjusted;
+    total = next;
+  }
+
+  return total;
 }
 
-export function signedAreaOfSegmentRef(ref: OrientedSegmentRef, segmentsById: Map<SegmentId, PathSegment>) {
+export function signedAreaOfSegmentRef(
+  ref: OrientedSegmentRef,
+  segmentsById: Map<SegmentId, PathSegment>,
+  origin: Point2 = { x: 0, y: 0 }
+) {
   const segment = requiredSegment(segmentsById, ref.segmentId);
 
   if (segment.kind === 'circle') {
@@ -308,18 +512,19 @@ export function signedAreaOfSegmentRef(ref: OrientedSegmentRef, segmentsById: Ma
 
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
+  const translatedTriangle =
+    0.5 *
+    ((start.x - origin.x) * (end.y - origin.y) -
+      (end.x - origin.x) * (start.y - origin.y));
 
   if (segment.kind === 'line') {
-    return 0.5 * crossPoint(start, end);
+    return translatedTriangle;
   }
 
-  const sweep = ref.reversed ? -segment.sweepRadians : segment.sweepRadians;
-  return (
-    0.5 *
-    (segment.center.x * (end.y - start.y) -
-      segment.center.y * (end.x - start.x) +
-      segment.radius * segment.radius * sweep)
-  );
+  const sweep = orientedArcSweep(segment, ref);
+  const correction = sweepMinusSin(sweep);
+  const circularSegmentArea = 0.5 * segment.radius * (segment.radius * correction);
+  return translatedTriangle + circularSegmentArea;
 }
 
 export function approximatePath(
@@ -357,16 +562,103 @@ export function approximateSegmentRef(segment: PathSegment, ref: OrientedSegment
     return points;
   }
 
-  const startAngle = ref.reversed ? segment.endAngleRadians : segment.startAngleRadians;
-  const sweep = ref.reversed ? -segment.sweepRadians : segment.sweepRadians;
+  const sweep = orientedArcSweep(segment, ref);
   const count = Math.max(1, Math.ceil(Math.abs(sweep) / Math.max(maxAngleRadians, Math.PI / 90)));
-  const points: Point2[] = [];
+  const points: Point2[] = [orientedSegmentStart(segment, ref)];
 
-  for (let index = 0; index <= count; index++) {
-    points.push(pointOnCircle(segment.center, segment.radius, startAngle + (sweep * index) / count));
+  for (let index = 1; index < count; index++) {
+    points.push(pointOnArcAtParameter(segment, ref, index / count));
   }
+  points.push(orientedSegmentEnd(segment, ref));
 
   return points;
+}
+
+function normalizedDirection(vector: Point2): Point2 | null {
+  const scale = Math.max(Math.abs(vector.x), Math.abs(vector.y));
+  if (!Number.isFinite(scale) || scale === 0) return null;
+
+  const scaledX = vector.x / scale;
+  const scaledY = vector.y / scale;
+  const length = Math.hypot(scaledX, scaledY);
+  if (!Number.isFinite(length) || length === 0) return null;
+
+  return { x: scaledX / length, y: scaledY / length };
+}
+
+function directedAngularDelta(start: Point2, target: Point2, sweepRadians: number) {
+  let delta = Math.atan2(cross(start, target), dot(start, target));
+  if (sweepRadians > 0 && delta < 0) delta += FULL_TURN;
+  if (sweepRadians < 0 && delta > 0) delta -= FULL_TURN;
+  return delta;
+}
+
+function angularDeltaIsOnSweep(delta: number, sweepRadians: number) {
+  if (!Number.isFinite(delta) || !Number.isFinite(sweepRadians) || sweepRadians === 0) return false;
+  const tolerance = angularUlpTolerance(delta, sweepRadians);
+  return sweepRadians > 0
+    ? delta >= -tolerance && delta <= sweepRadians + tolerance
+    : delta <= tolerance && delta >= sweepRadians - tolerance;
+}
+
+function angularDeltaIsStrictlyInterior(delta: number, sweepRadians: number) {
+  return sweepRadians > 0
+    ? delta > 0 && delta < sweepRadians
+    : delta < 0 && delta > sweepRadians;
+}
+
+function angularUlpTolerance(...angles: number[]) {
+  const magnitude = Math.max(...angles.map((angle) => Math.abs(angle)));
+  return ANGULAR_ULP_FACTOR * Number.EPSILON * magnitude;
+}
+
+function pointFromExactArcStart(start: Point2, center: Point2, delta: number): Point2 {
+  const radialX = start.x - center.x;
+  const radialY = start.y - center.y;
+  const exactQuadrant = exactQuadrantTrig(delta);
+  const sinDelta = exactQuadrant?.sin ?? Math.sin(delta);
+  const sinHalf = exactQuadrant ? null : Math.sin(delta / 2);
+  const cosDeltaMinusOne = exactQuadrant?.cosMinusOne ?? -2 * sinHalf! * sinHalf!;
+
+  return {
+    x: start.x + cosDeltaMinusOne * radialX - sinDelta * radialY,
+    y: start.y + sinDelta * radialX + cosDeltaMinusOne * radialY
+  };
+}
+
+function exactQuadrantTrig(delta: number) {
+  const quadrant = Math.round(delta / (Math.PI / 2));
+  const exactDelta = quadrant * (Math.PI / 2);
+  if (delta !== exactDelta) return null;
+
+  switch (((quadrant % 4) + 4) % 4) {
+    case 0:
+      return { sin: 0, cosMinusOne: 0 };
+    case 1:
+      return { sin: 1, cosMinusOne: -1 };
+    case 2:
+      return { sin: 0, cosMinusOne: -2 };
+    default:
+      return { sin: -1, cosMinusOne: -1 };
+  }
+}
+
+function sweepMinusSin(sweepRadians: number) {
+  if (Math.abs(sweepRadians) >= SMALL_SWEEP_SERIES_LIMIT) {
+    return sweepRadians - Math.sin(sweepRadians);
+  }
+
+  const squared = sweepRadians * sweepRadians;
+  return (
+    sweepRadians *
+    squared *
+    (1 / 6 +
+      squared *
+        (-1 / 120 +
+          squared *
+            (1 / 5040 +
+              squared * (-1 / 362880 + squared * (1 / 39916800 - squared / 6227020800)))))
+  );
 }
 
 export function requiredSegment(segmentsById: Map<SegmentId, PathSegment>, segmentId: SegmentId) {

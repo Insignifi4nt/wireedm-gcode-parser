@@ -1,3 +1,9 @@
+import {
+  createGCodeInterpreterState,
+  interpretGCodeBlock,
+  type GCodeBlockResult,
+  type GCodeInterpreterState
+} from './gcodeBlockInterpreter';
 import type {
   GCodeArcPathPoint,
   GCodeBounds,
@@ -7,16 +13,10 @@ import type {
   GCodePathPoint
 } from './types';
 
-const COORDINATE_PATTERN = /([XYZ])\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?)/g;
-const ARC_CENTER_PATTERN = /([IJ])\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?)/g;
-const LEADING_BLOCK_NUMBER_PATTERN = /^N\d+(?:\s+|$)/i;
-const MOTION_COMMAND_PATTERN = /^G([0-3])(?=\D|$)/;
 const POSITION_EPSILON = 1e-9;
 
 interface ParserState {
-  currentPosition: { x: number; y: number };
-  modalMotion: string | null;
-  ijAbsolute: boolean;
+  interpreter: GCodeInterpreterState;
   path: GCodePathPoint[];
   bounds: GCodeBounds;
   errors: GCodeParseIssue[];
@@ -69,9 +69,7 @@ export function parseGCodeProgram(gcodeText: string): GCodeParseResult {
 
 function createParserState(): ParserState {
   return {
-    currentPosition: { x: 0, y: 0 },
-    modalMotion: null,
-    ijAbsolute: false,
+    interpreter: createGCodeInterpreterState(),
     path: [],
     bounds: createEmptyBounds(),
     errors: [],
@@ -88,215 +86,105 @@ function createParserState(): ParserState {
 }
 
 function parseLine(state: ParserState, rawLine: string, lineNumber: number) {
-  let line = normalizeMotionCodes(rawLine.trim().toUpperCase());
-  if (line === '') return;
+  const block = interpretGCodeBlock(state.interpreter, rawLine, lineNumber);
+  recordIssues(state, block);
 
-  if (isComment(line)) {
+  if (block.commentOnly) {
     state.stats.comments++;
     return;
   }
+  if (block.cleanedLine === '') return;
 
-  line = removeInlineComments(line).replace(LEADING_BLOCK_NUMBER_PATTERN, '').trim();
-  if (line === '') return;
-
-  if (/^G92(?=\D|$)/.test(line)) {
-    parseG92(state, line, lineNumber);
+  if (block.positionSet) {
+    if (state.path.length === 0) {
+      state.path.push({
+        type: 'position',
+        x: block.positionSet.x,
+        y: block.positionSet.y,
+        line: lineNumber,
+        meta: { source: 'G92' }
+      });
+      state.bounds = updateBounds(state.bounds, block.positionSet.x, block.positionSet.y);
+    }
+    state.stats.processedLines++;
     return;
   }
 
-  let handledMode = false;
-  if (/\bG60\b/.test(line) || /\bG90\.1\b/.test(line)) {
-    state.ijAbsolute = true;
-    handledMode = true;
-  }
-  if (/\bG91\.1\b/.test(line)) {
-    state.ijAbsolute = false;
-    handledMode = true;
-  }
-
-  const motionCommand = getMotionCommand(line) ?? getModalMotionCommand(state, line);
-  if (motionCommand === 'G0' || motionCommand === 'G1') {
-    state.stats.processedLines++;
-    state.modalMotion = motionCommand;
-    parseLinearMove(state, line, lineNumber, motionCommand);
-  } else if (motionCommand === 'G2' || motionCommand === 'G3') {
-    state.stats.processedLines++;
-    state.modalMotion = motionCommand;
-    parseArcMove(state, line, lineNumber, motionCommand);
-  } else if (!handledMode && !isKnownNonMotionCommand(line)) {
-    state.warnings.push({
-      line: lineNumber,
-      message: `Unknown G-code command: ${line}`,
-      type: 'warning'
-    });
-  } else if (handledMode || isKnownNonMotionCommand(line)) {
-    state.stats.processedLines++;
-  }
-}
-
-function parseLinearMove(
-  state: ParserState,
-  line: string,
-  lineNumber: number,
-  motionCommand: string
-) {
-  const coordinates = extractCoordinates(line);
-  state.currentPosition = {
-    x: coordinates.x ?? state.currentPosition.x,
-    y: coordinates.y ?? state.currentPosition.y
-  };
-
-  state.path.push({
-    type: motionCommand === 'G0' ? 'rapid' : 'cut',
-    x: state.currentPosition.x,
-    y: state.currentPosition.y,
-    line: lineNumber
-  });
-  state.bounds = updateBounds(state.bounds, state.currentPosition.x, state.currentPosition.y);
-  state.stats.linearMoves++;
-}
-
-function parseArcMove(
-  state: ParserState,
-  line: string,
-  lineNumber: number,
-  motionCommand: string
-) {
-  const coordinates = extractCoordinates(line);
-  const arcCenter = extractArcCenter(line);
-  const startX = state.currentPosition.x;
-  const startY = state.currentPosition.y;
-  const endX = coordinates.x ?? startX;
-  const endY = coordinates.y ?? startY;
-  let centerX: number;
-  let centerY: number;
-
-  if (state.ijAbsolute && (arcCenter.i === undefined || arcCenter.j === undefined)) {
-    state.warnings.push({
-      line: lineNumber,
-      message: 'Arc center missing I or J in absolute IJ mode; falling back to incremental IJ.',
-      type: 'warning'
-    });
-    centerX = startX + (arcCenter.i ?? 0);
-    centerY = startY + (arcCenter.j ?? 0);
-  } else if (state.ijAbsolute) {
-    centerX = arcCenter.i ?? startX;
-    centerY = arcCenter.j ?? startY;
-  } else {
-    centerX = startX + (arcCenter.i ?? 0);
-    centerY = startY + (arcCenter.j ?? 0);
-  }
-
-  const arc: GCodeArcPathPoint = {
-    type: 'arc',
-    startX,
-    startY,
-    endX,
-    endY,
-    centerX,
-    centerY,
-    clockwise: motionCommand === 'G2',
-    line: lineNumber
-  };
-
-  state.path.push(arc);
-  state.currentPosition = { x: endX, y: endY };
-  state.bounds = mergeBounds(state.bounds, calculateArcBounds(arc));
-  state.stats.arcMoves++;
-}
-
-function parseG92(state: ParserState, line: string, lineNumber: number) {
-  const coordinates = extractCoordinates(line);
-  const hasX = coordinates.x !== undefined;
-  const hasY = coordinates.y !== undefined;
-  const x = hasX ? coordinates.x! : hasY ? state.currentPosition.x : 0;
-  const y = hasY ? coordinates.y! : hasX ? state.currentPosition.y : 0;
-  state.currentPosition = { x, y };
-
-  if (state.path.length === 0) {
+  const motion = block.motion;
+  if (motion?.command === 'G0' || motion?.command === 'G1') {
     state.path.push({
-      type: 'position',
-      x,
-      y,
-      line: lineNumber,
-      meta: { source: 'G92' }
+      type: motion.command === 'G0' ? 'rapid' : 'cut',
+      x: motion.end.x,
+      y: motion.end.y,
+      line: lineNumber
     });
-    state.bounds = updateBounds(state.bounds, x, y);
+    state.bounds = updateBounds(state.bounds, motion.end.x, motion.end.y);
+    state.stats.linearMoves++;
+    state.stats.processedLines++;
+    return;
   }
 
-  state.stats.processedLines++;
-}
-
-function normalizeMotionCodes(line: string) {
-  return line.replace(/\bG0+([0-3])(?!\d)/g, 'G$1');
-}
-
-function isComment(line: string) {
-  return line.startsWith(';') || line.startsWith('(');
-}
-
-function removeInlineComments(line: string) {
-  return line.replace(/[;(].*$/, '').trim();
-}
-
-function getMotionCommand(line: string) {
-  const motion = line.match(MOTION_COMMAND_PATTERN);
-  return motion ? `G${motion[1]}` : null;
-}
-
-function getModalMotionCommand(state: ParserState, line: string) {
-  if (!state.modalMotion) return null;
-  return hasCoordinateOrArcParameter(line) ? state.modalMotion : null;
-}
-
-function hasCoordinateOrArcParameter(line: string) {
-  COORDINATE_PATTERN.lastIndex = 0;
-  ARC_CENTER_PATTERN.lastIndex = 0;
-  return COORDINATE_PATTERN.test(line) || ARC_CENTER_PATTERN.test(line);
-}
-
-function isKnownNonMotionCommand(line: string) {
-  return [
-    /^%$/,
-    /^G17(?=\D|$)/,
-    /^G18(?=\D|$)/,
-    /^G19(?=\D|$)/,
-    /^G20(?=\D|$)/,
-    /^G21(?=\D|$)/,
-    /^G38(?=\D|$)/,
-    /^G4[0-9](?=\D|$)/,
-    /^G5[0-9](?=\D|$)/,
-    /^G90(?=\D|$)/,
-    /^G91(?=\D|$)/,
-    /^G9[4-9](?=\D|$)/,
-    /^M\d+(?=\D|$)/
-  ].some((pattern) => pattern.test(line));
-}
-
-function extractCoordinates(line: string) {
-  const coordinates: Partial<Record<'x' | 'y' | 'z', number>> = {};
-  COORDINATE_PATTERN.lastIndex = 0;
-
-  let match: RegExpExecArray | null;
-  while ((match = COORDINATE_PATTERN.exec(line)) !== null) {
-    const axis = match[1].toLowerCase() as 'x' | 'y' | 'z';
-    coordinates[axis] = round(Number.parseFloat(match[2]));
+  if ((motion?.command === 'G2' || motion?.command === 'G3') && motion.center) {
+    const arc: GCodeArcPathPoint = {
+      type: 'arc',
+      startX: motion.start.x,
+      startY: motion.start.y,
+      endX: motion.end.x,
+      endY: motion.end.y,
+      centerX: motion.center.x,
+      centerY: motion.center.y,
+      clockwise: motion.command === 'G2',
+      line: lineNumber
+    };
+    state.path.push(arc);
+    state.bounds = mergeBounds(state.bounds, calculateArcBounds(arc));
+    state.stats.arcMoves++;
+    state.stats.processedLines++;
+    return;
   }
 
-  return coordinates;
-}
-
-function extractArcCenter(line: string) {
-  const center: Partial<Record<'i' | 'j', number>> = {};
-  ARC_CENTER_PATTERN.lastIndex = 0;
-
-  let match: RegExpExecArray | null;
-  while ((match = ARC_CENTER_PATTERN.exec(line)) !== null) {
-    const axis = match[1].toLowerCase() as 'i' | 'j';
-    center[axis] = round(Number.parseFloat(match[2]));
+  if (block.explicitMotion) {
+    state.stats.processedLines++;
+    return;
   }
 
-  return center;
+  if (isKnownNonMotionBlock(block)) {
+    state.stats.processedLines++;
+    return;
+  }
+
+  if (!block.issues.some((issue) => issue.type === 'error')) {
+    state.warnings.push({
+      line: lineNumber,
+      message: `Unknown G-code command: ${block.cleanedLine}`,
+      type: 'warning'
+    });
+  }
+}
+
+function recordIssues(state: ParserState, block: GCodeBlockResult) {
+  for (const issue of block.issues) {
+    if (issue.type === 'error') {
+      state.errors.push(issue);
+      state.stats.errors++;
+    } else {
+      state.warnings.push(issue);
+    }
+  }
+}
+
+function isKnownNonMotionBlock(block: GCodeBlockResult) {
+  if (block.cleanedLine === '%') return true;
+
+  return block.words.some((word) => {
+    if (word.letter === 'M') return true;
+    if (word.letter !== 'G') return false;
+    return (
+      [17, 18, 19, 20, 21, 38, 60, 90, 90.1, 91, 91.1, 92].includes(word.value) ||
+      (word.value >= 40 && word.value <= 59) ||
+      (word.value >= 94 && word.value <= 99)
+    );
+  });
 }
 
 function createEmptyBounds(): GCodeBounds {
@@ -382,8 +270,4 @@ function normalizeAngle(angle: number) {
 
 function pointsEqual(a: { x: number; y: number }, b: { x: number; y: number }) {
   return Math.abs(a.x - b.x) <= POSITION_EPSILON && Math.abs(a.y - b.y) <= POSITION_EPSILON;
-}
-
-function round(value: number) {
-  return Number(value.toFixed(12));
 }

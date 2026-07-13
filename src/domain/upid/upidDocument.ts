@@ -1,10 +1,19 @@
-import type { DxfDrawingUnits, DxfEntity } from '@/domain/dxf/types';
+import type {
+  AppliedDxfUnits,
+  DxfDrawingUnits,
+  DxfEntity,
+  DxfUnitDeclaration
+} from '@/domain/dxf/types';
+import {
+  createGCodeInterpreterState,
+  interpretGCodeBlock
+} from '@/domain/editor/gcodeBlockInterpreter';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import {
-  pathPlanToGcodeBody,
   postPathPlanToGcode,
   type GcodePostedMove,
   type GcodePostedOperation,
+  type GcodePostResult,
   type GcodePostOptions
 } from '@/domain/path-intel/postGcode';
 import {
@@ -13,6 +22,14 @@ import {
   programLineForBodyLine,
   type GCodeProgramComposition
 } from '@/domain/post/gcodeTemplates';
+import {
+  machineResultFromGenericPost,
+  postUpidForMachine,
+  type GcodePostedBlock,
+  type UpidMachinePostResult
+} from '@/domain/post/upidMachinePost';
+import { scanExecutableGCodeWords } from '@/domain/post/templateModalPolicy';
+import type { MachineProfile } from '@/domain/workbench/types';
 import type {
   OperationOrderStrategy,
   PathDiagnostic,
@@ -33,29 +50,36 @@ import {
   type UpidManualOrderDecision,
   type UpidManualStartDecision
 } from './manualDecisions';
+import { validateUpidDocument } from './validateUpidDocument';
 
 export const UPID_FORMAT_NAME = 'Universal Path Intelligence Document';
 
 export type UniversalPathIntelligenceDocument = PathPlanningDocument;
 
 export interface ComposeUpidGCodeExportInput {
-  footer: string;
-  header: string;
+  coordinatePrecision?: number;
+  footer?: string;
+  header?: string;
   lineEnding?: 'lf' | 'crlf';
+  machine?: MachineProfile;
 }
 
 export interface UpidGCodeExport {
   body: string;
+  blockingDiagnostics: PathDiagnostic[];
+  canDownload: boolean;
   diagnostics: PathDiagnostic[];
   documentTrace: UpidGCodeExportDocumentTrace;
   planning: UpidGCodeExportPlanning;
-  post: ReturnType<typeof postUpidToGcode>;
+  post: UpidMachinePostResult;
   program: GCodeProgramComposition;
+  programBlocks: UpidGCodeProgramBlock[];
   programOperations: UpidGCodeProgramOperation[];
   summary: UpidGCodeExportSummary;
 }
 
 export interface UpidGCodeExportDocumentTrace {
+  appliedUnits: AppliedDxfUnits | null;
   contourCount: number;
   fileName: string | null;
   format: typeof UPID_FORMAT_NAME;
@@ -68,6 +92,7 @@ export interface UpidGCodeExportDocumentTrace {
   sourceEntityCount: number;
   sourceKind: UniversalPathIntelligenceDocument['source']['kind'];
   sourceUnits: DxfDrawingUnits | null;
+  unitDeclaration: DxfUnitDeclaration | null;
 }
 
 export interface UpidGCodeExportPlanning {
@@ -88,6 +113,10 @@ export interface UpidGCodeProgramMove extends GcodePostedMove {
   programLineNumber: number;
   segmentIndex: number | null;
   segmentOrdinal: number | null;
+}
+
+export interface UpidGCodeProgramBlock extends GcodePostedBlock {
+  programLineNumber: number;
 }
 
 export interface UpidGCodeProgramOperation extends Omit<GcodePostedOperation, 'moves'> {
@@ -130,19 +159,21 @@ export function postUpidToGcodeBody(
   document: UniversalPathIntelligenceDocument,
   options: GcodePostOptions = {}
 ) {
-  return pathPlanToGcodeBody(document.plan, document.segments, {
-    ...document.options,
-    ...options
-  });
+  return postUpidToGcode(document, options).body;
 }
 
 export function postUpidToGcode(
   document: UniversalPathIntelligenceDocument,
   options: GcodePostOptions = {}
 ) {
+  const validation = validateUpidDocument(document);
+  if (!validation.valid) return blockedPost(validation.blockingDiagnostics);
+
   return postPathPlanToGcode(document.plan, document.segments, {
     ...document.options,
-    ...options
+    ...options,
+    endpointTolerance: effectiveDocumentEndpointTolerance(document),
+    coincidenceEpsilon: document.options.coincidenceEpsilon
   });
 }
 
@@ -150,80 +181,194 @@ export function composeUpidGCodeExport(
   document: UniversalPathIntelligenceDocument,
   input: ComposeUpidGCodeExportInput
 ): UpidGCodeExport {
-  const post = postUpidToGcode(document, {
-    arcCenterMode: inferArcCenterModeFromHeader(input.header)
+  const machine = input.machine;
+  const header = machine ? machine.templates.header : input.header ?? '';
+  const footer = machine ? machine.templates.footer : input.footer ?? '';
+  const candidatePost = machine
+    ? postUpidForMachine(document, machine)
+    : machineResultFromGenericPost(
+        postUpidToGcode(document, {
+          arcCenterMode: inferArcCenterModeFromHeader(header),
+          coordinatePrecision: input.coordinatePrecision
+        })
+      );
+  const inchUnitSources = unsupportedInchUnitSources({
+    body: candidatePost.body,
+    footer,
+    header,
+    machine
   });
+  const post = inchUnitSources.length > 0
+    ? blockPostForUnsupportedInchUnits(candidatePost, inchUnitSources)
+    : candidatePost;
   const body = post.body;
-  const diagnostics = [...document.diagnostics, ...post.diagnostics];
+  const documentDiagnostics = Array.isArray(document?.diagnostics) ? document.diagnostics : [];
+  const diagnostics = uniqueDiagnostics([...documentDiagnostics, ...post.diagnostics]);
+  const blockingDiagnostics =
+    post.status === 'blocked'
+      ? uniqueDiagnostics(post.diagnostics.filter((diagnostic) => diagnostic.severity === 'error'))
+      : [];
   const planning = summarizeExportPlanning(document);
   const program = composeGCodeProgramWithLineMap({
-    header: input.header,
+    header: post.programOwned ? '' : header,
     body,
-    footer: input.footer,
-    lineEnding: input.lineEnding
+    footer: post.programOwned ? '' : footer,
+    lineEnding: machine?.output.lineEnding ?? input.lineEnding
   });
 
   return {
     body,
+    blockingDiagnostics,
+    canDownload: post.status === 'ready',
     diagnostics,
     documentTrace: traceUpidDocumentForExport(document),
     planning,
     post,
     program,
-    programOperations: mapProgramOperations(document, post.operations, program),
+    programBlocks: post.blocks.map((block) => ({
+      ...block,
+      programLineNumber: programLineForBodyLine(program.sections.body, block.bodyLineIndex)
+    })),
+    programOperations:
+      post.status === 'ready' ? mapProgramOperations(document, post.operations, program) : [],
     summary: {
       ...planning,
       diagnosticCount: diagnostics.length,
-      operationCount: document.plan.operations.length,
+      operationCount: post.operations.length,
       postDiagnosticCount: post.diagnostics.length
     }
   };
 }
 
-function inferArcCenterModeFromHeader(header: string): GcodePostOptions['arcCenterMode'] {
-  let mode: GcodePostOptions['arcCenterMode'] = 'incremental';
-
-  for (const rawLine of header.split(/\r?\n/)) {
-    const line = rawLine
-      .toUpperCase()
-      .replace(/^N\d+(?:\s+|$)/, '')
-      .replace(/[;(].*$/, '')
-      .trim();
-
-    if (/\bG60\b/.test(line) || /\bG90\.1\b/.test(line)) mode = 'absolute';
-    if (/\bG91\.1\b/.test(line)) mode = 'incremental';
+function unsupportedInchUnitSources(input: {
+  body: string;
+  footer: string;
+  header: string;
+  machine?: MachineProfile;
+}) {
+  const sources: string[] = [];
+  if (input.machine?.controller.unitsCode === 'G20') {
+    sources.push('machine.controller.unitsCode');
   }
+  for (const [section, source] of [
+    ['header', input.header],
+    ['body', input.body],
+    ['footer', input.footer]
+  ] as const) {
+    for (const word of scanExecutableGCodeWords(source)) {
+      if (word.letter === 'G' && word.value === 20) {
+        sources.push(`${section}:${word.lineNumber}`);
+      }
+    }
+  }
+  return [...new Set(sources)];
+}
 
-  return mode;
+function blockPostForUnsupportedInchUnits(
+  post: UpidMachinePostResult,
+  sources: string[]
+): UpidMachinePostResult {
+  const diagnostic: PathDiagnostic = {
+    id: 'diag_post_units_g20_unsupported',
+    severity: 'error',
+    code: 'post-inch-units-unsupported',
+    message: 'G20 inch output is unavailable because UPID coordinates are currently posted in millimetres.',
+    details: {
+      coordinateUnits: 'millimeters',
+      requestedUnits: 'inches',
+      sources
+    }
+  };
+
+  return {
+    ...post,
+    status: 'blocked',
+    body: '',
+    diagnostics: uniqueDiagnostics([...post.diagnostics, diagnostic]),
+    metrics: { rapidCount: 0, cutMoveCount: 0 },
+    moves: [],
+    operations: [],
+    blocks: []
+  };
+}
+
+function blockedPost(diagnostics: PathDiagnostic[]): GcodePostResult {
+  return {
+    status: 'blocked',
+    body: '',
+    diagnostics: uniqueDiagnostics(diagnostics),
+    metrics: { rapidCount: 0, cutMoveCount: 0 },
+    moves: [],
+    operations: []
+  };
+}
+
+function effectiveDocumentEndpointTolerance(document: UniversalPathIntelligenceDocument) {
+  return Math.max(
+    document.options.endpointTolerance,
+    document.options.coincidenceEpsilon,
+    ...document.endpointClusters
+      .filter((cluster) => cluster.method === 'within-tolerance')
+      .map((cluster) => cluster.toleranceUsed)
+  );
+}
+
+function uniqueDiagnostics(diagnostics: PathDiagnostic[]) {
+  const seen = new Set<string>();
+  return diagnostics.filter((diagnostic) => {
+    if (seen.has(diagnostic.id)) return false;
+    seen.add(diagnostic.id);
+    return true;
+  });
+}
+
+function inferArcCenterModeFromHeader(header: string): GcodePostOptions['arcCenterMode'] {
+  const state = createGCodeInterpreterState();
+  header.split(/\r?\n/).forEach((line, index) => {
+    interpretGCodeBlock(state, line, index + 1);
+  });
+  return state.ijMode;
 }
 
 function traceUpidDocumentForExport(
   document: UniversalPathIntelligenceDocument
 ): UpidGCodeExportDocumentTrace {
+  const source = document?.source ?? ({ kind: 'dxf-entities', entityCount: 0 } as const);
   return {
-    contourCount: document.contours.length,
-    fileName: document.source.fileName ?? null,
+    appliedUnits: source.appliedUnits ? structuredClone(source.appliedUnits) : null,
+    contourCount: Array.isArray(document?.contours) ? document.contours.length : 0,
+    fileName: source.fileName ?? null,
     format: UPID_FORMAT_NAME,
-    importedAt: document.source.importedAt ?? null,
-    operationCount: document.plan.operations.length,
-    pathElementCount: document.pathElements.length,
-    projectId: document.source.projectId ?? null,
-    schemaVersion: document.schemaVersion,
-    segmentCount: document.segments.length,
-    sourceEntityCount: document.source.entityCount,
-    sourceKind: document.source.kind,
-    sourceUnits: document.source.units ?? null
+    importedAt: source.importedAt ?? null,
+    operationCount: Array.isArray(document?.plan?.operations)
+      ? document.plan.operations.length
+      : 0,
+    pathElementCount: Array.isArray(document?.pathElements) ? document.pathElements.length : 0,
+    projectId: source.projectId ?? null,
+    schemaVersion: document?.schemaVersion ?? 1,
+    segmentCount: Array.isArray(document?.segments) ? document.segments.length : 0,
+    sourceEntityCount: Number.isInteger(source.entityCount) ? source.entityCount : 0,
+    sourceKind: source.kind === 'dxf-entities' ? source.kind : 'dxf-entities',
+    sourceUnits: source.units ? { ...source.units } : null,
+    unitDeclaration: source.unitDeclaration ? structuredClone(source.unitDeclaration) : null
   };
 }
 
 function summarizeExportPlanning(document: UniversalPathIntelligenceDocument): UpidGCodeExportPlanning {
-  const manualDecisionSummary = summarizeUpidManualDecisions(document.plan.operations);
+  const operations = Array.isArray(document?.plan?.operations) ? document.plan.operations : [];
+  const manualDecisionSummary = summarizeUpidManualDecisions(operations);
+  const operationOrderStrategy = document?.options?.operationOrderStrategy;
 
   return {
     manualDecisionCount: manualDecisionSummary.count,
     manualDecisionCounts: manualDecisionSummary.counts,
     manualOrderCount: manualDecisionSummary.counts.order,
-    operationOrderStrategy: document.options.operationOrderStrategy
+    operationOrderStrategy:
+      operationOrderStrategy === 'nearest' ||
+      operationOrderStrategy === 'source-order' ||
+      operationOrderStrategy === 'inside-out-nearest'
+        ? operationOrderStrategy
+        : 'inside-out-nearest'
   };
 }
 

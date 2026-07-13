@@ -18,27 +18,17 @@ import {
   Save,
   Undo2
 } from 'lucide-react';
-import {
-  useEffect,
-  useState,
-  type Dispatch,
-  type MouseEvent,
-  type ReactNode,
-  type SetStateAction
-} from 'react';
+import { useEffect, useState, type Dispatch, type MouseEvent, type ReactNode, type SetStateAction } from 'react';
 
 import {
   canSetCircleOperationCenterPierceLeadIn,
   type MagnetizeMode,
   type PathMirrorAxis
 } from '@/domain/path-editor/pathDocumentOperations';
+import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
+import type { ManualCompensationSelection } from '@/domain/compensation/intent';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
-import {
-  orientedSegmentEnd,
-  orientedSegmentStart,
-  requiredSegment,
-  segmentMap
-} from '@/domain/path-intel/segments';
+import { orientedSegmentEnd, orientedSegmentStart, requiredSegment, segmentMap } from '@/domain/path-intel/segments';
 import type {
   Bounds2,
   ContourClassification,
@@ -48,6 +38,7 @@ import type {
   PathSegment,
   Point2
 } from '@/domain/path-intel/types';
+import type { MachineProfile } from '@/domain/workbench/types';
 import {
   createUpidProjectRail,
   readUpidEndpointTopologyRows,
@@ -111,6 +102,14 @@ const DOCUMENT_REFERENCE_OPTIONS: Array<{
   { label: 'Max X / Min Y', value: 'max-x-min-y' },
   { label: 'Picked Point', value: 'picked' }
 ];
+
+function formatCompensationIntent(
+  intent: PathPlanningDocument['plan']['operations'][number]['compensationIntent']
+) {
+  if (!intent) return 'not selected';
+  if (intent.mode === 'centerline') return `centreline · ${intent.source}`;
+  return `${intent.keptMaterial} · ${intent.source}`;
+}
 interface DiagnosticGuidance {
   actions: Array<{
     label: string;
@@ -128,13 +127,9 @@ interface EditorPathNavigatorPanelProps {
   magneticSnapEnabled: boolean;
   pathClickMode: 'set-start' | MagnetizeMode | null;
   pathDocument: PathPlanningDocument;
+  machineProfile: MachineProfile;
   expandedPathElementIds: Record<string, boolean>;
-  renderWorkspacePanel?: (
-    id: string,
-    title: string,
-    children: ReactNode,
-    options?: { fill?: boolean }
-  ) => ReactNode;
+  renderWorkspacePanel?: (id: string, title: string, children: ReactNode, options?: { fill?: boolean }) => ReactNode;
   latestMeasurementPoint: Point2 | null;
   measurementPoints: MeasurementPoint[];
   pathTargetXDraft: string;
@@ -167,6 +162,8 @@ interface EditorPathNavigatorPanelProps {
   onPathTranslateXDraftChange: (value: string) => void;
   onPathTranslateYDraftChange: (value: string) => void;
   onSetPathOperationClassification: (classification: ContourClassification) => void;
+  onSetGeometryBasis: (basis: PathPlanningDocument['geometryBasis']) => void;
+  onSetManualCompensation: (selection: ManualCompensationSelection) => void;
   onSetPathOperationCenterPierceLeadIn: () => void;
   onSetPathOperationOrderStrategy: (strategy: OperationOrderStrategy) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
@@ -185,6 +182,7 @@ export function EditorPathNavigatorPanel({
   magneticSnapEnabled,
   pathClickMode,
   pathDocument,
+  machineProfile,
   expandedPathElementIds,
   latestMeasurementPoint,
   measurementPoints,
@@ -215,6 +213,8 @@ export function EditorPathNavigatorPanel({
   onPathTranslateXDraftChange,
   onPathTranslateYDraftChange,
   onSetPathOperationClassification,
+  onSetGeometryBasis,
+  onSetManualCompensation,
   onSetPathOperationCenterPierceLeadIn,
   onSetPathOperationOrderStrategy,
   onSetPathStartFromElement,
@@ -237,17 +237,31 @@ export function EditorPathNavigatorPanel({
   const endpointTopologyPanel = summarizeEndpointTopologyPanel(pathDocument);
   const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
   const pathTreeElementIds = projectRail.operationElements.map((element) => element.id);
+  const selectedEndpointSegmentKey = readSelectedEndpointSegmentKey(
+    projectRail.operationElements,
+    selectedPathElement
+  );
   const selectedOperationIndex = pathDocument.plan.operations.findIndex(
     (operation) => operation.id === selectedPathOperationId
   );
-  const selectedOperation =
-    selectedOperationIndex >= 0 ? pathDocument.plan.operations[selectedOperationIndex] : null;
+  const selectedOperation = selectedOperationIndex >= 0 ? pathDocument.plan.operations[selectedOperationIndex] : null;
+  const compensationResolution = selectedOperation
+    ? resolveControllerCompensation({ document: pathDocument, operation: selectedOperation })
+    : null;
+  const compensationSelection = selectedOperation?.compensationIntent?.source === 'automatic'
+    ? 'automatic'
+    : selectedOperation?.compensationIntent?.mode === 'controller'
+      ? selectedOperation.compensationIntent.keptMaterial
+      : selectedOperation?.compensationIntent?.mode === 'centerline'
+        ? 'centerline'
+        : '';
   const selectedSegmentIndex =
     selectedOperation && selectedPathElement?.segmentId
       ? selectedOperation.segmentRefs.findIndex((ref) => ref.segmentId === selectedPathElement.segmentId)
       : -1;
-  const selectedSegment =
-    selectedPathElement?.segmentId ? segmentsById.get(selectedPathElement.segmentId) ?? null : null;
+  const selectedSegment = selectedPathElement?.segmentId
+    ? (segmentsById.get(selectedPathElement.segmentId) ?? null)
+    : null;
   const selectedSegmentCenter = selectedSegment && selectedSegment.kind !== 'line' ? selectedSegment.center : null;
   const documentBounds = readPathDocumentBounds(pathDocument);
   const documentCenter = readPathDocumentBoundsCenter(pathDocument);
@@ -288,18 +302,26 @@ export function EditorPathNavigatorPanel({
   const hasTransformSelection = Boolean(selectedOperation && selectedGeometryCenter);
   const canOrientDocument = Boolean(documentCenter) && pathDocument.segments.length > 0 && !isSaving;
   const canOrientSelection = hasTransformSelection && !isSaving;
-  const canSetCenterPierceLeadIn =
-    selectedPathOperationId
-      ? canSetCircleOperationCenterPierceLeadIn(pathDocument, selectedPathOperationId) && !isSaving
+  const canSetCenterPierceLeadIn = selectedPathOperationId
+      ? canSetCircleOperationCenterPierceLeadIn(pathDocument, selectedPathOperationId) &&
+        !(
+          pathDocument.geometryBasis === 'finished-contour' &&
+          selectedOperation?.compensationIntent?.mode === 'controller'
+        ) &&
+        !isSaving
       : false;
+  const centerPierceBlockedByControllerCompensation = Boolean(
+    selectedOperation &&
+    pathDocument.geometryBasis === 'finished-contour' &&
+    selectedOperation.compensationIntent?.mode === 'controller'
+  );
   const [pathTransformTarget, setPathTransformTarget] = useState<PathTransformTarget>('document');
   const [pathTransformTargetPinned, setPathTransformTargetPinned] = useState(false);
+  const [expandedSegmentDetailIds, setExpandedSegmentDetailIds] = useState<Record<string, boolean>>({});
   const [documentReferenceMode, setDocumentReferenceMode] = useState<DocumentReferenceMode>('center');
-  const [documentReferenceMeasurementPointId, setDocumentReferenceMeasurementPointId] = useState<string | null>(
-    null
-  );
+  const [documentReferenceMeasurementPointId, setDocumentReferenceMeasurementPointId] = useState<string | null>(null);
   const selectedDocumentReferenceMeasurementPoint = documentReferenceMeasurementPointId
-    ? measurementPoints.find((point) => point.id === documentReferenceMeasurementPointId) ?? null
+    ? (measurementPoints.find((point) => point.id === documentReferenceMeasurementPointId) ?? null)
     : null;
   const latestDocumentReferenceMeasurementPoint = measurementPoints.at(-1) ?? null;
   const pickedDocumentReferencePoint =
@@ -318,10 +340,8 @@ export function EditorPathNavigatorPanel({
   const activePathTransformTarget =
     pathTransformTarget === 'selection' && hasTransformSelection ? 'selection' : 'document';
   const activePathTransformTargetName = activePathTransformTarget === 'document' ? 'document' : 'selection';
-  const activeTransformTargetLabel =
-    activePathTransformTarget === 'document' ? 'Document' : translateTargetLabel;
-  const activeTransformCenter =
-    activePathTransformTarget === 'document' ? documentCenter : selectedGeometryCenter;
+  const activeTransformTargetLabel = activePathTransformTarget === 'document' ? 'Document' : translateTargetLabel;
+  const activeTransformCenter = activePathTransformTarget === 'document' ? documentCenter : selectedGeometryCenter;
   const activeTargetReferencePoint =
     activePathTransformTarget === 'document' ? documentReferencePoint : selectedGeometryCenter;
   const activeTargetReferenceName = activePathTransformTarget === 'document' ? 'reference' : 'center';
@@ -429,13 +449,25 @@ export function EditorPathNavigatorPanel({
     });
   }, [onExpandedPathElementIdsChange, pathDocument, selectedPathElement]);
 
+  useEffect(() => {
+    if (!selectedEndpointSegmentKey) return;
+
+    setExpandedSegmentDetailIds((current) =>
+      current[selectedEndpointSegmentKey] === true
+        ? current
+        : { ...current, [selectedEndpointSegmentKey]: true }
+    );
+  }, [selectedEndpointSegmentKey, selectedPathElement?.pointRole]);
+
   return (
-    <div
-      className="flex h-full min-h-0 flex-col overflow-hidden p-2 text-[10px]"
-      data-editor-project-rail
-    >
-      <section className="work-region-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto" data-upid-path-navigator>
-        {renderWorkspacePanel('path-summary', 'Path Summary', (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden p-2 text-[10px]" data-editor-project-rail>
+      <section
+        className="work-region-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto"
+        data-upid-path-navigator
+      >
+        {renderWorkspacePanel(
+          'path-summary',
+          'Path Summary',
         <div>
           <p className="text-[10px] uppercase text-muted-foreground">Project Rail</p>
           <h2 className="mt-1 text-sm font-semibold">UPID Path Navigator</h2>
@@ -452,8 +484,7 @@ export function EditorPathNavigatorPanel({
             data-upid-topology-summary
           >
             Topology: {endpointTopology.endpointClusterCount} clusters / snapped{' '}
-            {endpointTopology.snappedEndpointClusterCount} / max gap{' '}
-            {endpointTopology.maxEndpointSnapGap.toFixed(3)}
+              {endpointTopology.snappedEndpointClusterCount} / max gap {endpointTopology.maxEndpointSnapGap.toFixed(3)}
             {endpointTopology.ambiguousEndpointClusterCount > 0 && (
               <> / ambiguous {endpointTopology.ambiguousEndpointClusterCount}</>
             )}
@@ -498,9 +529,11 @@ export function EditorPathNavigatorPanel({
             {formatProjectSourceSummary(sourceSummary)}
           </p>
         </div>
-        ))}
+        )}
 
-        {renderWorkspacePanel('path-actions', 'Path Actions', (
+        {renderWorkspacePanel(
+          'path-actions',
+          'Path Actions',
         <div data-upid-path-action-bar>
           <div className="mb-2 flex items-center justify-between gap-2">
             <span className="text-[10px] uppercase text-muted-foreground">Path Action Bar</span>
@@ -517,12 +550,9 @@ export function EditorPathNavigatorPanel({
             <div className="text-[10px] uppercase text-muted-foreground">Active Selection</div>
             {selectedOperation ? (
               <>
-                <div className="mt-0.5 truncate text-[10px] text-foreground">
-                  {selectedOperation.displayName}
-                </div>
+                  <div className="mt-0.5 truncate text-[10px] text-foreground">{selectedOperation.displayName}</div>
                 <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                  order {selectedOperationIndex + 1} /{' '}
-                  {selectedOperation.closed ? 'closed contour' : 'open chain'} /{' '}
+                    order {selectedOperationIndex + 1} / {selectedOperation.closed ? 'closed contour' : 'open chain'} /{' '}
                   {selectedOperation.direction}
                 </div>
                 {selectedSegmentIndex >= 0 && (
@@ -648,6 +678,74 @@ export function EditorPathNavigatorPanel({
             Reapply Planning Mode
           </button>
           <label className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground">
+            Geometry Basis
+            <select
+              aria-label="Geometry basis"
+              className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={isSaving}
+              onChange={(event) =>
+                onSetGeometryBasis(event.currentTarget.value as PathPlanningDocument['geometryBasis'])
+              }
+              value={pathDocument.geometryBasis}
+            >
+              <option value="wire-centre">Wire centre</option>
+              <option value="finished-contour">Finished contour</option>
+            </select>
+          </label>
+          <section
+            className="mt-2 grid gap-1 border border-border bg-background/50 p-1.5"
+            data-upid-compensation-review
+          >
+            <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
+              Compensation
+              <select
+                aria-label="Compensation kept material"
+                className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!selectedOperation || isSaving}
+                onChange={(event) => {
+                  if (event.currentTarget.value === 'automatic' || event.currentTarget.value === '') return;
+                  onSetManualCompensation(event.currentTarget.value as ManualCompensationSelection);
+                }}
+                value={compensationSelection}
+              >
+                <option value="">Choose kept material</option>
+                {compensationSelection === 'automatic' && <option value="automatic">Automatic</option>}
+                <option value="inside">Keep inside</option>
+                <option value="outside">Keep outside</option>
+                <option value="centerline">Centreline</option>
+              </select>
+            </label>
+            <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
+              <dt className="text-muted-foreground">Source</dt>
+              <dd data-testid="compensation-kept-material">
+                {formatCompensationIntent(selectedOperation?.compensationIntent)}
+              </dd>
+              <dt className="text-muted-foreground">Final refs</dt>
+              <dd data-testid="compensation-winding">
+                {compensationResolution?.status === 'ready' ? compensationResolution.winding.toUpperCase() : '—'}
+              </dd>
+              <dt className="text-muted-foreground">Wire side</dt>
+              <dd data-testid="compensation-wire-side">
+                {compensationResolution?.status === 'ready' ? compensationResolution.wireSide : '—'}
+              </dd>
+              <dt className="text-muted-foreground">Controller</dt>
+              <dd data-testid="compensation-code">
+                {compensationResolution?.status === 'ready'
+                  ? `${compensationResolution.code} D${machineProfile.compensation.offsetSelection.index}`
+                  : '—'}
+              </dd>
+              <dt className="text-muted-foreground">Snapshot</dt>
+              <dd data-testid="compensation-machine-status">
+                {machineProfile.controller.verification.status}
+              </dd>
+            </dl>
+            {compensationResolution?.status === 'blocked' && (
+              <p className="text-amber-300" data-testid="compensation-blocker">
+                Blocked: {compensationResolution.reason}
+              </p>
+            )}
+          </section>
+          <label className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground">
             Contour Role
             <select
               aria-label="Contour role"
@@ -683,6 +781,11 @@ export function EditorPathNavigatorPanel({
               className={selectedOperation?.overrides?.leadIn ? activeModeButtonClass : modeButtonClass}
               disabled={!canSetCenterPierceLeadIn}
               onClick={onSetPathOperationCenterPierceLeadIn}
+              title={
+                centerPierceBlockedByControllerCompensation
+                  ? 'Center pierce is unavailable while controller compensation is active.'
+                  : 'Add center pierce lead-in'
+              }
               type="button"
             >
               <Flag className="size-3" />
@@ -692,9 +795,7 @@ export function EditorPathNavigatorPanel({
               aria-label="Magnetize latest point perpendicular"
               aria-pressed={pathClickMode === 'perpendicular'}
               className={pathClickMode === 'perpendicular' ? activeModeButtonClass : modeButtonClass}
-              onClick={() =>
-                onActivatePathClickMode(pathClickMode === 'perpendicular' ? null : 'perpendicular')
-              }
+                onClick={() => onActivatePathClickMode(pathClickMode === 'perpendicular' ? null : 'perpendicular')}
               type="button"
             >
               <Magnet className="size-3" />
@@ -712,9 +813,11 @@ export function EditorPathNavigatorPanel({
             </button>
           </div>
         </div>
-        ))}
+        )}
 
-        {renderWorkspacePanel('path-transform', 'Transform', (
+        {renderWorkspacePanel(
+          'path-transform',
+          'Transform',
         <section data-upid-path-transform>
           <div className="mb-2 flex items-center justify-between gap-2">
             <span className="text-[10px] uppercase text-muted-foreground">Placement</span>
@@ -750,10 +853,7 @@ export function EditorPathNavigatorPanel({
               Selection
             </button>
           </div>
-          <div
-            className="mb-3 border border-border bg-background/35 p-2"
-            data-upid-transform-document-placement
-          >
+            <div className="mb-3 border border-border bg-background/35 p-2" data-upid-transform-document-placement>
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="text-[10px] uppercase text-muted-foreground">Reference</span>
               <select
@@ -765,7 +865,7 @@ export function EditorPathNavigatorPanel({
                   const nextMode = event.currentTarget.value as DocumentReferenceMode;
                   const nextMeasurementPointId =
                     nextMode === 'picked'
-                      ? documentReferenceMeasurementPointId ?? measurementPoints.at(-1)?.id ?? null
+                        ? (documentReferenceMeasurementPointId ?? measurementPoints.at(-1)?.id ?? null)
                       : documentReferenceMeasurementPointId;
                   setDocumentReferenceMode(nextMode);
                   if (nextMode === 'picked' && nextMeasurementPointId !== documentReferenceMeasurementPointId) {
@@ -782,9 +882,12 @@ export function EditorPathNavigatorPanel({
                 ))}
               </select>
             </div>
-            <p className="mb-2 text-[10px] leading-4 text-muted-foreground" data-upid-transform-document-placement-help>
-              Move the active reference or selection center to X0 Y0, or enter a precise target. DXF
-              source extents come from DXF header metadata and are shown unchanged.
+              <p
+                className="mb-2 text-[10px] leading-4 text-muted-foreground"
+                data-upid-transform-document-placement-help
+              >
+                Move the active reference or selection center to X0 Y0, or enter a precise target. DXF source extents
+                come from DXF header metadata and are shown unchanged.
             </p>
             <dl className="grid gap-1 font-mono text-[10px]">
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
@@ -824,17 +927,12 @@ export function EditorPathNavigatorPanel({
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-1">
                 <dt className="uppercase text-muted-foreground">Source Base</dt>
                 <dd className="truncate text-foreground" data-upid-transform-source-base>
-                  {pathDocument.source.drawing?.basePoint
-                    ? formatPoint(pathDocument.source.drawing.basePoint)
-                    : '-'}
+                    {pathDocument.source.drawing?.basePoint ? formatPoint(pathDocument.source.drawing.basePoint) : '-'}
                 </dd>
               </div>
             </dl>
             {documentReferenceMode === 'picked' && (
-              <div
-                className="mt-2 border-t border-border pt-2"
-                data-upid-transform-document-reference-points
-              >
+                <div className="mt-2 border-t border-border pt-2" data-upid-transform-document-reference-points>
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <span className="text-[10px] uppercase text-muted-foreground">Picked Point</span>
                   <span className="truncate text-[10px] text-muted-foreground">
@@ -848,9 +946,7 @@ export function EditorPathNavigatorPanel({
                     data-upid-transform-document-reference-use-latest
                     disabled={!latestDocumentReferenceMeasurementPoint || isSaving}
                     onClick={() => {
-                      setDocumentReferenceMeasurementPointId(
-                        latestDocumentReferenceMeasurementPoint?.id ?? null
-                      );
+                        setDocumentReferenceMeasurementPointId(latestDocumentReferenceMeasurementPoint?.id ?? null);
                       setTargetDraftsFromPoint(latestDocumentReferenceMeasurementPoint);
                     }}
                     type="button"
@@ -893,7 +989,9 @@ export function EditorPathNavigatorPanel({
                 aria-label="Translate X"
                 className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                 data-upid-transform-delta-x
-                disabled={(activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving}
+                  disabled={
+                    (activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving
+                  }
                 inputMode="decimal"
                 onChange={(event) => onPathTranslateXDraftChange(event.currentTarget.value)}
                 type="number"
@@ -906,7 +1004,9 @@ export function EditorPathNavigatorPanel({
                 aria-label="Translate Y"
                 className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                 data-upid-transform-delta-y
-                disabled={(activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving}
+                  disabled={
+                    (activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving
+                  }
                 inputMode="decimal"
                 onChange={(event) => onPathTranslateYDraftChange(event.currentTarget.value)}
                 type="number"
@@ -945,7 +1045,9 @@ export function EditorPathNavigatorPanel({
             <div
               className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-1"
               data-upid-transform-document-orientation={activePathTransformTarget === 'document' ? 'true' : undefined}
-              data-upid-transform-selection-orientation={activePathTransformTarget === 'selection' ? 'true' : undefined}
+                data-upid-transform-selection-orientation={
+                  activePathTransformTarget === 'selection' ? 'true' : undefined
+                }
             >
               <span className="truncate text-[10px] uppercase text-muted-foreground">
                 {activePathTransformTarget}
@@ -956,9 +1058,7 @@ export function EditorPathNavigatorPanel({
                   className={iconButtonClass}
                   disabled={!canOrientActiveTarget}
                   onClick={() =>
-                    activePathTransformTarget === 'document'
-                      ? onRotatePathDocument(-90)
-                      : onRotatePathSelection(-90)
+                      activePathTransformTarget === 'document' ? onRotatePathDocument(-90) : onRotatePathSelection(-90)
                   }
                   title={`Rotate ${activePathTransformTarget} 90 degrees counterclockwise`}
                   type="button"
@@ -1253,9 +1353,11 @@ export function EditorPathNavigatorPanel({
           </div>
           )}
         </section>
-        ))}
+        )}
 
-        {renderWorkspacePanel('path-hover-assist', 'Hover Assist', (
+        {renderWorkspacePanel(
+          'path-hover-assist',
+          'Hover Assist',
         <section data-upid-hover-assist>
           <div className="mb-1 text-[10px] uppercase text-muted-foreground">Hover Assist</div>
           <label className="flex items-center justify-between gap-2">
@@ -1280,9 +1382,11 @@ export function EditorPathNavigatorPanel({
             />
           </label>
         </section>
-        ))}
+        )}
 
-        {renderWorkspacePanel('endpoint-topology', 'Endpoint Topology', (
+        {renderWorkspacePanel(
+          'endpoint-topology',
+          'Endpoint Topology',
         <section data-upid-endpoint-topology>
           <div className="mb-2 flex items-start justify-between gap-2">
             <span className="min-w-0">
@@ -1312,25 +1416,42 @@ export function EditorPathNavigatorPanel({
             className="mb-2 border border-border bg-background/35 px-2 py-1.5 text-[10px] leading-4 text-muted-foreground"
             data-upid-endpoint-topology-help
           >
-            Endpoint topology pairs segment starts and ends into continuous contours. The join map tells you
-            whether the importer found exact joins, tiny healed gaps, open chain clues, or ambiguous endpoint
-            candidates that need review before export.
+              Endpoint topology pairs segment starts and ends into continuous contours. The join map tells you whether
+              the importer found exact joins, tiny healed gaps, open chain clues, or ambiguous endpoint candidates that
+              need review before export.
           </p>
           <div
             className="mb-2 grid grid-cols-2 gap-1 text-[10px]"
             data-upid-endpoint-topology-summary
             title="Endpoint topology explains how segment starts and ends are paired into continuous contours."
           >
-            <TopologyMetric id="exact-joins" label="Exact joins" value={endpointTopologyPanel.exactJoinCount} tone="ok" />
-            <TopologyMetric id="open-ends" label="Open chain clues" value={endpointTopologyPanel.openEndCount} tone={endpointTopologyPanel.openEndCount > 0 ? 'warn' : 'muted'} />
-            <TopologyMetric id="healed-joins" label="Healed joins" value={endpointTopologyPanel.snappedCount} tone={endpointTopologyPanel.snappedCount > 0 ? 'warn' : 'muted'} />
-            <TopologyMetric id="ambiguous" label="Ambiguous joins" value={endpointTopologyPanel.ambiguousCount} tone={endpointTopologyPanel.ambiguousCount > 0 ? 'warn' : 'muted'} />
+              <TopologyMetric
+                id="exact-joins"
+                label="Exact joins"
+                value={endpointTopologyPanel.exactJoinCount}
+                tone="ok"
+              />
+              <TopologyMetric
+                id="open-ends"
+                label="Open chain clues"
+                value={endpointTopologyPanel.openEndCount}
+                tone={endpointTopologyPanel.openEndCount > 0 ? 'warn' : 'muted'}
+              />
+              <TopologyMetric
+                id="healed-joins"
+                label="Healed joins"
+                value={endpointTopologyPanel.snappedCount}
+                tone={endpointTopologyPanel.snappedCount > 0 ? 'warn' : 'muted'}
+              />
+              <TopologyMetric
+                id="ambiguous"
+                label="Ambiguous joins"
+                value={endpointTopologyPanel.ambiguousCount}
+                tone={endpointTopologyPanel.ambiguousCount > 0 ? 'warn' : 'muted'}
+              />
           </div>
           {endpointTopologyRows.length > 0 ? (
-            <div
-              className="border border-border bg-background/35"
-              data-upid-endpoint-topology-list
-            >
+              <div className="border border-border bg-background/35" data-upid-endpoint-topology-list>
               {endpointTopologyRows.map((row) =>
                 renderEndpointTopologyRow({
                   hoveredPathElement,
@@ -1347,9 +1468,11 @@ export function EditorPathNavigatorPanel({
             </p>
           )}
         </section>
-        ))}
+        )}
 
-        {renderWorkspacePanel('path-diagnostics', 'Path Diagnostics', (
+        {renderWorkspacePanel(
+          'path-diagnostics',
+          'Path Diagnostics',
           <section data-upid-diagnostics>
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-[10px] uppercase text-muted-foreground">Path Diagnostics</span>
@@ -1398,10 +1521,7 @@ export function EditorPathNavigatorPanel({
                 </ol>
               </div>
             )}
-            <div
-              className="border border-border bg-background/35"
-              data-upid-diagnostics-list
-            >
+            <div className="border border-border bg-background/35" data-upid-diagnostics-list>
               {pathDiagnostics.length > 0 ? (
                 pathDiagnostics.map((diagnostic) =>
                   renderDiagnosticRow({
@@ -1420,9 +1540,11 @@ export function EditorPathNavigatorPanel({
               )}
             </div>
           </section>
-        ))}
+        )}
 
-        {renderWorkspacePanel('cut-sequence', 'Cut Sequence', (
+        {renderWorkspacePanel(
+          'cut-sequence',
+          'Cut Sequence',
         <section className="-m-2" data-upid-cut-sequence data-upid-cut-sequence-list>
           {cutSequenceElements.map((pathElement) =>
             renderCutSequenceRow({
@@ -1437,15 +1559,15 @@ export function EditorPathNavigatorPanel({
             })
           )}
         </section>
-        ))}
+        )}
 
-        {renderWorkspacePanel('contour-tree', 'Contour Tree', (
+        {renderWorkspacePanel(
+          'contour-tree',
+          'Contour Tree',
         <section className="min-h-0" data-upid-contour-tree>
           <div className="mb-2 flex items-center gap-1" data-upid-path-tree-controls>
             <div className="mr-auto flex items-center gap-1">
-              <span className="text-[10px] text-muted-foreground">
-                {projectRail.summary.rootCount} roots
-              </span>
+                <span className="text-[10px] text-muted-foreground">{projectRail.summary.rootCount} roots</span>
               <div className="group relative">
                 <button
                   aria-describedby="contour-tree-help-tooltip"
@@ -1462,9 +1584,9 @@ export function EditorPathNavigatorPanel({
                   id="contour-tree-help-tooltip"
                   role="tooltip"
                 >
-                  Hover or select a row to cross-highlight the canvas. A contour is a whole cut loop
-                  made from ordered line or arc segments; each segment exposes start and end endpoint
-                  handles. Inspect joins in Endpoint Topology from Panels or Diagnostics.
+                    Hover or select a row to cross-highlight the canvas. A contour is a whole cut loop made from ordered
+                    line or arc segments; each segment exposes start and end endpoint handles. Inspect joins in Endpoint
+                    Topology from Panels or Diagnostics.
                 </div>
               </div>
             </div>
@@ -1500,12 +1622,19 @@ export function EditorPathNavigatorPanel({
               selectedPathElement,
               selectedPathOperationId,
               segmentsById,
+              expandedSegmentDetailIds,
+              onToggleSegmentDetails: (segmentKey) =>
+                setExpandedSegmentDetailIds((current) => ({
+                  ...current,
+                  [segmentKey]: !(current[segmentKey] ?? false)
+                })),
               togglePathElementExpanded,
               treeDepth: 0
             })
           )}
-        </section>
-        ), { fill: true })}
+          </section>,
+          { fill: true }
+        )}
       </section>
     </div>
   );
@@ -1625,7 +1754,14 @@ function renderEndpointTopologyRow({
   );
 }
 
-function formatEndpointMemberPair(members: Array<{ pointRole: 'start' | 'end' | null; rawEndpointSide: 'start' | 'end'; segmentIndex: number | null; segmentId: string }>) {
+function formatEndpointMemberPair(
+  members: Array<{
+    pointRole: 'start' | 'end' | null;
+    rawEndpointSide: 'start' | 'end';
+    segmentIndex: number | null;
+    segmentId: string;
+  }>
+) {
   const labels = members.slice(0, 2).map((member) => formatEndpointMember(member));
   if (members.length > 2) labels.push(`+${members.length - 2}`);
   return labels.join(' / ');
@@ -1862,22 +1998,19 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic): Diagnos
           { label: 'Open Contour Tree', panelId: 'contour-tree' }
         ],
         title: 'Open chains have unmatched start/end endpoints.',
-        text:
-          'Open Endpoint Topology, select the affected start/end refs below, and inspect the gap in the Contour Tree. If this should be a closed loop, repair or re-import the source endpoints before exporting.'
+        text: 'Open Endpoint Topology, select the affected start/end refs below, and inspect the gap in the Contour Tree. If this should be a closed loop, repair or re-import the source endpoints before exporting.'
       };
     case 'ambiguous-endpoint-cluster':
       return {
         actions: [{ label: 'Open Endpoint Topology', panelId: 'endpoint-topology' }],
         title: 'More than one endpoint pairing is possible inside tolerance.',
-        text:
-          'Open Endpoint Topology and compare the candidate endpoint refs. Simplify the nearby geometry or re-import with cleaner endpoints so the chain order is unambiguous.'
+        text: 'Open Endpoint Topology and compare the candidate endpoint refs. Simplify the nearby geometry or re-import with cleaner endpoints so the chain order is unambiguous.'
       };
     case 'endpoint-cluster-snap':
       return {
         actions: [{ label: 'Open Endpoint Topology', panelId: 'endpoint-topology' }],
         title: 'The importer healed a small endpoint gap.',
-        text:
-          'Inspect the snapped endpoint in Endpoint Topology. If the healed gap is intentional and tiny, continue; if it bridges the wrong edges, fix the source geometry.'
+        text: 'Inspect the snapped endpoint in Endpoint Topology. If the healed gap is intentional and tiny, continue; if it bridges the wrong edges, fix the source geometry.'
       };
     case 'post-bridged-gap':
     case 'post-unexpected-gap':
@@ -1887,8 +2020,7 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic): Diagnos
           { label: 'Open Cut Sequence', panelId: 'cut-sequence' }
         ],
         title: 'The posted path contains a bridge or unexpected travel gap.',
-        text:
-          'Select the affected refs, then check cut order, direction, and endpoint joins before trusting the exported G-code.'
+        text: 'Select the affected refs, then check cut order, direction, and endpoint joins before trusting the exported G-code.'
       };
     case 'invalid-arc':
     case 'invalid-polyline':
@@ -1896,16 +2028,14 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic): Diagnos
       return {
         actions: [{ label: 'Open Contour Tree', panelId: 'contour-tree' }],
         title: 'The source entity could not become clean cut geometry.',
-        text:
-          'Select the affected refs, then repair the source entity or remove duplicate/invalid geometry before importing again.'
+        text: 'Select the affected refs, then repair the source entity or remove duplicate/invalid geometry before importing again.'
       };
     case 'self-intersection':
     case 'degenerate-contour':
       return {
         actions: [{ label: 'Open Contour Tree', panelId: 'contour-tree' }],
         title: 'The contour shape is not a clean closed machining loop.',
-        text:
-          'Inspect the highlighted contour and segment rows. Repair overlapping, crossing, or collapsed geometry before relying on automatic ordering.'
+        text: 'Inspect the highlighted contour and segment rows. Repair overlapping, crossing, or collapsed geometry before relying on automatic ordering.'
       };
     case 'branching-topology':
     case 'closed-chain-gap':
@@ -1916,8 +2046,7 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic): Diagnos
           { label: 'Open Cut Sequence', panelId: 'cut-sequence' }
         ],
         title: 'The path graph needs manual inspection.',
-        text:
-          'Use the affected refs and Contour Tree to find the conflicting joins, then fix the source geometry or adjust ordering manually.'
+        text: 'Use the affected refs and Contour Tree to find the conflicting joins, then fix the source geometry or adjust ordering manually.'
       };
     default:
       return null;
@@ -2017,8 +2146,7 @@ function renderCutSequenceRow({
         <span className="min-w-0">
           <span className="block truncate text-[10px]">{label}</span>
           <span className="block truncate text-[10px] text-muted-foreground">
-            {pathElement.label} / {pathElement.closed ? 'closed contour' : 'open chain'} /{' '}
-            {pathElement.direction}
+            {pathElement.label} / {pathElement.closed ? 'closed contour' : 'open chain'} / {pathElement.direction}
           </span>
           <span className="block truncate text-[10px] text-muted-foreground">
             {upidPathElementNestLabel(pathElement)}
@@ -2075,13 +2203,38 @@ function renderCutSequenceRow({
   );
 }
 
+function segmentDetailsKey(pathElementId: string, segmentId: string, index: number) {
+  return `${pathElementId}:${segmentId}:${index}`;
+}
+
+function readSelectedEndpointSegmentKey(
+  elements: UpidOperationPathElement[],
+  selectedPathElement: EditorPathElementRef | null
+) {
+  if (!selectedPathElement?.pointRole || !selectedPathElement.segmentId) return null;
+
+  const owner = elements.find(
+    (element) =>
+      (selectedPathElement.pathElementId
+        ? element.id === selectedPathElement.pathElementId
+        : element.operationId === selectedPathElement.operationId) &&
+      element.segmentRefs.some((ref) => ref.segmentId === selectedPathElement.segmentId)
+  );
+  if (!owner) return null;
+
+  const index = owner.segmentRefs.findIndex((ref) => ref.segmentId === selectedPathElement.segmentId);
+  return index < 0 ? null : segmentDetailsKey(owner.id, selectedPathElement.segmentId, index);
+}
+
 function renderContourTreeNode({
+  expandedSegmentDetailIds,
   hoveredPathElement,
   isSaving,
   node,
   onHoverPathElement,
   onSelectPathElement,
   onSetPathStartFromElement,
+  onToggleSegmentDetails,
   pathDocument,
   isPathElementExpanded,
   selectedPathElement,
@@ -2090,6 +2243,7 @@ function renderContourTreeNode({
   togglePathElementExpanded,
   treeDepth
 }: {
+  expandedSegmentDetailIds: Record<string, boolean>;
   hoveredPathElement: EditorPathElementRef | null;
   isSaving: boolean;
   isPathElementExpanded: (pathElementId: string) => boolean;
@@ -2097,6 +2251,7 @@ function renderContourTreeNode({
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
+  onToggleSegmentDetails: (segmentKey: string) => void;
   pathDocument: PathPlanningDocument;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
@@ -2117,14 +2272,25 @@ function renderContourTreeNode({
     pathElementId: element.id,
     segmentId: null
   });
+  const workbookNumber = String(element.orderIndex + 1).padStart(2, '0');
+  const contourRef: EditorPathElementRef = {
+    operationId: element.operationId,
+    pathElementId: element.id,
+    segmentId: null
+  };
+  const contourHelp = formatContourRowHelp({
+    contourKindLabel,
+    diagnosticSummary,
+    editedSegmentCount,
+    element,
+    manualDecisions,
+    node,
+    sourceEntityCount
+  });
 
   return (
     <details
-      className={
-        nested
-          ? 'ml-3 border-l border-border/80 bg-background/20 pl-2'
-          : 'mb-1 border border-border bg-background/45'
-      }
+      className={`mb-2 overflow-hidden border bg-background/45 ${nested ? 'border-sky-400/25' : 'border-border'}`}
       data-upid-expanded={expanded ? 'true' : 'false'}
       data-upid-hovered={hoveredPathElement?.operationId === element.operationId ? 'true' : undefined}
       data-upid-contour-group={element.id}
@@ -2140,7 +2306,7 @@ function renderContourTreeNode({
     >
       <summary className="list-none" onClick={(event) => event.preventDefault()}>
         <div
-          className={`grid w-full grid-cols-[22px_minmax(0,1fr)] items-stretch hover:bg-accent ${
+          className={`grid w-full grid-cols-[34px_minmax(0,1fr)_28px] items-stretch ${
             element.operationId === selectedPathOperationId
               ? 'bg-sky-500/15 text-sky-100'
               : hoveredPathElement?.operationId === element.operationId
@@ -2148,23 +2314,16 @@ function renderContourTreeNode({
                 : ''
           }`}
         >
-          <button
-            aria-expanded={expanded}
-            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
-            className="flex items-center justify-center text-muted-foreground outline-none hover:bg-accent"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              togglePathElementExpanded(element.id);
-            }}
-            type="button"
+          <span
+            className="flex items-center justify-center border-r border-border bg-sky-400/5 font-mono text-[11px] font-semibold text-sky-200"
+            data-upid-contour-field="order"
           >
-            {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-          </button>
+            {workbookNumber}
+          </span>
           <button
             aria-label={`Select ${label}`}
             aria-pressed={element.operationId === selectedPathOperationId}
-            className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)] items-start gap-1 px-1.5 py-1.5 text-left outline-none hover:bg-accent"
+            className="min-w-0 px-2 py-1.5 text-left outline-none"
             data-upid-contour-children={element.childIds.length}
             data-upid-contour-depth={element.containmentDepth}
             data-upid-contour-display-name={element.displayName}
@@ -2174,6 +2333,7 @@ function renderContourTreeNode({
             data-upid-contour-diagnostics={diagnosticSummary.count}
             data-upid-contour-label={element.label}
             data-upid-contour-manual={manualDecisions.length > 0 ? manualDecisions.join(' ') : undefined}
+            data-upid-contour-order={element.orderIndex + 1}
             data-upid-contour-parent={element.parentId ?? undefined}
             data-upid-contour-role={element.classification}
             data-upid-contour-row
@@ -2193,43 +2353,26 @@ function renderContourTreeNode({
                 ? 'true'
                 : undefined
             }
-            title={`${label}: ${contourKindLabel}. Selects and highlights the whole contour on the canvas.`}
+            onBlur={() => onHoverPathElement(null)}
             onClick={(event) => {
               event.preventDefault();
-              onSelectPathElement({
-                operationId: element.operationId,
-                pathElementId: element.id,
-                segmentId: null
-              });
+              onSelectPathElement(contourRef);
             }}
-            onMouseEnter={() =>
-              onHoverPathElement({
-                operationId: element.operationId,
-                pathElementId: element.id,
-                segmentId: null
-              })
-            }
+            onFocus={() => onHoverPathElement(contourRef)}
+            onMouseEnter={() => onHoverPathElement(contourRef)}
             onMouseLeave={() => onHoverPathElement(null)}
+            onPointerEnter={() => onHoverPathElement(contourRef)}
+            onPointerLeave={() => onHoverPathElement(null)}
+            title={contourHelp}
             type="button"
           >
-            <span
-              className="flex flex-col items-center gap-0.5 pt-0.5 text-center text-muted-foreground"
-              data-upid-tree-depth-rail="contour"
-            >
-              <span className="text-[10px] uppercase" data-upid-tree-depth-label="contour">
-                Contour
-              </span>
-              <span className="text-[10px] uppercase">#{element.orderIndex + 1}</span>
-              <span className="h-full min-h-6 border-l border-border/80" aria-hidden="true" />
-            </span>
             <span className="min-w-0">
-              <span className="flex min-w-0 flex-wrap items-center gap-1">
+              <span className="flex min-w-0 items-center gap-1.5">
                 <span
-                  className="shrink-0 border border-sky-400/35 bg-sky-400/10 px-1 text-[10px] uppercase text-sky-100"
+                  className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground"
                   data-upid-tree-kind-label
-                  title="Contour row: selects the complete path operation and highlights the whole loop on the canvas."
                 >
-                  Contour
+                  {label}
                 </span>
                 <span
                   className={`shrink-0 border px-1 text-[10px] uppercase ${
@@ -2239,58 +2382,48 @@ function renderContourTreeNode({
                   }`}
                   data-upid-contour-node-summary
                 >
-                  {contourKindLabel}
-                </span>
-                <span className="truncate text-[10px] text-foreground">{label}</span>
+                  {element.closed ? 'Closed' : 'Open'}
               </span>
-              <span
-                className="mt-0.5 block text-[10px] uppercase tracking-normal text-muted-foreground"
-                data-upid-tree-action-hint
-              >
-                selects whole contour on canvas
-              </span>
-              <span className="mt-1 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
-                <span className="border border-border bg-background/45 px-1" data-upid-contour-field="role">
-                  Role <span className="text-foreground">{element.classification}</span>
                 </span>
-                <span className="border border-border bg-background/45 px-1" data-upid-contour-field="order">
-                  Cut order <span className="text-foreground">{element.orderIndex + 1}</span>
+              <span className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
+                <span className="capitalize" data-upid-contour-field="role">
+                  {element.classification}
                 </span>
-                <span className="border border-border bg-background/45 px-1" data-upid-contour-field="segments">
-                  Segments <span className="text-foreground">{node.treeMetrics.directSegmentCount}</span>
-                  {node.treeMetrics.totalSegmentCount !== node.treeMetrics.directSegmentCount && (
-                    <> / total {node.treeMetrics.totalSegmentCount}</>
+                <span data-upid-contour-field="cut-length">Cut {element.metrics.cutLength.toFixed(3)}</span>
+                <span data-upid-contour-field="segments">{node.treeMetrics.directSegmentCount} steps</span>
+                {diagnosticSummary.count > 0 && (
+                  <span className="text-amber-200">{diagnosticSummary.count} issues</span>
                   )}
                 </span>
-                <span className="border border-border bg-background/45 px-1" data-upid-contour-field="cut-length">
-                  Cut <span className="text-foreground">{element.metrics.cutLength.toFixed(3)}</span>
-                </span>
+              <span className="sr-only" data-upid-tree-action-hint>
+                Selects whole contour on canvas
               </span>
-              <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
-                Source {element.label} / direction {element.direction}
-              </span>
-              <span className="block truncate text-[10px] text-muted-foreground">
-                {upidPathElementNestLabel(element)}
-              </span>
-              <span className="block truncate text-[10px] text-muted-foreground">
-                {formatTreeMetrics(node.treeMetrics)}
-              </span>
-              {renderManualDecisionBadges(manualDecisions)}
-              {renderDiagnosticSummaryBadge(diagnosticSummary)}
             </span>
+          </button>
+          <button
+            aria-expanded={expanded}
+            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
+            className="flex items-center justify-center border-l border-border text-muted-foreground outline-none hover:bg-accent"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              togglePathElementExpanded(element.id);
+            }}
+            title={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
+            type="button"
+          >
+            {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           </button>
         </div>
       </summary>
       {expanded && (
-        <div className="border-t border-border bg-card/35 py-1" data-upid-segment-stack>
+        <div className="border-t border-border bg-card/35" data-upid-segment-stack>
+          <div className="flex items-center justify-between border-b border-border px-2 py-1 text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+            <span>Cut path</span>
+            <span>{element.segmentRefs.length} steps</span>
+          </div>
           {element.overrides?.leadIn &&
-            renderLeadInRow(
-              element,
-              hoveredPathElement,
-              selectedPathElement,
-              onHoverPathElement,
-              onSelectPathElement
-            )}
+            renderLeadInRow(element, hoveredPathElement, selectedPathElement, onHoverPathElement, onSelectPathElement)}
           {element.segmentRefs.map((ref, index) =>
             renderSegmentRow(
               element,
@@ -2303,21 +2436,35 @@ function renderContourTreeNode({
               onHoverPathElement,
               onSelectPathElement,
               onSetPathStartFromElement,
-              isSaving
+              isSaving,
+              expandedSegmentDetailIds[segmentDetailsKey(element.id, ref.segmentId, index)] ?? false,
+              () => onToggleSegmentDetails(segmentDetailsKey(element.id, ref.segmentId, index))
             )
           )}
         </div>
       )}
       {expanded && node.children.length > 0 && (
-        <div className="py-1" data-upid-contour-children-list>
+        <div
+          className="border-t border-sky-400/20 bg-sky-400/[0.03] p-2"
+          data-upid-contour-children-list
+          data-upid-nested-contours-section
+        >
+          <div className="mb-2 flex items-center justify-between text-[9px] uppercase tracking-[0.14em] text-sky-200/80">
+            <span>Nested contours</span>
+            <span>
+              {node.children.length} inside {label}
+            </span>
+          </div>
           {node.children.map((child) =>
             renderContourTreeNode({
+              expandedSegmentDetailIds,
               hoveredPathElement,
               isSaving,
               node: child,
               onHoverPathElement,
               onSelectPathElement,
               onSetPathStartFromElement,
+              onToggleSegmentDetails,
               isPathElementExpanded,
               pathDocument,
               selectedPathElement,
@@ -2386,6 +2533,40 @@ function formatDiagnosticSummaryLabel(summary: UpidPathDiagnosticSummary) {
   return `${summary.firstCode} +${summary.count - 1}`;
 }
 
+function formatContourRowHelp({
+  contourKindLabel,
+  diagnosticSummary,
+  editedSegmentCount,
+  element,
+  manualDecisions,
+  node,
+  sourceEntityCount
+}: {
+  contourKindLabel: string;
+  diagnosticSummary: UpidPathDiagnosticSummary;
+  editedSegmentCount: number;
+  element: UpidOperationPathElement;
+  manualDecisions: UpidManualDecisionKind[];
+  node: UpidProjectRailTreeNode;
+  sourceEntityCount: number;
+}) {
+  const nesting = element.parentId
+    ? `depth ${element.containmentDepth}, nested under ${element.parentId}`
+    : `depth ${element.containmentDepth}, root contour`;
+  const manual =
+    manualDecisions.length === 0
+      ? 'automatic decisions'
+      : `manual ${manualDecisions
+          .map((decision) => (decision === 'direction' ? `direction ${element.direction}` : decision))
+          .join(', ')}`;
+  const diagnostics =
+    diagnosticSummary.count === 0
+      ? 'diagnostics clean'
+      : `diagnostics ${diagnosticSummary.count}: ${diagnosticSummary.codes.join(', ')}`;
+
+  return `${contourKindLabel.toLowerCase()}; ${nesting}; direction ${element.direction}; provenance ${element.label}; source ${sourceEntityCount} ${sourceEntityCount === 1 ? 'entity' : 'entities'}; edits ${editedSegmentCount}; topology ${formatTreeMetrics(node.treeMetrics)}; ${diagnostics}; ${manual}. Selects and highlights the whole contour.`;
+}
+
 function formatTreeMetrics(metrics: UpidProjectRailTreeNode['treeMetrics']) {
   const segmentLabel = metrics.directSegmentCount === 1 ? 'segment' : 'segments';
   if (metrics.descendantCount === 0) return `${metrics.directSegmentCount} ${segmentLabel}`;
@@ -2399,9 +2580,7 @@ function formatPathManualDecisionCount(count: number) {
   return `${count} manual ${count === 1 ? 'decision' : 'decisions'}`;
 }
 
-function formatPathManualDecisionBreakdown(
-  counts: Record<UpidManualDecisionKind, number>
-) {
+function formatPathManualDecisionBreakdown(counts: Record<UpidManualDecisionKind, number>) {
   return `order ${counts.order} / role ${counts.role} / direction ${counts.direction} / start ${counts.start} / lead-in ${counts['lead-in']}`;
 }
 
@@ -2435,6 +2614,33 @@ function formatSourceLayers(layers: Array<string | null>) {
   return layers.map((layer) => layer ?? '-').join(', ');
 }
 
+function formatSegmentRowHelp({
+  diagnosticSummary,
+  index,
+  pathElement,
+  ref,
+  segment
+}: {
+  diagnosticSummary: UpidPathDiagnosticSummary;
+  index: number;
+  pathElement: UpidOperationPathElement;
+  ref: OrientedSegmentRef;
+  segment: PathSegment;
+}) {
+  const sourceHandle = segment.source.sourceEntityHandle
+    ? ` handle ${segment.source.sourceEntityHandle}`
+    : '';
+  const sourceSubIndex =
+    segment.source.sourceSubIndex === undefined ? '' : ` part ${segment.source.sourceSubIndex + 1}`;
+  const edit = segment.source.edit ? `; edit ${segment.source.edit.kind}` : '; unedited';
+  const diagnostics =
+    diagnosticSummary.count === 0
+      ? 'diagnostics clean'
+      : `diagnostics ${diagnosticSummary.count}: ${diagnosticSummary.codes.join(', ')}`;
+
+  return `${segment.kind} segment ${index + 1} in ${pathElement.displayName}; ${ref.reversed ? 'reversed' : 'forward'} reference; source ${segment.source.sourceEntityType} entity ${segment.source.sourceEntityIndex + 1}${sourceHandle}${sourceSubIndex}; ${segment.source.exact ? 'exact' : 'approximated'} provenance; layer ${segment.layer ?? '-'}${edit}; ${diagnostics}. Selects and highlights one segment.`;
+}
+
 function renderLeadInRow(
   pathElement: UpidOperationPathElement,
   hoveredPathElement: EditorPathElementRef | null,
@@ -2452,11 +2658,9 @@ function renderLeadInRow(
     travelRole: 'lead-in'
   };
   const hovered =
-    hoveredPathElement?.operationId === pathElement.operationId &&
-    hoveredPathElement.travelRole === 'lead-in';
+    hoveredPathElement?.operationId === pathElement.operationId && hoveredPathElement.travelRole === 'lead-in';
   const selected =
-    selectedPathElement?.operationId === pathElement.operationId &&
-    selectedPathElement.travelRole === 'lead-in';
+    selectedPathElement?.operationId === pathElement.operationId && selectedPathElement.travelRole === 'lead-in';
   const length = Math.hypot(leadIn.to.x - leadIn.from.x, leadIn.to.y - leadIn.from.y);
 
   return (
@@ -2470,8 +2674,9 @@ function renderLeadInRow(
       key={`${pathElement.id}-lead-in`}
     >
       <button
+        aria-label={`Select lead-in for ${pathElement.displayName}`}
         aria-pressed={selected}
-        className={`grid w-full grid-cols-[28px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent ${
+        className={`grid w-full grid-cols-[28px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[10px] text-muted-foreground outline-none ${
           selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
         }`}
         data-upid-hovered={hovered ? 'true' : undefined}
@@ -2479,10 +2684,14 @@ function renderLeadInRow(
         data-upid-tree-row-action="select-lead-in"
         data-upid-tree-row-kind="lead-in"
         data-upid-tree-row-level="1"
+        onBlur={() => onHoverPathElement(null)}
         onClick={() => onSelectPathElement(element)}
+        onFocus={() => onHoverPathElement(element)}
         onMouseEnter={() => onHoverPathElement(element)}
         onMouseLeave={() => onHoverPathElement(null)}
-        title={`Lead-in cut from ${formatPoint(leadIn.from)} to ${formatPoint(leadIn.to)}.`}
+        onPointerEnter={() => onHoverPathElement(element)}
+        onPointerLeave={() => onHoverPathElement(null)}
+        title={`Lead-in cut for ${pathElement.displayName}: ${formatPoint(leadIn.from)} → ${formatPoint(leadIn.to)}; length ${length.toFixed(3)}. Selects and highlights the lead-in.`}
         type="button"
       >
         <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="lead-in">
@@ -2510,9 +2719,7 @@ function renderLeadInRow(
             selects pierce cut on canvas
           </span>
           <span className="block truncate" data-upid-lead-in-span>
-            {formatPoint(leadIn.from)}
-            {' -> '}
-            {formatPoint(leadIn.to)}
+            {formatPoint(leadIn.from)} → {formatPoint(leadIn.to)}
           </span>
           <span className="mt-1 grid gap-0.5 text-[10px]">
             <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-lead-in-field="from">
@@ -2545,12 +2752,13 @@ function renderSegmentRow(
   onHoverPathElement: (element: EditorPathElementRef | null) => void,
   onSelectPathElement: (element: EditorPathElementRef) => void,
   onSetPathStartFromElement: (element: EditorPathElementRef) => void,
-  isSaving: boolean
+  isSaving: boolean,
+  detailsExpanded: boolean,
+  onToggleDetails: () => void
 ) {
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
   const segmentLength = segment.length.toFixed(3);
-  const refDirection = ref.reversed ? 'reversed ref' : 'forward ref';
   const geometry = readUpidSegmentGeometry(segment, ref);
   const geometrySummary = formatSegmentGeometrySummary(geometry);
   const segmentKindLabel = `${segment.kind.toUpperCase()} segment`;
@@ -2567,17 +2775,33 @@ function renderSegmentRow(
     selectedPathElement?.operationId === pathElement.operationId &&
     selectedPathElement.segmentId === segment.id &&
     !selectedPathElement.pointRole;
+  const element: EditorPathElementRef = {
+    operationId: pathElement.operationId,
+    pathElementId: pathElement.id,
+    segmentId: segment.id
+  };
+  const detailsId = `upid-segment-details-${pathElement.id}-${index}`;
+  const segmentHelp = formatSegmentRowHelp({
+    diagnosticSummary,
+    index,
+    pathElement,
+    ref,
+    segment
+  });
 
   return (
     <div
-      className="border-l border-border/70 pl-2"
+      className="border-b border-border/70 last:border-b-0"
+      data-upid-segment-details-expanded={detailsExpanded ? 'true' : 'false'}
       data-upid-path-element-id={pathElement.id}
       data-upid-segment-group
       key={`${pathElement.id}-${segment.id}-${index}`}
     >
+      <div className="grid grid-cols-[minmax(0,1fr)_28px]">
       <button
+        aria-label={`Select segment ${index + 1} in ${pathElement.displayName}`}
         aria-pressed={selected}
-        className={`grid w-full grid-cols-[28px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent ${
+          className={`grid min-w-0 grid-cols-[30px_minmax(0,1fr)] items-center gap-1.5 px-2 py-1.5 text-left text-[10px] text-muted-foreground outline-none ${
           selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
         }`}
         data-upid-hovered={hovered ? 'true' : undefined}
@@ -2591,9 +2815,7 @@ function renderSegmentRow(
         data-upid-segment-geometry={geometry.kind}
         data-upid-segment-index={index}
         data-upid-segment-length={segmentLength}
-        data-upid-segment-orientation={
-          geometry.kind === 'line' ? undefined : geometry.clockwise ? 'cw' : 'ccw'
-        }
+          data-upid-segment-orientation={geometry.kind === 'line' ? undefined : geometry.clockwise ? 'cw' : 'ccw'}
         data-upid-segment-radius={geometry.kind === 'line' ? undefined : formatNumber(geometry.radius)}
         data-upid-segment-reversed={ref.reversed ? 'true' : 'false'}
         data-upid-segment-sweep={geometry.kind === 'line' ? undefined : formatNumber(geometry.sweepDegrees)}
@@ -2602,60 +2824,73 @@ function renderSegmentRow(
         data-upid-tree-row-action="select-segment"
         data-upid-tree-row-kind="segment"
         data-upid-tree-row-level="1"
-        title={`${segmentKindLabel}. Selects and highlights one segment of ${pathElement.displayName}.`}
-        onClick={() =>
-          onSelectPathElement({
-            operationId: pathElement.operationId,
-            pathElementId: pathElement.id,
-            segmentId: segment.id
-          })
-        }
-        onMouseEnter={() =>
-          onHoverPathElement({
-            operationId: pathElement.operationId,
-            pathElementId: pathElement.id,
-            segmentId: segment.id
-          })
-        }
+        onBlur={() => onHoverPathElement(null)}
+        onClick={() => onSelectPathElement(element)}
+        onFocus={() => onHoverPathElement(element)}
+        onMouseEnter={() => onHoverPathElement(element)}
         onMouseLeave={() => onHoverPathElement(null)}
+        onPointerEnter={() => onHoverPathElement(element)}
+        onPointerLeave={() => onHoverPathElement(null)}
+        title={segmentHelp}
         type="button"
       >
-        <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="segment">
-          <span className="text-[10px] uppercase" data-upid-tree-depth-label="segment">
-            Segment
-          </span>
-          <span className="text-[10px] uppercase">S{index + 1}</span>
-          <span className="h-full min-h-5 border-l border-border/70" aria-hidden="true" />
-        </span>
-        <span className="min-w-0">
-          <span className="flex min-w-0 flex-wrap items-center gap-1">
             <span
-              className="shrink-0 border border-cyan-400/35 bg-cyan-400/10 px-1 text-[10px] uppercase text-cyan-100"
-              data-upid-tree-kind-label
-              title="Segment row: selects one line or arc inside the contour."
+            className="flex size-7 items-center justify-center border border-border bg-background/50 font-mono text-[10px] text-cyan-100"
+            data-upid-tree-depth-rail="segment"
             >
-              Segment
+            S{index + 1}
             </span>
-            <span
-              className="shrink-0 border border-border bg-background/50 px-1 text-[10px] uppercase text-muted-foreground"
-              data-upid-segment-kind-label
-            >
+          <span className="min-w-0">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="shrink-0 text-[10px] font-medium uppercase text-foreground" data-upid-tree-kind-label>
+                {segment.kind}
+            </span>
+              <span className="truncate" data-upid-segment-span>
+                {formatPoint(start)} → {formatPoint(end)}
+          </span>
+              <span className="ml-auto shrink-0 text-foreground">{segmentLength}</span>
+          </span>
+            {(geometry.kind !== 'line' || diagnosticSummary.count > 0) && (
+              <span className="mt-0.5 flex items-center gap-2 text-[9px] text-muted-foreground">
+                {geometry.kind !== 'line' && (
+                <span>
+                  {geometry.clockwise ? 'CW' : 'CCW'} · R{formatNumber(geometry.radius)}
+                </span>
+                )}
+                {diagnosticSummary.count > 0 && <span className="text-amber-200">{diagnosticSummary.count} issues</span>}
+              </span>
+            )}
+            <span className="sr-only" data-upid-tree-action-hint>
+              Selects one segment on canvas
+            </span>
+            <span className="sr-only" data-upid-segment-kind-label>
               {segmentKindLabel}
             </span>
-            <span className="truncate text-[10px] text-muted-foreground">#{index + 1}</span>
           </span>
-          <span
-            className="mt-0.5 block text-[10px] uppercase tracking-normal text-muted-foreground"
-            data-upid-tree-action-hint
-          >
-            selects one segment on canvas
-          </span>
-          <span className="block truncate" data-upid-segment-span>
-            {formatPoint(start)}
-            {' -> '}
-            {formatPoint(end)}
-          </span>
-          <span className="mt-1 grid gap-0.5 text-[10px]">
+        </button>
+        <button
+          aria-controls={detailsId}
+          aria-expanded={detailsExpanded}
+          aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} segment ${index + 1} details in ${pathElement.displayName}`}
+          className="flex items-center justify-center border-l border-border text-muted-foreground outline-none hover:bg-accent"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onToggleDetails();
+          }}
+          title={`${detailsExpanded ? 'Hide' : 'Show'} exact geometry and endpoints`}
+          type="button"
+        >
+          {detailsExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+        </button>
+      </div>
+      {detailsExpanded && (
+        <div
+          className="border-t border-border bg-background/35 px-2 py-1.5"
+          data-upid-segment-details
+          id={detailsId}
+        >
+          <div className="grid gap-0.5 text-[10px]">
             <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-segment-field="from">
               <span className="uppercase text-muted-foreground">From</span>
               <span className="truncate text-foreground">{formatPoint(start)}</span>
@@ -2666,14 +2901,14 @@ function renderSegmentRow(
             </span>
             <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-segment-field="length">
               <span className="uppercase text-muted-foreground">Length</span>
-              <span className="truncate text-foreground">{segmentLength} / {refDirection}</span>
+              <span className="truncate text-foreground">
+                {segmentLength}
             </span>
           </span>
           {geometrySummary && <span className="block truncate">{geometrySummary}</span>}
           {renderDiagnosticSummaryBadge(diagnosticSummary)}
-        </span>
-      </button>
-      <div className="border-t border-border/70 bg-background/35" data-upid-point-stack>
+          </div>
+          <div className="mt-1 border border-border/70 bg-background/35" data-upid-point-stack>
         {renderPointRow({
           index,
           onHoverPathElement,
@@ -2703,6 +2938,8 @@ function renderSegmentRow(
           selectedPathElement
         })}
       </div>
+    </div>
+      )}
     </div>
   );
 }
@@ -2755,10 +2992,12 @@ function renderPointRow({
     ? `cluster ${endpointCluster.method} / gap ${endpointClusterGap} / ${endpointCluster.memberCount} ends`
     : null;
   const diagnosticSummary = summarizeUpidDiagnosticsForPathElementRef(pathDocument, element);
+  const endpointHelpId = `upid-endpoint-help-${pathElement.id}-${segment.id}-${index}-${role}`;
+  const endpointHelp = `${endpointCluster ? `Endpoint cluster ${endpointCluster.id}` : 'Unpaired endpoint'}: ${role} endpoint of segment ${index + 1} in ${pathElement.displayName} at ${formatPoint(point)}; ${endpointClusterSummary ?? 'no topology pairing'}; ${diagnosticSummary.count === 0 ? 'diagnostics clean' : `diagnostics ${diagnosticSummary.count}: ${diagnosticSummary.codes.join(', ')}`}.`;
 
   return (
     <div
-      className={`grid w-full grid-cols-[34px_minmax(0,1fr)_20px] gap-1 border-l border-border/60 px-1.5 py-1 pl-5 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent ${
+      className={`grid w-full grid-cols-[34px_minmax(0,1fr)_20px] gap-1 border-l border-border/60 px-1.5 py-1 pl-5 text-left text-[10px] text-muted-foreground outline-none ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}
       data-upid-hovered={hovered ? 'true' : undefined}
@@ -2780,9 +3019,10 @@ function renderPointRow({
       data-upid-tree-row-action="select-endpoint"
       data-upid-tree-row-kind="endpoint"
       data-upid-tree-row-level="2"
-      title={`Endpoint cluster ${endpointCluster?.id ?? 'unpaired'}: ${role} point for segment ${index + 1}.`}
       onMouseEnter={() => onHoverPathElement(element)}
       onMouseLeave={() => onHoverPathElement(null)}
+      onPointerEnter={() => onHoverPathElement(element)}
+      onPointerLeave={() => onHoverPathElement(null)}
     >
       <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="endpoint">
         <span className="text-[10px] uppercase" data-upid-tree-depth-label="endpoint">
@@ -2791,9 +3031,15 @@ function renderPointRow({
         <span className="h-full min-h-5 border-l border-border/60" aria-hidden="true" />
       </span>
       <button
+        aria-describedby={endpointHelpId}
+        aria-label={`Select ${role} endpoint of segment ${index + 1} in ${pathElement.displayName}`}
         aria-pressed={selected}
         className="min-w-0 text-left outline-none"
+        data-upid-point-select
+        onBlur={() => onHoverPathElement(null)}
         onClick={() => onSelectPathElement(element)}
+        onFocus={() => onHoverPathElement(element)}
+        title={endpointHelp}
         type="button"
       >
         <span className="min-w-0">
@@ -2805,7 +3051,9 @@ function renderPointRow({
             >
               Endpoint
             </span>
-            <span className="uppercase text-muted-foreground" data-upid-point-role-label>{role.toUpperCase()}</span>
+            <span className="uppercase text-muted-foreground" data-upid-point-role-label>
+              {role.toUpperCase()}
+            </span>
           </span>
           <span
             className="mt-0.5 block text-[10px] uppercase tracking-normal text-muted-foreground"
@@ -2826,19 +3074,25 @@ function renderPointRow({
         </span>
       </button>
       <button
+        aria-describedby={endpointHelpId}
         aria-label="Set path start to this point"
         className="flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
         disabled={!pathElement.closed || isSaving}
+        onBlur={() => onHoverPathElement(null)}
         onClick={(event) => {
           event.stopPropagation();
           onSelectPathElement(element);
           onSetPathStartFromElement(element);
         }}
+        onFocus={() => onHoverPathElement(element)}
         title="Set start to this point"
         type="button"
       >
         <Flag className="size-3" />
       </button>
+      <span className="sr-only" data-upid-point-help={role} id={endpointHelpId}>
+        {endpointHelp}
+      </span>
     </div>
   );
 }
@@ -2851,9 +3105,7 @@ function formatBounds(bounds: Bounds2) {
   return `X ${formatNumber(bounds.minX)}..${formatNumber(bounds.maxX)} Y ${formatNumber(bounds.minY)}..${formatNumber(bounds.maxY)}`;
 }
 
-function formatDrawingExtents(
-  extents: { min: { x: number; y: number }; max: { x: number; y: number } } | undefined
-) {
+function formatDrawingExtents(extents: { min: { x: number; y: number }; max: { x: number; y: number } } | undefined) {
   if (!extents) return '-';
   return `X ${formatNumber(extents.min.x)}..${formatNumber(extents.max.x)} Y ${formatNumber(extents.min.y)}..${formatNumber(extents.max.y)}`;
 }

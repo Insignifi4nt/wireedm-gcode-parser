@@ -55,7 +55,7 @@ export function buildChains(
     if (incidents.length > 2) {
       diagnostics.push({
         id: `diag_chain_${String(diagnostics.length + 1).padStart(4, '0')}`,
-        severity: 'warning',
+        severity: 'error',
         code: 'branching-topology',
         message: `Endpoint cluster ${clusterId} touches ${incidents.length} segment endpoints; continuation needs review.`,
         relatedSegmentIds: [...new Set(incidents.map((incident) => incident.segmentId))],
@@ -242,7 +242,7 @@ function walkChain(
     if (candidates.length > 1) {
       state.diagnostics.push({
         id: `diag_chain_${String(state.diagnostics.length + 1).padStart(4, '0')}`,
-        severity: 'warning',
+        severity: 'error',
         code: 'branching-topology',
         message: `Multiple unused continuations meet at endpoint cluster ${currentClusterId}; chose the smoothest tangent continuation.`,
         relatedSegmentIds: candidates.map((candidate) => candidate.segmentId),

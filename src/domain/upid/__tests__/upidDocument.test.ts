@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
+import { initializeProjectCompensationIntents } from '@/domain/compensation/intent';
+import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
+import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import {
   movePathOperation,
   reversePathOperation,
@@ -12,6 +15,7 @@ import {
 import {
   composeProjectUpidGCodeExport,
   createProjectUpid,
+  normalizeLegacyProjectUpidDocument,
   projectUpidDocument,
   withProjectUpid
 } from '../projectUpid';
@@ -54,6 +58,7 @@ describe('UPID document boundary', () => {
 
     const posted = postUpidToGcode(document);
 
+    expect(posted.status).toBe('ready');
     expect(posted.body).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
     expect(posted.moves.map((move) => move.text)).toEqual(posted.body.split('\n'));
     expect(posted.operations).toHaveLength(1);
@@ -103,6 +108,23 @@ describe('UPID document boundary', () => {
         fileName: 'trace-source.dxf',
         importedAt: '2026-05-31T10:00:00.000Z',
         projectId: 'trace-project',
+        coordinateScaleToMillimeters: 1,
+        unitDeclaration: {
+          status: 'recognized',
+          units: {
+            code: 4,
+            label: 'millimeters',
+            scaleToMillimeters: 1,
+            source: 'dxf-insunits'
+          }
+        },
+        appliedUnits: {
+          label: 'millimeters',
+          scaleToMillimeters: 1,
+          basis: 'user-confirmed',
+          confirmed: true,
+          confirmedAt: '2026-05-31T10:00:00.000Z'
+        },
         units: {
           code: 4,
           label: 'millimeters',
@@ -130,6 +152,22 @@ describe('UPID document boundary', () => {
       segmentCount: 1,
       sourceEntityCount: 1,
       sourceKind: 'dxf-entities',
+      unitDeclaration: {
+        status: 'recognized',
+        units: {
+          code: 4,
+          label: 'millimeters',
+          scaleToMillimeters: 1,
+          source: 'dxf-insunits'
+        }
+      },
+      appliedUnits: {
+        label: 'millimeters',
+        scaleToMillimeters: 1,
+        basis: 'user-confirmed',
+        confirmed: true,
+        confirmedAt: '2026-05-31T10:00:00.000Z'
+      },
       sourceUnits: {
         code: 4,
         label: 'millimeters',
@@ -137,6 +175,10 @@ describe('UPID document boundary', () => {
         source: 'dxf-insunits'
       }
     });
+    expect(exportProgram.documentTrace.appliedUnits).not.toBe(document.source.appliedUnits);
+    expect(exportProgram.documentTrace.unitDeclaration).not.toBe(document.source.unitDeclaration);
+    expect(exportProgram.canDownload).toBe(true);
+    expect(exportProgram.blockingDiagnostics).toEqual([]);
     expect(exportProgram.body).toBe('G0 X0.000 Y0.000\nG1 X10.000 Y0.000');
     expect(exportProgram.program.text).toBe('%\nG90 G21\nG0 X0.000 Y0.000\nG1 X10.000 Y0.000\nM30\n%\n');
     expect(exportProgram.program.sections.body).toEqual({
@@ -301,6 +343,7 @@ describe('UPID document boundary', () => {
 
     expect(exportProgram.planning.manualDecisionCount).toBe(4);
     expect(exportProgram.planning.manualDecisionCounts).toEqual({
+      compensation: 0,
       direction: 1,
       'lead-in': 0,
       order: 2,
@@ -338,6 +381,7 @@ describe('UPID document boundary', () => {
     expect(exportProgram.planning).toEqual({
       manualDecisionCount: 0,
       manualDecisionCounts: {
+        compensation: 0,
         direction: 0,
         'lead-in': 0,
         order: 0,
@@ -351,6 +395,7 @@ describe('UPID document boundary', () => {
       diagnosticCount: exportProgram.diagnostics.length,
       manualDecisionCount: 0,
       manualDecisionCounts: {
+        compensation: 0,
         direction: 0,
         'lead-in': 0,
         order: 0,
@@ -460,6 +505,193 @@ describe('UPID document boundary', () => {
     ]);
   });
 
+  it('keeps export and parser arc-center semantics aligned for compact modal header words', () => {
+    const document = createUpidFromDxfEntities([
+      {
+        type: 'circle',
+        layer: 'HOLE',
+        center: { x: 30, y: 30 },
+        radius: 5
+      }
+    ]);
+
+    const exportProgram = composeUpidGCodeExport(document, {
+      header: '%\nG90.1G17',
+      footer: 'M02',
+      lineEnding: 'lf'
+    });
+    const parsed = parseGCodeProgram(exportProgram.program.text);
+
+    expect(exportProgram.body).toContain('G3 X25.000 Y30.000 I30.000 J30.000');
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.path.filter((point) => point.type === 'arc')).toEqual([
+      expect.objectContaining({ centerX: 30, centerY: 30 }),
+      expect.objectContaining({ centerX: 30, centerY: 30 })
+    ]);
+  });
+
+  it.each([
+    {
+      label: 'branched',
+      entities: [line(-1, 0, 0, 0), line(0, 0, 1, 0), line(0, 0, 0, 1)]
+    },
+    {
+      label: 'duplicate',
+      entities: [line(0, 0, 1, 0), line(0, 0, 1, 0)]
+    }
+  ])('blocks a $label UPID document atomically', ({ entities }) => {
+    const document = createUpidFromDxfEntities(entities);
+
+    const posted = postUpidToGcode(document);
+
+    expect(posted.status).toBe('blocked');
+    expect(posted.body).toBe('');
+    expect(posted.moves).toEqual([]);
+    expect(posted.operations).toEqual([]);
+    expect(posted.metrics).toEqual({ rapidCount: 0, cutMoveCount: 0 });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: 'error' })
+    );
+    expect(postUpidToGcodeBody(document)).toBe('');
+  });
+
+  it('retains configured header/footer context for a blocked export without a downloadable body', () => {
+    const document = createUpidFromDxfEntities([
+      line(-1, 0, 1, 0),
+      line(0, -1, 0, 1)
+    ]);
+
+    const exportProgram = composeUpidGCodeExport(document, {
+      header: '%\nG90 G21 G17 G40',
+      footer: 'M30\n%',
+      lineEnding: 'lf'
+    });
+
+    expect(exportProgram.canDownload).toBe(false);
+    expect(exportProgram.body).toBe('');
+    expect(exportProgram.blockingDiagnostics).toContainEqual(
+      expect.objectContaining({ severity: 'error', code: 'intersecting-topology' })
+    );
+    expect(exportProgram.program.text).toBe('%\nG90 G21 G17 G40\nM30\n%\n');
+    expect(exportProgram.post.status).toBe('blocked');
+    expect(exportProgram.post.moves).toEqual([]);
+    expect(exportProgram.post.operations).toEqual([]);
+    expect(exportProgram.post.metrics).toEqual({ rapidCount: 0, cutMoveCount: 0 });
+    expect(exportProgram.programOperations).toEqual([]);
+    expect(exportProgram.summary.operationCount).toBe(0);
+    expect(new Set(exportProgram.diagnostics.map((diagnostic) => diagnostic.id)).size).toBe(
+      exportProgram.diagnostics.length
+    );
+  });
+
+  it.each([
+    { label: 'header G20', header: 'G20', footer: 'M30' },
+    { label: 'compact header G90G20G40', header: 'G90G20G40', footer: 'M30' },
+    { label: 'zero-padded header N10G020', header: 'N10G020', footer: 'M30' },
+    { label: 'footer G20', header: 'G21', footer: 'G20' }
+  ])(
+    'blocks canonical-millimetre UPID output for executable $label',
+    ({ footer, header }) => {
+      const document = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
+
+      const exportProgram = composeUpidGCodeExport(document, {
+        header,
+        footer,
+        lineEnding: 'lf'
+      });
+
+      expect(exportProgram.canDownload).toBe(false);
+      expect(exportProgram.blockingDiagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'post-inch-units-unsupported',
+          severity: 'error'
+        })
+      );
+      expect(exportProgram.body).toBe('');
+      expect(exportProgram.post).toMatchObject({
+        status: 'blocked',
+        blocks: [],
+        moves: [],
+        operations: [],
+        metrics: { rapidCount: 0, cutMoveCount: 0 }
+      });
+      expect(exportProgram.programOperations).toEqual([]);
+      expect(exportProgram.program.text).toBe(`${header}\n${footer}\n`);
+    }
+  );
+
+  it.each(['(G20) G21', '; G20\nG21', 'G200 G21'])(
+    'does not false-positive on non-executable G20 text in %s',
+    (header) => {
+      const document = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
+
+      const exportProgram = composeUpidGCodeExport(document, {
+        header,
+        footer: '',
+        lineEnding: 'lf'
+      });
+
+      expect(exportProgram.canDownload).toBe(true);
+      expect(exportProgram.blockingDiagnostics).toEqual([]);
+      expect(exportProgram.body).toContain('G1 X10.000 Y0.000');
+    }
+  );
+
+  it('blocks a project profile that requests G20 even when its templates emit G21', () => {
+    const machine = createDefaultMachineProfile();
+    machine.controller.unitsCode = 'G20';
+    machine.templates = { header: 'G90 G21', footer: 'M30' };
+    const document = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
+
+    const exportProgram = composeUpidGCodeExport(document, { machine });
+
+    expect(exportProgram.canDownload).toBe(false);
+    expect(exportProgram.blockingDiagnostics).toContainEqual(
+      expect.objectContaining({ code: 'post-inch-units-unsupported' })
+    );
+    expect(exportProgram.body).toBe('');
+    expect(exportProgram.post.blocks).toEqual([]);
+  });
+
+  it('keeps an inch DXF-import preference independent from millimetre UPID output', () => {
+    const machine = createDefaultMachineProfile();
+    machine.preferredDxfImportUnit = 'inches';
+    machine.controller.unitsCode = 'G21';
+    machine.templates = { header: 'G90 G21', footer: 'M30' };
+    const document = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
+
+    const exportProgram = composeUpidGCodeExport(document, { machine });
+
+    expect(exportProgram.canDownload).toBe(true);
+    expect(exportProgram.blockingDiagnostics).toEqual([]);
+    expect(exportProgram.body).toContain('G1 X10.000 Y0.000');
+    expect(exportProgram.program.text).not.toContain('X254.000');
+  });
+
+  it('keeps structurally invalid Robofil composition executable-empty before intent checks', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    machine.templates.header = 'G28 X100 Y100';
+    machine.templates.footer = 'M99';
+    const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
+    document.plan.operations[0].segmentRefs[0].segmentId = 'seg_missing';
+
+    const exportProgram = composeUpidGCodeExport(document, { machine });
+
+    expect(exportProgram.canDownload).toBe(false);
+    expect(exportProgram.body).toBe('');
+    expect(exportProgram.post).toMatchObject({
+      status: 'blocked',
+      programOwned: true,
+      blocks: [],
+      moves: [],
+      operations: []
+    });
+    expect(exportProgram.program.lines).toEqual([]);
+    expect(exportProgram.program.text.trim()).toBe('');
+    expect(exportProgram.program.text).not.toContain('G28');
+    expect(exportProgram.program.text).not.toContain('M99');
+  });
+
   it('stamps projectless UPID documents when attaching them to a project', () => {
     const document = createUpidFromDxfEntities([line(0, 0, 4, 0)]);
     const projectDocument = projectUpidDocument(withProjectUpid(baseProject(), document));
@@ -475,6 +707,136 @@ describe('UPID document boundary', () => {
 
     expect(upid.document.source.projectId).toBe('upid-project');
     expect(document.source.projectId).toBeUndefined();
+  });
+
+  it('normalizes omitted schema-v1 layer filters at the project load boundary', () => {
+    const project = withProjectUpid(
+      baseProject(),
+      createUpidFromDxfEntities([line(0, 0, 4, 0)])
+    );
+    const storedOptions = project.upid!.document.options;
+    delete (storedOptions as Partial<typeof storedOptions>).includeLayers;
+    delete (storedOptions as Partial<typeof storedOptions>).excludeLayers;
+
+    const loaded = projectUpidDocument(project)!;
+
+    expect(loaded.options.includeLayers).toEqual([]);
+    expect(loaded.options.excludeLayers).toEqual([]);
+    expect(storedOptions).not.toHaveProperty('includeLayers');
+    expect(storedOptions).not.toHaveProperty('excludeLayers');
+  });
+
+  it('normalizes legacy documents to wire-centre without inventing compensation intent', () => {
+    const legacy = createUpidFromDxfEntities([
+      ...rectangle(0, 0, 10, 5),
+      ...rectangle(20, 0, 30, 5)
+    ]);
+    delete (legacy as Partial<typeof legacy>).geometryBasis;
+    legacy.plan.operations[0].compensationIntent = {
+      mode: 'controller',
+      keptMaterial: 'inside',
+      source: 'automatic'
+    };
+    const automaticElement = legacy.pathElements.find(
+      (element) => element.operationId === legacy.plan.operations[0].id
+    )!;
+    automaticElement.compensationIntent = structuredClone(
+      legacy.plan.operations[0].compensationIntent
+    );
+    legacy.plan.operations[1].compensationIntent = {
+      mode: 'controller',
+      keptMaterial: 'outside',
+      source: 'manual'
+    };
+    const manualElement = legacy.pathElements.find(
+      (element) => element.operationId === legacy.plan.operations[1].id
+    )!;
+    manualElement.compensationIntent = structuredClone(
+      legacy.plan.operations[1].compensationIntent
+    );
+    const before = structuredClone(legacy);
+
+    const normalized = normalizeLegacyProjectUpidDocument(legacy);
+
+    expect(normalized.geometryBasis).toBe('wire-centre');
+    expect(normalized.plan.operations[0].compensationIntent).toBeUndefined();
+    expect(normalized.pathElements.find(
+      (element) => element.operationId === normalized.plan.operations[0].id
+    )?.compensationIntent).toBeUndefined();
+    expect(normalized.plan.operations[1].compensationIntent).toEqual({
+      mode: 'controller',
+      keptMaterial: 'outside',
+      source: 'manual'
+    });
+    expect(normalized.pathElements.find(
+      (element) => element.operationId === normalized.plan.operations[1].id
+    )?.compensationIntent).toEqual(normalized.plan.operations[1].compensationIntent);
+    expect(legacy).toEqual(before);
+    expect(legacy).not.toHaveProperty('geometryBasis');
+  });
+
+  it('clone-synthesizes declared applied units for legacy project documents without touching geometry', () => {
+    const legacy = createUpidFromDxfEntities([line(0, 0, 25.4, 0)], {}, {
+      coordinateScaleToMillimeters: 25.4,
+      units: {
+        source: 'dxf-insunits',
+        code: 1,
+        label: 'inches',
+        scaleToMillimeters: 25.4
+      }
+    });
+    const storedBefore = structuredClone(legacy);
+    const storedSegments = legacy.segments;
+
+    const normalized = normalizeLegacyProjectUpidDocument(legacy);
+
+    expect(normalized).not.toBe(legacy);
+    expect(normalized.source).not.toBe(legacy.source);
+    expect(normalized.source.appliedUnits).toEqual({
+      label: 'inches',
+      scaleToMillimeters: 25.4,
+      basis: 'dxf-declared',
+      confirmed: true
+    });
+    expect(normalized.source.unitDeclaration).toEqual({
+      status: 'recognized',
+      units: legacy.source.units
+    });
+    expect(normalized.segments).toBe(storedSegments);
+    expect(legacy).toEqual(storedBefore);
+    expect(legacy.source.appliedUnits).toBeUndefined();
+  });
+
+  it('clone-synthesizes an explicit unconfirmed millimeter assumption for unitless legacy documents', () => {
+    const legacy = createUpidFromDxfEntities([line(0, 0, 4, 0)], {}, {
+      coordinateScaleToMillimeters: 1
+    });
+    const storedBefore = structuredClone(legacy);
+
+    const normalized = normalizeLegacyProjectUpidDocument(legacy);
+
+    expect(normalized.source.appliedUnits).toEqual({
+      label: 'millimeters',
+      scaleToMillimeters: 1,
+      basis: 'legacy-assumed',
+      confirmed: false
+    });
+    expect(normalized.source.unitDeclaration).toEqual({ status: 'missing' });
+    expect(legacy).toEqual(storedBefore);
+  });
+
+  it('does not normalize an explicit malformed layer filter at the project load boundary', () => {
+    const project = withProjectUpid(
+      baseProject(),
+      createUpidFromDxfEntities([line(0, 0, 4, 0)])
+    );
+    const storedOptions = project.upid!.document.options;
+    storedOptions.includeLayers = null as never;
+    delete (storedOptions as Partial<typeof storedOptions>).excludeLayers;
+
+    expect(() => projectUpidDocument(project)).toThrow(
+      'options.includeLayers must be an array of strings.'
+    );
   });
 
   it('rejects attaching UPID state to external G-code projects', () => {
@@ -512,6 +874,62 @@ describe('UPID document boundary', () => {
     expect(exportProgram.documentTrace.projectId).toBe('upid-project');
     expect(exportProgram.pathDocument).toBe(document);
     expect(exportProgram.program.text).toBe('G0 X0.000 Y0.000\r\nG1 X4.000 Y0.000\r\n');
+  });
+
+  it('passes project machine coordinate precision into UPID posting', () => {
+    const project = withProjectUpid(
+      {
+        ...baseProject(),
+        machine: {
+          ...baseProject().machine,
+          output: {
+            ...baseProject().machine.output,
+            coordinatePrecision: 5
+          }
+        }
+      },
+      createUpidFromDxfEntities([line(0, 0, 1.234567, 0)])
+    );
+    const document = projectUpidDocument(project)!;
+
+    const exportProgram = composeProjectUpidGCodeExport(project, document);
+
+    expect(exportProgram.body).toContain('X1.23457');
+    expect(exportProgram.fileName).toBe('upid-project.iso');
+  });
+
+  it('composes verified Robofil modal blocks from only the project machine snapshot', () => {
+    const libraryProfile = createVerifiedCharmillesRobofil100Profile(
+      'robofil-project-snapshot',
+      new Date('2026-07-13T00:00:00.000Z')
+    );
+    const project = {
+      ...baseProject(),
+      machine: structuredClone(libraryProfile)
+    };
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(rectangle(0, 0, 10, 5)),
+      project.machine
+    );
+    const attached = withProjectUpid(project, initialized);
+    const document = projectUpidDocument(attached)!;
+
+    libraryProfile.compensation.preActivationCodes = ['G61'];
+    const exportProgram = composeProjectUpidGCodeExport(attached, document);
+
+    expect(exportProgram.canDownload).toBe(true);
+    expect(exportProgram.program.text).toMatch(
+      /^G92 X0 Y0\r\nG60\r\nG38\r\nG4[12] D0\r\nG90\r\nG1 /
+    );
+    expect(exportProgram.program.text).not.toContain('G61');
+    expect(exportProgram.program.text.endsWith('M02\r\n')).toBe(true);
+    expect(exportProgram.programBlocks.slice(0, 5)).toEqual([
+      expect.objectContaining({ programLineNumber: 1, kind: 'setup', text: 'G92 X0 Y0' }),
+      expect.objectContaining({ programLineNumber: 2, kind: 'setup', text: 'G60' }),
+      expect.objectContaining({ programLineNumber: 3, kind: 'compensation-activation', text: 'G38' }),
+      expect.objectContaining({ programLineNumber: 4, kind: 'compensation-activation' }),
+      expect.objectContaining({ programLineNumber: 5, kind: 'setup', text: 'G90' })
+    ]);
   });
 
   it('rejects project UPID exports for documents outside the current project', () => {
@@ -583,6 +1001,38 @@ describe('UPID document boundary', () => {
       'Unsupported UPID document schema version: 2.'
     );
   });
+
+  it('rejects structurally corrupt stored UPID but loads topology-blocked state for inspection', () => {
+    const healthy = withProjectUpid(
+      baseProject(),
+      createUpidFromDxfEntities([line(0, 0, 4, 0)])
+    );
+    const corrupt = structuredClone(healthy);
+    corrupt.upid!.document.plan.operations[0].segmentRefs[0].segmentId = 'seg_missing';
+    const topologyBlocked = withProjectUpid(
+      baseProject(),
+      createUpidFromDxfEntities([
+        line(-1, 0, 0, 0),
+        line(0, 0, 1, 0),
+        line(0, 0, 0, 1)
+      ])
+    );
+
+    expect(() => projectUpidDocument(corrupt)).toThrow('Invalid UPID document:');
+    expect(projectUpidDocument(topologyBlocked)?.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: 'error', code: 'branching-topology' })
+    );
+  });
+
+  it('reports a structurally malformed stored source through the UPID validation error', () => {
+    const project = withProjectUpid(
+      baseProject(),
+      createUpidFromDxfEntities([line(0, 0, 4, 0)])
+    );
+    project.upid!.document.source = null as never;
+
+    expect(() => projectUpidDocument(project)).toThrow('Invalid UPID document:');
+  });
 });
 
 function baseProject() {
@@ -597,6 +1047,7 @@ function baseProject() {
       files: []
     },
     machine: {
+      ...createDefaultMachineProfile(),
       id: 'machine',
       name: 'Machine',
       templates: {
@@ -605,7 +1056,8 @@ function baseProject() {
       },
       output: {
         extension: 'iso' as const,
-        lineEnding: 'crlf' as const
+        lineEnding: 'crlf' as const,
+        coordinatePrecision: 3
       },
       workArea: {
         widthMm: null,

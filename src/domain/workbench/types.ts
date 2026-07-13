@@ -22,6 +22,7 @@ export interface OutputFormat {
   extension: OutputExtension;
   customExtension?: string;
   lineEnding: 'lf' | 'crlf';
+  coordinatePrecision: number;
 }
 
 export interface MachineWorkArea {
@@ -29,13 +30,55 @@ export interface MachineWorkArea {
   lengthMm: number | null;
 }
 
+export interface MachineProfileVerification {
+  status: 'unverified' | 'user-verified';
+  verifiedAt?: string;
+  verifiedFingerprint?: string;
+}
+
+export interface MachineControllerPolicy {
+  family: 'generic-iso' | 'charmilles-robofil-classic' | 'custom';
+  postVersion: number;
+  verification: MachineProfileVerification;
+  blockFormatting: 'spaced' | 'compact';
+  coordinateSystem: 'template-managed' | 'work-offset' | 'wire-position-g92';
+  unitsCode: 'G20' | 'G21' | 'omit';
+  planeCode: 'G17' | 'omit';
+  workOffsetCode: 'G54' | 'omit' | 'template-managed';
+  distanceMode: 'G90';
+  arcCenterMode: 'incremental-from-start' | 'absolute';
+  programEnd: 'M02' | 'M30' | 'template-managed';
+}
+
+export interface MachineCompensationPolicy {
+  supported: boolean;
+  enabledByDefault: boolean;
+  offsetSelection: { address: 'D'; index: number };
+  activation: 'linear-lead' | 'charmilles-g38';
+  cancellation: 'linear-lead-out' | 'charmilles-g39' | 'program-end';
+  lifecycleScope: 'operation' | 'program';
+  preActivationCodes: string[];
+  validationLeadLengthMm: number;
+  expectedMaximumOffsetMm: number | null;
+}
+
 export interface MachineProfile {
   id: string;
   name: string;
+  preferredDxfImportUnit: 'millimeters' | 'inches' | null;
+  controller: MachineControllerPolicy;
+  compensation: MachineCompensationPolicy;
   templates: GCodeTemplateSet;
   output: OutputFormat;
   workArea: MachineWorkArea;
   notes: string;
+}
+
+export interface PortableMachineProfileDocument {
+  format: 'wire-edm-machine-profile';
+  schemaVersion: 1;
+  exportedAt: string;
+  profile: MachineProfile;
 }
 
 export interface EditorSessionState {

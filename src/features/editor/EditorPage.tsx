@@ -24,6 +24,13 @@ import { normalizeToISO } from '@/domain/editor/isoNormalizer';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import { evaluateMachineFit } from '@/domain/machine/machineFit';
+import { deriveVerifiedRobofilPreviewTransitions } from '@/domain/editor/previewGeometry';
+import {
+  initializeProjectCompensationIntents,
+  machineSnapshotAuthorizesAutomaticCompensation,
+  setManualCompensationIntent,
+  type ManualCompensationSelection
+} from '@/domain/compensation/intent';
 import {
   constructMagnetizedPoint,
   mirrorPathDocument,
@@ -138,6 +145,7 @@ interface EditorPageProps {
   onBackToDashboard: () => void;
   onDownloadEditorFile: (fileName: string, text: string) => void;
   onImportProgramFile: (file: File) => void | Promise<void>;
+  onReimportDxfUnits?: () => void | Promise<void>;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void | Promise<void>;
   onStatusMessage?: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void;
 }
@@ -473,6 +481,7 @@ export function EditorPage({
   onBackToDashboard,
   onDownloadEditorFile,
   onImportProgramFile,
+  onReimportDxfUnits,
   onSaveEditorDraft,
   onStatusMessage
 }: EditorPageProps) {
@@ -568,6 +577,11 @@ export function EditorPage({
     : draftParseResult && pathCount > 0
       ? formatBounds(draftParseResult.bounds)
       : '-';
+  const dxfUnitSummary = pathDocumentDraft?.source.appliedUnits
+    ? `${pathDocumentDraft.source.appliedUnits.label} ×${formatUnitScale(
+        pathDocumentDraft.source.appliedUnits.scaleToMillimeters
+      )}`
+    : null;
   const machineFit = useMemo(
     () =>
       program
@@ -584,7 +598,9 @@ export function EditorPage({
     const exportProgram = composeProjectUpidGCodeExport(program.project, pathDocumentDraft);
 
     return {
+      blockingDiagnostics: exportProgram.blockingDiagnostics,
       body: exportProgram.body,
+      canDownload: exportProgram.canDownload,
       diagnostics: exportProgram.diagnostics,
       documentTrace: exportProgram.documentTrace,
       fileName: exportProgram.fileName,
@@ -592,12 +608,20 @@ export function EditorPage({
       operationCount: exportProgram.summary.operationCount,
       pathDocument: exportProgram.pathDocument,
       planning: exportProgram.planning,
+      programBlocks: exportProgram.programBlocks,
       programLines: exportProgram.program.lines,
       programText: exportProgram.program.text,
       postMetrics: exportProgram.post.metrics,
       postedOperations: exportProgram.programOperations
     };
   }, [exportPreviewOpen, pathDocumentDraft, program?.project]);
+  const postedPreviewTransitions = useMemo(
+    () =>
+      pathDocumentDraft && program?.project
+        ? deriveVerifiedRobofilPreviewTransitions(pathDocumentDraft, program.project.machine)
+        : undefined,
+    [pathDocumentDraft, program?.project]
+  );
   const constructionPreview = useMemo(() => {
     if (
       !pathDocumentDraft ||
@@ -970,10 +994,11 @@ export function EditorPage({
         (event.ctrlKey || event.metaKey) &&
         (event.key.toLowerCase() === 'y' || (event.key.toLowerCase() === 'z' && event.shiftKey));
       const isClearPoints =
-        (event.ctrlKey || event.metaKey) &&
-        event.key.toLowerCase() === 'c' &&
-        !event.shiftKey &&
-        !event.altKey;
+        event.altKey &&
+        event.shiftKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        event.code === 'KeyC';
 
       if (isUndo) {
         event.preventDefault();
@@ -1275,12 +1300,14 @@ export function EditorPage({
   function handlePreviewPointClick(point: { x: number; y: number }) {
     if (isEditorMutationLocked) return;
 
-    if (!pathClickMode || !pathDocumentDraft || !selectedPathOperationId) {
+    if (!pathClickMode || !pathDocumentDraft) {
       if (canvasMouseMode === 'point') addMeasurementPoint(point.x, point.y);
       return;
     }
 
     if (pathClickMode === 'set-start') {
+      if (!selectedPathOperationId) return;
+
       const edited = pathMagneticSnapEnabled
         ? setClosedOperationStartNearPoint(pathDocumentDraft, selectedPathOperationId, point)
         : setClosedOperationStartAtExistingPointNearPoint(pathDocumentDraft, selectedPathOperationId, point);
@@ -1374,7 +1401,28 @@ export function EditorPage({
 
   function handleSetPathOperationClassification(classification: ContourClassification) {
     if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
-    const edited = setPathOperationClassification(pathDocumentDraft, selectedPathOperationId, classification);
+    const edited = setPathOperationClassification(
+      pathDocumentDraft,
+      selectedPathOperationId,
+      classification,
+      program?.project?.machine
+    );
+    if (edited) applyPathDocumentEdit(edited);
+  }
+
+  function handleSetGeometryBasis(basis: PathPlanningDocument['geometryBasis']) {
+    if (!pathDocumentDraft || !program?.project || isEditorMutationLocked) return;
+    if (basis === pathDocumentDraft.geometryBasis) return;
+
+    const edited = basis === 'finished-contour' && machineSnapshotAuthorizesAutomaticCompensation(program.project.machine)
+      ? initializeProjectCompensationIntents(pathDocumentDraft, program.project.machine)
+      : { ...structuredClone(pathDocumentDraft), geometryBasis: basis };
+    applyPathDocumentEdit(edited);
+  }
+
+  function handleSetManualCompensation(selection: ManualCompensationSelection) {
+    if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
+    const edited = setManualCompensationIntent(pathDocumentDraft, selectedPathOperationId, selection);
     if (edited) applyPathDocumentEdit(edited);
   }
 
@@ -1862,6 +1910,7 @@ export function EditorPage({
         isSaving={isEditorMutationLocked}
         latestMeasurementPoint={measurementPoints.at(-1) ?? null}
         magneticSnapEnabled={pathMagneticSnapEnabled}
+        machineProfile={program!.project!.machine}
         measurementPoints={measurementPoints}
         onActivatePathClickMode={setPathClickMode}
         onExpandedPathElementIdsChange={setExpandedPathElementIds}
@@ -1883,6 +1932,8 @@ export function EditorPage({
         onPathTargetXDraftChange={setPathTargetXDraft}
         onPathTargetYDraftChange={setPathTargetYDraft}
         onSetPathOperationClassification={handleSetPathOperationClassification}
+        onSetGeometryBasis={handleSetGeometryBasis}
+        onSetManualCompensation={handleSetManualCompensation}
         onSetPathOperationCenterPierceLeadIn={handleSetPathOperationCenterPierceLeadIn}
         onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
         onSetPathStartFromElement={handleSetPathStartFromElement}
@@ -1974,6 +2025,10 @@ export function EditorPage({
           measurementPoints={measurementPoints}
           machineFit={machineFit}
           machineProfile={program?.project?.machine ?? null}
+          canReimportDxfUnits={Boolean(pathDocumentDraft && onReimportDxfUnits && !hasUnsavedChanges)}
+          reimportDxfUnitsDisabledReason={
+            hasUnsavedChanges ? 'Save or undo path changes before re-importing DXF units.' : null
+          }
           onAddMeasurementPoint={handleAddMeasurementPoint}
           onClearMeasurementPoints={() => setMeasurementPoints([])}
           onDeleteMeasurementPoint={(pointId) =>
@@ -1984,6 +2039,7 @@ export function EditorPage({
           onExportMeasurementPoints={handleExportMeasurementPoints}
           onHoverPathElement={setHoveredPathElement}
           onInsertMeasurementPoints={handleInsertMeasurementPoints}
+          onReimportDxfUnits={onReimportDxfUnits}
           onPointXDraftChange={setPointXDraft}
           onPointYDraftChange={setPointYDraft}
           onSelectPathElement={handleSelectPathElement}
@@ -2273,6 +2329,7 @@ export function EditorPage({
           onPreviewPointClick={handlePreviewPointClick}
           onSetCanvasMouseMode={setCanvasMouseMode}
           pathDocument={pathDocumentDraft}
+          postedTransitions={postedPreviewTransitions}
           pathCount={pathCount}
           pinnedLines={pinnedLines}
           selectedPathElement={selectedPathElement}
@@ -2355,15 +2412,21 @@ export function EditorPage({
         previewCursorPoint={previewCursorPoint}
         segmentCount={pathDocumentDraft?.segments.length ?? null}
         selectionSummary={editorSelectionSummary}
+        unitSummary={dxfUnitSummary}
       />
       {exportPreviewOpen && upidExport && (
         <EditorUpidExportPreview
+          blockingDiagnostics={upidExport.blockingDiagnostics}
+          canDownload={upidExport.canDownload}
           fileName={upidExport.fileName}
           diagnostics={upidExport.diagnostics}
           documentTrace={upidExport.documentTrace}
           machineName={upidExport.machineName}
           onClose={() => setExportPreviewOpen(false)}
-          onDownload={() => onDownloadEditorFile(upidExport.fileName, upidExport.programText)}
+          onDownload={() => {
+            if (!upidExport.canDownload || upidExport.blockingDiagnostics.length > 0) return;
+            onDownloadEditorFile(upidExport.fileName, upidExport.programText);
+          }}
           onHoverPathElement={setHoveredPathElement}
           onSelectPathElement={handleSelectPathElement}
           operationCount={upidExport.operationCount}
@@ -2371,6 +2434,7 @@ export function EditorPage({
           planning={upidExport.planning}
           postMetrics={upidExport.postMetrics}
           postedOperations={upidExport.postedOperations}
+          programBlocks={upidExport.programBlocks}
           programLines={upidExport.programLines}
         />
       )}
@@ -2384,4 +2448,8 @@ function nextMeasurementPointId(currentLength: number) {
 
 function formatCoordinateDraft(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(3);
+}
+
+function formatUnitScale(value: number) {
+  return Number.isInteger(value) ? String(value) : String(value);
 }

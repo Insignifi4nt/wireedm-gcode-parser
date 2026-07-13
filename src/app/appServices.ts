@@ -1,8 +1,18 @@
 import {
-  importDxfProject,
-  type ImportDxfProjectInput,
+  commitDxfProjectImport,
+  type DxfImportDecision,
   type ImportDxfProjectResult
 } from '@/domain/dxf/importDxfProject';
+import {
+  prepareDxfProjectImport,
+  previewDxfProjectImport,
+  unitCandidatesForDxfImport,
+  type DxfImportPreparation
+} from '@/domain/dxf/prepareDxfProjectImport';
+import {
+  commitDxfProjectReimport,
+  prepareDxfProjectReimport
+} from '@/domain/dxf/reimportDxfProjectUnits';
 import {
   importExternalProgram,
   type ImportExternalProgramInput,
@@ -34,6 +44,14 @@ import {
   type UpdateWorkbenchSettingsInput
 } from '@/domain/storage/updateWorkbenchSettings';
 import {
+  addMachineProfile,
+  deleteMachineProfile,
+  duplicateMachineProfile,
+  importMachineProfile,
+  setActiveMachineProfile,
+  updateMachineProfileLibrary
+} from '@/domain/storage/updateMachineProfileLibrary';
+import {
   renameWorkbenchProject,
   type RenameWorkbenchProjectInput,
   type RenameWorkbenchProjectResult
@@ -44,15 +62,22 @@ import {
   type DeleteWorkbenchProjectResult
 } from '@/domain/storage/deleteWorkbenchProject';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import type { MachineProfile } from '@/domain/workbench/types';
 
 export interface AppServices {
   connectCachedWorkbench: () => Promise<ConnectedWorkbench>;
   connectRememberedWorkbenchDirectory: typeof connectRememberedWorkbenchDirectory;
   connectWorkbenchDirectory: () => Promise<ConnectedWorkbench>;
-  importDxfProject: (
+  prepareDxfProjectImport: typeof prepareDxfProjectImport;
+  previewDxfProjectImport: typeof previewDxfProjectImport;
+  unitCandidatesForDxfImport: typeof unitCandidatesForDxfImport;
+  commitDxfProjectImport: (
     workbench: ConnectedWorkbench,
-    input: ImportDxfProjectInput
+    preparation: DxfImportPreparation,
+    decision: DxfImportDecision
   ) => Promise<ImportDxfProjectResult>;
+  prepareDxfProjectReimport: typeof prepareDxfProjectReimport;
+  commitDxfProjectReimport: typeof commitDxfProjectReimport;
   importExternalProgram: (
     workbench: ConnectedWorkbench,
     input: ImportExternalProgramInput
@@ -78,14 +103,29 @@ export interface AppServices {
     workbench: ConnectedWorkbench,
     input: UpdateWorkbenchSettingsInput
   ) => Promise<ConnectedWorkbench>;
+  addMachineProfile: typeof addMachineProfile;
+  duplicateMachineProfile: typeof duplicateMachineProfile;
+  deleteMachineProfile: typeof deleteMachineProfile;
+  setActiveMachineProfile: typeof setActiveMachineProfile;
+  importMachineProfile: typeof importMachineProfile;
+  replaceMachineProfile: (
+    workbench: ConnectedWorkbench,
+    profile: MachineProfile
+  ) => Promise<ConnectedWorkbench>;
   downloadGeneratedProgram: (input: DownloadProgramFileInput) => void;
+  downloadTextFile: (input: DownloadProgramFileInput) => void;
 }
 
 export const defaultAppServices: AppServices = {
   connectCachedWorkbench,
   connectRememberedWorkbenchDirectory,
   connectWorkbenchDirectory,
-  importDxfProject,
+  prepareDxfProjectImport,
+  previewDxfProjectImport,
+  unitCandidatesForDxfImport,
+  commitDxfProjectImport,
+  prepareDxfProjectReimport,
+  commitDxfProjectReimport,
   importExternalProgram,
   loadEditorProgram,
   openWorkbenchProject,
@@ -93,5 +133,13 @@ export const defaultAppServices: AppServices = {
   renameWorkbenchProject,
   deleteWorkbenchProject,
   updateWorkbenchSettings,
-  downloadGeneratedProgram: downloadProgramFile
+  addMachineProfile,
+  duplicateMachineProfile,
+  deleteMachineProfile,
+  setActiveMachineProfile,
+  importMachineProfile,
+  replaceMachineProfile: (workbench, profile) =>
+    updateMachineProfileLibrary(workbench, { kind: 'replace', profile }),
+  downloadGeneratedProgram: downloadProgramFile,
+  downloadTextFile: downloadProgramFile
 };

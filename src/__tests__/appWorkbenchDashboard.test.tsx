@@ -1,12 +1,19 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  createBlankMachineProfile,
+  createVerifiedCharmillesRobofil100Profile
+} from '@/domain/machine/machineProfiles';
+import { serializeMachineProfileFile } from '@/domain/machine/machineProfileFile';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 import { updateWorkbenchSettings } from '@/domain/storage/updateWorkbenchSettings';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
+import type { MachineProfile } from '@/domain/workbench/types';
 
 import {
   cleanupAppTestContext,
+  confirmPendingDxfImport,
   createAppTestContext,
   flushAsync,
   renderApp,
@@ -279,6 +286,12 @@ describe('App dashboard and workbench shell', () => {
     const lineEnding = container.querySelector(
       'select[aria-label="Line ending"]'
     ) as HTMLSelectElement | null;
+    const coordinatePrecision = container.querySelector(
+      'input[aria-label="Coordinate precision"]'
+    ) as HTMLInputElement | null;
+    const preferredDxfImportUnit = container.querySelector(
+      'select[aria-label="Preferred DXF import unit"]'
+    ) as HTMLSelectElement | null;
     const customExtension = container.querySelector(
       'input[aria-label="Custom output extension"]'
     ) as HTMLInputElement | null;
@@ -296,6 +309,11 @@ describe('App dashboard and workbench shell', () => {
     expect(footerEditor).not.toBeNull();
     expect(outputExtension).not.toBeNull();
     expect(lineEnding).not.toBeNull();
+    expect(coordinatePrecision).not.toBeNull();
+    expect(preferredDxfImportUnit?.value).toBe('');
+    expect(coordinatePrecision?.min).toBe('0');
+    expect(coordinatePrecision?.max).toBe('6');
+    expect(coordinatePrecision?.step).toBe('1');
     expect(machineName).not.toBeNull();
     expect(workAreaWidth).not.toBeNull();
     expect(workAreaLength).not.toBeNull();
@@ -305,6 +323,8 @@ describe('App dashboard and workbench shell', () => {
       if (footerEditor) setTextAreaValue(footerEditor, 'CUSTOM FOOTER\n%');
       if (outputExtension) setSelectValue(outputExtension, 'custom');
       if (lineEnding) setSelectValue(lineEnding, 'lf');
+      if (coordinatePrecision) setInputValue(coordinatePrecision, '5');
+      if (preferredDxfImportUnit) setSelectValue(preferredDxfImportUnit, 'inches');
       if (machineName) setInputValue(machineName, 'Shop Wire EDM');
       if (workAreaWidth) setInputValue(workAreaWidth, '320.5');
       if (workAreaLength) setInputValue(workAreaLength, '470');
@@ -337,8 +357,9 @@ describe('App dashboard and workbench shell', () => {
         name: 'Shop Wire EDM',
         output: {
           extension: 'custom',
-          customExtension: '.CUT',
-          lineEnding: 'lf'
+          customExtension: 'cut',
+          lineEnding: 'lf',
+          coordinatePrecision: 5
         },
         workArea: {
           widthMm: 320.5,
@@ -360,7 +381,8 @@ describe('App dashboard and workbench shell', () => {
     expect(manifest.output).toEqual({
       extension: 'custom',
       customExtension: 'cut',
-      lineEnding: 'lf'
+      lineEnding: 'lf',
+      coordinatePrecision: 5
     });
     expect(manifest.machineProfiles[0]).toMatchObject({
       name: 'Shop Wire EDM',
@@ -382,6 +404,7 @@ describe('App dashboard and workbench shell', () => {
       dxfInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
+    await confirmPendingDxfImport(container);
 
     const importManifest = JSON.parse(
       window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
@@ -398,12 +421,243 @@ describe('App dashboard and workbench shell', () => {
     expect(project.machine.output).toEqual({
       extension: 'custom',
       customExtension: 'cut',
-      lineEnding: 'lf'
+      lineEnding: 'lf',
+      coordinatePrecision: 5
     });
+    expect(project.machine.preferredDxfImportUnit).toBe('inches');
     expect(project.machine.workArea).toEqual({
       widthMm: 320.5,
       lengthMm: 470
     });
+  });
+
+  it('creates and edits an inactive blank profile without changing the default', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+    await openMachineOutputSettings(container);
+
+    const selector = container.querySelector(
+      'select[aria-label="Machine profile selector"]'
+    ) as HTMLSelectElement | null;
+    expect(selector?.value).toBe('default-wire-machine');
+
+    await clickButton(container, 'New blank machine profile');
+    await flushAsync();
+
+    expect(selector?.value).toBe('new-wire-machine');
+    expect(readStoredManifest().activeMachineProfileId).toBe('default-wire-machine');
+    expect((container.querySelector('textarea[aria-label="Header template"]') as HTMLTextAreaElement).value)
+      .toBe('');
+    expect((container.querySelector('textarea[aria-label="Footer template"]') as HTMLTextAreaElement).value)
+      .toBe('');
+
+    const requiredStructuredControls = [
+      'Controller family',
+      'Post version',
+      'Block formatting',
+      'Coordinate system',
+      'Units code',
+      'Plane code',
+      'Work offset code',
+      'Distance mode',
+      'Arc center mode',
+      'Program end',
+      'Compensation supported',
+      'Compensation enabled by default',
+      'D register index',
+      'Compensation activation',
+      'Compensation cancellation',
+      'Compensation lifecycle',
+      'Pre-activation codes',
+      'Validation lead length',
+      'Expected maximum offset'
+    ];
+    for (const label of requiredStructuredControls) {
+      expect(container.querySelector(`[aria-label="${label}"]`), label).not.toBeNull();
+    }
+
+    await act(async () => {
+      setInputValue(
+        container.querySelector('input[aria-label="Machine profile name"]') as HTMLInputElement,
+        'Bench Custom'
+      );
+      setSelectValue(
+        container.querySelector('select[aria-label="Controller family"]') as HTMLSelectElement,
+        'custom'
+      );
+      setInputValue(
+        container.querySelector('input[aria-label="Post version"]') as HTMLInputElement,
+        '2'
+      );
+      setSelectValue(
+        container.querySelector('select[aria-label="Arc center mode"]') as HTMLSelectElement,
+        'absolute'
+      );
+      setTextAreaValue(
+        container.querySelector('textarea[aria-label="Pre-activation codes"]') as HTMLTextAreaElement,
+        'G60'
+      );
+    });
+    await clickButton(container, 'Save machine profile');
+    await flushAsync();
+
+    const manifest = readStoredManifest();
+    expect(manifest.activeMachineProfileId).toBe('default-wire-machine');
+    expect(manifest.machineProfiles.find((profile: { id: string }) => profile.id === 'new-wire-machine'))
+      .toMatchObject({
+        name: 'Bench Custom',
+        controller: { family: 'custom', postVersion: 2, arcCenterMode: 'absolute' },
+        compensation: { preActivationCodes: ['G60'] },
+        templates: { header: '', footer: '' }
+      });
+  });
+
+  it('duplicates and imports profiles as inactive, resolves collisions, and exports the exact portable wrapper', async () => {
+    window.showDirectoryPicker = undefined;
+    const downloadTextFile = vi.fn();
+    await renderApp(context, { downloadTextFile });
+    await openMachineOutputSettings(container);
+
+    await clickButton(container, 'Duplicate machine profile');
+    await flushAsync();
+    const selector = container.querySelector(
+      'select[aria-label="Machine profile selector"]'
+    ) as HTMLSelectElement;
+    expect(selector.value).toBe('default-wire-machine-2');
+    expect(readStoredManifest().activeMachineProfileId).toBe('default-wire-machine');
+
+    setSelectValue(selector, 'default-wire-machine');
+    await clickButton(container, 'Export machine profile');
+
+    expect(downloadTextFile).toHaveBeenCalledOnce();
+    const exported = downloadTextFile.mock.calls[0]?.[0];
+    expect(exported).toMatchObject({
+      fileName: 'default-wire-machine.wireedm-machine.json',
+      mimeType: 'application/json;charset=utf-8'
+    });
+    expect(JSON.parse(exported.text)).toMatchObject({
+      format: 'wire-edm-machine-profile',
+      schemaVersion: 1,
+      profile: { id: 'default-wire-machine' }
+    });
+
+    const conflicting = createBlankMachineProfile('default-wire-machine');
+    conflicting.name = 'Imported conflict';
+    const importInput = container.querySelector(
+      'input[aria-label="Import machine profile file"]'
+    ) as HTMLInputElement;
+    Object.defineProperty(importInput, 'files', {
+      configurable: true,
+      value: [
+        new File(
+          [serializeMachineProfileFile(conflicting, new Date('2026-07-13T12:00:00.000Z'))],
+          'profile.wireedm-machine.json',
+          { type: 'application/json' }
+        )
+      ]
+    });
+    await act(async () => importInput.dispatchEvent(new Event('change', { bubbles: true })));
+    await flushAsync();
+
+    expect(selector.value).toBe('default-wire-machine-3');
+    expect(readStoredManifest().activeMachineProfileId).toBe('default-wire-machine');
+    expect(readStoredManifest().machineProfiles.find(
+      (profile: { id: string }) => profile.id === 'default-wire-machine-3'
+    )).toMatchObject({
+      name: 'Imported conflict (3)',
+      controller: { verification: { status: 'unverified' } }
+    });
+  });
+
+  it('shows strict inline errors for malformed imports and invalid profile drafts', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+    await openMachineOutputSettings(container);
+
+    const postVersion = container.querySelector(
+      'input[aria-label="Post version"]'
+    ) as HTMLInputElement;
+    await act(async () => setInputValue(postVersion, '0'));
+    expect(container.textContent).toMatch(/post version/i);
+    expect(
+      (container.querySelector('button[aria-label="Acknowledge machine profile verification"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+    expect(
+      (container.querySelector('button[aria-label="Save machine profile"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+
+    const importInput = container.querySelector(
+      'input[aria-label="Import machine profile file"]'
+    ) as HTMLInputElement;
+    Object.defineProperty(importInput, 'files', {
+      configurable: true,
+      value: [new File(['{"broken"'], 'broken.wireedm-machine.json')]
+    });
+    await act(async () => importInput.dispatchEvent(new Event('change', { bubbles: true })));
+    await flushAsync();
+
+    expect(container.textContent).toMatch(/malformed JSON/i);
+  });
+
+  it('visibly resets sensitive verification edits and acknowledges only by explicit action', async () => {
+    window.showDirectoryPicker = undefined;
+    const verified = createVerifiedCharmillesRobofil100Profile(
+      'robofil-100',
+      new Date('2026-07-13T12:00:00.000Z')
+    );
+    seedStoredProfiles([verified], verified.id);
+    await renderApp(context);
+    await openMachineOutputSettings(container);
+
+    expect(container.textContent).toContain('User verified');
+    await act(async () =>
+      setInputValue(
+        container.querySelector('input[aria-label="D register index"]') as HTMLInputElement,
+        '1'
+      )
+    );
+    expect(container.textContent).toContain('Unverified');
+    expect(container.textContent).toContain('Controller-sensitive settings changed');
+
+    await clickButton(container, 'Acknowledge machine profile verification');
+    await flushAsync();
+    const stored = readStoredManifest().machineProfiles[0];
+    expect(stored.controller.verification).toMatchObject({
+      status: 'user-verified',
+      verifiedAt: expect.any(String),
+      verifiedFingerprint: expect.any(String)
+    });
+    expect(container.textContent).toContain('User verified');
+  });
+
+  it('sets the default explicitly and deletes the active profile with a safe deterministic fallback', async () => {
+    window.showDirectoryPicker = undefined;
+    const primary = createDefaultMachineProfile();
+    const fallback = createBlankMachineProfile('fallback-machine');
+    fallback.name = 'Fallback machine';
+    seedStoredProfiles([primary, fallback], primary.id);
+    await renderApp(context);
+    await openMachineOutputSettings(container);
+
+    const selector = container.querySelector(
+      'select[aria-label="Machine profile selector"]'
+    ) as HTMLSelectElement;
+    setSelectValue(selector, fallback.id);
+    expect(readStoredManifest().activeMachineProfileId).toBe(primary.id);
+    await clickButton(container, 'Set default machine profile');
+    await flushAsync();
+    expect(readStoredManifest().activeMachineProfileId).toBe(fallback.id);
+
+    await clickButton(container, 'Delete machine profile');
+    await flushAsync();
+    expect(readStoredManifest().activeMachineProfileId).toBe(primary.id);
+    expect(selector.value).toBe(primary.id);
+    expect(
+      (container.querySelector('button[aria-label="Delete machine profile"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
   });
 
   it('chooses a workbench folder from settings and displays folder details', async () => {
@@ -753,7 +1007,8 @@ function createTemporaryWorkbench(): ConnectedWorkbench {
       },
       output: {
         extension: 'iso',
-        lineEnding: 'crlf'
+        lineEnding: 'crlf',
+        coordinatePrecision: 3
       },
       activeMachineProfileId: activeMachineProfile.id,
       machineProfiles: [activeMachineProfile],
@@ -763,6 +1018,62 @@ function createTemporaryWorkbench(): ConnectedWorkbench {
     header: '%',
     footer: '%'
   };
+}
+
+async function openMachineOutputSettings(container: HTMLDivElement) {
+  await act(async () => {
+    container
+      .querySelector('button[aria-label="Open settings"]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  await act(async () => {
+    [...container.querySelectorAll('button')]
+      .find((button) => button.getAttribute('aria-label') === 'Machine & Output settings')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+}
+
+async function clickButton(container: HTMLDivElement, ariaLabel: string) {
+  await act(async () => {
+    container
+      .querySelector(`button[aria-label="${ariaLabel}"]`)
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+}
+
+function seedStoredProfiles(profiles: MachineProfile[], activeMachineProfileId: string) {
+  const active = profiles.find((profile) => profile.id === activeMachineProfileId)!;
+  window.localStorage.setItem(
+    'wire-edm-workbench:file:workbench.json',
+    JSON.stringify({
+      schemaVersion: 1,
+      name: 'Browser cache',
+      createdAt: '2026-07-13T10:00:00.000Z',
+      updatedAt: '2026-07-13T10:00:00.000Z',
+      templates: {
+        headerPath: 'templates/header.gcode',
+        footerPath: 'templates/footer.gcode'
+      },
+      output: active.output,
+      activeMachineProfileId,
+      machineProfiles: profiles,
+      projects: []
+    })
+  );
+  window.localStorage.setItem(
+    'wire-edm-workbench:file:templates/header.gcode',
+    active.templates.header
+  );
+  window.localStorage.setItem(
+    'wire-edm-workbench:file:templates/footer.gcode',
+    active.templates.footer
+  );
+}
+
+function readStoredManifest() {
+  return JSON.parse(
+    window.localStorage.getItem('wire-edm-workbench:file:workbench.json') ?? '{}'
+  );
 }
 
 function createDirectoryWorkbench(name: string): ConnectedWorkbench {
@@ -788,7 +1099,8 @@ function createDirectoryWorkbench(name: string): ConnectedWorkbench {
       },
       output: {
         extension: 'iso',
-        lineEnding: 'crlf'
+        lineEnding: 'crlf',
+        coordinatePrecision: 3
       },
       activeMachineProfileId: activeMachineProfile.id,
       machineProfiles: [activeMachineProfile],

@@ -1,4 +1,5 @@
 import { buildOutputFilename } from '@/domain/post/gcodeTemplates';
+import type { AppliedDxfUnits, DxfUnitDeclaration } from '@/domain/dxf/types';
 import type { WorkbenchProject, WorkbenchUpidState } from '@/domain/workbench/types';
 
 import {
@@ -6,6 +7,7 @@ import {
   type UpidGCodeExport,
   type UniversalPathIntelligenceDocument
 } from './upidDocument';
+import { validateUpidDocument } from './validateUpidDocument';
 
 const PROJECT_UPID_FORMAT = 'upid';
 const PROJECT_UPID_SCHEMA_VERSION = 1;
@@ -66,7 +68,10 @@ export function projectUpidDocument(project: WorkbenchProject | null | undefined
     );
   }
 
-  return requireProjectUpidDocument(project.id, upid.document as UniversalPathIntelligenceDocument);
+  return requireProjectUpidDocument(
+    project.id,
+    normalizeLegacyProjectUpidDocument(upid.document as UniversalPathIntelligenceDocument)
+  );
 }
 
 export function composeProjectUpidGCodeExport(
@@ -77,9 +82,7 @@ export function composeProjectUpidGCodeExport(
   const pathDocument = requireProjectUpidDocument(project.id, document);
   const machine = project.machine;
   const exportProgram = composeUpidGCodeExport(pathDocument, {
-    header: machine.templates.header,
-    footer: machine.templates.footer,
-    lineEnding: machine.output.lineEnding
+    machine
   });
 
   return {
@@ -98,6 +101,15 @@ function requireProjectUpidDocument(
   projectId: string,
   document: UniversalPathIntelligenceDocument
 ) {
+  const validation = validateUpidDocument(document);
+  if (!validation.structurallyValid) {
+    throw new Error(
+      `Invalid UPID document: ${validation.structuralDiagnostics
+        .map((diagnostic) => diagnostic.message)
+        .join('; ')}`
+    );
+  }
+
   const documentProjectId = document.source.projectId;
   if (typeof documentProjectId !== 'string') {
     throw new Error(`UPID document project identity is required for ${projectId}.`);
@@ -110,6 +122,131 @@ function requireProjectUpidDocument(
   }
 
   return document;
+}
+
+export function normalizeLegacyProjectUpidDocument(
+  document: UniversalPathIntelligenceDocument
+): UniversalPathIntelligenceDocument {
+  const options = document?.options as
+    | Partial<UniversalPathIntelligenceDocument['options']>
+    | undefined;
+  const hasLayerFilters =
+    options?.includeLayers !== undefined && options.excludeLayers !== undefined;
+  const hasGeometryBasis = document.geometryBasis !== undefined;
+  const sourceMigration = legacyDxfUnitMetadata(document);
+  if ((!options || hasLayerFilters) && hasGeometryBasis && !sourceMigration) {
+    return document;
+  }
+
+  return {
+    ...document,
+    geometryBasis: document.geometryBasis ?? 'wire-centre',
+    ...(!hasGeometryBasis
+      ? {
+          plan: {
+            ...document.plan,
+            operations: document.plan.operations.map(withoutAutomaticCompensationIntent)
+          },
+          pathElements: document.pathElements.map(withoutAutomaticCompensationIntent)
+        }
+      : {}),
+    ...(!options || hasLayerFilters
+      ? {}
+      : {
+          options: {
+            ...document.options,
+            includeLayers: options.includeLayers === undefined ? [] : options.includeLayers,
+            excludeLayers: options.excludeLayers === undefined ? [] : options.excludeLayers
+          }
+        }),
+    ...(sourceMigration
+      ? {
+          source: {
+            ...document.source,
+            ...sourceMigration
+          }
+        }
+      : {})
+  };
+}
+
+function legacyDxfUnitMetadata(
+  document: UniversalPathIntelligenceDocument
+): {
+  appliedUnits?: AppliedDxfUnits;
+  unitDeclaration?: DxfUnitDeclaration;
+} | null {
+  const source = document.source;
+  if (!source || typeof source !== 'object') return null;
+  const unitDeclaration = source.unitDeclaration ?? legacyUnitDeclaration(source.units);
+  const appliedUnits = source.appliedUnits ?? legacyAppliedUnits(
+    source.units,
+    source.coordinateScaleToMillimeters
+  );
+  if (unitDeclaration === source.unitDeclaration && appliedUnits === source.appliedUnits) {
+    return null;
+  }
+  return {
+    ...(source.unitDeclaration ? {} : { unitDeclaration }),
+    ...(source.appliedUnits || !appliedUnits ? {} : { appliedUnits })
+  };
+}
+
+function legacyUnitDeclaration(
+  units: UniversalPathIntelligenceDocument['source']['units']
+): DxfUnitDeclaration {
+  if (!units) return { status: 'missing' };
+  if (units.code === 0) return { status: 'unitless', units: { ...units } };
+  if (
+    units.scaleToMillimeters != null &&
+    Number.isFinite(units.scaleToMillimeters) &&
+    units.scaleToMillimeters > 0
+  ) {
+    return { status: 'recognized', units: { ...units } };
+  }
+  return { status: 'unknown', units: { ...units } };
+}
+
+function legacyAppliedUnits(
+  units: UniversalPathIntelligenceDocument['source']['units'],
+  coordinateScaleToMillimeters: number | undefined
+): AppliedDxfUnits | undefined {
+  const rawScale = units?.scaleToMillimeters;
+  if (
+    units &&
+    rawScale != null &&
+    Number.isFinite(rawScale) &&
+    rawScale > 0 &&
+    coordinateScaleToMillimeters === rawScale
+  ) {
+    return {
+      label: units.label,
+      scaleToMillimeters: rawScale,
+      basis: 'dxf-declared',
+      confirmed: true
+    };
+  }
+  if (
+    coordinateScaleToMillimeters === 1 &&
+    (!units || units.scaleToMillimeters == null)
+  ) {
+    return {
+      label: 'millimeters',
+      scaleToMillimeters: 1,
+      basis: 'legacy-assumed',
+      confirmed: false
+    };
+  }
+  return undefined;
+}
+
+function withoutAutomaticCompensationIntent<T extends { compensationIntent?: unknown }>(
+  value: T
+): T {
+  const intent = value.compensationIntent as { source?: unknown } | undefined;
+  if (intent?.source !== 'automatic') return value;
+  const { compensationIntent: _ignored, ...rest } = value;
+  return rest as T;
 }
 
 function stampProjectUpidDocument(

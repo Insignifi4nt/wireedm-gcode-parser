@@ -1,14 +1,13 @@
 import {
   approximatePath,
   boundsAreFinite,
-  cross,
   distance,
   mergeBounds,
   pathBounds,
   segmentMap,
-  signedAreaOfPath,
-  vector
+  signedAreaOfPath
 } from './segments';
+import { findPathSegmentIntersectionDiagnostics } from './intersections';
 import type {
   Bounds2,
   ContourAnalysisResult,
@@ -31,7 +30,12 @@ export function analyzeContours(
 ): ContourAnalysisResult {
   const resolved = resolvePathPlanningOptions(options);
   const segmentsById = segmentMap(segments);
-  const diagnostics: PathDiagnostic[] = [];
+  const intersectionDiagnostics = findPathSegmentIntersectionDiagnostics(
+    segments,
+    chains,
+    resolved
+  );
+  const diagnostics: PathDiagnostic[] = [...intersectionDiagnostics];
 
   const contours: PathContour[] = chains.map((chain, index) => {
     const id = `contour_${String(index + 1).padStart(4, '0')}`;
@@ -39,7 +43,13 @@ export function analyzeContours(
     const bounds = boundsAreFinite(pathBounds(chain.segmentRefs, segmentsById))
       ? pathBounds(chain.segmentRefs, segmentsById)
       : boundsFromPolygon(approximatePolygon);
-    const diagnosticIds = [...chain.diagnosticIds];
+    const chainIntersectionDiagnostics = intersectionDiagnostics.filter((diagnostic) =>
+      diagnostic.relatedChainIds?.includes(chain.id)
+    );
+    const diagnosticIds = [
+      ...chain.diagnosticIds,
+      ...chainIntersectionDiagnostics.map((diagnostic) => diagnostic.id)
+    ];
     const provenance = summarizePathProvenance(chain.segmentRefs.map((ref) => segmentsById.get(ref.segmentId)));
 
     if (!chain.closed) {
@@ -66,24 +76,51 @@ export function analyzeContours(
 
     const signedArea = signedAreaOfPath(chain.segmentRefs, segmentsById);
     const area = Math.abs(signedArea);
-    const orientation = orientationFromArea(signedArea, resolved.coincidenceEpsilon);
-    const representativePoint = polygonCentroidOrAverage(approximatePolygon, resolved.coincidenceEpsilon);
-    const selfIntersects = hasSelfIntersection(approximatePolygon, resolved.coincidenceEpsilon);
-    let classification: ContourClassification = 'ambiguous';
-    let confidence = 0.95;
-
-    if (selfIntersects) {
+    if (!Number.isFinite(signedArea) || !Number.isFinite(area)) {
       const diagnostic: PathDiagnostic = {
         id: `diag_contour_${String(diagnostics.length + 1).padStart(4, '0')}`,
-        severity: 'warning',
-        code: 'self-intersection',
-        message: `Closed chain ${chain.id} appears to self-intersect after arc approximation; classification is ambiguous.`,
+        severity: 'error',
+        code: 'non-finite-geometry',
+        message: `Closed chain ${chain.id} produced a non-finite contour area; geometric metrics and classification were suppressed.`,
         relatedChainIds: [chain.id],
         relatedSegmentIds: chain.segmentRefs.map((ref) => ref.segmentId),
-        relatedContourIds: [id]
+        relatedContourIds: [id],
+        details: {
+          metric: 'signed-area',
+          result: Number.isNaN(signedArea) ? 'nan' : 'infinite'
+        }
       };
       diagnostics.push(diagnostic);
       diagnosticIds.push(diagnostic.id);
+
+      return {
+        id,
+        label: contourLabel(index),
+        provenance,
+        chainId: chain.id,
+        closed: true,
+        classification: 'ambiguous',
+        signedArea: null,
+        area: null,
+        orientation: null,
+        bounds,
+        containmentDepth: 0,
+        parentId: null,
+        childIds: [],
+        representativePoint: null,
+        approximatePolygon,
+        confidence: 0,
+        diagnosticIds
+      };
+    }
+
+    const orientation = orientationFromArea(signedArea, resolved.coincidenceEpsilon);
+    const representativePoint = polygonCentroidOrAverage(approximatePolygon, resolved.coincidenceEpsilon);
+    const intersects = chainIntersectionDiagnostics.length > 0;
+    let classification: ContourClassification = 'ambiguous';
+    let confidence = 0.95;
+
+    if (intersects) {
       confidence = 0.2;
     } else if (area <= resolved.coincidenceEpsilon) {
       const diagnostic: PathDiagnostic = {
@@ -125,6 +162,17 @@ export function analyzeContours(
   });
 
   assignContainment(contours, resolved.coincidenceEpsilon);
+
+  const contourIdByChainId = new Map(contours.map((contour) => [contour.chainId, contour.id]));
+  for (const diagnostic of intersectionDiagnostics) {
+    diagnostic.relatedContourIds = [
+      ...new Set(
+        (diagnostic.relatedChainIds ?? [])
+          .map((chainId) => contourIdByChainId.get(chainId))
+          .filter((contourId): contourId is string => Boolean(contourId))
+      )
+    ];
+  }
 
   return { contours, diagnostics };
 }
@@ -296,52 +344,6 @@ function pointInPolygon(point: Point2, polygon: Point2[], epsilon = 1e-9) {
   }
 
   return inside;
-}
-
-function hasSelfIntersection(points: Point2[], epsilon: number) {
-  const clean = stripClosingDuplicate(points, epsilon);
-  if (clean.length < 4) return false;
-
-  for (let first = 0; first < clean.length; first++) {
-    const a1 = clean[first];
-    const a2 = clean[(first + 1) % clean.length];
-
-    for (let second = first + 1; second < clean.length; second++) {
-      const b1 = clean[second];
-      const b2 = clean[(second + 1) % clean.length];
-
-      const adjacent = first === second || (first + 1) % clean.length === second || first === (second + 1) % clean.length;
-      if (adjacent) continue;
-
-      if (segmentsIntersect(a1, a2, b1, b2, epsilon)) return true;
-    }
-  }
-
-  return false;
-}
-
-function segmentsIntersect(a1: Point2, a2: Point2, b1: Point2, b2: Point2, epsilon: number) {
-  const r = vector(a1, a2);
-  const s = vector(b1, b2);
-  const denominator = cross(r, s);
-  const qp = vector(a1, b1);
-
-  if (Math.abs(denominator) <= epsilon) {
-    if (Math.abs(cross(qp, r)) > epsilon) return false;
-    return rangesOverlap(a1.x, a2.x, b1.x, b2.x, epsilon) && rangesOverlap(a1.y, a2.y, b1.y, b2.y, epsilon);
-  }
-
-  const t = cross(qp, s) / denominator;
-  const u = cross(qp, r) / denominator;
-  return t > epsilon && t < 1 - epsilon && u > epsilon && u < 1 - epsilon;
-}
-
-function rangesOverlap(a: number, b: number, c: number, d: number, epsilon: number) {
-  const minA = Math.min(a, b);
-  const maxA = Math.max(a, b);
-  const minB = Math.min(c, d);
-  const maxB = Math.max(c, d);
-  return Math.max(minA, minB) <= Math.min(maxA, maxB) + epsilon;
 }
 
 function stripClosingDuplicate(points: Point2[], epsilon = 1e-9) {

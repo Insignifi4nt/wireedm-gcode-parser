@@ -1,9 +1,11 @@
 import { useState } from 'react';
 
+import type { PendingDxfImport } from '@/app/useWorkbenchAppController';
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
 import { DashboardHeader } from './DashboardHeader';
+import { DxfImportConfirmationDialog } from './DxfImportConfirmationDialog';
 import { LatestDxfImportPanel } from './LatestDxfImportPanel';
 import { ProjectActionDialog, type ProjectAction } from './ProjectActionDialog';
 import { ProjectListPanel } from './ProjectListPanel';
@@ -18,12 +20,18 @@ interface DashboardPageProps {
   programImportStatus: 'idle' | 'importing' | 'error';
   programImportErrorMessage: string | null;
   latestImport: ImportDxfProjectResult | null;
+  pendingDxfImport: PendingDxfImport | null;
   onOpenEditor: () => void;
   onOpenLatestImportInEditor: () => void;
   onOpenProject: (projectPath: string) => void | Promise<void>;
   onDeleteProject: (projectId: string) => Promise<void>;
   onRenameProject: (projectId: string, name: string) => Promise<void>;
   onImportDxfFile: (file: File) => void | Promise<void>;
+  onCancelDxfImport: () => void;
+  onConfirmDxfImport: () => void | Promise<void>;
+  onDxfImportMachineProfileChange: (profileId: string) => void;
+  onDxfImportOverrideAcknowledgedChange: (acknowledged: boolean) => void;
+  onDxfImportUnitCandidateChange: (candidateId: string) => void;
   onImportProgramFile: (file: File) => void | Promise<void>;
 }
 
@@ -36,12 +44,18 @@ export function DashboardPage({
   programImportStatus,
   programImportErrorMessage,
   latestImport,
+  pendingDxfImport,
   onOpenEditor,
   onOpenLatestImportInEditor,
   onOpenProject,
   onDeleteProject,
   onRenameProject,
   onImportDxfFile,
+  onCancelDxfImport,
+  onConfirmDxfImport,
+  onDxfImportMachineProfileChange,
+  onDxfImportOverrideAcknowledgedChange,
+  onDxfImportUnitCandidateChange,
   onImportProgramFile
 }: DashboardPageProps) {
   const projects = connectedWorkbench?.manifest.projects ?? [];
@@ -103,6 +117,24 @@ export function DashboardPage({
         onDeleteProject={onDeleteProject}
         onRenameProject={onRenameProject}
       />
+
+      {pendingDxfImport && (
+        <DxfImportConfirmationDialog
+          declaredUnitOverrideAcknowledged={pendingDxfImport.declaredUnitOverrideAcknowledged}
+          errorMessage={importErrorMessage}
+          onCancel={onCancelDxfImport}
+          onConfirm={onConfirmDxfImport}
+          onMachineProfileChange={onDxfImportMachineProfileChange}
+          onOverrideAcknowledgedChange={onDxfImportOverrideAcknowledgedChange}
+          onUnitCandidateChange={onDxfImportUnitCandidateChange}
+          preparation={pendingDxfImport.preparation}
+          preview={pendingDxfImport.preview}
+          previewErrorMessage={pendingDxfImport.previewErrorMessage}
+          selection={pendingDxfImport.selection}
+          submitting={importStatus === 'importing'}
+          unitCandidates={pendingDxfImport.unitCandidates}
+        />
+      )}
     </div>
   );
 }

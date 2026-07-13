@@ -16,13 +16,39 @@ export function createDefaultMachineProfile(): MachineProfile {
   return {
     id: 'default-wire-machine',
     name: 'Default Wire EDM',
+    preferredDxfImportUnit: null,
+    controller: {
+      family: 'generic-iso',
+      postVersion: 1,
+      verification: { status: 'unverified' },
+      blockFormatting: 'spaced',
+      coordinateSystem: 'template-managed',
+      unitsCode: 'omit',
+      planeCode: 'omit',
+      workOffsetCode: 'template-managed',
+      distanceMode: 'G90',
+      arcCenterMode: 'incremental-from-start',
+      programEnd: 'template-managed'
+    },
+    compensation: {
+      supported: false,
+      enabledByDefault: false,
+      offsetSelection: { address: 'D', index: 0 },
+      activation: 'linear-lead',
+      cancellation: 'linear-lead-out',
+      lifecycleScope: 'operation',
+      preActivationCodes: [],
+      validationLeadLengthMm: 2,
+      expectedMaximumOffsetMm: null
+    },
     templates: {
       header: DEFAULT_HEADER_TEMPLATE,
       footer: DEFAULT_FOOTER_TEMPLATE
     },
     output: {
       extension: 'iso',
-      lineEnding: 'crlf'
+      lineEnding: 'crlf',
+      coordinatePrecision: 3
     },
     workArea: {
       widthMm: null,

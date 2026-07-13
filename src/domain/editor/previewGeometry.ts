@@ -29,6 +29,10 @@ import type {
   Point2,
   SegmentId
 } from '@/domain/path-intel/types';
+import {
+  deriveVerifiedRobofilPreviewPostBlocks
+} from '@/domain/post/upidMachinePost';
+import type { MachineProfile } from '@/domain/workbench/types';
 
 export interface EditorPreviewPath {
   type: 'rapid' | 'cut' | 'arc';
@@ -51,7 +55,7 @@ export interface EditorPreviewPath {
   pathElementId?: PathElementId;
   segmentId?: SegmentId;
   source?: 'gcode' | 'path-document';
-  travelRole?: 'rapid-in' | 'lead-in';
+  travelRole?: 'rapid-in' | 'lead-in' | 'lead-out';
 }
 
 export interface EditorPreviewViewBox {
@@ -81,6 +85,38 @@ interface BuildEditorPreviewGeometryOptions {
 interface BuildEditorPathDocumentPreviewGeometryOptions {
   lineHints?: number[];
   padding?: number;
+  postedTransitions?: PostedPreviewTransition[];
+}
+
+export interface PostedPreviewTransition {
+  endPoint: Point2;
+  kind: 'rapid' | 'lead-in' | 'lead-out';
+  operationId: string;
+  programLineNumber: number;
+  startPoint: Point2;
+}
+
+export function deriveVerifiedRobofilPreviewTransitions(
+  document: PathPlanningDocument,
+  machine: MachineProfile
+): PostedPreviewTransition[] | undefined {
+  return deriveVerifiedRobofilPreviewPostBlocks(document, machine)?.flatMap((block) => {
+    if (
+      block.kind !== 'lead-in' ||
+      !block.operationId ||
+      !block.startPoint ||
+      !block.endPoint
+    ) {
+      return [];
+    }
+    return [{
+      kind: block.kind,
+      operationId: block.operationId,
+      programLineNumber: block.bodyLineIndex + 1,
+      startPoint: block.startPoint,
+      endPoint: block.endPoint
+    }];
+  });
 }
 
 export function buildEditorPreviewGeometry(
@@ -169,39 +205,62 @@ export function buildEditorPathDocumentPreviewGeometry(
   for (const operation of document.plan.operations) {
     bounds = mergeBounds(bounds, pathBounds(operation.segmentRefs, segmentsById));
     const pathElementId = pathElementsByOperationId.get(operation.id)?.id;
-    const leadIn = operation.overrides?.leadIn;
-    const entryPoint = leadIn?.from ?? operation.startPoint;
-    const rapidStart = currentPoint ?? document.options.startPoint;
-    if (!currentPoint || !pathPointsEqual(currentPoint, entryPoint, document.options.coincidenceEpsilon)) {
-      paths.push({
-        type: 'rapid',
-        bounds: boundsFromPoints([rapidStart, entryPoint]),
-        d: linePath(rapidStart, entryPoint),
-        start: rapidStart,
-        end: entryPoint,
-        line: pathLineNumber(options.lineHints, pathIndex++),
-        operationId: operation.id,
-        pathElementId,
-        source: 'path-document',
-        travelRole: 'rapid-in'
-      });
-    }
+    const postedTransitions = options.postedTransitions?.filter(
+      (transition) => transition.operationId === operation.id
+    );
+    const hasPostedTransitionTrace = postedTransitions !== undefined;
+    if (hasPostedTransitionTrace) {
+      for (const transition of postedTransitions.filter((candidate) => candidate.kind !== 'lead-out')) {
+        const transitionBounds = boundsFromPoints([transition.startPoint, transition.endPoint]);
+        bounds = mergeBounds(bounds, transitionBounds);
+        paths.push({
+          type: transition.kind === 'rapid' ? 'rapid' : 'cut',
+          bounds: transitionBounds,
+          d: linePath(transition.startPoint, transition.endPoint),
+          start: transition.startPoint,
+          end: transition.endPoint,
+          line: transition.programLineNumber,
+          operationId: operation.id,
+          pathElementId,
+          source: 'path-document',
+          travelRole: transition.kind === 'rapid' ? 'rapid-in' : transition.kind
+        });
+      }
+    } else {
+      const leadIn = operation.overrides?.leadIn;
+      const entryPoint = leadIn?.from ?? operation.startPoint;
+      const rapidStart = currentPoint ?? document.options.startPoint;
+      if (!currentPoint || !pathPointsEqual(currentPoint, entryPoint, document.options.coincidenceEpsilon)) {
+        paths.push({
+          type: 'rapid',
+          bounds: boundsFromPoints([rapidStart, entryPoint]),
+          d: linePath(rapidStart, entryPoint),
+          start: rapidStart,
+          end: entryPoint,
+          line: pathLineNumber(options.lineHints, pathIndex++),
+          operationId: operation.id,
+          pathElementId,
+          source: 'path-document',
+          travelRole: 'rapid-in'
+        });
+      }
 
-    if (leadIn && !pathPointsEqual(leadIn.from, leadIn.to, document.options.coincidenceEpsilon)) {
-      const leadInBounds = boundsFromPoints([leadIn.from, leadIn.to]);
-      bounds = mergeBounds(bounds, leadInBounds);
-      paths.push({
-        type: 'cut',
-        bounds: leadInBounds,
-        d: linePath(leadIn.from, leadIn.to),
-        start: leadIn.from,
-        end: leadIn.to,
-        line: pathLineNumber(options.lineHints, pathIndex++),
-        operationId: operation.id,
-        pathElementId,
-        source: 'path-document',
-        travelRole: 'lead-in'
-      });
+      if (leadIn && !pathPointsEqual(leadIn.from, leadIn.to, document.options.coincidenceEpsilon)) {
+        const leadInBounds = boundsFromPoints([leadIn.from, leadIn.to]);
+        bounds = mergeBounds(bounds, leadInBounds);
+        paths.push({
+          type: 'cut',
+          bounds: leadInBounds,
+          d: linePath(leadIn.from, leadIn.to),
+          start: leadIn.from,
+          end: leadIn.to,
+          line: pathLineNumber(options.lineHints, pathIndex++),
+          operationId: operation.id,
+          pathElementId,
+          source: 'path-document',
+          travelRole: 'lead-in'
+        });
+      }
     }
 
     for (const ref of operation.segmentRefs) {
@@ -221,6 +280,23 @@ export function buildEditorPathDocumentPreviewGeometry(
           source: 'path-document'
         });
       }
+    }
+
+    for (const transition of postedTransitions?.filter((candidate) => candidate.kind === 'lead-out') ?? []) {
+      const transitionBounds = boundsFromPoints([transition.startPoint, transition.endPoint]);
+      bounds = mergeBounds(bounds, transitionBounds);
+      paths.push({
+        type: 'cut',
+        bounds: transitionBounds,
+        d: linePath(transition.startPoint, transition.endPoint),
+        start: transition.startPoint,
+        end: transition.endPoint,
+        line: transition.programLineNumber,
+        operationId: operation.id,
+        pathElementId,
+        source: 'path-document',
+        travelRole: 'lead-out'
+      });
     }
 
     currentPoint = operation.endPoint;

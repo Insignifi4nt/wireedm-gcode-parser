@@ -123,4 +123,19 @@ describe('connectWorkbenchDirectory', () => {
 
     expect(restored.status).toBe('permission-needed');
   });
+
+  it('returns an error result when the remembered handle store read rejects', async () => {
+    window.showDirectoryPicker = async () => directoryHandle('unused');
+
+    const result = await connectRememberedWorkbenchDirectory({
+      handleStore: {
+        read: async () => {
+          throw new Error('IndexedDB failed');
+        },
+        write: async () => {}
+      }
+    });
+
+    expect(result).toEqual({ status: 'error', message: 'IndexedDB failed' });
+  });
 });

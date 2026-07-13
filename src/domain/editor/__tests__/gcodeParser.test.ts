@@ -3,6 +3,99 @@ import { describe, expect, it } from 'vitest';
 import { parseGCodeProgram } from '../gcodeParser';
 
 describe('parseGCodeProgram', () => {
+  it('preserves words after parenthesized inline comments', () => {
+    expect(parseGCodeProgram('G1 X1 (note) Y2').path.at(-1)).toMatchObject({ x: 1, y: 2 });
+  });
+
+  it('treats semicolons inside parenthesized comments as comment text', () => {
+    const result = parseGCodeProgram('G1 X1 (note; still note) Y2');
+
+    expect(result.path.at(-1)).toMatchObject({ x: 1, y: 2 });
+    expect(result.errors).toEqual([]);
+  });
+
+  it('tracks G91 XY independently from incremental IJ mode', () => {
+    const result = parseGCodeProgram('G91\nG0 X10\nG1 X1\nG1 X1');
+    expect(result.path.map((point) => ('x' in point ? point.x : point.endX))).toEqual([
+      10, 11, 12
+    ]);
+  });
+
+  it('parses setup and motion words in one block', () => {
+    expect(parseGCodeProgram('G90 G0 X5 Y5').path.at(-1)).toMatchObject({ x: 5, y: 5 });
+  });
+
+  it('resolves minor and major R arcs without inventing an IJ zero centre', () => {
+    expect(parseGCodeProgram('G0 X0 Y0\nG2 X10 Y0 R5').path.at(-1)).toMatchObject({
+      centerX: 5,
+      centerY: 0
+    });
+    expect(parseGCodeProgram('G0 X0 Y0\nG3 X10 Y0 R-10').errors).toHaveLength(0);
+  });
+
+  it('selects the directed minor or major centre from the sign of R', () => {
+    const minor = parseGCodeProgram('G0 X0 Y0\nG2 X10 Y0 R10').path.at(-1);
+    const major = parseGCodeProgram('G0 X0 Y0\nG2 X10 Y0 R-10').path.at(-1);
+
+    expect(minor).toMatchObject({ centerX: 5 });
+    expect(major).toMatchObject({ centerX: 5 });
+    expect('centerY' in minor! ? minor.centerY : Number.NaN).toBeCloseTo(-Math.sqrt(75), 9);
+    expect('centerY' in major! ? major.centerY : Number.NaN).toBeCloseTo(Math.sqrt(75), 9);
+  });
+
+  it.each(['10000000000000000', '-10000000000000000'])(
+    'rejects numerically indistinguishable large signed-R arc geometry for R%s',
+    (radius) => {
+      const result = parseGCodeProgram(`G0 X0 Y0\nG2 X1 Y0 R${radius}`);
+
+      expect(result.path).toHaveLength(1);
+      expect(result.errors).toMatchObject([{ line: 2, type: 'error' }]);
+    }
+  );
+
+  it('preserves distinguishable large signed-R arc geometry', () => {
+    const minor = parseGCodeProgram('G0 X0 Y0\nG2 X1 Y0 R1000000000000');
+    const major = parseGCodeProgram('G0 X0 Y0\nG2 X1 Y0 R-1000000000000');
+    const minorArc = minor.path.at(-1);
+    const majorArc = major.path.at(-1);
+
+    expect(minor.errors).toEqual([]);
+    expect(major.errors).toEqual([]);
+    expect(minorArc).toMatchObject({ type: 'arc', centerX: 0.5 });
+    expect(majorArc).toMatchObject({ type: 'arc', centerX: 0.5 });
+    expect(minorArc && 'centerY' in minorArc ? minorArc.centerY : 0).toBeLessThan(0);
+    expect(majorArc && 'centerY' in majorArc ? majorArc.centerY : 0).toBeGreaterThan(0);
+  });
+
+  it('keeps IJ mode absolute when XY switches to incremental', () => {
+    const result = parseGCodeProgram('G90.1\nG91\nG0 X10 Y0\nG3 X10 Y10 I10 J0');
+
+    expect(result.path.at(-1)).toMatchObject({
+      endX: 20,
+      endY: 10,
+      centerX: 10,
+      centerY: 0
+    });
+  });
+
+  it('reports unclosed parenthesized comments and preserves preceding words', () => {
+    const result = parseGCodeProgram('G1 X1 (unfinished');
+
+    expect(result.path.at(-1)).toMatchObject({ x: 1, y: 0 });
+    expect(result.errors).toMatchObject([{ line: 1, type: 'error' }]);
+  });
+
+  it.each([
+    ['a radius shorter than half the chord', 'G0 X0 Y0\nG2 X10 Y0 R4'],
+    ['coincident arc endpoints', 'G0 X0 Y0\nG2 X0 Y0 R5'],
+    ['a non-finite radius', 'G0 X0 Y0\nG2 X10 Y0 R1e999']
+  ])('rejects %s for R arcs', (_caseName, program) => {
+    const result = parseGCodeProgram(program);
+
+    expect(result.path).toHaveLength(1);
+    expect(result.errors).toHaveLength(1);
+  });
+
   it('does not parse setup modal commands as motion', () => {
     const result = parseGCodeProgram(['G21', 'G17', 'G90', 'G0 X1 Y2'].join('\n'));
 

@@ -1,8 +1,16 @@
 import { expect, test } from '@playwright/test';
 
+import { confirmPendingDxfImport } from './dxf-import';
+
+async function openReadyWorkbench(page: import('@playwright/test').Page) {
+  await page.goto('/');
+  await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
+  await expect(page.locator('input[aria-label="Machine program file"]')).toBeEnabled();
+}
+
 test('loads the workbench dashboard in a real browser', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await expect(page).toHaveTitle(/Wire EDM Workbench/);
   await expect(page.locator('[data-app-shell]')).toBeVisible();
@@ -35,15 +43,18 @@ test('loads the workbench dashboard in a real browser', async ({ page }) => {
 
 test('keeps the 1024px workbench in one readable column without clipping', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 720 });
-  await page.goto('/');
+  await openReadyWorkbench(page);
 
   await page.locator('input[aria-label="DXF file"]').setInputFiles({
     name: 'workbench-library.dxf',
     mimeType: 'application/dxf',
     buffer: Buffer.from(rectangleDxf())
   });
+  await confirmPendingDxfImport(page);
   await page.getByRole('button', { name: /dashboard/i }).click();
-  await page.locator('input[aria-label="Machine program file"]').setInputFiles({
+  const machineProgramInput = page.locator('input[aria-label="Machine program file"]');
+  await expect(machineProgramInput).toBeEnabled();
+  await machineProgramInput.setInputFiles({
     name: 'workbench-library.nc',
     mimeType: 'text/plain',
     buffer: Buffer.from('G90\nG0 X0 Y0\nG1 X10 Y10')

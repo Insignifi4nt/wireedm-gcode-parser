@@ -1,29 +1,37 @@
 import { analyzeContours } from '@/domain/path-intel/contours';
+import {
+  machineSnapshotAuthorizesAutomaticCompensation,
+  suggestCompensationIntent
+} from '@/domain/compensation/intent';
+import type { MachineProfile } from '@/domain/workbench/types';
 import { buildChains } from '@/domain/path-intel/chains';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
 import { buildPathElements } from '@/domain/path-intel/pathElements';
 import { buildContourDisplayNames } from '@/domain/path-intel/pathNaming';
 import { planOperations } from '@/domain/path-intel/planOperations';
+import { sanitizePathSegments } from '@/domain/path-intel/sanitizeSegments';
 import {
-  angleIsOnSweep,
+  arcParameterAtPoint,
+  arcParameterAtRadial,
   createArcSegment,
   createCircleSegment,
   createLineSegment,
   distance,
   endpointKey,
   orientedArcClockwise,
+  orientedArcSweep,
   orientedSegmentEnd,
   orientedSegmentStart,
   pathCutLength,
   pathEndPoint,
   pathStartPoint,
+  pointOnArcAtParameter,
   pointOnCircle,
   pointsEqual,
   requiredSegment,
   reversePathRefs,
   rotatePathRefs,
-  segmentMap,
-  signedSweep
+  segmentMap
 } from '@/domain/path-intel/segments';
 import type {
   ArcPathSegment,
@@ -35,6 +43,7 @@ import type {
   OrientedSegmentRef,
   OperationOrderStrategy,
   PathChain,
+  PathDiagnostic,
   PathElementId,
   PathOperation,
   PathPlanningDocument,
@@ -129,7 +138,8 @@ export function setPathOperationOrderStrategy(
 export function setPathOperationClassification(
   document: PathPlanningDocument,
   operationId: string,
-  classification: ContourClassification
+  classification: ContourClassification,
+  projectMachineSnapshot?: MachineProfile
 ) {
   const next = cloneDocument(document);
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
@@ -147,6 +157,14 @@ export function setPathOperationClassification(
 
   const contour = next.contours.find((candidate) => candidate.id === operation.contourId);
   if (contour) contour.classification = classification;
+
+  if (operation.compensationIntent?.source === 'automatic') {
+    operation.compensationIntent = machineSnapshotAuthorizesAutomaticCompensation(
+      projectMachineSnapshot
+    )
+      ? suggestCompensationIntent({ document: next, operation })
+      : undefined;
+  }
 
   refreshOperationDisplayNames(next);
   refreshPathElements(next);
@@ -738,7 +756,14 @@ function splitOperationSegmentAtPoint(
     };
   }
 
-  const splitSegments = splitSegment(segment, ref, nearest.point, document, operation.id);
+  const splitSegments = splitSegment(
+    segment,
+    ref,
+    nearest.point,
+    nearest.t,
+    document,
+    operation.id
+  );
   if (!splitSegments) return null;
 
   replaceDocumentSegment(document, segment.id, splitSegments);
@@ -763,12 +788,21 @@ function splitSegment(
   segment: PathSegment,
   ref: OrientedSegmentRef,
   point: Point2,
+  parameter: number,
   document: PathPlanningDocument,
   operationId: string
 ): PathSegment[] | null {
   const source = splitSegmentSource(segment, point, operationId, 'user split');
   const start = orientedSegmentStart(segment, ref);
   const end = orientedSegmentEnd(segment, ref);
+
+  const splitParameter = clamp(parameter);
+  if (
+    segment.kind !== 'circle' &&
+    (!Number.isFinite(parameter) || splitParameter <= 0 || splitParameter >= 1)
+  ) {
+    return null;
+  }
 
   if (segment.kind === 'line') {
     const [firstId, secondId] = nextEditSegmentIds(document, 2);
@@ -779,26 +813,34 @@ function splitSegment(
   }
 
   if (segment.kind === 'arc') {
-    const clockwise = orientedArcClockwise(segment, ref);
+    const sweep = orientedArcSweep(segment, ref);
+    const firstSweep = sweep * splitParameter;
+    const secondSweep = sweep - firstSweep;
+    if (firstSweep === 0 || secondSweep === 0) return null;
+
+    const splitPoint = pointOnArcAtParameter(segment, ref, splitParameter);
+    const clockwise = sweep < 0;
     const [firstId, secondId] = nextEditSegmentIds(document, 2);
     return [
       createArcSegment({
         id: firstId,
         source,
         start,
-        end: point,
+        end: splitPoint,
         center: segment.center,
         radius: segment.radius,
-        clockwise
+        clockwise,
+        sweepRadians: firstSweep
       }),
       createArcSegment({
         id: secondId,
         source,
-        start: point,
+        start: splitPoint,
         end,
         center: segment.center,
         radius: segment.radius,
-        clockwise
+        clockwise,
+        sweepRadians: secondSweep
       })
     ];
   }
@@ -896,7 +938,8 @@ function transformSegmentGeometry(
     end: transformPoint(segment.end),
     center: transformPoint(segment.center),
     radius: segment.radius,
-    clockwise: determinant < 0 ? !segment.clockwise : segment.clockwise
+    clockwise: determinant < 0 ? !segment.clockwise : segment.clockwise,
+    sweepRadians: segment.sweepRadians * determinant
   });
 }
 
@@ -908,6 +951,14 @@ function refreshDocumentAfterSegmentGeometryEdit(
   const previousOperations = document.plan.operations.map((operation) => structuredClone(operation));
   const previousOperationsByContourId = new Map(previousOperations.map((operation) => [operation.contourId, operation]));
   const manualClassificationsByContourId = manualClassifications(document);
+  const persistentDiagnostics = persistentImportDiagnostics(document.diagnostics);
+  const sanitationDiagnostics = sanitizePathSegments(
+    document.segments,
+    document.options
+  ).diagnostics.map((diagnostic, index) => ({
+    ...diagnostic,
+    id: `diag_edit_sanitize_${String(index + 1).padStart(4, '0')}`
+  }));
 
   const clusterResult = clusterSegmentEndpoints(document.segments, document.options);
   const chainResult = buildChains(document.segments, clusterResult, document.options);
@@ -952,6 +1003,8 @@ function refreshDocumentAfterSegmentGeometryEdit(
     operations: orderedOperations
   };
   document.diagnostics = [
+    ...persistentDiagnostics,
+    ...sanitationDiagnostics,
     ...clusterResult.diagnostics,
     ...chainResult.diagnostics,
     ...contourResult.diagnostics,
@@ -963,6 +1016,25 @@ function refreshDocumentAfterSegmentGeometryEdit(
   }
 
   refreshPlan(document);
+}
+
+const PERSISTENT_IMPORT_DIAGNOSTIC_CODES = new Set<PathDiagnostic['code']>([
+  'zero-length-segment',
+  'non-finite-geometry',
+  'duplicate-segment',
+  'invalid-arc',
+  'invalid-polyline',
+  'layer-filtered',
+  'dxf-import-warning',
+  'units-assumed-millimeters'
+]);
+
+function persistentImportDiagnostics(diagnostics: PathDiagnostic[]) {
+  return diagnostics.filter(
+    (diagnostic) =>
+      PERSISTENT_IMPORT_DIAGNOSTIC_CODES.has(diagnostic.code) &&
+      !diagnostic.id.startsWith('diag_edit_sanitize_')
+  );
 }
 
 function restoreGeometryEditOperationState(
@@ -991,6 +1063,9 @@ function restoreGeometryEditOperationState(
   const restored: PathOperation = {
     ...operation,
     id: previous.id,
+    ...(previous.compensationIntent
+      ? { compensationIntent: structuredClone(previous.compensationIntent) }
+      : {}),
     ...(overrides ? { overrides } : {})
   };
 
@@ -1087,16 +1162,16 @@ function nearestPointOnArc(segment: ArcPathSegment, ref: OrientedSegmentRef, poi
   const startAngle = Math.atan2(start.y - segment.center.y, start.x - segment.center.x);
   const endAngle = Math.atan2(end.y - segment.center.y, end.x - segment.center.x);
   const clockwise = orientedArcClockwise(segment, ref);
-  const sweep = signedSweep(startAngle, endAngle, clockwise);
   const projectedAngle = Math.atan2(point.y - segment.center.y, point.x - segment.center.x);
+  const parameter = arcParameterAtPoint(segment, ref, point);
 
-  if (angleIsOnSweep(projectedAngle, startAngle, sweep)) {
-    const projected = pointOnCircle(segment.center, segment.radius, projectedAngle);
+  if (parameter !== null) {
+    const projected = pointOnArcAtParameter(segment, ref, parameter);
     return {
       distance: distance(point, projected),
       point: projected,
       tangent: circleTangent(projectedAngle, clockwise),
-      t: Math.abs(signedSweep(startAngle, projectedAngle, clockwise) / sweep)
+      t: parameter
     };
   }
 
@@ -1127,25 +1202,30 @@ function tangentPointOnSegment(
   };
   const sourceDistance = Math.hypot(centerToSource.x, centerToSource.y);
 
-  if (sourceDistance <= segment.radius + 1e-9) {
+  if (!Number.isFinite(sourceDistance) || sourceDistance <= segment.radius + 1e-9) {
     return {
       ...nearestPointOnSegment(segment, ref, contourHintPoint),
       relation: 'nearest-fallback' as const
     };
   }
 
-  const baseAngle = Math.atan2(centerToSource.y, centerToSource.x);
-  const tangentOffset = Math.acos(segment.radius / sourceDistance);
-  const candidates = [baseAngle + tangentOffset, baseAngle - tangentOffset]
-    .filter((angle) => tangentAngleIsValid(segment, ref, angle))
-    .map((angle) => {
-      const point = pointOnCircle(segment.center, segment.radius, angle);
+  const candidates = tangentRadialsFromSource(centerToSource, segment.radius)
+    .filter((radial) => tangentRadialIsValid(segment, ref, radial))
+    .map((radial) => {
+      const parameter = tangentParameter(segment, ref, radial);
+      const point =
+        segment.kind === 'arc'
+          ? pointOnArcAtParameter(segment, ref, parameter)
+          : {
+              x: segment.center.x + segment.radius * radial.x,
+              y: segment.center.y + segment.radius * radial.y
+            };
       return {
         distance: distance(sourcePoint, point),
         hintDistance: distance(contourHintPoint, point),
         point,
-        tangent: circleTangent(angle, clockwise),
-        t: tangentParameter(segment, ref, angle),
+        tangent: circleTangentFromRadial(radial, clockwise),
+        t: parameter,
         relation: 'tangent' as const
       };
     });
@@ -1156,28 +1236,57 @@ function tangentPointOnSegment(
   };
 }
 
-function tangentAngleIsValid(segment: ArcPathSegment | CirclePathSegment, ref: OrientedSegmentRef, angle: number) {
-  if (segment.kind === 'circle') return true;
+function tangentRadialsFromSource(centerToSource: Point2, radius: number) {
+  const scale = Math.max(Math.abs(centerToSource.x), Math.abs(centerToSource.y), radius);
+  if (!Number.isFinite(scale) || scale <= 0) return [];
 
-  const start = orientedSegmentStart(segment, ref);
-  const end = orientedSegmentEnd(segment, ref);
-  const startAngle = Math.atan2(start.y - segment.center.y, start.x - segment.center.x);
-  const endAngle = Math.atan2(end.y - segment.center.y, end.x - segment.center.x);
-  const sweep = signedSweep(startAngle, endAngle, orientedArcClockwise(segment, ref));
-  return angleIsOnSweep(angle, startAngle, sweep);
+  const scaledX = centerToSource.x / scale;
+  const scaledY = centerToSource.y / scale;
+  const scaledRadius = radius / scale;
+  const scaledDistance = Math.hypot(scaledX, scaledY);
+  if (!Number.isFinite(scaledDistance) || scaledDistance <= scaledRadius) return [];
+
+  const sourceRadial = {
+    x: scaledX / scaledDistance,
+    y: scaledY / scaledDistance
+  };
+  const radiusRatio = scaledRadius / scaledDistance;
+  const excessUsingYFactor =
+    scaledX * scaledX +
+    (Math.abs(scaledY) - scaledRadius) * (Math.abs(scaledY) + scaledRadius);
+  const excessUsingXFactor =
+    scaledY * scaledY +
+    (Math.abs(scaledX) - scaledRadius) * (Math.abs(scaledX) + scaledRadius);
+  const squaredTangentLeg =
+    Math.abs(scaledX) >= Math.abs(scaledY) ? excessUsingXFactor : excessUsingYFactor;
+  const tangentScale =
+    Math.sqrt(Math.max(0, squaredTangentLeg)) / scaledDistance;
+  const sourceLeftNormal = { x: -sourceRadial.y, y: sourceRadial.x };
+
+  return [1, -1].map((side) =>
+    normalize({
+      x: radiusRatio * sourceRadial.x + side * tangentScale * sourceLeftNormal.x,
+      y: radiusRatio * sourceRadial.y + side * tangentScale * sourceLeftNormal.y
+    })
+  );
 }
 
-function tangentParameter(segment: ArcPathSegment | CirclePathSegment, ref: OrientedSegmentRef, angle: number) {
+function tangentRadialIsValid(
+  segment: ArcPathSegment | CirclePathSegment,
+  ref: OrientedSegmentRef,
+  radial: Point2
+) {
+  if (segment.kind === 'circle') return true;
+  return arcParameterAtRadial(segment, ref, radial) !== null;
+}
+
+function tangentParameter(
+  segment: ArcPathSegment | CirclePathSegment,
+  ref: OrientedSegmentRef,
+  radial: Point2
+) {
   if (segment.kind === 'circle') return 0;
-
-  const start = orientedSegmentStart(segment, ref);
-  const end = orientedSegmentEnd(segment, ref);
-  const startAngle = Math.atan2(start.y - segment.center.y, start.x - segment.center.x);
-  const endAngle = Math.atan2(end.y - segment.center.y, end.x - segment.center.x);
-  const clockwise = orientedArcClockwise(segment, ref);
-  const sweep = signedSweep(startAngle, endAngle, clockwise);
-
-  return Math.abs(signedSweep(startAngle, angle, clockwise) / sweep);
+  return arcParameterAtRadial(segment, ref, radial) ?? 0;
 }
 
 function syncChainRefs(document: PathPlanningDocument, operation: PathOperation) {
@@ -1414,6 +1523,9 @@ function restoreManualOperationState(
   const restored: PathOperation = {
     ...operation,
     id: previous.id,
+    ...(previous.compensationIntent
+      ? { compensationIntent: structuredClone(previous.compensationIntent) }
+      : {}),
     ...(preservedOverrides ? { overrides: preservedOverrides } : {})
   };
 
@@ -1483,6 +1595,10 @@ function clamp(value: number) {
 
 function circleTangent(angle: number, clockwise: boolean): Point2 {
   return clockwise ? { x: Math.sin(angle), y: -Math.cos(angle) } : { x: -Math.sin(angle), y: Math.cos(angle) };
+}
+
+function circleTangentFromRadial(radial: Point2, clockwise: boolean): Point2 {
+  return clockwise ? { x: radial.y, y: -radial.x } : { x: -radial.y, y: radial.x };
 }
 
 function normalize(vector: Point2): Point2 {

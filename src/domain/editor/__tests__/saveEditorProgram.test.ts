@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { importDxfProject } from '@/domain/dxf/importDxfProject';
 import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
+import { setManualCompensationIntent } from '@/domain/compensation/intent';
 import type { DxfEntity } from '@/domain/dxf/types';
 import {
   reversePathOperation,
@@ -161,10 +162,17 @@ describe('saveEditorProgram', () => {
       imported.pathDocument.plan.operations[0].id
     );
     expect(reversedDocument).not.toBeNull();
-    const editedDocument = setPathOperationClassification(
+    const classifiedDocument = setPathOperationClassification(
       reversedDocument!,
       reversedDocument!.plan.operations[0].id,
       'hole'
+    );
+    expect(classifiedDocument).not.toBeNull();
+    classifiedDocument!.geometryBasis = 'finished-contour';
+    const editedDocument = setManualCompensationIntent(
+      classifiedDocument!,
+      classifiedDocument!.plan.operations[0].id,
+      'outside'
     );
     expect(editedDocument).not.toBeNull();
 
@@ -194,6 +202,12 @@ describe('saveEditorProgram', () => {
     expect(savedProject.upid.document.plan.operations[0].overrides.classification).toEqual({
       classification: 'hole',
       kind: 'manual'
+    });
+    expect(savedProject.upid.document.geometryBasis).toBe('finished-contour');
+    expect(savedProject.upid.document.plan.operations[0].compensationIntent).toEqual({
+      mode: 'controller',
+      keptMaterial: 'outside',
+      source: 'manual'
     });
     expect(savedProject.pathPlanning).toBeUndefined();
     expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');

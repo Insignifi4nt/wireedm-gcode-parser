@@ -16,6 +16,7 @@ interface EditorStatusBarProps {
   previewCursorPoint: { x: number; y: number } | null;
   segmentCount: number | null;
   selectionSummary: string;
+  unitSummary: string | null;
 }
 
 const DOCUMENT_CONTEXT_LABELS: Record<EditorDocumentContext, string> = {
@@ -37,7 +38,8 @@ export function EditorStatusBar({
   programLineCount,
   previewCursorPoint,
   segmentCount,
-  selectionSummary
+  selectionSummary,
+  unitSummary
 }: EditorStatusBarProps) {
   const saveState = isSaving ? 'Saving' : hasUnsavedChanges ? 'Modified' : 'Saved';
 
@@ -75,6 +77,7 @@ export function EditorStatusBar({
       <span data-editor-status-diagnostics>Diagnostics {diagnosticCount}</span>
       <span data-editor-status-machine>Machine {machineProfileName ?? '—'}</span>
       <span data-editor-status-machine-fit>Fit {formatMachineFit(machineFitStatus)}</span>
+      {unitSummary && <span data-editor-status-units>Units {unitSummary}</span>}
     </footer>
   );
 }

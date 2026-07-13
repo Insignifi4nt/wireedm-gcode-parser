@@ -1,11 +1,16 @@
 export interface DownloadProgramFileInput {
   fileName: string;
+  mimeType?: string;
   text: string;
 }
 
-export function downloadProgramFile({ fileName, text }: DownloadProgramFileInput) {
+export function downloadProgramFile({
+  fileName,
+  mimeType = 'text/plain;charset=utf-8',
+  text
+}: DownloadProgramFileInput) {
   const blob = new Blob([text], {
-    type: 'text/plain;charset=utf-8'
+    type: mimeType
   });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -13,8 +18,11 @@ export function downloadProgramFile({ fileName, text }: DownloadProgramFileInput
   link.href = url;
   link.download = fileName;
   link.rel = 'noopener';
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  try {
+    document.body.append(link);
+    link.click();
+  } finally {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
 }

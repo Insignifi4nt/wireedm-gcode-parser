@@ -14,9 +14,10 @@ import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbe
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
 import { AppRailProvider, type AppRailContent } from './AppRailContext';
+import type { MachineProfileSettingsActions } from './MachineOutputSettingsPanel';
 import { WorkbenchSettingsDialog } from './WorkbenchSettingsDialog';
 
-interface AppShellProps {
+interface AppShellProps extends MachineProfileSettingsActions {
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
   connectedWorkbench: ConnectedWorkbench | null;
   errorMessage: string | null;
@@ -38,7 +39,15 @@ export function AppShell({
   errorMessage,
   interactionLocked,
   onConnectWorkbench,
+  onAcknowledgeMachineProfile,
+  onCreateBlankMachineProfile,
+  onDeleteMachineProfile,
+  onDuplicateMachineProfile,
+  onExportMachineProfile,
+  onImportMachineProfileFile,
+  onSaveMachineProfile,
   onSaveWorkbenchSettings,
+  onSetDefaultMachineProfile,
   settingsErrorMessage,
   settingsStatus,
   storageSwitchDisabled,
@@ -252,9 +261,17 @@ export function AppShell({
         connectedWorkbench={connectedWorkbench}
         errorMessage={errorMessage}
         interactionLocked={interactionLocked}
+        onAcknowledgeMachineProfile={onAcknowledgeMachineProfile}
         onClose={() => setSettingsOpen(false)}
         onConnectWorkbench={onConnectWorkbench}
+        onCreateBlankMachineProfile={onCreateBlankMachineProfile}
+        onDeleteMachineProfile={onDeleteMachineProfile}
+        onDuplicateMachineProfile={onDuplicateMachineProfile}
+        onExportMachineProfile={onExportMachineProfile}
+        onImportMachineProfileFile={onImportMachineProfileFile}
+        onSaveMachineProfile={onSaveMachineProfile}
         onSaveWorkbenchSettings={onSaveWorkbenchSettings}
+        onSetDefaultMachineProfile={onSetDefaultMachineProfile}
         open={settingsOpen}
         settingsErrorMessage={settingsErrorMessage}
         settingsStatus={settingsStatus}

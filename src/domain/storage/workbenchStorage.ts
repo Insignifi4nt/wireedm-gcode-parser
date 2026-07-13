@@ -7,7 +7,7 @@ import {
   machineProfileFromLegacySettings,
   normalizeMachineProfile
 } from '@/domain/machine/machineProfiles';
-import type { MachineProfile, OutputExtension } from '../workbench/types';
+import type { MachineProfile, OutputFormat } from '../workbench/types';
 
 export const WORKBENCH_MANIFEST_FILE = 'workbench.json';
 export const HEADER_TEMPLATE_PATH = 'templates/header.gcode';
@@ -47,11 +47,7 @@ export interface WorkbenchManifest {
     headerPath: typeof HEADER_TEMPLATE_PATH;
     footerPath: typeof FOOTER_TEMPLATE_PATH;
   };
-  output: {
-    extension: OutputExtension;
-    customExtension?: string;
-    lineEnding: 'lf' | 'crlf';
-  };
+  output: OutputFormat;
   activeMachineProfileId: string;
   machineProfiles: MachineProfile[];
   projects: WorkbenchProjectIndexEntry[];
@@ -93,8 +89,9 @@ export async function initializeWorkbenchDirectory(
   const output = {
     extension: existingManifest?.output.extension || 'iso',
     customExtension: existingManifest?.output.customExtension,
-    lineEnding: existingManifest?.output.lineEnding || 'crlf'
-  } satisfies WorkbenchManifest['output'];
+    lineEnding: existingManifest?.output.lineEnding || 'crlf',
+    coordinatePrecision: existingManifest?.output.coordinatePrecision
+  } satisfies Partial<OutputFormat> & Pick<OutputFormat, 'extension' | 'lineEnding'>;
   const profiles =
     existingManifest?.machineProfiles?.length
       ? existingManifest.machineProfiles.map(normalizeMachineProfile)
@@ -130,7 +127,7 @@ export async function initializeWorkbenchDirectory(
 
   await adapter.writeText(HEADER_TEMPLATE_PATH, activeMachineProfile.templates.header);
   await adapter.writeText(FOOTER_TEMPLATE_PATH, activeMachineProfile.templates.footer);
-  await adapter.writeText(WORKBENCH_MANIFEST_FILE, JSON.stringify(manifest, null, 2));
+  await writeWorkbenchManifest(adapter, manifest);
 
   return {
     adapter,
@@ -139,6 +136,13 @@ export async function initializeWorkbenchDirectory(
     header: activeMachineProfile.templates.header,
     footer: activeMachineProfile.templates.footer
   };
+}
+
+export function writeWorkbenchManifest(
+  adapter: WorkbenchStorageAdapter,
+  manifest: WorkbenchManifest
+) {
+  return adapter.writeText(WORKBENCH_MANIFEST_FILE, JSON.stringify(manifest, null, 2));
 }
 
 async function readManifest(adapter: WorkbenchStorageAdapter) {

@@ -114,7 +114,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Insert Points is for external posted programs. DXF path projects keep measurement and magnetized points on the canvas; Export CSV, Export G-code, and Export Point ISO write point-only files for outside use.'
           },
           {
-            text: 'Ctrl/Cmd+C clears all measurement points when focus is not inside an input or the program editor.'
+            text: 'Alt/Option+Shift+C clears all measurement points when focus is not inside an input or the program editor.'
           }
         ]
       },
@@ -251,7 +251,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Insert Points este pentru programe externe postate. Proiectele DXF pastreaza punctele de masurare si punctele magnetizate pe canvas; Export CSV, Export G-code si Export Point ISO scriu fisiere doar cu punctele.'
           },
           {
-            text: 'Ctrl/Cmd+C curata toate punctele de masurare cand focusul nu este intr-un input sau in editorul de program.'
+            text: 'Alt/Option+Shift+C curata toate punctele de masurare cand focusul nu este intr-un input sau in editorul de program.'
           }
         ]
       },

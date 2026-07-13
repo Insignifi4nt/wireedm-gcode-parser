@@ -36,6 +36,21 @@ describe('gcodeStructure', () => {
   });
 
   describe('structure organization', () => {
+    it('classifies combined setup and motion blocks as body lines', () => {
+      expect(organizeGCodeStructure(['G90 G0 X5 Y5']).body.lines).toHaveLength(1);
+    });
+
+    it('includes modal continuation moves in contour length', () => {
+      const structure = organizeGCodeStructure(['G1 X3 Y0', 'X3 Y4']);
+      expect(structure.body.contours?.[0].length).toBeCloseTo(7, 9);
+    });
+
+    it('calculates exact arc length from interpreted geometry', () => {
+      const structure = organizeGCodeStructure(['G0 X1 Y0', 'G3 X0 Y1 I-1 J0']);
+
+      expect(structure.body.contours?.[1].length).toBeCloseTo(Math.PI / 2, 9);
+    });
+
     it('splits code into header, body, and footer', () => {
       const sections = organizeGCodeStructure([
         '%',

@@ -1,4 +1,11 @@
-import type { DxfDrawingMetadata, DxfDrawingUnits, DxfEntitySource } from '@/domain/dxf/types';
+import type {
+  AppliedDxfUnits,
+  DxfApproximation,
+  DxfDrawingMetadata,
+  DxfDrawingUnits,
+  DxfEntitySource,
+  DxfUnitDeclaration
+} from '@/domain/dxf/types';
 
 export interface Point2 {
   x: number;
@@ -29,15 +36,21 @@ export interface PathPlanningOptions {
   allowReverseClosedContours?: boolean;
   approximationMaxAngleRadians?: number;
   operationOrderStrategy?: OperationOrderStrategy;
+  includeLayers?: string[];
+  excludeLayers?: string[];
 }
 
 export type OperationOrderStrategy = 'inside-out-nearest' | 'nearest' | 'source-order';
 
 export interface PathPlanningSourceMetadata {
+  appliedUnits?: AppliedDxfUnits;
+  coordinateScaleToMillimeters?: number;
   drawing?: DxfDrawingMetadata;
   fileName?: string;
   importedAt?: string;
+  importWarnings?: string[];
   projectId?: string;
+  unitDeclaration?: DxfUnitDeclaration;
   units?: DxfDrawingUnits;
 }
 
@@ -50,7 +63,9 @@ export const DEFAULT_PATH_PLANNING_OPTIONS: ResolvedPathPlanningOptions = {
   allowReverseOpenChains: false,
   allowReverseClosedContours: true,
   approximationMaxAngleRadians: Math.PI / 18,
-  operationOrderStrategy: 'inside-out-nearest'
+  operationOrderStrategy: 'inside-out-nearest',
+  includeLayers: [],
+  excludeLayers: []
 };
 
 export type DiagnosticSeverity = 'info' | 'warning' | 'error';
@@ -60,6 +75,10 @@ export interface PathDiagnostic {
   severity: DiagnosticSeverity;
   code:
     | 'zero-length-segment'
+    | 'non-finite-geometry'
+    | 'duplicate-segment'
+    | 'overlapping-segment'
+    | 'intersecting-topology'
     | 'invalid-arc'
     | 'invalid-polyline'
     | 'endpoint-cluster-snap'
@@ -71,7 +90,18 @@ export interface PathDiagnostic {
     | 'degenerate-contour'
     | 'route-dependency-cycle'
     | 'post-bridged-gap'
-    | 'post-unexpected-gap';
+    | 'post-unexpected-gap'
+    | 'post-invalid-input'
+    | 'post-inch-units-unsupported'
+    | 'upid-duplicate-id'
+    | 'upid-invalid-value'
+    | 'upid-missing-reference'
+    | 'upid-identity-mismatch'
+    | 'upid-discontinuity'
+    | 'upid-broken-closure'
+    | 'layer-filtered'
+    | 'dxf-import-warning'
+    | 'units-assumed-millimeters';
   message: string;
   relatedSegmentIds?: SegmentId[];
   relatedClusterIds?: EndpointClusterId[];
@@ -108,6 +138,7 @@ export interface SegmentSourceRef {
   sourceSubIndex?: number;
   layer: string | null;
   exact: boolean;
+  approximation?: DxfApproximation;
   dxf?: DxfEntitySource;
   edit?: SegmentEditProvenance;
   note?: string;
@@ -216,6 +247,18 @@ export interface ChainBuildResult {
 
 export type ContourClassification = 'exterior' | 'hole' | 'island' | 'ambiguous' | 'open-chain';
 export type ContourOrientation = 'ccw' | 'cw' | 'degenerate';
+export type PathGeometryBasis = 'finished-contour' | 'wire-centre';
+
+export type ClosedContourCompensationIntent =
+  | {
+      mode: 'controller';
+      keptMaterial: 'inside' | 'outside';
+      source: 'automatic' | 'manual';
+    }
+  | {
+      mode: 'centerline';
+      source: 'manual' | 'legacy';
+    };
 
 export interface PathContour {
   id: ContourId;
@@ -306,6 +349,7 @@ export interface PathOperation {
   endPoint: Point2;
   direction: 'forward' | 'reverse';
   metrics: PathOperationMetrics;
+  compensationIntent?: ClosedContourCompensationIntent;
   overrides?: PathOperationOverrides;
 }
 
@@ -351,6 +395,7 @@ export interface PathElement {
   orderIndex: number | null;
   direction: PathOperation['direction'] | null;
   metrics: PathOperationMetrics | null;
+  compensationIntent?: ClosedContourCompensationIntent;
   overrides?: PathOperationOverrides;
   bounds: Bounds2;
   confidence: number;
@@ -368,6 +413,7 @@ export interface SegmentBuildResult {
 
 export interface PathPlanningDocument {
   schemaVersion: 1;
+  geometryBasis: PathGeometryBasis;
   source: {
     kind: 'dxf-entities';
     entityCount: number;

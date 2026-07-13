@@ -21,6 +21,7 @@ import {
 } from '@/domain/editor/previewGeometry';
 import type { EditorPreviewPath, EditorPreviewViewBox } from '@/domain/editor/previewGeometry';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import type { PostedPreviewTransition } from '@/domain/editor/previewGeometry';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 import {
   MAX_PREVIEW_ZOOM,
@@ -72,6 +73,7 @@ interface EditorPreviewProps {
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
   onSetCanvasMouseMode?: (mode: CanvasMouseMode) => void;
   pathDocument?: PathPlanningDocument | null;
+  postedTransitions?: PostedPreviewTransition[];
   pathCount?: number;
   pinnedLines: number[];
   selectedPathElement?: EditorPathElementRef | null;
@@ -133,6 +135,7 @@ export function EditorPreview({
   onPreviewPointClick,
   onSetCanvasMouseMode,
   pathDocument,
+  postedTransitions,
   pathCount,
   previewLabel = 'G-code path preview',
   previewTitle = 'Preview',
@@ -145,11 +148,11 @@ export function EditorPreview({
   const preview = useMemo(
     () =>
       pathDocument
-        ? buildEditorPathDocumentPreviewGeometry(pathDocument, { padding: 1 })
+        ? buildEditorPathDocumentPreviewGeometry(pathDocument, { padding: 1, postedTransitions })
         : program?.parseResult
           ? buildEditorPreviewGeometry(program.parseResult, { padding: 1 })
           : null,
-    [pathDocument, program]
+    [pathDocument, postedTransitions, program]
   );
   const selected = useMemo(() => new Set(selectedLines), [selectedLines]);
   const pinned = useMemo(() => new Set(pinnedLines), [pinnedLines]);
@@ -1419,7 +1422,7 @@ export function EditorPreview({
 }
 
 function pathElementMatches(
-  path: { operationId?: string; pathElementId?: string; segmentId?: string; travelRole?: 'rapid-in' | 'lead-in' },
+  path: { operationId?: string; pathElementId?: string; segmentId?: string; travelRole?: 'rapid-in' | 'lead-in' | 'lead-out' },
   element: EditorPathElementRef | null | undefined
 ) {
   if (!element?.operationId || path.operationId !== element.operationId) return false;
