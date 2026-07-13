@@ -51,6 +51,30 @@ describe('validateTemplateModalPolicy', () => {
     }
   );
 
+  it.each(['G20', 'G39', 'G92', 'G38', 'G60', 'G90', 'G1 X1', 'M02'])(
+    'rejects the unverified Robofil template lifecycle word in %s',
+    (word) => {
+      const result = validateTemplateModalPolicy({
+        machine: createVerifiedCharmillesRobofil100Profile(),
+        header: '',
+        footer: word
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.diagnostics[0]).toMatchObject({ section: 'footer' });
+    }
+  );
+
+  it('ignores conflicting words inside nested parenthetical comments', () => {
+    const result = validateTemplateModalPolicy({
+      machine: createVerifiedCharmillesRobofil100Profile(),
+      header: '(outer (G20 G39 G92 G60 M02) comment)',
+      footer: ''
+    });
+
+    expect(result).toEqual({ valid: true, diagnostics: [] });
+  });
+
   it('does not impose the Robofil forbidden-word policy on a custom profile', () => {
     const machine = createBlankMachineProfile();
 

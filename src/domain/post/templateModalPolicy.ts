@@ -18,7 +18,29 @@ export interface TemplateModalPolicyResult {
   diagnostics: TemplateModalPolicyDiagnostic[];
 }
 
-const ROBOFIL_CONFLICTS = new Set(['G17', 'G21', 'G40', 'G41', 'G42', 'G54', 'M30']);
+const ROBOFIL_CONFLICTS = new Set([
+  'G0',
+  'G1',
+  'G2',
+  'G3',
+  'G17',
+  'G20',
+  'G21',
+  'G38',
+  'G39',
+  'G40',
+  'G41',
+  'G42',
+  'G54',
+  'G60',
+  'G90',
+  'G90.1',
+  'G91',
+  'G91.1',
+  'G92',
+  'M2',
+  'M30'
+]);
 
 export function validateTemplateModalPolicy({
   machine,
@@ -34,11 +56,11 @@ export function validateTemplateModalPolicy({
     ['header', header],
     ['footer', footer]
   ] as const) {
-    stripParentheticalComments(source)
+    stripGcodeComments(source)
       .split(/\r?\n/)
       .forEach((rawLine, index) => {
-        const line = rawLine.replace(/;.*$/, '').toUpperCase();
-        for (const match of line.matchAll(/([GM])0*(\d+)(?![\d.])/g)) {
+        const line = rawLine.toUpperCase();
+        for (const match of line.matchAll(/([GM])0*(\d+(?:\.\d+)?)/g)) {
           const word = `${match[1]}${Number(match[2])}`;
           if (!ROBOFIL_CONFLICTS.has(word)) continue;
           diagnostics.push({
@@ -54,12 +76,12 @@ export function validateTemplateModalPolicy({
   return { valid: diagnostics.length === 0, diagnostics };
 }
 
-function stripParentheticalComments(source: string) {
+export function stripGcodeComments(source: string) {
   let result = source;
   let previous: string;
   do {
     previous = result;
     result = result.replace(/\([^()]*\)/g, '');
   } while (result !== previous);
-  return result;
+  return result.replace(/;.*$/gm, '');
 }

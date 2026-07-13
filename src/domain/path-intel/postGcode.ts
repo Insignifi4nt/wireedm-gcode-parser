@@ -26,6 +26,7 @@ export type GcodePostedMoveKind = 'rapid' | 'cut';
 
 export type GcodePostedMoveReason =
   | 'operation-start'
+  | 'operation-start-approach'
   | 'manual-lead-in'
   | 'segment-cut'
   | 'gap-bridge'
@@ -36,7 +37,8 @@ export type GcodeArcCenterMode = 'absolute' | 'incremental';
 export interface GcodePostOptions extends PathPlanningOptions {
   arcCenterMode?: GcodeArcCenterMode;
   coordinatePrecision?: number;
-  suppressOperationStartRapid?: boolean;
+  initialPosition?: Point2;
+  operationStartMode?: 'rapid' | 'linear';
 }
 
 export interface GcodePostedMove {
@@ -136,6 +138,17 @@ export function postPathPlanToGcode(
     return block(`Cannot post unsupported arc-center mode ${String(arcCenterMode)}.`);
   }
   const formatter = createCoordinateFormatter(options.coordinatePrecision);
+  const operationStartMode = options.operationStartMode ?? 'rapid';
+  if (operationStartMode !== 'rapid' && operationStartMode !== 'linear') {
+    return block(`Cannot post unsupported operation-start mode ${String(operationStartMode)}.`);
+  }
+  const initialPosition = options.initialPosition ?? null;
+  const initialFormattedPosition = initialPosition
+    ? formattedPoint(initialPosition, formatter)
+    : null;
+  if (initialPosition && (!finitePoint(initialPosition) || !initialFormattedPosition)) {
+    return block('Cannot post a non-finite or unformattable initial machine position.');
+  }
   const segmentsById = new Map<string, PathSegment>();
   for (const segment of segments) {
     if (!segment || typeof segment.id !== 'string' || segment.id.length === 0) {
@@ -173,8 +186,8 @@ export function postPathPlanToGcode(
   const lines: string[] = [];
   const moves: GcodePostedMove[] = [];
   const postedOperations: GcodePostedOperation[] = [];
-  let currentPosition: Point2 | null = null;
-  let currentFormattedPosition: FormattedPoint | null = null;
+  let currentPosition: Point2 | null = initialPosition;
+  let currentFormattedPosition: FormattedPoint | null = initialFormattedPosition;
 
   const appendMove = (move: Omit<GcodePostedMove, 'bodyLineIndex'>): GcodePostedMove => {
     const postedMove = { ...move, bodyLineIndex: lines.length };
@@ -207,15 +220,19 @@ export function postPathPlanToGcode(
     const needsOperationStartRapid =
       !pointsEqualNullable(currentPosition, entryPoint, coincidenceEpsilon) ||
       !formattedPointsEqualNullable(currentFormattedPosition, formattedEntryPoint);
-    if (!options.suppressOperationStartRapid && needsOperationStartRapid) {
+    if (needsOperationStartRapid) {
+      const command = operationStartMode === 'linear' ? 'G1' as const : 'G0' as const;
       appendOperationMove({
-        command: 'G0',
+        command,
         endPoint: entryPoint,
-        kind: 'rapid',
-        reason: 'operation-start',
+        kind: operationStartMode === 'linear' ? 'cut' : 'rapid',
+        reason:
+          operationStartMode === 'linear'
+            ? 'operation-start-approach'
+            : 'operation-start',
         segmentId: null,
         startPoint: currentPosition,
-        text: `G0 X${formattedEntryPoint.x} Y${formattedEntryPoint.y}`
+        text: `${command} X${formattedEntryPoint.x} Y${formattedEntryPoint.y}`
       });
     }
 

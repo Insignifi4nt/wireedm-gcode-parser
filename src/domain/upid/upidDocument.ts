@@ -174,12 +174,10 @@ export function composeUpidGCodeExport(
   input: ComposeUpidGCodeExportInput
 ): UpidGCodeExport {
   const machine = input.machine;
-  const header = input.header ?? machine?.templates.header ?? '';
-  const footer = input.footer ?? machine?.templates.footer ?? '';
+  const header = machine ? machine.templates.header : input.header ?? '';
+  const footer = machine ? machine.templates.footer : input.footer ?? '';
   const post = machine
-    ? postUpidForMachine(document, machine, {
-        coordinatePrecision: input.coordinatePrecision ?? machine.output.coordinatePrecision
-      })
+    ? postUpidForMachine(document, machine)
     : machineResultFromGenericPost(
         postUpidToGcode(document, {
           arcCenterMode: inferArcCenterModeFromHeader(header),
@@ -198,7 +196,7 @@ export function composeUpidGCodeExport(
     header: post.programOwned ? '' : header,
     body,
     footer: post.programOwned ? '' : footer,
-    lineEnding: input.lineEnding ?? machine?.output.lineEnding
+    lineEnding: machine?.output.lineEnding ?? input.lineEnding
   });
 
   return {

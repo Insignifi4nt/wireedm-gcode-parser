@@ -2,6 +2,10 @@ import { machineSnapshotAuthorizesAutomaticCompensation } from '@/domain/compens
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
 import { machineProfileVerificationFingerprint } from '@/domain/machine/machineProfiles';
 import {
+  createGCodeInterpreterState,
+  interpretGCodeBlock
+} from '@/domain/editor/gcodeBlockInterpreter';
+import {
   postPathPlanToGcode,
   type GcodePostResult,
   type GcodePostedMove,
@@ -11,13 +15,14 @@ import type { PathDiagnostic, PathPlanningDocument, Point2 } from '@/domain/path
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 import type { MachineProfile } from '@/domain/workbench/types';
 
-import { validateTemplateModalPolicy } from './templateModalPolicy';
+import { stripGcodeComments, validateTemplateModalPolicy } from './templateModalPolicy';
 
 export type GcodePostedBlockKind =
   | 'template'
   | 'setup'
   | 'rapid'
   | 'compensation-activation'
+  | 'lead-in'
   | 'contour'
   | 'program-end';
 
@@ -46,7 +51,7 @@ export interface UpidMachinePostResult extends GcodePostResult {
 export function postUpidForMachine(
   document: PathPlanningDocument,
   machine: MachineProfile,
-  options: UpidMachinePostOptions = {}
+  _options: UpidMachinePostOptions = {}
 ): UpidMachinePostResult {
   const validation = validateUpidDocument(document);
   if (!validation.valid) return blockedMachinePost(validation.blockingDiagnostics, false);
@@ -58,8 +63,8 @@ export function postUpidForMachine(
     const posted = postPathPlanToGcode(document.plan, document.segments, {
       ...document.options,
       arcCenterMode:
-        machine.controller.arcCenterMode === 'absolute' ? 'absolute' : 'incremental',
-      coordinatePrecision: options.coordinatePrecision ?? machine.output.coordinatePrecision,
+        machineArcCenterMode(machine),
+      coordinatePrecision: machine.output.coordinatePrecision,
       endpointTolerance: effectiveDocumentEndpointTolerance(document),
       coincidenceEpsilon: document.options.coincidenceEpsilon
     });
@@ -73,19 +78,24 @@ export function postUpidForMachine(
     );
   }
 
-  return postVerifiedRobofil(document, machine, compensatedOperations, options);
+  return postVerifiedRobofil(document, machine, compensatedOperations);
 }
 
 function postVerifiedRobofil(
   document: PathPlanningDocument,
   machine: MachineProfile,
-  compensatedOperations: PathPlanningDocument['plan']['operations'],
-  options: UpidMachinePostOptions
+  compensatedOperations: PathPlanningDocument['plan']['operations']
 ): UpidMachinePostResult {
-  if (!verifiedRobofilPolicy(machine)) {
+  if (!hasCurrentRobofilVerification(machine)) {
     return blockedReason(
       'unverified-machine-profile',
       'Robofil compensated posting requires a current user-verified project machine snapshot.'
+    );
+  }
+  if (!matchesVerifiedRobofilEnvelope(machine)) {
+    return blockedReason(
+      'unsupported-robofil-post-envelope',
+      'This Robofil snapshot is outside the physically verified post-version-1 envelope.'
     );
   }
   if (document.plan.operations.length !== 1 || compensatedOperations.length !== 1) {
@@ -97,7 +107,7 @@ function postVerifiedRobofil(
 
   const templatePolicy = validateTemplateModalPolicy({
     machine,
-    header: [machine.templates.header, ...machine.compensation.preActivationCodes].join('\n'),
+    header: machine.templates.header,
     footer: machine.templates.footer
   });
   if (!templatePolicy.valid) {
@@ -122,10 +132,11 @@ function postVerifiedRobofil(
     ...document.options,
     arcCenterMode:
       machine.controller.arcCenterMode === 'absolute' ? 'absolute' : 'incremental',
-    coordinatePrecision: options.coordinatePrecision ?? machine.output.coordinatePrecision,
+    coordinatePrecision: machine.output.coordinatePrecision,
     endpointTolerance: effectiveDocumentEndpointTolerance(document),
     coincidenceEpsilon: document.options.coincidenceEpsilon,
-    suppressOperationStartRapid: true
+    initialPosition: { x: 0, y: 0 },
+    operationStartMode: 'linear'
   });
   if (geometry.status === 'blocked') {
     return blockedMachinePost(geometry.diagnostics, true);
@@ -202,7 +213,12 @@ function postVerifiedRobofil(
   moves.forEach((move) => {
     blocks.push({
       bodyLineIndex: move.bodyLineIndex,
-      kind: move.kind === 'rapid' ? 'rapid' : 'contour',
+      kind:
+        move.kind === 'rapid'
+          ? 'rapid'
+          : move.reason === 'operation-start-approach'
+            ? 'lead-in'
+            : 'contour',
       text: move.text,
       operationId: move.operationId,
       segmentId: move.segmentId,
@@ -228,12 +244,20 @@ function postVerifiedRobofil(
   };
 }
 
-function verifiedRobofilPolicy(machine: MachineProfile) {
+function hasCurrentRobofilVerification(machine: MachineProfile) {
   const verification = machine.controller.verification;
   return (
     machineSnapshotAuthorizesAutomaticCompensation(machine) &&
     verification.status === 'user-verified' &&
-    verification.verifiedFingerprint === machineProfileVerificationFingerprint(machine) &&
+    verification.verifiedFingerprint === machineProfileVerificationFingerprint(machine)
+  );
+}
+
+function matchesVerifiedRobofilEnvelope(machine: MachineProfile) {
+  return (
+    machine.controller.family === 'charmilles-robofil-classic' &&
+    machine.controller.postVersion === 1 &&
+    machine.controller.blockFormatting === 'spaced' &&
     machine.controller.coordinateSystem === 'wire-position-g92' &&
     machine.controller.unitsCode === 'omit' &&
     machine.controller.planeCode === 'omit' &&
@@ -245,8 +269,11 @@ function verifiedRobofilPolicy(machine: MachineProfile) {
     machine.compensation.cancellation === 'program-end' &&
     machine.compensation.lifecycleScope === 'program' &&
     machine.compensation.offsetSelection.address === 'D' &&
-    Number.isSafeInteger(machine.compensation.offsetSelection.index) &&
-    machine.compensation.offsetSelection.index >= 0
+    machine.compensation.offsetSelection.index === 0 &&
+    machine.compensation.preActivationCodes.length === 1 &&
+    machine.compensation.preActivationCodes[0] === 'G60' &&
+    machine.output.coordinatePrecision === 3 &&
+    machine.output.lineEnding === 'crlf'
   );
 }
 
@@ -353,7 +380,19 @@ function templateLines(source: string) {
 }
 
 function stripComments(line: string) {
-  return line.replace(/\([^)]*\)/g, '').replace(/;.*$/, '').trim().toUpperCase();
+  return stripGcodeComments(line).trim().toUpperCase();
+}
+
+function machineArcCenterMode(machine: MachineProfile): 'absolute' | 'incremental' {
+  if (machine.controller.coordinateSystem !== 'template-managed') {
+    return machine.controller.arcCenterMode === 'absolute' ? 'absolute' : 'incremental';
+  }
+
+  const state = createGCodeInterpreterState();
+  machine.templates.header.split(/\r?\n/).forEach((line, index) => {
+    interpretGCodeBlock(state, line, index + 1);
+  });
+  return state.ijMode;
 }
 
 function blockedReason(

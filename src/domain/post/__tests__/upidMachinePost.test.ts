@@ -8,7 +8,11 @@ import {
 } from '@/domain/machine/machineProfiles';
 import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperations';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
-import { createUpidFromDxfEntities, postUpidToGcode } from '@/domain/upid/upidDocument';
+import {
+  composeUpidGCodeExport,
+  createUpidFromDxfEntities,
+  postUpidToGcode
+} from '@/domain/upid/upidDocument';
 
 import { postUpidForMachine } from '../upidMachinePost';
 
@@ -71,6 +75,41 @@ describe('postUpidForMachine', () => {
     expect(after.body).toContain('\nG42 D0\n');
   });
 
+  it('approaches a translated contour linearly from the G92 origin before cutting its first segment', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(clockwiseRectangle(20, 30, 30, 35)),
+      machine
+    );
+    const operation = document.plan.operations[0];
+
+    const posted = postUpidForMachine(document, machine);
+    const approach = posted.moves[0];
+
+    expect(posted.status).toBe('ready');
+    expect(posted.body.split('\n').slice(5, 7)).toEqual([
+      'G1 X20.000 Y30.000',
+      'G1 X20.000 Y35.000'
+    ]);
+    expect(approach).toMatchObject({
+      command: 'G1',
+      kind: 'cut',
+      reason: 'operation-start-approach',
+      segmentId: null,
+      startPoint: { x: 0, y: 0 },
+      endPoint: { x: 20, y: 30 }
+    });
+    expect(posted.blocks[5]).toMatchObject({
+      kind: 'lead-in',
+      text: approach.text,
+      operationId: operation.id
+    });
+    expect(posted.blocks[6]).toMatchObject({
+      kind: 'contour',
+      segmentId: operation.segmentRefs[0].segmentId
+    });
+  });
+
   it('blocks a second compensated operation atomically', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     const document = initializeProjectCompensationIntents(
@@ -129,6 +168,105 @@ describe('postUpidForMachine', () => {
     );
   });
 
+  it.each([
+    {
+      label: 'G61 pre-activation',
+      mutate: (machine: ReturnType<typeof createVerifiedCharmillesRobofil100Profile>) => {
+        machine.compensation.preActivationCodes = ['G61'];
+      }
+    },
+    {
+      label: 'D1 selection',
+      mutate: (machine: ReturnType<typeof createVerifiedCharmillesRobofil100Profile>) => {
+        machine.compensation.offsetSelection.index = 1;
+      }
+    },
+    {
+      label: 'compact blocks',
+      mutate: (machine: ReturnType<typeof createVerifiedCharmillesRobofil100Profile>) => {
+        machine.controller.blockFormatting = 'compact';
+      }
+    },
+    {
+      label: 'four-decimal output',
+      mutate: (machine: ReturnType<typeof createVerifiedCharmillesRobofil100Profile>) => {
+        machine.output.coordinatePrecision = 4;
+      }
+    },
+    {
+      label: 'LF output',
+      mutate: (machine: ReturnType<typeof createVerifiedCharmillesRobofil100Profile>) => {
+        machine.output.lineEnding = 'lf';
+      }
+    },
+    {
+      label: 'post version 2',
+      mutate: (machine: ReturnType<typeof createVerifiedCharmillesRobofil100Profile>) => {
+        machine.controller.postVersion = 2;
+      }
+    }
+  ])('blocks reverified $label outside the physically verified envelope', ({ mutate }) => {
+    const base = createVerifiedCharmillesRobofil100Profile();
+    mutate(base);
+    const machine = markMachineProfileUserVerified(base);
+    const document = compensatedRectangle(machine, 'G41');
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted).toMatchObject({ status: 'blocked', body: '', blocks: [], moves: [] });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({
+        details: expect.objectContaining({ reason: 'unsupported-robofil-post-envelope' })
+      })
+    );
+  });
+
+  it('ignores direct precision overrides for the verified snapshot', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(clockwiseRectangle(20.1234, 30.5678, 31.2345, 36.7891)),
+      machine
+    );
+
+    const posted = postUpidForMachine(document, machine, { coordinatePrecision: 1 });
+
+    expect(posted.status).toBe('ready');
+    expect(posted.body).toContain('G1 X20.123 Y30.568');
+    expect(posted.body).not.toContain('G1 X20.1 Y30.6');
+  });
+
+  it('ignores composition precision and line-ending overrides when a snapshot is supplied', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(clockwiseRectangle(20.1234, 30.5678, 31.2345, 36.7891)),
+      machine
+    );
+
+    const exported = composeUpidGCodeExport(document, {
+      machine,
+      coordinatePrecision: 1,
+      lineEnding: 'lf'
+    });
+
+    expect(exported.canDownload).toBe(true);
+    expect(exported.body).toContain('G1 X20.123 Y30.568');
+    expect(exported.program.text).not.toMatch(/(?<!\r)\n/);
+  });
+
+  it('allows comment-only Robofil templates without confusing nested comments for executable setup', () => {
+    const base = createVerifiedCharmillesRobofil100Profile();
+    base.templates.header = '(outer (G20 G92 G60) setup note)';
+    base.templates.footer = '(outer (G39 M02) end note)';
+    const machine = markMachineProfileUserVerified(base);
+    const document = compensatedRectangle(machine, 'G41');
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('ready');
+    expect(posted.body).toContain('(outer (G20 G92 G60) setup note)\nG92 X0 Y0');
+    expect(posted.body.endsWith('(outer (G39 M02) end note)\nM02')).toBe(true);
+  });
+
   it('keeps generic centreline posting byte-compatible', () => {
     const machine = createDefaultMachineProfile();
     const document = createUpidFromDxfEntities([
@@ -144,6 +282,27 @@ describe('postUpidForMachine', () => {
     expect(posted.body).toBe(legacy.body);
     expect(posted.moves).toEqual(legacy.moves);
     expect(posted.operations).toEqual(legacy.operations);
+  });
+
+  it('keeps template-managed generic G90.1 arc semantics byte-compatible', () => {
+    const machine = createDefaultMachineProfile();
+    machine.templates.header = '%\nG90.1';
+    machine.templates.footer = 'M30\n%';
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 30, y: 30 }, radius: 5 }
+    ]);
+
+    const legacy = composeUpidGCodeExport(document, {
+      header: machine.templates.header,
+      footer: machine.templates.footer,
+      lineEnding: machine.output.lineEnding,
+      coordinatePrecision: machine.output.coordinatePrecision
+    });
+    const snapshot = composeUpidGCodeExport(document, { machine });
+
+    expect(snapshot.body).toContain('I30.000 J30.000');
+    expect(snapshot.body).toBe(legacy.body);
+    expect(snapshot.program.text).toBe(legacy.program.text);
   });
 });
 

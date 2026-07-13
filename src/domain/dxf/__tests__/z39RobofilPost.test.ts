@@ -5,7 +5,12 @@ import { describe, expect, it } from 'vitest';
 
 import { initializeProjectCompensationIntents } from '@/domain/compensation/intent';
 import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
-import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperations';
+import {
+  previewClosedOperationStartNearPoint,
+  reversePathOperation,
+  setClosedOperationStartNearPoint,
+  translatePathDocument
+} from '@/domain/path-editor/pathDocumentOperations';
 import { segmentMap, signedAreaOfPath } from '@/domain/path-intel/segments';
 import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 
@@ -23,10 +28,7 @@ describe('z39 verified Robofil post acceptance', () => {
       'z39-robofil-snapshot',
       new Date('2026-07-13T00:00:00.000Z')
     );
-    const document = initializeProjectCompensationIntents(
-      dxfEntitiesToUpidDocument(parseDxf(fixtureText).entities),
-      machine
-    );
+    const document = physicalZ39Document(machine);
     const operation = document.plan.operations[0];
     const area = signedAreaOfPath(operation.segmentRefs, segmentMap(document.segments));
 
@@ -39,7 +41,7 @@ describe('z39 verified Robofil post acceptance', () => {
       source: 'automatic'
     });
     expect(operation.metrics.cutLength).toBeCloseTo(178.6370073617, 8);
-    expect(area).toBeCloseTo(1216.888482811, 5);
+    expect(area).toBeCloseTo(1216.888482811, 4);
 
     const exported = composeUpidGCodeExport(document, { machine });
     const lines = exported.body.split('\n');
@@ -52,6 +54,19 @@ describe('z39 verified Robofil post acceptance', () => {
     expect(exported.post.metrics.rapidCount).toBe(0);
     expect(exported.post.blocks.filter((block) => block.kind === 'rapid')).toEqual([]);
     expect(lines.slice(0, 5)).toEqual(['G92 X0 Y0', 'G60', 'G38', 'G42 D0', 'G90']);
+    expect(lines.slice(5, 7)).toEqual([
+      'G1 X-1.200 Y-18.946',
+      'G1 X-0.500 Y-20.228'
+    ]);
+    expect(exported.post.blocks[5]).toMatchObject({
+      kind: 'lead-in',
+      startPoint: { x: 0, y: 0 },
+      endPoint: expect.objectContaining({ x: expect.closeTo(-1.2, 3), y: expect.closeTo(-18.946, 3) })
+    });
+    expect(exported.post.blocks[6]).toMatchObject({
+      kind: 'contour',
+      segmentId: operation.segmentRefs[0].segmentId
+    });
     expect(lines.at(-1)).toBe('M02');
     expect(exported.body).not.toMatch(/\b(?:G21|G17|G54|G40|M30)\b/);
     expect(exported.program.text.endsWith('M02\r\n')).toBe(true);
@@ -87,10 +102,7 @@ describe('z39 verified Robofil post acceptance', () => {
 
   it('reverses traversal and compensation side while preserving canonical XY/I/J geometry', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
-    const forward = initializeProjectCompensationIntents(
-      dxfEntitiesToUpidDocument(parseDxf(fixtureText).entities),
-      machine
-    );
+    const forward = physicalZ39Document(machine);
     const operation = forward.plan.operations[0];
     const reversed = reversePathOperation(forward, operation.id)!;
 
@@ -124,6 +136,24 @@ describe('z39 verified Robofil post acceptance', () => {
     }
   });
 });
+
+function physicalZ39Document(
+  machine: ReturnType<typeof createVerifiedCharmillesRobofil100Profile>
+) {
+  const initialized = initializeProjectCompensationIntents(
+    dxfEntitiesToUpidDocument(parseDxf(fixtureText).entities),
+    machine
+  );
+  const translated = translatePathDocument(initialized, { x: 6.894299, y: -19.024251 })!;
+  const operation = translated.plan.operations[0];
+  const preview = previewClosedOperationStartNearPoint(
+    translated,
+    operation.id,
+    { x: -1.2, y: -18.946 },
+    false
+  )!;
+  return setClosedOperationStartNearPoint(translated, operation.id, preview.point)!;
+}
 
 function numericWords(line: string) {
   return Object.fromEntries(
