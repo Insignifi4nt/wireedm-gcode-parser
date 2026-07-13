@@ -34,6 +34,13 @@ import {
   type UpdateWorkbenchSettingsInput
 } from '@/domain/storage/updateWorkbenchSettings';
 import {
+  addMachineProfile,
+  deleteMachineProfile,
+  duplicateMachineProfile,
+  importMachineProfile,
+  setActiveMachineProfile
+} from '@/domain/storage/updateMachineProfileLibrary';
+import {
   renameWorkbenchProject,
   type RenameWorkbenchProjectInput,
   type RenameWorkbenchProjectResult
@@ -78,6 +85,11 @@ export interface AppServices {
     workbench: ConnectedWorkbench,
     input: UpdateWorkbenchSettingsInput
   ) => Promise<ConnectedWorkbench>;
+  addMachineProfile: typeof addMachineProfile;
+  duplicateMachineProfile: typeof duplicateMachineProfile;
+  deleteMachineProfile: typeof deleteMachineProfile;
+  setActiveMachineProfile: typeof setActiveMachineProfile;
+  importMachineProfile: typeof importMachineProfile;
   downloadGeneratedProgram: (input: DownloadProgramFileInput) => void;
 }
 
@@ -93,5 +105,10 @@ export const defaultAppServices: AppServices = {
   renameWorkbenchProject,
   deleteWorkbenchProject,
   updateWorkbenchSettings,
+  addMachineProfile,
+  duplicateMachineProfile,
+  deleteMachineProfile,
+  setActiveMachineProfile,
+  importMachineProfile,
   downloadGeneratedProgram: downloadProgramFile
 };

@@ -127,7 +127,7 @@ export async function initializeWorkbenchDirectory(
 
   await adapter.writeText(HEADER_TEMPLATE_PATH, activeMachineProfile.templates.header);
   await adapter.writeText(FOOTER_TEMPLATE_PATH, activeMachineProfile.templates.footer);
-  await adapter.writeText(WORKBENCH_MANIFEST_FILE, JSON.stringify(manifest, null, 2));
+  await writeWorkbenchManifest(adapter, manifest);
 
   return {
     adapter,
@@ -136,6 +136,13 @@ export async function initializeWorkbenchDirectory(
     header: activeMachineProfile.templates.header,
     footer: activeMachineProfile.templates.footer
   };
+}
+
+export function writeWorkbenchManifest(
+  adapter: WorkbenchStorageAdapter,
+  manifest: WorkbenchManifest
+) {
+  return adapter.writeText(WORKBENCH_MANIFEST_FILE, JSON.stringify(manifest, null, 2));
 }
 
 async function readManifest(adapter: WorkbenchStorageAdapter) {
