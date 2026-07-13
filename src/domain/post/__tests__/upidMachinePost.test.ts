@@ -152,6 +152,36 @@ describe('postUpidForMachine', () => {
     }
   );
 
+  it('blocks verified Robofil wire-centre output instead of falling through to generic posting', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const document = createUpidFromDxfEntities(clockwiseRectangle(0, 0, 10, 5));
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted).toMatchObject({ status: 'blocked', body: '', blocks: [], moves: [] });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('wire-centre'),
+        details: expect.objectContaining({ reason: 'compensation-resolution-blocked' })
+      })
+    );
+  });
+
+  it('reports unverified Robofil before any missing compensation intent', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    machine.controller.verification = { status: 'unverified' };
+    const document = createUpidFromDxfEntities(clockwiseRectangle(0, 0, 10, 5));
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted).toMatchObject({ status: 'blocked', body: '', blocks: [], moves: [] });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({
+        details: expect.objectContaining({ reason: 'unverified-machine-profile' })
+      })
+    );
+  });
+
   it('returns an empty body when the final profile-specific audit finds a forbidden word', () => {
     const base = createVerifiedCharmillesRobofil100Profile();
     const machine = markMachineProfileUserVerified({

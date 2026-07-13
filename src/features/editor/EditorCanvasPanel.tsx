@@ -1,6 +1,7 @@
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import type { PostedPreviewTransition } from '@/domain/editor/previewGeometry';
 
 import { EditorPreview, type EditorConstructionPreview, type EditorStartPreview } from './EditorPreview';
 import type { EditorGuideTarget } from './editorGuideContent';
@@ -20,6 +21,7 @@ interface EditorCanvasPanelProps {
   hoveredPathElement?: EditorPathElementRef | null;
   measurementPoints: MeasurementPoint[];
   pathDocument?: PathPlanningDocument | null;
+  postedTransitions?: PostedPreviewTransition[];
   pathCount: number;
   pinnedLines: number[];
   selectedPathElement?: EditorPathElementRef | null;
@@ -50,6 +52,7 @@ export function EditorCanvasPanel({
   hoveredPathElement,
   measurementPoints,
   pathDocument,
+  postedTransitions,
   pathCount,
   pinnedLines,
   selectedPathElement,
@@ -92,6 +95,7 @@ export function EditorCanvasPanel({
           onPreviewPointClick={onPreviewPointClick}
           onSetCanvasMouseMode={onSetCanvasMouseMode}
           pathDocument={pathDocument}
+          postedTransitions={postedTransitions}
           pathCount={pathCount}
           pinnedLines={pinnedLines}
           previewLabel={pathDocument ? 'UPID path preview' : 'G-code path preview'}

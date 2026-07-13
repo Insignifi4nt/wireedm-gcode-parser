@@ -45,7 +45,7 @@ export interface UpidPathElementRef {
   pathElementId?: string | null;
   pointRole?: 'start' | 'end' | null;
   segmentId: SegmentId | null;
-  travelRole?: 'rapid-in' | 'lead-in' | null;
+  travelRole?: 'rapid-in' | 'lead-in' | 'lead-out' | null;
 }
 
 export type UpidOperationPathElement = PathElement & {

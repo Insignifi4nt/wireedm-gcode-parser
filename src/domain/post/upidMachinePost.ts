@@ -48,6 +48,10 @@ export interface UpidMachinePostResult extends GcodePostResult {
   programOwned: boolean;
 }
 
+export function verifiedRobofilPostEnvelopeIsReady(machine: MachineProfile) {
+  return hasCurrentRobofilVerification(machine) && matchesVerifiedRobofilEnvelope(machine);
+}
+
 export function postUpidForMachine(
   document: PathPlanningDocument,
   machine: MachineProfile,
@@ -64,6 +68,23 @@ export function postUpidForMachine(
   const compensatedOperations = document.plan.operations.filter(
     (operation) => operation.compensationIntent?.mode === 'controller'
   );
+  if (
+    machine.controller.family === 'charmilles-robofil-classic' &&
+    compensatedOperations.length === 0
+  ) {
+    if (!hasCurrentRobofilVerification(machine)) {
+      return blockedReason(
+        'unverified-machine-profile',
+        'Robofil compensated posting requires a current user-verified project machine snapshot.'
+      );
+    }
+    const reason = document.geometryBasis === 'wire-centre' ? 'wire-centre' : 'missing-intent';
+    return blockedReason(
+      'compensation-resolution-blocked',
+      `Controller compensation could not be resolved: ${reason}.`,
+      { compensationReason: reason }
+    );
+  }
   if (compensatedOperations.length === 0) {
     const posted = postPathPlanToGcode(document.plan, document.segments, {
       ...document.options,

@@ -1,42 +1,70 @@
-# Task 7 Report — Integrated correctness audit and release verification
+# Task 7 Report: Verified Robofil operation review UI
 
-Date: 2026-07-12
-Branch: `codex/upid-correctness-safety`
-Base: `eefc712`
+Date: 2026-07-13
 
-## Outcome
+## Status
 
-- Audited all 21 findings from the 2026-07-08 bug-hunt ledger: 9 were already fixed before this correctness branch, 12 were fixed in this branch, and 0 remain open.
-- Re-ran the entire DXF -> UPID -> edit -> validate -> post/export path and closed final review gaps around compact IJ-mode headers, legacy schema-v1 options, import-warning provenance, edit-time diagnostic retention, and stale legacy topology diagnostics.
-- Kept the compensation boundary explicit: output remains G40 wire-centre geometry; reversal changes traversal and arc direction only; no G41/G42, D-register, feed, or automatic lead-in/lead-out policy was inferred.
+Implemented and verified on the current `codex/upid-correctness-safety` branch. The checked-in Task 10 z39 fixture was reused; it was not copied or duplicated.
 
-## Final review hardening
+## Delivered behavior
 
-- `a7edb17` aligned committed Playwright coverage with the compact Contour Workbook and progressive endpoint disclosure.
-- `b40af20` reused the shared G-code interpreter for compact headers such as `G90.1G17` and normalized only omitted legacy layer-filter arrays.
-- `8293363` persisted DXF parse warnings, retained lossy source diagnostics through geometry edits, and recalculated duplicates introduced or resolved by edits.
-- `d70ac60` independently re-audits live legacy geometry before post/export. It canonicalizes derived geometry on clones, sanitizes, rebuilds endpoint clusters, derives fresh linear adjacency, and blocks every new error-level duplicate/overlap/intersection/branch/invalid/non-finite finding without trusting or mutating persisted chains/diagnostics.
-- `8dfd15b` removed the final review's Minor cold-start upload race by waiting for the browser-cache workbench inputs before every E2E upload.
+- Added a visible project geometry-basis selector. Choosing `finished-contour` with a current verified compensation-capable project snapshot initializes eligible automatic intent; ambiguous contours remain unresolved until the operator chooses manually.
+- Added persistent manual keep-inside, keep-outside, and centreline controls. The UPID draft stores semantic intent only; no literal G41/G42 text is persisted.
+- Added an operation review showing the intent source, winding calculated from the final oriented refs, physical wire side, derived G41/G42 with the snapshotted D-register index, snapshot verification state, or the resolver's typed blocker.
+- Reversal immediately changes the derived G41/G42 result while preserving kept material and manual/automatic source.
+- Added a structured export trace row for every posted setup, compensation activation, lead-in, contour, and program-end block. The displayed rows use the actual `programBlocks` trace and show M02 as the Robofil terminator.
+- Added a future-compatible `lead-out` preview role without creating any Robofil lead-out geometry. The verified program-end lifecycle continues directly to M02.
+- Added a pure verified-Robofil preview policy that draws only the real G92 origin-to-entry G1 approach as `lead-in`. It validates the current project snapshot against the exact Task 10 post envelope and resolves compensation from semantic geometry without composing or persisting program text.
+- Kept generic rapid and manually authored lead-in previews unchanged and retained the existing contract that machine posting happens only when export preview is explicitly opened.
+- Closed a machine-safety gap at the post boundary: verified Robofil wire-centre/missing-intent documents and unverified Robofil snapshots can no longer fall through to generic downloadable centreline output. Failures remain atomic with empty body/move/block traces and clear diagnostics.
 
-The final whole-branch review returned **APPROVE** with zero Critical and zero Important findings. Its one Minor browser-harness finding was fixed and then passed 10/10 parallel reproductions plus the complete Playwright suite.
+## TDD evidence
 
-## Final verification
+### RED
 
-- Full Vitest: 50 files / 757 tests passed.
-- Production build: passed. Main JavaScript is 723.86 kB (196.97 kB gzip); Vite's existing over-500-kB advisory remains non-blocking.
-- Playwright on owned strict port 3107: 28 passed / 1 explicitly skipped in 10.5 seconds; the app-title ownership assertion passed.
-- `z18f25.dxf`: 72 exact finite segments, one closed contour, zero error diagnostics.
-- Focused validator/performance/DXF gate: 3 files / 141 tests passed.
-- Performance medians:
-  - endpoint clustering, 1,000 -> 4,000: 11.38 ms -> 26.04 ms (2.29x);
-  - oversized-bound queries, 4,000 -> 16,000: 7.15 ms -> 32.74 ms (4.58x);
-  - mixed-location queries, 1,000 -> 4,000: 1.87 ms -> 5.78 ms (3.08x);
-  - mixed-size sanitization, 1,000 -> 4,000: 48.91 ms -> 304.26 ms (6.22x);
-  - live legacy validation, 1,000 -> 4,000: 15.92 ms -> 72.43 ms (4.55x).
-- Browser visual check on the real z18 import: meaningful content, no Vite overlay or page errors, and no document overflow at 1280x720 or 1024x720.
+The first focused run produced five expected failures:
+
+- posted lead-in/lead-out roles were ignored and replaced by the generic rapid preview;
+- geometry-basis and compensation review controls did not exist;
+- structured export block rows did not exist.
+
+A separate post-boundary RED cycle proved that verified and unverified Robofil wire-centre documents incorrectly returned ready generic output. A later pure-preview RED cycle failed because the verified origin-approach derivation API did not yet exist.
+
+The expanded app regression set then caught three compatibility failures caused by an initial eager-post approach: generic rapid/manual lead-in previews disappeared and the existing explicit-export-only composition spy fired early. The implementation was corrected to use pure preview policy and lazy posting; no regression was waived.
+
+### GREEN
+
+- Final full Vitest: 58 files, 958 tests passed.
+- Production build: TypeScript and Vite passed.
+- Full Playwright: 29 passed, 1 existing environment-dependent seeded-workbench test skipped.
+- Real z39 browser acceptance: passed in Chromium. It imports the checked-in fixture under a verified project snapshot, selects finished-contour basis, observes automatic keep-inside, verifies reversal changes G41/G42 D0, inspects structured setup/activation/contour/M02 rows, confirms no lead-out row, and confirms download is enabled only when ready.
 - `git diff --check`: passed.
 
-## Remaining non-blocking work
+The first two z39 Playwright attempts failed only in test setup: one ambiguous title locator and one attempt to click `Show Path Actions` while that panel was already visible. Both locators were corrected and the complete flow passed without changing product behavior or weakening assertions.
 
-- The production bundle-size advisory remains and can be addressed separately with code splitting.
-- Compensation-aware reversal and safe lead-in/lead-out activation/cancellation remain the next intentional design phase.
+## Real z39 acceptance
+
+- 156 canonical segments and one exterior operation.
+- Cut length approximately `178.637007` mm.
+- Canonical area approximately `1216.888483` mm².
+- Automatic keep-inside intent resolves in both directions; reversal changes the derived code and preserves kept material.
+- The physical Task 10 placement/start produces the real G92-origin `lead-in`, no rapid while compensated, no fabricated lead-out, and M02 program end.
+- The only import diagnostic is the existing assumed-millimetres unit diagnostic.
+- A manual keep-outside decision survives reversal, and serialized UPID contains no literal G41/G42 value.
+
+## Compatibility files
+
+The brief's minimum file list was expanded only where the existing architecture required it:
+
+- `src/domain/post/upidMachinePost.ts` and its test own download gating and expose exact verified-envelope readiness to the pure preview policy.
+- `src/domain/upid/projectRail.ts` extends the shared travel-role type with future-compatible `lead-out`.
+- `src/features/editor/EditorCanvasPanel.tsx` and `src/features/editor/EditorPreview.tsx` pass pure transition geometry to the existing canvas.
+
+`src/__tests__/appDxfProjects.test.tsx` required no source edit; its complete existing suite was used as a compatibility gate. The Task 10 fixture already existed, so Task 7 did not add another copy.
+
+## Remaining concerns
+
+- The operator must still confirm the physical D0 table value for each job; the app deliberately emits only the register selector.
+- Generic explicit-linear compensation and multi-operation Robofil lifecycle behavior remain intentionally blocked pending Tasks 5/6 or later verified policy work.
+- The raw imported z39 browser flow validates the review/export interaction. The exact translated physical origin approach is additionally covered by the domain acceptance and pure preview tests because placement/start editing is independent editor functionality.
+- Vite continues to emit the existing non-failing large-chunk advisory. The full suite also retains pre-existing React `act(...)` warnings in two machine-profile dashboard tests.

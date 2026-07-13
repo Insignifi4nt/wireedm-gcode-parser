@@ -24,6 +24,13 @@ import { normalizeToISO } from '@/domain/editor/isoNormalizer';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import { evaluateMachineFit } from '@/domain/machine/machineFit';
+import { deriveVerifiedRobofilPreviewTransitions } from '@/domain/editor/previewGeometry';
+import {
+  initializeProjectCompensationIntents,
+  machineSnapshotAuthorizesAutomaticCompensation,
+  setManualCompensationIntent,
+  type ManualCompensationSelection
+} from '@/domain/compensation/intent';
 import {
   constructMagnetizedPoint,
   mirrorPathDocument,
@@ -594,12 +601,20 @@ export function EditorPage({
       operationCount: exportProgram.summary.operationCount,
       pathDocument: exportProgram.pathDocument,
       planning: exportProgram.planning,
+      programBlocks: exportProgram.programBlocks,
       programLines: exportProgram.program.lines,
       programText: exportProgram.program.text,
       postMetrics: exportProgram.post.metrics,
       postedOperations: exportProgram.programOperations
     };
   }, [exportPreviewOpen, pathDocumentDraft, program?.project]);
+  const postedPreviewTransitions = useMemo(
+    () =>
+      pathDocumentDraft && program?.project
+        ? deriveVerifiedRobofilPreviewTransitions(pathDocumentDraft, program.project.machine)
+        : undefined,
+    [pathDocumentDraft, program?.project]
+  );
   const constructionPreview = useMemo(() => {
     if (
       !pathDocumentDraft ||
@@ -1379,7 +1394,28 @@ export function EditorPage({
 
   function handleSetPathOperationClassification(classification: ContourClassification) {
     if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
-    const edited = setPathOperationClassification(pathDocumentDraft, selectedPathOperationId, classification);
+    const edited = setPathOperationClassification(
+      pathDocumentDraft,
+      selectedPathOperationId,
+      classification,
+      program?.project?.machine
+    );
+    if (edited) applyPathDocumentEdit(edited);
+  }
+
+  function handleSetGeometryBasis(basis: PathPlanningDocument['geometryBasis']) {
+    if (!pathDocumentDraft || !program?.project || isEditorMutationLocked) return;
+    if (basis === pathDocumentDraft.geometryBasis) return;
+
+    const edited = basis === 'finished-contour' && machineSnapshotAuthorizesAutomaticCompensation(program.project.machine)
+      ? initializeProjectCompensationIntents(pathDocumentDraft, program.project.machine)
+      : { ...structuredClone(pathDocumentDraft), geometryBasis: basis };
+    applyPathDocumentEdit(edited);
+  }
+
+  function handleSetManualCompensation(selection: ManualCompensationSelection) {
+    if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
+    const edited = setManualCompensationIntent(pathDocumentDraft, selectedPathOperationId, selection);
     if (edited) applyPathDocumentEdit(edited);
   }
 
@@ -1867,6 +1903,7 @@ export function EditorPage({
         isSaving={isEditorMutationLocked}
         latestMeasurementPoint={measurementPoints.at(-1) ?? null}
         magneticSnapEnabled={pathMagneticSnapEnabled}
+        machineProfile={program!.project!.machine}
         measurementPoints={measurementPoints}
         onActivatePathClickMode={setPathClickMode}
         onExpandedPathElementIdsChange={setExpandedPathElementIds}
@@ -1888,6 +1925,8 @@ export function EditorPage({
         onPathTargetXDraftChange={setPathTargetXDraft}
         onPathTargetYDraftChange={setPathTargetYDraft}
         onSetPathOperationClassification={handleSetPathOperationClassification}
+        onSetGeometryBasis={handleSetGeometryBasis}
+        onSetManualCompensation={handleSetManualCompensation}
         onSetPathOperationCenterPierceLeadIn={handleSetPathOperationCenterPierceLeadIn}
         onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
         onSetPathStartFromElement={handleSetPathStartFromElement}
@@ -2278,6 +2317,7 @@ export function EditorPage({
           onPreviewPointClick={handlePreviewPointClick}
           onSetCanvasMouseMode={setCanvasMouseMode}
           pathDocument={pathDocumentDraft}
+          postedTransitions={postedPreviewTransitions}
           pathCount={pathCount}
           pinnedLines={pinnedLines}
           selectedPathElement={selectedPathElement}
@@ -2381,6 +2421,7 @@ export function EditorPage({
           planning={upidExport.planning}
           postMetrics={upidExport.postMetrics}
           postedOperations={upidExport.postedOperations}
+          programBlocks={upidExport.programBlocks}
           programLines={upidExport.programLines}
         />
       )}

@@ -7,6 +7,7 @@ import {
 } from '@/domain/upid/projectRail';
 import type {
   UpidGCodeExportDocumentTrace,
+  UpidGCodeProgramBlock,
   UpidGCodeProgramManualDecisionKind,
   UpidGCodeProgramOperation
 } from '@/domain/upid/upidDocument';
@@ -33,6 +34,7 @@ interface EditorUpidExportPreviewProps {
     rapidCount: number;
   };
   postedOperations: UpidGCodeProgramOperation[];
+  programBlocks?: UpidGCodeProgramBlock[];
   programLines: GCodeProgramLineMap[];
   onClose: () => void;
   onDownload: () => void;
@@ -52,6 +54,7 @@ export function EditorUpidExportPreview({
   planning,
   postMetrics,
   postedOperations,
+  programBlocks = [],
   programLines,
   onClose,
   onDownload,
@@ -60,6 +63,7 @@ export function EditorUpidExportPreview({
 }: EditorUpidExportPreviewProps) {
   const exportReady = canDownload && blockingDiagnostics.length === 0;
   const visiblePostedOperations = exportReady ? postedOperations : [];
+  const visibleProgramBlocks = exportReady ? programBlocks : [];
   const visibleProgramLines = exportReady
     ? programLines
     : programLines.filter((line) => line.section !== 'body');
@@ -366,6 +370,33 @@ export function EditorUpidExportPreview({
             </div>
           </section>
         )}
+        {visibleProgramBlocks.length > 0 && (
+          <section className="border border-border bg-card/60" data-upid-export-blocks>
+            <div className="border-b border-border px-2 py-1 text-[10px] uppercase text-muted-foreground">
+              Structured Program Trace
+            </div>
+            <div className="max-h-36 overflow-auto">
+              {visibleProgramBlocks.map((block, index) => (
+                <div
+                  className="grid grid-cols-[2.5rem_9rem_minmax(0,1fr)_4.5rem] gap-2 border-b border-border/70 px-2 py-1 last:border-b-0"
+                  data-upid-export-block-kind={block.kind}
+                  data-upid-export-block-line={block.programLineNumber}
+                  data-upid-export-block-operation={block.operationId ?? undefined}
+                  data-upid-export-block-row
+                  data-upid-export-block-segment={block.segmentId ?? undefined}
+                  key={`${block.programLineNumber}-${block.kind}-${index}`}
+                >
+                  <span className="text-muted-foreground">{block.programLineNumber}</span>
+                  <span className="uppercase text-cyan-200">{formatPostedBlockKind(block.kind)}</span>
+                  <span className="truncate text-foreground">{block.text}</span>
+                  <span className="text-right text-muted-foreground">
+                    {block.compensationBefore}→{block.compensationAfter}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </section>
       <div
         className="min-h-0 overflow-auto bg-background/80 p-3 leading-5 text-foreground"
@@ -405,6 +436,10 @@ export function EditorUpidExportPreview({
       </div>
     </section>
   );
+}
+
+function formatPostedBlockKind(kind: UpidGCodeProgramBlock['kind']) {
+  return kind === 'compensation-activation' ? 'activation' : kind;
 }
 
 function stableDiagnosticUnion(

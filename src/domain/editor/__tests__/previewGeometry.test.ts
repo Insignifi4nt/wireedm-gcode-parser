@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { setCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
+import { initializeProjectCompensationIntents } from '@/domain/compensation/intent';
+import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
+import {
+  setCircleOperationCenterPierceLeadIn,
+  translatePathDocument
+} from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 
 import { parseGCodeProgram } from '../gcodeParser';
 import {
   buildEditorPathDocumentPreviewGeometry,
   buildEditorPreviewGeometry,
+  deriveVerifiedRobofilPreviewTransitions,
   fitViewBoxToViewportAspect
 } from '../previewGeometry';
 
@@ -270,6 +276,110 @@ describe('buildEditorPreviewGeometry', () => {
       travelRole: 'lead-in',
       type: 'cut'
     });
+  });
+
+  it('renders supplied posted transitions as lead-in and lead-out roles without inventing either', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(5, 0, 15, 0),
+      line(15, 0, 15, 5),
+      line(15, 5, 5, 5),
+      line(5, 5, 5, 0)
+    ]);
+    const operationId = document.plan.operations[0].id;
+
+    const preview = buildEditorPathDocumentPreviewGeometry(document, {
+      postedTransitions: [
+        {
+          kind: 'lead-in',
+          operationId,
+          startPoint: { x: 0, y: 0 },
+          endPoint: { x: 5, y: 0 },
+          programLineNumber: 6
+        },
+        {
+          kind: 'lead-out',
+          operationId,
+          startPoint: { x: 5, y: 0 },
+          endPoint: { x: 3, y: 0 },
+          programLineNumber: 11
+        }
+      ],
+      padding: 1
+    });
+
+    expect(preview.paths.filter((path) => path.travelRole)).toEqual([
+      expect.objectContaining({
+        line: 6,
+        start: { x: 0, y: 0 },
+        end: { x: 5, y: 0 },
+        travelRole: 'lead-in',
+        type: 'cut'
+      }),
+      expect.objectContaining({
+        line: 11,
+        start: { x: 5, y: 0 },
+        end: { x: 3, y: 0 },
+        travelRole: 'lead-out',
+        type: 'cut'
+      })
+    ]);
+    expect(preview.paths.some((path) => path.travelRole === 'rapid-in')).toBe(false);
+  });
+
+  it('shows only the real Robofil origin approach when no lead-out was posted', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(5, 0, 15, 0),
+      line(15, 0, 15, 5),
+      line(15, 5, 5, 5),
+      line(5, 5, 5, 0)
+    ]);
+    const operationId = document.plan.operations[0].id;
+
+    const preview = buildEditorPathDocumentPreviewGeometry(document, {
+      postedTransitions: [
+        {
+          kind: 'lead-in',
+          operationId,
+          startPoint: { x: 0, y: 0 },
+          endPoint: { x: 5, y: 0 },
+          programLineNumber: 6
+        }
+      ]
+    });
+
+    expect(preview.paths.filter((path) => path.travelRole).map((path) => path.travelRole)).toEqual([
+      'lead-in'
+    ]);
+  });
+
+  it('derives only the verified Robofil G92-origin approach without posting program text', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const source = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 10, 0),
+      line(10, 0, 10, 5),
+      line(10, 5, 0, 5),
+      line(0, 5, 0, 0)
+    ]);
+    const document = translatePathDocument(
+      initializeProjectCompensationIntents(source, machine),
+      { x: 5, y: 7 }
+    )!;
+
+    expect(deriveVerifiedRobofilPreviewTransitions(document, machine)).toEqual([
+      {
+        kind: 'lead-in',
+        operationId: document.plan.operations[0].id,
+        programLineNumber: 1,
+        startPoint: { x: 0, y: 0 },
+        endPoint: { x: 5, y: 7 }
+      }
+    ]);
+    expect(
+      deriveVerifiedRobofilPreviewTransitions(
+        document,
+        { ...machine, controller: { ...machine.controller, verification: { status: 'unverified' } } }
+      )
+    ).toBeUndefined();
   });
 
   it('uses stable synthetic line ids when path document preview has stale line hints', () => {

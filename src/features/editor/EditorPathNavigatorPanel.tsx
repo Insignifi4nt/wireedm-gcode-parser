@@ -25,6 +25,8 @@ import {
   type MagnetizeMode,
   type PathMirrorAxis
 } from '@/domain/path-editor/pathDocumentOperations';
+import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
+import type { ManualCompensationSelection } from '@/domain/compensation/intent';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import { orientedSegmentEnd, orientedSegmentStart, requiredSegment, segmentMap } from '@/domain/path-intel/segments';
 import type {
@@ -36,6 +38,7 @@ import type {
   PathSegment,
   Point2
 } from '@/domain/path-intel/types';
+import type { MachineProfile } from '@/domain/workbench/types';
 import {
   createUpidProjectRail,
   readUpidEndpointTopologyRows,
@@ -99,6 +102,14 @@ const DOCUMENT_REFERENCE_OPTIONS: Array<{
   { label: 'Max X / Min Y', value: 'max-x-min-y' },
   { label: 'Picked Point', value: 'picked' }
 ];
+
+function formatCompensationIntent(
+  intent: PathPlanningDocument['plan']['operations'][number]['compensationIntent']
+) {
+  if (!intent) return 'not selected';
+  if (intent.mode === 'centerline') return `centreline · ${intent.source}`;
+  return `${intent.keptMaterial} · ${intent.source}`;
+}
 interface DiagnosticGuidance {
   actions: Array<{
     label: string;
@@ -116,6 +127,7 @@ interface EditorPathNavigatorPanelProps {
   magneticSnapEnabled: boolean;
   pathClickMode: 'set-start' | MagnetizeMode | null;
   pathDocument: PathPlanningDocument;
+  machineProfile: MachineProfile;
   expandedPathElementIds: Record<string, boolean>;
   renderWorkspacePanel?: (id: string, title: string, children: ReactNode, options?: { fill?: boolean }) => ReactNode;
   latestMeasurementPoint: Point2 | null;
@@ -150,6 +162,8 @@ interface EditorPathNavigatorPanelProps {
   onPathTranslateXDraftChange: (value: string) => void;
   onPathTranslateYDraftChange: (value: string) => void;
   onSetPathOperationClassification: (classification: ContourClassification) => void;
+  onSetGeometryBasis: (basis: PathPlanningDocument['geometryBasis']) => void;
+  onSetManualCompensation: (selection: ManualCompensationSelection) => void;
   onSetPathOperationCenterPierceLeadIn: () => void;
   onSetPathOperationOrderStrategy: (strategy: OperationOrderStrategy) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
@@ -168,6 +182,7 @@ export function EditorPathNavigatorPanel({
   magneticSnapEnabled,
   pathClickMode,
   pathDocument,
+  machineProfile,
   expandedPathElementIds,
   latestMeasurementPoint,
   measurementPoints,
@@ -198,6 +213,8 @@ export function EditorPathNavigatorPanel({
   onPathTranslateXDraftChange,
   onPathTranslateYDraftChange,
   onSetPathOperationClassification,
+  onSetGeometryBasis,
+  onSetManualCompensation,
   onSetPathOperationCenterPierceLeadIn,
   onSetPathOperationOrderStrategy,
   onSetPathStartFromElement,
@@ -228,6 +245,16 @@ export function EditorPathNavigatorPanel({
     (operation) => operation.id === selectedPathOperationId
   );
   const selectedOperation = selectedOperationIndex >= 0 ? pathDocument.plan.operations[selectedOperationIndex] : null;
+  const compensationResolution = selectedOperation
+    ? resolveControllerCompensation({ document: pathDocument, operation: selectedOperation })
+    : null;
+  const compensationSelection = selectedOperation?.compensationIntent?.source === 'automatic'
+    ? 'automatic'
+    : selectedOperation?.compensationIntent?.mode === 'controller'
+      ? selectedOperation.compensationIntent.keptMaterial
+      : selectedOperation?.compensationIntent?.mode === 'centerline'
+        ? 'centerline'
+        : '';
   const selectedSegmentIndex =
     selectedOperation && selectedPathElement?.segmentId
       ? selectedOperation.segmentRefs.findIndex((ref) => ref.segmentId === selectedPathElement.segmentId)
@@ -640,6 +667,74 @@ export function EditorPathNavigatorPanel({
           >
             Reapply Planning Mode
           </button>
+          <label className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground">
+            Geometry Basis
+            <select
+              aria-label="Geometry basis"
+              className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={isSaving}
+              onChange={(event) =>
+                onSetGeometryBasis(event.currentTarget.value as PathPlanningDocument['geometryBasis'])
+              }
+              value={pathDocument.geometryBasis}
+            >
+              <option value="wire-centre">Wire centre</option>
+              <option value="finished-contour">Finished contour</option>
+            </select>
+          </label>
+          <section
+            className="mt-2 grid gap-1 border border-border bg-background/50 p-1.5"
+            data-upid-compensation-review
+          >
+            <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
+              Compensation
+              <select
+                aria-label="Compensation kept material"
+                className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!selectedOperation || isSaving}
+                onChange={(event) => {
+                  if (event.currentTarget.value === 'automatic' || event.currentTarget.value === '') return;
+                  onSetManualCompensation(event.currentTarget.value as ManualCompensationSelection);
+                }}
+                value={compensationSelection}
+              >
+                <option value="">Choose kept material</option>
+                {compensationSelection === 'automatic' && <option value="automatic">Automatic</option>}
+                <option value="inside">Keep inside</option>
+                <option value="outside">Keep outside</option>
+                <option value="centerline">Centreline</option>
+              </select>
+            </label>
+            <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
+              <dt className="text-muted-foreground">Source</dt>
+              <dd data-testid="compensation-kept-material">
+                {formatCompensationIntent(selectedOperation?.compensationIntent)}
+              </dd>
+              <dt className="text-muted-foreground">Final refs</dt>
+              <dd data-testid="compensation-winding">
+                {compensationResolution?.status === 'ready' ? compensationResolution.winding.toUpperCase() : '—'}
+              </dd>
+              <dt className="text-muted-foreground">Wire side</dt>
+              <dd data-testid="compensation-wire-side">
+                {compensationResolution?.status === 'ready' ? compensationResolution.wireSide : '—'}
+              </dd>
+              <dt className="text-muted-foreground">Controller</dt>
+              <dd data-testid="compensation-code">
+                {compensationResolution?.status === 'ready'
+                  ? `${compensationResolution.code} D${machineProfile.compensation.offsetSelection.index}`
+                  : '—'}
+              </dd>
+              <dt className="text-muted-foreground">Snapshot</dt>
+              <dd data-testid="compensation-machine-status">
+                {machineProfile.controller.verification.status}
+              </dd>
+            </dl>
+            {compensationResolution?.status === 'blocked' && (
+              <p className="text-amber-300" data-testid="compensation-blocker">
+                Blocked: {compensationResolution.reason}
+              </p>
+            )}
+          </section>
           <label className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground">
             Contour Role
             <select

@@ -5,10 +5,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRailProvider, type AppRailContent } from '@/app/AppRailContext';
 import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
 import { parseDxf } from '@/domain/dxf/parseDxf';
+import {
+  initializeProjectCompensationIntents
+} from '@/domain/compensation/intent';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import {
+  createVerifiedCharmillesRobofil100Profile
+} from '@/domain/machine/machineProfiles';
+import {
   setCircleOperationCenterPierceLeadIn,
-  setClosedOperationStartNearPoint
+  setClosedOperationStartNearPoint,
+  setPathOperationClassification,
+  translatePathDocument
 } from '@/domain/path-editor/pathDocumentOperations';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
@@ -68,6 +76,148 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('button[aria-label="Open Path Project export preview"]');
     expect(container.querySelector('[data-upid-export-preview]')).not.toBeNull();
+  });
+
+  it('initializes verified finished-contour intent and derives reversal-safe Robofil review data', async () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const translated = translatePathDocument(pathDocumentFromRectangle(), { x: 5, y: 0 })!;
+    const project = projectWithUpid(translated, machine);
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+    await clickElement('[data-upid-cut-sequence-select]');
+
+    const basis = container.querySelector(
+      'select[aria-label="Geometry basis"]'
+    ) as HTMLSelectElement | null;
+    expect(basis?.value).toBe('wire-centre');
+    await changeSelect(basis, 'finished-contour');
+
+    expect(container.querySelector('[data-testid="compensation-kept-material"]')?.textContent).toContain(
+      'inside · automatic'
+    );
+    expect(container.querySelector('[data-testid="compensation-winding"]')?.textContent).toMatch(/ccw/i);
+    expect(container.querySelector('[data-testid="compensation-wire-side"]')?.textContent).toMatch(/right/i);
+    const codeBefore = container.querySelector('[data-testid="compensation-code"]')?.textContent;
+    expect(codeBefore).toContain('G42 D0');
+
+    await clickElement('button[aria-label="Reverse path operation"]');
+
+    const codeAfter = container.querySelector('[data-testid="compensation-code"]')?.textContent;
+    expect(codeAfter).toContain('G41 D0');
+    expect(codeAfter).not.toBe(codeBefore);
+    expect(container.querySelector('[data-testid="compensation-kept-material"]')?.textContent).toContain('inside');
+  });
+
+  it('persists a manual kept side and exposes every structured Robofil export row', async () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const translated = translatePathDocument(pathDocumentFromRectangle(), { x: 5, y: 0 })!;
+    const initialized = initializeProjectCompensationIntents(translated, machine);
+    const project = projectWithUpid(initialized, machine);
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+    await clickElement('[data-upid-cut-sequence-select]');
+
+    const compensation = container.querySelector(
+      'select[aria-label="Compensation kept material"]'
+    ) as HTMLSelectElement | null;
+    await changeSelect(compensation, 'outside');
+    expect(container.querySelector('[data-testid="compensation-kept-material"]')?.textContent).toContain(
+      'outside · manual'
+    );
+    await clickElement('button[aria-label="Reverse path operation"]');
+    expect(container.querySelector('[data-testid="compensation-kept-material"]')?.textContent).toContain(
+      'outside · manual'
+    );
+
+    await clickElement('button[aria-label="Open UPID export preview"]');
+    const blockKinds = [...container.querySelectorAll('[data-upid-export-block-kind]')].map((row) =>
+      row.getAttribute('data-upid-export-block-kind')
+    );
+    expect(blockKinds).toContain('setup');
+    expect(blockKinds).toContain('compensation-activation');
+    expect(blockKinds).toContain('lead-in');
+    expect(blockKinds).toContain('contour');
+    expect(blockKinds).toContain('program-end');
+    expect(blockKinds).not.toContain('lead-out');
+    expect(container.querySelector('[data-upid-export-block-kind="program-end"]')?.textContent).toContain('M02');
+    expect(
+      (container.querySelector('button[aria-label="Download UPID export program"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(false);
+  });
+
+  it('allows an ambiguous contour manual choice and blocks Robofil wire-centre download clearly', async () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const sourceDocument = pathDocumentFromRectangle();
+    const document = setPathOperationClassification(
+      sourceDocument,
+      sourceDocument.plan.operations[0].id,
+      'ambiguous',
+      machine
+    )!;
+    const project = projectWithUpid(document, machine);
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+    await clickElement('[data-upid-cut-sequence-select]');
+
+    const basis = container.querySelector('select[aria-label="Geometry basis"]') as HTMLSelectElement;
+    await changeSelect(basis, 'finished-contour');
+    expect(container.querySelector('[data-testid="compensation-blocker"]')?.textContent).toContain(
+      'missing-intent'
+    );
+    await changeSelect(
+      container.querySelector('select[aria-label="Compensation kept material"]') as HTMLSelectElement,
+      'inside'
+    );
+    expect(container.querySelector('[data-testid="compensation-code"]')?.textContent).toMatch(/G4[12] D0/);
+
+    await changeSelect(basis, 'wire-centre');
+    expect(container.querySelector('[data-testid="compensation-blocker"]')?.textContent).toContain(
+      'wire-centre'
+    );
+    await clickElement('button[aria-label="Open UPID export preview"]');
+    expect(container.querySelector('[data-upid-export-blocking-message]')?.textContent).toContain(
+      'wire-centre'
+    );
+    expect(
+      (container.querySelector('button[aria-label="Download UPID export program"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+  });
+
+  it('blocks download from an unverified Robofil project snapshot with an operator-readable reason', async () => {
+    const verified = createVerifiedCharmillesRobofil100Profile();
+    const document = initializeProjectCompensationIntents(pathDocumentFromRectangle(), verified);
+    const unverified = structuredClone(verified);
+    unverified.controller.verification = { status: 'unverified' };
+    const project = projectWithUpid(document, unverified);
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+    await clickElement('[data-upid-cut-sequence-select]');
+
+    expect(container.querySelector('[data-testid="compensation-machine-status"]')?.textContent).toContain(
+      'unverified'
+    );
+    await clickElement('button[aria-label="Open UPID export preview"]');
+    expect(container.querySelector('[data-upid-export-blocking-message]')?.textContent).toContain(
+      'current user-verified project machine snapshot'
+    );
+    expect(
+      (container.querySelector('button[aria-label="Download UPID export program"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
   });
 
   it('derives blocked readiness from blocking diagnostics and suppresses inconsistent posted cuts', async () => {
@@ -1713,7 +1863,10 @@ function EditorPageHarness({
   );
 }
 
-function projectWithUpid(pathDocument: PathPlanningDocument) {
+function projectWithUpid(
+  pathDocument: PathPlanningDocument,
+  machine?: WorkbenchProject['machine']
+) {
   const project = createWorkbenchProject({
     id: 'rectangle-2026-05-31',
     name: 'rectangle',
@@ -1729,8 +1882,20 @@ function projectWithUpid(pathDocument: PathPlanningDocument) {
       path: 'imports/rectangle.dxf'
     }
   ];
+  if (machine) project.machine = structuredClone(machine);
 
   return withProjectUpid(project, pathDocument);
+}
+
+async function changeSelect(select: HTMLSelectElement | null, value: string) {
+  expect(select).not.toBeNull();
+  await act(async () => {
+    if (!select) return;
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    setter?.call(select, value);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await flushAsync();
 }
 
 function pathDocumentFromRectangle() {
