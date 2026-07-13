@@ -303,8 +303,18 @@ export function EditorPathNavigatorPanel({
   const canOrientDocument = Boolean(documentCenter) && pathDocument.segments.length > 0 && !isSaving;
   const canOrientSelection = hasTransformSelection && !isSaving;
   const canSetCenterPierceLeadIn = selectedPathOperationId
-      ? canSetCircleOperationCenterPierceLeadIn(pathDocument, selectedPathOperationId) && !isSaving
+      ? canSetCircleOperationCenterPierceLeadIn(pathDocument, selectedPathOperationId) &&
+        !(
+          pathDocument.geometryBasis === 'finished-contour' &&
+          selectedOperation?.compensationIntent?.mode === 'controller'
+        ) &&
+        !isSaving
       : false;
+  const centerPierceBlockedByControllerCompensation = Boolean(
+    selectedOperation &&
+    pathDocument.geometryBasis === 'finished-contour' &&
+    selectedOperation.compensationIntent?.mode === 'controller'
+  );
   const [pathTransformTarget, setPathTransformTarget] = useState<PathTransformTarget>('document');
   const [pathTransformTargetPinned, setPathTransformTargetPinned] = useState(false);
   const [expandedSegmentDetailIds, setExpandedSegmentDetailIds] = useState<Record<string, boolean>>({});
@@ -771,6 +781,11 @@ export function EditorPathNavigatorPanel({
               className={selectedOperation?.overrides?.leadIn ? activeModeButtonClass : modeButtonClass}
               disabled={!canSetCenterPierceLeadIn}
               onClick={onSetPathOperationCenterPierceLeadIn}
+              title={
+                centerPierceBlockedByControllerCompensation
+                  ? 'Center pierce is unavailable while controller compensation is active.'
+                  : 'Add center pierce lead-in'
+              }
               type="button"
             >
               <Flag className="size-3" />

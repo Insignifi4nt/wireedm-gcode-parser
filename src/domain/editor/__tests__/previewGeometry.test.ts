@@ -352,7 +352,7 @@ describe('buildEditorPreviewGeometry', () => {
     ]);
   });
 
-  it('derives only the verified Robofil G92-origin approach without posting program text', () => {
+  it('derives the verified Robofil G92-origin approach from actual posted block metadata', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     const source = createPathPlanningDocumentFromDxfEntities([
       line(0, 0, 10, 0),
@@ -369,7 +369,7 @@ describe('buildEditorPreviewGeometry', () => {
       {
         kind: 'lead-in',
         operationId: document.plan.operations[0].id,
-        programLineNumber: 1,
+        programLineNumber: 6,
         startPoint: { x: 0, y: 0 },
         endPoint: { x: 5, y: 7 }
       }
@@ -380,6 +380,22 @@ describe('buildEditorPreviewGeometry', () => {
         { ...machine, controller: { ...machine.controller, verification: { status: 'unverified' } } }
       )
     ).toBeUndefined();
+  });
+
+  it('suppresses synthetic transitions when an unsafe compensated center-pierce post is blocked', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const initialized = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 30, y: 30 }, radius: 5 }
+      ]),
+      machine
+    );
+    const document = setCircleOperationCenterPierceLeadIn(
+      initialized,
+      initialized.plan.operations[0].id
+    )!;
+
+    expect(deriveVerifiedRobofilPreviewTransitions(document, machine)).toEqual([]);
   });
 
   it('uses stable synthetic line ids when path document preview has stale line hints', () => {

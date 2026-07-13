@@ -6,7 +6,10 @@ import {
   createVerifiedCharmillesRobofil100Profile,
   markMachineProfileUserVerified
 } from '@/domain/machine/machineProfiles';
-import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperations';
+import {
+  reversePathOperation,
+  setCircleOperationCenterPierceLeadIn
+} from '@/domain/path-editor/pathDocumentOperations';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import {
   composeUpidGCodeExport,
@@ -108,6 +111,34 @@ describe('postUpidForMachine', () => {
       kind: 'contour',
       segmentId: operation.segmentRefs[0].segmentId
     });
+  });
+
+  it('blocks a compensated Robofil circle center-pierce lead-in atomically', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 30, y: 30 }, radius: 5 }
+      ]),
+      machine
+    );
+    const operation = initialized.plan.operations[0];
+    const document = setCircleOperationCenterPierceLeadIn(initialized, operation.id)!;
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted).toMatchObject({
+      status: 'blocked',
+      body: '',
+      blocks: [],
+      moves: [],
+      operations: []
+    });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: 'error',
+        details: expect.objectContaining({ reason: 'unsafe-controller-compensation-lead-in' })
+      })
+    );
   });
 
   it('blocks a second compensated operation atomically', () => {
@@ -312,6 +343,43 @@ describe('postUpidForMachine', () => {
     expect(posted.body).toBe(legacy.body);
     expect(posted.moves).toEqual(legacy.moves);
     expect(posted.operations).toEqual(legacy.operations);
+  });
+
+  it('keeps a generic centreline center-pierce lead-in and traces its radial cut as lead-in', () => {
+    const machine = createDefaultMachineProfile();
+    const source = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 30, y: 30 }, radius: 5 }
+    ]);
+    const operation = source.plan.operations[0];
+    const document = setCircleOperationCenterPierceLeadIn(source, operation.id)!;
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('ready');
+    expect(posted.moves.some((move) => move.reason === 'manual-lead-in')).toBe(true);
+    expect(
+      posted.blocks
+        .filter((block) => block.kind === 'rapid' || block.kind === 'lead-in')
+        .map(({ kind, operationId, startPoint, endPoint }) => ({
+          kind,
+          operationId,
+          startPoint,
+          endPoint
+        }))
+    ).toEqual([
+      {
+        kind: 'rapid',
+        operationId: operation.id,
+        startPoint: null,
+        endPoint: { x: 30, y: 30 }
+      },
+      {
+        kind: 'lead-in',
+        operationId: operation.id,
+        startPoint: { x: 30, y: 30 },
+        endPoint: { x: 35, y: 30 }
+      }
+    ]);
   });
 
   it('keeps template-managed generic G90.1 arc semantics byte-compatible', () => {

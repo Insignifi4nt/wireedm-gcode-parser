@@ -68,3 +68,23 @@ The brief's minimum file list was expanded only where the existing architecture 
 - Generic explicit-linear compensation and multi-operation Robofil lifecycle behavior remain intentionally blocked pending Tasks 5/6 or later verified policy work.
 - The raw imported z39 browser flow validates the review/export interaction. The exact translated physical origin approach is additionally covered by the domain acceptance and pure preview tests because placement/start editing is independent editor functionality.
 - Vite continues to emit the existing non-failing large-chunk advisory. The full suite also retains pre-existing React `act(...)` warnings in two machine-profile dashboard tests.
+
+## Reviewer follow-up: compensated lead-in safety and real download acceptance
+
+The review fixes supersede the earlier pure-preview note above where the two differ. Verified Robofil preview transitions now come from the actual machine-post block trace, including the real body line number, rather than reconstructing a synthetic line-1 approach. If the post is blocked, the preview emits no fallback transition.
+
+Delivered fixes:
+
+- A circle-center/manual radial lead-in is atomically rejected whenever verified Robofil controller compensation is active. The result has an empty body and empty operation/move/block traces with the typed `unsafe-controller-compensation-lead-in` reason.
+- The center-pierce action remains available for generic centreline work, but is disabled with a controller-compensation explanation for the unsafe compensated case.
+- `manual-lead-in` posted moves are classified as `lead-in`, not `contour`; the generic centreline regression covers the approach to `leadIn.from` followed by the radial cut to `leadIn.to`.
+- The z39 Playwright test now imports the production verified preset, performs the physical translation and reversal through the UI, downloads the actual `.iso`, reads its bytes, and asserts the dated filename, CRLF-only terminators, exact five-line envelope, exact origin approach, exact absolute-I/J arc sample, 78 arc blocks, three-decimal XYIJ words, one D0, M02 termination, and absence of forbidden G21/G17/G54/G40/M30 words.
+
+Follow-up TDD evidence:
+
+- RED: the focused set failed in four expected categories: the UI still enabled center pierce, preview metadata reported hard-coded line 1, the compensated Robofil center-pierce post was ready instead of blocked, and the generic manual radial move was labeled contour.
+- GREEN focused compatibility: 6 files, 146 tests passed, including app integration and both z39 domain acceptance suites.
+- GREEN full Vitest: 58 files, 962 tests passed.
+- Production build: TypeScript and Vite passed.
+- Full Playwright: 29 passed, 1 existing environment-dependent test skipped.
+- `git diff --check`: passed.

@@ -30,7 +30,10 @@ import type {
   SegmentId
 } from '@/domain/path-intel/types';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
-import { verifiedRobofilPostEnvelopeIsReady } from '@/domain/post/upidMachinePost';
+import {
+  postUpidForMachine,
+  verifiedRobofilPostEnvelopeIsReady
+} from '@/domain/post/upidMachinePost';
 import type { MachineProfile } from '@/domain/workbench/types';
 
 export interface EditorPreviewPath {
@@ -111,18 +114,26 @@ export function deriveVerifiedRobofilPreviewTransitions(
   if (resolveControllerCompensation({ document, operation }).status !== 'ready') {
     return undefined;
   }
+  const posted = postUpidForMachine(document, machine);
+  if (posted.status === 'blocked') return [];
 
-  const origin = { x: 0, y: 0 };
-  const entryPoint = operation.overrides?.leadIn?.from ?? operation.startPoint;
-  if (pathPointsEqual(origin, entryPoint, document.options.coincidenceEpsilon)) return [];
-
-  return [{
-    kind: 'lead-in',
-    operationId: operation.id,
-    programLineNumber: 1,
-    startPoint: origin,
-    endPoint: entryPoint
-  }];
+  return posted.blocks.flatMap((block) => {
+    if (
+      block.kind !== 'lead-in' ||
+      !block.operationId ||
+      !block.startPoint ||
+      !block.endPoint
+    ) {
+      return [];
+    }
+    return [{
+      kind: block.kind,
+      operationId: block.operationId,
+      programLineNumber: block.bodyLineIndex + 1,
+      startPoint: block.startPoint,
+      endPoint: block.endPoint
+    }];
+  });
 }
 
 export function buildEditorPreviewGeometry(

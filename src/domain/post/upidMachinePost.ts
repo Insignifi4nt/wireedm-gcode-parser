@@ -153,6 +153,12 @@ function postVerifiedRobofil(
       { compensationReason: resolution.reason }
     );
   }
+  if (operation.overrides?.leadIn?.source === 'circle-center') {
+    return blockedReason(
+      'unsafe-controller-compensation-lead-in',
+      'A radial circle-center lead-in is unsafe while Robofil controller compensation is active.'
+    );
+  }
 
   const geometry = postPathPlanToGcode(document.plan, document.segments, {
     ...document.options,
@@ -242,7 +248,7 @@ function postVerifiedRobofil(
       kind:
         move.kind === 'rapid'
           ? 'rapid'
-          : move.reason === 'operation-start-approach'
+          : move.reason === 'operation-start-approach' || move.reason === 'manual-lead-in'
             ? 'lead-in'
             : 'contour',
       text: move.text,
@@ -351,7 +357,12 @@ export function machineResultFromGenericPost(posted: GcodePostResult): UpidMachi
       posted.status === 'ready'
         ? posted.moves.map((move) => ({
             bodyLineIndex: move.bodyLineIndex,
-            kind: move.kind === 'rapid' ? 'rapid' as const : 'contour' as const,
+            kind:
+              move.kind === 'rapid'
+                ? 'rapid' as const
+                : move.reason === 'manual-lead-in'
+                  ? 'lead-in' as const
+                  : 'contour' as const,
             text: move.text,
             operationId: move.operationId,
             segmentId: move.segmentId,

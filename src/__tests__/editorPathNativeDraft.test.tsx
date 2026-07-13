@@ -220,6 +220,28 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe(true);
   });
 
+  it('does not offer a radial center-pierce lead-in for active controller compensation', async () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const document = initializeProjectCompensationIntents(
+      dxfEntitiesToUpidDocument(parseDxf(circleDxf()).entities),
+      machine
+    );
+    const project = projectWithUpid(document, machine);
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+    await clickElement('[data-upid-cut-sequence-select]');
+
+    const pierceButton = container.querySelector(
+      'button[aria-label="Add center pierce lead-in"]'
+    ) as HTMLButtonElement | null;
+    expect(pierceButton).not.toBeNull();
+    expect(pierceButton?.disabled).toBe(true);
+    expect(pierceButton?.title).toContain('controller compensation');
+  });
+
   it('derives blocked readiness from blocking diagnostics and suppresses inconsistent posted cuts', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
     const pathDocument = project.upid!.document;
