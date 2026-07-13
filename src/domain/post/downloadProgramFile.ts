@@ -18,8 +18,11 @@ export function downloadProgramFile({
   link.href = url;
   link.download = fileName;
   link.rel = 'noopener';
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  try {
+    document.body.append(link);
+    link.click();
+  } finally {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
 }
