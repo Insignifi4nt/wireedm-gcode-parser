@@ -128,6 +128,9 @@ describe('portable UPID projects', () => {
     });
     const sourceProjectPath = sourceImport.workbench.manifest.projects[0].path;
     const portable = await exportPortableUpidProject(sourceImport.workbench, sourceProjectPath);
+    const senderDocument = JSON.parse(portable.text);
+    senderDocument.document.source.projectId = 'sender-local-project-id';
+    const senderText = JSON.stringify(senderDocument);
 
     const targetAdapter = new MemoryWorkbenchAdapter('target');
     const targetWorkbench = await initializeWorkbenchDirectory(targetAdapter, {
@@ -142,12 +145,12 @@ describe('portable UPID projects', () => {
 
     const first = await importPortableUpidProject(targetWorkbench, {
       fileName: portable.fileName,
-      text: portable.text,
+      text: senderText,
       now: new Date('2026-07-14T11:00:00.000Z')
     });
     const second = await importPortableUpidProject(first.workbench, {
       fileName: portable.fileName,
-      text: portable.text,
+      text: senderText,
       now: new Date('2026-07-14T12:00:00.000Z')
     });
 

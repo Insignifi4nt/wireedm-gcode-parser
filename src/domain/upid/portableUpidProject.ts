@@ -94,7 +94,9 @@ export async function importPortableUpidProject(
         now: input.now
       });
   project.machine = normalizeMachineProfile(structuredClone(workbench.activeMachineProfile));
-  project.upid = createProjectUpid(project, structuredClone(portable.document));
+  const importedDocument = structuredClone(portable.document);
+  delete importedDocument.source.projectId;
+  project.upid = createProjectUpid(project, importedDocument);
 
   const projectDirectory = `projects/${project.id}`;
   const projectPath = `${projectDirectory}/project.json`;
