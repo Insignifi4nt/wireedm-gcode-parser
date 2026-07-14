@@ -79,15 +79,25 @@ describe('portable UPID projects', () => {
     pathElement.compensationIntent = structuredClone(operation.compensationIntent);
     storedProject.machine.name = 'Must not travel';
     const extendedDocument = storedProject.upid!.document as PathPlanningDocument & {
+      controller?: { family: string };
       machine?: { name: string };
+      programText?: string;
     };
     const extendedSource = extendedDocument.source as typeof extendedDocument.source & {
       rawDxf?: string;
+      rawDxfText?: string;
     };
-    const extendedOperation = operation as typeof operation & { generatedGcode?: string };
+    const extendedOperation = operation as typeof operation & {
+      generatedGcode?: string;
+      postedGcode?: string;
+    };
+    extendedDocument.controller = { family: 'hidden-controller' };
     extendedDocument.machine = { name: 'Embedded Machine Secret' };
+    extendedDocument.programText = 'PROGRAM TEXT SECRET';
     extendedSource.rawDxf = 'RAW DXF SECRET';
+    extendedSource.rawDxfText = 'ALTERNATE RAW DXF SECRET';
     extendedOperation.generatedGcode = 'G-CODE SECRET';
+    extendedOperation.postedGcode = 'POSTED G-CODE SECRET';
     adapter.files.set(projectPath, JSON.stringify(storedProject));
 
     const exported = await exportPortableUpidProject(imported.workbench, projectPath);
@@ -124,11 +134,18 @@ describe('portable UPID projects', () => {
     expect(parsed).not.toHaveProperty('editor');
     expect(parsed).not.toHaveProperty('name');
     expect(parsed.document).not.toHaveProperty('machine');
+    expect(parsed.document).not.toHaveProperty('controller');
+    expect(parsed.document).not.toHaveProperty('programText');
     expect(parsed.document.source).not.toHaveProperty('rawDxf');
+    expect(parsed.document.source).not.toHaveProperty('rawDxfText');
     expect(parsed.document.plan.operations[0]).not.toHaveProperty('generatedGcode');
+    expect(parsed.document.plan.operations[0]).not.toHaveProperty('postedGcode');
     expect(exported.text).not.toContain('Embedded Machine Secret');
     expect(exported.text).not.toContain('RAW DXF SECRET');
     expect(exported.text).not.toContain('G-CODE SECRET');
+    expect(exported.text).not.toContain('PROGRAM TEXT SECRET');
+    expect(exported.text).not.toContain('ALTERNATE RAW DXF SECRET');
+    expect(exported.text).not.toContain('POSTED G-CODE SECRET');
     expect(JSON.parse(adapter.files.get(projectPath)!)).toEqual(storedProject);
   });
 
@@ -147,7 +164,10 @@ describe('portable UPID projects', () => {
     const senderDocument = JSON.parse(portable.text);
     senderDocument.document.source.projectId = 'sender-local-project-id';
     senderDocument.document.machine = { name: 'Sender Machine Secret' };
+    senderDocument.document.controller = { family: 'sender-controller' };
+    senderDocument.document.programText = 'SENDER PROGRAM TEXT';
     senderDocument.document.source.rawDxf = 'SENDER RAW DXF';
+    senderDocument.document.source.rawDxfText = 'SENDER ALTERNATE RAW DXF';
     const senderText = JSON.stringify(senderDocument);
 
     const targetAdapter = new MemoryWorkbenchAdapter('target');
@@ -186,7 +206,10 @@ describe('portable UPID projects', () => {
     });
     expect(first.pathDocument.source.projectId).toBe(first.project.id);
     expect(first.pathDocument).not.toHaveProperty('machine');
+    expect(first.pathDocument).not.toHaveProperty('controller');
+    expect(first.pathDocument).not.toHaveProperty('programText');
     expect(first.pathDocument.source).not.toHaveProperty('rawDxf');
+    expect(first.pathDocument.source).not.toHaveProperty('rawDxfText');
     expect(first.pathDocument.segments).toEqual(sourceImport.pathDocument.segments);
     expect(first.pathDocument.plan).toEqual(sourceImport.pathDocument.plan);
     expect(second.project.id).toBe('portable-part-2026-07-14-3');
