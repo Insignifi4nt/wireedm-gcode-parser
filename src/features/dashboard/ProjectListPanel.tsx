@@ -87,7 +87,7 @@ export function ProjectListPanel({
               {visibleProjects.length > 0 ? (
                 visibleProjects.map((project) => (
                   <div
-                    className="grid grid-cols-[minmax(0,1fr)_84px_130px_auto] items-center gap-3 p-2"
+                    className="grid grid-cols-[minmax(0,1fr)_110px_150px_164px] items-center gap-3 p-2"
                     data-project-source={project.sourceKind}
                     key={project.id}
                   >
@@ -97,11 +97,11 @@ export function ProjectListPanel({
                         {project.path}
                       </p>
                     </div>
-                    <span className="text-muted-foreground">
+                    <span className="whitespace-nowrap text-muted-foreground">
                       {getProjectSourceLabel(project.sourceKind)}
                     </span>
                     <span className="technical-value truncate text-muted-foreground" title={project.updatedAt}>{project.updatedAt}</span>
-                    <div className="flex items-center gap-1">
+                    <div className="flex w-[164px] items-center gap-1">
                       <Button
                         aria-label={`Open project ${project.id} in editor`}
                         disabled={interactionLocked}
