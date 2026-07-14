@@ -63,6 +63,10 @@ import {
 } from '@/domain/storage/deleteWorkbenchProject';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 import type { MachineProfile } from '@/domain/workbench/types';
+import {
+  exportPortableUpidProject,
+  importPortableUpidProject
+} from '@/domain/upid/portableUpidProject';
 
 export interface AppServices {
   connectCachedWorkbench: () => Promise<ConnectedWorkbench>;
@@ -78,6 +82,8 @@ export interface AppServices {
   ) => Promise<ImportDxfProjectResult>;
   prepareDxfProjectReimport: typeof prepareDxfProjectReimport;
   commitDxfProjectReimport: typeof commitDxfProjectReimport;
+  exportPortableUpidProject: typeof exportPortableUpidProject;
+  importPortableUpidProject: typeof importPortableUpidProject;
   importExternalProgram: (
     workbench: ConnectedWorkbench,
     input: ImportExternalProgramInput
@@ -126,6 +132,8 @@ export const defaultAppServices: AppServices = {
   commitDxfProjectImport,
   prepareDxfProjectReimport,
   commitDxfProjectReimport,
+  exportPortableUpidProject,
+  importPortableUpidProject,
   importExternalProgram,
   loadEditorProgram,
   openWorkbenchProject,

@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Forward, Pencil, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchProjectIndexEntry } from '@/domain/storage/workbenchStorage';
+import { isPathProjectSourceKind } from '@/domain/workbench/types';
 
-type ProjectSourceFilter = 'all' | WorkbenchProjectIndexEntry['sourceKind'];
+type ProjectSourceFilter = 'all' | 'dxf' | 'external-gcode';
 type ProjectSortMode = 'updated-desc' | 'updated-asc' | 'name-asc' | 'name-desc' | 'type';
 
 interface ProjectListPanelProps {
@@ -12,6 +13,7 @@ interface ProjectListPanelProps {
   projects: WorkbenchProjectIndexEntry[];
   onOpenProject: (projectPath: string) => void | Promise<void>;
   onDeleteProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
+  onExportUpidProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
   onRenameProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
 }
 
@@ -19,6 +21,7 @@ export function ProjectListPanel({
   interactionLocked,
   projects,
   onDeleteProject,
+  onExportUpidProject,
   onOpenProject,
   onRenameProject
 }: ProjectListPanelProps) {
@@ -133,6 +136,20 @@ export function ProjectListPanel({
                       >
                         <Trash2 />
                       </Button>
+                      {isPathProjectSourceKind(project.sourceKind) && (
+                        <Button
+                          aria-label={`Export UPID project ${project.id}`}
+                          className="size-7 text-muted-foreground hover:text-foreground"
+                          disabled={interactionLocked}
+                          onClick={() => onExportUpidProject(project)}
+                          size="icon"
+                          title="Export UPID"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Forward />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))
@@ -158,7 +175,7 @@ export function ProjectListPanel({
 }
 
 function getProjectSourceLabel(sourceKind: WorkbenchProjectIndexEntry['sourceKind']) {
-  return sourceKind === 'dxf' ? 'Path Project' : 'Machine Program';
+  return isPathProjectSourceKind(sourceKind) ? 'Path Project' : 'Machine Program';
 }
 
 function getVisibleProjects(
@@ -171,7 +188,11 @@ function getVisibleProjects(
 
   return projects
     .filter((project) => {
-      const matchesSource = sourceFilter === 'all' || project.sourceKind === sourceFilter;
+      const matchesSource =
+        sourceFilter === 'all' ||
+        (sourceFilter === 'dxf'
+          ? isPathProjectSourceKind(project.sourceKind)
+          : project.sourceKind === sourceFilter);
       const matchesSearch =
         !query ||
         project.name.toLowerCase().includes(query) ||

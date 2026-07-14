@@ -25,8 +25,10 @@ interface DashboardPageProps {
   onOpenLatestImportInEditor: () => void;
   onOpenProject: (projectPath: string) => void | Promise<void>;
   onDeleteProject: (projectId: string) => Promise<void>;
+  onExportUpidProject: (projectPath: string) => Promise<void>;
   onRenameProject: (projectId: string, name: string) => Promise<void>;
   onImportDxfFile: (file: File) => void | Promise<void>;
+  onImportUpidFile: (file: File) => void | Promise<void>;
   onCancelDxfImport: () => void;
   onConfirmDxfImport: () => void | Promise<void>;
   onDxfImportMachineProfileChange: (profileId: string) => void;
@@ -49,8 +51,10 @@ export function DashboardPage({
   onOpenLatestImportInEditor,
   onOpenProject,
   onDeleteProject,
+  onExportUpidProject,
   onRenameProject,
   onImportDxfFile,
+  onImportUpidFile,
   onCancelDxfImport,
   onConfirmDxfImport,
   onDxfImportMachineProfileChange,
@@ -82,6 +86,7 @@ export function DashboardPage({
         <ProjectListPanel
           interactionLocked={interactionLocked}
           onDeleteProject={(project) => setProjectAction({ kind: 'delete', project })}
+          onExportUpidProject={(project) => onExportUpidProject(project.path)}
           onOpenProject={onOpenProject}
           onRenameProject={(project) => setProjectAction({ kind: 'rename', project })}
           projects={projects}
@@ -94,6 +99,7 @@ export function DashboardPage({
             dxfImporting={importStatus === 'importing'}
             interactionLocked={interactionLocked}
             onImportDxfFile={onImportDxfFile}
+            onImportUpidFile={onImportUpidFile}
             onImportProgramFile={onImportProgramFile}
             onOpenEditor={onOpenEditor}
             programErrorMessage={programImportErrorMessage}

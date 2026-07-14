@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchProjectIndexEntry } from '@/domain/storage/workbenchStorage';
+import { isPathProjectSourceKind } from '@/domain/workbench/types';
 
 export type ProjectAction =
   | { kind: 'rename'; project: WorkbenchProjectIndexEntry }
@@ -49,7 +50,9 @@ export function ProjectActionDialog({
 
   const { kind, project } = action;
   const isRename = kind === 'rename';
-  const projectTypeLabel = project.sourceKind === 'dxf' ? 'Path Project' : 'Machine Program';
+  const projectTypeLabel = isPathProjectSourceKind(project.sourceKind)
+    ? 'Path Project'
+    : 'Machine Program';
   const title = isRename ? 'Rename project' : 'Delete project';
   const submitLabel = isRename ? 'Rename' : 'Delete';
   const savingLabel = isRename ? 'Saving...' : 'Deleting...';

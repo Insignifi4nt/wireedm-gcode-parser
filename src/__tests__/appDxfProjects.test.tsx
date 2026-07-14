@@ -48,6 +48,8 @@ import { commitDxfProjectReimport as commitDxfProjectReimportService } from '@/d
 import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { parseDxf } from '@/domain/dxf/parseDxf';
 
 import {
   FakeDirectoryHandle,
@@ -82,6 +84,115 @@ describe('App DXF imports and project library', () => {
 
   afterEach(() => {
     cleanupAppTestContext(context);
+  });
+
+  it('imports a portable UPID document from the DXF split-button menu', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+
+    const moreImports = container.querySelector(
+      'button[aria-label="More path project import options"]'
+    ) as HTMLButtonElement | null;
+    expect(moreImports).not.toBeNull();
+    expect(moreImports?.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+
+    await act(async () => moreImports?.click());
+
+    expect(moreImports?.getAttribute('aria-expanded')).toBe('true');
+    const importUpid = container.querySelector(
+      '[role="menuitem"][aria-label="Import UPID Path Project"]'
+    ) as HTMLButtonElement | null;
+    expect(importUpid).not.toBeNull();
+    const input = container.querySelector(
+      'input[aria-label="UPID path project file"]'
+    ) as HTMLInputElement | null;
+    expect(input?.accept).toBe('.upid.json,application/json');
+
+    const document = createUpidFromDxfEntities(parseDxf(simpleLineDxf()).entities, {}, {
+      fileName: 'source.dxf',
+      projectId: 'sender-local-id'
+    });
+    const portableText = JSON.stringify({
+      format: 'upid',
+      schemaVersion: 1,
+      document: {
+        ...document,
+        source: { ...document.source, projectId: undefined }
+      }
+    });
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [new File([portableText], 'Shared Path.upid.json', { type: 'application/json' })]
+    });
+
+    await act(async () => input?.dispatchEvent(new Event('change', { bubbles: true })));
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
+    const manifest = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    expect(manifest.projects).toEqual([
+      expect.objectContaining({
+        name: 'Shared Path',
+        sourceKind: 'upid'
+      })
+    ]);
+    const storedProject = JSON.parse(
+      window.localStorage.getItem(
+        `wire-edm-workbench:file:${manifest.projects[0].path}`
+      ) || '{}'
+    );
+    expect(storedProject.source).toEqual({ kind: 'upid', files: [] });
+    expect(storedProject.machine.name).toBe('Default Wire EDM');
+    expect(storedProject.upid.document.source.projectId).toBe(storedProject.id);
+    expect(storedProject.upid.document.segments).toEqual(document.segments);
+  });
+
+  it('exports persisted UPID from a final textless share action after Delete', async () => {
+    window.showDirectoryPicker = undefined;
+    const downloadTextFile = vi.fn();
+    await renderApp(context, { downloadTextFile });
+    await prepareDxfImport(container, new File([simpleLineDxf()], 'share-row.dxf'));
+    await confirmPendingDxfImport(container);
+
+    await act(async () => {
+      (container.querySelector(
+        'button[aria-label="Back to Dashboard"]'
+      ) as HTMLButtonElement | null)?.click();
+    });
+    await flushAsync();
+
+    const manifest = JSON.parse(
+      window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
+    );
+    const projectId = manifest.projects[0].id as string;
+    const projectRow = container.querySelector(`[data-project-source="dxf"]`);
+    const rowButtons = [...(projectRow?.querySelectorAll('button') ?? [])];
+    const deleteIndex = rowButtons.findIndex(
+      (button) => button.getAttribute('aria-label') === `Delete project ${projectId}`
+    );
+    const exportIndex = rowButtons.findIndex(
+      (button) => button.getAttribute('aria-label') === `Export UPID project ${projectId}`
+    );
+
+    expect(deleteIndex).toBeGreaterThan(-1);
+    expect(exportIndex).toBe(deleteIndex + 1);
+    expect(exportIndex).toBe(rowButtons.length - 1);
+    expect(rowButtons[exportIndex]?.textContent?.trim()).toBe('');
+    expect(rowButtons[exportIndex]?.title).toBe('Export UPID');
+
+    await act(async () => rowButtons[exportIndex]?.click());
+    await flushAsync();
+
+    expect(downloadTextFile).toHaveBeenCalledOnce();
+    const downloaded = downloadTextFile.mock.calls[0][0];
+    expect(downloaded.fileName).toBe('share-row.upid.json');
+    const parsed = JSON.parse(downloaded.text);
+    expect(parsed).toMatchObject({ format: 'upid', schemaVersion: 1 });
+    expect(parsed).not.toHaveProperty('machine');
+    expect(parsed.document.source).not.toHaveProperty('projectId');
   });
 
   it('prepares a DXF for explicit review without writing or opening the editor, and cancel stays write-free', async () => {

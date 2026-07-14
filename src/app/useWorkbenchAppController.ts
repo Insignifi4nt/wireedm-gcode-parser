@@ -58,9 +58,11 @@ export interface PendingDxfReimport {
 type WorkbenchOperationKind =
   | 'dxf-import'
   | 'dxf-reimport'
+  | 'upid-import'
   | 'editor-import'
   | 'editor-save'
   | 'project-delete'
+  | 'project-export'
   | 'project-open'
   | 'project-rename'
   | 'machine-profile'
@@ -98,6 +100,7 @@ export interface WorkbenchAppController {
   handleConnectWorkbench: () => Promise<void>;
   handleDownloadEditorFile: (fileName: string, text: string) => void;
   handleImportDxfFile: (file: File) => Promise<void>;
+  handleImportUpidFile: (file: File) => Promise<void>;
   handleCancelDxfImport: () => void;
   handleConfirmDxfImport: () => Promise<void>;
   handleDxfImportMachineProfileChange: (profileId: string) => void;
@@ -114,6 +117,7 @@ export interface WorkbenchAppController {
   handleOpenLatestImportInEditor: () => Promise<void>;
   handleOpenWorkbenchProject: (projectPath: string) => Promise<void>;
   handleDeleteWorkbenchProject: (projectId: string) => Promise<void>;
+  handleExportUpidProject: (projectPath: string) => Promise<void>;
   handleRenameWorkbenchProject: (projectId: string, name: string) => Promise<void>;
   handleSaveEditorDraft: (draft: EditorSaveDraft) => Promise<void>;
   handleSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => Promise<void>;
@@ -449,6 +453,41 @@ export function useWorkbenchAppController(
       if (!isCurrentWorkbenchOperation(operationId)) return;
       setImportStatus('error');
       const message = error instanceof Error ? error.message : 'Could not import DXF.';
+      setImportErrorMessage(message);
+      showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
+    }
+  }
+
+  async function handleImportUpidFile(file: File) {
+    if (!connectedWorkbench || importStatus === 'importing' || pendingDxfImport) return;
+    const operationId = beginWorkbenchOperation('upid-import');
+    if (operationId === null) return;
+    const workbench = connectedWorkbench;
+
+    setImportStatus('importing');
+    setImportErrorMessage(null);
+
+    try {
+      const result = await appServices.importPortableUpidProject(workbench, {
+        fileName: file.name,
+        text: await file.text()
+      });
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      const editorProgram = await appServices.loadEditorProgram(result.workbench, result.project);
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      setConnectedWorkbench(result.workbench);
+      setLoadedEditorProgram(editorProgram);
+      setLatestImport(null);
+      resetEditorLoadState();
+      setActiveView('editor');
+      setImportStatus('idle');
+      showStatusToast(`UPID imported and opened: ${file.name}`, 'success');
+    } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      setImportStatus('error');
+      const message = error instanceof Error ? error.message : 'Could not import UPID project.';
       setImportErrorMessage(message);
       showStatusToast(message, 'error');
     } finally {
@@ -825,6 +864,32 @@ export function useWorkbenchAppController(
     }
   }
 
+  async function handleExportUpidProject(projectPath: string) {
+    if (!connectedWorkbench) return;
+    const operationId = beginWorkbenchOperation('project-export');
+    if (operationId === null) return;
+    const workbench = connectedWorkbench;
+
+    try {
+      const exported = await appServices.exportPortableUpidProject(workbench, projectPath);
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      appServices.downloadTextFile({
+        fileName: exported.fileName,
+        mimeType: 'application/json;charset=utf-8',
+        text: exported.text
+      });
+      setErrorMessage(null);
+      showStatusToast(`UPID exported: ${exported.fileName}`, 'success');
+    } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      const message = error instanceof Error ? error.message : 'Could not export UPID project.';
+      setErrorMessage(message);
+      showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
+    }
+  }
+
   async function handleRenameWorkbenchProject(projectId: string, name: string) {
     if (!connectedWorkbench) {
       throw new Error('Workbench is not connected.');
@@ -1085,6 +1150,7 @@ export function useWorkbenchAppController(
     handleExportMachineProfile,
     handleImportMachineProfileFile,
     handleImportDxfFile,
+    handleImportUpidFile,
     handleCancelDxfImport,
     handleConfirmDxfImport,
     handleDxfImportMachineProfileChange,
@@ -1103,6 +1169,7 @@ export function useWorkbenchAppController(
     },
     handleOpenLatestImportInEditor,
     handleOpenWorkbenchProject,
+    handleExportUpidProject,
     handleDeleteWorkbenchProject,
     handleRenameWorkbenchProject,
     handleSaveEditorDraft,

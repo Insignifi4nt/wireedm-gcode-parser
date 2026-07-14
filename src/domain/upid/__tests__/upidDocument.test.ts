@@ -853,13 +853,13 @@ describe('UPID document boundary', () => {
     });
 
     expect(() => createProjectUpid(project, projectlessDocument)).toThrow(
-      'UPID path state can only be attached to DXF projects.'
+      'UPID path state can only be attached to path projects.'
     );
     expect(() => withProjectUpid(project, projectlessDocument)).toThrow(
-      'UPID path state can only be attached to DXF projects.'
+      'UPID path state can only be attached to path projects.'
     );
     expect(() => composeProjectUpidGCodeExport(project, projectDocument)).toThrow(
-      'UPID path state can only be attached to DXF projects.'
+      'UPID path state can only be attached to path projects.'
     );
   });
 
