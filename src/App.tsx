@@ -49,7 +49,11 @@ export default function App({ services }: AppProps = {}) {
           onBackToDashboard={app.handleBackToDashboard}
           onDownloadEditorFile={app.handleDownloadEditorFile}
           onImportProgramFile={app.handleImportExternalProgram}
-          onReimportDxfUnits={app.handlePrepareDxfReimport}
+          onReimportDxfUnits={
+            app.loadedEditorProgram?.project?.source.kind === 'dxf'
+              ? app.handlePrepareDxfReimport
+              : undefined
+          }
           onSaveEditorDraft={app.handleSaveEditorDraft}
           onStatusMessage={app.showStatusToast}
           program={app.loadedEditorProgram}

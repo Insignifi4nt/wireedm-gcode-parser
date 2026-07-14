@@ -110,6 +110,13 @@ describe('App DXF imports and project library', () => {
     expect(input?.accept).toBe('.upid.json,application/json');
 
     const document = createUpidFromDxfEntities(parseDxf(simpleLineDxf()).entities, {}, {
+      appliedUnits: {
+        basis: 'legacy-assumed',
+        confirmed: false,
+        label: 'millimeters',
+        scaleToMillimeters: 1
+      },
+      coordinateScaleToMillimeters: 1,
       fileName: 'source.dxf',
       projectId: 'sender-local-id'
     });
@@ -130,6 +137,9 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
+    expect(container.querySelector(
+      'button[aria-label="Re-import with different units"]'
+    )).toBeNull();
     const manifest = JSON.parse(
       window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}'
     );

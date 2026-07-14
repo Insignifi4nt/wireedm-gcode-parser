@@ -77,6 +77,16 @@ describe('portable UPID projects', () => {
     pathElement.overrides = structuredClone(operation.overrides);
     pathElement.compensationIntent = structuredClone(operation.compensationIntent);
     storedProject.machine.name = 'Must not travel';
+    const extendedDocument = storedProject.upid!.document as typeof storedProject.upid.document & {
+      machine?: { name: string };
+    };
+    const extendedSource = extendedDocument.source as typeof extendedDocument.source & {
+      rawDxf?: string;
+    };
+    const extendedOperation = operation as typeof operation & { generatedGcode?: string };
+    extendedDocument.machine = { name: 'Embedded Machine Secret' };
+    extendedSource.rawDxf = 'RAW DXF SECRET';
+    extendedOperation.generatedGcode = 'G-CODE SECRET';
     adapter.files.set(projectPath, JSON.stringify(storedProject));
 
     const exported = await exportPortableUpidProject(imported.workbench, projectPath);
@@ -113,6 +123,11 @@ describe('portable UPID projects', () => {
     expect(parsed).not.toHaveProperty('editor');
     expect(parsed).not.toHaveProperty('name');
     expect(parsed.document).not.toHaveProperty('machine');
+    expect(parsed.document.source).not.toHaveProperty('rawDxf');
+    expect(parsed.document.plan.operations[0]).not.toHaveProperty('generatedGcode');
+    expect(exported.text).not.toContain('Embedded Machine Secret');
+    expect(exported.text).not.toContain('RAW DXF SECRET');
+    expect(exported.text).not.toContain('G-CODE SECRET');
     expect(JSON.parse(adapter.files.get(projectPath)!)).toEqual(storedProject);
   });
 
@@ -130,6 +145,8 @@ describe('portable UPID projects', () => {
     const portable = await exportPortableUpidProject(sourceImport.workbench, sourceProjectPath);
     const senderDocument = JSON.parse(portable.text);
     senderDocument.document.source.projectId = 'sender-local-project-id';
+    senderDocument.document.machine = { name: 'Sender Machine Secret' };
+    senderDocument.document.source.rawDxf = 'SENDER RAW DXF';
     const senderText = JSON.stringify(senderDocument);
 
     const targetAdapter = new MemoryWorkbenchAdapter('target');
@@ -142,6 +159,8 @@ describe('portable UPID projects', () => {
       name: 'Recipient Machine',
       templates: { header: 'RECIPIENT HEADER', footer: 'RECIPIENT FOOTER' }
     };
+    const orphanPath = 'projects/portable-part-2026-07-14/project.json';
+    targetAdapter.files.set(orphanPath, 'ORPHAN MUST NOT BE OVERWRITTEN');
 
     const first = await importPortableUpidProject(targetWorkbench, {
       fileName: portable.fileName,
@@ -155,7 +174,7 @@ describe('portable UPID projects', () => {
     });
 
     expect(first.project).toMatchObject({
-      id: 'portable-part-2026-07-14',
+      id: 'portable-part-2026-07-14-2',
       name: 'Portable Part',
       source: { kind: 'upid', files: [] },
       machine: {
@@ -165,9 +184,11 @@ describe('portable UPID projects', () => {
       }
     });
     expect(first.pathDocument.source.projectId).toBe(first.project.id);
+    expect(first.pathDocument).not.toHaveProperty('machine');
+    expect(first.pathDocument.source).not.toHaveProperty('rawDxf');
     expect(first.pathDocument.segments).toEqual(sourceImport.pathDocument.segments);
     expect(first.pathDocument.plan).toEqual(sourceImport.pathDocument.plan);
-    expect(second.project.id).toBe('portable-part-2026-07-14-2');
+    expect(second.project.id).toBe('portable-part-2026-07-14-3');
     expect(second.pathDocument.source.projectId).toBe(second.project.id);
     expect(second.workbench.manifest.projects.map(({ sourceKind }) => sourceKind)).toEqual([
       'upid',
@@ -176,6 +197,7 @@ describe('portable UPID projects', () => {
     expect(targetAdapter.files.has(`projects/${first.project.id}/project.json`)).toBe(true);
     expect(targetAdapter.files.has(`projects/${second.project.id}/project.json`)).toBe(true);
     expect([...targetAdapter.files.keys()].some((path) => path.endsWith('.dxf'))).toBe(false);
+    expect(targetAdapter.files.get(orphanPath)).toBe('ORPHAN MUST NOT BE OVERWRITTEN');
     expect(targetAdapter.writes.indexOf(`projects/${first.project.id}/project.json`)).toBeLessThan(
       targetAdapter.writes.lastIndexOf('workbench.json')
     );

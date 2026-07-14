@@ -475,9 +475,9 @@ export function useWorkbenchAppController(
         text: await file.text()
       });
       if (!isCurrentWorkbenchOperation(operationId)) return;
+      setConnectedWorkbench(result.workbench);
       const editorProgram = await appServices.loadEditorProgram(result.workbench, result.project);
       if (!isCurrentWorkbenchOperation(operationId)) return;
-      setConnectedWorkbench(result.workbench);
       setLoadedEditorProgram(editorProgram);
       setLatestImport(null);
       resetEditorLoadState();

@@ -6,7 +6,7 @@ import {
   type WorkbenchManifest
 } from '@/domain/storage/workbenchStorage';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
-import { baseNameFromFileName, uniqueProjectId } from '@/domain/workbench/projectNaming';
+import { baseNameFromFileName } from '@/domain/workbench/projectNaming';
 import type { WorkbenchProject, WorkbenchUpidState } from '@/domain/workbench/types';
 
 import { createProjectUpid, projectUpidDocument } from './projectUpid';
@@ -39,7 +39,8 @@ export async function exportPortableUpidProject(
   }
 
   const project = parseWorkbenchProject(projectText, projectPath);
-  const document = structuredClone(projectUpidDocument(project));
+  const pathDocument = projectUpidDocument(project);
+  const document = pathDocument ? portableDocumentClone(pathDocument) : null;
   if (!document) {
     throw new Error('Only path projects can be exported as UPID.');
   }
@@ -81,10 +82,7 @@ export async function importPortableUpidProject(
     sourceKind: 'upid',
     now: input.now
   });
-  const projectId = uniqueProjectId(
-    initialProject.id,
-    workbench.manifest.projects.map(({ id }) => id)
-  );
+  const projectId = await availableProjectId(workbench, initialProject.id);
   const project = projectId === initialProject.id
     ? initialProject
     : createWorkbenchProject({
@@ -94,7 +92,7 @@ export async function importPortableUpidProject(
         now: input.now
       });
   project.machine = normalizeMachineProfile(structuredClone(workbench.activeMachineProfile));
-  const importedDocument = structuredClone(portable.document);
+  const importedDocument = portableDocumentClone(portable.document);
   delete importedDocument.source.projectId;
   project.upid = createProjectUpid(project, importedDocument);
 
@@ -160,4 +158,62 @@ function portableFileBaseName(name: string) {
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
     .replace(/[. ]+$/g, '');
   return safe || 'UPID Project';
+}
+
+async function availableProjectId(workbench: ConnectedWorkbench, baseId: string) {
+  const manifestIds = new Set(workbench.manifest.projects.map(({ id }) => id));
+
+  for (let suffix = 1; suffix < Number.MAX_SAFE_INTEGER; suffix++) {
+    const candidate = suffix === 1 ? baseId : `${baseId}-${suffix}`;
+    if (manifestIds.has(candidate)) continue;
+    const projectPath = `projects/${candidate}/project.json`;
+    if (await workbench.adapter.readText(projectPath) === null) return candidate;
+  }
+
+  throw new Error('Could not create a unique project ID.');
+}
+
+const EXCLUDED_PORTABLE_PROPERTY_NAMES = new Set([
+  'editor',
+  'footer',
+  'gcode',
+  'generated',
+  'generatedbody',
+  'generatedgcode',
+  'generatedprogram',
+  'header',
+  'machine',
+  'machineprofile',
+  'machineprofiles',
+  'manifest',
+  'output',
+  'rawdxf',
+  'rawsource',
+  'sourcetext',
+  'templates',
+  'workbench'
+]);
+
+function portableDocumentClone(document: PathPlanningDocument) {
+  const clone = structuredClone(document);
+  stripExcludedPortableProperties(clone);
+  return clone;
+}
+
+function stripExcludedPortableProperties(value: unknown): void {
+  if (Array.isArray(value)) {
+    value.forEach(stripExcludedPortableProperties);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+
+  const record = value as Record<string, unknown>;
+  for (const [key, nestedValue] of Object.entries(record)) {
+    const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (EXCLUDED_PORTABLE_PROPERTY_NAMES.has(normalizedKey)) {
+      delete record[key];
+    } else {
+      stripExcludedPortableProperties(nestedValue);
+    }
+  }
 }
