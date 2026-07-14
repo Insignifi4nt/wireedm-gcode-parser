@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { importDxfProject } from '@/domain/dxf/importDxfProject';
-import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   initializeWorkbenchDirectory,
   type WorkbenchStorageAdapter
@@ -78,26 +77,6 @@ describe('portable UPID projects', () => {
     pathElement.overrides = structuredClone(operation.overrides);
     pathElement.compensationIntent = structuredClone(operation.compensationIntent);
     storedProject.machine.name = 'Must not travel';
-    const extendedDocument = storedProject.upid!.document as PathPlanningDocument & {
-      controller?: { family: string };
-      machine?: { name: string };
-      programText?: string;
-    };
-    const extendedSource = extendedDocument.source as typeof extendedDocument.source & {
-      rawDxf?: string;
-      rawDxfText?: string;
-    };
-    const extendedOperation = operation as typeof operation & {
-      generatedGcode?: string;
-      postedGcode?: string;
-    };
-    extendedDocument.controller = { family: 'hidden-controller' };
-    extendedDocument.machine = { name: 'Embedded Machine Secret' };
-    extendedDocument.programText = 'PROGRAM TEXT SECRET';
-    extendedSource.rawDxf = 'RAW DXF SECRET';
-    extendedSource.rawDxfText = 'ALTERNATE RAW DXF SECRET';
-    extendedOperation.generatedGcode = 'G-CODE SECRET';
-    extendedOperation.postedGcode = 'POSTED G-CODE SECRET';
     adapter.files.set(projectPath, JSON.stringify(storedProject));
 
     const exported = await exportPortableUpidProject(imported.workbench, projectPath);
@@ -133,19 +112,7 @@ describe('portable UPID projects', () => {
     expect(parsed).not.toHaveProperty('source');
     expect(parsed).not.toHaveProperty('editor');
     expect(parsed).not.toHaveProperty('name');
-    expect(parsed.document).not.toHaveProperty('machine');
-    expect(parsed.document).not.toHaveProperty('controller');
-    expect(parsed.document).not.toHaveProperty('programText');
-    expect(parsed.document.source).not.toHaveProperty('rawDxf');
-    expect(parsed.document.source).not.toHaveProperty('rawDxfText');
-    expect(parsed.document.plan.operations[0]).not.toHaveProperty('generatedGcode');
-    expect(parsed.document.plan.operations[0]).not.toHaveProperty('postedGcode');
-    expect(exported.text).not.toContain('Embedded Machine Secret');
-    expect(exported.text).not.toContain('RAW DXF SECRET');
-    expect(exported.text).not.toContain('G-CODE SECRET');
-    expect(exported.text).not.toContain('PROGRAM TEXT SECRET');
-    expect(exported.text).not.toContain('ALTERNATE RAW DXF SECRET');
-    expect(exported.text).not.toContain('POSTED G-CODE SECRET');
+    expect(exported.text).not.toContain('Must not travel');
     expect(JSON.parse(adapter.files.get(projectPath)!)).toEqual(storedProject);
   });
 
@@ -163,11 +130,6 @@ describe('portable UPID projects', () => {
     const portable = await exportPortableUpidProject(sourceImport.workbench, sourceProjectPath);
     const senderDocument = JSON.parse(portable.text);
     senderDocument.document.source.projectId = 'sender-local-project-id';
-    senderDocument.document.machine = { name: 'Sender Machine Secret' };
-    senderDocument.document.controller = { family: 'sender-controller' };
-    senderDocument.document.programText = 'SENDER PROGRAM TEXT';
-    senderDocument.document.source.rawDxf = 'SENDER RAW DXF';
-    senderDocument.document.source.rawDxfText = 'SENDER ALTERNATE RAW DXF';
     const senderText = JSON.stringify(senderDocument);
 
     const targetAdapter = new MemoryWorkbenchAdapter('target');
@@ -205,11 +167,6 @@ describe('portable UPID projects', () => {
       }
     });
     expect(first.pathDocument.source.projectId).toBe(first.project.id);
-    expect(first.pathDocument).not.toHaveProperty('machine');
-    expect(first.pathDocument).not.toHaveProperty('controller');
-    expect(first.pathDocument).not.toHaveProperty('programText');
-    expect(first.pathDocument.source).not.toHaveProperty('rawDxf');
-    expect(first.pathDocument.source).not.toHaveProperty('rawDxfText');
     expect(first.pathDocument.segments).toEqual(sourceImport.pathDocument.segments);
     expect(first.pathDocument.plan).toEqual(sourceImport.pathDocument.plan);
     expect(second.project.id).toBe('portable-part-2026-07-14-3');
@@ -253,6 +210,83 @@ describe('portable UPID projects', () => {
     expect(adapter.writes).toEqual([]);
     expect(workbench.manifest.projects).toEqual([]);
   });
+
+  it('rejects unknown container payloads instead of transmitting them as UPID', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter);
+    const imported = await importDxfProject(workbench, {
+      fileName: 'Boundary.dxf',
+      text: closedPolylineDxf()
+    });
+    const projectPath = imported.workbench.manifest.projects[0].path;
+    const storedProject = structuredClone(imported.project) as typeof imported.project & {
+      upid: NonNullable<typeof imported.project.upid> & {
+        document: NonNullable<typeof imported.project.upid>['document'] & {
+          controller?: { family: string };
+        };
+      };
+    };
+    storedProject.upid.document.controller = { family: 'must-not-travel' };
+    adapter.files.set(projectPath, JSON.stringify(storedProject));
+
+    await expect(
+      exportPortableUpidProject(imported.workbench, projectPath)
+    ).rejects.toThrow('Unsupported UPID property: document.controller');
+
+    delete storedProject.upid.document.controller;
+    adapter.files.set(projectPath, JSON.stringify(storedProject));
+    const portable = await exportPortableUpidProject(imported.workbench, projectPath);
+    const payload = JSON.parse(portable.text);
+    payload.document.source.rawDxfText = 'must-not-travel';
+    adapter.writes.length = 0;
+
+    await expect(importPortableUpidProject(imported.workbench, {
+      fileName: portable.fileName,
+      text: JSON.stringify(payload)
+    })).rejects.toThrow('Unsupported UPID property: document.source.rawDxfText');
+
+    delete payload.document.source.rawDxfText;
+    payload.document.diagnostics[0].details.machine = { name: 'must-not-travel' };
+    await expect(importPortableUpidProject(imported.workbench, {
+      fileName: portable.fileName,
+      text: JSON.stringify(payload)
+    })).rejects.toThrow('Unsupported UPID property: document.diagnostics[0].details.machine');
+
+    payload.document.diagnostics[0].details = [{ machine: { name: 'must-not-travel' } }];
+    await expect(importPortableUpidProject(imported.workbench, {
+      fileName: portable.fileName,
+      text: JSON.stringify(payload)
+    })).rejects.toThrow('document.diagnostics[0].details must be an object');
+    expect(adapter.writes).toEqual([]);
+  });
+
+  it('round-trips circular geometry and diagnostic details without loss', async () => {
+    const sourceAdapter = new MemoryWorkbenchAdapter('source-circle');
+    const sourceWorkbench = await initializeWorkbenchDirectory(sourceAdapter);
+    const sourceImport = await importDxfProject(sourceWorkbench, {
+      fileName: 'Circle.dxf',
+      text: circleDxf()
+    });
+    const projectPath = sourceImport.workbench.manifest.projects[0].path;
+    const storedProject = structuredClone(sourceImport.project);
+    const diagnostic = storedProject.upid!.document.diagnostics[0];
+    diagnostic.details = { radius: 5, point: { x: 4, y: 6 } };
+    sourceAdapter.files.set(projectPath, JSON.stringify(storedProject));
+
+    const portable = await exportPortableUpidProject(sourceImport.workbench, projectPath);
+    const targetAdapter = new MemoryWorkbenchAdapter('target-circle');
+    const targetWorkbench = await initializeWorkbenchDirectory(targetAdapter);
+    const restored = await importPortableUpidProject(targetWorkbench, {
+      fileName: portable.fileName,
+      text: portable.text
+    });
+
+    expect(restored.pathDocument.segments).toEqual(storedProject.upid!.document.segments);
+    expect(restored.pathDocument.diagnostics[0].details).toEqual({
+      radius: 5,
+      point: { x: 4, y: 6 }
+    });
+  });
 });
 
 function closedPolylineDxf() {
@@ -263,6 +297,14 @@ function closedPolylineDxf() {
     '10', '10', '20', '0',
     '10', '10', '20', '10',
     '10', '0', '20', '10',
+    '0', 'ENDSEC', '0', 'EOF'
+  ].join('\n');
+}
+
+function circleDxf() {
+  return [
+    '0', 'SECTION', '2', 'ENTITIES',
+    '0', 'CIRCLE', '10', '4', '20', '6', '40', '5',
     '0', 'ENDSEC', '0', 'EOF'
   ].join('\n');
 }
