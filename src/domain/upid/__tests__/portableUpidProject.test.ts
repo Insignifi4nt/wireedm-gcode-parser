@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { importDxfProject } from '@/domain/dxf/importDxfProject';
+import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   initializeWorkbenchDirectory,
   type WorkbenchStorageAdapter
@@ -77,7 +78,7 @@ describe('portable UPID projects', () => {
     pathElement.overrides = structuredClone(operation.overrides);
     pathElement.compensationIntent = structuredClone(operation.compensationIntent);
     storedProject.machine.name = 'Must not travel';
-    const extendedDocument = storedProject.upid!.document as typeof storedProject.upid.document & {
+    const extendedDocument = storedProject.upid!.document as PathPlanningDocument & {
       machine?: { name: string };
     };
     const extendedSource = extendedDocument.source as typeof extendedDocument.source & {
