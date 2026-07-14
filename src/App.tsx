@@ -21,6 +21,7 @@ export default function App({ services }: AppProps = {}) {
       onAcknowledgeMachineProfile={app.handleAcknowledgeMachineProfile}
       onConnectWorkbench={app.handleConnectWorkbench}
       onCreateBlankMachineProfile={app.handleCreateBlankMachineProfile}
+      onCreateRobofilV2CandidateProfile={app.handleCreateRobofilV2CandidateProfile}
       onDeleteMachineProfile={app.handleDeleteMachineProfile}
       onDuplicateMachineProfile={app.handleDuplicateMachineProfile}
       onExportMachineProfile={app.handleExportMachineProfile}

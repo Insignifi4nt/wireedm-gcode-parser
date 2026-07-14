@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
+import {
+  createCharmillesRobofil100V2CandidateProfile,
+  createVerifiedCharmillesRobofil100Profile,
+  markMachineProfileUserVerified
+} from '@/domain/machine/machineProfiles';
 import { initializeWorkbenchDirectory, type WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
 import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 
@@ -203,6 +207,43 @@ describe('importDxfProject', () => {
     selectedProfile.controller.arcCenterMode = 'incremental-from-start';
     selectedProfile.compensation.preActivationCodes[0] = 'G61';
     expect(result.project.machine).toEqual(snapshot);
+  });
+
+  it('initializes automatic compensation when importing with a verified enabled machine', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-07-13T08:00:00.000Z')
+    });
+    const candidate = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile(),
+      new Date('2026-07-13T08:30:00.000Z')
+    );
+    workbench.manifest = {
+      ...workbench.manifest,
+      activeMachineProfileId: candidate.id,
+      machineProfiles: [...workbench.manifest.machineProfiles, candidate]
+    };
+    const preparation = prepareDxfProjectImport(workbench, {
+      fileName: 'compensated-circle.dxf',
+      text: circleDxf(),
+      now: new Date('2026-07-13T09:00:00.000Z')
+    });
+
+    const result = await commitDxfProjectImport(workbench, preparation, {
+      ...preparation.defaultSelection,
+      confirmed: true,
+      declaredUnitOverrideAcknowledged: false
+    });
+
+    expect(result.pathDocument.geometryBasis).toBe('finished-contour');
+    expect(result.pathDocument.plan.operations[0].compensationIntent).toMatchObject({
+      mode: 'controller',
+      source: 'automatic'
+    });
+    const persistedProject = JSON.parse(
+      adapter.files.get(`projects/${result.project.id}/project.json`) ?? '{}'
+    );
+    expect(persistedProject.upid.document.geometryBasis).toBe('finished-contour');
   });
 
   it('rejects a machine removed after review before writing and allocates the project ID at commit time', async () => {
@@ -696,6 +737,29 @@ function simpleSlotDxf() {
     '270',
     '51',
     '0',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function circleDxf() {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'CIRCLE',
+    '8',
+    'CUT',
+    '10',
+    '10',
+    '20',
+    '10',
+    '40',
+    '5',
     '0',
     'ENDSEC',
     '0',

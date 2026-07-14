@@ -15,7 +15,7 @@ After placement, its finished-contour bounds must be exactly:
 - X: `-32.500` through `32.500` (centered on X0);
 - Y: `0.000` through `64.500` (bottom on Y0);
 - document center: `0.000, 32.250`;
-- two circular holes centered near `X=-17.500` and `X=17.500`, both at `Y=24.900`.
+- two circular holes centered at `X=-17.500` and `X=17.500`, both at `Y=39.600` after placement (the raw DXF uses `Y=-24.900`).
 
 The recommended program begins from the center of one hole, travels by a deliberate linear lead to the selected circle start, cuts both holes before the exterior, and exposes every inter-operation rapid in the editor and export trace.
 
@@ -57,9 +57,9 @@ Rapid endpoints remain canonical rather than duplicated:
 
 ### Route optimization
 
-The recommended route preserves containment prerequisites (holes before their containing exterior), then minimizes rapid travel jointly across eligible operation order and available contour start candidates. Existing manual order/start overrides remain authoritative until the user explicitly reapplies automatic planning.
+The delivered recommended route preserves containment prerequisites (holes before their containing exterior) and applies deterministic inside/out-nearest operation ordering. Existing manual order and start edits remain authoritative until the user explicitly reapplies automatic planning.
 
-For native circles, the optimizer may choose a start on the circumference closest to the preceding route position. Manual circle starts are stored as explicit start overrides without degrading the circle geometry.
+Joint optimization of native-circle circumference starts is intentionally deferred. A native circle currently stores its preferred start on the shared `CirclePathSegment`; changing that value during automatic replanning could overwrite a manual start. Implementing this safely requires a separate planned-start override with an explicit manual/automatic ownership contract. The v2 UI still exposes exact rapid endpoints and contour-start editing, but the automatic optimizer does not claim to solve that additional degree of freedom yet.
 
 ### Lead movements
 
@@ -99,10 +99,10 @@ Domain tests cover post-version normalization and verification, exact modal sequ
 
 Component tests cover planned-route visibility under blocked v1 posting, exact coordinate editing, undo/redo, accessible browser-agent controls, and export preview trace semantics.
 
-End-to-end tests import the real Prisma DXF through browser cache, confirm units, place it at the acceptance bounds, choose/verify v2, optimize the route, inspect/edit rapid links, export, and assert the downloaded bytes.
+The deterministic acceptance generator imports the real Prisma DXF and asserts its units, placement, lead geometry, route, modal audit, and exported bytes. An interactive browser-agent run independently repeats profile creation/verification, real-file import, lead creation, document placement, route inspection/editing, and export preview through named controls.
 
 The full Vitest suite, production build, Playwright suite, and an interactive browser verification run are required before completion.
 
 ## Deferred Scope
 
-`.CMD`, `.TEC`, rough/skim orchestration, automatic threading/cut-wire codes, generator/flushing codes, and U/V taper output remain deferred until exact-machine fixtures exist. Version 2 must not infer those codes from generic Charmilles or Robofil 440 references.
+Native-circle joint start optimization, `.CMD`, `.TEC`, rough/skim orchestration, automatic threading/cut-wire codes, generator/flushing codes, and U/V taper output remain deferred until their data model or exact-machine fixtures exist. Version 2 must not infer controller codes from generic Charmilles or Robofil 440 references.

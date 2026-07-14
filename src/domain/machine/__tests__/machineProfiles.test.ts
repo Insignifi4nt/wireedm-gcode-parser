@@ -13,8 +13,74 @@ import {
   normalizeMachineProfile,
   normalizeOutput
 } from '../machineProfiles';
+import * as machineProfiles from '../machineProfiles';
+import * as robofilEnvelope from '../../post/verifiedRobofilPostEnvelope';
 
 describe('machine profile policies', () => {
+  it('creates an unverified operation-scoped Robofil 100 v2 candidate', () => {
+    const createCandidate = Reflect.get(
+      machineProfiles,
+      'createCharmillesRobofil100V2CandidateProfile'
+    ) as ((id?: string) => MachineProfile) | undefined;
+
+    expect(createCandidate).toBeTypeOf('function');
+
+    const candidate = createCandidate?.('robofil-v2-local');
+    expect(candidate).toMatchObject({
+      id: 'robofil-v2-local',
+      name: 'Charmilles Robofil 100 / Classic (v2 multi-contour candidate)',
+      controller: {
+        family: 'charmilles-robofil-classic',
+        postVersion: 2,
+        verification: { status: 'unverified' },
+        coordinateSystem: 'wire-position-g92',
+        unitsCode: 'omit',
+        planeCode: 'omit',
+        workOffsetCode: 'omit',
+        distanceMode: 'G90',
+        arcCenterMode: 'absolute',
+        programEnd: 'M02'
+      },
+      compensation: {
+        supported: true,
+        enabledByDefault: true,
+        offsetSelection: { address: 'D', index: 0 },
+        activation: 'charmilles-g38',
+        cancellation: 'charmilles-g39',
+        lifecycleScope: 'operation',
+        preActivationCodes: ['G60']
+      },
+      templates: { header: '', footer: '' },
+      output: { extension: 'iso', lineEnding: 'crlf', coordinatePrecision: 3 }
+    });
+  });
+
+  it('keeps Robofil v1 and v2 post envelopes distinct and requires explicit v2 verification', () => {
+    const createCandidate = Reflect.get(
+      machineProfiles,
+      'createCharmillesRobofil100V2CandidateProfile'
+    ) as (() => MachineProfile) | undefined;
+    const matchesV2 = Reflect.get(
+      robofilEnvelope,
+      'matchesRobofilV2PostEnvelope'
+    ) as ((machine: MachineProfile) => boolean) | undefined;
+    const v2IsReady = Reflect.get(
+      robofilEnvelope,
+      'robofilV2PostEnvelopeIsReady'
+    ) as ((machine: MachineProfile) => boolean) | undefined;
+
+    expect(createCandidate).toBeTypeOf('function');
+    expect(matchesV2).toBeTypeOf('function');
+    expect(v2IsReady).toBeTypeOf('function');
+
+    const v1 = createVerifiedCharmillesRobofil100Profile();
+    const candidate = createCandidate?.();
+    expect(candidate && matchesV2?.(candidate)).toBe(true);
+    expect(candidate && v2IsReady?.(candidate)).toBe(false);
+    expect(matchesV2?.(v1)).toBe(false);
+    expect(candidate && v2IsReady?.(markMachineProfileUserVerified(candidate))).toBe(true);
+  });
+
   it('creates the physically verified Robofil 100 version-1 post policy', () => {
     const verifiedAt = new Date('2026-07-13T09:30:00.000Z');
 

@@ -1,0 +1,331 @@
+{
+  "format": "wire-edm-robofil-v2-test-artifacts",
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-14T00:00:00.000Z",
+  "source": {
+    "path": "Prisma fixa 1 cog.dxf",
+    "fileName": "Prisma fixa 1 cog.dxf",
+    "sha256": "c8b1a79dea0e239344db0194e00c68df206776505cc0d18480112c552bf89cb0",
+    "entityCount": 24,
+    "unitDeclaration": {
+      "status": "missing"
+    },
+    "appliedUnits": "User-confirmed millimetres (scale 1). The DXF itself has no usable unit declaration."
+  },
+  "placement": {
+    "bounds": {
+      "minX": -32.5,
+      "minY": 0,
+      "maxX": 32.5,
+      "maxY": 64.5
+    },
+    "centre": {
+      "x": 0,
+      "y": 32.25
+    },
+    "dimensions": {
+      "width": 65,
+      "height": 64.5
+    },
+    "holeCenters": [
+      {
+        "x": -17.5,
+        "y": 39.6
+      },
+      {
+        "x": 17.5,
+        "y": 39.6
+      }
+    ]
+  },
+  "lifecycle": {
+    "profile": "Charmilles Robofil 100 / Classic (v2 multi-contour candidate)",
+    "warning": "Candidate only. Verify in controller graphics/SIM mode and a supervised dry run before cutting.",
+    "boundary": "Every operation emits G39 then G40; all G0 travel occurs in G40; G41/G42 D0 is reapplied before that operation's lead and contour; the file ends G39, G40, M02."
+  },
+  "programs": [
+    {
+      "fileName": "prisma-fixa-1-cog.robofil-v2-recommended.iso",
+      "operationOrder": [
+        {
+          "classification": "hole",
+          "direction": "forward",
+          "displayName": "Hole 2",
+          "operationId": "op_0001",
+          "entryPoint": {
+            "x": -17.5,
+            "y": 39.6
+          },
+          "leadSource": "circle-center"
+        },
+        {
+          "classification": "hole",
+          "direction": "forward",
+          "displayName": "Hole 1",
+          "operationId": "op_0002",
+          "entryPoint": {
+            "x": 17.5,
+            "y": 39.6
+          },
+          "leadSource": "circle-center"
+        },
+        {
+          "classification": "exterior",
+          "direction": "forward",
+          "displayName": "Exterior 1",
+          "operationId": "op_0003",
+          "entryPoint": {
+            "x": 37.5,
+            "y": 64.5
+          },
+          "leadSource": "manual-point"
+        }
+      ],
+      "rapidRoutes": [
+        {
+          "operationId": "op_0001",
+          "startPoint": {
+            "x": 0,
+            "y": 0
+          },
+          "endPoint": {
+            "x": -17.5,
+            "y": 39.6
+          },
+          "length": 43.294457
+        },
+        {
+          "operationId": "op_0002",
+          "startPoint": {
+            "x": -9.5,
+            "y": 39.6
+          },
+          "endPoint": {
+            "x": 17.5,
+            "y": 39.6
+          },
+          "length": 27
+        },
+        {
+          "operationId": "op_0003",
+          "startPoint": {
+            "x": 25.5,
+            "y": 39.6
+          },
+          "endPoint": {
+            "x": 37.5,
+            "y": 64.5
+          },
+          "length": 27.640731
+        }
+      ],
+      "modalAudit": {
+        "operationCount": 3,
+        "rapidCount": 3,
+        "rapidUnderCompensationCount": 0,
+        "finalBlocks": [
+          "G39",
+          "G40",
+          "M02"
+        ]
+      },
+      "sha256": "3d07e4d4f45f2bd43e868331ddb38be06170d5261cd58e0e0ee80525431f9fd8"
+    },
+    {
+      "fileName": "prisma-fixa-1-cog.robofil-v2-opposite-hole-first.iso",
+      "operationOrder": [
+        {
+          "classification": "hole",
+          "direction": "forward",
+          "displayName": "Hole 1",
+          "operationId": "op_0002",
+          "entryPoint": {
+            "x": 17.5,
+            "y": 39.6
+          },
+          "leadSource": "circle-center"
+        },
+        {
+          "classification": "hole",
+          "direction": "forward",
+          "displayName": "Hole 2",
+          "operationId": "op_0001",
+          "entryPoint": {
+            "x": -17.5,
+            "y": 39.6
+          },
+          "leadSource": "circle-center"
+        },
+        {
+          "classification": "exterior",
+          "direction": "forward",
+          "displayName": "Exterior 1",
+          "operationId": "op_0003",
+          "entryPoint": {
+            "x": 37.5,
+            "y": 64.5
+          },
+          "leadSource": "manual-point"
+        }
+      ],
+      "rapidRoutes": [
+        {
+          "operationId": "op_0002",
+          "startPoint": {
+            "x": 0,
+            "y": 0
+          },
+          "endPoint": {
+            "x": 17.5,
+            "y": 39.6
+          },
+          "length": 43.294457
+        },
+        {
+          "operationId": "op_0001",
+          "startPoint": {
+            "x": 25.5,
+            "y": 39.6
+          },
+          "endPoint": {
+            "x": -17.5,
+            "y": 39.6
+          },
+          "length": 43
+        },
+        {
+          "operationId": "op_0003",
+          "startPoint": {
+            "x": -9.5,
+            "y": 39.6
+          },
+          "endPoint": {
+            "x": 37.5,
+            "y": 64.5
+          },
+          "length": 53.188439
+        }
+      ],
+      "modalAudit": {
+        "operationCount": 3,
+        "rapidCount": 3,
+        "rapidUnderCompensationCount": 0,
+        "finalBlocks": [
+          "G39",
+          "G40",
+          "M02"
+        ]
+      },
+      "sha256": "bec3f4082dc034e2e11e26246db8aed1cd3dd47b22bf1f839bcc1cd79bba220f"
+    },
+    {
+      "fileName": "prisma-fixa-1-cog.robofil-v2-exterior-reversed.iso",
+      "operationOrder": [
+        {
+          "classification": "hole",
+          "direction": "forward",
+          "displayName": "Hole 2",
+          "operationId": "op_0001",
+          "entryPoint": {
+            "x": -17.5,
+            "y": 39.6
+          },
+          "leadSource": "circle-center"
+        },
+        {
+          "classification": "hole",
+          "direction": "forward",
+          "displayName": "Hole 1",
+          "operationId": "op_0002",
+          "entryPoint": {
+            "x": 17.5,
+            "y": 39.6
+          },
+          "leadSource": "circle-center"
+        },
+        {
+          "classification": "exterior",
+          "direction": "reverse",
+          "displayName": "Exterior 1",
+          "operationId": "op_0003",
+          "entryPoint": {
+            "x": 37.5,
+            "y": 64.5
+          },
+          "leadSource": "manual-point"
+        }
+      ],
+      "rapidRoutes": [
+        {
+          "operationId": "op_0001",
+          "startPoint": {
+            "x": 0,
+            "y": 0
+          },
+          "endPoint": {
+            "x": -17.5,
+            "y": 39.6
+          },
+          "length": 43.294457
+        },
+        {
+          "operationId": "op_0002",
+          "startPoint": {
+            "x": -9.5,
+            "y": 39.6
+          },
+          "endPoint": {
+            "x": 17.5,
+            "y": 39.6
+          },
+          "length": 27
+        },
+        {
+          "operationId": "op_0003",
+          "startPoint": {
+            "x": 25.5,
+            "y": 39.6
+          },
+          "endPoint": {
+            "x": 37.5,
+            "y": 64.5
+          },
+          "length": 27.640731
+        }
+      ],
+      "modalAudit": {
+        "operationCount": 3,
+        "rapidCount": 3,
+        "rapidUnderCompensationCount": 0,
+        "finalBlocks": [
+          "G39",
+          "G40",
+          "M02"
+        ]
+      },
+      "sha256": "c40f45e73f458ad00cdb0d2a54b949645da98c67eddf3c273d007c49500580a7"
+    }
+  ],
+  "references": {
+    "genericWireCentre": {
+      "fileName": "prisma-fixa-1-cog.generic-wire-centre-reference.iso",
+      "purpose": "Geometry comparison only; no Robofil controller compensation lifecycle.",
+      "sha256": "e71dc4300c4fa686e66ff9110f862e2bb70b51683f092d41c88b81788b645e17"
+    },
+    "v1BlockedReport": "robofil-v1-multicontour-blocked.json",
+    "importableCandidateProfile": "charmilles-robofil-100-v2-candidate.wireedm-machine.json"
+  },
+  "verificationCommands": [
+    "npm test -- --run src/domain/compensation/__tests__/validateCompensatedExport.test.ts src/domain/post/__tests__/upidMachinePost.test.ts src/domain/dxf/__tests__/importDxfProject.test.ts src/domain/path-editor/__tests__/pathDocumentOperations.test.ts src/domain/editor/__tests__/previewGeometry.test.ts src/__tests__/editorPathNativeDraft.test.tsx src/__tests__/appWorkbenchDashboard.test.tsx",
+    "npm run build",
+    "npm run artifacts:prisma"
+  ],
+  "outputHashes": {
+    "prisma-fixa-1-cog.robofil-v2-recommended.iso": "3d07e4d4f45f2bd43e868331ddb38be06170d5261cd58e0e0ee80525431f9fd8",
+    "prisma-fixa-1-cog.robofil-v2-opposite-hole-first.iso": "bec3f4082dc034e2e11e26246db8aed1cd3dd47b22bf1f839bcc1cd79bba220f",
+    "prisma-fixa-1-cog.robofil-v2-exterior-reversed.iso": "c40f45e73f458ad00cdb0d2a54b949645da98c67eddf3c273d007c49500580a7",
+    "prisma-fixa-1-cog.generic-wire-centre-reference.iso": "e71dc4300c4fa686e66ff9110f862e2bb70b51683f092d41c88b81788b645e17",
+    "charmilles-robofil-100-v2-candidate.wireedm-machine.json": "9d41e205739396b4026ad7352e197c93ed13290277848886a00b9cb5cda1542e",
+    "robofil-v1-multicontour-blocked.json": "5c11ee71cd4df37558605d5bdaa3fa1a411b1996e8d44f38b57d2bb21d2a79c9"
+  }
+}

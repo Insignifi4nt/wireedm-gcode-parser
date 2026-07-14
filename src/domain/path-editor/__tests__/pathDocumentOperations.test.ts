@@ -20,6 +20,7 @@ import {
   setPathOperationClassification,
   setClosedOperationStartAtExistingPointNearPoint,
   setCircleOperationCenterPierceLeadIn,
+  setPathOperationManualLeadIn,
   setClosedOperationStartNearPoint,
   setPathOperationOrderStrategy,
   movePathSegmentCenterTo,
@@ -28,8 +29,77 @@ import {
   translatePathElement,
   translatePathSegment
 } from '../pathDocumentOperations';
+import * as pathDocumentOperations from '../pathDocumentOperations';
 
 describe('pathDocumentOperations', () => {
+  it('derives canonical rapid routes and edits their source and destination endpoints', () => {
+    type PlannedRapid = {
+      endPoint: { x: number; y: number };
+      operationId: string;
+      startPoint: { x: number; y: number };
+    };
+    const deriveRoutes = Reflect.get(
+      pathDocumentOperations,
+      'derivePlannedRapidRoutes'
+    ) as ((document: ReturnType<typeof createPathPlanningDocumentFromDxfEntities>) => PlannedRapid[]) | undefined;
+    const setSource = Reflect.get(
+      pathDocumentOperations,
+      'setPlannedRapidSourcePoint'
+    ) as ((document: ReturnType<typeof createPathPlanningDocumentFromDxfEntities>, operationId: string, point: { x: number; y: number }) => ReturnType<typeof createPathPlanningDocumentFromDxfEntities> | null) | undefined;
+    const setDestination = Reflect.get(
+      pathDocumentOperations,
+      'setPlannedRapidDestinationPoint'
+    ) as ((document: ReturnType<typeof createPathPlanningDocumentFromDxfEntities>, operationId: string, point: { x: number; y: number }) => ReturnType<typeof createPathPlanningDocumentFromDxfEntities> | null) | undefined;
+
+    expect(deriveRoutes).toBeTypeOf('function');
+    expect(setSource).toBeTypeOf('function');
+    expect(setDestination).toBeTypeOf('function');
+
+    let document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 30, y: 20 }, radius: 5 }
+    ]);
+    for (const operation of document.plan.operations) {
+      document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
+    }
+    const firstOperationId = document.plan.operations[0].id;
+    const secondOperationId = document.plan.operations[1].id;
+
+    expect(deriveRoutes?.(document).map((route) => [route.startPoint, route.endPoint])).toEqual([
+      [{ x: 0, y: 0 }, { x: 10, y: 20 }],
+      [{ x: 15, y: 20 }, { x: 30, y: 20 }]
+    ]);
+
+    document = setSource?.(document, firstOperationId, { x: 1, y: 2 }) ?? document;
+    expect(deriveRoutes?.(document)[0].startPoint).toEqual({ x: 1, y: 2 });
+
+    document = setDestination?.(document, firstOperationId, { x: 12, y: 21 }) ?? document;
+    expect(deriveRoutes?.(document)[0].endPoint).toEqual({ x: 12, y: 21 });
+    expect(document.plan.operations[0].overrides?.leadIn).toMatchObject({
+      source: 'manual-point', from: { x: 12, y: 21 }
+    });
+
+    document = setSource?.(document, secondOperationId, { x: 10, y: 25 }) ?? document;
+    expect(deriveRoutes?.(document)[1].startPoint.x).toBeCloseTo(10, 6);
+    expect(deriveRoutes?.(document)[1].startPoint.y).toBeCloseTo(25, 6);
+  });
+
+  it('adds an explicit manual lead to a planned operation', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      rectangleLines(0, 0, 20, 10)
+    );
+    const operation = document.plan.operations[0];
+
+    const withLead = setPathOperationManualLeadIn(document, operation.id, { x: -5, y: 0 });
+
+    expect(withLead?.plan.operations[0].overrides?.leadIn).toMatchObject({
+      from: { x: -5, y: 0 },
+      to: operation.startPoint,
+      source: 'manual-point'
+    });
+    expect(pathPlanToGcodeBody(withLead!.plan, withLead!.segments)).toContain('G1 X0.000 Y0.000');
+  });
+
   it('reorders planned operations without editing raw G-code text', () => {
     const document = createPathPlanningDocumentFromDxfEntities(
       [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)]

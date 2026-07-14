@@ -512,6 +512,35 @@ describe('App dashboard and workbench shell', () => {
       });
   });
 
+  it('creates and explicitly acknowledges a Robofil v2 candidate from one named settings action', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+    await openMachineOutputSettings(container);
+
+    await clickButton(container, 'New Robofil v2 candidate profile');
+    await flushAsync();
+
+    const selector = container.querySelector(
+      'select[aria-label="Machine profile selector"]'
+    ) as HTMLSelectElement | null;
+    expect(selector?.value).toBe('charmilles-robofil-100-v2-candidate');
+    expect((container.querySelector('input[aria-label="Post version"]') as HTMLInputElement).value).toBe('2');
+    expect((container.querySelector('select[aria-label="Compensation cancellation"]') as HTMLSelectElement).value)
+      .toBe('charmilles-g39');
+    expect((container.querySelector('select[aria-label="Compensation lifecycle"]') as HTMLSelectElement).value)
+      .toBe('operation');
+    expect(readStoredManifest().machineProfiles.at(-1)).toMatchObject({
+      id: 'charmilles-robofil-100-v2-candidate',
+      controller: { postVersion: 2, verification: { status: 'unverified' } },
+      compensation: { cancellation: 'charmilles-g39', lifecycleScope: 'operation' }
+    });
+
+    await clickButton(container, 'Acknowledge machine profile verification');
+    await flushAsync();
+    expect(readStoredManifest().machineProfiles.at(-1)?.controller.verification.status)
+      .toBe('user-verified');
+  });
+
   it('duplicates and imports profiles as inactive, resolves collisions, and exports the exact portable wrapper', async () => {
     window.showDirectoryPicker = undefined;
     const downloadTextFile = vi.fn();

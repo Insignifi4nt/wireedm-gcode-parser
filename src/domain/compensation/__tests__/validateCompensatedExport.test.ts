@@ -3,10 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { initializeProjectCompensationIntents } from '@/domain/compensation/intent';
 import {
   createBlankMachineProfile,
+  createCharmillesRobofil100V2CandidateProfile,
   createVerifiedCharmillesRobofil100Profile,
   markMachineProfileUserVerified
 } from '@/domain/machine/machineProfiles';
-import { setCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
+import {
+  setCircleOperationCenterPierceLeadIn,
+  setPathOperationManualLeadIn
+} from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import type { MachineProfile } from '@/domain/workbench/types';
 
@@ -161,6 +165,138 @@ describe('validateCompensatedExport', () => {
     })).toMatchObject({ status: 'blocked', reason: 'unsupported-operation-count' });
   });
 
+  it('blocks Robofil v2 operations without an explicit linear lead', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile(),
+      new Date('2026-07-14T00:00:00.000Z')
+    );
+    const document = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+        { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 3 }
+      ]),
+      machine
+    );
+
+    expect(validateCompensatedExport({
+      document,
+      operation: document.plan.operations[0],
+      machine
+    })).toMatchObject({
+      status: 'blocked', reason: 'unsafe-controller-compensation-lead-in'
+    });
+  });
+
+  it.each([
+    {
+      label: 'zero length',
+      edit: (document: ReturnType<typeof baseCircle>) => {
+        const operation = document.plan.operations[0];
+        return setPathOperationManualLeadIn(document, operation.id, operation.startPoint)!;
+      }
+    },
+    {
+      label: 'disconnected destination',
+      edit: (document: ReturnType<typeof baseCircle>) => {
+        const operation = document.plan.operations[0];
+        const next = setPathOperationManualLeadIn(document, operation.id, { x: 0, y: 0 })!;
+        next.plan.operations[0].overrides!.leadIn!.to = { x: 4, y: 0 };
+        return next;
+      }
+    },
+    {
+      label: 'coordinate-formatting collapse',
+      edit: (document: ReturnType<typeof baseCircle>) => {
+        const operation = document.plan.operations[0];
+        return setPathOperationManualLeadIn(document, operation.id, { x: 5.0004, y: 0 })!;
+      }
+    },
+    {
+      label: 'non-finite derived length',
+      edit: (document: ReturnType<typeof baseCircle>) => {
+        const operation = document.plan.operations[0];
+        return setPathOperationManualLeadIn(document, operation.id, {
+          x: Number.MAX_VALUE,
+          y: Number.MAX_VALUE
+        })!;
+      }
+    }
+  ])('blocks a Robofil v2 $label lead', ({ edit }) => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const initialized = initializeProjectCompensationIntents(baseCircle(), machine);
+    const document = edit(initialized);
+
+    expect(validateCompensatedExport({
+      document,
+      operation: document.plan.operations[0],
+      machine
+    })).toMatchObject({
+      status: 'blocked', reason: 'unsafe-controller-compensation-lead-in'
+    });
+  });
+
+  it('blocks a manual Robofil v2 lead that crosses its target contour before the endpoint', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const initialized = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities(rectangle(0, 0, 10, 10)),
+      machine
+    );
+    const operation = initialized.plan.operations[0];
+    const document = setPathOperationManualLeadIn(initialized, operation.id, { x: 15, y: 5 })!;
+
+    expect(validateCompensatedExport({
+      document,
+      operation: document.plan.operations[0],
+      machine
+    })).toMatchObject({
+      status: 'blocked', reason: 'unsafe-controller-compensation-lead-in'
+    });
+  });
+
+  it('blocks a circle-center Robofil v2 lead on a non-circular operation', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const initialized = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities(rectangle(0, 0, 10, 10)),
+      machine
+    );
+    const operation = initialized.plan.operations[0];
+    const document = setPathOperationManualLeadIn(initialized, operation.id, { x: 5, y: 5 })!;
+    document.plan.operations[0].overrides!.leadIn!.source = 'circle-center';
+
+    expect(validateCompensatedExport({
+      document,
+      operation: document.plan.operations[0],
+      machine
+    })).toMatchObject({
+      status: 'blocked', reason: 'unsafe-controller-compensation-lead-in'
+    });
+  });
+
+  it('accepts a circle-center lead for the operation-scoped Robofil v2 lifecycle', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const initialized = initializeProjectCompensationIntents(baseCircle(), machine);
+    const document = setCircleOperationCenterPierceLeadIn(
+      initialized,
+      initialized.plan.operations[0].id
+    )!;
+
+    expect(validateCompensatedExport({
+      document,
+      operation: document.plan.operations[0],
+      machine
+    })).toMatchObject({
+      status: 'ready', strategy: 'controller-native', transition: null
+    });
+  });
+
   it('rejects a circle-center radial override before either controller lifecycle posts', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     const initialized = initializeProjectCompensationIntents(baseCircle(), machine);
@@ -181,6 +317,15 @@ function baseCircle() {
   return createPathPlanningDocumentFromDxfEntities([
     { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
   ]);
+}
+
+function rectangle(minX: number, minY: number, maxX: number, maxY: number) {
+  return [
+    { type: 'line' as const, layer: 'CUT', start: { x: minX, y: minY }, end: { x: minX, y: maxY } },
+    { type: 'line' as const, layer: 'CUT', start: { x: minX, y: maxY }, end: { x: maxX, y: maxY } },
+    { type: 'line' as const, layer: 'CUT', start: { x: maxX, y: maxY }, end: { x: maxX, y: minY } },
+    { type: 'line' as const, layer: 'CUT', start: { x: maxX, y: minY }, end: { x: minX, y: minY } }
+  ];
 }
 
 function finishedCircle() {

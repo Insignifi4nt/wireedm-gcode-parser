@@ -20,7 +20,10 @@ import {
   planMachineProfileImport,
   serializeMachineProfileFile
 } from '@/domain/machine/machineProfileFile';
-import { createBlankMachineProfile } from '@/domain/machine/machineProfiles';
+import {
+  createBlankMachineProfile,
+  createCharmillesRobofil100V2CandidateProfile
+} from '@/domain/machine/machineProfiles';
 import { supportsWorkbenchDirectoryAccess } from '@/domain/storage/fileSystemAccess';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
@@ -116,6 +119,7 @@ export interface WorkbenchAppController {
   handleSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => Promise<void>;
   handleAcknowledgeMachineProfile: (profile: MachineProfile) => Promise<boolean>;
   handleCreateBlankMachineProfile: () => Promise<string | null>;
+  handleCreateRobofilV2CandidateProfile: () => Promise<string | null>;
   handleDeleteMachineProfile: (profileId: string) => Promise<string | null>;
   handleDuplicateMachineProfile: (profileId: string) => Promise<string | null>;
   handleExportMachineProfile: (profile: MachineProfile) => void;
@@ -328,6 +332,21 @@ export function useWorkbenchAppController(
     const updated = await runMachineProfileMutation(
       (workbench) => appServices.addMachineProfile(workbench, profile),
       'Blank machine profile created.'
+    );
+    return updated ? profile.id : null;
+  }
+
+  async function handleCreateRobofilV2CandidateProfile() {
+    if (!connectedWorkbench) return null;
+    const occupied = new Set(connectedWorkbench.manifest.machineProfiles.map(({ id }) => id));
+    const baseId = 'charmilles-robofil-100-v2-candidate';
+    let id = baseId;
+    let suffix = 2;
+    while (occupied.has(id)) id = `${baseId}-${suffix++}`;
+    const profile = createCharmillesRobofil100V2CandidateProfile(id);
+    const updated = await runMachineProfileMutation(
+      (workbench) => appServices.addMachineProfile(workbench, profile),
+      'Robofil v2 candidate profile created. Review and acknowledge before export.'
     );
     return updated ? profile.id : null;
   }
@@ -1059,6 +1078,7 @@ export function useWorkbenchAppController(
     handleConnectWorkbench,
     handleAcknowledgeMachineProfile,
     handleCreateBlankMachineProfile,
+    handleCreateRobofilV2CandidateProfile,
     handleDeleteMachineProfile,
     handleDownloadEditorFile,
     handleDuplicateMachineProfile,

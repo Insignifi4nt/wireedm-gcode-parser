@@ -1,0 +1,47 @@
+{
+  "tool": "agent-browser",
+  "date": "2026-07-14",
+  "url": "http://127.0.0.1:3000/wireedm-gcode-parser/",
+  "checks": {
+    "pageLoaded": true,
+    "meaningfulContent": true,
+    "viteErrorOverlay": false,
+    "pageErrors": [],
+    "profileCreation": "Created the named Robofil v2 candidate from Machine & Output settings, acknowledged its controller-sensitive fingerprint, and made it default.",
+    "profilesExercised": [
+      "Default Wire EDM",
+      "Charmilles Robofil 100 / Classic (v2 multi-contour candidate)"
+    ],
+    "realDxfImported": "/mnt/c/Users/cristian/Documents/Catia/COGEME/Prisma/Prisma fixa 1 cog.dxf",
+    "automaticGeometryBasis": "finished-contour",
+    "placement": {
+      "minX": -32.5,
+      "minY": 0,
+      "verifiedThroughNamedControl": "Document reference point: Min XY"
+    },
+    "plannedRapidCount": 3,
+    "postedRapidCount": 3,
+    "rapidEditing": "Selected the exterior rapid through the named Cut Sequence control, changed its destination from X65 Y0 to X70 Y0, and used the named Create manual lead action. After document placement this became the safe outside lead X37.5 Y64.5 to X32.5 Y64.5.",
+    "transformTarget": "The selected exterior made Selection the automatic transform target. The browser agent used the named Target document for transform control, confirmed the Apply translation to document geometry accessible name, then placed the entire document.",
+    "savedProject": false,
+    "exportPreviewReady": true,
+    "exportPreview": {
+      "firstHoleRapid": "G0 X-17.500 Y39.600",
+      "secondHoleRapid": "G0 X17.500 Y39.600",
+      "boundarySequenceObserved": "G39, G40, G0, G41 D0",
+      "exteriorRapid": "G0 X37.500 Y64.500",
+      "exteriorLead": "G1 X32.500 Y64.500",
+      "finalSequenceObserved": "G39, G40, M02"
+    }
+  },
+  "screenshots": [
+    "home.png",
+    "prisma-v2-export-preview.png"
+  ],
+  "notes": [
+    "The browser flow exposed and verified the fix for automatic compensation initialization at DXF import.",
+    "The browser flow exposed and verified the fix that makes posted travel overlays non-interactive so planned routes remain selectable.",
+    "The final browser pass verified all three exact G39/G40/G0/G41 D0 boundaries plus the G39/G40/M02 tail after explicit lead safety validation was added.",
+    "The in-app browser bridge rejected the WSL workspace URI, so the supported agent-browser CLI was used against the rendered Vite application instead."
+  ]
+}

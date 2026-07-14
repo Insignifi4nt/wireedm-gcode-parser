@@ -19,6 +19,7 @@ import {
 export interface MachineProfileSettingsActions {
   onAcknowledgeMachineProfile: (profile: MachineProfile) => Promise<boolean>;
   onCreateBlankMachineProfile: () => Promise<string | null>;
+  onCreateRobofilV2CandidateProfile: () => Promise<string | null>;
   onDeleteMachineProfile: (profileId: string) => Promise<string | null>;
   onDuplicateMachineProfile: (profileId: string) => Promise<string | null>;
   onExportMachineProfile: (profile: MachineProfile) => void;
@@ -40,6 +41,7 @@ export function MachineOutputSettingsPanel({
   interactionLocked,
   onAcknowledgeMachineProfile,
   onCreateBlankMachineProfile,
+  onCreateRobofilV2CandidateProfile,
   onDeleteMachineProfile,
   onDuplicateMachineProfile,
   onExportMachineProfile,
@@ -173,6 +175,13 @@ export function MachineOutputSettingsPanel({
             icon={<FilePlus2 />}
             label="New Blank"
             onClick={() => selectCreatedProfile(onCreateBlankMachineProfile)}
+          />
+          <ActionButton
+            ariaLabel="New Robofil v2 candidate profile"
+            disabled={settingsControlsDisabled}
+            icon={<FilePlus2 />}
+            label="Robofil v2"
+            onClick={() => selectCreatedProfile(onCreateRobofilV2CandidateProfile)}
           />
           <ActionButton
             ariaLabel="Duplicate machine profile"

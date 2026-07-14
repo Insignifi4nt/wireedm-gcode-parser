@@ -3,7 +3,6 @@ import { resolveControllerCompensation } from '@/domain/compensation/resolveCont
 import { machineProfileHasCurrentVerification } from '@/domain/machine/machineProfiles';
 import {
   formatGcodePointWords,
-  preflightPathPlanToGcode,
   postPathPlanToGcode,
   type GcodePostResult,
   type GcodePostedMove,
@@ -19,6 +18,7 @@ import {
   validateTemplateModalPolicy
 } from './templateModalPolicy';
 import {
+  matchesRobofilV2PostEnvelope,
   matchesVerifiedRobofilPostEnvelope,
   verifiedRobofilPostEnvelopeIsReady
 } from './verifiedRobofilPostEnvelope';
@@ -69,49 +69,20 @@ export function deriveVerifiedRobofilPreviewPostBlocks(
   machine: MachineProfile
 ): VerifiedRobofilPreviewPostBlock[] | undefined {
   if (machine.controller.family !== 'charmilles-robofil-classic') return undefined;
-  if (
-    !verifiedRobofilPostEnvelopeIsReady(machine) ||
-    document.plan.operations.length !== 1
-  ) return [];
-  if (!validateUpidDocument(document).valid) return [];
+  const posted = postUpidForMachine(document, machine);
+  if (posted.status === 'blocked') return [];
 
-  const operation = document.plan.operations[0];
-  const resolution = resolveControllerCompensation({ document, operation });
-  if (
-    resolution.status === 'blocked' ||
-    operation.overrides?.leadIn?.source === 'circle-center' ||
-    !validateTemplateModalPolicy({
-      machine,
-      header: machine.templates.header,
-      footer: machine.templates.footer
-    }).valid
-  ) {
-    return [];
-  }
-
-  const geometry = preflightPathPlanToGcode(document.plan, document.segments, {
-    ...document.options,
-    arcCenterMode:
-      machine.controller.arcCenterMode === 'absolute' ? 'absolute' : 'incremental',
-    coordinatePrecision: machine.output.coordinatePrecision,
-    endpointTolerance: effectiveDocumentEndpointTolerance(document),
-    coincidenceEpsilon: document.options.coincidenceEpsilon,
-    initialPosition: { x: 0, y: 0 },
-    operationStartMode: 'linear'
-  });
-  if (geometry.status === 'blocked') return [];
-
-  const prefixLineCount =
-    templateLines(machine.templates.header).length +
-    verifiedRobofilStructuredPrefix(machine, resolution.code).length;
-  return geometry.operationStartApproaches.flatMap((approach) =>
-    approach.operationId && approach.startPoint
+  return posted.blocks.flatMap((block) =>
+    (block.kind === 'rapid' || block.kind === 'lead-in' || block.kind === 'lead-out') &&
+    block.operationId &&
+    block.startPoint &&
+    block.endPoint
       ? [{
-          bodyLineIndex: prefixLineCount + approach.bodyLineIndex,
-          kind: 'lead-in' as const,
-          operationId: approach.operationId,
-          startPoint: approach.startPoint,
-          endPoint: approach.endPoint
+          bodyLineIndex: block.bodyLineIndex,
+          kind: block.kind,
+          operationId: block.operationId,
+          startPoint: block.startPoint,
+          endPoint: block.endPoint
         }]
       : []
   );
@@ -174,6 +145,10 @@ export function postUpidForMachine(
 
   if (machine.controller.family !== 'charmilles-robofil-classic') {
     return blockedReason('unsupported-compensation-lifecycle', 'The selected native compensation lifecycle is unsupported.');
+  }
+
+  if (machine.controller.postVersion === 2) {
+    return postRobofilV2(document, machine, compensatedOperations);
   }
 
   return postVerifiedRobofil(document, machine, compensatedOperations);
@@ -697,6 +672,269 @@ function postVerifiedRobofil(
     blocks,
     programOwned: true
   };
+}
+
+function postRobofilV2(
+  document: PathPlanningDocument,
+  machine: MachineProfile,
+  compensatedOperations: PathPlanningDocument['plan']['operations']
+): UpidMachinePostResult {
+  if (!machineProfileHasCurrentVerification(machine)) {
+    return blockedReason(
+      'unverified-machine-profile',
+      'Robofil v2 compensated posting requires a current user-verified project machine snapshot.'
+    );
+  }
+  if (!matchesRobofilV2PostEnvelope(machine)) {
+    return blockedReason(
+      'unsupported-robofil-post-envelope',
+      'This Robofil snapshot is outside the operation-scoped post-version-2 envelope.'
+    );
+  }
+  if (
+    document.plan.operations.length === 0 ||
+    compensatedOperations.length !== document.plan.operations.length
+  ) {
+    return blockedReason(
+      'unsupported-operation-count',
+      'Robofil v2 requires every posted operation to have a resolved controller-compensation intent.'
+    );
+  }
+
+  const templatePolicy = validateTemplateModalPolicy({
+    machine,
+    header: machine.templates.header,
+    footer: machine.templates.footer
+  });
+  if (!templatePolicy.valid) {
+    return blockedReason(
+      'template-modal-conflict',
+      templatePolicy.diagnostics.map((diagnostic) => diagnostic.message).join(' '),
+      { templateDiagnostics: templatePolicy.diagnostics }
+    );
+  }
+
+  const resolutionByOperationId = new Map<string, 'G41' | 'G42'>();
+  for (const operation of document.plan.operations) {
+    const readiness = validateCompensatedExport({ document, operation, machine });
+    if (readiness.status === 'blocked') return blockedMachinePost(readiness.diagnostics, true);
+    const resolution = resolveControllerCompensation({ document, operation });
+    if (resolution.status === 'blocked') {
+      return blockedReason(
+        'compensation-resolution-blocked',
+        `Controller compensation could not be resolved for ${operation.displayName}: ${resolution.reason}.`,
+        { compensationReason: resolution.reason, operationId: operation.id }
+      );
+    }
+    resolutionByOperationId.set(operation.id, resolution.code);
+  }
+
+  const geometry = postPathPlanToGcode(document.plan, document.segments, {
+    ...document.options,
+    arcCenterMode:
+      machine.controller.arcCenterMode === 'absolute' ? 'absolute' : 'incremental',
+    coordinatePrecision: machine.output.coordinatePrecision,
+    endpointTolerance: effectiveDocumentEndpointTolerance(document),
+    coincidenceEpsilon: document.options.coincidenceEpsilon,
+    initialPosition: { x: 0, y: 0 },
+    operationStartMode: 'rapid'
+  });
+  if (geometry.status === 'blocked') return blockedMachinePost(geometry.diagnostics, true);
+
+  const lines: string[] = [];
+  const blocks: GcodePostedBlock[] = [];
+  const moves: GcodePostedMove[] = [];
+  const operations: GcodePostedOperation[] = [];
+  let compensation: 'G40' | 'G41' | 'G42' = 'G40';
+  let currentPosition: Point2 = { x: 0, y: 0 };
+
+  const appendModal = (
+    text: string,
+    kind: GcodePostedBlockKind,
+    operationId: string | null = null
+  ) => {
+    const before = compensation;
+    if (text === 'G40') compensation = 'G40';
+    else if (/^G41(?:\s|$)/.test(text)) compensation = 'G41';
+    else if (/^G42(?:\s|$)/.test(text)) compensation = 'G42';
+    lines.push(text);
+    blocks.push({
+      bodyLineIndex: lines.length - 1,
+      kind,
+      text,
+      operationId,
+      segmentId: null,
+      startPoint: null,
+      endPoint: null,
+      command: null,
+      compensationBefore: before,
+      compensationAfter: compensation
+    });
+  };
+  const appendMove = (move: GcodePostedMove) => {
+    const postedMove = { ...move, bodyLineIndex: lines.length };
+    lines.push(postedMove.text);
+    moves.push(postedMove);
+    blocks.push({
+      bodyLineIndex: postedMove.bodyLineIndex,
+      kind:
+        postedMove.kind === 'rapid'
+          ? 'rapid'
+          : postedMove.reason === 'manual-lead-in' ||
+              postedMove.reason === 'operation-start-approach'
+            ? 'lead-in'
+            : 'contour',
+      text: postedMove.text,
+      operationId: postedMove.operationId,
+      segmentId: postedMove.segmentId,
+      startPoint: postedMove.startPoint,
+      endPoint: postedMove.endPoint,
+      command: postedMove.command,
+      compensationBefore: compensation,
+      compensationAfter: compensation
+    });
+    return postedMove;
+  };
+
+  templateLines(machine.templates.header).forEach((line) => appendModal(line, 'template'));
+  appendModal('G92 X0 Y0', 'setup');
+  machine.compensation.preActivationCodes.forEach((line) => appendModal(line, 'setup'));
+  appendModal('G38', 'compensation-activation');
+  appendModal(machine.controller.distanceMode, 'setup');
+
+  for (const operation of document.plan.operations) {
+    const geometryOperation = geometry.operations.find(
+      (candidate) => candidate.operationId === operation.id
+    );
+    if (!geometryOperation) {
+      return blockedReason(
+        'post-audit-failed',
+        `Robofil v2 geometry did not produce a trace for ${operation.displayName}.`
+      );
+    }
+    const operationStart = lines.length;
+    appendModal('G39', 'compensation-cancellation', operation.id);
+    appendModal('G40', 'operation-boundary', operation.id);
+    const cutMoves = geometryOperation.moves.filter((move) => move.kind !== 'rapid');
+    const entryPoint = operation.overrides!.leadIn!.from;
+    const entryWords = formatGcodePointWords(entryPoint, machine.output.coordinatePrecision);
+    if (!entryWords) {
+      return blockedReason(
+        'post-audit-failed',
+        `Robofil v2 could not format the canonical rapid destination for ${operation.displayName}.`
+      );
+    }
+    appendMove({
+      bodyLineIndex: 0,
+      command: 'G0',
+      contourId: operation.contourId,
+      endPoint: { ...entryPoint },
+      kind: 'rapid',
+      operationId: operation.id,
+      reason: 'operation-start',
+      segmentId: null,
+      startPoint: { ...currentPosition },
+      text: `G0 ${entryWords}`
+    });
+    const compensationCode = resolutionByOperationId.get(operation.id)!;
+    appendModal(
+      `${compensationCode} D${machine.compensation.offsetSelection.index}`,
+      'compensation-activation',
+      operation.id
+    );
+    cutMoves.forEach(appendMove);
+    currentPosition = cutMoves.at(-1)?.endPoint ?? entryPoint;
+    const postedOperationMoves = moves.filter((move) => move.operationId === operation.id);
+    operations.push({
+      ...geometryOperation,
+      bodyLineStart: operationStart,
+      bodyLineEnd: lines.length - 1,
+      moves: postedOperationMoves,
+      rapidCount: postedOperationMoves.filter((move) => move.kind === 'rapid').length,
+      cutMoveCount: postedOperationMoves.filter((move) => move.kind === 'cut').length
+    });
+  }
+
+  appendModal('G39', 'compensation-cancellation');
+  appendModal('G40', 'compensation-cancellation');
+  templateLines(machine.templates.footer).forEach((line) => appendModal(line, 'template'));
+  appendModal('M02', 'program-end');
+
+  const auditIssue = auditRobofilV2Program({
+    lines,
+    blocks,
+    operationIds: document.plan.operations.map((operation) => operation.id)
+  });
+  if (auditIssue) return blockedReason('post-audit-failed', auditIssue);
+
+  return {
+    status: 'ready',
+    body: lines.join('\n'),
+    diagnostics: geometry.diagnostics,
+    metrics: {
+      rapidCount: moves.filter((move) => move.kind === 'rapid').length,
+      cutMoveCount: moves.filter((move) => move.kind === 'cut').length
+    },
+    moves,
+    operations,
+    blocks,
+    programOwned: true
+  };
+}
+
+function auditRobofilV2Program(input: {
+  lines: string[];
+  blocks: GcodePostedBlock[];
+  operationIds: string[];
+}) {
+  if (input.blocks.length !== input.lines.length) {
+    return 'Robofil v2 line and structured-block counts disagree.';
+  }
+  if (input.blocks.some((block, index) =>
+    block.bodyLineIndex !== index || block.text !== input.lines[index]
+  )) {
+    return 'Robofil v2 line and structured-block indexes disagree.';
+  }
+  const rapidBlocks = input.blocks.filter((block) => block.kind === 'rapid');
+  if (rapidBlocks.some((block) =>
+    block.compensationBefore !== 'G40' || block.compensationAfter !== 'G40'
+  )) {
+    return 'Robofil v2 contains a rapid while controller compensation is active.';
+  }
+  for (const operationId of input.operationIds) {
+    const operationBlocks = input.blocks.filter((block) => block.operationId === operationId);
+    const boundaryIndex = input.blocks.findIndex((block) =>
+      block.operationId === operationId && block.kind === 'operation-boundary'
+    );
+    const activationBlocks = operationBlocks.filter((block) => block.kind === 'compensation-activation');
+    const rapidBlocksForOperation = operationBlocks.filter((block) => block.kind === 'rapid');
+    const activationIndex = activationBlocks[0]?.bodyLineIndex ?? -1;
+    const firstCutIndex = input.blocks.findIndex((block) =>
+      block.operationId === operationId &&
+      (block.kind === 'lead-in' || block.kind === 'contour')
+    );
+    if (
+      boundaryIndex < 1 ||
+      input.blocks[boundaryIndex - 1]?.text !== 'G39' ||
+      input.blocks[boundaryIndex]?.text !== 'G40' ||
+      rapidBlocksForOperation.length !== 1 ||
+      rapidBlocksForOperation[0].bodyLineIndex !== boundaryIndex + 1 ||
+      activationBlocks.length !== 1 ||
+      activationIndex !== boundaryIndex + 2 ||
+      firstCutIndex !== activationIndex + 1 ||
+      operationBlocks.some((block) =>
+        block.compensationBefore !== block.compensationAfter &&
+        block.kind !== 'operation-boundary' &&
+        block.kind !== 'compensation-activation'
+      )
+    ) {
+      return `Robofil v2 operation ${operationId} has an invalid cancellation/activation boundary.`;
+    }
+  }
+  if (input.lines.slice(-3).join('\n') !== 'G39\nG40\nM02') {
+    return 'Robofil v2 must cancel compensation before M02.';
+  }
+  return null;
 }
 
 function auditVerifiedRobofilProgram(input: {

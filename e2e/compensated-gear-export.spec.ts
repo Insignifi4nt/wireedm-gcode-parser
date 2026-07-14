@@ -41,8 +41,7 @@ test('reviews and exports the real z39 gear with reversal-safe Robofil compensat
 
   await page.getByRole('button', { name: 'Select Exterior 1' }).click();
   const geometryBasis = page.locator('select[aria-label="Geometry basis"]:visible').first();
-  await expect(geometryBasis).toHaveValue('wire-centre');
-  await geometryBasis.selectOption('finished-contour');
+  await expect(geometryBasis).toHaveValue('finished-contour');
 
   const keptMaterial = page.locator('[data-testid="compensation-kept-material"]:visible').first();
   const compensationCode = page.locator('[data-testid="compensation-code"]:visible').first();

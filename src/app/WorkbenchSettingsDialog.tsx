@@ -37,6 +37,7 @@ export function WorkbenchSettingsDialog({
   onConnectWorkbench,
   onAcknowledgeMachineProfile,
   onCreateBlankMachineProfile,
+  onCreateRobofilV2CandidateProfile,
   onDeleteMachineProfile,
   onDuplicateMachineProfile,
   onExportMachineProfile,
@@ -278,6 +279,7 @@ export function WorkbenchSettingsDialog({
                 interactionLocked={interactionLocked}
                 onAcknowledgeMachineProfile={onAcknowledgeMachineProfile}
                 onCreateBlankMachineProfile={onCreateBlankMachineProfile}
+                onCreateRobofilV2CandidateProfile={onCreateRobofilV2CandidateProfile}
                 onDeleteMachineProfile={onDeleteMachineProfile}
                 onDuplicateMachineProfile={onDuplicateMachineProfile}
                 onExportMachineProfile={onExportMachineProfile}

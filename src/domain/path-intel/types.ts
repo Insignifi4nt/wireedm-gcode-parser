@@ -321,7 +321,7 @@ export interface ManualLeadInOverride {
   move: 'cut';
   from: Point2;
   to: Point2;
-  source: 'circle-center';
+  source: 'circle-center' | 'manual-point';
   sourceSegmentId: SegmentId;
   sourceSegmentIndex: number;
 }

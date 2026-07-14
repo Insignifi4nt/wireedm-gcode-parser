@@ -45,6 +45,9 @@ import {
   rotatePathOperation,
   rotatePathSegment,
   setCircleOperationCenterPierceLeadIn,
+  setPathOperationManualLeadIn,
+  setPlannedRapidDestinationPoint,
+  setPlannedRapidSourcePoint,
   setClosedOperationStartAtSegmentEndpoint,
   reversePathOperation,
   setClosedOperationStartAtExistingPointNearPoint,
@@ -1393,6 +1396,33 @@ export function EditorPage({
     if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
 
+  function handleSetPlannedRapidSourcePoint(point: { x: number; y: number }) {
+    const operationId = selectedPathElement?.travelRole === 'rapid-in'
+      ? selectedPathElement.operationId
+      : null;
+    if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
+    const edited = setPlannedRapidSourcePoint(pathDocumentDraft, operationId, point);
+    if (edited) applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+  }
+
+  function handleSetPlannedRapidDestinationPoint(point: { x: number; y: number }) {
+    const operationId = selectedPathElement?.travelRole === 'rapid-in'
+      ? selectedPathElement.operationId
+      : null;
+    if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
+    const edited = setPlannedRapidDestinationPoint(pathDocumentDraft, operationId, point);
+    if (edited) applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+  }
+
+  function handleSetPathOperationManualLeadIn(point: { x: number; y: number }) {
+    const operationId = selectedPathElement?.travelRole === 'rapid-in'
+      ? selectedPathElement.operationId
+      : null;
+    if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
+    const edited = setPathOperationManualLeadIn(pathDocumentDraft, operationId, point);
+    if (edited) applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+  }
+
   function handleReversePathOperation() {
     if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
     const edited = reversePathOperation(pathDocumentDraft, selectedPathOperationId);
@@ -1935,7 +1965,10 @@ export function EditorPage({
         onSetGeometryBasis={handleSetGeometryBasis}
         onSetManualCompensation={handleSetManualCompensation}
         onSetPathOperationCenterPierceLeadIn={handleSetPathOperationCenterPierceLeadIn}
+        onSetPathOperationManualLeadIn={handleSetPathOperationManualLeadIn}
         onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
+        onSetPlannedRapidDestinationPoint={handleSetPlannedRapidDestinationPoint}
+        onSetPlannedRapidSourcePoint={handleSetPlannedRapidSourcePoint}
         onSetPathStartFromElement={handleSetPathStartFromElement}
         onTranslatePathDocument={handleTranslatePathDocument}
         onTranslatePathSelection={handleTranslatePathSelection}

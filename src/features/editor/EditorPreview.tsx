@@ -977,6 +977,10 @@ export function EditorPreview({
                 data-preview-segment={path.segmentId}
                 data-preview-source={path.source}
                 data-preview-travel={path.travelRole}
+                data-preview-travel-source={path.travelSource}
+                aria-label={path.travelRole
+                  ? `${path.travelSource ?? 'planned'} ${path.travelRole} for ${path.operationId ?? 'path'}`
+                  : undefined}
                 data-type={path.type}
                 fill="none"
                 key={`${path.type}-${path.line}-${index}`}
@@ -1018,8 +1022,11 @@ export function EditorPreview({
                     event
                   );
                 }}
+                pointerEvents={path.travelSource === 'posted' ? 'none' : undefined}
                 stroke={strokeForPath(path.type, highlight, isPinned)}
-                strokeDasharray={path.type === 'rapid' ? '0.4 0.4' : undefined}
+                strokeDasharray={path.type === 'rapid'
+                  ? path.travelSource === 'posted' ? '1.2 0.4' : '0.4 0.4'
+                  : undefined}
                 strokeLinecap="round"
                 strokeWidth={strokeWidthForPath(path.type, highlight, isPinned)}
                 vectorEffect="non-scaling-stroke"

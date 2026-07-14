@@ -24,7 +24,9 @@ import {
 } from '@/domain/compensation/intent';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import {
-  createVerifiedCharmillesRobofil100Profile
+  createCharmillesRobofil100V2CandidateProfile,
+  createVerifiedCharmillesRobofil100Profile,
+  markMachineProfileUserVerified
 } from '@/domain/machine/machineProfiles';
 import {
   setCircleOperationCenterPierceLeadIn,
@@ -256,6 +258,95 @@ describe('EditorPage UPID draft boundary', () => {
     expect(pierceButton).not.toBeNull();
     expect(pierceButton?.disabled).toBe(true);
     expect(pierceButton?.title).toContain('controller compensation');
+  });
+
+  it('offers center-pierce lead creation for the verified operation-scoped Robofil v2 lifecycle', async () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const document = initializeProjectCompensationIntents(
+      dxfEntitiesToUpidDocument(parseDxf(circleDxf()).entities),
+      machine
+    );
+    const project = projectWithUpid(document, machine);
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+    await clickElement('[data-upid-cut-sequence-select]');
+
+    const pierceButton = container.querySelector(
+      'button[aria-label="Add center pierce lead-in"]'
+    ) as HTMLButtonElement | null;
+    expect(pierceButton?.disabled).toBe(false);
+
+    await clickElement('button[aria-label="Add center pierce lead-in"]');
+    expect(container.querySelector('[data-upid-lead-in-row]')).not.toBeNull();
+    expect(container.querySelector(
+      'path[data-preview-travel-source="posted"]'
+    )?.getAttribute('pointer-events')).toBe('none');
+    expect(container.querySelector(
+      'path[data-preview-travel-source="planned"]'
+    )?.getAttribute('pointer-events')).not.toBe('none');
+  });
+
+  it('edits a selected planned rapid through named controls with undo and redo', async () => {
+    const project = projectWithUpid(pathDocumentFromIndependentRectangles());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-upid-cut-sequence-rapid-control]');
+    expect(container.querySelector('[data-upid-planned-rapid-editor]')).not.toBeNull();
+    expect(container.querySelector('input[aria-label="Planned rapid source X"]')).not.toBeNull();
+    expect(container.querySelector('input[aria-label="Planned rapid destination Y"]')).not.toBeNull();
+
+    await changeInput('input[aria-label="Planned rapid source X"]', '2');
+    await changeInput('input[aria-label="Planned rapid source Y"]', '3');
+    await clickElement('button[aria-label="Apply planned rapid source"]');
+
+    const selectedRapidPath = () => container.querySelector(
+      'svg[aria-label="UPID path preview"] path[data-preview-travel="rapid-in"][data-preview-travel-source="planned"]'
+    );
+    expect(selectedRapidPath()?.getAttribute('d')).toMatch(/^M 2 3 L /);
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(selectedRapidPath()?.getAttribute('d')).toMatch(/^M 0 0 L /);
+
+    await clickElement('button[aria-label="Redo active document change"]');
+    expect(selectedRapidPath()?.getAttribute('d')).toMatch(/^M 2 3 L /);
+  });
+
+  it('creates a manual lead from a selected rapid destination, then edits it with undo and redo', async () => {
+    const project = projectWithUpid(pathDocumentFromIndependentRectangles());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+    await clickElement('[data-upid-cut-sequence-rapid-control]');
+
+    await changeInput('input[aria-label="Planned rapid destination X"]', '-3');
+    await changeInput('input[aria-label="Planned rapid destination Y"]', '1');
+    await clickElement('button[aria-label="Create manual lead from planned rapid destination"]');
+
+    const selectedRapidPath = () => container.querySelector(
+      'svg[aria-label="UPID path preview"] path[data-preview-travel="rapid-in"][data-preview-travel-source="planned"]'
+    );
+    expect(selectedRapidPath()?.getAttribute('d')).toMatch(/ L -3 1$/);
+    expect(container.querySelector('button[aria-label="Create manual lead from planned rapid destination"]')).toBeNull();
+
+    await changeInput('input[aria-label="Planned rapid destination X"]', '-4');
+    await clickElement('button[aria-label="Apply planned rapid destination"]');
+    expect(selectedRapidPath()?.getAttribute('d')).toMatch(/ L -4 1$/);
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(selectedRapidPath()?.getAttribute('d')).toMatch(/ L -3 1$/);
+    await clickElement('button[aria-label="Redo active document change"]');
+    expect(selectedRapidPath()?.getAttribute('d')).toMatch(/ L -4 1$/);
   });
 
   it('derives blocked readiness from blocking diagnostics and suppresses inconsistent posted cuts', async () => {
@@ -1838,6 +1929,17 @@ describe('EditorPage UPID draft boundary', () => {
 
     await act(async () => {
       element?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+  }
+
+  async function changeInput(selector: string, value: string) {
+    const input = container.querySelector(selector) as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(input, value);
+      input?.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await flushAsync();
   }

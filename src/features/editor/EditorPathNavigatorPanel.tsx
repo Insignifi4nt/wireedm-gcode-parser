@@ -22,6 +22,7 @@ import { useEffect, useState, type Dispatch, type MouseEvent, type ReactNode, ty
 
 import {
   canSetCircleOperationCenterPierceLeadIn,
+  derivePlannedRapidRoutes,
   type MagnetizeMode,
   type PathMirrorAxis
 } from '@/domain/path-editor/pathDocumentOperations';
@@ -165,7 +166,10 @@ interface EditorPathNavigatorPanelProps {
   onSetGeometryBasis: (basis: PathPlanningDocument['geometryBasis']) => void;
   onSetManualCompensation: (selection: ManualCompensationSelection) => void;
   onSetPathOperationCenterPierceLeadIn: () => void;
+  onSetPathOperationManualLeadIn: (point: Point2) => void;
   onSetPathOperationOrderStrategy: (strategy: OperationOrderStrategy) => void;
+  onSetPlannedRapidDestinationPoint: (point: Point2) => void;
+  onSetPlannedRapidSourcePoint: (point: Point2) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   onTranslatePathSelection: (delta: { x: number; y: number }) => void;
   onTranslatePathDocument: (delta: { x: number; y: number }) => void;
@@ -216,7 +220,10 @@ export function EditorPathNavigatorPanel({
   onSetGeometryBasis,
   onSetManualCompensation,
   onSetPathOperationCenterPierceLeadIn,
+  onSetPathOperationManualLeadIn,
   onSetPathOperationOrderStrategy,
+  onSetPlannedRapidDestinationPoint,
+  onSetPlannedRapidSourcePoint,
   onSetPathStartFromElement,
   onTranslatePathDocument,
   onTranslatePathSelection,
@@ -233,6 +240,27 @@ export function EditorPathNavigatorPanel({
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
   const endpointTopology = projectRail.summary.topology;
   const sourceSummary = projectRail.summary.source;
+  const plannedRapidRoutes = derivePlannedRapidRoutes(pathDocument);
+  const selectedPlannedRapid = selectedPathElement?.travelRole === 'rapid-in'
+    ? plannedRapidRoutes.find((route) => route.operationId === selectedPathElement.operationId) ?? null
+    : null;
+  const [rapidSourceXDraft, setRapidSourceXDraft] = useState('');
+  const [rapidSourceYDraft, setRapidSourceYDraft] = useState('');
+  const [rapidDestinationXDraft, setRapidDestinationXDraft] = useState('');
+  const [rapidDestinationYDraft, setRapidDestinationYDraft] = useState('');
+
+  useEffect(() => {
+    setRapidSourceXDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.startPoint.x) : '');
+    setRapidSourceYDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.startPoint.y) : '');
+    setRapidDestinationXDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.endPoint.x) : '');
+    setRapidDestinationYDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.endPoint.y) : '');
+  }, [
+    selectedPlannedRapid?.operationId,
+    selectedPlannedRapid?.startPoint.x,
+    selectedPlannedRapid?.startPoint.y,
+    selectedPlannedRapid?.endPoint.x,
+    selectedPlannedRapid?.endPoint.y
+  ]);
   const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
   const endpointTopologyPanel = summarizeEndpointTopologyPanel(pathDocument);
   const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
@@ -302,18 +330,26 @@ export function EditorPathNavigatorPanel({
   const hasTransformSelection = Boolean(selectedOperation && selectedGeometryCenter);
   const canOrientDocument = Boolean(documentCenter) && pathDocument.segments.length > 0 && !isSaving;
   const canOrientSelection = hasTransformSelection && !isSaving;
+  const robofilV2OperationLifecycle =
+    machineProfile.controller.family === 'charmilles-robofil-classic' &&
+    machineProfile.controller.postVersion === 2 &&
+    machineProfile.compensation.activation === 'charmilles-g38' &&
+    machineProfile.compensation.cancellation === 'charmilles-g39' &&
+    machineProfile.compensation.lifecycleScope === 'operation';
   const canSetCenterPierceLeadIn = selectedPathOperationId
       ? canSetCircleOperationCenterPierceLeadIn(pathDocument, selectedPathOperationId) &&
         !(
           pathDocument.geometryBasis === 'finished-contour' &&
-          selectedOperation?.compensationIntent?.mode === 'controller'
+          selectedOperation?.compensationIntent?.mode === 'controller' &&
+          !robofilV2OperationLifecycle
         ) &&
         !isSaving
       : false;
   const centerPierceBlockedByControllerCompensation = Boolean(
     selectedOperation &&
     pathDocument.geometryBasis === 'finished-contour' &&
-    selectedOperation.compensationIntent?.mode === 'controller'
+    selectedOperation.compensationIntent?.mode === 'controller' &&
+    !robofilV2OperationLifecycle
   );
   const [pathTransformTarget, setPathTransformTarget] = useState<PathTransformTarget>('document');
   const [pathTransformTargetPinned, setPathTransformTargetPinned] = useState(false);
@@ -677,6 +713,61 @@ export function EditorPathNavigatorPanel({
           >
             Reapply Planning Mode
           </button>
+          {selectedPlannedRapid && (
+            <section
+              className="mt-2 grid gap-1 border border-sky-500/40 bg-sky-500/5 p-1.5"
+              data-upid-planned-rapid-editor
+              data-upid-rapid-operation-id={selectedPlannedRapid.operationId}
+              data-upid-rapid-length={selectedPlannedRapid.length.toFixed(3)}
+            >
+              <div className="flex items-center justify-between gap-2 text-[10px]">
+                <span className="font-medium text-sky-100">Planned rapid</span>
+                <span className="font-mono text-muted-foreground">
+                  {selectedPlannedRapid.length.toFixed(3)} mm
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <CoordinateInput ariaLabel="Planned rapid source X" disabled={isSaving} value={rapidSourceXDraft} onChange={setRapidSourceXDraft} />
+                <CoordinateInput ariaLabel="Planned rapid source Y" disabled={isSaving} value={rapidSourceYDraft} onChange={setRapidSourceYDraft} />
+                <CoordinateInput ariaLabel="Planned rapid destination X" disabled={isSaving} value={rapidDestinationXDraft} onChange={setRapidDestinationXDraft} />
+                <CoordinateInput ariaLabel="Planned rapid destination Y" disabled={isSaving} value={rapidDestinationYDraft} onChange={setRapidDestinationYDraft} />
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  aria-label="Apply planned rapid source"
+                  className={textButtonClass}
+                  disabled={isSaving || !finiteCoordinatePair(rapidSourceXDraft, rapidSourceYDraft)}
+                  onClick={() => onSetPlannedRapidSourcePoint({ x: Number(rapidSourceXDraft), y: Number(rapidSourceYDraft) })}
+                  type="button"
+                >
+                  Set source
+                </button>
+                <button
+                  aria-label="Apply planned rapid destination"
+                  className={textButtonClass}
+                  disabled={isSaving || !finiteCoordinatePair(rapidDestinationXDraft, rapidDestinationYDraft)}
+                  onClick={() => onSetPlannedRapidDestinationPoint({ x: Number(rapidDestinationXDraft), y: Number(rapidDestinationYDraft) })}
+                  type="button"
+                >
+                  Set destination
+                </button>
+              </div>
+              {!selectedOperation?.overrides?.leadIn && (
+                <button
+                  aria-label="Create manual lead from planned rapid destination"
+                  className={textButtonClass}
+                  disabled={isSaving || !finiteCoordinatePair(rapidDestinationXDraft, rapidDestinationYDraft)}
+                  onClick={() => onSetPathOperationManualLeadIn({
+                    x: Number(rapidDestinationXDraft),
+                    y: Number(rapidDestinationYDraft)
+                  })}
+                  type="button"
+                >
+                  Create manual lead
+                </button>
+              )}
+            </section>
+          )}
           <label className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground">
             Geometry Basis
             <select
@@ -3099,6 +3190,42 @@ function renderPointRow({
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
+}
+
+function formatCoordinateDraft(value: number) {
+  return Number.isFinite(value) ? value.toFixed(3) : '';
+}
+
+function finiteCoordinatePair(x: string, y: string) {
+  return x.trim() !== '' && y.trim() !== '' && Number.isFinite(Number(x)) && Number.isFinite(Number(y));
+}
+
+function CoordinateInput({
+  ariaLabel,
+  disabled,
+  onChange,
+  value
+}: {
+  ariaLabel: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <label className="grid gap-0.5 text-[9px] uppercase text-muted-foreground">
+      {ariaLabel.endsWith(' X') ? 'X' : 'Y'}
+      <input
+        aria-label={ariaLabel}
+        className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:opacity-50"
+        disabled={disabled}
+        inputMode="decimal"
+        onChange={(event) => onChange(event.currentTarget.value)}
+        step="any"
+        type="number"
+        value={value}
+      />
+    </label>
+  );
 }
 
 function formatBounds(bounds: Bounds2) {

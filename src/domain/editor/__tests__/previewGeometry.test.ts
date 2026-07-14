@@ -5,6 +5,7 @@ import {
   setManualCompensationIntent
 } from '@/domain/compensation/intent';
 import {
+  createCharmillesRobofil100V2CandidateProfile,
   createVerifiedCharmillesRobofil100Profile,
   markMachineProfileUserVerified
 } from '@/domain/machine/machineProfiles';
@@ -314,7 +315,7 @@ describe('buildEditorPreviewGeometry', () => {
       padding: 1
     });
 
-    expect(preview.paths.filter((path) => path.travelRole)).toEqual([
+    expect(preview.paths.filter((path) => path.travelSource === 'posted')).toEqual([
       expect.objectContaining({
         line: 6,
         start: { x: 0, y: 0 },
@@ -330,7 +331,59 @@ describe('buildEditorPreviewGeometry', () => {
         type: 'cut'
       })
     ]);
-    expect(preview.paths.some((path) => path.travelRole === 'rapid-in')).toBe(false);
+    expect(preview.paths.some((path) =>
+      path.travelRole === 'rapid-in' && path.travelSource === 'posted'
+    )).toBe(false);
+    expect(preview.paths.some((path) =>
+      path.travelRole === 'rapid-in' && path.travelSource === 'planned'
+    )).toBe(true);
+  });
+
+  it('keeps canonical planned rapid travel visible when posted transition metadata is empty', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 30, y: 20 }, radius: 5 }
+    ]);
+
+    const preview = buildEditorPathDocumentPreviewGeometry(document, {
+      postedTransitions: []
+    });
+    const plannedRapids = preview.paths.filter((path) =>
+      path.travelRole === 'rapid-in' && path.travelSource === 'planned'
+    );
+
+    expect(plannedRapids).toHaveLength(2);
+    expect(plannedRapids.map((path) => [path.start, path.end])).toEqual([
+      [{ x: 0, y: 0 }, { x: 15, y: 20 }],
+      [{ x: 15, y: 20 }, { x: 35, y: 20 }]
+    ]);
+  });
+
+  it('renders posted travel as a distinct overlay without replacing the editable planned route', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      line(5, 0, 15, 0),
+      line(15, 0, 15, 5),
+      line(15, 5, 5, 5),
+      line(5, 5, 5, 0)
+    ]);
+    const operationId = document.plan.operations[0].id;
+
+    const preview = buildEditorPathDocumentPreviewGeometry(document, {
+      postedTransitions: [{
+        kind: 'lead-in',
+        operationId,
+        startPoint: { x: 0, y: 0 },
+        endPoint: { x: 5, y: 0 },
+        programLineNumber: 6
+      }]
+    });
+
+    expect(preview.paths.filter((path) => path.travelSource === 'planned')).toContainEqual(
+      expect.objectContaining({ travelRole: 'rapid-in', type: 'rapid' })
+    );
+    expect(preview.paths.filter((path) => path.travelSource === 'posted')).toEqual([
+      expect.objectContaining({ line: 6, travelRole: 'lead-in', type: 'cut' })
+    ]);
   });
 
   it('shows only the real Robofil origin approach when no lead-out was posted', () => {
@@ -354,7 +407,7 @@ describe('buildEditorPreviewGeometry', () => {
       ]
     });
 
-    expect(preview.paths.filter((path) => path.travelRole).map((path) => path.travelRole)).toEqual([
+    expect(preview.paths.filter((path) => path.travelSource === 'posted').map((path) => path.travelRole)).toEqual([
       'lead-in'
     ]);
   });
@@ -390,6 +443,30 @@ describe('buildEditorPreviewGeometry', () => {
     expect(
       deriveVerifiedRobofilPreviewTransitions(document, createDefaultMachineProfile())
     ).toBeUndefined();
+  });
+
+  it('derives posted rapid and lead overlays from a ready Robofil v2 multi-contour program', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    let document = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 },
+        { type: 'circle', layer: 'CUT', center: { x: 30, y: 20 }, radius: 5 }
+      ]),
+      machine
+    );
+    for (const operation of document.plan.operations) {
+      document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
+    }
+
+    const transitions = deriveVerifiedRobofilPreviewTransitions(document, machine);
+
+    expect(transitions?.map((transition) => transition.kind)).toEqual([
+      'rapid', 'lead-in', 'rapid', 'lead-in'
+    ]);
+    expect(transitions?.filter((transition) => transition.kind === 'rapid').map((transition) => transition.endPoint))
+      .toEqual([{ x: 10, y: 20 }, { x: 30, y: 20 }]);
   });
 
   it('suppresses synthetic transitions when an unsafe compensated center-pierce post is blocked', () => {

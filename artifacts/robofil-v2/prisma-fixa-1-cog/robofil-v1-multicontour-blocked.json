@@ -1,0 +1,15 @@
+{
+  "canDownload": false,
+  "meaning": "This is a limitation of Wire EDM Workbench's physically verified v1 post envelope, not evidence that the Robofil controller fundamentally forbids multiple contours.",
+  "diagnostics": [
+    {
+      "id": "diag_machine_post_0001",
+      "severity": "error",
+      "code": "post-invalid-input",
+      "message": "The verified program-scoped Robofil lifecycle supports exactly one compensated operation.",
+      "details": {
+        "reason": "unsupported-operation-count"
+      }
+    }
+  ]
+}

@@ -133,3 +133,9 @@
 - [ ] Check the error overlay, console, semantic controls, generated placement, and downloaded bytes.
 - [ ] Run `git diff --check` and inspect `git status`/`git diff`.
 - [ ] Commit any final verified fixes and prepare the artifact handoff.
+
+## Final implementation status
+
+Delivered on `codex/robofil-multicontour-route-v2`: versioned v2 machine policy, per-operation cancellation/rapid/reactivation state machine, explicit lead safety validation, planned/posted route separation, exact rapid editing controls, real-Prisma deterministic artifacts, and browser-agent verification. Robofil v1 retains its single-contour verified envelope and its prior manual-lead compatibility.
+
+The planner delivers deterministic inside/out-nearest operation ordering. The proposed joint native-circle circumference-start optimizer is not included: circle starts currently live on shared segment state, so automatic replanning could overwrite manual starts. That work remains a separate data-model change requiring explicit ownership semantics for planned versus manual circle starts.

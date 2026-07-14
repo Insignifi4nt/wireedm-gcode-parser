@@ -4,7 +4,10 @@ import {
   inspectTemplateModalState,
   validateTemplateModalPolicy
 } from '@/domain/post/templateModalPolicy';
-import { verifiedRobofilPostEnvelopeIsReady } from '@/domain/post/verifiedRobofilPostEnvelope';
+import {
+  robofilV2PostEnvelopeIsReady,
+  verifiedRobofilPostEnvelopeIsReady
+} from '@/domain/post/verifiedRobofilPostEnvelope';
 import type { MachineProfile } from '@/domain/workbench/types';
 
 import {
@@ -16,6 +19,7 @@ import {
   resolveControllerCompensation,
   type CompensationResolution
 } from './resolveControllerCompensation';
+import { validateRobofilV2OperationLead } from './robofilV2LeadValidation';
 
 export interface ValidateCompensatedExportInput {
   document: PathPlanningDocument;
@@ -31,6 +35,7 @@ export type CompensatedExportBlockedReason =
   | 'compensation-resolution-blocked'
   | 'template-modal-conflict'
   | 'unsafe-radial-lead'
+  | 'unsafe-controller-compensation-lead-in'
   | 'unsupported-generic-post-envelope'
   | 'unsupported-robofil-post-envelope'
   | 'unsupported-operation-count'
@@ -93,16 +98,38 @@ export function validateCompensatedExport({
       { templateDiagnostics: templatePolicy.diagnostics }
     );
   }
-  if (operation.overrides?.leadIn?.source === 'circle-center') {
-    return blocked('unsafe-radial-lead', 'A circle-center radial lead is unsafe under controller compensation.');
-  }
-
   if (machine.compensation.activation === 'charmilles-g38') {
+    if (robofilV2PostEnvelopeIsReady(machine)) {
+      if (!document.plan.operations.some((candidate) => candidate.id === operation.id)) {
+        return blocked(
+          'unsupported-operation-count',
+          'The selected operation is not part of the operation-scoped Robofil v2 plan.'
+        );
+      }
+      const leadValidation = validateRobofilV2OperationLead(
+        document,
+        operation,
+        machine.output.coordinatePrecision
+      );
+      if (!leadValidation.valid) {
+        return blocked('unsafe-controller-compensation-lead-in', leadValidation.message);
+      }
+      return {
+        status: 'ready',
+        strategy: 'controller-native',
+        resolution,
+        transition: null,
+        diagnostics: []
+      };
+    }
     if (!verifiedRobofilPostEnvelopeIsReady(machine)) {
       return blocked(
         'unsupported-robofil-post-envelope',
-        'This native transition is outside the physically verified Robofil post-version-1 envelope.'
+        'This native transition is outside the supported Robofil post envelope.'
       );
+    }
+    if (operation.overrides?.leadIn?.source === 'circle-center') {
+      return blocked('unsafe-radial-lead', 'A circle-center radial lead is unsafe under controller compensation.');
     }
     if (
       document.plan.operations.length !== 1 ||
@@ -120,6 +147,10 @@ export function validateCompensatedExport({
       transition: null,
       diagnostics: []
     };
+  }
+
+  if (operation.overrides?.leadIn?.source === 'circle-center') {
+    return blocked('unsafe-radial-lead', 'A circle-center radial lead is unsafe under controller compensation.');
   }
 
   if (

@@ -81,7 +81,89 @@ export interface PathStartPreview {
   segmentIndex: number;
 }
 
+export interface PlannedRapidRoute {
+  id: string;
+  operationId: string;
+  orderIndex: number;
+  startPoint: Point2;
+  endPoint: Point2;
+  length: number;
+  destinationKind: 'operation-start' | 'lead-in-start';
+}
+
 export type PathMirrorAxis = 'x' | 'y';
+
+export function derivePlannedRapidRoutes(
+  document: PathPlanningDocument
+): PlannedRapidRoute[] {
+  let currentPoint = document.options.startPoint;
+  return document.plan.operations.map((operation, orderIndex) => {
+    const leadIn = operation.overrides?.leadIn;
+    const endPoint = leadIn?.from ?? operation.startPoint;
+    const route = {
+      id: `rapid_${operation.id}`,
+      operationId: operation.id,
+      orderIndex,
+      startPoint: { ...currentPoint },
+      endPoint: { ...endPoint },
+      length: distance(currentPoint, endPoint),
+      destinationKind: leadIn ? 'lead-in-start' as const : 'operation-start' as const
+    };
+    currentPoint = operation.endPoint;
+    return route;
+  });
+}
+
+export function setPlannedRapidSourcePoint(
+  document: PathPlanningDocument,
+  operationId: string,
+  point: Point2
+) {
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  const operationIndex = document.plan.operations.findIndex(
+    (operation) => operation.id === operationId
+  );
+  if (operationIndex < 0) return null;
+  if (operationIndex === 0) {
+    const next = cloneDocument(document);
+    next.options = { ...next.options, startPoint: { ...point } };
+    refreshPlan(next);
+    return next;
+  }
+
+  const previousOperation = document.plan.operations[operationIndex - 1];
+  if (!previousOperation?.closed) return null;
+  return setClosedOperationStartNearPoint(document, previousOperation.id, point);
+}
+
+export function setPlannedRapidDestinationPoint(
+  document: PathPlanningDocument,
+  operationId: string,
+  point: Point2
+) {
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  const operation = document.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation) return null;
+
+  if (operation.overrides?.leadIn) {
+    const next = cloneDocument(document);
+    const nextOperation = next.plan.operations.find((candidate) => candidate.id === operationId)!;
+    nextOperation.overrides = {
+      ...nextOperation.overrides,
+      leadIn: {
+        ...nextOperation.overrides!.leadIn!,
+        from: { ...point },
+        source: 'manual-point'
+      }
+    };
+    refreshPlan(next);
+    return next;
+  }
+
+  return operation.closed
+    ? setClosedOperationStartNearPoint(document, operationId, point)
+    : null;
+}
 
 export function movePathOperation(
   document: PathPlanningDocument,
@@ -417,6 +499,34 @@ export function setCircleOperationCenterPierceLeadIn(
       source: 'circle-center',
       sourceSegmentId: leadInSource.segmentId,
       sourceSegmentIndex: leadInSource.segmentIndex
+    }
+  };
+  refreshPlan(next);
+  return next;
+}
+
+export function setPathOperationManualLeadIn(
+  document: PathPlanningDocument,
+  operationId: string,
+  from: Point2
+) {
+  if (!Number.isFinite(from.x) || !Number.isFinite(from.y)) return null;
+
+  const next = cloneDocument(document);
+  const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
+  const sourceRef = operation?.segmentRefs[0];
+  if (!operation || !sourceRef) return null;
+
+  operation.overrides = {
+    ...operation.overrides,
+    leadIn: {
+      kind: 'manual',
+      move: 'cut',
+      from: { ...from },
+      to: { ...operation.startPoint },
+      source: 'manual-point',
+      sourceSegmentId: sourceRef.segmentId,
+      sourceSegmentIndex: 0
     }
   };
   refreshPlan(next);

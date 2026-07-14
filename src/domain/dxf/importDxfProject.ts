@@ -1,4 +1,5 @@
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
+import { initializeProjectCompensationIntents } from '@/domain/compensation/intent';
 import { normalizeMachineProfile } from '@/domain/machine/machineProfiles';
 import {
   WORKBENCH_MANIFEST_FILE,
@@ -183,7 +184,7 @@ async function commitValidatedDxfProject(input: {
     ...preparation.parseResult.warnings,
     ...(overrideWarning ? [overrideWarning] : [])
   ];
-  const pathDocument = dxfEntitiesToUpidDocument(preparation.parseResult.entities, {}, {
+  const importedPathDocument = dxfEntitiesToUpidDocument(preparation.parseResult.entities, {}, {
     fileName: preparation.fileName,
     importedAt: timestamp,
     importWarnings,
@@ -204,6 +205,10 @@ async function commitValidatedDxfProject(input: {
       : {}),
     ...(preparation.parseResult.units ? { units: preparation.parseResult.units } : {})
   });
+  const pathDocument = initializeProjectCompensationIntents(
+    importedPathDocument,
+    machineProfile
+  );
   if (pathDocument.segments.length === 0 || pathDocument.plan.operations.length === 0) {
     throw new Error('DXF did not contain valid cut geometry.');
   }

@@ -167,6 +167,50 @@ export function createVerifiedCharmillesRobofil100Profile(
   return markMachineProfileUserVerified(profile, verifiedAt);
 }
 
+export function createCharmillesRobofil100V2CandidateProfile(
+  id = 'charmilles-robofil-100-v2-candidate'
+): MachineProfile {
+  return normalizeMachineProfile({
+    ...createDefaultMachineProfile(),
+    id,
+    name: 'Charmilles Robofil 100 / Classic (v2 multi-contour candidate)',
+    controller: {
+      family: 'charmilles-robofil-classic',
+      postVersion: 2,
+      verification: unverified(),
+      blockFormatting: 'spaced',
+      coordinateSystem: 'wire-position-g92',
+      unitsCode: 'omit',
+      planeCode: 'omit',
+      workOffsetCode: 'omit',
+      distanceMode: 'G90',
+      arcCenterMode: 'absolute',
+      programEnd: 'M02'
+    },
+    compensation: {
+      supported: true,
+      enabledByDefault: true,
+      offsetSelection: { address: 'D', index: 0 },
+      activation: 'charmilles-g38',
+      cancellation: 'charmilles-g39',
+      lifecycleScope: 'operation',
+      preActivationCodes: ['G60'],
+      validationLeadLengthMm: 2,
+      expectedMaximumOffsetMm: 0.5
+    },
+    templates: { header: '', footer: '' },
+    output: {
+      extension: 'iso',
+      lineEnding: 'crlf',
+      coordinatePrecision: 3
+    },
+    notes: [
+      'Candidate multi-contour post: emits operation-scoped G39/G40 boundaries before rapid travel.',
+      'Verify in controller graphics, SIM mode, and a supervised dry run before cutting.'
+    ].join(' ')
+  });
+}
+
 export function machineProfileVerificationFingerprint(profile: MachineProfile): string {
   return JSON.stringify({
     family: profile.controller.family,

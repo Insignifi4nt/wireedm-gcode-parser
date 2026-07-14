@@ -6,13 +6,15 @@ import {
 } from '@/domain/compensation/intent';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
 import {
+  createCharmillesRobofil100V2CandidateProfile,
   createVerifiedCharmillesRobofil100Profile,
   markMachineProfileUserVerified,
   normalizeMachineProfile
 } from '@/domain/machine/machineProfiles';
 import {
   reversePathOperation,
-  setCircleOperationCenterPierceLeadIn
+  setCircleOperationCenterPierceLeadIn,
+  setPathOperationManualLeadIn
 } from '@/domain/path-editor/pathDocumentOperations';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import {
@@ -527,6 +529,26 @@ describe('postUpidForMachine', () => {
     );
   });
 
+  it('preserves the v1 program-scoped manual-point lead behavior', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(clockwiseRectangle(0, 0, 10, 5)),
+      machine
+    );
+    const operation = initialized.plan.operations[0];
+    const document = setPathOperationManualLeadIn(initialized, operation.id, { x: -2, y: 0 })!;
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('ready');
+    expect(posted.moves).toContainEqual(expect.objectContaining({
+      operationId: operation.id,
+      reason: 'manual-lead-in',
+      startPoint: { x: -2, y: 0 },
+      endPoint: operation.startPoint
+    }));
+  });
+
   it('keeps pure preview metadata empty when fixed precision blocks real Robofil geometry', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     const source = createUpidFromDxfEntities(
@@ -570,6 +592,105 @@ describe('postUpidForMachine', () => {
         details: expect.objectContaining({ reason: 'unsupported-operation-count' })
       })
     );
+  });
+
+  it('posts Robofil v2 multi-contour rapids only after G39 and G40, then reapplies compensation', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile(),
+      new Date('2026-07-14T00:00:00.000Z')
+    );
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: -10, y: 5 }, radius: 3 },
+        { type: 'circle', layer: 'CUT', center: { x: 10, y: 5 }, radius: 3 }
+      ]),
+      machine
+    );
+    for (const operation of document.plan.operations) {
+      document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
+    }
+
+    const posted = postUpidForMachine(document, machine);
+    const lines = posted.body.split('\n');
+    const rapidIndexes = lines.flatMap((line, index) => line.startsWith('G0 ') ? [index] : []);
+
+    expect(posted.status).toBe('ready');
+    expect(lines.slice(0, 4)).toEqual(['G92 X0 Y0', 'G60', 'G38', 'G90']);
+    expect(rapidIndexes).toHaveLength(2);
+    for (const rapidIndex of rapidIndexes) {
+      expect(lines.slice(rapidIndex - 2, rapidIndex + 2)).toEqual([
+        'G39',
+        'G40',
+        expect.stringMatching(/^G0 X-?10\.000 Y5\.000$/),
+        expect.stringMatching(/^G4[12] D0$/)
+      ]);
+    }
+    expect(lines.slice(-3)).toEqual(['G39', 'G40', 'M02']);
+    expect(lines.filter((line) => /^G4[12] D0$/.test(line))).toHaveLength(2);
+    expect(posted.blocks.filter((block) => block.kind === 'rapid')).toSatisfy(
+      (blocks: typeof posted.blocks) => blocks.every((block) =>
+        block.compensationBefore === 'G40' && block.compensationAfter === 'G40'
+      )
+    );
+    expect(posted.blocks.filter((block) => block.kind === 'lead-in')).toSatisfy(
+      (blocks: typeof posted.blocks) => blocks.length === 2 && blocks.every((block) =>
+        block.compensationBefore !== 'G40' && block.compensationAfter !== 'G40'
+      )
+    );
+    expect(posted.blocks.map((block) => block.bodyLineIndex)).toEqual(
+      lines.map((_, index) => index)
+    );
+  });
+
+  it('recomputes the Robofil v2 compensation side independently after reversing one contour', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    let forward = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: -10, y: 5 }, radius: 3 },
+        { type: 'circle', layer: 'CUT', center: { x: 10, y: 5 }, radius: 3 }
+      ]),
+      machine
+    );
+    for (const operation of forward.plan.operations) {
+      forward = setCircleOperationCenterPierceLeadIn(forward, operation.id)!;
+    }
+    const reversed = reversePathOperation(forward, forward.plan.operations[1].id)!;
+
+    const before = postUpidForMachine(forward, machine);
+    const after = postUpidForMachine(reversed, machine);
+    const activations = (body: string) => body.split('\n').filter((line) => /^G4[12] D0$/.test(line));
+
+    expect(before.status).toBe('ready');
+    expect(after.status).toBe('ready');
+    expect(activations(after.body)[0]).toBe(activations(before.body)[0]);
+    expect(activations(after.body)[1]).not.toBe(activations(before.body)[1]);
+  });
+
+  it('emits one canonical rapid and one activation when the first lead starts at the setup origin', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const document = setCircleOperationCenterPierceLeadIn(
+      initialized,
+      initialized.plan.operations[0].id
+    )!;
+
+    const posted = postUpidForMachine(document, machine);
+    const lines = posted.body.split('\n');
+    const operationId = document.plan.operations[0].id;
+
+    expect(posted.status).toBe('ready');
+    expect(lines.slice(4, 8)).toEqual(['G39', 'G40', 'G0 X0.000 Y0.000', expect.stringMatching(/^G4[12] D0$/)]);
+    expect(posted.blocks.filter((block) => block.operationId === operationId && block.kind === 'rapid')).toHaveLength(1);
+    expect(posted.blocks.filter((block) => block.operationId === operationId && block.kind === 'compensation-activation')).toHaveLength(1);
   });
 
   it.each(['unverified', 'stale-fingerprint'] as const)(
