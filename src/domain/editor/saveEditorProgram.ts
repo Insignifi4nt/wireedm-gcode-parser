@@ -9,6 +9,7 @@ import {
   withProjectUpid
 } from '@/domain/upid/projectUpid';
 import type { WorkbenchProject } from '@/domain/workbench/types';
+import { isPathProjectSourceKind } from '@/domain/workbench/types';
 
 import { upidEditorDocumentPath } from './editorProjectPaths';
 import { parseGCodeProgram } from './gcodeParser';
@@ -58,8 +59,12 @@ export async function saveEditorProgram(
   }
 
   const projectPathDocument = input.project ? projectUpidDocument(input.project) : null;
-  if (input.project?.source.kind === 'dxf' && !projectPathDocument) {
-    throw new Error('DXF projects must contain a UPID document.');
+  if (input.project && isPathProjectSourceKind(input.project.source.kind) && !projectPathDocument) {
+    throw new Error(
+      input.project.source.kind === 'dxf'
+        ? 'DXF projects must contain a UPID document.'
+        : 'UPID projects must contain a UPID document.'
+    );
   }
 
   if (input.model === 'upid-document' && input.project && !projectPathDocument) {

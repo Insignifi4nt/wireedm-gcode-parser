@@ -7,7 +7,7 @@ import {
   machineProfileFromLegacySettings,
   normalizeMachineProfile
 } from '@/domain/machine/machineProfiles';
-import type { MachineProfile, OutputFormat } from '../workbench/types';
+import type { MachineProfile, OutputFormat, WorkbenchSourceKind } from '../workbench/types';
 
 export const WORKBENCH_MANIFEST_FILE = 'workbench.json';
 export const HEADER_TEMPLATE_PATH = 'templates/header.gcode';
@@ -34,7 +34,7 @@ export interface WorkbenchProjectIndexEntry {
   id: string;
   name: string;
   path: string;
-  sourceKind: 'dxf' | 'external-gcode';
+  sourceKind: WorkbenchSourceKind;
   updatedAt: string;
 }
 

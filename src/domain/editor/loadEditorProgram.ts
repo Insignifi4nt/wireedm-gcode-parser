@@ -2,6 +2,7 @@ import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { projectUpidDocument } from '@/domain/upid/projectUpid';
 import type { WorkbenchProject } from '@/domain/workbench/types';
+import { isPathProjectSourceKind } from '@/domain/workbench/types';
 
 import { upidEditorDocumentPath } from './editorProjectPaths';
 import { parseGCodeProgram } from './gcodeParser';
@@ -32,7 +33,8 @@ export async function loadEditorProgram(
   workbench: ConnectedWorkbench,
   project: WorkbenchProject
 ): Promise<LoadedEditorProgram> {
-  if (project.source.kind !== 'dxf' && project.upid) {
+  const isPathProject = isPathProjectSourceKind(project.source.kind);
+  if (!isPathProject && project.upid) {
     throw new Error('External G-code projects cannot contain UPID path state.');
   }
 
@@ -41,8 +43,12 @@ export async function loadEditorProgram(
     return createUpidEditorProgram(workbench, project, pathDocument);
   }
 
-  if (project.source.kind === 'dxf') {
-    throw new Error('DXF projects must contain a UPID document.');
+  if (isPathProject) {
+    throw new Error(
+      project.source.kind === 'dxf'
+        ? 'DXF projects must contain a UPID document.'
+        : 'UPID projects must contain a UPID document.'
+    );
   }
 
   const filePath = project.editor.activeFilePath;

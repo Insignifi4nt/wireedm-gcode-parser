@@ -1,6 +1,7 @@
 import { buildOutputFilename } from '@/domain/post/gcodeTemplates';
 import type { AppliedDxfUnits, DxfUnitDeclaration } from '@/domain/dxf/types';
 import type { WorkbenchProject, WorkbenchUpidState } from '@/domain/workbench/types';
+import { isPathProjectSourceKind } from '@/domain/workbench/types';
 
 import {
   composeUpidGCodeExport,
@@ -274,8 +275,8 @@ function stampProjectUpidDocument(
 }
 
 function assertUpidProjectSource(project: WorkbenchProject) {
-  if (project.source.kind !== 'dxf') {
-    throw new Error('UPID path state can only be attached to DXF projects.');
+  if (!isPathProjectSourceKind(project.source.kind)) {
+    throw new Error('UPID path state can only be attached to path projects.');
   }
 }
 

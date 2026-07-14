@@ -4,7 +4,14 @@ export const OUTPUT_EXTENSIONS = ['iso', 'nc', 'gcode'] as const;
 
 export type OutputExtension = (typeof OUTPUT_EXTENSIONS)[number] | 'custom';
 
-export type WorkbenchSourceKind = 'dxf' | 'external-gcode';
+export type WorkbenchSourceKind = 'dxf' | 'upid' | 'external-gcode';
+export type PathProjectSourceKind = Extract<WorkbenchSourceKind, 'dxf' | 'upid'>;
+
+export function isPathProjectSourceKind(
+  sourceKind: WorkbenchSourceKind
+): sourceKind is PathProjectSourceKind {
+  return sourceKind === 'dxf' || sourceKind === 'upid';
+}
 
 export interface WorkbenchFileRef {
   name: string;
