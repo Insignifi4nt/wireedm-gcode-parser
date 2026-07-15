@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 
 import type { PendingDxfImport } from '@/app/useWorkbenchAppController';
 import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import { updateProjectSimulationSettings } from '@/domain/storage/updateSimulationSettings';
 
 import { DashboardHeader } from './DashboardHeader';
 import { DxfImportConfirmationDialog } from './DxfImportConfirmationDialog';
@@ -10,6 +11,12 @@ import { LatestDxfImportPanel } from './LatestDxfImportPanel';
 import { ProjectActionDialog, type ProjectAction } from './ProjectActionDialog';
 import { ProjectListPanel } from './ProjectListPanel';
 import { StartWorkPanel } from './StartWorkPanel';
+
+const SimulationWorkspace = lazy(() =>
+  import('@/features/simulation/SimulationWorkspace').then((module) => ({
+    default: module.SimulationWorkspace
+  }))
+);
 
 interface DashboardPageProps {
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
@@ -64,6 +71,7 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const projects = connectedWorkbench?.manifest.projects ?? [];
   const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
+  const [simulationProjectPath, setSimulationProjectPath] = useState<string | null>(null);
 
   function closeProjectAction() {
     setProjectAction(null);
@@ -89,6 +97,7 @@ export function DashboardPage({
           onExportUpidProject={(project) => onExportUpidProject(project.path)}
           onOpenProject={onOpenProject}
           onRenameProject={(project) => setProjectAction({ kind: 'rename', project })}
+          onSimulateProject={(project) => setSimulationProjectPath(project.path)}
           projects={projects}
         />
 
@@ -141,6 +150,31 @@ export function DashboardPage({
           unitCandidates={pendingDxfImport.unitCandidates}
         />
       )}
+
+      {connectedWorkbench && simulationProjectPath && (
+        <Suspense fallback={<SimulationWorkspaceLoading />}>
+          <SimulationWorkspace
+            onClose={() => setSimulationProjectPath(null)}
+            onSaveSettings={async (settings) => {
+              const project = connectedWorkbench.manifest.projects.find(
+                (entry) => entry.path === simulationProjectPath
+              );
+              if (!project) throw new Error(`Project index entry not found: ${simulationProjectPath}`);
+              await updateProjectSimulationSettings(connectedWorkbench, project.id, settings);
+            }}
+            projectPath={simulationProjectPath}
+            workbench={connectedWorkbench}
+          />
+        </Suspense>
+      )}
+    </div>
+  );
+}
+
+function SimulationWorkspaceLoading() {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-background text-xs text-muted-foreground">
+      Loading 3D simulation…
     </div>
   );
 }

@@ -184,9 +184,13 @@ describe('App DXF imports and project library', () => {
     const exportIndex = rowButtons.findIndex(
       (button) => button.getAttribute('aria-label') === `Export UPID project ${projectId}`
     );
+    const simulateIndex = rowButtons.findIndex(
+      (button) => button.getAttribute('aria-label') === `Simulate project ${projectId} in 3D`
+    );
 
     expect(deleteIndex).toBeGreaterThan(-1);
-    expect(exportIndex).toBe(deleteIndex + 1);
+    expect(simulateIndex).toBe(deleteIndex + 1);
+    expect(exportIndex).toBe(simulateIndex + 1);
     expect(exportIndex).toBe(rowButtons.length - 1);
     expect(rowButtons[exportIndex]?.textContent?.trim()).toBe('');
     expect(rowButtons[exportIndex]?.title).toBe('Export UPID');
