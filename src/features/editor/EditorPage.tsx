@@ -45,7 +45,13 @@ import {
   rotatePathOperation,
   rotatePathSegment,
   setCircleOperationCenterPierceLeadIn,
+  setGeometryLinkedInitialWirePosition,
+  setManualInitialWirePosition,
   setPathOperationManualLeadIn,
+  setPathOperationProgramStops,
+  setPathOperationThreadingTransition,
+  setPathOperationTransitions,
+  setProjectThreadingDefault,
   setPlannedRapidDestinationPoint,
   setPlannedRapidSourcePoint,
   setClosedOperationStartAtSegmentEndpoint,
@@ -65,9 +71,17 @@ import {
 } from '@/domain/path-editor/pathDocumentOperations';
 import type {
   ContourClassification,
+  OperationThreadingTransition,
+  OperationProgramStop,
   OperationOrderStrategy,
   PathPlanningDocument
 } from '@/domain/path-intel/types';
+import { normalizeLegacyOperationTransitions } from '@/domain/path-intel/operationTransitions';
+import {
+  setMachiningSpanParticipation,
+  setPartialContourEntryReview,
+  setPartialContourCompensationSide
+} from '@/domain/path-intel/machiningParticipation';
 import {
   normalizeUpidPathElementSelection,
   summarizeUpidPathDocumentForEditor,
@@ -88,6 +102,14 @@ import { EditorCanvasPanel } from './EditorCanvasPanel';
 import { EditorGuideDialog } from './EditorGuideDialog';
 import { EditorHeaderBar, type EditorDocumentContext } from './EditorHeaderBar';
 import { EditorInspectorPanel } from './EditorInspectorPanel';
+import { EditorInitialWirePositionPanel } from './EditorInitialWirePositionPanel';
+import { EditorEntryExitPanel } from './EditorEntryExitPanel';
+import { EditorProgramStopsPanel } from './EditorProgramStopsPanel';
+import { EditorMachiningParticipationPanel } from './EditorMachiningParticipationPanel';
+import {
+  EditorWorkflowMenuBar,
+  type EditorWorkflowMenuGroup
+} from './EditorWorkflowMenuBar';
 import {
   EditorPathNavigatorPanel,
   type EditorPathElementRef
@@ -137,6 +159,21 @@ import {
   readPathSelectionBoundsCenter,
   resolvePathDragTarget
 } from './pathSelectionGeometry';
+import {
+  readEditorWorkspaceLayout,
+  writeEditorWorkspaceLayout,
+  type EditorWorkspaceLayoutV1
+} from './workspace/editorWorkspaceLayout';
+import {
+  createEditorCommandRegistry,
+  evaluateEditorCommand,
+  type EditorCommandDefinition
+} from './commands/editorCommands';
+import {
+  createEditorToolSession,
+  editorToolSessionReducer,
+  type EditorToolSession
+} from './commands/editorToolSession';
 
 interface EditorPageProps {
   program: LoadedEditorProgram | null;
@@ -159,6 +196,17 @@ interface EditorDraftSnapshot {
   selectedPathOperationId: string | null;
 }
 
+const SET_START_COMMAND: EditorCommandDefinition = {
+  id: 'machining.set-start',
+  label: 'Set Start',
+  menuPath: ['Machining', 'Operation', 'Set Start'],
+  scope: 'operation',
+  toolWindowId: 'path-actions',
+  historyLabel: 'Set operation start',
+  prerequisites: [{ kind: 'document' }, { kind: 'selected-operation' }, { kind: 'interaction-unlocked' }],
+  session: { kind: 'set-start' }
+};
+
 type EditorWorkspacePanelId =
   | 'path-summary'
   | 'path-actions'
@@ -168,6 +216,10 @@ type EditorWorkspacePanelId =
   | 'path-diagnostics'
   | 'cut-sequence'
   | 'contour-tree'
+  | 'initial-wire-position'
+  | 'entry-exit'
+  | 'program-stops'
+  | 'machining-participation'
   | 'position'
   | 'statistics'
   | 'machine'
@@ -182,6 +234,10 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   'path-diagnostics': 'Path Diagnostics',
   'cut-sequence': 'Cut Sequence',
   'contour-tree': 'Contour Tree',
+  'initial-wire-position': 'Initial Wire Position',
+  'entry-exit': 'Entry / Exit & Rethreading',
+  'program-stops': 'Program Stops',
+  'machining-participation': 'Machining Participation',
   position: 'Position',
   statistics: 'Statistics',
   machine: 'Machine',
@@ -197,6 +253,10 @@ const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string
   'path-diagnostics': 'warnings and linked rows for broken or risky path geometry',
   'cut-sequence': 'operation order, rapid moves, and cut direction',
   'contour-tree': 'nested contours, segments, endpoints, and canvas cross-highlighting',
+  'initial-wire-position': 'reviewed project G92 coordinates and first route origin',
+  'entry-exit': 'per-operation cut entry, exit, and manual or automatic rethread policy',
+  'program-stops': 'typed unconditional M00 events at operation boundaries or remaining cut distance',
+  'machining-participation': 'source-preserving active cuts, inactive reference spans, and explicit open-path compensation side',
   position: 'cursor position and grid snap state',
   statistics: 'bounds, move counts, and selected geometry details',
   machine: 'active Wire EDM profile and machine fit checks',
@@ -211,7 +271,11 @@ const PATH_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
   'endpoint-topology',
   'path-diagnostics',
   'cut-sequence',
-  'contour-tree'
+  'contour-tree',
+  'initial-wire-position',
+  'entry-exit',
+  'program-stops',
+  'machining-participation'
 ];
 
 const INSPECTOR_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
@@ -230,6 +294,10 @@ const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFlo
   'path-diagnostics': { x: 370, y: 224, width: 360, height: 260 },
   'cut-sequence': { x: 394, y: 254, width: 340, height: 340 },
   'contour-tree': { x: 418, y: 84, width: 380, height: 560 },
+  'initial-wire-position': { x: 620, y: 110, width: 360, height: 430 },
+  'entry-exit': { x: 650, y: 130, width: 390, height: 620 },
+  'program-stops': { x: 680, y: 150, width: 370, height: 560 },
+  'machining-participation': { x: 710, y: 170, width: 390, height: 600 },
   position: { x: 1020, y: 74, width: 300, height: 180 },
   statistics: { x: 990, y: 104, width: 360, height: 560 },
   machine: { x: 1040, y: 134, width: 300, height: 220 },
@@ -252,6 +320,11 @@ const WORKSPACE_PANEL_GROUPS: Array<{
     panelIds: ['cut-sequence', 'contour-tree']
   },
   {
+    id: 'setup',
+    title: 'Setup',
+    panelIds: ['initial-wire-position', 'entry-exit', 'program-stops', 'machining-participation']
+  },
+  {
     id: 'inspection',
     title: 'Inspection',
     panelIds: ['position', 'statistics']
@@ -267,6 +340,63 @@ const WORKSPACE_PANEL_GROUPS: Array<{
     panelIds: ['measurement']
   }
 ];
+
+const EDITOR_WORKFLOW_MENU_TITLES: EditorWorkflowMenuGroup['title'][] = [
+  'Project', 'Geometry', 'Machining', 'Construction', 'View', 'Machine', 'Export'
+];
+
+const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
+  {
+    id: 'project.save', label: 'Save Project', menuPath: ['Project', 'Save Project'],
+    scope: 'document', prerequisites: [{ kind: 'document' }, { kind: 'interaction-unlocked' }]
+  },
+  {
+    id: 'geometry.transform', label: 'Transform Geometry', menuPath: ['Geometry', 'Transform Geometry'],
+    scope: 'document', toolWindowId: 'path-transform', prerequisites: [{ kind: 'document' }]
+  },
+  {
+    id: 'geometry.path-actions', label: 'Path Actions', menuPath: ['Geometry', 'Path Actions'],
+    scope: 'document', toolWindowId: 'path-actions', prerequisites: [{ kind: 'document' }]
+  },
+  SET_START_COMMAND,
+  ...([
+    ['machining.sequence', 'Cut Sequence', 'cut-sequence'],
+    ['machining.contours', 'Contour Tree', 'contour-tree'],
+    ['machining.initial-wire', 'Initial Wire Position', 'initial-wire-position'],
+    ['machining.entry-exit', 'Entry / Exit & Rethreading', 'entry-exit'],
+    ['machining.program-stops', 'Program Stops', 'program-stops'],
+    ['machining.participation', 'Machining Participation', 'machining-participation']
+  ] as const).map(([id, label, toolWindowId]) => ({
+    id, label, menuPath: ['Machining', label] as const, scope: 'document' as const,
+    toolWindowId, prerequisites: [{ kind: 'document' } as const]
+  })),
+  ...([
+    ['construction.measurement', 'Measurement', 'measurement'],
+    ['construction.hover-assist', 'Hover / Snap Assist', 'path-hover-assist']
+  ] as const).map(([id, label, toolWindowId]) => ({
+    id, label, menuPath: ['Construction', label] as const, scope: 'document' as const,
+    toolWindowId, prerequisites: [{ kind: 'document' } as const]
+  })),
+  ...([
+    ['view.summary', 'Path Summary', 'path-summary'],
+    ['view.endpoints', 'Endpoint Topology', 'endpoint-topology'],
+    ['view.diagnostics', 'Path Diagnostics', 'path-diagnostics'],
+    ['view.statistics', 'Statistics', 'statistics'],
+    ['view.position', 'Position', 'position']
+  ] as const).map(([id, label, toolWindowId]) => ({
+    id, label, menuPath: ['View', label] as const, scope: 'view' as const,
+    toolWindowId, prerequisites: [{ kind: 'document' } as const]
+  })),
+  {
+    id: 'machine.profile', label: 'Project Machine', menuPath: ['Machine', 'Project Machine'],
+    scope: 'machine', toolWindowId: 'machine', prerequisites: [{ kind: 'document' }]
+  },
+  {
+    id: 'export.preview', label: 'Controller Export Preview',
+    menuPath: ['Export', 'Controller Export Preview'], scope: 'export',
+    prerequisites: [{ kind: 'document' }]
+  }
+]);
 
 function createDefaultPanelRecord<T>(valueFor: (id: EditorWorkspacePanelId) => T): Record<EditorWorkspacePanelId, T> {
   return [...PATH_WORKSPACE_PANEL_IDS, ...INSPECTOR_WORKSPACE_PANEL_IDS].reduce(
@@ -300,6 +430,25 @@ function createDefaultWorkspaceDockOrders(model: LoadedEditorProgram['model'] | 
         right: [...PATH_DEFAULT_DOCK_ORDERS.right]
       }
     : { left: [], right: [] };
+}
+
+function createDefaultWorkspaceLayout(
+  model: LoadedEditorProgram['model'] | undefined
+): EditorWorkspaceLayoutV1 {
+  return {
+    schemaVersion: 1,
+    placements: createDefaultWorkspacePanelPlacements(model),
+    dockOrders: createDefaultWorkspaceDockOrders(model),
+    floatingGeometries: { ...DEFAULT_WORKSPACE_PANEL_GEOMETRY },
+    dockWidths: { left: 360, right: 420 }
+  };
+}
+
+function readInitialWorkspaceLayout(model: LoadedEditorProgram['model'] | undefined) {
+  return readEditorWorkspaceLayout(createDefaultWorkspaceLayout(model), {
+    width: window.innerWidth,
+    height: window.innerHeight
+  });
 }
 
 function handleEditorDragOver(event: DragEvent<HTMLDivElement>) {
@@ -489,6 +638,7 @@ export function EditorPage({
   onStatusMessage
 }: EditorPageProps) {
   const { setHeaderContent, setRailCollapsed, setRailContent } = useAppRail();
+  const [initialWorkspaceLayout] = useState(() => readInitialWorkspaceLayout(program?.model));
   const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
   const lastClickedLineRef = useRef<number | null>(null);
@@ -509,6 +659,7 @@ export function EditorPage({
   const [pathTargetYDraft, setPathTargetYDraft] = useState('');
   const [lineMode, setLineMode] = useState<'select' | 'edit'>(readStoredLineMode);
   const [pathClickMode, setPathClickMode] = useState<'set-start' | MagnetizeMode | null>(null);
+  const [activeToolSession, setActiveToolSession] = useState<EditorToolSession | null>(null);
   const [hoveredPathElement, setHoveredPathElement] = useState<EditorPathElementRef | null>(null);
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
   const [pathHoverAssistEnabled, setPathHoverAssistEnabled] = useState(false);
@@ -518,15 +669,24 @@ export function EditorPage({
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
   const [inspectorRailCollapsed, setInspectorRailCollapsed] = useState(false);
-  const [inspectorRailWidth, setInspectorRailWidth] = useState(420);
+  const [inspectorRailWidth, setInspectorRailWidth] = useState(
+    initialWorkspaceLayout.dockWidths.right
+  );
   const [workspacePanelPlacements, setWorkspacePanelPlacements] = useState<
     Record<EditorWorkspacePanelId, EditorPanelPlacement>
-  >(() => createDefaultWorkspacePanelPlacements(program?.model));
+  >(() => initialWorkspaceLayout.placements as Record<EditorWorkspacePanelId, EditorPanelPlacement>);
   const [workspacePanelGeometries, setWorkspacePanelGeometries] = useState<
     Record<EditorWorkspacePanelId, EditorFloatingPanelGeometry>
-  >(() => ({ ...DEFAULT_WORKSPACE_PANEL_GEOMETRY }));
+  >(
+    () =>
+      initialWorkspaceLayout.floatingGeometries as Record<
+        EditorWorkspacePanelId,
+        EditorFloatingPanelGeometry
+      >
+  );
   const [workspaceDockOrders, setWorkspaceDockOrders] = useState<Record<EditorDockSide, EditorWorkspacePanelId[]>>(
-    () => createDefaultWorkspaceDockOrders(program?.model)
+    () =>
+      initialWorkspaceLayout.dockOrders as Record<EditorDockSide, EditorWorkspacePanelId[]>
   );
   const [expandedPathElementIds, setExpandedPathElementIds] = useState<Record<string, boolean>>({});
   const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
@@ -774,6 +934,64 @@ export function EditorPage({
     ),
     [pathDocumentDraft, workspacePanelPlacements]
   );
+  const editorWorkflowMenus = useMemo<EditorWorkflowMenuGroup[]>(() => {
+    if (!pathDocumentDraft) return [];
+    const visiblePanelIds = Object.entries(workspacePanelPlacements)
+      .filter(([, placement]) => placement !== 'hidden')
+      .map(([panelId]) => panelId);
+    const context = {
+      documentAvailable: true,
+      interactionLocked: Boolean(isEditorMutationLocked),
+      selectedOperationId: selectedPathOperationId,
+      selectedPathElementId: selectedPathElement?.pathElementId ?? null,
+      activeTool: activeToolSession
+        ? { commandId: activeToolSession.commandId, label: activeToolSession.label }
+        : null,
+      visiblePanelIds
+    };
+    return EDITOR_WORKFLOW_MENU_TITLES.map((title) => ({
+      title,
+      commands: EDITOR_COMMAND_REGISTRY.commandsForMenu(title).map((command) => {
+        const availability = evaluateEditorCommand(command, context);
+        const saveUnavailable = command.id === 'project.save' && !hasUnsavedChanges
+          ? 'There are no unsaved project changes.'
+          : null;
+        const enabled = availability.enabled && !saveUnavailable;
+        return {
+          id: command.id,
+          label: command.label,
+          description: command.toolWindowId
+            ? EDITOR_WORKSPACE_PANEL_DESCRIPTIONS[command.toolWindowId as EditorWorkspacePanelId]
+            : command.id === 'project.save'
+              ? 'Write the active local-first project through its current storage adapter.'
+              : 'Review exact controller output, readiness, transitions, and diagnostics.',
+          enabled,
+          disabledReason: saveUnavailable ?? (availability.enabled ? undefined : availability.reason),
+          onExecute: () => {
+            if (command.id === SET_START_COMMAND.id) {
+              showOrFocusWorkspacePanel('path-actions');
+              handleActivatePathClickMode('set-start');
+            } else if (command.id === 'project.save') {
+              void handleSaveClick();
+            } else if (command.id === 'export.preview') {
+              setExportPreviewOpen(true);
+            } else if (command.toolWindowId) {
+              showOrFocusWorkspacePanel(command.toolWindowId as EditorWorkspacePanelId);
+            }
+          }
+        };
+      })
+    }));
+  }, [
+    activeToolSession,
+    hasUnsavedChanges,
+    isEditorMutationLocked,
+    pathDocumentDraft,
+    pathClickMode,
+    selectedPathElement,
+    selectedPathOperationId,
+    workspacePanelPlacements
+  ]);
   const editorRailContent = useMemo(
     () =>
       pathDocumentDraft
@@ -834,7 +1052,12 @@ export function EditorPage({
         title={editorHeaderTitle}
         titleTooltip={editorHeaderTooltip}
         undoAvailable={undoStack.length > 0}
-        workspaceControls={editorPanelToolbar}
+        workspaceControls={pathDocumentDraft ? (
+          <>
+            <EditorWorkflowMenuBar groups={editorWorkflowMenus} />
+            {editorPanelToolbar}
+          </>
+        ) : editorPanelToolbar}
       />
     ),
     [
@@ -904,11 +1127,29 @@ export function EditorPage({
   useEffect(() => {
     setInspectorRailCollapsed(false);
     setProgramLinesOpen(true);
-    setWorkspacePanelPlacements(createDefaultWorkspacePanelPlacements(program?.model));
-    setWorkspaceDockOrders(createDefaultWorkspaceDockOrders(program?.model));
 
     if (program?.model === 'upid-document') setRailCollapsed(false);
   }, [program?.filePath, program?.model]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      writeEditorWorkspaceLayout({
+        schemaVersion: 1,
+        placements: workspacePanelPlacements,
+        dockOrders: workspaceDockOrders,
+        floatingGeometries: workspacePanelGeometries,
+        dockWidths: { left: initialWorkspaceLayout.dockWidths.left, right: inspectorRailWidth }
+      });
+    }, 200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    initialWorkspaceLayout.dockWidths.left,
+    inspectorRailWidth,
+    workspaceDockOrders,
+    workspacePanelGeometries,
+    workspacePanelPlacements
+  ]);
 
   useEffect(() => {
     function clampFloatingPanelsToViewport() {
@@ -979,6 +1220,12 @@ export function EditorPage({
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
+        if (activeToolSession) {
+          const nextSession = editorToolSessionReducer(activeToolSession, { type: 'escape' });
+          setActiveToolSession(nextSession.status === 'active' ? nextSession : null);
+          if (nextSession.status !== 'active') setPathClickMode(null);
+          return;
+        }
         setHoveredLine(null);
         setLastClickedLine(null);
         setSelectedLines([]);
@@ -1024,7 +1271,7 @@ export function EditorPage({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [draftText, isEditorMutationLocked, measurementPoints.length, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
+  }, [activeToolSession, draftText, isEditorMutationLocked, measurementPoints.length, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
 
   function handleBackToDashboard() {
     if (isEditorMutationLocked) return;
@@ -1320,6 +1567,14 @@ export function EditorPage({
         return;
       }
       applyPathDocumentEdit(edited);
+      if (activeToolSession?.commandId === SET_START_COMMAND.id) {
+        const withPoint = editorToolSessionReducer(activeToolSession, {
+          type: 'advance',
+          provisional: { point }
+        });
+        editorToolSessionReducer(withPoint, { type: 'apply' });
+        setActiveToolSession(null);
+      }
       setPathClickMode(null);
       onStatusMessage?.('Path start updated.', 'success');
       return;
@@ -1359,8 +1614,38 @@ export function EditorPage({
       selectedPathElement: element,
       selectedPathOperationId: element.operationId
     });
+    if (activeToolSession?.commandId === SET_START_COMMAND.id) {
+      const withPoint = editorToolSessionReducer(activeToolSession, {
+        type: 'advance',
+        provisional: { element }
+      });
+      editorToolSessionReducer(withPoint, { type: 'apply' });
+      setActiveToolSession(null);
+    }
     setPathClickMode(null);
     onStatusMessage?.('Path start updated.', 'success');
+  }
+
+  function handleSetManualInitialWirePosition(point: { x: number; y: number }) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setManualInitialWirePosition(pathDocumentDraft, point);
+    if (!edited) {
+      onStatusMessage?.('Initial wire coordinates must be finite numbers.', 'warning');
+      return;
+    }
+    applyPathDocumentEdit(edited);
+    onStatusMessage?.('Initial Wire Position reviewed and updated.', 'success');
+  }
+
+  function handleSetGeometryLinkedInitialWirePosition(segmentId: string) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setGeometryLinkedInitialWirePosition(pathDocumentDraft, segmentId);
+    if (!edited) {
+      onStatusMessage?.('Choose an available circle center for Initial Wire Position.', 'warning');
+      return;
+    }
+    applyPathDocumentEdit(edited);
+    onStatusMessage?.('Initial Wire Position linked to the circle center.', 'success');
   }
 
   function handleMeasurementPointMove(pointId: string, point: { x: number; y: number }) {
@@ -1466,6 +1751,123 @@ export function EditorPage({
 
     applyPathDocumentEdit(edited);
     onStatusMessage?.('Center pierce lead-in added.', 'success');
+  }
+
+  function handleSetOperationCircleCenterEntry(operationId: string) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setCircleOperationCenterPierceLeadIn(pathDocumentDraft, operationId);
+    if (!edited) {
+      onStatusMessage?.('Circle-center entry requires one closed circular operation.', 'warning');
+      return;
+    }
+    applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+  }
+
+  function handleSetOperationManualEntry(operationId: string, point: { x: number; y: number }) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setPathOperationManualLeadIn(pathDocumentDraft, operationId, point);
+    if (edited) {
+      applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+    }
+  }
+
+  function handleSetOperationManualExit(operationId: string, point: { x: number; y: number }) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const operation = pathDocumentDraft.plan.operations.find(
+      (candidate) => candidate.id === operationId
+    );
+    if (!operation) return;
+    const edited = setPathOperationTransitions(pathDocumentDraft, operationId, {
+      ...normalizeLegacyOperationTransitions(operation),
+      exit: {
+        strategy: 'manual-straight',
+        move: 'cut',
+        from: { ...operation.endPoint },
+        to: point,
+        review: 'reviewed'
+      }
+    });
+    if (edited) {
+      applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+    }
+  }
+
+  function handleSetProjectThreading(
+    transition: Omit<OperationThreadingTransition, 'source'>
+  ) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setProjectThreadingDefault(pathDocumentDraft, transition);
+    if (edited) applyPathDocumentEdit(edited);
+  }
+
+  function handleSetOperationThreading(
+    operationId: string,
+    transition: Omit<OperationThreadingTransition, 'source'> | null
+  ) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setPathOperationThreadingTransition(
+      pathDocumentDraft,
+      operationId,
+      transition
+    );
+    if (edited) {
+      applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+    }
+  }
+
+  function handleSetOperationProgramStops(
+    operationId: string,
+    stops: OperationProgramStop[]
+  ) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setPathOperationProgramStops(pathDocumentDraft, operationId, stops);
+    if (edited) {
+      applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+    }
+  }
+
+  function handleSetMachiningSpan(input: Parameters<typeof setMachiningSpanParticipation>[1]) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setMachiningSpanParticipation(pathDocumentDraft, input);
+    if (edited) {
+      applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId });
+    }
+  }
+
+  function handleSetPartialContourCompensationSide(
+    sourceOperationId: string,
+    wireSide: 'left' | 'right' | null
+  ) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setPartialContourCompensationSide(
+      pathDocumentDraft,
+      sourceOperationId,
+      wireSide
+    );
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId: sourceOperationId
+      });
+    }
+  }
+
+  function handleSetPartialContourEntryReview(
+    sourceOperationId: string,
+    reviewed: boolean
+  ) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setPartialContourEntryReview(
+      pathDocumentDraft,
+      sourceOperationId,
+      reviewed
+    );
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId: sourceOperationId
+      });
+    }
   }
 
   function handleSetPathOperationOrderStrategy(strategy: OperationOrderStrategy) {
@@ -1942,7 +2344,7 @@ export function EditorPage({
         magneticSnapEnabled={pathMagneticSnapEnabled}
         machineProfile={program!.project!.machine}
         measurementPoints={measurementPoints}
-        onActivatePathClickMode={setPathClickMode}
+        onActivatePathClickMode={handleActivatePathClickMode}
         onExpandedPathElementIdsChange={setExpandedPathElementIds}
         onHoverPathElement={setHoveredPathElement}
         onMirrorPathDocument={handleMirrorPathDocument}
@@ -1953,7 +2355,6 @@ export function EditorPage({
         onOpenWorkspacePanel={showWorkspacePanel}
         onOpenWorkspacePanels={showWorkspacePanels}
         onOpenExportPreview={() => setExportPreviewOpen(true)}
-        onRedoDraft={handleRedoDraft}
         onReversePathOperation={handleReversePathOperation}
         onRotatePathDocument={handleRotatePathDocument}
         onRotatePathSelection={handleRotatePathSelection}
@@ -1974,22 +2375,75 @@ export function EditorPage({
         onTranslatePathSelection={handleTranslatePathSelection}
         onToggleHoverAssist={handleTogglePathHoverAssist}
         onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
-        onUndoDraft={handleUndoDraft}
         pathClickMode={pathClickMode}
         pathDocument={pathDocument}
         pathTargetXDraft={pathTargetXDraft}
         pathTargetYDraft={pathTargetYDraft}
         pathTranslateXDraft={pathTranslateXDraft}
         pathTranslateYDraft={pathTranslateYDraft}
-        redoAvailable={redoStack.length > 0}
         renderWorkspacePanel={renderWorkspacePanel}
         selectedPathElement={selectedPathElement}
         selectedPathOperationId={selectedPathOperationId}
         onPathTranslateXDraftChange={setPathTranslateXDraft}
         onPathTranslateYDraftChange={setPathTranslateYDraft}
-        undoAvailable={undoStack.length > 0}
       />
     );
+  }
+
+  function handleActivatePathClickMode(mode: 'set-start' | MagnetizeMode | null) {
+    if (mode === null) {
+      setPathClickMode(null);
+      setActiveToolSession((current) =>
+        current?.commandId === SET_START_COMMAND.id ? null : current
+      );
+      return;
+    }
+
+    if (mode !== 'set-start') {
+      if (activeToolSession) {
+        onStatusMessage?.(
+          `Finish or cancel ${activeToolSession.label} before starting construction.`,
+          'warning'
+        );
+        return;
+      }
+      setPathClickMode(mode);
+      return;
+    }
+
+    if (pathClickMode === 'set-start') {
+      setPathClickMode(null);
+      setActiveToolSession(null);
+      return;
+    }
+
+    const availability = evaluateEditorCommand(SET_START_COMMAND, {
+      documentAvailable: Boolean(pathDocumentDraft),
+      interactionLocked: Boolean(isEditorMutationLocked),
+      selectedOperationId: selectedPathOperationId,
+      selectedPathElementId: selectedPathElement?.pathElementId ?? null,
+      activeTool: activeToolSession
+        ? { commandId: activeToolSession.commandId, label: activeToolSession.label }
+        : null,
+      visiblePanelIds: Object.entries(workspacePanelPlacements)
+        .filter(([, placement]) => placement !== 'hidden')
+        .map(([panelId]) => panelId)
+    });
+    if (!availability.enabled) {
+      onStatusMessage?.(availability.reason, 'warning');
+      return;
+    }
+
+    setActiveToolSession(
+      createEditorToolSession({
+        commandId: SET_START_COMMAND.id,
+        label: SET_START_COMMAND.label,
+        historyLabel: SET_START_COMMAND.historyLabel!,
+        target: { kind: 'operation', id: selectedPathOperationId! },
+        steps: ['pick-point']
+      })
+    );
+    setPathClickMode('set-start');
   }
 
   function renderInspectorPanelContent() {
@@ -2063,6 +2517,7 @@ export function EditorPage({
             hasUnsavedChanges ? 'Save or undo path changes before re-importing DXF units.' : null
           }
           onAddMeasurementPoint={handleAddMeasurementPoint}
+          onActivatePathConstructionMode={(mode) => handleActivatePathClickMode(mode)}
           onClearMeasurementPoints={() => setMeasurementPoints([])}
           onDeleteMeasurementPoint={(pointId) =>
             setMeasurementPoints((current) =>
@@ -2079,6 +2534,7 @@ export function EditorPage({
           onSetCanvasMouseMode={setCanvasMouseMode}
           onToggleGridSnap={() => setGridSnapEnabled((current) => !current)}
           pathCount={pathCount}
+          pathConstructionMode={pathClickMode === 'set-start' ? null : pathClickMode}
           pathDocument={pathDocumentDraft}
           pointXDraft={pointXDraft}
           pointYDraft={pointYDraft}
@@ -2290,6 +2746,20 @@ export function EditorPage({
     }));
   }
 
+  function showOrFocusWorkspacePanel(panelId: EditorWorkspacePanelId) {
+    if (workspacePanelPlacements[panelId] === 'hidden') {
+      showWorkspacePanel(panelId);
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      const panel = document.querySelector<HTMLElement>(
+        `[data-editor-workspace-panel="${panelId}"]`
+      );
+      panel?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      panel?.focus?.({ preventScroll: true });
+    });
+  }
+
   function showWorkspacePanels(panelIds: EditorWorkspacePanelId[]) {
     const uniquePanelIds = [...new Set(panelIds)];
     setWorkspacePanelGeometries((current) => {
@@ -2333,6 +2803,63 @@ export function EditorPage({
       <div data-editor-floating-layer />
       <div className="hidden" data-editor-workspace-panel-registry>
         {pathDocumentDraft && renderPathNavigatorPanel(pathDocumentDraft)}
+        {pathDocumentDraft &&
+          renderWorkspacePanel(
+            'initial-wire-position',
+            'Initial Wire Position',
+            <EditorInitialWirePositionPanel
+              disabled={Boolean(isEditorMutationLocked)}
+              document={pathDocumentDraft}
+              onSetGeometryLinked={handleSetGeometryLinkedInitialWirePosition}
+              onSetManual={handleSetManualInitialWirePosition}
+            />
+          )}
+        {pathDocumentDraft && program?.project &&
+          renderWorkspacePanel(
+            'entry-exit',
+            'Entry / Exit & Rethreading',
+            <EditorEntryExitPanel
+              disabled={Boolean(isEditorMutationLocked)}
+              document={pathDocumentDraft}
+              machine={program.project.machine}
+              onSelectOperation={(operationId) => {
+                setSelectedPathOperationId(operationId);
+                setSelectedPathElement(null);
+              }}
+              onSetCircleCenterEntry={handleSetOperationCircleCenterEntry}
+              onSetManualEntry={handleSetOperationManualEntry}
+              onSetManualExit={handleSetOperationManualExit}
+              onSetOperationThreading={handleSetOperationThreading}
+              onSetProjectThreading={handleSetProjectThreading}
+              selectedOperationId={selectedPathOperationId}
+            />
+          )}
+        {pathDocumentDraft &&
+          renderWorkspacePanel(
+            'machining-participation',
+            'Machining Participation',
+            <EditorMachiningParticipationPanel
+              disabled={Boolean(isEditorMutationLocked)}
+              document={pathDocumentDraft}
+              onSetEntryReview={handleSetPartialContourEntryReview}
+              onSetSpan={handleSetMachiningSpan}
+              onSetWireSide={handleSetPartialContourCompensationSide}
+              selectedOperationId={selectedPathOperationId}
+              selectedSegmentId={selectedPathElement?.segmentId ?? null}
+            />
+          )}
+        {pathDocumentDraft && program?.project &&
+          renderWorkspacePanel(
+            'program-stops',
+            'Program Stops',
+            <EditorProgramStopsPanel
+              disabled={Boolean(isEditorMutationLocked)}
+              document={pathDocumentDraft}
+              machine={program.project.machine}
+              onSetStops={handleSetOperationProgramStops}
+              selectedOperationId={selectedPathOperationId}
+            />
+          )}
         {isPathProject && renderInspectorPanelContent()}
       </div>
       <section

@@ -122,6 +122,20 @@ describe('openWorkbenchProject', () => {
         validationLeadLengthMm: 2,
         expectedMaximumOffsetMm: null
       },
+      threading: {
+        manual: { supported: false, stopCode: 'M00' },
+        automatic: {
+          supported: false,
+          beforePositioningCodes: [],
+          afterPositioningCodes: []
+        }
+      },
+      programStops: {
+        supported: false,
+        code: 'M00',
+        allowedPlacements: [],
+        allowCompensationActive: false
+      },
       templates: {
         header: 'LEGACY HEADER',
         footer: 'LEGACY FOOTER'

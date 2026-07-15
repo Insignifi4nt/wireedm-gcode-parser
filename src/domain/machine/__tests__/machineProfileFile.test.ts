@@ -34,6 +34,8 @@ function legacyVerificationFingerprint(
     cancellation,
     lifecycleScope,
     preActivationCodes,
+    threading: _threading,
+    programStops: _programStops,
     templates,
     lineEnding,
     coordinatePrecision,

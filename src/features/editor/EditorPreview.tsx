@@ -5,8 +5,7 @@ import {
   useRef,
   useState,
   type MouseEvent,
-  type TouchEvent,
-  type WheelEvent
+  type TouchEvent
 } from 'react';
 import { Magnet, Maximize2, MousePointer2, ZoomIn, ZoomOut } from 'lucide-react';
 
@@ -320,6 +319,20 @@ export function EditorPreview({
     keyboardShortcutsEnabled
   ]);
 
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !preview || !previewViewBox || preview.paths.length === 0) return;
+    const handleWheel = (event: globalThis.WheelEvent) => {
+      event.preventDefault();
+      const nextZoom = event.deltaY > 0
+        ? zoom / PREVIEW_ZOOM_STEP
+        : zoom * PREVIEW_ZOOM_STEP;
+      setZoom(clampZoom(nextZoom));
+    };
+    svg.addEventListener('wheel', handleWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', handleWheel);
+  }, [preview, previewViewBox, zoom]);
+
   if (!preview || !previewViewBox || preview.paths.length === 0) {
     return (
       <div
@@ -364,12 +377,6 @@ export function EditorPreview({
     if (!point) return;
 
     onPreviewPointClick(point);
-  }
-
-  function handlePreviewWheel(event: WheelEvent<SVGSVGElement>) {
-    event.preventDefault();
-    const nextZoom = event.deltaY > 0 ? zoom / PREVIEW_ZOOM_STEP : zoom * PREVIEW_ZOOM_STEP;
-    setZoom(clampZoom(nextZoom));
   }
 
   function handlePreviewMouseDown(event: MouseEvent<SVGSVGElement>) {
@@ -861,7 +868,6 @@ export function EditorPreview({
         onTouchEnd={handlePreviewTouchEnd}
         onTouchMove={handlePreviewTouchMove}
         onTouchStart={handlePreviewTouchStart}
-        onWheel={handlePreviewWheel}
         preserveAspectRatio="xMidYMid meet"
         style={{ touchAction: 'none' }}
         viewBox={viewBox}
@@ -973,6 +979,7 @@ export function EditorPreview({
                 data-preview-hovered={pathElementHovered ? 'true' : undefined}
                 data-preview-operation={path.operationId}
                 data-preview-path-element-id={path.pathElementId}
+                data-preview-participation={path.participation}
                 data-preview-selected={pathElementSelected ? 'true' : undefined}
                 data-preview-segment={path.segmentId}
                 data-preview-source={path.source}
@@ -1023,10 +1030,15 @@ export function EditorPreview({
                   );
                 }}
                 pointerEvents={path.travelSource === 'posted' ? 'none' : undefined}
-                stroke={strokeForPath(path.type, highlight, isPinned)}
-                strokeDasharray={path.type === 'rapid'
+                stroke={path.participation === 'inactive-reference' && !highlight
+                  ? '#64748b'
+                  : strokeForPath(path.type, highlight, isPinned)}
+                strokeDasharray={path.participation === 'inactive-reference'
+                  ? '0.8 0.5'
+                  : path.type === 'rapid'
                   ? path.travelSource === 'posted' ? '1.2 0.4' : '0.4 0.4'
                   : undefined}
+                strokeOpacity={path.participation === 'inactive-reference' ? 0.72 : undefined}
                 strokeLinecap="round"
                 strokeWidth={strokeWidthForPath(path.type, highlight, isPinned)}
                 vectorEffect="non-scaling-stroke"

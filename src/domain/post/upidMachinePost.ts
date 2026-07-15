@@ -8,6 +8,10 @@ import {
   type GcodePostedMove,
   type GcodePostedOperation
 } from '@/domain/path-intel/postGcode';
+import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
+import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
+import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
+import { resolveProgramStopPoints, validateProgramStops } from '@/domain/path-intel/programStops';
 import type { PathDiagnostic, PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 import type { MachineProfile } from '@/domain/workbench/types';
@@ -35,6 +39,11 @@ export type GcodePostedBlockKind =
   | 'contour'
   | 'compensation-cancellation'
   | 'operation-boundary'
+  | 'wire-separation'
+  | 'position-for-threading'
+  | 'manual-rethread'
+  | 'automatic-rethread'
+  | 'program-stop'
   | 'program-end';
 
 export interface GcodePostedBlock {
@@ -73,7 +82,12 @@ export function deriveVerifiedRobofilPreviewPostBlocks(
   if (posted.status === 'blocked') return [];
 
   return posted.blocks.flatMap((block) =>
-    (block.kind === 'rapid' || block.kind === 'lead-in' || block.kind === 'lead-out') &&
+    (
+      block.kind === 'rapid' ||
+      block.kind === 'position-for-threading' ||
+      block.kind === 'lead-in' ||
+      block.kind === 'lead-out'
+    ) &&
     block.operationId &&
     block.startPoint &&
     block.endPoint
@@ -89,21 +103,50 @@ export function deriveVerifiedRobofilPreviewPostBlocks(
 }
 
 export function postUpidForMachine(
-  document: PathPlanningDocument,
+  sourceDocument: PathPlanningDocument,
   machine: MachineProfile,
   _options: UpidMachinePostOptions = {}
 ): UpidMachinePostResult {
   const structuredCompensationRequested =
-    Array.isArray(document?.plan?.operations) &&
-    document.plan.operations.some(
+    Array.isArray(sourceDocument?.plan?.operations) &&
+    sourceDocument.plan.operations.some(
       (operation) => operation?.compensationIntent?.mode === 'controller'
     );
-  const validation = validateUpidDocument(document);
+  const validation = validateUpidDocument(sourceDocument);
   if (!validation.valid) {
     return blockedMachinePost(
       validation.blockingDiagnostics,
       machine.controller.family === 'charmilles-robofil-classic' ||
-        structuredCompensationRequested
+      structuredCompensationRequested
+    );
+  }
+
+  const machining = deriveActiveMachiningOperations(sourceDocument);
+  if (machining.status === 'blocked') {
+    return blockedReason(
+      'machining-participation-blocked',
+      `Machining participation could not be resolved: ${machining.reason}.`,
+      { machiningParticipationReason: machining.reason }
+    );
+  }
+  if (machining.operations.length === 0) {
+    return blockedReason(
+      'machining-participation-blocked',
+      'Machining participation leaves no active cutting operations.'
+    );
+  }
+  const document = effectiveMachiningDocument(sourceDocument, machining);
+  const enabledProgramStops = document.plan.operations.flatMap((operation) =>
+    (operation.programStops ?? []).filter((stop) => stop.enabled)
+  );
+  const postOwnsProgramStops =
+    machine.controller.family === 'charmilles-robofil-classic' &&
+    machine.controller.postVersion === 2 &&
+    machine.compensation.activation === 'charmilles-g38';
+  if (enabledProgramStops.length > 0 && !postOwnsProgramStops) {
+    return blockedReason(
+      'program-stop-post-unsupported',
+      'The selected post cannot emit configured program stops; export is blocked rather than dropping M00 intent.'
     );
   }
 
@@ -152,6 +195,32 @@ export function postUpidForMachine(
   }
 
   return postVerifiedRobofil(document, machine, compensatedOperations);
+}
+
+function effectiveMachiningDocument(
+  source: PathPlanningDocument,
+  machining: Extract<ReturnType<typeof deriveActiveMachiningOperations>, { status: 'ready' }>
+): PathPlanningDocument {
+  const operations = structuredClone(machining.operations);
+  return {
+    ...structuredClone(source),
+    segments: structuredClone(machining.segments),
+    plan: {
+      ...structuredClone(source.plan),
+      operations,
+      metrics: {
+        operationCount: operations.length,
+        totalCutLength: operations.reduce(
+          (total, operation) => total + operation.metrics.cutLength,
+          0
+        ),
+        totalRapidLength: operations.reduce(
+          (total, operation) => total + operation.metrics.rapidInLength,
+          0
+        )
+      }
+    }
+  };
 }
 
 function postGenericExplicitLinear(
@@ -563,6 +632,24 @@ function postVerifiedRobofil(
       'A radial circle-center lead-in is unsafe while Robofil controller compensation is active.'
     );
   }
+  const initialWire = resolveInitialWirePosition(document);
+  if (initialWire.status === 'blocked') {
+    return blockedReason(
+      'initial-wire-position-required',
+      'Review Initial Wire Position before exporting with the verified Robofil post.',
+      { initialWireReason: initialWire.reason }
+    );
+  }
+  const g92Words = formatGcodePointWords(
+    initialWire.point,
+    machine.output.coordinatePrecision
+  );
+  if (!g92Words) {
+    return blockedReason(
+      'initial-wire-position-required',
+      'Initial Wire Position could not be formatted for the selected machine.'
+    );
+  }
 
   const geometry = postPathPlanToGcode(document.plan, document.segments, {
     ...document.options,
@@ -571,7 +658,7 @@ function postVerifiedRobofil(
     coordinatePrecision: machine.output.coordinatePrecision,
     endpointTolerance: effectiveDocumentEndpointTolerance(document),
     coincidenceEpsilon: document.options.coincidenceEpsilon,
-    initialPosition: { x: 0, y: 0 },
+    initialPosition: initialWire.point,
     operationStartMode: 'linear'
   });
   if (geometry.status === 'blocked') {
@@ -587,7 +674,7 @@ function postVerifiedRobofil(
   const headerLines = templateLines(machine.templates.header);
   const footerLines = templateLines(machine.templates.footer);
   const dIndex = machine.compensation.offsetSelection.index;
-  const structuredPrefix = verifiedRobofilStructuredPrefix(machine, resolution.code);
+  const structuredPrefix = verifiedRobofilStructuredPrefix(machine, resolution.code, g92Words);
   const prefixLines = [...headerLines, ...structuredPrefix];
   const contourLines = geometry.body ? geometry.body.split('\n') : [];
   const lines = [...prefixLines, ...contourLines, ...footerLines, 'M02'];
@@ -635,7 +722,7 @@ function postVerifiedRobofil(
   };
 
   headerLines.forEach((line) => appendModalBlock(line, 'template'));
-  appendModalBlock('G92 X0 Y0', 'setup');
+  appendModalBlock(`G92 ${g92Words}`, 'setup');
   machine.compensation.preActivationCodes.forEach((line) => appendModalBlock(line, 'setup'));
   appendModalBlock('G38', 'compensation-activation', operation.id);
   appendModalBlock(`${resolution.code} D${dIndex}`, 'compensation-activation', operation.id);
@@ -701,6 +788,25 @@ function postRobofilV2(
     );
   }
 
+  const initialWire = resolveInitialWirePosition(document);
+  if (initialWire.status === 'blocked') {
+    return blockedReason(
+      'initial-wire-position-required',
+      'Review Initial Wire Position before exporting with Robofil v2.',
+      { initialWireReason: initialWire.reason }
+    );
+  }
+  const g92Words = formatGcodePointWords(
+    initialWire.point,
+    machine.output.coordinatePrecision
+  );
+  if (!g92Words) {
+    return blockedReason(
+      'initial-wire-position-required',
+      'Initial Wire Position could not be formatted for the selected machine.'
+    );
+  }
+
   const templatePolicy = validateTemplateModalPolicy({
     machine,
     header: machine.templates.header,
@@ -736,7 +842,7 @@ function postRobofilV2(
     coordinatePrecision: machine.output.coordinatePrecision,
     endpointTolerance: effectiveDocumentEndpointTolerance(document),
     coincidenceEpsilon: document.options.coincidenceEpsilon,
-    initialPosition: { x: 0, y: 0 },
+    initialPosition: initialWire.point,
     operationStartMode: 'rapid'
   });
   if (geometry.status === 'blocked') return blockedMachinePost(geometry.diagnostics, true);
@@ -746,7 +852,7 @@ function postRobofilV2(
   const moves: GcodePostedMove[] = [];
   const operations: GcodePostedOperation[] = [];
   let compensation: 'G40' | 'G41' | 'G42' = 'G40';
-  let currentPosition: Point2 = { x: 0, y: 0 };
+  let currentPosition: Point2 = { ...initialWire.point };
 
   const appendModal = (
     text: string,
@@ -771,19 +877,23 @@ function postRobofilV2(
       compensationAfter: compensation
     });
   };
-  const appendMove = (move: GcodePostedMove) => {
+  const appendMove = (
+    move: GcodePostedMove,
+    kind?: GcodePostedBlockKind
+  ) => {
     const postedMove = { ...move, bodyLineIndex: lines.length };
     lines.push(postedMove.text);
     moves.push(postedMove);
     blocks.push({
       bodyLineIndex: postedMove.bodyLineIndex,
-      kind:
+      kind: kind ?? (
         postedMove.kind === 'rapid'
           ? 'rapid'
           : postedMove.reason === 'manual-lead-in' ||
               postedMove.reason === 'operation-start-approach'
             ? 'lead-in'
-            : 'contour',
+            : 'contour'
+      ),
       text: postedMove.text,
       operationId: postedMove.operationId,
       segmentId: postedMove.segmentId,
@@ -797,12 +907,12 @@ function postRobofilV2(
   };
 
   templateLines(machine.templates.header).forEach((line) => appendModal(line, 'template'));
-  appendModal('G92 X0 Y0', 'setup');
+  appendModal(`G92 ${g92Words}`, 'setup');
   machine.compensation.preActivationCodes.forEach((line) => appendModal(line, 'setup'));
   appendModal('G38', 'compensation-activation');
   appendModal(machine.controller.distanceMode, 'setup');
 
-  for (const operation of document.plan.operations) {
+  for (const [operationIndex, operation] of document.plan.operations.entries()) {
     const geometryOperation = geometry.operations.find(
       (candidate) => candidate.operationId === operation.id
     );
@@ -813,8 +923,59 @@ function postRobofilV2(
       );
     }
     const operationStart = lines.length;
+    const programStops = validateProgramStops(operation, machine, document.segments);
+    if (programStops.status === 'blocked') {
+      return blockedReason(
+        'program-stop-blocked',
+        programStops.message,
+        { operationId: operation.id, programStopReason: programStops.reason }
+      );
+    }
+    const appendProgramStops = (
+      placement: 'before-entry' | 'after-contour' | 'after-exit'
+    ) => {
+      programStops.stops
+        .filter((stop) => stop.placement.kind === placement)
+        .forEach(() => appendModal(programStops.code, 'program-stop', operation.id));
+    };
+    const appendProgramStopAtPoint = (point: Point2) => {
+      lines.push(programStops.code);
+      blocks.push({
+        bodyLineIndex: lines.length - 1,
+        kind: 'program-stop',
+        text: programStops.code,
+        operationId: operation.id,
+        segmentId: null,
+        startPoint: { ...point },
+        endPoint: { ...point },
+        command: null,
+        compensationBefore: compensation,
+        compensationAfter: compensation
+      });
+    };
     appendModal('G39', 'compensation-cancellation', operation.id);
     appendModal('G40', 'operation-boundary', operation.id);
+    appendProgramStops('before-entry');
+    const threading = operationIndex === 0
+      ? null
+      : resolveOperationThreadingTransition(document, operation.id, machine);
+    if (threading?.status === 'blocked') {
+      return blockedReason(
+        'threading-transition-blocked',
+        threading.message,
+        { operationId: operation.id, threadingReason: threading.reason }
+      );
+    }
+    if (
+      threading?.transition.mode === 'manual' &&
+      threading.transition.wireSeparation === 'manual-before-positioning'
+    ) {
+      appendModal(threading.manualStopCode!, 'wire-separation', operation.id);
+    } else if (threading?.transition.mode === 'automatic') {
+      threading.automaticBeforePositioningCodes!.forEach((code) =>
+        appendModal(code, 'automatic-rethread', operation.id)
+      );
+    }
     const cutMoves = geometryOperation.moves.filter((move) => move.kind !== 'rapid');
     const entryPoint = operation.overrides!.leadIn!.from;
     const entryWords = formatGcodePointWords(entryPoint, machine.output.coordinatePrecision);
@@ -824,26 +985,88 @@ function postRobofilV2(
         `Robofil v2 could not format the canonical rapid destination for ${operation.displayName}.`
       );
     }
-    appendMove({
-      bodyLineIndex: 0,
-      command: 'G0',
-      contourId: operation.contourId,
-      endPoint: { ...entryPoint },
-      kind: 'rapid',
-      operationId: operation.id,
-      reason: 'operation-start',
-      segmentId: null,
-      startPoint: { ...currentPosition },
-      text: `G0 ${entryWords}`
-    });
+    if (!pointsWithinTolerance(currentPosition, entryPoint, effectiveDocumentEndpointTolerance(document))) {
+      appendMove({
+        bodyLineIndex: 0,
+        command: 'G0',
+        contourId: operation.contourId,
+        endPoint: { ...entryPoint },
+        kind: 'rapid',
+        operationId: operation.id,
+        reason: 'operation-start',
+        segmentId: null,
+        startPoint: { ...currentPosition },
+        text: `G0 ${entryWords}`
+      }, operationIndex === 0 ? 'rapid' : 'position-for-threading');
+    }
+    if (threading?.transition.mode === 'manual') {
+      appendModal(threading.manualStopCode!, 'manual-rethread', operation.id);
+    } else if (threading?.transition.mode === 'automatic') {
+      threading.automaticAfterPositioningCodes!.forEach((code) =>
+        appendModal(code, 'automatic-rethread', operation.id)
+      );
+    }
     const compensationCode = resolutionByOperationId.get(operation.id)!;
     appendModal(
       `${compensationCode} D${machine.compensation.offsetSelection.index}`,
       'compensation-activation',
       operation.id
     );
-    cutMoves.forEach(appendMove);
+    const distanceStopPoints = resolveProgramStopPoints(document, operation.id);
+    if (distanceStopPoints.status === 'blocked') {
+      return blockedReason(
+        'program-stop-blocked',
+        `The remaining-distance stop for ${operation.displayName} could not be resolved.`
+      );
+    }
+    const splitIssue = appendContourMovesWithStops({
+      appendMove,
+      appendProgramStopAtPoint,
+      document,
+      machine,
+      moves: cutMoves,
+      stops: distanceStopPoints.stops
+    });
+    if (splitIssue) return blockedReason('program-stop-blocked', splitIssue);
     currentPosition = cutMoves.at(-1)?.endPoint ?? entryPoint;
+    appendProgramStops('after-contour');
+    const exit = operation.transitions?.exit;
+    if (exit) {
+      if (exit.review !== 'reviewed') {
+        return blockedReason(
+          'operation-transition-review-required',
+          `Review the exit transition for ${operation.displayName} before exporting.`
+        );
+      }
+      const tolerance = effectiveDocumentEndpointTolerance(document);
+      if (!pointsWithinTolerance(currentPosition, exit.from, tolerance)) {
+        return blockedReason(
+          'operation-transition-disconnected',
+          `The exit transition for ${operation.displayName} is not connected to the contour end.`
+        );
+      }
+      const exitWords = formatGcodePointWords(exit.to, machine.output.coordinatePrecision);
+      if (!exitWords) {
+        return blockedReason(
+          'post-formatting-failed',
+          `Robofil v2 could not format the exit transition for ${operation.displayName}.`
+        );
+      }
+      appendMove({
+        bodyLineIndex: 0,
+        command: 'G1',
+        contourId: operation.contourId,
+        endPoint: { ...exit.to },
+        kind: 'cut',
+        operationId: operation.id,
+        reason: 'compensation-lead-out',
+        segmentId: null,
+        startPoint: { ...exit.from },
+        text: `G1 ${exitWords}`
+      }, 'lead-out');
+      currentPosition = { ...exit.to };
+    }
+    appendProgramStops('after-exit');
     const postedOperationMoves = moves.filter((move) => move.operationId === operation.id);
     operations.push({
       ...geometryOperation,
@@ -882,6 +1105,130 @@ function postRobofilV2(
   };
 }
 
+function appendContourMovesWithStops(input: {
+  appendMove: (move: GcodePostedMove, kind?: GcodePostedBlockKind) => GcodePostedMove;
+  appendProgramStopAtPoint: (point: Point2) => void;
+  document: PathPlanningDocument;
+  machine: MachineProfile;
+  moves: GcodePostedMove[];
+  stops: Array<{
+    id: string;
+    placement: 'before-operation-end';
+    point: Point2;
+    remainingCutLengthMm: number;
+  }>;
+}) {
+  const contourMoves = input.moves.filter(isContourCutMove);
+  const totalLength = contourMoves.reduce(
+    (total, move) => total + postedMoveLength(move, input.document),
+    0
+  );
+  const pending = input.stops
+    .map((stop) => ({ ...stop, distanceFromStart: totalLength - stop.remainingCutLengthMm }))
+    .sort((left, right) => left.distanceFromStart - right.distanceFromStart);
+  let contourDistance = 0;
+  let stopIndex = 0;
+  const tolerance = effectiveDocumentEndpointTolerance(input.document);
+
+  for (const move of input.moves) {
+    if (!isContourCutMove(move)) {
+      input.appendMove(move);
+      continue;
+    }
+    const moveLength = postedMoveLength(move, input.document);
+    if (!Number.isFinite(moveLength) || moveLength <= 0 || !move.startPoint) {
+      return 'A contour move containing a program stop has invalid posted geometry.';
+    }
+    const moveEndDistance = contourDistance + moveLength;
+    let currentStart = { ...move.startPoint };
+    while (
+      pending[stopIndex] &&
+      pending[stopIndex].distanceFromStart <= moveEndDistance + tolerance
+    ) {
+      const stop = pending[stopIndex];
+      if (stop.distanceFromStart < contourDistance - tolerance) {
+        return 'A remaining-distance program stop resolved outside the posted contour.';
+      }
+      if (!pointsWithinTolerance(currentStart, stop.point, tolerance)) {
+        const text = formatSplitMove(move, stop.point, input.document, input.machine);
+        if (!text) return 'A split contour move for a program stop could not be formatted.';
+        input.appendMove({
+          ...move,
+          bodyLineIndex: -1,
+          startPoint: currentStart,
+          endPoint: { ...stop.point },
+          text
+        });
+      }
+      input.appendProgramStopAtPoint(stop.point);
+      currentStart = { ...stop.point };
+      stopIndex += 1;
+    }
+    if (!pointsWithinTolerance(currentStart, move.endPoint, tolerance)) {
+      input.appendMove({
+        ...move,
+        bodyLineIndex: -1,
+        startPoint: currentStart
+      });
+    }
+    contourDistance = moveEndDistance;
+  }
+  return stopIndex === pending.length
+    ? null
+    : 'A remaining-distance program stop did not resolve onto the posted contour.';
+}
+
+function isContourCutMove(move: GcodePostedMove) {
+  return move.reason === 'segment-cut' ||
+    move.reason === 'gap-bridge' ||
+    move.reason === 'unexpected-gap';
+}
+
+function postedMoveLength(move: GcodePostedMove, document: PathPlanningDocument) {
+  if (!move.startPoint) return Number.NaN;
+  if (move.command === 'G0' || move.command === 'G1') {
+    return Math.hypot(
+      move.endPoint.x - move.startPoint.x,
+      move.endPoint.y - move.startPoint.y
+    );
+  }
+  const segment = document.segments.find((candidate) => candidate.id === move.segmentId);
+  if (!segment || (segment.kind !== 'arc' && segment.kind !== 'circle')) return Number.NaN;
+  const startAngle = Math.atan2(
+    move.startPoint.y - segment.center.y,
+    move.startPoint.x - segment.center.x
+  );
+  const endAngle = Math.atan2(
+    move.endPoint.y - segment.center.y,
+    move.endPoint.x - segment.center.x
+  );
+  const delta = move.command === 'G2'
+    ? normalizePositiveAngle(startAngle - endAngle)
+    : normalizePositiveAngle(endAngle - startAngle);
+  return segment.radius * (delta === 0 ? Math.PI * 2 : delta);
+}
+
+function formatSplitMove(
+  move: GcodePostedMove,
+  endPoint: Point2,
+  document: PathPlanningDocument,
+  machine: MachineProfile
+) {
+  const endWords = formatGcodePointWords(endPoint, machine.output.coordinatePrecision);
+  if (!endWords) return null;
+  if (move.command === 'G1') return `G1 ${endWords}`;
+  if (move.command !== 'G2' && move.command !== 'G3') return null;
+  const segment = document.segments.find((candidate) => candidate.id === move.segmentId);
+  if (!segment || (segment.kind !== 'arc' && segment.kind !== 'circle')) return null;
+  const precision = machine.output.coordinatePrecision;
+  return `${move.command} ${endWords} I${segment.center.x.toFixed(precision)} J${segment.center.y.toFixed(precision)}`;
+}
+
+function normalizePositiveAngle(value: number) {
+  const fullTurn = Math.PI * 2;
+  return ((value % fullTurn) + fullTurn) % fullTurn;
+}
+
 function auditRobofilV2Program(input: {
   lines: string[];
   blocks: GcodePostedBlock[];
@@ -895,7 +1242,9 @@ function auditRobofilV2Program(input: {
   )) {
     return 'Robofil v2 line and structured-block indexes disagree.';
   }
-  const rapidBlocks = input.blocks.filter((block) => block.kind === 'rapid');
+  const rapidBlocks = input.blocks.filter((block) =>
+    block.kind === 'rapid' || block.kind === 'position-for-threading'
+  );
   if (rapidBlocks.some((block) =>
     block.compensationBefore !== 'G40' || block.compensationAfter !== 'G40'
   )) {
@@ -907,8 +1256,11 @@ function auditRobofilV2Program(input: {
       block.operationId === operationId && block.kind === 'operation-boundary'
     );
     const activationBlocks = operationBlocks.filter((block) => block.kind === 'compensation-activation');
-    const rapidBlocksForOperation = operationBlocks.filter((block) => block.kind === 'rapid');
+    const rapidBlocksForOperation = operationBlocks.filter((block) =>
+      block.kind === 'rapid' || block.kind === 'position-for-threading'
+    );
     const activationIndex = activationBlocks[0]?.bodyLineIndex ?? -1;
+    const transitionBlocks = input.blocks.slice(boundaryIndex + 1, activationIndex);
     const firstCutIndex = input.blocks.findIndex((block) =>
       block.operationId === operationId &&
       (block.kind === 'lead-in' || block.kind === 'contour')
@@ -917,10 +1269,23 @@ function auditRobofilV2Program(input: {
       boundaryIndex < 1 ||
       input.blocks[boundaryIndex - 1]?.text !== 'G39' ||
       input.blocks[boundaryIndex]?.text !== 'G40' ||
-      rapidBlocksForOperation.length !== 1 ||
-      rapidBlocksForOperation[0].bodyLineIndex !== boundaryIndex + 1 ||
+      rapidBlocksForOperation.length > 1 ||
       activationBlocks.length !== 1 ||
-      activationIndex !== boundaryIndex + 2 ||
+      activationIndex <= boundaryIndex ||
+      transitionBlocks.some((block) =>
+        block.operationId !== operationId ||
+        ![
+          'rapid',
+          'wire-separation',
+          'position-for-threading',
+          'manual-rethread',
+          'automatic-rethread',
+          'program-stop'
+        ].includes(block.kind)
+      ) ||
+      rapidBlocksForOperation.some((block) =>
+        block.bodyLineIndex <= boundaryIndex || block.bodyLineIndex >= activationIndex
+      ) ||
       firstCutIndex !== activationIndex + 1 ||
       operationBlocks.some((block) =>
         block.compensationBefore !== block.compensationAfter &&
@@ -935,6 +1300,10 @@ function auditRobofilV2Program(input: {
     return 'Robofil v2 must cancel compensation before M02.';
   }
   return null;
+}
+
+function pointsWithinTolerance(first: Point2, second: Point2, tolerance: number) {
+  return Math.hypot(first.x - second.x, first.y - second.y) <= tolerance;
 }
 
 function auditVerifiedRobofilProgram(input: {
@@ -1046,10 +1415,11 @@ function templateLines(source: string) {
 
 function verifiedRobofilStructuredPrefix(
   machine: MachineProfile,
-  compensationCode: 'G41' | 'G42'
+  compensationCode: 'G41' | 'G42',
+  g92Words: string
 ) {
   return [
-    'G92 X0 Y0',
+    `G92 ${g92Words}`,
     ...machine.compensation.preActivationCodes,
     'G38',
     `${compensationCode} D${machine.compensation.offsetSelection.index}`,

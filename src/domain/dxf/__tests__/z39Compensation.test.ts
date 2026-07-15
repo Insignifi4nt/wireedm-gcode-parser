@@ -9,6 +9,7 @@ import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/mach
 import {
   previewClosedOperationStartNearPoint,
   reversePathOperation,
+  setManualInitialWirePosition,
   setClosedOperationStartNearPoint,
   translatePathDocument
 } from '@/domain/path-editor/pathDocumentOperations';
@@ -110,5 +111,8 @@ function physicalZ39Document(
     { x: -1.2, y: -18.946 },
     false
   )!;
-  return setClosedOperationStartNearPoint(translated, operation.id, preview.point)!;
+  return setManualInitialWirePosition(
+    setClosedOperationStartNearPoint(translated, operation.id, preview.point)!,
+    { x: 0, y: 0 }
+  )!;
 }

@@ -54,7 +54,7 @@ describe('resolveControllerCompensation', () => {
     expect(reversedResult.code).not.toBe(originalResult.code);
     expect(rotatedResult.code).toBe(originalResult.code);
     expect(reversedResult.keptMaterial).toBe(originalResult.keptMaterial);
-    expect(rotatedResult.signedArea).toBeCloseTo(originalResult.signedArea, 12);
+    expect(rotatedResult.signedArea).toBeCloseTo(originalResult.signedArea!, 12);
   });
 
   it.each([
@@ -151,6 +151,45 @@ describe('resolveControllerCompensation', () => {
     expect(resolve(document)).toEqual({ status: 'blocked', reason: 'missing-intent' });
   });
 
+  it('accepts an explicit manual wire side for an intentional open partial contour', () => {
+    const document = rectangleDocument();
+    const operation = document.plan.operations[0];
+    operation.closed = false;
+    operation.segmentRefs = operation.segmentRefs.slice(0, 2);
+    operation.machiningIntent = {
+      kind: 'partial-contour',
+      sourceOperationId: operation.id,
+      spanIds: ['span_1', 'span_2']
+    };
+    operation.compensationIntent = {
+      mode: 'controller',
+      wireSide: 'left',
+      source: 'manual'
+    };
+
+    expect(resolve(document)).toEqual({
+      status: 'ready',
+      signedArea: null,
+      winding: null,
+      keptMaterial: null,
+      wireSide: 'left',
+      code: 'G41'
+    });
+  });
+
+  it('blocks an explicit wire side on an ordinary open operation', () => {
+    const document = rectangleDocument();
+    const operation = document.plan.operations[0];
+    operation.closed = false;
+    operation.compensationIntent = {
+      mode: 'controller',
+      wireSide: 'right',
+      source: 'manual'
+    };
+
+    expect(resolve(document)).toEqual({ status: 'blocked', reason: 'open-path' });
+  });
+
   it.each([
     ['permuted line refs', () => {
       const document = rectangleDocument();
@@ -210,7 +249,7 @@ function ready(result: ReturnType<typeof resolveControllerCompensation>) {
 
 function orient(document: PathPlanningDocument, winding: 'cw' | 'ccw') {
   const result = resolveWithTemporaryIntent(document);
-  const currentlyCcw = result.signedArea > 0;
+  const currentlyCcw = result.signedArea! > 0;
   if ((winding === 'ccw') !== currentlyCcw) {
     document.plan.operations[0].segmentRefs = reversePathRefs(document.plan.operations[0].segmentRefs);
   }

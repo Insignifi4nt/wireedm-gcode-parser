@@ -13,9 +13,16 @@ import {
 } from '@/domain/machine/machineProfiles';
 import {
   reversePathOperation,
+  setManualInitialWirePosition,
+  setPathOperationTransitions,
   setCircleOperationCenterPierceLeadIn,
   setPathOperationManualLeadIn
 } from '@/domain/path-editor/pathDocumentOperations';
+import {
+  setMachiningSpanParticipation,
+  setPartialContourEntryReview,
+  setPartialContourCompensationSide
+} from '@/domain/path-intel/machiningParticipation';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import {
   composeUpidGCodeExport,
@@ -30,6 +37,25 @@ import {
 import * as machinePostModule from '../upidMachinePost';
 
 describe('postUpidForMachine', () => {
+  it('blocks any enabled program stop when the selected post cannot emit it', () => {
+    const machine = createDefaultMachineProfile();
+    const document = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
+    document.plan.operations[0].programStops = [{
+      id: 'must-not-disappear',
+      enabled: true,
+      placement: { kind: 'after-contour' },
+      reason: 'operator-check'
+    }];
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('blocked');
+    expect(posted.body).toBe('');
+    expect(posted.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({ reason: 'program-stop-post-unsupported' })
+    }));
+  });
+
   it('posts a smooth generic compensated circle with explicit linear activation and cancellation', () => {
     const machine = verifiedGenericExplicitMachine();
     const document = initializeProjectCompensationIntents(
@@ -396,7 +422,7 @@ describe('postUpidForMachine', () => {
 
     expect(posted.status).toBe('ready');
     expect(posted.body.split('\n').slice(0, 6)).toEqual([
-      'G92 X0 Y0',
+      'G92 X0.000 Y0.000',
       'G60',
       'G38',
       'G41 D0',
@@ -422,6 +448,23 @@ describe('postUpidForMachine', () => {
       text: 'M02'
     });
     expect(posted.metrics.rapidCount).toBe(0);
+  });
+
+  it('uses the reviewed project G92 as the verified Robofil v1 modal origin', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    let document = compensatedRectangle(machine, 'G41');
+    document = setManualInitialWirePosition(document, { x: -4.5, y: 7.25 })!;
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('ready');
+    expect(posted.body.split('\n')[0]).toBe('G92 X-4.500 Y7.250');
+    expect(posted.blocks[0]).toMatchObject({
+      kind: 'setup',
+      text: 'G92 X-4.500 Y7.250'
+    });
+    expect(posted.moves[0]?.startPoint).toEqual({ x: -4.5, y: 7.25 });
+    expect(posted.body).not.toContain('G92 X0 Y0');
   });
 
   it('derives the opposite compensation code after reversing final refs', () => {
@@ -459,10 +502,10 @@ describe('postUpidForMachine', () => {
 
   it('approaches a translated contour linearly from the G92 origin before cutting its first segment', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
-    const document = initializeProjectCompensationIntents(
+    const document = setManualInitialWirePosition(initializeProjectCompensationIntents(
       createUpidFromDxfEntities(clockwiseRectangle(20, 30, 30, 35)),
       machine
-    );
+    ), { x: 0, y: 0 })!;
     const operation = document.plan.operations[0];
 
     const posted = postUpidForMachine(document, machine);
@@ -510,7 +553,10 @@ describe('postUpidForMachine', () => {
       machine
     );
     const operation = initialized.plan.operations[0];
-    const document = setCircleOperationCenterPierceLeadIn(initialized, operation.id)!;
+    const document = setManualInitialWirePosition(
+      setCircleOperationCenterPierceLeadIn(initialized, operation.id)!,
+      { x: 0, y: 0 }
+    )!;
 
     const posted = postUpidForMachine(document, machine);
 
@@ -536,7 +582,10 @@ describe('postUpidForMachine', () => {
       machine
     );
     const operation = initialized.plan.operations[0];
-    const document = setPathOperationManualLeadIn(initialized, operation.id, { x: -2, y: 0 })!;
+    const document = setManualInitialWirePosition(
+      setPathOperationManualLeadIn(initialized, operation.id, { x: -2, y: 0 })!,
+      { x: 0, y: 0 }
+    )!;
 
     const posted = postUpidForMachine(document, machine);
 
@@ -556,11 +605,12 @@ describe('postUpidForMachine', () => {
       { coincidenceEpsilon: 1e-12 }
     );
     source.geometryBasis = 'finished-contour';
-    const document = setManualCompensationIntent(
+    let document = setManualCompensationIntent(
       source,
       source.plan.operations[0].id,
       'inside'
     )!;
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
 
     const posted = postUpidForMachine(document, machine);
 
@@ -575,13 +625,13 @@ describe('postUpidForMachine', () => {
 
   it('blocks a second compensated operation atomically', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
-    const document = initializeProjectCompensationIntents(
+    const document = setManualInitialWirePosition(initializeProjectCompensationIntents(
       createUpidFromDxfEntities([
         ...clockwiseRectangle(0, 0, 10, 5),
         ...clockwiseRectangle(20, 0, 30, 5)
       ]),
       machine
-    );
+    ), { x: 0, y: 0 })!;
 
     const posted = postUpidForMachine(document, machine);
 
@@ -609,22 +659,28 @@ describe('postUpidForMachine', () => {
     for (const operation of document.plan.operations) {
       document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
     }
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
 
     const posted = postUpidForMachine(document, machine);
     const lines = posted.body.split('\n');
     const rapidIndexes = lines.flatMap((line, index) => line.startsWith('G0 ') ? [index] : []);
 
     expect(posted.status).toBe('ready');
-    expect(lines.slice(0, 4)).toEqual(['G92 X0 Y0', 'G60', 'G38', 'G90']);
+    expect(lines.slice(0, 4)).toEqual(['G92 X0.000 Y0.000', 'G60', 'G38', 'G90']);
     expect(rapidIndexes).toHaveLength(2);
-    for (const rapidIndex of rapidIndexes) {
-      expect(lines.slice(rapidIndex - 2, rapidIndex + 2)).toEqual([
-        'G39',
-        'G40',
-        expect.stringMatching(/^G0 X-?10\.000 Y5\.000$/),
-        expect.stringMatching(/^G4[12] D0$/)
-      ]);
-    }
+    expect(lines.slice(rapidIndexes[0] - 2, rapidIndexes[0] + 2)).toEqual([
+      'G39',
+      'G40',
+      expect.stringMatching(/^G0 X-10\.000 Y5\.000$/),
+      expect.stringMatching(/^G4[12] D0$/)
+    ]);
+    expect(lines.slice(rapidIndexes[1] - 2, rapidIndexes[1] + 3)).toEqual([
+      'G39',
+      'G40',
+      'G0 X10.000 Y5.000',
+      'M00',
+      expect.stringMatching(/^G4[12] D0$/)
+    ]);
     expect(lines.slice(-3)).toEqual(['G39', 'G40', 'M02']);
     expect(lines.filter((line) => /^G4[12] D0$/.test(line))).toHaveLength(2);
     expect(posted.blocks.filter((block) => block.kind === 'rapid')).toSatisfy(
@@ -640,6 +696,258 @@ describe('postUpidForMachine', () => {
     expect(posted.blocks.map((block) => block.bodyLineIndex)).toEqual(
       lines.map((_, index) => index)
     );
+    expect(posted.blocks.filter((block) => block.kind === 'manual-rethread')).toHaveLength(1);
+  });
+
+  it('blocks a derived partial entry until it is explicitly reviewed, then posts only active spans', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(clockwiseRectangle(0, 0, 10, 5)),
+      machine
+    );
+    const sourceOperation = document.plan.operations[0];
+    const inactiveSegmentId = sourceOperation.segmentRefs[0].segmentId;
+    document = setPathOperationManualLeadIn(document, sourceOperation.id, { x: -2, y: -2 })!;
+    document = setPartialContourCompensationSide(document, sourceOperation.id, 'left')!;
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: inactiveSegmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+    document = setManualInitialWirePosition(document, { x: -2, y: -2 })!;
+
+    const blocked = postUpidForMachine(document, machine);
+    expect(blocked).toMatchObject({ status: 'blocked', body: '', moves: [], blocks: [] });
+    expect(blocked.diagnostics).toContainEqual(expect.objectContaining({
+      message: expect.stringContaining('Review')
+    }));
+
+    document = setPartialContourEntryReview(document, sourceOperation.id, true)!;
+    const posted = postUpidForMachine(document, machine);
+    const contourMoves = posted.moves.filter((move) => move.reason === 'segment-cut');
+
+    expect(posted.status).toBe('ready');
+    expect(contourMoves).toHaveLength(3);
+    expect(contourMoves.map((move) => move.segmentId)).not.toContain(inactiveSegmentId);
+    expect(posted.blocks).toContainEqual(expect.objectContaining({
+      kind: 'compensation-activation',
+      text: 'G41 D0'
+    }));
+  });
+
+  it('stops before positioning when manual wire separation is required', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 3 },
+        { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 3 }
+      ]),
+      machine
+    );
+    for (const operation of document.plan.operations) {
+      document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
+    }
+    document.plan.operations[1].threadingTransition = {
+      mode: 'manual',
+      wireSeparation: 'manual-before-positioning',
+      source: 'operation-override'
+    };
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
+
+    const posted = postUpidForMachine(document, machine);
+    const lines = posted.body.split('\n');
+    const secondBoundary = posted.blocks.findIndex((block) =>
+      block.operationId === document.plan.operations[1].id &&
+      block.kind === 'compensation-cancellation'
+    );
+
+    expect(posted.status).toBe('ready');
+    expect(lines.slice(secondBoundary, secondBoundary + 7)).toEqual([
+      'G39',
+      'G40',
+      'M00',
+      'G0 X20.000 Y0.000',
+      'M00',
+      expect.stringMatching(/^G4[12] D0$/),
+      'G1 X23.000 Y0.000'
+    ]);
+    expect(posted.blocks.slice(secondBoundary, secondBoundary + 5).map((block) => block.kind))
+      .toEqual([
+        'compensation-cancellation',
+        'operation-boundary',
+        'wire-separation',
+        'position-for-threading',
+        'manual-rethread'
+      ]);
+  });
+
+  it('posts canonical user-authored M00 blocks at configured operation boundaries', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const operationId = document.plan.operations[0].id;
+    document = setCircleOperationCenterPierceLeadIn(document, operationId)!;
+    const operation = document.plan.operations[0];
+    document = setPathOperationTransitions(document, operationId, {
+      ...operation.transitions,
+      exit: {
+        strategy: 'manual-straight',
+        move: 'cut',
+        from: operation.endPoint,
+        to: { x: 7, y: 0 },
+        review: 'reviewed'
+      }
+    })!;
+    document.plan.operations[0].programStops = [
+      { id: 'before', enabled: true, placement: { kind: 'before-entry' }, reason: 'operator-check' },
+      { id: 'contour', enabled: true, placement: { kind: 'after-contour' }, reason: 'part-retention' },
+      { id: 'exit', enabled: true, placement: { kind: 'after-exit' }, reason: 'manual' }
+    ];
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
+
+    const posted = postUpidForMachine(document, machine);
+    const stops = posted.blocks.filter((block) => block.kind === 'program-stop');
+
+    expect(posted.status).toBe('ready');
+    expect(stops.map((block) => block.text)).toEqual(['M00', 'M00', 'M00']);
+    expect(posted.blocks[stops[0].bodyLineIndex - 1]).toMatchObject({ kind: 'operation-boundary' });
+    expect(posted.blocks[stops[1].bodyLineIndex - 1]).toMatchObject({ kind: 'contour' });
+    expect(posted.blocks[stops[2].bodyLineIndex - 1]).toMatchObject({ kind: 'lead-out' });
+  });
+
+  it('splits the executable contour for an exact remaining-distance M00', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const operationId = document.plan.operations[0].id;
+    document = setCircleOperationCenterPierceLeadIn(document, operationId)!;
+    document.plan.operations[0].programStops = [{
+      id: 'retain-part',
+      enabled: true,
+      placement: { kind: 'before-operation-end', remainingCutLengthMm: 1 },
+      reason: 'part-retention'
+    }];
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
+
+    const posted = postUpidForMachine(document, machine);
+    const stop = posted.blocks.find((block) => block.kind === 'program-stop');
+    const previous = stop ? posted.blocks[stop.bodyLineIndex - 1] : undefined;
+    const next = stop ? posted.blocks[stop.bodyLineIndex + 1] : undefined;
+
+    expect(posted.status).toBe('ready');
+    expect(stop).toMatchObject({
+      text: 'M00',
+      operationId,
+      compensationBefore: expect.stringMatching(/^G4[12]$/),
+      compensationAfter: expect.stringMatching(/^G4[12]$/)
+    });
+    expect(stop?.startPoint?.x).toBeCloseTo(5 * Math.cos(0.2), 3);
+    expect(stop?.startPoint?.y).toBeCloseTo(-5 * Math.sin(0.2), 3);
+    expect(stop?.endPoint).toEqual(stop?.startPoint);
+    expect(previous?.endPoint).toEqual(stop?.startPoint);
+    expect(next?.startPoint).toEqual(stop?.endPoint);
+  });
+
+  it('blocks Robofil v2 until the project initial wire position is reviewed', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: -10, y: 5 }, radius: 3 }
+      ]),
+      machine
+    );
+    document = setCircleOperationCenterPierceLeadIn(document, document.plan.operations[0].id)!;
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted).toMatchObject({ status: 'blocked', body: '', moves: [], blocks: [] });
+    expect(posted.diagnostics).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('Initial Wire Position'),
+        details: expect.objectContaining({ reason: 'initial-wire-position-required' })
+      })
+    );
+  });
+
+  it('uses reviewed G92 coordinates as post origin and omits a zero-length first rapid', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: -10, y: 5 }, radius: 3 },
+        { type: 'circle', layer: 'CUT', center: { x: 10, y: 5 }, radius: 3 }
+      ]),
+      machine
+    );
+    for (const operation of document.plan.operations) {
+      document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
+    }
+    document = setManualInitialWirePosition(document, { x: -10, y: 5 })!;
+
+    const posted = postUpidForMachine(document, machine);
+    const lines = posted.body.split('\n');
+
+    expect(posted.status).toBe('ready');
+    expect(lines[0]).toBe('G92 X-10.000 Y5.000');
+    expect(lines.filter((line) => line.startsWith('G0 '))).toEqual(['G0 X10.000 Y5.000']);
+    expect(posted.blocks.filter((block) => block.kind === 'position-for-threading')).toHaveLength(1);
+  });
+
+  it('posts a reviewed geometric exit before Robofil v2 cancellation', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const operationId = document.plan.operations[0].id;
+    document = setCircleOperationCenterPierceLeadIn(document, operationId)!;
+    const operation = document.plan.operations[0];
+    document = setPathOperationTransitions(document, operationId, {
+      ...operation.transitions,
+      exit: {
+        strategy: 'manual-straight',
+        move: 'cut',
+        from: operation.endPoint,
+        to: { x: 7, y: 0 },
+        review: 'reviewed'
+      }
+    })!;
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
+
+    const posted = postUpidForMachine(document, machine);
+    const leadOut = posted.blocks.find((block) => block.kind === 'lead-out');
+
+    expect(posted.status).toBe('ready');
+    expect(leadOut).toMatchObject({
+      operationId,
+      startPoint: operation.endPoint,
+      endPoint: { x: 7, y: 0 },
+      text: 'G1 X7.000 Y0.000'
+    });
+    expect(posted.body.split('\n')[leadOut!.bodyLineIndex + 1]).toBe('G39');
   });
 
   it('recomputes the Robofil v2 compensation side independently after reversing one contour', () => {
@@ -656,6 +964,7 @@ describe('postUpidForMachine', () => {
     for (const operation of forward.plan.operations) {
       forward = setCircleOperationCenterPierceLeadIn(forward, operation.id)!;
     }
+    forward = setManualInitialWirePosition(forward, { x: 0, y: 0 })!;
     const reversed = reversePathOperation(forward, forward.plan.operations[1].id)!;
 
     const before = postUpidForMachine(forward, machine);
@@ -668,7 +977,7 @@ describe('postUpidForMachine', () => {
     expect(activations(after.body)[1]).not.toBe(activations(before.body)[1]);
   });
 
-  it('emits one canonical rapid and one activation when the first lead starts at the setup origin', () => {
+  it('omits the canonical rapid and keeps one activation when the first lead starts at G92', () => {
     const machine = markMachineProfileUserVerified(
       createCharmillesRobofil100V2CandidateProfile()
     );
@@ -678,18 +987,19 @@ describe('postUpidForMachine', () => {
       ]),
       machine
     );
-    const document = setCircleOperationCenterPierceLeadIn(
+    let document = setCircleOperationCenterPierceLeadIn(
       initialized,
       initialized.plan.operations[0].id
     )!;
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
 
     const posted = postUpidForMachine(document, machine);
     const lines = posted.body.split('\n');
     const operationId = document.plan.operations[0].id;
 
     expect(posted.status).toBe('ready');
-    expect(lines.slice(4, 8)).toEqual(['G39', 'G40', 'G0 X0.000 Y0.000', expect.stringMatching(/^G4[12] D0$/)]);
-    expect(posted.blocks.filter((block) => block.operationId === operationId && block.kind === 'rapid')).toHaveLength(1);
+    expect(lines.slice(4, 7)).toEqual(['G39', 'G40', expect.stringMatching(/^G4[12] D0$/)]);
+    expect(posted.blocks.filter((block) => block.operationId === operationId && block.kind === 'rapid')).toHaveLength(0);
     expect(posted.blocks.filter((block) => block.operationId === operationId && block.kind === 'compensation-activation')).toHaveLength(1);
   });
 
@@ -815,10 +1125,10 @@ describe('postUpidForMachine', () => {
 
   it('ignores direct precision overrides for the verified snapshot', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
-    const document = initializeProjectCompensationIntents(
+    const document = setManualInitialWirePosition(initializeProjectCompensationIntents(
       createUpidFromDxfEntities(clockwiseRectangle(20.1234, 30.5678, 31.2345, 36.7891)),
       machine
-    );
+    ), { x: 0, y: 0 })!;
 
     const posted = postUpidForMachine(document, machine, { coordinatePrecision: 1 });
 
@@ -829,10 +1139,10 @@ describe('postUpidForMachine', () => {
 
   it('ignores composition precision and line-ending overrides when a snapshot is supplied', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
-    const document = initializeProjectCompensationIntents(
+    const document = setManualInitialWirePosition(initializeProjectCompensationIntents(
       createUpidFromDxfEntities(clockwiseRectangle(20.1234, 30.5678, 31.2345, 36.7891)),
       machine
-    );
+    ), { x: 0, y: 0 })!;
 
     const exported = composeUpidGCodeExport(document, {
       machine,
@@ -855,7 +1165,7 @@ describe('postUpidForMachine', () => {
     const posted = postUpidForMachine(document, machine);
 
     expect(posted.status).toBe('ready');
-    expect(posted.body).toContain('(outer (G20 G92 G60) setup note)\nG92 X0 Y0');
+    expect(posted.body).toContain('(outer (G20 G92 G60) setup note)\nG92 X0.000 Y0.000');
     expect(posted.body.endsWith('(outer (G39 M02) end note)\nM02')).toBe(true);
   });
 
@@ -948,7 +1258,7 @@ function compensatedRectangle(
   if (resolution.status === 'ready' && resolution.code !== desiredCode) {
     document = reversePathOperation(document, operation.id)!;
   }
-  return document;
+  return setManualInitialWirePosition(document, { x: 0, y: 0 })!;
 }
 
 function clockwiseRectangle(minX: number, minY: number, maxX: number, maxY: number) {

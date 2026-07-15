@@ -1,6 +1,7 @@
 import { classifyPathSegmentIntersection } from '@/domain/path-intel/intersections';
 import { formatGcodePointWords } from '@/domain/path-intel/postGcode';
 import { createLineSegment, distance, segmentMap } from '@/domain/path-intel/segments';
+import { normalizeLegacyOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import type { PathOperation, PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 
 export type RobofilV2LeadValidation =
@@ -19,6 +20,10 @@ export function validateRobofilV2OperationLead(
   operation: PathOperation,
   coordinatePrecision: number
 ): RobofilV2LeadValidation {
+  const entry = normalizeLegacyOperationTransitions(operation).entry;
+  if (entry?.strategy === 'manual-straight' && entry.review !== 'reviewed') {
+    return invalid('Review the derived partial-contour entry before Robofil v2 export.');
+  }
   const lead = operation.overrides?.leadIn;
   if (!lead) return invalid('Robofil v2 requires an explicit linear lead-in for every operation.');
   if (![lead.from, lead.to, operation.startPoint].every(finitePoint)) {

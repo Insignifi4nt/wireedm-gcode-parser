@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import type { GCodeStructure } from '@/domain/editor/gcodeStructure';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
+import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
 import type { MachineFitResult } from '@/domain/machine/machineFit';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
@@ -52,6 +53,7 @@ interface EditorInspectorPanelProps {
   machineProfile: MachineProfile | null;
   measurementPoints: MeasurementPoint[];
   pathCount: number;
+  pathConstructionMode?: MagnetizeMode | null;
   pathDocument: PathPlanningDocument | null;
   pointXDraft: string;
   pointYDraft: string;
@@ -71,6 +73,7 @@ interface EditorInspectorPanelProps {
   canReimportDxfUnits?: boolean;
   reimportDxfUnitsDisabledReason?: string | null;
   onAddMeasurementPoint: () => void;
+  onActivatePathConstructionMode?: (mode: MagnetizeMode | null) => void;
   onClearMeasurementPoints: () => void;
   onDeleteMeasurementPoint: (pointId: string) => void;
   onExportMeasurementPoints: (format: MeasurementExportFormat) => void;
@@ -99,6 +102,7 @@ export function EditorInspectorPanel({
   machineProfile,
   measurementPoints,
   pathCount,
+  pathConstructionMode = null,
   pathDocument,
   pointXDraft,
   pointYDraft,
@@ -113,6 +117,7 @@ export function EditorInspectorPanel({
   canReimportDxfUnits = false,
   reimportDxfUnitsDisabledReason = null,
   onAddMeasurementPoint,
+  onActivatePathConstructionMode,
   onClearMeasurementPoints,
   onDeleteMeasurementPoint,
   onExportMeasurementPoints,
@@ -1036,6 +1041,34 @@ export function EditorInspectorPanel({
             Point
           </button>
         </div>
+        {pathDocument && onActivatePathConstructionMode && (
+          <div className="mb-2 border border-border bg-background/35 p-1.5" data-path-construction-tools>
+            <div className="mb-1 text-[10px] text-muted-foreground">
+              Constrain the latest measurement/construction point to selected path geometry.
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              {(['perpendicular', 'tangent'] as const).map((mode) => (
+                <button
+                  aria-label={`Magnetize latest point ${mode}`}
+                  aria-pressed={pathConstructionMode === mode}
+                  className={`flex h-6 items-center justify-center gap-1 border px-1.5 text-[10px] outline-none transition hover:bg-accent ${
+                    pathConstructionMode === mode
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border text-muted-foreground'
+                  }`}
+                  disabled={isSaving}
+                  onClick={() => onActivatePathConstructionMode(
+                    pathConstructionMode === mode ? null : mode
+                  )}
+                  type="button"
+                >
+                  <Magnet className="size-3" />
+                  {mode === 'perpendicular' ? 'Perpendicular' : 'Tangent'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-1.5">
           <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
             X

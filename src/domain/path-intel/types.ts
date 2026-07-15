@@ -249,11 +249,48 @@ export type ContourClassification = 'exterior' | 'hole' | 'island' | 'ambiguous'
 export type ContourOrientation = 'ccw' | 'cw' | 'degenerate';
 export type PathGeometryBasis = 'finished-contour' | 'wire-centre';
 
+export type InitialWirePosition =
+  | {
+      kind: 'geometry-linked';
+      point: Point2;
+      reference: { kind: 'circle-center'; segmentId: SegmentId };
+      review: 'reviewed';
+    }
+  | {
+      kind: 'manual';
+      point: Point2;
+      review: 'reviewed' | 'required';
+      reviewReason?: 'geometry-transformed';
+    };
+
+export type ThreadingMode = 'continuous' | 'manual' | 'automatic';
+
+export type WireSeparationStrategy =
+  | 'already-separated'
+  | 'manual-before-positioning'
+  | 'automatic-before-positioning';
+
+export interface OperationThreadingTransition {
+  mode: ThreadingMode;
+  wireSeparation: WireSeparationStrategy;
+  source: 'project-default' | 'operation-override';
+}
+
+export interface PathProjectSetup {
+  initialWirePosition?: InitialWirePosition;
+  threadingDefault?: Omit<OperationThreadingTransition, 'source'>;
+}
+
 export type ClosedContourCompensationIntent =
   | {
       mode: 'controller';
       keptMaterial: 'inside' | 'outside';
       source: 'automatic' | 'manual';
+    }
+  | {
+      mode: 'controller';
+      wireSide: 'left' | 'right';
+      source: 'manual';
     }
   | {
       mode: 'centerline';
@@ -326,6 +363,75 @@ export interface ManualLeadInOverride {
   sourceSegmentIndex: number;
 }
 
+export type OperationEntry =
+  | {
+      strategy: 'circle-center';
+      move: 'cut';
+      from: Point2;
+      to: Point2;
+      sourceSegmentId: SegmentId;
+    }
+  | {
+      strategy: 'manual-straight';
+      move: 'cut';
+      from: Point2;
+      to: Point2;
+      review: 'reviewed' | 'required';
+    };
+
+export type OperationExit = {
+  strategy: 'manual-straight';
+  move: 'cut';
+  from: Point2;
+  to: Point2;
+  review: 'reviewed' | 'required';
+};
+
+export interface PathOperationTransitions {
+  entry?: OperationEntry;
+  exit?: OperationExit;
+}
+
+export type OperationProgramStopPlacement =
+  | { kind: 'before-entry' }
+  | { kind: 'before-operation-end'; remainingCutLengthMm: number }
+  | { kind: 'after-contour' }
+  | { kind: 'after-exit' };
+
+export interface OperationProgramStop {
+  id: string;
+  enabled: boolean;
+  placement: OperationProgramStopPlacement;
+  reason: 'operator-check' | 'part-retention' | 'manual';
+  note?: string;
+}
+
+export interface MachiningSpan {
+  id: string;
+  sourceSegmentId: SegmentId;
+  range: { start: number; end: number };
+  participation: 'active-cut' | 'inactive-reference';
+}
+
+export interface MachiningParticipation {
+  spans: MachiningSpan[];
+  partialContourCompensation?: Array<{
+    sourceOperationId: OperationId;
+    wireSide: 'left' | 'right';
+  }>;
+  partialContourEntryReviews?: Array<{
+    sourceOperationId: OperationId;
+    review: 'reviewed';
+    entryFingerprint: string;
+  }>;
+}
+
+export interface PathOperationMachiningIntent {
+  kind: 'partial-contour';
+  sourceOperationId: OperationId;
+  spanIds: string[];
+}
+
 export interface PathOperationOverrides {
   classification?: ManualClassificationOverride;
   order?: ManualOrderOverride;
@@ -350,6 +456,10 @@ export interface PathOperation {
   direction: 'forward' | 'reverse';
   metrics: PathOperationMetrics;
   compensationIntent?: ClosedContourCompensationIntent;
+  transitions?: PathOperationTransitions;
+  threadingTransition?: OperationThreadingTransition;
+  programStops?: OperationProgramStop[];
+  machiningIntent?: PathOperationMachiningIntent;
   overrides?: PathOperationOverrides;
 }
 
@@ -414,6 +524,8 @@ export interface SegmentBuildResult {
 export interface PathPlanningDocument {
   schemaVersion: 1;
   geometryBasis: PathGeometryBasis;
+  setup?: PathProjectSetup;
+  machiningParticipation?: MachiningParticipation;
   source: {
     kind: 'dxf-entities';
     entityCount: number;

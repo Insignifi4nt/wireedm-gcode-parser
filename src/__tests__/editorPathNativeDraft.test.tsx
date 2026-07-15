@@ -30,6 +30,7 @@ import {
 } from '@/domain/machine/machineProfiles';
 import {
   setCircleOperationCenterPierceLeadIn,
+  setManualInitialWirePosition,
   setClosedOperationStartNearPoint,
   setPathOperationClassification,
   translatePathDocument
@@ -132,7 +133,10 @@ describe('EditorPage UPID draft boundary', () => {
   it('persists a manual kept side and exposes every structured Robofil export row', async () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     const translated = translatePathDocument(pathDocumentFromRectangle(), { x: 5, y: 0 })!;
-    const initialized = initializeProjectCompensationIntents(translated, machine);
+    const initialized = setManualInitialWirePosition(
+      initializeProjectCompensationIntents(translated, machine),
+      { x: 0, y: 0 }
+    )!;
     const project = projectWithUpid(initialized, machine);
 
     await act(async () => {
@@ -240,10 +244,11 @@ describe('EditorPage UPID draft boundary', () => {
 
   it('does not offer a radial center-pierce lead-in for active controller compensation', async () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
-    const document = initializeProjectCompensationIntents(
+    let document = initializeProjectCompensationIntents(
       dxfEntitiesToUpidDocument(parseDxf(circleDxf()).entities),
       machine
     );
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
     const project = projectWithUpid(document, machine);
 
     await act(async () => {
@@ -264,10 +269,11 @@ describe('EditorPage UPID draft boundary', () => {
     const machine = markMachineProfileUserVerified(
       createCharmillesRobofil100V2CandidateProfile()
     );
-    const document = initializeProjectCompensationIntents(
+    let document = initializeProjectCompensationIntents(
       dxfEntitiesToUpidDocument(parseDxf(circleDxf()).entities),
       machine
     );
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
     const project = projectWithUpid(document, machine);
 
     await act(async () => {

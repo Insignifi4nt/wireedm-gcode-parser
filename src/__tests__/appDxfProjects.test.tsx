@@ -1458,6 +1458,10 @@ describe('App DXF imports and project library', () => {
       ['path-diagnostics', 'Path Diagnostics'],
       ['cut-sequence', 'Cut Sequence'],
       ['contour-tree', 'Contour Tree'],
+      ['initial-wire-position', 'Initial Wire Position'],
+      ['entry-exit', 'Entry / Exit & Rethreading'],
+      ['program-stops', 'Program Stops'],
+      ['machining-participation', 'Machining Participation'],
       ['position', 'Position'],
       ['statistics', 'Statistics'],
       ['machine', 'Machine'],
@@ -1467,16 +1471,18 @@ describe('App DXF imports and project library', () => {
     for (const [panelId, title] of expectedPanels) {
       expect(container.querySelector(`[data-editor-workspace-panel="${panelId}"]`)).not.toBeNull();
       expect(container.querySelector(`[data-editor-panel-menu-item="${panelId}"]`)).not.toBeNull();
-      expect(container.querySelector(`button[aria-label="Dock ${title} left"]`)).not.toBeNull();
-      expect(container.querySelector(`button[aria-label="Dock ${title} right"]`)).not.toBeNull();
-      expect(container.querySelector(`button[aria-label="Float ${title}"]`)).not.toBeNull();
+      const buttons = [...container.querySelectorAll<HTMLButtonElement>('button[aria-label]')];
+      expect(buttons.some((button) => button.getAttribute('aria-label') === `Dock ${title} left`)).toBe(true);
+      expect(buttons.some((button) => button.getAttribute('aria-label') === `Dock ${title} right`)).toBe(true);
+      expect(buttons.some((button) => button.getAttribute('aria-label') === `Float ${title}`)).toBe(true);
     }
     expect(container.querySelector('[data-editor-panel-menu-group="path"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-panel-menu-group="inspection"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-panel-menu-group="setup"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-panel-menu-group="machine"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-panel-menu-group="measurement"]')).not.toBeNull();
-    expect(container.querySelectorAll('button[aria-label^="Float "]')).toHaveLength(12);
-    expect(container.querySelectorAll('button[aria-label^="Dock "]')).toHaveLength(24);
+    expect(container.querySelectorAll('button[aria-label^="Float "]')).toHaveLength(16);
+    expect(container.querySelectorAll('button[aria-label^="Dock "]')).toHaveLength(32);
     expect(container.querySelector('[data-editor-workspace-panel-handle="path-diagnostics"]')).not.toBeNull();
     expect(container.querySelector('[data-upid-endpoint-topology]')).not.toBeNull();
     expect(container.querySelector('[data-upid-endpoint-topology-status]')?.textContent).toContain(

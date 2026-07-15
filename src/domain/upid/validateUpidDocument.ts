@@ -151,6 +151,13 @@ export function validateUpidDocument(document: unknown): UpidValidationReport {
       validSegmentIds.add(segment.id);
     }
   }
+  validateProjectSetup(root.setup, segmentMap, context);
+  validateMachiningParticipation(
+    root.machiningParticipation,
+    segmentMap,
+    operationMap,
+    context
+  );
 
   validateEndpointClusters(
     endpointClusters,
@@ -218,6 +225,190 @@ export function validateUpidDocument(document: unknown): UpidValidationReport {
       : [];
 
   return report(acceptedDiagnostics, structuralDiagnostics, liveBlockingDiagnostics);
+}
+
+function validateProjectSetup(
+  value: unknown,
+  segmentMap: Map<string, PathSegment>,
+  context: ValidationContext
+) {
+  if (value === undefined) return;
+  const setup = record(value);
+  if (!setup) {
+    context.add('upid-invalid-value', 'UPID setup must be an object.');
+    return;
+  }
+  validateThreadingIntent(setup.threadingDefault, 'setup.threadingDefault', false, context);
+  if (setup.initialWirePosition === undefined) return;
+  const initial = record(setup.initialWirePosition);
+  if (!initial) {
+    context.add('upid-invalid-value', 'Initial wire position must be an object.');
+    return;
+  }
+  finitePoint(initial.point, 'setup.initialWirePosition.point', context);
+
+  if (initial.kind === 'manual') {
+    if (initial.review !== 'reviewed' && initial.review !== 'required') {
+      context.add('upid-invalid-value', 'Manual initial wire review state is invalid.');
+    }
+    if (
+      initial.reviewReason !== undefined &&
+      initial.reviewReason !== 'geometry-transformed'
+    ) {
+      context.add('upid-invalid-value', 'Manual initial wire review reason is invalid.');
+    }
+    return;
+  }
+
+  if (initial.kind !== 'geometry-linked') {
+    context.add('upid-invalid-value', 'Initial wire position kind is invalid.');
+    return;
+  }
+  if (initial.review !== 'reviewed') {
+    context.add('upid-invalid-value', 'Geometry-linked initial wire position must be reviewed.');
+  }
+  const reference = record(initial.reference);
+  const segmentId = reference?.segmentId;
+  const segment = typeof segmentId === 'string' ? segmentMap.get(segmentId) : undefined;
+  if (reference?.kind !== 'circle-center' || !segment || segment.kind !== 'circle') {
+    context.add(
+      'upid-missing-reference',
+      'Geometry-linked initial wire position must reference an existing circle segment.',
+      typeof segmentId === 'string' ? { relatedSegmentIds: [segmentId] } : {}
+    );
+  }
+}
+
+function validateMachiningParticipation(
+  value: unknown,
+  segmentMap: Map<string, PathSegment>,
+  operationMap: Map<string, PathOperation>,
+  context: ValidationContext
+) {
+  if (value === undefined) return;
+  const participation = record(value);
+  if (!participation) {
+    context.add('upid-invalid-value', 'Machining participation must be an object.');
+    return;
+  }
+  const spans = array(participation.spans);
+  if (!Array.isArray(participation.spans)) {
+    context.add('upid-invalid-value', 'Machining participation spans must be an array.');
+  }
+  const ids = new Set<string>();
+  const rangesBySegment = new Map<string, Array<{ start: number; end: number }>>();
+  spans.forEach((value, index) => {
+    const span = record(value);
+    if (!span) {
+      context.add('upid-invalid-value', `Machining span ${index} must be an object.`);
+      return;
+    }
+    if (typeof span.id !== 'string' || span.id.length === 0) {
+      context.add('upid-invalid-value', `Machining span ${index} must have a stable id.`);
+    } else if (ids.has(span.id)) {
+      context.add('upid-duplicate-id', `Machining span id ${span.id} is duplicated.`);
+    } else ids.add(span.id);
+    if (typeof span.sourceSegmentId !== 'string' || !segmentMap.has(span.sourceSegmentId)) {
+      context.add(
+        'upid-missing-reference',
+        `Machining span ${String(span.id)} references a missing source segment.`
+      );
+      return;
+    }
+    const range = record(span.range);
+    const start = range?.start;
+    const end = range?.end;
+    if (
+      typeof start !== 'number' ||
+      typeof end !== 'number' ||
+      !Number.isFinite(start) ||
+      !Number.isFinite(end) ||
+      start < 0 ||
+      end > 1 ||
+      start >= end
+    ) {
+      context.add('upid-invalid-value', `Machining span ${String(span.id)} has an invalid normalized range.`);
+      return;
+    }
+    if (span.participation !== 'active-cut' && span.participation !== 'inactive-reference') {
+      context.add('upid-invalid-value', `Machining span ${String(span.id)} has an invalid participation state.`);
+    }
+    const siblings = rangesBySegment.get(span.sourceSegmentId) ?? [];
+    if (siblings.some((sibling) => Math.max(sibling.start, start) < Math.min(sibling.end, end))) {
+      context.add('upid-invalid-value', `Machining spans overlap on source segment ${span.sourceSegmentId}.`);
+    }
+    siblings.push({ start, end });
+    rangesBySegment.set(span.sourceSegmentId, siblings);
+  });
+
+  const settings = array(participation.partialContourCompensation);
+  if (
+    participation.partialContourCompensation !== undefined &&
+    !Array.isArray(participation.partialContourCompensation)
+  ) {
+    context.add('upid-invalid-value', 'Partial-contour compensation settings must be an array.');
+  }
+  const configuredOperationIds = new Set<string>();
+  settings.forEach((value, index) => {
+    const setting = record(value);
+    if (!setting) {
+      context.add('upid-invalid-value', `Partial-contour compensation setting ${index} must be an object.`);
+      return;
+    }
+    if (
+      typeof setting.sourceOperationId !== 'string' ||
+      !operationMap.has(setting.sourceOperationId)
+    ) {
+      context.add(
+        'upid-missing-reference',
+        `Partial-contour compensation setting ${index} references a missing source operation.`
+      );
+    } else if (configuredOperationIds.has(setting.sourceOperationId)) {
+      context.add(
+        'upid-duplicate-id',
+        `Partial-contour compensation for ${setting.sourceOperationId} is duplicated.`
+      );
+    } else configuredOperationIds.add(setting.sourceOperationId);
+    if (setting.wireSide !== 'left' && setting.wireSide !== 'right') {
+      context.add('upid-invalid-value', `Partial-contour compensation setting ${index} has an invalid wire side.`);
+    }
+  });
+
+  const reviews = array(participation.partialContourEntryReviews);
+  if (
+    participation.partialContourEntryReviews !== undefined &&
+    !Array.isArray(participation.partialContourEntryReviews)
+  ) {
+    context.add('upid-invalid-value', 'Partial-contour entry reviews must be an array.');
+  }
+  const reviewedOperationIds = new Set<string>();
+  reviews.forEach((value, index) => {
+    const setting = record(value);
+    if (!setting) {
+      context.add('upid-invalid-value', `Partial-contour entry review ${index} must be an object.`);
+      return;
+    }
+    if (
+      typeof setting.sourceOperationId !== 'string' ||
+      !operationMap.has(setting.sourceOperationId)
+    ) {
+      context.add(
+        'upid-missing-reference',
+        `Partial-contour entry review ${index} references a missing source operation.`
+      );
+    } else if (reviewedOperationIds.has(setting.sourceOperationId)) {
+      context.add(
+        'upid-duplicate-id',
+        `Partial-contour entry review for ${setting.sourceOperationId} is duplicated.`
+      );
+    } else reviewedOperationIds.add(setting.sourceOperationId);
+    if (setting.review !== 'reviewed') {
+      context.add('upid-invalid-value', `Partial-contour entry review ${index} has an invalid state.`);
+    }
+    if (typeof setting.entryFingerprint !== 'string' || setting.entryFingerprint.length === 0) {
+      context.add('upid-invalid-value', `Partial-contour entry review ${index} has no entry fingerprint.`);
+    }
+  });
 }
 
 function report(
@@ -1281,8 +1472,17 @@ function validateOperations(
       `operation ${operation.id}.compensationIntent`,
       context
     );
+    validateOperationMachiningIntent(operation, operationMap, context);
     validateProvenance(operation.provenance, `operation ${operation.id}.provenance`, segmentMap, context, operationMap);
     validateOverrides(operation.overrides, operation, segmentMap, tolerance, context);
+    validateOperationTransitions(operation.transitions, operation, segmentMap, tolerance, context);
+    validateThreadingIntent(
+      operation.threadingTransition,
+      `operation ${operation.id} threading transition`,
+      true,
+      context
+    );
+    validateProgramStops(operation.programStops, operation, context);
     validateContinuity(resolved, operation.closed, `Operation ${operation.id}`, tolerance, context);
     if (resolved.length > 0 && finitePointOnly(operation.startPoint)) {
       const actualStart = orientedSegmentStart(resolved[0].segment, resolved[0].ref);
@@ -1303,6 +1503,39 @@ function validateOperations(
         );
       }
     }
+  }
+}
+
+function validateOperationMachiningIntent(
+  operation: PathOperation,
+  operationMap: Map<string, PathOperation>,
+  context: ValidationContext
+) {
+  const intent = operation.machiningIntent;
+  if (intent !== undefined) {
+    if (
+      intent.kind !== 'partial-contour' ||
+      typeof intent.sourceOperationId !== 'string' ||
+      !operationMap.has(intent.sourceOperationId) ||
+      !Array.isArray(intent.spanIds) ||
+      intent.spanIds.length === 0 ||
+      intent.spanIds.some((id) => typeof id !== 'string' || id.length === 0)
+    ) {
+      context.add(
+        'upid-invalid-value',
+        `Operation ${operation.id} has an invalid partial-contour machining intent.`
+      );
+    }
+  }
+  if (
+    operation.compensationIntent?.mode === 'controller' &&
+    'wireSide' in operation.compensationIntent &&
+    intent?.kind !== 'partial-contour'
+  ) {
+    context.add(
+      'upid-invalid-value',
+      `Operation ${operation.id} may use an explicit wire side only as a derived partial contour.`
+    );
   }
 }
 
@@ -1846,6 +2079,165 @@ function validateOverrides(
   }
 }
 
+function validateOperationTransitions(
+  value: unknown,
+  operation: PathOperation,
+  segmentMap: Map<string, PathSegment>,
+  tolerance: number,
+  context: ValidationContext
+) {
+  if (value === undefined) return;
+  const transitions = record(value);
+  if (!transitions) {
+    context.add('upid-invalid-value', `Operation ${operation.id} transitions must be an object.`);
+    return;
+  }
+
+  const entry = record(transitions.entry);
+  if (transitions.entry !== undefined && !entry) {
+    context.add('upid-invalid-value', `Operation ${operation.id} entry transition must be an object.`);
+  } else if (entry) {
+    finitePoint(entry.from, `operation ${operation.id} entry transition from`, context);
+    finitePoint(entry.to, `operation ${operation.id} entry transition to`, context);
+    if (entry.move !== 'cut') {
+      context.add('upid-invalid-value', `Operation ${operation.id} entry transition move is unsupported.`);
+    }
+    if (entry.strategy === 'circle-center') {
+      const source = typeof entry.sourceSegmentId === 'string'
+        ? segmentMap.get(entry.sourceSegmentId)
+        : undefined;
+      if (!source || source.kind !== 'circle') {
+        context.add(
+          'upid-missing-reference',
+          `Operation ${operation.id} circle-center entry transition must reference a circle segment.`
+        );
+      }
+    } else if (entry.strategy === 'manual-straight') {
+      if (entry.review !== 'reviewed' && entry.review !== 'required') {
+        context.add('upid-invalid-value', `Operation ${operation.id} entry transition review state is invalid.`);
+      }
+    } else {
+      context.add('upid-invalid-value', `Operation ${operation.id} entry transition strategy is unsupported.`);
+    }
+    if (
+      finitePointOnly(entry.to) &&
+      finitePointOnly(operation.startPoint) &&
+      distance(entry.to, operation.startPoint) > tolerance
+    ) {
+      context.add(
+        'upid-identity-mismatch',
+        `Operation ${operation.id} entry transition does not end at operation start.`
+      );
+    }
+  }
+
+  const exit = record(transitions.exit);
+  if (transitions.exit !== undefined && !exit) {
+    context.add('upid-invalid-value', `Operation ${operation.id} exit transition must be an object.`);
+  } else if (exit) {
+    finitePoint(exit.from, `operation ${operation.id} exit transition from`, context);
+    finitePoint(exit.to, `operation ${operation.id} exit transition to`, context);
+    if (exit.strategy !== 'manual-straight' || exit.move !== 'cut') {
+      context.add('upid-invalid-value', `Operation ${operation.id} exit transition is unsupported.`);
+    }
+    if (exit.review !== 'reviewed' && exit.review !== 'required') {
+      context.add('upid-invalid-value', `Operation ${operation.id} exit transition review state is invalid.`);
+    }
+    if (
+      finitePointOnly(exit.from) &&
+      finitePointOnly(operation.endPoint) &&
+      distance(exit.from, operation.endPoint) > tolerance
+    ) {
+      context.add(
+        'upid-identity-mismatch',
+        `Operation ${operation.id} exit transition does not start at operation end.`
+      );
+    }
+  }
+}
+
+function validateThreadingIntent(
+  value: unknown,
+  path: string,
+  requireSource: boolean,
+  context: ValidationContext
+) {
+  if (value === undefined) return;
+  const threading = record(value);
+  if (!threading) {
+    context.add('upid-invalid-value', `${path} must be an object.`);
+    return;
+  }
+  const validPair =
+    (threading.mode === 'continuous' && threading.wireSeparation === 'already-separated') ||
+    (threading.mode === 'manual' &&
+      (threading.wireSeparation === 'already-separated' ||
+        threading.wireSeparation === 'manual-before-positioning')) ||
+    (threading.mode === 'automatic' &&
+      threading.wireSeparation === 'automatic-before-positioning');
+  if (!validPair) {
+    context.add('upid-invalid-value', `${path} mode and wire-separation strategy are incompatible.`);
+  }
+  if (
+    requireSource &&
+    threading.source !== 'project-default' &&
+    threading.source !== 'operation-override'
+  ) {
+    context.add('upid-invalid-value', `${path} source is invalid.`);
+  }
+}
+
+function validateProgramStops(
+  value: unknown,
+  operation: PathOperation,
+  context: ValidationContext
+) {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    context.add('upid-invalid-value', `Operation ${operation.id} program stops must be an array.`);
+    return;
+  }
+  const ids = new Set<string>();
+  for (const [index, rawStop] of value.entries()) {
+    const stop = record(rawStop);
+    if (!stop) {
+      context.add('upid-invalid-value', `Operation ${operation.id} program stop ${index + 1} must be an object.`);
+      continue;
+    }
+    if (typeof stop.id !== 'string' || stop.id.length === 0) {
+      context.add('upid-invalid-value', `Operation ${operation.id} program stop ${index + 1} ID is invalid.`);
+    } else if (ids.has(stop.id)) {
+      context.add('upid-duplicate-id', `Operation ${operation.id} contains duplicate program stop ${stop.id}.`);
+    } else {
+      ids.add(stop.id);
+    }
+    if (typeof stop.enabled !== 'boolean') {
+      context.add('upid-invalid-value', `Operation ${operation.id} program stop enabled state is invalid.`);
+    }
+    if (!['operator-check', 'part-retention', 'manual'].includes(String(stop.reason))) {
+      context.add('upid-invalid-value', `Operation ${operation.id} program stop reason is invalid.`);
+    }
+    if (stop.note !== undefined && typeof stop.note !== 'string') {
+      context.add('upid-invalid-value', `Operation ${operation.id} program stop note must be text.`);
+    }
+    const placement = record(stop.placement);
+    if (!placement) {
+      context.add('upid-invalid-value', `Operation ${operation.id} program stop placement is invalid.`);
+      continue;
+    }
+    if (placement.kind === 'before-operation-end') {
+      finiteNumber(
+        placement.remainingCutLengthMm,
+        `operation ${operation.id} program stop remaining cut length`,
+        context,
+        { positive: true }
+      );
+    } else if (!['before-entry', 'after-contour', 'after-exit'].includes(String(placement.kind))) {
+      context.add('upid-invalid-value', `Operation ${operation.id} program stop placement is unsupported.`);
+    }
+  }
+}
+
 function validateCompensationIntent(
   value: unknown,
   path: string,
@@ -1859,11 +2251,17 @@ function validateCompensationIntent(
   }
 
   if (intent.mode === 'controller') {
-    const valid =
+    const validKeptMaterial =
       (intent.keptMaterial === 'inside' || intent.keptMaterial === 'outside') &&
       (intent.source === 'automatic' || intent.source === 'manual') &&
       hasOnlyKeys(intent, ['mode', 'keptMaterial', 'source']);
-    if (!valid) context.add('upid-invalid-value', `${path} has an invalid controller intent shape.`);
+    const validWireSide =
+      (intent.wireSide === 'left' || intent.wireSide === 'right') &&
+      intent.source === 'manual' &&
+      hasOnlyKeys(intent, ['mode', 'wireSide', 'source']);
+    if (!validKeptMaterial && !validWireSide) {
+      context.add('upid-invalid-value', `${path} has an invalid controller intent shape.`);
+    }
     return;
   }
 
@@ -1893,7 +2291,8 @@ function compensationIntentsSemanticallyEqual(left: unknown, right: unknown) {
     return (
       leftIntent.mode === 'controller' &&
       rightIntent.mode === 'controller' &&
-      leftIntent.keptMaterial === rightIntent.keptMaterial
+      leftIntent.keptMaterial === rightIntent.keptMaterial &&
+      leftIntent.wireSide === rightIntent.wireSide
     );
   }
   return leftIntent.mode === 'centerline' && rightIntent.mode === 'centerline';

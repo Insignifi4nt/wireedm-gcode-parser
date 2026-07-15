@@ -8,15 +8,12 @@ import {
   FlipVertical,
   Flag,
   Info,
-  Magnet,
   MousePointer2,
   Move,
-  Redo2,
   RefreshCw,
   RotateCcw,
   RotateCw,
-  Save,
-  Undo2
+  Save
 } from 'lucide-react';
 import { useEffect, useState, type Dispatch, type MouseEvent, type ReactNode, type SetStateAction } from 'react';
 
@@ -109,7 +106,7 @@ function formatCompensationIntent(
 ) {
   if (!intent) return 'not selected';
   if (intent.mode === 'centerline') return `centreline · ${intent.source}`;
-  return `${intent.keptMaterial} · ${intent.source}`;
+  return `${'wireSide' in intent ? `wire ${intent.wireSide}` : intent.keptMaterial} · ${intent.source}`;
 }
 interface DiagnosticGuidance {
   actions: Array<{
@@ -137,10 +134,8 @@ interface EditorPathNavigatorPanelProps {
   pathTargetYDraft: string;
   pathTranslateXDraft: string;
   pathTranslateYDraft: string;
-  redoAvailable: boolean;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
-  undoAvailable: boolean;
   onExpandedPathElementIdsChange: Dispatch<SetStateAction<Record<string, boolean>>>;
   onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
@@ -152,7 +147,6 @@ interface EditorPathNavigatorPanelProps {
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onMirrorPathDocument: (axis: PathMirrorAxis) => void;
   onMirrorPathSelection: (axis: PathMirrorAxis) => void;
-  onRedoDraft: () => void;
   onReversePathOperation: () => void;
   onRotatePathDocument: (angleDegrees: number) => void;
   onRotatePathSelection: (angleDegrees: number) => void;
@@ -175,7 +169,6 @@ interface EditorPathNavigatorPanelProps {
   onTranslatePathDocument: (delta: { x: number; y: number }) => void;
   onToggleHoverAssist: () => void;
   onToggleMagneticSnap: () => void;
-  onUndoDraft: () => void;
 }
 
 export function EditorPathNavigatorPanel({
@@ -191,10 +184,8 @@ export function EditorPathNavigatorPanel({
   latestMeasurementPoint,
   measurementPoints,
   renderWorkspacePanel = (_id, _title, children) => children,
-  redoAvailable,
   selectedPathElement,
   selectedPathOperationId,
-  undoAvailable,
   onExpandedPathElementIdsChange,
   onActivatePathClickMode,
   onMovePathOperation,
@@ -206,7 +197,6 @@ export function EditorPathNavigatorPanel({
   onHoverPathElement,
   onMirrorPathDocument,
   onMirrorPathSelection,
-  onRedoDraft,
   onReversePathOperation,
   onRotatePathDocument,
   onRotatePathSelection,
@@ -229,7 +219,6 @@ export function EditorPathNavigatorPanel({
   onTranslatePathSelection,
   onToggleHoverAssist,
   onToggleMagneticSnap,
-  onUndoDraft,
   pathTargetXDraft,
   pathTargetYDraft,
   pathTranslateXDraft,
@@ -279,7 +268,9 @@ export function EditorPathNavigatorPanel({
   const compensationSelection = selectedOperation?.compensationIntent?.source === 'automatic'
     ? 'automatic'
     : selectedOperation?.compensationIntent?.mode === 'controller'
-      ? selectedOperation.compensationIntent.keptMaterial
+      ? 'wireSide' in selectedOperation.compensationIntent
+        ? selectedOperation.compensationIntent.wireSide
+        : selectedOperation.compensationIntent.keptMaterial
       : selectedOperation?.compensationIntent?.mode === 'centerline'
         ? 'centerline'
         : '';
@@ -601,52 +592,6 @@ export function EditorPathNavigatorPanel({
               <div className="mt-0.5 text-[10px] text-muted-foreground">No path selected</div>
             )}
           </div>
-          <div className="grid grid-cols-4 gap-1">
-            <button
-              aria-label="Undo"
-              className={iconButtonClass}
-              disabled={!undoAvailable || isSaving}
-              onClick={onUndoDraft}
-              title="Undo"
-              type="button"
-            >
-              <Undo2 className="size-3" />
-            </button>
-            <button
-              aria-label="Redo"
-              className={iconButtonClass}
-              disabled={!redoAvailable || isSaving}
-              onClick={onRedoDraft}
-              title="Redo"
-              type="button"
-            >
-              <Redo2 className="size-3" />
-            </button>
-            <button
-              aria-label="Move path operation up"
-              className={iconButtonClass}
-              disabled={selectedOperationIndex <= 0 || isSaving}
-              onClick={() => onMovePathOperation(-1)}
-              title="Move operation up"
-              type="button"
-            >
-              <ArrowUp className="size-3" />
-            </button>
-            <button
-              aria-label="Move path operation down"
-              className={iconButtonClass}
-              disabled={
-                selectedOperationIndex < 0 ||
-                selectedOperationIndex >= pathDocument.plan.operations.length - 1 ||
-                isSaving
-              }
-              onClick={() => onMovePathOperation(1)}
-              title="Move operation down"
-              type="button"
-            >
-              <ArrowDown className="size-3" />
-            </button>
-          </div>
           <div className="mt-1 grid grid-cols-2 gap-1">
             <button
               aria-label="Reverse path operation"
@@ -801,8 +746,17 @@ export function EditorPathNavigatorPanel({
               >
                 <option value="">Choose kept material</option>
                 {compensationSelection === 'automatic' && <option value="automatic">Automatic</option>}
-                <option value="inside">Keep inside</option>
-                <option value="outside">Keep outside</option>
+                {selectedOperation?.closed ? (
+                  <>
+                    <option value="inside">Keep inside</option>
+                    <option value="outside">Keep outside</option>
+                  </>
+                ) : selectedOperation?.machiningIntent?.kind === 'partial-contour' ? (
+                  <>
+                    <option value="left">Wire left of travel</option>
+                    <option value="right">Wire right of travel</option>
+                  </>
+                ) : null}
                 <option value="centerline">Centreline</option>
               </select>
             </label>
@@ -813,7 +767,9 @@ export function EditorPathNavigatorPanel({
               </dd>
               <dt className="text-muted-foreground">Final refs</dt>
               <dd data-testid="compensation-winding">
-                {compensationResolution?.status === 'ready' ? compensationResolution.winding.toUpperCase() : '—'}
+                {compensationResolution?.status === 'ready' && compensationResolution.winding
+                  ? compensationResolution.winding.toUpperCase()
+                  : '—'}
               </dd>
               <dt className="text-muted-foreground">Wire side</dt>
               <dd data-testid="compensation-wire-side">
@@ -881,26 +837,6 @@ export function EditorPathNavigatorPanel({
             >
               <Flag className="size-3" />
               Pierce
-            </button>
-            <button
-              aria-label="Magnetize latest point perpendicular"
-              aria-pressed={pathClickMode === 'perpendicular'}
-              className={pathClickMode === 'perpendicular' ? activeModeButtonClass : modeButtonClass}
-                onClick={() => onActivatePathClickMode(pathClickMode === 'perpendicular' ? null : 'perpendicular')}
-              type="button"
-            >
-              <Magnet className="size-3" />
-              Perp
-            </button>
-            <button
-              aria-label="Magnetize latest point tangent"
-              aria-pressed={pathClickMode === 'tangent'}
-              className={pathClickMode === 'tangent' ? activeModeButtonClass : modeButtonClass}
-              onClick={() => onActivatePathClickMode(pathClickMode === 'tangent' ? null : 'tangent')}
-              type="button"
-            >
-              <Magnet className="size-3" />
-              Tangent
             </button>
           </div>
         </div>
@@ -2753,6 +2689,9 @@ function renderLeadInRow(
   const selected =
     selectedPathElement?.operationId === pathElement.operationId && selectedPathElement.travelRole === 'lead-in';
   const length = Math.hypot(leadIn.to.x - leadIn.from.x, leadIn.to.y - leadIn.from.y);
+  const strategyLabel = leadIn.source === 'circle-center'
+    ? 'Circle-center entry'
+    : 'Manual straight entry';
 
   return (
     <div
@@ -2782,12 +2721,12 @@ function renderLeadInRow(
         onMouseLeave={() => onHoverPathElement(null)}
         onPointerEnter={() => onHoverPathElement(element)}
         onPointerLeave={() => onHoverPathElement(null)}
-        title={`Lead-in cut for ${pathElement.displayName}: ${formatPoint(leadIn.from)} → ${formatPoint(leadIn.to)}; length ${length.toFixed(3)}. Selects and highlights the lead-in.`}
+        title={`${strategyLabel} for ${pathElement.displayName}: ${formatPoint(leadIn.from)} → ${formatPoint(leadIn.to)}; length ${length.toFixed(3)}. Selects and highlights the entry.`}
         type="button"
       >
         <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="lead-in">
           <span className="text-[10px] uppercase" data-upid-tree-depth-label="lead-in">
-            Pierce
+            Entry
           </span>
           <Flag className="size-3" />
           <span className="h-full min-h-5 border-l border-border/70" aria-hidden="true" />
@@ -2797,17 +2736,17 @@ function renderLeadInRow(
             <span
               className="shrink-0 border border-amber-400/40 bg-amber-400/10 px-1 text-[10px] uppercase text-amber-100"
               data-upid-tree-kind-label
-              title="Pierce lead-in row: selects the center-to-contour cut move."
+              title={`${strategyLabel}: selects the configured cut entry.`}
             >
               Lead-in
             </span>
-            <span className="truncate text-[10px] text-muted-foreground">Center pierce cut</span>
+            <span className="truncate text-[10px] text-muted-foreground">{strategyLabel}</span>
           </span>
           <span
             className="mt-0.5 block text-[10px] uppercase tracking-normal text-muted-foreground"
             data-upid-tree-action-hint
           >
-            selects pierce cut on canvas
+            selects cut entry on canvas
           </span>
           <span className="block truncate" data-upid-lead-in-span>
             {formatPoint(leadIn.from)} → {formatPoint(leadIn.to)}

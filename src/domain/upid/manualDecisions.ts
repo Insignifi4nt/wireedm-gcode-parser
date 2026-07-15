@@ -51,6 +51,7 @@ export interface UpidManualLeadInDecision {
 
 export type UpidManualCompensationDecision =
   | { mode: 'controller'; keptMaterial: 'inside' | 'outside'; source: 'manual' }
+  | { mode: 'controller'; wireSide: 'left' | 'right'; source: 'manual' }
   | { mode: 'centerline'; source: 'manual' };
 
 export interface UpidManualDecisionDetails {
@@ -121,9 +122,10 @@ function readUpidManualCompensationDecision(
   intent: ClosedContourCompensationIntent | undefined
 ): UpidManualCompensationDecision | null {
   if (intent?.source !== 'manual') return null;
-  return intent.mode === 'controller'
-    ? { mode: 'controller', keptMaterial: intent.keptMaterial, source: 'manual' }
-    : { mode: 'centerline', source: 'manual' };
+  if (intent.mode === 'centerline') return { mode: 'centerline', source: 'manual' };
+  return 'wireSide' in intent
+    ? { mode: 'controller', wireSide: intent.wireSide, source: 'manual' }
+    : { mode: 'controller', keptMaterial: intent.keptMaterial, source: 'manual' };
 }
 
 function createEmptyUpidManualDecisionCounts(): UpidManualDecisionCounts {

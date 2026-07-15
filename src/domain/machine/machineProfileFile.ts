@@ -206,6 +206,25 @@ function reconstructProfile(value: unknown, resetVerification: boolean): Machine
     invalidProfile('explicit linear compensation requires an expected maximum offset.');
   }
 
+  const threading = source.threading === undefined
+    ? {
+        manual: { supported: false, stopCode: 'M00' as const },
+        automatic: {
+          supported: false,
+          beforePositioningCodes: [],
+          afterPositioningCodes: []
+        }
+      }
+    : reconstructThreading(source.threading);
+  const programStops = source.programStops === undefined
+    ? {
+        supported: false,
+        code: 'M00' as const,
+        allowedPlacements: [],
+        allowCompensationActive: false
+      }
+    : reconstructProgramStops(source.programStops);
+
   const templates = requireRecord(source.templates, 'templates');
   const header = requireString(templates.header, 'header template', MAX_TEMPLATE_LENGTH, true);
   const footer = requireString(templates.footer, 'footer template', MAX_TEMPLATE_LENGTH, true);
@@ -258,6 +277,8 @@ function reconstructProfile(value: unknown, resetVerification: boolean): Machine
       validationLeadLengthMm,
       expectedMaximumOffsetMm
     },
+    threading,
+    programStops,
     templates: { header, footer },
     output: {
       extension,
@@ -270,6 +291,70 @@ function reconstructProfile(value: unknown, resetVerification: boolean): Machine
   };
 
   return normalizeMachineProfile(profile);
+}
+
+function reconstructThreading(value: unknown): MachineProfile['threading'] {
+  const threading = requireRecord(value, 'threading');
+  const manual = requireRecord(threading.manual, 'manual threading');
+  const automatic = requireRecord(threading.automatic, 'automatic threading');
+  const manualSupported = requireBoolean(manual.supported, 'manual threading supported');
+  if (manual.stopCode !== 'M00') {
+    invalidProfile('manual threading stop code must be canonical M00.');
+  }
+  const automaticSupported = requireBoolean(
+    automatic.supported,
+    'automatic threading supported'
+  );
+  const beforePositioningCodes = requirePreActivationCodes(
+    automatic.beforePositioningCodes
+  );
+  const afterPositioningCodes = requirePreActivationCodes(
+    automatic.afterPositioningCodes
+  );
+  if (
+    automaticSupported &&
+    (beforePositioningCodes.length === 0 || afterPositioningCodes.length === 0)
+  ) {
+    invalidProfile('automatic threading requires exact before- and after-positioning codes.');
+  }
+  return {
+    manual: { supported: manualSupported, stopCode: 'M00' },
+    automatic: {
+      supported: automaticSupported,
+      beforePositioningCodes,
+      afterPositioningCodes
+    }
+  };
+}
+
+function reconstructProgramStops(value: unknown): MachineProfile['programStops'] {
+  const policy = requireRecord(value, 'program stops');
+  const supported = requireBoolean(policy.supported, 'program stops supported');
+  if (policy.code !== 'M00') invalidProfile('program-stop code must be canonical M00.');
+  if (!Array.isArray(policy.allowedPlacements)) {
+    invalidProfile('program-stop placements must be an array.');
+  }
+  const allowedValues = [
+    'before-entry',
+    'before-operation-end',
+    'after-contour',
+    'after-exit'
+  ] as const;
+  const allowedPlacements = policy.allowedPlacements.map((placement) =>
+    requireEnum(placement, allowedValues, 'program-stop placement')
+  );
+  if (new Set(allowedPlacements).size !== allowedPlacements.length) {
+    invalidProfile('program-stop placements must not contain duplicates.');
+  }
+  return {
+    supported,
+    code: 'M00',
+    allowedPlacements,
+    allowCompensationActive: requireBoolean(
+      policy.allowCompensationActive,
+      'compensation-active program stops'
+    )
+  };
 }
 
 function reconstructVerification(value: unknown): MachineProfileVerification {

@@ -4,11 +4,13 @@ type JsonRecord = Record<string, unknown>;
 
 export function assertPortableUpidV1Shape(document: PathPlanningDocument): void {
   assertKeys(document, [
-    'schemaVersion', 'geometryBasis', 'source', 'options', 'segments', 'endpointClusters',
+    'schemaVersion', 'geometryBasis', 'setup', 'machiningParticipation', 'source', 'options', 'segments', 'endpointClusters',
     'chains', 'contours', 'pathElements', 'rootPathElementIds', 'plan', 'diagnostics'
   ], 'document');
 
   source(document.source, 'document.source');
+  setup(document.setup, 'document.setup');
+  machiningParticipation(document.machiningParticipation, 'document.machiningParticipation');
   options(document.options, 'document.options');
   each(document.segments, segment, 'document.segments');
   each(document.endpointClusters, endpointCluster, 'document.endpointClusters');
@@ -17,6 +19,32 @@ export function assertPortableUpidV1Shape(document: PathPlanningDocument): void 
   each(document.pathElements, pathElement, 'document.pathElements');
   plan(document.plan, 'document.plan');
   each(document.diagnostics, diagnostic, 'document.diagnostics');
+}
+
+function machiningParticipation(value: unknown, path: string) {
+  assertKeys(value, ['spans', 'partialContourCompensation', 'partialContourEntryReviews'], path);
+  const object = record(value);
+  each(object?.spans, (span, spanPath) => {
+    assertKeys(span, ['id', 'sourceSegmentId', 'range', 'participation'], spanPath);
+    assertKeys(record(span)?.range, ['start', 'end'], `${spanPath}.range`);
+  }, `${path}.spans`);
+  each(object?.partialContourCompensation, (setting, settingPath) => {
+    assertKeys(setting, ['sourceOperationId', 'wireSide'], settingPath);
+  }, `${path}.partialContourCompensation`);
+  each(object?.partialContourEntryReviews, (setting, settingPath) => {
+    assertKeys(setting, ['sourceOperationId', 'review', 'entryFingerprint'], settingPath);
+  }, `${path}.partialContourEntryReviews`);
+}
+
+function setup(value: unknown, path: string) {
+  assertKeys(value, ['initialWirePosition', 'threadingDefault'], path);
+  const setupObject = record(value);
+  const initial = setupObject?.initialWirePosition;
+  assertKeys(initial, ['kind', 'point', 'reference', 'review', 'reviewReason'], `${path}.initialWirePosition`);
+  const object = record(initial);
+  point(object?.point, `${path}.initialWirePosition.point`);
+  assertKeys(object?.reference, ['kind', 'segmentId'], `${path}.initialWirePosition.reference`);
+  threading(setupObject?.threadingDefault, `${path}.threadingDefault`, false);
 }
 
 function source(value: unknown, path: string) {
@@ -213,7 +241,7 @@ function operation(value: unknown, path: string) {
   assertKeys(value, [
     'id', 'label', 'displayName', 'provenance', 'orderIndex', 'contourId', 'chainId',
     'classification', 'closed', 'segmentRefs', 'startPoint', 'endPoint', 'direction', 'metrics',
-    'compensationIntent', 'overrides'
+    'compensationIntent', 'transitions', 'threadingTransition', 'programStops', 'machiningIntent', 'overrides'
   ], path);
   const object = record(value);
   provenance(object?.provenance, `${path}.provenance`);
@@ -222,7 +250,41 @@ function operation(value: unknown, path: string) {
   point(object?.endPoint, `${path}.endPoint`);
   operationMetrics(object?.metrics, `${path}.metrics`);
   compensation(object?.compensationIntent, `${path}.compensationIntent`);
+  transitions(object?.transitions, `${path}.transitions`);
+  threading(object?.threadingTransition, `${path}.threadingTransition`, true);
+  each(object?.programStops, programStop, `${path}.programStops`);
+  assertKeys(object?.machiningIntent, ['kind', 'sourceOperationId', 'spanIds'], `${path}.machiningIntent`);
   overrides(object?.overrides, `${path}.overrides`);
+}
+
+function programStop(value: unknown, path: string) {
+  assertKeys(value, ['id', 'enabled', 'placement', 'reason', 'note'], path);
+  assertKeys(
+    record(value)?.placement,
+    ['kind', 'remainingCutLengthMm'],
+    `${path}.placement`
+  );
+}
+
+function threading(value: unknown, path: string, includeSource: boolean) {
+  assertKeys(
+    value,
+    includeSource ? ['mode', 'wireSeparation', 'source'] : ['mode', 'wireSeparation'],
+    path
+  );
+}
+
+function transitions(value: unknown, path: string) {
+  assertKeys(value, ['entry', 'exit'], path);
+  const object = record(value);
+  const entry = object?.entry;
+  assertKeys(entry, ['strategy', 'move', 'from', 'to', 'sourceSegmentId', 'review'], `${path}.entry`);
+  point(record(entry)?.from, `${path}.entry.from`);
+  point(record(entry)?.to, `${path}.entry.to`);
+  const exit = object?.exit;
+  assertKeys(exit, ['strategy', 'move', 'from', 'to', 'review'], `${path}.exit`);
+  point(record(exit)?.from, `${path}.exit.from`);
+  point(record(exit)?.to, `${path}.exit.to`);
 }
 
 function operationMetrics(value: unknown, path: string) {
@@ -230,7 +292,7 @@ function operationMetrics(value: unknown, path: string) {
 }
 
 function compensation(value: unknown, path: string) {
-  assertKeys(value, ['mode', 'keptMaterial', 'source'], path);
+  assertKeys(value, ['mode', 'keptMaterial', 'wireSide', 'source'], path);
 }
 
 function overrides(value: unknown, path: string) {
