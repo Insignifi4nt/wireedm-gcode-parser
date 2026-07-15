@@ -11,6 +11,7 @@ import { StatusNotificationMenu, type StatusToast } from '@/components/StatusToa
 import { Button } from '@/components/ui/button';
 import { normalizeOutputExtension } from '@/domain/post/gcodeTemplates';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
+import type { WorkbenchSimulationSettings } from '@/domain/simulation/simulationConfig';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
 import { AppRailProvider, type AppRailContent } from './AppRailContext';
@@ -24,6 +25,9 @@ interface AppShellProps extends MachineProfileSettingsActions {
   interactionLocked: boolean;
   onConnectWorkbench: () => void | Promise<void>;
   onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
+  onSaveWorkbenchSimulationSettings: (
+    settings: WorkbenchSimulationSettings
+  ) => void | Promise<void>;
   settingsErrorMessage: string | null;
   settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
   storageSwitchDisabled: boolean;
@@ -47,6 +51,7 @@ export function AppShell({
   onExportMachineProfile,
   onImportMachineProfileFile,
   onSaveMachineProfile,
+  onSaveWorkbenchSimulationSettings,
   onSaveWorkbenchSettings,
   onSetDefaultMachineProfile,
   settingsErrorMessage,
@@ -272,6 +277,7 @@ export function AppShell({
         onExportMachineProfile={onExportMachineProfile}
         onImportMachineProfileFile={onImportMachineProfileFile}
         onSaveMachineProfile={onSaveMachineProfile}
+        onSaveWorkbenchSimulationSettings={onSaveWorkbenchSimulationSettings}
         onSaveWorkbenchSettings={onSaveWorkbenchSettings}
         onSetDefaultMachineProfile={onSetDefaultMachineProfile}
         open={settingsOpen}

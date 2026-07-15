@@ -26,6 +26,7 @@ import {
 } from '@/domain/machine/machineProfiles';
 import { supportsWorkbenchDirectoryAccess } from '@/domain/storage/fileSystemAccess';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
+import type { WorkbenchSimulationSettings } from '@/domain/simulation/simulationConfig';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 import type { MachineProfile } from '@/domain/workbench/types';
 
@@ -121,6 +122,9 @@ export interface WorkbenchAppController {
   handleRenameWorkbenchProject: (projectId: string, name: string) => Promise<void>;
   handleSaveEditorDraft: (draft: EditorSaveDraft) => Promise<void>;
   handleSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => Promise<void>;
+  handleSaveWorkbenchSimulationSettings: (
+    settings: WorkbenchSimulationSettings
+  ) => Promise<void>;
   handleAcknowledgeMachineProfile: (profile: MachineProfile) => Promise<boolean>;
   handleCreateBlankMachineProfile: () => Promise<string | null>;
   handleCreateRobofilV2CandidateProfile: () => Promise<string | null>;
@@ -287,6 +291,37 @@ export function useWorkbenchAppController(
       if (!isCurrentWorkbenchOperation(operationId)) return;
       setSettingsStatus('error');
       const message = error instanceof Error ? error.message : 'Could not save workbench settings.';
+      setSettingsErrorMessage(message);
+      showStatusToast(message, 'error');
+    } finally {
+      finishWorkbenchOperation(operationId);
+    }
+  }
+
+  async function handleSaveWorkbenchSimulationSettings(
+    settings: WorkbenchSimulationSettings
+  ) {
+    if (!connectedWorkbench || settingsStatus === 'saving') return;
+    const operationId = beginWorkbenchOperation('settings-save');
+    if (operationId === null) return;
+
+    setSettingsStatus('saving');
+    setSettingsErrorMessage(null);
+
+    try {
+      const updatedWorkbench = await appServices.updateWorkbenchSimulationSettings(
+        connectedWorkbench,
+        settings
+      );
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      setConnectedWorkbench(updatedWorkbench);
+      setSettingsStatus('saved');
+      showStatusToast('3D simulation settings saved.', 'success');
+    } catch (error) {
+      if (!isCurrentWorkbenchOperation(operationId)) return;
+      setSettingsStatus('error');
+      const message =
+        error instanceof Error ? error.message : 'Could not save 3D simulation settings.';
       setSettingsErrorMessage(message);
       showStatusToast(message, 'error');
     } finally {
@@ -1174,6 +1209,7 @@ export function useWorkbenchAppController(
     handleRenameWorkbenchProject,
     handleSaveEditorDraft,
     handleSaveMachineProfile,
+    handleSaveWorkbenchSimulationSettings,
     handleSaveWorkbenchSettings,
     handleSetDefaultMachineProfile,
     showStatusToast

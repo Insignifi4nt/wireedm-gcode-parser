@@ -43,6 +43,7 @@ import {
   updateWorkbenchSettings,
   type UpdateWorkbenchSettingsInput
 } from '@/domain/storage/updateWorkbenchSettings';
+import { updateWorkbenchSimulationSettings } from '@/domain/storage/updateSimulationSettings';
 import {
   addMachineProfile,
   deleteMachineProfile,
@@ -109,6 +110,7 @@ export interface AppServices {
     workbench: ConnectedWorkbench,
     input: UpdateWorkbenchSettingsInput
   ) => Promise<ConnectedWorkbench>;
+  updateWorkbenchSimulationSettings: typeof updateWorkbenchSimulationSettings;
   addMachineProfile: typeof addMachineProfile;
   duplicateMachineProfile: typeof duplicateMachineProfile;
   deleteMachineProfile: typeof deleteMachineProfile;
@@ -141,6 +143,7 @@ export const defaultAppServices: AppServices = {
   renameWorkbenchProject,
   deleteWorkbenchProject,
   updateWorkbenchSettings,
+  updateWorkbenchSimulationSettings,
   addMachineProfile,
   duplicateMachineProfile,
   deleteMachineProfile,

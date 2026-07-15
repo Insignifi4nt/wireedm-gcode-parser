@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { Database, RefreshCw, SlidersHorizontal, X } from 'lucide-react';
+import { Box, Database, RefreshCw, SlidersHorizontal, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { BROWSER_WORKBENCH_NAMESPACE } from '@/domain/storage/connectCachedWorkbench';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchSimulationSettings } from '@/domain/simulation/simulationConfig';
 
 import {
   MachineOutputSettingsPanel,
   type MachineProfileSettingsActions
 } from './MachineOutputSettingsPanel';
+import { SimulationSettingsPanel } from './SimulationSettingsPanel';
 
 type WorkbenchStatus = 'initializing' | 'ready' | 'connecting-storage' | 'error';
 
@@ -20,6 +22,9 @@ interface WorkbenchSettingsDialogProps extends MachineProfileSettingsActions {
   onClose: () => void;
   onConnectWorkbench: () => void | Promise<void>;
   onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
+  onSaveWorkbenchSimulationSettings: (
+    settings: WorkbenchSimulationSettings
+  ) => void | Promise<void>;
   open: boolean;
   settingsErrorMessage: string | null;
   settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
@@ -43,6 +48,7 @@ export function WorkbenchSettingsDialog({
   onExportMachineProfile,
   onImportMachineProfileFile,
   onSaveMachineProfile,
+  onSaveWorkbenchSimulationSettings,
   onSaveWorkbenchSettings,
   onSetDefaultMachineProfile,
   open,
@@ -53,7 +59,9 @@ export function WorkbenchSettingsDialog({
   storageWarningMessage,
   workbenchStatus
 }: WorkbenchSettingsDialogProps) {
-  const [activeSection, setActiveSection] = useState<'storage' | 'machine-output'>('storage');
+  const [activeSection, setActiveSection] = useState<
+    'storage' | 'machine-output' | 'simulation'
+  >('storage');
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const latestCloseRef = useRef(onClose);
@@ -197,13 +205,31 @@ export function WorkbenchSettingsDialog({
               <SlidersHorizontal className="size-4" />
               Machine &amp; Output
             </button>
+            <button
+              aria-current={activeSection === 'simulation' ? 'page' : undefined}
+              aria-label="3D Simulation settings"
+              className={`flex h-8 items-center gap-2 whitespace-nowrap rounded-[2px] border px-3 text-left text-[10px] outline-none transition ${
+                activeSection === 'simulation'
+                  ? 'border-primary/40 bg-accent text-foreground'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:bg-accent/50 hover:text-foreground'
+              }`}
+              onClick={() => setActiveSection('simulation')}
+              type="button"
+            >
+              <Box className="size-4" />
+              3D Simulation
+            </button>
           </nav>
         </aside>
 
         <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
           <header className="border-b border-border p-4">
             <h2 className="text-base font-semibold">
-              {activeSection === 'storage' ? 'Storage' : 'Machine & Output'}
+              {activeSection === 'storage'
+                ? 'Storage'
+                : activeSection === 'machine-output'
+                  ? 'Machine & Output'
+                  : '3D Simulation'}
             </h2>
           </header>
 
@@ -273,7 +299,7 @@ export function WorkbenchSettingsDialog({
                   </div>
                 </section>
               </div>
-            ) : (
+            ) : activeSection === 'machine-output' ? (
               <MachineOutputSettingsPanel
                 connectedWorkbench={connectedWorkbench}
                 interactionLocked={interactionLocked}
@@ -287,6 +313,14 @@ export function WorkbenchSettingsDialog({
                 onSaveMachineProfile={onSaveMachineProfile}
                 onSaveWorkbenchSettings={onSaveWorkbenchSettings}
                 onSetDefaultMachineProfile={onSetDefaultMachineProfile}
+                settingsErrorMessage={settingsErrorMessage}
+                settingsStatus={settingsStatus}
+              />
+            ) : (
+              <SimulationSettingsPanel
+                connectedWorkbench={connectedWorkbench}
+                interactionLocked={interactionLocked}
+                onSaveWorkbenchSimulationSettings={onSaveWorkbenchSimulationSettings}
                 settingsErrorMessage={settingsErrorMessage}
                 settingsStatus={settingsStatus}
               />

@@ -27,6 +27,7 @@ export default function App({ services }: AppProps = {}) {
       onExportMachineProfile={app.handleExportMachineProfile}
       onImportMachineProfileFile={app.handleImportMachineProfileFile}
       onSaveMachineProfile={app.handleSaveMachineProfile}
+      onSaveWorkbenchSimulationSettings={app.handleSaveWorkbenchSimulationSettings}
       onSaveWorkbenchSettings={app.handleSaveWorkbenchSettings}
       onSetDefaultMachineProfile={app.handleSetDefaultMachineProfile}
       settingsErrorMessage={app.settingsErrorMessage}
