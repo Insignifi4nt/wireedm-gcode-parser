@@ -3332,6 +3332,7 @@ export function EditorPage({
               onSetWireSide={handleSetPartialContourCompensationSide}
               selectedOperationId={selectedPathOperationId}
               selectedSegmentId={selectedPathElement?.segmentId ?? null}
+              targetChangeBlocked={workflowTargetChangeBlocked}
             />
           )}
         {pathDocumentDraft && program?.project &&

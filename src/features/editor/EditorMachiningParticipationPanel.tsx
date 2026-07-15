@@ -16,6 +16,7 @@ interface EditorMachiningParticipationPanelProps {
   onSetWireSide: (sourceOperationId: string, wireSide: 'left' | 'right' | null) => void;
   selectedOperationId: string | null;
   selectedSegmentId?: string | null;
+  targetChangeBlocked?: boolean;
 }
 
 export function EditorMachiningParticipationPanel({
@@ -26,7 +27,8 @@ export function EditorMachiningParticipationPanel({
   onSetEntryReview,
   onSetWireSide,
   selectedOperationId,
-  selectedSegmentId
+  selectedSegmentId,
+  targetChangeBlocked = false
 }: EditorMachiningParticipationPanelProps) {
   const operation = document.plan.operations.find(
     (candidate) => candidate.id === selectedOperationId
@@ -40,12 +42,13 @@ export function EditorMachiningParticipationPanel({
   const [rangeEnd, setRangeEnd] = useState('1');
 
   useEffect(() => {
+    if (targetChangeBlocked) return;
     if (selectedSegmentId && segmentIds.includes(selectedSegmentId)) {
       setSourceSegmentId(selectedSegmentId);
     } else if (!segmentIds.includes(sourceSegmentId)) {
       setSourceSegmentId(segmentIds[0] ?? '');
     }
-  }, [selectedSegmentId, segmentIds.join('|'), sourceSegmentId]);
+  }, [selectedSegmentId, segmentIds.join('|'), sourceSegmentId, targetChangeBlocked]);
 
   const spans = useMemo(
     () => (document.machiningParticipation?.spans ?? []).filter(
@@ -87,10 +90,15 @@ export function EditorMachiningParticipationPanel({
           <select
             aria-label="Machining source segment"
             className="h-7 border border-border bg-background px-1 font-mono text-foreground"
+            disabled={targetChangeBlocked}
             onChange={(event) => {
+              if (targetChangeBlocked) return;
               setSourceSegmentId(event.currentTarget.value);
               onDraftChange?.();
             }}
+            title={targetChangeBlocked
+              ? 'Apply or discard the pending machining range before changing its source segment.'
+              : undefined}
             value={sourceSegmentId}
           >
             {segmentIds.map((segmentId, index) => (

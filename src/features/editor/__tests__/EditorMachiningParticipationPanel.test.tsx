@@ -80,6 +80,48 @@ describe('EditorMachiningParticipationPanel', () => {
       participation: 'active-cut'
     }), false);
   });
+
+  it('keeps a pending range bound to its source segment until it is applied or discarded', async () => {
+    const document = createUpidFromDxfEntities([
+      line(0, 0, 10, 0), line(10, 0, 10, 5), line(10, 5, 0, 5), line(0, 5, 0, 0)
+    ]);
+    const operation = document.plan.operations[0];
+    const [firstSegment, secondSegment] = operation.segmentRefs;
+    const onDraftChange = vi.fn();
+    const renderPanel = (targetChangeBlocked: boolean) => (
+      <EditorMachiningParticipationPanel
+        disabled={false}
+        document={document}
+        onDraftChange={onDraftChange}
+        onSetSpan={vi.fn()}
+        onSetEntryReview={vi.fn()}
+        onSetWireSide={vi.fn()}
+        selectedOperationId={operation.id}
+        targetChangeBlocked={targetChangeBlocked}
+      />
+    );
+
+    await act(async () => root.render(renderPanel(false)));
+    await act(async () => {
+      setInput(container.querySelector('[aria-label="Machining span start"]')!, '0.2');
+    });
+    expect(onDraftChange).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.render(renderPanel(true)));
+    const sourceSegmentSelect = container.querySelector<HTMLSelectElement>(
+      '[aria-label="Machining source segment"]'
+    )!;
+    expect(sourceSegmentSelect.disabled).toBe(true);
+    expect(sourceSegmentSelect.title).toBe(
+      'Apply or discard the pending machining range before changing its source segment.'
+    );
+
+    await act(async () => {
+      setSelect(sourceSegmentSelect, secondSegment.segmentId);
+    });
+    expect(sourceSegmentSelect.value).toBe(firstSegment.segmentId);
+    expect(onDraftChange).toHaveBeenCalledTimes(1);
+  });
 });
 
 function setInput(input: HTMLInputElement, value: string) {
