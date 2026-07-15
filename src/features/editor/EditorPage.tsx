@@ -1112,6 +1112,7 @@ export function EditorPage({
     setActiveWorkflowPendingReasons({});
     setWorkflowTransition(null);
     pendingWorkflowExitActionRef.current = null;
+    setEntryExitCanvasPick(null);
     setPathClickMode(null);
     setCanvasMouseMode('select');
     setRedoStack([]);

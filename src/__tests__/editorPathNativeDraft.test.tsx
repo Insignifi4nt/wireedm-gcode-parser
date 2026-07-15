@@ -893,6 +893,54 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe(true);
   });
 
+  it('clears an active Entry Exit canvas picker when the loaded project identity changes', async () => {
+    const firstProject = projectWithUpid(pathDocumentFromIndependentRectangles());
+    const replacementProject = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/first-project.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={firstProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    await clickElement('button[aria-label="Pick entry point on canvas"]');
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
+      'Pick entry'
+    );
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/replacement-project.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={replacementProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).not.toContain(
+      'Pick entry'
+    );
+
+    await clickElement('[data-editor-workflow-command="view.contours"]');
+    const replacementPath = container.querySelector(
+      'path[data-preview-source="path-document"][data-type="cut"]'
+    ) as SVGPathElement;
+    await act(async () => {
+      replacementPath.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+    expect(replacementPath.getAttribute('data-preview-selected')).toBe('true');
+  });
+
   it('offers only single-workflow diagnostic repair links', async () => {
     const project = projectWithUpid(pathDocumentFromGappedRectangle());
 
@@ -2998,6 +3046,7 @@ describe('EditorPage UPID draft boundary', () => {
 });
 
 function EditorPageHarness({
+  filePath = 'imports/rectangle.dxf',
   initialWorkflowId,
   onBackToDashboard = noop,
   onImportProgramFile = noop,
@@ -3005,6 +3054,7 @@ function EditorPageHarness({
   project,
   saveStatus = 'idle'
 }: {
+  filePath?: string;
   initialWorkflowId?: string;
   onBackToDashboard?: () => void;
   onImportProgramFile?: (file: File) => void;
@@ -3039,7 +3089,7 @@ function EditorPageHarness({
         onImportProgramFile={onImportProgramFile}
         onSaveEditorDraft={onSaveEditorDraft}
         program={{
-          filePath: 'imports/rectangle.dxf',
+          filePath,
           model: 'upid-document',
           parseResult: null,
           pathDocument: project.upid!.document,
