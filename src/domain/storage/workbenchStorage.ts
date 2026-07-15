@@ -7,6 +7,10 @@ import {
   machineProfileFromLegacySettings,
   normalizeMachineProfile
 } from '@/domain/machine/machineProfiles';
+import {
+  normalizeWorkbenchSimulationSettings,
+  type WorkbenchSimulationSettings
+} from '@/domain/simulation/simulationConfig';
 import type { MachineProfile, OutputFormat, WorkbenchSourceKind } from '../workbench/types';
 
 export const WORKBENCH_MANIFEST_FILE = 'workbench.json';
@@ -50,6 +54,7 @@ export interface WorkbenchManifest {
   output: OutputFormat;
   activeMachineProfileId: string;
   machineProfiles: MachineProfile[];
+  simulation?: WorkbenchSimulationSettings;
   projects: WorkbenchProjectIndexEntry[];
 }
 
@@ -122,6 +127,10 @@ export async function initializeWorkbenchDirectory(
     output: activeMachineProfile.output,
     activeMachineProfileId: activeMachineProfile.id,
     machineProfiles,
+    simulation: normalizeWorkbenchSimulationSettings(
+      existingManifest?.simulation,
+      machineProfiles
+    ),
     projects: existingManifest?.projects || []
   };
 

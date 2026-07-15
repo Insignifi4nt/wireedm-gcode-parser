@@ -1,4 +1,5 @@
 import type { UniversalPathIntelligenceDocument } from '@/domain/upid/upidDocument';
+import type { ProjectSimulationSettings } from '@/domain/simulation/simulationConfig';
 
 export const OUTPUT_EXTENSIONS = ['iso', 'nc', 'gcode'] as const;
 
@@ -137,6 +138,7 @@ export interface WorkbenchProject {
     files: WorkbenchFileRef[];
   };
   upid?: WorkbenchUpidState;
+  simulation?: ProjectSimulationSettings;
   machine: MachineProfile;
   editor: EditorSessionState;
 }
