@@ -4,29 +4,16 @@ import {
   useState,
   type CSSProperties,
   type DragEvent,
-  type FocusEvent,
   type KeyboardEvent,
-  type MouseEvent,
   type PointerEvent,
   type ReactNode
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Eye,
-  EyeOff,
-  ListOrdered,
-  ListTree,
-  MousePointer2,
-  Move,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  PanelsTopLeft,
-  Ruler,
-  Search,
-  Settings2,
-  TriangleAlert,
   X
 } from 'lucide-react';
 
@@ -97,185 +84,6 @@ export interface EditorWorkspacePanelController {
   onFloatFromDock: (point: { x: number; y: number }) => void;
   onGeometryChange: (geometry: EditorFloatingPanelGeometry) => void;
   onHide: () => void;
-}
-
-interface EditorPanelMenuItem {
-  description?: string;
-  id: string;
-  title: string;
-  placement: EditorPanelPlacement;
-  onHide: () => void;
-  onShow: () => void;
-}
-
-interface EditorPanelMenuGroup {
-  id: string;
-  title: string;
-  panels: EditorPanelMenuItem[];
-}
-
-interface EditorPanelToolbarProps {
-  groups: EditorPanelMenuGroup[];
-}
-
-const EDITOR_PANEL_SHORTCUTS = [
-  { icon: ListTree, id: 'contour-tree' },
-  { icon: MousePointer2, id: 'path-actions' },
-  { icon: ListOrdered, id: 'cut-sequence' },
-  { icon: Move, id: 'path-transform' },
-  { icon: TriangleAlert, id: 'path-diagnostics' },
-  { icon: Search, id: 'statistics' },
-  { icon: Ruler, id: 'measurement' },
-  { icon: Settings2, id: 'machine' }
-] as const;
-const EDITOR_PANEL_HOVER_OPEN_DELAY_MS = 500;
-
-export function EditorPanelToolbar({ groups }: EditorPanelToolbarProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const hoverOpenTimerRef = useRef<number | null>(null);
-  const visibleGroups = groups.filter((group) => group.panels.length > 0);
-  const panelsById = new Map(
-    visibleGroups.flatMap((group) => group.panels.map((panel) => [panel.id, panel] as const))
-  );
-
-  function clearHoverOpenTimer() {
-    if (hoverOpenTimerRef.current === null) return;
-    window.clearTimeout(hoverOpenTimerRef.current);
-    hoverOpenTimerRef.current = null;
-  }
-
-  function handleMouseEnter() {
-    clearHoverOpenTimer();
-    hoverOpenTimerRef.current = window.setTimeout(() => {
-      hoverOpenTimerRef.current = null;
-      setMenuOpen(true);
-    }, EDITOR_PANEL_HOVER_OPEN_DELAY_MS);
-  }
-
-  function handleMouseLeave() {
-    clearHoverOpenTimer();
-    setMenuOpen(false);
-  }
-
-  useEffect(() => clearHoverOpenTimer, []);
-
-  if (visibleGroups.length === 0) return null;
-
-  function handleBlur(event: FocusEvent<HTMLElement>) {
-    const nextFocus = event.relatedTarget;
-    if (!nextFocus || !event.currentTarget.contains(nextFocus as Node)) {
-      clearHoverOpenTimer();
-      setMenuOpen(false);
-    }
-  }
-
-  function handleSummaryClick(event: MouseEvent<HTMLElement>) {
-    event.preventDefault();
-    clearHoverOpenTimer();
-    setMenuOpen((current) => !current);
-  }
-
-  function handlePanelClick(panel: EditorPanelMenuItem) {
-    clearHoverOpenTimer();
-    if (panel.placement === 'hidden') panel.onShow();
-    else panel.onHide();
-    setMenuOpen(false);
-  }
-
-  return (
-    <div className="flex min-w-0 items-center gap-1 text-[10px]" data-editor-panel-toolbar>
-      <div className="hidden items-center gap-1 min-[1360px]:flex" data-editor-panel-shortcuts>
-        {EDITOR_PANEL_SHORTCUTS.map((shortcut) => {
-          const panel = panelsById.get(shortcut.id);
-          if (!panel) return null;
-          const action = panel.placement === 'hidden' ? 'Show' : 'Hide';
-          const ShortcutIcon = shortcut.icon;
-
-          return (
-            <button
-              aria-label={`${action} ${panel.title} workspace panel`}
-              className="flex size-7 items-center justify-center border border-border bg-background/70 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
-              data-editor-panel-shortcut={shortcut.id}
-              key={shortcut.id}
-              onClick={() => handlePanelClick(panel)}
-              title={`${action} ${panel.title}`}
-              type="button"
-            >
-              <ShortcutIcon aria-hidden="true" className="size-3.5" />
-            </button>
-          );
-        })}
-      </div>
-      <details
-        className="relative min-w-0"
-        onBlur={handleBlur}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        open={menuOpen}
-      >
-        <summary
-          aria-label="Panels"
-          className="flex size-7 cursor-pointer select-none items-center justify-center border border-border bg-background/70 text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
-          onClick={handleSummaryClick}
-          title="All workspace panels"
-        >
-          <PanelsTopLeft aria-hidden="true" className="size-3.5" />
-        </summary>
-        <div className="absolute right-0 top-7 z-50 grid max-h-[76vh] w-72 gap-2 overflow-auto border border-border bg-card p-2 shadow-2xl">
-          {visibleGroups.map((group) => (
-            <section
-              className="grid gap-1 border border-border bg-background/35 p-1"
-              data-editor-panel-menu-group={group.id}
-              key={group.id}
-            >
-              <h3 className="px-1 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
-                {group.title}
-              </h3>
-              {group.panels.map((panel) => {
-                const isHidden = panel.placement === 'hidden';
-                const status = isHidden
-                  ? 'off'
-                  : panel.placement === 'floating'
-                    ? 'free'
-                    : panel.placement.replace('docked-', '');
-
-                return (
-                  <button
-                    aria-label={`${isHidden ? 'Show' : 'Hide'} ${panel.title}`}
-                    className="grid min-h-8 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border border-border px-1.5 py-1 text-left text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-                    data-editor-panel-menu-item={panel.id}
-                    key={panel.id}
-                    onClick={() => handlePanelClick(panel)}
-                    title={`${isHidden ? 'Show' : 'Hide'} ${panel.title}`}
-                    type="button"
-                  >
-                    {isHidden ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-                    <span className="min-w-0">
-                      <span className="block truncate text-[10px] text-foreground">{panel.title}</span>
-                      {panel.description && (
-                        <span
-                          className="block truncate text-[10px] text-muted-foreground"
-                          data-editor-panel-menu-item-description
-                        >
-                          {panel.description}
-                        </span>
-                      )}
-                    </span>
-                    <span
-                      className="technical-value text-[10px] uppercase text-muted-foreground"
-                      data-editor-panel-menu-item-status
-                    >
-                      {status}
-                    </span>
-                  </button>
-                );
-              })}
-            </section>
-          ))}
-        </div>
-      </details>
-    </div>
-  );
 }
 
 interface EditorPanelDockZoneProps {

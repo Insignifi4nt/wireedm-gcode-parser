@@ -16,10 +16,11 @@ export interface EditorWorkflowMenuGroup {
 
 export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGroup[] }) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const visibleGroups = groups.filter((group) => group.commands.length > 0);
 
   return (
     <nav className="flex items-center gap-px" aria-label="Editor workflows" data-editor-workflow-menus>
-      {groups.map((group) => (
+      {visibleGroups.map((group) => (
         <details
           className="relative"
           key={group.title}

@@ -124,7 +124,6 @@ import {
   EDITOR_FLOATING_PANEL_TOP,
   EditorCollapsedDockZone,
   EditorPanelDockZone,
-  EditorPanelToolbar,
   EditorWorkspacePanelFrame,
   type EditorDockSide,
   type EditorFloatingPanelGeometry,
@@ -317,52 +316,11 @@ const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFlo
   measurement: { x: 250, y: 194, width: 340, height: 420 }
 };
 
-const WORKSPACE_PANEL_GROUPS: Array<{
-  id: string;
-  title: string;
-  panelIds: EditorWorkspacePanelId[];
-}> = [
-  {
-    id: 'path',
-    title: 'Path',
-    panelIds: ['path-summary', 'path-actions', 'path-transform', 'path-hover-assist', 'endpoint-topology', 'path-diagnostics']
-  },
-  {
-    id: 'sequence',
-    title: 'Sequence',
-    panelIds: ['cut-sequence', 'contour-tree']
-  },
-  {
-    id: 'setup',
-    title: 'Setup',
-    panelIds: ['initial-wire-position', 'entry-exit', 'program-stops', 'machining-participation']
-  },
-  {
-    id: 'inspection',
-    title: 'Inspection',
-    panelIds: ['position', 'statistics']
-  },
-  {
-    id: 'machine',
-    title: 'Machine',
-    panelIds: ['machine']
-  },
-  {
-    id: 'measurement',
-    title: 'Measurement',
-    panelIds: ['measurement']
-  }
-];
-
 const EDITOR_WORKFLOW_MENU_TITLES: EditorWorkflowMenuGroup['title'][] = [
-  'Project', 'Geometry', 'Machining', 'Construction', 'View', 'Machine', 'Export'
+  'Geometry', 'Machining', 'Construction', 'View', 'Machine', 'Export'
 ];
 
 const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
-  {
-    id: 'project.save', label: 'Save Project', menuPath: ['Project', 'Save Project'],
-    scope: 'document', prerequisites: [{ kind: 'document' }, { kind: 'interaction-unlocked' }]
-  },
   {
     id: 'geometry.transform', label: 'Transform Geometry', menuPath: ['Geometry', 'Transform Geometry'],
     scope: 'document', toolWindowId: 'path-transform', historyLabel: 'Transform geometry',
@@ -410,9 +368,9 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
     prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
   },
   {
-    id: 'export.preview', label: 'Controller Export Preview',
-    menuPath: ['Export', 'Controller Export Preview'], scope: 'export',
-    prerequisites: [{ kind: 'document' }]
+    id: 'export.preview', label: 'Controller Export',
+    menuPath: ['Export', 'Controller Export'], scope: 'export', toolWindowId: 'controller-export',
+    prerequisites: [{ kind: 'document' }], workflow: { kind: 'view' }
   }
 ]);
 
@@ -941,29 +899,6 @@ export function EditorPage({
   const exportAvailable = isPathProject
     ? Boolean(program?.project)
     : documentContext === 'machine-program' && draftText.trim() !== '';
-  const editorPanelToolbar = useMemo(
-    () => (
-      <EditorPanelToolbar
-        groups={
-          pathDocumentDraft
-            ? WORKSPACE_PANEL_GROUPS.map((group) => ({
-                id: group.id,
-                title: group.title,
-                panels: group.panelIds.map((id) => ({
-                  description: EDITOR_WORKSPACE_PANEL_DESCRIPTIONS[id],
-                  id,
-                  title: EDITOR_WORKSPACE_PANEL_TITLES[id],
-                  placement: readWorkspacePanelRenderedPlacement(id),
-                  onHide: requestCloseEditorWorkflow,
-                  onShow: () => openEditorWorkflowForPanel(id)
-                }))
-              }))
-            : []
-        }
-      />
-    ),
-    [activeWorkflowSession, pathDocumentDraft, workspacePanelPlacements]
-  );
   const editorWorkflowMenus = useMemo<EditorWorkflowMenuGroup[]>(() => {
     if (!pathDocumentDraft) return [];
     const visiblePanelIds = Object.entries(workspacePanelPlacements)
@@ -983,30 +918,18 @@ export function EditorPage({
       title,
       commands: EDITOR_COMMAND_REGISTRY.commandsForMenu(title).map((command) => {
         const availability = evaluateEditorCommand(command, context);
-        const saveUnavailable = command.id === 'project.save'
-          ? workflowProjectSaveBlockedReason ?? (
-              !hasUnsavedChanges ? 'There are no unsaved project changes.' : null
-            )
-          : null;
-        const enabled = availability.enabled && !saveUnavailable;
         return {
           id: command.id,
           label: command.label,
-          description: command.toolWindowId
-            ? EDITOR_WORKSPACE_PANEL_DESCRIPTIONS[command.toolWindowId as EditorWorkspacePanelId]
-            : command.id === 'project.save'
-              ? 'Write the active local-first project through its current storage adapter.'
-              : 'Review exact controller output, readiness, transitions, and diagnostics.',
-          enabled,
-          disabledReason: saveUnavailable ?? (availability.enabled ? undefined : availability.reason),
+          description: command.id === 'export.preview'
+            ? 'Review exact controller output, readiness, transitions, and diagnostics.'
+            : command.toolWindowId
+              ? EDITOR_WORKSPACE_PANEL_DESCRIPTIONS[command.toolWindowId as EditorWorkspacePanelId]
+              : undefined,
+          enabled: availability.enabled,
+          disabledReason: availability.enabled ? undefined : availability.reason,
           onExecute: () => {
-            if (command.id === 'project.save') {
-              void handleSaveClick();
-            } else if (command.id === 'export.preview') {
-              setExportPreviewOpen(true);
-            } else if (command.toolWindowId) {
-              openEditorWorkflow(command.id);
-            }
+            if (command.toolWindowId) openEditorWorkflow(command.id);
           }
         };
       })
@@ -1014,14 +937,12 @@ export function EditorPage({
   }, [
     activeToolSession,
     activeWorkflowSession,
-    hasUnsavedChanges,
     isEditorMutationLocked,
     pathDocumentDraft,
     pathClickMode,
     selectedPathElement,
     selectedPathOperationId,
-    workspacePanelPlacements,
-    workflowProjectSaveBlockedReason
+    workspacePanelPlacements
   ]);
   const editorRailContent = useMemo(
     () =>
@@ -1052,9 +973,7 @@ export function EditorPage({
         documentContext={documentContext}
         exportAvailable={exportAvailable}
         exportLabel={
-          isPathProject
-            ? 'Open Path Project export preview'
-            : documentContext === 'machine-program'
+          documentContext === 'machine-program'
               ? 'Export normalized ISO'
               : null
         }
@@ -1067,9 +986,7 @@ export function EditorPage({
         isSaving={isSaving}
         onBackToDashboard={handleBackToDashboard}
         onExport={
-          isPathProject
-            ? () => setExportPreviewOpen(true)
-            : documentContext === 'machine-program'
+          documentContext === 'machine-program'
               ? handleExportNormalizedISO
               : null
         }
@@ -1085,15 +1002,11 @@ export function EditorPage({
         titleTooltip={editorHeaderTooltip}
         undoAvailable={!activeMutatingWorkflow && undoStack.length > 0}
         workspaceControls={pathDocumentDraft ? (
-          <>
-            <EditorWorkflowMenuBar groups={editorWorkflowMenus} />
-            {editorPanelToolbar}
-          </>
-        ) : editorPanelToolbar}
+          <EditorWorkflowMenuBar groups={editorWorkflowMenus} />
+        ) : undefined}
       />
     ),
     [
-      editorPanelToolbar,
       activeMutatingWorkflow,
       editorHeaderTitle,
       editorHeaderTooltip,
@@ -2426,6 +2339,7 @@ export function EditorPage({
 
     setActiveWorkflowSession(session);
     setWorkflowTransition(null);
+    setExportPreviewOpen(command.id === 'export.preview');
     if (command.id === SET_START_COMMAND.id) {
       setActiveToolSession(
         createEditorToolSession({
@@ -2485,6 +2399,7 @@ export function EditorPage({
     setActiveToolSession(null);
     setPathClickMode(null);
     setWorkflowTransition(null);
+    setExportPreviewOpen(false);
     if (request.kind === 'close') {
       setActiveWorkflowSession(null);
       return;
@@ -3159,7 +3074,13 @@ export function EditorPage({
           diagnostics={upidExport.diagnostics}
           documentTrace={upidExport.documentTrace}
           machineName={upidExport.machineName}
-          onClose={() => setExportPreviewOpen(false)}
+          onClose={() => {
+            if (activeWorkflowSession?.commandId === 'export.preview') {
+              requestCloseEditorWorkflow();
+            } else {
+              setExportPreviewOpen(false);
+            }
+          }}
           onDownload={() => {
             if (!upidExport.canDownload || upidExport.blockingDiagnostics.length > 0) return;
             onDownloadEditorFile(upidExport.fileName, upidExport.programText);

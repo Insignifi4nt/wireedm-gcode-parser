@@ -21,26 +21,34 @@ describe('EditorWorkflowMenuBar', () => {
     container.remove();
   });
 
-  it('exposes all workflow menus, executes enabled commands, and explains disabled commands', async () => {
+  it('renders only nonempty canonical workflow menus and executes their commands', async () => {
     const execute = vi.fn();
     const titles: EditorWorkflowMenuGroup['title'][] = [
-      'Project', 'Geometry', 'Machining', 'Construction', 'View', 'Machine', 'Export'
+      'Geometry', 'Machining', 'Construction', 'View', 'Machine', 'Export'
     ];
     await act(async () => root.render(
-      <EditorWorkflowMenuBar groups={titles.map((title) => ({
-        title,
-        commands: [{
-          id: `${title.toLowerCase()}.command`,
-          label: `${title} command`,
-          description: 'Ready action',
-          enabled: title !== 'Export',
-          disabledReason: title === 'Export' ? 'Resolve export diagnostics first.' : undefined,
-          onExecute: execute
-        }]
-      }))} />
+      <EditorWorkflowMenuBar
+        groups={[
+          { title: 'Project', commands: [] },
+          ...titles.map((title) => ({
+            title,
+            commands: [{
+              id: `${title.toLowerCase()}.command`,
+              label: `${title} command`,
+              description: 'Ready action',
+              enabled: title !== 'Export',
+              disabledReason: title === 'Export' ? 'Resolve export diagnostics first.' : undefined,
+              onExecute: execute
+            }]
+          }))
+        ]}
+      />
     ));
 
-    expect(container.querySelectorAll('summary')).toHaveLength(7);
+    expect(
+      [...container.querySelectorAll('summary')].map((summary) => summary.textContent)
+    ).toEqual(titles);
+    expect(container.querySelector('summary[aria-label="Project menu"]')).toBeNull();
     await act(async () => {
       container.querySelector<HTMLElement>('summary[aria-label="Machining menu"]')?.click();
     });
