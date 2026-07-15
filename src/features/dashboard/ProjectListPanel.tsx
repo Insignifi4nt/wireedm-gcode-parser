@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Forward, Pencil, Trash2 } from 'lucide-react';
+import { Box, Forward, Pencil, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchProjectIndexEntry } from '@/domain/storage/workbenchStorage';
@@ -15,6 +15,7 @@ interface ProjectListPanelProps {
   onDeleteProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
   onExportUpidProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
   onRenameProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
+  onSimulateProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
 }
 
 export function ProjectListPanel({
@@ -23,7 +24,8 @@ export function ProjectListPanel({
   onDeleteProject,
   onExportUpidProject,
   onOpenProject,
-  onRenameProject
+  onRenameProject,
+  onSimulateProject
 }: ProjectListPanelProps) {
   const [searchText, setSearchText] = useState('');
   const [sourceFilter, setSourceFilter] = useState<ProjectSourceFilter>('all');
@@ -87,7 +89,7 @@ export function ProjectListPanel({
               {visibleProjects.length > 0 ? (
                 visibleProjects.map((project) => (
                   <div
-                    className="grid grid-cols-[minmax(0,1fr)_110px_150px_164px] items-center gap-3 p-2"
+                    className="grid grid-cols-[minmax(0,1fr)_110px_150px_196px] items-center gap-3 p-2"
                     data-project-source={project.sourceKind}
                     key={project.id}
                   >
@@ -101,7 +103,7 @@ export function ProjectListPanel({
                       {getProjectSourceLabel(project.sourceKind)}
                     </span>
                     <span className="technical-value truncate text-muted-foreground" title={project.updatedAt}>{project.updatedAt}</span>
-                    <div className="flex w-[164px] items-center gap-1">
+                    <div className="flex w-[196px] items-center gap-1">
                       <Button
                         aria-label={`Open project ${project.id} in editor`}
                         disabled={interactionLocked}
@@ -137,18 +139,32 @@ export function ProjectListPanel({
                         <Trash2 />
                       </Button>
                       {isPathProjectSourceKind(project.sourceKind) && (
-                        <Button
-                          aria-label={`Export UPID project ${project.id}`}
-                          className="size-7 text-muted-foreground hover:text-foreground"
-                          disabled={interactionLocked}
-                          onClick={() => onExportUpidProject(project)}
-                          size="icon"
-                          title="Export UPID"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <Forward />
-                        </Button>
+                        <>
+                          <Button
+                            aria-label={`Simulate project ${project.id} in 3D`}
+                            className="size-7 text-muted-foreground hover:text-primary"
+                            disabled={interactionLocked}
+                            onClick={() => onSimulateProject(project)}
+                            size="icon"
+                            title="Open 3D simulation"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Box />
+                          </Button>
+                          <Button
+                            aria-label={`Export UPID project ${project.id}`}
+                            className="size-7 text-muted-foreground hover:text-foreground"
+                            disabled={interactionLocked}
+                            onClick={() => onExportUpidProject(project)}
+                            size="icon"
+                            title="Export UPID"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Forward />
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
