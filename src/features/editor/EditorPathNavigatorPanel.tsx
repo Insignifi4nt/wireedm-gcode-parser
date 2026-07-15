@@ -116,7 +116,6 @@ interface EditorPathNavigatorPanelProps {
   onMovePathSelectionCenter: (targetCenter: Point2) => void;
   onMoveSelectedSegmentCenter: (targetCenter: Point2) => void;
   onOpenWorkspacePanel?: (panelId: DiagnosticPanelActionId) => void;
-  onOpenWorkspacePanels?: (panelIds: DiagnosticPanelActionId[]) => void;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onMirrorPathDocument: (axis: PathMirrorAxis) => void;
   onMirrorPathSelection: (axis: PathMirrorAxis) => void;
@@ -151,7 +150,6 @@ export function EditorPathNavigatorPanel({
   onMovePathSelectionCenter,
   onMoveSelectedSegmentCenter,
   onOpenWorkspacePanel,
-  onOpenWorkspacePanels,
   onHoverPathElement,
   onMirrorPathDocument,
   onMirrorPathSelection,
@@ -1112,35 +1110,19 @@ export function EditorPathNavigatorPanel({
               <div
                 className="mb-2 border border-amber-400/35 bg-amber-400/10 px-2 py-1.5 text-[10px] leading-4 text-amber-50"
                 data-upid-diagnostics-repair-workflow
-                title="Repair workflow for diagnostics: identify the broken join, inspect affected geometry, then repair or re-import before export."
+                title="Repair guidance: identify the broken join, inspect affected geometry, then open one owning workflow at a time."
               >
-                <div className="mb-1 flex items-center justify-between gap-2">
+                <div className="mb-1 flex items-center gap-2">
                   <span className="text-[10px] uppercase text-amber-100">Repair workflow</span>
-                  <button
-                    aria-label="Open Repair Workspace"
-                    className="border border-amber-300/40 bg-background/70 px-1.5 py-0.5 text-[10px] text-amber-50 outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={!onOpenWorkspacePanel && !onOpenWorkspacePanels}
-                    onClick={() => {
-                      if (onOpenWorkspacePanels) {
-                        onOpenWorkspacePanels(['endpoint-topology', 'contour-tree']);
-                        return;
-                      }
-                      onOpenWorkspacePanel?.('endpoint-topology');
-                      onOpenWorkspacePanel?.('contour-tree');
-                    }}
-                    type="button"
-                  >
-                    Open Repair Workspace
-                  </button>
                 </div>
                 <ol className="grid gap-0.5 text-muted-foreground">
                   <li>
-                    <span className="text-amber-100">1 Find the broken join:</span> use Endpoint Topology to inspect
-                    open, healed, or ambiguous endpoint pairs.
+                    <span className="text-amber-100">1 Find the broken join:</span> use the targeted Endpoint Topology
+                    link on the relevant diagnostic below.
                   </li>
                   <li>
-                    <span className="text-amber-100">2 Inspect affected geometry:</span> select the refs below and
-                    cross-highlight the Contour Tree and canvas.
+                    <span className="text-amber-100">2 Inspect affected geometry:</span> use one targeted link at a
+                    time, then select the affected refs to cross-highlight the canvas.
                   </li>
                   <li>
                     <span className="text-amber-100">3 Decide:</span> fix the source geometry, simplify the join, then

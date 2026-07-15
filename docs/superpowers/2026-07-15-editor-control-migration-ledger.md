@@ -47,15 +47,15 @@ Status: Implemented and reconciled against the final actionable-JSX audit below.
 | Canvas endpoint Set Start action | Operation start target | Machining > Set Start | Workflow target selector | Gate to active Set Start; never launch independently |
 | Contour Tree endpoint Set Start flag | Operation start target | Machining > Set Start | Workflow target selector | Gate to active Set Start; remove direct mutation doorway |
 | Initial Wire Position panel controls | Project G92 setup | Machining > Initial Wire Position | Workflow steps | Retain; provisional until Save |
-| Entry/Exit manual/circle entry, exit, threading controls | Operation transitions | Machining > Entry/Exit & Rethreading | Workflow steps | Retain; provisional until Save |
+| Entry/Exit manual/circle entry, exit, threading, and Entry-vs-Exit canvas pick modes | Operation transitions | Machining > Entry/Exit & Rethreading | Workflow steps/canvas point input | Retain; target-locked and provisional until Save |
 | Program Stops controls | Stop events | Machining > Program Stops | Workflow steps | Retain; provisional until Save |
 | Machining Participation controls | Span participation/side/review | Machining > Machining Participation | Workflow steps | Retain; provisional until Save |
 | Cut Sequence row up/down | Operation order | Machining > Cut Sequence | Workflow steps | Retain as sole Path Project reorder control |
 | Contour Tree rows/expand/collapse | Hierarchy selection/navigation | View > Contour Tree or embedded workflow target picker | Read-only/target selector | Retain without direct mutation |
 | Path Summary | Document summary | View > Path Summary | Read-only workflow | Retain |
 | Endpoint Topology | Join/open-end inspection | View > Endpoint Topology | Read-only workflow | Retain |
-| Diagnostics linked rows/Repair Workspace | Diagnostic inspection/navigation | View > Diagnostics | Read-only/launcher | Retain diagnostic navigation; route repairs through owning workflow |
-| Diagnostics “Open Repair Workspace” multi-panel action | Repair target navigation | View > Diagnostics -> owning repair workflow | Conflicting launcher | Replace with one workflow transition; never open several panels |
+| Diagnostics linked rows/targeted repair links | Diagnostic inspection/navigation | View > Diagnostics | Read-only/single-workflow links | Retain per-diagnostic navigation; each link opens exactly one owning workflow |
+| Diagnostics “Open Repair Workspace” multi-panel action | Repair target navigation | Removed | Conflicting launcher | Removed; use the already-present per-diagnostic single-workflow links |
 | Statistics | Geometry/move statistics | View > Statistics | Read-only workflow | Retain |
 | Position/grid snap summary | Cursor/grid state | View > Position | Read-only workflow | Retain; active-tool snap options live with tool |
 | Hover cross-highlighting toggle | Passive selection feedback | View workflow preference | Workflow-local preference | Move from Hover Assist |
@@ -84,7 +84,7 @@ Audit command:
 rg -n '<(Button|button|input|select|textarea|summary|a)\b|\bon[A-Z][A-Za-z]*=' src/features/editor --glob '*.tsx' --glob '!**/__tests__/**'
 ```
 
-The 2026-07-15 audit returned 589 syntactic matches across 18 production files after root file-drop removal. The match count includes opening elements, forwarded callback props, and their handlers, so it is intentionally larger than the number of rendered controls. Every matched file and control family is assigned below; no unmatched control file or unassigned control family remains.
+The 2026-07-15 audit returned 591 syntactic matches across 18 production files after root file-drop removal. The match count includes opening elements, forwarded callback props, and their handlers, so it is intentionally larger than the number of rendered controls. Every matched file and control family is assigned below; no unmatched control file or unassigned control family remains.
 
 | Actionable component | Control families found | Responsibility and canonical ownership | Audit result |
 |---|---|---|---|
@@ -93,12 +93,12 @@ The 2026-07-15 audit returned 589 syntactic matches across 18 production files a
 | `EditorPage.tsx` | Workflow Cancel/Save; inspector-rail expand/collapse; callback wiring | Active workflow commit/cancel, non-mutating rail layout, and ownership-gated composition | Session/layout only; mutations are delegated only to the active workflow; root file-drop import handlers are absent |
 | `EditorWorkflowTransitionDialog.tsx` | X; Discard; Save | Dirty workflow transition resolution | Canonical lifecycle warning; X is the only stay action |
 | `EditorWorkspacePanels.tsx` | Dock collapse/expand; dock/float; close; drag; resize | Layout and active-workflow close request | Layout-only except close, which routes through workflow lifecycle |
-| `EditorCanvasPanel.tsx` | Ownership-gated canvas callback forwarding | Canvas composition for Transform, Construction, Set Start, selection, and viewport state | No independent doorway; only callbacks supplied by the active owner can mutate |
-| `EditorPreview.tsx` | Zoom/fit/pan; canvas selection; active-workflow target dragging/picking | Persistent viewport navigation plus target input owned by Transform, Construction, or Set Start | No workflow launcher; mutating callbacks are present only for the owning workflow |
+| `EditorCanvasPanel.tsx` | Ownership-gated canvas callback forwarding | Canvas composition for Transform, Construction, Set Start, Entry/Exit point picking, selection, and viewport state | No independent doorway; only callbacks supplied by the active owner can mutate |
+| `EditorPreview.tsx` | Zoom/fit/pan; canvas selection; active-workflow target dragging/picking | Persistent viewport navigation plus target input owned by Transform, Construction, Set Start, or Entry/Exit | No workflow launcher; mutating callbacks are present only for the owning workflow |
 | `EditorPathNavigatorPanel.tsx` | Geometry transform; Cut Sequence; Contour Tree; summary/topology/diagnostics/statistics/position selection and navigation | Dedicated Path Project workflow content rendered through the singleton panel frame | Each family is conditionally rendered only for its command-owned workflow |
 | `EditorWorkflowSetupPanels.tsx` | Geometry Basis; Contour Setup target/reverse/role/compensation; Set Start target/snap/pick | Geometry Setup, Contour Setup, and Set Start workflow steps | One responsibility per workflow; no panel-global duplicate |
 | `EditorInitialWirePositionPanel.tsx` | Exact X/Y and geometry-linked circle-center selection | Initial Wire Position workflow | Provisional mutating workflow only |
-| `EditorEntryExitPanel.tsx` | Operation target; planned rapid; manual/circle entry; exit; threading | Entry/Exit & Rethreading workflow | Provisional mutating workflow only |
+| `EditorEntryExitPanel.tsx` | Operation target; planned rapid; manual/circle entry; exit; threading; target-locked Entry-vs-Exit canvas pick modes | Entry/Exit & Rethreading workflow | Provisional mutating workflow only; canvas mode resets after pick, Escape, Save, Discard, switch, or close |
 | `EditorProgramStopsPanel.tsx` | Placement/reason/note; add, enable, remove stop | Program Stops workflow | Provisional mutating workflow only |
 | `EditorMachiningParticipationPanel.tsx` | Source span; wire side; entry review; restore active cut | Machining Participation workflow | Provisional mutating workflow only |
 | `EditorInspectorPanel.tsx` | Read-only lineage/diagnostic navigation; Machine/source re-import; Construction modes/snap/points/point export | The active View workflow, Project Machine & Source Setup, or Measurement & Construction, according to the rendered section | Action families are gated to their canonical active workflow; point-only export remains Construction-owned, not document export |

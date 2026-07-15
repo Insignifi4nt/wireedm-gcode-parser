@@ -39,9 +39,11 @@ describe('EditorEntryExitPanel', () => {
     await act(async () => {
       root.render(
         <EditorEntryExitPanel
+          canvasPickMode={null}
           disabled={false}
           document={document}
           machine={createCharmillesRobofil100V2CandidateProfile()}
+          onCanvasPickModeChange={vi.fn()}
           onSelectOperation={vi.fn()}
           onSetCircleCenterEntry={vi.fn()}
           onSetManualEntry={vi.fn()}
@@ -91,9 +93,11 @@ describe('EditorEntryExitPanel', () => {
     await act(async () => {
       root.render(
         <EditorEntryExitPanel
+          canvasPickMode={null}
           disabled={false}
           document={document}
           machine={createCharmillesRobofil100V2CandidateProfile()}
+          onCanvasPickModeChange={vi.fn()}
           onSelectOperation={vi.fn()}
           onSetCircleCenterEntry={vi.fn()}
           onSetManualEntry={vi.fn()}

@@ -799,6 +799,121 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
+  it('owns canvas entry picking, locks its operation target, and discards the provisional lead', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    const operationTarget = container.querySelector(
+      'select[aria-label="Entry and exit operation"]'
+    ) as HTMLSelectElement;
+    expect(operationTarget.value).toBe(firstOperation.id);
+
+    await clickElement('button[aria-label="Pick entry point on canvas"]');
+    expect(operationTarget.disabled).toBe(true);
+    expect(
+      container.querySelector('button[aria-label="Pick entry point on canvas"]')?.getAttribute('aria-pressed')
+    ).toBe('true');
+
+    const preview = container.querySelector('svg[aria-label="UPID path preview"]') as SVGSVGElement;
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        bottom: 140,
+        height: 120,
+        left: 10,
+        right: 130,
+        toJSON: () => ({}),
+        top: 20,
+        width: 120,
+        x: 10,
+        y: 20
+      })
+    });
+    const secondOperationPath = container.querySelector(
+      `path[data-preview-source="path-document"][data-preview-operation="${secondOperation.id}"][data-type="cut"]`
+    ) as SVGPathElement;
+    const pickedPoint = previewWorldClientPoint(preview, { x: 22, y: 2 }, 5);
+
+    await act(async () => {
+      secondOperationPath.dispatchEvent(new MouseEvent('click', { bubbles: true, ...pickedPoint }));
+    });
+    await flushAsync();
+
+    expect(operationTarget.value).toBe(firstOperation.id);
+    expect(operationTarget.disabled).toBe(false);
+    expect((container.querySelector('input[aria-label="Entry X"]') as HTMLInputElement).value).toBe('22');
+    expect((container.querySelector('input[aria-label="Entry Y"]') as HTMLInputElement).value).toBe('2');
+    expect(container.querySelector(
+      `path[data-preview-travel="lead-in"][data-preview-operation="${firstOperation.id}"]`
+    )).not.toBeNull();
+    expect(container.querySelector(
+      `path[data-preview-travel="lead-in"][data-preview-operation="${secondOperation.id}"]`
+    )).toBeNull();
+
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Cancel "]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    expect(container.querySelector('path[data-preview-travel="lead-in"]')).toBeNull();
+  });
+
+  it('cancels canvas exit picking with Escape without mutating the workflow draft', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    await clickElement('button[aria-label="Pick exit point on canvas"]');
+    expect(
+      container.querySelector('button[aria-label="Pick exit point on canvas"]')?.getAttribute('aria-pressed')
+    ).toBe('true');
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Pick exit point on canvas"]')?.getAttribute('aria-pressed')
+    ).toBe('false');
+    expect(container.querySelector('path[data-preview-travel="lead-out"]')).toBeNull();
+    expect(
+      (container.querySelector(
+        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(true);
+  });
+
+  it('offers only single-workflow diagnostic repair links', async () => {
+    const project = projectWithUpid(pathDocumentFromGappedRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="view.diagnostics"
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-diagnostics-repair-workflow]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Open Repair Workspace"]')).toBeNull();
+    expect(container.querySelector(
+      '[data-upid-diagnostic-guidance-action="endpoint-topology"]'
+    )).not.toBeNull();
+  });
+
   it('resolves a dirty workflow before Back and lets the warning X cancel the pending action', async () => {
     const onBackToDashboard = vi.fn();
     const confirmDiscard = vi.spyOn(window, 'confirm');

@@ -653,6 +653,10 @@ export function EditorPage({
   const [pathTargetYDraft, setPathTargetYDraft] = useState('');
   const [lineMode, setLineMode] = useState<'select' | 'edit'>(readStoredLineMode);
   const [pathClickMode, setPathClickMode] = useState<'set-start' | MagnetizeMode | null>(null);
+  const [entryExitCanvasPick, setEntryExitCanvasPick] = useState<{
+    kind: 'entry' | 'exit';
+    operationId: string;
+  } | null>(null);
   const [activeToolSession, setActiveToolSession] = useState<EditorToolSession | null>(null);
   const [activeWorkflowSession, setActiveWorkflowSession] = useState<
     EditorWorkflowSession<EditorDraftSnapshot> | null
@@ -874,14 +878,20 @@ export function EditorPage({
     ? activeWorkflowSession
     : null;
   const workflowTargetChangeBlocked = Boolean(
-    activeMutatingWorkflow &&
-    Object.keys(activeWorkflowPendingReasons).length > 0 &&
-    [
-      'geometry.transform',
-      'machining.entry-exit',
-      'machining.participation',
-      'machining.program-stops'
-    ].includes(activeMutatingWorkflow.commandId)
+    activeMutatingWorkflow && (
+      (
+        Object.keys(activeWorkflowPendingReasons).length > 0 &&
+        [
+          'geometry.transform',
+          'machining.entry-exit',
+          'machining.participation',
+          'machining.program-stops'
+        ].includes(activeMutatingWorkflow.commandId)
+      ) || (
+        activeMutatingWorkflow.commandId === 'machining.entry-exit' &&
+        entryExitCanvasPick !== null
+      )
+    )
   );
   const workflowProjectSaveBlockedReason = activeMutatingWorkflow
     ? `Save or discard ${activeMutatingWorkflow.label} before saving the project.`
@@ -1217,6 +1227,10 @@ export function EditorPage({
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
+        if (activeWorkflowOwns('machining.entry-exit') && entryExitCanvasPick) {
+          setEntryExitCanvasPick(null);
+          return;
+        }
         if (activeToolSession) {
           const nextSession = editorToolSessionReducer(activeToolSession, { type: 'escape' });
           if (nextSession.status === 'active') {
@@ -1291,7 +1305,7 @@ export function EditorPage({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeToolSession, activeWorkflowSession, canvasMouseMode, draftText, isEditorMutationLocked, measurementPoints.length, pathClickMode, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
+  }, [activeToolSession, activeWorkflowSession, canvasMouseMode, draftText, entryExitCanvasPick, isEditorMutationLocked, measurementPoints.length, pathClickMode, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
 
   function handleBackToDashboard() {
     if (isEditorMutationLocked) return;
@@ -1594,6 +1608,18 @@ export function EditorPage({
 
   function handlePreviewPointClick(point: { x: number; y: number }) {
     if (isEditorMutationLocked) return;
+
+    if (entryExitCanvasPick) {
+      if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft) return;
+      const { kind, operationId } = entryExitCanvasPick;
+      setEntryExitCanvasPick(null);
+      if (kind === 'entry') {
+        handleSetOperationManualEntry(operationId, point, 'entry');
+      } else {
+        handleSetOperationManualExit(operationId, point);
+      }
+      return;
+    }
 
     if (!pathClickMode || !pathDocumentDraft) {
       if (
@@ -2401,6 +2427,11 @@ export function EditorPage({
         : 'Import a program or DXF file to begin.';
     }
 
+    if (entryExitCanvasPick) {
+      const pointRole = entryExitCanvasPick.kind === 'entry' ? 'entry' : 'exit';
+      return `Entry / Exit / Pick ${pointRole}: click one canvas point for the locked operation, or press Escape to cancel picking.`;
+    }
+
     if (pathClickMode === 'set-start') {
       if (!selectedPathOperationId) {
         return 'Set Start / Step 1: choose a closed contour in the workflow before choosing its start point.';
@@ -2585,6 +2616,7 @@ export function EditorPage({
         });
 
     setActiveWorkflowSession(session);
+    setEntryExitCanvasPick(null);
     setActiveWorkflowPendingReasons({});
     setWorkflowTransition(null);
     setExportPreviewOpen(command.id === 'export.preview');
@@ -2654,6 +2686,7 @@ export function EditorPage({
     }
 
     setActiveToolSession(null);
+    setEntryExitCanvasPick(null);
     setPathClickMode(null);
     setWorkflowTransition(null);
     setActiveWorkflowPendingReasons({});
@@ -2787,7 +2820,6 @@ export function EditorPage({
         onMoveSelectedSegmentCenter={handleMoveSelectedSegmentCenter}
         onMovePathOperation={handleMovePathOperation}
         onOpenWorkspacePanel={showWorkspacePanel}
-        onOpenWorkspacePanels={showWorkspacePanels}
         onRotatePathDocument={handleRotatePathDocument}
         onRotatePathSelection={handleRotatePathSelection}
         onSelectPathElement={handleSelectPathElement}
@@ -3176,11 +3208,6 @@ export function EditorPage({
     openEditorWorkflowForPanel(panelId);
   }
 
-  function showWorkspacePanels(panelIds: EditorWorkspacePanelId[]) {
-    const panelId = panelIds.at(-1);
-    if (panelId) openEditorWorkflowForPanel(panelId);
-  }
-
   return (
     <div
       className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background"
@@ -3273,9 +3300,14 @@ export function EditorPage({
             'entry-exit',
             'Entry / Exit & Rethreading',
             <EditorEntryExitPanel
+              canvasPickMode={entryExitCanvasPick?.kind ?? null}
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
               machine={program.project.machine}
+              onCanvasPickModeChange={(mode, operationId) => {
+                if (!activeWorkflowOwns('machining.entry-exit') || isEditorMutationLocked) return;
+                setEntryExitCanvasPick(mode ? { kind: mode, operationId } : null);
+              }}
               onDraftChange={(source) => markActiveWorkflowPending(
                 'machining.entry-exit', source,
                 'Apply or correct the pending entry, exit, or rapid coordinates before saving or changing the target contour.'
@@ -3364,7 +3396,7 @@ export function EditorPage({
               ? handleDragPathElement
               : undefined
           }
-          onPathElementClick={!pathClickMode ? handleSelectPathElement : undefined}
+          onPathElementClick={!pathClickMode && !entryExitCanvasPick ? handleSelectPathElement : undefined}
           onPathElementHover={pathHoverAssistEnabled ? setHoveredPathElement : undefined}
           onPathSegmentCenterMove={
             activeWorkflowOwns('geometry.transform') && !pathClickMode
@@ -3377,9 +3409,12 @@ export function EditorPage({
               : null
           }
           onPreviewPointClick={
-            !pathDocumentDraft ||
-            activeWorkflowOwns(SET_START_COMMAND.id) ||
-            activeWorkflowOwns('construction.measurement')
+            (
+              !pathDocumentDraft ||
+              activeWorkflowOwns(SET_START_COMMAND.id) ||
+              activeWorkflowOwns('construction.measurement') ||
+              (activeWorkflowOwns('machining.entry-exit') && entryExitCanvasPick !== null)
+            )
               ? handlePreviewPointClick
               : undefined
           }

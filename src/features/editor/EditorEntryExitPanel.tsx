@@ -14,9 +14,14 @@ import type {
 import type { MachineProfile } from '@/domain/workbench/types';
 
 interface EditorEntryExitPanelProps {
+  canvasPickMode: 'entry' | 'exit' | null;
   disabled: boolean;
   document: PathPlanningDocument;
   machine: MachineProfile;
+  onCanvasPickModeChange: (
+    mode: 'entry' | 'exit' | null,
+    operationId: string
+  ) => void;
   onDraftChange?: (source: 'entry' | 'exit' | 'rapid-destination' | 'rapid-source') => void;
   onSelectOperation: (operationId: string) => void;
   onSetCircleCenterEntry: (operationId: string) => void;
@@ -40,9 +45,11 @@ interface EditorEntryExitPanelProps {
 }
 
 export function EditorEntryExitPanel({
+  canvasPickMode,
   disabled,
   document,
   machine,
+  onCanvasPickModeChange,
   onDraftChange,
   onSelectOperation,
   onSetCircleCenterEntry,
@@ -133,10 +140,16 @@ export function EditorEntryExitPanel({
         <select
           aria-label="Entry and exit operation"
           className="h-7 border border-border bg-background px-1.5 text-foreground"
-          disabled={disabled || targetChangeBlocked}
+          disabled={disabled || targetChangeBlocked || canvasPickMode !== null}
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected.id}
-          title={targetChangeBlocked ? 'Apply or discard pending coordinates before changing the target contour.' : undefined}
+          title={
+            canvasPickMode
+              ? 'Pick the canvas point or press Escape before changing the target contour.'
+              : targetChangeBlocked
+                ? 'Apply or discard pending coordinates before changing the target contour.'
+                : undefined
+          }
         >
           {document.plan.operations.map((operation) => (
             <option key={operation.id} value={operation.id}>
@@ -145,6 +158,47 @@ export function EditorEntryExitPanel({
           ))}
         </select>
       </label>
+
+      <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
+        <legend className="px-1 uppercase text-muted-foreground">Canvas point picking</legend>
+        <p className="text-muted-foreground">
+          Choose Entry or Exit, then pick one point on the canvas. The operation target stays locked until the point is picked or the mode is cancelled.
+        </p>
+        <div className="grid grid-cols-2 gap-1">
+          <button
+            aria-label="Pick entry point on canvas"
+            aria-pressed={canvasPickMode === 'entry'}
+            className={`h-7 border px-1.5 ${
+              canvasPickMode === 'entry'
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border bg-background'
+            }`}
+            onClick={() => onCanvasPickModeChange(
+              canvasPickMode === 'entry' ? null : 'entry',
+              selected.id
+            )}
+            type="button"
+          >
+            Pick Entry
+          </button>
+          <button
+            aria-label="Pick exit point on canvas"
+            aria-pressed={canvasPickMode === 'exit'}
+            className={`h-7 border px-1.5 ${
+              canvasPickMode === 'exit'
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border bg-background'
+            }`}
+            onClick={() => onCanvasPickModeChange(
+              canvasPickMode === 'exit' ? null : 'exit',
+              selected.id
+            )}
+            type="button"
+          >
+            Pick Exit
+          </button>
+        </div>
+      </fieldset>
 
       <fieldset
         className="grid gap-1 border border-border p-2"
