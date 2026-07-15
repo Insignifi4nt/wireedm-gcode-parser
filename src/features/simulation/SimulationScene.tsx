@@ -67,7 +67,7 @@ export function SimulationScene({
         frameloop="demand"
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
         orthographic
-        shadows
+        shadows="basic"
       >
         <color attach="background" args={['#071014']} />
         <fog attach="fog" args={['#071014', 300, 2200]} />

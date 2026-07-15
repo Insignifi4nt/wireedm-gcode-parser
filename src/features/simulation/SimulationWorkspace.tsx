@@ -159,7 +159,7 @@ export function SimulationWorkspace({
         </Button>
       </header>
 
-      <div className="grid min-h-0 grid-cols-[248px_minmax(0,1fr)_258px]">
+      <div className="grid min-h-0 grid-cols-[300px_minmax(0,1fr)_285px]">
         <SimulationSetupPanel
           exportMachineProfileId={ready.loaded.project.machine.id}
           machineProfiles={machineProfiles}

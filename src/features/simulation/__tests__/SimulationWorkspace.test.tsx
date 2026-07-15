@@ -12,6 +12,7 @@ import { createProjectUpid } from '@/domain/upid/projectUpid';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 
+import { SimulationSetupPanel } from '../SimulationSetupPanel';
 import { SimulationWorkspace } from '../SimulationWorkspace';
 
 vi.mock('../SimulationScene', () => ({
@@ -49,6 +50,39 @@ describe('SimulationWorkspace', () => {
     expect(
       view.container.querySelector('input[aria-label="Visual playback speed multiplier"]')
     ).not.toBeNull();
+  });
+
+  it('formats stock setup values to readable technical precision', () => {
+    const project = createWorkbenchProject({ name: 'Precision Part', sourceKind: 'dxf' });
+    const view = mount(
+      <SimulationSetupPanel
+        exportMachineProfileId={project.machine.id}
+        machineProfiles={[project.machine]}
+        onSave={vi.fn()}
+        projectName={project.name}
+        saveErrorMessage={null}
+        saveStatus="idle"
+        settings={{
+          schemaVersion: 1,
+          machineProfileId: project.machine.id,
+          stock: {
+            widthMm: 44.800193421114,
+            lengthMm: 45.00000000000034,
+            thicknessMm: 10,
+            originX: -30.885307,
+            originY: -13.321154000000167,
+            topZMm: 0,
+            material: 'Tool steel'
+          },
+          entryHoleDiameterMm: 1,
+          visualPlaybackSpeed: 1
+        }}
+      />
+    );
+
+    expect(input(view.container, 'Stock width (mm)').value).toBe('44.8');
+    expect(input(view.container, 'Stock length (mm)').value).toBe('45');
+    expect(input(view.container, 'Stock origin Y (mm)').value).toBe('-13.321');
   });
 
   it('keeps invalid numeric setup local and prevents saving it', async () => {
@@ -205,13 +239,18 @@ async function settle() {
 }
 
 function setInput(container: HTMLElement, label: string, value: string) {
-  const input = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
-  if (!input) throw new Error(`Missing input: ${label}`);
+  const element = input(container, label);
   act(() => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    setter?.call(input, value);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
+    setter?.call(element, value);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
   });
+}
+
+function input(container: HTMLElement, label: string) {
+  const match = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+  if (!match) throw new Error(`Missing input: ${label}`);
+  return match;
 }
 
 function button(container: HTMLElement, label: string) {

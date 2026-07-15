@@ -105,7 +105,7 @@ export function SimulationSetupPanel({
           </label>
         </fieldset>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid gap-2">
           <NumericField
             label="Entry hole diameter (mm)"
             value={draft.entryHoleDiameterMm}
@@ -178,16 +178,20 @@ function NumericField({
 function draftFromSettings(settings: ProjectSimulationSettings): SetupDraft {
   return {
     machineProfileId: settings.machineProfileId,
-    widthMm: String(settings.stock.widthMm),
-    lengthMm: String(settings.stock.lengthMm),
-    thicknessMm: String(settings.stock.thicknessMm),
-    originX: String(settings.stock.originX),
-    originY: String(settings.stock.originY),
-    topZMm: String(settings.stock.topZMm),
+    widthMm: formatDraftNumber(settings.stock.widthMm),
+    lengthMm: formatDraftNumber(settings.stock.lengthMm),
+    thicknessMm: formatDraftNumber(settings.stock.thicknessMm),
+    originX: formatDraftNumber(settings.stock.originX),
+    originY: formatDraftNumber(settings.stock.originY),
+    topZMm: formatDraftNumber(settings.stock.topZMm),
     material: settings.stock.material,
-    entryHoleDiameterMm: String(settings.entryHoleDiameterMm),
-    visualPlaybackSpeed: String(settings.visualPlaybackSpeed)
+    entryHoleDiameterMm: formatDraftNumber(settings.entryHoleDiameterMm),
+    visualPlaybackSpeed: formatDraftNumber(settings.visualPlaybackSpeed)
   };
+}
+
+function formatDraftNumber(value: number) {
+  return String(Number(value.toFixed(3)));
 }
 
 function validateDraft(
