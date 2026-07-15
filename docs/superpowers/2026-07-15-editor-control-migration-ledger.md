@@ -11,6 +11,7 @@ Status: Implementation ledger for the approved single-workflow editor. Every cur
 | Header Save | Persist committed project/program | Header | Global | Retain as sole persistence control |
 | Header Path Project Export Preview | Controller export | Export > Controller Export | Launcher | Remove header duplicate |
 | Header Machine Program Import / Export | Machine Program file workflow | Machine Program Header | Global | Retain after Program Lines duplicates are removed |
+| Editor file drop import | Program/project import | Canonical Import workflow | Duplicate launcher | Disable unless Import workflow owns the drop target |
 | Header Help/Controls | Usage guidance | Header | Global | Retain |
 | Eight quick-panel icons | Panel discovery/toggle | None | Duplicate launcher | Remove all |
 | Panels selector and grouped inventory | Panel discovery/toggle | None | Duplicate launcher | Remove; panel chrome retains layout actions |
@@ -54,12 +55,15 @@ Status: Implementation ledger for the approved single-workflow editor. Every cur
 | Path Summary | Document summary | View > Path Summary | Read-only workflow | Retain |
 | Endpoint Topology | Join/open-end inspection | View > Endpoint Topology | Read-only workflow | Retain |
 | Diagnostics linked rows/Repair Workspace | Diagnostic inspection/navigation | View > Diagnostics | Read-only/launcher | Retain diagnostic navigation; route repairs through owning workflow |
+| Diagnostics “Open Repair Workspace” multi-panel action | Repair target navigation | View > Diagnostics -> owning repair workflow | Conflicting launcher | Replace with one workflow transition; never open several panels |
 | Statistics | Geometry/move statistics | View > Statistics | Read-only workflow | Retain |
 | Position/grid snap summary | Cursor/grid state | View > Position | Read-only workflow | Retain; active-tool snap options live with tool |
 | Hover cross-highlighting toggle | Passive selection feedback | View workflow preference | Workflow-local preference | Move from Hover Assist |
 | Magnetic snap toggle | Set Start/construction input behavior | Owning active workflow | Workflow option | Move into Set Start and Construction |
 | Canvas Select mode | Select workflow target | Active workflow/canvas | Target selector | Retain; not a workflow doorway |
 | Canvas Point mode | Measurement point placement | Construction > Measurement & Construction | Workflow mode | Gate to active Construction |
+| Persistent preview Select/Point buttons | Target selection / measurement placement | Active workflow | Duplicate mode launchers | Remove persistent duplicates; render the relevant mode inside the active workflow |
+| Canvas zoom, fit, pan, wheel/pinch | Viewport navigation | Canvas | Persistent view controls | Retain; never mutate document or launch a workflow |
 | Measurement add/delete/clear/move/export | Measurement workspace | Construction > Measurement & Construction | Workflow steps | Retain in single workflow |
 | Perpendicular / Tangent | Construction point authoring | Construction > Measurement & Construction | Workflow steps | Retain; session-owned |
 | Machine profile/fit/source unit/reimport | Machine/source setup and inspection | Machine > Project Machine & Source Setup | Workflow steps/info | Regroup; provisional/destructive rules preserved |
@@ -69,6 +73,7 @@ Status: Implementation ledger for the approved single-workflow editor. Every cur
 | Machine Program Program Lines Undo/Redo/Save/Export | Global program history/persistence/export | Machine Program Header | Exact duplicates | Remove |
 | Machine Program normalize, edit, delete, move lines/groups, Set Start | Text fallback editing | Machine Program editor | Workflow-local | Retain; distinct from Path Project capabilities |
 | Machine Program Program Text | Raw program editing | Machine Program editor | Workflow-local | Retain |
+| Guide highlight targets and diagnostic panel links | Guided navigation | Canonical workflow router | Workflow transition | Remap every stale panel ID; never bypass dirty-workflow warning |
 
 ## Completion Checks
 
@@ -78,4 +83,3 @@ Status: Implementation ledger for the approved single-workflow editor. Every cur
 - [ ] No Path Project capability appears in more than one menu, header action, canvas launcher, tree launcher, or panel-global action.
 - [ ] Exactly one workflow panel is visible.
 - [ ] Warning actions and X behavior match the approved lifecycle.
-
