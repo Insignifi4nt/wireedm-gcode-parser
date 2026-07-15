@@ -219,7 +219,7 @@ const SET_START_COMMAND: EditorCommandDefinition = {
   scope: 'operation',
   toolWindowId: 'set-start',
   historyLabel: 'Set operation start',
-  prerequisites: [{ kind: 'document' }, { kind: 'selected-operation' }, { kind: 'interaction-unlocked' }],
+  prerequisites: [{ kind: 'document' }, { kind: 'interaction-unlocked' }],
   session: { kind: 'set-start' },
   workflow: { kind: 'mutating' }
 };
@@ -1647,35 +1647,42 @@ export function EditorPage({
     if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
 
-  function handleSetPlannedRapidSourcePoint(point: { x: number; y: number }) {
-    const operationId = selectedPathOperationId;
+  function handleSetPlannedRapidSourcePoint(
+    operationId: string,
+    point: { x: number; y: number }
+  ) {
     if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
     const edited = setPlannedRapidSourcePoint(pathDocumentDraft, operationId, point);
     if (edited) applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
   }
 
-  function handleSetPlannedRapidDestinationPoint(point: { x: number; y: number }) {
-    const operationId = selectedPathOperationId;
+  function handleSetPlannedRapidDestinationPoint(
+    operationId: string,
+    point: { x: number; y: number }
+  ) {
     if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
     const edited = setPlannedRapidDestinationPoint(pathDocumentDraft, operationId, point);
     if (edited) applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
   }
 
-  function handleReversePathOperation() {
-    if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
-    const edited = reversePathOperation(pathDocumentDraft, selectedPathOperationId);
-    if (edited) applyPathDocumentEdit(edited);
+  function handleReversePathOperation(operationId: string) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = reversePathOperation(pathDocumentDraft, operationId);
+    if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
 
-  function handleSetPathOperationClassification(classification: ContourClassification) {
-    if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
+  function handleSetPathOperationClassification(
+    operationId: string,
+    classification: ContourClassification
+  ) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPathOperationClassification(
       pathDocumentDraft,
-      selectedPathOperationId,
+      operationId,
       classification,
       program?.project?.machine
     );
-    if (edited) applyPathDocumentEdit(edited);
+    if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
 
   function handleSetGeometryBasis(basis: PathPlanningDocument['geometryBasis']) {
@@ -1688,10 +1695,13 @@ export function EditorPage({
     applyPathDocumentEdit(edited);
   }
 
-  function handleSetManualCompensation(selection: ManualCompensationSelection) {
-    if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
-    const edited = setManualCompensationIntent(pathDocumentDraft, selectedPathOperationId, selection);
-    if (edited) applyPathDocumentEdit(edited);
+  function handleSetManualCompensation(
+    operationId: string,
+    selection: ManualCompensationSelection
+  ) {
+    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setManualCompensationIntent(pathDocumentDraft, operationId, selection);
+    if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
 
   function handleSetOperationCircleCenterEntry(operationId: string) {
@@ -2328,16 +2338,24 @@ export function EditorPage({
     setWorkflowTransition(null);
     setExportPreviewOpen(command.id === 'export.preview');
     if (command.id === SET_START_COMMAND.id) {
-      setActiveToolSession(
-        createEditorToolSession({
-          commandId: SET_START_COMMAND.id,
-          label: SET_START_COMMAND.label,
-          historyLabel: SET_START_COMMAND.historyLabel!,
-          target: { kind: 'operation', id: openingSnapshot.selectedPathOperationId! },
-          steps: ['pick-point']
-        })
-      );
-      setPathClickMode('set-start');
+      const openingDocument = editorDraftPathDocument(openingSnapshot.draft);
+      const operationId = openingDocument?.plan.operations.find(
+        (operation) => operation.id === openingSnapshot.selectedPathOperationId && operation.closed
+      )?.id ?? openingDocument?.plan.operations.find((operation) => operation.closed)?.id ?? null;
+      if (operationId) {
+        setSelectedPathOperationId(operationId);
+        setSelectedPathElement(null);
+        setActiveToolSession(
+          createEditorToolSession({
+            commandId: SET_START_COMMAND.id,
+            label: SET_START_COMMAND.label,
+            historyLabel: SET_START_COMMAND.historyLabel!,
+            target: { kind: 'operation', id: operationId },
+            steps: ['pick-point']
+          })
+        );
+        setPathClickMode('set-start');
+      }
     }
     window.requestAnimationFrame(() => focusWorkspacePanel(panelId));
   }
@@ -2477,11 +2495,6 @@ export function EditorPage({
         onPathTargetXDraftChange={setPathTargetXDraft}
         onPathTargetYDraftChange={setPathTargetYDraft}
         onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
-        onSetPathStartFromElement={
-          activeWorkflowSession?.commandId === SET_START_COMMAND.id
-            ? handleSetPathStartFromElement
-            : () => undefined
-        }
         onTranslatePathDocument={handleTranslatePathDocument}
         onTranslatePathSelection={handleTranslatePathSelection}
         onToggleHoverAssist={handleTogglePathHoverAssist}
@@ -2499,56 +2512,32 @@ export function EditorPage({
     );
   }
 
-  function handleActivatePathClickMode(mode: 'set-start' | MagnetizeMode | null) {
+  function handleActivatePathClickMode(mode: MagnetizeMode | null) {
     if (mode === null) {
-      setPathClickMode(null);
-      setActiveToolSession((current) =>
-        current?.commandId === SET_START_COMMAND.id ? null : current
+      setPathClickMode((current) => current === 'set-start' ? current : null);
+      return;
+    }
+
+    if (activeToolSession) {
+      onStatusMessage?.(
+        `Finish or cancel ${activeToolSession.label} before starting construction.`,
+        'warning'
       );
       return;
     }
+    setPathClickMode(mode);
+  }
 
-    if (mode !== 'set-start') {
-      if (activeToolSession) {
-        onStatusMessage?.(
-          `Finish or cancel ${activeToolSession.label} before starting construction.`,
-          'warning'
-        );
-        return;
-      }
-      setPathClickMode(mode);
-      return;
-    }
-
-    if (pathClickMode === 'set-start') {
-      setPathClickMode(null);
-      setActiveToolSession(null);
-      return;
-    }
-
-    const availability = evaluateEditorCommand(SET_START_COMMAND, {
-      documentAvailable: Boolean(pathDocumentDraft),
-      interactionLocked: Boolean(isEditorMutationLocked),
-      selectedOperationId: selectedPathOperationId,
-      selectedPathElementId: selectedPathElement?.pathElementId ?? null,
-      activeTool: activeToolSession
-        ? { commandId: activeToolSession.commandId, label: activeToolSession.label }
-        : null,
-      visiblePanelIds: Object.entries(workspacePanelPlacements)
-        .filter(([, placement]) => placement !== 'hidden')
-        .map(([panelId]) => panelId)
-    });
-    if (!availability.enabled) {
-      onStatusMessage?.(availability.reason, 'warning');
-      return;
-    }
-
+  function handleSetStartOperationTarget(operationId: string) {
+    if (isEditorMutationLocked) return;
+    setSelectedPathOperationId(operationId);
+    setSelectedPathElement(null);
     setActiveToolSession(
       createEditorToolSession({
         commandId: SET_START_COMMAND.id,
         label: SET_START_COMMAND.label,
         historyLabel: SET_START_COMMAND.historyLabel!,
-        target: { kind: 'operation', id: selectedPathOperationId! },
+        target: { kind: 'operation', id: operationId },
         steps: ['pick-point']
       })
     );
@@ -2908,11 +2897,8 @@ export function EditorPage({
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
               magneticSnapEnabled={pathMagneticSnapEnabled}
-              onPickStart={() => handleActivatePathClickMode('set-start')}
-              onSelectOperation={(operationId) => {
-                setSelectedPathOperationId(operationId);
-                setSelectedPathElement(null);
-              }}
+              onPickStart={handleSetStartOperationTarget}
+              onSelectOperation={handleSetStartOperationTarget}
               onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
               selectedOperationId={selectedPathOperationId}
             />

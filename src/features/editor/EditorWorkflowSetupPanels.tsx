@@ -67,10 +67,10 @@ export function EditorContourSetupPanel({
   disabled: boolean;
   document: PathPlanningDocument;
   machine: MachineProfile;
-  onReverse: () => void;
+  onReverse: (operationId: string) => void;
   onSelectOperation: (operationId: string) => void;
-  onSetClassification: (classification: ContourClassification) => void;
-  onSetCompensation: (selection: ManualCompensationSelection) => void;
+  onSetClassification: (operationId: string, classification: ContourClassification) => void;
+  onSetCompensation: (operationId: string, selection: ManualCompensationSelection) => void;
   selectedOperationId: string | null;
 }) {
   const selected = document.plan.operations.find((operation) => operation.id === selectedOperationId)
@@ -117,7 +117,7 @@ export function EditorContourSetupPanel({
         aria-label="Reverse path operation"
         className={buttonClass}
         disabled={!selected || disabled}
-        onClick={onReverse}
+        onClick={() => selected && onReverse(selected.id)}
         type="button"
       >
         <RefreshCw className="size-3" />
@@ -130,7 +130,10 @@ export function EditorContourSetupPanel({
           className="h-7 border border-border bg-background px-1.5 text-foreground"
           disabled={!selected?.closed || disabled}
           onChange={(event) =>
-            onSetClassification(event.currentTarget.value as ContourClassification)
+            selected && onSetClassification(
+              selected.id,
+              event.currentTarget.value as ContourClassification
+            )
           }
           value={selected?.classification ?? ''}
         >
@@ -150,7 +153,11 @@ export function EditorContourSetupPanel({
             disabled={!selected || disabled}
             onChange={(event) => {
               if (event.currentTarget.value === '' || event.currentTarget.value === 'automatic') return;
-              onSetCompensation(event.currentTarget.value as ManualCompensationSelection);
+              if (!selected) return;
+              onSetCompensation(
+                selected.id,
+                event.currentTarget.value as ManualCompensationSelection
+              );
             }}
             value={compensationSelection}
           >
@@ -218,12 +225,14 @@ export function EditorSetStartPanel({
   disabled: boolean;
   document: PathPlanningDocument;
   magneticSnapEnabled: boolean;
-  onPickStart: () => void;
+  onPickStart: (operationId: string) => void;
   onSelectOperation: (operationId: string) => void;
   onToggleMagneticSnap: () => void;
   selectedOperationId: string | null;
 }) {
-  const selected = document.plan.operations.find((operation) => operation.id === selectedOperationId)
+  const selected = document.plan.operations.find(
+    (operation) => operation.id === selectedOperationId && operation.closed
+  )
     ?? document.plan.operations.find((operation) => operation.closed)
     ?? null;
 
@@ -273,7 +282,7 @@ export function EditorSetStartPanel({
         aria-label="Pick another start"
         className={buttonClass}
         disabled={!selected || disabled}
-        onClick={onPickStart}
+        onClick={() => selected && onPickStart(selected.id)}
         type="button"
       >
         <MousePointer2 className="size-3" />

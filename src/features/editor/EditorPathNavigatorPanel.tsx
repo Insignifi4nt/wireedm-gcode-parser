@@ -128,7 +128,6 @@ interface EditorPathNavigatorPanelProps {
   onPathTranslateXDraftChange: (value: string) => void;
   onPathTranslateYDraftChange: (value: string) => void;
   onSetPathOperationOrderStrategy: (strategy: OperationOrderStrategy) => void;
-  onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   onTranslatePathSelection: (delta: { x: number; y: number }) => void;
   onTranslatePathDocument: (delta: { x: number; y: number }) => void;
   onToggleHoverAssist: () => void;
@@ -162,7 +161,6 @@ export function EditorPathNavigatorPanel({
   onPathTranslateXDraftChange,
   onPathTranslateYDraftChange,
   onSetPathOperationOrderStrategy,
-  onSetPathStartFromElement,
   onTranslatePathDocument,
   onTranslatePathSelection,
   onToggleHoverAssist,
@@ -1270,7 +1268,6 @@ export function EditorPathNavigatorPanel({
               node,
               onHoverPathElement,
               onSelectPathElement,
-              onSetPathStartFromElement,
               isPathElementExpanded,
               isSaving,
               pathDocument,
@@ -1888,7 +1885,6 @@ function renderContourTreeNode({
   node,
   onHoverPathElement,
   onSelectPathElement,
-  onSetPathStartFromElement,
   onToggleSegmentDetails,
   pathDocument,
   isPathElementExpanded,
@@ -1905,7 +1901,6 @@ function renderContourTreeNode({
   node: UpidProjectRailTreeNode;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
-  onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   onToggleSegmentDetails: (segmentKey: string) => void;
   pathDocument: PathPlanningDocument;
   selectedPathElement: EditorPathElementRef | null;
@@ -2090,7 +2085,6 @@ function renderContourTreeNode({
               selectedPathElement,
               onHoverPathElement,
               onSelectPathElement,
-              onSetPathStartFromElement,
               isSaving,
               expandedSegmentDetailIds[segmentDetailsKey(element.id, ref.segmentId, index)] ?? false,
               () => onToggleSegmentDetails(segmentDetailsKey(element.id, ref.segmentId, index))
@@ -2118,7 +2112,6 @@ function renderContourTreeNode({
               node: child,
               onHoverPathElement,
               onSelectPathElement,
-              onSetPathStartFromElement,
               onToggleSegmentDetails,
               isPathElementExpanded,
               pathDocument,
@@ -2409,7 +2402,6 @@ function renderSegmentRow(
   selectedPathElement: EditorPathElementRef | null,
   onHoverPathElement: (element: EditorPathElementRef | null) => void,
   onSelectPathElement: (element: EditorPathElementRef) => void,
-  onSetPathStartFromElement: (element: EditorPathElementRef) => void,
   isSaving: boolean,
   detailsExpanded: boolean,
   onToggleDetails: () => void
@@ -2578,7 +2570,6 @@ function renderSegmentRow(
           segment,
           hoveredPathElement,
           isSaving,
-          onSetPathStartFromElement,
           selectedPathElement
         })}
         {renderPointRow({
@@ -2592,7 +2583,6 @@ function renderSegmentRow(
           segment,
           hoveredPathElement,
           isSaving,
-          onSetPathStartFromElement,
           selectedPathElement
         })}
       </div>
@@ -2608,7 +2598,6 @@ function renderPointRow({
   isSaving,
   onHoverPathElement,
   onSelectPathElement,
-  onSetPathStartFromElement,
   pathElement,
   point,
   pathDocument,
@@ -2621,7 +2610,6 @@ function renderPointRow({
   isSaving: boolean;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
-  onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   pathElement: UpidOperationPathElement;
   pathDocument: PathPlanningDocument;
   point: { x: number; y: number };
@@ -2730,23 +2718,6 @@ function renderPointRow({
           {endpointClusterSummary && <span className="block truncate">{endpointClusterSummary}</span>}
           {renderDiagnosticSummaryBadge(diagnosticSummary)}
         </span>
-      </button>
-      <button
-        aria-describedby={endpointHelpId}
-        aria-label="Set path start to this point"
-        className="flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-        disabled={!pathElement.closed || isSaving}
-        onBlur={() => onHoverPathElement(null)}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelectPathElement(element);
-          onSetPathStartFromElement(element);
-        }}
-        onFocus={() => onHoverPathElement(element)}
-        title="Set start to this point"
-        type="button"
-      >
-        <Flag className="size-3" />
       </button>
       <span className="sr-only" data-upid-point-help={role} id={endpointHelpId}>
         {endpointHelp}

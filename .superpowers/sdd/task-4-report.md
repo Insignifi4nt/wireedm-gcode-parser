@@ -17,6 +17,13 @@ Complete. The mixed `path-actions` capability hub and its `path-hover-assist` co
 
 The previous controller-compensation safety guard for circle-center entry, compensation review fields, exact rapid editing, and Set Start split/existing-point behavior remain covered.
 
+## Review fixes
+
+- Workflow-local fallback targets are now explicit mutation inputs. Contour Setup, Entry / Exit, and Set Start pass the operation ID they display rather than relying on a possibly null or stale parent selection.
+- Set Start can open without a preselected operation and selects the first closed contour as its workflow target. Selecting another contour updates both the displayed target and the active canvas tool target.
+- The Contour Tree no longer exposes `Set path start to this point`. Endpoint rows remain selection/navigation controls; Set Start plus the canvas is the sole mutation doorway.
+- Existing-point provenance and export metadata coverage now performs the mutation through the canonical Set Start canvas workflow.
+
 ## TDD evidence
 
 ### RED
@@ -48,6 +55,31 @@ Result:
 ```text
 Test Files  4 passed (4)
 Tests       139 passed (139)
+```
+
+### RED: review regressions
+
+Command:
+
+```text
+npm test -- --run src/features/editor/__tests__/EditorWorkflowSetupPanels.test.tsx src/features/editor/__tests__/EditorEntryExitPanel.test.tsx src/__tests__/appDxfProjects.test.tsx
+```
+
+Observed failures proved all three target-identity bugs: Contour Setup received a click event instead of `op_0001`, Set Start received a click event instead of `op_0001`, and planned rapid editing received only the point instead of the displayed operation ID.
+
+### GREEN: review-focused suite
+
+Command:
+
+```text
+npm test -- --run src/features/editor/__tests__/EditorWorkflowSetupPanels.test.tsx src/features/editor/__tests__/EditorEntryExitPanel.test.tsx src/__tests__/editorPathNativeDraft.test.tsx src/__tests__/appDxfProjects.test.tsx
+```
+
+Result:
+
+```text
+Test Files  4 passed (4)
+Tests       136 passed (136)
 ```
 
 ### GREEN: full regression suite
@@ -88,6 +120,6 @@ Named actionable-control search finds each migrated control only in its canonica
 
 ## Concerns / next boundary
 
-- Task 5 still owns the complete canvas and inactive-hidden-handler ownership sweep. Task 4 gates the old Contour Tree Set Start mutation unless Set Start is active, but it intentionally does not redesign every hidden registry render or all canvas mutation guards.
+- Task 5 still owns the complete canvas and inactive-hidden-handler ownership sweep. Task 4 removed the Contour Tree Set Start mutation doorway and intentionally does not redesign every hidden registry render or all canvas mutation guards.
 - Measurement points remain editor-local workspace data, so the Measurement & Construction session is currently classified as a view workflow; document mutations are not introduced there.
 - Existing Vite chunk-size advisory remains unrelated to this task.

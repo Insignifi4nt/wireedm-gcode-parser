@@ -308,7 +308,7 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
-  it('does not activate Set Start after discard restores a null opening selection', async () => {
+  it('activates Set Start with its displayed fallback after discard restores a null selection', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
     const operation = pathDocument.plan.operations[0];
@@ -328,9 +328,17 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('[data-editor-workflow-command="machining.set-start"]');
     await clickElement('[data-editor-workflow-transition-action="discard"]');
 
-    expect(visibleWorkflowPanelIds()).toEqual([]);
-    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain('Selection None');
-    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain('Select mode');
+    expect(visibleWorkflowPanelIds()).toEqual(['set-start']);
+    expect(
+      (container.querySelector('select[aria-label="Set start operation"]') as HTMLSelectElement | null)
+        ?.value
+    ).toBe(operation.id);
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
+      `Selection Operation ${operation.id}`
+    );
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
+      'Start mode / Step 2'
+    );
   });
 
   it('opens a workflow without rewriting its remembered hidden placement or geometry', async () => {
@@ -1339,9 +1347,6 @@ describe('EditorPage UPID draft boundary', () => {
       '[data-upid-point-row][data-upid-point-role="start"]'
     ) as HTMLElement | null;
     const endpointSelect = endpointRow?.querySelector('[data-upid-point-select]') as HTMLButtonElement | null;
-    const endpointSetStart = endpointRow?.querySelector(
-      'button[aria-label="Set path start to this point"]'
-    ) as HTMLButtonElement | null;
     const leadInRow = container.querySelector('[data-upid-tree-row-kind="lead-in"]') as HTMLButtonElement | null;
 
     expect(contourRow?.getAttribute('aria-label')).toBe('Select Exterior 1');
@@ -1393,18 +1398,9 @@ describe('EditorPage UPID draft boundary', () => {
       expect(row?.getAttribute('data-upid-hovered')).not.toBe('true');
     }
 
-    await act(async () => {
-      endpointSetStart?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-    });
-    expect(endpointRow?.getAttribute('data-upid-hovered')).toBe('true');
-
-    await act(async () => {
-      endpointSetStart?.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-    });
-    expect(endpointRow?.getAttribute('data-upid-hovered')).not.toBe('true');
   });
 
-  it('associates rich endpoint help with selection and Set Start actions', async () => {
+  it('associates rich endpoint help with the Contour Tree selection action only', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 
     await act(async () => {
@@ -1424,14 +1420,11 @@ describe('EditorPage UPID draft boundary', () => {
     const endpointSelect = endpointRow?.querySelector(
       'button[data-upid-point-select]'
     ) as HTMLButtonElement | null;
-    const setStart = endpointRow?.querySelector(
-      'button[aria-label="Set path start to this point"]'
-    ) as HTMLButtonElement | null;
     const helpId = endpointSelect?.getAttribute('aria-describedby');
 
     expect(helpId).not.toBeNull();
     expect(helpId ?? '').toMatch(/^upid-endpoint-help-/);
-    expect(setStart?.getAttribute('aria-describedby')).toBe(helpId);
+    expect(endpointRow?.querySelectorAll('button')).toHaveLength(1);
     expect(endpointSelect?.getAttribute('title')).toContain('start endpoint of segment 1');
 
     const help = helpId ? container.querySelector(`#${helpId}`) : null;
@@ -1439,10 +1432,6 @@ describe('EditorPage UPID draft boundary', () => {
     expect(help?.textContent).toContain('Endpoint cluster');
     expect(help?.textContent).toContain('0.000, 0.000');
 
-    await act(async () => {
-      setStart?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-    });
-    expect(endpointRow?.getAttribute('data-upid-hovered')).toBe('true');
   });
 
   it('shows selected contour subtree metrics in the inspector', async () => {

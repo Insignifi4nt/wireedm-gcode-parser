@@ -21,8 +21,8 @@ interface EditorEntryExitPanelProps {
   onSetCircleCenterEntry: (operationId: string) => void;
   onSetManualEntry: (operationId: string, point: Point2) => void;
   onSetManualExit: (operationId: string, point: Point2) => void;
-  onSetPlannedRapidDestination: (point: Point2) => void;
-  onSetPlannedRapidSource: (point: Point2) => void;
+  onSetPlannedRapidDestination: (operationId: string, point: Point2) => void;
+  onSetPlannedRapidSource: (operationId: string, point: Point2) => void;
   onSetOperationThreading: (
     operationId: string,
     transition: Omit<OperationThreadingTransition, 'source'> | null
@@ -165,7 +165,7 @@ export function EditorEntryExitPanel({
             aria-label="Apply planned rapid source"
             className="h-7 border border-border bg-background disabled:opacity-40"
             disabled={!rapidSourcePoint}
-            onClick={() => rapidSourcePoint && onSetPlannedRapidSource(rapidSourcePoint)}
+            onClick={() => rapidSourcePoint && onSetPlannedRapidSource(selected.id, rapidSourcePoint)}
             type="button"
           >
             Set source
@@ -174,7 +174,9 @@ export function EditorEntryExitPanel({
             aria-label="Apply planned rapid destination"
             className="h-7 border border-border bg-background disabled:opacity-40"
             disabled={!rapidDestinationPoint}
-            onClick={() => rapidDestinationPoint && onSetPlannedRapidDestination(rapidDestinationPoint)}
+            onClick={() =>
+              rapidDestinationPoint && onSetPlannedRapidDestination(selected.id, rapidDestinationPoint)
+            }
             type="button"
           >
             Set destination

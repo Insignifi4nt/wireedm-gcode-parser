@@ -80,6 +80,42 @@ describe('EditorEntryExitPanel', () => {
       { mode: 'manual', wireSeparation: 'already-separated' }
     );
   });
+
+  it('passes its displayed fallback operation to planned rapid edits', async () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
+    ]);
+    const onSetPlannedRapidSource = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorEntryExitPanel
+          disabled={false}
+          document={document}
+          machine={createCharmillesRobofil100V2CandidateProfile()}
+          onSelectOperation={vi.fn()}
+          onSetCircleCenterEntry={vi.fn()}
+          onSetManualEntry={vi.fn()}
+          onSetManualExit={vi.fn()}
+          onSetOperationThreading={vi.fn()}
+          onSetPlannedRapidDestination={vi.fn()}
+          onSetPlannedRapidSource={onSetPlannedRapidSource}
+          onSetProjectThreading={vi.fn()}
+          selectedOperationId={null}
+        />
+      );
+    });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Apply planned rapid source"]')?.click();
+    });
+
+    expect(onSetPlannedRapidSource).toHaveBeenCalledWith(
+      document.plan.operations[0].id,
+      expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) })
+    );
+  });
 });
 
 function setInput(input: HTMLInputElement, value: string) {
