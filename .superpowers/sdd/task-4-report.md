@@ -23,6 +23,7 @@ The previous controller-compensation safety guard for circle-center entry, compe
 - Set Start can open without a preselected operation and selects the first closed contour as its workflow target. Selecting another contour updates both the displayed target and the active canvas tool target.
 - The Contour Tree no longer exposes `Set path start to this point`. Endpoint rows remain selection/navigation controls; Set Start plus the canvas is the sole mutation doorway.
 - Existing-point provenance and export metadata coverage now performs the mutation through the canonical Set Start canvas workflow.
+- Set Start endpoint interaction is scoped to the panel-selected contour. Other contours remain visible for context, but their endpoint handles are marked disabled, consume clicks without invoking canvas picking, and are rejected again by the mutation guard.
 
 ## TDD evidence
 
@@ -80,6 +81,21 @@ Result:
 ```text
 Test Files  4 passed (4)
 Tests       136 passed (136)
+```
+
+### GREEN: cross-contour Set Start guard
+
+Command:
+
+```text
+npm test -- --run src/__tests__/editorPathNativeDraft.test.tsx src/__tests__/editorPreviewControls.test.tsx src/__tests__/appDxfProjects.test.tsx
+```
+
+Result:
+
+```text
+Test Files  3 passed (3)
+Tests       146 passed (146)
 ```
 
 ### GREEN: full regression suite

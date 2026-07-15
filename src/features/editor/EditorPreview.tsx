@@ -73,6 +73,7 @@ interface EditorPreviewProps {
   onSetCanvasMouseMode?: (mode: CanvasMouseMode) => void;
   pathDocument?: PathPlanningDocument | null;
   postedTransitions?: PostedPreviewTransition[];
+  pathEndpointActionOperationId?: string | null;
   pathCount?: number;
   pinnedLines: number[];
   selectedPathElement?: EditorPathElementRef | null;
@@ -134,6 +135,7 @@ export function EditorPreview({
   onPreviewPointClick,
   onSetCanvasMouseMode,
   pathDocument,
+  pathEndpointActionOperationId,
   postedTransitions,
   pathCount,
   previewLabel = 'G-code path preview',
@@ -1059,10 +1061,15 @@ export function EditorPreview({
                   : undefined;
               const color = highlight ? highlightColor(highlight) : '#67e8f9';
               const svgY = flipY - point.y;
+              const endpointActionable = Boolean(
+                onPathEndpointClick &&
+                (pathEndpointActionOperationId == null || path.operationId === pathEndpointActionOperationId)
+              );
 
               return (
                 <circle
-                  className={onPathElementClick || onPathEndpointClick ? 'cursor-pointer' : undefined}
+                  aria-disabled={onPathEndpointClick && !endpointActionable ? true : undefined}
+                  className={onPathElementClick || endpointActionable ? 'cursor-pointer' : undefined}
                   cx={point.x}
                   cy={svgY}
                   data-preview-hovered={highlight === 'hover' ? 'true' : undefined}
@@ -1084,7 +1091,7 @@ export function EditorPreview({
                     };
                     if (onPathEndpointClick) {
                       event.stopPropagation();
-                      onPathEndpointClick(element);
+                      if (endpointActionable) onPathEndpointClick(element);
                       return;
                     }
                     if (!onPathElementClick) return;

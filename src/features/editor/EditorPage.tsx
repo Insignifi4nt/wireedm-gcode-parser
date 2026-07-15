@@ -1561,6 +1561,7 @@ export function EditorPage({
     if (
       !pathDocumentDraft ||
       !element.operationId ||
+      element.operationId !== selectedPathOperationId ||
       !element.segmentId ||
       !element.pointRole ||
       isEditorMutationLocked
@@ -2988,6 +2989,7 @@ export function EditorPage({
           onPathElementClick={!pathClickMode ? handleSelectPathElement : undefined}
           onPathElementHover={pathHoverAssistEnabled ? setHoveredPathElement : undefined}
           onPathSegmentCenterMove={!pathClickMode ? handleMovePathSegmentCenter : undefined}
+          pathEndpointActionOperationId={pathClickMode === 'set-start' ? selectedPathOperationId : null}
           onPreviewPointClick={handlePreviewPointClick}
           onSetCanvasMouseMode={setCanvasMouseMode}
           pathDocument={pathDocumentDraft}

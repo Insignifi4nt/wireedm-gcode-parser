@@ -20,6 +20,7 @@ interface EditorCanvasPanelProps {
   interactionHint?: string | null;
   hoveredPathElement?: EditorPathElementRef | null;
   measurementPoints: MeasurementPoint[];
+  pathEndpointActionOperationId?: string | null;
   pathDocument?: PathPlanningDocument | null;
   postedTransitions?: PostedPreviewTransition[];
   pathCount: number;
@@ -51,6 +52,7 @@ export function EditorCanvasPanel({
   interactionHint,
   hoveredPathElement,
   measurementPoints,
+  pathEndpointActionOperationId,
   pathDocument,
   postedTransitions,
   pathCount,
@@ -95,6 +97,7 @@ export function EditorCanvasPanel({
           onPreviewPointClick={onPreviewPointClick}
           onSetCanvasMouseMode={onSetCanvasMouseMode}
           pathDocument={pathDocument}
+          pathEndpointActionOperationId={pathEndpointActionOperationId}
           postedTransitions={postedTransitions}
           pathCount={pathCount}
           pinnedLines={pinnedLines}

@@ -341,6 +341,48 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
+  it('keeps endpoints from non-target contours inert during Set Start', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [targetOperation, otherOperation] = pathDocument.plan.operations;
+    const otherSegmentId = otherOperation.segmentRefs[1].segmentId;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.set-start"]');
+    await changeSelect(
+      container.querySelector('select[aria-label="Set start operation"]'),
+      targetOperation.id
+    );
+
+    const otherEndpoint = container.querySelector(
+      `circle[data-preview-path-endpoint][data-preview-operation="${otherOperation.id}"][data-preview-segment="${otherSegmentId}"][data-preview-point-role="start"]`
+    );
+    expect(otherEndpoint).not.toBeNull();
+
+    await act(async () => {
+      otherEndpoint?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(otherEndpoint?.getAttribute('aria-disabled')).toBe('true');
+    expect(
+      (container.querySelector('select[aria-label="Set start operation"]') as HTMLSelectElement | null)
+        ?.value
+    ).toBe(targetOperation.id);
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
+      'Start mode / Step 2'
+    );
+    expect(
+      container
+        .querySelector(`[data-upid-cut-sequence-row][data-upid-operation-id="${otherOperation.id}"]`)
+        ?.getAttribute('data-upid-cut-sequence-manual') ?? ''
+    ).not.toContain('start');
+  });
+
   it('opens a workflow without rewriting its remembered hidden placement or geometry', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
     const rememberedGeometry = { x: 333, y: 144, width: 377, height: 411 };
