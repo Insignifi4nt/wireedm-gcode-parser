@@ -1107,6 +1107,16 @@ export function EditorPage({
     setSelectedPathOperationId(null);
     setSelectedPathElement(null);
     setHoveredPathElement(null);
+    setPreviewCursorPoint(null);
+    setMeasurementPoints([]);
+    setPointXDraft('');
+    setPointYDraft('');
+    setPathTranslateXDraft('0');
+    setPathTranslateYDraft('0');
+    setPathTargetXDraft('');
+    setPathTargetYDraft('');
+    setExpandedGroups({});
+    setExpandedPathElementIds({});
     setExportPreviewOpen(false);
     setActiveWorkflowSession(null);
     setActiveToolSession(null);
@@ -2812,6 +2822,7 @@ export function EditorPage({
         hoveredPathElement={activeHoveredPathElement}
         hoverAssistEnabled={pathHoverAssistEnabled}
         isSaving={isEditorMutationLocked}
+        key={programIdentity}
         latestMeasurementPoint={measurementPoints.at(-1) ?? null}
         measurementPoints={measurementPoints}
         onExpandedPathElementIdsChange={setExpandedPathElementIds}

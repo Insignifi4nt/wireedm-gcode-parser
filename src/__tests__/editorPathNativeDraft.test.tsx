@@ -990,6 +990,75 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe('false');
   });
 
+  it('clears project-bound measurement data and coordinate drafts on identity change', async () => {
+    const firstProject = projectWithUpid(pathDocumentFromRectangle());
+    const replacementProject = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/project-bound-drafts.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={firstProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '7');
+    await changeInput('input[aria-label="Translate Y"]', '8');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    expect((container.querySelector('input[aria-label="Document reference target X"]') as HTMLInputElement).value)
+      .toBe('12.000');
+    expect((container.querySelector('input[aria-label="Document reference target Y"]') as HTMLInputElement).value)
+      .toBe('10.500');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    await changeInput('input[aria-label="Measurement point X"]', '3');
+    await changeInput('input[aria-label="Measurement point Y"]', '4');
+    const addPoint = [...container.querySelectorAll<HTMLButtonElement>(
+      '[data-editor-workspace-panel="measurement"] button'
+    )].find((button) => button.textContent?.trim() === 'Add Point');
+    expect(addPoint).not.toBeUndefined();
+    await act(async () => addPoint?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flushAsync();
+    await changeInput('input[aria-label="Measurement point X"]', '9');
+    await changeInput('input[aria-label="Measurement point Y"]', '10');
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/replacement-clean-drafts.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={replacementProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    expect(container.querySelector('[data-measurement-point-row="1"]')).toBeNull();
+    expect((container.querySelector('input[aria-label="Measurement point X"]') as HTMLInputElement).value)
+      .toBe('');
+    expect((container.querySelector('input[aria-label="Measurement point Y"]') as HTMLInputElement).value)
+      .toBe('');
+    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Cancel "]');
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    expect((container.querySelector('input[aria-label="Translate X"]') as HTMLInputElement).value)
+      .toBe('0');
+    expect((container.querySelector('input[aria-label="Translate Y"]') as HTMLInputElement).value)
+      .toBe('0');
+    expect((container.querySelector('input[aria-label="Document reference target X"]') as HTMLInputElement).value)
+      .not.toBe('12.000');
+    expect((container.querySelector('input[aria-label="Document reference target Y"]') as HTMLInputElement).value)
+      .not.toBe('10.500');
+    expect(container.querySelector('[data-upid-transform-target-center-points]')).toBeNull();
+  });
+
   it('offers only single-workflow diagnostic repair links', async () => {
     const project = projectWithUpid(pathDocumentFromGappedRectangle());
 
