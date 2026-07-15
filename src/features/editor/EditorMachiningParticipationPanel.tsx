@@ -6,11 +6,12 @@ import type { PathPlanningDocument } from '@/domain/path-intel/types';
 interface EditorMachiningParticipationPanelProps {
   disabled: boolean;
   document: PathPlanningDocument;
+  onDraftChange?: () => void;
   onSetSpan: (input: {
     sourceSegmentId: string;
     range: { start: number; end: number };
     participation: 'active-cut' | 'inactive-reference';
-  }) => void;
+  }, completeForm?: boolean) => void;
   onSetEntryReview: (sourceOperationId: string, reviewed: boolean) => void;
   onSetWireSide: (sourceOperationId: string, wireSide: 'left' | 'right' | null) => void;
   selectedOperationId: string | null;
@@ -20,6 +21,7 @@ interface EditorMachiningParticipationPanelProps {
 export function EditorMachiningParticipationPanel({
   disabled,
   document,
+  onDraftChange,
   onSetSpan,
   onSetEntryReview,
   onSetWireSide,
@@ -85,7 +87,10 @@ export function EditorMachiningParticipationPanel({
           <select
             aria-label="Machining source segment"
             className="h-7 border border-border bg-background px-1 font-mono text-foreground"
-            onChange={(event) => setSourceSegmentId(event.currentTarget.value)}
+            onChange={(event) => {
+              setSourceSegmentId(event.currentTarget.value);
+              onDraftChange?.();
+            }}
             value={sourceSegmentId}
           >
             {segmentIds.map((segmentId, index) => (
@@ -99,7 +104,10 @@ export function EditorMachiningParticipationPanel({
             <input
               aria-label="Machining span start"
               className="h-7 border border-border bg-background px-1 font-mono text-foreground"
-              onChange={(event) => setRangeStart(event.currentTarget.value)}
+              onChange={(event) => {
+                setRangeStart(event.currentTarget.value);
+                onDraftChange?.();
+              }}
               value={rangeStart}
             />
           </label>
@@ -108,7 +116,10 @@ export function EditorMachiningParticipationPanel({
             <input
               aria-label="Machining span end"
               className="h-7 border border-border bg-background px-1 font-mono text-foreground"
-              onChange={(event) => setRangeEnd(event.currentTarget.value)}
+              onChange={(event) => {
+                setRangeEnd(event.currentTarget.value);
+                onDraftChange?.();
+              }}
               value={rangeEnd}
             />
           </label>
@@ -120,7 +131,7 @@ export function EditorMachiningParticipationPanel({
             sourceSegmentId,
             range: { start, end },
             participation: 'inactive-reference'
-          })}
+          }, true)}
           type="button"
         >
           Mark inactive reference
@@ -182,7 +193,7 @@ export function EditorMachiningParticipationPanel({
                 sourceSegmentId: span.sourceSegmentId,
                 range: span.range,
                 participation: 'active-cut'
-              })}
+              }, false)}
               type="button"
             >
               Restore

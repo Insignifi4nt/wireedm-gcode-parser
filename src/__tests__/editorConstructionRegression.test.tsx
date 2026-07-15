@@ -46,6 +46,22 @@ describe('Editor construction regressions', () => {
     await flushAsync();
     await confirmPendingDxfImport(container);
 
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        '[data-editor-workflow-command="view.contours"]'
+      )?.click();
+    });
+    await flushAsync();
+    await act(async () => {
+      container.querySelector<HTMLInputElement>(
+        'input[aria-label="Toggle canvas hover assist"]'
+      )?.click();
+      container.querySelector<HTMLButtonElement>(
+        '[data-editor-workflow-command="construction.measurement"]'
+      )?.click();
+    });
+    await flushAsync();
+
     expect(
       container.querySelector('[data-upid-cut-sequence-row][data-upid-selected="true"]')
     ).toBeNull();
@@ -86,22 +102,15 @@ describe('Editor construction regressions', () => {
       configurable: true
     });
 
-    const hoverToggle = container.querySelector(
-      'input[aria-label="Toggle canvas hover assist"]'
-    ) as HTMLInputElement | null;
     const snapToggle = container.querySelector(
       'input[aria-label="Toggle construction magnetic snap"]'
     ) as HTMLInputElement | null;
     const perpendicularButton = container.querySelector(
       'button[aria-label="Magnetize latest point perpendicular"]'
     ) as HTMLButtonElement | null;
-    expect(hoverToggle).not.toBeNull();
     expect(snapToggle).not.toBeNull();
     expect(perpendicularButton).not.toBeNull();
 
-    await act(async () => {
-      hoverToggle?.click();
-    });
     await act(async () => {
       snapToggle?.click();
     });

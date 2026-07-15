@@ -12,7 +12,8 @@ interface EditorProgramStopsPanelProps {
   disabled: boolean;
   document: PathPlanningDocument;
   machine: MachineProfile;
-  onSetStops: (operationId: string, stops: OperationProgramStop[]) => void;
+  onDraftChange?: () => void;
+  onSetStops: (operationId: string, stops: OperationProgramStop[], completeForm?: boolean) => void;
   selectedOperationId: string | null;
 }
 
@@ -20,6 +21,7 @@ export function EditorProgramStopsPanel({
   disabled,
   document,
   machine,
+  onDraftChange,
   onSetStops,
   selectedOperationId
 }: EditorProgramStopsPanelProps) {
@@ -38,8 +40,8 @@ export function EditorProgramStopsPanel({
   const canAdd = placement !== 'before-operation-end' ||
     (Number.isFinite(remainingValue) && remainingValue > 0);
 
-  function commit(nextStops: OperationProgramStop[]) {
-    if (!disabled) onSetStops(operation!.id, nextStops);
+  function commit(nextStops: OperationProgramStop[], completeForm = false) {
+    if (!disabled) onSetStops(operation!.id, nextStops, completeForm);
   }
 
   function addStop() {
@@ -56,7 +58,7 @@ export function EditorProgramStopsPanel({
         : { kind: placement },
       reason,
       ...(note.trim() ? { note: note.trim() } : {})
-    }]);
+    }], true);
   }
 
   return (
@@ -80,7 +82,10 @@ export function EditorProgramStopsPanel({
           <select
             aria-label="Program stop placement"
             className="h-7 border border-border bg-background px-1 text-foreground"
-            onChange={(event) => setPlacement(event.currentTarget.value as OperationProgramStopPlacement['kind'])}
+            onChange={(event) => {
+              setPlacement(event.currentTarget.value as OperationProgramStopPlacement['kind']);
+              onDraftChange?.();
+            }}
             value={placement}
           >
             <option value="before-entry">Before entry</option>
@@ -96,7 +101,10 @@ export function EditorProgramStopsPanel({
               aria-label="Program stop remaining cut millimeters"
               className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
               inputMode="decimal"
-              onChange={(event) => setRemaining(event.currentTarget.value)}
+              onChange={(event) => {
+                setRemaining(event.currentTarget.value);
+                onDraftChange?.();
+              }}
               value={remaining}
             />
           </label>
@@ -106,7 +114,10 @@ export function EditorProgramStopsPanel({
           <select
             aria-label="Program stop reason"
             className="h-7 border border-border bg-background px-1 text-foreground"
-            onChange={(event) => setReason(event.currentTarget.value as OperationProgramStop['reason'])}
+            onChange={(event) => {
+              setReason(event.currentTarget.value as OperationProgramStop['reason']);
+              onDraftChange?.();
+            }}
             value={reason}
           >
             <option value="part-retention">Part retention</option>
@@ -119,7 +130,10 @@ export function EditorProgramStopsPanel({
           <input
             aria-label="Program stop note"
             className="h-7 border border-border bg-background px-1.5 text-foreground"
-            onChange={(event) => setNote(event.currentTarget.value)}
+            onChange={(event) => {
+              setNote(event.currentTarget.value);
+              onDraftChange?.();
+            }}
             value={note}
           />
         </label>

@@ -94,7 +94,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Press G to toggle grid visibility. Current Position shows live mouse coordinates over the canvas.'
           },
           {
-            text: 'Enable Grid Snap when cursor coordinates and clicked measurement points should land on the 5 mm canvas grid.',
+            text: 'Open Measurement & Construction and enable Grid Snap when cursor coordinates and clicked points should land on the 5 mm canvas grid.',
             mock: { label: 'Grid Snap ON' },
             highlightTarget: 'grid-snap'
           }
@@ -104,7 +104,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '4. Measurement Points',
         steps: [
           {
-            text: 'Use Point canvas mode to place P1, P2, and later points by clicking the canvas. You can also type exact X/Y values and click Add Point.',
+            text: 'Open Construction > Measurement & Construction, then use Point mode to place P1, P2, and later points. You can also type exact X/Y values and click Add Point.',
             highlightTarget: 'measurement-points'
           },
           {
@@ -114,7 +114,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Insert Points is for external posted programs. DXF path projects keep measurement and magnetized points on the canvas; Export CSV, Export G-code, and Export Point ISO write point-only files for outside use.'
           },
           {
-            text: 'Alt/Option+Shift+C clears all measurement points when focus is not inside an input or the program editor.'
+            text: 'While Measurement & Construction is open, Alt/Option+Shift+C clears all points when focus is not inside an input.'
           }
         ]
       },
@@ -122,7 +122,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator Or Program Lines',
         steps: [
           {
-            text: 'DXF path projects use the UPID Path Navigator for contour order, contour role correction, direction, start selection, segment inspection, hover assist, and tangent/perpendicular construction.',
+            text: 'DXF path projects use one workflow per responsibility: Cut Sequence for order, Contour Setup for role and direction, Set Start for starts, Measurement & Construction for points and constraints, and View workflows for inspection.',
             highlightTarget: 'program-lines'
           },
           {
@@ -231,7 +231,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Apasa G ca sa ascunzi sau afisezi gridul. Current Position arata coordonatele live ale mouse-ului pe canvas.'
           },
           {
-            text: 'Activeaza Grid Snap cand coordonatele cursorului si punctele adaugate prin click trebuie sa cada pe gridul de 5 mm.',
+            text: 'Deschide Measurement & Construction si activeaza Grid Snap cand coordonatele cursorului si punctele adaugate trebuie sa cada pe gridul de 5 mm.',
             mock: { label: 'Grid Snap ON' },
             highlightTarget: 'grid-snap'
           }
@@ -241,7 +241,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '4. Puncte de masurare',
         steps: [
           {
-            text: 'Foloseste modul Point pe canvas pentru P1, P2 si urmatoarele puncte prin click. Poti introduce si valori exacte X/Y, apoi Add Point.',
+            text: 'Deschide Construction > Measurement & Construction, apoi foloseste modul Point pentru P1, P2 si punctele urmatoare. Poti introduce si valori exacte X/Y, apoi Add Point.',
             highlightTarget: 'measurement-points'
           },
           {
@@ -251,7 +251,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Insert Points este pentru programe externe postate. Proiectele DXF pastreaza punctele de masurare si punctele magnetizate pe canvas; Export CSV, Export G-code si Export Point ISO scriu fisiere doar cu punctele.'
           },
           {
-            text: 'Alt/Option+Shift+C curata toate punctele de masurare cand focusul nu este intr-un input sau in editorul de program.'
+            text: 'Cat timp Measurement & Construction este deschis, Alt/Option+Shift+C curata toate punctele cand focusul nu este intr-un input.'
           }
         ]
       },
@@ -259,7 +259,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator sau Program Lines',
         steps: [
           {
-            text: 'Proiectele DXF folosesc UPID Path Navigator pentru ordinea contururilor, corectarea rolului de contur, directie, start, inspectie segmente, hover assist si constructii tangent/perpendicular.',
+            text: 'Proiectele DXF folosesc cate un workflow pentru fiecare responsabilitate: Cut Sequence pentru ordine, Contour Setup pentru rol si directie, Set Start pentru start, Measurement & Construction pentru puncte si constrangeri, iar workflow-urile View pentru inspectie.',
             highlightTarget: 'program-lines'
           },
           {

@@ -17,9 +17,14 @@ interface EditorEntryExitPanelProps {
   disabled: boolean;
   document: PathPlanningDocument;
   machine: MachineProfile;
+  onDraftChange?: (source: 'entry' | 'exit' | 'rapid-destination' | 'rapid-source') => void;
   onSelectOperation: (operationId: string) => void;
   onSetCircleCenterEntry: (operationId: string) => void;
-  onSetManualEntry: (operationId: string, point: Point2) => void;
+  onSetManualEntry: (
+    operationId: string,
+    point: Point2,
+    completedSource: 'entry' | 'rapid-destination'
+  ) => void;
   onSetManualExit: (operationId: string, point: Point2) => void;
   onSetPlannedRapidDestination: (operationId: string, point: Point2) => void;
   onSetPlannedRapidSource: (operationId: string, point: Point2) => void;
@@ -37,6 +42,7 @@ export function EditorEntryExitPanel({
   disabled,
   document,
   machine,
+  onDraftChange,
   onSelectOperation,
   onSetCircleCenterEntry,
   onSetManualEntry,
@@ -148,15 +154,15 @@ export function EditorEntryExitPanel({
         </p>
         <CoordinateInputs
           label="Planned rapid source"
-          onXChange={setRapidSourceX}
-          onYChange={setRapidSourceY}
+          onXChange={(value) => { setRapidSourceX(value); onDraftChange?.('rapid-source'); }}
+          onYChange={(value) => { setRapidSourceY(value); onDraftChange?.('rapid-source'); }}
           x={rapidSourceX}
           y={rapidSourceY}
         />
         <CoordinateInputs
           label="Planned rapid destination"
-          onXChange={setRapidDestinationX}
-          onYChange={setRapidDestinationY}
+          onXChange={(value) => { setRapidDestinationX(value); onDraftChange?.('rapid-destination'); }}
+          onYChange={(value) => { setRapidDestinationY(value); onDraftChange?.('rapid-destination'); }}
           x={rapidDestinationX}
           y={rapidDestinationY}
         />
@@ -187,7 +193,11 @@ export function EditorEntryExitPanel({
             aria-label="Create manual lead from planned rapid destination"
             className="h-7 border border-border bg-background disabled:opacity-40"
             disabled={!rapidDestinationPoint}
-            onClick={() => rapidDestinationPoint && onSetManualEntry(selected.id, rapidDestinationPoint)}
+            onClick={() => rapidDestinationPoint && onSetManualEntry(
+              selected.id,
+              rapidDestinationPoint,
+              'rapid-destination'
+            )}
             type="button"
           >
             Create manual entry from destination
@@ -202,8 +212,8 @@ export function EditorEntryExitPanel({
         </div>
         <CoordinateInputs
           label="Entry"
-          onXChange={setEntryX}
-          onYChange={setEntryY}
+          onXChange={(value) => { setEntryX(value); onDraftChange?.('entry'); }}
+          onYChange={(value) => { setEntryY(value); onDraftChange?.('entry'); }}
           x={entryX}
           y={entryY}
         />
@@ -211,7 +221,7 @@ export function EditorEntryExitPanel({
           <button
             className="h-7 border border-border bg-background disabled:opacity-40"
             disabled={!entryPoint}
-            onClick={() => entryPoint && onSetManualEntry(selected.id, entryPoint)}
+            onClick={() => entryPoint && onSetManualEntry(selected.id, entryPoint, 'entry')}
             type="button"
           >
             Set straight entry
@@ -242,8 +252,8 @@ export function EditorEntryExitPanel({
         </div>
         <CoordinateInputs
           label="Exit"
-          onXChange={setExitX}
-          onYChange={setExitY}
+          onXChange={(value) => { setExitX(value); onDraftChange?.('exit'); }}
+          onYChange={(value) => { setExitY(value); onDraftChange?.('exit'); }}
           x={exitX}
           y={exitY}
         />

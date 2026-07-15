@@ -206,8 +206,20 @@ interface EditorPageProps {
 }
 
 interface EditorDraftSnapshot {
+  canvasMouseMode: 'select' | 'point';
   draft: EditorDraftState;
   historyLabel?: string;
+  gridSnapEnabled: boolean;
+  measurementPoints: MeasurementPoint[];
+  pathClickMode: 'set-start' | MagnetizeMode | null;
+  constructionMagneticSnapEnabled: boolean;
+  pathTargetXDraft: string;
+  pathTargetYDraft: string;
+  pathTranslateXDraft: string;
+  pathTranslateYDraft: string;
+  pointXDraft: string;
+  pointYDraft: string;
+  setStartMagneticSnapEnabled: boolean;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
 }
@@ -361,8 +373,8 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
   {
     id: 'construction.measurement', label: 'Measurement & Construction',
     menuPath: ['Construction', 'Measurement & Construction'], scope: 'document',
-    toolWindowId: 'measurement', prerequisites: [{ kind: 'document' }],
-    workflow: { kind: 'view' }
+    toolWindowId: 'measurement', historyLabel: 'Edit measurement and construction points',
+    prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
   },
   ...([
     ['view.contours', 'Contour Tree', 'contour-tree'],
@@ -377,8 +389,8 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
   })),
   {
     id: 'machine.profile', label: 'Project Machine', menuPath: ['Machine', 'Project Machine'],
-    scope: 'machine', toolWindowId: 'machine', historyLabel: 'Edit project machine',
-    prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
+    scope: 'machine', toolWindowId: 'machine', prerequisites: [{ kind: 'document' }],
+    workflow: { kind: 'view' }
   },
   {
     id: 'export.preview', label: 'Controller Export',
@@ -650,13 +662,18 @@ export function EditorPage({
   const [activeWorkflowSession, setActiveWorkflowSession] = useState<
     EditorWorkflowSession<EditorDraftSnapshot> | null
   >(null);
+  const pendingWorkflowExitActionRef = useRef<null | ((unsavedAfterWorkflow: boolean) => void)>(null);
   const [workflowTransition, setWorkflowTransition] = useState<
     EditorWorkflowTransition<EditorDraftSnapshot> | null
   >(null);
+  const [activeWorkflowPendingReasons, setActiveWorkflowPendingReasons] = useState<
+    Record<string, string>
+  >({});
   const [hoveredPathElement, setHoveredPathElement] = useState<EditorPathElementRef | null>(null);
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
   const [pathHoverAssistEnabled, setPathHoverAssistEnabled] = useState(false);
-  const [pathMagneticSnapEnabled, setPathMagneticSnapEnabled] = useState(false);
+  const [constructionMagneticSnapEnabled, setConstructionMagneticSnapEnabled] = useState(false);
+  const [setStartMagneticSnapEnabled, setSetStartMagneticSnapEnabled] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [selectedPathElement, setSelectedPathElement] = useState<EditorPathElementRef | null>(null);
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
@@ -781,7 +798,7 @@ export function EditorPage({
   const constructionPreview = useMemo(() => {
     if (
       !pathDocumentDraft ||
-      !pathMagneticSnapEnabled ||
+      !constructionMagneticSnapEnabled ||
       !previewCursorPoint ||
       (pathClickMode !== 'perpendicular' && pathClickMode !== 'tangent')
     ) {
@@ -808,7 +825,7 @@ export function EditorPage({
       sourcePoint,
       targetPoint: magnetized.point
     };
-  }, [measurementPoints, pathClickMode, pathDocumentDraft, pathMagneticSnapEnabled, previewCursorPoint]);
+  }, [constructionMagneticSnapEnabled, measurementPoints, pathClickMode, pathDocumentDraft, previewCursorPoint]);
   const startPreview = useMemo(() => {
     if (
       !pathDocumentDraft ||
@@ -823,7 +840,7 @@ export function EditorPage({
       pathDocumentDraft,
       selectedPathOperationId,
       previewCursorPoint,
-      pathMagneticSnapEnabled
+      setStartMagneticSnapEnabled
     );
     if (!preview) return null;
 
@@ -838,7 +855,7 @@ export function EditorPage({
   }, [
     pathClickMode,
     pathDocumentDraft,
-    pathMagneticSnapEnabled,
+    setStartMagneticSnapEnabled,
     previewCursorPoint,
     selectedPathOperationId
   ]);
@@ -1077,7 +1094,9 @@ export function EditorPage({
     setHoveredPathElement(null);
     setExportPreviewOpen(false);
     setActiveWorkflowSession(null);
+    setActiveWorkflowPendingReasons({});
     setWorkflowTransition(null);
+    pendingWorkflowExitActionRef.current = null;
     setPathClickMode(null);
     setCanvasMouseMode('select');
     setRedoStack([]);
@@ -1091,6 +1110,18 @@ export function EditorPage({
 
     if (program?.model === 'upid-document') setRailCollapsed(false);
   }, [program?.filePath, program?.model]);
+
+  useEffect(() => {
+    const pendingReason = Object.values(activeWorkflowPendingReasons)[0];
+    setActiveWorkflowSession((current) =>
+      current?.kind === 'mutating' && current.dirty
+        ? markEditorWorkflowDirty(
+            current,
+            pendingReason ? { enabled: false, reason: pendingReason } : { enabled: true }
+          )
+        : current
+    );
+  }, [activeWorkflowPendingReasons, draftSignature]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -1146,7 +1177,7 @@ export function EditorPage({
   }, [editorHeaderContent, setHeaderContent]);
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (!hasUnsavedChanges && !activeWorkflowSession?.dirty) return;
 
     function handleBeforeUnload(event: BeforeUnloadEvent) {
       event.preventDefault();
@@ -1155,7 +1186,7 @@ export function EditorPage({
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [hasUnsavedChanges]);
+  }, [activeWorkflowSession?.dirty, hasUnsavedChanges]);
 
   function setLastClickedLine(lineNumber: number | null) {
     lastClickedLineRef.current = lineNumber;
@@ -1183,8 +1214,31 @@ export function EditorPage({
       if (event.key === 'Escape') {
         if (activeToolSession) {
           const nextSession = editorToolSessionReducer(activeToolSession, { type: 'escape' });
-          setActiveToolSession(nextSession.status === 'active' ? nextSession : null);
-          if (nextSession.status !== 'active') setPathClickMode(null);
+          if (nextSession.status === 'active') {
+            setActiveToolSession(nextSession);
+          } else {
+            setActiveToolSession(null);
+            setPathClickMode(null);
+            requestCloseEditorWorkflow();
+          }
+          return;
+        }
+        if (
+          activeWorkflowOwns('construction.measurement') &&
+          (pathClickMode === 'perpendicular' || pathClickMode === 'tangent')
+        ) {
+          setPathClickMode(null);
+          clearActiveWorkflowPending('construction-mode');
+          markActiveWorkflowDirty('construction.measurement');
+          return;
+        }
+        if (activeWorkflowOwns('construction.measurement') && canvasMouseMode === 'point') {
+          setCanvasMouseMode('select');
+          markActiveWorkflowDirty('construction.measurement');
+          return;
+        }
+        if (activeWorkflowSession) {
+          requestCloseEditorWorkflow();
           return;
         }
         setHoveredLine(null);
@@ -1219,7 +1273,7 @@ export function EditorPage({
         handleRedoDraft();
       } else if (isClearPoints && measurementPoints.length > 0) {
         event.preventDefault();
-        setMeasurementPoints([]);
+        handleClearMeasurementPoints();
       } else if ((event.key === 'Delete' || event.key === 'Backspace') && selectedLines.length > 0) {
         event.preventDefault();
         if (pathDocumentDraft) {
@@ -1232,30 +1286,30 @@ export function EditorPage({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeToolSession, activeWorkflowSession, draftText, isEditorMutationLocked, measurementPoints.length, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
+  }, [activeToolSession, activeWorkflowSession, canvasMouseMode, draftText, isEditorMutationLocked, measurementPoints.length, pathClickMode, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
 
   function handleBackToDashboard() {
     if (isEditorMutationLocked) return;
-    if (!confirmDiscardUnsavedChanges()) return;
-    onBackToDashboard();
+    runAfterActiveWorkflowResolved((unsavedAfterWorkflow) => {
+      if (unsavedAfterWorkflow && !window.confirm('Discard unsaved changes?')) return;
+      onBackToDashboard();
+    });
   }
 
-  async function handleImportProgramFile(file: File) {
+  function handleImportProgramFile(file: File) {
     if (isEditorMutationLocked) return;
-    if (!confirmDiscardUnsavedChanges()) return;
-    await onImportProgramFile(file);
+    runAfterActiveWorkflowResolved((unsavedAfterWorkflow) => {
+      if (unsavedAfterWorkflow && !window.confirm('Discard unsaved changes?')) return;
+      void onImportProgramFile(file);
+    });
   }
 
-  function confirmDiscardUnsavedChanges() {
-    return !hasUnsavedChanges || window.confirm('Discard unsaved changes?');
-  }
-
-  async function handleEditorDrop(event: DragEvent<HTMLDivElement>) {
+  function handleEditorDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     const file = event.dataTransfer.files?.[0];
     if (!file || isEditorMutationLocked) return;
 
-    await handleImportProgramFile(file);
+    handleImportProgramFile(file);
   }
 
   function handleInspectorRailResizeStart(event: PointerEvent<HTMLDivElement>) {
@@ -1326,10 +1380,10 @@ export function EditorPage({
   }
 
   function handleTogglePathHoverAssist() {
+    if (!activeWorkflowOwns('view.contours')) return;
     setPathHoverAssistEnabled((current) => {
       if (current) {
         setHoveredPathElement(null);
-        setPathMagneticSnapEnabled(false);
       }
       return !current;
     });
@@ -1479,6 +1533,7 @@ export function EditorPage({
   }
 
   function handleAddMeasurementPoint() {
+    if (pathDocumentDraft && !activeWorkflowOwns('construction.measurement')) return;
     if (pointXDraft.trim() === '' || pointYDraft.trim() === '') return;
 
     const x = Number(pointXDraft);
@@ -1491,6 +1546,11 @@ export function EditorPage({
   }
 
   function addMeasurementPoint(x: number, y: number) {
+    if (pathDocumentDraft && !activeWorkflowOwns('construction.measurement')) return;
+    if (pathDocumentDraft) {
+      clearActiveWorkflowPending('measurement-input');
+      markActiveWorkflowDirty('construction.measurement');
+    }
     setMeasurementPoints((current) => [
       ...current,
       {
@@ -1502,6 +1562,9 @@ export function EditorPage({
   }
 
   function addPathConstructionPoint(magnetized: MagnetizedPathPoint) {
+    if (!activeWorkflowOwns('construction.measurement')) return;
+    clearActiveWorkflowPending('construction-mode');
+    markActiveWorkflowDirty('construction.measurement');
     setMeasurementPoints((current) => [
       ...current,
       {
@@ -1517,14 +1580,18 @@ export function EditorPage({
     if (isEditorMutationLocked) return;
 
     if (!pathClickMode || !pathDocumentDraft) {
-      if (canvasMouseMode === 'point') addMeasurementPoint(point.x, point.y);
+      if (
+        canvasMouseMode === 'point' &&
+        (!pathDocumentDraft || activeWorkflowOwns('construction.measurement'))
+      ) addMeasurementPoint(point.x, point.y);
       return;
     }
 
     if (pathClickMode === 'set-start') {
+      if (!activeWorkflowOwns(SET_START_COMMAND.id)) return;
       if (!selectedPathOperationId) return;
 
-      const edited = pathMagneticSnapEnabled
+      const edited = setStartMagneticSnapEnabled
         ? setClosedOperationStartNearPoint(pathDocumentDraft, selectedPathOperationId, point)
         : setClosedOperationStartAtExistingPointNearPoint(pathDocumentDraft, selectedPathOperationId, point);
       if (!edited) {
@@ -1532,6 +1599,7 @@ export function EditorPage({
         setPathClickMode(null);
         return;
       }
+      clearActiveWorkflowPending('set-start-input');
       applyPathDocumentEdit(edited);
       if (activeToolSession?.commandId === SET_START_COMMAND.id) {
         const withPoint = editorToolSessionReducer(activeToolSession, {
@@ -1546,6 +1614,8 @@ export function EditorPage({
       return;
     }
 
+    if (!activeWorkflowOwns('construction.measurement')) return;
+
     const sourcePoint = measurementPoints.at(-1) ?? point;
     const magnetized = constructMagnetizedPoint(pathDocumentDraft, sourcePoint, point, pathClickMode);
     if (!magnetized) {
@@ -1559,6 +1629,7 @@ export function EditorPage({
 
   function handleSetPathStartFromElement(element: EditorPathElementRef) {
     if (
+      !activeWorkflowOwns(SET_START_COMMAND.id) ||
       !pathDocumentDraft ||
       !element.operationId ||
       element.operationId !== selectedPathOperationId ||
@@ -1577,6 +1648,7 @@ export function EditorPage({
     );
     if (!edited) return;
 
+    clearActiveWorkflowPending('set-start-input');
     applyPathDocumentEdit(edited, {
       selectedPathElement: element,
       selectedPathOperationId: element.operationId
@@ -1594,28 +1666,30 @@ export function EditorPage({
   }
 
   function handleSetManualInitialWirePosition(point: { x: number; y: number }) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.initial-wire') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setManualInitialWirePosition(pathDocumentDraft, point);
     if (!edited) {
       onStatusMessage?.('Initial wire coordinates must be finite numbers.', 'warning');
       return;
     }
-    applyPathDocumentEdit(edited);
+    applyPathDocumentEdit(edited, { completedPendingSources: ['initial-input'] });
     onStatusMessage?.('Initial Wire Position reviewed and updated.', 'success');
   }
 
   function handleSetGeometryLinkedInitialWirePosition(segmentId: string) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.initial-wire') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setGeometryLinkedInitialWirePosition(pathDocumentDraft, segmentId);
     if (!edited) {
       onStatusMessage?.('Choose an available circle center for Initial Wire Position.', 'warning');
       return;
     }
-    applyPathDocumentEdit(edited);
+    applyPathDocumentEdit(edited, { completedPendingSources: ['initial-input'] });
     onStatusMessage?.('Initial Wire Position linked to the circle center.', 'success');
   }
 
   function handleMeasurementPointMove(pointId: string, point: { x: number; y: number }) {
+    if (pathDocumentDraft && !activeWorkflowOwns('construction.measurement')) return;
+    if (pathDocumentDraft) markActiveWorkflowDirty('construction.measurement');
     setMeasurementPoints((current) =>
       current.map((measurementPoint) => {
         if (measurementPoint.id !== pointId) return measurementPoint;
@@ -1642,8 +1716,22 @@ export function EditorPage({
     );
   }
 
+  function handleClearMeasurementPoints() {
+    if (pathDocumentDraft && !activeWorkflowOwns('construction.measurement')) return;
+    if (measurementPoints.length === 0) return;
+    if (pathDocumentDraft) markActiveWorkflowDirty('construction.measurement');
+    setMeasurementPoints([]);
+  }
+
+  function handleDeleteMeasurementPoint(pointId: string) {
+    if (pathDocumentDraft && !activeWorkflowOwns('construction.measurement')) return;
+    if (!measurementPoints.some((point) => point.id === pointId)) return;
+    if (pathDocumentDraft) markActiveWorkflowDirty('construction.measurement');
+    setMeasurementPoints((current) => current.filter((point) => point.id !== pointId));
+  }
+
   function handleMovePathOperation(direction: -1 | 1, operationId = selectedPathOperationId ?? undefined) {
-    if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.sequence') || !pathDocumentDraft || !operationId || isEditorMutationLocked) return;
     const edited = movePathOperation(pathDocumentDraft, operationId, direction);
     if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
@@ -1652,22 +1740,26 @@ export function EditorPage({
     operationId: string,
     point: { x: number; y: number }
   ) {
-    if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || !operationId || isEditorMutationLocked) return;
     const edited = setPlannedRapidSourcePoint(pathDocumentDraft, operationId, point);
-    if (edited) applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+    if (edited) applyPathDocumentEdit(edited, {
+      completedPendingSources: ['rapid-source'], selectedPathElement, selectedPathOperationId: operationId
+    });
   }
 
   function handleSetPlannedRapidDestinationPoint(
     operationId: string,
     point: { x: number; y: number }
   ) {
-    if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || !operationId || isEditorMutationLocked) return;
     const edited = setPlannedRapidDestinationPoint(pathDocumentDraft, operationId, point);
-    if (edited) applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+    if (edited) applyPathDocumentEdit(edited, {
+      completedPendingSources: ['rapid-destination'], selectedPathElement, selectedPathOperationId: operationId
+    });
   }
 
   function handleReversePathOperation(operationId: string) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.contour-setup') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = reversePathOperation(pathDocumentDraft, operationId);
     if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
@@ -1676,7 +1768,7 @@ export function EditorPage({
     operationId: string,
     classification: ContourClassification
   ) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.contour-setup') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPathOperationClassification(
       pathDocumentDraft,
       operationId,
@@ -1687,7 +1779,7 @@ export function EditorPage({
   }
 
   function handleSetGeometryBasis(basis: PathPlanningDocument['geometryBasis']) {
-    if (!pathDocumentDraft || !program?.project || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('geometry.setup') || !pathDocumentDraft || !program?.project || isEditorMutationLocked) return;
     if (basis === pathDocumentDraft.geometryBasis) return;
 
     const edited = basis === 'finished-contour' && machineSnapshotAuthorizesAutomaticCompensation(program.project.machine)
@@ -1700,13 +1792,13 @@ export function EditorPage({
     operationId: string,
     selection: ManualCompensationSelection
   ) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.contour-setup') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setManualCompensationIntent(pathDocumentDraft, operationId, selection);
     if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
 
   function handleSetOperationCircleCenterEntry(operationId: string) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setCircleOperationCenterPierceLeadIn(pathDocumentDraft, operationId);
     if (!edited) {
       onStatusMessage?.('Circle-center entry requires one closed circular operation.', 'warning');
@@ -1715,16 +1807,23 @@ export function EditorPage({
     applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
   }
 
-  function handleSetOperationManualEntry(operationId: string, point: { x: number; y: number }) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+  function handleSetOperationManualEntry(
+    operationId: string,
+    point: { x: number; y: number },
+    completedSource: 'entry' | 'rapid-destination'
+  ) {
+    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPathOperationManualLeadIn(pathDocumentDraft, operationId, point);
     if (edited) {
-      applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+      applyPathDocumentEdit(edited, {
+        completedPendingSources: [completedSource], selectedPathElement,
+        selectedPathOperationId: operationId
+      });
     }
   }
 
   function handleSetOperationManualExit(operationId: string, point: { x: number; y: number }) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
     const operation = pathDocumentDraft.plan.operations.find(
       (candidate) => candidate.id === operationId
     );
@@ -1740,14 +1839,16 @@ export function EditorPage({
       }
     });
     if (edited) {
-      applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+      applyPathDocumentEdit(edited, {
+        completedPendingSources: ['exit'], selectedPathElement, selectedPathOperationId: operationId
+      });
     }
   }
 
   function handleSetProjectThreading(
     transition: Omit<OperationThreadingTransition, 'source'>
   ) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setProjectThreadingDefault(pathDocumentDraft, transition);
     if (edited) applyPathDocumentEdit(edited);
   }
@@ -1756,33 +1857,48 @@ export function EditorPage({
     operationId: string,
     transition: Omit<OperationThreadingTransition, 'source'> | null
   ) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPathOperationThreadingTransition(
       pathDocumentDraft,
       operationId,
       transition
     );
     if (edited) {
-      applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId: operationId
+      });
     }
   }
 
   function handleSetOperationProgramStops(
     operationId: string,
-    stops: OperationProgramStop[]
+    stops: OperationProgramStop[],
+    completeForm = false
   ) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.program-stops') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPathOperationProgramStops(pathDocumentDraft, operationId, stops);
     if (edited) {
-      applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+      applyPathDocumentEdit(edited, {
+        completedPendingSources: completeForm ? ['stop-form'] : undefined,
+        selectedPathElement,
+        selectedPathOperationId: operationId
+      });
     }
   }
 
-  function handleSetMachiningSpan(input: Parameters<typeof setMachiningSpanParticipation>[1]) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+  function handleSetMachiningSpan(
+    input: Parameters<typeof setMachiningSpanParticipation>[1],
+    completeForm = false
+  ) {
+    if (!activeWorkflowOwns('machining.participation') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setMachiningSpanParticipation(pathDocumentDraft, input);
     if (edited) {
-      applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId });
+      applyPathDocumentEdit(edited, {
+        completedPendingSources: completeForm ? ['span-form'] : undefined,
+        selectedPathElement,
+        selectedPathOperationId
+      });
     }
   }
 
@@ -1790,7 +1906,7 @@ export function EditorPage({
     sourceOperationId: string,
     wireSide: 'left' | 'right' | null
   ) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.participation') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPartialContourCompensationSide(
       pathDocumentDraft,
       sourceOperationId,
@@ -1808,7 +1924,7 @@ export function EditorPage({
     sourceOperationId: string,
     reviewed: boolean
   ) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.participation') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPartialContourEntryReview(
       pathDocumentDraft,
       sourceOperationId,
@@ -1823,7 +1939,7 @@ export function EditorPage({
   }
 
   function handleSetPathOperationOrderStrategy(strategy: OperationOrderStrategy) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.sequence') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPathOperationOrderStrategy(pathDocumentDraft, strategy);
     if (edited) {
       applyPathDocumentEdit(edited, {
@@ -1833,8 +1949,11 @@ export function EditorPage({
     }
   }
 
-  function handleTranslatePathSelection(delta: { x: number; y: number }) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+  function handleTranslatePathSelection(
+    delta: { x: number; y: number },
+    completedSource: 'transform-target' | 'transform-translate' = 'transform-translate'
+  ) {
+    if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
 
     const edited = selectedPathElement?.segmentId
       ? translatePathSegment(pathDocumentDraft, selectedPathElement.segmentId, delta)
@@ -1845,6 +1964,7 @@ export function EditorPage({
           : null;
 
     if (edited) {
+      clearActiveWorkflowPending(completedSource);
       applyPathDocumentEdit(edited, {
         selectedPathElement,
         selectedPathOperationId
@@ -1853,10 +1973,11 @@ export function EditorPage({
   }
 
   function handleTranslatePathDocument(delta: { x: number; y: number }) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
 
     const edited = translatePathDocument(pathDocumentDraft, delta);
     if (edited) {
+      clearActiveWorkflowPending('transform-translate');
       applyPathDocumentEdit(edited, {
         selectedPathElement,
         selectedPathOperationId
@@ -1865,7 +1986,7 @@ export function EditorPage({
   }
 
   function handleRotatePathSelection(angleDegrees: number) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
 
     const origin = readPathSelectionBoundsCenter(
       pathDocumentDraft,
@@ -1891,7 +2012,7 @@ export function EditorPage({
   }
 
   function handleMirrorPathSelection(axis: PathMirrorAxis) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
 
     const origin = readPathSelectionBoundsCenter(
       pathDocumentDraft,
@@ -1917,7 +2038,7 @@ export function EditorPage({
   }
 
   function handleRotatePathDocument(angleDegrees: number) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
 
     const origin = readPathDocumentBoundsCenter(pathDocumentDraft);
     if (!origin) return;
@@ -1932,7 +2053,7 @@ export function EditorPage({
   }
 
   function handleMirrorPathDocument(axis: PathMirrorAxis) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
 
     const origin = readPathDocumentBoundsCenter(pathDocumentDraft);
     if (!origin) return;
@@ -1947,7 +2068,7 @@ export function EditorPage({
   }
 
   function handleMovePathSelectionCenter(targetCenter: { x: number; y: number }) {
-    if (!pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
 
     const selectionCenter = readPathSelectionBoundsCenter(
       pathDocumentDraft,
@@ -1956,14 +2077,17 @@ export function EditorPage({
     );
     if (!selectionCenter) return;
 
-    handleTranslatePathSelection({
-      x: targetCenter.x - selectionCenter.x,
-      y: targetCenter.y - selectionCenter.y
-    });
+    handleTranslatePathSelection(
+      {
+        x: targetCenter.x - selectionCenter.x,
+        y: targetCenter.y - selectionCenter.y
+      },
+      'transform-target'
+    );
   }
 
   function handleDragPathElement(element: EditorPathElementRef, delta: { x: number; y: number }) {
-    if (!pathDocumentDraft || isEditorMutationLocked || (delta.x === 0 && delta.y === 0)) return;
+    if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked || (delta.x === 0 && delta.y === 0)) return;
 
     const dragTarget = resolvePathDragTarget(selectedPathElement, element);
     const edited =
@@ -1984,10 +2108,11 @@ export function EditorPage({
   }
 
   function handleMoveSelectedSegmentCenter(targetCenter: { x: number; y: number }) {
-    if (!pathDocumentDraft || !selectedPathElement?.segmentId || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || !selectedPathElement?.segmentId || isEditorMutationLocked) return;
 
     const edited = movePathSegmentCenterTo(pathDocumentDraft, selectedPathElement.segmentId, targetCenter);
     if (edited) {
+      clearActiveWorkflowPending('transform-target');
       applyPathDocumentEdit(edited, {
         selectedPathElement,
         selectedPathOperationId
@@ -1999,7 +2124,7 @@ export function EditorPage({
     element: EditorPathElementRef,
     targetCenter: { x: number; y: number }
   ) {
-    if (!pathDocumentDraft || !element.segmentId || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || !element.segmentId || isEditorMutationLocked) return;
 
     const edited = movePathSegmentCenterTo(pathDocumentDraft, element.segmentId, targetCenter);
     if (edited) {
@@ -2017,11 +2142,13 @@ export function EditorPage({
   function applyPathDocumentEdit(
     nextDocument: PathPlanningDocument,
     options: {
+      completedPendingSources?: string[];
       selectedPathElement?: EditorPathElementRef | null;
       selectedPathOperationId?: string | null;
     } = {}
   ) {
     if (!program?.project) return;
+    options.completedPendingSources?.forEach(clearActiveWorkflowPending);
 
     replaceUpidDraftDocument(nextDocument, {
       selectedPathElement: Object.hasOwn(options, 'selectedPathElement')
@@ -2121,7 +2248,9 @@ export function EditorPage({
 
     if (activeWorkflowSession?.kind === 'mutating') {
       setActiveWorkflowSession((current) =>
-        current?.kind === 'mutating' ? markEditorWorkflowDirty(current) : current
+        current?.kind === 'mutating'
+          ? markEditorWorkflowDirty(current, { enabled: true })
+          : current
       );
     } else {
       setUndoStack((current) => [...current, currentDraftSnapshot()]);
@@ -2176,8 +2305,20 @@ export function EditorPage({
 
   function currentDraftSnapshot(historyLabel?: string): EditorDraftSnapshot {
     return {
+      canvasMouseMode,
       draft: cloneEditorDraftState(draftState),
+      constructionMagneticSnapEnabled,
+      gridSnapEnabled,
       historyLabel,
+      measurementPoints: structuredClone(measurementPoints),
+      pathClickMode,
+      pathTargetXDraft,
+      pathTargetYDraft,
+      pathTranslateXDraft,
+      pathTranslateYDraft,
+      pointXDraft,
+      pointYDraft,
+      setStartMagneticSnapEnabled,
       selectedPathElement,
       selectedPathOperationId
     };
@@ -2187,6 +2328,17 @@ export function EditorPage({
     const restoredDraft = cloneEditorDraftState(snapshot.draft);
     const restoredPathDocument = editorDraftPathDocument(restoredDraft);
     setDraftState(restoredDraft);
+    setCanvasMouseMode(snapshot.canvasMouseMode);
+    setConstructionMagneticSnapEnabled(snapshot.constructionMagneticSnapEnabled);
+    setGridSnapEnabled(snapshot.gridSnapEnabled);
+    setMeasurementPoints(structuredClone(snapshot.measurementPoints));
+    setPathTargetXDraft(snapshot.pathTargetXDraft);
+    setPathTargetYDraft(snapshot.pathTargetYDraft);
+    setPathTranslateXDraft(snapshot.pathTranslateXDraft);
+    setPathTranslateYDraft(snapshot.pathTranslateYDraft);
+    setPointXDraft(snapshot.pointXDraft);
+    setPointYDraft(snapshot.pointYDraft);
+    setSetStartMagneticSnapEnabled(snapshot.setStartMagneticSnapEnabled);
     const restoredOperationId = restoredPathDocument ? snapshot.selectedPathOperationId : null;
     setSelectedPathOperationId(restoredOperationId);
     setSelectedPathElement(
@@ -2198,7 +2350,7 @@ export function EditorPage({
           )
         : null
     );
-    setPathClickMode(null);
+    setPathClickMode(snapshot.pathClickMode);
   }
 
   function clearTransientLineState() {
@@ -2235,12 +2387,12 @@ export function EditorPage({
 
     if (pathClickMode === 'set-start') {
       if (!selectedPathOperationId) {
-        return 'Start mode / Step 1: select a closed contour in the Contour Tree or canvas before choosing the start point.';
+        return 'Set Start / Step 1: choose a closed contour in the workflow before choosing its start point.';
       }
 
-      return pathMagneticSnapEnabled
+      return setStartMagneticSnapEnabled
         ? 'Start mode / Step 2: click the contour near the desired start. Magnetic mode can split a segment at the clicked point.'
-        : 'Start mode / Step 2: click an existing endpoint on the canvas or in the Contour Tree.';
+        : 'Set Start / Step 2: click an existing endpoint on the selected contour.';
     }
 
     if (pathClickMode === 'perpendicular' || pathClickMode === 'tangent') {
@@ -2253,14 +2405,92 @@ export function EditorPage({
     }
 
     if (selectedPathElement) {
-      return 'Selection active / Next: drag selected geometry on the canvas, or use Transform for exact moves. Move Center to Origin sends the selection center to X0 Y0.';
+      return activeWorkflowOwns('geometry.transform')
+        ? 'Transform active / Drag selected geometry on the canvas or use the workflow fields for exact placement.'
+        : 'Selection active / Open Geometry > Transform Geometry to move or drag the selected geometry.';
     }
 
     if (canvasMouseMode === 'point') {
-      return 'Point mode / Step 1: click empty canvas space to place measurement points. Switch to Select to inspect geometry.';
+      return 'Measurement & Construction / Click empty canvas space to place a point, or switch to Select.';
     }
 
-    return 'Select mode / Next: click a contour, segment, endpoint, or diagnostic. Use Point mode to place measurement points.';
+    return 'Select mode / Click geometry to inspect it. Open Construction > Measurement & Construction to place points.';
+  }
+
+  function activeWorkflowOwns(commandId: string) {
+    return activeWorkflowSession?.commandId === commandId;
+  }
+
+  function markActiveWorkflowDirty(
+    commandId: string,
+    saveAvailability: { enabled: true } | { enabled: false; reason: string } = { enabled: true }
+  ) {
+    setActiveWorkflowSession((current) =>
+      current?.kind === 'mutating' && current.commandId === commandId
+        ? markEditorWorkflowDirty(current, saveAvailability)
+        : current
+    );
+  }
+
+  function markActiveWorkflowPending(commandId: string, source: string, reason: string) {
+    if (!activeWorkflowOwns(commandId)) return;
+    setActiveWorkflowPendingReasons((current) => ({ ...current, [source]: reason }));
+    markActiveWorkflowDirty(commandId, { enabled: false, reason });
+  }
+
+  function clearActiveWorkflowPending(source: string) {
+    setActiveWorkflowPendingReasons((current) => {
+      if (!Object.hasOwn(current, source)) return current;
+      const next = { ...current };
+      delete next[source];
+      return next;
+    });
+  }
+
+  function readWorkflowSaveUnavailableReason(commandId: string) {
+    switch (commandId) {
+      case SET_START_COMMAND.id:
+        return 'Choose and apply a valid contour start before saving.';
+      case 'construction.measurement':
+        return 'Add, move, or remove a measurement or construction point before saving.';
+      case 'machining.initial-wire':
+        return 'Review and apply an initial wire position before saving.';
+      default:
+        return 'Make a valid change in this workflow before saving.';
+    }
+  }
+
+  function runAfterActiveWorkflowResolved(action: (unsavedAfterWorkflow: boolean) => void) {
+    if (!activeWorkflowSession) {
+      action(hasUnsavedChanges);
+      return;
+    }
+
+    const transition = requestEditorWorkflowTransition(activeWorkflowSession, { kind: 'close' });
+    if (transition.kind === 'held') {
+      pendingWorkflowExitActionRef.current = action;
+      setWorkflowTransition(transition);
+      return;
+    }
+
+    if (transition.kind === 'resolved') {
+      pendingWorkflowExitActionRef.current = action;
+      completeEditorWorkflowTransition(transition);
+    }
+  }
+
+  function saveActiveEditorWorkflow() {
+    if (
+      !activeWorkflowSession ||
+      activeWorkflowSession.kind !== 'mutating' ||
+      !activeWorkflowSession.dirty ||
+      !activeWorkflowSession.saveAvailability.enabled
+    ) return;
+
+    const requested = requestEditorWorkflowTransition(activeWorkflowSession, { kind: 'close' });
+    if (requested.kind !== 'held') return;
+    const resolved = resolveEditorWorkflowTransition(requested, 'save');
+    if (resolved.kind === 'resolved') completeEditorWorkflowTransition(resolved);
   }
 
   function openEditorWorkflow(commandId: string) {
@@ -2323,7 +2553,10 @@ export function EditorPage({
           label: command.label,
           openingSnapshot,
           panelId,
-          saveAvailability: { enabled: true as const }
+          saveAvailability: {
+            enabled: false as const,
+            reason: readWorkflowSaveUnavailableReason(command.id)
+          }
         })
       : createEditorWorkflowSession({
           commandId: command.id,
@@ -2336,6 +2569,7 @@ export function EditorPage({
         });
 
     setActiveWorkflowSession(session);
+    setActiveWorkflowPendingReasons({});
     setWorkflowTransition(null);
     setExportPreviewOpen(command.id === 'export.preview');
     if (command.id === SET_START_COMMAND.id) {
@@ -2374,6 +2608,7 @@ export function EditorPage({
   function dismissWorkflowTransition() {
     if (!workflowTransition) return;
     dismissEditorWorkflowTransition(workflowTransition);
+    pendingWorkflowExitActionRef.current = null;
     setWorkflowTransition(null);
   }
 
@@ -2405,9 +2640,18 @@ export function EditorPage({
     setActiveToolSession(null);
     setPathClickMode(null);
     setWorkflowTransition(null);
+    setActiveWorkflowPendingReasons({});
     setExportPreviewOpen(false);
     if (request.kind === 'close') {
       setActiveWorkflowSession(null);
+      const pendingAction = pendingWorkflowExitActionRef.current;
+      pendingWorkflowExitActionRef.current = null;
+      const resultingSnapshot = resolution === 'discard'
+        ? session.openingSnapshot
+        : currentDraftSnapshot();
+      pendingAction?.(
+        editorDraftSignature(resultingSnapshot.draft) !== savedDraftSignature
+      );
       return;
     }
 
@@ -2443,13 +2687,51 @@ export function EditorPage({
   ) {
     const panelId = id as EditorWorkspacePanelId;
     const renderedPlacement = readWorkspacePanelRenderedPlacement(panelId);
+    const ownedMutatingWorkflow =
+      activeWorkflowSession?.kind === 'mutating' && activeWorkflowSession.panelId === panelId
+        ? activeWorkflowSession
+        : null;
+    const panelChildren = (
+      <>
+        {children}
+        {ownedMutatingWorkflow && (
+          <div className="mt-3 border-t border-border pt-2" data-editor-workflow-actions={ownedMutatingWorkflow.commandId}>
+            {!ownedMutatingWorkflow.saveAvailability.enabled && (
+              <p className="mb-1 text-[10px] leading-4 text-amber-300" data-editor-workflow-save-reason>
+                {ownedMutatingWorkflow.saveAvailability.reason}
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                aria-label={`Cancel ${ownedMutatingWorkflow.label} workflow`}
+                className="h-7 border border-border px-2 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+                onClick={requestCloseEditorWorkflow}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                aria-label={`Save ${ownedMutatingWorkflow.label} workflow`}
+                className="h-7 border border-primary bg-primary px-2 text-[10px] text-primary-foreground outline-none disabled:cursor-not-allowed disabled:opacity-45"
+                disabled={!ownedMutatingWorkflow.saveAvailability.enabled}
+                onClick={saveActiveEditorWorkflow}
+                title={
+                  ownedMutatingWorkflow.saveAvailability.enabled
+                    ? `Save ${ownedMutatingWorkflow.label}`
+                    : ownedMutatingWorkflow.saveAvailability.reason
+                }
+                type="button"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+      </>
+    );
 
     if (renderedPlacement === 'hidden') {
-      return (
-        <div aria-hidden="true" className="hidden" data-editor-inactive-workflow-panel={id}>
-          {children}
-        </div>
-      );
+      return null;
     }
 
     return (
@@ -2467,7 +2749,7 @@ export function EditorPage({
         placement={renderedPlacement}
         title={title}
       >
-        {children}
+        {panelChildren}
       </EditorWorkspacePanelFrame>
     );
   }
@@ -2509,13 +2791,23 @@ export function EditorPage({
         selectedPathOperationId={selectedPathOperationId}
         onPathTranslateXDraftChange={setPathTranslateXDraft}
         onPathTranslateYDraftChange={setPathTranslateYDraft}
+        onTransformDraftChange={(source) => {
+          markActiveWorkflowPending(
+            'geometry.transform',
+            source === 'target' ? 'transform-target' : 'transform-translate',
+            'Apply or correct the pending transform coordinates before saving.'
+          );
+        }}
       />
     );
   }
 
   function handleActivatePathClickMode(mode: MagnetizeMode | null) {
+    if (!activeWorkflowOwns('construction.measurement')) return;
     if (mode === null) {
       setPathClickMode((current) => current === 'set-start' ? current : null);
+      clearActiveWorkflowPending('construction-mode');
+      markActiveWorkflowDirty('construction.measurement');
       return;
     }
 
@@ -2527,10 +2819,15 @@ export function EditorPage({
       return;
     }
     setPathClickMode(mode);
+    markActiveWorkflowPending(
+      'construction.measurement',
+      'construction-mode',
+      'Place the construction point or exit the active construction mode before saving.'
+    );
   }
 
   function handleSetStartOperationTarget(operationId: string) {
-    if (isEditorMutationLocked) return;
+    if (!activeWorkflowOwns(SET_START_COMMAND.id) || isEditorMutationLocked) return;
     setSelectedPathOperationId(operationId);
     setSelectedPathElement(null);
     setActiveToolSession(
@@ -2543,6 +2840,35 @@ export function EditorPage({
       })
     );
     setPathClickMode('set-start');
+  }
+
+  function handleSetCanvasMouseMode(mode: 'select' | 'point') {
+    if (pathDocumentDraft && !activeWorkflowOwns('construction.measurement')) return;
+    if (canvasMouseMode === mode) return;
+    if (pathDocumentDraft) markActiveWorkflowDirty('construction.measurement');
+    setCanvasMouseMode(mode);
+  }
+
+  function handleToggleConstructionGridSnap() {
+    if (pathDocumentDraft && !activeWorkflowOwns('construction.measurement')) return;
+    if (pathDocumentDraft) markActiveWorkflowDirty('construction.measurement');
+    setGridSnapEnabled((current) => !current);
+  }
+
+  function handleToggleConstructionMagneticSnap() {
+    if (!activeWorkflowOwns('construction.measurement')) return;
+    markActiveWorkflowDirty('construction.measurement');
+    setConstructionMagneticSnapEnabled((current) => !current);
+  }
+
+  function handleToggleSetStartMagneticSnap() {
+    if (!activeWorkflowOwns(SET_START_COMMAND.id)) return;
+    markActiveWorkflowPending(
+      SET_START_COMMAND.id,
+      'set-start-input',
+      'Choose and apply a valid contour start before saving.'
+    );
+    setSetStartMagneticSnapEnabled((current) => !current);
   }
 
   function renderInspectorPanelContent() {
@@ -2617,26 +2943,43 @@ export function EditorPage({
           }
           onAddMeasurementPoint={handleAddMeasurementPoint}
           onActivatePathConstructionMode={(mode) => handleActivatePathClickMode(mode)}
-          onClearMeasurementPoints={() => setMeasurementPoints([])}
-          onDeleteMeasurementPoint={(pointId) =>
-            setMeasurementPoints((current) =>
-              current.filter((measurementPoint) => measurementPoint.id !== pointId)
-            )
-          }
+          onClearMeasurementPoints={handleClearMeasurementPoints}
+          onDeleteMeasurementPoint={handleDeleteMeasurementPoint}
           onExportMeasurementPoints={handleExportMeasurementPoints}
           onHoverPathElement={setHoveredPathElement}
           onInsertMeasurementPoints={handleInsertMeasurementPoints}
-          onReimportDxfUnits={onReimportDxfUnits}
-          onPointXDraftChange={setPointXDraft}
-          onPointYDraftChange={setPointYDraft}
+          onReimportDxfUnits={
+            onReimportDxfUnits
+              ? () => runAfterActiveWorkflowResolved((unsavedAfterWorkflow) => {
+                  if (unsavedAfterWorkflow && !window.confirm('Discard unsaved changes?')) return;
+                  void onReimportDxfUnits();
+                })
+              : undefined
+          }
+          onPointXDraftChange={(value) => {
+            setPointXDraft(value);
+            if (pathDocumentDraft) markActiveWorkflowPending(
+              'construction.measurement',
+              'measurement-input',
+              'Add a valid point or clear the pending point coordinates before saving.'
+            );
+          }}
+          onPointYDraftChange={(value) => {
+            setPointYDraft(value);
+            if (pathDocumentDraft) markActiveWorkflowPending(
+              'construction.measurement',
+              'measurement-input',
+              'Add a valid point or clear the pending point coordinates before saving.'
+            );
+          }}
           onSelectPathElement={handleSelectPathElement}
-          onSetCanvasMouseMode={setCanvasMouseMode}
-          onToggleGridSnap={() => setGridSnapEnabled((current) => !current)}
-          onTogglePathMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
+          onSetCanvasMouseMode={handleSetCanvasMouseMode}
+          onToggleGridSnap={handleToggleConstructionGridSnap}
+          onTogglePathMagneticSnap={handleToggleConstructionMagneticSnap}
           pathCount={pathCount}
           pathConstructionMode={pathClickMode === 'set-start' ? null : pathClickMode}
           pathDocument={pathDocumentDraft}
-          pathMagneticSnapEnabled={pathMagneticSnapEnabled}
+          pathMagneticSnapEnabled={constructionMagneticSnapEnabled}
           pointXDraft={pointXDraft}
           pointYDraft={pointYDraft}
           previewCursorPoint={previewCursorPoint}
@@ -2897,10 +3240,10 @@ export function EditorPage({
             <EditorSetStartPanel
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
-              magneticSnapEnabled={pathMagneticSnapEnabled}
+              magneticSnapEnabled={setStartMagneticSnapEnabled}
               onPickStart={handleSetStartOperationTarget}
               onSelectOperation={handleSetStartOperationTarget}
-              onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
+              onToggleMagneticSnap={handleToggleSetStartMagneticSnap}
               selectedOperationId={selectedPathOperationId}
             />
           )}
@@ -2911,6 +3254,10 @@ export function EditorPage({
             <EditorInitialWirePositionPanel
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
+              onDraftChange={() => markActiveWorkflowPending(
+                'machining.initial-wire', 'initial-input',
+                'Review and apply valid initial wire coordinates before saving.'
+              )}
               onSetGeometryLinked={handleSetGeometryLinkedInitialWirePosition}
               onSetManual={handleSetManualInitialWirePosition}
             />
@@ -2923,6 +3270,10 @@ export function EditorPage({
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
               machine={program.project.machine}
+              onDraftChange={(source) => markActiveWorkflowPending(
+                'machining.entry-exit', source,
+                'Apply or correct the pending entry, exit, or rapid coordinates before saving.'
+              )}
               onSelectOperation={(operationId) => {
                 setSelectedPathOperationId(operationId);
                 setSelectedPathElement(null);
@@ -2944,6 +3295,10 @@ export function EditorPage({
             <EditorMachiningParticipationPanel
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
+              onDraftChange={() => markActiveWorkflowPending(
+                'machining.participation', 'span-form',
+                'Apply a valid machining span or discard its pending range before saving.'
+              )}
               onSetEntryReview={handleSetPartialContourEntryReview}
               onSetSpan={handleSetMachiningSpan}
               onSetWireSide={handleSetPartialContourCompensationSide}
@@ -2959,6 +3314,10 @@ export function EditorPage({
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
               machine={program.project.machine}
+              onDraftChange={() => markActiveWorkflowPending(
+                'machining.program-stops', 'stop-form',
+                'Add a valid program stop or discard its pending fields before saving.'
+              )}
               onSetStops={handleSetOperationProgramStops}
               selectedOperationId={selectedPathOperationId}
             />
@@ -2983,15 +3342,43 @@ export function EditorPage({
           hoveredPathElement={activeHoveredPathElement}
           measurementPoints={measurementPoints}
           onCursorPointChange={setPreviewCursorPoint}
-          onMeasurementPointMove={handleMeasurementPointMove}
-          onPathEndpointClick={pathClickMode === 'set-start' ? handleSetPathStartFromElement : undefined}
-          onPathElementDrag={!pathClickMode ? handleDragPathElement : undefined}
+          onMeasurementPointMove={
+            activeWorkflowOwns('construction.measurement') ? handleMeasurementPointMove : undefined
+          }
+          onPathEndpointClick={
+            activeWorkflowOwns(SET_START_COMMAND.id) && pathClickMode === 'set-start'
+              ? handleSetPathStartFromElement
+              : undefined
+          }
+          onPathElementDrag={
+            activeWorkflowOwns('geometry.transform') && !pathClickMode
+              ? handleDragPathElement
+              : undefined
+          }
           onPathElementClick={!pathClickMode ? handleSelectPathElement : undefined}
           onPathElementHover={pathHoverAssistEnabled ? setHoveredPathElement : undefined}
-          onPathSegmentCenterMove={!pathClickMode ? handleMovePathSegmentCenter : undefined}
-          pathEndpointActionOperationId={pathClickMode === 'set-start' ? selectedPathOperationId : null}
-          onPreviewPointClick={handlePreviewPointClick}
-          onSetCanvasMouseMode={setCanvasMouseMode}
+          onPathSegmentCenterMove={
+            activeWorkflowOwns('geometry.transform') && !pathClickMode
+              ? handleMovePathSegmentCenter
+              : undefined
+          }
+          pathEndpointActionOperationId={
+            activeWorkflowOwns(SET_START_COMMAND.id) && pathClickMode === 'set-start'
+              ? selectedPathOperationId
+              : null
+          }
+          onPreviewPointClick={
+            !pathDocumentDraft ||
+            activeWorkflowOwns(SET_START_COMMAND.id) ||
+            activeWorkflowOwns('construction.measurement')
+              ? handlePreviewPointClick
+              : undefined
+          }
+          onSetCanvasMouseMode={
+            !pathDocumentDraft || activeWorkflowOwns('construction.measurement')
+              ? handleSetCanvasMouseMode
+              : undefined
+          }
           pathDocument={pathDocumentDraft}
           postedTransitions={postedPreviewTransitions}
           pathCount={pathCount}

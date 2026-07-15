@@ -6,6 +6,7 @@ import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 interface EditorInitialWirePositionPanelProps {
   disabled: boolean;
   document: PathPlanningDocument;
+  onDraftChange?: () => void;
   onSetGeometryLinked: (segmentId: string) => void;
   onSetManual: (point: Point2) => void;
 }
@@ -13,6 +14,7 @@ interface EditorInitialWirePositionPanelProps {
 export function EditorInitialWirePositionPanel({
   disabled,
   document,
+  onDraftChange,
   onSetGeometryLinked,
   onSetManual
 }: EditorInitialWirePositionPanelProps) {
@@ -61,7 +63,10 @@ export function EditorInitialWirePositionPanel({
               aria-label="Initial wire X"
               className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
               inputMode="decimal"
-              onChange={(event) => setXDraft(event.currentTarget.value)}
+              onChange={(event) => {
+                setXDraft(event.currentTarget.value);
+                onDraftChange?.();
+              }}
               value={xDraft}
             />
           </label>
@@ -71,7 +76,10 @@ export function EditorInitialWirePositionPanel({
               aria-label="Initial wire Y"
               className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
               inputMode="decimal"
-              onChange={(event) => setYDraft(event.currentTarget.value)}
+              onChange={(event) => {
+                setYDraft(event.currentTarget.value);
+                onDraftChange?.();
+              }}
               value={yDraft}
             />
           </label>

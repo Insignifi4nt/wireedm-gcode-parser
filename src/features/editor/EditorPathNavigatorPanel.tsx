@@ -131,6 +131,7 @@ interface EditorPathNavigatorPanelProps {
   onTranslatePathSelection: (delta: { x: number; y: number }) => void;
   onTranslatePathDocument: (delta: { x: number; y: number }) => void;
   onToggleHoverAssist: () => void;
+  onTransformDraftChange?: (source: 'target' | 'translate') => void;
 }
 
 export function EditorPathNavigatorPanel({
@@ -164,11 +165,31 @@ export function EditorPathNavigatorPanel({
   onTranslatePathDocument,
   onTranslatePathSelection,
   onToggleHoverAssist,
+  onTransformDraftChange,
   pathTargetXDraft,
   pathTargetYDraft,
   pathTranslateXDraft,
   pathTranslateYDraft
 }: EditorPathNavigatorPanelProps) {
+  function setUserTargetX(value: string) {
+    onPathTargetXDraftChange(value);
+    onTransformDraftChange?.('target');
+  }
+
+  function setUserTargetY(value: string) {
+    onPathTargetYDraftChange(value);
+    onTransformDraftChange?.('target');
+  }
+
+  function setUserTranslateX(value: string) {
+    onPathTranslateXDraftChange(value);
+    onTransformDraftChange?.('translate');
+  }
+
+  function setUserTranslateY(value: string) {
+    onPathTranslateYDraftChange(value);
+    onTransformDraftChange?.('translate');
+  }
   const segmentsById = segmentMap(pathDocument.segments);
   const projectRail = createUpidProjectRail(pathDocument);
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
@@ -627,7 +648,7 @@ export function EditorPathNavigatorPanel({
                     (activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving
                   }
                 inputMode="decimal"
-                onChange={(event) => onPathTranslateXDraftChange(event.currentTarget.value)}
+                onChange={(event) => setUserTranslateX(event.currentTarget.value)}
                 type="number"
                 value={pathTranslateXDraft}
               />
@@ -642,7 +663,7 @@ export function EditorPathNavigatorPanel({
                     (activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving
                   }
                 inputMode="decimal"
-                onChange={(event) => onPathTranslateYDraftChange(event.currentTarget.value)}
+                onChange={(event) => setUserTranslateY(event.currentTarget.value)}
                 type="number"
                 value={pathTranslateYDraft}
               />
@@ -779,7 +800,7 @@ export function EditorPathNavigatorPanel({
                   data-upid-transform-target-center-x
                   disabled={!activeTargetReferencePoint || isSaving}
                   inputMode="decimal"
-                  onChange={(event) => onPathTargetXDraftChange(event.currentTarget.value)}
+                  onChange={(event) => setUserTargetX(event.currentTarget.value)}
                   type="number"
                   value={pathTargetXDraft}
                 />
@@ -793,7 +814,7 @@ export function EditorPathNavigatorPanel({
                   data-upid-transform-target-center-y
                   disabled={!activeTargetReferencePoint || isSaving}
                   inputMode="decimal"
-                  onChange={(event) => onPathTargetYDraftChange(event.currentTarget.value)}
+                  onChange={(event) => setUserTargetY(event.currentTarget.value)}
                   type="number"
                   value={pathTargetYDraft}
                 />
@@ -807,8 +828,8 @@ export function EditorPathNavigatorPanel({
                 data-upid-transform-target-center-use-origin
                 disabled={!activeTargetReferencePoint || isSaving}
                 onClick={() => {
-                  onPathTargetXDraftChange(formatNumber(0));
-                  onPathTargetYDraftChange(formatNumber(0));
+                  setUserTargetX(formatNumber(0));
+                  setUserTargetY(formatNumber(0));
                 }}
                 type="button"
               >
@@ -822,8 +843,8 @@ export function EditorPathNavigatorPanel({
                 disabled={!activeTargetReferencePoint || !latestMeasurementPoint || isSaving}
                 onClick={() => {
                   if (!latestMeasurementPoint) return;
-                  onPathTargetXDraftChange(formatNumber(latestMeasurementPoint.x));
-                  onPathTargetYDraftChange(formatNumber(latestMeasurementPoint.y));
+                  setUserTargetX(formatNumber(latestMeasurementPoint.x));
+                  setUserTargetY(formatNumber(latestMeasurementPoint.y));
                 }}
                 type="button"
               >
@@ -868,8 +889,8 @@ export function EditorPathNavigatorPanel({
                       disabled={!activeTargetReferencePoint || isSaving}
                       key={point.id}
                       onClick={() => {
-                        onPathTargetXDraftChange(formatNumber(point.x));
-                        onPathTargetYDraftChange(formatNumber(point.y));
+                        setUserTargetX(formatNumber(point.x));
+                        setUserTargetY(formatNumber(point.y));
                       }}
                       title={`P${index + 1}: ${formatPoint(point)}`}
                       type="button"
@@ -902,7 +923,7 @@ export function EditorPathNavigatorPanel({
                   data-upid-transform-center-x
                   disabled={!selectedSegmentCenter || isSaving}
                   inputMode="decimal"
-                  onChange={(event) => onPathTargetXDraftChange(event.currentTarget.value)}
+                  onChange={(event) => setUserTargetX(event.currentTarget.value)}
                   type="number"
                   value={pathTargetXDraft}
                 />
@@ -915,7 +936,7 @@ export function EditorPathNavigatorPanel({
                   data-upid-transform-center-y
                   disabled={!selectedSegmentCenter || isSaving}
                   inputMode="decimal"
-                  onChange={(event) => onPathTargetYDraftChange(event.currentTarget.value)}
+                  onChange={(event) => setUserTargetY(event.currentTarget.value)}
                   type="number"
                   value={pathTargetYDraft}
                 />
@@ -928,8 +949,8 @@ export function EditorPathNavigatorPanel({
                 data-upid-transform-center-use-origin
                 disabled={!selectedSegmentCenter || isSaving}
                 onClick={() => {
-                  onPathTargetXDraftChange(formatNumber(0));
-                  onPathTargetYDraftChange(formatNumber(0));
+                  setUserTargetX(formatNumber(0));
+                  setUserTargetY(formatNumber(0));
                 }}
                 type="button"
               >
@@ -942,8 +963,8 @@ export function EditorPathNavigatorPanel({
                 disabled={!selectedSegmentCenter || !latestMeasurementPoint || isSaving}
                 onClick={() => {
                   if (!latestMeasurementPoint) return;
-                  onPathTargetXDraftChange(formatNumber(latestMeasurementPoint.x));
-                  onPathTargetYDraftChange(formatNumber(latestMeasurementPoint.y));
+                  setUserTargetX(formatNumber(latestMeasurementPoint.x));
+                  setUserTargetY(formatNumber(latestMeasurementPoint.y));
                 }}
                 type="button"
               >
@@ -972,8 +993,8 @@ export function EditorPathNavigatorPanel({
                       disabled={!selectedSegmentCenter || isSaving}
                       key={point.id}
                       onClick={() => {
-                        onPathTargetXDraftChange(formatNumber(point.x));
-                        onPathTargetYDraftChange(formatNumber(point.y));
+                        setUserTargetX(formatNumber(point.x));
+                        setUserTargetY(formatNumber(point.y));
                       }}
                       title={`P${index + 1}: ${formatPoint(point)}`}
                       type="button"
@@ -1229,7 +1250,7 @@ export function EditorPathNavigatorPanel({
                 >
                     Hover or select a row to cross-highlight the canvas. A contour is a whole cut loop made from ordered
                     line or arc segments; each segment exposes start and end endpoint handles. Inspect joins in Endpoint
-                    Topology from Panels or Diagnostics.
+                    Topology from the View menu or Path Diagnostics workflow.
                 </div>
               </div>
             </div>

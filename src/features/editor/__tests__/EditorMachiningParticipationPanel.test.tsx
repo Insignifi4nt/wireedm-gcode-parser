@@ -60,7 +60,7 @@ describe('EditorMachiningParticipationPanel', () => {
     expect(onSetSpan).toHaveBeenCalledWith(expect.objectContaining({
       range: { start: 0.1, end: 0.3 },
       participation: 'inactive-reference'
-    }));
+    }), true);
 
     await act(async () => {
       setSelect(container.querySelector('[aria-label="Partial contour wire side"]')!, 'right');
@@ -78,7 +78,7 @@ describe('EditorMachiningParticipationPanel', () => {
     expect(onSetSpan).toHaveBeenLastCalledWith(expect.objectContaining({
       range: { start: 0.2, end: 0.8 },
       participation: 'active-cut'
-    }));
+    }), false);
   });
 });
 

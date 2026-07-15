@@ -197,29 +197,14 @@ export function EditorInspectorPanel({
     >
       {renderWorkspacePanel('position', 'Position', (
       <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-[11px] font-semibold">Position</h3>
-          <button
-            aria-label="Toggle preview grid snap"
-            aria-pressed={gridSnapEnabled}
-            className={`inline-flex h-6 items-center gap-1 border px-2 font-mono text-[10px] outline-none transition hover:bg-accent ${
-              gridSnapEnabled ? 'border-primary text-primary' : 'border-border text-muted-foreground'
-            } ${guideHighlightClass('grid-snap', guideHighlightTarget)}`}
-            data-editor-grid-snap
-            {...guideTargetProps('grid-snap', guideHighlightTarget)}
-            onClick={onToggleGridSnap}
-            title="Snap cursor and measurement clicks to the 5 mm preview grid"
-            type="button"
-          >
-            <Magnet className="size-3" />
-            {gridSnapEnabled ? 'ON' : 'OFF'}
-          </button>
-        </div>
+        <h3 className="mb-2 text-[11px] font-semibold">Position</h3>
         <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
           <dt className="text-muted-foreground">Mouse X</dt>
           <dd data-editor-cursor="x">{formatCursorCoordinate(previewCursorPoint?.x)}</dd>
           <dt className="text-muted-foreground">Mouse Y</dt>
           <dd data-editor-cursor="y">{formatCursorCoordinate(previewCursorPoint?.y)}</dd>
+          <dt className="text-muted-foreground">Grid Snap</dt>
+          <dd data-editor-position-grid-snap>{gridSnapEnabled ? 'On' : 'Off'}</dd>
         </dl>
       </section>
       ))}
@@ -1011,7 +996,24 @@ export function EditorInspectorPanel({
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="text-[11px] font-semibold">Measurement & Construction</h3>
-          <span className="text-[10px] text-muted-foreground">{measurementPoints.length}</span>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-muted-foreground">{measurementPoints.length}</span>
+            <button
+              aria-label="Toggle preview grid snap"
+              aria-pressed={gridSnapEnabled}
+              className={`inline-flex h-6 items-center gap-1 border px-2 font-mono text-[10px] outline-none transition hover:bg-accent ${
+                gridSnapEnabled ? 'border-primary text-primary' : 'border-border text-muted-foreground'
+              } ${guideHighlightClass('grid-snap', guideHighlightTarget)}`}
+              data-editor-grid-snap
+              {...guideTargetProps('grid-snap', guideHighlightTarget)}
+              onClick={onToggleGridSnap}
+              title="Snap cursor and measurement clicks to the 5 mm preview grid"
+              type="button"
+            >
+              <Magnet className="size-3" />
+              {gridSnapEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
         </div>
         <div className="mb-2 grid grid-cols-2 gap-1" data-editor-canvas-mouse-mode>
           <button

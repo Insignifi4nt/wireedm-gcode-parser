@@ -54,7 +54,7 @@ describe('EditorProgramStopsPanel', () => {
         placement: { kind: 'before-operation-end', remainingCutLengthMm: 2.5 },
         reason: 'part-retention'
       })
-    ]);
+    ], true);
   });
 });
 

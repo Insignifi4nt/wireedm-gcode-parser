@@ -35,7 +35,7 @@ interface EditorCanvasPanelProps {
   onPathElementHover?: (element: EditorPathElementRef | null) => void;
   onPathSegmentCenterMove?: (element: EditorPathElementRef, targetCenter: { x: number; y: number }) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
-  onSetCanvasMouseMode: (mode: CanvasMouseMode) => void;
+  onSetCanvasMouseMode?: (mode: CanvasMouseMode) => void;
 }
 
 type CanvasMouseMode = 'select' | 'point';

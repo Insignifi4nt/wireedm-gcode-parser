@@ -67,6 +67,12 @@ describe('Editor density cleanup', () => {
 
   it('moves Contour Tree teaching content into one hover and focus explanation', async () => {
     await importSimplePathProject();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        '[data-editor-workflow-command="view.contours"]'
+      )?.click();
+    });
+    await flushAsync();
 
     expect(document.querySelector('[data-upid-contour-tree-map]')).toBeNull();
     expect(document.querySelector('[data-upid-contour-tree-help]')).toBeNull();
@@ -84,16 +90,29 @@ describe('Editor density cleanup', () => {
   it('lets each workspace panel own scrolling for its primary row collection', async () => {
     await importSimplePathProject();
 
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        '[data-editor-workflow-command="machining.sequence"]'
+      )?.click();
+    });
+    await flushAsync();
+
     const cutSequence = document.querySelector('[data-upid-cut-sequence-list]');
     expect(cutSequence).not.toBeNull();
     expect(cutSequence?.matches('[data-upid-cut-sequence]')).toBe(true);
     expect(cutSequence?.className).not.toMatch(/max-h-|overflow-auto/);
 
-    for (const selector of [
-      '[data-upid-contour-tree]',
-      '[data-upid-endpoint-topology-list]',
-      '[data-upid-diagnostics-list]'
+    for (const [commandId, selector] of [
+      ['view.contours', '[data-upid-contour-tree]'],
+      ['view.endpoints', '[data-upid-endpoint-topology-list]'],
+      ['view.diagnostics', '[data-upid-diagnostics-list]']
     ]) {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>(
+          `[data-editor-workflow-command="${commandId}"]`
+        )?.click();
+      });
+      await flushAsync();
       const primaryList = document.querySelector(selector);
       expect(primaryList).not.toBeNull();
       expect(primaryList?.className).not.toMatch(/max-h-|overflow-auto/);
