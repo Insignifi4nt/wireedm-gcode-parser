@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY,
   normalizeEditorWorkspaceLayout,
+  readEditorWorkspaceRenderedPlacement,
   readEditorWorkspaceLayout,
   writeEditorWorkspaceLayout,
   type EditorWorkspaceLayoutV1
@@ -89,6 +90,24 @@ describe('editor workspace layout persistence', () => {
     writeEditorWorkspaceLayout(layout);
 
     expect(readEditorWorkspaceLayout(defaults, viewport())).toEqual(layout);
+  });
+
+  it('keeps remembered placements while rendering only the active workflow panel', () => {
+    expect(readEditorWorkspaceRenderedPlacement(defaults.placements, 'contour-tree', null))
+      .toBe('hidden');
+    expect(readEditorWorkspaceRenderedPlacement(defaults.placements, 'contour-tree', 'contour-tree'))
+      .toBe('docked-left');
+    expect(readEditorWorkspaceRenderedPlacement(defaults.placements, 'path-actions', 'contour-tree'))
+      .toBe('hidden');
+    expect(defaults.placements).toMatchObject({
+      'contour-tree': 'docked-left',
+      'path-actions': 'docked-right'
+    });
+  });
+
+  it('floats an active panel whose remembered placement is hidden', () => {
+    expect(readEditorWorkspaceRenderedPlacement(defaults.placements, 'measurement', 'measurement'))
+      .toBe('floating');
   });
 });
 

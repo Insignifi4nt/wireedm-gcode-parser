@@ -30,6 +30,7 @@ export interface EditorCommandDefinition {
   historyLabel?: string;
   prerequisites?: readonly EditorCommandPrerequisite[];
   session?: { kind: string };
+  workflow?: { kind: 'mutating' | 'view' };
 }
 
 export interface EditorCommandEvaluationContext {
@@ -55,6 +56,12 @@ export function createEditorCommandRegistry(
   for (const command of ordered) {
     if (byId.has(command.id)) {
       throw new Error(`Duplicate editor command id: ${command.id}.`);
+    }
+    if (
+      command.workflow?.kind === 'mutating' &&
+      (typeof command.historyLabel !== 'string' || command.historyLabel.trim() === '')
+    ) {
+      throw new Error(`Mutating editor workflow ${command.id} requires a nonempty history label.`);
     }
     byId.set(command.id, command);
   }

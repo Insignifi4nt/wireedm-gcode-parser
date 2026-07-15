@@ -161,6 +161,7 @@ import {
 } from './pathSelectionGeometry';
 import {
   readEditorWorkspaceLayout,
+  readEditorWorkspaceRenderedPlacement,
   writeEditorWorkspaceLayout,
   type EditorWorkspaceLayoutV1
 } from './workspace/editorWorkspaceLayout';
@@ -174,6 +175,16 @@ import {
   editorToolSessionReducer,
   type EditorToolSession
 } from './commands/editorToolSession';
+import { EditorWorkflowTransitionDialog } from './EditorWorkflowTransitionDialog';
+import {
+  createEditorWorkflowSession,
+  dismissEditorWorkflowTransition,
+  markEditorWorkflowDirty,
+  requestEditorWorkflowTransition,
+  resolveEditorWorkflowTransition,
+  type EditorWorkflowSession,
+  type EditorWorkflowTransition
+} from './workflows/editorWorkflowSession';
 
 interface EditorPageProps {
   program: LoadedEditorProgram | null;
@@ -192,6 +203,7 @@ interface EditorPageProps {
 
 interface EditorDraftSnapshot {
   draft: EditorDraftState;
+  historyLabel?: string;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
 }
@@ -204,7 +216,8 @@ const SET_START_COMMAND: EditorCommandDefinition = {
   toolWindowId: 'path-actions',
   historyLabel: 'Set operation start',
   prerequisites: [{ kind: 'document' }, { kind: 'selected-operation' }, { kind: 'interaction-unlocked' }],
-  session: { kind: 'set-start' }
+  session: { kind: 'set-start' },
+  workflow: { kind: 'mutating' }
 };
 
 type EditorWorkspacePanelId =
@@ -352,11 +365,13 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
   },
   {
     id: 'geometry.transform', label: 'Transform Geometry', menuPath: ['Geometry', 'Transform Geometry'],
-    scope: 'document', toolWindowId: 'path-transform', prerequisites: [{ kind: 'document' }]
+    scope: 'document', toolWindowId: 'path-transform', historyLabel: 'Transform geometry',
+    prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
   },
   {
     id: 'geometry.path-actions', label: 'Path Actions', menuPath: ['Geometry', 'Path Actions'],
-    scope: 'document', toolWindowId: 'path-actions', prerequisites: [{ kind: 'document' }]
+    scope: 'document', toolWindowId: 'path-actions', historyLabel: 'Edit path setup',
+    prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
   },
   SET_START_COMMAND,
   ...([
@@ -368,14 +383,16 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
     ['machining.participation', 'Machining Participation', 'machining-participation']
   ] as const).map(([id, label, toolWindowId]) => ({
     id, label, menuPath: ['Machining', label] as const, scope: 'document' as const,
-    toolWindowId, prerequisites: [{ kind: 'document' } as const]
+    toolWindowId, historyLabel: `Edit ${label}`, prerequisites: [{ kind: 'document' } as const],
+    workflow: { kind: 'mutating' as const }
   })),
   ...([
     ['construction.measurement', 'Measurement', 'measurement'],
     ['construction.hover-assist', 'Hover / Snap Assist', 'path-hover-assist']
   ] as const).map(([id, label, toolWindowId]) => ({
     id, label, menuPath: ['Construction', label] as const, scope: 'document' as const,
-    toolWindowId, prerequisites: [{ kind: 'document' } as const]
+    toolWindowId, prerequisites: [{ kind: 'document' } as const],
+    workflow: { kind: 'view' as const }
   })),
   ...([
     ['view.summary', 'Path Summary', 'path-summary'],
@@ -385,11 +402,12 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
     ['view.position', 'Position', 'position']
   ] as const).map(([id, label, toolWindowId]) => ({
     id, label, menuPath: ['View', label] as const, scope: 'view' as const,
-    toolWindowId, prerequisites: [{ kind: 'document' } as const]
+    toolWindowId, prerequisites: [{ kind: 'document' } as const], workflow: { kind: 'view' as const }
   })),
   {
     id: 'machine.profile', label: 'Project Machine', menuPath: ['Machine', 'Project Machine'],
-    scope: 'machine', toolWindowId: 'machine', prerequisites: [{ kind: 'document' }]
+    scope: 'machine', toolWindowId: 'machine', historyLabel: 'Edit project machine',
+    prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
   },
   {
     id: 'export.preview', label: 'Controller Export Preview',
@@ -660,6 +678,12 @@ export function EditorPage({
   const [lineMode, setLineMode] = useState<'select' | 'edit'>(readStoredLineMode);
   const [pathClickMode, setPathClickMode] = useState<'set-start' | MagnetizeMode | null>(null);
   const [activeToolSession, setActiveToolSession] = useState<EditorToolSession | null>(null);
+  const [activeWorkflowSession, setActiveWorkflowSession] = useState<
+    EditorWorkflowSession<EditorDraftSnapshot> | null
+  >(null);
+  const [workflowTransition, setWorkflowTransition] = useState<
+    EditorWorkflowTransition<EditorDraftSnapshot> | null
+  >(null);
   const [hoveredPathElement, setHoveredPathElement] = useState<EditorPathElementRef | null>(null);
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
   const [pathHoverAssistEnabled, setPathHoverAssistEnabled] = useState(false);
@@ -923,16 +947,16 @@ export function EditorPage({
                   description: EDITOR_WORKSPACE_PANEL_DESCRIPTIONS[id],
                   id,
                   title: EDITOR_WORKSPACE_PANEL_TITLES[id],
-                  placement: workspacePanelPlacements[id],
-                  onHide: () => hideWorkspacePanel(id),
-                  onShow: () => showWorkspacePanel(id)
+                  placement: readWorkspacePanelRenderedPlacement(id),
+                  onHide: requestCloseEditorWorkflow,
+                  onShow: () => openEditorWorkflowForPanel(id)
                 }))
               }))
             : []
         }
       />
     ),
-    [pathDocumentDraft, workspacePanelPlacements]
+    [activeWorkflowSession, pathDocumentDraft, workspacePanelPlacements]
   );
   const editorWorkflowMenus = useMemo<EditorWorkflowMenuGroup[]>(() => {
     if (!pathDocumentDraft) return [];
@@ -968,15 +992,12 @@ export function EditorPage({
           enabled,
           disabledReason: saveUnavailable ?? (availability.enabled ? undefined : availability.reason),
           onExecute: () => {
-            if (command.id === SET_START_COMMAND.id) {
-              showOrFocusWorkspacePanel('path-actions');
-              handleActivatePathClickMode('set-start');
-            } else if (command.id === 'project.save') {
+            if (command.id === 'project.save') {
               void handleSaveClick();
             } else if (command.id === 'export.preview') {
               setExportPreviewOpen(true);
             } else if (command.toolWindowId) {
-              showOrFocusWorkspacePanel(command.toolWindowId as EditorWorkspacePanelId);
+              openEditorWorkflow(command.id);
             }
           }
         };
@@ -984,6 +1005,7 @@ export function EditorPage({
     }));
   }, [
     activeToolSession,
+    activeWorkflowSession,
     hasUnsavedChanges,
     isEditorMutationLocked,
     pathDocumentDraft,
@@ -1117,6 +1139,8 @@ export function EditorPage({
     setSelectedPathElement(null);
     setHoveredPathElement(null);
     setExportPreviewOpen(false);
+    setActiveWorkflowSession(null);
+    setWorkflowTransition(null);
     setPathClickMode(null);
     setCanvasMouseMode('select');
     setRedoStack([]);
@@ -2167,8 +2191,14 @@ export function EditorPage({
         )
       : null;
 
-    setUndoStack((current) => [...current, currentDraftSnapshot()]);
-    setRedoStack([]);
+    if (activeWorkflowSession?.kind === 'mutating') {
+      setActiveWorkflowSession((current) =>
+        current?.kind === 'mutating' ? markEditorWorkflowDirty(current) : current
+      );
+    } else {
+      setUndoStack((current) => [...current, currentDraftSnapshot()]);
+      setRedoStack([]);
+    }
     setDraftState(clonedDraft);
     setSelectedPathOperationId(nextSelectedPathOperationId);
     setSelectedPathElement(nextSelectedPathElement);
@@ -2216,9 +2246,10 @@ export function EditorPage({
     setPathClickMode(null);
   }
 
-  function currentDraftSnapshot(): EditorDraftSnapshot {
+  function currentDraftSnapshot(historyLabel?: string): EditorDraftSnapshot {
     return {
       draft: cloneEditorDraftState(draftState),
+      historyLabel,
       selectedPathElement,
       selectedPathOperationId
     };
@@ -2304,6 +2335,155 @@ export function EditorPage({
     return 'Select mode / Next: click a contour, segment, endpoint, or diagnostic. Use Point mode to place measurement points.';
   }
 
+  function openEditorWorkflow(commandId: string) {
+    const command = EDITOR_COMMAND_REGISTRY.get(commandId);
+    if (!command?.toolWindowId || !command.workflow) return;
+
+    if (activeWorkflowSession?.commandId === commandId) {
+      focusWorkspacePanel(command.toolWindowId as EditorWorkspacePanelId);
+      return;
+    }
+
+    if (activeWorkflowSession) {
+      const transition = requestEditorWorkflowTransition(activeWorkflowSession, {
+        commandId,
+        kind: 'open'
+      });
+      if (transition.kind === 'held') {
+        setWorkflowTransition(transition);
+        return;
+      }
+      if (transition.kind === 'resolved') completeEditorWorkflowTransition(transition);
+      return;
+    }
+
+    activateEditorWorkflow(command);
+  }
+
+  function openEditorWorkflowForPanel(panelId: EditorWorkspacePanelId) {
+    const command = EDITOR_COMMAND_REGISTRY.all().find(
+      (candidate) => candidate.toolWindowId === panelId && candidate.workflow
+    );
+    if (command) openEditorWorkflow(command.id);
+  }
+
+  function activateEditorWorkflow(
+    command: EditorCommandDefinition,
+    openingSnapshot: EditorDraftSnapshot = currentDraftSnapshot()
+  ) {
+    if (!command.toolWindowId || !command.workflow) return;
+    const panelId = command.toolWindowId as EditorWorkspacePanelId;
+    const session = command.workflow.kind === 'mutating'
+      ? createEditorWorkflowSession({
+          commandId: command.id,
+          historyLabel: command.historyLabel!,
+          kind: 'mutating' as const,
+          label: command.label,
+          openingSnapshot,
+          panelId,
+          saveAvailability: { enabled: true as const }
+        })
+      : createEditorWorkflowSession({
+          commandId: command.id,
+          historyLabel: null,
+          kind: 'view' as const,
+          label: command.label,
+          openingSnapshot,
+          panelId,
+          saveAvailability: { enabled: true as const }
+        });
+
+    setActiveWorkflowSession(session);
+    setWorkflowTransition(null);
+    if (workspacePanelPlacements[panelId] === 'hidden') {
+      setWorkspacePanelGeometries((current) => ({
+        ...current,
+        [panelId]: findReadableFloatingPanelGeometry(
+          panelId,
+          current[panelId],
+          workspacePanelPlacements,
+          current
+        )
+      }));
+      setWorkspacePanelPlacements((current) => ({ ...current, [panelId]: 'floating' }));
+    }
+    if (command.id === SET_START_COMMAND.id) handleActivatePathClickMode('set-start');
+    window.requestAnimationFrame(() => focusWorkspacePanel(panelId));
+  }
+
+  function requestCloseEditorWorkflow() {
+    if (!activeWorkflowSession) return;
+    const transition = requestEditorWorkflowTransition(activeWorkflowSession, { kind: 'close' });
+    if (transition.kind === 'held') {
+      setWorkflowTransition(transition);
+      return;
+    }
+    if (transition.kind === 'resolved') completeEditorWorkflowTransition(transition);
+  }
+
+  function dismissWorkflowTransition() {
+    if (!workflowTransition) return;
+    dismissEditorWorkflowTransition(workflowTransition);
+    setWorkflowTransition(null);
+  }
+
+  function resolveWorkflowTransition(resolution: 'save' | 'discard') {
+    if (!workflowTransition) return;
+    const resolved = resolveEditorWorkflowTransition(workflowTransition, resolution);
+    if (resolved.kind !== 'resolved') return;
+    completeEditorWorkflowTransition(resolved);
+  }
+
+  function completeEditorWorkflowTransition(
+    transition: Extract<EditorWorkflowTransition<EditorDraftSnapshot>, { kind: 'resolved' }>
+  ) {
+    const { request, resolution, session } = transition;
+    const nextOpeningSnapshot = resolution === 'discard'
+      ? session.openingSnapshot
+      : currentDraftSnapshot();
+
+    if (resolution === 'save' && session.kind === 'mutating') {
+      setUndoStack((current) => [
+        ...current,
+        { ...session.openingSnapshot, historyLabel: session.historyLabel }
+      ]);
+      setRedoStack([]);
+    } else if (resolution === 'discard') {
+      restoreDraftSnapshot(session.openingSnapshot);
+    }
+
+    setActiveToolSession(null);
+    setPathClickMode(null);
+    setWorkflowTransition(null);
+    if (request.kind === 'close') {
+      setActiveWorkflowSession(null);
+      return;
+    }
+
+    const nextCommand = EDITOR_COMMAND_REGISTRY.get(request.commandId);
+    if (!nextCommand) {
+      setActiveWorkflowSession(null);
+      return;
+    }
+    activateEditorWorkflow(nextCommand, nextOpeningSnapshot);
+  }
+
+  function readWorkspacePanelRenderedPlacement(panelId: EditorWorkspacePanelId) {
+    return readEditorWorkspaceRenderedPlacement(
+      workspacePanelPlacements,
+      panelId,
+      activeWorkflowSession?.panelId ?? null
+    );
+  }
+
+  function focusWorkspacePanel(panelId: EditorWorkspacePanelId) {
+    const panel = document.querySelector<HTMLElement>(
+      `[data-editor-workspace-panel="${panelId}"]`
+    );
+    panel?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    panel?.focus?.({ preventScroll: true });
+  }
+
   function renderWorkspacePanel(
     id: string,
     title: string,
@@ -2311,6 +2491,15 @@ export function EditorPage({
     options: { fill?: boolean } = {}
   ) {
     const panelId = id as EditorWorkspacePanelId;
+    const renderedPlacement = readWorkspacePanelRenderedPlacement(panelId);
+
+    if (renderedPlacement === 'hidden') {
+      return (
+        <div aria-hidden="true" className="hidden" data-editor-inactive-workflow-panel={id}>
+          {children}
+        </div>
+      );
+    }
 
     return (
       <EditorWorkspacePanelFrame
@@ -2323,8 +2512,8 @@ export function EditorPage({
         onFloat={() => floatWorkspacePanel(panelId)}
         onFloatFromDock={(point) => floatWorkspacePanelFromDock(panelId, point)}
         onGeometryChange={(geometry) => setWorkspacePanelGeometry(panelId, geometry)}
-        onHide={() => hideWorkspacePanel(panelId)}
-        placement={workspacePanelPlacements[panelId]}
+        onHide={requestCloseEditorWorkflow}
+        placement={renderedPlacement}
         title={title}
       >
         {children}
@@ -2586,12 +2775,12 @@ export function EditorPage({
 
   function readWorkspaceDockPanelCount(side: EditorDockSide) {
     return workspaceDockOrders[side].filter(
-      (panelId) => workspacePanelPlacements[panelId] === `docked-${side}`
+      (panelId) => readWorkspacePanelRenderedPlacement(panelId) === `docked-${side}`
     ).length;
   }
 
   function readWorkspacePanelDockOrder(panelId: EditorWorkspacePanelId) {
-    const placement = workspacePanelPlacements[panelId];
+    const placement = readWorkspacePanelRenderedPlacement(panelId);
     if (placement !== 'docked-left' && placement !== 'docked-right') return 0;
 
     const side = placement === 'docked-left' ? 'left' : 'right';
@@ -2719,70 +2908,13 @@ export function EditorPage({
     }));
   }
 
-  function hideWorkspacePanel(panelId: EditorWorkspacePanelId) {
-    setWorkspacePanelPlacements((current) => ({
-      ...current,
-      [panelId]: 'hidden'
-    }));
-    setWorkspaceDockOrders((current) => ({
-      left: current.left.filter((id) => id !== panelId),
-      right: current.right.filter((id) => id !== panelId)
-    }));
-  }
-
   function showWorkspacePanel(panelId: EditorWorkspacePanelId) {
-    setWorkspacePanelGeometries((current) => ({
-      ...current,
-      [panelId]: findReadableFloatingPanelGeometry(
-        panelId,
-        current[panelId],
-        workspacePanelPlacements,
-        current
-      )
-    }));
-    setWorkspacePanelPlacements((current) => ({
-      ...current,
-      [panelId]: 'floating'
-    }));
-  }
-
-  function showOrFocusWorkspacePanel(panelId: EditorWorkspacePanelId) {
-    if (workspacePanelPlacements[panelId] === 'hidden') {
-      showWorkspacePanel(panelId);
-      return;
-    }
-    window.requestAnimationFrame(() => {
-      const panel = document.querySelector<HTMLElement>(
-        `[data-editor-workspace-panel="${panelId}"]`
-      );
-      panel?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
-      panel?.focus?.({ preventScroll: true });
-    });
+    openEditorWorkflowForPanel(panelId);
   }
 
   function showWorkspacePanels(panelIds: EditorWorkspacePanelId[]) {
-    const uniquePanelIds = [...new Set(panelIds)];
-    setWorkspacePanelGeometries((current) => {
-      const nextGeometries = { ...current };
-      const nextPlacements = { ...workspacePanelPlacements };
-      for (const panelId of uniquePanelIds) {
-        nextGeometries[panelId] = findReadableFloatingPanelGeometry(
-          panelId,
-          nextGeometries[panelId],
-          nextPlacements,
-          nextGeometries
-        );
-        nextPlacements[panelId] = 'floating';
-      }
-      return nextGeometries;
-    });
-    setWorkspacePanelPlacements((current) => {
-      const nextPlacements = { ...current };
-      for (const panelId of uniquePanelIds) {
-        nextPlacements[panelId] = 'floating';
-      }
-      return nextPlacements;
-    });
+    const panelId = panelIds.at(-1);
+    if (panelId) openEditorWorkflowForPanel(panelId);
   }
 
   return (
@@ -2800,6 +2932,21 @@ export function EditorPage({
         onLanguageChange={handleGuideLanguageChange}
         open={guideOpen}
       />
+      {activeWorkflowSession && (
+        <EditorWorkflowTransitionDialog
+          nextWorkflowLabel={
+            workflowTransition?.kind === 'held' && workflowTransition.request.kind === 'open'
+              ? EDITOR_COMMAND_REGISTRY.get(workflowTransition.request.commandId)?.label ?? null
+              : null
+          }
+          onDiscard={() => resolveWorkflowTransition('discard')}
+          onDismiss={dismissWorkflowTransition}
+          onSave={() => resolveWorkflowTransition('save')}
+          open={workflowTransition?.kind === 'held'}
+          saveAvailability={activeWorkflowSession.saveAvailability}
+          workflowLabel={activeWorkflowSession.label}
+        />
+      )}
       <div data-editor-floating-layer />
       <div className="hidden" data-editor-workspace-panel-registry>
         {pathDocumentDraft && renderPathNavigatorPanel(pathDocumentDraft)}

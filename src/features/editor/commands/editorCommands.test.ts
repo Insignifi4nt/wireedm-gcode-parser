@@ -72,6 +72,30 @@ describe('editor command availability', () => {
     expect(available).toEqual({ enabled: true });
     expect(canStartEditorToolSession(available)).toBe(true);
   });
+
+  it('requires mutating workflow commands to define one history label', () => {
+    expect(() => createEditorCommandRegistry([{
+      id: 'geometry.transform',
+      label: 'Transform Geometry',
+      menuPath: ['Geometry', 'Transform Geometry'],
+      scope: 'document',
+      toolWindowId: 'path-transform',
+      workflow: { kind: 'mutating' }
+    }])).toThrow(/history label/i);
+  });
+
+  it('accepts view workflows without assigning document history', () => {
+    const command: EditorCommandDefinition = {
+      id: 'view.summary',
+      label: 'Path Summary',
+      menuPath: ['View', 'Path Summary'],
+      scope: 'view',
+      toolWindowId: 'path-summary',
+      workflow: { kind: 'view' }
+    };
+
+    expect(createEditorCommandRegistry([command]).get(command.id)).toBe(command);
+  });
 });
 
 function context(

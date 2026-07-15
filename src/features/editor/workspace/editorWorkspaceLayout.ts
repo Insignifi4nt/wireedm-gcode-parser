@@ -41,6 +41,18 @@ export function writeEditorWorkspaceLayout(
   storage.setItem(EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
 }
 
+export function readEditorWorkspaceRenderedPlacement(
+  placements: Readonly<Record<string, EditorPanelPlacement>>,
+  panelId: string,
+  activePanelId: string | null
+): EditorPanelPlacement {
+  if (panelId !== activePanelId) return 'hidden';
+  const rememberedPlacement = placements[panelId];
+  return rememberedPlacement === 'hidden' || rememberedPlacement === undefined
+    ? 'floating'
+    : rememberedPlacement;
+}
+
 export function normalizeEditorWorkspaceLayout(
   candidate: unknown,
   defaults: EditorWorkspaceLayoutV1,

@@ -45,7 +45,6 @@ import { EditorUpidExportPreview } from '@/features/editor/EditorUpidExportPrevi
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const noop = () => undefined;
-let autoOpenedPanelToolbars = new WeakSet<Element>();
 
 describe('EditorPage UPID draft boundary', () => {
   let container: HTMLDivElement;
@@ -55,7 +54,6 @@ describe('EditorPage UPID draft boundary', () => {
     postUpidForMachineSpy.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
-    autoOpenedPanelToolbars = new WeakSet<Element>();
     root = createRoot(container);
   });
 
@@ -94,6 +92,76 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('button[aria-label="Open Path Project export preview"]');
     expect(container.querySelector('[data-upid-export-preview]')).not.toBeNull();
+  });
+
+  it('holds dirty workflow switches and restores the opening draft when discarded', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    expect(visibleWorkflowPanelIds()).toEqual(['path-transform']);
+    const openingGeometry = previewGeometrySignature();
+
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    expect(previewGeometrySignature()).not.toBe(openingGeometry);
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      'before opening Entry / Exit & Rethreading'
+    );
+    expect(visibleWorkflowPanelIds()).toEqual(['path-transform']);
+
+    await clickElement('button[aria-label="Dismiss workflow transition"]');
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(visibleWorkflowPanelIds()).toEqual(['path-transform']);
+    expect(previewGeometrySignature()).not.toBe(openingGeometry);
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(visibleWorkflowPanelIds()).toEqual(['entry-exit']);
+    expect(previewGeometrySignature()).toBe(openingGeometry);
+    expect(
+      (container.querySelector(
+        'button[aria-label="Undo active document change"]'
+      ) as HTMLButtonElement | null)?.disabled
+    ).toBe(true);
+  });
+
+  it('commits several provisional workflow edits as one Undo entry when switching with Save', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    const openingGeometry = previewGeometrySignature();
+    await changeInput('input[aria-label="Translate X"]', '2');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await changeInput('input[aria-label="Translate X"]', '4');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    const savedGeometry = previewGeometrySignature();
+    expect(savedGeometry).not.toBe(openingGeometry);
+
+    await clickElement('[data-editor-workflow-command="view.summary"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    expect(visibleWorkflowPanelIds()).toEqual(['path-summary']);
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(previewGeometrySignature()).toBe(openingGeometry);
+    expect(
+      (container.querySelector(
+        'button[aria-label="Undo active document change"]'
+      ) as HTMLButtonElement | null)?.disabled
+    ).toBe(true);
+    expect(previewGeometrySignature()).not.toBe(savedGeometry);
   });
 
   it('initializes verified finished-contour intent and derives reversal-safe Robofil review data', async () => {
@@ -1967,6 +2035,18 @@ describe('EditorPage UPID draft boundary', () => {
         ?.getAttribute('data-upid-expanded')
     ).toBe(expanded ? 'true' : 'false');
   }
+
+  function visibleWorkflowPanelIds() {
+    return [...container.querySelectorAll('[data-editor-workspace-panel]')].map((panel) =>
+      panel.getAttribute('data-editor-workspace-panel')
+    );
+  }
+
+  function previewGeometrySignature() {
+    return [...container.querySelectorAll(
+      'svg[aria-label="UPID path preview"] path[data-preview-source="path-document"]'
+    )].map((path) => path.getAttribute('d')).join('|');
+  }
 });
 
 function EditorPageHarness({
@@ -2275,21 +2355,5 @@ async function flushAsync() {
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
-    openEditorWorkspacePanelsOnce();
-    await Promise.resolve();
-    await Promise.resolve();
   });
-}
-
-function openEditorWorkspacePanelsOnce() {
-  for (const toolbar of document.querySelectorAll('[data-editor-panel-toolbar]')) {
-    if (autoOpenedPanelToolbars.has(toolbar)) continue;
-    autoOpenedPanelToolbars.add(toolbar);
-
-    for (const button of toolbar.querySelectorAll('button[data-editor-panel-menu-item]')) {
-      if (button.getAttribute('aria-label')?.startsWith('Show')) {
-        button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      }
-    }
-  }
 }
