@@ -132,6 +132,7 @@ interface EditorPathNavigatorPanelProps {
   onTranslatePathDocument: (delta: { x: number; y: number }) => void;
   onToggleHoverAssist: () => void;
   onTransformDraftChange?: (source: 'target' | 'translate') => void;
+  transformTargetChangeBlocked?: boolean;
 }
 
 export function EditorPathNavigatorPanel({
@@ -169,7 +170,8 @@ export function EditorPathNavigatorPanel({
   pathTargetXDraft,
   pathTargetYDraft,
   pathTranslateXDraft,
-  pathTranslateYDraft
+  pathTranslateYDraft,
+  transformTargetChangeBlocked = false
 }: EditorPathNavigatorPanelProps) {
   function setUserTargetX(value: string) {
     onPathTargetXDraftChange(value);
@@ -485,7 +487,7 @@ export function EditorPathNavigatorPanel({
               aria-label="Target document for transform"
               aria-pressed={activePathTransformTarget === 'document'}
               className={activePathTransformTarget === 'document' ? activeModeButtonClass : modeButtonClass}
-              disabled={!documentBounds || isSaving}
+              disabled={!documentBounds || isSaving || transformTargetChangeBlocked}
               onClick={() => {
                 setPathTransformTarget('document');
                 setPathTransformTargetPinned(true);
@@ -498,7 +500,7 @@ export function EditorPathNavigatorPanel({
               aria-label="Target selection for transform"
               aria-pressed={activePathTransformTarget === 'selection'}
               className={activePathTransformTarget === 'selection' ? activeModeButtonClass : modeButtonClass}
-              disabled={!hasTransformSelection || isSaving}
+              disabled={!hasTransformSelection || isSaving || transformTargetChangeBlocked}
               onClick={() => {
                 setPathTransformTarget('selection');
                 setPathTransformTargetPinned(true);
@@ -515,7 +517,7 @@ export function EditorPathNavigatorPanel({
                 aria-label="Document reference point"
                 className="h-6 max-w-[132px] border border-border bg-background px-1 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                 data-upid-transform-document-reference
-                disabled={!documentBounds || isSaving}
+                disabled={!documentBounds || isSaving || transformTargetChangeBlocked}
                 onChange={(event) => {
                   const nextMode = event.currentTarget.value as DocumentReferenceMode;
                   const nextMeasurementPointId =
@@ -599,7 +601,7 @@ export function EditorPathNavigatorPanel({
                     aria-label="Use latest measurement point as document reference"
                     className={textButtonClass}
                     data-upid-transform-document-reference-use-latest
-                    disabled={!latestDocumentReferenceMeasurementPoint || isSaving}
+                    disabled={!latestDocumentReferenceMeasurementPoint || isSaving || transformTargetChangeBlocked}
                     onClick={() => {
                         setDocumentReferenceMeasurementPointId(latestDocumentReferenceMeasurementPoint?.id ?? null);
                       setTargetDraftsFromPoint(latestDocumentReferenceMeasurementPoint);
@@ -615,7 +617,7 @@ export function EditorPathNavigatorPanel({
                         point.id === pickedDocumentReferencePoint?.id ? activeModeButtonClass : textButtonClass
                       }
                       data-upid-transform-document-reference-use-point={index + 1}
-                      disabled={isSaving}
+                      disabled={isSaving || transformTargetChangeBlocked}
                       key={point.id}
                       onClick={() => {
                         setDocumentReferenceMeasurementPointId(point.id);

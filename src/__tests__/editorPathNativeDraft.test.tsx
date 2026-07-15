@@ -477,6 +477,56 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe(true);
   });
 
+  it('does not quantize Transform canvas drag with the saved Construction grid preference', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    await clickElement('button[aria-label="Toggle preview grid snap"]');
+    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+
+    const preview = container.querySelector(
+      'svg[aria-label="UPID path preview"]'
+    ) as SVGSVGElement;
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        bottom: 140,
+        height: 120,
+        left: 10,
+        right: 130,
+        toJSON: () => ({}),
+        top: 20,
+        width: 120,
+        x: 10,
+        y: 20
+      })
+    });
+    const path = container.querySelector(
+      'path[data-preview-source="path-document"][data-type="cut"]'
+    ) as SVGPathElement;
+    const start = previewWorldClientPoint(preview, { x: 0, y: 0 }, 5);
+    const end = previewWorldClientPoint(preview, { x: 1, y: 0 }, 5);
+
+    await act(async () => {
+      path.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, ...start }));
+      preview.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, buttons: 1, ...end }));
+      preview.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0, ...end }));
+    });
+    await flushAsync();
+
+    expect(
+      (container.querySelector(
+        '[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(false);
+  });
+
   it('keeps hidden workflow document handlers inert outside their owning workflow', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 
@@ -591,7 +641,14 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
+    await clickElement('[data-editor-workflow-command="view.contours"]');
+    await clickElement('button[aria-label="Select Exterior 1"]');
     await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    expect(
+      (container.querySelector(
+        'button[aria-label="Target selection for transform"]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(false);
     await changeInput('input[aria-label="Translate X"]', '2');
     const save = () => container.querySelector(
       '[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]'
@@ -600,8 +657,13 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
       'pending transform coordinates'
     );
+    expect(
+      (container.querySelector(
+        'button[aria-label="Target selection for transform"]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(true);
 
-    await clickElement('button[aria-label="Mirror document across X axis"]');
+    await clickElement('button[aria-label^="Mirror "][aria-label$=" across X axis"]');
     expect(save().disabled).toBe(true);
     expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
       'pending transform coordinates'
@@ -648,6 +710,13 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]');
     await clickElement('[data-editor-workflow-command="machining.participation"]');
     await changeInput('input[aria-label="Machining span start"]', '0.2');
+    const secondOperation = project.upid!.document.plan.operations[1];
+    await clickElement(
+      `path[data-preview-source="path-document"][data-preview-operation="${secondOperation.id}"][data-type="cut"]`
+    );
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).not.toContain(
+      `Selection Operation ${secondOperation.id}`
+    );
     const restore = [...container.querySelectorAll<HTMLButtonElement>(
       '[data-machining-participation-panel] button'
     )].find((button) => button.textContent?.trim() === 'Restore');
@@ -658,6 +727,46 @@ describe('EditorPage UPID draft boundary', () => {
         '[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]'
       ) as HTMLButtonElement).disabled
     ).toBe(true);
+  });
+
+  it('locks Entry Exit and Program Stops targets while their local forms are pending', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    const entryTarget = container.querySelector(
+      'select[aria-label="Entry and exit operation"]'
+    ) as HTMLSelectElement;
+    expect(entryTarget.value).toBe(firstOperation.id);
+    await changeInput('input[aria-label="Entry X"]', '-2');
+    expect(entryTarget.disabled).toBe(true);
+    expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
+      'target contour'
+    );
+
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Cancel "]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    await clickElement('[data-editor-workflow-command="machining.program-stops"]');
+    await changeInput('input[aria-label="Program stop note"]', 'keep this target');
+    await clickElement(
+      `path[data-preview-source="path-document"][data-preview-operation="${secondOperation.id}"]`
+    );
+
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).not.toContain(
+      `Selection Operation ${secondOperation.id}`
+    );
+    expect(container.querySelector('[data-program-stops-panel]')?.textContent).toContain(
+      firstOperation.displayName
+    );
+    expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
+      'target contour'
+    );
   });
 
   it('resolves a dirty workflow before Back and lets the warning X cancel the pending action', async () => {
@@ -2865,6 +2974,24 @@ async function changeSelect(select: HTMLSelectElement | null, value: string) {
     select.dispatchEvent(new Event('change', { bubbles: true }));
   });
   await flushAsync();
+}
+
+function previewWorldClientPoint(
+  preview: SVGSVGElement,
+  point: { x: number; y: number },
+  flipY: number
+) {
+  const [minX, minY, width, height] = (preview.getAttribute('viewBox') ?? '0 0 1 1')
+    .split(/\s+/)
+    .map(Number);
+  const rect = preview.getBoundingClientRect();
+  const scale = Math.min(rect.width / width, rect.height / height);
+  const offsetX = (rect.width - width * scale) / 2;
+  const offsetY = (rect.height - height * scale) / 2;
+  return {
+    clientX: rect.left + offsetX + (point.x - minX) * scale,
+    clientY: rect.top + offsetY + (flipY - point.y - minY) * scale
+  };
 }
 
 function pathDocumentFromRectangle() {

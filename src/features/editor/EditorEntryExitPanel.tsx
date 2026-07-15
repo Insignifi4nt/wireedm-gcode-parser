@@ -36,6 +36,7 @@ interface EditorEntryExitPanelProps {
     transition: Omit<OperationThreadingTransition, 'source'>
   ) => void;
   selectedOperationId: string | null;
+  targetChangeBlocked?: boolean;
 }
 
 export function EditorEntryExitPanel({
@@ -51,7 +52,8 @@ export function EditorEntryExitPanel({
   onSetPlannedRapidSource,
   onSetOperationThreading,
   onSetProjectThreading,
-  selectedOperationId
+  selectedOperationId,
+  targetChangeBlocked = false
 }: EditorEntryExitPanelProps) {
   const selected = document.plan.operations.find(
     (operation) => operation.id === selectedOperationId
@@ -131,9 +133,10 @@ export function EditorEntryExitPanel({
         <select
           aria-label="Entry and exit operation"
           className="h-7 border border-border bg-background px-1.5 text-foreground"
-          disabled={disabled}
+          disabled={disabled || targetChangeBlocked}
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected.id}
+          title={targetChangeBlocked ? 'Apply or discard pending coordinates before changing the target contour.' : undefined}
         >
           {document.plan.operations.map((operation) => (
             <option key={operation.id} value={operation.id}>

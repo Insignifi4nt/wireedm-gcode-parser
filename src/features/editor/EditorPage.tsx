@@ -878,6 +878,16 @@ export function EditorPage({
   const activeMutatingWorkflow = activeWorkflowSession?.kind === 'mutating'
     ? activeWorkflowSession
     : null;
+  const workflowTargetChangeBlocked = Boolean(
+    activeMutatingWorkflow &&
+    Object.keys(activeWorkflowPendingReasons).length > 0 &&
+    [
+      'geometry.transform',
+      'machining.entry-exit',
+      'machining.participation',
+      'machining.program-stops'
+    ].includes(activeMutatingWorkflow.commandId)
+  );
   const workflowProjectSaveBlockedReason = activeMutatingWorkflow
     ? `Save or discard ${activeMutatingWorkflow.label} before saving the project.`
     : null;
@@ -1390,8 +1400,27 @@ export function EditorPage({
   }
 
   function handleSelectPathElement(element: EditorPathElementRef) {
+    if (workflowTargetChangeBlocked) {
+      onStatusMessage?.(
+        'Apply or discard the pending workflow form before changing its target.',
+        'warning'
+      );
+      return;
+    }
     setSelectedPathOperationId(element.operationId);
     setSelectedPathElement(element);
+  }
+
+  function handleSelectWorkflowOperation(operationId: string) {
+    if (workflowTargetChangeBlocked && operationId !== selectedPathOperationId) {
+      onStatusMessage?.(
+        'Apply or discard the pending workflow form before changing its target contour.',
+        'warning'
+      );
+      return;
+    }
+    setSelectedPathOperationId(operationId);
+    setSelectedPathElement(null);
   }
 
   function handleSelectPathOperation(operationId: string) {
@@ -2795,9 +2824,10 @@ export function EditorPage({
           markActiveWorkflowPending(
             'geometry.transform',
             source === 'target' ? 'transform-target' : 'transform-translate',
-            'Apply or correct the pending transform coordinates before saving.'
+            'Apply or correct the pending transform coordinates before saving or changing the target.'
           );
         }}
+        transformTargetChangeBlocked={workflowTargetChangeBlocked}
       />
     );
   }
@@ -3272,12 +3302,9 @@ export function EditorPage({
               machine={program.project.machine}
               onDraftChange={(source) => markActiveWorkflowPending(
                 'machining.entry-exit', source,
-                'Apply or correct the pending entry, exit, or rapid coordinates before saving.'
+                'Apply or correct the pending entry, exit, or rapid coordinates before saving or changing the target contour.'
               )}
-              onSelectOperation={(operationId) => {
-                setSelectedPathOperationId(operationId);
-                setSelectedPathElement(null);
-              }}
+              onSelectOperation={handleSelectWorkflowOperation}
               onSetCircleCenterEntry={handleSetOperationCircleCenterEntry}
               onSetManualEntry={handleSetOperationManualEntry}
               onSetManualExit={handleSetOperationManualExit}
@@ -3286,6 +3313,7 @@ export function EditorPage({
               onSetOperationThreading={handleSetOperationThreading}
               onSetProjectThreading={handleSetProjectThreading}
               selectedOperationId={selectedPathOperationId}
+              targetChangeBlocked={workflowTargetChangeBlocked}
             />
           )}
         {pathDocumentDraft &&
@@ -3297,7 +3325,7 @@ export function EditorPage({
               document={pathDocumentDraft}
               onDraftChange={() => markActiveWorkflowPending(
                 'machining.participation', 'span-form',
-                'Apply a valid machining span or discard its pending range before saving.'
+                'Apply a valid machining span or discard its pending range before saving or changing the target contour.'
               )}
               onSetEntryReview={handleSetPartialContourEntryReview}
               onSetSpan={handleSetMachiningSpan}
@@ -3316,7 +3344,7 @@ export function EditorPage({
               machine={program.project.machine}
               onDraftChange={() => markActiveWorkflowPending(
                 'machining.program-stops', 'stop-form',
-                'Add a valid program stop or discard its pending fields before saving.'
+                'Add a valid program stop or discard its pending fields before saving or changing the target contour.'
               )}
               onSetStops={handleSetOperationProgramStops}
               selectedOperationId={selectedPathOperationId}
@@ -3334,7 +3362,11 @@ export function EditorPage({
           canvasMouseMode={canvasMouseMode}
           constructionPreview={constructionPreview}
           draftProgram={draftProgram}
-          gridSnapEnabled={gridSnapEnabled}
+          gridSnapEnabled={
+            !pathDocumentDraft || activeWorkflowOwns('construction.measurement')
+              ? gridSnapEnabled
+              : false
+          }
           guideHighlightTarget={guideHighlightTarget}
           guideOpen={guideOpen}
           hoveredLine={hoveredLine}
