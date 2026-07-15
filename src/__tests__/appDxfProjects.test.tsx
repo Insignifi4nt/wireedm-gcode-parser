@@ -1313,6 +1313,9 @@ describe('App DXF imports and project library', () => {
       container.querySelector('button[aria-label="Open Path Project export preview"]')
     ).toBeNull();
     expect(container.querySelectorAll('[data-editor-workflow-command]')).toHaveLength(18);
+    expect(
+      container.querySelector('[data-editor-workflow-command="machine.profile"]')?.textContent
+    ).toContain('Project Machine & Source Setup');
 
     await selectFirstCutSequence(container);
 
@@ -1343,6 +1346,11 @@ describe('App DXF imports and project library', () => {
           panel.getAttribute('data-editor-workspace-panel')
         )
       ).toEqual([panelId]);
+      if (commandId === 'machine.profile') {
+        expect(
+          container.querySelector('[data-editor-machine-section] h3')?.textContent
+        ).toBe('Project Machine & Source Setup');
+      }
     }
 
     await openWorkflowCommand(container, 'export.preview');

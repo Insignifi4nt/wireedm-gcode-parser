@@ -9,9 +9,7 @@ export type EditorGuideTarget =
   | 'line-modes'
   | 'selection-counter'
   | 'clear-pins'
-  | 'normalize-draft'
-  | 'export-iso'
-  | 'save-program';
+  | 'normalize-draft';
 
 export interface EditorGuideStep {
   text: string;
@@ -71,7 +69,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'From the dashboard, import a DXF to create a clean internal path project. G-code is posted later from the active path plan and machine profile.'
           },
           {
-            text: 'From the editor, click Import Program or drag in .gcode, .nc, .iso, or .txt files. External programs pass through the cleanup/display pipeline before canvas display and editing.',
+            text: 'From the editor, click Import Program to choose a .gcode, .nc, .iso, or .txt file. External programs pass through the cleanup/display pipeline before canvas display and editing.',
             mock: { label: 'Import Program', tone: 'primary' },
             highlightTarget: 'import-program'
           },
@@ -158,7 +156,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editing And Export',
         steps: [
           {
-            text: 'For DXF path projects, reorder operations, correct contour roles, reverse direction, or set starts from the path surface. Manual UPID decisions are recorded in the selected geometry inspector. For external posted programs, move selected rows, delete rows, undo/redo draft changes, or use Start Here.'
+            text: 'For DXF path projects, reorder operations, correct contour roles, reverse direction, or set starts from the path surface. Manual UPID decisions are recorded in the selected geometry inspector. For external posted programs, move selected rows, delete rows, use the header Undo/Redo controls, or use Start Here.'
           },
           {
             text: 'Normalize Draft rewrites the current editor text into the app ISO style without downloading a file.',
@@ -166,14 +164,12 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'normalize-draft'
           },
           {
-            text: 'Export ISO downloads a normalized ISO copy without mutating the current draft.',
-            mock: { label: 'Export ISO' },
-            highlightTarget: 'export-iso'
+            text: 'Export normalized ISO in the header downloads a normalized copy without mutating the current draft.',
+            mock: { label: 'Export normalized ISO' }
           },
           {
-            text: 'Save in the header writes committed DXF workflow decisions back to the project. Machine Program Save writes an external posted-program draft back to the active workbench entry.',
-            mock: { label: 'Header Save' },
-            highlightTarget: 'save-program'
+            text: 'Save in the header is the single persistence control. It writes committed DXF workflow decisions back to the project or a Machine Program draft back to the active workbench entry.',
+            mock: { label: 'Header Save' }
           }
         ]
       }
@@ -208,7 +204,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Din dashboard, importa un DXF ca sa creezi un proiect intern de path. G-code-ul se posteaza mai tarziu din planul de path si profilul de masina activ.'
           },
           {
-            text: 'Din editor, apasa Import Program sau trage fisiere .gcode, .nc, .iso ori .txt. Programele externe trec prin pipeline-ul de cleanup/display inainte de afisare pe canvas si editare.',
+            text: 'Din editor, apasa Import Program pentru a alege un fisier .gcode, .nc, .iso ori .txt. Programele externe trec prin pipeline-ul de cleanup/display inainte de afisare pe canvas si editare.',
             mock: { label: 'Import Program', tone: 'primary' },
             highlightTarget: 'import-program'
           },
@@ -295,7 +291,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editare si export',
         steps: [
           {
-            text: 'Pentru proiecte DXF, schimba ordinea operatiilor, corecteaza rolul conturului, inverseaza directia sau seteaza startul din suprafata de path. Deciziile manuale UPID sunt inregistrate in inspectorul geometriei selectate. Pentru programe externe, muta randuri, sterge randuri, undo/redo sau Start Here.'
+            text: 'Pentru proiecte DXF, schimba ordinea operatiilor, corecteaza rolul conturului, inverseaza directia sau seteaza startul din suprafata de path. Deciziile manuale UPID sunt inregistrate in inspectorul geometriei selectate. Pentru programe externe, muta randuri, sterge randuri, foloseste Undo/Redo din header sau Start Here.'
           },
           {
             text: 'Normalize Draft rescrie textul curent in stilul ISO al aplicatiei, fara download.',
@@ -303,14 +299,12 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'normalize-draft'
           },
           {
-            text: 'Export ISO descarca o copie ISO normalizata fara sa modifice draftul curent.',
-            mock: { label: 'Export ISO' },
-            highlightTarget: 'export-iso'
+            text: 'Export normalized ISO din header descarca o copie normalizata fara sa modifice draftul curent.',
+            mock: { label: 'Export normalized ISO' }
           },
           {
-            text: 'Save din header scrie deciziile DXF confirmate inapoi in proiect. Save din Machine Program scrie draftul unui program extern inapoi in workbench.',
-            mock: { label: 'Header Save' },
-            highlightTarget: 'save-program'
+            text: 'Save din header este singurul control de persistenta. El scrie deciziile DXF confirmate inapoi in proiect sau draftul unui Machine Program inapoi in workbench.',
+            mock: { label: 'Header Save' }
           }
         ]
       }

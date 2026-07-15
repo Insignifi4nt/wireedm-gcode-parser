@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type DragEvent,
   type MouseEvent,
   type PointerEvent,
   type ReactNode
@@ -271,7 +270,7 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   'machining-participation': 'Machining Participation',
   position: 'Position',
   statistics: 'Statistics',
-  machine: 'Machine',
+  machine: 'Project Machine & Source Setup',
   measurement: 'Measurement & Construction'
 };
 
@@ -291,7 +290,7 @@ const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string
   'machining-participation': 'source-preserving active cuts, inactive reference spans, and explicit open-path compensation side',
   position: 'cursor position and grid snap state',
   statistics: 'bounds, move counts, and selected geometry details',
-  machine: 'active Wire EDM profile and machine fit checks',
+  machine: 'project machine profile, source units, and machine fit checks',
   measurement: 'manual points, perpendicular and tangent construction, and export actions'
 };
 
@@ -388,7 +387,8 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
     toolWindowId, prerequisites: [{ kind: 'document' } as const], workflow: { kind: 'view' as const }
   })),
   {
-    id: 'machine.profile', label: 'Project Machine', menuPath: ['Machine', 'Project Machine'],
+    id: 'machine.profile', label: 'Project Machine & Source Setup',
+    menuPath: ['Machine', 'Project Machine & Source Setup'],
     scope: 'machine', toolWindowId: 'machine', prerequisites: [{ kind: 'document' }],
     workflow: { kind: 'view' }
   },
@@ -448,11 +448,6 @@ function readInitialWorkspaceLayout(model: LoadedEditorProgram['model'] | undefi
     width: window.innerWidth,
     height: window.innerHeight
   });
-}
-
-function handleEditorDragOver(event: DragEvent<HTMLDivElement>) {
-  event.preventDefault();
-  event.dataTransfer.dropEffect = 'copy';
 }
 
 function findReadableFloatingPanelGeometry(
@@ -1312,14 +1307,6 @@ export function EditorPage({
       if (unsavedAfterWorkflow && !window.confirm('Discard unsaved changes?')) return;
       void onImportProgramFile(file);
     });
-  }
-
-  function handleEditorDrop(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const file = event.dataTransfer.files?.[0];
-    if (!file || isEditorMutationLocked) return;
-
-    handleImportProgramFile(file);
   }
 
   function handleInspectorRailResizeStart(event: PointerEvent<HTMLDivElement>) {
@@ -2915,9 +2902,7 @@ export function EditorPage({
           >
             <EditorProgramLinesPanel
               bodyGroups={bodyGroups}
-              draftText={draftText}
               guideHighlightTarget={guideHighlightTarget}
-              hasUnsavedChanges={hasUnsavedChanges}
               isGroupExpanded={isGroupExpanded}
               isSaving={isEditorMutationLocked}
               lineMode={lineMode}
@@ -2926,28 +2911,22 @@ export function EditorPage({
               onClearSelectedLines={clearSelectedLines}
               onDeleteGroup={handleDeleteGroup}
               onDeleteSelectedLines={handleDeleteSelectedLines}
-              onExportNormalizedISO={handleExportNormalizedISO}
               onHoverLineChange={setHoveredLine}
               onLineClick={handleLineClick}
               onLineEditCommit={handleLineEditCommit}
               onMoveGroup={handleMoveGroup}
               onMoveSelectedLines={handleMoveSelectedLines}
               onNormalizeDraft={handleNormalizeDraft}
-              onRedoDraft={handleRedoDraft}
-              onSaveClick={handleSaveClick}
               onSetLineMode={handleSetLineMode}
               onSetStartHere={handleSetStartHere}
               onToggleGroup={handleToggleGroup}
               onTogglePin={handleTogglePin}
               onToggleProgramLinesOpen={() => setProgramLinesOpen((current) => !current)}
-              onUndoDraft={handleUndoDraft}
               pinnedLines={pinnedLines}
               program={program}
               programLinesOpen={programLinesOpen}
-              redoAvailable={redoStack.length > 0}
               selectedLines={selectedLines}
               structure={structure}
-              undoAvailable={undoStack.length > 0}
             />
             {renderProgramTextPanel()}
           </div>
@@ -3205,10 +3184,7 @@ export function EditorPage({
   return (
     <div
       className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background"
-      data-editor-drop-zone="true"
       data-editor-layout="canvas-first"
-      onDragOver={handleEditorDragOver}
-      onDrop={handleEditorDrop}
     >
       <EditorGuideDialog
         language={guideLanguage}

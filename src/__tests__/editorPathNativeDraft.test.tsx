@@ -800,39 +800,6 @@ describe('EditorPage UPID draft boundary', () => {
     expect(onBackToDashboard).toHaveBeenCalledOnce();
   });
 
-  it('resolves a dirty workflow before accepting a dropped program', async () => {
-    const onImportProgramFile = vi.fn();
-    const confirmDiscard = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const project = projectWithUpid(pathDocumentFromRectangle());
-    const file = new File(['G90'], 'replacement.nc');
-
-    await act(async () => {
-      root.render(
-        <EditorPageHarness
-          onImportProgramFile={onImportProgramFile}
-          onSaveEditorDraft={vi.fn()}
-          project={project}
-        />
-      );
-    });
-    await flushAsync();
-
-    await clickElement('[data-editor-workflow-command="geometry.transform"]');
-    await changeInput('input[aria-label="Translate X"]', '3');
-    await clickElement('button[aria-label="Apply translation to document geometry"]');
-    const dropZone = container.querySelector('[data-editor-drop-zone="true"]');
-    const dropEvent = new Event('drop', { bubbles: true, cancelable: true });
-    Object.defineProperty(dropEvent, 'dataTransfer', { value: { files: [file] } });
-    await act(async () => dropZone?.dispatchEvent(dropEvent));
-    await flushAsync();
-    expect(onImportProgramFile).not.toHaveBeenCalled();
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
-
-    await clickElement('[data-editor-workflow-transition-action="save"]');
-    expect(confirmDiscard).toHaveBeenCalledWith('Discard unsaved changes?');
-    expect(onImportProgramFile).toHaveBeenCalledWith(file);
-  });
-
   it('restores a valid opening selection before discarded switch activation', async () => {
     const pathDocument = pathDocumentFromIndependentRectangles();
     const project = projectWithUpid(pathDocument);

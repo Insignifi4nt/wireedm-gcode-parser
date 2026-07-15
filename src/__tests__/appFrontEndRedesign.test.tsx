@@ -133,6 +133,58 @@ describe('App front-end redesign', () => {
     expect(programEditor?.value).toContain('G1 X5 Y5');
   });
 
+  it('keeps history, persistence, and export in the Machine Program header while retaining text tools', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+
+    const input = container.querySelector(
+      'input[aria-label="Machine program file"]'
+    ) as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    if (!input) return;
+
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [new File(['G90\nG0 X0 Y0\nG1 X5 Y5\nM30'], 'sole-doorway.iso')]
+    });
+
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAsync();
+
+    const headerCommands = container.querySelector('[data-editor-header-document-commands]');
+    expect(
+      headerCommands?.querySelectorAll('button[aria-label="Undo active document change"]')
+    ).toHaveLength(1);
+    expect(
+      headerCommands?.querySelectorAll('button[aria-label="Redo active document change"]')
+    ).toHaveLength(1);
+    expect(
+      headerCommands?.querySelectorAll('button[aria-label="Save active document"]')
+    ).toHaveLength(1);
+    expect(
+      headerCommands?.querySelectorAll('button[aria-label="Export normalized ISO"]')
+    ).toHaveLength(1);
+    expect(container.querySelector('[data-editor-drop-zone="true"]')).toBeNull();
+
+    const programLines = container.querySelector('[data-editor-code-section="lines"]');
+    expect(programLines?.querySelector('button[aria-label="Undo"]')).toBeNull();
+    expect(programLines?.querySelector('button[aria-label="Redo"]')).toBeNull();
+    expect(programLines?.textContent).not.toContain('Save Program');
+    expect(programLines?.textContent).not.toContain('Export ISO');
+
+    expect(programLines?.textContent).toContain('Normalize Draft');
+    expect(programLines?.querySelector('button[aria-label="Select line mode"]')).not.toBeNull();
+    expect(programLines?.querySelector('button[aria-label="Edit line mode"]')).not.toBeNull();
+    expect(programLines?.querySelector('button[aria-label="Move selected lines up"]')).not.toBeNull();
+    expect(programLines?.querySelector('button[aria-label="Move selected lines down"]')).not.toBeNull();
+    expect(programLines?.querySelector('button[aria-label="Pin line 2"]')).not.toBeNull();
+    expect(programLines?.textContent).toContain('Delete Selected');
+    expect(programLines?.textContent).toContain('Start Here');
+    expect(container.querySelector('textarea[aria-label="Program editor"]')).not.toBeNull();
+  });
+
   it('disables every start action while an import is running', async () => {
     window.showDirectoryPicker = undefined;
     const importExternalProgram = vi.fn(() => new Promise<never>(() => undefined));

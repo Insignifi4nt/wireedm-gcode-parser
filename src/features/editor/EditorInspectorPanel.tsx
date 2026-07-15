@@ -911,9 +911,9 @@ export function EditorInspectorPanel({
       ), { fill: true })}
 
       {machineProfile && (
-        renderWorkspacePanel('machine', 'Machine', (
+        renderWorkspacePanel('machine', 'Project Machine & Source Setup', (
         <section data-editor-machine-section>
-          <h3 className="mb-2 text-[11px] font-semibold">Machine</h3>
+          <h3 className="mb-2 text-[11px] font-semibold">Project Machine & Source Setup</h3>
           <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
             <dt className="text-muted-foreground">Profile</dt>
             <dd className="truncate" data-editor-machine="profile" title={machineProfile.name}>
