@@ -54,6 +54,7 @@ interface EditorInspectorPanelProps {
   measurementPoints: MeasurementPoint[];
   pathCount: number;
   pathConstructionMode?: MagnetizeMode | null;
+  pathMagneticSnapEnabled?: boolean;
   pathDocument: PathPlanningDocument | null;
   pointXDraft: string;
   pointYDraft: string;
@@ -85,6 +86,7 @@ interface EditorInspectorPanelProps {
   onSelectPathElement?: (element: EditorPathElementRef) => void;
   onSetCanvasMouseMode: (mode: CanvasMouseMode) => void;
   onToggleGridSnap: () => void;
+  onTogglePathMagneticSnap?: () => void;
 }
 
 export function EditorInspectorPanel({
@@ -103,6 +105,7 @@ export function EditorInspectorPanel({
   measurementPoints,
   pathCount,
   pathConstructionMode = null,
+  pathMagneticSnapEnabled = false,
   pathDocument,
   pointXDraft,
   pointYDraft,
@@ -128,7 +131,8 @@ export function EditorInspectorPanel({
   onPointYDraftChange,
   onSelectPathElement,
   onSetCanvasMouseMode,
-  onToggleGridSnap
+  onToggleGridSnap,
+  onTogglePathMagneticSnap
 }: EditorInspectorPanelProps) {
   const selectedPathOperationIndex =
     pathDocument?.plan.operations.findIndex((operation) => operation.id === selectedPathOperationId) ?? -1;
@@ -997,7 +1001,7 @@ export function EditorInspectorPanel({
         ))
       )}
 
-      {renderWorkspacePanel('measurement', 'Measurement', (
+      {renderWorkspacePanel('measurement', 'Measurement & Construction', (
       <section
         className={`${guideHighlightClass(
           'measurement-points',
@@ -1006,7 +1010,7 @@ export function EditorInspectorPanel({
         {...guideTargetProps('measurement-points', guideHighlightTarget)}
       >
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h3 className="text-[11px] font-semibold">Measurement</h3>
+          <h3 className="text-[11px] font-semibold">Measurement & Construction</h3>
           <span className="text-[10px] text-muted-foreground">{measurementPoints.length}</span>
         </div>
         <div className="mb-2 grid grid-cols-2 gap-1" data-editor-canvas-mouse-mode>
@@ -1067,6 +1071,16 @@ export function EditorInspectorPanel({
                 </button>
               ))}
             </div>
+            <label className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2">
+              <span>Magnetic construction snap</span>
+              <input
+                aria-label="Toggle construction magnetic snap"
+                checked={pathMagneticSnapEnabled}
+                disabled={isSaving || !onTogglePathMagneticSnap}
+                onChange={onTogglePathMagneticSnap}
+                type="checkbox"
+              />
+            </label>
           </div>
         )}
         <div className="grid grid-cols-2 gap-1.5">

@@ -171,8 +171,8 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'export-iso'
           },
           {
-            text: 'Save Path Plan writes DXF path decisions back to the project. Save Program writes an external posted-program draft back to the active workbench entry.',
-            mock: { label: 'Save Path Plan' },
+            text: 'Save in the header writes committed DXF workflow decisions back to the project. Machine Program Save writes an external posted-program draft back to the active workbench entry.',
+            mock: { label: 'Header Save' },
             highlightTarget: 'save-program'
           }
         ]
@@ -308,8 +308,8 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'export-iso'
           },
           {
-            text: 'Save Path Plan scrie deciziile DXF inapoi in proiect. Save Program scrie draftul unui program extern inapoi in workbench.',
-            mock: { label: 'Save Path Plan' },
+            text: 'Save din header scrie deciziile DXF confirmate inapoi in proiect. Save din Machine Program scrie draftul unui program extern inapoi in workbench.',
+            mock: { label: 'Header Save' },
             highlightTarget: 'save-program'
           }
         ]

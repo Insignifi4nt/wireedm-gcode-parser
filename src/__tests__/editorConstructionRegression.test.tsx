@@ -90,7 +90,7 @@ describe('Editor construction regressions', () => {
       'input[aria-label="Toggle canvas hover assist"]'
     ) as HTMLInputElement | null;
     const snapToggle = container.querySelector(
-      'input[aria-label="Toggle magnetic non-existing point snap"]'
+      'input[aria-label="Toggle construction magnetic snap"]'
     ) as HTMLInputElement | null;
     const perpendicularButton = container.querySelector(
       'button[aria-label="Magnetize latest point perpendicular"]'

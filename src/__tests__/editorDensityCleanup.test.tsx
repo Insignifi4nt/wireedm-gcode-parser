@@ -46,7 +46,7 @@ describe('Editor density cleanup', () => {
     await confirmPendingDxfImport(container);
   }
 
-  it('keeps primary panels directly accessible in a compact Path Project header', async () => {
+  it('keeps canonical workflows directly accessible in a compact Path Project header', async () => {
     await importSimplePathProject();
 
     const header = container.querySelector('[data-editor-context="path-project"]');
@@ -58,14 +58,11 @@ describe('Editor density cleanup', () => {
     expect(header?.textContent).toContain('Undo');
     expect(header?.textContent).toContain('Redo');
     expect(header?.textContent).toContain('Save');
-    expect(header?.querySelector('summary[aria-label="Panels"]')).not.toBeNull();
+    expect(header?.querySelector('summary[aria-label="Panels"]')).toBeNull();
+    expect(header?.querySelector('[data-editor-workflow-menus]')).not.toBeNull();
 
     const shortcuts = [...(header?.querySelectorAll('[data-editor-panel-shortcut]') ?? [])];
-    expect(shortcuts).toHaveLength(8);
-    for (const shortcut of shortcuts) {
-      expect(shortcut.textContent).toBe('');
-      expect(shortcut.getAttribute('title')).toMatch(/^(Show|Hide) /);
-    }
+    expect(shortcuts).toHaveLength(0);
   });
 
   it('moves Contour Tree teaching content into one hover and focus explanation', async () => {

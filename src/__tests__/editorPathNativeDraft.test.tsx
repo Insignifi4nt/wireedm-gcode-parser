@@ -87,11 +87,11 @@ describe('EditorPage UPID draft boundary', () => {
     ).not.toBeNull();
     expect(container.querySelector('button[aria-label="Save active document"]')).not.toBeNull();
     expect(
-      container.querySelector('button[aria-label="Open Path Project export preview"]')
+      container.querySelector('button[aria-label="Open UPID export preview"]')
     ).not.toBeNull();
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain('Saved');
 
-    await clickElement('button[aria-label="Open Path Project export preview"]');
+    await clickElement('button[aria-label="Open UPID export preview"]');
     expect(container.querySelector('[data-upid-export-preview]')).not.toBeNull();
   });
 
@@ -299,7 +299,7 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('[data-editor-workflow-command="machining.set-start"]');
     await clickElement('[data-editor-workflow-transition-action="discard"]');
 
-    expect(visibleWorkflowPanelIds()).toEqual(['path-actions']);
+    expect(visibleWorkflowPanelIds()).toEqual(['set-start']);
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
       `Selection Operation ${firstOperation.id}`
     );
@@ -424,7 +424,7 @@ describe('EditorPage UPID draft boundary', () => {
       'outside · manual'
     );
 
-    await clickElement('button[aria-label="Open UPID export preview"]');
+    await clickElement('[data-editor-workflow-command="export.preview"]');
     const blockKinds = [...container.querySelectorAll('[data-upid-export-block-kind]')].map((row) =>
       row.getAttribute('data-upid-export-block-kind')
     );
@@ -473,7 +473,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-testid="compensation-blocker"]')?.textContent).toContain(
       'wire-centre'
     );
-    await clickElement('button[aria-label="Open UPID export preview"]');
+    await clickElement('[data-editor-workflow-command="export.preview"]');
     expect(container.querySelector('[data-upid-export-blocking-message]')?.textContent).toContain(
       'wire-centre'
     );
@@ -499,7 +499,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-testid="compensation-machine-status"]')?.textContent).toContain(
       'unverified'
     );
-    await clickElement('button[aria-label="Open UPID export preview"]');
+    await clickElement('[data-editor-workflow-command="export.preview"]');
     expect(container.querySelector('[data-upid-export-blocking-message]')?.textContent).toContain(
       'current user-verified project machine snapshot'
     );
@@ -989,7 +989,7 @@ describe('EditorPage UPID draft boundary', () => {
       'Save active document',
       'Undo active document change',
       'Redo active document change',
-      'Open Path Project export preview'
+      'Open UPID export preview'
     ]) {
       expect(
         (container.querySelector(`button[aria-label="${ariaLabel}"]`) as HTMLButtonElement).disabled

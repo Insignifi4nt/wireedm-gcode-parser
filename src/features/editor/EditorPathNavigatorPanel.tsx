@@ -3,40 +3,27 @@ import {
   ArrowUp,
   ChevronDown,
   ChevronRight,
-  FileText,
   FlipHorizontal,
   FlipVertical,
   Flag,
   Info,
-  MousePointer2,
   Move,
-  RefreshCw,
   RotateCcw,
-  RotateCw,
-  Save
+  RotateCw
 } from 'lucide-react';
 import { useEffect, useState, type Dispatch, type MouseEvent, type ReactNode, type SetStateAction } from 'react';
 
-import {
-  canSetCircleOperationCenterPierceLeadIn,
-  derivePlannedRapidRoutes,
-  type MagnetizeMode,
-  type PathMirrorAxis
-} from '@/domain/path-editor/pathDocumentOperations';
-import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
-import type { ManualCompensationSelection } from '@/domain/compensation/intent';
+import { type PathMirrorAxis } from '@/domain/path-editor/pathDocumentOperations';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import { orientedSegmentEnd, orientedSegmentStart, requiredSegment, segmentMap } from '@/domain/path-intel/segments';
 import type {
   Bounds2,
-  ContourClassification,
   OperationOrderStrategy,
   OrientedSegmentRef,
   PathPlanningDocument,
   PathSegment,
   Point2
 } from '@/domain/path-intel/types';
-import type { MachineProfile } from '@/domain/workbench/types';
 import {
   createUpidProjectRail,
   readUpidEndpointTopologyRows,
@@ -77,7 +64,6 @@ const modeButtonClass =
   'flex h-7 items-center justify-center gap-1 rounded-[2px] border border-border px-1 text-[10px] text-muted-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
 const activeModeButtonClass =
   'flex h-7 items-center justify-center gap-1 rounded-[2px] border border-primary bg-primary px-1 text-[10px] text-primary-foreground outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
-const CONTOUR_ROLE_OPTIONS: ContourClassification[] = ['exterior', 'hole', 'island', 'ambiguous'];
 const ORDER_STRATEGY_OPTIONS: Array<{
   label: string;
   value: OperationOrderStrategy;
@@ -101,13 +87,6 @@ const DOCUMENT_REFERENCE_OPTIONS: Array<{
   { label: 'Picked Point', value: 'picked' }
 ];
 
-function formatCompensationIntent(
-  intent: PathPlanningDocument['plan']['operations'][number]['compensationIntent']
-) {
-  if (!intent) return 'not selected';
-  if (intent.mode === 'centerline') return `centreline · ${intent.source}`;
-  return `${'wireSide' in intent ? `wire ${intent.wireSide}` : intent.keptMaterial} · ${intent.source}`;
-}
 interface DiagnosticGuidance {
   actions: Array<{
     label: string;
@@ -118,14 +97,10 @@ interface DiagnosticGuidance {
 }
 
 interface EditorPathNavigatorPanelProps {
-  hasUnsavedChanges: boolean;
   hoveredPathElement: EditorPathElementRef | null;
   hoverAssistEnabled: boolean;
   isSaving: boolean;
-  magneticSnapEnabled: boolean;
-  pathClickMode: 'set-start' | MagnetizeMode | null;
   pathDocument: PathPlanningDocument;
-  machineProfile: MachineProfile;
   expandedPathElementIds: Record<string, boolean>;
   renderWorkspacePanel?: (id: string, title: string, children: ReactNode, options?: { fill?: boolean }) => ReactNode;
   latestMeasurementPoint: Point2 | null;
@@ -137,49 +112,33 @@ interface EditorPathNavigatorPanelProps {
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
   onExpandedPathElementIdsChange: Dispatch<SetStateAction<Record<string, boolean>>>;
-  onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
   onMovePathSelectionCenter: (targetCenter: Point2) => void;
   onMoveSelectedSegmentCenter: (targetCenter: Point2) => void;
   onOpenWorkspacePanel?: (panelId: DiagnosticPanelActionId) => void;
   onOpenWorkspacePanels?: (panelIds: DiagnosticPanelActionId[]) => void;
-  onOpenExportPreview: () => void;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onMirrorPathDocument: (axis: PathMirrorAxis) => void;
   onMirrorPathSelection: (axis: PathMirrorAxis) => void;
-  onReversePathOperation: () => void;
   onRotatePathDocument: (angleDegrees: number) => void;
   onRotatePathSelection: (angleDegrees: number) => void;
-  onSaveClick: () => void | Promise<void>;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onPathTargetXDraftChange: (value: string) => void;
   onPathTargetYDraftChange: (value: string) => void;
   onPathTranslateXDraftChange: (value: string) => void;
   onPathTranslateYDraftChange: (value: string) => void;
-  onSetPathOperationClassification: (classification: ContourClassification) => void;
-  onSetGeometryBasis: (basis: PathPlanningDocument['geometryBasis']) => void;
-  onSetManualCompensation: (selection: ManualCompensationSelection) => void;
-  onSetPathOperationCenterPierceLeadIn: () => void;
-  onSetPathOperationManualLeadIn: (point: Point2) => void;
   onSetPathOperationOrderStrategy: (strategy: OperationOrderStrategy) => void;
-  onSetPlannedRapidDestinationPoint: (point: Point2) => void;
-  onSetPlannedRapidSourcePoint: (point: Point2) => void;
   onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   onTranslatePathSelection: (delta: { x: number; y: number }) => void;
   onTranslatePathDocument: (delta: { x: number; y: number }) => void;
   onToggleHoverAssist: () => void;
-  onToggleMagneticSnap: () => void;
 }
 
 export function EditorPathNavigatorPanel({
-  hasUnsavedChanges,
   hoveredPathElement,
   hoverAssistEnabled,
   isSaving,
-  magneticSnapEnabled,
-  pathClickMode,
   pathDocument,
-  machineProfile,
   expandedPathElementIds,
   latestMeasurementPoint,
   measurementPoints,
@@ -187,38 +146,26 @@ export function EditorPathNavigatorPanel({
   selectedPathElement,
   selectedPathOperationId,
   onExpandedPathElementIdsChange,
-  onActivatePathClickMode,
   onMovePathOperation,
   onMovePathSelectionCenter,
   onMoveSelectedSegmentCenter,
   onOpenWorkspacePanel,
   onOpenWorkspacePanels,
-  onOpenExportPreview,
   onHoverPathElement,
   onMirrorPathDocument,
   onMirrorPathSelection,
-  onReversePathOperation,
   onRotatePathDocument,
   onRotatePathSelection,
-  onSaveClick,
   onSelectPathElement,
   onPathTargetXDraftChange,
   onPathTargetYDraftChange,
   onPathTranslateXDraftChange,
   onPathTranslateYDraftChange,
-  onSetPathOperationClassification,
-  onSetGeometryBasis,
-  onSetManualCompensation,
-  onSetPathOperationCenterPierceLeadIn,
-  onSetPathOperationManualLeadIn,
   onSetPathOperationOrderStrategy,
-  onSetPlannedRapidDestinationPoint,
-  onSetPlannedRapidSourcePoint,
   onSetPathStartFromElement,
   onTranslatePathDocument,
   onTranslatePathSelection,
   onToggleHoverAssist,
-  onToggleMagneticSnap,
   pathTargetXDraft,
   pathTargetYDraft,
   pathTranslateXDraft,
@@ -229,27 +176,6 @@ export function EditorPathNavigatorPanel({
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
   const endpointTopology = projectRail.summary.topology;
   const sourceSummary = projectRail.summary.source;
-  const plannedRapidRoutes = derivePlannedRapidRoutes(pathDocument);
-  const selectedPlannedRapid = selectedPathElement?.travelRole === 'rapid-in'
-    ? plannedRapidRoutes.find((route) => route.operationId === selectedPathElement.operationId) ?? null
-    : null;
-  const [rapidSourceXDraft, setRapidSourceXDraft] = useState('');
-  const [rapidSourceYDraft, setRapidSourceYDraft] = useState('');
-  const [rapidDestinationXDraft, setRapidDestinationXDraft] = useState('');
-  const [rapidDestinationYDraft, setRapidDestinationYDraft] = useState('');
-
-  useEffect(() => {
-    setRapidSourceXDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.startPoint.x) : '');
-    setRapidSourceYDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.startPoint.y) : '');
-    setRapidDestinationXDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.endPoint.x) : '');
-    setRapidDestinationYDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.endPoint.y) : '');
-  }, [
-    selectedPlannedRapid?.operationId,
-    selectedPlannedRapid?.startPoint.x,
-    selectedPlannedRapid?.startPoint.y,
-    selectedPlannedRapid?.endPoint.x,
-    selectedPlannedRapid?.endPoint.y
-  ]);
   const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
   const endpointTopologyPanel = summarizeEndpointTopologyPanel(pathDocument);
   const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
@@ -262,18 +188,6 @@ export function EditorPathNavigatorPanel({
     (operation) => operation.id === selectedPathOperationId
   );
   const selectedOperation = selectedOperationIndex >= 0 ? pathDocument.plan.operations[selectedOperationIndex] : null;
-  const compensationResolution = selectedOperation
-    ? resolveControllerCompensation({ document: pathDocument, operation: selectedOperation })
-    : null;
-  const compensationSelection = selectedOperation?.compensationIntent?.source === 'automatic'
-    ? 'automatic'
-    : selectedOperation?.compensationIntent?.mode === 'controller'
-      ? 'wireSide' in selectedOperation.compensationIntent
-        ? selectedOperation.compensationIntent.wireSide
-        : selectedOperation.compensationIntent.keptMaterial
-      : selectedOperation?.compensationIntent?.mode === 'centerline'
-        ? 'centerline'
-        : '';
   const selectedSegmentIndex =
     selectedOperation && selectedPathElement?.segmentId
       ? selectedOperation.segmentRefs.findIndex((ref) => ref.segmentId === selectedPathElement.segmentId)
@@ -321,27 +235,6 @@ export function EditorPathNavigatorPanel({
   const hasTransformSelection = Boolean(selectedOperation && selectedGeometryCenter);
   const canOrientDocument = Boolean(documentCenter) && pathDocument.segments.length > 0 && !isSaving;
   const canOrientSelection = hasTransformSelection && !isSaving;
-  const robofilV2OperationLifecycle =
-    machineProfile.controller.family === 'charmilles-robofil-classic' &&
-    machineProfile.controller.postVersion === 2 &&
-    machineProfile.compensation.activation === 'charmilles-g38' &&
-    machineProfile.compensation.cancellation === 'charmilles-g39' &&
-    machineProfile.compensation.lifecycleScope === 'operation';
-  const canSetCenterPierceLeadIn = selectedPathOperationId
-      ? canSetCircleOperationCenterPierceLeadIn(pathDocument, selectedPathOperationId) &&
-        !(
-          pathDocument.geometryBasis === 'finished-contour' &&
-          selectedOperation?.compensationIntent?.mode === 'controller' &&
-          !robofilV2OperationLifecycle
-        ) &&
-        !isSaving
-      : false;
-  const centerPierceBlockedByControllerCompensation = Boolean(
-    selectedOperation &&
-    pathDocument.geometryBasis === 'finished-contour' &&
-    selectedOperation.compensationIntent?.mode === 'controller' &&
-    !robofilV2OperationLifecycle
-  );
   const [pathTransformTarget, setPathTransformTarget] = useState<PathTransformTarget>('document');
   const [pathTransformTargetPinned, setPathTransformTargetPinned] = useState(false);
   const [expandedSegmentDetailIds, setExpandedSegmentDetailIds] = useState<Record<string, boolean>>({});
@@ -555,290 +448,6 @@ export function EditorPathNavigatorPanel({
           >
             {formatProjectSourceSummary(sourceSummary)}
           </p>
-        </div>
-        )}
-
-        {renderWorkspacePanel(
-          'path-actions',
-          'Path Actions',
-        <div data-upid-path-action-bar>
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-[10px] uppercase text-muted-foreground">Path Action Bar</span>
-            {hasUnsavedChanges && <span className="text-[10px] text-amber-200">Unsaved</span>}
-          </div>
-          <div
-            className="mb-2 border border-border bg-background/35 px-2 py-1.5"
-            data-upid-active-selection
-            data-upid-active-selection-operation={selectedOperation?.id}
-            data-upid-active-selection-path-element={selectedPathElement?.pathElementId ?? undefined}
-            data-upid-active-selection-segment={selectedPathElement?.segmentId ?? undefined}
-            data-upid-active-selection-state={selectedOperation ? 'selected' : 'empty'}
-          >
-            <div className="text-[10px] uppercase text-muted-foreground">Active Selection</div>
-            {selectedOperation ? (
-              <>
-                  <div className="mt-0.5 truncate text-[10px] text-foreground">{selectedOperation.displayName}</div>
-                <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                    order {selectedOperationIndex + 1} / {selectedOperation.closed ? 'closed contour' : 'open chain'} /{' '}
-                  {selectedOperation.direction}
-                </div>
-                {selectedSegmentIndex >= 0 && (
-                  <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                    segment {selectedSegmentIndex + 1} / {selectedPathElement?.pointRole ?? 'body'}
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="mt-0.5 text-[10px] text-muted-foreground">No path selected</div>
-            )}
-          </div>
-          <div className="mt-1 grid grid-cols-2 gap-1">
-            <button
-              aria-label="Reverse path operation"
-              className={textButtonClass}
-              disabled={!selectedOperation || isSaving}
-              onClick={onReversePathOperation}
-              type="button"
-            >
-              <RefreshCw className="size-3" />
-              Reverse
-            </button>
-            <button
-              aria-label="Save Path Plan"
-              className={textButtonClass}
-              disabled={!hasUnsavedChanges || isSaving}
-              onClick={onSaveClick}
-              type="button"
-            >
-              <Save className="size-3" />
-              Save
-            </button>
-          </div>
-          <button
-            aria-label="Open UPID export preview"
-            className={`mt-1 w-full ${textButtonClass}`}
-            disabled={isSaving}
-            onClick={onOpenExportPreview}
-            type="button"
-          >
-            <FileText className="size-3" />
-            Export Preview
-          </button>
-          <label
-            className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground"
-            data-upid-manual-order-active={manualOrderActive ? 'true' : undefined}
-            data-upid-order-strategy
-          >
-            Planning Mode
-            <select
-              aria-label="Planning order strategy"
-              className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isSaving}
-              onChange={(event) =>
-                onSetPathOperationOrderStrategy(event.currentTarget.value as OperationOrderStrategy)
-              }
-              value={pathDocument.options.operationOrderStrategy}
-            >
-              {ORDER_STRATEGY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <span className="normal-case text-[10px] text-muted-foreground" data-upid-order-strategy-status>
-              {manualOrderActive ? 'Manual order overrides active' : 'Automatic order active'}
-            </span>
-          </label>
-          <button
-            aria-label="Reapply planning order strategy"
-            className={`mt-1 w-full ${textButtonClass}`}
-            disabled={!manualOrderActive || isSaving}
-            onClick={() => onSetPathOperationOrderStrategy(pathDocument.options.operationOrderStrategy)}
-            type="button"
-          >
-            Reapply Planning Mode
-          </button>
-          {selectedPlannedRapid && (
-            <section
-              className="mt-2 grid gap-1 border border-sky-500/40 bg-sky-500/5 p-1.5"
-              data-upid-planned-rapid-editor
-              data-upid-rapid-operation-id={selectedPlannedRapid.operationId}
-              data-upid-rapid-length={selectedPlannedRapid.length.toFixed(3)}
-            >
-              <div className="flex items-center justify-between gap-2 text-[10px]">
-                <span className="font-medium text-sky-100">Planned rapid</span>
-                <span className="font-mono text-muted-foreground">
-                  {selectedPlannedRapid.length.toFixed(3)} mm
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-1">
-                <CoordinateInput ariaLabel="Planned rapid source X" disabled={isSaving} value={rapidSourceXDraft} onChange={setRapidSourceXDraft} />
-                <CoordinateInput ariaLabel="Planned rapid source Y" disabled={isSaving} value={rapidSourceYDraft} onChange={setRapidSourceYDraft} />
-                <CoordinateInput ariaLabel="Planned rapid destination X" disabled={isSaving} value={rapidDestinationXDraft} onChange={setRapidDestinationXDraft} />
-                <CoordinateInput ariaLabel="Planned rapid destination Y" disabled={isSaving} value={rapidDestinationYDraft} onChange={setRapidDestinationYDraft} />
-              </div>
-              <div className="grid grid-cols-2 gap-1">
-                <button
-                  aria-label="Apply planned rapid source"
-                  className={textButtonClass}
-                  disabled={isSaving || !finiteCoordinatePair(rapidSourceXDraft, rapidSourceYDraft)}
-                  onClick={() => onSetPlannedRapidSourcePoint({ x: Number(rapidSourceXDraft), y: Number(rapidSourceYDraft) })}
-                  type="button"
-                >
-                  Set source
-                </button>
-                <button
-                  aria-label="Apply planned rapid destination"
-                  className={textButtonClass}
-                  disabled={isSaving || !finiteCoordinatePair(rapidDestinationXDraft, rapidDestinationYDraft)}
-                  onClick={() => onSetPlannedRapidDestinationPoint({ x: Number(rapidDestinationXDraft), y: Number(rapidDestinationYDraft) })}
-                  type="button"
-                >
-                  Set destination
-                </button>
-              </div>
-              {!selectedOperation?.overrides?.leadIn && (
-                <button
-                  aria-label="Create manual lead from planned rapid destination"
-                  className={textButtonClass}
-                  disabled={isSaving || !finiteCoordinatePair(rapidDestinationXDraft, rapidDestinationYDraft)}
-                  onClick={() => onSetPathOperationManualLeadIn({
-                    x: Number(rapidDestinationXDraft),
-                    y: Number(rapidDestinationYDraft)
-                  })}
-                  type="button"
-                >
-                  Create manual lead
-                </button>
-              )}
-            </section>
-          )}
-          <label className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground">
-            Geometry Basis
-            <select
-              aria-label="Geometry basis"
-              className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isSaving}
-              onChange={(event) =>
-                onSetGeometryBasis(event.currentTarget.value as PathPlanningDocument['geometryBasis'])
-              }
-              value={pathDocument.geometryBasis}
-            >
-              <option value="wire-centre">Wire centre</option>
-              <option value="finished-contour">Finished contour</option>
-            </select>
-          </label>
-          <section
-            className="mt-2 grid gap-1 border border-border bg-background/50 p-1.5"
-            data-upid-compensation-review
-          >
-            <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
-              Compensation
-              <select
-                aria-label="Compensation kept material"
-                className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!selectedOperation || isSaving}
-                onChange={(event) => {
-                  if (event.currentTarget.value === 'automatic' || event.currentTarget.value === '') return;
-                  onSetManualCompensation(event.currentTarget.value as ManualCompensationSelection);
-                }}
-                value={compensationSelection}
-              >
-                <option value="">Choose kept material</option>
-                {compensationSelection === 'automatic' && <option value="automatic">Automatic</option>}
-                {selectedOperation?.closed ? (
-                  <>
-                    <option value="inside">Keep inside</option>
-                    <option value="outside">Keep outside</option>
-                  </>
-                ) : selectedOperation?.machiningIntent?.kind === 'partial-contour' ? (
-                  <>
-                    <option value="left">Wire left of travel</option>
-                    <option value="right">Wire right of travel</option>
-                  </>
-                ) : null}
-                <option value="centerline">Centreline</option>
-              </select>
-            </label>
-            <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
-              <dt className="text-muted-foreground">Source</dt>
-              <dd data-testid="compensation-kept-material">
-                {formatCompensationIntent(selectedOperation?.compensationIntent)}
-              </dd>
-              <dt className="text-muted-foreground">Final refs</dt>
-              <dd data-testid="compensation-winding">
-                {compensationResolution?.status === 'ready' && compensationResolution.winding
-                  ? compensationResolution.winding.toUpperCase()
-                  : '—'}
-              </dd>
-              <dt className="text-muted-foreground">Wire side</dt>
-              <dd data-testid="compensation-wire-side">
-                {compensationResolution?.status === 'ready' ? compensationResolution.wireSide : '—'}
-              </dd>
-              <dt className="text-muted-foreground">Controller</dt>
-              <dd data-testid="compensation-code">
-                {compensationResolution?.status === 'ready'
-                  ? `${compensationResolution.code} D${machineProfile.compensation.offsetSelection.index}`
-                  : '—'}
-              </dd>
-              <dt className="text-muted-foreground">Snapshot</dt>
-              <dd data-testid="compensation-machine-status">
-                {machineProfile.controller.verification.status}
-              </dd>
-            </dl>
-            {compensationResolution?.status === 'blocked' && (
-              <p className="text-amber-300" data-testid="compensation-blocker">
-                Blocked: {compensationResolution.reason}
-              </p>
-            )}
-          </section>
-          <label className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground">
-            Contour Role
-            <select
-              aria-label="Contour role"
-              className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!selectedOperation || !selectedOperation.closed || isSaving}
-              onChange={(event) =>
-                onSetPathOperationClassification(event.currentTarget.value as ContourClassification)
-              }
-              value={selectedOperation?.classification ?? ''}
-            >
-              {CONTOUR_ROLE_OPTIONS.map((classification) => (
-                <option key={classification} value={classification}>
-                  {classification}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="mt-1 grid grid-cols-4 gap-1">
-            <button
-              aria-label="Set path start from canvas"
-              aria-pressed={pathClickMode === 'set-start'}
-              className={pathClickMode === 'set-start' ? activeModeButtonClass : modeButtonClass}
-              disabled={!selectedOperation?.closed || isSaving}
-              onClick={() => onActivatePathClickMode(pathClickMode === 'set-start' ? null : 'set-start')}
-              type="button"
-            >
-              <MousePointer2 className="size-3" />
-              Start
-            </button>
-            <button
-              aria-label="Add center pierce lead-in"
-              aria-pressed={Boolean(selectedOperation?.overrides?.leadIn)}
-              className={selectedOperation?.overrides?.leadIn ? activeModeButtonClass : modeButtonClass}
-              disabled={!canSetCenterPierceLeadIn}
-              onClick={onSetPathOperationCenterPierceLeadIn}
-              title={
-                centerPierceBlockedByControllerCompensation
-                  ? 'Center pierce is unavailable while controller compensation is active.'
-                  : 'Add center pierce lead-in'
-              }
-              type="button"
-            >
-              <Flag className="size-3" />
-              Pierce
-            </button>
-          </div>
         </div>
         )}
 
@@ -1383,35 +992,6 @@ export function EditorPathNavigatorPanel({
         )}
 
         {renderWorkspacePanel(
-          'path-hover-assist',
-          'Hover Assist',
-        <section data-upid-hover-assist>
-          <div className="mb-1 text-[10px] uppercase text-muted-foreground">Hover Assist</div>
-          <label className="flex items-center justify-between gap-2">
-            <span>Canvas hover highlights navigator</span>
-            <input
-              aria-label="Toggle canvas hover assist"
-              checked={hoverAssistEnabled}
-              data-upid-hover-assist-toggle
-              onChange={onToggleHoverAssist}
-              type="checkbox"
-            />
-          </label>
-          <label className="mt-1 flex items-center justify-between gap-2 pl-3" data-upid-magnetic-snap>
-            <span>Magnetic non-existing points</span>
-            <input
-              aria-label="Toggle magnetic non-existing point snap"
-              checked={magneticSnapEnabled}
-              data-upid-magnetic-snap-toggle
-              disabled={!hoverAssistEnabled}
-              onChange={onToggleMagneticSnap}
-              type="checkbox"
-            />
-          </label>
-        </section>
-        )}
-
-        {renderWorkspacePanel(
           'endpoint-topology',
           'Endpoint Topology',
         <section data-upid-endpoint-topology>
@@ -1572,19 +1152,57 @@ export function EditorPathNavigatorPanel({
         {renderWorkspacePanel(
           'cut-sequence',
           'Cut Sequence',
-        <section className="-m-2" data-upid-cut-sequence data-upid-cut-sequence-list>
-          {cutSequenceElements.map((pathElement) =>
-            renderCutSequenceRow({
-              hoveredPathElement,
-              isSaving,
-              onHoverPathElement,
-              onMovePathOperation,
-              onSelectPathElement,
-              operationCount: cutSequenceElements.length,
-              pathElement,
-              selectedPathElement
-            })
-          )}
+        <section className="-m-2" data-upid-cut-sequence>
+          <div className="grid gap-1 border-b border-border p-2">
+            <label
+              className="grid gap-1 uppercase text-muted-foreground"
+              data-upid-manual-order-active={manualOrderActive ? 'true' : undefined}
+              data-upid-order-strategy
+            >
+              Planning Mode
+              <select
+                aria-label="Planning order strategy"
+                className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+                disabled={isSaving}
+                onChange={(event) =>
+                  onSetPathOperationOrderStrategy(event.currentTarget.value as OperationOrderStrategy)
+                }
+                value={pathDocument.options.operationOrderStrategy}
+              >
+                {ORDER_STRATEGY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-muted-foreground" data-upid-order-strategy-status>
+              {manualOrderActive ? 'Manual order overrides active' : 'Automatic order active'}
+            </span>
+            <button
+              aria-label="Reapply planning order strategy"
+              className={textButtonClass}
+              disabled={!manualOrderActive || isSaving}
+              onClick={() => onSetPathOperationOrderStrategy(pathDocument.options.operationOrderStrategy)}
+              type="button"
+            >
+              Reapply Planning Mode
+            </button>
+          </div>
+          <div data-upid-cut-sequence data-upid-cut-sequence-list>
+            {cutSequenceElements.map((pathElement) =>
+              renderCutSequenceRow({
+                hoveredPathElement,
+                isSaving,
+                onHoverPathElement,
+                onMovePathOperation,
+                onSelectPathElement,
+                operationCount: cutSequenceElements.length,
+                pathElement,
+                selectedPathElement
+              })
+            )}
+          </div>
         </section>
         )}
 
@@ -1636,6 +1254,16 @@ export function EditorPathNavigatorPanel({
               Collapse All
             </button>
           </div>
+          <label className="mb-2 flex items-center justify-between gap-2 border border-border p-1.5">
+            <span className="text-muted-foreground">Canvas hover cross-highlighting</span>
+            <input
+              aria-label="Toggle canvas hover assist"
+              checked={hoverAssistEnabled}
+              data-upid-hover-assist-toggle
+              onChange={onToggleHoverAssist}
+              type="checkbox"
+            />
+          </label>
           {contourTree.map((node) =>
             renderContourTreeNode({
               hoveredPathElement,
@@ -3129,42 +2757,6 @@ function renderPointRow({
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
-}
-
-function formatCoordinateDraft(value: number) {
-  return Number.isFinite(value) ? value.toFixed(3) : '';
-}
-
-function finiteCoordinatePair(x: string, y: string) {
-  return x.trim() !== '' && y.trim() !== '' && Number.isFinite(Number(x)) && Number.isFinite(Number(y));
-}
-
-function CoordinateInput({
-  ariaLabel,
-  disabled,
-  onChange,
-  value
-}: {
-  ariaLabel: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-  value: string;
-}) {
-  return (
-    <label className="grid gap-0.5 text-[9px] uppercase text-muted-foreground">
-      {ariaLabel.endsWith(' X') ? 'X' : 'Y'}
-      <input
-        aria-label={ariaLabel}
-        className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:opacity-50"
-        disabled={disabled}
-        inputMode="decimal"
-        onChange={(event) => onChange(event.currentTarget.value)}
-        step="any"
-        type="number"
-        value={value}
-      />
-    </label>
-  );
 }
 
 function formatBounds(bounds: Bounds2) {

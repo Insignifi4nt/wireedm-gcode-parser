@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 export interface EditorWorkflowMenuCommand {
+  ariaLabel?: string;
   id: string;
   label: string;
   description?: string;
@@ -42,7 +43,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
           <div className="absolute left-0 top-7 z-[60] grid min-w-64 gap-1 border border-border bg-card p-1.5 shadow-2xl">
             {group.commands.map((command) => (
               <button
-                aria-label={command.label}
+                aria-label={command.ariaLabel ?? command.label}
                 className="grid min-h-8 gap-0.5 border border-border px-2 py-1 text-left text-[10px] text-muted-foreground enabled:hover:bg-accent enabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-55"
                 data-editor-workflow-command={command.id}
                 disabled={!command.enabled}

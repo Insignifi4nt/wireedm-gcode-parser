@@ -41,7 +41,7 @@ export function EditorStatusBar({
   selectionSummary,
   unitSummary
 }: EditorStatusBarProps) {
-  const saveState = isSaving ? 'Saving' : hasUnsavedChanges ? 'Modified' : 'Saved';
+  const saveState = isSaving ? 'Saving' : hasUnsavedChanges ? 'Modified · Unsaved' : 'Saved';
 
   return (
     <footer

@@ -13,13 +13,13 @@ const defaults: EditorWorkspaceLayoutV1 = {
   schemaVersion: 1,
   placements: {
     'contour-tree': 'docked-left',
-    'path-actions': 'docked-right',
+    'contour-setup': 'docked-right',
     measurement: 'hidden'
   },
-  dockOrders: { left: ['contour-tree'], right: ['path-actions'] },
+  dockOrders: { left: ['contour-tree'], right: ['contour-setup'] },
   floatingGeometries: {
     'contour-tree': { x: 20, y: 50, width: 380, height: 560 },
-    'path-actions': { x: 440, y: 50, width: 320, height: 430 },
+    'contour-setup': { x: 440, y: 50, width: 320, height: 430 },
     measurement: { x: 200, y: 100, width: 340, height: 420 }
   },
   dockWidths: { left: 360, right: 420 }
@@ -97,11 +97,11 @@ describe('editor workspace layout persistence', () => {
       .toBe('hidden');
     expect(readEditorWorkspaceRenderedPlacement(defaults.placements, 'contour-tree', 'contour-tree'))
       .toBe('docked-left');
-    expect(readEditorWorkspaceRenderedPlacement(defaults.placements, 'path-actions', 'contour-tree'))
+    expect(readEditorWorkspaceRenderedPlacement(defaults.placements, 'contour-setup', 'contour-tree'))
       .toBe('hidden');
     expect(defaults.placements).toMatchObject({
       'contour-tree': 'docked-left',
-      'path-actions': 'docked-right'
+      'contour-setup': 'docked-right'
     });
   });
 

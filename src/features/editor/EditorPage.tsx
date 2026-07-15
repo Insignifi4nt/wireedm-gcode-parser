@@ -104,6 +104,11 @@ import { EditorHeaderBar, type EditorDocumentContext } from './EditorHeaderBar';
 import { EditorInspectorPanel } from './EditorInspectorPanel';
 import { EditorInitialWirePositionPanel } from './EditorInitialWirePositionPanel';
 import { EditorEntryExitPanel } from './EditorEntryExitPanel';
+import {
+  EditorContourSetupPanel,
+  EditorGeometrySetupPanel,
+  EditorSetStartPanel
+} from './EditorWorkflowSetupPanels';
 import { EditorProgramStopsPanel } from './EditorProgramStopsPanel';
 import { EditorMachiningParticipationPanel } from './EditorMachiningParticipationPanel';
 import {
@@ -212,7 +217,7 @@ const SET_START_COMMAND: EditorCommandDefinition = {
   label: 'Set Start',
   menuPath: ['Machining', 'Operation', 'Set Start'],
   scope: 'operation',
-  toolWindowId: 'path-actions',
+  toolWindowId: 'set-start',
   historyLabel: 'Set operation start',
   prerequisites: [{ kind: 'document' }, { kind: 'selected-operation' }, { kind: 'interaction-unlocked' }],
   session: { kind: 'set-start' },
@@ -221,9 +226,10 @@ const SET_START_COMMAND: EditorCommandDefinition = {
 
 type EditorWorkspacePanelId =
   | 'path-summary'
-  | 'path-actions'
+  | 'geometry-setup'
+  | 'contour-setup'
+  | 'set-start'
   | 'path-transform'
-  | 'path-hover-assist'
   | 'endpoint-topology'
   | 'path-diagnostics'
   | 'cut-sequence'
@@ -239,9 +245,10 @@ type EditorWorkspacePanelId =
 
 const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   'path-summary': 'Path Summary',
-  'path-actions': 'Path Actions',
+  'geometry-setup': 'Geometry Setup',
+  'contour-setup': 'Contour Setup',
+  'set-start': 'Set Start',
   'path-transform': 'Transform',
-  'path-hover-assist': 'Hover Assist',
   'endpoint-topology': 'Endpoint Topology',
   'path-diagnostics': 'Path Diagnostics',
   'cut-sequence': 'Cut Sequence',
@@ -253,14 +260,15 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   position: 'Position',
   statistics: 'Statistics',
   machine: 'Machine',
-  measurement: 'Measurement'
+  measurement: 'Measurement & Construction'
 };
 
 const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string> = {
   'path-summary': 'project counts, topology, source, and planning state',
-  'path-actions': 'selection actions, start point, direction, and contour role',
+  'geometry-setup': 'document machining geometry basis',
+  'contour-setup': 'contour direction, role, and compensation intent',
+  'set-start': 'guided contour start-point selection',
   'path-transform': 'move, rotate, and mirror tools for document and selected geometry',
-  'path-hover-assist': 'canvas hover and magnetic construction behavior',
   'endpoint-topology': 'join map for endpoint joins, healed gaps, open ends, and ambiguous clusters',
   'path-diagnostics': 'warnings and linked rows for broken or risky path geometry',
   'cut-sequence': 'operation order, rapid moves, and cut direction',
@@ -272,14 +280,15 @@ const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string
   position: 'cursor position and grid snap state',
   statistics: 'bounds, move counts, and selected geometry details',
   machine: 'active Wire EDM profile and machine fit checks',
-  measurement: 'manual points, construction points, and export actions'
+  measurement: 'manual points, perpendicular and tangent construction, and export actions'
 };
 
 const PATH_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
   'path-summary',
-  'path-actions',
+  'geometry-setup',
+  'contour-setup',
+  'set-start',
   'path-transform',
-  'path-hover-assist',
   'endpoint-topology',
   'path-diagnostics',
   'cut-sequence',
@@ -299,9 +308,10 @@ const INSPECTOR_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
 
 const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFloatingPanelGeometry> = {
   'path-summary': { x: 250, y: 74, width: 300, height: 220 },
-  'path-actions': { x: 274, y: 104, width: 320, height: 430 },
+  'geometry-setup': { x: 274, y: 104, width: 320, height: 260 },
+  'contour-setup': { x: 286, y: 118, width: 340, height: 430 },
+  'set-start': { x: 300, y: 132, width: 340, height: 340 },
   'path-transform': { x: 298, y: 134, width: 340, height: 430 },
-  'path-hover-assist': { x: 322, y: 164, width: 300, height: 190 },
   'endpoint-topology': { x: 812, y: 84, width: 360, height: 300 },
   'path-diagnostics': { x: 370, y: 224, width: 360, height: 260 },
   'cut-sequence': { x: 394, y: 254, width: 340, height: 340 },
@@ -322,19 +332,23 @@ const EDITOR_WORKFLOW_MENU_TITLES: EditorWorkflowMenuGroup['title'][] = [
 
 const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
   {
+    id: 'geometry.setup', label: 'Geometry Setup', menuPath: ['Geometry', 'Geometry Setup'],
+    scope: 'document', toolWindowId: 'geometry-setup', historyLabel: 'Edit geometry setup',
+    prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
+  },
+  {
     id: 'geometry.transform', label: 'Transform Geometry', menuPath: ['Geometry', 'Transform Geometry'],
     scope: 'document', toolWindowId: 'path-transform', historyLabel: 'Transform geometry',
     prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
   },
   {
-    id: 'geometry.path-actions', label: 'Path Actions', menuPath: ['Geometry', 'Path Actions'],
-    scope: 'document', toolWindowId: 'path-actions', historyLabel: 'Edit path setup',
+    id: 'machining.contour-setup', label: 'Contour Setup', menuPath: ['Machining', 'Contour Setup'],
+    scope: 'operation', toolWindowId: 'contour-setup', historyLabel: 'Edit contour setup',
     prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
   },
   SET_START_COMMAND,
   ...([
     ['machining.sequence', 'Cut Sequence', 'cut-sequence'],
-    ['machining.contours', 'Contour Tree', 'contour-tree'],
     ['machining.initial-wire', 'Initial Wire Position', 'initial-wire-position'],
     ['machining.entry-exit', 'Entry / Exit & Rethreading', 'entry-exit'],
     ['machining.program-stops', 'Program Stops', 'program-stops'],
@@ -344,15 +358,14 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
     toolWindowId, historyLabel: `Edit ${label}`, prerequisites: [{ kind: 'document' } as const],
     workflow: { kind: 'mutating' as const }
   })),
+  {
+    id: 'construction.measurement', label: 'Measurement & Construction',
+    menuPath: ['Construction', 'Measurement & Construction'], scope: 'document',
+    toolWindowId: 'measurement', prerequisites: [{ kind: 'document' }],
+    workflow: { kind: 'view' }
+  },
   ...([
-    ['construction.measurement', 'Measurement', 'measurement'],
-    ['construction.hover-assist', 'Hover / Snap Assist', 'path-hover-assist']
-  ] as const).map(([id, label, toolWindowId]) => ({
-    id, label, menuPath: ['Construction', label] as const, scope: 'document' as const,
-    toolWindowId, prerequisites: [{ kind: 'document' } as const],
-    workflow: { kind: 'view' as const }
-  })),
-  ...([
+    ['view.contours', 'Contour Tree', 'contour-tree'],
     ['view.summary', 'Path Summary', 'path-summary'],
     ['view.endpoints', 'Endpoint Topology', 'endpoint-topology'],
     ['view.diagnostics', 'Path Diagnostics', 'path-diagnostics'],
@@ -370,7 +383,7 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
   {
     id: 'export.preview', label: 'Controller Export',
     menuPath: ['Export', 'Controller Export'], scope: 'export', toolWindowId: 'controller-export',
-    prerequisites: [{ kind: 'document' }], workflow: { kind: 'view' }
+    prerequisites: [{ kind: 'document' }, { kind: 'interaction-unlocked' }], workflow: { kind: 'view' }
   }
 ]);
 
@@ -385,12 +398,10 @@ function createDefaultPanelRecord<T>(valueFor: (id: EditorWorkspacePanelId) => T
 }
 
 const HIDDEN_WORKSPACE_PANEL_PLACEMENTS = createDefaultPanelRecord<EditorPanelPlacement>(() => 'hidden');
-const PATH_DEFAULT_PLACEMENTS = createDefaultPanelRecord<EditorPanelPlacement>((id) =>
-  id === 'contour-tree' ? 'docked-left' : id === 'path-actions' ? 'docked-right' : 'hidden'
-);
+const PATH_DEFAULT_PLACEMENTS = createDefaultPanelRecord<EditorPanelPlacement>(() => 'hidden');
 const PATH_DEFAULT_DOCK_ORDERS: Record<EditorDockSide, EditorWorkspacePanelId[]> = {
-  left: ['contour-tree'],
-  right: ['path-actions']
+  left: [],
+  right: []
 };
 
 function createDefaultWorkspacePanelPlacements(model: LoadedEditorProgram['model'] | undefined) {
@@ -919,6 +930,7 @@ export function EditorPage({
       commands: EDITOR_COMMAND_REGISTRY.commandsForMenu(title).map((command) => {
         const availability = evaluateEditorCommand(command, context);
         return {
+          ariaLabel: command.id === 'export.preview' ? 'Open UPID export preview' : undefined,
           id: command.id,
           label: command.label,
           description: command.id === 'export.preview'
@@ -1636,29 +1648,16 @@ export function EditorPage({
   }
 
   function handleSetPlannedRapidSourcePoint(point: { x: number; y: number }) {
-    const operationId = selectedPathElement?.travelRole === 'rapid-in'
-      ? selectedPathElement.operationId
-      : null;
+    const operationId = selectedPathOperationId;
     if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
     const edited = setPlannedRapidSourcePoint(pathDocumentDraft, operationId, point);
     if (edited) applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
   }
 
   function handleSetPlannedRapidDestinationPoint(point: { x: number; y: number }) {
-    const operationId = selectedPathElement?.travelRole === 'rapid-in'
-      ? selectedPathElement.operationId
-      : null;
+    const operationId = selectedPathOperationId;
     if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
     const edited = setPlannedRapidDestinationPoint(pathDocumentDraft, operationId, point);
-    if (edited) applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
-  }
-
-  function handleSetPathOperationManualLeadIn(point: { x: number; y: number }) {
-    const operationId = selectedPathElement?.travelRole === 'rapid-in'
-      ? selectedPathElement.operationId
-      : null;
-    if (!pathDocumentDraft || !operationId || isEditorMutationLocked) return;
-    const edited = setPathOperationManualLeadIn(pathDocumentDraft, operationId, point);
     if (edited) applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
   }
 
@@ -1693,18 +1692,6 @@ export function EditorPage({
     if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
     const edited = setManualCompensationIntent(pathDocumentDraft, selectedPathOperationId, selection);
     if (edited) applyPathDocumentEdit(edited);
-  }
-
-  function handleSetPathOperationCenterPierceLeadIn() {
-    if (!pathDocumentDraft || !selectedPathOperationId || isEditorMutationLocked) return;
-    const edited = setCircleOperationCenterPierceLeadIn(pathDocumentDraft, selectedPathOperationId);
-    if (!edited) {
-      onStatusMessage?.('Select a closed circular contour before adding a center pierce lead-in.', 'warning');
-      return;
-    }
-
-    applyPathDocumentEdit(edited);
-    onStatusMessage?.('Center pierce lead-in added.', 'success');
   }
 
   function handleSetOperationCircleCenterEntry(operationId: string) {
@@ -2470,15 +2457,11 @@ export function EditorPage({
     return (
       <EditorPathNavigatorPanel
         expandedPathElementIds={expandedPathElementIds}
-        hasUnsavedChanges={hasUnsavedChanges}
         hoveredPathElement={activeHoveredPathElement}
         hoverAssistEnabled={pathHoverAssistEnabled}
         isSaving={isEditorMutationLocked}
         latestMeasurementPoint={measurementPoints.at(-1) ?? null}
-        magneticSnapEnabled={pathMagneticSnapEnabled}
-        machineProfile={program!.project!.machine}
         measurementPoints={measurementPoints}
-        onActivatePathClickMode={handleActivatePathClickMode}
         onExpandedPathElementIdsChange={setExpandedPathElementIds}
         onHoverPathElement={setHoveredPathElement}
         onMirrorPathDocument={handleMirrorPathDocument}
@@ -2488,28 +2471,20 @@ export function EditorPage({
         onMovePathOperation={handleMovePathOperation}
         onOpenWorkspacePanel={showWorkspacePanel}
         onOpenWorkspacePanels={showWorkspacePanels}
-        onOpenExportPreview={() => setExportPreviewOpen(true)}
-        onReversePathOperation={handleReversePathOperation}
         onRotatePathDocument={handleRotatePathDocument}
         onRotatePathSelection={handleRotatePathSelection}
-        onSaveClick={handleSaveClick}
         onSelectPathElement={handleSelectPathElement}
         onPathTargetXDraftChange={setPathTargetXDraft}
         onPathTargetYDraftChange={setPathTargetYDraft}
-        onSetPathOperationClassification={handleSetPathOperationClassification}
-        onSetGeometryBasis={handleSetGeometryBasis}
-        onSetManualCompensation={handleSetManualCompensation}
-        onSetPathOperationCenterPierceLeadIn={handleSetPathOperationCenterPierceLeadIn}
-        onSetPathOperationManualLeadIn={handleSetPathOperationManualLeadIn}
         onSetPathOperationOrderStrategy={handleSetPathOperationOrderStrategy}
-        onSetPlannedRapidDestinationPoint={handleSetPlannedRapidDestinationPoint}
-        onSetPlannedRapidSourcePoint={handleSetPlannedRapidSourcePoint}
-        onSetPathStartFromElement={handleSetPathStartFromElement}
+        onSetPathStartFromElement={
+          activeWorkflowSession?.commandId === SET_START_COMMAND.id
+            ? handleSetPathStartFromElement
+            : () => undefined
+        }
         onTranslatePathDocument={handleTranslatePathDocument}
         onTranslatePathSelection={handleTranslatePathSelection}
         onToggleHoverAssist={handleTogglePathHoverAssist}
-        onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
-        pathClickMode={pathClickMode}
         pathDocument={pathDocument}
         pathTargetXDraft={pathTargetXDraft}
         pathTargetYDraft={pathTargetYDraft}
@@ -2667,9 +2642,11 @@ export function EditorPage({
           onSelectPathElement={handleSelectPathElement}
           onSetCanvasMouseMode={setCanvasMouseMode}
           onToggleGridSnap={() => setGridSnapEnabled((current) => !current)}
+          onTogglePathMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
           pathCount={pathCount}
           pathConstructionMode={pathClickMode === 'set-start' ? null : pathClickMode}
           pathDocument={pathDocumentDraft}
+          pathMagneticSnapEnabled={pathMagneticSnapEnabled}
           pointXDraft={pointXDraft}
           pointYDraft={pointYDraft}
           previewCursorPoint={previewCursorPoint}
@@ -2897,6 +2874,51 @@ export function EditorPage({
         {pathDocumentDraft && renderPathNavigatorPanel(pathDocumentDraft)}
         {pathDocumentDraft &&
           renderWorkspacePanel(
+            'geometry-setup',
+            'Geometry Setup',
+            <EditorGeometrySetupPanel
+              disabled={Boolean(isEditorMutationLocked)}
+              document={pathDocumentDraft}
+              onSetGeometryBasis={handleSetGeometryBasis}
+            />
+          )}
+        {pathDocumentDraft && program?.project &&
+          renderWorkspacePanel(
+            'contour-setup',
+            'Contour Setup',
+            <EditorContourSetupPanel
+              disabled={Boolean(isEditorMutationLocked)}
+              document={pathDocumentDraft}
+              machine={program.project.machine}
+              onReverse={handleReversePathOperation}
+              onSelectOperation={(operationId) => {
+                setSelectedPathOperationId(operationId);
+                setSelectedPathElement(null);
+              }}
+              onSetClassification={handleSetPathOperationClassification}
+              onSetCompensation={handleSetManualCompensation}
+              selectedOperationId={selectedPathOperationId}
+            />
+          )}
+        {pathDocumentDraft &&
+          renderWorkspacePanel(
+            'set-start',
+            'Set Start',
+            <EditorSetStartPanel
+              disabled={Boolean(isEditorMutationLocked)}
+              document={pathDocumentDraft}
+              magneticSnapEnabled={pathMagneticSnapEnabled}
+              onPickStart={() => handleActivatePathClickMode('set-start')}
+              onSelectOperation={(operationId) => {
+                setSelectedPathOperationId(operationId);
+                setSelectedPathElement(null);
+              }}
+              onToggleMagneticSnap={() => setPathMagneticSnapEnabled((current) => !current)}
+              selectedOperationId={selectedPathOperationId}
+            />
+          )}
+        {pathDocumentDraft &&
+          renderWorkspacePanel(
             'initial-wire-position',
             'Initial Wire Position',
             <EditorInitialWirePositionPanel
@@ -2921,6 +2943,8 @@ export function EditorPage({
               onSetCircleCenterEntry={handleSetOperationCircleCenterEntry}
               onSetManualEntry={handleSetOperationManualEntry}
               onSetManualExit={handleSetOperationManualExit}
+              onSetPlannedRapidDestination={handleSetPlannedRapidDestinationPoint}
+              onSetPlannedRapidSource={handleSetPlannedRapidSourcePoint}
               onSetOperationThreading={handleSetOperationThreading}
               onSetProjectThreading={handleSetProjectThreading}
               selectedOperationId={selectedPathOperationId}

@@ -1194,7 +1194,12 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
     await confirmPendingDxfImport(container);
-    await openWorkflowCommand(container, 'machining.contours');
+    await openWorkflowCommand(container, 'view.contours');
+    await act(async () => {
+      container.querySelector('button[aria-label="Dock Contour Tree left"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushReactOnly();
 
     for (let cycle = 0; cycle < 2; cycle += 1) {
       const contourTree = container.querySelector(
@@ -1293,17 +1298,17 @@ describe('App DXF imports and project library', () => {
     await selectFirstCutSequence(container);
 
     const workflowPanels = [
+      ['geometry.setup', 'geometry-setup'],
       ['geometry.transform', 'path-transform'],
-      ['geometry.path-actions', 'path-actions'],
-      ['machining.set-start', 'path-actions'],
+      ['machining.contour-setup', 'contour-setup'],
+      ['machining.set-start', 'set-start'],
       ['machining.sequence', 'cut-sequence'],
-      ['machining.contours', 'contour-tree'],
       ['machining.initial-wire', 'initial-wire-position'],
       ['machining.entry-exit', 'entry-exit'],
       ['machining.program-stops', 'program-stops'],
       ['machining.participation', 'machining-participation'],
       ['construction.measurement', 'measurement'],
-      ['construction.hover-assist', 'path-hover-assist'],
+      ['view.contours', 'contour-tree'],
       ['view.summary', 'path-summary'],
       ['view.endpoints', 'endpoint-topology'],
       ['view.diagnostics', 'path-diagnostics'],
@@ -1326,6 +1331,77 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelectorAll('[data-editor-workspace-panel]')).toHaveLength(0);
   });
 
+  it('regroups every former Path Actions control into one canonical workflow responsibility', async () => {
+    window.showDirectoryPicker = undefined;
+
+    await renderApp(context);
+    await prepareDxfImport(container, new File([rectangleDxf()], 'regrouped-workflows.dxf'));
+    await confirmPendingDxfImport(container);
+    await selectFirstCutSequence(container);
+
+    const commandIds = [...container.querySelectorAll('[data-editor-workflow-command]')].map(
+      (command) => command.getAttribute('data-editor-workflow-command')
+    );
+    expect(commandIds).toContain('geometry.setup');
+    expect(commandIds).toContain('machining.contour-setup');
+    expect(commandIds).not.toContain('geometry.path-actions');
+    expect(commandIds).not.toContain('construction.hover-assist');
+
+    await openWorkflowCommand(container, 'geometry.setup');
+    let activePanel = container.querySelector('[data-editor-workspace-panel]');
+    expect(activePanel?.getAttribute('data-editor-workspace-panel')).toBe('geometry-setup');
+    expect(activePanel?.querySelector('[aria-label="Geometry basis"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Reverse path operation"]')).toBeNull();
+
+    await openWorkflowCommand(container, 'machining.contour-setup');
+    activePanel = container.querySelector('[data-editor-workspace-panel]');
+    expect(activePanel?.getAttribute('data-editor-workspace-panel')).toBe('contour-setup');
+    expect(activePanel?.querySelector('[aria-label="Reverse path operation"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Contour role"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Compensation kept material"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Planning order strategy"]')).toBeNull();
+
+    await openWorkflowCommand(container, 'machining.sequence');
+    activePanel = container.querySelector('[data-editor-workspace-panel]');
+    expect(activePanel?.querySelector('[aria-label="Planning order strategy"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Reapply planning order strategy"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[data-upid-cut-sequence-row]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Contour role"]')).toBeNull();
+
+    await openWorkflowCommand(container, 'machining.set-start');
+    activePanel = container.querySelector('[data-editor-workspace-panel]');
+    expect(activePanel?.getAttribute('data-editor-workspace-panel')).toBe('set-start');
+    expect(activePanel?.querySelector('[data-upid-set-start-workflow]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Toggle set start magnetic snap"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Pick another start"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Add center pierce lead-in"]')).toBeNull();
+
+    await openWorkflowCommand(container, 'machining.entry-exit');
+    activePanel = container.querySelector('[data-editor-workspace-panel]');
+    expect(activePanel?.querySelector('[data-entry-exit-panel]')).not.toBeNull();
+    expect(activePanel?.textContent).toContain('Use circle center');
+    expect(activePanel?.querySelector('[aria-label="Planned rapid source X"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Create manual lead from planned rapid destination"]')).not.toBeNull();
+
+    await openWorkflowCommand(container, 'construction.measurement');
+    activePanel = container.querySelector('[data-editor-workspace-panel]');
+    expect(activePanel?.getAttribute('data-editor-workspace-panel')).toBe('measurement');
+    expect(activePanel?.textContent).toContain('Measurement & Construction');
+    expect(activePanel?.querySelector('[aria-label="Magnetize latest point perpendicular"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Magnetize latest point tangent"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Toggle construction magnetic snap"]')).not.toBeNull();
+
+    expect(container.querySelector('[data-editor-workspace-panel="path-actions"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Save Path Plan"]')).toBeNull();
+    expect(
+      container.querySelector('[data-editor-workspace-panel] button[aria-label="Open UPID export preview"]')
+    ).toBeNull();
+    expect(container.querySelector('button[aria-label="Set path start from canvas"]')).toBeNull();
+    expect(
+      container.querySelector('[data-editor-workspace-panel="set-start"] button[aria-label="Add center pierce lead-in"]')
+    ).toBeNull();
+  });
+
   it('floats and restores editor panels without losing panel state', async () => {
     window.showDirectoryPicker = undefined;
 
@@ -1342,7 +1418,7 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
     await confirmPendingDxfImport(container);
-    await openWorkflowCommand(container, 'construction.hover-assist');
+    await openWorkflowCommand(container, 'view.contours');
 
     const hoverAssistToggle = container.querySelector(
       'input[aria-label="Toggle canvas hover assist"]'
@@ -1362,19 +1438,19 @@ describe('App DXF imports and project library', () => {
 
     expect(
       container
-        .querySelector('[data-editor-workspace-panel="path-hover-assist"]')
+        .querySelector('[data-editor-workspace-panel="contour-tree"]')
         ?.getAttribute('data-editor-workspace-panel-placement')
     ).toBe('floating');
     expect(
-      (container.querySelector('button[aria-label="Float Hover Assist"]') as HTMLButtonElement)
+      (container.querySelector('button[aria-label="Float Contour Tree"]') as HTMLButtonElement)
         .disabled
     ).toBe(true);
-    expect(container.querySelector('button[aria-label="Dock Hover Assist left"]')).not.toBeNull();
-    expect(container.querySelector('button[aria-label="Dock Hover Assist right"]')).not.toBeNull();
-    expect(container.querySelector('[data-editor-workspace-panel-handle="path-hover-assist"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Dock Contour Tree left"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Dock Contour Tree right"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-workspace-panel-handle="contour-tree"]')).not.toBeNull();
 
     const hideHoverAssistButton = container.querySelector(
-      'button[aria-label="Hide Hover Assist"]'
+      'button[aria-label="Hide Contour Tree"]'
     ) as HTMLButtonElement | null;
 
     await act(async () => {
@@ -1382,16 +1458,16 @@ describe('App DXF imports and project library', () => {
     });
     await flushReactOnly();
 
-    expect(container.querySelector('[data-editor-workspace-panel="path-hover-assist"]')).toBeNull();
-    await openWorkflowCommand(container, 'construction.hover-assist');
+    expect(container.querySelector('[data-editor-workspace-panel="contour-tree"]')).toBeNull();
+    await openWorkflowCommand(container, 'view.contours');
 
     const restoredHoverAssistToggle = container.querySelector(
-      '[data-editor-workspace-panel="path-hover-assist"] input[aria-label="Toggle canvas hover assist"]'
+      '[data-editor-workspace-panel="contour-tree"] input[aria-label="Toggle canvas hover assist"]'
     ) as HTMLInputElement | null;
     expect(restoredHoverAssistToggle?.checked).toBe(true);
     expect(
       container
-        .querySelector('[data-editor-workspace-panel="path-hover-assist"]')
+        .querySelector('[data-editor-workspace-panel="contour-tree"]')
         ?.getAttribute('data-editor-workspace-panel-placement')
     ).toBe('floating');
 
@@ -1434,27 +1510,27 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
     await confirmPendingDxfImport(container);
-    await openWorkflowCommand(container, 'geometry.path-actions');
+    await openWorkflowCommand(container, 'machining.contour-setup');
 
     expect(
       container
-        .querySelector('[data-editor-workspace-panel="path-actions"]')
+        .querySelector('[data-editor-workspace-panel="contour-setup"]')
         ?.getAttribute('data-editor-workspace-panel-placement')
-    ).toBe('docked-right');
+    ).toBe('floating');
 
     await act(async () => {
-      container.querySelector('button[aria-label="Hide Path Actions"]')
+      container.querySelector('button[aria-label="Hide Contour Setup"]')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushReactOnly();
 
-    await openWorkflowCommand(container, 'geometry.path-actions');
+    await openWorkflowCommand(container, 'machining.contour-setup');
 
     expect(
       container
-        .querySelector('[data-editor-workspace-panel="path-actions"]')
+        .querySelector('[data-editor-workspace-panel="contour-setup"]')
         ?.getAttribute('data-editor-workspace-panel-placement')
-    ).toBe('docked-right');
+    ).toBe('floating');
 
     await selectFirstCutSequence(container);
     const reverseButton = container.querySelector(
@@ -1469,12 +1545,12 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).toContain('Unsaved');
     expect(
       container
-        .querySelector('[data-editor-workspace-panel="path-actions"]')
+        .querySelector('[data-editor-workspace-panel="contour-setup"]')
         ?.getAttribute('data-editor-workspace-panel-placement')
-    ).toBe('docked-right');
+    ).toBe('floating');
 
     await act(async () => {
-      container.querySelector('button[aria-label="Hide Path Actions"]')
+      container.querySelector('button[aria-label="Hide Contour Setup"]')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushReactOnly();
@@ -1488,14 +1564,14 @@ describe('App DXF imports and project library', () => {
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushAsync();
-    await openWorkflowCommand(container, 'geometry.path-actions');
+    await openWorkflowCommand(container, 'machining.contour-setup');
 
     expect(container.textContent).toContain('Saved');
     expect(
       container
-        .querySelector('[data-editor-workspace-panel="path-actions"]')
+        .querySelector('[data-editor-workspace-panel="contour-setup"]')
         ?.getAttribute('data-editor-workspace-panel-placement')
-    ).toBe('docked-right');
+    ).toBe('floating');
   });
 
   it('exposes path and inspector functionality as individual workspace panels', async () => {
@@ -1577,17 +1653,6 @@ describe('App DXF imports and project library', () => {
       contourRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await openWorkflowCommand(container, 'view.statistics');
-
-    const activeSelection = container.querySelector('[data-upid-active-selection]');
-    expect(activeSelection?.getAttribute('data-upid-active-selection-state')).toBe('selected');
-    expect(activeSelection?.getAttribute('data-upid-active-selection-operation')).toBe(
-      contourRow?.getAttribute('data-upid-operation-id')
-    );
-    expect(activeSelection?.textContent).toContain('Active Selection');
-    expect(activeSelection?.textContent).toContain('Exterior 1');
-    expect(activeSelection?.textContent).toContain('order 1');
-    expect(activeSelection?.textContent).toContain('closed contour');
-    expect(activeSelection?.textContent).toContain('forward');
 
     const inspector = container.querySelector('[data-editor-workspace-panel="statistics"]');
     const selectedGeometry = container.querySelector('[data-upid-selected-geometry]');
@@ -1935,7 +2000,7 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).toContain('Unsaved');
 
     const saveButton = container.querySelector(
-      'button[aria-label="Save Path Plan"]'
+      'button[aria-label="Save active document"]'
     ) as HTMLButtonElement | null;
 
     await act(async () => {
@@ -2094,7 +2159,7 @@ describe('App DXF imports and project library', () => {
       'select[aria-label="Contour role"]'
     ) as HTMLSelectElement | null;
     const saveButton = container.querySelector(
-      'button[aria-label="Save Path Plan"]'
+      'button[aria-label="Save active document"]'
     ) as HTMLButtonElement | null;
     expect(roleSelect).not.toBeNull();
     expect(saveButton).not.toBeNull();
@@ -2200,7 +2265,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     const saveButton = container.querySelector(
-      'button[aria-label="Save Path Plan"]'
+      'button[aria-label="Save active document"]'
     ) as HTMLButtonElement | null;
 
     await act(async () => {
@@ -2647,12 +2712,7 @@ describe('App DXF imports and project library', () => {
       configurable: true
     });
 
-    const startButton = container.querySelector(
-      'button[aria-label="Set path start from canvas"]'
-    ) as HTMLButtonElement | null;
-    await act(async () => {
-      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+    await openWorkflowCommand(container, 'machining.set-start');
     await act(async () => {
       preview?.dispatchEvent(
         new MouseEvent('click', {
@@ -3427,6 +3487,8 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
     await confirmPendingDxfImport(container);
 
+    await selectFirstCutSequence(container);
+    await openWorkflowCommand(container, 'machining.set-start');
     await expandSegmentDetails(container, 0);
     const targetPointRow = [...container.querySelectorAll('[data-upid-point-row]')].find((row) =>
       row.textContent?.includes('10.000, 0.000')
@@ -3473,6 +3535,8 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
     await confirmPendingDxfImport(container);
 
+    await selectFirstCutSequence(container);
+    await openWorkflowCommand(container, 'machining.set-start');
     await expandSegmentDetails(container, 1);
     const targetPointRow = container.querySelector(
       '[data-upid-point-row][data-upid-segment-index="1"][data-upid-point-role="start"]'
@@ -3543,12 +3607,7 @@ describe('App DXF imports and project library', () => {
     );
     expect(endpointHandle).not.toBeNull();
 
-    const startButton = container.querySelector(
-      'button[aria-label="Set path start from canvas"]'
-    ) as HTMLButtonElement | null;
-    await act(async () => {
-      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+    await openWorkflowCommand(container, 'machining.set-start');
     await act(async () => {
       endpointHandle?.dispatchEvent(
         new MouseEvent('click', {
@@ -3621,7 +3680,7 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
     await confirmPendingDxfImport(container);
-    await showWorkspacePanels(container, ['contour-tree', 'cut-sequence', 'path-actions', 'path-hover-assist']);
+    await showWorkspacePanels(container, ['contour-tree']);
     await openWorkflowCommand(container, 'construction.measurement');
     await selectFirstCutSequence(container);
 
@@ -3668,7 +3727,7 @@ describe('App DXF imports and project library', () => {
       'input[aria-label="Toggle canvas hover assist"]'
     ) as HTMLInputElement | null;
     const snapToggle = document.querySelector(
-      'input[aria-label="Toggle magnetic non-existing point snap"]'
+      'input[aria-label="Toggle construction magnetic snap"]'
     ) as HTMLInputElement | null;
     const perpendicularButton = document.querySelector(
       'button[aria-label="Magnetize latest point perpendicular"]'
@@ -3752,15 +3811,7 @@ describe('App DXF imports and project library', () => {
       configurable: true
     });
 
-    const startButton = container.querySelector(
-      'button[aria-label="Set path start from canvas"]'
-    ) as HTMLButtonElement | null;
-
     expect(container.querySelectorAll('[data-upid-segment-row]')).toHaveLength(4);
-
-    await act(async () => {
-      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
     await act(async () => {
       preview?.dispatchEvent(
         new MouseEvent('click', {
@@ -3776,7 +3827,7 @@ describe('App DXF imports and project library', () => {
       'input[aria-label="Toggle canvas hover assist"]'
     ) as HTMLInputElement | null;
     const snapToggle = container.querySelector(
-      'input[aria-label="Toggle magnetic non-existing point snap"]'
+      'input[aria-label="Toggle set start magnetic snap"]'
     ) as HTMLInputElement | null;
 
     await act(async () => {
@@ -3786,7 +3837,8 @@ describe('App DXF imports and project library', () => {
       snapToggle?.click();
     });
     await act(async () => {
-      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.querySelector('button[aria-label="Pick another start"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await act(async () => {
       preview?.dispatchEvent(
@@ -3861,7 +3913,7 @@ describe('App DXF imports and project library', () => {
       'input[aria-label="Toggle canvas hover assist"]'
     ) as HTMLInputElement | null;
     const snapToggle = container.querySelector(
-      'input[aria-label="Toggle magnetic non-existing point snap"]'
+      'input[aria-label="Toggle set start magnetic snap"]'
     ) as HTMLInputElement | null;
 
     await act(async () => {
@@ -3929,6 +3981,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
     await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
+    await openWorkflowCommand(container, 'machining.set-start');
 
     const preview = container.querySelector(
       'svg[aria-label="UPID path preview"]'
@@ -3953,20 +4006,14 @@ describe('App DXF imports and project library', () => {
       'input[aria-label="Toggle canvas hover assist"]'
     ) as HTMLInputElement | null;
     const snapToggle = container.querySelector(
-      'input[aria-label="Toggle magnetic non-existing point snap"]'
+      'input[aria-label="Toggle set start magnetic snap"]'
     ) as HTMLInputElement | null;
-    const startButton = container.querySelector(
-      'button[aria-label="Set path start from canvas"]'
-    ) as HTMLButtonElement | null;
 
     await act(async () => {
       hoverToggle?.click();
     });
     await act(async () => {
       snapToggle?.click();
-    });
-    await act(async () => {
-      startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await act(async () => {
       preview?.dispatchEvent(
@@ -3985,6 +4032,7 @@ describe('App DXF imports and project library', () => {
     await act(async () => {
       openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
+    await savePendingWorkflowTransition(container);
 
     const exportOperationRow = container.querySelector('[data-upid-export-operation-row]');
 
@@ -4010,6 +4058,8 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
     await confirmPendingDxfImport(container);
 
+    await selectFirstCutSequence(container);
+    await openWorkflowCommand(container, 'machining.set-start');
     await expandSegmentDetails(container, 1);
     const targetPointRow = container.querySelector(
       '[data-upid-point-row][data-upid-segment-index="1"][data-upid-point-role="start"]'
@@ -4031,6 +4081,7 @@ describe('App DXF imports and project library', () => {
     await act(async () => {
       openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
+    await savePendingWorkflowTransition(container);
 
     const exportOperationRow = container.querySelector('[data-upid-export-operation-row]');
     expect(exportOperationRow?.getAttribute('data-upid-export-operation-start-relation')).toBe(
@@ -4083,7 +4134,7 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).toContain('Unsaved');
 
     const saveButton = container.querySelector(
-      'button[aria-label="Save Path Plan"]'
+      'button[aria-label="Save active document"]'
     ) as HTMLButtonElement | null;
 
     await act(async () => {
@@ -4225,6 +4276,7 @@ describe('App DXF imports and project library', () => {
     await act(async () => {
       openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
+    await savePendingWorkflowTransition(container);
 
     const exportCode = container.querySelector('[data-upid-export-gcode]');
     expect(exportCode?.textContent).toContain('G0 X8.000 Y23.000');
@@ -4262,7 +4314,7 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
     await confirmPendingDxfImport(container);
-    await showWorkspacePanels(container, ['contour-tree', 'path-actions']);
+    await showWorkspacePanels(container, ['entry-exit']);
     await selectFirstCutSequence(container);
 
     const pierceButton = container.querySelector(
@@ -4314,6 +4366,7 @@ describe('App DXF imports and project library', () => {
     await act(async () => {
       openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
+    await savePendingWorkflowTransition(container);
 
     const exportText = container.querySelector('[data-upid-export-gcode]')?.textContent ?? '';
     expect(exportText).toContain('G0 X10.000 Y20.000');
@@ -4360,6 +4413,7 @@ describe('App DXF imports and project library', () => {
     await act(async () => {
       openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
+    await savePendingWorkflowTransition(container);
 
     const exportCode = container.querySelector('[data-upid-export-gcode]');
     expect(exportCode?.textContent).toContain('G0 X4.000 Y2.000');
@@ -4909,7 +4963,7 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
     await confirmPendingDxfImport(container);
-    await showWorkspacePanels(container, ['contour-tree', 'cut-sequence', 'measurement', 'path-actions', 'statistics']);
+    await showWorkspacePanels(container, ['statistics']);
     await openWorkflowCommand(container, 'construction.measurement');
     expect(document.querySelector('[data-editor-workspace-panel="measurement"]')).not.toBeNull();
     await selectFirstCutSequence(container);
@@ -5538,13 +5592,24 @@ async function openWorkflowCommand(container: HTMLElement, commandId: string) {
   await flushReactOnly();
 }
 
+async function savePendingWorkflowTransition(container: HTMLElement) {
+  const save = container.querySelector(
+    '[data-editor-workflow-transition-action="save"]'
+  ) as HTMLButtonElement | null;
+  if (!save) return;
+  await act(async () => save.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await flushReactOnly();
+}
+
 async function showWorkspacePanels(container: HTMLElement, panelIds: string[]) {
   const commandByPanelId: Record<string, string> = {
-    'contour-tree': 'machining.contours',
+    'contour-tree': 'view.contours',
     'cut-sequence': 'machining.sequence',
+    'entry-exit': 'machining.entry-exit',
     measurement: 'construction.measurement',
-    'path-actions': 'geometry.path-actions',
-    'path-hover-assist': 'construction.hover-assist',
+    'contour-setup': 'machining.contour-setup',
+    'geometry-setup': 'geometry.setup',
+    'set-start': 'machining.set-start',
     'path-transform': 'geometry.transform',
     statistics: 'view.statistics'
   };

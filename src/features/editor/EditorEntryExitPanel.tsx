@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import {
+  canSetCircleOperationCenterPierceLeadIn,
+  derivePlannedRapidRoutes
+} from '@/domain/path-editor/pathDocumentOperations';
 import { normalizeLegacyOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
 import type {
@@ -17,6 +21,8 @@ interface EditorEntryExitPanelProps {
   onSetCircleCenterEntry: (operationId: string) => void;
   onSetManualEntry: (operationId: string, point: Point2) => void;
   onSetManualExit: (operationId: string, point: Point2) => void;
+  onSetPlannedRapidDestination: (point: Point2) => void;
+  onSetPlannedRapidSource: (point: Point2) => void;
   onSetOperationThreading: (
     operationId: string,
     transition: Omit<OperationThreadingTransition, 'source'> | null
@@ -35,6 +41,8 @@ export function EditorEntryExitPanel({
   onSetCircleCenterEntry,
   onSetManualEntry,
   onSetManualExit,
+  onSetPlannedRapidDestination,
+  onSetPlannedRapidSource,
   onSetOperationThreading,
   onSetProjectThreading,
   selectedOperationId
@@ -47,6 +55,13 @@ export function EditorEntryExitPanel({
   const [entryY, setEntryY] = useState('');
   const [exitX, setExitX] = useState('');
   const [exitY, setExitY] = useState('');
+  const plannedRapid = selected
+    ? derivePlannedRapidRoutes(document).find((route) => route.operationId === selected.id) ?? null
+    : null;
+  const [rapidSourceX, setRapidSourceX] = useState('');
+  const [rapidSourceY, setRapidSourceY] = useState('');
+  const [rapidDestinationX, setRapidDestinationX] = useState('');
+  const [rapidDestinationY, setRapidDestinationY] = useState('');
 
   useEffect(() => {
     setEntryX(transitions.entry ? String(transitions.entry.from.x) : '');
@@ -54,6 +69,19 @@ export function EditorEntryExitPanel({
     setExitX(transitions.exit ? String(transitions.exit.to.x) : '');
     setExitY(transitions.exit ? String(transitions.exit.to.y) : '');
   }, [selected?.id, transitions.entry?.from.x, transitions.entry?.from.y, transitions.exit?.to.x, transitions.exit?.to.y]);
+
+  useEffect(() => {
+    setRapidSourceX(plannedRapid ? String(plannedRapid.startPoint.x) : '');
+    setRapidSourceY(plannedRapid ? String(plannedRapid.startPoint.y) : '');
+    setRapidDestinationX(plannedRapid ? String(plannedRapid.endPoint.x) : '');
+    setRapidDestinationY(plannedRapid ? String(plannedRapid.endPoint.y) : '');
+  }, [
+    plannedRapid?.operationId,
+    plannedRapid?.startPoint.x,
+    plannedRapid?.startPoint.y,
+    plannedRapid?.endPoint.x,
+    plannedRapid?.endPoint.y
+  ]);
 
   const threading = useMemo(
     () => selected && selected.orderIndex > 0
@@ -63,10 +91,28 @@ export function EditorEntryExitPanel({
   );
   const entryPoint = readFinitePoint(entryX, entryY);
   const exitPoint = readFinitePoint(exitX, exitY);
+  const rapidSourcePoint = readFinitePoint(rapidSourceX, rapidSourceY);
+  const rapidDestinationPoint = readFinitePoint(rapidDestinationX, rapidDestinationY);
   const projectThreading = document.setup?.threadingDefault ?? {
     mode: 'manual' as const,
     wireSeparation: 'already-separated' as const
   };
+  const robofilV2OperationLifecycle =
+    machine.controller.family === 'charmilles-robofil-classic' &&
+    machine.controller.postVersion === 2 &&
+    machine.compensation.activation === 'charmilles-g38' &&
+    machine.compensation.cancellation === 'charmilles-g39' &&
+    machine.compensation.lifecycleScope === 'operation';
+  const centerPierceBlockedByControllerCompensation = Boolean(
+    document.geometryBasis === 'finished-contour' &&
+    selected?.compensationIntent?.mode === 'controller' &&
+    !robofilV2OperationLifecycle
+  );
+  const canSetCircleCenterEntry = Boolean(
+    selected &&
+    canSetCircleOperationCenterPierceLeadIn(document, selected.id) &&
+    !centerPierceBlockedByControllerCompensation
+  );
 
   if (!selected) {
     return <p className="text-[10px] text-muted-foreground">No operations are available.</p>;
@@ -91,6 +137,62 @@ export function EditorEntryExitPanel({
         </select>
       </label>
 
+      <fieldset
+        className="grid gap-1 border border-border p-2"
+        data-upid-planned-rapid-editor
+        disabled={disabled || !plannedRapid}
+      >
+        <legend className="px-1 uppercase text-muted-foreground">Planned rapid</legend>
+        <p className="text-muted-foreground">
+          Review the positioning move that reaches this operation before defining its cutting entry.
+        </p>
+        <CoordinateInputs
+          label="Planned rapid source"
+          onXChange={setRapidSourceX}
+          onYChange={setRapidSourceY}
+          x={rapidSourceX}
+          y={rapidSourceY}
+        />
+        <CoordinateInputs
+          label="Planned rapid destination"
+          onXChange={setRapidDestinationX}
+          onYChange={setRapidDestinationY}
+          x={rapidDestinationX}
+          y={rapidDestinationY}
+        />
+        <div className="grid grid-cols-2 gap-1">
+          <button
+            aria-label="Apply planned rapid source"
+            className="h-7 border border-border bg-background disabled:opacity-40"
+            disabled={!rapidSourcePoint}
+            onClick={() => rapidSourcePoint && onSetPlannedRapidSource(rapidSourcePoint)}
+            type="button"
+          >
+            Set source
+          </button>
+          <button
+            aria-label="Apply planned rapid destination"
+            className="h-7 border border-border bg-background disabled:opacity-40"
+            disabled={!rapidDestinationPoint}
+            onClick={() => rapidDestinationPoint && onSetPlannedRapidDestination(rapidDestinationPoint)}
+            type="button"
+          >
+            Set destination
+          </button>
+        </div>
+        {!selected.overrides?.leadIn && (
+          <button
+            aria-label="Create manual lead from planned rapid destination"
+            className="h-7 border border-border bg-background disabled:opacity-40"
+            disabled={!rapidDestinationPoint}
+            onClick={() => rapidDestinationPoint && onSetManualEntry(selected.id, rapidDestinationPoint)}
+            type="button"
+          >
+            Create manual entry from destination
+          </button>
+        )}
+      </fieldset>
+
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
         <legend className="px-1 uppercase text-muted-foreground">Entry</legend>
         <div className="text-foreground" data-entry-strategy>
@@ -113,8 +215,15 @@ export function EditorEntryExitPanel({
             Set straight entry
           </button>
           <button
+            aria-label="Add center pierce lead-in"
             className="h-7 border border-border bg-background disabled:opacity-40"
+            disabled={!canSetCircleCenterEntry}
             onClick={() => onSetCircleCenterEntry(selected.id)}
+            title={
+              centerPierceBlockedByControllerCompensation
+                ? 'Center pierce is unavailable while controller compensation is active.'
+                : 'Use circle center entry'
+            }
             type="button"
           >
             Use circle center
