@@ -941,6 +941,55 @@ describe('EditorPage UPID draft boundary', () => {
     expect(replacementPath.getAttribute('data-preview-selected')).toBe('true');
   });
 
+  it('clears the Set Start tool session before Escape is handled in a replacement project', async () => {
+    const firstProject = projectWithUpid(pathDocumentFromRectangle());
+    const replacementProject = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/set-start-project.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={firstProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.set-start"]');
+    expect(visibleWorkflowPanelIds()).toEqual(['set-start']);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/replacement-construction-project.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={replacementProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    await clickElement('button[aria-label="Place measurement points on canvas"]');
+    expect(
+      container.querySelector('button[aria-label="Place measurement points on canvas"]')
+        ?.getAttribute('aria-pressed')
+    ).toBe('true');
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(visibleWorkflowPanelIds()).toEqual(['measurement']);
+    expect(
+      container.querySelector('button[aria-label="Place measurement points on canvas"]')
+        ?.getAttribute('aria-pressed')
+    ).toBe('false');
+  });
+
   it('offers only single-workflow diagnostic repair links', async () => {
     const project = projectWithUpid(pathDocumentFromGappedRectangle());
 

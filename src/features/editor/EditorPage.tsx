@@ -1109,6 +1109,7 @@ export function EditorPage({
     setHoveredPathElement(null);
     setExportPreviewOpen(false);
     setActiveWorkflowSession(null);
+    setActiveToolSession(null);
     setActiveWorkflowPendingReasons({});
     setWorkflowTransition(null);
     pendingWorkflowExitActionRef.current = null;
