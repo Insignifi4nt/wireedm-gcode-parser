@@ -27,6 +27,7 @@ interface EditorHeaderBarProps {
   isSaving: boolean;
   redoAvailable: boolean;
   saveErrorMessage: string | null;
+  saveDisabledReason?: string | null;
   title?: string;
   titleTooltip?: string;
   undoAvailable: boolean;
@@ -53,6 +54,7 @@ export function EditorHeaderBar({
   isSaving,
   redoAvailable,
   saveErrorMessage,
+  saveDisabledReason,
   title,
   titleTooltip,
   undoAvailable,
@@ -147,10 +149,10 @@ export function EditorHeaderBar({
           aria-label="Save active document"
           className="h-7 px-2 text-[10px]"
           data-editor-header-command
-          disabled={!hasUnsavedChanges || interactionLocked}
+          disabled={!hasUnsavedChanges || interactionLocked || Boolean(saveDisabledReason)}
           onClick={onSave}
           size="sm"
-          title="Save"
+          title={saveDisabledReason ?? 'Save'}
           variant="outline"
         >
           <Save />

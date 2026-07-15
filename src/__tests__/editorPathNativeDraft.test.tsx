@@ -41,6 +41,7 @@ import { composeProjectUpidGCodeExport, withProjectUpid } from '@/domain/upid/pr
 import type { WorkbenchProject } from '@/domain/workbench/types';
 import { EditorPage } from '@/features/editor/EditorPage';
 import { EditorUpidExportPreview } from '@/features/editor/EditorUpidExportPreview';
+import { EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY } from '@/features/editor/workspace/editorWorkspaceLayout';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -162,6 +163,204 @@ describe('EditorPage UPID draft boundary', () => {
       ) as HTMLButtonElement | null)?.disabled
     ).toBe(true);
     expect(previewGeometrySignature()).not.toBe(savedGeometry);
+  });
+
+  it('blocks project persistence until provisional workflow changes are committed', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    const onSaveEditorDraft = vi.fn();
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={onSaveEditorDraft} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+
+    const projectSave = container.querySelector(
+      'button[aria-label="Save active document"]'
+    ) as HTMLButtonElement | null;
+    expect(projectSave?.disabled).toBe(true);
+    expect(projectSave?.title).toBe(
+      'Save or discard Transform Geometry before saving the project.'
+    );
+    await act(async () => projectSave?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(onSaveEditorDraft).not.toHaveBeenCalled();
+
+    await clickElement('[data-editor-workflow-command="view.summary"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    const resolvedProjectSave = container.querySelector(
+      'button[aria-label="Save active document"]'
+    ) as HTMLButtonElement | null;
+    expect(resolvedProjectSave?.disabled).toBe(false);
+    await clickElement('button[aria-label="Save active document"]');
+    expect(onSaveEditorDraft).toHaveBeenCalledOnce();
+  });
+
+  it('locks global history during a mutating workflow and discards without leaking Undo or Redo', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    const originalGeometry = previewGeometrySignature();
+    await changeInput('input[aria-label="Translate X"]', '2');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    const openingGeometry = previewGeometrySignature();
+    expect(openingGeometry).not.toBe(originalGeometry);
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '5');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    const provisionalGeometry = previewGeometrySignature();
+    expect(provisionalGeometry).not.toBe(openingGeometry);
+
+    const undo = container.querySelector(
+      'button[aria-label="Undo active document change"]'
+    ) as HTMLButtonElement | null;
+    const redo = container.querySelector(
+      'button[aria-label="Redo active document change"]'
+    ) as HTMLButtonElement | null;
+    expect(undo?.disabled).toBe(true);
+    expect(redo?.disabled).toBe(true);
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'z' }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'y' }));
+    });
+    expect(previewGeometrySignature()).toBe(provisionalGeometry);
+
+    await clickElement('button[aria-label="Hide Transform"]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+    expect(previewGeometrySignature()).toBe(openingGeometry);
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(previewGeometrySignature()).toBe(originalGeometry);
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'y' }));
+    });
+    await flushAsync();
+    expect(previewGeometrySignature()).toBe(openingGeometry);
+    expect(previewGeometrySignature()).not.toBe(provisionalGeometry);
+  });
+
+  it('routes dirty panel X through Save and creates exactly one history entry', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    const openingGeometry = previewGeometrySignature();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '2');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await changeInput('input[aria-label="Translate X"]', '4');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+
+    await clickElement('button[aria-label="Hide Transform"]');
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('before closing it');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(previewGeometrySignature()).toBe(openingGeometry);
+    expect(
+      (container.querySelector(
+        'button[aria-label="Undo active document change"]'
+      ) as HTMLButtonElement | null)?.disabled
+    ).toBe(true);
+  });
+
+  it('restores a valid opening selection before discarded switch activation', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement(
+      `[data-upid-cut-sequence-row][data-upid-operation-id="${firstOperation.id}"] [data-upid-cut-sequence-select]`
+    );
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await clickElement(
+      `[data-upid-cut-sequence-row][data-upid-operation-id="${secondOperation.id}"] [data-upid-cut-sequence-select]`
+    );
+    await clickElement('button[aria-label="Target document for transform"]');
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await clickElement('[data-editor-workflow-command="machining.set-start"]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+
+    expect(visibleWorkflowPanelIds()).toEqual(['path-actions']);
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
+      `Selection Operation ${firstOperation.id}`
+    );
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
+      'Start mode / Step 2'
+    );
+  });
+
+  it('does not activate Set Start after discard restores a null opening selection', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const project = projectWithUpid(pathDocument);
+    const operation = pathDocument.plan.operations[0];
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await clickElement(
+      `[data-upid-cut-sequence-row][data-upid-operation-id="${operation.id}"] [data-upid-cut-sequence-select]`
+    );
+    await clickElement('button[aria-label="Target document for transform"]');
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await clickElement('[data-editor-workflow-command="machining.set-start"]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain('Selection None');
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain('Select mode');
+  });
+
+  it('opens a workflow without rewriting its remembered hidden placement or geometry', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    const rememberedGeometry = { x: 333, y: 144, width: 377, height: 411 };
+    window.localStorage.setItem(EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      placements: { 'path-transform': 'hidden' },
+      dockOrders: { left: [], right: [] },
+      floatingGeometries: { 'path-transform': rememberedGeometry },
+      dockWidths: { left: 360, right: 420 }
+    }));
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    expect(
+      container.querySelector('[data-editor-workspace-panel="path-transform"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('floating');
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    });
+    const stored = JSON.parse(window.localStorage.getItem(EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY) ?? '{}');
+    expect(stored.placements['path-transform']).toBe('hidden');
+    expect(stored.floatingGeometries['path-transform']).toEqual(rememberedGeometry);
+    window.localStorage.removeItem(EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY);
   });
 
   it('initializes verified finished-contour intent and derives reversal-safe Robofil review data', async () => {

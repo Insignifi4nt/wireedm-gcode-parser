@@ -889,6 +889,12 @@ export function EditorPage({
       ? 'UPID Project'
       : program?.filePath.split('/').pop() ?? '-';
   const hasUnsavedChanges = Boolean(program && draftSignature !== savedDraftSignature);
+  const activeMutatingWorkflow = activeWorkflowSession?.kind === 'mutating'
+    ? activeWorkflowSession
+    : null;
+  const workflowProjectSaveBlockedReason = activeMutatingWorkflow
+    ? `Save or discard ${activeMutatingWorkflow.label} before saving the project.`
+    : null;
   const constructionHoveredPathElement = useMemo<EditorPathElementRef | null>(
     () =>
       constructionPreview && pathHoverAssistEnabled
@@ -977,8 +983,10 @@ export function EditorPage({
       title,
       commands: EDITOR_COMMAND_REGISTRY.commandsForMenu(title).map((command) => {
         const availability = evaluateEditorCommand(command, context);
-        const saveUnavailable = command.id === 'project.save' && !hasUnsavedChanges
-          ? 'There are no unsaved project changes.'
+        const saveUnavailable = command.id === 'project.save'
+          ? workflowProjectSaveBlockedReason ?? (
+              !hasUnsavedChanges ? 'There are no unsaved project changes.' : null
+            )
           : null;
         const enabled = availability.enabled && !saveUnavailable;
         return {
@@ -1012,7 +1020,8 @@ export function EditorPage({
     pathClickMode,
     selectedPathElement,
     selectedPathOperationId,
-    workspacePanelPlacements
+    workspacePanelPlacements,
+    workflowProjectSaveBlockedReason
   ]);
   const editorRailContent = useMemo(
     () =>
@@ -1069,11 +1078,12 @@ export function EditorPage({
         onRedo={handleRedoDraft}
         onSave={handleSaveClick}
         onUndo={handleUndoDraft}
-        redoAvailable={redoStack.length > 0}
+        redoAvailable={!activeMutatingWorkflow && redoStack.length > 0}
         saveErrorMessage={saveErrorMessage}
+        saveDisabledReason={workflowProjectSaveBlockedReason}
         title={editorHeaderTitle}
         titleTooltip={editorHeaderTooltip}
-        undoAvailable={undoStack.length > 0}
+        undoAvailable={!activeMutatingWorkflow && undoStack.length > 0}
         workspaceControls={pathDocumentDraft ? (
           <>
             <EditorWorkflowMenuBar groups={editorWorkflowMenus} />
@@ -1084,6 +1094,7 @@ export function EditorPage({
     ),
     [
       editorPanelToolbar,
+      activeMutatingWorkflow,
       editorHeaderTitle,
       editorHeaderTooltip,
       documentContext,
@@ -1106,6 +1117,7 @@ export function EditorPage({
       program?.filePath,
       redoStack,
       saveErrorMessage,
+      workflowProjectSaveBlockedReason,
       selectedPathElement,
       selectedPathOperationId,
       undoStack
@@ -1295,7 +1307,7 @@ export function EditorPage({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeToolSession, draftText, isEditorMutationLocked, measurementPoints.length, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
+  }, [activeToolSession, activeWorkflowSession, draftText, isEditorMutationLocked, measurementPoints.length, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
 
   function handleBackToDashboard() {
     if (isEditorMutationLocked) return;
@@ -1341,7 +1353,12 @@ export function EditorPage({
   }
 
   async function handleSaveClick() {
-    if (!program || !hasUnsavedChanges || isEditorMutationLocked) return;
+    if (
+      !program ||
+      !hasUnsavedChanges ||
+      isEditorMutationLocked ||
+      activeWorkflowSession?.kind === 'mutating'
+    ) return;
     await onSaveEditorDraft(
       pathDocumentDraft
         ? {
@@ -2206,7 +2223,7 @@ export function EditorPage({
   }
 
   function handleUndoDraft() {
-    if (isEditorMutationLocked) return;
+    if (isEditorMutationLocked || activeWorkflowSession?.kind === 'mutating') return;
     const previous = undoStack.at(-1);
     if (previous === undefined) return;
 
@@ -2217,7 +2234,7 @@ export function EditorPage({
   }
 
   function handleRedoDraft() {
-    if (isEditorMutationLocked) return;
+    if (isEditorMutationLocked || activeWorkflowSession?.kind === 'mutating') return;
     const next = redoStack[0];
     if (next === undefined) return;
 
@@ -2262,7 +2279,7 @@ export function EditorPage({
     const restoredOperationId = restoredPathDocument ? snapshot.selectedPathOperationId : null;
     setSelectedPathOperationId(restoredOperationId);
     setSelectedPathElement(
-      restoredPathDocument
+      restoredPathDocument && (snapshot.selectedPathElement || restoredOperationId)
         ? normalizeUpidPathElementSelection(
             restoredPathDocument,
             restoredOperationId,
@@ -2372,6 +2389,20 @@ export function EditorPage({
     openingSnapshot: EditorDraftSnapshot = currentDraftSnapshot()
   ) {
     if (!command.toolWindowId || !command.workflow) return;
+    const availability = evaluateEditorCommand(command, {
+      activeTool: null,
+      documentAvailable: Boolean(editorDraftPathDocument(openingSnapshot.draft)),
+      interactionLocked: Boolean(isEditorMutationLocked),
+      selectedOperationId: openingSnapshot.selectedPathOperationId,
+      selectedPathElementId: openingSnapshot.selectedPathElement?.pathElementId ?? null,
+      visiblePanelIds: []
+    });
+    if (!availability.enabled) {
+      setActiveWorkflowSession(null);
+      setWorkflowTransition(null);
+      onStatusMessage?.(availability.reason, 'warning');
+      return;
+    }
     const panelId = command.toolWindowId as EditorWorkspacePanelId;
     const session = command.workflow.kind === 'mutating'
       ? createEditorWorkflowSession({
@@ -2395,19 +2426,18 @@ export function EditorPage({
 
     setActiveWorkflowSession(session);
     setWorkflowTransition(null);
-    if (workspacePanelPlacements[panelId] === 'hidden') {
-      setWorkspacePanelGeometries((current) => ({
-        ...current,
-        [panelId]: findReadableFloatingPanelGeometry(
-          panelId,
-          current[panelId],
-          workspacePanelPlacements,
-          current
-        )
-      }));
-      setWorkspacePanelPlacements((current) => ({ ...current, [panelId]: 'floating' }));
+    if (command.id === SET_START_COMMAND.id) {
+      setActiveToolSession(
+        createEditorToolSession({
+          commandId: SET_START_COMMAND.id,
+          label: SET_START_COMMAND.label,
+          historyLabel: SET_START_COMMAND.historyLabel!,
+          target: { kind: 'operation', id: openingSnapshot.selectedPathOperationId! },
+          steps: ['pick-point']
+        })
+      );
+      setPathClickMode('set-start');
     }
-    if (command.id === SET_START_COMMAND.id) handleActivatePathClickMode('set-start');
     window.requestAnimationFrame(() => focusWorkspacePanel(panelId));
   }
 

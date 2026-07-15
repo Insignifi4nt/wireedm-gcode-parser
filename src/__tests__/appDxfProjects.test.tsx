@@ -1443,14 +1443,22 @@ describe('App DXF imports and project library', () => {
         ?.getAttribute('data-editor-workspace-panel-placement')
     ).toBe('docked-right');
 
-    const saveButton = container.querySelector(
-      'button[aria-label="Save Path Plan"]'
-    ) as HTMLButtonElement | null;
-
     await act(async () => {
-      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      container.querySelector('button[aria-label="Hide Path Actions"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushReactOnly();
+    await act(async () => {
+      container.querySelector('[data-editor-workflow-transition-action="save"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushReactOnly();
+    await act(async () => {
+      container.querySelector('button[aria-label="Save active document"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushAsync();
+    await openWorkflowCommand(container, 'geometry.path-actions');
 
     expect(container.textContent).toContain('Saved');
     expect(
