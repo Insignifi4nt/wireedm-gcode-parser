@@ -23,6 +23,54 @@ function createSession() {
 }
 
 describe('editor workflow session', () => {
+  it('rejects mutating sessions without a nonempty history label', () => {
+    const base = {
+      commandId: 'geometry.transform',
+      kind: 'mutating' as const,
+      label: 'Transform',
+      openingSnapshot,
+      panelId: 'path-transform',
+      saveAvailability: { enabled: true } as const
+    };
+
+    expect(() => createEditorWorkflowSession({
+      ...base,
+      historyLabel: null
+    } as never)).toThrow(/history label/i);
+    expect(() => createEditorWorkflowSession({
+      ...base,
+      historyLabel: '   '
+    })).toThrow(/history label/i);
+  });
+
+  it('rejects history labels and dirty state for view sessions', () => {
+    expect(() => createEditorWorkflowSession({
+      commandId: 'view.statistics',
+      historyLabel: 'Open statistics',
+      kind: 'view',
+      label: 'Statistics',
+      openingSnapshot,
+      panelId: 'statistics',
+      saveAvailability: { enabled: true }
+    } as never)).toThrow(/view workflow.*history label/i);
+
+    const viewSession = createEditorWorkflowSession({
+      commandId: 'view.statistics',
+      historyLabel: null,
+      kind: 'view',
+      label: 'Statistics',
+      openingSnapshot,
+      panelId: 'statistics',
+      saveAvailability: { enabled: true }
+    });
+
+    expect(() => markEditorWorkflowDirty(viewSession as never)).toThrow(/view workflow.*dirty/i);
+    expect(requestEditorWorkflowTransition(viewSession, { kind: 'close' })).toMatchObject({
+      kind: 'resolved',
+      resolution: 'clean'
+    });
+  });
+
   it('resolves a clean close request immediately', () => {
     const session = createSession();
 

@@ -1,3 +1,4 @@
+import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -23,12 +24,48 @@ export function EditorWorkflowTransitionDialog({
   saveAvailability,
   workflowLabel
 }: EditorWorkflowTransitionDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const discardButtonRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    discardButtonRef.current?.focus();
+
+    return () => {
+      const previousFocus = previousFocusRef.current;
+      previousFocusRef.current = null;
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const description = nextWorkflowLabel
     ? `Save or discard changes in ${workflowLabel} before opening ${nextWorkflowLabel}.`
     : `Save or discard changes in ${workflowLabel} before closing it.`;
   const saveReasonId = 'editor-workflow-transition-save-reason';
+
+  function handleDialogKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'Tab') return;
+    const buttons = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []
+    );
+    const first = buttons[0];
+    const last = buttons.at(-1);
+    if (!first || !last) return;
+
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4">
@@ -37,6 +74,8 @@ export function EditorWorkflowTransitionDialog({
         aria-labelledby="editor-workflow-transition-title"
         aria-modal="true"
         className="w-full max-w-md border border-border bg-card shadow-2xl"
+        onKeyDown={handleDialogKeyDown}
+        ref={dialogRef}
         role="dialog"
       >
         <div className="flex items-start justify-between gap-4 border-b border-border p-4">
@@ -75,6 +114,7 @@ export function EditorWorkflowTransitionDialog({
           <Button
             data-editor-workflow-transition-action="discard"
             onClick={onDiscard}
+            ref={discardButtonRef}
             type="button"
             variant="outline"
           >

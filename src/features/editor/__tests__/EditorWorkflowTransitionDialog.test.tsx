@@ -34,11 +34,17 @@ describe('EditorWorkflowTransitionDialog', () => {
       />
     ));
 
-    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('Transform');
-    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('Entry/Exit');
-    expect(Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[data-editor-workflow-transition-action]')
-    ).map((button) => button.textContent)).toEqual(['Discard', 'Save']);
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]');
+    expect(dialog?.textContent).toContain('Transform');
+    expect(dialog?.textContent).toContain('Entry/Exit');
+
+    const allButtons = Array.from(dialog?.querySelectorAll('button') ?? []);
+    const dismiss = allButtons.find(
+      (button) => button.getAttribute('aria-label') === 'Dismiss workflow transition'
+    );
+    expect(dismiss).toBeTruthy();
+    expect(allButtons.filter((button) => button !== dismiss).map((button) => button.textContent))
+      .toEqual(['Discard', 'Save']);
   });
 
   it('disables Save and exposes its reason', async () => {
@@ -58,8 +64,10 @@ describe('EditorWorkflowTransitionDialog', () => {
     const save = Array.from(container.querySelectorAll('button'))
       .find((button) => button.textContent === 'Save');
     expect(save?.disabled).toBe(true);
-    expect(save?.getAttribute('aria-describedby')).toBeTruthy();
-    expect(container.textContent).toContain(reason);
+    const reasonId = save?.getAttribute('aria-describedby');
+    const reasonElement = reasonId ? container.querySelector<HTMLElement>(`#${reasonId}`) : null;
+    expect(reasonElement?.textContent).toBe(reason);
+    expect(reasonElement?.hidden).toBe(false);
   });
 
   it('calls only onDismiss from the X button', async () => {
@@ -85,5 +93,68 @@ describe('EditorWorkflowTransitionDialog', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(onSave).not.toHaveBeenCalled();
     expect(onDiscard).not.toHaveBeenCalled();
+  });
+
+  it('moves focus into the dialog and restores it when closed', async () => {
+    const previousFocus = document.createElement('button');
+    previousFocus.textContent = 'Previous focus';
+    document.body.appendChild(previousFocus);
+    previousFocus.focus();
+
+    const props = {
+      nextWorkflowLabel: 'Entry/Exit',
+      onDiscard: vi.fn(),
+      onDismiss: vi.fn(),
+      onSave: vi.fn(),
+      saveAvailability: { enabled: true } as const,
+      workflowLabel: 'Transform'
+    };
+    await act(async () => root.render(
+      <EditorWorkflowTransitionDialog {...props} open />
+    ));
+
+    expect(document.activeElement?.textContent).toBe('Discard');
+
+    await act(async () => root.render(
+      <EditorWorkflowTransitionDialog {...props} open={false} />
+    ));
+    expect(document.activeElement).toBe(previousFocus);
+    previousFocus.remove();
+  });
+
+  it('traps Tab navigation within the dialog', async () => {
+    await act(async () => root.render(
+      <EditorWorkflowTransitionDialog
+        nextWorkflowLabel="Entry/Exit"
+        onDiscard={vi.fn()}
+        onDismiss={vi.fn()}
+        onSave={vi.fn()}
+        open
+        saveAvailability={{ enabled: true }}
+        workflowLabel="Transform"
+      />
+    ));
+
+    const dismiss = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Dismiss workflow transition"]'
+    );
+    const save = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Save');
+    dismiss?.focus();
+    dismiss?.dispatchEvent(new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Tab',
+      shiftKey: true
+    }));
+    expect(document.activeElement).toBe(save);
+
+    save?.focus();
+    save?.dispatchEvent(new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Tab'
+    }));
+    expect(document.activeElement).toBe(dismiss);
   });
 });
