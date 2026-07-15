@@ -1063,6 +1063,7 @@ export function EditorInspectorPanel({
                       : 'border-border text-muted-foreground'
                   }`}
                   disabled={isSaving}
+                  key={mode}
                   onClick={() => onActivatePathConstructionMode(
                     pathConstructionMode === mode ? null : mode
                   )}

@@ -454,6 +454,36 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-editor-position-grid-snap]')?.textContent).toBe('On');
   });
 
+  it('rerenders Measurement and Construction controls without missing-key warnings', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await act(async () => {
+        root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+      });
+      await flushAsync();
+
+      await clickElement('[data-editor-workflow-command="construction.measurement"]');
+      await changeInput('input[aria-label="Measurement point X"]', '3');
+      await changeInput('input[aria-label="Measurement point Y"]', '4');
+      const addPoint = [...container.querySelectorAll<HTMLButtonElement>(
+        '[data-editor-workspace-panel="measurement"] button'
+      )].find((button) => button.textContent?.trim() === 'Add Point');
+      expect(addPoint).not.toBeUndefined();
+      await act(async () => addPoint?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await flushAsync();
+
+      expect(
+        consoleError.mock.calls.some(([message]) =>
+          String(message).includes('Each child in a list should have a unique "key" prop.')
+        )
+      ).toBe(false);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('keeps Contour Tree hover preference independent from Construction magnetic snap', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 
