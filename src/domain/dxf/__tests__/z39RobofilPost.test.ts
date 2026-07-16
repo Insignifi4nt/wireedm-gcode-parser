@@ -8,6 +8,7 @@ import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/mach
 import {
   previewClosedOperationStartNearPoint,
   reversePathOperation,
+  setManualInitialWirePosition,
   setClosedOperationStartNearPoint,
   translatePathDocument
 } from '@/domain/path-editor/pathDocumentOperations';
@@ -53,7 +54,7 @@ describe('z39 verified Robofil post acceptance', () => {
     expect(exported.post.status).toBe('ready');
     expect(exported.post.metrics.rapidCount).toBe(0);
     expect(exported.post.blocks.filter((block) => block.kind === 'rapid')).toEqual([]);
-    expect(lines.slice(0, 5)).toEqual(['G92 X0 Y0', 'G60', 'G38', 'G42 D0', 'G90']);
+    expect(lines.slice(0, 5)).toEqual(['G92 X0.000 Y0.000', 'G60', 'G38', 'G42 D0', 'G90']);
     expect(lines.slice(5, 7)).toEqual([
       'G1 X-1.200 Y-18.946',
       'G1 X-0.500 Y-20.228'
@@ -152,7 +153,10 @@ function physicalZ39Document(
     { x: -1.2, y: -18.946 },
     false
   )!;
-  return setClosedOperationStartNearPoint(translated, operation.id, preview.point)!;
+  return setManualInitialWirePosition(
+    setClosedOperationStartNearPoint(translated, operation.id, preview.point)!,
+    { x: 0, y: 0 }
+  )!;
 }
 
 function numericWords(line: string) {

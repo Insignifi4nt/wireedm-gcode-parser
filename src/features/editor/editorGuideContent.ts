@@ -9,9 +9,7 @@ export type EditorGuideTarget =
   | 'line-modes'
   | 'selection-counter'
   | 'clear-pins'
-  | 'normalize-draft'
-  | 'export-iso'
-  | 'save-program';
+  | 'normalize-draft';
 
 export interface EditorGuideStep {
   text: string;
@@ -71,7 +69,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'From the dashboard, import a DXF to create a clean internal path project. G-code is posted later from the active path plan and machine profile.'
           },
           {
-            text: 'From the editor, click Import Program or drag in .gcode, .nc, .iso, or .txt files. External programs pass through the cleanup/display pipeline before canvas display and editing.',
+            text: 'From the editor, click Import Program to choose a .gcode, .nc, .iso, or .txt file. External programs pass through the cleanup/display pipeline before canvas display and editing.',
             mock: { label: 'Import Program', tone: 'primary' },
             highlightTarget: 'import-program'
           },
@@ -94,7 +92,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Press G to toggle grid visibility. Current Position shows live mouse coordinates over the canvas.'
           },
           {
-            text: 'Enable Grid Snap when cursor coordinates and clicked measurement points should land on the 5 mm canvas grid.',
+            text: 'Open Measurement & Construction and enable Grid Snap when cursor coordinates and clicked points should land on the 5 mm canvas grid.',
             mock: { label: 'Grid Snap ON' },
             highlightTarget: 'grid-snap'
           }
@@ -104,7 +102,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '4. Measurement Points',
         steps: [
           {
-            text: 'Use Point canvas mode to place P1, P2, and later points by clicking the canvas. You can also type exact X/Y values and click Add Point.',
+            text: 'Open Construction > Measurement & Construction, then use Point mode to place P1, P2, and later points. You can also type exact X/Y values and click Add Point.',
             highlightTarget: 'measurement-points'
           },
           {
@@ -114,7 +112,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Insert Points is for external posted programs. DXF path projects keep measurement and magnetized points on the canvas; Export CSV, Export G-code, and Export Point ISO write point-only files for outside use.'
           },
           {
-            text: 'Alt/Option+Shift+C clears all measurement points when focus is not inside an input or the program editor.'
+            text: 'While Measurement & Construction is open, Alt/Option+Shift+C clears all points when focus is not inside an input.'
           }
         ]
       },
@@ -122,7 +120,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator Or Program Lines',
         steps: [
           {
-            text: 'DXF path projects use the UPID Path Navigator for contour order, contour role correction, direction, start selection, segment inspection, hover assist, and tangent/perpendicular construction.',
+            text: 'DXF path projects use one workflow per responsibility: Cut Sequence for order, Contour Setup for role and direction, Set Start for starts, Measurement & Construction for points and constraints, and View workflows for inspection.',
             highlightTarget: 'program-lines'
           },
           {
@@ -158,7 +156,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editing And Export',
         steps: [
           {
-            text: 'For DXF path projects, reorder operations, correct contour roles, reverse direction, or set starts from the path surface. Manual UPID decisions are recorded in the selected geometry inspector. For external posted programs, move selected rows, delete rows, undo/redo draft changes, or use Start Here.'
+            text: 'For DXF path projects, reorder operations, correct contour roles, reverse direction, or set starts from the path surface. Manual UPID decisions are recorded in the selected geometry inspector. For external posted programs, move selected rows, delete rows, use the header Undo/Redo controls, or use Start Here.'
           },
           {
             text: 'Normalize Draft rewrites the current editor text into the app ISO style without downloading a file.',
@@ -166,14 +164,12 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'normalize-draft'
           },
           {
-            text: 'Export ISO downloads a normalized ISO copy without mutating the current draft.',
-            mock: { label: 'Export ISO' },
-            highlightTarget: 'export-iso'
+            text: 'Export normalized ISO in the header downloads a normalized copy without mutating the current draft.',
+            mock: { label: 'Export normalized ISO' }
           },
           {
-            text: 'Save Path Plan writes DXF path decisions back to the project. Save Program writes an external posted-program draft back to the active workbench entry.',
-            mock: { label: 'Save Path Plan' },
-            highlightTarget: 'save-program'
+            text: 'Save in the header is the single persistence control. It writes committed DXF workflow decisions back to the project or a Machine Program draft back to the active workbench entry.',
+            mock: { label: 'Header Save' }
           }
         ]
       }
@@ -208,7 +204,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Din dashboard, importa un DXF ca sa creezi un proiect intern de path. G-code-ul se posteaza mai tarziu din planul de path si profilul de masina activ.'
           },
           {
-            text: 'Din editor, apasa Import Program sau trage fisiere .gcode, .nc, .iso ori .txt. Programele externe trec prin pipeline-ul de cleanup/display inainte de afisare pe canvas si editare.',
+            text: 'Din editor, apasa Import Program pentru a alege un fisier .gcode, .nc, .iso ori .txt. Programele externe trec prin pipeline-ul de cleanup/display inainte de afisare pe canvas si editare.',
             mock: { label: 'Import Program', tone: 'primary' },
             highlightTarget: 'import-program'
           },
@@ -231,7 +227,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Apasa G ca sa ascunzi sau afisezi gridul. Current Position arata coordonatele live ale mouse-ului pe canvas.'
           },
           {
-            text: 'Activeaza Grid Snap cand coordonatele cursorului si punctele adaugate prin click trebuie sa cada pe gridul de 5 mm.',
+            text: 'Deschide Measurement & Construction si activeaza Grid Snap cand coordonatele cursorului si punctele adaugate trebuie sa cada pe gridul de 5 mm.',
             mock: { label: 'Grid Snap ON' },
             highlightTarget: 'grid-snap'
           }
@@ -241,7 +237,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '4. Puncte de masurare',
         steps: [
           {
-            text: 'Foloseste modul Point pe canvas pentru P1, P2 si urmatoarele puncte prin click. Poti introduce si valori exacte X/Y, apoi Add Point.',
+            text: 'Deschide Construction > Measurement & Construction, apoi foloseste modul Point pentru P1, P2 si punctele urmatoare. Poti introduce si valori exacte X/Y, apoi Add Point.',
             highlightTarget: 'measurement-points'
           },
           {
@@ -251,7 +247,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Insert Points este pentru programe externe postate. Proiectele DXF pastreaza punctele de masurare si punctele magnetizate pe canvas; Export CSV, Export G-code si Export Point ISO scriu fisiere doar cu punctele.'
           },
           {
-            text: 'Alt/Option+Shift+C curata toate punctele de masurare cand focusul nu este intr-un input sau in editorul de program.'
+            text: 'Cat timp Measurement & Construction este deschis, Alt/Option+Shift+C curata toate punctele cand focusul nu este intr-un input.'
           }
         ]
       },
@@ -259,7 +255,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator sau Program Lines',
         steps: [
           {
-            text: 'Proiectele DXF folosesc UPID Path Navigator pentru ordinea contururilor, corectarea rolului de contur, directie, start, inspectie segmente, hover assist si constructii tangent/perpendicular.',
+            text: 'Proiectele DXF folosesc cate un workflow pentru fiecare responsabilitate: Cut Sequence pentru ordine, Contour Setup pentru rol si directie, Set Start pentru start, Measurement & Construction pentru puncte si constrangeri, iar workflow-urile View pentru inspectie.',
             highlightTarget: 'program-lines'
           },
           {
@@ -295,7 +291,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '6. Editare si export',
         steps: [
           {
-            text: 'Pentru proiecte DXF, schimba ordinea operatiilor, corecteaza rolul conturului, inverseaza directia sau seteaza startul din suprafata de path. Deciziile manuale UPID sunt inregistrate in inspectorul geometriei selectate. Pentru programe externe, muta randuri, sterge randuri, undo/redo sau Start Here.'
+            text: 'Pentru proiecte DXF, schimba ordinea operatiilor, corecteaza rolul conturului, inverseaza directia sau seteaza startul din suprafata de path. Deciziile manuale UPID sunt inregistrate in inspectorul geometriei selectate. Pentru programe externe, muta randuri, sterge randuri, foloseste Undo/Redo din header sau Start Here.'
           },
           {
             text: 'Normalize Draft rescrie textul curent in stilul ISO al aplicatiei, fara download.',
@@ -303,14 +299,12 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             highlightTarget: 'normalize-draft'
           },
           {
-            text: 'Export ISO descarca o copie ISO normalizata fara sa modifice draftul curent.',
-            mock: { label: 'Export ISO' },
-            highlightTarget: 'export-iso'
+            text: 'Export normalized ISO din header descarca o copie normalizata fara sa modifice draftul curent.',
+            mock: { label: 'Export normalized ISO' }
           },
           {
-            text: 'Save Path Plan scrie deciziile DXF inapoi in proiect. Save Program scrie draftul unui program extern inapoi in workbench.',
-            mock: { label: 'Save Path Plan' },
-            highlightTarget: 'save-program'
+            text: 'Save din header este singurul control de persistenta. El scrie deciziile DXF confirmate inapoi in proiect sau draftul unui Machine Program inapoi in workbench.',
+            mock: { label: 'Header Save' }
           }
         ]
       }

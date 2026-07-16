@@ -10,6 +10,7 @@ import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/mach
 
 import {
   constructMagnetizedPoint,
+  derivePlannedRapidRoutes,
   magnetizePointToPath,
   movePathOperation,
   previewClosedOperationStartNearPoint,
@@ -21,8 +22,14 @@ import {
   setClosedOperationStartAtExistingPointNearPoint,
   setCircleOperationCenterPierceLeadIn,
   setPathOperationManualLeadIn,
+  setPathOperationTransitions,
+  setPathOperationThreadingTransition,
+  setPathOperationProgramStops,
+  setProjectThreadingDefault,
   setClosedOperationStartNearPoint,
   setPathOperationOrderStrategy,
+  setGeometryLinkedInitialWirePosition,
+  setManualInitialWirePosition,
   movePathSegmentCenterTo,
   slideMagnetizedPointOnSegment,
   translatePathDocument,
@@ -32,6 +39,173 @@ import {
 import * as pathDocumentOperations from '../pathDocumentOperations';
 
 describe('pathDocumentOperations', () => {
+  it('stores reviewed manual initial wire coordinates and marks them stale after placement', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const configured = setManualInitialWirePosition(document, { x: 10, y: 20 });
+
+    expect(configured?.setup?.initialWirePosition).toEqual({
+      kind: 'manual',
+      point: { x: 10, y: 20 },
+      review: 'reviewed'
+    });
+
+    const translated = translatePathDocument(configured!, { x: 5, y: -2 });
+    expect(translated?.setup?.initialWirePosition).toEqual({
+      kind: 'manual',
+      point: { x: 10, y: 20 },
+      review: 'required',
+      reviewReason: 'geometry-transformed'
+    });
+  });
+
+  it('keeps a geometry-linked initial wire point attached to a transformed circle center', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const circleId = document.segments[0].id;
+    const configured = setGeometryLinkedInitialWirePosition(document, circleId);
+    const translated = translatePathDocument(configured!, { x: 5, y: -2 });
+
+    expect(translated?.setup?.initialWirePosition).toEqual({
+      kind: 'geometry-linked',
+      point: { x: 15, y: 18 },
+      reference: { kind: 'circle-center', segmentId: circleId },
+      review: 'reviewed'
+    });
+  });
+
+  it('starts planned travel from the reviewed initial wire position', () => {
+    let document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    document = setCircleOperationCenterPierceLeadIn(document, document.plan.operations[0].id)!;
+    document = setManualInitialWirePosition(document, { x: 10, y: 20 })!;
+
+    expect(derivePlannedRapidRoutes(document)[0]).toMatchObject({
+      startPoint: { x: 10, y: 20 },
+      endPoint: { x: 10, y: 20 },
+      length: 0
+    });
+  });
+
+  it('routes between a configured exit and the next configured entry', () => {
+    let document = createPathPlanningDocumentFromDxfEntities([
+      ...rectangleLines(0, 0, 5, 5),
+      ...rectangleLines(20, 0, 25, 5)
+    ]);
+    const [first, second] = document.plan.operations;
+    document = setPathOperationTransitions(document, first.id, {
+      exit: {
+        strategy: 'manual-straight',
+        move: 'cut',
+        from: first.endPoint,
+        to: { x: 7, y: 5 },
+        review: 'reviewed'
+      }
+    })!;
+    document = setPathOperationTransitions(document, second.id, {
+      entry: {
+        strategy: 'manual-straight',
+        move: 'cut',
+        from: { x: 18, y: 0 },
+        to: second.startPoint,
+        review: 'reviewed'
+      }
+    })!;
+
+    expect(derivePlannedRapidRoutes(document)[1]).toMatchObject({
+      startPoint: { x: 7, y: 5 },
+      endPoint: { x: 18, y: 0 }
+    });
+    expect(document.plan.operations[1].overrides?.leadIn).toMatchObject({
+      from: { x: 18, y: 0 },
+      to: second.startPoint,
+      source: 'manual-point'
+    });
+  });
+
+  it('preserves per-operation threading intent through geometry transforms and replanning', () => {
+    let document = createPathPlanningDocumentFromDxfEntities([
+      ...rectangleLines(0, 0, 5, 5),
+      ...rectangleLines(20, 0, 25, 5)
+    ]);
+    const contourId = document.plan.operations[1].contourId;
+    document.plan.operations[1].threadingTransition = {
+      mode: 'manual',
+      wireSeparation: 'manual-before-positioning',
+      source: 'operation-override'
+    };
+
+    document = translatePathDocument(document, { x: 2, y: 3 })!;
+    document = setPathOperationOrderStrategy(document, 'source-order')!;
+
+    expect(document.plan.operations.find((operation) => operation.contourId === contourId))
+      .toMatchObject({
+        threadingTransition: {
+          mode: 'manual',
+          wireSeparation: 'manual-before-positioning',
+          source: 'operation-override'
+        }
+      });
+  });
+
+  it('sets project-default and per-operation threading policies through typed APIs', () => {
+    const source = createPathPlanningDocumentFromDxfEntities([
+      ...rectangleLines(0, 0, 5, 5),
+      ...rectangleLines(20, 0, 25, 5)
+    ]);
+    const withDefault = setProjectThreadingDefault(source, {
+      mode: 'manual',
+      wireSeparation: 'already-separated'
+    });
+    const operationId = withDefault!.plan.operations[1].id;
+    const withOverride = setPathOperationThreadingTransition(withDefault!, operationId, {
+      mode: 'automatic',
+      wireSeparation: 'automatic-before-positioning'
+    });
+    const restoredDefault = setPathOperationThreadingTransition(
+      withOverride!,
+      operationId,
+      null
+    );
+
+    expect(withDefault?.setup?.threadingDefault).toEqual({
+      mode: 'manual',
+      wireSeparation: 'already-separated'
+    });
+    expect(withOverride?.plan.operations[1].threadingTransition).toEqual({
+      mode: 'automatic',
+      wireSeparation: 'automatic-before-positioning',
+      source: 'operation-override'
+    });
+    expect(restoredDefault?.plan.operations[1].threadingTransition).toBeUndefined();
+  });
+
+  it('sets typed program stops and preserves them through replanning', () => {
+    let document = createPathPlanningDocumentFromDxfEntities([
+      ...rectangleLines(0, 0, 5, 5),
+      ...rectangleLines(20, 0, 25, 5)
+    ]);
+    const operationId = document.plan.operations[1].id;
+    document = setPathOperationProgramStops(document, operationId, [{
+      id: 'retain-part',
+      enabled: true,
+      placement: { kind: 'before-operation-end', remainingCutLengthMm: 2 },
+      reason: 'part-retention'
+    }])!;
+    document = setPathOperationOrderStrategy(document, 'source-order')!;
+
+    expect(document.plan.operations.find((operation) => operation.id === operationId)?.programStops)
+      .toEqual([{
+        id: 'retain-part',
+        enabled: true,
+        placement: { kind: 'before-operation-end', remainingCutLengthMm: 2 },
+        reason: 'part-retention'
+      }]);
+  });
+
   it('derives canonical rapid routes and edits their source and destination endpoints', () => {
     type PlannedRapid = {
       endPoint: { x: number; y: number };

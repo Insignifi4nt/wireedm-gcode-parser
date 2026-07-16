@@ -69,12 +69,39 @@ export interface MachineCompensationPolicy {
   expectedMaximumOffsetMm: number | null;
 }
 
+export interface MachineThreadingPolicy {
+  manual: {
+    supported: boolean;
+    stopCode: 'M00';
+  };
+  automatic: {
+    supported: boolean;
+    beforePositioningCodes: string[];
+    afterPositioningCodes: string[];
+  };
+}
+
+export type MachineProgramStopPlacement =
+  | 'before-entry'
+  | 'before-operation-end'
+  | 'after-contour'
+  | 'after-exit';
+
+export interface MachineProgramStopPolicy {
+  supported: boolean;
+  code: 'M00';
+  allowedPlacements: MachineProgramStopPlacement[];
+  allowCompensationActive: boolean;
+}
+
 export interface MachineProfile {
   id: string;
   name: string;
   preferredDxfImportUnit: 'millimeters' | 'inches' | null;
   controller: MachineControllerPolicy;
   compensation: MachineCompensationPolicy;
+  threading: MachineThreadingPolicy;
+  programStops: MachineProgramStopPolicy;
   templates: GCodeTemplateSet;
   output: OutputFormat;
   workArea: MachineWorkArea;

@@ -22,7 +22,12 @@ export interface CompensationIntentSuggestionInput {
   operation: PathOperation;
 }
 
-export type ManualCompensationSelection = 'inside' | 'outside' | 'centerline';
+export type ManualCompensationSelection =
+  | 'inside'
+  | 'outside'
+  | 'left'
+  | 'right'
+  | 'centerline';
 
 const AUTOMATIC_KEPT_MATERIAL = {
   exterior: 'inside',
@@ -124,13 +129,22 @@ export function setManualCompensationIntent(
   selection: ManualCompensationSelection
 ): PathPlanningDocument | null {
   const operation = document.plan.operations.find((candidate) => candidate.id === operationId);
-  if (!operation || (selection !== 'centerline' && !operation.closed)) return null;
+  if (!operation) return null;
+  const selectingKeptMaterial = selection === 'inside' || selection === 'outside';
+  const selectingWireSide = selection === 'left' || selection === 'right';
+  if (selectingKeptMaterial && !operation.closed) return null;
+  if (
+    selectingWireSide &&
+    (operation.closed || operation.machiningIntent?.kind !== 'partial-contour')
+  ) return null;
 
   const next = structuredClone(document);
   const edited = next.plan.operations.find((candidate) => candidate.id === operationId)!;
   edited.compensationIntent = selection === 'centerline'
     ? { mode: 'centerline', source: 'manual' }
-    : { mode: 'controller', keptMaterial: selection, source: 'manual' };
+    : selectingWireSide
+      ? { mode: 'controller', wireSide: selection, source: 'manual' }
+      : { mode: 'controller', keptMaterial: selection, source: 'manual' };
   const pathElement = next.pathElements.find((candidate) => candidate.operationId === operationId);
   if (pathElement) pathElement.compensationIntent = structuredClone(edited.compensationIntent);
   return next;

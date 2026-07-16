@@ -27,6 +27,7 @@ interface EditorHeaderBarProps {
   isSaving: boolean;
   redoAvailable: boolean;
   saveErrorMessage: string | null;
+  saveDisabledReason?: string | null;
   title?: string;
   titleTooltip?: string;
   undoAvailable: boolean;
@@ -53,6 +54,7 @@ export function EditorHeaderBar({
   isSaving,
   redoAvailable,
   saveErrorMessage,
+  saveDisabledReason,
   title,
   titleTooltip,
   undoAvailable,
@@ -68,8 +70,6 @@ export function EditorHeaderBar({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const heading = title ?? filePath ?? 'Import or open a G-code program';
   const canImportProgram = documentContext !== 'path-project';
-  const visibleExportLabel =
-    exportLabel === 'Open Path Project export preview' ? 'Export Preview' : exportLabel;
 
   async function handleFileInputChange(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
@@ -147,16 +147,16 @@ export function EditorHeaderBar({
           aria-label="Save active document"
           className="h-7 px-2 text-[10px]"
           data-editor-header-command
-          disabled={!hasUnsavedChanges || interactionLocked}
+          disabled={!hasUnsavedChanges || interactionLocked || Boolean(saveDisabledReason)}
           onClick={onSave}
           size="sm"
-          title="Save"
+          title={saveDisabledReason ?? 'Save'}
           variant="outline"
         >
           <Save />
           <span data-editor-header-command-label>{isSaving ? 'Saving...' : 'Save'}</span>
         </Button>
-        {onExport && exportLabel && (
+        {documentContext !== 'path-project' && onExport && exportLabel && (
           <Button
             aria-label={exportLabel}
             className="h-7 px-2 text-[10px]"
@@ -164,11 +164,11 @@ export function EditorHeaderBar({
             disabled={!exportAvailable || interactionLocked}
             onClick={onExport}
             size="sm"
-            title={visibleExportLabel ?? exportLabel}
-            variant={documentContext === 'path-project' ? 'default' : 'outline'}
+            title={exportLabel}
+            variant="outline"
           >
             <FileOutput />
-            <span data-editor-header-command-label>{visibleExportLabel}</span>
+            <span data-editor-header-command-label>{exportLabel}</span>
           </Button>
         )}
         {canImportProgram && (

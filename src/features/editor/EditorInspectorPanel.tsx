@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import type { GCodeStructure } from '@/domain/editor/gcodeStructure';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
+import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
 import type { MachineFitResult } from '@/domain/machine/machineFit';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
@@ -52,6 +53,8 @@ interface EditorInspectorPanelProps {
   machineProfile: MachineProfile | null;
   measurementPoints: MeasurementPoint[];
   pathCount: number;
+  pathConstructionMode?: MagnetizeMode | null;
+  pathMagneticSnapEnabled?: boolean;
   pathDocument: PathPlanningDocument | null;
   pointXDraft: string;
   pointYDraft: string;
@@ -71,6 +74,7 @@ interface EditorInspectorPanelProps {
   canReimportDxfUnits?: boolean;
   reimportDxfUnitsDisabledReason?: string | null;
   onAddMeasurementPoint: () => void;
+  onActivatePathConstructionMode?: (mode: MagnetizeMode | null) => void;
   onClearMeasurementPoints: () => void;
   onDeleteMeasurementPoint: (pointId: string) => void;
   onExportMeasurementPoints: (format: MeasurementExportFormat) => void;
@@ -82,6 +86,7 @@ interface EditorInspectorPanelProps {
   onSelectPathElement?: (element: EditorPathElementRef) => void;
   onSetCanvasMouseMode: (mode: CanvasMouseMode) => void;
   onToggleGridSnap: () => void;
+  onTogglePathMagneticSnap?: () => void;
 }
 
 export function EditorInspectorPanel({
@@ -99,6 +104,8 @@ export function EditorInspectorPanel({
   machineProfile,
   measurementPoints,
   pathCount,
+  pathConstructionMode = null,
+  pathMagneticSnapEnabled = false,
   pathDocument,
   pointXDraft,
   pointYDraft,
@@ -113,6 +120,7 @@ export function EditorInspectorPanel({
   canReimportDxfUnits = false,
   reimportDxfUnitsDisabledReason = null,
   onAddMeasurementPoint,
+  onActivatePathConstructionMode,
   onClearMeasurementPoints,
   onDeleteMeasurementPoint,
   onExportMeasurementPoints,
@@ -123,7 +131,8 @@ export function EditorInspectorPanel({
   onPointYDraftChange,
   onSelectPathElement,
   onSetCanvasMouseMode,
-  onToggleGridSnap
+  onToggleGridSnap,
+  onTogglePathMagneticSnap
 }: EditorInspectorPanelProps) {
   const selectedPathOperationIndex =
     pathDocument?.plan.operations.findIndex((operation) => operation.id === selectedPathOperationId) ?? -1;
@@ -188,29 +197,14 @@ export function EditorInspectorPanel({
     >
       {renderWorkspacePanel('position', 'Position', (
       <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-[11px] font-semibold">Position</h3>
-          <button
-            aria-label="Toggle preview grid snap"
-            aria-pressed={gridSnapEnabled}
-            className={`inline-flex h-6 items-center gap-1 border px-2 font-mono text-[10px] outline-none transition hover:bg-accent ${
-              gridSnapEnabled ? 'border-primary text-primary' : 'border-border text-muted-foreground'
-            } ${guideHighlightClass('grid-snap', guideHighlightTarget)}`}
-            data-editor-grid-snap
-            {...guideTargetProps('grid-snap', guideHighlightTarget)}
-            onClick={onToggleGridSnap}
-            title="Snap cursor and measurement clicks to the 5 mm preview grid"
-            type="button"
-          >
-            <Magnet className="size-3" />
-            {gridSnapEnabled ? 'ON' : 'OFF'}
-          </button>
-        </div>
+        <h3 className="mb-2 text-[11px] font-semibold">Position</h3>
         <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
           <dt className="text-muted-foreground">Mouse X</dt>
           <dd data-editor-cursor="x">{formatCursorCoordinate(previewCursorPoint?.x)}</dd>
           <dt className="text-muted-foreground">Mouse Y</dt>
           <dd data-editor-cursor="y">{formatCursorCoordinate(previewCursorPoint?.y)}</dd>
+          <dt className="text-muted-foreground">Grid Snap</dt>
+          <dd data-editor-position-grid-snap>{gridSnapEnabled ? 'On' : 'Off'}</dd>
         </dl>
       </section>
       ))}
@@ -917,9 +911,9 @@ export function EditorInspectorPanel({
       ), { fill: true })}
 
       {machineProfile && (
-        renderWorkspacePanel('machine', 'Machine', (
+        renderWorkspacePanel('machine', 'Project Machine & Source Setup', (
         <section data-editor-machine-section>
-          <h3 className="mb-2 text-[11px] font-semibold">Machine</h3>
+          <h3 className="mb-2 text-[11px] font-semibold">Project Machine & Source Setup</h3>
           <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
             <dt className="text-muted-foreground">Profile</dt>
             <dd className="truncate" data-editor-machine="profile" title={machineProfile.name}>
@@ -992,7 +986,7 @@ export function EditorInspectorPanel({
         ))
       )}
 
-      {renderWorkspacePanel('measurement', 'Measurement', (
+      {renderWorkspacePanel('measurement', 'Measurement & Construction', (
       <section
         className={`${guideHighlightClass(
           'measurement-points',
@@ -1001,8 +995,25 @@ export function EditorInspectorPanel({
         {...guideTargetProps('measurement-points', guideHighlightTarget)}
       >
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h3 className="text-[11px] font-semibold">Measurement</h3>
-          <span className="text-[10px] text-muted-foreground">{measurementPoints.length}</span>
+          <h3 className="text-[11px] font-semibold">Measurement & Construction</h3>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-muted-foreground">{measurementPoints.length}</span>
+            <button
+              aria-label="Toggle preview grid snap"
+              aria-pressed={gridSnapEnabled}
+              className={`inline-flex h-6 items-center gap-1 border px-2 font-mono text-[10px] outline-none transition hover:bg-accent ${
+                gridSnapEnabled ? 'border-primary text-primary' : 'border-border text-muted-foreground'
+              } ${guideHighlightClass('grid-snap', guideHighlightTarget)}`}
+              data-editor-grid-snap
+              {...guideTargetProps('grid-snap', guideHighlightTarget)}
+              onClick={onToggleGridSnap}
+              title="Snap cursor and measurement clicks to the 5 mm preview grid"
+              type="button"
+            >
+              <Magnet className="size-3" />
+              {gridSnapEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
         </div>
         <div className="mb-2 grid grid-cols-2 gap-1" data-editor-canvas-mouse-mode>
           <button
@@ -1036,6 +1047,45 @@ export function EditorInspectorPanel({
             Point
           </button>
         </div>
+        {pathDocument && onActivatePathConstructionMode && (
+          <div className="mb-2 border border-border bg-background/35 p-1.5" data-path-construction-tools>
+            <div className="mb-1 text-[10px] text-muted-foreground">
+              Constrain the latest measurement/construction point to selected path geometry.
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              {(['perpendicular', 'tangent'] as const).map((mode) => (
+                <button
+                  aria-label={`Magnetize latest point ${mode}`}
+                  aria-pressed={pathConstructionMode === mode}
+                  className={`flex h-6 items-center justify-center gap-1 border px-1.5 text-[10px] outline-none transition hover:bg-accent ${
+                    pathConstructionMode === mode
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border text-muted-foreground'
+                  }`}
+                  disabled={isSaving}
+                  key={mode}
+                  onClick={() => onActivatePathConstructionMode(
+                    pathConstructionMode === mode ? null : mode
+                  )}
+                  type="button"
+                >
+                  <Magnet className="size-3" />
+                  {mode === 'perpendicular' ? 'Perpendicular' : 'Tangent'}
+                </button>
+              ))}
+            </div>
+            <label className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2">
+              <span>Magnetic construction snap</span>
+              <input
+                aria-label="Toggle construction magnetic snap"
+                checked={pathMagneticSnapEnabled}
+                disabled={isSaving || !onTogglePathMagneticSnap}
+                onChange={onTogglePathMagneticSnap}
+                type="checkbox"
+              />
+            </label>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-1.5">
           <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
             X

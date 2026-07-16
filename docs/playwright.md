@@ -20,6 +20,9 @@ npm run pw:open
 npm run pw:seed:reload
 ```
 
+For a shared, foreground session in the user's existing Windows Comet profile,
+see [Playwright Comet Session](./playwright-comet.md).
+
 Useful variants:
 
 ```bash

@@ -3,7 +3,9 @@ import type {
   MachineCompensationPolicy,
   MachineControllerPolicy,
   MachineProfile,
+  MachineProgramStopPolicy,
   MachineProfileVerification,
+  MachineThreadingPolicy,
   OutputFormat
 } from '@/domain/workbench/types';
 
@@ -16,6 +18,8 @@ export function normalizeMachineProfile(profile: Partial<MachineProfile> | null 
   const output = normalizeOutput(profile?.output ?? fallback.output);
   const controller = normalizeController(profile?.controller, fallback.controller);
   const compensation = normalizeCompensation(profile?.compensation, fallback.compensation);
+  const threading = normalizeThreading(profile?.threading, fallback.threading);
+  const programStops = normalizeProgramStops(profile?.programStops, fallback.programStops);
   const normalizedWithoutVerification: MachineProfile = {
     id: profile?.id?.trim() || fallback.id,
     name: profile?.name?.trim() || fallback.name,
@@ -24,6 +28,8 @@ export function normalizeMachineProfile(profile: Partial<MachineProfile> | null 
     ),
     controller: { ...controller, verification: unverified() },
     compensation,
+    threading,
+    programStops,
     templates: {
       header: profile?.templates?.header ?? fallback.templates.header,
       footer: profile?.templates?.footer ?? fallback.templates.footer
@@ -43,7 +49,7 @@ export function normalizeMachineProfile(profile: Partial<MachineProfile> | null 
       verification: normalizeVerification(
         controller.verification,
         machineProfileVerificationFingerprint(normalizedWithoutVerification),
-        legacyMachineProfileVerificationFingerprint(normalizedWithoutVerification)
+        legacyMachineProfileVerificationFingerprints(normalizedWithoutVerification)
       )
     }
   };
@@ -115,6 +121,14 @@ export function createCharmillesRobofilClassicProfile(
       validationLeadLengthMm: 2,
       expectedMaximumOffsetMm: 0.5
     },
+    threading: {
+      manual: { supported: true, stopCode: 'M00' },
+      automatic: {
+        supported: false,
+        beforePositioningCodes: [],
+        afterPositioningCodes: []
+      }
+    },
     templates: {
       header: ['%', 'G90 G21 G17 G40'].join('\n'),
       footer: ['G40', 'M30', '%'].join('\n')
@@ -154,6 +168,14 @@ export function createVerifiedCharmillesRobofil100Profile(
       preActivationCodes: ['G60'],
       validationLeadLengthMm: 2,
       expectedMaximumOffsetMm: 0.5
+    },
+    threading: {
+      manual: { supported: true, stopCode: 'M00' },
+      automatic: {
+        supported: false,
+        beforePositioningCodes: [],
+        afterPositioningCodes: []
+      }
     },
     templates: { header: '', footer: '' },
     output: {
@@ -198,6 +220,25 @@ export function createCharmillesRobofil100V2CandidateProfile(
       validationLeadLengthMm: 2,
       expectedMaximumOffsetMm: 0.5
     },
+    threading: {
+      manual: { supported: true, stopCode: 'M00' },
+      automatic: {
+        supported: false,
+        beforePositioningCodes: [],
+        afterPositioningCodes: []
+      }
+    },
+    programStops: {
+      supported: true,
+      code: 'M00',
+      allowedPlacements: [
+        'before-entry',
+        'before-operation-end',
+        'after-contour',
+        'after-exit'
+      ],
+      allowCompensationActive: true
+    },
     templates: { header: '', footer: '' },
     output: {
       extension: 'iso',
@@ -229,6 +270,8 @@ export function machineProfileVerificationFingerprint(profile: MachineProfile): 
     cancellation: profile.compensation.cancellation,
     lifecycleScope: profile.compensation.lifecycleScope,
     preActivationCodes: profile.compensation.preActivationCodes,
+    threading: profile.threading,
+    programStops: profile.programStops,
     templates: profile.templates,
     lineEnding: profile.output.lineEnding,
     coordinatePrecision: profile.output.coordinatePrecision
@@ -240,12 +283,14 @@ export function machineProfileHasCurrentVerification(profile: MachineProfile) {
   if (verification.status !== 'user-verified' || !verification.verifiedAt) return false;
   return (
     verification.verifiedFingerprint === machineProfileVerificationFingerprint(profile) ||
-    verification.verifiedFingerprint === legacyMachineProfileVerificationFingerprint(profile)
+    legacyMachineProfileVerificationFingerprints(profile).includes(
+      verification.verifiedFingerprint ?? ''
+    )
   );
 }
 
-function legacyMachineProfileVerificationFingerprint(profile: MachineProfile): string {
-  return JSON.stringify({
+function legacyMachineProfileVerificationFingerprints(profile: MachineProfile): string[] {
+  const base = {
     family: profile.controller.family,
     postVersion: profile.controller.postVersion,
     blockFormatting: profile.controller.blockFormatting,
@@ -263,10 +308,18 @@ function legacyMachineProfileVerificationFingerprint(profile: MachineProfile): s
     cancellation: profile.compensation.cancellation,
     lifecycleScope: profile.compensation.lifecycleScope,
     preActivationCodes: profile.compensation.preActivationCodes,
+    threading: profile.threading,
     templates: profile.templates,
     lineEnding: profile.output.lineEnding,
     coordinatePrecision: profile.output.coordinatePrecision
-  });
+  };
+  const { threading: _threading, ...withoutThreading } = base;
+  const { enabledByDefault: _enabledByDefault, ...withoutEnabledOrThreading } = withoutThreading;
+  return [
+    JSON.stringify(base),
+    JSON.stringify(withoutThreading),
+    JSON.stringify(withoutEnabledOrThreading)
+  ];
 }
 
 export function markMachineProfileUserVerified(
@@ -354,6 +407,47 @@ export function normalizeCoordinatePrecision(value: unknown) {
 function normalizeNullableLimit(value: number | null | undefined) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
   return value;
+}
+
+function normalizeThreading(
+  value: MachineThreadingPolicy | undefined,
+  fallback: MachineThreadingPolicy
+): MachineThreadingPolicy {
+  const safeCodes = (codes: unknown) => Array.isArray(codes)
+    ? codes.filter((code): code is string => typeof code === 'string' && code.trim().length > 0)
+      .map((code) => code.trim())
+    : [];
+  return {
+    manual: {
+      supported: value?.manual?.supported === true,
+      stopCode: 'M00'
+    },
+    automatic: {
+      supported: value?.automatic?.supported === true,
+      beforePositioningCodes: safeCodes(
+        value?.automatic?.beforePositioningCodes ?? fallback.automatic.beforePositioningCodes
+      ),
+      afterPositioningCodes: safeCodes(
+        value?.automatic?.afterPositioningCodes ?? fallback.automatic.afterPositioningCodes
+      )
+    }
+  };
+}
+
+function normalizeProgramStops(
+  value: MachineProgramStopPolicy | undefined,
+  fallback: MachineProgramStopPolicy
+): MachineProgramStopPolicy {
+  const supported = value?.supported === true;
+  const allowed = new Set(['before-entry', 'before-operation-end', 'after-contour', 'after-exit']);
+  return {
+    supported,
+    code: 'M00',
+    allowedPlacements: supported && Array.isArray(value?.allowedPlacements)
+      ? value.allowedPlacements.filter((placement) => allowed.has(placement))
+      : [...fallback.allowedPlacements],
+    allowCompensationActive: supported && value?.allowCompensationActive === true
+  };
 }
 
 function normalizePreferredDxfImportUnit(value: unknown): MachineProfile['preferredDxfImportUnit'] {
@@ -448,13 +542,13 @@ function isSafePreActivationCode(value: unknown): value is string {
 function normalizeVerification(
   verification: MachineProfileVerification,
   currentFingerprint: string,
-  legacyFingerprint: string
+  legacyFingerprints: string[]
 ): MachineProfileVerification {
   if (
     verification.status !== 'user-verified' ||
     !verification.verifiedAt ||
     (verification.verifiedFingerprint !== currentFingerprint &&
-      verification.verifiedFingerprint !== legacyFingerprint)
+      !legacyFingerprints.includes(verification.verifiedFingerprint ?? ''))
   ) {
     return unverified();
   }

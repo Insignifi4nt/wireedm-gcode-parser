@@ -29,6 +29,7 @@ import type {
   Point2,
   SegmentId
 } from '@/domain/path-intel/types';
+import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import {
   deriveVerifiedRobofilPreviewPostBlocks
 } from '@/domain/post/upidMachinePost';
@@ -57,6 +58,7 @@ export interface EditorPreviewPath {
   source?: 'gcode' | 'path-document';
   travelRole?: 'rapid-in' | 'lead-in' | 'lead-out';
   travelSource?: 'planned' | 'posted';
+  participation?: 'active-cut' | 'inactive-reference';
 }
 
 export interface EditorPreviewViewBox {
@@ -103,7 +105,12 @@ export function deriveVerifiedRobofilPreviewTransitions(
 ): PostedPreviewTransition[] | undefined {
   return deriveVerifiedRobofilPreviewPostBlocks(document, machine)?.flatMap((block) => {
     if (
-      (block.kind !== 'rapid' && block.kind !== 'lead-in' && block.kind !== 'lead-out') ||
+      (
+        block.kind !== 'rapid' &&
+        block.kind !== 'position-for-threading' &&
+        block.kind !== 'lead-in' &&
+        block.kind !== 'lead-out'
+      ) ||
       !block.operationId ||
       !block.startPoint ||
       !block.endPoint
@@ -111,7 +118,7 @@ export function deriveVerifiedRobofilPreviewTransitions(
       return [];
     }
     return [{
-      kind: block.kind,
+      kind: block.kind === 'position-for-threading' ? 'rapid' : block.kind,
       operationId: block.operationId,
       programLineNumber: block.bodyLineIndex + 1,
       startPoint: block.startPoint,
@@ -192,7 +199,19 @@ export function buildEditorPathDocumentPreviewGeometry(
   options: BuildEditorPathDocumentPreviewGeometryOptions = {}
 ): EditorPreviewGeometry {
   const padding = options.padding ?? 1;
-  const segmentsById = segmentMap(document.segments);
+  const hasParticipation = (document.machiningParticipation?.spans ?? []).some(
+    (span) => span.participation === 'inactive-reference'
+  );
+  const machining = hasParticipation ? deriveActiveMachiningOperations(document) : null;
+  const planningDocument = machining?.status === 'ready'
+    ? {
+        ...document,
+        segments: machining.segments,
+        plan: { ...document.plan, operations: machining.operations }
+      }
+    : document;
+  const segmentsById = segmentMap(planningDocument.segments);
+  const sourceSegmentsById = segmentMap(document.segments);
   const pathElementsByOperationId = new Map(
     document.pathElements
       .filter((element) => element.operationId !== null)
@@ -203,16 +222,50 @@ export function buildEditorPathDocumentPreviewGeometry(
   let currentPoint: Point2 | null = null;
   let pathIndex = 0;
 
-  for (const operation of document.plan.operations) {
+  if (hasParticipation) {
+    const inactiveSegmentIds = new Set(
+      document.machiningParticipation?.spans
+        .filter((span) => span.participation === 'inactive-reference')
+        .map((span) => span.sourceSegmentId)
+    );
+    for (const segmentId of inactiveSegmentIds) {
+      const segment = sourceSegmentsById.get(segmentId);
+      const sourceOperation = document.plan.operations.find((operation) =>
+        operation.segmentRefs.some((ref) => ref.segmentId === segmentId)
+      );
+      if (!segment || !sourceOperation) continue;
+      const ref = sourceOperation.segmentRefs.find((candidate) => candidate.segmentId === segmentId)!;
+      bounds = mergeBounds(bounds, segment.bounds);
+      for (const segmentPath of pathDocumentSegmentPaths(segment, ref)) {
+        paths.push({
+          type: segmentPath.type,
+          bounds: segment.bounds,
+          center: 'center' in segmentPath ? segmentPath.center : undefined,
+          d: segmentPath.d,
+          start: segmentPath.start,
+          end: segmentPath.end,
+          line: pathLineNumber(options.lineHints, pathIndex++),
+          operationId: sourceOperation.id,
+          pathElementId: pathElementsByOperationId.get(sourceOperation.id)?.id,
+          segmentId,
+          source: 'path-document',
+          participation: 'inactive-reference'
+        });
+      }
+    }
+  }
+
+  for (const operation of planningDocument.plan.operations) {
     bounds = mergeBounds(bounds, pathBounds(operation.segmentRefs, segmentsById));
-    const pathElementId = pathElementsByOperationId.get(operation.id)?.id;
+    const sourceOperationId = operation.machiningIntent?.sourceOperationId ?? operation.id;
+    const pathElementId = pathElementsByOperationId.get(sourceOperationId)?.id;
     const postedTransitions = options.postedTransitions?.filter(
       (transition) => transition.operationId === operation.id
     );
     const leadIn = operation.overrides?.leadIn;
     const entryPoint = leadIn?.from ?? operation.startPoint;
-    const rapidStart = currentPoint ?? document.options.startPoint;
-    if (!currentPoint || !pathPointsEqual(currentPoint, entryPoint, document.options.coincidenceEpsilon)) {
+    const rapidStart = currentPoint ?? planningDocument.options.startPoint;
+    if (!currentPoint || !pathPointsEqual(currentPoint, entryPoint, planningDocument.options.coincidenceEpsilon)) {
       const rapidBounds = boundsFromPoints([rapidStart, entryPoint]);
       bounds = mergeBounds(bounds, rapidBounds);
       paths.push({
@@ -230,7 +283,7 @@ export function buildEditorPathDocumentPreviewGeometry(
       });
     }
 
-    if (leadIn && !pathPointsEqual(leadIn.from, leadIn.to, document.options.coincidenceEpsilon)) {
+    if (leadIn && !pathPointsEqual(leadIn.from, leadIn.to, planningDocument.options.coincidenceEpsilon)) {
       const leadInBounds = boundsFromPoints([leadIn.from, leadIn.to]);
       bounds = mergeBounds(bounds, leadInBounds);
       paths.push({
@@ -280,7 +333,8 @@ export function buildEditorPathDocumentPreviewGeometry(
           operationId: operation.id,
           pathElementId,
           segmentId: ref.segmentId,
-          source: 'path-document'
+          source: 'path-document',
+          participation: hasParticipation ? 'active-cut' : undefined
         });
       }
     }
@@ -307,7 +361,7 @@ export function buildEditorPathDocumentPreviewGeometry(
   }
 
   return {
-    markers: pathDocumentPreviewMarkers(document),
+    markers: pathDocumentPreviewMarkers(planningDocument),
     viewBox: paddedBoundsViewBox(bounds, padding),
     paths
   };

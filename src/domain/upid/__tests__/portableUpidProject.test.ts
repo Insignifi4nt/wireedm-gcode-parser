@@ -50,6 +50,17 @@ describe('portable UPID projects', () => {
     });
     const projectPath = imported.workbench.manifest.projects[0].path;
     const storedProject = structuredClone(imported.project);
+    storedProject.upid!.document.setup = {
+      initialWirePosition: {
+        kind: 'manual',
+        point: { x: -17.5, y: 24.9 },
+        review: 'reviewed'
+      },
+      threadingDefault: {
+        mode: 'manual',
+        wireSeparation: 'already-separated'
+      }
+    };
     const operation = storedProject.upid!.document.plan.operations[0];
     operation.direction = 'reverse';
     operation.overrides = {
@@ -70,6 +81,51 @@ describe('portable UPID projects', () => {
       keptMaterial: 'inside',
       source: 'manual'
     };
+    operation.transitions = {
+      entry: {
+        strategy: 'manual-straight',
+        move: 'cut',
+        from: { x: -2, y: 0 },
+        to: { ...operation.startPoint },
+        review: 'reviewed'
+      },
+      exit: {
+        strategy: 'manual-straight',
+        move: 'cut',
+        from: { ...operation.endPoint },
+        to: { x: 2, y: 0 },
+        review: 'reviewed'
+      }
+    };
+    operation.threadingTransition = {
+      mode: 'manual',
+      wireSeparation: 'manual-before-positioning',
+      source: 'operation-override'
+    };
+    operation.programStops = [{
+      id: 'retain-part',
+      enabled: true,
+      placement: { kind: 'before-operation-end', remainingCutLengthMm: 1.5 },
+      reason: 'part-retention',
+      note: 'Inspect before release'
+    }];
+    storedProject.upid!.document.machiningParticipation = {
+      spans: [{
+        id: 'span_saved_partial',
+        sourceSegmentId: operation.segmentRefs[0].segmentId,
+        range: { start: 0.25, end: 0.75 },
+        participation: 'inactive-reference'
+      }],
+      partialContourCompensation: [{
+        sourceOperationId: operation.id,
+        wireSide: 'right'
+      }],
+      partialContourEntryReviews: [{
+        sourceOperationId: operation.id,
+        review: 'reviewed',
+        entryFingerprint: 'saved-derived-entry-fingerprint'
+      }]
+    };
     const pathElement = storedProject.upid!.document.pathElements.find(
       (element) => element.operationId === operation.id
     )!;
@@ -87,6 +143,33 @@ describe('portable UPID projects', () => {
       format: 'upid',
       schemaVersion: 1,
       document: {
+        setup: {
+          initialWirePosition: {
+            kind: 'manual',
+            point: { x: -17.5, y: 24.9 },
+            review: 'reviewed'
+          },
+          threadingDefault: {
+            mode: 'manual',
+            wireSeparation: 'already-separated'
+          }
+        },
+        machiningParticipation: {
+          spans: [{
+            id: 'span_saved_partial',
+            range: { start: 0.25, end: 0.75 },
+            participation: 'inactive-reference'
+          }],
+          partialContourCompensation: [{
+            sourceOperationId: operation.id,
+            wireSide: 'right'
+          }],
+          partialContourEntryReviews: [{
+            sourceOperationId: operation.id,
+            review: 'reviewed',
+            entryFingerprint: 'saved-derived-entry-fingerprint'
+          }]
+        },
         plan: {
           operations: [
             {
@@ -101,7 +184,28 @@ describe('portable UPID projects', () => {
                   from: { x: -2, y: 0 },
                   to: { x: 0, y: 0 }
                 }
-              }
+              },
+              transitions: {
+                entry: {
+                  strategy: 'manual-straight',
+                  from: { x: -2, y: 0 }
+                },
+                exit: {
+                  strategy: 'manual-straight',
+                  to: { x: 2, y: 0 }
+                }
+              },
+              threadingTransition: {
+                mode: 'manual',
+                wireSeparation: 'manual-before-positioning',
+                source: 'operation-override'
+              },
+              programStops: [{
+                id: 'retain-part',
+                enabled: true,
+                placement: { kind: 'before-operation-end', remainingCutLengthMm: 1.5 },
+                reason: 'part-retention'
+              }]
             }
           ]
         }

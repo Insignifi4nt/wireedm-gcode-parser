@@ -1,4 +1,4 @@
-import { act, useState, type ReactNode } from 'react';
+import { act, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -30,6 +30,7 @@ import {
 } from '@/domain/machine/machineProfiles';
 import {
   setCircleOperationCenterPierceLeadIn,
+  setManualInitialWirePosition,
   setClosedOperationStartNearPoint,
   setPathOperationClassification,
   translatePathDocument
@@ -40,11 +41,11 @@ import { composeProjectUpidGCodeExport, withProjectUpid } from '@/domain/upid/pr
 import type { WorkbenchProject } from '@/domain/workbench/types';
 import { EditorPage } from '@/features/editor/EditorPage';
 import { EditorUpidExportPreview } from '@/features/editor/EditorUpidExportPreview';
+import { EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY } from '@/features/editor/workspace/editorWorkspaceLayout';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const noop = () => undefined;
-let autoOpenedPanelToolbars = new WeakSet<Element>();
 
 describe('EditorPage UPID draft boundary', () => {
   let container: HTMLDivElement;
@@ -54,7 +55,6 @@ describe('EditorPage UPID draft boundary', () => {
     postUpidForMachineSpy.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
-    autoOpenedPanelToolbars = new WeakSet<Element>();
     root = createRoot(container);
   });
 
@@ -78,6 +78,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     expect(container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
+    expect(visibleWorkflowPanelIds()).toEqual([]);
     expect(container.textContent).toContain('Path Project');
     expect(
       container.querySelector('button[aria-label="Undo active document change"]')
@@ -87,12 +88,1162 @@ describe('EditorPage UPID draft boundary', () => {
     ).not.toBeNull();
     expect(container.querySelector('button[aria-label="Save active document"]')).not.toBeNull();
     expect(
-      container.querySelector('button[aria-label="Open Path Project export preview"]')
+      container.querySelector('button[aria-label="Open UPID export preview"]')
     ).not.toBeNull();
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain('Saved');
 
-    await clickElement('button[aria-label="Open Path Project export preview"]');
+    await clickElement('button[aria-label="Open UPID export preview"]');
     expect(container.querySelector('[data-upid-export-preview]')).not.toBeNull();
+  });
+
+  it('holds dirty workflow switches and restores the opening draft when discarded', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    expect(visibleWorkflowPanelIds()).toEqual(['path-transform']);
+    const openingGeometry = previewGeometrySignature();
+
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    expect(previewGeometrySignature()).not.toBe(openingGeometry);
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      'before opening Entry / Exit & Rethreading'
+    );
+    expect(visibleWorkflowPanelIds()).toEqual(['path-transform']);
+
+    await clickElement('button[aria-label="Dismiss workflow transition"]');
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(visibleWorkflowPanelIds()).toEqual(['path-transform']);
+    expect(previewGeometrySignature()).not.toBe(openingGeometry);
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(visibleWorkflowPanelIds()).toEqual(['entry-exit']);
+    expect(previewGeometrySignature()).toBe(openingGeometry);
+    expect(
+      (container.querySelector(
+        'button[aria-label="Undo active document change"]'
+      ) as HTMLButtonElement | null)?.disabled
+    ).toBe(true);
+  });
+
+  it('commits several provisional workflow edits as one Undo entry when switching with Save', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    const openingGeometry = previewGeometrySignature();
+    await changeInput('input[aria-label="Translate X"]', '2');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await changeInput('input[aria-label="Translate X"]', '4');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    const savedGeometry = previewGeometrySignature();
+    expect(savedGeometry).not.toBe(openingGeometry);
+
+    await clickElement('[data-editor-workflow-command="view.summary"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    expect(visibleWorkflowPanelIds()).toEqual(['path-summary']);
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(previewGeometrySignature()).toBe(openingGeometry);
+    expect(
+      (container.querySelector(
+        'button[aria-label="Undo active document change"]'
+      ) as HTMLButtonElement | null)?.disabled
+    ).toBe(true);
+    expect(previewGeometrySignature()).not.toBe(savedGeometry);
+  });
+
+  it('blocks project persistence until provisional workflow changes are committed', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    const onSaveEditorDraft = vi.fn();
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={onSaveEditorDraft} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+
+    const projectSave = container.querySelector(
+      'button[aria-label="Save active document"]'
+    ) as HTMLButtonElement | null;
+    expect(projectSave?.disabled).toBe(true);
+    expect(projectSave?.title).toBe(
+      'Save or discard Transform Geometry before saving the project.'
+    );
+    await act(async () => projectSave?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(onSaveEditorDraft).not.toHaveBeenCalled();
+
+    await clickElement('[data-editor-workflow-command="view.summary"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    const resolvedProjectSave = container.querySelector(
+      'button[aria-label="Save active document"]'
+    ) as HTMLButtonElement | null;
+    expect(resolvedProjectSave?.disabled).toBe(false);
+    await clickElement('button[aria-label="Save active document"]');
+    expect(onSaveEditorDraft).toHaveBeenCalledOnce();
+  });
+
+  it('locks global history during a mutating workflow and discards without leaking Undo or Redo', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    const originalGeometry = previewGeometrySignature();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '2');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    const openingGeometry = previewGeometrySignature();
+    expect(openingGeometry).not.toBe(originalGeometry);
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '5');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    const provisionalGeometry = previewGeometrySignature();
+    expect(provisionalGeometry).not.toBe(openingGeometry);
+
+    const undo = container.querySelector(
+      'button[aria-label="Undo active document change"]'
+    ) as HTMLButtonElement | null;
+    const redo = container.querySelector(
+      'button[aria-label="Redo active document change"]'
+    ) as HTMLButtonElement | null;
+    expect(undo?.disabled).toBe(true);
+    expect(redo?.disabled).toBe(true);
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'z' }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'y' }));
+    });
+    expect(previewGeometrySignature()).toBe(provisionalGeometry);
+
+    await clickElement('button[aria-label="Hide Transform"]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+    expect(previewGeometrySignature()).toBe(openingGeometry);
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(previewGeometrySignature()).toBe(originalGeometry);
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'y' }));
+    });
+    await flushAsync();
+    expect(previewGeometrySignature()).toBe(openingGeometry);
+    expect(previewGeometrySignature()).not.toBe(provisionalGeometry);
+  });
+
+  it('routes dirty panel X through Save and creates exactly one history entry', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    const openingGeometry = previewGeometrySignature();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '2');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await changeInput('input[aria-label="Translate X"]', '4');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+
+    await clickElement('button[aria-label="Hide Transform"]');
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('before closing it');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(previewGeometrySignature()).toBe(openingGeometry);
+    expect(
+      (container.querySelector(
+        'button[aria-label="Undo active document change"]'
+      ) as HTMLButtonElement | null)?.disabled
+    ).toBe(true);
+  });
+
+  it('saves and preserves one real owned mutation from every provisional workflow', async () => {
+    const project = projectWithUpid(pathDocumentFromIndependentRectangles());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    let contourSignatureAfter = '';
+    let setStartSignatureAfter = '';
+    let transformSignatureAfter = '';
+    const workflows: Array<{
+      assertPreserved: () => void;
+      commandId: string;
+      mutate: () => Promise<void>;
+    }> = [
+      {
+        commandId: 'geometry.setup',
+        mutate: async () => changeSelect(
+          container.querySelector('select[aria-label="Geometry basis"]'),
+          'finished-contour'
+        ),
+        assertPreserved: () => expect(
+          (container.querySelector('select[aria-label="Geometry basis"]') as HTMLSelectElement).value
+        ).toBe('finished-contour')
+      },
+      {
+        commandId: 'geometry.transform',
+        mutate: async () => {
+          await changeInput('input[aria-label="Translate X"]', '1');
+          await clickElement('button[aria-label="Apply translation to document geometry"]');
+          transformSignatureAfter = previewGeometrySignature();
+        },
+        assertPreserved: () => expect(previewGeometrySignature()).toBe(transformSignatureAfter)
+      },
+      {
+        commandId: 'machining.contour-setup',
+        mutate: async () => {
+          await clickElement('button[aria-label="Reverse path operation"]');
+          contourSignatureAfter = previewGeometrySignature();
+        },
+        assertPreserved: () => expect(previewGeometrySignature()).toBe(contourSignatureAfter)
+      },
+      {
+        commandId: 'machining.set-start',
+        mutate: async () => {
+          const endpoints = [...container.querySelectorAll<SVGCircleElement>(
+            'circle[data-preview-path-endpoint]'
+          )].filter((endpoint) => endpoint.getAttribute('aria-disabled') !== 'true');
+          expect(endpoints.length).toBeGreaterThan(1);
+          await act(async () => endpoints[1].dispatchEvent(new MouseEvent('click', { bubbles: true })));
+          await flushAsync();
+          setStartSignatureAfter = previewGeometrySignature();
+        },
+        assertPreserved: () => expect(previewGeometrySignature()).toBe(setStartSignatureAfter)
+      },
+      {
+        commandId: 'machining.sequence',
+        mutate: async () => changeSelect(
+          container.querySelector('select[aria-label="Planning order strategy"]'),
+          'source-order'
+        ),
+        assertPreserved: () => expect(
+          (container.querySelector('select[aria-label="Planning order strategy"]') as HTMLSelectElement).value
+        ).toBe('source-order')
+      },
+      {
+        commandId: 'machining.initial-wire',
+        mutate: async () => {
+          await changeInput('input[aria-label="Initial wire X"]', '3');
+          await changeInput('input[aria-label="Initial wire Y"]', '4');
+          await clickElement('button[aria-label="Review and set manual initial wire position"]');
+        },
+        assertPreserved: () => expect(
+          container.querySelector('[data-initial-wire-g92-preview]')?.textContent
+        ).toBe('G92 X3.000 Y4.000')
+      },
+      {
+        commandId: 'machining.entry-exit',
+        mutate: async () => changeSelect(
+          container.querySelector('select[aria-label="Project threading default"]'),
+          'automatic'
+        ),
+        assertPreserved: () => expect(
+          (container.querySelector('select[aria-label="Project threading default"]') as HTMLSelectElement).value
+        ).toBe('automatic')
+      },
+      {
+        commandId: 'machining.program-stops',
+        mutate: async () => {
+          const add = [...container.querySelectorAll<HTMLButtonElement>('[data-program-stops-panel] button')]
+            .find((button) => button.textContent?.trim() === 'Add M00 stop');
+          expect(add).not.toBeUndefined();
+          await act(async () => add?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+          await flushAsync();
+        },
+        assertPreserved: () => expect(container.querySelector('[data-program-stops-panel]')?.textContent)
+          .toContain('M00 with 1.000 mm remaining')
+      },
+      {
+        commandId: 'machining.participation',
+        mutate: async () => {
+          const markInactive = [...container.querySelectorAll<HTMLButtonElement>(
+            '[data-machining-participation-panel] button'
+          )].find((button) => button.textContent?.trim() === 'Mark inactive reference');
+          expect(markInactive).not.toBeUndefined();
+          await act(async () => markInactive?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+          await flushAsync();
+        },
+        assertPreserved: () => expect(
+          container.querySelector('[data-machining-participation-panel]')?.textContent
+        ).toContain('0..1 · inactive-reference')
+      },
+      {
+        commandId: 'construction.measurement',
+        mutate: async () => {
+          await changeInput('input[aria-label="Measurement point X"]', '8');
+          await changeInput('input[aria-label="Measurement point Y"]', '9');
+          const add = [...container.querySelectorAll<HTMLButtonElement>(
+            '[data-editor-workspace-panel="measurement"] button'
+          )].find((button) => button.textContent?.trim() === 'Add Point');
+          expect(add).not.toBeUndefined();
+          await act(async () => add?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+          await flushAsync();
+        },
+        assertPreserved: () => expect(container.querySelector('[data-measurement-point-row="1"]'))
+          .not.toBeNull()
+      }
+    ];
+
+    for (const workflow of workflows) {
+      await clickElement(`[data-editor-workflow-command="${workflow.commandId}"]`);
+      await workflow.mutate();
+      const save = container.querySelector(
+        `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Save "]`
+      ) as HTMLButtonElement | null;
+      expect(save?.disabled, workflow.commandId).toBe(false);
+      await clickElement(
+        `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Save "]`
+      );
+      expect(visibleWorkflowPanelIds(), workflow.commandId).toEqual([]);
+      await clickElement(`[data-editor-workflow-command="${workflow.commandId}"]`);
+      workflow.assertPreserved();
+      await clickElement(
+        `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Cancel "]`
+      );
+    }
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(container.querySelector('[data-measurement-point-row="1"]')).toBeNull();
+    await clickElement('button[aria-label="Redo active document change"]');
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    expect(container.querySelector('[data-measurement-point-row="1"]')).not.toBeNull();
+  });
+
+  it('keeps Position read-only and owns preview grid snap in Measurement & Construction', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="view.position"]');
+    expect(container.querySelector('button[aria-label="Toggle preview grid snap"]')).toBeNull();
+    expect(container.querySelector('[data-editor-position-grid-snap]')?.textContent).toBe('Off');
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    expect(container.querySelector('button[aria-label="Toggle preview grid snap"]')).not.toBeNull();
+    await clickElement('button[aria-label="Toggle preview grid snap"]');
+    await clickElement('[data-editor-workflow-command="view.position"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    expect(container.querySelector('button[aria-label="Toggle preview grid snap"]')).toBeNull();
+    expect(container.querySelector('[data-editor-position-grid-snap]')?.textContent).toBe('On');
+  });
+
+  it('rerenders Measurement and Construction controls without missing-key warnings', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await act(async () => {
+        root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+      });
+      await flushAsync();
+
+      await clickElement('[data-editor-workflow-command="construction.measurement"]');
+      await changeInput('input[aria-label="Measurement point X"]', '3');
+      await changeInput('input[aria-label="Measurement point Y"]', '4');
+      const addPoint = [...container.querySelectorAll<HTMLButtonElement>(
+        '[data-editor-workspace-panel="measurement"] button'
+      )].find((button) => button.textContent?.trim() === 'Add Point');
+      expect(addPoint).not.toBeUndefined();
+      await act(async () => addPoint?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await flushAsync();
+
+      expect(
+        consoleError.mock.calls.some(([message]) =>
+          String(message).includes('Each child in a list should have a unique "key" prop.')
+        )
+      ).toBe(false);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('keeps Contour Tree hover preference independent from Construction magnetic snap', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    await clickElement('input[aria-label="Toggle construction magnetic snap"]');
+    await clickElement('[data-editor-workflow-command="view.contours"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    await clickElement('input[aria-label="Toggle canvas hover assist"]');
+    await clickElement('input[aria-label="Toggle canvas hover assist"]');
+
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    expect(
+      (container.querySelector(
+        'input[aria-label="Toggle construction magnetic snap"]'
+      ) as HTMLInputElement).checked
+    ).toBe(true);
+  });
+
+  it('does not quantize Transform canvas drag with the saved Construction grid preference', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    await clickElement('button[aria-label="Toggle preview grid snap"]');
+    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+
+    const preview = container.querySelector(
+      'svg[aria-label="UPID path preview"]'
+    ) as SVGSVGElement;
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        bottom: 140,
+        height: 120,
+        left: 10,
+        right: 130,
+        toJSON: () => ({}),
+        top: 20,
+        width: 120,
+        x: 10,
+        y: 20
+      })
+    });
+    const path = container.querySelector(
+      'path[data-preview-source="path-document"][data-type="cut"]'
+    ) as SVGPathElement;
+    const start = previewWorldClientPoint(preview, { x: 0, y: 0 }, 5);
+    const end = previewWorldClientPoint(preview, { x: 1, y: 0 }, 5);
+
+    await act(async () => {
+      path.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, ...start }));
+      preview.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, buttons: 1, ...end }));
+      preview.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0, ...end }));
+    });
+    await flushAsync();
+
+    expect(
+      (container.querySelector(
+        '[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(false);
+  });
+
+  it('keeps hidden workflow document handlers inert outside their owning workflow', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    expect(container.querySelector('button[aria-label="Reverse path operation"]')).toBeNull();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('routes workflow-local Cancel through X-stays and Discard restoration', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.setup"]');
+    const basis = container.querySelector('select[aria-label="Geometry basis"]') as HTMLSelectElement;
+    const basisBefore = basis.value;
+    await changeSelect(basis, basisBefore === 'wire-centre' ? 'finished-contour' : 'wire-centre');
+    expect(basis.value).not.toBe(basisBefore);
+
+    await clickElement('button[aria-label="Cancel Geometry Setup workflow"]');
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-workflow-transition-action="stay"]')).toBeNull();
+
+    await clickElement('button[aria-label="Dismiss workflow transition"]');
+    expect(visibleWorkflowPanelIds()).toEqual(['geometry-setup']);
+    await clickElement('button[aria-label="Cancel Geometry Setup workflow"]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+    await clickElement('[data-editor-workflow-command="geometry.setup"]');
+    expect(
+      (container.querySelector('select[aria-label="Geometry basis"]') as HTMLSelectElement).value
+    ).toBe(basisBefore);
+  });
+
+  it('discards provisional measurement points and their construction state exactly', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    await changeInput('input[aria-label="Measurement point X"]', '2');
+    await changeInput('input[aria-label="Measurement point Y"]', '3');
+    const addPoint = [...container.querySelectorAll('[data-editor-workspace-panel="measurement"] button')]
+      .find((button) => button.textContent?.trim() === 'Add Point');
+    expect(addPoint).not.toBeUndefined();
+    await act(async () => addPoint?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flushAsync();
+    await clickElement('button[aria-label="Magnetize latest point tangent"]');
+    expect(container.querySelector('[data-measurement-point-row="1"]')).not.toBeNull();
+
+    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Cancel "]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    expect(container.querySelector('[data-measurement-point-row="1"]')).toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Magnetize latest point tangent"]')
+        ?.getAttribute('aria-pressed')
+    ).toBe('false');
+  });
+
+  it('keeps incomplete measurement input blocking Save across unrelated workflow actions', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    await changeInput('input[aria-label="Measurement point X"]', '2');
+    const save = () => container.querySelector(
+      '[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Save "]'
+    ) as HTMLButtonElement;
+    expect(save().disabled).toBe(true);
+    expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
+      'Add a valid point'
+    );
+
+    await clickElement('button[aria-label="Toggle preview grid snap"]');
+    await clickElement('button[aria-label="Magnetize latest point tangent"]');
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+    });
+    await flushAsync();
+
+    expect(save().disabled).toBe(true);
+    expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
+      'Add a valid point'
+    );
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+  });
+
+  it('keeps an incomplete Transform draft blocking Save across another valid transform', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="view.contours"]');
+    await clickElement('button[aria-label="Select Exterior 1"]');
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    expect(
+      (container.querySelector(
+        'button[aria-label="Target selection for transform"]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(false);
+    await changeInput('input[aria-label="Translate X"]', '2');
+    const save = () => container.querySelector(
+      '[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]'
+    ) as HTMLButtonElement;
+    expect(save().disabled).toBe(true);
+    expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
+      'pending transform coordinates'
+    );
+    expect(
+      (container.querySelector(
+        'button[aria-label="Target selection for transform"]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(true);
+
+    await clickElement('button[aria-label^="Mirror "][aria-label$=" across X axis"]');
+    expect(save().disabled).toBe(true);
+    expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
+      'pending transform coordinates'
+    );
+
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Cancel "]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    expect((container.querySelector('input[aria-label="Translate X"]') as HTMLInputElement).value)
+      .not.toBe('2');
+  });
+
+  it('does not clear one pending form when another action in the workflow succeeds', async () => {
+    const project = projectWithUpid(pathDocumentFromIndependentRectangles());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    await changeInput('input[aria-label="Planned rapid source X"]', '2');
+    await changeInput('input[aria-label="Entry X"]', '-2');
+    await changeInput('input[aria-label="Entry Y"]', '0');
+    const setEntry = [...container.querySelectorAll<HTMLButtonElement>('[data-entry-exit-panel] button')]
+      .find((button) => button.textContent?.trim() === 'Set straight entry');
+    expect(setEntry).not.toBeUndefined();
+    await act(async () => setEntry?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flushAsync();
+    expect(
+      (container.querySelector(
+        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(true);
+
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Cancel "]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    await clickElement('[data-editor-workflow-command="machining.participation"]');
+    const markInactive = [...container.querySelectorAll<HTMLButtonElement>(
+      '[data-machining-participation-panel] button'
+    )].find((button) => button.textContent?.trim() === 'Mark inactive reference');
+    await act(async () => markInactive?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flushAsync();
+    await clickElement('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-command="machining.participation"]');
+    await changeInput('input[aria-label="Machining span start"]', '0.2');
+    const secondOperation = project.upid!.document.plan.operations[1];
+    await clickElement(
+      `path[data-preview-source="path-document"][data-preview-operation="${secondOperation.id}"][data-type="cut"]`
+    );
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).not.toContain(
+      `Selection Operation ${secondOperation.id}`
+    );
+    const restore = [...container.querySelectorAll<HTMLButtonElement>(
+      '[data-machining-participation-panel] button'
+    )].find((button) => button.textContent?.trim() === 'Restore');
+    await act(async () => restore?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flushAsync();
+    expect(
+      (container.querySelector(
+        '[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(true);
+  });
+
+  it('locks Entry Exit and Program Stops targets while their local forms are pending', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    const entryTarget = container.querySelector(
+      'select[aria-label="Entry and exit operation"]'
+    ) as HTMLSelectElement;
+    expect(entryTarget.value).toBe(firstOperation.id);
+    await changeInput('input[aria-label="Entry X"]', '-2');
+    expect(entryTarget.disabled).toBe(true);
+    expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
+      'target contour'
+    );
+
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Cancel "]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    await clickElement('[data-editor-workflow-command="machining.program-stops"]');
+    await changeInput('input[aria-label="Program stop note"]', 'keep this target');
+    await clickElement(
+      `path[data-preview-source="path-document"][data-preview-operation="${secondOperation.id}"]`
+    );
+
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).not.toContain(
+      `Selection Operation ${secondOperation.id}`
+    );
+    expect(container.querySelector('[data-program-stops-panel]')?.textContent).toContain(
+      firstOperation.displayName
+    );
+    expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
+      'target contour'
+    );
+  });
+
+  it('owns canvas entry picking, locks its operation target, and discards the provisional lead', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    const operationTarget = container.querySelector(
+      'select[aria-label="Entry and exit operation"]'
+    ) as HTMLSelectElement;
+    expect(operationTarget.value).toBe(firstOperation.id);
+
+    await clickElement('button[aria-label="Pick entry point on canvas"]');
+    expect(operationTarget.disabled).toBe(true);
+    expect(
+      container.querySelector('button[aria-label="Pick entry point on canvas"]')?.getAttribute('aria-pressed')
+    ).toBe('true');
+
+    const preview = container.querySelector('svg[aria-label="UPID path preview"]') as SVGSVGElement;
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        bottom: 140,
+        height: 120,
+        left: 10,
+        right: 130,
+        toJSON: () => ({}),
+        top: 20,
+        width: 120,
+        x: 10,
+        y: 20
+      })
+    });
+    const secondOperationPath = container.querySelector(
+      `path[data-preview-source="path-document"][data-preview-operation="${secondOperation.id}"][data-type="cut"]`
+    ) as SVGPathElement;
+    const pickedPoint = previewWorldClientPoint(preview, { x: 22, y: 2 }, 5);
+
+    await act(async () => {
+      secondOperationPath.dispatchEvent(new MouseEvent('click', { bubbles: true, ...pickedPoint }));
+    });
+    await flushAsync();
+
+    expect(operationTarget.value).toBe(firstOperation.id);
+    expect(operationTarget.disabled).toBe(false);
+    expect((container.querySelector('input[aria-label="Entry X"]') as HTMLInputElement).value).toBe('22');
+    expect((container.querySelector('input[aria-label="Entry Y"]') as HTMLInputElement).value).toBe('2');
+    expect(container.querySelector(
+      `path[data-preview-travel="lead-in"][data-preview-operation="${firstOperation.id}"]`
+    )).not.toBeNull();
+    expect(container.querySelector(
+      `path[data-preview-travel="lead-in"][data-preview-operation="${secondOperation.id}"]`
+    )).toBeNull();
+
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Cancel "]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    expect(container.querySelector('path[data-preview-travel="lead-in"]')).toBeNull();
+  });
+
+  it('cancels canvas exit picking with Escape without mutating the workflow draft', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    await clickElement('button[aria-label="Pick exit point on canvas"]');
+    expect(
+      container.querySelector('button[aria-label="Pick exit point on canvas"]')?.getAttribute('aria-pressed')
+    ).toBe('true');
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Pick exit point on canvas"]')?.getAttribute('aria-pressed')
+    ).toBe('false');
+    expect(container.querySelector('path[data-preview-travel="lead-out"]')).toBeNull();
+    expect(
+      (container.querySelector(
+        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(true);
+  });
+
+  it('clears an active Entry Exit canvas picker when the loaded project identity changes', async () => {
+    const firstProject = projectWithUpid(pathDocumentFromIndependentRectangles());
+    const replacementProject = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/first-project.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={firstProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    await clickElement('button[aria-label="Pick entry point on canvas"]');
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
+      'Pick entry'
+    );
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/replacement-project.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={replacementProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).not.toContain(
+      'Pick entry'
+    );
+
+    await clickElement('[data-editor-workflow-command="view.contours"]');
+    const replacementPath = container.querySelector(
+      'path[data-preview-source="path-document"][data-type="cut"]'
+    ) as SVGPathElement;
+    await act(async () => {
+      replacementPath.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+    expect(replacementPath.getAttribute('data-preview-selected')).toBe('true');
+  });
+
+  it('clears the Set Start tool session before Escape is handled in a replacement project', async () => {
+    const firstProject = projectWithUpid(pathDocumentFromRectangle());
+    const replacementProject = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/set-start-project.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={firstProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.set-start"]');
+    expect(visibleWorkflowPanelIds()).toEqual(['set-start']);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/replacement-construction-project.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={replacementProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    await clickElement('button[aria-label="Place measurement points on canvas"]');
+    expect(
+      container.querySelector('button[aria-label="Place measurement points on canvas"]')
+        ?.getAttribute('aria-pressed')
+    ).toBe('true');
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(visibleWorkflowPanelIds()).toEqual(['measurement']);
+    expect(
+      container.querySelector('button[aria-label="Place measurement points on canvas"]')
+        ?.getAttribute('aria-pressed')
+    ).toBe('false');
+  });
+
+  it('clears project-bound measurement data and coordinate drafts on identity change', async () => {
+    const firstProject = projectWithUpid(pathDocumentFromRectangle());
+    const replacementProject = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/project-bound-drafts.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={firstProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '7');
+    await changeInput('input[aria-label="Translate Y"]', '8');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    expect((container.querySelector('input[aria-label="Document reference target X"]') as HTMLInputElement).value)
+      .toBe('12.000');
+    expect((container.querySelector('input[aria-label="Document reference target Y"]') as HTMLInputElement).value)
+      .toBe('10.500');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    await changeInput('input[aria-label="Measurement point X"]', '3');
+    await changeInput('input[aria-label="Measurement point Y"]', '4');
+    const addPoint = [...container.querySelectorAll<HTMLButtonElement>(
+      '[data-editor-workspace-panel="measurement"] button'
+    )].find((button) => button.textContent?.trim() === 'Add Point');
+    expect(addPoint).not.toBeUndefined();
+    await act(async () => addPoint?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flushAsync();
+    await changeInput('input[aria-label="Measurement point X"]', '9');
+    await changeInput('input[aria-label="Measurement point Y"]', '10');
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          filePath="imports/replacement-clean-drafts.dxf"
+          onSaveEditorDraft={vi.fn()}
+          project={replacementProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    expect(container.querySelector('[data-measurement-point-row="1"]')).toBeNull();
+    expect((container.querySelector('input[aria-label="Measurement point X"]') as HTMLInputElement).value)
+      .toBe('');
+    expect((container.querySelector('input[aria-label="Measurement point Y"]') as HTMLInputElement).value)
+      .toBe('');
+    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Cancel "]');
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    expect((container.querySelector('input[aria-label="Translate X"]') as HTMLInputElement).value)
+      .toBe('0');
+    expect((container.querySelector('input[aria-label="Translate Y"]') as HTMLInputElement).value)
+      .toBe('0');
+    expect((container.querySelector('input[aria-label="Document reference target X"]') as HTMLInputElement).value)
+      .not.toBe('12.000');
+    expect((container.querySelector('input[aria-label="Document reference target Y"]') as HTMLInputElement).value)
+      .not.toBe('10.500');
+    expect(container.querySelector('[data-upid-transform-target-center-points]')).toBeNull();
+  });
+
+  it('offers only single-workflow diagnostic repair links', async () => {
+    const project = projectWithUpid(pathDocumentFromGappedRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="view.diagnostics"
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-diagnostics-repair-workflow]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Open Repair Workspace"]')).toBeNull();
+    expect(container.querySelector(
+      '[data-upid-diagnostic-guidance-action="endpoint-topology"]'
+    )).not.toBeNull();
+  });
+
+  it('resolves a dirty workflow before Back and lets the warning X cancel the pending action', async () => {
+    const onBackToDashboard = vi.fn();
+    const confirmDiscard = vi.spyOn(window, 'confirm');
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onBackToDashboard={onBackToDashboard}
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await clickElement('button[aria-label="Back to Dashboard"]');
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(onBackToDashboard).not.toHaveBeenCalled();
+    expect(confirmDiscard).not.toHaveBeenCalled();
+
+    await clickElement('button[aria-label="Dismiss workflow transition"]');
+    expect(onBackToDashboard).not.toHaveBeenCalled();
+    await clickElement('button[aria-label="Back to Dashboard"]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    expect(onBackToDashboard).toHaveBeenCalledOnce();
+  });
+
+  it('restores a valid opening selection before discarded switch activation', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.sequence"]');
+    await clickElement(
+      `[data-upid-cut-sequence-row][data-upid-operation-id="${firstOperation.id}"] [data-upid-cut-sequence-select]`
+    );
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await clickElement(
+      `path[data-preview-source="path-document"][data-preview-operation="${secondOperation.id}"]`
+    );
+    await clickElement('button[aria-label="Target document for transform"]');
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await clickElement('[data-editor-workflow-command="machining.set-start"]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+
+    expect(visibleWorkflowPanelIds()).toEqual(['set-start']);
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
+      `Selection Operation ${firstOperation.id}`
+    );
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
+      'Set Start / Step 2'
+    );
+  });
+
+  it('activates Set Start with its displayed fallback after discard restores a null selection', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const project = projectWithUpid(pathDocument);
+    const operation = pathDocument.plan.operations[0];
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await clickElement('button[aria-label="Target document for transform"]');
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await clickElement('[data-editor-workflow-command="machining.set-start"]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+
+    expect(visibleWorkflowPanelIds()).toEqual(['set-start']);
+    expect(
+      (container.querySelector('select[aria-label="Set start operation"]') as HTMLSelectElement | null)
+        ?.value
+    ).toBe(operation.id);
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
+      `Selection Operation ${operation.id}`
+    );
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
+      'Set Start / Step 2'
+    );
+  });
+
+  it('keeps endpoints from non-target contours inert during Set Start', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [targetOperation, otherOperation] = pathDocument.plan.operations;
+    const otherSegmentId = otherOperation.segmentRefs[1].segmentId;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.set-start"]');
+    await changeSelect(
+      container.querySelector('select[aria-label="Set start operation"]'),
+      targetOperation.id
+    );
+
+    const otherEndpoint = container.querySelector(
+      `circle[data-preview-path-endpoint][data-preview-operation="${otherOperation.id}"][data-preview-segment="${otherSegmentId}"][data-preview-point-role="start"]`
+    );
+    expect(otherEndpoint).not.toBeNull();
+
+    await act(async () => {
+      otherEndpoint?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(otherEndpoint?.getAttribute('aria-disabled')).toBe('true');
+    expect(
+      (container.querySelector('select[aria-label="Set start operation"]') as HTMLSelectElement | null)
+        ?.value
+    ).toBe(targetOperation.id);
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
+      'Set Start / Step 2'
+    );
+    expect(
+      container
+        .querySelector(`[data-upid-cut-sequence-row][data-upid-operation-id="${otherOperation.id}"]`)
+        ?.getAttribute('data-upid-cut-sequence-manual') ?? ''
+    ).not.toContain('start');
+  });
+
+  it('opens a workflow without rewriting its remembered hidden placement or geometry', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    const rememberedGeometry = { x: 333, y: 144, width: 377, height: 411 };
+    window.localStorage.setItem(EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      placements: { 'path-transform': 'hidden' },
+      dockOrders: { left: [], right: [] },
+      floatingGeometries: { 'path-transform': rememberedGeometry },
+      dockWidths: { left: 360, right: 420 }
+    }));
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    expect(
+      container.querySelector('[data-editor-workspace-panel="path-transform"]')
+        ?.getAttribute('data-editor-workspace-panel-placement')
+    ).toBe('floating');
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    });
+    const stored = JSON.parse(window.localStorage.getItem(EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY) ?? '{}');
+    expect(stored.placements['path-transform']).toBe('hidden');
+    expect(stored.floatingGeometries['path-transform']).toEqual(rememberedGeometry);
+    window.localStorage.removeItem(EDITOR_WORKSPACE_LAYOUT_STORAGE_KEY);
   });
 
   it('initializes verified finished-contour intent and derives reversal-safe Robofil review data', async () => {
@@ -101,16 +1252,17 @@ describe('EditorPage UPID draft boundary', () => {
     const project = projectWithUpid(translated, machine);
 
     await act(async () => {
-      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+      root.render(<EditorPageHarness initialWorkflowId="geometry.setup" onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
-    await clickElement('[data-upid-cut-sequence-select]');
 
     const basis = container.querySelector(
       'select[aria-label="Geometry basis"]'
     ) as HTMLSelectElement | null;
     expect(basis?.value).toBe('wire-centre');
     await changeSelect(basis, 'finished-contour');
+    await clickElement('[data-editor-workflow-actions="geometry.setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
 
     expect(container.querySelector('[data-testid="compensation-kept-material"]')?.textContent).toContain(
       'inside · automatic'
@@ -132,14 +1284,16 @@ describe('EditorPage UPID draft boundary', () => {
   it('persists a manual kept side and exposes every structured Robofil export row', async () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     const translated = translatePathDocument(pathDocumentFromRectangle(), { x: 5, y: 0 })!;
-    const initialized = initializeProjectCompensationIntents(translated, machine);
+    const initialized = setManualInitialWirePosition(
+      initializeProjectCompensationIntents(translated, machine),
+      { x: 0, y: 0 }
+    )!;
     const project = projectWithUpid(initialized, machine);
 
     await act(async () => {
-      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+      root.render(<EditorPageHarness initialWorkflowId="machining.contour-setup" onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
-    await clickElement('[data-upid-cut-sequence-select]');
 
     const compensation = container.querySelector(
       'select[aria-label="Compensation kept material"]'
@@ -153,7 +1307,8 @@ describe('EditorPage UPID draft boundary', () => {
       'outside · manual'
     );
 
-    await clickElement('button[aria-label="Open UPID export preview"]');
+    await clickElement('[data-editor-workflow-command="export.preview"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
     const blockKinds = [...container.querySelectorAll('[data-upid-export-block-kind]')].map((row) =>
       row.getAttribute('data-upid-export-block-kind')
     );
@@ -182,13 +1337,14 @@ describe('EditorPage UPID draft boundary', () => {
     const project = projectWithUpid(document, machine);
 
     await act(async () => {
-      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+      root.render(<EditorPageHarness initialWorkflowId="geometry.setup" onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
-    await clickElement('[data-upid-cut-sequence-select]');
 
     const basis = container.querySelector('select[aria-label="Geometry basis"]') as HTMLSelectElement;
     await changeSelect(basis, 'finished-contour');
+    await clickElement('[data-editor-workflow-actions="geometry.setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     expect(container.querySelector('[data-testid="compensation-blocker"]')?.textContent).toContain(
       'missing-intent'
     );
@@ -198,11 +1354,16 @@ describe('EditorPage UPID draft boundary', () => {
     );
     expect(container.querySelector('[data-testid="compensation-code"]')?.textContent).toMatch(/G4[12] D0/);
 
-    await changeSelect(basis, 'wire-centre');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-command="geometry.setup"]');
+    const reopenedBasis = container.querySelector('select[aria-label="Geometry basis"]') as HTMLSelectElement;
+    await changeSelect(reopenedBasis, 'wire-centre');
+    await clickElement('[data-editor-workflow-actions="geometry.setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     expect(container.querySelector('[data-testid="compensation-blocker"]')?.textContent).toContain(
       'wire-centre'
     );
-    await clickElement('button[aria-label="Open UPID export preview"]');
+    await clickElement('[data-editor-workflow-command="export.preview"]');
     expect(container.querySelector('[data-upid-export-blocking-message]')?.textContent).toContain(
       'wire-centre'
     );
@@ -220,15 +1381,14 @@ describe('EditorPage UPID draft boundary', () => {
     const project = projectWithUpid(document, unverified);
 
     await act(async () => {
-      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+      root.render(<EditorPageHarness initialWorkflowId="machining.contour-setup" onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
-    await clickElement('[data-upid-cut-sequence-select]');
 
     expect(container.querySelector('[data-testid="compensation-machine-status"]')?.textContent).toContain(
       'unverified'
     );
-    await clickElement('button[aria-label="Open UPID export preview"]');
+    await clickElement('[data-editor-workflow-command="export.preview"]');
     expect(container.querySelector('[data-upid-export-blocking-message]')?.textContent).toContain(
       'current user-verified project machine snapshot'
     );
@@ -240,17 +1400,17 @@ describe('EditorPage UPID draft boundary', () => {
 
   it('does not offer a radial center-pierce lead-in for active controller compensation', async () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
-    const document = initializeProjectCompensationIntents(
+    let document = initializeProjectCompensationIntents(
       dxfEntitiesToUpidDocument(parseDxf(circleDxf()).entities),
       machine
     );
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
     const project = projectWithUpid(document, machine);
 
     await act(async () => {
-      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+      root.render(<EditorPageHarness initialWorkflowId="machining.entry-exit" onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
-    await clickElement('[data-upid-cut-sequence-select]');
 
     const pierceButton = container.querySelector(
       'button[aria-label="Add center pierce lead-in"]'
@@ -264,17 +1424,17 @@ describe('EditorPage UPID draft boundary', () => {
     const machine = markMachineProfileUserVerified(
       createCharmillesRobofil100V2CandidateProfile()
     );
-    const document = initializeProjectCompensationIntents(
+    let document = initializeProjectCompensationIntents(
       dxfEntitiesToUpidDocument(parseDxf(circleDxf()).entities),
       machine
     );
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
     const project = projectWithUpid(document, machine);
 
     await act(async () => {
-      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+      root.render(<EditorPageHarness initialWorkflowId="machining.entry-exit" onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
-    await clickElement('[data-upid-cut-sequence-select]');
 
     const pierceButton = container.querySelector(
       'button[aria-label="Add center pierce lead-in"]'
@@ -282,6 +1442,8 @@ describe('EditorPage UPID draft boundary', () => {
     expect(pierceButton?.disabled).toBe(false);
 
     await clickElement('button[aria-label="Add center pierce lead-in"]');
+    await clickElement('[data-editor-workflow-command="view.contours"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
     expect(container.querySelector('[data-upid-lead-in-row]')).not.toBeNull();
     expect(container.querySelector(
       'path[data-preview-travel-source="posted"]'
@@ -295,11 +1457,10 @@ describe('EditorPage UPID draft boundary', () => {
     const project = projectWithUpid(pathDocumentFromIndependentRectangles());
 
     await act(async () => {
-      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+      root.render(<EditorPageHarness initialWorkflowId="machining.entry-exit" onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
 
-    await clickElement('[data-upid-cut-sequence-rapid-control]');
     expect(container.querySelector('[data-upid-planned-rapid-editor]')).not.toBeNull();
     expect(container.querySelector('input[aria-label="Planned rapid source X"]')).not.toBeNull();
     expect(container.querySelector('input[aria-label="Planned rapid destination Y"]')).not.toBeNull();
@@ -307,6 +1468,7 @@ describe('EditorPage UPID draft boundary', () => {
     await changeInput('input[aria-label="Planned rapid source X"]', '2');
     await changeInput('input[aria-label="Planned rapid source Y"]', '3');
     await clickElement('button[aria-label="Apply planned rapid source"]');
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]');
 
     const selectedRapidPath = () => container.querySelector(
       'svg[aria-label="UPID path preview"] path[data-preview-travel="rapid-in"][data-preview-travel-source="planned"]'
@@ -324,14 +1486,14 @@ describe('EditorPage UPID draft boundary', () => {
     const project = projectWithUpid(pathDocumentFromIndependentRectangles());
 
     await act(async () => {
-      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+      root.render(<EditorPageHarness initialWorkflowId="machining.entry-exit" onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
-    await clickElement('[data-upid-cut-sequence-rapid-control]');
 
     await changeInput('input[aria-label="Planned rapid destination X"]', '-3');
     await changeInput('input[aria-label="Planned rapid destination Y"]', '1');
     await clickElement('button[aria-label="Create manual lead from planned rapid destination"]');
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]');
 
     const selectedRapidPath = () => container.querySelector(
       'svg[aria-label="UPID path preview"] path[data-preview-travel="rapid-in"][data-preview-travel-source="planned"]'
@@ -339,8 +1501,10 @@ describe('EditorPage UPID draft boundary', () => {
     expect(selectedRapidPath()?.getAttribute('d')).toMatch(/ L -3 1$/);
     expect(container.querySelector('button[aria-label="Create manual lead from planned rapid destination"]')).toBeNull();
 
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
     await changeInput('input[aria-label="Planned rapid destination X"]', '-4');
     await clickElement('button[aria-label="Apply planned rapid destination"]');
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]');
     expect(selectedRapidPath()?.getAttribute('d')).toMatch(/ L -4 1$/);
 
     await clickElement('button[aria-label="Undo active document change"]');
@@ -564,7 +1728,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(status?.textContent).toContain('Diagnostics 1');
     expect(
       container.querySelector('[data-upid-diagnostic-code="units-assumed-millimeters"]')
-    ).not.toBeNull();
+    ).toBeNull();
     expect(status?.textContent).toContain('Machine Default Wire EDM');
     expect(status?.textContent).toContain('Fit Unchecked');
   });
@@ -577,6 +1741,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="machining.contour-setup"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -584,20 +1749,23 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    await clickElement(
-      `[data-upid-cut-sequence-row][data-upid-operation-id="${firstOperation.id}"] [data-upid-cut-sequence-select]`
+    await changeSelect(
+      container.querySelector('select[aria-label="Contour setup operation"]'),
+      firstOperation.id
     );
     await clickElement('button[aria-label="Reverse path operation"]');
-    await clickElement(
-      `[data-upid-cut-sequence-row][data-upid-operation-id="${secondOperation.id}"] [data-upid-cut-sequence-select]`
+    await changeSelect(
+      container.querySelector('select[aria-label="Contour setup operation"]'),
+      secondOperation.id
     );
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
       `Selection Operation ${secondOperation.id}`
     );
 
     await clickElement('button[aria-label="Undo active document change"]');
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
-      `Selection Operation ${firstOperation.id}`
+      'Selection None'
     );
 
     await clickElement('button[aria-label="Redo active document change"]');
@@ -615,6 +1783,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="machining.contour-setup"
           onSaveEditorDraft={onSaveEditorDraft}
           project={project}
         />
@@ -622,13 +1791,16 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    await clickElement(
-      `[data-upid-cut-sequence-row][data-upid-operation-id="${firstOperation.id}"] [data-upid-cut-sequence-select]`
+    await changeSelect(
+      container.querySelector('select[aria-label="Contour setup operation"]'),
+      firstOperation.id
     );
     await clickElement('button[aria-label="Reverse path operation"]');
-    await clickElement(
-      `[data-upid-cut-sequence-row][data-upid-operation-id="${secondOperation.id}"] [data-upid-cut-sequence-select]`
+    await changeSelect(
+      container.querySelector('select[aria-label="Contour setup operation"]'),
+      secondOperation.id
     );
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
     await clickElement('button[aria-label="Save active document"]');
 
     const savedDraft = onSaveEditorDraft.mock.calls[0]?.[0] as EditorSaveDraft | undefined;
@@ -658,7 +1830,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('button[aria-label="Undo active document change"]');
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
-      `Selection Operation ${firstOperation.id}`
+      'Selection None'
     );
     expect(container.textContent).toContain('Unsaved');
   });
@@ -671,6 +1843,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="machining.contour-setup"
           onSaveEditorDraft={firstSave}
           project={project}
         />
@@ -678,8 +1851,8 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    await clickElement('[data-upid-cut-sequence-select]');
     await clickElement('button[aria-label="Reverse path operation"]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
 
     await act(async () => {
       root.render(
@@ -716,7 +1889,7 @@ describe('EditorPage UPID draft boundary', () => {
       'Save active document',
       'Undo active document change',
       'Redo active document change',
-      'Open Path Project export preview'
+      'Open UPID export preview'
     ]) {
       expect(
         (container.querySelector(`button[aria-label="${ariaLabel}"]`) as HTMLButtonElement).disabled
@@ -745,8 +1918,9 @@ describe('EditorPage UPID draft boundary', () => {
     expect(onBackToDashboard).toHaveBeenCalledOnce();
     onBackToDashboard.mockClear();
 
-    await clickElement('[data-upid-cut-sequence-select]');
+    await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     await clickElement('button[aria-label="Reverse path operation"]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
     await clickElement('button[aria-label="Back to Dashboard"]');
 
     expect(confirmDiscard).toHaveBeenCalledWith('Discard unsaved changes?');
@@ -774,8 +1948,9 @@ describe('EditorPage UPID draft boundary', () => {
     window.dispatchEvent(cleanEvent);
     expect(cleanEvent.defaultPrevented).toBe(false);
 
-    await clickElement('[data-upid-cut-sequence-select]');
+    await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     await clickElement('button[aria-label="Reverse path operation"]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
     const modifiedEvent = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(modifiedEvent);
     expect(modifiedEvent.defaultPrevented).toBe(true);
@@ -801,8 +1976,9 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    await clickElement('[data-upid-cut-sequence-select]');
+    await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     await clickElement('button[aria-label="Reverse path operation"]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
 
     expect(container.textContent).toContain('Unsaved');
 
@@ -839,8 +2015,9 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    await clickElement('[data-upid-cut-sequence-select]');
+    await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     await clickElement('button[aria-label="Reverse path operation"]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
     expect(container.textContent).toContain('Unsaved');
 
     await clickElement('button[aria-label="Undo active document change"]');
@@ -877,6 +2054,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -912,6 +2090,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -947,6 +2126,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -999,6 +2179,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1043,6 +2224,7 @@ describe('EditorPage UPID draft boundary', () => {
         `[data-upid-point-row][data-upid-segment-id="${targetSegmentId}"][data-upid-point-role="start"]`
       )
     ).toBeNull();
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
     expect(container.querySelector('[data-upid-selected-point-role]')?.textContent).toBe('start');
   });
 
@@ -1052,6 +2234,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1066,9 +2249,6 @@ describe('EditorPage UPID draft boundary', () => {
       '[data-upid-point-row][data-upid-point-role="start"]'
     ) as HTMLElement | null;
     const endpointSelect = endpointRow?.querySelector('[data-upid-point-select]') as HTMLButtonElement | null;
-    const endpointSetStart = endpointRow?.querySelector(
-      'button[aria-label="Set path start to this point"]'
-    ) as HTMLButtonElement | null;
     const leadInRow = container.querySelector('[data-upid-tree-row-kind="lead-in"]') as HTMLButtonElement | null;
 
     expect(contourRow?.getAttribute('aria-label')).toBe('Select Exterior 1');
@@ -1120,23 +2300,15 @@ describe('EditorPage UPID draft boundary', () => {
       expect(row?.getAttribute('data-upid-hovered')).not.toBe('true');
     }
 
-    await act(async () => {
-      endpointSetStart?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-    });
-    expect(endpointRow?.getAttribute('data-upid-hovered')).toBe('true');
-
-    await act(async () => {
-      endpointSetStart?.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-    });
-    expect(endpointRow?.getAttribute('data-upid-hovered')).not.toBe('true');
   });
 
-  it('associates rich endpoint help with selection and Set Start actions', async () => {
+  it('associates rich endpoint help with the Contour Tree selection action only', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1151,14 +2323,11 @@ describe('EditorPage UPID draft boundary', () => {
     const endpointSelect = endpointRow?.querySelector(
       'button[data-upid-point-select]'
     ) as HTMLButtonElement | null;
-    const setStart = endpointRow?.querySelector(
-      'button[aria-label="Set path start to this point"]'
-    ) as HTMLButtonElement | null;
     const helpId = endpointSelect?.getAttribute('aria-describedby');
 
     expect(helpId).not.toBeNull();
     expect(helpId ?? '').toMatch(/^upid-endpoint-help-/);
-    expect(setStart?.getAttribute('aria-describedby')).toBe(helpId);
+    expect(endpointRow?.querySelectorAll('button')).toHaveLength(1);
     expect(endpointSelect?.getAttribute('title')).toContain('start endpoint of segment 1');
 
     const help = helpId ? container.querySelector(`#${helpId}`) : null;
@@ -1166,10 +2335,6 @@ describe('EditorPage UPID draft boundary', () => {
     expect(help?.textContent).toContain('Endpoint cluster');
     expect(help?.textContent).toContain('0.000, 0.000');
 
-    await act(async () => {
-      setStart?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
-    });
-    expect(endpointRow?.getAttribute('data-upid-hovered')).toBe('true');
   });
 
   it('shows selected contour subtree metrics in the inspector', async () => {
@@ -1179,6 +2344,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1187,6 +2353,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     await clickElement('button[aria-label="Select Exterior 1"]');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
 
     const exteriorTreeContext = container.querySelector('[data-upid-selected-tree-context]');
     expect(exteriorTreeContext?.getAttribute('data-upid-path-element-id')).toBe('contour_0001');
@@ -1198,7 +2365,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected="tree-descendants"]')?.textContent).toBe('1');
     expect(container.querySelector('[data-upid-selected="tree-total-segments"]')?.textContent).toBe('8');
 
-    await clickElement('button[aria-label="Select Hole 1"]');
+    await clickElement('button[aria-label="Select child Hole 1"]');
 
     const holeTreeContext = container.querySelector('[data-upid-selected-tree-context]');
     expect(holeTreeContext?.getAttribute('data-upid-path-element-id')).toBe('contour_0002');
@@ -1220,6 +2387,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1228,6 +2396,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     await clickElement('button[aria-label="Select Hole 1"]');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
 
     expect(container.querySelector('[data-upid-selected-tree-context]')?.getAttribute('data-upid-path-element-id')).toBe(
       'contour_0002'
@@ -1249,6 +2418,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1257,6 +2427,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     await clickElement('button[aria-label="Select Exterior 1"]');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
 
     expect(container.querySelector('[data-upid-selected-tree-context]')?.getAttribute('data-upid-path-element-id')).toBe(
       'contour_0001'
@@ -1280,6 +2451,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1288,6 +2460,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     await clickElement('button[aria-label="Select Exterior 1"]');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
 
     expect(container.querySelector('[data-upid-selected-tree-context]')?.getAttribute('data-upid-path-element-id')).toBe(
       'contour_0001'
@@ -1309,6 +2482,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1317,6 +2491,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     await clickElement('button[aria-label="Select Exterior 1"]');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
 
     expect(container.querySelector('[data-upid-selected-tree-context]')?.getAttribute('data-upid-path-element-id')).toBe(
       'contour_0001'
@@ -1347,6 +2522,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1360,6 +2536,7 @@ describe('EditorPage UPID draft boundary', () => {
     const lastSegmentId = segmentRows[3].getAttribute('data-upid-segment-id');
 
     await clickElement(`[data-upid-segment-row][data-upid-segment-id="${firstSegmentId}"]`);
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
 
     expect(container.querySelector('[data-upid-selected-segment]')?.getAttribute('data-upid-selected-segment-id')).toBe(
       firstSegmentId
@@ -1389,6 +2566,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1407,8 +2585,10 @@ describe('EditorPage UPID draft boundary', () => {
       '10.000'
     );
 
-    await clickElement('button[aria-label="Select Exterior 1"]');
+    await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     await clickElement('button[aria-label="Reverse path operation"]');
+    await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-command="view.contours"]');
 
     const reversedFirstSegmentRow = container.querySelector(
       `[data-upid-segment-row][data-upid-segment-id="${firstSegmentId}"]`
@@ -1432,6 +2612,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1440,6 +2621,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     await clickElement('[data-upid-segment-row]');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
 
     expect(
       container
@@ -1467,6 +2649,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1494,6 +2677,8 @@ describe('EditorPage UPID draft boundary', () => {
       snappedEndpointRow?.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
 
     expect(container.querySelector('[data-upid-selected-point-cluster]')?.textContent).toMatch(/^ec_/);
     expect(container.querySelector('[data-upid-selected-point-cluster-method]')?.textContent).toBe(
@@ -1530,6 +2715,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.summary"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1555,6 +2741,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.diagnostics"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1589,22 +2776,12 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     const selectedSegmentId = affectedRefs[1].getAttribute('data-upid-diagnostic-ref-segment');
-    const selectedPointRole = affectedRefs[1].getAttribute('data-upid-diagnostic-ref-point-role');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
     expect(container.querySelector('[data-upid-selected-point-role]')?.textContent).toBe('start');
     expect(container.querySelector('[data-upid-selected-point-coordinate]')?.textContent).toBe(
       '10.004, 0.000'
     );
-    expect(
-      container
-        .querySelector(`[data-upid-segment-row][data-upid-segment-id="${selectedSegmentId}"]`)
-        ?.closest('[data-upid-segment-group]')
-        ?.getAttribute('data-upid-segment-details-expanded')
-    ).toBe('true');
-    expect(
-      container.querySelector(
-        `[data-upid-point-row][data-upid-segment-id="${selectedSegmentId}"][data-upid-point-role="${selectedPointRole}"]`
-      )?.getAttribute('data-upid-selected')
-    ).toBe('true');
+    expect(selectedSegmentId).toBeTruthy();
   });
 
   it('marks path navigator rows with local diagnostic summaries', async () => {
@@ -1614,6 +2791,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1668,6 +2846,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.endpoints"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1692,6 +2871,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     expect(topologyRow?.getAttribute('data-upid-selected')).toBe('true');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
     expect(container.querySelector('[data-upid-selected-point-role]')?.textContent).toBe('end');
     expect(container.querySelector('[data-upid-selected-point-coordinate]')?.textContent).toBe(
       '10.000, 0.000'
@@ -1741,6 +2921,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.endpoints"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1765,6 +2946,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     expect(topologyRow?.getAttribute('data-upid-selected')).toBe('true');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
     expect(container.querySelector('[data-upid-selected-segment]')).not.toBeNull();
   });
 
@@ -1775,6 +2957,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1801,6 +2984,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1843,6 +3027,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1858,6 +3043,18 @@ describe('EditorPage UPID draft boundary', () => {
     });
 
     await clickElement(`[data-upid-segment-row][data-upid-segment-id="${createdSegmentId}"]`);
+    expect(
+      container
+        .querySelector('[data-upid-contour-row][data-upid-path-element-id="contour_0001"]')
+        ?.getAttribute('data-upid-contour-edited-segments')
+    ).toBe('2');
+    await clickElement('[data-editor-workflow-command="machining.sequence"]');
+    expect(
+      container
+        .querySelector('[data-upid-cut-sequence-row][data-upid-path-element-id="contour_0001"]')
+        ?.getAttribute('data-upid-cut-sequence-edited-segments')
+    ).toBe('2');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
 
     expect(container.querySelector('[data-upid-selected-segment-source-edit-kind]')?.textContent).toBe(
       'manual-start-split'
@@ -1871,16 +3068,6 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected="source-edits"]')?.textContent).toBe(
       '1 edit / 2 segments'
     );
-    expect(
-      container
-        .querySelector('[data-upid-contour-row][data-upid-path-element-id="contour_0001"]')
-        ?.getAttribute('data-upid-contour-edited-segments')
-    ).toBe('2');
-    expect(
-      container
-        .querySelector('[data-upid-cut-sequence-row][data-upid-path-element-id="contour_0001"]')
-        ?.getAttribute('data-upid-cut-sequence-edited-segments')
-    ).toBe('2');
   });
 
   it('temporarily reveals collapsed contour groups while canvas hover assist targets geometry', async () => {
@@ -1890,6 +3077,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => {
       root.render(
         <EditorPageHarness
+          initialWorkflowId="view.contours"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />
@@ -1961,22 +3149,52 @@ describe('EditorPage UPID draft boundary', () => {
         ?.getAttribute('data-upid-expanded')
     ).toBe(expanded ? 'true' : 'false');
   }
+
+  function visibleWorkflowPanelIds() {
+    return [...container.querySelectorAll('[data-editor-workspace-panel]')].map((panel) =>
+      panel.getAttribute('data-editor-workspace-panel')
+    );
+  }
+
+  function previewGeometrySignature() {
+    return [...container.querySelectorAll(
+      'svg[aria-label="UPID path preview"] path[data-preview-source="path-document"]'
+    )].map((path) => path.getAttribute('d')).join('|');
+  }
 });
 
 function EditorPageHarness({
+  filePath = 'imports/rectangle.dxf',
+  initialWorkflowId,
   onBackToDashboard = noop,
+  onImportProgramFile = noop,
   onSaveEditorDraft,
   project,
   saveStatus = 'idle'
 }: {
+  filePath?: string;
+  initialWorkflowId?: string;
   onBackToDashboard?: () => void;
+  onImportProgramFile?: (file: File) => void;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void;
   project: WorkbenchProject;
   saveStatus?: 'error' | 'idle' | 'saving';
 }) {
   const [headerContent, setHeaderContent] = useState<ReactNode | null>(null);
   const [railContent, setRailContent] = useState<AppRailContent | null>(null);
+  const openedInitialWorkflowRef = useRef<string | null>(null);
 
+  useEffect(() => {
+    if (!initialWorkflowId || !headerContent || openedInitialWorkflowRef.current === initialWorkflowId) {
+      return;
+    }
+    const command = document.querySelector(
+      `[data-editor-workflow-command="${initialWorkflowId}"]`
+    ) as HTMLButtonElement | null;
+    if (!command) return;
+    openedInitialWorkflowRef.current = initialWorkflowId;
+    command.click();
+  }, [headerContent, initialWorkflowId]);
   return (
     <AppRailProvider value={{ setHeaderContent, setRailCollapsed: () => undefined, setRailContent }}>
       <div>{headerContent}</div>
@@ -1986,10 +3204,10 @@ function EditorPageHarness({
         importStatus="idle"
         onBackToDashboard={onBackToDashboard}
         onDownloadEditorFile={noop}
-        onImportProgramFile={noop}
+        onImportProgramFile={onImportProgramFile}
         onSaveEditorDraft={onSaveEditorDraft}
         program={{
-          filePath: 'imports/rectangle.dxf',
+          filePath,
           model: 'upid-document',
           parseResult: null,
           pathDocument: project.upid!.document,
@@ -2036,6 +3254,24 @@ async function changeSelect(select: HTMLSelectElement | null, value: string) {
     select.dispatchEvent(new Event('change', { bubbles: true }));
   });
   await flushAsync();
+}
+
+function previewWorldClientPoint(
+  preview: SVGSVGElement,
+  point: { x: number; y: number },
+  flipY: number
+) {
+  const [minX, minY, width, height] = (preview.getAttribute('viewBox') ?? '0 0 1 1')
+    .split(/\s+/)
+    .map(Number);
+  const rect = preview.getBoundingClientRect();
+  const scale = Math.min(rect.width / width, rect.height / height);
+  const offsetX = (rect.width - width * scale) / 2;
+  const offsetY = (rect.height - height * scale) / 2;
+  return {
+    clientX: rect.left + offsetX + (point.x - minX) * scale,
+    clientY: rect.top + offsetY + (flipY - point.y - minY) * scale
+  };
 }
 
 function pathDocumentFromRectangle() {
@@ -2269,21 +3505,5 @@ async function flushAsync() {
   await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
-    openEditorWorkspacePanelsOnce();
-    await Promise.resolve();
-    await Promise.resolve();
   });
-}
-
-function openEditorWorkspacePanelsOnce() {
-  for (const toolbar of document.querySelectorAll('[data-editor-panel-toolbar]')) {
-    if (autoOpenedPanelToolbars.has(toolbar)) continue;
-    autoOpenedPanelToolbars.add(toolbar);
-
-    for (const button of toolbar.querySelectorAll('button[data-editor-panel-menu-item]')) {
-      if (button.getAttribute('aria-label')?.startsWith('Show')) {
-        button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      }
-    }
-  }
 }

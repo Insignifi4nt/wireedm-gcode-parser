@@ -373,10 +373,15 @@ describe('Editor preview controls and guide', () => {
     expect(container.querySelector('[data-editor-guide-overlay]')).not.toBeNull();
     expect(dialog?.textContent).toContain('Wire EDM Workbench Manual');
     expect(dialog?.textContent).toContain('Import Program');
+    expect(dialog?.textContent).not.toContain('drag in .gcode');
     expect(dialog?.textContent).toContain('Canvas Navigation');
     expect(dialog?.textContent).not.toContain('Preview Navigation');
     expect(dialog?.textContent).toContain('UPID Path Navigator');
     expect(dialog?.textContent).toContain('Close or reopen Program Lines');
+    expect(dialog?.textContent).toContain('Export normalized ISO in the header');
+    expect(dialog?.textContent).not.toContain('Export ISO downloads');
+    expect(dialog?.querySelector('[data-editor-guide-highlight="export-iso"]')).toBeNull();
+    expect(dialog?.querySelector('[data-editor-guide-highlight="save-program"]')).toBeNull();
 
     const romanianToggle = dialog?.querySelector(
       'button[data-editor-guide-language="ro"]'

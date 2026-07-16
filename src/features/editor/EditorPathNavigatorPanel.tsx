@@ -3,43 +3,27 @@ import {
   ArrowUp,
   ChevronDown,
   ChevronRight,
-  FileText,
   FlipHorizontal,
   FlipVertical,
   Flag,
   Info,
-  Magnet,
-  MousePointer2,
   Move,
-  Redo2,
-  RefreshCw,
   RotateCcw,
-  RotateCw,
-  Save,
-  Undo2
+  RotateCw
 } from 'lucide-react';
 import { useEffect, useState, type Dispatch, type MouseEvent, type ReactNode, type SetStateAction } from 'react';
 
-import {
-  canSetCircleOperationCenterPierceLeadIn,
-  derivePlannedRapidRoutes,
-  type MagnetizeMode,
-  type PathMirrorAxis
-} from '@/domain/path-editor/pathDocumentOperations';
-import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
-import type { ManualCompensationSelection } from '@/domain/compensation/intent';
+import { type PathMirrorAxis } from '@/domain/path-editor/pathDocumentOperations';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import { orientedSegmentEnd, orientedSegmentStart, requiredSegment, segmentMap } from '@/domain/path-intel/segments';
 import type {
   Bounds2,
-  ContourClassification,
   OperationOrderStrategy,
   OrientedSegmentRef,
   PathPlanningDocument,
   PathSegment,
   Point2
 } from '@/domain/path-intel/types';
-import type { MachineProfile } from '@/domain/workbench/types';
 import {
   createUpidProjectRail,
   readUpidEndpointTopologyRows,
@@ -80,7 +64,6 @@ const modeButtonClass =
   'flex h-7 items-center justify-center gap-1 rounded-[2px] border border-border px-1 text-[10px] text-muted-foreground outline-none transition hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
 const activeModeButtonClass =
   'flex h-7 items-center justify-center gap-1 rounded-[2px] border border-primary bg-primary px-1 text-[10px] text-primary-foreground outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40';
-const CONTOUR_ROLE_OPTIONS: ContourClassification[] = ['exterior', 'hole', 'island', 'ambiguous'];
 const ORDER_STRATEGY_OPTIONS: Array<{
   label: string;
   value: OperationOrderStrategy;
@@ -104,13 +87,6 @@ const DOCUMENT_REFERENCE_OPTIONS: Array<{
   { label: 'Picked Point', value: 'picked' }
 ];
 
-function formatCompensationIntent(
-  intent: PathPlanningDocument['plan']['operations'][number]['compensationIntent']
-) {
-  if (!intent) return 'not selected';
-  if (intent.mode === 'centerline') return `centreline · ${intent.source}`;
-  return `${intent.keptMaterial} · ${intent.source}`;
-}
 interface DiagnosticGuidance {
   actions: Array<{
     label: string;
@@ -121,14 +97,10 @@ interface DiagnosticGuidance {
 }
 
 interface EditorPathNavigatorPanelProps {
-  hasUnsavedChanges: boolean;
   hoveredPathElement: EditorPathElementRef | null;
   hoverAssistEnabled: boolean;
   isSaving: boolean;
-  magneticSnapEnabled: boolean;
-  pathClickMode: 'set-start' | MagnetizeMode | null;
   pathDocument: PathPlanningDocument;
-  machineProfile: MachineProfile;
   expandedPathElementIds: Record<string, boolean>;
   renderWorkspacePanel?: (id: string, title: string, children: ReactNode, options?: { fill?: boolean }) => ReactNode;
   latestMeasurementPoint: Point2 | null;
@@ -137,130 +109,92 @@ interface EditorPathNavigatorPanelProps {
   pathTargetYDraft: string;
   pathTranslateXDraft: string;
   pathTranslateYDraft: string;
-  redoAvailable: boolean;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
-  undoAvailable: boolean;
   onExpandedPathElementIdsChange: Dispatch<SetStateAction<Record<string, boolean>>>;
-  onActivatePathClickMode: (mode: 'set-start' | MagnetizeMode | null) => void;
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
   onMovePathSelectionCenter: (targetCenter: Point2) => void;
   onMoveSelectedSegmentCenter: (targetCenter: Point2) => void;
   onOpenWorkspacePanel?: (panelId: DiagnosticPanelActionId) => void;
-  onOpenWorkspacePanels?: (panelIds: DiagnosticPanelActionId[]) => void;
-  onOpenExportPreview: () => void;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onMirrorPathDocument: (axis: PathMirrorAxis) => void;
   onMirrorPathSelection: (axis: PathMirrorAxis) => void;
-  onRedoDraft: () => void;
-  onReversePathOperation: () => void;
   onRotatePathDocument: (angleDegrees: number) => void;
   onRotatePathSelection: (angleDegrees: number) => void;
-  onSaveClick: () => void | Promise<void>;
   onSelectPathElement: (element: EditorPathElementRef) => void;
   onPathTargetXDraftChange: (value: string) => void;
   onPathTargetYDraftChange: (value: string) => void;
   onPathTranslateXDraftChange: (value: string) => void;
   onPathTranslateYDraftChange: (value: string) => void;
-  onSetPathOperationClassification: (classification: ContourClassification) => void;
-  onSetGeometryBasis: (basis: PathPlanningDocument['geometryBasis']) => void;
-  onSetManualCompensation: (selection: ManualCompensationSelection) => void;
-  onSetPathOperationCenterPierceLeadIn: () => void;
-  onSetPathOperationManualLeadIn: (point: Point2) => void;
   onSetPathOperationOrderStrategy: (strategy: OperationOrderStrategy) => void;
-  onSetPlannedRapidDestinationPoint: (point: Point2) => void;
-  onSetPlannedRapidSourcePoint: (point: Point2) => void;
-  onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   onTranslatePathSelection: (delta: { x: number; y: number }) => void;
   onTranslatePathDocument: (delta: { x: number; y: number }) => void;
   onToggleHoverAssist: () => void;
-  onToggleMagneticSnap: () => void;
-  onUndoDraft: () => void;
+  onTransformDraftChange?: (source: 'target' | 'translate') => void;
+  transformTargetChangeBlocked?: boolean;
 }
 
 export function EditorPathNavigatorPanel({
-  hasUnsavedChanges,
   hoveredPathElement,
   hoverAssistEnabled,
   isSaving,
-  magneticSnapEnabled,
-  pathClickMode,
   pathDocument,
-  machineProfile,
   expandedPathElementIds,
   latestMeasurementPoint,
   measurementPoints,
   renderWorkspacePanel = (_id, _title, children) => children,
-  redoAvailable,
   selectedPathElement,
   selectedPathOperationId,
-  undoAvailable,
   onExpandedPathElementIdsChange,
-  onActivatePathClickMode,
   onMovePathOperation,
   onMovePathSelectionCenter,
   onMoveSelectedSegmentCenter,
   onOpenWorkspacePanel,
-  onOpenWorkspacePanels,
-  onOpenExportPreview,
   onHoverPathElement,
   onMirrorPathDocument,
   onMirrorPathSelection,
-  onRedoDraft,
-  onReversePathOperation,
   onRotatePathDocument,
   onRotatePathSelection,
-  onSaveClick,
   onSelectPathElement,
   onPathTargetXDraftChange,
   onPathTargetYDraftChange,
   onPathTranslateXDraftChange,
   onPathTranslateYDraftChange,
-  onSetPathOperationClassification,
-  onSetGeometryBasis,
-  onSetManualCompensation,
-  onSetPathOperationCenterPierceLeadIn,
-  onSetPathOperationManualLeadIn,
   onSetPathOperationOrderStrategy,
-  onSetPlannedRapidDestinationPoint,
-  onSetPlannedRapidSourcePoint,
-  onSetPathStartFromElement,
   onTranslatePathDocument,
   onTranslatePathSelection,
   onToggleHoverAssist,
-  onToggleMagneticSnap,
-  onUndoDraft,
+  onTransformDraftChange,
   pathTargetXDraft,
   pathTargetYDraft,
   pathTranslateXDraft,
-  pathTranslateYDraft
+  pathTranslateYDraft,
+  transformTargetChangeBlocked = false
 }: EditorPathNavigatorPanelProps) {
+  function setUserTargetX(value: string) {
+    onPathTargetXDraftChange(value);
+    onTransformDraftChange?.('target');
+  }
+
+  function setUserTargetY(value: string) {
+    onPathTargetYDraftChange(value);
+    onTransformDraftChange?.('target');
+  }
+
+  function setUserTranslateX(value: string) {
+    onPathTranslateXDraftChange(value);
+    onTransformDraftChange?.('translate');
+  }
+
+  function setUserTranslateY(value: string) {
+    onPathTranslateYDraftChange(value);
+    onTransformDraftChange?.('translate');
+  }
   const segmentsById = segmentMap(pathDocument.segments);
   const projectRail = createUpidProjectRail(pathDocument);
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
   const endpointTopology = projectRail.summary.topology;
   const sourceSummary = projectRail.summary.source;
-  const plannedRapidRoutes = derivePlannedRapidRoutes(pathDocument);
-  const selectedPlannedRapid = selectedPathElement?.travelRole === 'rapid-in'
-    ? plannedRapidRoutes.find((route) => route.operationId === selectedPathElement.operationId) ?? null
-    : null;
-  const [rapidSourceXDraft, setRapidSourceXDraft] = useState('');
-  const [rapidSourceYDraft, setRapidSourceYDraft] = useState('');
-  const [rapidDestinationXDraft, setRapidDestinationXDraft] = useState('');
-  const [rapidDestinationYDraft, setRapidDestinationYDraft] = useState('');
-
-  useEffect(() => {
-    setRapidSourceXDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.startPoint.x) : '');
-    setRapidSourceYDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.startPoint.y) : '');
-    setRapidDestinationXDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.endPoint.x) : '');
-    setRapidDestinationYDraft(selectedPlannedRapid ? formatCoordinateDraft(selectedPlannedRapid.endPoint.y) : '');
-  }, [
-    selectedPlannedRapid?.operationId,
-    selectedPlannedRapid?.startPoint.x,
-    selectedPlannedRapid?.startPoint.y,
-    selectedPlannedRapid?.endPoint.x,
-    selectedPlannedRapid?.endPoint.y
-  ]);
   const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
   const endpointTopologyPanel = summarizeEndpointTopologyPanel(pathDocument);
   const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
@@ -273,16 +207,6 @@ export function EditorPathNavigatorPanel({
     (operation) => operation.id === selectedPathOperationId
   );
   const selectedOperation = selectedOperationIndex >= 0 ? pathDocument.plan.operations[selectedOperationIndex] : null;
-  const compensationResolution = selectedOperation
-    ? resolveControllerCompensation({ document: pathDocument, operation: selectedOperation })
-    : null;
-  const compensationSelection = selectedOperation?.compensationIntent?.source === 'automatic'
-    ? 'automatic'
-    : selectedOperation?.compensationIntent?.mode === 'controller'
-      ? selectedOperation.compensationIntent.keptMaterial
-      : selectedOperation?.compensationIntent?.mode === 'centerline'
-        ? 'centerline'
-        : '';
   const selectedSegmentIndex =
     selectedOperation && selectedPathElement?.segmentId
       ? selectedOperation.segmentRefs.findIndex((ref) => ref.segmentId === selectedPathElement.segmentId)
@@ -330,27 +254,6 @@ export function EditorPathNavigatorPanel({
   const hasTransformSelection = Boolean(selectedOperation && selectedGeometryCenter);
   const canOrientDocument = Boolean(documentCenter) && pathDocument.segments.length > 0 && !isSaving;
   const canOrientSelection = hasTransformSelection && !isSaving;
-  const robofilV2OperationLifecycle =
-    machineProfile.controller.family === 'charmilles-robofil-classic' &&
-    machineProfile.controller.postVersion === 2 &&
-    machineProfile.compensation.activation === 'charmilles-g38' &&
-    machineProfile.compensation.cancellation === 'charmilles-g39' &&
-    machineProfile.compensation.lifecycleScope === 'operation';
-  const canSetCenterPierceLeadIn = selectedPathOperationId
-      ? canSetCircleOperationCenterPierceLeadIn(pathDocument, selectedPathOperationId) &&
-        !(
-          pathDocument.geometryBasis === 'finished-contour' &&
-          selectedOperation?.compensationIntent?.mode === 'controller' &&
-          !robofilV2OperationLifecycle
-        ) &&
-        !isSaving
-      : false;
-  const centerPierceBlockedByControllerCompensation = Boolean(
-    selectedOperation &&
-    pathDocument.geometryBasis === 'finished-contour' &&
-    selectedOperation.compensationIntent?.mode === 'controller' &&
-    !robofilV2OperationLifecycle
-  );
   const [pathTransformTarget, setPathTransformTarget] = useState<PathTransformTarget>('document');
   const [pathTransformTargetPinned, setPathTransformTargetPinned] = useState(false);
   const [expandedSegmentDetailIds, setExpandedSegmentDetailIds] = useState<Record<string, boolean>>({});
@@ -568,345 +471,6 @@ export function EditorPathNavigatorPanel({
         )}
 
         {renderWorkspacePanel(
-          'path-actions',
-          'Path Actions',
-        <div data-upid-path-action-bar>
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-[10px] uppercase text-muted-foreground">Path Action Bar</span>
-            {hasUnsavedChanges && <span className="text-[10px] text-amber-200">Unsaved</span>}
-          </div>
-          <div
-            className="mb-2 border border-border bg-background/35 px-2 py-1.5"
-            data-upid-active-selection
-            data-upid-active-selection-operation={selectedOperation?.id}
-            data-upid-active-selection-path-element={selectedPathElement?.pathElementId ?? undefined}
-            data-upid-active-selection-segment={selectedPathElement?.segmentId ?? undefined}
-            data-upid-active-selection-state={selectedOperation ? 'selected' : 'empty'}
-          >
-            <div className="text-[10px] uppercase text-muted-foreground">Active Selection</div>
-            {selectedOperation ? (
-              <>
-                  <div className="mt-0.5 truncate text-[10px] text-foreground">{selectedOperation.displayName}</div>
-                <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                    order {selectedOperationIndex + 1} / {selectedOperation.closed ? 'closed contour' : 'open chain'} /{' '}
-                  {selectedOperation.direction}
-                </div>
-                {selectedSegmentIndex >= 0 && (
-                  <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                    segment {selectedSegmentIndex + 1} / {selectedPathElement?.pointRole ?? 'body'}
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="mt-0.5 text-[10px] text-muted-foreground">No path selected</div>
-            )}
-          </div>
-          <div className="grid grid-cols-4 gap-1">
-            <button
-              aria-label="Undo"
-              className={iconButtonClass}
-              disabled={!undoAvailable || isSaving}
-              onClick={onUndoDraft}
-              title="Undo"
-              type="button"
-            >
-              <Undo2 className="size-3" />
-            </button>
-            <button
-              aria-label="Redo"
-              className={iconButtonClass}
-              disabled={!redoAvailable || isSaving}
-              onClick={onRedoDraft}
-              title="Redo"
-              type="button"
-            >
-              <Redo2 className="size-3" />
-            </button>
-            <button
-              aria-label="Move path operation up"
-              className={iconButtonClass}
-              disabled={selectedOperationIndex <= 0 || isSaving}
-              onClick={() => onMovePathOperation(-1)}
-              title="Move operation up"
-              type="button"
-            >
-              <ArrowUp className="size-3" />
-            </button>
-            <button
-              aria-label="Move path operation down"
-              className={iconButtonClass}
-              disabled={
-                selectedOperationIndex < 0 ||
-                selectedOperationIndex >= pathDocument.plan.operations.length - 1 ||
-                isSaving
-              }
-              onClick={() => onMovePathOperation(1)}
-              title="Move operation down"
-              type="button"
-            >
-              <ArrowDown className="size-3" />
-            </button>
-          </div>
-          <div className="mt-1 grid grid-cols-2 gap-1">
-            <button
-              aria-label="Reverse path operation"
-              className={textButtonClass}
-              disabled={!selectedOperation || isSaving}
-              onClick={onReversePathOperation}
-              type="button"
-            >
-              <RefreshCw className="size-3" />
-              Reverse
-            </button>
-            <button
-              aria-label="Save Path Plan"
-              className={textButtonClass}
-              disabled={!hasUnsavedChanges || isSaving}
-              onClick={onSaveClick}
-              type="button"
-            >
-              <Save className="size-3" />
-              Save
-            </button>
-          </div>
-          <button
-            aria-label="Open UPID export preview"
-            className={`mt-1 w-full ${textButtonClass}`}
-            disabled={isSaving}
-            onClick={onOpenExportPreview}
-            type="button"
-          >
-            <FileText className="size-3" />
-            Export Preview
-          </button>
-          <label
-            className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground"
-            data-upid-manual-order-active={manualOrderActive ? 'true' : undefined}
-            data-upid-order-strategy
-          >
-            Planning Mode
-            <select
-              aria-label="Planning order strategy"
-              className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isSaving}
-              onChange={(event) =>
-                onSetPathOperationOrderStrategy(event.currentTarget.value as OperationOrderStrategy)
-              }
-              value={pathDocument.options.operationOrderStrategy}
-            >
-              {ORDER_STRATEGY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <span className="normal-case text-[10px] text-muted-foreground" data-upid-order-strategy-status>
-              {manualOrderActive ? 'Manual order overrides active' : 'Automatic order active'}
-            </span>
-          </label>
-          <button
-            aria-label="Reapply planning order strategy"
-            className={`mt-1 w-full ${textButtonClass}`}
-            disabled={!manualOrderActive || isSaving}
-            onClick={() => onSetPathOperationOrderStrategy(pathDocument.options.operationOrderStrategy)}
-            type="button"
-          >
-            Reapply Planning Mode
-          </button>
-          {selectedPlannedRapid && (
-            <section
-              className="mt-2 grid gap-1 border border-sky-500/40 bg-sky-500/5 p-1.5"
-              data-upid-planned-rapid-editor
-              data-upid-rapid-operation-id={selectedPlannedRapid.operationId}
-              data-upid-rapid-length={selectedPlannedRapid.length.toFixed(3)}
-            >
-              <div className="flex items-center justify-between gap-2 text-[10px]">
-                <span className="font-medium text-sky-100">Planned rapid</span>
-                <span className="font-mono text-muted-foreground">
-                  {selectedPlannedRapid.length.toFixed(3)} mm
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-1">
-                <CoordinateInput ariaLabel="Planned rapid source X" disabled={isSaving} value={rapidSourceXDraft} onChange={setRapidSourceXDraft} />
-                <CoordinateInput ariaLabel="Planned rapid source Y" disabled={isSaving} value={rapidSourceYDraft} onChange={setRapidSourceYDraft} />
-                <CoordinateInput ariaLabel="Planned rapid destination X" disabled={isSaving} value={rapidDestinationXDraft} onChange={setRapidDestinationXDraft} />
-                <CoordinateInput ariaLabel="Planned rapid destination Y" disabled={isSaving} value={rapidDestinationYDraft} onChange={setRapidDestinationYDraft} />
-              </div>
-              <div className="grid grid-cols-2 gap-1">
-                <button
-                  aria-label="Apply planned rapid source"
-                  className={textButtonClass}
-                  disabled={isSaving || !finiteCoordinatePair(rapidSourceXDraft, rapidSourceYDraft)}
-                  onClick={() => onSetPlannedRapidSourcePoint({ x: Number(rapidSourceXDraft), y: Number(rapidSourceYDraft) })}
-                  type="button"
-                >
-                  Set source
-                </button>
-                <button
-                  aria-label="Apply planned rapid destination"
-                  className={textButtonClass}
-                  disabled={isSaving || !finiteCoordinatePair(rapidDestinationXDraft, rapidDestinationYDraft)}
-                  onClick={() => onSetPlannedRapidDestinationPoint({ x: Number(rapidDestinationXDraft), y: Number(rapidDestinationYDraft) })}
-                  type="button"
-                >
-                  Set destination
-                </button>
-              </div>
-              {!selectedOperation?.overrides?.leadIn && (
-                <button
-                  aria-label="Create manual lead from planned rapid destination"
-                  className={textButtonClass}
-                  disabled={isSaving || !finiteCoordinatePair(rapidDestinationXDraft, rapidDestinationYDraft)}
-                  onClick={() => onSetPathOperationManualLeadIn({
-                    x: Number(rapidDestinationXDraft),
-                    y: Number(rapidDestinationYDraft)
-                  })}
-                  type="button"
-                >
-                  Create manual lead
-                </button>
-              )}
-            </section>
-          )}
-          <label className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground">
-            Geometry Basis
-            <select
-              aria-label="Geometry basis"
-              className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isSaving}
-              onChange={(event) =>
-                onSetGeometryBasis(event.currentTarget.value as PathPlanningDocument['geometryBasis'])
-              }
-              value={pathDocument.geometryBasis}
-            >
-              <option value="wire-centre">Wire centre</option>
-              <option value="finished-contour">Finished contour</option>
-            </select>
-          </label>
-          <section
-            className="mt-2 grid gap-1 border border-border bg-background/50 p-1.5"
-            data-upid-compensation-review
-          >
-            <label className="grid gap-1 text-[10px] uppercase text-muted-foreground">
-              Compensation
-              <select
-                aria-label="Compensation kept material"
-                className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!selectedOperation || isSaving}
-                onChange={(event) => {
-                  if (event.currentTarget.value === 'automatic' || event.currentTarget.value === '') return;
-                  onSetManualCompensation(event.currentTarget.value as ManualCompensationSelection);
-                }}
-                value={compensationSelection}
-              >
-                <option value="">Choose kept material</option>
-                {compensationSelection === 'automatic' && <option value="automatic">Automatic</option>}
-                <option value="inside">Keep inside</option>
-                <option value="outside">Keep outside</option>
-                <option value="centerline">Centreline</option>
-              </select>
-            </label>
-            <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
-              <dt className="text-muted-foreground">Source</dt>
-              <dd data-testid="compensation-kept-material">
-                {formatCompensationIntent(selectedOperation?.compensationIntent)}
-              </dd>
-              <dt className="text-muted-foreground">Final refs</dt>
-              <dd data-testid="compensation-winding">
-                {compensationResolution?.status === 'ready' ? compensationResolution.winding.toUpperCase() : '—'}
-              </dd>
-              <dt className="text-muted-foreground">Wire side</dt>
-              <dd data-testid="compensation-wire-side">
-                {compensationResolution?.status === 'ready' ? compensationResolution.wireSide : '—'}
-              </dd>
-              <dt className="text-muted-foreground">Controller</dt>
-              <dd data-testid="compensation-code">
-                {compensationResolution?.status === 'ready'
-                  ? `${compensationResolution.code} D${machineProfile.compensation.offsetSelection.index}`
-                  : '—'}
-              </dd>
-              <dt className="text-muted-foreground">Snapshot</dt>
-              <dd data-testid="compensation-machine-status">
-                {machineProfile.controller.verification.status}
-              </dd>
-            </dl>
-            {compensationResolution?.status === 'blocked' && (
-              <p className="text-amber-300" data-testid="compensation-blocker">
-                Blocked: {compensationResolution.reason}
-              </p>
-            )}
-          </section>
-          <label className="mt-2 grid gap-1 text-[10px] uppercase text-muted-foreground">
-            Contour Role
-            <select
-              aria-label="Contour role"
-              className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!selectedOperation || !selectedOperation.closed || isSaving}
-              onChange={(event) =>
-                onSetPathOperationClassification(event.currentTarget.value as ContourClassification)
-              }
-              value={selectedOperation?.classification ?? ''}
-            >
-              {CONTOUR_ROLE_OPTIONS.map((classification) => (
-                <option key={classification} value={classification}>
-                  {classification}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="mt-1 grid grid-cols-4 gap-1">
-            <button
-              aria-label="Set path start from canvas"
-              aria-pressed={pathClickMode === 'set-start'}
-              className={pathClickMode === 'set-start' ? activeModeButtonClass : modeButtonClass}
-              disabled={!selectedOperation?.closed || isSaving}
-              onClick={() => onActivatePathClickMode(pathClickMode === 'set-start' ? null : 'set-start')}
-              type="button"
-            >
-              <MousePointer2 className="size-3" />
-              Start
-            </button>
-            <button
-              aria-label="Add center pierce lead-in"
-              aria-pressed={Boolean(selectedOperation?.overrides?.leadIn)}
-              className={selectedOperation?.overrides?.leadIn ? activeModeButtonClass : modeButtonClass}
-              disabled={!canSetCenterPierceLeadIn}
-              onClick={onSetPathOperationCenterPierceLeadIn}
-              title={
-                centerPierceBlockedByControllerCompensation
-                  ? 'Center pierce is unavailable while controller compensation is active.'
-                  : 'Add center pierce lead-in'
-              }
-              type="button"
-            >
-              <Flag className="size-3" />
-              Pierce
-            </button>
-            <button
-              aria-label="Magnetize latest point perpendicular"
-              aria-pressed={pathClickMode === 'perpendicular'}
-              className={pathClickMode === 'perpendicular' ? activeModeButtonClass : modeButtonClass}
-                onClick={() => onActivatePathClickMode(pathClickMode === 'perpendicular' ? null : 'perpendicular')}
-              type="button"
-            >
-              <Magnet className="size-3" />
-              Perp
-            </button>
-            <button
-              aria-label="Magnetize latest point tangent"
-              aria-pressed={pathClickMode === 'tangent'}
-              className={pathClickMode === 'tangent' ? activeModeButtonClass : modeButtonClass}
-              onClick={() => onActivatePathClickMode(pathClickMode === 'tangent' ? null : 'tangent')}
-              type="button"
-            >
-              <Magnet className="size-3" />
-              Tangent
-            </button>
-          </div>
-        </div>
-        )}
-
-        {renderWorkspacePanel(
           'path-transform',
           'Transform',
         <section data-upid-path-transform>
@@ -921,7 +485,7 @@ export function EditorPathNavigatorPanel({
               aria-label="Target document for transform"
               aria-pressed={activePathTransformTarget === 'document'}
               className={activePathTransformTarget === 'document' ? activeModeButtonClass : modeButtonClass}
-              disabled={!documentBounds || isSaving}
+              disabled={!documentBounds || isSaving || transformTargetChangeBlocked}
               onClick={() => {
                 setPathTransformTarget('document');
                 setPathTransformTargetPinned(true);
@@ -934,7 +498,7 @@ export function EditorPathNavigatorPanel({
               aria-label="Target selection for transform"
               aria-pressed={activePathTransformTarget === 'selection'}
               className={activePathTransformTarget === 'selection' ? activeModeButtonClass : modeButtonClass}
-              disabled={!hasTransformSelection || isSaving}
+              disabled={!hasTransformSelection || isSaving || transformTargetChangeBlocked}
               onClick={() => {
                 setPathTransformTarget('selection');
                 setPathTransformTargetPinned(true);
@@ -951,7 +515,7 @@ export function EditorPathNavigatorPanel({
                 aria-label="Document reference point"
                 className="h-6 max-w-[132px] border border-border bg-background px-1 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
                 data-upid-transform-document-reference
-                disabled={!documentBounds || isSaving}
+                disabled={!documentBounds || isSaving || transformTargetChangeBlocked}
                 onChange={(event) => {
                   const nextMode = event.currentTarget.value as DocumentReferenceMode;
                   const nextMeasurementPointId =
@@ -1035,7 +599,7 @@ export function EditorPathNavigatorPanel({
                     aria-label="Use latest measurement point as document reference"
                     className={textButtonClass}
                     data-upid-transform-document-reference-use-latest
-                    disabled={!latestDocumentReferenceMeasurementPoint || isSaving}
+                    disabled={!latestDocumentReferenceMeasurementPoint || isSaving || transformTargetChangeBlocked}
                     onClick={() => {
                         setDocumentReferenceMeasurementPointId(latestDocumentReferenceMeasurementPoint?.id ?? null);
                       setTargetDraftsFromPoint(latestDocumentReferenceMeasurementPoint);
@@ -1051,7 +615,7 @@ export function EditorPathNavigatorPanel({
                         point.id === pickedDocumentReferencePoint?.id ? activeModeButtonClass : textButtonClass
                       }
                       data-upid-transform-document-reference-use-point={index + 1}
-                      disabled={isSaving}
+                      disabled={isSaving || transformTargetChangeBlocked}
                       key={point.id}
                       onClick={() => {
                         setDocumentReferenceMeasurementPointId(point.id);
@@ -1084,7 +648,7 @@ export function EditorPathNavigatorPanel({
                     (activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving
                   }
                 inputMode="decimal"
-                onChange={(event) => onPathTranslateXDraftChange(event.currentTarget.value)}
+                onChange={(event) => setUserTranslateX(event.currentTarget.value)}
                 type="number"
                 value={pathTranslateXDraft}
               />
@@ -1099,7 +663,7 @@ export function EditorPathNavigatorPanel({
                     (activePathTransformTarget === 'document' ? !documentBounds : !selectedOperation) || isSaving
                   }
                 inputMode="decimal"
-                onChange={(event) => onPathTranslateYDraftChange(event.currentTarget.value)}
+                onChange={(event) => setUserTranslateY(event.currentTarget.value)}
                 type="number"
                 value={pathTranslateYDraft}
               />
@@ -1236,7 +800,7 @@ export function EditorPathNavigatorPanel({
                   data-upid-transform-target-center-x
                   disabled={!activeTargetReferencePoint || isSaving}
                   inputMode="decimal"
-                  onChange={(event) => onPathTargetXDraftChange(event.currentTarget.value)}
+                  onChange={(event) => setUserTargetX(event.currentTarget.value)}
                   type="number"
                   value={pathTargetXDraft}
                 />
@@ -1250,7 +814,7 @@ export function EditorPathNavigatorPanel({
                   data-upid-transform-target-center-y
                   disabled={!activeTargetReferencePoint || isSaving}
                   inputMode="decimal"
-                  onChange={(event) => onPathTargetYDraftChange(event.currentTarget.value)}
+                  onChange={(event) => setUserTargetY(event.currentTarget.value)}
                   type="number"
                   value={pathTargetYDraft}
                 />
@@ -1264,8 +828,8 @@ export function EditorPathNavigatorPanel({
                 data-upid-transform-target-center-use-origin
                 disabled={!activeTargetReferencePoint || isSaving}
                 onClick={() => {
-                  onPathTargetXDraftChange(formatNumber(0));
-                  onPathTargetYDraftChange(formatNumber(0));
+                  setUserTargetX(formatNumber(0));
+                  setUserTargetY(formatNumber(0));
                 }}
                 type="button"
               >
@@ -1279,8 +843,8 @@ export function EditorPathNavigatorPanel({
                 disabled={!activeTargetReferencePoint || !latestMeasurementPoint || isSaving}
                 onClick={() => {
                   if (!latestMeasurementPoint) return;
-                  onPathTargetXDraftChange(formatNumber(latestMeasurementPoint.x));
-                  onPathTargetYDraftChange(formatNumber(latestMeasurementPoint.y));
+                  setUserTargetX(formatNumber(latestMeasurementPoint.x));
+                  setUserTargetY(formatNumber(latestMeasurementPoint.y));
                 }}
                 type="button"
               >
@@ -1325,8 +889,8 @@ export function EditorPathNavigatorPanel({
                       disabled={!activeTargetReferencePoint || isSaving}
                       key={point.id}
                       onClick={() => {
-                        onPathTargetXDraftChange(formatNumber(point.x));
-                        onPathTargetYDraftChange(formatNumber(point.y));
+                        setUserTargetX(formatNumber(point.x));
+                        setUserTargetY(formatNumber(point.y));
                       }}
                       title={`P${index + 1}: ${formatPoint(point)}`}
                       type="button"
@@ -1359,7 +923,7 @@ export function EditorPathNavigatorPanel({
                   data-upid-transform-center-x
                   disabled={!selectedSegmentCenter || isSaving}
                   inputMode="decimal"
-                  onChange={(event) => onPathTargetXDraftChange(event.currentTarget.value)}
+                  onChange={(event) => setUserTargetX(event.currentTarget.value)}
                   type="number"
                   value={pathTargetXDraft}
                 />
@@ -1372,7 +936,7 @@ export function EditorPathNavigatorPanel({
                   data-upid-transform-center-y
                   disabled={!selectedSegmentCenter || isSaving}
                   inputMode="decimal"
-                  onChange={(event) => onPathTargetYDraftChange(event.currentTarget.value)}
+                  onChange={(event) => setUserTargetY(event.currentTarget.value)}
                   type="number"
                   value={pathTargetYDraft}
                 />
@@ -1385,8 +949,8 @@ export function EditorPathNavigatorPanel({
                 data-upid-transform-center-use-origin
                 disabled={!selectedSegmentCenter || isSaving}
                 onClick={() => {
-                  onPathTargetXDraftChange(formatNumber(0));
-                  onPathTargetYDraftChange(formatNumber(0));
+                  setUserTargetX(formatNumber(0));
+                  setUserTargetY(formatNumber(0));
                 }}
                 type="button"
               >
@@ -1399,8 +963,8 @@ export function EditorPathNavigatorPanel({
                 disabled={!selectedSegmentCenter || !latestMeasurementPoint || isSaving}
                 onClick={() => {
                   if (!latestMeasurementPoint) return;
-                  onPathTargetXDraftChange(formatNumber(latestMeasurementPoint.x));
-                  onPathTargetYDraftChange(formatNumber(latestMeasurementPoint.y));
+                  setUserTargetX(formatNumber(latestMeasurementPoint.x));
+                  setUserTargetY(formatNumber(latestMeasurementPoint.y));
                 }}
                 type="button"
               >
@@ -1429,8 +993,8 @@ export function EditorPathNavigatorPanel({
                       disabled={!selectedSegmentCenter || isSaving}
                       key={point.id}
                       onClick={() => {
-                        onPathTargetXDraftChange(formatNumber(point.x));
-                        onPathTargetYDraftChange(formatNumber(point.y));
+                        setUserTargetX(formatNumber(point.x));
+                        setUserTargetY(formatNumber(point.y));
                       }}
                       title={`P${index + 1}: ${formatPoint(point)}`}
                       type="button"
@@ -1443,35 +1007,6 @@ export function EditorPathNavigatorPanel({
             )}
           </div>
           )}
-        </section>
-        )}
-
-        {renderWorkspacePanel(
-          'path-hover-assist',
-          'Hover Assist',
-        <section data-upid-hover-assist>
-          <div className="mb-1 text-[10px] uppercase text-muted-foreground">Hover Assist</div>
-          <label className="flex items-center justify-between gap-2">
-            <span>Canvas hover highlights navigator</span>
-            <input
-              aria-label="Toggle canvas hover assist"
-              checked={hoverAssistEnabled}
-              data-upid-hover-assist-toggle
-              onChange={onToggleHoverAssist}
-              type="checkbox"
-            />
-          </label>
-          <label className="mt-1 flex items-center justify-between gap-2 pl-3" data-upid-magnetic-snap>
-            <span>Magnetic non-existing points</span>
-            <input
-              aria-label="Toggle magnetic non-existing point snap"
-              checked={magneticSnapEnabled}
-              data-upid-magnetic-snap-toggle
-              disabled={!hoverAssistEnabled}
-              onChange={onToggleMagneticSnap}
-              type="checkbox"
-            />
-          </label>
         </section>
         )}
 
@@ -1575,35 +1110,19 @@ export function EditorPathNavigatorPanel({
               <div
                 className="mb-2 border border-amber-400/35 bg-amber-400/10 px-2 py-1.5 text-[10px] leading-4 text-amber-50"
                 data-upid-diagnostics-repair-workflow
-                title="Repair workflow for diagnostics: identify the broken join, inspect affected geometry, then repair or re-import before export."
+                title="Repair guidance: identify the broken join, inspect affected geometry, then open one owning workflow at a time."
               >
-                <div className="mb-1 flex items-center justify-between gap-2">
+                <div className="mb-1 flex items-center gap-2">
                   <span className="text-[10px] uppercase text-amber-100">Repair workflow</span>
-                  <button
-                    aria-label="Open Repair Workspace"
-                    className="border border-amber-300/40 bg-background/70 px-1.5 py-0.5 text-[10px] text-amber-50 outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={!onOpenWorkspacePanel && !onOpenWorkspacePanels}
-                    onClick={() => {
-                      if (onOpenWorkspacePanels) {
-                        onOpenWorkspacePanels(['endpoint-topology', 'contour-tree']);
-                        return;
-                      }
-                      onOpenWorkspacePanel?.('endpoint-topology');
-                      onOpenWorkspacePanel?.('contour-tree');
-                    }}
-                    type="button"
-                  >
-                    Open Repair Workspace
-                  </button>
                 </div>
                 <ol className="grid gap-0.5 text-muted-foreground">
                   <li>
-                    <span className="text-amber-100">1 Find the broken join:</span> use Endpoint Topology to inspect
-                    open, healed, or ambiguous endpoint pairs.
+                    <span className="text-amber-100">1 Find the broken join:</span> use the targeted Endpoint Topology
+                    link on the relevant diagnostic below.
                   </li>
                   <li>
-                    <span className="text-amber-100">2 Inspect affected geometry:</span> select the refs below and
-                    cross-highlight the Contour Tree and canvas.
+                    <span className="text-amber-100">2 Inspect affected geometry:</span> use one targeted link at a
+                    time, then select the affected refs to cross-highlight the canvas.
                   </li>
                   <li>
                     <span className="text-amber-100">3 Decide:</span> fix the source geometry, simplify the join, then
@@ -1636,19 +1155,57 @@ export function EditorPathNavigatorPanel({
         {renderWorkspacePanel(
           'cut-sequence',
           'Cut Sequence',
-        <section className="-m-2" data-upid-cut-sequence data-upid-cut-sequence-list>
-          {cutSequenceElements.map((pathElement) =>
-            renderCutSequenceRow({
-              hoveredPathElement,
-              isSaving,
-              onHoverPathElement,
-              onMovePathOperation,
-              onSelectPathElement,
-              operationCount: cutSequenceElements.length,
-              pathElement,
-              selectedPathElement
-            })
-          )}
+        <section className="-m-2" data-upid-cut-sequence>
+          <div className="grid gap-1 border-b border-border p-2">
+            <label
+              className="grid gap-1 uppercase text-muted-foreground"
+              data-upid-manual-order-active={manualOrderActive ? 'true' : undefined}
+              data-upid-order-strategy
+            >
+              Planning Mode
+              <select
+                aria-label="Planning order strategy"
+                className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+                disabled={isSaving}
+                onChange={(event) =>
+                  onSetPathOperationOrderStrategy(event.currentTarget.value as OperationOrderStrategy)
+                }
+                value={pathDocument.options.operationOrderStrategy}
+              >
+                {ORDER_STRATEGY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-muted-foreground" data-upid-order-strategy-status>
+              {manualOrderActive ? 'Manual order overrides active' : 'Automatic order active'}
+            </span>
+            <button
+              aria-label="Reapply planning order strategy"
+              className={textButtonClass}
+              disabled={!manualOrderActive || isSaving}
+              onClick={() => onSetPathOperationOrderStrategy(pathDocument.options.operationOrderStrategy)}
+              type="button"
+            >
+              Reapply Planning Mode
+            </button>
+          </div>
+          <div data-upid-cut-sequence data-upid-cut-sequence-list>
+            {cutSequenceElements.map((pathElement) =>
+              renderCutSequenceRow({
+                hoveredPathElement,
+                isSaving,
+                onHoverPathElement,
+                onMovePathOperation,
+                onSelectPathElement,
+                operationCount: cutSequenceElements.length,
+                pathElement,
+                selectedPathElement
+              })
+            )}
+          </div>
         </section>
         )}
 
@@ -1677,7 +1234,7 @@ export function EditorPathNavigatorPanel({
                 >
                     Hover or select a row to cross-highlight the canvas. A contour is a whole cut loop made from ordered
                     line or arc segments; each segment exposes start and end endpoint handles. Inspect joins in Endpoint
-                    Topology from Panels or Diagnostics.
+                    Topology from the View menu or Path Diagnostics workflow.
                 </div>
               </div>
             </div>
@@ -1700,13 +1257,22 @@ export function EditorPathNavigatorPanel({
               Collapse All
             </button>
           </div>
+          <label className="mb-2 flex items-center justify-between gap-2 border border-border p-1.5">
+            <span className="text-muted-foreground">Canvas hover cross-highlighting</span>
+            <input
+              aria-label="Toggle canvas hover assist"
+              checked={hoverAssistEnabled}
+              data-upid-hover-assist-toggle
+              onChange={onToggleHoverAssist}
+              type="checkbox"
+            />
+          </label>
           {contourTree.map((node) =>
             renderContourTreeNode({
               hoveredPathElement,
               node,
               onHoverPathElement,
               onSelectPathElement,
-              onSetPathStartFromElement,
               isPathElementExpanded,
               isSaving,
               pathDocument,
@@ -2324,7 +1890,6 @@ function renderContourTreeNode({
   node,
   onHoverPathElement,
   onSelectPathElement,
-  onSetPathStartFromElement,
   onToggleSegmentDetails,
   pathDocument,
   isPathElementExpanded,
@@ -2341,7 +1906,6 @@ function renderContourTreeNode({
   node: UpidProjectRailTreeNode;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
-  onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   onToggleSegmentDetails: (segmentKey: string) => void;
   pathDocument: PathPlanningDocument;
   selectedPathElement: EditorPathElementRef | null;
@@ -2526,7 +2090,6 @@ function renderContourTreeNode({
               selectedPathElement,
               onHoverPathElement,
               onSelectPathElement,
-              onSetPathStartFromElement,
               isSaving,
               expandedSegmentDetailIds[segmentDetailsKey(element.id, ref.segmentId, index)] ?? false,
               () => onToggleSegmentDetails(segmentDetailsKey(element.id, ref.segmentId, index))
@@ -2554,7 +2117,6 @@ function renderContourTreeNode({
               node: child,
               onHoverPathElement,
               onSelectPathElement,
-              onSetPathStartFromElement,
               onToggleSegmentDetails,
               isPathElementExpanded,
               pathDocument,
@@ -2753,6 +2315,9 @@ function renderLeadInRow(
   const selected =
     selectedPathElement?.operationId === pathElement.operationId && selectedPathElement.travelRole === 'lead-in';
   const length = Math.hypot(leadIn.to.x - leadIn.from.x, leadIn.to.y - leadIn.from.y);
+  const strategyLabel = leadIn.source === 'circle-center'
+    ? 'Circle-center entry'
+    : 'Manual straight entry';
 
   return (
     <div
@@ -2782,12 +2347,12 @@ function renderLeadInRow(
         onMouseLeave={() => onHoverPathElement(null)}
         onPointerEnter={() => onHoverPathElement(element)}
         onPointerLeave={() => onHoverPathElement(null)}
-        title={`Lead-in cut for ${pathElement.displayName}: ${formatPoint(leadIn.from)} → ${formatPoint(leadIn.to)}; length ${length.toFixed(3)}. Selects and highlights the lead-in.`}
+        title={`${strategyLabel} for ${pathElement.displayName}: ${formatPoint(leadIn.from)} → ${formatPoint(leadIn.to)}; length ${length.toFixed(3)}. Selects and highlights the entry.`}
         type="button"
       >
         <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="lead-in">
           <span className="text-[10px] uppercase" data-upid-tree-depth-label="lead-in">
-            Pierce
+            Entry
           </span>
           <Flag className="size-3" />
           <span className="h-full min-h-5 border-l border-border/70" aria-hidden="true" />
@@ -2797,17 +2362,17 @@ function renderLeadInRow(
             <span
               className="shrink-0 border border-amber-400/40 bg-amber-400/10 px-1 text-[10px] uppercase text-amber-100"
               data-upid-tree-kind-label
-              title="Pierce lead-in row: selects the center-to-contour cut move."
+              title={`${strategyLabel}: selects the configured cut entry.`}
             >
               Lead-in
             </span>
-            <span className="truncate text-[10px] text-muted-foreground">Center pierce cut</span>
+            <span className="truncate text-[10px] text-muted-foreground">{strategyLabel}</span>
           </span>
           <span
             className="mt-0.5 block text-[10px] uppercase tracking-normal text-muted-foreground"
             data-upid-tree-action-hint
           >
-            selects pierce cut on canvas
+            selects cut entry on canvas
           </span>
           <span className="block truncate" data-upid-lead-in-span>
             {formatPoint(leadIn.from)} → {formatPoint(leadIn.to)}
@@ -2842,7 +2407,6 @@ function renderSegmentRow(
   selectedPathElement: EditorPathElementRef | null,
   onHoverPathElement: (element: EditorPathElementRef | null) => void,
   onSelectPathElement: (element: EditorPathElementRef) => void,
-  onSetPathStartFromElement: (element: EditorPathElementRef) => void,
   isSaving: boolean,
   detailsExpanded: boolean,
   onToggleDetails: () => void
@@ -3011,7 +2575,6 @@ function renderSegmentRow(
           segment,
           hoveredPathElement,
           isSaving,
-          onSetPathStartFromElement,
           selectedPathElement
         })}
         {renderPointRow({
@@ -3025,7 +2588,6 @@ function renderSegmentRow(
           segment,
           hoveredPathElement,
           isSaving,
-          onSetPathStartFromElement,
           selectedPathElement
         })}
       </div>
@@ -3041,7 +2603,6 @@ function renderPointRow({
   isSaving,
   onHoverPathElement,
   onSelectPathElement,
-  onSetPathStartFromElement,
   pathElement,
   point,
   pathDocument,
@@ -3054,7 +2615,6 @@ function renderPointRow({
   isSaving: boolean;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
-  onSetPathStartFromElement: (element: EditorPathElementRef) => void;
   pathElement: UpidOperationPathElement;
   pathDocument: PathPlanningDocument;
   point: { x: number; y: number };
@@ -3164,23 +2724,6 @@ function renderPointRow({
           {renderDiagnosticSummaryBadge(diagnosticSummary)}
         </span>
       </button>
-      <button
-        aria-describedby={endpointHelpId}
-        aria-label="Set path start to this point"
-        className="flex size-5 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-        disabled={!pathElement.closed || isSaving}
-        onBlur={() => onHoverPathElement(null)}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelectPathElement(element);
-          onSetPathStartFromElement(element);
-        }}
-        onFocus={() => onHoverPathElement(element)}
-        title="Set start to this point"
-        type="button"
-      >
-        <Flag className="size-3" />
-      </button>
       <span className="sr-only" data-upid-point-help={role} id={endpointHelpId}>
         {endpointHelp}
       </span>
@@ -3190,42 +2733,6 @@ function renderPointRow({
 
 function formatPoint(point: { x: number; y: number }) {
   return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
-}
-
-function formatCoordinateDraft(value: number) {
-  return Number.isFinite(value) ? value.toFixed(3) : '';
-}
-
-function finiteCoordinatePair(x: string, y: string) {
-  return x.trim() !== '' && y.trim() !== '' && Number.isFinite(Number(x)) && Number.isFinite(Number(y));
-}
-
-function CoordinateInput({
-  ariaLabel,
-  disabled,
-  onChange,
-  value
-}: {
-  ariaLabel: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-  value: string;
-}) {
-  return (
-    <label className="grid gap-0.5 text-[9px] uppercase text-muted-foreground">
-      {ariaLabel.endsWith(' X') ? 'X' : 'Y'}
-      <input
-        aria-label={ariaLabel}
-        className="h-7 border border-border bg-background px-1.5 font-mono text-[10px] text-foreground outline-none focus:border-primary disabled:opacity-50"
-        disabled={disabled}
-        inputMode="decimal"
-        onChange={(event) => onChange(event.currentTarget.value)}
-        step="any"
-        type="number"
-        value={value}
-      />
-    </label>
-  );
 }
 
 function formatBounds(bounds: Bounds2) {

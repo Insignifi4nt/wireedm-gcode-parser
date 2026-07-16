@@ -20,6 +20,94 @@ import {
 import { validateUpidDocument } from '../validateUpidDocument';
 
 describe('validateUpidDocument', () => {
+  it('accepts valid source-oriented machining participation and partial compensation settings', () => {
+    const document = closedDocument();
+    document.machiningParticipation = {
+      spans: [{
+        id: 'span_a',
+        sourceSegmentId: document.segments[0].id,
+        range: { start: 0.2, end: 0.8 },
+        participation: 'inactive-reference'
+      }],
+      partialContourCompensation: [{
+        sourceOperationId: document.plan.operations[0].id,
+        wireSide: 'left'
+      }],
+      partialContourEntryReviews: [{
+        sourceOperationId: document.plan.operations[0].id,
+        review: 'reviewed',
+        entryFingerprint: 'validated-derived-entry-fingerprint'
+      }]
+    };
+
+    expect(validateUpidDocument(document)).toMatchObject({
+      structurallyValid: true,
+      valid: true
+    });
+  });
+
+  it('rejects overlapping machining spans and stale compensation references', () => {
+    const document = closedDocument();
+    const sourceSegmentId = document.segments[0].id;
+    document.machiningParticipation = {
+      spans: [
+        {
+          id: 'span_a', sourceSegmentId, range: { start: 0.1, end: 0.7 },
+          participation: 'inactive-reference'
+        },
+        {
+          id: 'span_b', sourceSegmentId, range: { start: 0.6, end: 0.9 },
+          participation: 'active-cut'
+        }
+      ],
+      partialContourCompensation: [{ sourceOperationId: 'missing', wireSide: 'right' }]
+    };
+
+    const report = validateUpidDocument(document);
+    expect(report.structurallyValid).toBe(false);
+    expect(report.structuralDiagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: expect.stringContaining('overlap') }),
+      expect.objectContaining({ code: 'upid-missing-reference' })
+    ]));
+  });
+
+  it('rejects a non-finite manual initial wire position', () => {
+    const document = closedDocument();
+    document.setup = {
+      initialWirePosition: {
+        kind: 'manual',
+        point: { x: Number.NaN, y: 0 },
+        review: 'reviewed'
+      }
+    };
+
+    expect(validateUpidDocument(document)).toMatchObject({
+      structurallyValid: false,
+      valid: false
+    });
+  });
+
+  it('rejects an initial wire geometry reference that is not a circle', () => {
+    const document = closedDocument();
+    document.setup = {
+      initialWirePosition: {
+        kind: 'geometry-linked',
+        point: { x: 0, y: 0 },
+        reference: { kind: 'circle-center', segmentId: document.segments[0].id },
+        review: 'reviewed'
+      }
+    };
+
+    const report = validateUpidDocument(document);
+    expect(report.structurallyValid).toBe(false);
+    expect(report.structuralDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'upid-missing-reference',
+        message: expect.stringContaining('circle segment')
+      })
+    );
+  });
+
   it('accepts a normal closed contour and a valid open G40 centreline', () => {
     const closed = closedDocument();
     const open = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
@@ -1418,6 +1506,91 @@ describe('validateUpidDocument', () => {
     );
     expect(validateUpidDocument(missing).structuralDiagnostics).toContainEqual(
       expect.objectContaining({ code: 'upid-missing-reference', severity: 'error' })
+    );
+  });
+
+  it('rejects malformed or disconnected operation entry and exit transitions', () => {
+    const malformed = closedDocument();
+    const malformedOperation = malformed.plan.operations[0];
+    malformedOperation.transitions = {
+      entry: {
+        strategy: 'manual-straight',
+        move: 'cut',
+        from: { x: Number.NaN, y: 0 },
+        to: { ...malformedOperation.startPoint },
+        review: 'invalid' as never
+      }
+    };
+
+    const disconnected = closedDocument();
+    const disconnectedOperation = disconnected.plan.operations[0];
+    disconnectedOperation.transitions = {
+      exit: {
+        strategy: 'manual-straight',
+        move: 'cut',
+        from: { x: 99, y: 99 },
+        to: { x: 100, y: 99 },
+        review: 'reviewed'
+      }
+    };
+
+    expect(validateUpidDocument(malformed).structuralDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'upid-invalid-value' })
+      ])
+    );
+    expect(validateUpidDocument(disconnected).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'upid-identity-mismatch',
+        message: expect.stringContaining('exit transition')
+      })
+    );
+  });
+
+  it('rejects incompatible threading mode and wire-separation intent', () => {
+    const document = closedDocument();
+    document.setup = {
+      threadingDefault: {
+        mode: 'manual',
+        wireSeparation: 'automatic-before-positioning'
+      }
+    };
+    document.plan.operations[0].threadingTransition = {
+      mode: 'automatic',
+      wireSeparation: 'already-separated',
+      source: 'operation-override'
+    };
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'upid-invalid-value' }),
+        expect.objectContaining({ code: 'upid-invalid-value' })
+      ])
+    );
+  });
+
+  it('rejects malformed program-stop identity and distance', () => {
+    const document = closedDocument();
+    document.plan.operations[0].programStops = [
+      {
+        id: 'duplicate',
+        enabled: true,
+        placement: { kind: 'before-operation-end', remainingCutLengthMm: Number.NaN },
+        reason: 'part-retention'
+      },
+      {
+        id: 'duplicate',
+        enabled: true,
+        placement: { kind: 'before-entry' },
+        reason: 'invalid' as never
+      }
+    ];
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'upid-invalid-value' }),
+        expect.objectContaining({ code: 'upid-duplicate-id' })
+      ])
     );
   });
 

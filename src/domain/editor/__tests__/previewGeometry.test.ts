@@ -11,9 +11,11 @@ import {
 } from '@/domain/machine/machineProfiles';
 import {
   setCircleOperationCenterPierceLeadIn,
+  setManualInitialWirePosition,
   translatePathDocument
 } from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
+import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 
 import { parseGCodeProgram } from '../gcodeParser';
@@ -225,6 +227,28 @@ describe('buildEditorPreviewGeometry', () => {
     ]);
   });
 
+  it('distinguishes inactive source reference geometry from derived active partial cuts', () => {
+    const source = createPathPlanningDocumentFromDxfEntities([
+      line(0, 0, 10, 0),
+      line(10, 0, 10, 5),
+      line(10, 5, 0, 5),
+      line(0, 5, 0, 0)
+    ]);
+    const inactiveSegmentId = source.plan.operations[0].segmentRefs[0].segmentId;
+    const document = setMachiningSpanParticipation(source, {
+      sourceSegmentId: inactiveSegmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+
+    const preview = buildEditorPathDocumentPreviewGeometry(document);
+    const machiningPaths = preview.paths.filter((path) => path.segmentId);
+
+    expect(machiningPaths.filter((path) => path.participation === 'active-cut')).toHaveLength(3);
+    expect(machiningPaths.filter((path) => path.participation === 'inactive-reference'))
+      .toEqual([expect.objectContaining({ segmentId: inactiveSegmentId })]);
+  });
+
   it('matches path document circle preview paths to posted motion-line hints', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
@@ -420,10 +444,11 @@ describe('buildEditorPreviewGeometry', () => {
       line(10, 5, 0, 5),
       line(0, 5, 0, 0)
     ]);
-    const document = translatePathDocument(
+    let document = translatePathDocument(
       initializeProjectCompensationIntents(source, machine),
       { x: 5, y: 7 }
     )!;
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
 
     expect(deriveVerifiedRobofilPreviewTransitions(document, machine)).toEqual([
       {
@@ -459,6 +484,7 @@ describe('buildEditorPreviewGeometry', () => {
     for (const operation of document.plan.operations) {
       document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
     }
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
 
     const transitions = deriveVerifiedRobofilPreviewTransitions(document, machine);
 
@@ -565,7 +591,8 @@ describe('buildEditorPreviewGeometry', () => {
       ],
       { coincidenceEpsilon: 0.001 }
     );
-    const document = initializeProjectCompensationIntents(source, machine);
+    let document = initializeProjectCompensationIntents(source, machine);
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
 
     expect(deriveVerifiedRobofilPreviewTransitions(document, machine)).toEqual([
       {

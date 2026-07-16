@@ -1,0 +1,8 @@
+{
+  "browser": {
+    "browserName": "chromium",
+    "launchOptions": {
+      "executablePath": "/home/cristian/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome"
+    }
+  }
+}

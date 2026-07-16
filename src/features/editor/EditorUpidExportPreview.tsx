@@ -12,6 +12,7 @@ import type {
   UpidGCodeProgramOperation
 } from '@/domain/upid/upidDocument';
 import type { OperationOrderStrategy, PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
+import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 interface EditorUpidExportPreviewProps {
@@ -77,6 +78,17 @@ export function EditorUpidExportPreview({
     projectUpidPathDiagnostic(pathDocument, diagnostic)
   );
   const blockingDiagnosticIds = new Set(blockingDiagnostics.map((diagnostic) => diagnostic.id));
+  const initialWirePosition = resolveInitialWirePosition(pathDocument);
+  const postedG92 = visibleProgramBlocks.find(
+    (block) => block.kind === 'setup' && /^G92\b/.test(block.text)
+  )?.text;
+  const inactiveSpanCount = (pathDocument.machiningParticipation?.spans ?? []).filter(
+    (span) => span.participation === 'inactive-reference'
+  ).length;
+  const programStopCount = visibleProgramBlocks.filter((block) => block.kind === 'program-stop').length;
+  const rethreadCount = visibleProgramBlocks.filter((block) =>
+    block.kind === 'manual-rethread' || block.kind === 'automatic-rethread'
+  ).length;
 
   return (
     <section
@@ -241,6 +253,33 @@ export function EditorUpidExportPreview({
                 </span>
               )}
             </dd>
+          </div>
+        </dl>
+        <dl
+          className="grid grid-cols-2 gap-1 md:grid-cols-4"
+          data-upid-export-production-intent
+        >
+          <div className="border border-border bg-card/60 px-2 py-1">
+            <dt className="uppercase text-muted-foreground">Initial Wire / G92</dt>
+            <dd className="truncate" data-upid-export-g92>
+              {postedG92 ?? (initialWirePosition.status === 'ready'
+                ? `Reviewed X${formatCoordinate(initialWirePosition.point.x)} Y${formatCoordinate(initialWirePosition.point.y)}`
+                : `Blocked: ${initialWirePosition.reason}`)}
+            </dd>
+          </div>
+          <div className="border border-border bg-card/60 px-2 py-1">
+            <dt className="uppercase text-muted-foreground">Participation</dt>
+            <dd data-upid-export-inactive-spans={inactiveSpanCount}>
+              {inactiveSpanCount === 0 ? 'All source geometry active' : `${inactiveSpanCount} inactive reference span${inactiveSpanCount === 1 ? '' : 's'}`}
+            </dd>
+          </div>
+          <div className="border border-border bg-card/60 px-2 py-1">
+            <dt className="uppercase text-muted-foreground">Rethreading</dt>
+            <dd data-upid-export-rethread-count={rethreadCount}>{rethreadCount} posted transition{rethreadCount === 1 ? '' : 's'}</dd>
+          </div>
+          <div className="border border-border bg-card/60 px-2 py-1">
+            <dt className="uppercase text-muted-foreground">Program Stops</dt>
+            <dd data-upid-export-program-stop-count={programStopCount}>{programStopCount} posted M00 event{programStopCount === 1 ? '' : 's'}</dd>
           </div>
         </dl>
         {projectedDiagnostics.length > 0 && (
@@ -453,6 +492,10 @@ export function EditorUpidExportPreview({
       </div>
     </section>
   );
+}
+
+function formatCoordinate(value: number) {
+  return Number.isFinite(value) ? value.toFixed(3) : '—';
 }
 
 function formatUnitDeclaration(

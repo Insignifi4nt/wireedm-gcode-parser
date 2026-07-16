@@ -33,6 +33,12 @@ import {
   rotatePathRefs,
   segmentMap
 } from '@/domain/path-intel/segments';
+import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
+import {
+  operationEntryPoint as resolvedOperationEntryPoint,
+  operationExitPoint as resolvedOperationExitPoint,
+  operationTransitionCutLength
+} from '@/domain/path-intel/operationTransitions';
 import type {
   ArcPathSegment,
   CirclePathSegment,
@@ -42,10 +48,13 @@ import type {
   OperationPlan,
   OrientedSegmentRef,
   OperationOrderStrategy,
+  OperationProgramStop,
+  OperationThreadingTransition,
   PathChain,
   PathDiagnostic,
   PathElementId,
   PathOperation,
+  PathOperationTransitions,
   PathPlanningDocument,
   PathSegment,
   Point2,
@@ -96,10 +105,12 @@ export type PathMirrorAxis = 'x' | 'y';
 export function derivePlannedRapidRoutes(
   document: PathPlanningDocument
 ): PlannedRapidRoute[] {
-  let currentPoint = document.options.startPoint;
+  const initialWire = resolveInitialWirePosition(document);
+  let currentPoint =
+    initialWire.status === 'ready' ? initialWire.point : document.options.startPoint;
   return document.plan.operations.map((operation, orderIndex) => {
-    const leadIn = operation.overrides?.leadIn;
-    const endPoint = leadIn?.from ?? operation.startPoint;
+    const leadIn = operation.transitions?.entry ?? operation.overrides?.leadIn;
+    const endPoint = resolvedOperationEntryPoint(operation);
     const route = {
       id: `rapid_${operation.id}`,
       operationId: operation.id,
@@ -109,7 +120,7 @@ export function derivePlannedRapidRoutes(
       length: distance(currentPoint, endPoint),
       destinationKind: leadIn ? 'lead-in-start' as const : 'operation-start' as const
     };
-    currentPoint = operation.endPoint;
+    currentPoint = resolvedOperationExitPoint(operation);
     return route;
   });
 }
@@ -156,6 +167,22 @@ export function setPlannedRapidDestinationPoint(
         source: 'manual-point'
       }
     };
+    if (nextOperation.transitions?.entry) {
+      const currentEntry = nextOperation.transitions.entry;
+      nextOperation.transitions = {
+        ...nextOperation.transitions,
+        entry:
+          currentEntry.strategy === 'circle-center'
+            ? {
+                strategy: 'manual-straight',
+                move: 'cut',
+                from: { ...point },
+                to: { ...currentEntry.to },
+                review: 'reviewed'
+              }
+            : { ...currentEntry, from: { ...point } }
+      };
+    }
     refreshPlan(next);
     return next;
   }
@@ -289,6 +316,134 @@ export function translatePathDocument(document: PathPlanningDocument, delta: Poi
     document.segments.map((segment) => segment.id),
     delta
   );
+}
+
+export function setManualInitialWirePosition(
+  document: PathPlanningDocument,
+  point: Point2
+) {
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  const next = cloneDocument(document);
+  next.setup = {
+    ...next.setup,
+    initialWirePosition: {
+      kind: 'manual',
+      point: { ...point },
+      review: 'reviewed'
+    }
+  };
+  return next;
+}
+
+export function setGeometryLinkedInitialWirePosition(
+  document: PathPlanningDocument,
+  segmentId: SegmentId
+) {
+  const segment = document.segments.find(
+    (candidate) => candidate.id === segmentId && candidate.kind === 'circle'
+  );
+  if (!segment || segment.kind !== 'circle') return null;
+  const next = cloneDocument(document);
+  next.setup = {
+    ...next.setup,
+    initialWirePosition: {
+      kind: 'geometry-linked',
+      point: { ...segment.center },
+      reference: { kind: 'circle-center', segmentId },
+      review: 'reviewed'
+    }
+  };
+  return next;
+}
+
+export function setPathOperationTransitions(
+  document: PathPlanningDocument,
+  operationId: string,
+  transitions: PathOperationTransitions
+) {
+  const next = cloneDocument(document);
+  const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation || !transitionsAreFinite(transitions)) return null;
+  operation.transitions = structuredClone(transitions);
+  const entry = operation.transitions.entry;
+  if (entry) {
+    const sourceSegmentId = entry.strategy === 'circle-center'
+      ? entry.sourceSegmentId
+      : operation.segmentRefs[0]?.segmentId;
+    const sourceSegmentIndex = operation.segmentRefs.findIndex(
+      (ref) => ref.segmentId === sourceSegmentId
+    );
+    if (!sourceSegmentId || sourceSegmentIndex < 0) return null;
+    operation.overrides = {
+      ...operation.overrides,
+      leadIn: {
+        kind: 'manual',
+        move: 'cut',
+        from: { ...entry.from },
+        to: { ...entry.to },
+        source: entry.strategy === 'circle-center' ? 'circle-center' : 'manual-point',
+        sourceSegmentId,
+        sourceSegmentIndex
+      }
+    };
+  }
+  refreshOperationTransitions(operation);
+  refreshPlan(next);
+  return next;
+}
+
+export function setProjectThreadingDefault(
+  document: PathPlanningDocument,
+  transition: Omit<OperationThreadingTransition, 'source'>
+) {
+  if (!threadingIntentIsCompatible(transition)) return null;
+  const next = cloneDocument(document);
+  next.setup = {
+    ...next.setup,
+    threadingDefault: structuredClone(transition)
+  };
+  return next;
+}
+
+export function setPathOperationThreadingTransition(
+  document: PathPlanningDocument,
+  operationId: string,
+  transition: Omit<OperationThreadingTransition, 'source'> | null
+) {
+  const next = cloneDocument(document);
+  const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation || (transition && !threadingIntentIsCompatible(transition))) return null;
+  if (transition) {
+    operation.threadingTransition = {
+      ...structuredClone(transition),
+      source: 'operation-override'
+    };
+  } else {
+    delete operation.threadingTransition;
+  }
+  return next;
+}
+
+export function setPathOperationProgramStops(
+  document: PathPlanningDocument,
+  operationId: string,
+  stops: OperationProgramStop[]
+) {
+  const ids = new Set<string>();
+  for (const stop of stops) {
+    if (!stop.id || ids.has(stop.id)) return null;
+    ids.add(stop.id);
+    if (
+      stop.placement.kind === 'before-operation-end' &&
+      (!Number.isFinite(stop.placement.remainingCutLengthMm) ||
+        stop.placement.remainingCutLengthMm <= 0)
+    ) return null;
+  }
+  const next = cloneDocument(document);
+  const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!operation) return null;
+  operation.programStops = structuredClone(stops);
+  return next;
 }
 
 export function translatePathSegment(
@@ -501,6 +656,16 @@ export function setCircleOperationCenterPierceLeadIn(
       sourceSegmentIndex: leadInSource.segmentIndex
     }
   };
+  operation.transitions = {
+    ...operation.transitions,
+    entry: {
+      strategy: 'circle-center',
+      move: 'cut',
+      from: { ...leadInSource.center },
+      to: { ...operation.startPoint },
+      sourceSegmentId: leadInSource.segmentId
+    }
+  };
   refreshPlan(next);
   return next;
 }
@@ -527,6 +692,16 @@ export function setPathOperationManualLeadIn(
       source: 'manual-point',
       sourceSegmentId: sourceRef.segmentId,
       sourceSegmentIndex: 0
+    }
+  };
+  operation.transitions = {
+    ...operation.transitions,
+    entry: {
+      strategy: 'manual-straight',
+      move: 'cut',
+      from: { ...from },
+      to: { ...operation.startPoint },
+      review: 'reviewed'
     }
   };
   refreshPlan(next);
@@ -1058,6 +1233,11 @@ function refreshDocumentAfterSegmentGeometryEdit(
   transformedSegmentIds: Set<SegmentId>,
   transformPoint: (point: Point2) => Point2
 ) {
+  refreshInitialWirePositionAfterGeometryEdit(
+    document,
+    transformedSegmentIds,
+    transformPoint
+  );
   const previousOperations = document.plan.operations.map((operation) => structuredClone(operation));
   const previousOperationsByContourId = new Map(previousOperations.map((operation) => [operation.contourId, operation]));
   const manualClassificationsByContourId = manualClassifications(document);
@@ -1128,6 +1308,36 @@ function refreshDocumentAfterSegmentGeometryEdit(
   refreshPlan(document);
 }
 
+function refreshInitialWirePositionAfterGeometryEdit(
+  document: PathPlanningDocument,
+  transformedSegmentIds: Set<SegmentId>,
+  transformPoint: (point: Point2) => Point2
+) {
+  const initial = document.setup?.initialWirePosition;
+  if (!initial) return;
+
+  if (initial.kind === 'manual') {
+    document.setup = {
+      ...document.setup,
+      initialWirePosition: {
+        ...initial,
+        review: 'required',
+        reviewReason: 'geometry-transformed'
+      }
+    };
+    return;
+  }
+
+  if (!transformedSegmentIds.has(initial.reference.segmentId)) return;
+  document.setup = {
+    ...document.setup,
+    initialWirePosition: {
+      ...initial,
+      point: transformPoint(initial.point)
+    }
+  };
+}
+
 const PERSISTENT_IMPORT_DIAGNOSTIC_CODES = new Set<PathDiagnostic['code']>([
   'zero-length-segment',
   'non-finite-geometry',
@@ -1156,6 +1366,10 @@ function restoreGeometryEditOperationState(
   if (!previous) return operation;
 
   const overrides = previous.overrides ? structuredClone(previous.overrides) : undefined;
+  const transitions = previous.transitions ? structuredClone(previous.transitions) : undefined;
+  const operationGeometryTransformed = previous.segmentRefs.some((ref) =>
+    transformedSegmentIds.has(ref.segmentId)
+  );
   if (overrides?.start && startOverrideTouchesTransformedSegments(overrides.start, transformedSegmentIds)) {
     overrides.start = {
       ...overrides.start,
@@ -1169,6 +1383,24 @@ function restoreGeometryEditOperationState(
       to: transformPoint(overrides.leadIn.to)
     };
   }
+  if (transitions?.entry && operationGeometryTransformed) {
+    transitions.entry = {
+      ...transitions.entry,
+      from: transformPoint(transitions.entry.from),
+      to: transformPoint(transitions.entry.to),
+      ...(transitions.entry.strategy === 'manual-straight'
+        ? { review: 'required' as const }
+        : {})
+    };
+  }
+  if (transitions?.exit && operationGeometryTransformed) {
+    transitions.exit = {
+      ...transitions.exit,
+      from: transformPoint(transitions.exit.from),
+      to: transformPoint(transitions.exit.to),
+      review: 'required'
+    };
+  }
 
   const restored: PathOperation = {
     ...operation,
@@ -1176,6 +1408,13 @@ function restoreGeometryEditOperationState(
     ...(previous.compensationIntent
       ? { compensationIntent: structuredClone(previous.compensationIntent) }
       : {}),
+    ...(previous.threadingTransition
+      ? { threadingTransition: structuredClone(previous.threadingTransition) }
+      : {}),
+    ...(previous.programStops
+      ? { programStops: structuredClone(previous.programStops) }
+      : {}),
+    ...(transitions ? { transitions } : {}),
     ...(overrides ? { overrides } : {})
   };
 
@@ -1413,7 +1652,8 @@ function refreshPlan(document: PathPlanningDocument) {
   const segmentsById = segmentMap(document.segments);
   document.chains.forEach((chain) => refreshChainTopology(chain, segmentsById, clusterResult.endpointToCluster));
 
-  let current = document.options.startPoint;
+  const initialWire = resolveInitialWirePosition(document);
+  let current = initialWire.status === 'ready' ? initialWire.point : document.options.startPoint;
 
   document.plan.operations.forEach((operation, index) => {
     operation.orderIndex = index;
@@ -1422,13 +1662,14 @@ function refreshPlan(document: PathPlanningDocument) {
       ? operation.startPoint
       : pathEndPoint(operation.segmentRefs, segmentsById) ?? operation.endPoint;
     refreshOperationLeadIn(document, operation);
-    const entryPoint = operationEntryPoint(operation);
+    refreshOperationTransitions(operation);
+    const entryPoint = resolvedOperationEntryPoint(operation);
     operation.metrics = {
-      cutLength: pathCutLength(operation.segmentRefs, segmentsById) + operationLeadInCutLength(operation),
+      cutLength: pathCutLength(operation.segmentRefs, segmentsById) + operationTransitionCutLength(operation),
       rapidInLength: distance(current, entryPoint),
       segmentCount: operation.segmentRefs.length
     };
-    current = operation.endPoint;
+    current = resolvedOperationExitPoint(operation);
   });
 
   document.plan.metrics = planMetrics(document.plan);
@@ -1531,12 +1772,7 @@ function planMetrics(plan: OperationPlan) {
 }
 
 function operationEntryPoint(operation: PathOperation) {
-  return operation.overrides?.leadIn?.from ?? operation.startPoint;
-}
-
-function operationLeadInCutLength(operation: PathOperation) {
-  const leadIn = operation.overrides?.leadIn;
-  return leadIn ? distance(leadIn.from, leadIn.to) : 0;
+  return resolvedOperationEntryPoint(operation);
 }
 
 function refreshOperationLeadIn(document: PathPlanningDocument, operation: PathOperation) {
@@ -1567,6 +1803,41 @@ function refreshOperationLeadIn(document: PathPlanningDocument, operation: PathO
       to: { ...operation.startPoint }
     }
   };
+}
+
+function refreshOperationTransitions(operation: PathOperation) {
+  const entry = operation.transitions?.entry;
+  const exit = operation.transitions?.exit;
+  if (!entry && !exit) return;
+  operation.transitions = {
+    ...(entry ? { entry: { ...entry, to: { ...operation.startPoint } } } : {}),
+    ...(exit ? { exit: { ...exit, from: { ...operation.endPoint } } } : {})
+  };
+}
+
+function transitionsAreFinite(transitions: PathOperationTransitions) {
+  return [transitions.entry, transitions.exit]
+    .filter((transition): transition is NonNullable<typeof transition> => Boolean(transition))
+    .every(
+      (transition) =>
+        Number.isFinite(transition.from.x) &&
+        Number.isFinite(transition.from.y) &&
+        Number.isFinite(transition.to.x) &&
+        Number.isFinite(transition.to.y)
+    );
+}
+
+function threadingIntentIsCompatible(
+  transition: Pick<OperationThreadingTransition, 'mode' | 'wireSeparation'>
+) {
+  return (
+    (transition.mode === 'continuous' && transition.wireSeparation === 'already-separated') ||
+    (transition.mode === 'manual' &&
+      (transition.wireSeparation === 'already-separated' ||
+        transition.wireSeparation === 'manual-before-positioning')) ||
+    (transition.mode === 'automatic' &&
+      transition.wireSeparation === 'automatic-before-positioning')
+  );
 }
 
 function circularOperationLeadInSource(document: PathPlanningDocument, operation: PathOperation) {
@@ -1635,6 +1906,15 @@ function restoreManualOperationState(
     id: previous.id,
     ...(previous.compensationIntent
       ? { compensationIntent: structuredClone(previous.compensationIntent) }
+      : {}),
+    ...(previous.threadingTransition
+      ? { threadingTransition: structuredClone(previous.threadingTransition) }
+      : {}),
+    ...(previous.programStops
+      ? { programStops: structuredClone(previous.programStops) }
+      : {}),
+    ...(previous.transitions
+      ? { transitions: structuredClone(previous.transitions) }
       : {}),
     ...(preservedOverrides ? { overrides: preservedOverrides } : {})
   };

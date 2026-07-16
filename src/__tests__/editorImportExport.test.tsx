@@ -583,104 +583,6 @@ describe('Editor import, export, and parse feedback', () => {
     expect(replacedProgramEditor?.value).toContain('G1 X8 Y8');
   });
 
-  it('imports an external G-code program by dropping it into the editor', async () => {
-    window.showDirectoryPicker = undefined;
-
-    await renderApp(context);
-
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
-    );
-
-    await act(async () => {
-      openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await flushAsync();
-
-    const dropZone = container.querySelector('[data-editor-drop-zone="true"]') as HTMLElement | null;
-    const dropEvent = new Event('drop', { bubbles: true, cancelable: true });
-    Object.defineProperty(dropEvent, 'dataTransfer', {
-      value: {
-        files: [new File(['G0 X0 Y0\nG1 X9 Y3\nM30'], 'dropped.nc')]
-      }
-    });
-
-    expect(dropZone).not.toBeNull();
-
-    await act(async () => {
-      dropZone?.dispatchEvent(dropEvent);
-    });
-    await flushAsync();
-
-    expect(container.textContent).toContain('editor/dropped-');
-    expect(container.textContent).toContain('G1 X9 Y3');
-    expect(container.textContent).toContain('2 path items');
-  });
-
-  it('guards dropped replacement imports only after the active machine draft is modified', async () => {
-    window.showDirectoryPicker = undefined;
-    const confirmDiscard = vi.spyOn(window, 'confirm').mockReturnValue(false);
-
-    await renderApp(context);
-
-    const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Open Editor')
-    );
-    await act(async () => {
-      openEditorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await flushAsync();
-
-    const dropZone = container.querySelector('[data-editor-drop-zone="true"]') as HTMLElement | null;
-    await act(async () => {
-      dropZone?.dispatchEvent(createProgramDropEvent('first-drop.nc', 'G0 X0 Y0\nG1 X5 Y5\nM30'));
-    });
-    await flushAsync();
-    expect(confirmDiscard).not.toHaveBeenCalled();
-
-    await act(async () => {
-      container
-        .querySelector('[data-editor-drop-zone="true"]')
-        ?.dispatchEvent(createProgramDropEvent('clean-second-drop.nc', 'G0 X1 Y1\nG1 X6 Y6\nM30'));
-    });
-    await flushAsync();
-    expect(confirmDiscard).not.toHaveBeenCalled();
-
-    const programEditor = container.querySelector(
-      'textarea[aria-label="Program editor"]'
-    ) as HTMLTextAreaElement | null;
-    expect(programEditor?.value).toContain('G1 X6 Y6');
-    await act(async () => {
-      if (programEditor) setTextAreaValue(programEditor, 'G0 X0 Y0\nG1 X88 Y88\nM30');
-    });
-    expect(
-      container.querySelector('[data-editor-status-bar]')?.textContent
-    ).toContain('Modified');
-
-    await act(async () => {
-      container
-        .querySelector('[data-editor-drop-zone="true"]')
-        ?.dispatchEvent(createProgramDropEvent('dirty-third-drop.nc', 'G0 X2 Y2\nG1 X7 Y7\nM30'));
-    });
-    await flushAsync();
-
-    expect(confirmDiscard).toHaveBeenCalledWith('Discard unsaved changes?');
-    expect(programEditor?.value).toContain('G1 X88 Y88');
-
-    confirmDiscard.mockReturnValue(true);
-    await act(async () => {
-      container
-        .querySelector('[data-editor-drop-zone="true"]')
-        ?.dispatchEvent(createProgramDropEvent('dirty-third-drop.nc', 'G0 X2 Y2\nG1 X7 Y7\nM30'));
-    });
-    await flushAsync();
-
-    const replacedProgramEditor = container.querySelector(
-      'textarea[aria-label="Program editor"]'
-    ) as HTMLTextAreaElement | null;
-    expect(replacedProgramEditor?.value).toContain('G1 X7 Y7');
-  });
-
   it('serializes replacement import behind save and preserves same-document history', async () => {
     window.showDirectoryPicker = undefined;
     const saveGate = createDeferred<void>();
@@ -913,14 +815,4 @@ function createDeferred<T>() {
     reject = rejectPromise;
   });
   return { promise, reject, resolve };
-}
-
-function createProgramDropEvent(fileName: string, text: string) {
-  const event = new Event('drop', { bubbles: true, cancelable: true });
-  Object.defineProperty(event, 'dataTransfer', {
-    value: {
-      files: [new File([text], fileName)]
-    }
-  });
-  return event;
 }

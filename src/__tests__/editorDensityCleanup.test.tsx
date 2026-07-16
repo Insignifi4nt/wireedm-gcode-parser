@@ -46,7 +46,7 @@ describe('Editor density cleanup', () => {
     await confirmPendingDxfImport(container);
   }
 
-  it('keeps primary panels directly accessible in a compact Path Project header', async () => {
+  it('keeps canonical workflows directly accessible in a compact Path Project header', async () => {
     await importSimplePathProject();
 
     const header = container.querySelector('[data-editor-context="path-project"]');
@@ -58,18 +58,21 @@ describe('Editor density cleanup', () => {
     expect(header?.textContent).toContain('Undo');
     expect(header?.textContent).toContain('Redo');
     expect(header?.textContent).toContain('Save');
-    expect(header?.querySelector('summary[aria-label="Panels"]')).not.toBeNull();
+    expect(header?.querySelector('summary[aria-label="Panels"]')).toBeNull();
+    expect(header?.querySelector('[data-editor-workflow-menus]')).not.toBeNull();
 
     const shortcuts = [...(header?.querySelectorAll('[data-editor-panel-shortcut]') ?? [])];
-    expect(shortcuts).toHaveLength(8);
-    for (const shortcut of shortcuts) {
-      expect(shortcut.textContent).toBe('');
-      expect(shortcut.getAttribute('title')).toMatch(/^(Show|Hide) /);
-    }
+    expect(shortcuts).toHaveLength(0);
   });
 
   it('moves Contour Tree teaching content into one hover and focus explanation', async () => {
     await importSimplePathProject();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        '[data-editor-workflow-command="view.contours"]'
+      )?.click();
+    });
+    await flushAsync();
 
     expect(document.querySelector('[data-upid-contour-tree-map]')).toBeNull();
     expect(document.querySelector('[data-upid-contour-tree-help]')).toBeNull();
@@ -87,16 +90,29 @@ describe('Editor density cleanup', () => {
   it('lets each workspace panel own scrolling for its primary row collection', async () => {
     await importSimplePathProject();
 
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        '[data-editor-workflow-command="machining.sequence"]'
+      )?.click();
+    });
+    await flushAsync();
+
     const cutSequence = document.querySelector('[data-upid-cut-sequence-list]');
     expect(cutSequence).not.toBeNull();
     expect(cutSequence?.matches('[data-upid-cut-sequence]')).toBe(true);
     expect(cutSequence?.className).not.toMatch(/max-h-|overflow-auto/);
 
-    for (const selector of [
-      '[data-upid-contour-tree]',
-      '[data-upid-endpoint-topology-list]',
-      '[data-upid-diagnostics-list]'
+    for (const [commandId, selector] of [
+      ['view.contours', '[data-upid-contour-tree]'],
+      ['view.endpoints', '[data-upid-endpoint-topology-list]'],
+      ['view.diagnostics', '[data-upid-diagnostics-list]']
     ]) {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>(
+          `[data-editor-workflow-command="${commandId}"]`
+        )?.click();
+      });
+      await flushAsync();
       const primaryList = document.querySelector(selector);
       expect(primaryList).not.toBeNull();
       expect(primaryList?.className).not.toMatch(/max-h-|overflow-auto/);

@@ -5,13 +5,9 @@ import {
   ArrowUp,
   ChevronDown,
   ChevronRight,
-  Download,
   Pin,
-  Redo2,
   RefreshCw,
-  Save,
   Trash2,
-  Undo2,
   X
 } from 'lucide-react';
 
@@ -29,9 +25,7 @@ import type { EditorLineRow } from './editorLineState';
 
 interface EditorProgramLinesPanelProps {
   bodyGroups: GCodeContourGroup[];
-  draftText: string;
   guideHighlightTarget: EditorGuideTarget | null;
-  hasUnsavedChanges: boolean;
   isGroupExpanded: (groupId: string) => boolean;
   isSaving: boolean;
   lineMode: 'select' | 'edit';
@@ -39,36 +33,28 @@ interface EditorProgramLinesPanelProps {
   pinnedLines: number[];
   program: LoadedEditorProgram | null;
   programLinesOpen: boolean;
-  redoAvailable: boolean;
   selectedLines: number[];
   structure: GCodeStructure | null;
-  undoAvailable: boolean;
   onClearPins: () => void;
   onClearSelectedLines: () => void;
   onDeleteGroup: (groupId: string) => void;
   onDeleteSelectedLines: () => void;
-  onExportNormalizedISO: () => void;
   onLineClick: (lineNumber: number, event: MouseEvent<HTMLButtonElement>) => void;
   onLineEditCommit: (lineNumber: number, nextText: string) => void;
   onMoveGroup: (groupId: string, direction: -1 | 1) => void;
   onMoveSelectedLines: (direction: -1 | 1) => void;
   onNormalizeDraft: () => void;
-  onRedoDraft: () => void;
-  onSaveClick: () => void | Promise<void>;
   onSetLineMode: (mode: 'select' | 'edit') => void;
   onSetStartHere: () => void;
   onToggleGroup: (groupId: string) => void;
   onTogglePin: (lineNumber: number) => void;
   onToggleProgramLinesOpen: () => void;
   onHoverLineChange: (lineNumber: number | null) => void;
-  onUndoDraft: () => void;
 }
 
 export function EditorProgramLinesPanel({
   bodyGroups,
-  draftText,
   guideHighlightTarget,
-  hasUnsavedChanges,
   isGroupExpanded,
   isSaving,
   lineMode,
@@ -76,29 +62,23 @@ export function EditorProgramLinesPanel({
   pinnedLines,
   program,
   programLinesOpen,
-  redoAvailable,
   selectedLines,
   structure,
-  undoAvailable,
   onClearPins,
   onClearSelectedLines,
   onDeleteGroup,
   onDeleteSelectedLines,
-  onExportNormalizedISO,
   onHoverLineChange,
   onLineClick,
   onLineEditCommit,
   onMoveGroup,
   onMoveSelectedLines,
   onNormalizeDraft,
-  onRedoDraft,
-  onSaveClick,
   onSetLineMode,
   onSetStartHere,
   onToggleGroup,
   onTogglePin,
-  onToggleProgramLinesOpen,
-  onUndoDraft
+  onToggleProgramLinesOpen
 }: EditorProgramLinesPanelProps) {
   const selectedLineSet = new Set(selectedLines);
   const pinnedLineSet = new Set(pinnedLines);
@@ -370,28 +350,6 @@ export function EditorProgramLinesPanel({
                 <ArrowDown className="size-3" />
               </button>
               <button
-                aria-label="Undo"
-                className="flex size-5 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={!undoAvailable || isSaving}
-                onClick={onUndoDraft}
-                title="Undo"
-                type="button"
-              >
-                <Undo2 className="size-3" />
-                <span className="sr-only">Undo</span>
-              </button>
-              <button
-                aria-label="Redo"
-                className="flex size-5 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={!redoAvailable || isSaving}
-                onClick={onRedoDraft}
-                title="Redo"
-                type="button"
-              >
-                <Redo2 className="size-3" />
-                <span className="sr-only">Redo</span>
-              </button>
-              <button
                 className="flex h-5 shrink-0 items-center gap-1 border border-border px-1.5 font-mono text-[10px] text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
                 disabled={selectedLines.length !== 1 || isSaving}
                 onClick={onSetStartHere}
@@ -447,42 +405,6 @@ export function EditorProgramLinesPanel({
           >
             <RefreshCw />
             Normalize Draft
-          </Button>
-          <Button
-            {...guideTargetProps('export-iso', guideHighlightTarget)}
-            className={`h-5 px-1.5 text-[10px] ${guideHighlightClass(
-              'export-iso',
-              guideHighlightTarget
-            )}`}
-            disabled={!program || isSaving || draftText.trim() === ''}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onExportNormalizedISO();
-            }}
-            size="sm"
-            variant="outline"
-          >
-            <Download />
-            Export ISO
-          </Button>
-          <Button
-            {...guideTargetProps('save-program', guideHighlightTarget)}
-            className={`h-5 px-1.5 text-[10px] ${guideHighlightClass(
-              'save-program',
-              guideHighlightTarget
-            )}`}
-            disabled={!program || !hasUnsavedChanges || isSaving}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void onSaveClick();
-            }}
-            size="sm"
-            variant="outline"
-          >
-            <Save />
-            {isSaving ? 'Saving...' : 'Save Program'}
           </Button>
         </div>
       </div>
