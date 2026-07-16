@@ -43,3 +43,11 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 - Technical workbench UI: thin bars, small writing, dense but readable panels.
 - Keep files focused and typed.
 - Prefer explicit domain models over ad hoc strings for project files, output templates, and export formats.
+
+## Context, Subagent, and Testing Discipline
+
+- Be deliberate with context usage. Do not spawn subagents reflexively or fragment work into tiny delegated tasks. Complete a meaningful investigation or implementation chunk first; delegate only substantial, separable work or independent review.
+- When a subagent finds a valid issue and its proposed fix is sound, prefer letting that same subagent implement and verify it so context is not repeatedly transferred.
+- Add tests for meaningful behavior, realistic regressions, edge cases, and data integrity. Do not add tests merely to prove removed UI/code is absent unless that absence is an important invariant.
+- Use the cheapest reliable verification first. After localized changes, run focused tests and relevant type/lint/build checks; expand to broader suites when changes cross systems, affect shared infrastructure, or have uncertain blast radius.
+- Optimize for reliable implementation with proportionate effort, not maximum tool calls, agent count, or test count.
