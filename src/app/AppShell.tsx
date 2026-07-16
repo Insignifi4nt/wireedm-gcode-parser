@@ -121,7 +121,7 @@ export function AppShell({
 
   return (
     <div
-      className="technical-workbench flex h-screen flex-col overflow-hidden bg-background text-foreground"
+      className="technical-workbench flex h-dvh flex-col overflow-hidden bg-background text-foreground"
       data-app-shell
       data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'}
     >
