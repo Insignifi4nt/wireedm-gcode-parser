@@ -192,6 +192,26 @@ summary:focus-visible {
   grid-template-columns: var(--app-rail-width) 4px minmax(0, 1fr);
 }
 
+@media (max-width: 639px) {
+  [data-app-workspace-grid][data-has-rail="true"][data-sidebar-collapsed] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-app-rail],
+  [data-app-rail-resizer],
+  [data-editor-main-grid] > [data-editor-panel-dock-zone],
+  [data-editor-main-grid] > [data-editor-inspector-panel],
+  [data-editor-main-grid] > [data-editor-inspector-collapsed],
+  [data-editor-main-grid] > [data-editor-inspector-resizer] {
+    display: none;
+  }
+
+  [data-editor-main-grid] {
+    grid-template-rows: minmax(0, 1fr);
+    padding: 4px;
+  }
+}
+
 @media (min-width: 1024px) {
   [data-editor-main-grid][data-inspector-collapsed="false"] {
     grid-template-columns: minmax(0, 1fr) 4px var(--editor-inspector-width);
