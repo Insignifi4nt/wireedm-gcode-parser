@@ -10,6 +10,7 @@ import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 import { updateWorkbenchSettings } from '@/domain/storage/updateWorkbenchSettings';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import type { MachineProfile } from '@/domain/workbench/types';
+import { ONBOARDING_DISMISSED_STORAGE_KEY } from '@/features/onboarding/onboardingPreference';
 
 import {
   cleanupAppTestContext,
@@ -35,6 +36,37 @@ describe('App dashboard and workbench shell', () => {
 
   afterEach(() => {
     cleanupAppTestContext(context);
+  });
+
+  it('shows onboarding on the first visit', async () => {
+    window.localStorage.removeItem(ONBOARDING_DISMISSED_STORAGE_KEY);
+
+    await renderApp(context);
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="onboarding-title"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain('Go Build!');
+  });
+
+  it('dismisses onboarding and remembers the primary action', async () => {
+    window.localStorage.removeItem(ONBOARDING_DISMISSED_STORAGE_KEY);
+
+    await renderApp(context);
+
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="onboarding-title"]');
+    const goBuild = [...(dialog?.querySelectorAll('button') ?? [])]
+      .find((button) => button.textContent?.trim() === 'Go Build!');
+    expect(goBuild).not.toBeNull();
+
+    await act(async () => goBuild?.click());
+
+    expect(container.querySelector('[aria-labelledby="onboarding-title"]')).toBeNull();
+    expect(window.localStorage.getItem(ONBOARDING_DISMISSED_STORAGE_KEY)).toBe('true');
+  });
+
+  it('does not show onboarding after it has been dismissed', async () => {
+    await renderApp(context);
+    expect(container.querySelector('[aria-labelledby="onboarding-title"]')).toBeNull();
   });
 
   it('starts with a browser cache fallback when folder access is unavailable', async () => {

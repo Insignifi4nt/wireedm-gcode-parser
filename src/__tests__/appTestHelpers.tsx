@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 
 import App from '../App';
 import type { AppServices } from '../app/appServices';
+import { ONBOARDING_DISMISSED_STORAGE_KEY } from '../features/onboarding/onboardingPreference';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -78,6 +79,7 @@ export function enableAutoOpenEditorWorkspacePanels() {
 }
 
 export function createAppTestContext(): AppTestContext {
+  window.localStorage.setItem(ONBOARDING_DISMISSED_STORAGE_KEY, 'true');
   const container = document.createElement('div');
   document.body.appendChild(container);
 

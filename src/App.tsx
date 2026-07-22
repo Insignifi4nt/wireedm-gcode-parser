@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { AppShell } from '@/app/AppShell';
 import { type AppServices } from '@/app/appServices';
 import { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
@@ -5,13 +7,26 @@ import { StatusToastList } from '@/components/StatusToasts';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { DxfImportConfirmationDialog } from '@/features/dashboard/DxfImportConfirmationDialog';
 import { EditorPage } from '@/features/editor/EditorPage';
+import { OnboardingDialog } from '@/features/onboarding/OnboardingDialog';
+import {
+  hasDismissedOnboarding,
+  rememberOnboardingDismissal
+} from '@/features/onboarding/onboardingPreference';
 
 interface AppProps {
   services?: Partial<AppServices>;
 }
 
 export default function App({ services }: AppProps = {}) {
+  const [onboardingOpen, setOnboardingOpen] = useState(
+    () => !hasDismissedOnboarding()
+  );
   const app = useWorkbenchAppController(services);
+
+  function handleDismissOnboarding() {
+    setOnboardingOpen(false);
+    rememberOnboardingDismissal();
+  }
 
   return (
     <AppShell
@@ -115,6 +130,10 @@ export default function App({ services }: AppProps = {}) {
           unitCandidates={app.pendingDxfReimport.unitCandidates}
         />
       )}
+      <OnboardingDialog
+        onDismiss={handleDismissOnboarding}
+        open={onboardingOpen && app.workbenchStatus === 'ready'}
+      />
     </AppShell>
   );
 }
