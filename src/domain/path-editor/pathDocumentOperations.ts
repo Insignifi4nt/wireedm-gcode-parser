@@ -12,7 +12,6 @@ import { planOperations } from '@/domain/path-intel/planOperations';
 import { sanitizePathSegments } from '@/domain/path-intel/sanitizeSegments';
 import {
   arcParameterAtPoint,
-  arcParameterAtRadial,
   createArcSegment,
   createCircleSegment,
   createLineSegment,
@@ -39,6 +38,10 @@ import {
   operationExitPoint as resolvedOperationExitPoint,
   operationTransitionCutLength
 } from '@/domain/path-intel/operationTransitions';
+import {
+  inferPathPoint,
+  type InferredPathPoint
+} from '@/domain/path-editor/pathPointInference';
 import type {
   ArcPathSegment,
   CirclePathSegment,
@@ -61,25 +64,7 @@ import type {
   SegmentId
 } from '@/domain/path-intel/types';
 
-export interface NearestPathPoint {
-  distance: number;
-  operationId: string;
-  pathElementId: PathElementId | null;
-  point: Point2;
-  segmentId: SegmentId;
-  segmentIndex: number;
-  tangent: Point2;
-  t: number;
-}
-
-export type MagnetizeMode = 'perpendicular' | 'tangent';
-
-export interface MagnetizedPathPoint extends NearestPathPoint {
-  mode: MagnetizeMode;
-  relation: 'perpendicular' | 'tangent' | 'nearest-fallback';
-  sourcePoint: Point2;
-  tangent: Point2;
-}
+type NearestPathPoint = InferredPathPoint;
 
 export interface PathStartPreview {
   operationId: string;
@@ -633,6 +618,50 @@ export function setClosedOperationStartNearPoint(
   return next;
 }
 
+export function setClosedOperationStartAtInferredPoint(
+  document: PathPlanningDocument,
+  inferred: InferredPathPoint
+) {
+  const next = cloneDocument(document);
+  const operation = next.plan.operations.find(
+    (candidate) => candidate.id === inferred.operationId
+  );
+  const ref = operation?.segmentRefs[inferred.segmentIndex];
+  if (
+    !operation ||
+    !operation.closed ||
+    !ref ||
+    ref.segmentId !== inferred.segmentId ||
+    !Number.isFinite(inferred.point.x) ||
+    !Number.isFinite(inferred.point.y)
+  ) {
+    return null;
+  }
+
+  const startSelection = manualStartSelection(next, operation, inferred);
+  const split = splitOperationSegmentAtPoint(next, operation, inferred);
+  const refs = split?.refs ?? operation.segmentRefs;
+  const startIndex = split?.startIndex ?? inferred.segmentIndex;
+  operation.segmentRefs = rotatePathRefs(refs, startIndex);
+  operation.overrides = {
+    ...operation.overrides,
+    start: {
+      kind: 'manual',
+      point: { ...inferred.point },
+      relation: split?.createdSegmentIds?.length
+        ? 'new-split-point'
+        : 'existing-point',
+      sourceSegmentId: inferred.segmentId,
+      sourceSegmentIndex: inferred.segmentIndex,
+      ...(startSelection.pointRole ? { pointRole: startSelection.pointRole } : {}),
+      createdSegmentIds: split?.createdSegmentIds ?? []
+    }
+  };
+  syncChainRefs(next, operation);
+  refreshPlan(next);
+  return next;
+}
+
 export function setCircleOperationCenterPierceLeadIn(
   document: PathPlanningDocument,
   operationId: string
@@ -840,130 +869,11 @@ export function nearestPointOnOperation(
   operationId: string,
   point: Point2
 ): NearestPathPoint | null {
-  const operation = document.plan.operations.find((candidate) => candidate.id === operationId);
-  if (!operation) return null;
-
-  const segmentsById = segmentMap(document.segments);
-  const pathElementId = pathElementIdForOperation(document, operationId);
-  let nearest: NearestPathPoint | null = null;
-
-  operation.segmentRefs.forEach((ref, segmentIndex) => {
-    const segment = requiredSegment(segmentsById, ref.segmentId);
-    const candidate = nearestPointOnSegment(segment, ref, point);
-    if (!candidate) return;
-    const item: NearestPathPoint = {
-      ...candidate,
-      operationId,
-      pathElementId,
-      segmentId: ref.segmentId,
-      segmentIndex
-    };
-    if (!nearest || item.distance < nearest.distance) nearest = item;
+  return inferPathPoint(document, {
+    mode: 'nearest',
+    operationId,
+    hintPoint: point
   });
-
-  return nearest;
-}
-
-export function magnetizePointToPath(
-  document: PathPlanningDocument,
-  point: Point2,
-  mode: MagnetizeMode
-): MagnetizedPathPoint | null {
-  return constructMagnetizedPoint(document, point, point, mode);
-}
-
-export function constructMagnetizedPoint(
-  document: PathPlanningDocument,
-  sourcePoint: Point2,
-  contourHintPoint: Point2,
-  mode: MagnetizeMode
-): MagnetizedPathPoint | null {
-  const hint = nearestPointOnDocument(document, contourHintPoint);
-  if (!hint) return null;
-
-  const operation = document.plan.operations.find((candidate) => candidate.id === hint.operationId);
-  const ref = operation?.segmentRefs[hint.segmentIndex];
-  if (!ref) return null;
-
-  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
-  const candidate =
-    mode === 'tangent'
-      ? tangentPointOnSegment(segment, ref, sourcePoint, contourHintPoint)
-      : {
-          ...nearestPointOnSegment(segment, ref, sourcePoint),
-          relation: 'perpendicular' as const
-        };
-  if (!candidate) return null;
-
-  return {
-    ...hint,
-    distance: distance(sourcePoint, candidate.point),
-    mode,
-    point: candidate.point,
-    relation: candidate.relation,
-    sourcePoint,
-    tangent: candidate.tangent,
-    t: candidate.t
-  };
-}
-
-export function slideMagnetizedPointOnSegment(
-  document: PathPlanningDocument,
-  snap: {
-    mode: MagnetizeMode;
-    operationId: string;
-    pathElementId: PathElementId | null;
-    relation: MagnetizedPathPoint['relation'];
-    segmentId: SegmentId;
-    sourcePoint: Point2;
-  },
-  contourHintPoint: Point2
-): MagnetizedPathPoint | null {
-  const operation = operationForSnap(document, snap.operationId, snap.pathElementId);
-  if (!operation) return null;
-
-  const storedSegmentIndex = operation.segmentRefs.findIndex((ref) => ref.segmentId === snap.segmentId);
-  const fallbackNearest =
-    storedSegmentIndex >= 0 ? null : nearestPointOnOperation(document, operation.id, contourHintPoint);
-  const segmentIndex = storedSegmentIndex >= 0 ? storedSegmentIndex : fallbackNearest?.segmentIndex ?? -1;
-  const ref = segmentIndex >= 0 ? operation.segmentRefs[segmentIndex] : null;
-  if (!ref) return null;
-
-  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
-  const candidate =
-    snap.mode === 'tangent' && snap.relation === 'tangent'
-      ? tangentPointOnSegment(segment, ref, snap.sourcePoint, contourHintPoint)
-      : {
-          ...nearestPointOnSegment(segment, ref, contourHintPoint),
-          relation: snap.relation === 'nearest-fallback' ? ('nearest-fallback' as const) : ('perpendicular' as const)
-        };
-  if (!candidate) return null;
-
-  return {
-    distance: distance(snap.sourcePoint, candidate.point),
-    mode: snap.mode,
-    operationId: operation.id,
-    pathElementId: pathElementIdForOperation(document, operation.id),
-    point: candidate.point,
-    relation: candidate.relation,
-    segmentId: ref.segmentId,
-    segmentIndex,
-    sourcePoint: snap.sourcePoint,
-    tangent: candidate.tangent,
-    t: candidate.t
-  };
-}
-
-function nearestPointOnDocument(document: PathPlanningDocument, point: Point2) {
-  let nearest: NearestPathPoint | null = null;
-
-  for (const operation of document.plan.operations) {
-    const candidate = nearestPointOnOperation(document, operation.id, point);
-    if (!candidate) continue;
-    if (!nearest || candidate.distance < nearest.distance) nearest = candidate;
-  }
-
-  return nearest;
 }
 
 function nearestExistingOperationEndpoint(
@@ -971,49 +881,11 @@ function nearestExistingOperationEndpoint(
   operation: PathOperation,
   point: Point2
 ) {
-  const segmentsById = segmentMap(document.segments);
-  const pathElementId = pathElementIdForOperation(document, operation.id);
-  let nearest: {
-    distance: number;
-    pathElementId: PathElementId | null;
-    point: Point2;
-    segmentId: SegmentId;
-    segmentIndex: number;
-  } | null = null;
-
-  for (const [segmentIndex, ref] of operation.segmentRefs.entries()) {
-    const segment = requiredSegment(segmentsById, ref.segmentId);
-    const candidates = [orientedSegmentStart(segment, ref), orientedSegmentEnd(segment, ref)];
-    for (const candidate of candidates) {
-      const candidateDistance = distance(point, candidate);
-      if (!nearest || candidateDistance < nearest.distance) {
-        nearest = {
-          distance: candidateDistance,
-          pathElementId,
-          point: candidate,
-          segmentId: ref.segmentId,
-          segmentIndex
-        };
-      }
-    }
-  }
-
-  return nearest ?? null;
-}
-
-function pathElementIdForOperation(document: PathPlanningDocument, operationId: string) {
-  return document.pathElements.find((element) => element.operationId === operationId)?.id ?? null;
-}
-
-function operationForSnap(
-  document: PathPlanningDocument,
-  operationId: string,
-  pathElementId?: PathElementId | null
-) {
-  const elementOperationId = pathElementId
-    ? document.pathElements.find((element) => element.id === pathElementId)?.operationId
-    : null;
-  return document.plan.operations.find((candidate) => candidate.id === (elementOperationId ?? operationId));
+  return inferPathPoint(document, {
+    mode: 'endpoint',
+    operationId: operation.id,
+    hintPoint: point
+  });
 }
 
 function splitOperationSegmentAtPoint(
@@ -1476,168 +1348,6 @@ function splitCircle(
   ];
 }
 
-function nearestPointOnSegment(segment: PathSegment, ref: OrientedSegmentRef, point: Point2) {
-  if (segment.kind === 'line') {
-    const start = orientedSegmentStart(segment, ref);
-    const end = orientedSegmentEnd(segment, ref);
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const lengthSquared = dx * dx + dy * dy;
-    const t = lengthSquared <= 0 ? 0 : clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared);
-    const candidate = {
-      x: start.x + dx * t,
-      y: start.y + dy * t
-    };
-    return { distance: distance(point, candidate), point: candidate, tangent: normalize({ x: dx, y: dy }), t };
-  }
-
-  if (segment.kind === 'circle') {
-    const angle = Math.atan2(point.y - segment.center.y, point.x - segment.center.x);
-    const candidate = pointOnCircle(segment.center, segment.radius, angle);
-    return {
-      distance: distance(point, candidate),
-      point: candidate,
-      tangent: circleTangent(angle, ref.reversed),
-      t: 0
-    };
-  }
-
-  return nearestPointOnArc(segment, ref, point);
-}
-
-function nearestPointOnArc(segment: ArcPathSegment, ref: OrientedSegmentRef, point: Point2) {
-  const start = orientedSegmentStart(segment, ref);
-  const end = orientedSegmentEnd(segment, ref);
-  const startAngle = Math.atan2(start.y - segment.center.y, start.x - segment.center.x);
-  const endAngle = Math.atan2(end.y - segment.center.y, end.x - segment.center.x);
-  const clockwise = orientedArcClockwise(segment, ref);
-  const projectedAngle = Math.atan2(point.y - segment.center.y, point.x - segment.center.x);
-  const parameter = arcParameterAtPoint(segment, ref, point);
-
-  if (parameter !== null) {
-    const projected = pointOnArcAtParameter(segment, ref, parameter);
-    return {
-      distance: distance(point, projected),
-      point: projected,
-      tangent: circleTangent(projectedAngle, clockwise),
-      t: parameter
-    };
-  }
-
-  const startDistance = distance(point, start);
-  const endDistance = distance(point, end);
-  return startDistance <= endDistance
-    ? { distance: startDistance, point: start, tangent: circleTangent(startAngle, clockwise), t: 0 }
-    : { distance: endDistance, point: end, tangent: circleTangent(endAngle, clockwise), t: 1 };
-}
-
-function tangentPointOnSegment(
-  segment: PathSegment,
-  ref: OrientedSegmentRef,
-  sourcePoint: Point2,
-  contourHintPoint: Point2
-) {
-  if (segment.kind === 'line') {
-    return {
-      ...nearestPointOnSegment(segment, ref, contourHintPoint),
-      relation: 'nearest-fallback' as const
-    };
-  }
-
-  const clockwise = segment.kind === 'circle' ? ref.reversed : orientedArcClockwise(segment, ref);
-  const centerToSource = {
-    x: sourcePoint.x - segment.center.x,
-    y: sourcePoint.y - segment.center.y
-  };
-  const sourceDistance = Math.hypot(centerToSource.x, centerToSource.y);
-
-  if (!Number.isFinite(sourceDistance) || sourceDistance <= segment.radius + 1e-9) {
-    return {
-      ...nearestPointOnSegment(segment, ref, contourHintPoint),
-      relation: 'nearest-fallback' as const
-    };
-  }
-
-  const candidates = tangentRadialsFromSource(centerToSource, segment.radius)
-    .filter((radial) => tangentRadialIsValid(segment, ref, radial))
-    .map((radial) => {
-      const parameter = tangentParameter(segment, ref, radial);
-      const point =
-        segment.kind === 'arc'
-          ? pointOnArcAtParameter(segment, ref, parameter)
-          : {
-              x: segment.center.x + segment.radius * radial.x,
-              y: segment.center.y + segment.radius * radial.y
-            };
-      return {
-        distance: distance(sourcePoint, point),
-        hintDistance: distance(contourHintPoint, point),
-        point,
-        tangent: circleTangentFromRadial(radial, clockwise),
-        t: parameter,
-        relation: 'tangent' as const
-      };
-    });
-
-  return candidates.sort((first, second) => first.hintDistance - second.hintDistance)[0] ?? {
-    ...nearestPointOnSegment(segment, ref, contourHintPoint),
-    relation: 'nearest-fallback' as const
-  };
-}
-
-function tangentRadialsFromSource(centerToSource: Point2, radius: number) {
-  const scale = Math.max(Math.abs(centerToSource.x), Math.abs(centerToSource.y), radius);
-  if (!Number.isFinite(scale) || scale <= 0) return [];
-
-  const scaledX = centerToSource.x / scale;
-  const scaledY = centerToSource.y / scale;
-  const scaledRadius = radius / scale;
-  const scaledDistance = Math.hypot(scaledX, scaledY);
-  if (!Number.isFinite(scaledDistance) || scaledDistance <= scaledRadius) return [];
-
-  const sourceRadial = {
-    x: scaledX / scaledDistance,
-    y: scaledY / scaledDistance
-  };
-  const radiusRatio = scaledRadius / scaledDistance;
-  const excessUsingYFactor =
-    scaledX * scaledX +
-    (Math.abs(scaledY) - scaledRadius) * (Math.abs(scaledY) + scaledRadius);
-  const excessUsingXFactor =
-    scaledY * scaledY +
-    (Math.abs(scaledX) - scaledRadius) * (Math.abs(scaledX) + scaledRadius);
-  const squaredTangentLeg =
-    Math.abs(scaledX) >= Math.abs(scaledY) ? excessUsingXFactor : excessUsingYFactor;
-  const tangentScale =
-    Math.sqrt(Math.max(0, squaredTangentLeg)) / scaledDistance;
-  const sourceLeftNormal = { x: -sourceRadial.y, y: sourceRadial.x };
-
-  return [1, -1].map((side) =>
-    normalize({
-      x: radiusRatio * sourceRadial.x + side * tangentScale * sourceLeftNormal.x,
-      y: radiusRatio * sourceRadial.y + side * tangentScale * sourceLeftNormal.y
-    })
-  );
-}
-
-function tangentRadialIsValid(
-  segment: ArcPathSegment | CirclePathSegment,
-  ref: OrientedSegmentRef,
-  radial: Point2
-) {
-  if (segment.kind === 'circle') return true;
-  return arcParameterAtRadial(segment, ref, radial) !== null;
-}
-
-function tangentParameter(
-  segment: ArcPathSegment | CirclePathSegment,
-  ref: OrientedSegmentRef,
-  radial: Point2
-) {
-  if (segment.kind === 'circle') return 0;
-  return arcParameterAtRadial(segment, ref, radial) ?? 0;
-}
-
 function syncChainRefs(document: PathPlanningDocument, operation: PathOperation) {
   const chain = document.chains.find((candidate) => candidate.id === operation.chainId);
   if (!chain) return;
@@ -1981,20 +1691,6 @@ function cloneDocument(document: PathPlanningDocument): PathPlanningDocument {
 
 function clamp(value: number) {
   return Math.min(1, Math.max(0, value));
-}
-
-function circleTangent(angle: number, clockwise: boolean): Point2 {
-  return clockwise ? { x: Math.sin(angle), y: -Math.cos(angle) } : { x: -Math.sin(angle), y: Math.cos(angle) };
-}
-
-function circleTangentFromRadial(radial: Point2, clockwise: boolean): Point2 {
-  return clockwise ? { x: radial.y, y: -radial.x } : { x: -radial.y, y: radial.x };
-}
-
-function normalize(vector: Point2): Point2 {
-  const length = Math.hypot(vector.x, vector.y);
-  if (length <= 0) return { x: 0, y: 0 };
-  return { x: vector.x / length, y: vector.y / length };
 }
 
 function translatePoint(point: Point2, delta: Point2): Point2 {

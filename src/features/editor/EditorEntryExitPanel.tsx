@@ -162,7 +162,7 @@ export function EditorEntryExitPanel({
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
         <legend className="px-1 uppercase text-muted-foreground">Canvas point picking</legend>
         <p className="text-muted-foreground">
-          Choose Entry or Exit, then pick one point on the canvas. The operation target stays locked until the point is picked or the mode is cancelled.
+          Choose Entry or Exit, then hover to preview a point on the endpoint normal and click to apply that exact perpendicular lead. The operation target stays locked until the point is picked or the mode is cancelled.
         </p>
         <div className="grid grid-cols-2 gap-1">
           <button

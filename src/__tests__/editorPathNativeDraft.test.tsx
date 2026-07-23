@@ -484,7 +484,7 @@ describe('EditorPage UPID draft boundary', () => {
     }
   });
 
-  it('keeps Contour Tree hover preference independent from Construction magnetic snap', async () => {
+  it('uses explicit Construction modes without a second magnetic-snap toggle', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 
     await act(async () => {
@@ -493,18 +493,15 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     await clickElement('[data-editor-workflow-command="construction.measurement"]');
-    await clickElement('input[aria-label="Toggle construction magnetic snap"]');
-    await clickElement('[data-editor-workflow-command="view.contours"]');
-    await clickElement('[data-editor-workflow-transition-action="save"]');
-    await clickElement('input[aria-label="Toggle canvas hover assist"]');
-    await clickElement('input[aria-label="Toggle canvas hover assist"]');
-
-    await clickElement('[data-editor-workflow-command="construction.measurement"]');
-    expect(
-      (container.querySelector(
-        'input[aria-label="Toggle construction magnetic snap"]'
-      ) as HTMLInputElement).checked
-    ).toBe(true);
+    expect(container.querySelector(
+      'button[aria-label="Magnetize latest point perpendicular"]'
+    )).not.toBeNull();
+    expect(container.querySelector(
+      'button[aria-label="Magnetize latest point tangent"]'
+    )).not.toBeNull();
+    expect(container.querySelector(
+      'input[aria-label="Toggle construction magnetic snap"]'
+    )).toBeNull();
   });
 
   it('does not quantize Transform canvas drag with the saved Construction grid preference', async () => {
@@ -842,13 +839,19 @@ describe('EditorPage UPID draft boundary', () => {
     const pickedPoint = previewWorldClientPoint(preview, { x: 22, y: 2 }, 5);
 
     await act(async () => {
+      preview.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, ...pickedPoint }));
+    });
+    await flushAsync();
+    expect(container.querySelector('[data-upid-construction-relation="perpendicular"]')).not.toBeNull();
+
+    await act(async () => {
       secondOperationPath.dispatchEvent(new MouseEvent('click', { bubbles: true, ...pickedPoint }));
     });
     await flushAsync();
 
     expect(operationTarget.value).toBe(firstOperation.id);
     expect(operationTarget.disabled).toBe(false);
-    expect((container.querySelector('input[aria-label="Entry X"]') as HTMLInputElement).value).toBe('22');
+    expect((container.querySelector('input[aria-label="Entry X"]') as HTMLInputElement).value).toBe('0');
     expect((container.querySelector('input[aria-label="Entry Y"]') as HTMLInputElement).value).toBe('2');
     expect(container.querySelector(
       `path[data-preview-travel="lead-in"][data-preview-operation="${firstOperation.id}"]`
@@ -1214,6 +1217,66 @@ describe('EditorPage UPID draft boundary', () => {
         .querySelector(`[data-upid-cut-sequence-row][data-upid-operation-id="${otherOperation.id}"]`)
         ?.getAttribute('data-upid-cut-sequence-manual') ?? ''
     ).not.toContain('start');
+  });
+
+  it('previews and commits the exact midpoint candidate in Set Start', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const operation = pathDocument.plan.operations[0];
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.set-start"]');
+    await changeSelect(
+      container.querySelector('select[aria-label="Set start point inference"]'),
+      'midpoint'
+    );
+
+    const preview = container.querySelector('svg[aria-label="UPID path preview"]') as SVGSVGElement;
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        bottom: 140,
+        height: 120,
+        left: 10,
+        right: 130,
+        toJSON: () => ({}),
+        top: 20,
+        width: 120,
+        x: 10,
+        y: 20
+      })
+    });
+    const path = container.querySelector(
+      `path[data-preview-source="path-document"][data-preview-operation="${operation.id}"][data-type="cut"]`
+    ) as SVGPathElement;
+    const midpoint = previewWorldClientPoint(preview, { x: 5, y: 4.8 }, 5);
+
+    await act(async () => {
+      preview.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, ...midpoint }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-start-inference="midpoint"]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-start-preview-label]')?.textContent).toBe('MIDPOINT');
+
+    await act(async () => {
+      path.dispatchEvent(new MouseEvent('click', { bubbles: true, ...midpoint }));
+    });
+    await flushAsync();
+    await clickElement(
+      '[data-editor-workflow-actions="machining.set-start"] button[aria-label^="Save "]'
+    );
+    await clickElement('[data-editor-workflow-command="machining.sequence"]');
+
+    expect(
+      container
+        .querySelector(`[data-upid-cut-sequence-row][data-upid-operation-id="${operation.id}"]`)
+        ?.getAttribute('data-upid-cut-sequence-manual')
+    ).toContain('start');
   });
 
   it('opens a workflow without rewriting its remembered hidden placement or geometry', async () => {

@@ -12,7 +12,10 @@ import { Magnet, Maximize2, MousePointer2, ZoomIn, ZoomOut } from 'lucide-react'
 import { Button } from '@/components/ui/button';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
-import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
+import type {
+  MagnetizeMode,
+  PathPointRelation
+} from '@/domain/path-editor/pathPointInference';
 import {
   buildEditorPathDocumentPreviewGeometry,
   buildEditorPreviewGeometry,
@@ -110,10 +113,12 @@ export interface EditorConstructionPreview {
 export interface EditorStartPreview {
   operationId: string;
   pathElementId?: string | null;
+  inferenceRelation: PathPointRelation;
   point: { x: number; y: number };
   pointRole?: 'start' | 'end' | null;
   relation: 'existing-point' | 'new-split-point';
   segmentId: string;
+  sourcePoint?: { x: number; y: number };
 }
 
 export function EditorPreview({
@@ -1365,10 +1370,24 @@ export function EditorPreview({
               data-upid-start-path-element-id={startPreview.pathElementId}
               data-upid-start-point-role={startPreview.pointRole ?? undefined}
               data-upid-start-preview
+              data-upid-start-inference={startPreview.inferenceRelation}
               data-upid-start-relation={startPreview.relation}
               data-upid-start-segment={startPreview.segmentId}
               pointerEvents="none"
             >
+              {startPreview.sourcePoint && (
+                <line
+                  data-upid-start-inference-guide
+                  stroke="#67e8f9"
+                  strokeDasharray="0.45 0.3"
+                  strokeWidth={markerRadius * 0.24}
+                  vectorEffect="non-scaling-stroke"
+                  x1={startPreview.sourcePoint.x}
+                  x2={startPreview.point.x}
+                  y1={flipY - startPreview.sourcePoint.y}
+                  y2={flipY - startPreview.point.y}
+                />
+              )}
               <circle
                 cx={startPreview.point.x}
                 cy={flipY - startPreview.point.y}
@@ -1405,7 +1424,7 @@ export function EditorPreview({
                 x={startPreview.point.x}
                 y={flipY - startPreview.point.y}
               >
-                {startPreview.relation === 'existing-point' ? 'START' : 'SPLIT START'}
+                {startPreview.inferenceRelation.replace('-', ' ').toUpperCase()}
               </text>
             </g>
           )}

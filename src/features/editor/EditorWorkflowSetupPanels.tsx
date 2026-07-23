@@ -216,18 +216,20 @@ export function EditorContourSetupPanel({
 export function EditorSetStartPanel({
   disabled,
   document,
-  magneticSnapEnabled,
+  inferenceMode,
+  onInferenceModeChange,
   onPickStart,
   onSelectOperation,
-  onToggleMagneticSnap,
   selectedOperationId
 }: {
   disabled: boolean;
   document: PathPlanningDocument;
-  magneticSnapEnabled: boolean;
+  inferenceMode: 'endpoint' | 'nearest' | 'midpoint' | 'perpendicular';
+  onInferenceModeChange: (
+    mode: 'endpoint' | 'nearest' | 'midpoint' | 'perpendicular'
+  ) => void;
   onPickStart: (operationId: string) => void;
   onSelectOperation: (operationId: string) => void;
-  onToggleMagneticSnap: () => void;
   selectedOperationId: string | null;
 }) {
   const selected = document.plan.operations.find(
@@ -260,21 +262,28 @@ export function EditorSetStartPanel({
           ))}
         </select>
       </label>
-      <label className="flex items-center justify-between gap-2 border border-border p-2">
-        <span>Allow magnetic segment splitting</span>
-        <input
-          aria-label="Toggle set start magnetic snap"
-          checked={magneticSnapEnabled}
+      <label className="grid gap-1 uppercase text-muted-foreground">
+        Point inference
+        <select
+          aria-label="Set start point inference"
+          className="h-7 border border-border bg-background px-1.5 text-foreground"
           disabled={disabled}
-          onChange={onToggleMagneticSnap}
-          type="checkbox"
-        />
+          onChange={(event) => onInferenceModeChange(
+            event.currentTarget.value as 'endpoint' | 'nearest' | 'midpoint' | 'perpendicular'
+          )}
+          value={inferenceMode}
+        >
+          <option value="endpoint">Endpoint</option>
+          <option value="nearest">Nearest point</option>
+          <option value="midpoint">Side midpoint</option>
+          <option value="perpendicular">Perpendicular from initial wire</option>
+        </select>
       </label>
       <div className="flex items-start gap-2 border border-sky-500/40 bg-sky-500/5 p-2 text-sky-100">
         <MousePointer2 className="mt-0.5 size-3 shrink-0" />
         <span>
           {selected
-            ? `Picking start for ${selected.displayName}. Click ${magneticSnapEnabled ? 'any point on the contour' : 'an existing endpoint'}.`
+            ? `Picking start for ${selected.displayName}. Hover to preview the ${inferenceMode} candidate, then click to apply it.`
             : 'No closed contour is available.'}
         </span>
       </div>

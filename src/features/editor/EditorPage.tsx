@@ -31,14 +31,12 @@ import {
   type ManualCompensationSelection
 } from '@/domain/compensation/intent';
 import {
-  constructMagnetizedPoint,
   mirrorPathDocument,
   mirrorPathElement,
   mirrorPathOperation,
   mirrorPathSegment,
   movePathOperation,
   movePathSegmentCenterTo,
-  previewClosedOperationStartNearPoint,
   rotatePathDocument,
   rotatePathElement,
   rotatePathOperation,
@@ -53,21 +51,25 @@ import {
   setProjectThreadingDefault,
   setPlannedRapidDestinationPoint,
   setPlannedRapidSourcePoint,
+  setClosedOperationStartAtInferredPoint,
   setClosedOperationStartAtSegmentEndpoint,
   reversePathOperation,
-  setClosedOperationStartAtExistingPointNearPoint,
-  setClosedOperationStartNearPoint,
   setPathOperationClassification,
   setPathOperationOrderStrategy,
-  slideMagnetizedPointOnSegment,
   translatePathDocument,
   translatePathElement,
   translatePathOperation,
   translatePathSegment,
-  type MagnetizedPathPoint,
-  type MagnetizeMode,
   type PathMirrorAxis
 } from '@/domain/path-editor/pathDocumentOperations';
+import {
+  inferPathPoint,
+  inferPerpendicularOperationOffset,
+  reinferStoredPathPoint,
+  type MagnetizedPathPoint,
+  type MagnetizeMode,
+  type PathPointInferenceMode
+} from '@/domain/path-editor/pathPointInference';
 import type {
   ContourClassification,
   OperationThreadingTransition,
@@ -76,6 +78,7 @@ import type {
   PathPlanningDocument
 } from '@/domain/path-intel/types';
 import { normalizeLegacyOperationTransitions } from '@/domain/path-intel/operationTransitions';
+import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
 import {
   setMachiningSpanParticipation,
   setPartialContourEntryReview,
@@ -84,8 +87,7 @@ import {
 import {
   normalizeUpidPathElementSelection,
   summarizeUpidPathDocumentForEditor,
-  upidPathElementIdForOperation,
-  upidStartPreviewPointRole
+  upidPathElementIdForOperation
 } from '@/domain/upid/projectRail';
 import { composeProjectUpidGCodeExport } from '@/domain/upid/projectUpid';
 import {
@@ -211,17 +213,21 @@ interface EditorDraftSnapshot {
   gridSnapEnabled: boolean;
   measurementPoints: MeasurementPoint[];
   pathClickMode: 'set-start' | MagnetizeMode | null;
-  constructionMagneticSnapEnabled: boolean;
   pathTargetXDraft: string;
   pathTargetYDraft: string;
   pathTranslateXDraft: string;
   pathTranslateYDraft: string;
   pointXDraft: string;
   pointYDraft: string;
-  setStartMagneticSnapEnabled: boolean;
+  setStartInferenceMode: SetStartInferenceMode;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
 }
+
+type SetStartInferenceMode = Extract<
+  PathPointInferenceMode,
+  'endpoint' | 'nearest' | 'midpoint' | 'perpendicular'
+>;
 
 const SET_START_COMMAND: EditorCommandDefinition = {
   id: 'machining.set-start',
@@ -671,8 +677,8 @@ export function EditorPage({
   const [hoveredPathElement, setHoveredPathElement] = useState<EditorPathElementRef | null>(null);
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
   const [pathHoverAssistEnabled, setPathHoverAssistEnabled] = useState(false);
-  const [constructionMagneticSnapEnabled, setConstructionMagneticSnapEnabled] = useState(false);
-  const [setStartMagneticSnapEnabled, setSetStartMagneticSnapEnabled] = useState(false);
+  const [setStartInferenceMode, setSetStartInferenceMode] =
+    useState<SetStartInferenceMode>('endpoint');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [selectedPathElement, setSelectedPathElement] = useState<EditorPathElementRef | null>(null);
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
@@ -797,7 +803,6 @@ export function EditorPage({
   const constructionPreview = useMemo(() => {
     if (
       !pathDocumentDraft ||
-      !constructionMagneticSnapEnabled ||
       !previewCursorPoint ||
       (pathClickMode !== 'perpendicular' && pathClickMode !== 'tangent')
     ) {
@@ -807,15 +812,15 @@ export function EditorPage({
     const sourcePoint = measurementPoints.at(-1);
     if (!sourcePoint) return null;
 
-    const magnetized = constructMagnetizedPoint(
-      pathDocumentDraft,
+    const magnetized = inferPathPoint(pathDocumentDraft, {
+      mode: pathClickMode,
       sourcePoint,
-      previewCursorPoint,
-      pathClickMode
-    );
+      hintPoint: previewCursorPoint
+    }) as MagnetizedPathPoint | null;
     if (!magnetized) return null;
 
     return {
+      candidate: magnetized,
       mode: pathClickMode,
       operationId: magnetized.operationId,
       pathElementId: magnetized.pathElementId,
@@ -824,7 +829,26 @@ export function EditorPage({
       sourcePoint,
       targetPoint: magnetized.point
     };
-  }, [constructionMagneticSnapEnabled, measurementPoints, pathClickMode, pathDocumentDraft, previewCursorPoint]);
+  }, [measurementPoints, pathClickMode, pathDocumentDraft, previewCursorPoint]);
+  const entryExitInferencePreview = useMemo(() => {
+    if (!pathDocumentDraft || !entryExitCanvasPick || !previewCursorPoint) return null;
+    const inferred = inferPerpendicularOperationOffset(pathDocumentDraft, {
+      endpoint: entryExitCanvasPick.kind,
+      operationId: entryExitCanvasPick.operationId,
+      hintPoint: previewCursorPoint
+    });
+    if (!inferred) return null;
+    return {
+      candidate: inferred,
+      mode: 'perpendicular' as const,
+      operationId: inferred.operationId,
+      pathElementId: inferred.pathElementId,
+      relation: inferred.relation,
+      segmentId: inferred.segmentId,
+      sourcePoint: inferred.sourcePoint,
+      targetPoint: inferred.point
+    };
+  }, [entryExitCanvasPick, pathDocumentDraft, previewCursorPoint]);
   const startPreview = useMemo(() => {
     if (
       !pathDocumentDraft ||
@@ -835,26 +859,36 @@ export function EditorPage({
       return null;
     }
 
-    const preview = previewClosedOperationStartNearPoint(
-      pathDocumentDraft,
-      selectedPathOperationId,
-      previewCursorPoint,
-      setStartMagneticSnapEnabled
-    );
+    const initialWire = resolveInitialWirePosition(pathDocumentDraft);
+    const sourcePoint =
+      setStartInferenceMode === 'perpendicular' && initialWire.status === 'ready'
+        ? initialWire.point
+        : undefined;
+    if (setStartInferenceMode === 'perpendicular' && !sourcePoint) return null;
+    const preview = inferPathPoint(pathDocumentDraft, {
+      mode: setStartInferenceMode,
+      operationId: selectedPathOperationId,
+      hintPoint: previewCursorPoint,
+      sourcePoint
+    });
     if (!preview) return null;
+    const atEndpoint = preview.endpointRole !== null;
 
     return {
+      candidate: preview,
       operationId: preview.operationId,
       pathElementId: preview.pathElementId,
       point: preview.point,
-      pointRole: upidStartPreviewPointRole(pathDocumentDraft, preview),
-      relation: preview.relation,
-      segmentId: preview.segmentId
+      pointRole: preview.endpointRole,
+      relation: atEndpoint ? 'existing-point' as const : 'new-split-point' as const,
+      inferenceRelation: preview.relation,
+      segmentId: preview.segmentId,
+      sourcePoint
     };
   }, [
     pathClickMode,
     pathDocumentDraft,
-    setStartMagneticSnapEnabled,
+    setStartInferenceMode,
     previewCursorPoint,
     selectedPathOperationId
   ]);
@@ -1624,11 +1658,13 @@ export function EditorPage({
     if (entryExitCanvasPick) {
       if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft) return;
       const { kind, operationId } = entryExitCanvasPick;
+      const inferred = entryExitInferencePreview?.candidate;
+      if (!inferred || inferred.operationId !== operationId) return;
       setEntryExitCanvasPick(null);
       if (kind === 'entry') {
-        handleSetOperationManualEntry(operationId, point, 'entry');
+        handleSetOperationManualEntry(operationId, inferred.point, 'entry');
       } else {
-        handleSetOperationManualExit(operationId, point);
+        handleSetOperationManualExit(operationId, inferred.point);
       }
       return;
     }
@@ -1645,9 +1681,11 @@ export function EditorPage({
       if (!activeWorkflowOwns(SET_START_COMMAND.id)) return;
       if (!selectedPathOperationId) return;
 
-      const edited = setStartMagneticSnapEnabled
-        ? setClosedOperationStartNearPoint(pathDocumentDraft, selectedPathOperationId, point)
-        : setClosedOperationStartAtExistingPointNearPoint(pathDocumentDraft, selectedPathOperationId, point);
+      const inferred = startPreview?.candidate;
+      const edited =
+        inferred?.operationId === selectedPathOperationId
+          ? setClosedOperationStartAtInferredPoint(pathDocumentDraft, inferred)
+          : null;
       if (!edited) {
         onStatusMessage?.('Choose a closed path operation before setting the start.', 'warning');
         setPathClickMode(null);
@@ -1670,8 +1708,7 @@ export function EditorPage({
 
     if (!activeWorkflowOwns('construction.measurement')) return;
 
-    const sourcePoint = measurementPoints.at(-1) ?? point;
-    const magnetized = constructMagnetizedPoint(pathDocumentDraft, sourcePoint, point, pathClickMode);
+    const magnetized = constructionPreview?.candidate as MagnetizedPathPoint | undefined;
     if (!magnetized) {
       setPathClickMode(null);
       return;
@@ -1751,7 +1788,7 @@ export function EditorPage({
           return { ...measurementPoint, x: point.x, y: point.y };
         }
 
-        const magnetized = slideMagnetizedPointOnSegment(
+        const magnetized = reinferStoredPathPoint(
           pathDocumentDraft,
           measurementPoint.pathSnap,
           point
@@ -2361,7 +2398,6 @@ export function EditorPage({
     return {
       canvasMouseMode,
       draft: cloneEditorDraftState(draftState),
-      constructionMagneticSnapEnabled,
       gridSnapEnabled,
       historyLabel,
       measurementPoints: structuredClone(measurementPoints),
@@ -2372,7 +2408,7 @@ export function EditorPage({
       pathTranslateYDraft,
       pointXDraft,
       pointYDraft,
-      setStartMagneticSnapEnabled,
+      setStartInferenceMode,
       selectedPathElement,
       selectedPathOperationId
     };
@@ -2383,7 +2419,6 @@ export function EditorPage({
     const restoredPathDocument = editorDraftPathDocument(restoredDraft);
     setDraftState(restoredDraft);
     setCanvasMouseMode(snapshot.canvasMouseMode);
-    setConstructionMagneticSnapEnabled(snapshot.constructionMagneticSnapEnabled);
     setGridSnapEnabled(snapshot.gridSnapEnabled);
     setMeasurementPoints(structuredClone(snapshot.measurementPoints));
     setPathTargetXDraft(snapshot.pathTargetXDraft);
@@ -2392,7 +2427,7 @@ export function EditorPage({
     setPathTranslateYDraft(snapshot.pathTranslateYDraft);
     setPointXDraft(snapshot.pointXDraft);
     setPointYDraft(snapshot.pointYDraft);
-    setSetStartMagneticSnapEnabled(snapshot.setStartMagneticSnapEnabled);
+    setSetStartInferenceMode(snapshot.setStartInferenceMode);
     const restoredOperationId = restoredPathDocument ? snapshot.selectedPathOperationId : null;
     setSelectedPathOperationId(restoredOperationId);
     setSelectedPathElement(
@@ -2449,9 +2484,7 @@ export function EditorPage({
         return 'Set Start / Step 1: choose a closed contour in the workflow before choosing its start point.';
       }
 
-      return setStartMagneticSnapEnabled
-        ? 'Start mode / Step 2: click the contour near the desired start. Magnetic mode can split a segment at the clicked point.'
-        : 'Set Start / Step 2: click an existing endpoint on the selected contour.';
+      return `Set Start / Step 2: hover the contour to preview a ${setStartInferenceMode} candidate, then click to apply that exact point.`;
     }
 
     if (pathClickMode === 'perpendicular' || pathClickMode === 'tangent') {
@@ -2917,20 +2950,14 @@ export function EditorPage({
     setGridSnapEnabled((current) => !current);
   }
 
-  function handleToggleConstructionMagneticSnap() {
-    if (!activeWorkflowOwns('construction.measurement')) return;
-    markActiveWorkflowDirty('construction.measurement');
-    setConstructionMagneticSnapEnabled((current) => !current);
-  }
-
-  function handleToggleSetStartMagneticSnap() {
+  function handleSetStartInferenceMode(mode: SetStartInferenceMode) {
     if (!activeWorkflowOwns(SET_START_COMMAND.id)) return;
     markActiveWorkflowPending(
       SET_START_COMMAND.id,
       'set-start-input',
       'Choose and apply a valid contour start before saving.'
     );
-    setSetStartMagneticSnapEnabled((current) => !current);
+    setSetStartInferenceMode(mode);
   }
 
   function renderInspectorPanelContent() {
@@ -3029,11 +3056,9 @@ export function EditorPage({
           onSelectPathElement={handleSelectPathElement}
           onSetCanvasMouseMode={handleSetCanvasMouseMode}
           onToggleGridSnap={handleToggleConstructionGridSnap}
-          onTogglePathMagneticSnap={handleToggleConstructionMagneticSnap}
           pathCount={pathCount}
           pathConstructionMode={pathClickMode === 'set-start' ? null : pathClickMode}
           pathDocument={pathDocumentDraft}
-          pathMagneticSnapEnabled={constructionMagneticSnapEnabled}
           pointXDraft={pointXDraft}
           pointYDraft={pointYDraft}
           previewCursorPoint={previewCursorPoint}
@@ -3286,10 +3311,10 @@ export function EditorPage({
             <EditorSetStartPanel
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
-              magneticSnapEnabled={setStartMagneticSnapEnabled}
+              inferenceMode={setStartInferenceMode}
+              onInferenceModeChange={handleSetStartInferenceMode}
               onPickStart={handleSetStartOperationTarget}
               onSelectOperation={handleSetStartOperationTarget}
-              onToggleMagneticSnap={handleToggleSetStartMagneticSnap}
               selectedOperationId={selectedPathOperationId}
             />
           )}
@@ -3382,7 +3407,7 @@ export function EditorPage({
       >
         <EditorCanvasPanel
           canvasMouseMode={canvasMouseMode}
-          constructionPreview={constructionPreview}
+          constructionPreview={constructionPreview ?? entryExitInferencePreview}
           draftProgram={draftProgram}
           gridSnapEnabled={
             !pathDocumentDraft || activeWorkflowOwns('construction.measurement')

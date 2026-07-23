@@ -1,5 +1,5 @@
 import { buildISOFromPoints, type BuildISOFromPointsOptions } from './isoNormalizer';
-import type { MagnetizedPathPoint } from '@/domain/path-editor/pathDocumentOperations';
+import type { MagnetizedPathPoint } from '@/domain/path-editor/pathPointInference';
 
 export interface MeasurementPoint {
   id: string;
