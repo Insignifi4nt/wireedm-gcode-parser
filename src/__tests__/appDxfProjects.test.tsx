@@ -1399,7 +1399,7 @@ describe('App DXF imports and project library', () => {
     activePanel = container.querySelector('[data-editor-workspace-panel]');
     expect(activePanel?.getAttribute('data-editor-workspace-panel')).toBe('set-start');
     expect(activePanel?.querySelector('[data-upid-set-start-workflow]')).not.toBeNull();
-    expect(activePanel?.querySelector('[aria-label="Toggle set start magnetic snap"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Set start point inference"]')).not.toBeNull();
     expect(activePanel?.querySelector('[aria-label="Pick another start"]')).not.toBeNull();
     expect(activePanel?.querySelector('[aria-label="Add center pierce lead-in"]')).toBeNull();
 
@@ -1416,7 +1416,7 @@ describe('App DXF imports and project library', () => {
     expect(activePanel?.textContent).toContain('Measurement & Construction');
     expect(activePanel?.querySelector('[aria-label="Magnetize latest point perpendicular"]')).not.toBeNull();
     expect(activePanel?.querySelector('[aria-label="Magnetize latest point tangent"]')).not.toBeNull();
-    expect(activePanel?.querySelector('[aria-label="Toggle construction magnetic snap"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Toggle construction magnetic snap"]')).toBeNull();
 
     await openWorkflowCommand(container, 'view.contours');
     expect(container.querySelector('button[aria-label="Set path start to this point"]')).toBeNull();
@@ -2847,6 +2847,14 @@ describe('App DXF imports and project library', () => {
     await openWorkflowCommand(container, 'machining.set-start');
     await act(async () => {
       preview?.dispatchEvent(
+        new MouseEvent('mousemove', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 10, y: 0 })
+        })
+      );
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
         new MouseEvent('click', {
           bubbles: true,
           ...worldClientPoint(preview!, { x: 10, y: 0 })
@@ -3717,6 +3725,14 @@ describe('App DXF imports and project library', () => {
 
     await act(async () => {
       preview?.dispatchEvent(
+        new MouseEvent('mousemove', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 5 })
+        })
+      );
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
         new MouseEvent('click', {
           bubbles: true,
           ...worldClientPoint(preview!, { x: 5, y: 2 })
@@ -3726,17 +3742,11 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
     expect(container.querySelector('[data-measurement-point="1"]')).not.toBeNull();
 
-    const snapToggle = document.querySelector(
-      'input[aria-label="Toggle construction magnetic snap"]'
-    ) as HTMLInputElement | null;
     const perpendicularButton = document.querySelector(
       'button[aria-label="Magnetize latest point perpendicular"]'
     ) as HTMLButtonElement | null;
     expect(perpendicularButton).not.toBeNull();
 
-    await act(async () => {
-      snapToggle?.click();
-    });
     await act(async () => {
       perpendicularButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
@@ -3811,16 +3821,21 @@ describe('App DXF imports and project library', () => {
 
     expect(container.querySelectorAll('path[data-preview-segment][data-type="cut"]')).toHaveLength(4);
 
-    const snapToggle = container.querySelector(
-      'input[aria-label="Toggle set start magnetic snap"]'
-    ) as HTMLInputElement | null;
-
-    await act(async () => {
-      snapToggle?.click();
-    });
+    await changeSelectValue(
+      container.querySelector('select[aria-label="Set start point inference"]'),
+      'nearest'
+    );
     await act(async () => {
       container.querySelector('button[aria-label="Pick another start"]')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('mousemove', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 5 })
+        })
+      );
     });
     await act(async () => {
       preview?.dispatchEvent(
@@ -3890,14 +3905,10 @@ describe('App DXF imports and project library', () => {
     expect(existingStartSegmentId).toBeTruthy();
     expect(existingStartPointRole).toBeTruthy();
 
-    const snapToggle = container.querySelector(
-      'input[aria-label="Toggle set start magnetic snap"]'
-    ) as HTMLInputElement | null;
-
-
-    await act(async () => {
-      snapToggle?.click();
-    });
+    await changeSelectValue(
+      container.querySelector('select[aria-label="Set start point inference"]'),
+      'nearest'
+    );
     await act(async () => {
       preview?.dispatchEvent(
         new MouseEvent('mousemove', {
@@ -3953,12 +3964,17 @@ describe('App DXF imports and project library', () => {
       configurable: true
     });
 
-    const snapToggle = container.querySelector(
-      'input[aria-label="Toggle set start magnetic snap"]'
-    ) as HTMLInputElement | null;
-
+    await changeSelectValue(
+      container.querySelector('select[aria-label="Set start point inference"]'),
+      'nearest'
+    );
     await act(async () => {
-      snapToggle?.click();
+      preview?.dispatchEvent(
+        new MouseEvent('mousemove', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 0 })
+        })
+      );
     });
     await act(async () => {
       preview?.dispatchEvent(
@@ -4987,6 +5003,14 @@ describe('App DXF imports and project library', () => {
     });
     await act(async () => {
       preview?.dispatchEvent(
+        new MouseEvent('mousemove', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 5 })
+        })
+      );
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
         new MouseEvent('click', {
           bubbles: true,
           ...worldClientPoint(preview!, { x: 5, y: 5 })
@@ -5094,7 +5118,29 @@ describe('App DXF imports and project library', () => {
     });
 
     await act(async () => {
+      container.querySelector('[data-editor-preview-mouse-mode-point]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 2 })
+        })
+      );
+    });
+    await flushAsync();
+
+    await act(async () => {
       tangentButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      preview?.dispatchEvent(
+        new MouseEvent('mousemove', {
+          bubbles: true,
+          ...worldClientPoint(preview!, { x: 5, y: 5 })
+        })
+      );
     });
     await act(async () => {
       preview?.dispatchEvent(
@@ -5105,7 +5151,7 @@ describe('App DXF imports and project library', () => {
       );
     });
 
-    expect(container.querySelector('[data-measurement-point-mode="1"]')?.textContent).toBe('Snap');
+    expect(container.querySelector('[data-measurement-point-mode="2"]')?.textContent).toBe('Snap');
   });
 
   it('renders imported DXF previews from the internal path document', async () => {
@@ -5604,6 +5650,20 @@ function duplicateFirstContour(document: PathPlanningDocument): PathPlanningDocu
       }
     ]
   };
+}
+
+async function changeSelectValue(select: HTMLSelectElement | null, value: string) {
+  expect(select).not.toBeNull();
+  await act(async () => {
+    if (!select) return;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLSelectElement.prototype,
+      'value'
+    )?.set;
+    setter?.call(select, value);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await flushAsync();
 }
 
 function worldClientPoint(preview: SVGSVGElement, point: { x: number; y: number }) {

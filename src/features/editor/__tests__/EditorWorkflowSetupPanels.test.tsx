@@ -67,25 +67,33 @@ describe('canonical workflow target fallbacks', () => {
     const document = twoCircleDocument();
     const fallbackOperation = document.plan.operations[0];
     const onPickStart = vi.fn();
+    const onInferenceModeChange = vi.fn();
 
     await act(async () => {
       root.render(
         <EditorSetStartPanel
           disabled={false}
           document={document}
-          magneticSnapEnabled={false}
+          inferenceMode="endpoint"
+          onInferenceModeChange={onInferenceModeChange}
           onPickStart={onPickStart}
           onSelectOperation={vi.fn()}
-          onToggleMagneticSnap={vi.fn()}
           selectedOperationId={null}
         />
       );
     });
 
     await act(async () => {
+      setSelect(
+        container.querySelector<HTMLSelectElement>(
+          '[aria-label="Set start point inference"]'
+        )!,
+        'midpoint'
+      );
       container.querySelector<HTMLButtonElement>('[aria-label="Pick another start"]')?.click();
     });
 
+    expect(onInferenceModeChange).toHaveBeenCalledWith('midpoint');
     expect(onPickStart).toHaveBeenCalledWith(fallbackOperation.id);
   });
 });

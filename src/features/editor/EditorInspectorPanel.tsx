@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import type { GCodeStructure } from '@/domain/editor/gcodeStructure';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
-import type { MagnetizeMode } from '@/domain/path-editor/pathDocumentOperations';
+import type { MagnetizeMode } from '@/domain/path-editor/pathPointInference';
 import type { MachineFitResult } from '@/domain/machine/machineFit';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
@@ -54,7 +54,6 @@ interface EditorInspectorPanelProps {
   measurementPoints: MeasurementPoint[];
   pathCount: number;
   pathConstructionMode?: MagnetizeMode | null;
-  pathMagneticSnapEnabled?: boolean;
   pathDocument: PathPlanningDocument | null;
   pointXDraft: string;
   pointYDraft: string;
@@ -86,7 +85,6 @@ interface EditorInspectorPanelProps {
   onSelectPathElement?: (element: EditorPathElementRef) => void;
   onSetCanvasMouseMode: (mode: CanvasMouseMode) => void;
   onToggleGridSnap: () => void;
-  onTogglePathMagneticSnap?: () => void;
 }
 
 export function EditorInspectorPanel({
@@ -105,7 +103,6 @@ export function EditorInspectorPanel({
   measurementPoints,
   pathCount,
   pathConstructionMode = null,
-  pathMagneticSnapEnabled = false,
   pathDocument,
   pointXDraft,
   pointYDraft,
@@ -131,8 +128,7 @@ export function EditorInspectorPanel({
   onPointYDraftChange,
   onSelectPathElement,
   onSetCanvasMouseMode,
-  onToggleGridSnap,
-  onTogglePathMagneticSnap
+  onToggleGridSnap
 }: EditorInspectorPanelProps) {
   const selectedPathOperationIndex =
     pathDocument?.plan.operations.findIndex((operation) => operation.id === selectedPathOperationId) ?? -1;
@@ -1074,16 +1070,6 @@ export function EditorInspectorPanel({
                 </button>
               ))}
             </div>
-            <label className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2">
-              <span>Magnetic construction snap</span>
-              <input
-                aria-label="Toggle construction magnetic snap"
-                checked={pathMagneticSnapEnabled}
-                disabled={isSaving || !onTogglePathMagneticSnap}
-                onChange={onTogglePathMagneticSnap}
-                type="checkbox"
-              />
-            </label>
           </div>
         )}
         <div className="grid grid-cols-2 gap-1.5">

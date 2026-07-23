@@ -102,18 +102,11 @@ describe('Editor construction regressions', () => {
       configurable: true
     });
 
-    const snapToggle = container.querySelector(
-      'input[aria-label="Toggle construction magnetic snap"]'
-    ) as HTMLInputElement | null;
     const perpendicularButton = container.querySelector(
       'button[aria-label="Magnetize latest point perpendicular"]'
     ) as HTMLButtonElement | null;
-    expect(snapToggle).not.toBeNull();
     expect(perpendicularButton).not.toBeNull();
 
-    await act(async () => {
-      snapToggle?.click();
-    });
     await act(async () => {
       perpendicularButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });

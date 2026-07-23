@@ -66,6 +66,7 @@ describe('measurementPoints', () => {
   it('creates persisted path snaps from magnetized UPID construction points', () => {
     const snap = createMeasurementPointPathSnapFromMagnetized({
       distance: 4,
+      endpointRole: null,
       mode: 'perpendicular',
       operationId: 'op_0001',
       pathElementId: 'contour_0001',
@@ -91,6 +92,7 @@ describe('measurementPoints', () => {
     const movedSnap = createMeasurementPointPathSnapFromMagnetized(
       {
         distance: 2,
+        endpointRole: null,
         mode: 'tangent',
         operationId: 'op_0001',
         pathElementId: 'contour_0001',
