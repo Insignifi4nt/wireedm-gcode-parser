@@ -706,6 +706,25 @@ describe('EditorPage UPID draft boundary', () => {
       .not.toBe('2');
   });
 
+  it('allows saving after moving the document reference to the origin', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await clickElement('button[aria-label="Use origin as document reference target"]');
+    await clickElement('button[aria-label="Move document reference to target"]');
+
+    const save = container.querySelector(
+      '[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]'
+    ) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    expect(container.querySelector('[data-editor-workflow-save-reason]')).toBeNull();
+  });
+
   it('does not clear one pending form when another action in the workflow succeeds', async () => {
     const project = projectWithUpid(pathDocumentFromIndependentRectangles());
 

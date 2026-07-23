@@ -128,7 +128,10 @@ interface EditorPathNavigatorPanelProps {
   onPathTranslateYDraftChange: (value: string) => void;
   onSetPathOperationOrderStrategy: (strategy: OperationOrderStrategy) => void;
   onTranslatePathSelection: (delta: { x: number; y: number }) => void;
-  onTranslatePathDocument: (delta: { x: number; y: number }) => void;
+  onTranslatePathDocument: (
+    delta: { x: number; y: number },
+    completedSource?: 'transform-target' | 'transform-translate'
+  ) => void;
   onToggleHoverAssist: () => void;
   onTransformDraftChange?: (source: 'target' | 'translate') => void;
   transformTargetChangeBlocked?: boolean;
@@ -862,7 +865,7 @@ export function EditorPathNavigatorPanel({
                     onTranslatePathDocument({
                       x: targetX - documentReferencePoint.x,
                       y: targetY - documentReferencePoint.y
-                    });
+                    }, 'transform-target');
                   } else {
                     onMovePathSelectionCenter({ x: targetX, y: targetY });
                   }
