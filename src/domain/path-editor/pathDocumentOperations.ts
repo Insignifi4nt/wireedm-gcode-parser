@@ -180,7 +180,15 @@ export function setPlannedRapidDestinationPoint(
                 to: { ...currentEntry.to },
                 review: 'reviewed'
               }
-            : { ...currentEntry, from: { ...point } }
+            : currentEntry.strategy === 'manual-straight'
+              ? { ...currentEntry, from: { ...point } }
+              : {
+                  strategy: 'manual-straight',
+                  move: 'cut',
+                  from: { ...point },
+                  to: { ...nextOperation.startPoint },
+                  review: 'reviewed'
+                }
       };
     }
     refreshPlan(next);
@@ -366,7 +374,7 @@ export function setPathOperationTransitions(
   if (!operation || !transitionsAreFinite(transitions)) return null;
   operation.transitions = structuredClone(transitions);
   const entry = operation.transitions.entry;
-  if (entry) {
+  if (entry && entry.strategy !== 'none') {
     const sourceSegmentId = entry.strategy === 'circle-center'
       ? entry.sourceSegmentId
       : operation.segmentRefs[0]?.segmentId;
@@ -386,6 +394,8 @@ export function setPathOperationTransitions(
         sourceSegmentIndex
       }
     };
+  } else {
+    delete operation.overrides?.leadIn;
   }
   refreshOperationTransitions(operation);
   refreshPlan(next);
@@ -1383,7 +1393,11 @@ function restoreGeometryEditOperationState(
       to: transformPoint(overrides.leadIn.to)
     };
   }
-  if (transitions?.entry && operationGeometryTransformed) {
+  if (
+    transitions?.entry &&
+    transitions.entry.strategy !== 'none' &&
+    operationGeometryTransformed
+  ) {
     transitions.entry = {
       ...transitions.entry,
       from: transformPoint(transitions.entry.from),
@@ -1393,7 +1407,11 @@ function restoreGeometryEditOperationState(
         : {})
     };
   }
-  if (transitions?.exit && operationGeometryTransformed) {
+  if (
+    transitions?.exit &&
+    transitions.exit.strategy !== 'none' &&
+    operationGeometryTransformed
+  ) {
     transitions.exit = {
       ...transitions.exit,
       from: transformPoint(transitions.exit.from),
@@ -1810,8 +1828,22 @@ function refreshOperationTransitions(operation: PathOperation) {
   const exit = operation.transitions?.exit;
   if (!entry && !exit) return;
   operation.transitions = {
-    ...(entry ? { entry: { ...entry, to: { ...operation.startPoint } } } : {}),
-    ...(exit ? { exit: { ...exit, from: { ...operation.endPoint } } } : {})
+    ...(entry
+      ? {
+          entry:
+            entry.strategy === 'none'
+              ? { ...entry }
+              : { ...entry, to: { ...operation.startPoint } }
+        }
+      : {}),
+    ...(exit
+      ? {
+          exit:
+            exit.strategy === 'none'
+              ? { ...exit }
+              : { ...exit, from: { ...operation.endPoint } }
+        }
+      : {})
   };
 }
 
@@ -1820,10 +1852,13 @@ function transitionsAreFinite(transitions: PathOperationTransitions) {
     .filter((transition): transition is NonNullable<typeof transition> => Boolean(transition))
     .every(
       (transition) =>
-        Number.isFinite(transition.from.x) &&
-        Number.isFinite(transition.from.y) &&
-        Number.isFinite(transition.to.x) &&
-        Number.isFinite(transition.to.y)
+        transition.strategy === 'none' ||
+        (
+          Number.isFinite(transition.from.x) &&
+          Number.isFinite(transition.from.y) &&
+          Number.isFinite(transition.to.x) &&
+          Number.isFinite(transition.to.y)
+        )
     );
 }
 

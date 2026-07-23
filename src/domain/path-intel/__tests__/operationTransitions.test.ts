@@ -55,6 +55,18 @@ describe('operation transitions', () => {
     expect(operationExitPoint(operation)).toEqual({ x: 12, y: 0 });
     expect(operationTransitionCutLength(operation)).toBe(4);
   });
+
+  it('routes reviewed none intent through canonical operation endpoints without cut length', () => {
+    const operation = operationFixture();
+    operation.transitions = {
+      entry: { strategy: 'none', review: 'reviewed' },
+      exit: { strategy: 'none', review: 'reviewed' }
+    };
+
+    expect(operationEntryPoint(operation)).toEqual(operation.startPoint);
+    expect(operationExitPoint(operation)).toEqual(operation.endPoint);
+    expect(operationTransitionCutLength(operation)).toBe(0);
+  });
 });
 
 function operationFixture(): PathOperation {

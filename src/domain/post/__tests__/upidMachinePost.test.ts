@@ -659,6 +659,7 @@ describe('postUpidForMachine', () => {
     for (const operation of document.plan.operations) {
       document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
     }
+    document = reviewNoExitForAll(document);
     document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
 
     const posted = postUpidForMachine(document, machine);
@@ -699,6 +700,40 @@ describe('postUpidForMachine', () => {
     expect(posted.blocks.filter((block) => block.kind === 'manual-rethread')).toHaveLength(1);
   });
 
+  it('posts reviewed Robofil v2 no-entry and no-exit intent without fabricated cut moves', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 10, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const operationId = document.plan.operations[0].id;
+    document = setPathOperationTransitions(document, operationId, {
+      entry: { strategy: 'none', review: 'reviewed' },
+      exit: { strategy: 'none', review: 'reviewed' }
+    })!;
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
+
+    const posted = postUpidForMachine(document, machine);
+    const operationBlocks = posted.blocks.filter(
+      (block) => block.operationId === operationId
+    );
+
+    expect(posted.status).toBe('ready');
+    expect(operationBlocks.some((block) => block.kind === 'lead-in')).toBe(false);
+    expect(operationBlocks.some((block) => block.kind === 'lead-out')).toBe(false);
+    expect(posted.moves.filter((move) => move.operationId === operationId)).toSatisfy(
+      (moves: typeof posted.moves) =>
+        moves.filter((move) => move.kind === 'cut').every(
+          (move) => move.segmentId !== null
+        )
+    );
+    expect(posted.body).toContain('G0 X15.000 Y0.000');
+  });
+
   it('blocks a derived partial entry until it is explicitly reviewed, then posts only active spans', () => {
     const machine = markMachineProfileUserVerified(
       createCharmillesRobofil100V2CandidateProfile()
@@ -716,6 +751,7 @@ describe('postUpidForMachine', () => {
       range: { start: 0, end: 1 },
       participation: 'inactive-reference'
     })!;
+    document = reviewNoExitForAll(document);
     document = setManualInitialWirePosition(document, { x: -2, y: -2 })!;
 
     const blocked = postUpidForMachine(document, machine);
@@ -751,6 +787,7 @@ describe('postUpidForMachine', () => {
     for (const operation of document.plan.operations) {
       document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
     }
+    document = reviewNoExitForAll(document);
     document.plan.operations[1].threadingTransition = {
       mode: 'manual',
       wireSeparation: 'manual-before-positioning',
@@ -797,6 +834,7 @@ describe('postUpidForMachine', () => {
     );
     const operationId = document.plan.operations[0].id;
     document = setCircleOperationCenterPierceLeadIn(document, operationId)!;
+    document = reviewNoExitForAll(document);
     const operation = document.plan.operations[0];
     document = setPathOperationTransitions(document, operationId, {
       ...operation.transitions,
@@ -837,6 +875,7 @@ describe('postUpidForMachine', () => {
     );
     const operationId = document.plan.operations[0].id;
     document = setCircleOperationCenterPierceLeadIn(document, operationId)!;
+    document = reviewNoExitForAll(document);
     document.plan.operations[0].programStops = [{
       id: 'retain-part',
       enabled: true,
@@ -901,6 +940,7 @@ describe('postUpidForMachine', () => {
     for (const operation of document.plan.operations) {
       document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
     }
+    document = reviewNoExitForAll(document);
     document = setManualInitialWirePosition(document, { x: -10, y: 5 })!;
 
     const posted = postUpidForMachine(document, machine);
@@ -964,6 +1004,7 @@ describe('postUpidForMachine', () => {
     for (const operation of forward.plan.operations) {
       forward = setCircleOperationCenterPierceLeadIn(forward, operation.id)!;
     }
+    forward = reviewNoExitForAll(forward);
     forward = setManualInitialWirePosition(forward, { x: 0, y: 0 })!;
     const reversed = reversePathOperation(forward, forward.plan.operations[1].id)!;
 
@@ -991,6 +1032,7 @@ describe('postUpidForMachine', () => {
       initialized,
       initialized.plan.operations[0].id
     )!;
+    document = reviewNoExitForAll(document);
     document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
 
     const posted = postUpidForMachine(document, machine);
@@ -1244,6 +1286,22 @@ describe('postUpidForMachine', () => {
     expect(snapshot.program.text).toBe(legacy.program.text);
   });
 });
+
+function reviewNoExitForAll(
+  document: ReturnType<typeof createUpidFromDxfEntities>
+) {
+  let next = document;
+  for (const operationId of document.plan.operations.map((operation) => operation.id)) {
+    const operation = next.plan.operations.find(
+      (candidate) => candidate.id === operationId
+    )!;
+    next = setPathOperationTransitions(next, operationId, {
+      ...operation.transitions,
+      exit: { strategy: 'none', review: 'reviewed' }
+    })!;
+  }
+  return next;
+}
 
 function compensatedRectangle(
   machine: ReturnType<typeof createVerifiedCharmillesRobofil100Profile>,

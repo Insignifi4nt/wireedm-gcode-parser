@@ -6,6 +6,7 @@ import {
 } from '@/domain/path-editor/pathDocumentOperations';
 import { normalizeLegacyOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
+import { robofilV2PostEnvelopeIsReady } from '@/domain/post/verifiedRobofilPostEnvelope';
 import type {
   OperationThreadingTransition,
   PathPlanningDocument,
@@ -31,6 +32,8 @@ interface EditorEntryExitPanelProps {
     completedSource: 'entry' | 'rapid-destination'
   ) => void;
   onSetManualExit: (operationId: string, point: Point2) => void;
+  onSetNoEntry: (operationId: string) => void;
+  onSetNoExit: (operationId: string) => void;
   onSetPlannedRapidDestination: (operationId: string, point: Point2) => void;
   onSetPlannedRapidSource: (operationId: string, point: Point2) => void;
   onSetOperationThreading: (
@@ -55,6 +58,8 @@ export function EditorEntryExitPanel({
   onSetCircleCenterEntry,
   onSetManualEntry,
   onSetManualExit,
+  onSetNoEntry,
+  onSetNoExit,
   onSetPlannedRapidDestination,
   onSetPlannedRapidSource,
   onSetOperationThreading,
@@ -77,13 +82,21 @@ export function EditorEntryExitPanel({
   const [rapidSourceY, setRapidSourceY] = useState('');
   const [rapidDestinationX, setRapidDestinationX] = useState('');
   const [rapidDestinationY, setRapidDestinationY] = useState('');
+  const entryFrom =
+    transitions.entry && transitions.entry.strategy !== 'none'
+      ? transitions.entry.from
+      : null;
+  const exitTo =
+    transitions.exit && transitions.exit.strategy !== 'none'
+      ? transitions.exit.to
+      : null;
 
   useEffect(() => {
-    setEntryX(transitions.entry ? String(transitions.entry.from.x) : '');
-    setEntryY(transitions.entry ? String(transitions.entry.from.y) : '');
-    setExitX(transitions.exit ? String(transitions.exit.to.x) : '');
-    setExitY(transitions.exit ? String(transitions.exit.to.y) : '');
-  }, [selected?.id, transitions.entry?.from.x, transitions.entry?.from.y, transitions.exit?.to.x, transitions.exit?.to.y]);
+    setEntryX(entryFrom ? String(entryFrom.x) : '');
+    setEntryY(entryFrom ? String(entryFrom.y) : '');
+    setExitX(exitTo ? String(exitTo.x) : '');
+    setExitY(exitTo ? String(exitTo.y) : '');
+  }, [selected?.id, entryFrom?.x, entryFrom?.y, exitTo?.x, exitTo?.y]);
 
   useEffect(() => {
     setRapidSourceX(plannedRapid ? String(plannedRapid.startPoint.x) : '');
@@ -112,12 +125,7 @@ export function EditorEntryExitPanel({
     mode: 'manual' as const,
     wireSeparation: 'already-separated' as const
   };
-  const robofilV2OperationLifecycle =
-    machine.controller.family === 'charmilles-robofil-classic' &&
-    machine.controller.postVersion === 2 &&
-    machine.compensation.activation === 'charmilles-g38' &&
-    machine.compensation.cancellation === 'charmilles-g39' &&
-    machine.compensation.lifecycleScope === 'operation';
+  const robofilV2OperationLifecycle = robofilV2PostEnvelopeIsReady(machine);
   const centerPierceBlockedByControllerCompensation = Boolean(
     document.geometryBasis === 'finished-contour' &&
     selected?.compensationIntent?.mode === 'controller' &&
@@ -298,14 +306,30 @@ export function EditorEntryExitPanel({
             Use circle center
           </button>
         </div>
+        <button
+          aria-label="Use reviewed no entry"
+          className="h-7 border border-border bg-background disabled:opacity-40"
+          disabled={!robofilV2OperationLifecycle}
+          onClick={() => onSetNoEntry(selected.id)}
+          title={
+            robofilV2OperationLifecycle
+              ? 'Review and use direct contour entry with no lead-in move.'
+              : 'Reviewed no-entry intent is available only for a verified Robofil v2 lifecycle.'
+          }
+          type="button"
+        >
+          Use no entry (reviewed)
+        </button>
       </fieldset>
 
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
         <legend className="px-1 uppercase text-muted-foreground">Exit</legend>
         <div className="text-foreground" data-exit-strategy>
-          {transitions.exit
+          {transitions.exit?.strategy === 'none'
+            ? `Reviewed no exit`
+            : transitions.exit
             ? `Reviewed straight exit · ${formatPoint(transitions.exit.from)} → ${formatPoint(transitions.exit.to)}`
-            : 'No explicit exit · contour ends at its operation endpoint'}
+            : 'Exit decision not reviewed'}
         </div>
         <CoordinateInputs
           label="Exit"
@@ -321,6 +345,20 @@ export function EditorEntryExitPanel({
           type="button"
         >
           Set straight exit
+        </button>
+        <button
+          aria-label="Use reviewed no exit"
+          className="h-7 border border-border bg-background disabled:opacity-40"
+          disabled={!robofilV2OperationLifecycle}
+          onClick={() => onSetNoExit(selected.id)}
+          title={
+            robofilV2OperationLifecycle
+              ? 'Review and end at the contour endpoint with no lead-out move.'
+              : 'Reviewed no-exit intent is available only for a verified Robofil v2 lifecycle.'
+          }
+          type="button"
+        >
+          Use no exit (reviewed)
         </button>
       </fieldset>
 
@@ -445,7 +483,8 @@ function threadingForMode(mode: string): Omit<OperationThreadingTransition, 'sou
 function entryStrategyLabel(
   entry: ReturnType<typeof normalizeLegacyOperationTransitions>['entry']
 ) {
-  if (!entry) return 'No explicit entry';
+  if (!entry) return 'Entry decision not reviewed';
+  if (entry.strategy === 'none') return 'Reviewed no entry';
   const strategy = entry.strategy === 'circle-center' ? 'Circle-center entry' : 'Reviewed straight entry';
   return `${strategy} · ${formatPoint(entry.from)} → ${formatPoint(entry.to)}`;
 }

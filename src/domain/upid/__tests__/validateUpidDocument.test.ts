@@ -1547,6 +1547,16 @@ describe('validateUpidDocument', () => {
     );
   });
 
+  it('accepts exact reviewed no-entry and no-exit transition intent', () => {
+    const document = closedDocument();
+    document.plan.operations[0].transitions = {
+      entry: { strategy: 'none', review: 'reviewed' },
+      exit: { strategy: 'none', review: 'reviewed' }
+    };
+
+    expect(validateUpidDocument(document).structuralDiagnostics).toEqual([]);
+  });
+
   it('rejects incompatible threading mode and wire-separation intent', () => {
     const document = closedDocument();
     document.setup = {

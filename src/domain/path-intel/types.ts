@@ -365,6 +365,10 @@ export interface ManualLeadInOverride {
 
 export type OperationEntry =
   | {
+      strategy: 'none';
+      review: 'reviewed' | 'required';
+    }
+  | {
       strategy: 'circle-center';
       move: 'cut';
       from: Point2;
@@ -379,13 +383,18 @@ export type OperationEntry =
       review: 'reviewed' | 'required';
     };
 
-export type OperationExit = {
-  strategy: 'manual-straight';
-  move: 'cut';
-  from: Point2;
-  to: Point2;
-  review: 'reviewed' | 'required';
-};
+export type OperationExit =
+  | {
+      strategy: 'none';
+      review: 'reviewed' | 'required';
+    }
+  | {
+      strategy: 'manual-straight';
+      move: 'cut';
+      from: Point2;
+      to: Point2;
+      review: 'reviewed' | 'required';
+    };
 
 export interface PathOperationTransitions {
   entry?: OperationEntry;

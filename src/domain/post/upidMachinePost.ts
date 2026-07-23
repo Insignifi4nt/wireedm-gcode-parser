@@ -9,6 +9,7 @@ import {
   type GcodePostedOperation
 } from '@/domain/path-intel/postGcode';
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
+import { operationEntryPoint } from '@/domain/path-intel/operationTransitions';
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
 import { resolveProgramStopPoints, validateProgramStops } from '@/domain/path-intel/programStops';
@@ -977,7 +978,7 @@ function postRobofilV2(
       );
     }
     const cutMoves = geometryOperation.moves.filter((move) => move.kind !== 'rapid');
-    const entryPoint = operation.overrides!.leadIn!.from;
+    const entryPoint = operationEntryPoint(operation);
     const entryWords = formatGcodePointWords(entryPoint, machine.output.coordinatePrecision);
     if (!entryWords) {
       return blockedReason(
@@ -1031,7 +1032,7 @@ function postRobofilV2(
     currentPosition = cutMoves.at(-1)?.endPoint ?? entryPoint;
     appendProgramStops('after-contour');
     const exit = operation.transitions?.exit;
-    if (exit) {
+    if (exit && exit.strategy !== 'none') {
       if (exit.review !== 'reviewed') {
         return blockedReason(
           'operation-transition-review-required',

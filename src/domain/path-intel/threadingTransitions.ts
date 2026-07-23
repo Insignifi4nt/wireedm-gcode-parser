@@ -60,9 +60,16 @@ export function resolveOperationThreadingTransition(
       : { ...LEGACY_MANUAL_DEFAULT };
 
   if (transition.mode === 'continuous') {
-    const previousExit = previous.transitions?.exit?.to ?? previous.endPoint;
-    const nextEntry = operation.transitions?.entry?.from ??
-      operation.overrides?.leadIn?.from ?? operation.startPoint;
+    const previousExitTransition = previous.transitions?.exit;
+    const nextEntryTransition = operation.transitions?.entry;
+    const previousExit =
+      previousExitTransition && previousExitTransition.strategy !== 'none'
+        ? previousExitTransition.to
+        : previous.endPoint;
+    const nextEntry =
+      nextEntryTransition && nextEntryTransition.strategy !== 'none'
+        ? nextEntryTransition.from
+        : operation.overrides?.leadIn?.from ?? operation.startPoint;
     const tolerance = Math.max(0, document.options.coincidenceEpsilon);
     if (
       previous.closed ||

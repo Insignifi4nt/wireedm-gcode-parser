@@ -1150,6 +1150,38 @@ describe('pathDocumentOperations', () => {
     ]);
   });
 
+  it('replaces lead geometry and reviewed no-entry intent through one canonical transition', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const operationId = document.plan.operations[0].id;
+    const withLead = setPathOperationManualLeadIn(
+      document,
+      operationId,
+      { x: 10, y: 20 }
+    )!;
+    const withoutLead = setPathOperationTransitions(withLead, operationId, {
+      entry: { strategy: 'none', review: 'reviewed' },
+      exit: { strategy: 'none', review: 'reviewed' }
+    })!;
+    const restoredLead = setPathOperationManualLeadIn(
+      withoutLead,
+      operationId,
+      { x: 11, y: 20 }
+    )!;
+
+    expect(withoutLead.plan.operations[0].overrides?.leadIn).toBeUndefined();
+    expect(withoutLead.plan.operations[0].transitions?.entry).toEqual({
+      strategy: 'none',
+      review: 'reviewed'
+    });
+    expect(restoredLead.plan.operations[0].transitions?.entry).toMatchObject({
+      strategy: 'manual-straight',
+      from: { x: 11, y: 20 },
+      review: 'reviewed'
+    });
+  });
+
   it('keeps a circle center lead-in aligned when moving the operation', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }

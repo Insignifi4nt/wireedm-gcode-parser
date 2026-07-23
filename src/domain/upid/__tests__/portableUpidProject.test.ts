@@ -288,6 +288,39 @@ describe('portable UPID projects', () => {
     );
   });
 
+  it('round-trips reviewed no-entry and no-exit intent without compatibility fields', async () => {
+    const sourceAdapter = new MemoryWorkbenchAdapter('none-intent-source');
+    const sourceWorkbench = await initializeWorkbenchDirectory(sourceAdapter);
+    const imported = await importDxfProject(sourceWorkbench, {
+      fileName: 'No Leads.dxf',
+      text: closedPolylineDxf()
+    });
+    const projectPath = imported.workbench.manifest.projects[0].path;
+    const storedProject = structuredClone(imported.project);
+    storedProject.upid!.document.plan.operations[0].transitions = {
+      entry: { strategy: 'none', review: 'reviewed' },
+      exit: { strategy: 'none', review: 'reviewed' }
+    };
+    sourceAdapter.files.set(projectPath, JSON.stringify(storedProject));
+
+    const portable = await exportPortableUpidProject(
+      imported.workbench,
+      projectPath
+    );
+    const targetAdapter = new MemoryWorkbenchAdapter('none-intent-target');
+    const targetWorkbench = await initializeWorkbenchDirectory(targetAdapter);
+    const received = await importPortableUpidProject(targetWorkbench, {
+      fileName: portable.fileName,
+      text: portable.text
+    });
+
+    expect(received.pathDocument.plan.operations[0].transitions).toEqual({
+      entry: { strategy: 'none', review: 'reviewed' },
+      exit: { strategy: 'none', review: 'reviewed' }
+    });
+    expect(received.pathDocument.plan.operations[0].overrides?.leadIn).toBeUndefined();
+  });
+
   it('rejects malformed and structurally invalid UPID before writing project state', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {

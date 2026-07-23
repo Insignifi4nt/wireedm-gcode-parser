@@ -20,12 +20,42 @@ export function validateRobofilV2OperationLead(
   operation: PathOperation,
   coordinatePrecision: number
 ): RobofilV2LeadValidation {
-  const entry = normalizeLegacyOperationTransitions(operation).entry;
+  const transitions = normalizeLegacyOperationTransitions(operation);
+  const entry = transitions.entry;
+  const exit = transitions.exit;
+  if (!entry) {
+    return invalid(
+      'Review an explicit entry decision before Robofil v2 export.'
+    );
+  }
+  if (!exit) {
+    return invalid(
+      'Review an explicit exit decision before Robofil v2 export.'
+    );
+  }
+  if (exit.review !== 'reviewed') {
+    return invalid('Review the exit decision before Robofil v2 export.');
+  }
+  if (entry.strategy === 'none') {
+    if (entry.review !== 'reviewed') {
+      return invalid('Review the no-entry decision before Robofil v2 export.');
+    }
+    if (operation.overrides?.leadIn) {
+      return invalid(
+        'Robofil v2 no-entry intent conflicts with an explicit lead-in.'
+      );
+    }
+    return { valid: true };
+  }
   if (entry?.strategy === 'manual-straight' && entry.review !== 'reviewed') {
     return invalid('Review the derived partial-contour entry before Robofil v2 export.');
   }
   const lead = operation.overrides?.leadIn;
-  if (!lead) return invalid('Robofil v2 requires an explicit linear lead-in for every operation.');
+  if (!lead) {
+    return invalid(
+      'The reviewed Robofil v2 entry geometry is missing its canonical lead-in.'
+    );
+  }
   if (![lead.from, lead.to, operation.startPoint].every(finitePoint)) {
     return invalid('Robofil v2 lead-in coordinates must be finite.');
   }
