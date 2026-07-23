@@ -2026,12 +2026,15 @@ export function EditorPage({
     }
   }
 
-  function handleTranslatePathDocument(delta: { x: number; y: number }) {
+  function handleTranslatePathDocument(
+    delta: { x: number; y: number },
+    completedSource: 'transform-target' | 'transform-translate' = 'transform-translate'
+  ) {
     if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
 
     const edited = translatePathDocument(pathDocumentDraft, delta);
     if (edited) {
-      clearActiveWorkflowPending('transform-translate');
+      clearActiveWorkflowPending(completedSource);
       applyPathDocumentEdit(edited, {
         selectedPathElement,
         selectedPathOperationId
