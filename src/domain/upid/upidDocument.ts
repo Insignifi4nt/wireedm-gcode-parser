@@ -386,14 +386,22 @@ function mapProgramOperations(
 
   return operations.map((operation) => {
     const pathElement = pathElementsByOperationId.get(operation.operationId) ?? null;
-    const manualDecisionDetails = readUpidManualDecisionDetails(pathElement);
+    const plannedOperation = document.plan.operations.find(
+      (candidate) => candidate.id === operation.operationId
+    );
+    const manualDecisionSource = {
+      ...pathElement,
+      segmentRefs: plannedOperation?.segmentRefs,
+      transitions: plannedOperation?.transitions
+    };
+    const manualDecisionDetails = readUpidManualDecisionDetails(manualDecisionSource);
 
     return {
       ...operation,
       editEventCount: pathElement?.provenance.edit?.events.length ?? 0,
       editedSegmentCount: pathElement?.provenance.edit?.derivedSegmentIds.length ?? 0,
       manualClassification: manualDecisionDetails.classification,
-      manualDecisionKinds: upidManualDecisionKinds(pathElement),
+      manualDecisionKinds: upidManualDecisionKinds(manualDecisionSource),
       manualDirection: manualDecisionDetails.direction,
       manualLeadIn: manualDecisionDetails.leadIn,
       manualOrder: manualDecisionDetails.order,

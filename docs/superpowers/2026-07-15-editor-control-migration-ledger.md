@@ -18,10 +18,10 @@ Status: Implemented and reconciled against the final actionable-JSX audit below.
 | Project > Save Project | Persist project | Header Save | Duplicate launcher | Remove command/menu if empty |
 | Geometry > Transform Geometry | Transform | Geometry > Transform | Workflow launcher | Retain; start/focus Transform workflow |
 | Geometry > Path Actions | Mixed responsibilities | Dedicated workflows below | Duplicate/mixed launcher | Remove |
-| Machining > Set Start | Operation start | Machining > Set Start | Workflow launcher | Retain |
+| Machining > Contour Start | Optional operation start override | Machining > Contour Start | Workflow launcher | Retain |
 | Machining > Cut Sequence | Operation order/planning | Machining > Cut Sequence | Workflow launcher | Retain |
 | Machining > Contour Tree | Read-only hierarchy/selection | View > Contour Tree | Workflow launcher | Move |
-| Machining > Initial Wire Position | Project G92 setup | Machining > Initial Wire Position | Workflow launcher | Retain |
+| Machining > Program Start / G92 | Project G92 setup and first connection | Machining > Program Start / G92 | Workflow launcher | Retain |
 | Machining > Entry/Exit & Rethreading | Operation transitions/threading | Same | Workflow launcher | Retain |
 | Machining > Program Stops | Operation stop events | Same | Workflow launcher | Retain |
 | Machining > Machining Participation | Active/inactive spans | Same | Workflow launcher | Retain |
@@ -39,14 +39,14 @@ Status: Implemented and reconciled against the final actionable-JSX audit below.
 | Path Actions Geometry Basis | Document machining geometry basis | Geometry > Geometry Setup | Workflow step | Move |
 | Path Actions Compensation | Selected-operation machining intent | Machining > Contour Setup | Workflow step | Move |
 | Path Actions Contour Role | Selected-contour classification | Machining > Contour Setup | Workflow step | Move |
-| Path Actions Start | Operation start | Machining > Set Start | Duplicate action | Remove |
+| Path Actions Start | Operation start | Machining > Contour Start | Duplicate action | Remove |
 | Path Actions Pierce | Circle-center entry | Machining > Entry/Exit & Rethreading | Duplicate action | Remove; existing Entry/Exit action remains |
 | Transform panel target/exact/rotate/mirror/move controls | Geometry transform | Geometry > Transform | Workflow steps | Retain only inside active Transform workflow |
 | Canvas geometry drag | Geometry transform | Geometry > Transform | Workflow canvas step | Gate to active Transform |
 | Canvas segment/arc-center drag | Geometry transform | Geometry > Transform | Workflow canvas step | Gate to active Transform |
-| Canvas endpoint Set Start action | Operation start target | Machining > Set Start | Workflow target selector | Gate to active Set Start; never launch independently |
-| Contour Tree endpoint Set Start flag | Operation start target | Machining > Set Start | Workflow target selector | Gate to active Set Start; remove direct mutation doorway |
-| Initial Wire Position panel controls | Project G92 setup | Machining > Initial Wire Position | Workflow steps | Retain; provisional until Save |
+| Canvas endpoint Contour Start action | Operation start target | Machining > Contour Start | Workflow target selector | Gate to active Contour Start; never launch independently |
+| Contour Tree endpoint Contour Start flag | Operation start target | Machining > Contour Start | Workflow target selector | Gate to active Contour Start; remove direct mutation doorway |
+| Program Start / G92 panel controls | Project G92 setup | Machining > Program Start / G92 | Workflow steps | Retain; provisional until Save |
 | Entry/Exit manual/circle entry, exit, threading, and Entry-vs-Exit canvas pick modes | Operation transitions | Machining > Entry/Exit & Rethreading | Workflow steps/canvas point input | Retain; target-locked and provisional until Save |
 | Program Stops controls | Stop events | Machining > Program Stops | Workflow steps | Retain; provisional until Save |
 | Machining Participation controls | Span participation/side/review | Machining > Machining Participation | Workflow steps | Retain; provisional until Save |
@@ -59,7 +59,7 @@ Status: Implemented and reconciled against the final actionable-JSX audit below.
 | Statistics | Geometry/move statistics | View > Statistics | Read-only workflow | Retain |
 | Position/grid snap summary | Cursor/grid state | View > Position | Read-only workflow | Retain; active-tool snap options live with tool |
 | Hover cross-highlighting toggle | Passive selection feedback | View workflow preference | Workflow-local preference | Move from Hover Assist |
-| Magnetic snap toggle | Set Start/construction input behavior | Owning active workflow | Workflow option | Move into Set Start and Construction |
+| Point inference | Contour Start/construction input behavior | Owning active workflow | Workflow option | Contour Start offers endpoint, cursor-nearest, hovered-side midpoint, and approach-perpendicular snaps; every mode previews the approach guide, while construction retains standalone perpendicular/tangent tools |
 | Canvas Select mode | Select workflow target | Active workflow/canvas | Target selector | Retain; not a workflow doorway |
 | Canvas Point mode | Measurement point placement | Construction > Measurement & Construction | Workflow mode | Gate to active Construction |
 | Persistent preview Select/Point buttons | Target selection / measurement placement | Active workflow | Duplicate mode launchers | Remove persistent duplicates; render the relevant mode inside the active workflow |
@@ -97,7 +97,7 @@ The 2026-07-15 audit returned 591 syntactic matches across 18 production files a
 | `EditorPreview.tsx` | Zoom/fit/pan; canvas selection; active-workflow target dragging/picking | Persistent viewport navigation plus target input owned by Transform, Construction, Set Start, or Entry/Exit | No workflow launcher; mutating callbacks are present only for the owning workflow |
 | `EditorPathNavigatorPanel.tsx` | Geometry transform; Cut Sequence; Contour Tree; summary/topology/diagnostics/statistics/position selection and navigation | Dedicated Path Project workflow content rendered through the singleton panel frame | Each family is conditionally rendered only for its command-owned workflow |
 | `EditorWorkflowSetupPanels.tsx` | Geometry Basis; Contour Setup target/reverse/role/compensation; Set Start target/snap/pick | Geometry Setup, Contour Setup, and Set Start workflow steps | One responsibility per workflow; no panel-global duplicate |
-| `EditorInitialWirePositionPanel.tsx` | Exact X/Y and geometry-linked circle-center selection | Initial Wire Position workflow | Provisional mutating workflow only |
+| `EditorInitialWirePositionPanel.tsx` | Exact X/Y and geometry-linked circle-center selection | Program Start / G92 workflow | Provisional mutating workflow only |
 | `EditorEntryExitPanel.tsx` | Operation target; planned rapid; manual/circle entry; exit; threading; target-locked Entry-vs-Exit canvas pick modes | Entry/Exit & Rethreading workflow | Provisional mutating workflow only; canvas mode resets after pick, Escape, Save, Discard, switch, or close |
 | `EditorProgramStopsPanel.tsx` | Placement/reason/note; add, enable, remove stop | Program Stops workflow | Provisional mutating workflow only |
 | `EditorMachiningParticipationPanel.tsx` | Source span; wire side; entry review; restore active cut | Machining Participation workflow | Provisional mutating workflow only |

@@ -94,7 +94,7 @@ export function derivePlannedRapidRoutes(
   let currentPoint =
     initialWire.status === 'ready' ? initialWire.point : document.options.startPoint;
   return document.plan.operations.map((operation, orderIndex) => {
-    const leadIn = operation.transitions?.entry ?? operation.overrides?.leadIn;
+    const entry = operation.transitions?.entry;
     const endPoint = resolvedOperationEntryPoint(operation);
     const route = {
       id: `rapid_${operation.id}`,
@@ -103,86 +103,14 @@ export function derivePlannedRapidRoutes(
       startPoint: { ...currentPoint },
       endPoint: { ...endPoint },
       length: distance(currentPoint, endPoint),
-      destinationKind: leadIn ? 'lead-in-start' as const : 'operation-start' as const
+      destinationKind:
+        entry && entry.strategy !== 'none'
+          ? 'lead-in-start' as const
+          : 'operation-start' as const
     };
     currentPoint = resolvedOperationExitPoint(operation);
     return route;
   });
-}
-
-export function setPlannedRapidSourcePoint(
-  document: PathPlanningDocument,
-  operationId: string,
-  point: Point2
-) {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
-  const operationIndex = document.plan.operations.findIndex(
-    (operation) => operation.id === operationId
-  );
-  if (operationIndex < 0) return null;
-  if (operationIndex === 0) {
-    const next = cloneDocument(document);
-    next.options = { ...next.options, startPoint: { ...point } };
-    refreshPlan(next);
-    return next;
-  }
-
-  const previousOperation = document.plan.operations[operationIndex - 1];
-  if (!previousOperation?.closed) return null;
-  return setClosedOperationStartNearPoint(document, previousOperation.id, point);
-}
-
-export function setPlannedRapidDestinationPoint(
-  document: PathPlanningDocument,
-  operationId: string,
-  point: Point2
-) {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
-  const operation = document.plan.operations.find((candidate) => candidate.id === operationId);
-  if (!operation) return null;
-
-  if (operation.overrides?.leadIn) {
-    const next = cloneDocument(document);
-    const nextOperation = next.plan.operations.find((candidate) => candidate.id === operationId)!;
-    nextOperation.overrides = {
-      ...nextOperation.overrides,
-      leadIn: {
-        ...nextOperation.overrides!.leadIn!,
-        from: { ...point },
-        source: 'manual-point'
-      }
-    };
-    if (nextOperation.transitions?.entry) {
-      const currentEntry = nextOperation.transitions.entry;
-      nextOperation.transitions = {
-        ...nextOperation.transitions,
-        entry:
-          currentEntry.strategy === 'circle-center'
-            ? {
-                strategy: 'manual-straight',
-                move: 'cut',
-                from: { ...point },
-                to: { ...currentEntry.to },
-                review: 'reviewed'
-              }
-            : currentEntry.strategy === 'manual-straight'
-              ? { ...currentEntry, from: { ...point } }
-              : {
-                  strategy: 'manual-straight',
-                  move: 'cut',
-                  from: { ...point },
-                  to: { ...nextOperation.startPoint },
-                  review: 'reviewed'
-                }
-      };
-    }
-    refreshPlan(next);
-    return next;
-  }
-
-  return operation.closed
-    ? setClosedOperationStartNearPoint(document, operationId, point)
-    : null;
 }
 
 export function movePathOperation(
@@ -358,30 +286,6 @@ export function setPathOperationTransitions(
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
   if (!operation || !transitionsAreFinite(transitions)) return null;
   operation.transitions = structuredClone(transitions);
-  const entry = operation.transitions.entry;
-  if (entry && entry.strategy !== 'none') {
-    const sourceSegmentId = entry.strategy === 'circle-center'
-      ? entry.sourceSegmentId
-      : operation.segmentRefs[0]?.segmentId;
-    const sourceSegmentIndex = operation.segmentRefs.findIndex(
-      (ref) => ref.segmentId === sourceSegmentId
-    );
-    if (!sourceSegmentId || sourceSegmentIndex < 0) return null;
-    operation.overrides = {
-      ...operation.overrides,
-      leadIn: {
-        kind: 'manual',
-        move: 'cut',
-        from: { ...entry.from },
-        to: { ...entry.to },
-        source: entry.strategy === 'circle-center' ? 'circle-center' : 'manual-point',
-        sourceSegmentId,
-        sourceSegmentIndex
-      }
-    };
-  } else {
-    delete operation.overrides?.leadIn;
-  }
   refreshOperationTransitions(operation);
   refreshPlan(next);
   return next;
@@ -683,18 +587,6 @@ export function setCircleOperationCenterPierceLeadIn(
   const leadInSource = circularOperationLeadInSource(next, operation);
   if (!leadInSource) return null;
 
-  operation.overrides = {
-    ...operation.overrides,
-    leadIn: {
-      kind: 'manual',
-      move: 'cut',
-      from: { ...leadInSource.center },
-      to: { ...operation.startPoint },
-      source: 'circle-center',
-      sourceSegmentId: leadInSource.segmentId,
-      sourceSegmentIndex: leadInSource.segmentIndex
-    }
-  };
   operation.transitions = {
     ...operation.transitions,
     entry: {
@@ -721,18 +613,6 @@ export function setPathOperationManualLeadIn(
   const sourceRef = operation?.segmentRefs[0];
   if (!operation || !sourceRef) return null;
 
-  operation.overrides = {
-    ...operation.overrides,
-    leadIn: {
-      kind: 'manual',
-      move: 'cut',
-      from: { ...from },
-      to: { ...operation.startPoint },
-      source: 'manual-point',
-      sourceSegmentId: sourceRef.segmentId,
-      sourceSegmentIndex: 0
-    }
-  };
   operation.transitions = {
     ...operation.transitions,
     entry: {
@@ -1258,13 +1138,6 @@ function restoreGeometryEditOperationState(
       point: transformPoint(overrides.start.point)
     };
   }
-  if (overrides?.leadIn && transformedSegmentIds.has(overrides.leadIn.sourceSegmentId)) {
-    overrides.leadIn = {
-      ...overrides.leadIn,
-      from: transformPoint(overrides.leadIn.from),
-      to: transformPoint(overrides.leadIn.to)
-    };
-  }
   if (
     transitions?.entry &&
     transitions.entry.strategy !== 'none' &&
@@ -1389,7 +1262,6 @@ function refreshPlan(document: PathPlanningDocument) {
     operation.endPoint = operation.closed
       ? operation.startPoint
       : pathEndPoint(operation.segmentRefs, segmentsById) ?? operation.endPoint;
-    refreshOperationLeadIn(document, operation);
     refreshOperationTransitions(operation);
     const entryPoint = resolvedOperationEntryPoint(operation);
     operation.metrics = {
@@ -1501,36 +1373,6 @@ function planMetrics(plan: OperationPlan) {
 
 function operationEntryPoint(operation: PathOperation) {
   return resolvedOperationEntryPoint(operation);
-}
-
-function refreshOperationLeadIn(document: PathPlanningDocument, operation: PathOperation) {
-  const leadIn = operation.overrides?.leadIn;
-  if (!leadIn) return;
-
-  if (leadIn.source === 'circle-center') {
-    const source = circularOperationLeadInSource(document, operation);
-    if (source) {
-      operation.overrides = {
-        ...operation.overrides,
-        leadIn: {
-          ...leadIn,
-          from: { ...source.center },
-          to: { ...operation.startPoint },
-          sourceSegmentId: source.segmentId,
-          sourceSegmentIndex: source.segmentIndex
-        }
-      };
-      return;
-    }
-  }
-
-  operation.overrides = {
-    ...operation.overrides,
-    leadIn: {
-      ...leadIn,
-      to: { ...operation.startPoint }
-    }
-  };
 }
 
 function refreshOperationTransitions(operation: PathOperation) {
@@ -1685,7 +1527,6 @@ function manualOverridesWithoutOrder(overrides: PathOperation['overrides']) {
     ...(overrides.classification ? { classification: overrides.classification } : {}),
     ...(overrides.direction ? { direction: overrides.direction } : {}),
     ...(overrides.start ? { start: overrides.start } : {}),
-    ...(overrides.leadIn ? { leadIn: overrides.leadIn } : {})
   };
 
   return Object.keys(preserved).length > 0 ? preserved : undefined;

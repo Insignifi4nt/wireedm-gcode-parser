@@ -353,16 +353,6 @@ export interface ManualStartOverride {
   createdSegmentIds: SegmentId[];
 }
 
-export interface ManualLeadInOverride {
-  kind: 'manual';
-  move: 'cut';
-  from: Point2;
-  to: Point2;
-  source: 'circle-center' | 'manual-point';
-  sourceSegmentId: SegmentId;
-  sourceSegmentIndex: number;
-}
-
 export type OperationEntry =
   | {
       strategy: 'none';
@@ -446,7 +436,6 @@ export interface PathOperationOverrides {
   order?: ManualOrderOverride;
   direction?: ManualDirectionOverride;
   start?: ManualStartOverride;
-  leadIn?: ManualLeadInOverride;
 }
 
 export interface PathOperation {

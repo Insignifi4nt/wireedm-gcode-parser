@@ -97,6 +97,7 @@ export function inferPathPoint(
     : document.plan.operations;
   const segmentsById = segmentMap(document.segments);
   let best: InferredPathPoint | null = null;
+  let bestSelectionDistance = Number.POSITIVE_INFINITY;
 
   for (const operation of operations) {
     const pathElementId =
@@ -106,6 +107,13 @@ export function inferPathPoint(
       const candidate = candidateForSegment(segment, ref, request);
       if (!candidate) continue;
       const hintDistance = distance(request.hintPoint, candidate.point);
+      const selectionDistance =
+        request.mode === 'midpoint' || request.mode === 'perpendicular'
+          ? distance(
+              request.hintPoint,
+              nearestPointOnSegment(segment, ref, request.hintPoint).point
+            )
+          : hintDistance;
       const inferred: InferredPathPoint = {
         ...candidate,
         distance: hintDistance,
@@ -128,9 +136,19 @@ export function inferPathPoint(
                 to: { ...candidate.point }
               }
             }
+          : request.mode === 'nearest'
+            ? {
+                guide: {
+                  from: { ...request.hintPoint },
+                  to: { ...candidate.point }
+                }
+              }
           : {})
       };
-      if (!best || inferred.distance < best.distance) best = inferred;
+      if (!best || selectionDistance < bestSelectionDistance) {
+        best = inferred;
+        bestSelectionDistance = selectionDistance;
+      }
     }
   }
 
@@ -184,6 +202,10 @@ export function inferPathPointOnSegment(
           sourcePoint: { ...request.sourcePoint },
           guide: { from: { ...request.sourcePoint }, to: { ...candidate.point } }
         }
+      : request.mode === 'nearest'
+        ? {
+            guide: { from: { ...request.hintPoint }, to: { ...candidate.point } }
+          }
       : {})
   };
 }

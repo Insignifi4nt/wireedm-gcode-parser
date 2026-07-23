@@ -90,11 +90,24 @@ describe('canonical workflow target fallbacks', () => {
         )!,
         'midpoint'
       );
-      container.querySelector<HTMLButtonElement>('[aria-label="Pick another start"]')?.click();
+      container.querySelector<HTMLButtonElement>('[aria-label="Pick explicit contour start"]')?.click();
     });
 
     expect(onInferenceModeChange).toHaveBeenCalledWith('midpoint');
     expect(onPickStart).toHaveBeenCalledWith(fallbackOperation.id);
+    expect(container.textContent).toContain('automatic contour start');
+    expect(
+      Array.from(
+        container.querySelectorAll<HTMLOptionElement>(
+          'select[aria-label="Set start point inference"] option'
+        )
+      ).map((option) => [option.value, option.textContent])
+    ).toEqual([
+      ['endpoint', 'Nearest endpoint'],
+      ['nearest', 'Nearest point to cursor'],
+      ['midpoint', 'Hovered side midpoint'],
+      ['perpendicular', 'Perpendicular from approach']
+    ]);
   });
 });
 

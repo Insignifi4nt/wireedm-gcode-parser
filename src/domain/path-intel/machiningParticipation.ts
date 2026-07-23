@@ -1,5 +1,5 @@
 import { resolveInitialWirePosition } from './initialWirePosition';
-import { normalizeLegacyOperationTransitions } from './operationTransitions';
+import { readOperationTransitions } from './operationTransitions';
 import {
   createArcSegment,
   createLineSegment,
@@ -270,7 +270,7 @@ function buildPartialOperation(
   reviewedEntryFingerprint: string | undefined
 ): PathOperation {
   const key = spanIds.join('__').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const transitions = normalizeLegacyOperationTransitions(source);
+  const transitions = readOperationTransitions(source);
   let sourceEntryWasReviewed = false;
   if (transitions?.entry) {
     if (transitions.entry.strategy === 'none') {
@@ -290,11 +290,6 @@ function buildPartialOperation(
     }
   }
   const overrides = source.overrides ? structuredClone(source.overrides) : undefined;
-  if (overrides?.leadIn) {
-    overrides.leadIn.to = { ...startPoint };
-    overrides.leadIn.sourceSegmentId = refs[0].segmentId;
-    overrides.leadIn.sourceSegmentIndex = 0;
-  }
   const compensationIntent = wireSide
     ? { mode: 'controller' as const, wireSide, source: 'manual' as const }
     : source.compensationIntent?.mode === 'centerline' && source.compensationIntent.source === 'manual'

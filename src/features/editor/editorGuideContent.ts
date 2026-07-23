@@ -120,7 +120,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator Or Program Lines',
         steps: [
           {
-            text: 'DXF path projects use one workflow per responsibility: Cut Sequence for order, Contour Setup for role and direction, Set Start for starts, Measurement & Construction for points and constraints, and View workflows for inspection.',
+            text: 'DXF path projects use one workflow per responsibility: Cut Sequence for order, Contour Setup for role and direction, Contour Start for optional start overrides, Program Start / G92 for the initial wire coordinate, Entry / Exit for cutting transitions, Between Contours for derived travel and rethreading, and View workflows for inspection.',
             highlightTarget: 'program-lines'
           },
           {
@@ -255,7 +255,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator sau Program Lines',
         steps: [
           {
-            text: 'Proiectele DXF folosesc cate un workflow pentru fiecare responsabilitate: Cut Sequence pentru ordine, Contour Setup pentru rol si directie, Set Start pentru start, Measurement & Construction pentru puncte si constrangeri, iar workflow-urile View pentru inspectie.',
+            text: 'Proiectele DXF folosesc cate un workflow pentru fiecare responsabilitate: Cut Sequence pentru ordine, Contour Setup pentru rol si directie, Contour Start pentru suprascrierea optionala a startului, Program Start / G92 pentru coordonata initiala a sarmei, Entry / Exit pentru tranzitiile de taiere, Between Contours pentru deplasare si refiletare, iar workflow-urile View pentru inspectie.',
             highlightTarget: 'program-lines'
           },
           {

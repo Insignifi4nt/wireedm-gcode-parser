@@ -21,7 +21,12 @@ describe('inferPathPoint', () => {
     expect(inferPathPoint(document, { mode: 'endpoint', hintPoint: { x: 8, y: 2 } }))
       .toMatchObject({ point: { x: 10, y: 0 }, relation: 'endpoint', t: 1 });
     expect(inferPathPoint(document, { mode: 'nearest', hintPoint: { x: 8, y: 2 } }))
-      .toMatchObject({ point: { x: 8, y: 0 }, relation: 'nearest', t: 0.8 });
+      .toMatchObject({
+        point: { x: 8, y: 0 },
+        relation: 'nearest',
+        t: 0.8,
+        guide: { from: { x: 8, y: 2 }, to: { x: 8, y: 0 } }
+      });
     expect(inferPathPoint(document, { mode: 'midpoint', hintPoint: { x: 8, y: 2 } }))
       .toMatchObject({ point: { x: 5, y: 0 }, relation: 'midpoint', t: 0.5 });
   });
@@ -49,6 +54,24 @@ describe('inferPathPoint', () => {
     })).toMatchObject({
       point: { x: 9, y: 0 },
       relation: 'nearest-fallback'
+    });
+  });
+
+  it('constructs the perpendicular foot on the hovered side, not the closest foot', () => {
+    const document = documentFrom([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 10, y: 5 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 5 }, end: { x: 0, y: 5 } },
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 5 }, end: { x: 0, y: 0 } }
+    ]);
+
+    expect(inferPathPoint(document, {
+      mode: 'perpendicular',
+      sourcePoint: { x: 2, y: 2 },
+      hintPoint: { x: 8, y: 4.8 }
+    })).toMatchObject({
+      point: { x: 2, y: 5 },
+      relation: 'perpendicular'
     });
   });
 

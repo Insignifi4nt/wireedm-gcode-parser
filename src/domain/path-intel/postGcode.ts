@@ -10,6 +10,10 @@ import {
   pathSegmentHasConsistentArcAngularGeometry,
   pathSegmentHasExecutableCircularGeometry
 } from './sanitizeSegments';
+import {
+  readOperationTransitions,
+  operationEntryPoint
+} from './operationTransitions';
 import type {
   ArcPathSegment,
   CirclePathSegment,
@@ -277,17 +281,21 @@ function projectPathPlanToGcode(
       });
     }
 
-    const leadIn = operation.overrides?.leadIn;
-    if (leadIn && !pointsWithinTolerance(leadIn.from, leadIn.to, coincidenceEpsilon)) {
-      const text = xy(leadIn.to, formatter);
+    const entry = readOperationTransitions(operation).entry;
+    if (entry && entry.strategy !== 'none' &&
+      !pointsWithinTolerance(entry.from, entry.to, coincidenceEpsilon)) {
+      const text = xy(entry.to, formatter);
       if (!text) return block('Cannot post a non-finite or unformattable manual lead-in point.');
       appendOperationMove({
         command: 'G1',
-        endPoint: leadIn.to,
+        endPoint: entry.to,
         kind: 'cut',
         reason: 'manual-lead-in',
-        segmentId: leadIn.sourceSegmentId,
-        startPoint: leadIn.from,
+        segmentId:
+          entry.strategy === 'circle-center'
+            ? entry.sourceSegmentId
+            : operation.segmentRefs[0]?.segmentId ?? null,
+        startPoint: entry.from,
         text: `G1 ${text}`
       });
     }
@@ -401,18 +409,22 @@ function operationIssue(
   if (!xy(operationEntryPoint(operation), formatter)) {
     return { message: `Cannot post operation ${operation.id} with an unformattable entry point.` };
   }
-  const leadIn = operation.overrides?.leadIn;
-  if (leadIn) {
-    if (!finitePoint(leadIn.from) || !finitePoint(leadIn.to)) {
+  const entry = readOperationTransitions(operation).entry;
+  if (entry && entry.strategy !== 'none') {
+    if (!finitePoint(entry.from) || !finitePoint(entry.to)) {
       return { message: `Cannot post operation ${operation.id} with non-finite lead-in points.` };
     }
-    if (!segmentsById.has(leadIn.sourceSegmentId)) {
+    const sourceSegmentId =
+      entry.strategy === 'circle-center'
+        ? entry.sourceSegmentId
+        : operation.segmentRefs[0]?.segmentId;
+    if (!sourceSegmentId || !segmentsById.has(sourceSegmentId)) {
       return {
-        message: `Cannot post operation ${operation.id}; lead-in segment ${leadIn.sourceSegmentId} is missing.`,
-        relatedSegmentIds: [leadIn.sourceSegmentId]
+        message: `Cannot post operation ${operation.id}; lead-in segment ${sourceSegmentId ?? 'unknown'} is missing.`,
+        ...(sourceSegmentId ? { relatedSegmentIds: [sourceSegmentId] } : {})
       };
     }
-    if (!pointsWithinTolerance(leadIn.to, operation.startPoint, tolerance)) {
+    if (!pointsWithinTolerance(entry.to, operation.startPoint, tolerance)) {
       return { message: `Cannot post operation ${operation.id}; its lead-in does not end at the operation start.` };
     }
   }
@@ -740,10 +752,6 @@ function blockedPost(diagnostics: PathDiagnostic[]): GcodePostResult {
     moves: [],
     operations: []
   };
-}
-
-function operationEntryPoint(operation: PathOperation) {
-  return operation.overrides?.leadIn?.from ?? operation.startPoint;
 }
 
 function oppositeCirclePoint(segment: CirclePathSegment) {

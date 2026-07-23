@@ -1,5 +1,6 @@
 import { machineProfileHasCurrentVerification } from '@/domain/machine/machineProfiles';
 import type { PathDiagnostic, PathOperation, PathPlanningDocument } from '@/domain/path-intel/types';
+import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import {
   inspectTemplateModalState,
   validateTemplateModalPolicy
@@ -128,7 +129,7 @@ export function validateCompensatedExport({
         'This native transition is outside the supported Robofil post envelope.'
       );
     }
-    if (operation.overrides?.leadIn?.source === 'circle-center') {
+    if (readOperationTransitions(operation).entry?.strategy === 'circle-center') {
       return blocked('unsafe-radial-lead', 'A circle-center radial lead is unsafe under controller compensation.');
     }
     if (
@@ -149,7 +150,7 @@ export function validateCompensatedExport({
     };
   }
 
-  if (operation.overrides?.leadIn?.source === 'circle-center') {
+  if (readOperationTransitions(operation).entry?.strategy === 'circle-center') {
     return blocked('unsafe-radial-lead', 'A circle-center radial lead is unsafe under controller compensation.');
   }
 

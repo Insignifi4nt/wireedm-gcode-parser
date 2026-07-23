@@ -31,6 +31,7 @@ import {
   type ManualCompensationSelection
 } from '@/domain/compensation/intent';
 import {
+  derivePlannedRapidRoutes,
   mirrorPathDocument,
   mirrorPathElement,
   mirrorPathOperation,
@@ -49,8 +50,6 @@ import {
   setPathOperationThreadingTransition,
   setPathOperationTransitions,
   setProjectThreadingDefault,
-  setPlannedRapidDestinationPoint,
-  setPlannedRapidSourcePoint,
   setClosedOperationStartAtInferredPoint,
   setClosedOperationStartAtSegmentEndpoint,
   reversePathOperation,
@@ -77,8 +76,7 @@ import type {
   OperationOrderStrategy,
   PathPlanningDocument
 } from '@/domain/path-intel/types';
-import { normalizeLegacyOperationTransitions } from '@/domain/path-intel/operationTransitions';
-import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
+import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import {
   setMachiningSpanParticipation,
   setPartialContourEntryReview,
@@ -105,6 +103,7 @@ import { EditorHeaderBar, type EditorDocumentContext } from './EditorHeaderBar';
 import { EditorInspectorPanel } from './EditorInspectorPanel';
 import { EditorInitialWirePositionPanel } from './EditorInitialWirePositionPanel';
 import { EditorEntryExitPanel } from './EditorEntryExitPanel';
+import { EditorBetweenContoursPanel } from './EditorBetweenContoursPanel';
 import {
   EditorContourSetupPanel,
   EditorGeometrySetupPanel,
@@ -231,8 +230,8 @@ type SetStartInferenceMode = Extract<
 
 const SET_START_COMMAND: EditorCommandDefinition = {
   id: 'machining.set-start',
-  label: 'Set Start',
-  menuPath: ['Machining', 'Operation', 'Set Start'],
+  label: 'Contour Start',
+  menuPath: ['Machining', 'Contour Start'],
   scope: 'operation',
   toolWindowId: 'set-start',
   historyLabel: 'Set operation start',
@@ -253,6 +252,7 @@ type EditorWorkspacePanelId =
   | 'contour-tree'
   | 'initial-wire-position'
   | 'entry-exit'
+  | 'between-contours'
   | 'program-stops'
   | 'machining-participation'
   | 'position'
@@ -264,14 +264,15 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   'path-summary': 'Path Summary',
   'geometry-setup': 'Geometry Setup',
   'contour-setup': 'Contour Setup',
-  'set-start': 'Set Start',
+  'set-start': 'Contour Start',
   'path-transform': 'Transform',
   'endpoint-topology': 'Endpoint Topology',
   'path-diagnostics': 'Path Diagnostics',
   'cut-sequence': 'Cut Sequence',
   'contour-tree': 'Contour Tree',
-  'initial-wire-position': 'Initial Wire Position',
-  'entry-exit': 'Entry / Exit & Rethreading',
+  'initial-wire-position': 'Program Start / G92',
+  'entry-exit': 'Entry / Exit',
+  'between-contours': 'Between Contours',
   'program-stops': 'Program Stops',
   'machining-participation': 'Machining Participation',
   position: 'Position',
@@ -290,8 +291,9 @@ const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string
   'path-diagnostics': 'warnings and linked rows for broken or risky path geometry',
   'cut-sequence': 'operation order, rapid moves, and cut direction',
   'contour-tree': 'nested contours, segments, endpoints, and canvas cross-highlighting',
-  'initial-wire-position': 'reviewed project G92 coordinates and first route origin',
-  'entry-exit': 'per-operation cut entry, exit, and manual or automatic rethread policy',
+  'initial-wire-position': 'reviewed project G92 coordinates and first connection origin',
+  'entry-exit': 'per-operation cutting entry and exit geometry',
+  'between-contours': 'derived rapid travel and manual or automatic rethread policy',
   'program-stops': 'typed unconditional M00 events at operation boundaries or remaining cut distance',
   'machining-participation': 'source-preserving active cuts, inactive reference spans, and explicit open-path compensation side',
   position: 'cursor position and grid snap state',
@@ -312,8 +314,9 @@ const PATH_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
   'contour-tree',
   'initial-wire-position',
   'entry-exit',
-  'program-stops',
-  'machining-participation'
+  'between-contours',
+  'machining-participation',
+  'program-stops'
 ];
 
 const INSPECTOR_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
@@ -335,6 +338,7 @@ const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFlo
   'contour-tree': { x: 418, y: 84, width: 380, height: 560 },
   'initial-wire-position': { x: 620, y: 110, width: 360, height: 430 },
   'entry-exit': { x: 650, y: 130, width: 390, height: 620 },
+  'between-contours': { x: 670, y: 145, width: 390, height: 520 },
   'program-stops': { x: 680, y: 150, width: 370, height: 560 },
   'machining-participation': { x: 710, y: 170, width: 390, height: 600 },
   position: { x: 1020, y: 74, width: 300, height: 180 },
@@ -366,10 +370,11 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
   SET_START_COMMAND,
   ...([
     ['machining.sequence', 'Cut Sequence', 'cut-sequence'],
-    ['machining.initial-wire', 'Initial Wire Position', 'initial-wire-position'],
-    ['machining.entry-exit', 'Entry / Exit & Rethreading', 'entry-exit'],
-    ['machining.program-stops', 'Program Stops', 'program-stops'],
-    ['machining.participation', 'Machining Participation', 'machining-participation']
+    ['machining.initial-wire', 'Program Start / G92', 'initial-wire-position'],
+    ['machining.entry-exit', 'Entry / Exit', 'entry-exit'],
+    ['machining.between-contours', 'Between Contours', 'between-contours'],
+    ['machining.participation', 'Machining Participation', 'machining-participation'],
+    ['machining.program-stops', 'Program Stops', 'program-stops']
   ] as const).map(([id, label, toolWindowId]) => ({
     id, label, menuPath: ['Machining', label] as const, scope: 'document' as const,
     toolWindowId, historyLabel: `Edit ${label}`, prerequisites: [{ kind: 'document' } as const],
@@ -859,17 +864,16 @@ export function EditorPage({
       return null;
     }
 
-    const initialWire = resolveInitialWirePosition(pathDocumentDraft);
-    const sourcePoint =
-      setStartInferenceMode === 'perpendicular' && initialWire.status === 'ready'
-        ? initialWire.point
-        : undefined;
-    if (setStartInferenceMode === 'perpendicular' && !sourcePoint) return null;
+    const approachSource = derivePlannedRapidRoutes(pathDocumentDraft).find(
+      (route) => route.operationId === selectedPathOperationId
+    )?.startPoint;
+    if (!approachSource) return null;
+
     const preview = inferPathPoint(pathDocumentDraft, {
       mode: setStartInferenceMode,
       operationId: selectedPathOperationId,
-      hintPoint: previewCursorPoint,
-      sourcePoint
+      sourcePoint: approachSource,
+      hintPoint: previewCursorPoint
     });
     if (!preview) return null;
     const atEndpoint = preview.endpointRole !== null;
@@ -883,7 +887,7 @@ export function EditorPage({
       relation: atEndpoint ? 'existing-point' as const : 'new-split-point' as const,
       inferenceRelation: preview.relation,
       segmentId: preview.segmentId,
-      sourcePoint
+      sourcePoint: preview.guide?.from
     };
   }, [
     pathClickMode,
@@ -1662,7 +1666,7 @@ export function EditorPage({
       if (!inferred || inferred.operationId !== operationId) return;
       setEntryExitCanvasPick(null);
       if (kind === 'entry') {
-        handleSetOperationManualEntry(operationId, inferred.point, 'entry');
+        handleSetOperationManualEntry(operationId, inferred.point);
       } else {
         handleSetOperationManualExit(operationId, inferred.point);
       }
@@ -1691,7 +1695,6 @@ export function EditorPage({
         setPathClickMode(null);
         return;
       }
-      clearActiveWorkflowPending('set-start-input');
       applyPathDocumentEdit(edited);
       if (activeToolSession?.commandId === SET_START_COMMAND.id) {
         const withPoint = editorToolSessionReducer(activeToolSession, {
@@ -1739,7 +1742,6 @@ export function EditorPage({
     );
     if (!edited) return;
 
-    clearActiveWorkflowPending('set-start-input');
     applyPathDocumentEdit(edited, {
       selectedPathElement: element,
       selectedPathOperationId: element.operationId
@@ -1827,28 +1829,6 @@ export function EditorPage({
     if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
 
-  function handleSetPlannedRapidSourcePoint(
-    operationId: string,
-    point: { x: number; y: number }
-  ) {
-    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || !operationId || isEditorMutationLocked) return;
-    const edited = setPlannedRapidSourcePoint(pathDocumentDraft, operationId, point);
-    if (edited) applyPathDocumentEdit(edited, {
-      completedPendingSources: ['rapid-source'], selectedPathElement, selectedPathOperationId: operationId
-    });
-  }
-
-  function handleSetPlannedRapidDestinationPoint(
-    operationId: string,
-    point: { x: number; y: number }
-  ) {
-    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || !operationId || isEditorMutationLocked) return;
-    const edited = setPlannedRapidDestinationPoint(pathDocumentDraft, operationId, point);
-    if (edited) applyPathDocumentEdit(edited, {
-      completedPendingSources: ['rapid-destination'], selectedPathElement, selectedPathOperationId: operationId
-    });
-  }
-
   function handleReversePathOperation(operationId: string) {
     if (!activeWorkflowOwns('machining.contour-setup') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = reversePathOperation(pathDocumentDraft, operationId);
@@ -1900,14 +1880,13 @@ export function EditorPage({
 
   function handleSetOperationManualEntry(
     operationId: string,
-    point: { x: number; y: number },
-    completedSource: 'entry' | 'rapid-destination'
+    point: { x: number; y: number }
   ) {
     if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPathOperationManualLeadIn(pathDocumentDraft, operationId, point);
     if (edited) {
       applyPathDocumentEdit(edited, {
-        completedPendingSources: [completedSource], selectedPathElement,
+        completedPendingSources: ['entry'], selectedPathElement,
         selectedPathOperationId: operationId
       });
     }
@@ -1920,7 +1899,7 @@ export function EditorPage({
     );
     if (!operation) return;
     const edited = setPathOperationTransitions(pathDocumentDraft, operationId, {
-      ...normalizeLegacyOperationTransitions(operation),
+      ...readOperationTransitions(operation),
       exit: {
         strategy: 'manual-straight',
         move: 'cut',
@@ -1943,7 +1922,7 @@ export function EditorPage({
     );
     if (!operation) return;
     const edited = setPathOperationTransitions(pathDocumentDraft, operationId, {
-      ...normalizeLegacyOperationTransitions(operation),
+      ...readOperationTransitions(operation),
       entry: { strategy: 'none', review: 'reviewed' }
     });
     if (edited) {
@@ -1962,7 +1941,7 @@ export function EditorPage({
     );
     if (!operation) return;
     const edited = setPathOperationTransitions(pathDocumentDraft, operationId, {
-      ...normalizeLegacyOperationTransitions(operation),
+      ...readOperationTransitions(operation),
       exit: { strategy: 'none', review: 'reviewed' }
     });
     if (edited) {
@@ -1977,7 +1956,7 @@ export function EditorPage({
   function handleSetProjectThreading(
     transition: Omit<OperationThreadingTransition, 'source'>
   ) {
-    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.between-contours') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setProjectThreadingDefault(pathDocumentDraft, transition);
     if (edited) applyPathDocumentEdit(edited);
   }
@@ -1986,7 +1965,7 @@ export function EditorPage({
     operationId: string,
     transition: Omit<OperationThreadingTransition, 'source'> | null
   ) {
-    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('machining.between-contours') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPathOperationThreadingTransition(
       pathDocumentDraft,
       operationId,
@@ -2522,10 +2501,10 @@ export function EditorPage({
 
     if (pathClickMode === 'set-start') {
       if (!selectedPathOperationId) {
-        return 'Set Start / Step 1: choose a closed contour in the workflow before choosing its start point.';
+        return 'Contour Start: choose a closed contour, then start explicit point picking.';
       }
 
-      return `Set Start / Step 2: hover the contour to preview a ${setStartInferenceMode} candidate, then click to apply that exact point.`;
+      return `Contour Start: hover the contour to preview a ${setStartInferenceMode} candidate, then click to apply that exact point.`;
     }
 
     if (pathClickMode === 'perpendicular' || pathClickMode === 'tangent') {
@@ -2583,7 +2562,7 @@ export function EditorPage({
   function readWorkflowSaveUnavailableReason(commandId: string) {
     switch (commandId) {
       case SET_START_COMMAND.id:
-        return 'Choose and apply a valid contour start before saving.';
+        return 'No explicit contour-start change to save; the automatic start remains active.';
       case 'construction.measurement':
         return 'Add, move, or remove a measurement or construction point before saving.';
       case 'machining.initial-wire':
@@ -2714,16 +2693,6 @@ export function EditorPage({
       if (operationId) {
         setSelectedPathOperationId(operationId);
         setSelectedPathElement(null);
-        setActiveToolSession(
-          createEditorToolSession({
-            commandId: SET_START_COMMAND.id,
-            label: SET_START_COMMAND.label,
-            historyLabel: SET_START_COMMAND.historyLabel!,
-            target: { kind: 'operation', id: operationId },
-            steps: ['pick-point']
-          })
-        );
-        setPathClickMode('set-start');
       }
     }
     window.requestAnimationFrame(() => focusWorkspacePanel(panelId));
@@ -2978,6 +2947,14 @@ export function EditorPage({
     setPathClickMode('set-start');
   }
 
+  function handleSelectSetStartOperation(operationId: string) {
+    if (!activeWorkflowOwns(SET_START_COMMAND.id) || isEditorMutationLocked) return;
+    setSelectedPathOperationId(operationId);
+    setSelectedPathElement(null);
+    setActiveToolSession(null);
+    setPathClickMode(null);
+  }
+
   function handleSetCanvasMouseMode(mode: 'select' | 'point') {
     if (pathDocumentDraft && !activeWorkflowOwns('construction.measurement')) return;
     if (canvasMouseMode === mode) return;
@@ -2993,11 +2970,6 @@ export function EditorPage({
 
   function handleSetStartInferenceMode(mode: SetStartInferenceMode) {
     if (!activeWorkflowOwns(SET_START_COMMAND.id)) return;
-    markActiveWorkflowPending(
-      SET_START_COMMAND.id,
-      'set-start-input',
-      'Choose and apply a valid contour start before saving.'
-    );
     setSetStartInferenceMode(mode);
   }
 
@@ -3348,21 +3320,21 @@ export function EditorPage({
         {pathDocumentDraft &&
           renderWorkspacePanel(
             'set-start',
-            'Set Start',
+            'Contour Start',
             <EditorSetStartPanel
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
               inferenceMode={setStartInferenceMode}
               onInferenceModeChange={handleSetStartInferenceMode}
               onPickStart={handleSetStartOperationTarget}
-              onSelectOperation={handleSetStartOperationTarget}
+              onSelectOperation={handleSelectSetStartOperation}
               selectedOperationId={selectedPathOperationId}
             />
           )}
         {pathDocumentDraft &&
           renderWorkspacePanel(
             'initial-wire-position',
-            'Initial Wire Position',
+            'Program Start / G92',
             <EditorInitialWirePositionPanel
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
@@ -3377,7 +3349,7 @@ export function EditorPage({
         {pathDocumentDraft && program?.project &&
           renderWorkspacePanel(
             'entry-exit',
-            'Entry / Exit & Rethreading',
+            'Entry / Exit',
             <EditorEntryExitPanel
               canvasPickMode={entryExitCanvasPick?.kind ?? null}
               disabled={Boolean(isEditorMutationLocked)}
@@ -3389,7 +3361,7 @@ export function EditorPage({
               }}
               onDraftChange={(source) => markActiveWorkflowPending(
                 'machining.entry-exit', source,
-                'Apply or correct the pending entry, exit, or rapid coordinates before saving or changing the target contour.'
+                'Apply or correct the pending cut entry or exit coordinates before saving or changing the target contour.'
               )}
               onSelectOperation={handleSelectWorkflowOperation}
               onSetCircleCenterEntry={handleSetOperationCircleCenterEntry}
@@ -3397,8 +3369,19 @@ export function EditorPage({
               onSetManualExit={handleSetOperationManualExit}
               onSetNoEntry={handleSetOperationNoEntry}
               onSetNoExit={handleSetOperationNoExit}
-              onSetPlannedRapidDestination={handleSetPlannedRapidDestinationPoint}
-              onSetPlannedRapidSource={handleSetPlannedRapidSourcePoint}
+              selectedOperationId={selectedPathOperationId}
+              targetChangeBlocked={workflowTargetChangeBlocked}
+            />
+          )}
+        {pathDocumentDraft && program?.project &&
+          renderWorkspacePanel(
+            'between-contours',
+            'Between Contours',
+            <EditorBetweenContoursPanel
+              disabled={Boolean(isEditorMutationLocked)}
+              document={pathDocumentDraft}
+              machine={program.project.machine}
+              onSelectOperation={handleSelectWorkflowOperation}
               onSetOperationThreading={handleSetOperationThreading}
               onSetProjectThreading={handleSetProjectThreading}
               selectedOperationId={selectedPathOperationId}

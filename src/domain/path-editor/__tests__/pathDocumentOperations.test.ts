@@ -122,11 +122,11 @@ describe('pathDocumentOperations', () => {
       startPoint: { x: 7, y: 5 },
       endPoint: { x: 18, y: 0 }
     });
-    expect(document.plan.operations[1].overrides?.leadIn).toMatchObject({
+    expect(document.plan.operations[1].transitions?.entry).toMatchObject({
       from: { x: 18, y: 0 },
-      to: second.startPoint,
-      source: 'manual-point'
+      to: second.startPoint
     });
+    expect(Object.keys(document.plan.operations[1].overrides ?? {})).not.toContain('leadIn');
   });
 
   it('preserves per-operation threading intent through geometry transforms and replanning', () => {
@@ -209,7 +209,7 @@ describe('pathDocumentOperations', () => {
       }]);
   });
 
-  it('derives canonical rapid routes and edits their source and destination endpoints', () => {
+  it('derives canonical rapid routes without exposing endpoint mutators', () => {
     type PlannedRapid = {
       endPoint: { x: number; y: number };
       operationId: string;
@@ -219,18 +219,10 @@ describe('pathDocumentOperations', () => {
       pathDocumentOperations,
       'derivePlannedRapidRoutes'
     ) as ((document: ReturnType<typeof createPathPlanningDocumentFromDxfEntities>) => PlannedRapid[]) | undefined;
-    const setSource = Reflect.get(
-      pathDocumentOperations,
-      'setPlannedRapidSourcePoint'
-    ) as ((document: ReturnType<typeof createPathPlanningDocumentFromDxfEntities>, operationId: string, point: { x: number; y: number }) => ReturnType<typeof createPathPlanningDocumentFromDxfEntities> | null) | undefined;
-    const setDestination = Reflect.get(
-      pathDocumentOperations,
-      'setPlannedRapidDestinationPoint'
-    ) as ((document: ReturnType<typeof createPathPlanningDocumentFromDxfEntities>, operationId: string, point: { x: number; y: number }) => ReturnType<typeof createPathPlanningDocumentFromDxfEntities> | null) | undefined;
 
     expect(deriveRoutes).toBeTypeOf('function');
-    expect(setSource).toBeTypeOf('function');
-    expect(setDestination).toBeTypeOf('function');
+    expect(Reflect.has(pathDocumentOperations, 'setPlannedRapidSourcePoint')).toBe(false);
+    expect(Reflect.has(pathDocumentOperations, 'setPlannedRapidDestinationPoint')).toBe(false);
 
     let document = createPathPlanningDocumentFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 },
@@ -239,26 +231,12 @@ describe('pathDocumentOperations', () => {
     for (const operation of document.plan.operations) {
       document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
     }
-    const firstOperationId = document.plan.operations[0].id;
-    const secondOperationId = document.plan.operations[1].id;
+    document = setManualInitialWirePosition(document, { x: 1, y: 2 })!;
 
     expect(deriveRoutes?.(document).map((route) => [route.startPoint, route.endPoint])).toEqual([
-      [{ x: 0, y: 0 }, { x: 10, y: 20 }],
+      [{ x: 1, y: 2 }, { x: 10, y: 20 }],
       [{ x: 15, y: 20 }, { x: 30, y: 20 }]
     ]);
-
-    document = setSource?.(document, firstOperationId, { x: 1, y: 2 }) ?? document;
-    expect(deriveRoutes?.(document)[0].startPoint).toEqual({ x: 1, y: 2 });
-
-    document = setDestination?.(document, firstOperationId, { x: 12, y: 21 }) ?? document;
-    expect(deriveRoutes?.(document)[0].endPoint).toEqual({ x: 12, y: 21 });
-    expect(document.plan.operations[0].overrides?.leadIn).toMatchObject({
-      source: 'manual-point', from: { x: 12, y: 21 }
-    });
-
-    document = setSource?.(document, secondOperationId, { x: 10, y: 25 }) ?? document;
-    expect(deriveRoutes?.(document)[1].startPoint.x).toBeCloseTo(10, 6);
-    expect(deriveRoutes?.(document)[1].startPoint.y).toBeCloseTo(25, 6);
   });
 
   it('adds an explicit manual lead to a planned operation', () => {
@@ -269,11 +247,11 @@ describe('pathDocumentOperations', () => {
 
     const withLead = setPathOperationManualLeadIn(document, operation.id, { x: -5, y: 0 });
 
-    expect(withLead?.plan.operations[0].overrides?.leadIn).toMatchObject({
+    expect(withLead?.plan.operations[0].transitions?.entry).toMatchObject({
       from: { x: -5, y: 0 },
-      to: operation.startPoint,
-      source: 'manual-point'
+      to: operation.startPoint
     });
+    expect(Object.keys(withLead?.plan.operations[0].overrides ?? {})).not.toContain('leadIn');
     expect(pathPlanToGcodeBody(withLead!.plan, withLead!.segments)).toContain('G1 X0.000 Y0.000');
   });
 
@@ -1138,11 +1116,12 @@ describe('pathDocumentOperations', () => {
     const edited = setCircleOperationCenterPierceLeadIn(document, operation.id);
     const body = pathPlanToGcodeBody(edited!.plan, edited!.segments);
 
-    expect(edited?.plan.operations[0].overrides?.leadIn).toMatchObject({
+    expect(edited?.plan.operations[0].transitions?.entry).toMatchObject({
       from: { x: 10, y: 20 },
       move: 'cut',
       to: { x: 15, y: 20 }
     });
+    expect(Object.keys(edited?.plan.operations[0].overrides ?? {})).not.toContain('leadIn');
     expect(edited?.plan.operations[0].metrics.cutLength).toBeCloseTo(2 * Math.PI * 5 + 5, 6);
     expect(body.split('\n')).toEqual([
       'G0 X10.000 Y20.000',
@@ -1172,7 +1151,7 @@ describe('pathDocumentOperations', () => {
       { x: 11, y: 20 }
     )!;
 
-    expect(withoutLead.plan.operations[0].overrides?.leadIn).toBeUndefined();
+    expect(Object.keys(withoutLead.plan.operations[0].overrides ?? {})).not.toContain('leadIn');
     expect(withoutLead.plan.operations[0].transitions?.entry).toEqual({
       strategy: 'none',
       review: 'reviewed'
@@ -1194,10 +1173,11 @@ describe('pathDocumentOperations', () => {
     const moved = translatePathDocument(edited!, { x: 2, y: -3 });
     const body = pathPlanToGcodeBody(moved!.plan, moved!.segments);
 
-    expect(moved?.plan.operations[0].overrides?.leadIn).toMatchObject({
+    expect(moved?.plan.operations[0].transitions?.entry).toMatchObject({
       from: { x: 12, y: 17 },
       to: { x: 17, y: 17 }
     });
+    expect(Object.keys(moved?.plan.operations[0].overrides ?? {})).not.toContain('leadIn');
     expect(body.split('\n').slice(0, 2)).toEqual([
       'G0 X12.000 Y17.000',
       'G1 X17.000 Y17.000'

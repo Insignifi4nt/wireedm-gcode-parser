@@ -2054,22 +2054,6 @@ function validateOverrides(
       context.add('upid-identity-mismatch', `Operation ${operation.id} start override point disagrees with operation start.`);
     }
   }
-  const leadIn = overrides.leadIn;
-  if (leadIn) {
-    finitePoint(leadIn.from, `operation ${operation.id} lead-in from`, context);
-    finitePoint(leadIn.to, `operation ${operation.id} lead-in to`, context);
-    finiteInteger(leadIn.sourceSegmentIndex, `operation ${operation.id} lead-in segment index`, context, 0);
-    if (!segmentMap.has(leadIn.sourceSegmentId)) {
-      context.add(
-        'upid-missing-reference',
-        `Operation ${operation.id} lead-in references missing segment ${leadIn.sourceSegmentId}.`,
-        { relatedSegmentIds: [leadIn.sourceSegmentId] }
-      );
-    }
-    if (finitePointOnly(leadIn.to) && finitePointOnly(operation.startPoint) && distance(leadIn.to, operation.startPoint) > tolerance) {
-      context.add('upid-identity-mismatch', `Operation ${operation.id} lead-in does not end at operation start.`);
-    }
-  }
   if (overrides.order) finiteInteger(overrides.order.orderIndex, `operation ${operation.id} order override`, context, 0);
   if (overrides.direction && overrides.direction.direction !== operation.direction) {
     context.add('upid-identity-mismatch', `Operation ${operation.id} direction override disagrees with operation direction.`);

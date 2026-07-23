@@ -147,7 +147,10 @@ export function EditorInspectorPanel({
     ? readUpidSelectedPathTravel(pathDocument, selectedPathOperationIndex, selectedPathElement)
     : null;
   const selectedPathOverrideRows = selectedPathElementModel
-    ? readUpidManualOverrideRows(selectedPathElementModel.overrides)
+    ? readUpidManualOverrideRows(
+        selectedPathElementModel.overrides,
+        selectedPathOperation?.transitions
+      )
     : [];
   const selectedPathSource = selectedPathElementModel
     ? readUpidPathElementSourceSummary(selectedPathElementModel)

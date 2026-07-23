@@ -1,12 +1,13 @@
 import type {
   ManualClassificationOverride,
   ManualDirectionOverride,
-  ManualLeadInOverride,
   ManualOrderOverride,
   ManualStartOverride,
   ClosedContourCompensationIntent,
   PathElement,
-  PathOperation
+  PathOperation,
+  PathOperationTransitions,
+  OrientedSegmentRef
 } from '@/domain/path-intel/types';
 
 export type UpidManualDecisionKind =
@@ -41,12 +42,12 @@ export interface UpidManualStartDecision {
 }
 
 export interface UpidManualLeadInDecision {
-  from: ManualLeadInOverride['from'];
-  move: ManualLeadInOverride['move'];
-  source: ManualLeadInOverride['source'];
+  from: { x: number; y: number };
+  move: 'cut';
+  source: 'circle-center' | 'manual-point';
   sourceSegmentId: string;
   sourceSegmentIndex: number;
-  to: ManualLeadInOverride['to'];
+  to: { x: number; y: number };
 }
 
 export type UpidManualCompensationDecision =
@@ -68,10 +69,12 @@ export interface UpidManualDecisionSummary {
   counts: UpidManualDecisionCounts;
 }
 
-type UpidManualDecisionSource =
-  | Pick<PathElement | PathOperation, 'compensationIntent' | 'overrides'>
-  | null
-  | undefined;
+type UpidManualDecisionSource = {
+  compensationIntent?: PathOperation['compensationIntent'];
+  overrides?: PathElement['overrides'];
+  segmentRefs?: OrientedSegmentRef[];
+  transitions?: PathOperationTransitions;
+} | null | undefined;
 
 export function upidManualDecisionKinds(source: UpidManualDecisionSource): UpidManualDecisionKind[] {
   const overrides = source?.overrides;
@@ -82,7 +85,9 @@ export function upidManualDecisionKinds(source: UpidManualDecisionSource): UpidM
   if (overrides?.classification) decisions.push('role');
   if (overrides?.direction) decisions.push('direction');
   if (overrides?.start) decisions.push('start');
-  if (overrides?.leadIn) decisions.push('lead-in');
+  if (source?.transitions?.entry && source.transitions.entry.strategy !== 'none') {
+    decisions.push('lead-in');
+  }
   return decisions;
 }
 
@@ -112,7 +117,7 @@ export function readUpidManualDecisionDetails(
     compensation: readUpidManualCompensationDecision(source?.compensationIntent),
     classification: readUpidManualClassificationDecision(overrides?.classification),
     direction: readUpidManualDirectionDecision(overrides?.direction),
-    leadIn: readUpidManualLeadInDecision(overrides?.leadIn),
+    leadIn: readUpidManualLeadInDecision(source),
     order: readUpidManualOrderDecision(overrides?.order),
     start: readUpidManualStartDecision(overrides?.start)
   };
@@ -173,16 +178,24 @@ function readUpidManualStartDecision(
 }
 
 function readUpidManualLeadInDecision(
-  leadIn: ManualLeadInOverride | undefined
+  source: UpidManualDecisionSource
 ): UpidManualLeadInDecision | null {
-  if (!leadIn) return null;
+  const entry = source?.transitions?.entry;
+  if (!entry || entry.strategy === 'none') return null;
+  const sourceSegmentId =
+    entry.strategy === 'circle-center'
+      ? entry.sourceSegmentId
+      : source?.segmentRefs?.[0]?.segmentId;
+  const sourceSegmentIndex =
+    source?.segmentRefs?.findIndex((ref) => ref.segmentId === sourceSegmentId) ?? -1;
+  if (!sourceSegmentId || sourceSegmentIndex < 0) return null;
 
   return {
-    from: { ...leadIn.from },
-    move: leadIn.move,
-    source: leadIn.source,
-    sourceSegmentId: leadIn.sourceSegmentId,
-    sourceSegmentIndex: leadIn.sourceSegmentIndex,
-    to: { ...leadIn.to }
+    from: { ...entry.from },
+    move: entry.move,
+    source: entry.strategy === 'circle-center' ? 'circle-center' : 'manual-point',
+    sourceSegmentId,
+    sourceSegmentIndex,
+    to: { ...entry.to }
   };
 }

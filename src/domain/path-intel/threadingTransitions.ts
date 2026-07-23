@@ -69,7 +69,7 @@ export function resolveOperationThreadingTransition(
     const nextEntry =
       nextEntryTransition && nextEntryTransition.strategy !== 'none'
         ? nextEntryTransition.from
-        : operation.overrides?.leadIn?.from ?? operation.startPoint;
+        : operation.startPoint;
     const tolerance = Math.max(0, document.options.coincidenceEpsilon);
     if (
       previous.closed ||

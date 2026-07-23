@@ -306,7 +306,7 @@ function compensation(value: unknown, path: string) {
 }
 
 function overrides(value: unknown, path: string) {
-  assertKeys(value, ['classification', 'order', 'direction', 'start', 'leadIn'], path);
+  assertKeys(value, ['classification', 'order', 'direction', 'start'], path);
   const object = record(value);
   assertKeys(object?.classification, ['kind', 'classification'], `${path}.classification`);
   assertKeys(object?.order, ['kind', 'orderIndex'], `${path}.order`);
@@ -316,12 +316,6 @@ function overrides(value: unknown, path: string) {
     'createdSegmentIds'
   ], `${path}.start`);
   point(record(object?.start)?.point, `${path}.start.point`);
-  assertKeys(object?.leadIn, [
-    'kind', 'move', 'from', 'to', 'source', 'sourceSegmentId', 'sourceSegmentIndex'
-  ], `${path}.leadIn`);
-  const leadIn = record(object?.leadIn);
-  point(leadIn?.from, `${path}.leadIn.from`);
-  point(leadIn?.to, `${path}.leadIn.to`);
 }
 
 function diagnostic(value: unknown, path: string) {

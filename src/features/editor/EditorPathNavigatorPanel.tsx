@@ -20,7 +20,9 @@ import type {
   Bounds2,
   OperationOrderStrategy,
   OrientedSegmentRef,
+  PathOperation,
   PathPlanningDocument,
+  OperationEntry,
   PathSegment,
   Point2
 } from '@/domain/path-intel/types';
@@ -1203,6 +1205,9 @@ export function EditorPathNavigatorPanel({
                 onHoverPathElement,
                 onMovePathOperation,
                 onSelectPathElement,
+                operation: pathDocument.plan.operations.find(
+                  (operation) => operation.id === pathElement.operationId
+                ),
                 operationCount: cutSequenceElements.length,
                 pathElement,
                 selectedPathElement
@@ -1719,6 +1724,7 @@ function renderCutSequenceRow({
   onHoverPathElement,
   onMovePathOperation,
   onSelectPathElement,
+  operation,
   operationCount,
   pathElement,
   selectedPathElement
@@ -1728,6 +1734,7 @@ function renderCutSequenceRow({
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
+  operation: PathOperation | undefined;
   operationCount: number;
   pathElement: UpidOperationPathElement;
   selectedPathElement: EditorPathElementRef | null;
@@ -1738,7 +1745,7 @@ function renderCutSequenceRow({
     selectedPathElement?.operationId === pathElement.operationId && selectedPathElement.travelRole === 'rapid-in';
   const rapidHovered =
     hoveredPathElement?.operationId === pathElement.operationId && hoveredPathElement.travelRole === 'rapid-in';
-  const manualDecisions = upidManualDecisionKinds(pathElement);
+  const manualDecisions = upidManualDecisionKinds(operation ?? pathElement);
   const cutLength = pathElement.metrics.cutLength.toFixed(3);
   const rapidInLength = pathElement.metrics.rapidInLength.toFixed(3);
   const label = pathElement.displayName;
@@ -2080,8 +2087,21 @@ function renderContourTreeNode({
             <span>Cut path</span>
             <span>{element.segmentRefs.length} steps</span>
           </div>
-          {element.overrides?.leadIn &&
-            renderLeadInRow(element, hoveredPathElement, selectedPathElement, onHoverPathElement, onSelectPathElement)}
+          {(() => {
+            const entry = pathDocument.plan.operations.find(
+              (operation) => operation.id === element.operationId
+            )?.transitions?.entry;
+            return entry && entry.strategy !== 'none'
+              ? renderLeadInRow(
+                  element,
+                  entry,
+                  hoveredPathElement,
+                  selectedPathElement,
+                  onHoverPathElement,
+                  onSelectPathElement
+                )
+              : null;
+          })()}
           {element.segmentRefs.map((ref, index) =>
             renderSegmentRow(
               element,
@@ -2299,14 +2319,12 @@ function formatSegmentRowHelp({
 
 function renderLeadInRow(
   pathElement: UpidOperationPathElement,
+  leadIn: Exclude<OperationEntry, { strategy: 'none' }>,
   hoveredPathElement: EditorPathElementRef | null,
   selectedPathElement: EditorPathElementRef | null,
   onHoverPathElement: (element: EditorPathElementRef | null) => void,
   onSelectPathElement: (element: EditorPathElementRef) => void
 ) {
-  const leadIn = pathElement.overrides?.leadIn;
-  if (!leadIn) return null;
-
   const element: EditorPathElementRef = {
     operationId: pathElement.operationId,
     pathElementId: pathElement.id,
@@ -2318,7 +2336,7 @@ function renderLeadInRow(
   const selected =
     selectedPathElement?.operationId === pathElement.operationId && selectedPathElement.travelRole === 'lead-in';
   const length = Math.hypot(leadIn.to.x - leadIn.from.x, leadIn.to.y - leadIn.from.y);
-  const strategyLabel = leadIn.source === 'circle-center'
+  const strategyLabel = leadIn.strategy === 'circle-center'
     ? 'Circle-center entry'
     : 'Manual straight entry';
 

@@ -1312,7 +1312,7 @@ describe('App DXF imports and project library', () => {
     expect(
       container.querySelector('button[aria-label="Open Path Project export preview"]')
     ).toBeNull();
-    expect(container.querySelectorAll('[data-editor-workflow-command]')).toHaveLength(18);
+    expect(container.querySelectorAll('[data-editor-workflow-command]')).toHaveLength(19);
     expect(
       container.querySelector('[data-editor-workflow-command="machine.profile"]')?.textContent
     ).toContain('Project Machine & Source Setup');
@@ -1327,6 +1327,7 @@ describe('App DXF imports and project library', () => {
       ['machining.sequence', 'cut-sequence'],
       ['machining.initial-wire', 'initial-wire-position'],
       ['machining.entry-exit', 'entry-exit'],
+      ['machining.between-contours', 'between-contours'],
       ['machining.program-stops', 'program-stops'],
       ['machining.participation', 'machining-participation'],
       ['construction.measurement', 'measurement'],
@@ -1400,15 +1401,20 @@ describe('App DXF imports and project library', () => {
     expect(activePanel?.getAttribute('data-editor-workspace-panel')).toBe('set-start');
     expect(activePanel?.querySelector('[data-upid-set-start-workflow]')).not.toBeNull();
     expect(activePanel?.querySelector('[aria-label="Set start point inference"]')).not.toBeNull();
-    expect(activePanel?.querySelector('[aria-label="Pick another start"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Pick explicit contour start"]')).not.toBeNull();
     expect(activePanel?.querySelector('[aria-label="Add center pierce lead-in"]')).toBeNull();
 
     await openWorkflowCommand(container, 'machining.entry-exit');
     activePanel = container.querySelector('[data-editor-workspace-panel]');
     expect(activePanel?.querySelector('[data-entry-exit-panel]')).not.toBeNull();
     expect(activePanel?.textContent).toContain('Use circle center');
-    expect(activePanel?.querySelector('[aria-label="Planned rapid source X"]')).not.toBeNull();
-    expect(activePanel?.querySelector('[aria-label="Create manual lead from planned rapid destination"]')).not.toBeNull();
+    expect(activePanel?.querySelector('[aria-label="Planned rapid source X"]')).toBeNull();
+    expect(activePanel?.textContent).not.toContain('Rethreading');
+
+    await openWorkflowCommand(container, 'machining.between-contours');
+    activePanel = container.querySelector('[data-editor-workspace-panel]');
+    expect(activePanel?.querySelector('[data-between-contours-panel]')).not.toBeNull();
+    expect(activePanel?.textContent).toContain('Program Start / G92');
 
     await openWorkflowCommand(container, 'construction.measurement');
     activePanel = container.querySelector('[data-editor-workspace-panel]');
@@ -2846,6 +2852,10 @@ describe('App DXF imports and project library', () => {
 
     await openWorkflowCommand(container, 'machining.set-start');
     await act(async () => {
+      container.querySelector('button[aria-label="Pick explicit contour start"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
       preview?.dispatchEvent(
         new MouseEvent('mousemove', {
           bubbles: true,
@@ -3618,6 +3628,10 @@ describe('App DXF imports and project library', () => {
 
     await openWorkflowCommand(container, 'machining.set-start');
     await act(async () => {
+      container.querySelector('button[aria-label="Pick explicit contour start"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
       endpointHandle?.dispatchEvent(
         new MouseEvent('click', {
           bubbles: true,
@@ -3826,7 +3840,7 @@ describe('App DXF imports and project library', () => {
       'nearest'
     );
     await act(async () => {
-      container.querySelector('button[aria-label="Pick another start"]')
+      container.querySelector('button[aria-label="Pick explicit contour start"]')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await act(async () => {
@@ -3868,6 +3882,10 @@ describe('App DXF imports and project library', () => {
     await openWorkflowCommand(container, 'machining.sequence');
     await selectFirstCutSequence(container);
     await openWorkflowCommand(container, 'machining.set-start');
+    await act(async () => {
+      container.querySelector('button[aria-label="Pick explicit contour start"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
 
     const preview = container.querySelector(
       'svg[aria-label="UPID path preview"]'
@@ -3969,6 +3987,10 @@ describe('App DXF imports and project library', () => {
       'nearest'
     );
     await act(async () => {
+      container.querySelector('button[aria-label="Pick explicit contour start"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
       preview?.dispatchEvent(
         new MouseEvent('mousemove', {
           bubbles: true,
@@ -4022,6 +4044,10 @@ describe('App DXF imports and project library', () => {
       .getAttribute('data-upid-segment-id');
     expect(targetSegmentId).toBeTruthy();
     await openWorkflowCommand(container, 'machining.set-start');
+    await act(async () => {
+      container.querySelector('button[aria-label="Pick explicit contour start"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
     const preview = container.querySelector(
       'svg[aria-label="UPID path preview"]'
     ) as SVGSVGElement | null;

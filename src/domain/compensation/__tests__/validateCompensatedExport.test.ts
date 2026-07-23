@@ -199,7 +199,7 @@ describe('validateCompensatedExport', () => {
       exit: { strategy: 'none', review: 'reviewed' }
     })!;
 
-    expect(document.plan.operations[0].overrides?.leadIn).toBeUndefined();
+    expect(Object.keys(document.plan.operations[0].overrides ?? {})).not.toContain('leadIn');
     expect(validateCompensatedExport({
       document,
       operation: document.plan.operations[0],
@@ -222,7 +222,8 @@ describe('validateCompensatedExport', () => {
       edit: (document: ReturnType<typeof baseCircle>) => {
         const operation = document.plan.operations[0];
         const next = setPathOperationManualLeadIn(document, operation.id, { x: 0, y: 0 })!;
-        next.plan.operations[0].overrides!.leadIn!.to = { x: 4, y: 0 };
+        const entry = next.plan.operations[0].transitions!.entry!;
+        if (entry.strategy !== 'none') entry.to = { x: 4, y: 0 };
         return next;
       }
     },
@@ -288,8 +289,15 @@ describe('validateCompensatedExport', () => {
       machine
     );
     const operation = initialized.plan.operations[0];
-    const document = setPathOperationManualLeadIn(initialized, operation.id, { x: 5, y: 5 })!;
-    document.plan.operations[0].overrides!.leadIn!.source = 'circle-center';
+    const document = setPathOperationTransitions(initialized, operation.id, {
+      entry: {
+        strategy: 'circle-center',
+        move: 'cut',
+        from: { x: 5, y: 5 },
+        to: operation.startPoint,
+        sourceSegmentId: operation.segmentRefs[0].segmentId
+      }
+    })!;
 
     expect(validateCompensatedExport({
       document,

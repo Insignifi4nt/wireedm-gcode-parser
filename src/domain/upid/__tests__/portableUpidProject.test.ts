@@ -65,15 +65,15 @@ describe('portable UPID projects', () => {
     operation.direction = 'reverse';
     operation.overrides = {
       ...operation.overrides,
-      direction: { kind: 'manual', direction: 'reverse' },
-      leadIn: {
-        kind: 'manual',
+      direction: { kind: 'manual', direction: 'reverse' }
+    };
+    operation.transitions = {
+      entry: {
+        strategy: 'manual-straight',
         move: 'cut',
         from: { x: -2, y: 0 },
         to: { x: 0, y: 0 },
-        source: 'manual-point',
-        sourceSegmentId: operation.segmentRefs[0].segmentId,
-        sourceSegmentIndex: 0
+        review: 'reviewed'
       }
     };
     operation.compensationIntent = {
@@ -178,12 +178,6 @@ describe('portable UPID projects', () => {
                 mode: 'controller',
                 keptMaterial: 'inside',
                 source: 'manual'
-              },
-              overrides: {
-                leadIn: {
-                  from: { x: -2, y: 0 },
-                  to: { x: 0, y: 0 }
-                }
               },
               transitions: {
                 entry: {
@@ -318,7 +312,7 @@ describe('portable UPID projects', () => {
       entry: { strategy: 'none', review: 'reviewed' },
       exit: { strategy: 'none', review: 'reviewed' }
     });
-    expect(received.pathDocument.plan.operations[0].overrides?.leadIn).toBeUndefined();
+    expect(Object.keys(received.pathDocument.plan.operations[0].overrides ?? {})).not.toContain('leadIn');
   });
 
   it('rejects malformed and structurally invalid UPID before writing project state', async () => {

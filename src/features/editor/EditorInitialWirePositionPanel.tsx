@@ -42,6 +42,10 @@ export function EditorInitialWirePositionPanel({
 
   return (
     <section className="grid gap-2 text-[10px]" data-initial-wire-position>
+      <p className="leading-4 text-muted-foreground">
+        Program Start / G92 declares the wire position once at program start. It supplies only the
+        first connection; use Contour Start for each contour and Entry / Exit for cutting transitions.
+      </p>
       <div className="border border-border bg-background/35 p-2">
         <div className="mb-1 uppercase text-muted-foreground">Current setup</div>
         <div className={resolution.status === 'ready' ? 'text-emerald-300' : 'text-amber-300'}>

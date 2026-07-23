@@ -1,7 +1,7 @@
 import { classifyPathSegmentIntersection } from '@/domain/path-intel/intersections';
 import { formatGcodePointWords } from '@/domain/path-intel/postGcode';
 import { createLineSegment, distance, segmentMap } from '@/domain/path-intel/segments';
-import { normalizeLegacyOperationTransitions } from '@/domain/path-intel/operationTransitions';
+import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import type { PathOperation, PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 
 export type RobofilV2LeadValidation =
@@ -20,7 +20,7 @@ export function validateRobofilV2OperationLead(
   operation: PathOperation,
   coordinatePrecision: number
 ): RobofilV2LeadValidation {
-  const transitions = normalizeLegacyOperationTransitions(operation);
+  const transitions = readOperationTransitions(operation);
   const entry = transitions.entry;
   const exit = transitions.exit;
   if (!entry) {
@@ -40,22 +40,12 @@ export function validateRobofilV2OperationLead(
     if (entry.review !== 'reviewed') {
       return invalid('Review the no-entry decision before Robofil v2 export.');
     }
-    if (operation.overrides?.leadIn) {
-      return invalid(
-        'Robofil v2 no-entry intent conflicts with an explicit lead-in.'
-      );
-    }
     return { valid: true };
   }
   if (entry?.strategy === 'manual-straight' && entry.review !== 'reviewed') {
     return invalid('Review the derived partial-contour entry before Robofil v2 export.');
   }
-  const lead = operation.overrides?.leadIn;
-  if (!lead) {
-    return invalid(
-      'The reviewed Robofil v2 entry geometry is missing its canonical lead-in.'
-    );
-  }
+  const lead = entry;
   if (![lead.from, lead.to, operation.startPoint].every(finitePoint)) {
     return invalid('Robofil v2 lead-in coordinates must be finite.');
   }
@@ -75,12 +65,16 @@ export function validateRobofilV2OperationLead(
   }
 
   const segmentsById = segmentMap(document.segments);
-  const sourceRef = operation.segmentRefs.find((ref) => ref.segmentId === lead.sourceSegmentId);
-  if (!sourceRef || !segmentsById.has(lead.sourceSegmentId)) {
+  const sourceSegmentId =
+    lead.strategy === 'circle-center'
+      ? lead.sourceSegmentId
+      : operation.segmentRefs[0]?.segmentId;
+  const sourceRef = operation.segmentRefs.find((ref) => ref.segmentId === sourceSegmentId);
+  if (!sourceSegmentId || !sourceRef || !segmentsById.has(sourceSegmentId)) {
     return invalid('Robofil v2 lead-in is disconnected from its target operation.');
   }
 
-  if (lead.source === 'circle-center') {
+  if (lead.strategy === 'circle-center') {
     const circularSegments = operation.segmentRefs.map((ref) => segmentsById.get(ref.segmentId));
     const first = circularSegments[0];
     if (

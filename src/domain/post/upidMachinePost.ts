@@ -9,7 +9,10 @@ import {
   type GcodePostedOperation
 } from '@/domain/path-intel/postGcode';
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
-import { operationEntryPoint } from '@/domain/path-intel/operationTransitions';
+import {
+  readOperationTransitions,
+  operationEntryPoint
+} from '@/domain/path-intel/operationTransitions';
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
 import { resolveProgramStopPoints, validateProgramStops } from '@/domain/path-intel/programStops';
@@ -627,7 +630,7 @@ function postVerifiedRobofil(
       { compensationReason: resolution.reason }
     );
   }
-  if (operation.overrides?.leadIn?.source === 'circle-center') {
+  if (readOperationTransitions(operation).entry?.strategy === 'circle-center') {
     return blockedReason(
       'unsafe-controller-compensation-lead-in',
       'A radial circle-center lead-in is unsafe while Robofil controller compensation is active.'

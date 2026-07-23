@@ -28,7 +28,7 @@ describe('EditorEntryExitPanel', () => {
     container.remove();
   });
 
-  it('shows actual entry strategy and authors exact exit and threading intent', async () => {
+  it('shows actual entry strategy and authors exact cut exit intent', async () => {
     let document = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
       { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
@@ -38,7 +38,6 @@ describe('EditorEntryExitPanel', () => {
       document.plan.operations[1].id
     )!;
     const onSetManualExit = vi.fn();
-    const onSetOperationThreading = vi.fn();
     await act(async () => {
       root.render(
         <EditorEntryExitPanel
@@ -53,10 +52,6 @@ describe('EditorEntryExitPanel', () => {
           onSetManualExit={onSetManualExit}
           onSetNoEntry={vi.fn()}
           onSetNoExit={vi.fn()}
-          onSetPlannedRapidDestination={vi.fn()}
-          onSetPlannedRapidSource={vi.fn()}
-          onSetOperationThreading={onSetOperationThreading}
-          onSetProjectThreading={vi.fn()}
           selectedOperationId={document.plan.operations[1].id}
         />
       );
@@ -72,29 +67,21 @@ describe('EditorEntryExitPanel', () => {
       [...container.querySelectorAll('button')]
         .find((button) => button.textContent?.includes('Set straight exit'))
         ?.click();
-      setSelect(
-        container.querySelector<HTMLSelectElement>('[aria-label="Operation threading mode"]')!,
-        'manual'
-      );
     });
 
     expect(onSetManualExit).toHaveBeenCalledWith(
       document.plan.operations[1].id,
       { x: 27.5, y: 1.25 }
     );
-    expect(onSetOperationThreading).toHaveBeenCalledWith(
-      document.plan.operations[1].id,
-      { mode: 'manual', wireSeparation: 'already-separated' }
-    );
+    expect(container.querySelector('[data-upid-planned-rapid-editor]')).toBeNull();
+    expect(container.textContent).not.toContain('Rethreading');
   });
 
-  it('passes its displayed fallback operation to planned rapid edits', async () => {
+  it('keeps the panel scoped to cutting entry and exit', async () => {
     const document = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
       { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
     ]);
-    const onSetPlannedRapidSource = vi.fn();
-
     await act(async () => {
       root.render(
         <EditorEntryExitPanel
@@ -109,23 +96,15 @@ describe('EditorEntryExitPanel', () => {
           onSetManualExit={vi.fn()}
           onSetNoEntry={vi.fn()}
           onSetNoExit={vi.fn()}
-          onSetOperationThreading={vi.fn()}
-          onSetPlannedRapidDestination={vi.fn()}
-          onSetPlannedRapidSource={onSetPlannedRapidSource}
-          onSetProjectThreading={vi.fn()}
           selectedOperationId={null}
         />
       );
     });
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>('[aria-label="Apply planned rapid source"]')?.click();
-    });
-
-    expect(onSetPlannedRapidSource).toHaveBeenCalledWith(
-      document.plan.operations[0].id,
-      expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) })
-    );
+    expect(container.textContent).toContain('Entry');
+    expect(container.textContent).toContain('Exit');
+    expect(container.textContent).not.toContain('Planned rapid');
+    expect(container.textContent).not.toContain('Project default');
   });
 
   it('gates and emits reviewed no-entry and no-exit choices through the Robofil v2 envelope', async () => {
@@ -152,10 +131,6 @@ describe('EditorEntryExitPanel', () => {
           onSetManualExit={vi.fn()}
           onSetNoEntry={onSetNoEntry}
           onSetNoExit={onSetNoExit}
-          onSetOperationThreading={vi.fn()}
-          onSetPlannedRapidDestination={vi.fn()}
-          onSetPlannedRapidSource={vi.fn()}
-          onSetProjectThreading={vi.fn()}
           selectedOperationId={operationId}
         />
       );
@@ -184,10 +159,4 @@ function setInput(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
   setter?.call(input, value);
   input.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-function setSelect(select: HTMLSelectElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
-  setter?.call(select, value);
-  select.dispatchEvent(new Event('change', { bubbles: true }));
 }

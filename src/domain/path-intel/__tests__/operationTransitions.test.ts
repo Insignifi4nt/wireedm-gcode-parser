@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  normalizeLegacyOperationTransitions,
+  readOperationTransitions,
   operationEntryPoint,
   operationExitPoint,
   operationTransitionCutLength
@@ -9,21 +9,19 @@ import {
 import type { PathOperation } from '../types';
 
 describe('operation transitions', () => {
-  it('normalizes a legacy circle-center lead without losing its strategy', () => {
+  it('reads canonical circle-center transition geometry without dual override state', () => {
     const operation = operationFixture();
-    operation.overrides = {
-      leadIn: {
-        kind: 'manual',
+    operation.transitions = {
+      entry: {
+        strategy: 'circle-center',
         move: 'cut',
         from: { x: 0, y: 0 },
         to: { x: 5, y: 0 },
-        source: 'circle-center',
-        sourceSegmentId: 'segment-1',
-        sourceSegmentIndex: 0
+        sourceSegmentId: 'segment-1'
       }
     };
 
-    expect(normalizeLegacyOperationTransitions(operation).entry).toEqual({
+    expect(readOperationTransitions(operation).entry).toEqual({
       strategy: 'circle-center',
       move: 'cut',
       from: { x: 0, y: 0 },

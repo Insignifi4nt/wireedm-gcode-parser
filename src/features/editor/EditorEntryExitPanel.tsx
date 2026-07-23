@@ -1,17 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import {
-  canSetCircleOperationCenterPierceLeadIn,
-  derivePlannedRapidRoutes
-} from '@/domain/path-editor/pathDocumentOperations';
-import { normalizeLegacyOperationTransitions } from '@/domain/path-intel/operationTransitions';
-import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
+import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
+import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { robofilV2PostEnvelopeIsReady } from '@/domain/post/verifiedRobofilPostEnvelope';
-import type {
-  OperationThreadingTransition,
-  PathPlanningDocument,
-  Point2
-} from '@/domain/path-intel/types';
+import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 import type { MachineProfile } from '@/domain/workbench/types';
 
 interface EditorEntryExitPanelProps {
@@ -23,26 +15,16 @@ interface EditorEntryExitPanelProps {
     mode: 'entry' | 'exit' | null,
     operationId: string
   ) => void;
-  onDraftChange?: (source: 'entry' | 'exit' | 'rapid-destination' | 'rapid-source') => void;
+  onDraftChange?: (source: 'entry' | 'exit') => void;
   onSelectOperation: (operationId: string) => void;
   onSetCircleCenterEntry: (operationId: string) => void;
   onSetManualEntry: (
     operationId: string,
-    point: Point2,
-    completedSource: 'entry' | 'rapid-destination'
+    point: Point2
   ) => void;
   onSetManualExit: (operationId: string, point: Point2) => void;
   onSetNoEntry: (operationId: string) => void;
   onSetNoExit: (operationId: string) => void;
-  onSetPlannedRapidDestination: (operationId: string, point: Point2) => void;
-  onSetPlannedRapidSource: (operationId: string, point: Point2) => void;
-  onSetOperationThreading: (
-    operationId: string,
-    transition: Omit<OperationThreadingTransition, 'source'> | null
-  ) => void;
-  onSetProjectThreading: (
-    transition: Omit<OperationThreadingTransition, 'source'>
-  ) => void;
   selectedOperationId: string | null;
   targetChangeBlocked?: boolean;
 }
@@ -60,28 +42,17 @@ export function EditorEntryExitPanel({
   onSetManualExit,
   onSetNoEntry,
   onSetNoExit,
-  onSetPlannedRapidDestination,
-  onSetPlannedRapidSource,
-  onSetOperationThreading,
-  onSetProjectThreading,
   selectedOperationId,
   targetChangeBlocked = false
 }: EditorEntryExitPanelProps) {
   const selected = document.plan.operations.find(
     (operation) => operation.id === selectedOperationId
   ) ?? document.plan.operations[0] ?? null;
-  const transitions = selected ? normalizeLegacyOperationTransitions(selected) : {};
+  const transitions = selected ? readOperationTransitions(selected) : {};
   const [entryX, setEntryX] = useState('');
   const [entryY, setEntryY] = useState('');
   const [exitX, setExitX] = useState('');
   const [exitY, setExitY] = useState('');
-  const plannedRapid = selected
-    ? derivePlannedRapidRoutes(document).find((route) => route.operationId === selected.id) ?? null
-    : null;
-  const [rapidSourceX, setRapidSourceX] = useState('');
-  const [rapidSourceY, setRapidSourceY] = useState('');
-  const [rapidDestinationX, setRapidDestinationX] = useState('');
-  const [rapidDestinationY, setRapidDestinationY] = useState('');
   const entryFrom =
     transitions.entry && transitions.entry.strategy !== 'none'
       ? transitions.entry.from
@@ -98,33 +69,8 @@ export function EditorEntryExitPanel({
     setExitY(exitTo ? String(exitTo.y) : '');
   }, [selected?.id, entryFrom?.x, entryFrom?.y, exitTo?.x, exitTo?.y]);
 
-  useEffect(() => {
-    setRapidSourceX(plannedRapid ? String(plannedRapid.startPoint.x) : '');
-    setRapidSourceY(plannedRapid ? String(plannedRapid.startPoint.y) : '');
-    setRapidDestinationX(plannedRapid ? String(plannedRapid.endPoint.x) : '');
-    setRapidDestinationY(plannedRapid ? String(plannedRapid.endPoint.y) : '');
-  }, [
-    plannedRapid?.operationId,
-    plannedRapid?.startPoint.x,
-    plannedRapid?.startPoint.y,
-    plannedRapid?.endPoint.x,
-    plannedRapid?.endPoint.y
-  ]);
-
-  const threading = useMemo(
-    () => selected && selected.orderIndex > 0
-      ? resolveOperationThreadingTransition(document, selected.id, machine)
-      : null,
-    [document, machine, selected]
-  );
   const entryPoint = readFinitePoint(entryX, entryY);
   const exitPoint = readFinitePoint(exitX, exitY);
-  const rapidSourcePoint = readFinitePoint(rapidSourceX, rapidSourceY);
-  const rapidDestinationPoint = readFinitePoint(rapidDestinationX, rapidDestinationY);
-  const projectThreading = document.setup?.threadingDefault ?? {
-    mode: 'manual' as const,
-    wireSeparation: 'already-separated' as const
-  };
   const robofilV2OperationLifecycle = robofilV2PostEnvelopeIsReady(machine);
   const centerPierceBlockedByControllerCompensation = Boolean(
     document.geometryBasis === 'finished-contour' &&
@@ -208,68 +154,6 @@ export function EditorEntryExitPanel({
         </div>
       </fieldset>
 
-      <fieldset
-        className="grid gap-1 border border-border p-2"
-        data-upid-planned-rapid-editor
-        disabled={disabled || !plannedRapid}
-      >
-        <legend className="px-1 uppercase text-muted-foreground">Planned rapid</legend>
-        <p className="text-muted-foreground">
-          Review the positioning move that reaches this operation before defining its cutting entry.
-        </p>
-        <CoordinateInputs
-          label="Planned rapid source"
-          onXChange={(value) => { setRapidSourceX(value); onDraftChange?.('rapid-source'); }}
-          onYChange={(value) => { setRapidSourceY(value); onDraftChange?.('rapid-source'); }}
-          x={rapidSourceX}
-          y={rapidSourceY}
-        />
-        <CoordinateInputs
-          label="Planned rapid destination"
-          onXChange={(value) => { setRapidDestinationX(value); onDraftChange?.('rapid-destination'); }}
-          onYChange={(value) => { setRapidDestinationY(value); onDraftChange?.('rapid-destination'); }}
-          x={rapidDestinationX}
-          y={rapidDestinationY}
-        />
-        <div className="grid grid-cols-2 gap-1">
-          <button
-            aria-label="Apply planned rapid source"
-            className="h-7 border border-border bg-background disabled:opacity-40"
-            disabled={!rapidSourcePoint}
-            onClick={() => rapidSourcePoint && onSetPlannedRapidSource(selected.id, rapidSourcePoint)}
-            type="button"
-          >
-            Set source
-          </button>
-          <button
-            aria-label="Apply planned rapid destination"
-            className="h-7 border border-border bg-background disabled:opacity-40"
-            disabled={!rapidDestinationPoint}
-            onClick={() =>
-              rapidDestinationPoint && onSetPlannedRapidDestination(selected.id, rapidDestinationPoint)
-            }
-            type="button"
-          >
-            Set destination
-          </button>
-        </div>
-        {!selected.overrides?.leadIn && (
-          <button
-            aria-label="Create manual lead from planned rapid destination"
-            className="h-7 border border-border bg-background disabled:opacity-40"
-            disabled={!rapidDestinationPoint}
-            onClick={() => rapidDestinationPoint && onSetManualEntry(
-              selected.id,
-              rapidDestinationPoint,
-              'rapid-destination'
-            )}
-            type="button"
-          >
-            Create manual entry from destination
-          </button>
-        )}
-      </fieldset>
-
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
         <legend className="px-1 uppercase text-muted-foreground">Entry</legend>
         <div className="text-foreground" data-entry-strategy>
@@ -284,9 +168,10 @@ export function EditorEntryExitPanel({
         />
         <div className="grid grid-cols-2 gap-1">
           <button
+            aria-label="Set straight entry"
             className="h-7 border border-border bg-background disabled:opacity-40"
             disabled={!entryPoint}
-            onClick={() => entryPoint && onSetManualEntry(selected.id, entryPoint, 'entry')}
+            onClick={() => entryPoint && onSetManualEntry(selected.id, entryPoint)}
             type="button"
           >
             Set straight entry
@@ -362,71 +247,6 @@ export function EditorEntryExitPanel({
         </button>
       </fieldset>
 
-      <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
-        <legend className="px-1 uppercase text-muted-foreground">Rethreading</legend>
-        <label className="grid grid-cols-[1fr_120px] items-center gap-2 text-muted-foreground">
-          Project default
-          <select
-            aria-label="Project threading default"
-            className="h-7 border border-border bg-background px-1 text-foreground"
-            onChange={(event) => onSetProjectThreading(threadingForMode(event.currentTarget.value))}
-            value={projectThreading.mode}
-          >
-            <option value="manual">Manual</option>
-            <option value="automatic">Automatic</option>
-          </select>
-        </label>
-        {selected.orderIndex === 0 ? (
-          <p className="text-muted-foreground">Initial threading is owned by Initial Wire Position setup.</p>
-        ) : (
-          <>
-            <label className="grid grid-cols-[1fr_120px] items-center gap-2 text-muted-foreground">
-              This transition
-              <select
-                aria-label="Operation threading mode"
-                className="h-7 border border-border bg-background px-1 text-foreground"
-                onChange={(event) => {
-                  const mode = event.currentTarget.value;
-                  onSetOperationThreading(
-                    selected.id,
-                    mode === 'project-default' ? null : threadingForMode(mode)
-                  );
-                }}
-                value={selected.threadingTransition?.mode ?? 'project-default'}
-              >
-                <option value="project-default">Project default</option>
-                <option value="manual">Manual</option>
-                <option value="automatic">Automatic</option>
-                <option value="continuous">Continuous</option>
-              </select>
-            </label>
-            {selected.threadingTransition?.mode === 'manual' && (
-              <label className="grid grid-cols-[1fr_180px] items-center gap-2 text-muted-foreground">
-                Before positioning
-                <select
-                  aria-label="Manual wire separation"
-                  className="h-7 border border-border bg-background px-1 text-foreground"
-                  onChange={(event) => onSetOperationThreading(selected.id, {
-                    mode: 'manual',
-                    wireSeparation: event.currentTarget.value as 'already-separated' | 'manual-before-positioning'
-                  })}
-                  value={selected.threadingTransition.wireSeparation}
-                >
-                  <option value="already-separated">Wire already separated</option>
-                  <option value="manual-before-positioning">Stop to separate wire</option>
-                </select>
-              </label>
-            )}
-            <p className={threading?.status === 'blocked' ? 'text-amber-300' : 'text-emerald-300'}>
-              {threading?.status === 'ready'
-                ? threading.transition.mode === 'manual'
-                  ? 'Manual: position at entry, M00, then activate compensation and cut.'
-                  : `${threading.transition.mode} transition is authorized.`
-                : threading?.message}
-            </p>
-          </>
-        )}
-      </fieldset>
     </section>
   );
 }
@@ -470,18 +290,8 @@ function CoordinateInputs({
   );
 }
 
-function threadingForMode(mode: string): Omit<OperationThreadingTransition, 'source'> {
-  if (mode === 'automatic') {
-    return { mode: 'automatic', wireSeparation: 'automatic-before-positioning' };
-  }
-  if (mode === 'continuous') {
-    return { mode: 'continuous', wireSeparation: 'already-separated' };
-  }
-  return { mode: 'manual', wireSeparation: 'already-separated' };
-}
-
 function entryStrategyLabel(
-  entry: ReturnType<typeof normalizeLegacyOperationTransitions>['entry']
+  entry: ReturnType<typeof readOperationTransitions>['entry']
 ) {
   if (!entry) return 'Entry decision not reviewed';
   if (entry.strategy === 'none') return 'Reviewed no entry';

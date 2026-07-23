@@ -17,6 +17,7 @@ import {
   requiredSegment,
   segmentMap
 } from '@/domain/path-intel/segments';
+import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import type {
   ArcPathSegment,
   Bounds2,
@@ -262,7 +263,8 @@ export function buildEditorPathDocumentPreviewGeometry(
     const postedTransitions = options.postedTransitions?.filter(
       (transition) => transition.operationId === operation.id
     );
-    const leadIn = operation.overrides?.leadIn;
+    const entry = readOperationTransitions(operation).entry;
+    const leadIn = entry && entry.strategy !== 'none' ? entry : null;
     const entryPoint = leadIn?.from ?? operation.startPoint;
     const rapidStart = currentPoint ?? planningDocument.options.startPoint;
     if (!currentPoint || !pathPointsEqual(currentPoint, entryPoint, planningDocument.options.coincidenceEpsilon)) {

@@ -1,44 +1,24 @@
 import { distance } from './segments';
 import type { PathOperation, PathOperationTransitions, Point2 } from './types';
 
-export function normalizeLegacyOperationTransitions(
+export function readOperationTransitions(
   operation: PathOperation
 ): PathOperationTransitions {
-  if (operation.transitions) return structuredClone(operation.transitions);
-  const leadIn = operation.overrides?.leadIn;
-  if (!leadIn) return {};
-  return {
-    entry:
-      leadIn.source === 'circle-center'
-        ? {
-            strategy: 'circle-center',
-            move: 'cut',
-            from: { ...leadIn.from },
-            to: { ...leadIn.to },
-            sourceSegmentId: leadIn.sourceSegmentId
-          }
-        : {
-            strategy: 'manual-straight',
-            move: 'cut',
-            from: { ...leadIn.from },
-            to: { ...leadIn.to },
-            review: 'reviewed'
-          }
-  };
+  return operation.transitions ? structuredClone(operation.transitions) : {};
 }
 
 export function operationEntryPoint(operation: PathOperation): Point2 {
-  const entry = normalizeLegacyOperationTransitions(operation).entry;
+  const entry = readOperationTransitions(operation).entry;
   return entry && entry.strategy !== 'none' ? entry.from : operation.startPoint;
 }
 
 export function operationExitPoint(operation: PathOperation): Point2 {
-  const exit = normalizeLegacyOperationTransitions(operation).exit;
+  const exit = readOperationTransitions(operation).exit;
   return exit && exit.strategy !== 'none' ? exit.to : operation.endPoint;
 }
 
 export function operationTransitionCutLength(operation: PathOperation) {
-  const transitions = normalizeLegacyOperationTransitions(operation);
+  const transitions = readOperationTransitions(operation);
   return transitionLength(transitions.entry) + transitionLength(transitions.exit);
 }
 

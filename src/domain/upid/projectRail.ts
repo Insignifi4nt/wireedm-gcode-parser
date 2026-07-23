@@ -1,7 +1,6 @@
 import type {
   Bounds2,
   EndpointSide,
-  ManualLeadInOverride,
   ManualStartOverride,
   OrientedSegmentRef,
   PathElementPointRole,
@@ -10,10 +9,12 @@ import type {
   PathElementId,
   PathOperation,
   PathPlanningDocument,
+  PathOperationTransitions,
   PathSegment,
   Point2,
   SegmentId
 } from '@/domain/path-intel/types';
+import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import type { DxfInsertSource } from '@/domain/dxf/types';
 import {
   boundsAreFinite,
@@ -339,7 +340,7 @@ export function createUpidProjectRail(document: PathPlanningDocument): UpidProje
   const operationElements = document.pathElements.filter(isUpidOperationPathElement);
   const cutSequenceElements = [...operationElements].sort((first, second) => first.orderIndex - second.orderIndex);
   const contourTree = buildUpidPathElementTree(operationElements, document.rootPathElementIds);
-  const manualDecisionSummary = summarizeUpidManualDecisions(operationElements);
+  const manualDecisionSummary = summarizeUpidManualDecisions(document.plan.operations);
 
   return {
     contourTree,
@@ -857,7 +858,8 @@ export function summarizeUpidPathDocumentForEditor(document: PathPlanningDocumen
       bounds = mergeBounds(bounds, operationBounds);
     }
 
-    const leadIn = operation.overrides?.leadIn;
+    const entry = readOperationTransitions(operation).entry;
+    const leadIn = entry && entry.strategy !== 'none' ? entry : null;
     const entryPoint = leadIn?.from ?? operation.startPoint;
     if (!currentPoint || !pointsEqual(currentPoint, entryPoint, document.options.coincidenceEpsilon)) {
       rapidMoveCount += 1;
@@ -1134,43 +1136,47 @@ function pointRoleForRawEndpointSide(
   return ref.reversed ? 'start' : 'end';
 }
 
-export function readUpidManualOverrideRows(overrides: PathElement['overrides']): UpidManualOverrideRow[] {
-  if (!overrides) return [];
+export function readUpidManualOverrideRows(
+  overrides: PathElement['overrides'],
+  transitions?: PathOperationTransitions
+): UpidManualOverrideRow[] {
+  if (!overrides && !transitions) return [];
 
   const rows: UpidManualOverrideRow[] = [];
-  if (overrides.order) {
+  if (overrides?.order) {
     rows.push({
       kind: 'order',
       label: 'Order',
       value: `Manual position ${overrides.order.orderIndex + 1}`
     });
   }
-  if (overrides.classification) {
+  if (overrides?.classification) {
     rows.push({
       kind: 'classification',
       label: 'Role',
       value: overrides.classification.classification
     });
   }
-  if (overrides.direction) {
+  if (overrides?.direction) {
     rows.push({
       kind: 'direction',
       label: 'Direction',
       value: overrides.direction.direction
     });
   }
-  if (overrides.start) {
+  if (overrides?.start) {
     rows.push({
       kind: 'start',
       label: 'Start',
       value: formatUpidStartOverride(overrides.start)
     });
   }
-  if (overrides.leadIn) {
+  const entry = transitions?.entry;
+  if (entry && entry.strategy !== 'none') {
     rows.push({
       kind: 'lead-in',
       label: 'Lead-in',
-      value: formatUpidLeadInOverride(overrides.leadIn)
+      value: formatUpidEntry(entry)
     });
   }
 
@@ -1187,8 +1193,8 @@ function formatUpidStartOverride(start: ManualStartOverride) {
   return `${formatUpidPoint(start.point)} / existing ${start.pointRole ?? 'point'} / ${source}`;
 }
 
-function formatUpidLeadInOverride(leadIn: ManualLeadInOverride) {
-  return `${leadIn.move.toUpperCase()} ${formatUpidPoint(leadIn.from)} -> ${formatUpidPoint(leadIn.to)} / ${leadIn.source}`;
+function formatUpidEntry(entry: Exclude<NonNullable<PathOperationTransitions['entry']>, { strategy: 'none' }>) {
+  return `${entry.move.toUpperCase()} ${formatUpidPoint(entry.from)} -> ${formatUpidPoint(entry.to)} / ${entry.strategy}`;
 }
 
 export function readUpidPathElementSourceSummary(element: PathElement): UpidPathElementSourceSummary {
@@ -1259,7 +1265,8 @@ export function readUpidSelectedPathTravel(
   if (!operation || element.operationId !== operation.id) return null;
 
   if (element.travelRole === 'lead-in') {
-    const leadIn = operation.overrides?.leadIn;
+    const entry = readOperationTransitions(operation).entry;
+    const leadIn = entry && entry.strategy !== 'none' ? entry : null;
     return leadIn
       ? {
           end: { ...leadIn.to },
@@ -1272,7 +1279,8 @@ export function readUpidSelectedPathTravel(
 
   const previousOperation = operationIndex > 0 ? document.plan.operations[operationIndex - 1] : null;
   const start = previousOperation?.endPoint ?? document.options.startPoint;
-  const end = operation.overrides?.leadIn?.from ?? operation.startPoint;
+  const entry = readOperationTransitions(operation).entry;
+  const end = entry && entry.strategy !== 'none' ? entry.from : operation.startPoint;
 
   return {
     end,

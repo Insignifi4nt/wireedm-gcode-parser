@@ -1488,18 +1488,15 @@ describe('validateUpidDocument', () => {
 
     const missing = closedDocument();
     const missingOperation = missing.plan.operations[0];
-    missingOperation.overrides = {
-      leadIn: {
-        kind: 'manual',
+    missingOperation.transitions = {
+      entry: {
+        strategy: 'circle-center',
         move: 'cut',
         from: { x: 5, y: 2.5 },
         to: { ...missingOperation.startPoint },
-        source: 'circle-center',
-        sourceSegmentId: 'seg_missing',
-        sourceSegmentIndex: 0
+        sourceSegmentId: 'seg_missing'
       }
     };
-    missing.pathElements[0].overrides = structuredClone(missingOperation.overrides);
 
     expect(validateUpidDocument(nonFinite).structuralDiagnostics).toContainEqual(
       expect.objectContaining({ code: 'upid-invalid-value', severity: 'error' })

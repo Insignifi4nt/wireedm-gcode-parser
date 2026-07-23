@@ -1376,17 +1376,31 @@ export function EditorPreview({
               pointerEvents="none"
             >
               {startPreview.sourcePoint && (
-                <line
-                  data-upid-start-inference-guide
-                  stroke="#67e8f9"
-                  strokeDasharray="0.45 0.3"
-                  strokeWidth={markerRadius * 0.24}
-                  vectorEffect="non-scaling-stroke"
-                  x1={startPreview.sourcePoint.x}
-                  x2={startPreview.point.x}
-                  y1={flipY - startPreview.sourcePoint.y}
-                  y2={flipY - startPreview.point.y}
-                />
+                <>
+                  <line
+                    data-upid-start-inference-guide-shadow
+                    stroke="#020617"
+                    strokeOpacity="0.9"
+                    strokeWidth={5}
+                    vectorEffect="non-scaling-stroke"
+                    x1={startPreview.sourcePoint.x}
+                    x2={startPreview.point.x}
+                    y1={flipY - startPreview.sourcePoint.y}
+                    y2={flipY - startPreview.point.y}
+                  />
+                  <line
+                    data-upid-start-inference-guide
+                    stroke="#67e8f9"
+                    strokeDasharray="6 4"
+                    strokeOpacity="1"
+                    strokeWidth={2.5}
+                    vectorEffect="non-scaling-stroke"
+                    x1={startPreview.sourcePoint.x}
+                    x2={startPreview.point.x}
+                    y1={flipY - startPreview.sourcePoint.y}
+                    y2={flipY - startPreview.point.y}
+                  />
+                </>
               )}
               <circle
                 cx={startPreview.point.x}

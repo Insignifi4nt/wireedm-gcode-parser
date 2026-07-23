@@ -241,9 +241,10 @@ export function EditorSetStartPanel({
   return (
     <section className="grid gap-2 text-[10px]" data-upid-set-start-workflow>
       <div>
-        <h3 className="text-[11px] font-semibold">Set Start</h3>
+        <h3 className="text-[11px] font-semibold">Contour Start</h3>
         <p className="mt-1 text-muted-foreground">
-          Choose a closed contour, then pick its new start on the canvas. The preview follows the pointer.
+          Every operation already has an automatic contour start. Choose a closed contour here only
+          when you want to override it with an explicit point.
         </p>
       </div>
       <label className="grid gap-1 uppercase text-muted-foreground">
@@ -273,29 +274,29 @@ export function EditorSetStartPanel({
           )}
           value={inferenceMode}
         >
-          <option value="endpoint">Endpoint</option>
-          <option value="nearest">Nearest point</option>
-          <option value="midpoint">Side midpoint</option>
-          <option value="perpendicular">Perpendicular from initial wire</option>
+          <option value="endpoint">Nearest endpoint</option>
+          <option value="nearest">Nearest point to cursor</option>
+          <option value="midpoint">Hovered side midpoint</option>
+          <option value="perpendicular">Perpendicular from approach</option>
         </select>
       </label>
       <div className="flex items-start gap-2 border border-sky-500/40 bg-sky-500/5 p-2 text-sky-100">
         <MousePointer2 className="mt-0.5 size-3 shrink-0" />
         <span>
           {selected
-            ? `Picking start for ${selected.displayName}. Hover to preview the ${inferenceMode} candidate, then click to apply it.`
+            ? `${selected.displayName} currently starts at X${selected.startPoint.x.toFixed(3)} Y${selected.startPoint.y.toFixed(3)}. Start picking to preview the approach guide and apply the inferred point.`
             : 'No closed contour is available.'}
         </span>
       </div>
       <button
-        aria-label="Pick another start"
+        aria-label="Pick explicit contour start"
         className={buttonClass}
         disabled={!selected || disabled}
         onClick={() => selected && onPickStart(selected.id)}
         type="button"
       >
         <MousePointer2 className="size-3" />
-        Pick another start
+        Pick explicit start
       </button>
     </section>
   );

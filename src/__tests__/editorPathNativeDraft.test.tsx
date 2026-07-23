@@ -114,7 +114,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
-      'before opening Entry / Exit & Rethreading'
+      'before opening Entry / Exit'
     );
     expect(visibleWorkflowPanelIds()).toEqual(['path-transform']);
 
@@ -325,6 +325,7 @@ describe('EditorPage UPID draft boundary', () => {
       {
         commandId: 'machining.set-start',
         mutate: async () => {
+          await clickElement('button[aria-label="Pick explicit contour start"]');
           const endpoints = [...container.querySelectorAll<SVGCircleElement>(
             'circle[data-preview-path-endpoint]'
           )].filter((endpoint) => endpoint.getAttribute('aria-disabled') !== 'true');
@@ -358,10 +359,27 @@ describe('EditorPage UPID draft boundary', () => {
       },
       {
         commandId: 'machining.entry-exit',
-        mutate: async () => changeSelect(
-          container.querySelector('select[aria-label="Project threading default"]'),
-          'automatic'
-        ),
+        mutate: async () => {
+          await changeInput('input[aria-label="Entry X"]', '-2');
+          await changeInput('input[aria-label="Entry Y"]', '0');
+          await clickElement('button[aria-label="Set straight entry"]');
+        },
+        assertPreserved: () => expect(
+          container.querySelector('[data-entry-strategy]')?.textContent
+        ).toContain('Reviewed straight entry')
+      },
+      {
+        commandId: 'machining.between-contours',
+        mutate: async () => {
+          const destination = container.querySelector(
+            'select[aria-label="Between contours destination operation"]'
+          ) as HTMLSelectElement;
+          await changeSelect(destination, destination.options[1].value);
+          await changeSelect(
+            container.querySelector('select[aria-label="Project threading default"]'),
+            'automatic'
+          );
+        },
         assertPreserved: () => expect(
           (container.querySelector('select[aria-label="Project threading default"]') as HTMLSelectElement).value
         ).toBe('automatic')
@@ -731,7 +749,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
-    await changeInput('input[aria-label="Planned rapid source X"]', '2');
+    await changeInput('input[aria-label="Exit X"]', '2');
     await changeInput('input[aria-label="Entry X"]', '-2');
     await changeInput('input[aria-label="Entry Y"]', '0');
     const setEntry = [...container.querySelectorAll<HTMLButtonElement>('[data-entry-exit-panel] button')]
@@ -1161,9 +1179,8 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
       `Selection Operation ${firstOperation.id}`
     );
-    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
-      'Set Start / Step 2'
-    );
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent)
+      .not.toContain('Contour Start: hover');
   });
 
   it('activates Set Start with its displayed fallback after discard restores a null selection', async () => {
@@ -1191,9 +1208,11 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
       `Selection Operation ${operation.id}`
     );
-    expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
-      'Set Start / Step 2'
+    expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
+      'automatic start remains active'
     );
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent)
+      .not.toContain('Contour Start: hover');
   });
 
   it('keeps endpoints from non-target contours inert during Set Start', async () => {
@@ -1212,6 +1231,7 @@ describe('EditorPage UPID draft boundary', () => {
       container.querySelector('select[aria-label="Set start operation"]'),
       targetOperation.id
     );
+    await clickElement('button[aria-label="Pick explicit contour start"]');
 
     const otherEndpoint = container.querySelector(
       `circle[data-preview-path-endpoint][data-preview-operation="${otherOperation.id}"][data-preview-segment="${otherSegmentId}"][data-preview-point-role="start"]`
@@ -1229,7 +1249,7 @@ describe('EditorPage UPID draft boundary', () => {
         ?.value
     ).toBe(targetOperation.id);
     expect(container.querySelector('[data-editor-command-hint]')?.textContent).toContain(
-      'Set Start / Step 2'
+      'Contour Start: hover'
     );
     expect(
       container
@@ -1253,6 +1273,7 @@ describe('EditorPage UPID draft boundary', () => {
       container.querySelector('select[aria-label="Set start point inference"]'),
       'midpoint'
     );
+    await clickElement('button[aria-label="Pick explicit contour start"]');
 
     const preview = container.querySelector('svg[aria-label="UPID path preview"]') as SVGSVGElement;
     Object.defineProperty(preview, 'getBoundingClientRect', {
@@ -1281,6 +1302,9 @@ describe('EditorPage UPID draft boundary', () => {
 
     expect(container.querySelector('[data-upid-start-inference="midpoint"]')).not.toBeNull();
     expect(container.querySelector('[data-upid-start-preview-label]')?.textContent).toBe('MIDPOINT');
+    const midpointGuide = container.querySelector('[data-upid-start-inference-guide]');
+    expect(midpointGuide).not.toBeNull();
+    expect(midpointGuide?.getAttribute('stroke-width')).toBe('2.5');
 
     await act(async () => {
       path.dispatchEvent(new MouseEvent('click', { bubbles: true, ...midpoint }));
@@ -1296,6 +1320,72 @@ describe('EditorPage UPID draft boundary', () => {
         .querySelector(`[data-upid-cut-sequence-row][data-upid-operation-id="${operation.id}"]`)
         ?.getAttribute('data-upid-cut-sequence-manual')
     ).toContain('start');
+  });
+
+  it('previews and commits a perpendicular contour start from the approach source', async () => {
+    const pathDocument = setManualInitialWirePosition(
+      pathDocumentFromRectangle(),
+      { x: 2, y: 2 }
+    );
+    if (!pathDocument) throw new Error('Expected an initial wire position.');
+    const operation = pathDocument.plan.operations[0];
+    const project = projectWithUpid(pathDocument);
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.set-start"]');
+    await changeSelect(
+      container.querySelector('select[aria-label="Set start point inference"]'),
+      'perpendicular'
+    );
+    await clickElement('button[aria-label="Pick explicit contour start"]');
+
+    const preview = container.querySelector('svg[aria-label="UPID path preview"]') as SVGSVGElement;
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        bottom: 140,
+        height: 120,
+        left: 10,
+        right: 130,
+        toJSON: () => ({}),
+        top: 20,
+        width: 120,
+        x: 10,
+        y: 20
+      })
+    });
+    const path = container.querySelector(
+      `path[data-preview-source="path-document"][data-preview-operation="${operation.id}"][data-type="cut"]`
+    ) as SVGPathElement;
+    const nearTopSide = previewWorldClientPoint(preview, { x: 8, y: 4.8 }, 5);
+
+    await act(async () => {
+      preview.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, ...nearTopSide }));
+    });
+    await flushAsync();
+
+    const startPoint = container.querySelector(
+      '[data-upid-start-inference="perpendicular"] [data-upid-start-preview-point]'
+    );
+    const guide = container.querySelector('[data-upid-start-inference-guide]');
+    expect(startPoint?.getAttribute('cx')).toBe('2');
+    expect(startPoint?.getAttribute('cy')).toBe('0');
+    expect(guide?.getAttribute('x1')).toBe('2');
+    expect(guide?.getAttribute('x2')).toBe('2');
+    expect(guide?.getAttribute('stroke-width')).toBe('2.5');
+
+    await act(async () => {
+      path.dispatchEvent(new MouseEvent('click', { bubbles: true, ...nearTopSide }));
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-upid-set-start-workflow]')?.textContent).toContain(
+      'currently starts at X2.000 Y5.000'
+    );
   });
 
   it('opens a workflow without rewriting its remembered hidden placement or geometry', async () => {
@@ -1536,36 +1626,21 @@ describe('EditorPage UPID draft boundary', () => {
     )?.getAttribute('pointer-events')).not.toBe('none');
   });
 
-  it('edits a selected planned rapid through named controls with undo and redo', async () => {
+  it('shows selected between-contour travel as derived read-only geometry', async () => {
     const project = projectWithUpid(pathDocumentFromIndependentRectangles());
 
     await act(async () => {
-      root.render(<EditorPageHarness initialWorkflowId="machining.entry-exit" onSaveEditorDraft={vi.fn()} project={project} />);
+      root.render(<EditorPageHarness initialWorkflowId="machining.between-contours" onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
 
-    expect(container.querySelector('[data-upid-planned-rapid-editor]')).not.toBeNull();
-    expect(container.querySelector('input[aria-label="Planned rapid source X"]')).not.toBeNull();
-    expect(container.querySelector('input[aria-label="Planned rapid destination Y"]')).not.toBeNull();
-
-    await changeInput('input[aria-label="Planned rapid source X"]', '2');
-    await changeInput('input[aria-label="Planned rapid source Y"]', '3');
-    await clickElement('button[aria-label="Apply planned rapid source"]');
-    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]');
-
-    const selectedRapidPath = () => container.querySelector(
-      'svg[aria-label="UPID path preview"] path[data-preview-travel="rapid-in"][data-preview-travel-source="planned"]'
-    );
-    expect(selectedRapidPath()?.getAttribute('d')).toMatch(/^M 2 3 L /);
-
-    await clickElement('button[aria-label="Undo active document change"]');
-    expect(selectedRapidPath()?.getAttribute('d')).toMatch(/^M 0 0 L /);
-
-    await clickElement('button[aria-label="Redo active document change"]');
-    expect(selectedRapidPath()?.getAttribute('d')).toMatch(/^M 2 3 L /);
+    expect(container.querySelector('[data-between-contours-panel]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-planned-rapid-editor]')).toBeNull();
+    expect(container.querySelector('input[aria-label^="Planned rapid"]')).toBeNull();
+    expect(container.textContent).toContain('Program Start / G92');
   });
 
-  it('creates a manual lead from a selected rapid destination, then edits it with undo and redo', async () => {
+  it('creates and edits a manual cut entry with undo and redo', async () => {
     const project = projectWithUpid(pathDocumentFromIndependentRectangles());
 
     await act(async () => {
@@ -1573,20 +1648,18 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    await changeInput('input[aria-label="Planned rapid destination X"]', '-3');
-    await changeInput('input[aria-label="Planned rapid destination Y"]', '1');
-    await clickElement('button[aria-label="Create manual lead from planned rapid destination"]');
+    await changeInput('input[aria-label="Entry X"]', '-3');
+    await changeInput('input[aria-label="Entry Y"]', '1');
+    await clickElement('button[aria-label="Set straight entry"]');
     await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]');
 
     const selectedRapidPath = () => container.querySelector(
       'svg[aria-label="UPID path preview"] path[data-preview-travel="rapid-in"][data-preview-travel-source="planned"]'
     );
     expect(selectedRapidPath()?.getAttribute('d')).toMatch(/ L -3 1$/);
-    expect(container.querySelector('button[aria-label="Create manual lead from planned rapid destination"]')).toBeNull();
-
     await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
-    await changeInput('input[aria-label="Planned rapid destination X"]', '-4');
-    await clickElement('button[aria-label="Apply planned rapid destination"]');
+    await changeInput('input[aria-label="Entry X"]', '-4');
+    await clickElement('button[aria-label="Set straight entry"]');
     await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]');
     expect(selectedRapidPath()?.getAttribute('d')).toMatch(/ L -4 1$/);
 
