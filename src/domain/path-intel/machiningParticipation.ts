@@ -273,15 +273,21 @@ function buildPartialOperation(
   const transitions = normalizeLegacyOperationTransitions(source);
   let sourceEntryWasReviewed = false;
   if (transitions?.entry) {
-    transitions.entry.to = { ...startPoint };
+    if (transitions.entry.strategy === 'none') {
+      transitions.entry.review = 'required';
+    } else {
+      transitions.entry.to = { ...startPoint };
+    }
     if (transitions.entry.strategy === 'manual-straight') {
       sourceEntryWasReviewed = transitions.entry.review === 'reviewed';
       transitions.entry.review = 'required';
     }
   }
   if (transitions?.exit) {
-    transitions.exit.from = { ...endPoint };
-    transitions.exit.review = 'required';
+    if (transitions.exit.strategy !== 'none') {
+      transitions.exit.from = { ...endPoint };
+      transitions.exit.review = 'required';
+    }
   }
   const overrides = source.overrides ? structuredClone(source.overrides) : undefined;
   if (overrides?.leadIn) {

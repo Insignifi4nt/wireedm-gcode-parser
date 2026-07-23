@@ -12,6 +12,7 @@ import {
 import {
   setCircleOperationCenterPierceLeadIn,
   setManualInitialWirePosition,
+  setPathOperationTransitions,
   translatePathDocument
 } from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
@@ -483,6 +484,13 @@ describe('buildEditorPreviewGeometry', () => {
     );
     for (const operation of document.plan.operations) {
       document = setCircleOperationCenterPierceLeadIn(document, operation.id)!;
+      const updatedOperation = document.plan.operations.find(
+        (candidate) => candidate.id === operation.id
+      )!;
+      document = setPathOperationTransitions(document, operation.id, {
+        ...updatedOperation.transitions,
+        exit: { strategy: 'none', review: 'reviewed' }
+      })!;
     }
     document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
 

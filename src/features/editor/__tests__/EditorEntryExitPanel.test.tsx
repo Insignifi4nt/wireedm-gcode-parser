@@ -2,7 +2,10 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createCharmillesRobofil100V2CandidateProfile } from '@/domain/machine/machineProfiles';
+import {
+  createCharmillesRobofil100V2CandidateProfile,
+  markMachineProfileUserVerified
+} from '@/domain/machine/machineProfiles';
 import { setCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
@@ -48,6 +51,8 @@ describe('EditorEntryExitPanel', () => {
           onSetCircleCenterEntry={vi.fn()}
           onSetManualEntry={vi.fn()}
           onSetManualExit={onSetManualExit}
+          onSetNoEntry={vi.fn()}
+          onSetNoExit={vi.fn()}
           onSetPlannedRapidDestination={vi.fn()}
           onSetPlannedRapidSource={vi.fn()}
           onSetOperationThreading={onSetOperationThreading}
@@ -102,6 +107,8 @@ describe('EditorEntryExitPanel', () => {
           onSetCircleCenterEntry={vi.fn()}
           onSetManualEntry={vi.fn()}
           onSetManualExit={vi.fn()}
+          onSetNoEntry={vi.fn()}
+          onSetNoExit={vi.fn()}
           onSetOperationThreading={vi.fn()}
           onSetPlannedRapidDestination={vi.fn()}
           onSetPlannedRapidSource={onSetPlannedRapidSource}
@@ -119,6 +126,57 @@ describe('EditorEntryExitPanel', () => {
       document.plan.operations[0].id,
       expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) })
     );
+  });
+
+  it('gates and emits reviewed no-entry and no-exit choices through the Robofil v2 envelope', async () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+    ]);
+    const onSetNoEntry = vi.fn();
+    const onSetNoExit = vi.fn();
+    const operationId = document.plan.operations[0].id;
+
+    await act(async () => {
+      root.render(
+        <EditorEntryExitPanel
+          canvasPickMode={null}
+          disabled={false}
+          document={document}
+          machine={markMachineProfileUserVerified(
+            createCharmillesRobofil100V2CandidateProfile()
+          )}
+          onCanvasPickModeChange={vi.fn()}
+          onSelectOperation={vi.fn()}
+          onSetCircleCenterEntry={vi.fn()}
+          onSetManualEntry={vi.fn()}
+          onSetManualExit={vi.fn()}
+          onSetNoEntry={onSetNoEntry}
+          onSetNoExit={onSetNoExit}
+          onSetOperationThreading={vi.fn()}
+          onSetPlannedRapidDestination={vi.fn()}
+          onSetPlannedRapidSource={vi.fn()}
+          onSetProjectThreading={vi.fn()}
+          selectedOperationId={operationId}
+        />
+      );
+    });
+
+    const noEntry = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Use reviewed no entry"]'
+    );
+    const noExit = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Use reviewed no exit"]'
+    );
+    expect(noEntry?.disabled).toBe(false);
+    expect(noExit?.disabled).toBe(false);
+
+    await act(async () => {
+      noEntry?.click();
+      noExit?.click();
+    });
+
+    expect(onSetNoEntry).toHaveBeenCalledWith(operationId);
+    expect(onSetNoExit).toHaveBeenCalledWith(operationId);
   });
 });
 

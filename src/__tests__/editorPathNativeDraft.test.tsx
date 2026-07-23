@@ -1524,6 +1524,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(pierceButton?.disabled).toBe(false);
 
     await clickElement('button[aria-label="Add center pierce lead-in"]');
+    await clickElement('button[aria-label="Use reviewed no exit"]');
     await clickElement('[data-editor-workflow-command="view.contours"]');
     await clickElement('[data-editor-workflow-transition-action="save"]');
     expect(container.querySelector('[data-upid-lead-in-row]')).not.toBeNull();

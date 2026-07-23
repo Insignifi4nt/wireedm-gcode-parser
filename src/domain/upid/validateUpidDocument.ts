@@ -2097,10 +2097,16 @@ function validateOperationTransitions(
   if (transitions.entry !== undefined && !entry) {
     context.add('upid-invalid-value', `Operation ${operation.id} entry transition must be an object.`);
   } else if (entry) {
-    finitePoint(entry.from, `operation ${operation.id} entry transition from`, context);
-    finitePoint(entry.to, `operation ${operation.id} entry transition to`, context);
-    if (entry.move !== 'cut') {
-      context.add('upid-invalid-value', `Operation ${operation.id} entry transition move is unsupported.`);
+    if (entry.strategy === 'none') {
+      if (entry.review !== 'reviewed' && entry.review !== 'required') {
+        context.add('upid-invalid-value', `Operation ${operation.id} no-entry review state is invalid.`);
+      }
+    } else {
+      finitePoint(entry.from, `operation ${operation.id} entry transition from`, context);
+      finitePoint(entry.to, `operation ${operation.id} entry transition to`, context);
+      if (entry.move !== 'cut') {
+        context.add('upid-invalid-value', `Operation ${operation.id} entry transition move is unsupported.`);
+      }
     }
     if (entry.strategy === 'circle-center') {
       const source = typeof entry.sourceSegmentId === 'string'
@@ -2116,10 +2122,11 @@ function validateOperationTransitions(
       if (entry.review !== 'reviewed' && entry.review !== 'required') {
         context.add('upid-invalid-value', `Operation ${operation.id} entry transition review state is invalid.`);
       }
-    } else {
+    } else if (entry.strategy !== 'none') {
       context.add('upid-invalid-value', `Operation ${operation.id} entry transition strategy is unsupported.`);
     }
     if (
+      entry.strategy !== 'none' &&
       finitePointOnly(entry.to) &&
       finitePointOnly(operation.startPoint) &&
       distance(entry.to, operation.startPoint) > tolerance
@@ -2135,15 +2142,25 @@ function validateOperationTransitions(
   if (transitions.exit !== undefined && !exit) {
     context.add('upid-invalid-value', `Operation ${operation.id} exit transition must be an object.`);
   } else if (exit) {
-    finitePoint(exit.from, `operation ${operation.id} exit transition from`, context);
-    finitePoint(exit.to, `operation ${operation.id} exit transition to`, context);
-    if (exit.strategy !== 'manual-straight' || exit.move !== 'cut') {
+    if (exit.strategy === 'none') {
+      if (exit.review !== 'reviewed' && exit.review !== 'required') {
+        context.add('upid-invalid-value', `Operation ${operation.id} no-exit review state is invalid.`);
+      }
+    } else {
+      finitePoint(exit.from, `operation ${operation.id} exit transition from`, context);
+      finitePoint(exit.to, `operation ${operation.id} exit transition to`, context);
+    }
+    if (
+      exit.strategy !== 'none' &&
+      (exit.strategy !== 'manual-straight' || exit.move !== 'cut')
+    ) {
       context.add('upid-invalid-value', `Operation ${operation.id} exit transition is unsupported.`);
     }
     if (exit.review !== 'reviewed' && exit.review !== 'required') {
       context.add('upid-invalid-value', `Operation ${operation.id} exit transition review state is invalid.`);
     }
     if (
+      exit.strategy !== 'none' &&
       finitePointOnly(exit.from) &&
       finitePointOnly(operation.endPoint) &&
       distance(exit.from, operation.endPoint) > tolerance

@@ -1936,6 +1936,44 @@ export function EditorPage({
     }
   }
 
+  function handleSetOperationNoEntry(operationId: string) {
+    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
+    const operation = pathDocumentDraft.plan.operations.find(
+      (candidate) => candidate.id === operationId
+    );
+    if (!operation) return;
+    const edited = setPathOperationTransitions(pathDocumentDraft, operationId, {
+      ...normalizeLegacyOperationTransitions(operation),
+      entry: { strategy: 'none', review: 'reviewed' }
+    });
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        completedPendingSources: ['entry'],
+        selectedPathElement,
+        selectedPathOperationId: operationId
+      });
+    }
+  }
+
+  function handleSetOperationNoExit(operationId: string) {
+    if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
+    const operation = pathDocumentDraft.plan.operations.find(
+      (candidate) => candidate.id === operationId
+    );
+    if (!operation) return;
+    const edited = setPathOperationTransitions(pathDocumentDraft, operationId, {
+      ...normalizeLegacyOperationTransitions(operation),
+      exit: { strategy: 'none', review: 'reviewed' }
+    });
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        completedPendingSources: ['exit'],
+        selectedPathElement,
+        selectedPathOperationId: operationId
+      });
+    }
+  }
+
   function handleSetProjectThreading(
     transition: Omit<OperationThreadingTransition, 'source'>
   ) {
@@ -3357,6 +3395,8 @@ export function EditorPage({
               onSetCircleCenterEntry={handleSetOperationCircleCenterEntry}
               onSetManualEntry={handleSetOperationManualEntry}
               onSetManualExit={handleSetOperationManualExit}
+              onSetNoEntry={handleSetOperationNoEntry}
+              onSetNoExit={handleSetOperationNoExit}
               onSetPlannedRapidDestination={handleSetPlannedRapidDestinationPoint}
               onSetPlannedRapidSource={handleSetPlannedRapidSourcePoint}
               onSetOperationThreading={handleSetOperationThreading}

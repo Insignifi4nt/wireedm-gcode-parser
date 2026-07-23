@@ -9,7 +9,8 @@ import {
 } from '@/domain/machine/machineProfiles';
 import {
   setCircleOperationCenterPierceLeadIn,
-  setPathOperationManualLeadIn
+  setPathOperationManualLeadIn,
+  setPathOperationTransitions
 } from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import type { MachineProfile } from '@/domain/workbench/types';
@@ -165,7 +166,7 @@ describe('validateCompensatedExport', () => {
     })).toMatchObject({ status: 'blocked', reason: 'unsupported-operation-count' });
   });
 
-  it('blocks Robofil v2 operations without an explicit linear lead', () => {
+  it('blocks Robofil v2 operations without reviewed entry and exit decisions', () => {
     const machine = markMachineProfileUserVerified(
       createCharmillesRobofil100V2CandidateProfile(),
       new Date('2026-07-14T00:00:00.000Z')
@@ -184,6 +185,27 @@ describe('validateCompensatedExport', () => {
       machine
     })).toMatchObject({
       status: 'blocked', reason: 'unsafe-controller-compensation-lead-in'
+    });
+  });
+
+  it('accepts reviewed no-entry and no-exit intent for Robofil v2', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const initialized = initializeProjectCompensationIntents(baseCircle(), machine);
+    const operation = initialized.plan.operations[0];
+    const document = setPathOperationTransitions(initialized, operation.id, {
+      entry: { strategy: 'none', review: 'reviewed' },
+      exit: { strategy: 'none', review: 'reviewed' }
+    })!;
+
+    expect(document.plan.operations[0].overrides?.leadIn).toBeUndefined();
+    expect(validateCompensatedExport({
+      document,
+      operation: document.plan.operations[0],
+      machine
+    })).toMatchObject({
+      status: 'ready', strategy: 'controller-native', transition: null
     });
   });
 
@@ -283,9 +305,17 @@ describe('validateCompensatedExport', () => {
       createCharmillesRobofil100V2CandidateProfile()
     );
     const initialized = initializeProjectCompensationIntents(baseCircle(), machine);
-    const document = setCircleOperationCenterPierceLeadIn(
+    const withEntry = setCircleOperationCenterPierceLeadIn(
       initialized,
       initialized.plan.operations[0].id
+    )!;
+    const document = setPathOperationTransitions(
+      withEntry,
+      withEntry.plan.operations[0].id,
+      {
+        entry: withEntry.plan.operations[0].transitions!.entry,
+        exit: { strategy: 'none', review: 'reviewed' }
+      }
     )!;
 
     expect(validateCompensatedExport({

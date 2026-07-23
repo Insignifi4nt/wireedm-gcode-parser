@@ -278,13 +278,23 @@ function transitions(value: unknown, path: string) {
   assertKeys(value, ['entry', 'exit'], path);
   const object = record(value);
   const entry = object?.entry;
-  assertKeys(entry, ['strategy', 'move', 'from', 'to', 'sourceSegmentId', 'review'], `${path}.entry`);
-  point(record(entry)?.from, `${path}.entry.from`);
-  point(record(entry)?.to, `${path}.entry.to`);
+  const entryObject = record(entry);
+  if (entryObject?.strategy === 'none') {
+    assertKeys(entry, ['strategy', 'review'], `${path}.entry`);
+  } else {
+    assertKeys(entry, ['strategy', 'move', 'from', 'to', 'sourceSegmentId', 'review'], `${path}.entry`);
+    point(entryObject?.from, `${path}.entry.from`);
+    point(entryObject?.to, `${path}.entry.to`);
+  }
   const exit = object?.exit;
-  assertKeys(exit, ['strategy', 'move', 'from', 'to', 'review'], `${path}.exit`);
-  point(record(exit)?.from, `${path}.exit.from`);
-  point(record(exit)?.to, `${path}.exit.to`);
+  const exitObject = record(exit);
+  if (exitObject?.strategy === 'none') {
+    assertKeys(exit, ['strategy', 'review'], `${path}.exit`);
+  } else {
+    assertKeys(exit, ['strategy', 'move', 'from', 'to', 'review'], `${path}.exit`);
+    point(exitObject?.from, `${path}.exit.from`);
+    point(exitObject?.to, `${path}.exit.to`);
+  }
 }
 
 function operationMetrics(value: unknown, path: string) {

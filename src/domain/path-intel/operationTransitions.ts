@@ -28,11 +28,13 @@ export function normalizeLegacyOperationTransitions(
 }
 
 export function operationEntryPoint(operation: PathOperation): Point2 {
-  return normalizeLegacyOperationTransitions(operation).entry?.from ?? operation.startPoint;
+  const entry = normalizeLegacyOperationTransitions(operation).entry;
+  return entry && entry.strategy !== 'none' ? entry.from : operation.startPoint;
 }
 
 export function operationExitPoint(operation: PathOperation): Point2 {
-  return normalizeLegacyOperationTransitions(operation).exit?.to ?? operation.endPoint;
+  const exit = normalizeLegacyOperationTransitions(operation).exit;
+  return exit && exit.strategy !== 'none' ? exit.to : operation.endPoint;
 }
 
 export function operationTransitionCutLength(operation: PathOperation) {
@@ -41,7 +43,12 @@ export function operationTransitionCutLength(operation: PathOperation) {
 }
 
 function transitionLength(
-  transition: { from: Point2; to: Point2 } | undefined
+  transition:
+    | { strategy: 'none' }
+    | { from: Point2; to: Point2 }
+    | undefined
 ) {
-  return transition ? distance(transition.from, transition.to) : 0;
+  return transition && 'from' in transition
+    ? distance(transition.from, transition.to)
+    : 0;
 }
