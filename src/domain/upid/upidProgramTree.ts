@@ -5,6 +5,7 @@ import {
   type ActiveMachiningDerivation
 } from '@/domain/path-intel/machiningParticipation';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
+import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
 import { validateProgramStops } from '@/domain/path-intel/programStops';
 import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
 import type {
@@ -13,11 +14,13 @@ import type {
   OperationProgramStop,
   PathDiagnostic,
   PathOperation,
-  PathPlanningDocument
+  PathPlanningDocument,
+  Point2
 } from '@/domain/path-intel/types';
 import type { MachineProfile } from '@/domain/workbench/types';
 import {
   prepareUpidMachinePost,
+  type ReadyUpidMachinePostPreparation,
   type UpidMachinePostPreparationIssue
 } from '@/domain/post/upidMachinePost';
 
@@ -42,6 +45,13 @@ export type UpidProgramTreeEditTarget =
   | { kind: 'program-stop'; operationId: string; stopId: string }
   | { kind: 'diagnostics'; diagnosticId?: string };
 
+export interface UpidProgramTreeEffectiveTransitionMove {
+  effectiveOperationId: string;
+  origin: 'generated-explicit-linear';
+  startPoint: Point2;
+  endPoint: Point2;
+}
+
 export interface UpidProgramTreeNode {
   treeKey: string;
   kind: 'setup' | 'operation' | 'phase' | 'stop' | 'span';
@@ -54,6 +64,7 @@ export interface UpidProgramTreeNode {
   pathElementId?: string;
   editTarget?: UpidProgramTreeEditTarget;
   sequenceEditTarget?: Extract<UpidProgramTreeEditTarget, { kind: 'cut-sequence' }>;
+  effectiveTransitionMoves?: readonly UpidProgramTreeEffectiveTransitionMove[];
   children: UpidProgramTreeNode[];
 }
 
@@ -75,6 +86,11 @@ interface SourceMachiningProjection {
   postIssues: UpidMachinePostPreparationIssue[];
   failureReason?: Extract<ActiveMachiningDerivation, { status: 'blocked' }>['reason'];
 }
+
+type ExplicitLinearReadinessByOperationId = Extract<
+  ReadyUpidMachinePostPreparation,
+  { route: 'explicit-linear' }
+>['readinessByOperationId'];
 
 export function buildUpidProgramTree(
   document: PathPlanningDocument,
@@ -121,6 +137,11 @@ export function buildUpidProgramTree(
       ?.postIssues.push(issue);
   }
   const effectiveExecutionDocument = postPreparation.document;
+  const explicitLinearReadinessByOperationId =
+    postPreparation.status === 'ready' &&
+    postPreparation.route === 'explicit-linear'
+      ? postPreparation.readinessByOperationId
+      : undefined;
   const operations = executionDocument.plan.operations
     .map((operation, executionIndex) => {
       const projection = machiningProjection.bySourceOperationId.get(operation.id)!;
@@ -135,6 +156,7 @@ export function buildUpidProgramTree(
         projection.effectiveSegments,
         projection.postIssues,
         effectiveExecutionDocument,
+        explicitLinearReadinessByOperationId,
         authoritativeGlobalPostBlocker
       );
     });
@@ -292,6 +314,7 @@ function buildOperationNode(
   effectiveSegments: PathPlanningDocument['segments'],
   postIssues: readonly UpidMachinePostPreparationIssue[],
   effectiveExecutionDocument: PathPlanningDocument | undefined,
+  explicitLinearReadinessByOperationId: ExplicitLinearReadinessByOperationId | undefined,
   authoritativeGlobalPostBlocker: boolean
 ): UpidProgramTreeNode {
   const stopNodes = buildStopNodes(
@@ -314,13 +337,17 @@ function buildOperationNode(
     operation,
     effectiveOperations,
     'entry',
-    postIssues
+    postIssues,
+    machine,
+    explicitLinearReadinessByOperationId
   );
   const exit = buildTransitionNode(
     operation,
     effectiveOperations,
     'exit',
-    postIssues
+    postIssues,
+    machine,
+    explicitLinearReadinessByOperationId
   );
   const cutPath = buildCutPathNode(
     document,
@@ -438,13 +465,49 @@ function buildTransitionNode(
   sourceOperation: PathOperation,
   effectiveOperations: readonly PathOperation[],
   phase: 'entry' | 'exit',
-  postIssues: readonly UpidMachinePostPreparationIssue[]
+  postIssues: readonly UpidMachinePostPreparationIssue[],
+  machine: MachineProfile,
+  explicitLinearReadinessByOperationId: ExplicitLinearReadinessByOperationId | undefined
 ): UpidProgramTreeNode {
   const transition = sourceOperation.transitions?.[phase];
-  const effectiveStatuses = (effectiveOperations.length > 0
+  const projectedOperations = effectiveOperations.length > 0
     ? effectiveOperations
-    : [sourceOperation]
-  ).map((operation) => transitionStatus(operation.transitions?.[phase]));
+    : [sourceOperation];
+  const projections = projectedOperations.map((operation) => {
+    const ownership = resolveOperationTransitionOwnership(operation, machine);
+    const generatedTransition =
+      ownership === 'generated-explicit-linear'
+        ? explicitLinearReadinessByOperationId?.get(operation.id)?.transition
+        : undefined;
+    return {
+      ownership,
+      status:
+        ownership === 'generated-explicit-linear'
+          ? 'ready' as const
+          : transitionStatus(operation.transitions?.[phase]),
+      move: generatedTransition
+        ? {
+            effectiveOperationId: operation.id,
+            origin: 'generated-explicit-linear' as const,
+            startPoint:
+              phase === 'entry'
+                ? generatedTransition.leadIn.start
+                : generatedTransition.leadOut.start,
+            endPoint:
+              phase === 'entry'
+                ? generatedTransition.leadIn.end
+                : generatedTransition.leadOut.end
+          }
+        : undefined
+    };
+  });
+  const effectiveStatuses = projections.map((projection) => projection.status);
+  const generatedCount = projections.filter(
+    (projection) => projection.ownership === 'generated-explicit-linear'
+  ).length;
+  const effectiveTransitionMoves = projections.flatMap((projection) =>
+    projection.move ? [projection.move] : []
+  );
   const postIssue = phase === 'entry'
     ? postIssues.find((issue) => issue.scope === 'entry-exit')
     : undefined;
@@ -453,7 +516,14 @@ function buildTransitionNode(
     treeKey: `${operationTreeKey(sourceOperation.id)}:${phase}`,
     kind: 'phase',
     label: phase === 'entry' ? 'Entry / lead-in' : 'Exit / lead-out',
-    detail: transition?.strategy === 'none' || !transition ? 'None' : transition.strategy,
+    detail:
+      generatedCount === projections.length
+        ? 'Generated explicit linear'
+        : generatedCount > 0
+          ? `${generatedCount} generated · ${projections.length - generatedCount} authored`
+          : transition?.strategy === 'none' || !transition
+            ? 'None'
+            : transition.strategy,
     status,
     statusReason:
       postIssue?.reason ??
@@ -463,6 +533,8 @@ function buildTransitionNode(
       : undefined,
     operationId: sourceOperation.id,
     editTarget: { kind: 'entry-exit', operationId: sourceOperation.id },
+    effectiveTransitionMoves:
+      effectiveTransitionMoves.length > 0 ? effectiveTransitionMoves : undefined,
     children: []
   };
 }

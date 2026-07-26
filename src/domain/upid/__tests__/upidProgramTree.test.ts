@@ -97,7 +97,11 @@ describe('UPID program tree projection', () => {
     const entry = tree.operations[0].children.find(
       (node) => node.label === 'Entry / lead-in'
     );
+    const exit = tree.operations[0].children.find(
+      (node) => node.label === 'Exit / lead-out'
+    );
     const generatedLead = posted.blocks.find((block) => block.kind === 'lead-in');
+    const generatedLeadOut = posted.blocks.find((block) => block.kind === 'lead-out');
 
     expect(posted.status).toBe('ready');
     expect(generatedLead).toMatchObject({
@@ -106,6 +110,65 @@ describe('UPID program tree projection', () => {
     });
     expect(generatedLead?.startPoint).not.toEqual({ x: 0, y: 0 });
     expect(entry).toMatchObject({
+      detail: 'Generated explicit linear',
+      effectiveTransitionMoves: [{
+        effectiveOperationId: operation.id,
+        origin: 'generated-explicit-linear',
+        startPoint: generatedLead?.startPoint,
+        endPoint: generatedLead?.endPoint
+      }],
+      status: 'ready',
+      statusReason: undefined,
+      statusActionTarget: undefined
+    });
+    expect(exit).toMatchObject({
+      detail: 'Generated explicit linear',
+      effectiveTransitionMoves: [{
+        effectiveOperationId: operation.id,
+        origin: 'generated-explicit-linear',
+        startPoint: generatedLeadOut?.startPoint,
+        endPoint: generatedLeadOut?.endPoint
+      }],
+      status: 'ready',
+      statusReason: undefined,
+      statusActionTarget: undefined
+    });
+    expect(tree.programStatus).toBe('ready');
+  });
+
+  it('ignores authored transition review when explicit-linear owns the operation transitions', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const operation = document.plan.operations[0];
+    operation.transitions = {
+      entry: { strategy: 'none', review: 'required' },
+      exit: { strategy: 'none', review: 'required' }
+    };
+    const withInitialWire = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
+
+    const posted = postUpidForMachine(withInitialWire, machine);
+    const tree = buildUpidProgramTree(withInitialWire, machine);
+    const entry = tree.operations[0].children.find(
+      (node) => node.label === 'Entry / lead-in'
+    );
+    const exit = tree.operations[0].children.find(
+      (node) => node.label === 'Exit / lead-out'
+    );
+
+    expect(posted.status).toBe('ready');
+    expect(entry).toMatchObject({
+      detail: 'Generated explicit linear',
+      status: 'ready',
+      statusReason: undefined,
+      statusActionTarget: undefined
+    });
+    expect(exit).toMatchObject({
+      detail: 'Generated explicit linear',
       status: 'ready',
       statusReason: undefined,
       statusActionTarget: undefined
@@ -237,8 +300,9 @@ describe('UPID program tree projection', () => {
   });
 
   it('offers Machine setup for precision-collapse and clears it with verified output precision', () => {
-    const blockedMachine = verifiedGenericExplicitMachine();
-    blockedMachine.compensation.validationLeadLengthMm = 0.0004;
+    const editableBlockedMachine = verifiedGenericExplicitMachine();
+    editableBlockedMachine.compensation.validationLeadLengthMm = 0.0004;
+    const blockedMachine = markMachineProfileUserVerified(editableBlockedMachine);
     const document = compensatedCircleDocument(blockedMachine);
 
     const blockedPost = postUpidForMachine(document, blockedMachine);

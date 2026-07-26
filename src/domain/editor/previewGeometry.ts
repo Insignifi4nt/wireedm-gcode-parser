@@ -32,7 +32,7 @@ import type {
 } from '@/domain/path-intel/types';
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import {
-  deriveVerifiedRobofilPreviewPostBlocks
+  deriveUpidPreviewPostProjection
 } from '@/domain/post/upidMachinePost';
 import type { MachineProfile } from '@/domain/workbench/types';
 
@@ -87,6 +87,7 @@ interface BuildEditorPreviewGeometryOptions {
 }
 
 interface BuildEditorPathDocumentPreviewGeometryOptions {
+  authoritativeGeneratedOperationIds?: readonly string[];
   lineHints?: number[];
   padding?: number;
   postedTransitions?: PostedPreviewTransition[];
@@ -97,14 +98,25 @@ export interface PostedPreviewTransition {
   kind: 'rapid' | 'lead-in' | 'lead-out';
   operationId: string;
   programLineNumber: number;
+  replacesPlanned?: boolean;
   startPoint: Point2;
 }
 
-export function deriveVerifiedRobofilPreviewTransitions(
+export interface UpidMachinePreviewTransitions {
+  authoritativeGeneratedOperationIds: readonly string[];
+  transitions: PostedPreviewTransition[];
+}
+
+export function deriveUpidMachinePreviewTransitions(
   document: PathPlanningDocument,
   machine: MachineProfile
-): PostedPreviewTransition[] | undefined {
-  return deriveVerifiedRobofilPreviewPostBlocks(document, machine)?.flatMap((block) => {
+): UpidMachinePreviewTransitions | undefined {
+  const projection = deriveUpidPreviewPostProjection(document, machine);
+  if (!projection) return undefined;
+  const authoritativeGeneratedOperationIds = new Set(
+    projection.authoritativeGeneratedOperationIds
+  );
+  const transitions = projection.blocks.flatMap((block) => {
     if (
       (
         block.kind !== 'rapid' &&
@@ -118,14 +130,31 @@ export function deriveVerifiedRobofilPreviewTransitions(
     ) {
       return [];
     }
+    const replacesPlanned = authoritativeGeneratedOperationIds.has(block.operationId);
     return [{
       kind: block.kind === 'position-for-threading' ? 'rapid' : block.kind,
       operationId: block.operationId,
       programLineNumber: block.bodyLineIndex + 1,
+      ...(replacesPlanned ? { replacesPlanned: true } : {}),
       startPoint: block.startPoint,
       endPoint: block.endPoint
     }];
   });
+  return {
+    authoritativeGeneratedOperationIds:
+      projection.authoritativeGeneratedOperationIds,
+    transitions
+  };
+}
+
+export function deriveVerifiedRobofilPreviewTransitions(
+  document: PathPlanningDocument,
+  machine: MachineProfile
+): PostedPreviewTransition[] | undefined {
+  if (machine.controller.family !== 'charmilles-robofil-classic') {
+    return undefined;
+  }
+  return deriveUpidMachinePreviewTransitions(document, machine)?.transitions ?? [];
 }
 
 export function buildEditorPreviewGeometry(
@@ -200,6 +229,9 @@ export function buildEditorPathDocumentPreviewGeometry(
   options: BuildEditorPathDocumentPreviewGeometryOptions = {}
 ): EditorPreviewGeometry {
   const padding = options.padding ?? 1;
+  const authoritativeGeneratedOperationIds = new Set(
+    options.authoritativeGeneratedOperationIds
+  );
   const hasParticipation = (document.machiningParticipation?.spans ?? []).some(
     (span) => span.participation === 'inactive-reference'
   );
@@ -263,11 +295,24 @@ export function buildEditorPathDocumentPreviewGeometry(
     const postedTransitions = options.postedTransitions?.filter(
       (transition) => transition.operationId === operation.id
     );
+    const generatedOwnership =
+      authoritativeGeneratedOperationIds.has(operation.id) ||
+      (postedTransitions?.some((transition) => transition.replacesPlanned) ?? false);
     const entry = readOperationTransitions(operation).entry;
     const leadIn = entry && entry.strategy !== 'none' ? entry : null;
     const entryPoint = leadIn?.from ?? operation.startPoint;
     const rapidStart = currentPoint ?? planningDocument.options.startPoint;
-    if (!currentPoint || !pathPointsEqual(currentPoint, entryPoint, planningDocument.options.coincidenceEpsilon)) {
+    if (
+      !generatedOwnership &&
+      (
+        !currentPoint ||
+        !pathPointsEqual(
+          currentPoint,
+          entryPoint,
+          planningDocument.options.coincidenceEpsilon
+        )
+      )
+    ) {
       const rapidBounds = boundsFromPoints([rapidStart, entryPoint]);
       bounds = mergeBounds(bounds, rapidBounds);
       paths.push({
@@ -285,7 +330,15 @@ export function buildEditorPathDocumentPreviewGeometry(
       });
     }
 
-    if (leadIn && !pathPointsEqual(leadIn.from, leadIn.to, planningDocument.options.coincidenceEpsilon)) {
+    if (
+      !generatedOwnership &&
+      leadIn &&
+      !pathPointsEqual(
+        leadIn.from,
+        leadIn.to,
+        planningDocument.options.coincidenceEpsilon
+      )
+    ) {
       const leadInBounds = boundsFromPoints([leadIn.from, leadIn.to]);
       bounds = mergeBounds(bounds, leadInBounds);
       paths.push({

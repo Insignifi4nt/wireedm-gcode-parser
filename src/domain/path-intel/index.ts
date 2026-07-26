@@ -3,6 +3,7 @@ export * from './contours';
 export * from './endpointClusters';
 export * from './fromDxfEntities';
 export * from './intersections';
+export * from './operationTransitionOwnership';
 export * from './planOperations';
 export * from './postGcode';
 export * from './sanitizeSegments';

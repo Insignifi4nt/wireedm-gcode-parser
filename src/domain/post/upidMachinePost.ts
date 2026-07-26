@@ -18,6 +18,7 @@ import {
 } from '@/domain/path-intel/operationTransitions';
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
+import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
 import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
 import {
   resolveProgramStopPoints,
@@ -153,15 +154,66 @@ export type VerifiedRobofilPreviewPostBlock = Pick<
   'bodyLineIndex' | 'kind' | 'operationId' | 'startPoint' | 'endPoint'
 >;
 
+export interface UpidPreviewPostProjection {
+  authoritativeGeneratedOperationIds: readonly string[];
+  blocks: VerifiedRobofilPreviewPostBlock[];
+}
+
+export function deriveUpidPreviewPostProjection(
+  document: PathPlanningDocument,
+  machine: MachineProfile
+): UpidPreviewPostProjection | undefined {
+  const robofilOwned =
+    machine.controller.family === 'charmilles-robofil-classic';
+  const hasGeneratedTransitionOwnership = document.plan.operations.some(
+    (operation) =>
+      resolveOperationTransitionOwnership(operation, machine) ===
+      'generated-explicit-linear'
+  );
+  if (!robofilOwned && !hasGeneratedTransitionOwnership) return undefined;
+
+  const preparation = prepareUpidMachinePost(document, machine);
+  if (preparation.status === 'blocked') {
+    return {
+      authoritativeGeneratedOperationIds: generatedOwnedOperationIds(
+        preparation.machining?.status === 'ready'
+          ? preparation.machining.operations
+          : document.plan.operations,
+        machine
+      ),
+      blocks: []
+    };
+  }
+  const authoritativeGeneratedOperationIds =
+    preparation.route === 'explicit-linear'
+      ? [...preparation.readinessByOperationId.keys()]
+      : [];
+  const posted = postUpidForMachine(document, machine);
+  if (posted.status === 'blocked') {
+    return {
+      authoritativeGeneratedOperationIds,
+      blocks: []
+    };
+  }
+
+  return {
+    authoritativeGeneratedOperationIds,
+    blocks: previewPostBlocks(posted.blocks)
+  };
+}
+
 export function deriveVerifiedRobofilPreviewPostBlocks(
   document: PathPlanningDocument,
   machine: MachineProfile
 ): VerifiedRobofilPreviewPostBlock[] | undefined {
   if (machine.controller.family !== 'charmilles-robofil-classic') return undefined;
-  const posted = postUpidForMachine(document, machine);
-  if (posted.status === 'blocked') return [];
+  return deriveUpidPreviewPostProjection(document, machine)?.blocks ?? [];
+}
 
-  return posted.blocks.flatMap((block) =>
+function previewPostBlocks(
+  blocks: readonly GcodePostedBlock[]
+): VerifiedRobofilPreviewPostBlock[] {
+  return blocks.flatMap((block) =>
     (
       block.kind === 'rapid' ||
       block.kind === 'position-for-threading' ||
@@ -178,6 +230,18 @@ export function deriveVerifiedRobofilPreviewPostBlocks(
           startPoint: block.startPoint,
           endPoint: block.endPoint
         }]
+      : []
+  );
+}
+
+function generatedOwnedOperationIds(
+  operations: readonly PathPlanningDocument['plan']['operations'][number][],
+  machine: MachineProfile
+): string[] {
+  return operations.flatMap((operation) =>
+    resolveOperationTransitionOwnership(operation, machine) ===
+    'generated-explicit-linear'
+      ? [operation.id]
       : []
   );
 }

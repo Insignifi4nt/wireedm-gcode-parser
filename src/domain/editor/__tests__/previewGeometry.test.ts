@@ -23,6 +23,7 @@ import { parseGCodeProgram } from '../gcodeParser';
 import {
   buildEditorPathDocumentPreviewGeometry,
   buildEditorPreviewGeometry,
+  deriveUpidMachinePreviewTransitions,
   deriveVerifiedRobofilPreviewTransitions,
   fitViewBoxToViewportAspect
 } from '../previewGeometry';
@@ -471,6 +472,130 @@ describe('buildEditorPreviewGeometry', () => {
     ).toBeUndefined();
   });
 
+  it('projects actual explicit-linear transitions as authoritative replacements', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const initialized = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const document = setManualInitialWirePosition(initialized, { x: 0, y: 0 })!;
+    const operationId = document.plan.operations[0].id;
+
+    const projection = deriveUpidMachinePreviewTransitions(document, machine);
+    const transitions = projection?.transitions;
+
+    expect(transitions).toEqual([
+      {
+        kind: 'lead-in',
+        operationId,
+        programLineNumber: 3,
+        replacesPlanned: true,
+        startPoint: { x: 5, y: -2 },
+        endPoint: { x: 5, y: 0 }
+      },
+      {
+        kind: 'lead-out',
+        operationId,
+        programLineNumber: 6,
+        replacesPlanned: true,
+        startPoint: { x: 5, y: 0 },
+        endPoint: { x: 5, y: 2 }
+      }
+    ]);
+
+    const preview = buildEditorPathDocumentPreviewGeometry(document, {
+      authoritativeGeneratedOperationIds:
+        projection?.authoritativeGeneratedOperationIds,
+      postedTransitions: transitions
+    });
+    expect(preview.paths.filter((path) => path.travelSource === 'planned')).toEqual([]);
+    expect(preview.paths.filter((path) => path.travelSource === 'posted').map((path) => ({
+      end: path.end,
+      role: path.travelRole,
+      start: path.start
+    }))).toEqual([
+      { role: 'lead-in', start: { x: 5, y: -2 }, end: { x: 5, y: 0 } },
+      { role: 'lead-out', start: { x: 5, y: 0 }, end: { x: 5, y: 2 } }
+    ]);
+  });
+
+  it('suppresses ignored planned transitions without inventing moves when explicit-linear posting is blocked', () => {
+    const editableMachine = verifiedGenericExplicitMachine();
+    editableMachine.compensation.validationLeadLengthMm = 0.0004;
+    const machine = markMachineProfileUserVerified(editableMachine);
+    const initialized = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const document = setManualInitialWirePosition(initialized, { x: 0, y: 0 })!;
+
+    const projection = deriveUpidMachinePreviewTransitions(document, machine);
+    const preview = buildEditorPathDocumentPreviewGeometry(document, {
+      authoritativeGeneratedOperationIds:
+        projection?.authoritativeGeneratedOperationIds,
+      postedTransitions: projection?.transitions
+    });
+
+    expect(projection).toEqual({
+      authoritativeGeneratedOperationIds: [document.plan.operations[0].id],
+      transitions: []
+    });
+    expect(preview.paths.some((path) => path.travelSource === 'planned')).toBe(false);
+    expect(preview.paths.some((path) => path.travelSource === 'posted')).toBe(false);
+  });
+
+  it('replaces planned travel only for generated operations in a mixed explicit-linear program', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const initialized = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+        { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const authoredOperationId = initialized.plan.operations[1].id;
+    const mixed = setManualCompensationIntent(
+      initialized,
+      authoredOperationId,
+      'centerline'
+    )!;
+    const document = setManualInitialWirePosition(mixed, { x: 0, y: 0 })!;
+
+    const projection = deriveUpidMachinePreviewTransitions(document, machine);
+    const transitions = projection?.transitions;
+    const preview = buildEditorPathDocumentPreviewGeometry(document, {
+      authoritativeGeneratedOperationIds:
+        projection?.authoritativeGeneratedOperationIds,
+      postedTransitions: transitions
+    });
+
+    expect(projection?.authoritativeGeneratedOperationIds).toEqual([
+      document.plan.operations[0].id
+    ]);
+    expect(transitions?.filter((transition) => transition.replacesPlanned).map(
+      (transition) => transition.operationId
+    )).toEqual([
+      document.plan.operations[0].id,
+      document.plan.operations[0].id
+    ]);
+    expect(transitions?.some((transition) =>
+      transition.operationId === authoredOperationId && transition.replacesPlanned
+    )).toBe(false);
+    expect(preview.paths.some((path) =>
+      path.operationId === document.plan.operations[0].id &&
+      path.travelSource === 'planned'
+    )).toBe(false);
+    expect(preview.paths.some((path) =>
+      path.operationId === authoredOperationId &&
+      path.travelRole === 'rapid-in' &&
+      path.travelSource === 'planned'
+    )).toBe(true);
+  });
+
   it('derives posted rapid and lead overlays from a ready Robofil v2 multi-contour program', () => {
     const machine = markMachineProfileUserVerified(
       createCharmillesRobofil100V2CandidateProfile()
@@ -657,4 +782,25 @@ function line(startX: number, startY: number, endX: number, endY: number) {
     start: { x: startX, y: startY },
     end: { x: endX, y: endY }
   };
+}
+
+function verifiedGenericExplicitMachine() {
+  const machine = createDefaultMachineProfile();
+  machine.id = 'verified-generic-explicit';
+  machine.compensation = {
+    supported: true,
+    enabledByDefault: true,
+    offsetSelection: { address: 'D', index: 0 },
+    activation: 'linear-lead',
+    cancellation: 'linear-lead-out',
+    lifecycleScope: 'operation',
+    preActivationCodes: [],
+    validationLeadLengthMm: 2,
+    expectedMaximumOffsetMm: 0.25
+  };
+  machine.templates = { header: 'G90', footer: '' };
+  return markMachineProfileUserVerified(
+    machine,
+    new Date('2026-07-13T00:00:00.000Z')
+  );
 }
