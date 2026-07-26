@@ -28,9 +28,14 @@ export type EditorWorkflowSession<TSnapshot = unknown> =
   | EditorMutatingWorkflowSession<TSnapshot>
   | EditorViewWorkflowSession<TSnapshot>;
 
+export interface EditorWorkflowOpenTarget {
+  operationId: string | null;
+  stopId: string | null;
+}
+
 export type EditorWorkflowTransitionRequest =
   | { kind: 'close' }
-  | { commandId: string; kind: 'open' };
+  | { commandId: string; kind: 'open'; target?: EditorWorkflowOpenTarget };
 
 export type EditorWorkflowTransitionResolution = 'clean' | 'save' | 'discard';
 

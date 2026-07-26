@@ -38,6 +38,7 @@ import {
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
 import { composeProjectUpidGCodeExport, withProjectUpid } from '@/domain/upid/projectUpid';
+import type { UpidProgramTreeEditTarget } from '@/domain/upid/upidProgramTree';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 import { EditorPage } from '@/features/editor/EditorPage';
 import { EditorUpidExportPreview } from '@/features/editor/EditorUpidExportPreview';
@@ -133,6 +134,128 @@ describe('EditorPage UPID draft boundary', () => {
         'button[aria-label="Undo active document change"]'
       ) as HTMLButtonElement | null)?.disabled
     ).toBe(true);
+  });
+
+  it('opens Entry / Exit for the explicit second operation and keeps a dirty first target on cancel', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+    let openProgramTreeTarget: ((target: UpidProgramTreeEditTarget) => void) | null = null;
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onProgramTreeActionReady={(open) => { openProgramTreeTarget = open; }}
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await act(async () => openProgramTreeTarget?.({
+      kind: 'entry-exit', operationId: secondOperation.id
+    }));
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-floating-panel="entry-exit"]')?.textContent)
+      .toContain('Entry / Exit');
+    expect(
+      (container.querySelector('select[aria-label="Entry and exit operation"]') as HTMLSelectElement).value
+    ).toBe(secondOperation.id);
+
+    await act(async () => openProgramTreeTarget?.({
+      kind: 'entry-exit', operationId: firstOperation.id
+    }));
+    await flushAsync();
+    await changeInput('input[aria-label="Entry X"]', '-2');
+    await act(async () => openProgramTreeTarget?.({
+      kind: 'entry-exit', operationId: secondOperation.id
+    }));
+    await flushAsync();
+
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      'before opening Entry / Exit'
+    );
+    await clickElement('button[aria-label="Dismiss workflow transition"]');
+
+    expect(container.querySelector('[data-entry-exit-panel]')).not.toBeNull();
+    expect(
+      (container.querySelector('select[aria-label="Entry and exit operation"]') as HTMLSelectElement).value
+    ).toBe(firstOperation.id);
+  });
+
+  it('opens Program Stops with the exact tree-selected stop inline', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const operation = pathDocument.plan.operations[1];
+    operation.programStops = [
+      { id: 'stop-1', enabled: true, placement: { kind: 'before-entry' }, reason: 'manual' },
+      { id: 'stop-2', enabled: false, placement: { kind: 'after-exit' }, reason: 'operator-check' }
+    ];
+    let openProgramTreeTarget: ((target: UpidProgramTreeEditTarget) => void) | null = null;
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onProgramTreeActionReady={(open) => { openProgramTreeTarget = open; }}
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await act(async () => openProgramTreeTarget?.({
+      kind: 'program-stop', operationId: operation.id, stopId: 'stop-2'
+    }));
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-floating-panel="program-stops"]')).not.toBeNull();
+    expect(container.querySelector('[data-program-stop="stop-2"]')?.getAttribute('data-selected'))
+      .toBe('true');
+    expect((container.querySelector('[aria-label="Selected stop note"]') as HTMLInputElement).value)
+      .toBe('');
+  });
+
+  it('keeps a pending stop identity until the dirty workflow transition resolves', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const operation = pathDocument.plan.operations[1];
+    operation.programStops = [
+      { id: 'stop-1', enabled: true, placement: { kind: 'before-entry' }, reason: 'manual' },
+      { id: 'stop-2', enabled: false, placement: { kind: 'after-exit' }, reason: 'operator-check' }
+    ];
+    let openProgramTreeTarget: ((target: UpidProgramTreeEditTarget) => void) | null = null;
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onProgramTreeActionReady={(open) => { openProgramTreeTarget = open; }}
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await act(async () => openProgramTreeTarget?.({
+      kind: 'program-stop', operationId: operation.id, stopId: 'stop-1'
+    }));
+    await flushAsync();
+    await changeInput('[aria-label="Selected stop note"]', 'provisional');
+    await act(async () => openProgramTreeTarget?.({
+      kind: 'program-stop', operationId: operation.id, stopId: 'stop-2'
+    }));
+    await flushAsync();
+
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.querySelector('[data-program-stop="stop-1"]')?.getAttribute('data-selected'))
+      .toBe('true');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+
+    expect(container.querySelector('[data-program-stop="stop-2"]')?.getAttribute('data-selected'))
+      .toBe('true');
   });
 
   it('commits several provisional workflow edits as one Undo entry when switching with Save', async () => {
@@ -3324,6 +3447,7 @@ function EditorPageHarness({
   initialWorkflowId,
   onBackToDashboard = noop,
   onImportProgramFile = noop,
+  onProgramTreeActionReady,
   onSaveEditorDraft,
   project,
   saveStatus = 'idle'
@@ -3332,6 +3456,7 @@ function EditorPageHarness({
   initialWorkflowId?: string;
   onBackToDashboard?: () => void;
   onImportProgramFile?: (file: File) => void;
+  onProgramTreeActionReady?: (open: (target: UpidProgramTreeEditTarget) => void) => void;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void;
   project: WorkbenchProject;
   saveStatus?: 'error' | 'idle' | 'saving';
@@ -3361,6 +3486,7 @@ function EditorPageHarness({
         onBackToDashboard={onBackToDashboard}
         onDownloadEditorFile={noop}
         onImportProgramFile={onImportProgramFile}
+        onProgramTreeActionReady={onProgramTreeActionReady}
         onSaveEditorDraft={onSaveEditorDraft}
         program={{
           filePath,
