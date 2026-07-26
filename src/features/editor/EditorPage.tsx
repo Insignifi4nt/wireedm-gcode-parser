@@ -1131,6 +1131,7 @@ export function EditorPage({
   }, [
     activeWorkflowSession,
     isEditorMutationLocked,
+    workflowTargetChangeBlocked,
     expandedPathElementIds,
     expandedProgramTreeKeys,
     pathDocumentDraft,
@@ -1386,6 +1387,8 @@ export function EditorPage({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
+
       if (event.key === 'Escape') {
         if (activeWorkflowOwns('machining.entry-exit') && entryExitCanvasPick) {
           setEntryExitCanvasPick(null);

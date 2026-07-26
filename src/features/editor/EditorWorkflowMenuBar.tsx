@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 export interface EditorWorkflowMenuCommand {
   ariaLabel?: string;
@@ -85,6 +85,13 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
     }
   }
 
+  function handleMenuKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== 'Escape' || (!openMenu && !compactOpen)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeMenu(openMenu ?? undefined);
+  }
+
   function moveFocus(group: EditorWorkflowMenuGroup, commandId: string, direction: 1 | -1) {
     const enabledCommands = group.commands.filter((command) => command.enabled);
     if (enabledCommands.length === 0) return;
@@ -130,11 +137,6 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
         style={compact ? compactMenuPosition : undefined}
         onKeyDown={(event) => {
           const commandId = (event.target as HTMLElement).dataset.editorWorkflowCommand;
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            closeMenu(group.title);
-            return;
-          }
           if (!commandId) return;
           if (event.key === 'ArrowDown') {
             event.preventDefault();
@@ -217,6 +219,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
       className="relative flex items-center gap-px"
       aria-label="Editor workflows"
       data-editor-workflow-menus
+      onKeyDown={handleMenuKeyDown}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           setOpenMenu(null);
@@ -295,12 +298,6 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
             className="fixed z-[60] w-[min(260px,calc(100vw-8px))] overflow-hidden border border-border bg-card p-1"
             data-editor-workflow-category-menu
             id="editor-workflow-compact-popover"
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape') return;
-              event.preventDefault();
-              setCompactOpen(false);
-              compactTriggerRef.current?.focus();
-            }}
             role="menu"
             style={compactMenuPosition}
           >

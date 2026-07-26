@@ -50,6 +50,12 @@ export function EditorWorkflowTransitionDialog({
   const saveReasonId = 'editor-workflow-transition-save-reason';
 
   function handleDialogKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      onDismiss();
+      return;
+    }
     if (event.key !== 'Tab') return;
     const buttons = Array.from(
       dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []

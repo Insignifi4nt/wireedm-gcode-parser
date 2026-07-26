@@ -95,6 +95,39 @@ describe('EditorWorkflowTransitionDialog', () => {
     expect(onDiscard).not.toHaveBeenCalled();
   });
 
+  it('dismisses on Escape without letting the key reach the page', async () => {
+    const onDismiss = vi.fn();
+    const onParentKeyDown = vi.fn();
+    await act(async () => root.render(
+      <div onKeyDown={onParentKeyDown}>
+        <EditorWorkflowTransitionDialog
+          nextWorkflowLabel="Entry/Exit"
+          onDiscard={vi.fn()}
+          onDismiss={onDismiss}
+          onSave={vi.fn()}
+          open
+          saveAvailability={{ enabled: true }}
+          workflowLabel="Transform"
+        />
+      </div>
+    ));
+
+    const escapeEvent = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Escape'
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-editor-workflow-transition-action="discard"]')
+        ?.dispatchEvent(escapeEvent);
+    });
+
+    expect(escapeEvent.defaultPrevented).toBe(true);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onParentKeyDown).not.toHaveBeenCalled();
+  });
+
   it('moves focus into the dialog and restores it when closed', async () => {
     const previousFocus = document.createElement('button');
     previousFocus.textContent = 'Previous focus';

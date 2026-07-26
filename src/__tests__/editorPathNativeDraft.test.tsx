@@ -209,6 +209,70 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe(firstOperation.id);
   });
 
+  it('dismisses a dirty rail transition with Escape without replacing its held request', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement(`li[data-tree-key="operation:${secondOperation.id}"] button[aria-label^="Expand"]`);
+    await clickElement(`button[data-tree-key="operation:${firstOperation.id}:entry"]`);
+    await changeInput('input[aria-label="Entry X"]', '-2');
+    await clickElement(`button[data-tree-key="operation:${secondOperation.id}:entry"]`);
+
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      'before opening Entry / Exit'
+    );
+    const escapeEvent = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Escape'
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-editor-workflow-transition-action="discard"]')
+        ?.dispatchEvent(escapeEvent);
+    });
+    await flushAsync();
+
+    expect(escapeEvent.defaultPrevented).toBe(true);
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(visibleWorkflowPanelIds()).toEqual(['entry-exit']);
+    expect(
+      (container.querySelector('select[aria-label="Entry and exit operation"]') as HTMLSelectElement)
+        .value
+    ).toBe(firstOperation.id);
+  });
+
+  it('leaves the active workflow unchanged when Escape was already consumed', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    const escapeEvent = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Escape'
+    });
+    escapeEvent.preventDefault();
+    await act(async () => {
+      window.dispatchEvent(escapeEvent);
+    });
+    await flushAsync();
+
+    expect(escapeEvent.defaultPrevented).toBe(true);
+    expect(visibleWorkflowPanelIds()).toEqual(['entry-exit']);
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
   it('keeps rail actions locked when interaction state changes without a workflow session', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
@@ -1104,6 +1168,36 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Cancel "]');
     await clickElement('[data-editor-workflow-transition-action="discard"]');
     expect(container.querySelector('path[data-preview-travel="lead-in"]')).toBeNull();
+  });
+
+  it('keeps the rendered program-tree selection on the canvas-pick operation', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement(`button[data-tree-key="operation:${firstOperation.id}:entry"]`);
+    const operationTarget = container.querySelector(
+      'select[aria-label="Entry and exit operation"]'
+    ) as HTMLSelectElement;
+    await clickElement('button[aria-label="Pick entry point on canvas"]');
+    expect(operationTarget.value).toBe(firstOperation.id);
+    expect(operationTarget.disabled).toBe(true);
+
+    await clickElement(`button[data-tree-key="operation:${secondOperation.id}"]`);
+
+    expect(operationTarget.value).toBe(firstOperation.id);
+    expect(
+      container.querySelector('button[aria-label="Pick entry point on canvas"]')
+        ?.getAttribute('aria-pressed')
+    ).toBe('true');
+    expect(container.querySelector('[data-editor-status-bar]')?.textContent).not.toContain(
+      `Selection Operation ${secondOperation.id}`
+    );
   });
 
   it('cancels canvas exit picking with Escape without mutating the workflow draft', async () => {

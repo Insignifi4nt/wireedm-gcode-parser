@@ -85,20 +85,28 @@ describe('EditorWorkflowMenuBar', () => {
     );
   });
 
-  it('closes with Escape and restores focus to the menu trigger', async () => {
+  it('closes a mouse-opened desktop menu with Escape at its trigger', async () => {
     await renderMenu();
-    await clickMenu('Machining');
-    const command = container.querySelector<HTMLButtonElement>(
-      '[data-editor-workflow-command="machining.command"]'
-    );
-    command?.focus();
-
-    await act(async () => {
-      command?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    const trigger = getMenuButton('Machining');
+    trigger.focus();
+    await act(async () => trigger.click());
+    const pageKeyDown = vi.fn();
+    window.addEventListener('keydown', pageKeyDown);
+    const escapeEvent = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Escape'
     });
 
+    await act(async () => {
+      trigger.dispatchEvent(escapeEvent);
+    });
+    window.removeEventListener('keydown', pageKeyDown);
+
+    expect(escapeEvent.defaultPrevented).toBe(true);
+    expect(pageKeyDown).not.toHaveBeenCalled();
     expect(container.querySelector('[role="menu"]')).toBeNull();
-    expect(document.activeElement).toBe(getMenuButton('Machining'));
+    expect(document.activeElement).toBe(trigger);
   });
 
   it('closes the first menu when a second menu opens', async () => {
@@ -176,9 +184,10 @@ describe('EditorWorkflowMenuBar', () => {
     expect(container.querySelector('[data-editor-workflow-compact-back]')).not.toBeNull();
   });
 
-  it('returns to the compact launcher when Escape closes a compact command menu', async () => {
+  it('owns Escape after mouse-opening a compact command menu and returns to its launcher', async () => {
     await renderMenu();
     const launcher = getCompactLauncher();
+    launcher.focus();
     await act(async () => launcher.click());
     await act(async () => {
       container
@@ -190,10 +199,20 @@ describe('EditorWorkflowMenuBar', () => {
       '[data-editor-workflow-compact] [data-editor-workflow-command="machining.command"]'
     );
     command?.focus();
-    await act(async () => {
-      command?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    const pageKeyDown = vi.fn();
+    window.addEventListener('keydown', pageKeyDown);
+    const escapeEvent = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Escape'
     });
+    await act(async () => {
+      command?.dispatchEvent(escapeEvent);
+    });
+    window.removeEventListener('keydown', pageKeyDown);
 
+    expect(escapeEvent.defaultPrevented).toBe(true);
+    expect(pageKeyDown).not.toHaveBeenCalled();
     expect(container.querySelector('[data-editor-workflow-compact-menu]')).toBeNull();
     expect(document.activeElement).toBe(launcher);
   });
