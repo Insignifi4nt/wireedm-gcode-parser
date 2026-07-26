@@ -1,4 +1,4 @@
-import { act, useEffect, useRef, useState, type ReactNode } from 'react';
+import { act, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -4236,6 +4236,7 @@ function EditorPageHarness({
   const [headerContent, setHeaderContent] = useState<ReactNode | null>(null);
   const [railContent, setRailContent] = useState<AppRailContent | null>(null);
   const [compactDrawer, setCompactDrawer] = useState<'upid' | 'workflow' | null>(null);
+  const closeCompactDrawerWithRailFocus = useCallback(() => setCompactDrawer(null), []);
   const openedInitialWorkflowRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -4255,6 +4256,7 @@ function EditorPageHarness({
   return (
     <AppRailProvider
       value={{
+        closeCompactDrawerWithRailFocus,
         compactDrawer,
         compactModalHost: null,
         compactTransitionOverlay: false,

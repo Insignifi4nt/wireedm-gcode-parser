@@ -465,7 +465,7 @@ function createDefaultWorkspaceLayout(
 ): EditorWorkspaceLayoutV1 {
   return {
     schemaVersion: 1,
-    upidRailCollapsed: window.innerWidth >= 768 && window.innerWidth < 1024,
+    upidRailCollapsed: false,
     placements: createDefaultWorkspacePanelPlacements(model),
     dockOrders: createDefaultWorkspaceDockOrders(model),
     floatingGeometries: { ...DEFAULT_WORKSPACE_PANEL_GEOMETRY },
@@ -661,7 +661,7 @@ export function EditorPage({
   onSaveEditorDraft,
   onStatusMessage
 }: EditorPageProps) {
-  const { compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailContent } = useAppRail();
+  const { closeCompactDrawerWithRailFocus, compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailContent } = useAppRail();
   const [initialWorkspaceLayout] = useState(() => readInitialWorkspaceLayout(program?.model));
   const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
@@ -1144,6 +1144,10 @@ export function EditorPage({
       geometryContent,
       mode: upidRailMode,
       onCollapseChange: (collapsed: boolean) => {
+        if (collapsed && (isCompactViewport || isMiddleViewport)) {
+          closeCompactDrawerWithRailFocus();
+          return;
+        }
         if (!collapsed && isMiddleViewport) {
           setCompactDrawer('upid');
           return;
@@ -1175,6 +1179,7 @@ export function EditorPage({
     };
   }, [
     activeWorkflowSession,
+    closeCompactDrawerWithRailFocus,
     isCompactViewport,
     isMiddleViewport,
     isEditorMutationLocked,

@@ -19,6 +19,7 @@ export interface AppRailContent {
 }
 
 interface AppRailContextValue {
+  closeCompactDrawerWithRailFocus: () => void;
   compactDrawer: EditorCompactDrawer;
   compactModalHost: HTMLElement | null;
   compactTransitionOverlay: boolean;

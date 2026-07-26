@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -74,7 +75,7 @@ export function AppShell({
   const [compactTransitionOverlay, setCompactTransitionOverlay] = useState(false);
   const compactDrawerRef = useRef(compactDrawer);
   compactDrawerRef.current = compactDrawer;
-  const restoreRailFocusAfterViewportCloseRef = useRef(false);
+  const restoreRailFocusAfterDrawerCloseRef = useRef(false);
   const [isCompactViewport, setIsCompactViewport] = useState(() => window.innerWidth < 768);
   const [isMiddleViewport, setIsMiddleViewport] = useState(
     () => window.innerWidth >= 768 && window.innerWidth < 1024
@@ -123,6 +124,10 @@ export function AppShell({
     : 'No output';
   const lineEnding = connectedWorkbench?.manifest.output.lineEnding.toUpperCase() ?? 'No line ending';
   const compactModalOpen = compactDrawer !== null;
+  const closeCompactDrawerWithRailFocus = useCallback(() => {
+    restoreRailFocusAfterDrawerCloseRef.current = true;
+    setCompactDrawer(null);
+  }, []);
 
   useEffect(() => {
     if (!window.matchMedia) {
@@ -130,7 +135,7 @@ export function AppShell({
         const compact = window.innerWidth < 768;
         const middle = window.innerWidth >= 768 && window.innerWidth < 1024;
         if (!compact && !middle && compactDrawerRef.current === 'upid') {
-          restoreRailFocusAfterViewportCloseRef.current = true;
+          restoreRailFocusAfterDrawerCloseRef.current = true;
         }
         setIsCompactViewport(compact);
         setIsMiddleViewport(middle);
@@ -147,7 +152,7 @@ export function AppShell({
     const middleMedia = window.matchMedia('(min-width: 768px) and (max-width: 1023px)');
     const updateCompactViewport = () => {
       if (!media.matches && !middleMedia.matches && compactDrawerRef.current === 'upid') {
-        restoreRailFocusAfterViewportCloseRef.current = true;
+        restoreRailFocusAfterDrawerCloseRef.current = true;
       }
       setIsCompactViewport(media.matches);
       setIsMiddleViewport(middleMedia.matches);
@@ -167,8 +172,8 @@ export function AppShell({
   }, []);
 
   useEffect(() => {
-    if (compactDrawer !== null || !restoreRailFocusAfterViewportCloseRef.current) return;
-    restoreRailFocusAfterViewportCloseRef.current = false;
+    if (compactDrawer !== null || !restoreRailFocusAfterDrawerCloseRef.current) return;
+    restoreRailFocusAfterDrawerCloseRef.current = false;
     const frame = window.requestAnimationFrame(() => {
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       const candidates = [
@@ -177,6 +182,9 @@ export function AppShell({
         ),
         document.querySelector<HTMLElement>(
           '[data-app-rail-collapsed-content] [aria-label="Expand UPID rail"]'
+        ),
+        document.querySelector<HTMLElement>(
+          '[data-editor-compact-drawer-launchers] [aria-label="Open UPID rail"]'
         )
       ];
       candidates
@@ -343,7 +351,7 @@ export function AppShell({
           />
         )}
 
-        <AppRailProvider value={{ compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailCollapsed: setShellRailCollapsed, setRailContent }}>
+        <AppRailProvider value={{ closeCompactDrawerWithRailFocus, compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailCollapsed: setShellRailCollapsed, setRailContent }}>
           <main
             className="min-h-0 min-w-0 overflow-hidden"
           >

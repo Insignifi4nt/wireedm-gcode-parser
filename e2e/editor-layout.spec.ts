@@ -325,6 +325,20 @@ test('path editor persists a collapsed UPID rail across reload and project reope
     return raw ? JSON.parse(raw).upidRailCollapsed : null;
   })).toBe(true);
 
+  await page.setViewportSize({ width: 800, height: 800 });
+  await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(true);
+
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(true);
+
   await page.reload();
   await expect(page.locator('[data-project-row]')).toHaveCount(1);
   await page.locator('[data-project-row]')
@@ -398,7 +412,7 @@ test('middle-width UPID strip opens its full tree as a focus-safe overlay', asyn
   await expect.poll(async () => page.evaluate(() => {
     const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
     return raw ? JSON.parse(raw).upidRailCollapsed : null;
-  })).toBe(true);
+  })).toBe(false);
 
   await upidDrawer.getByRole('button', { name: 'Close UPID rail' }).click();
   await expect(upidDrawer).toHaveCount(0);
@@ -443,6 +457,61 @@ test('middle-width UPID strip opens its full tree as a focus-safe overlay', asyn
   await expect(exitTreeItem).toBeFocused();
   await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(800);
+});
+
+test('fresh middle session restores the expanded desktop rail without persisting its effective collapse', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'fresh-middle-desktop-preference.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(false);
+
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await expect(page.getByRole('complementary', { name: 'UPID rail', exact: true })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toHaveCount(0);
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(false);
+});
+
+test('middle overlay Collapse closes the drawer and preserves the desktop rail preference', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'middle-overlay-collapse.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  const expandUpidRail = page.getByRole('button', { name: 'Expand UPID rail' });
+  await expandUpidRail.click();
+  const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
+  await expect(upidDrawer).toBeVisible();
+  await upidDrawer.getByRole('button', { name: 'Collapse UPID rail' }).click();
+
+  await expect(upidDrawer).toHaveCount(0);
+  await expect(expandUpidRail).toBeFocused();
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(false);
 });
 
 test('middle viewport temporarily collapses an expanded desktop UPID rail', async ({ page }) => {
