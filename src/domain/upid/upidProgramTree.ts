@@ -254,9 +254,13 @@ function buildCutPathNode(
     treeKey: `operation:${operation.id}:contour-start`,
     kind: 'phase',
     label: 'Contour start',
-    status: 'ready',
+    detail: operation.closed ? undefined : 'Closed contours only',
+    status: operation.closed ? 'ready' : 'inactive',
+    statusReason: operation.closed ? undefined : 'closed-contours-only',
     operationId: operation.id,
-    editTarget: { kind: 'contour-start', operationId: operation.id },
+    ...(operation.closed
+      ? { editTarget: { kind: 'contour-start' as const, operationId: operation.id } }
+      : {}),
     children: []
   };
   const spans = buildParticipationNodes(document, operation);

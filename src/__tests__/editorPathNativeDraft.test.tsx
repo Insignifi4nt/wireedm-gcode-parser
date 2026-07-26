@@ -258,6 +258,33 @@ describe('EditorPage UPID draft boundary', () => {
       .toBe('true');
   });
 
+  it('does not retarget an explicit open-operation Contour Start request', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const openOperation = pathDocument.plan.operations[1];
+    openOperation.closed = false;
+    const project = projectWithUpid(pathDocument);
+    let openProgramTreeTarget: ((target: UpidProgramTreeEditTarget) => void) | null = null;
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onProgramTreeActionReady={(open) => { openProgramTreeTarget = open; }}
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await act(async () => openProgramTreeTarget?.({
+      kind: 'contour-start', operationId: openOperation.id
+    }));
+    await flushAsync();
+
+    expect(container.querySelector('[data-editor-floating-panel="set-start"]')).toBeNull();
+    expect(container.querySelector('[data-upid-set-start-workflow]')).toBeNull();
+  });
+
   it('commits several provisional workflow edits as one Undo entry when switching with Save', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 

@@ -2658,9 +2658,20 @@ export function EditorPage({
   }
 
   function requestProgramTreeWorkflowTransition(action: EditorProgramTreeAction) {
+    if (!canOpenProgramTreeAction(action)) return;
     const command = EDITOR_COMMAND_REGISTRY.get(action.commandId);
     if (!command?.toolWindowId || !command.workflow) return;
     requestEditorWorkflowOpen(command, action);
+  }
+
+  function canOpenProgramTreeAction(action: EditorProgramTreeAction) {
+    if (action.commandId !== SET_START_COMMAND.id) return true;
+    const operation = pathDocumentDraft?.plan.operations.find(
+      (candidate) => candidate.id === action.operationId
+    );
+    if (operation?.closed) return true;
+    onStatusMessage?.('Contour Start is available only for closed contours.', 'warning');
+    return false;
   }
 
   function requestEditorWorkflowOpen(

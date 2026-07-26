@@ -187,6 +187,24 @@ describe('UPID program tree projection', () => {
     expect(tree.operations[0].status).toBe('review-required');
   });
 
+  it('keeps Contour Start informational and non-editable for an open operation', () => {
+    const document = twoRectangleDocument();
+    const operation = document.plan.operations[1];
+    operation.closed = false;
+
+    const tree = buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile());
+    const contourStart = tree.operations[1].children
+      .find((node) => node.label === 'Cut path')
+      ?.children.find((node) => node.label === 'Contour start');
+
+    expect(contourStart).toMatchObject({
+      detail: 'Closed contours only',
+      operationId: operation.id,
+      status: 'inactive'
+    });
+    expect(contourStart?.editTarget).toBeUndefined();
+  });
+
   it('rolls diagnostic warning and error severity into the tree status', () => {
     const document = twoRectangleDocument();
     document.diagnostics = [{
