@@ -191,18 +191,29 @@ summary:focus-visible {
   grid-template-columns: var(--app-rail-width) 4px minmax(0, 1fr);
 }
 
-@media (max-width: 639px) {
+@media (max-width: 767px) {
   [data-app-workspace-grid][data-has-rail="true"][data-sidebar-collapsed] {
     grid-template-columns: minmax(0, 1fr);
   }
 
   [data-app-rail],
-  [data-app-rail-resizer],
-  [data-editor-main-grid] > [data-editor-panel-dock-zone],
-  [data-editor-main-grid] > [data-editor-inspector-panel],
-  [data-editor-main-grid] > [data-editor-inspector-collapsed],
-  [data-editor-main-grid] > [data-editor-inspector-resizer] {
+  [data-app-rail-resizer] {
     display: none;
+  }
+
+  [data-editor-compact-drawer-launchers] {
+    display: flex;
+  }
+
+  [data-editor-compact-workflow="true"][data-editor-compact-workflow-open="false"] {
+    display: none;
+  }
+
+  [data-editor-compact-workflow="true"][data-editor-compact-workflow-open="true"] {
+    inset: 0;
+    z-index: 50;
+    width: auto !important;
+    height: auto !important;
   }
 
   [data-editor-main-grid] {

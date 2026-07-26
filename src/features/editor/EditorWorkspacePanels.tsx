@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type CSSProperties,
@@ -17,6 +18,164 @@ import {
 
 export type EditorDockSide = 'left' | 'right';
 export type EditorPanelPlacement = 'floating' | 'hidden' | `docked-${EditorDockSide}`;
+
+export type EditorCompactDrawer = 'upid' | 'workflow' | null;
+
+interface EditorCompactDrawerLaunchersProps {
+  drawer: EditorCompactDrawer;
+  hasActiveWorkflow: boolean;
+  hasUpidRail: boolean;
+  onDrawerChange: (drawer: EditorCompactDrawer) => void;
+  upidContent: ReactNode;
+  workflowContent?: ReactNode;
+}
+
+export function EditorCompactDrawerLaunchers({
+  drawer,
+  hasActiveWorkflow,
+  hasUpidRail,
+  onDrawerChange,
+  upidContent,
+  workflowContent
+}: EditorCompactDrawerLaunchersProps) {
+  const upidLauncherRef = useRef<HTMLButtonElement>(null);
+  const workflowLauncherRef = useRef<HTMLButtonElement>(null);
+  const upidTitleId = useId();
+  const workflowTitleId = useId();
+
+  function closeDrawer(owner: Exclude<EditorCompactDrawer, null>) {
+    onDrawerChange(null);
+    (owner === 'upid' ? upidLauncherRef : workflowLauncherRef).current?.focus();
+  }
+
+  useEffect(() => {
+    if (!drawer || (drawer === 'workflow' && !workflowContent)) return;
+    const drawerOwner = drawer;
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeDrawer(drawerOwner);
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [drawer, workflowContent]);
+
+  return (
+    <>
+      <div className="hidden items-center gap-1 p-1" data-editor-compact-drawer-launchers>
+        {hasUpidRail && (
+          <button
+            aria-label="Open UPID rail"
+            className="h-7 border border-border px-2 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+            onClick={() => onDrawerChange('upid')}
+            ref={upidLauncherRef}
+            type="button"
+          >
+            Program
+          </button>
+        )}
+        {hasActiveWorkflow && (
+          <button
+            aria-label="Open active workflow"
+            className="h-7 border border-border px-2 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+            onClick={() => onDrawerChange('workflow')}
+            ref={workflowLauncherRef}
+            type="button"
+          >
+            Workflow
+          </button>
+        )}
+      </div>
+      {drawer === 'upid' && (
+        <EditorCompactDrawerSheet
+          labelledBy={upidTitleId}
+          onClose={() => closeDrawer('upid')}
+          title="UPID rail"
+        >
+          <h2 className="sr-only" id={upidTitleId}>UPID rail</h2>
+          {upidContent}
+        </EditorCompactDrawerSheet>
+      )}
+      {drawer === 'workflow' && workflowContent && (
+        <EditorCompactDrawerSheet
+          labelledBy={workflowTitleId}
+          onClose={() => closeDrawer('workflow')}
+          title="Active workflow"
+        >
+          <h2 className="sr-only" id={workflowTitleId}>Active workflow</h2>
+          {workflowContent}
+        </EditorCompactDrawerSheet>
+      )}
+    </>
+  );
+}
+
+interface EditorCompactDrawerSheetProps {
+  children: ReactNode;
+  labelledBy: string;
+  onClose: () => void;
+  title: string;
+}
+
+export function EditorCompactDrawerSheet({
+  children,
+  labelledBy,
+  onClose,
+  title
+}: EditorCompactDrawerSheetProps) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'Tab') return;
+    const focusable = [...event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+    )];
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable.at(-1)!;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background/85 p-2" data-editor-compact-drawer-backdrop>
+      <div
+        aria-labelledby={labelledBy}
+        aria-modal="true"
+        aria-label={title}
+        className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-border bg-card shadow-2xl"
+        data-editor-compact-drawer={title === 'UPID rail' ? 'upid' : 'workflow'}
+        onKeyDown={handleKeyDown}
+        role="dialog"
+      >
+        <div className="flex h-8 items-center justify-between border-b border-border px-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{title}</span>
+          <button
+            aria-label={`Close ${title}`}
+            className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+            onClick={onClose}
+            ref={closeRef}
+            type="button"
+          >
+            <X aria-hidden="true" className="size-3" />
+          </button>
+        </div>
+        <div className="min-h-0 overflow-auto">{children}</div>
+      </div>
+    </div>
+  );
+}
 
 export interface EditorFloatingPanelGeometry {
   x: number;
@@ -219,9 +378,12 @@ export function EditorPanelDockZone({
 
 interface EditorFloatingPanelProps {
   children: ReactNode;
+  compactDrawerOpen?: boolean;
   geometry: EditorFloatingPanelGeometry;
   id: string;
+  isCompactWorkflow?: boolean;
   onDock: (side: EditorDockSide) => void;
+  onCloseCompactDrawer?: () => void;
   title: string;
   onDragEnd: (point: { x: number; y: number }) => void;
   onFloat: () => void;
@@ -231,15 +393,56 @@ interface EditorFloatingPanelProps {
 
 export function EditorFloatingPanel({
   children,
+  compactDrawerOpen = false,
   geometry,
   id,
+  isCompactWorkflow = false,
   onDock,
+  onCloseCompactDrawer,
   title,
   onDragEnd,
   onFloat,
   onGeometryChange,
   onHide
 }: EditorFloatingPanelProps) {
+  const compactDrawerCloseRef = useRef<HTMLButtonElement>(null);
+  const compactDrawerTitleId = useId();
+
+  useEffect(() => {
+    if (!compactDrawerOpen) return;
+    compactDrawerCloseRef.current?.focus();
+  }, [compactDrawerOpen]);
+
+  useEffect(() => {
+    if (!compactDrawerOpen || !onCloseCompactDrawer) return;
+
+    function handleCompactDrawerEscape(event: globalThis.KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onCloseCompactDrawer?.();
+    }
+
+    document.addEventListener('keydown', handleCompactDrawerEscape);
+    return () => document.removeEventListener('keydown', handleCompactDrawerEscape);
+  }, [compactDrawerOpen, onCloseCompactDrawer]);
+
+  function handleCompactDrawerKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (!compactDrawerOpen || event.key !== 'Tab') return;
+    const focusable = [...event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+    )];
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable.at(-1)!;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   function handleDragStart(event: PointerEvent<HTMLButtonElement>) {
     event.preventDefault();
     const startX = event.clientX;
@@ -321,8 +524,16 @@ export function EditorFloatingPanel({
 
   return (
     <aside
+      aria-hidden={isCompactWorkflow && !compactDrawerOpen ? true : undefined}
+      aria-labelledby={compactDrawerOpen ? compactDrawerTitleId : undefined}
+      aria-modal={compactDrawerOpen ? 'true' : undefined}
       className="fixed z-30 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/98 text-[10px] shadow-2xl"
+      data-editor-compact-workflow={isCompactWorkflow ? 'true' : undefined}
+      data-editor-compact-workflow-open={isCompactWorkflow ? String(compactDrawerOpen) : undefined}
       data-editor-floating-panel={id}
+      inert={isCompactWorkflow && !compactDrawerOpen ? true : undefined}
+      onKeyDown={handleCompactDrawerKeyDown}
+      role={compactDrawerOpen ? 'dialog' : undefined}
       style={
         {
           left: geometry.x,
@@ -342,7 +553,7 @@ export function EditorFloatingPanel({
           title={`Move ${title}`}
           type="button"
         >
-          <span className="truncate">{title}</span>
+          <span className="truncate" id={compactDrawerTitleId}>{title}</span>
         </button>
         <EditorPanelPlacementControls
           onDock={onDock}
@@ -351,10 +562,11 @@ export function EditorFloatingPanel({
           title={title}
         />
         <button
-          aria-label={`Hide ${title}`}
+          aria-label={compactDrawerOpen ? `Close ${title} drawer` : `Hide ${title}`}
           className="flex size-6 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-          onClick={onHide}
+          onClick={compactDrawerOpen ? onCloseCompactDrawer : onHide}
           onPointerDown={(event) => event.stopPropagation()}
+          ref={compactDrawerCloseRef}
           title={`Hide ${title}`}
           type="button"
         >
@@ -431,20 +643,26 @@ function EditorPanelPlacementControls({
 
 interface EditorWorkspacePanelFrameProps extends EditorWorkspacePanelController {
   children: ReactNode;
+  compactDrawerOpen?: boolean;
   id: string;
+  isCompactWorkflow?: boolean;
+  onCloseCompactDrawer?: () => void;
   title: string;
   fill?: boolean;
 }
 
 export function EditorWorkspacePanelFrame({
   children,
+  compactDrawerOpen = false,
   dockOrder = 0,
   fill = false,
   geometry,
   id,
+  isCompactWorkflow = false,
   placement,
   title,
   onDock,
+  onCloseCompactDrawer,
   onDragEnd,
   onFloat,
   onFloatFromDock,
@@ -492,9 +710,12 @@ export function EditorWorkspacePanelFrame({
   if (placement === 'floating') {
     const panel = (
       <EditorFloatingPanel
+        compactDrawerOpen={compactDrawerOpen}
         geometry={geometry}
         id={id}
+        isCompactWorkflow={isCompactWorkflow}
         onDock={onDock}
+        onCloseCompactDrawer={onCloseCompactDrawer}
         onDragEnd={onDragEnd}
         onFloat={onFloat}
         onGeometryChange={onGeometryChange}

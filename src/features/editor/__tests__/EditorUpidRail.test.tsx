@@ -1,8 +1,9 @@
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EditorUpidRail } from '../EditorUpidRail';
+import { EditorCompactDrawerLaunchers } from '../EditorWorkspacePanels';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -183,4 +184,56 @@ describe('EditorUpidRail', () => {
     expect(onCollapseChange).toHaveBeenCalledWith(false);
     expect(onModeChange).toHaveBeenCalledWith('geometry');
   });
+
+  it('keeps compact UPID and workflow drawers mutually exclusive and returns Escape focus to the launcher', async () => {
+    await act(async () => {
+      root.render(<CompactDrawerHarness hasActiveWorkflow />);
+    });
+
+    const upidLauncher = container.querySelector<HTMLButtonElement>('[aria-label="Open UPID rail"]');
+    const workflowLauncher = container.querySelector<HTMLButtonElement>('[aria-label="Open active workflow"]');
+    expect(upidLauncher).not.toBeNull();
+    expect(workflowLauncher).not.toBeNull();
+
+    await act(async () => {
+      upidLauncher?.click();
+    });
+    expect(container.querySelector('[role="dialog"][aria-label="UPID rail"]')).not.toBeNull();
+
+    await act(async () => {
+      workflowLauncher?.click();
+    });
+    expect(container.querySelector('[role="dialog"][aria-label="UPID rail"]')).toBeNull();
+    expect(container.querySelector('[role="dialog"][aria-label="Active workflow"]')).not.toBeNull();
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+    });
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(workflowLauncher);
+  });
+
+  it('shows the workflow launcher only while a workflow is active', async () => {
+    await act(async () => {
+      root.render(<CompactDrawerHarness hasActiveWorkflow={false} />);
+    });
+
+    expect(container.querySelector('[aria-label="Open UPID rail"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Open active workflow"]')).toBeNull();
+  });
 });
+
+function CompactDrawerHarness({ hasActiveWorkflow }: { hasActiveWorkflow: boolean }) {
+  const [drawer, setDrawer] = useState<'upid' | 'workflow' | null>(null);
+
+  return (
+    <EditorCompactDrawerLaunchers
+      drawer={drawer}
+      hasActiveWorkflow={hasActiveWorkflow}
+      hasUpidRail
+      onDrawerChange={setDrawer}
+      upidContent={<div>Program sequence</div>}
+      workflowContent={<input aria-label="Workflow draft" defaultValue="Draft survives" />}
+    />
+  );
+}

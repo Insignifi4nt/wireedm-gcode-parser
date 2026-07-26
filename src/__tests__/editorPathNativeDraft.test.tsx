@@ -3562,6 +3562,7 @@ function EditorPageHarness({
 }) {
   const [headerContent, setHeaderContent] = useState<ReactNode | null>(null);
   const [railContent, setRailContent] = useState<AppRailContent | null>(null);
+  const [compactDrawer, setCompactDrawer] = useState<'upid' | 'workflow' | null>(null);
   const openedInitialWorkflowRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -3579,7 +3580,7 @@ function EditorPageHarness({
     });
   }, [headerContent, initialWorkflowId]);
   return (
-    <AppRailProvider value={{ setHeaderContent, setRailCollapsed: () => undefined, setRailContent }}>
+    <AppRailProvider value={{ compactDrawer, isCompactViewport: false, setCompactDrawer, setHeaderContent, setRailCollapsed: () => undefined, setRailContent }}>
       <div>{headerContent}</div>
       <aside data-test-editor-project-rail>{railContent?.expanded}</aside>
       <EditorPage

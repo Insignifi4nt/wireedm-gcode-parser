@@ -168,6 +168,45 @@ test('path editor materializes a right dock only for a docked active workflow', 
   await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
 });
 
+test('compact path editor routes program-tree edits through mutually exclusive UPID and workflow drawers', async ({ page }) => {
+  await page.setViewportSize({ width: 767, height: 800 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'compact-drawer-layout.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  const upidLauncher = page.getByRole('button', { name: 'Open UPID rail' });
+  await expect(upidLauncher).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open active workflow' })).toHaveCount(0);
+  await upidLauncher.click();
+
+  const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
+  await expect(upidDrawer).toBeVisible();
+  await upidDrawer.getByRole('button', { name: 'Entry / lead-in · None' }).click();
+
+  const workflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
+  await expect(upidDrawer).toHaveCount(0);
+  await expect(workflowDrawer).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open active workflow' })).toBeVisible();
+
+  const entryX = workflowDrawer.getByRole('textbox', { name: 'Entry X' });
+  await entryX.fill('5');
+  await workflowDrawer.getByRole('button', { name: 'Close Entry / Exit drawer' }).click();
+  await expect(workflowDrawer).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open active workflow' })).toBeFocused();
+
+  await page.getByRole('button', { name: 'Open active workflow' }).click();
+  await expect(workflowDrawer.getByRole('textbox', { name: 'Entry X' })).toHaveValue('5');
+  await page.keyboard.press('Escape');
+  await expect(workflowDrawer).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open active workflow' })).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(767);
+});
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1024, height: 720 }

@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import {
   Database,
   HardDrive,
@@ -13,9 +13,10 @@ import { normalizeOutputExtension } from '@/domain/post/gcodeTemplates';
 import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
 import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
 
-import { AppRailProvider, type AppRailContent } from './AppRailContext';
+import { AppRailProvider, type AppRailContent, type EditorCompactDrawer } from './AppRailContext';
 import type { MachineProfileSettingsActions } from './MachineOutputSettingsPanel';
 import { WorkbenchSettingsDialog } from './WorkbenchSettingsDialog';
+import { EditorCompactDrawerLaunchers } from '@/features/editor/EditorWorkspacePanels';
 
 interface AppShellProps extends MachineProfileSettingsActions {
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
@@ -61,6 +62,8 @@ export function AppShell({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const [railContent, setRailContent] = useState<AppRailContent | null>(null);
+  const [compactDrawer, setCompactDrawer] = useState<EditorCompactDrawer>(null);
+  const [isCompactViewport, setIsCompactViewport] = useState(() => window.innerWidth < 768);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isReady = workbenchStatus === 'ready' && connectedWorkbench;
   const isConnectingStorage =
@@ -100,6 +103,26 @@ export function AppShell({
       )}`
     : 'No output';
   const lineEnding = connectedWorkbench?.manifest.output.lineEnding.toUpperCase() ?? 'No line ending';
+
+  useEffect(() => {
+    if (!window.matchMedia) {
+      const updateCompactViewport = () => {
+        const compact = window.innerWidth < 768;
+        setIsCompactViewport(compact);
+        if (!compact) setCompactDrawer(null);
+      };
+      window.addEventListener('resize', updateCompactViewport);
+      return () => window.removeEventListener('resize', updateCompactViewport);
+    }
+    const media = window.matchMedia('(max-width: 767px)');
+    const updateCompactViewport = () => {
+      setIsCompactViewport(media.matches);
+      if (!media.matches) setCompactDrawer(null);
+    };
+    updateCompactViewport();
+    media.addEventListener('change', updateCompactViewport);
+    return () => media.removeEventListener('change', updateCompactViewport);
+  }, []);
 
   function handleSidebarResizeStart(event: PointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -184,12 +207,14 @@ export function AppShell({
       >
         {railContent && (
           <aside
+            aria-hidden={isCompactViewport ? true : undefined}
             className={`grid min-w-0 overflow-hidden ${
               replaceRailChrome
                 ? 'grid-rows-[minmax(0,1fr)] bg-background pb-8 pt-2'
                 : 'grid-rows-[auto_minmax(0,1fr)] border-r border-border bg-card/95'
             }`}
             data-app-rail
+            inert={isCompactViewport ? true : undefined}
           >
             {!replaceRailChrome && (
               <div className="flex h-7 shrink-0 items-center justify-end border-b border-border px-1">
@@ -236,8 +261,20 @@ export function AppShell({
           />
         )}
 
-        <AppRailProvider value={{ setHeaderContent, setRailCollapsed: setSidebarCollapsed, setRailContent }}>
-          <main className="min-h-0 min-w-0 overflow-hidden">{children}</main>
+        <AppRailProvider value={{ compactDrawer, isCompactViewport, setCompactDrawer, setHeaderContent, setRailCollapsed: setSidebarCollapsed, setRailContent }}>
+          <main
+            className="min-h-0 min-w-0 overflow-hidden"
+            inert={compactDrawer === 'upid' ? true : undefined}
+          >
+            {children}
+          </main>
+          <EditorCompactDrawerLaunchers
+            drawer={compactDrawer}
+            hasActiveWorkflow={Boolean(railContent?.hasActiveWorkflow)}
+            hasUpidRail={Boolean(railContent?.isPathProject)}
+            onDrawerChange={setCompactDrawer}
+            upidContent={railContent?.expanded ?? null}
+          />
         </AppRailProvider>
       </div>
       <footer

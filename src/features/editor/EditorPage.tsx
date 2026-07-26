@@ -655,7 +655,7 @@ export function EditorPage({
   onSaveEditorDraft,
   onStatusMessage
 }: EditorPageProps) {
-  const { setHeaderContent, setRailCollapsed, setRailContent } = useAppRail();
+  const { compactDrawer, isCompactViewport, setCompactDrawer, setHeaderContent, setRailCollapsed, setRailContent } = useAppRail();
   const [initialWorkspaceLayout] = useState(() => readInitialWorkspaceLayout(program?.model));
   const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
@@ -997,6 +997,7 @@ export function EditorPage({
     : null;
   const hasActiveRightDock = Boolean(
     isPathProject &&
+    !isCompactViewport &&
     activeWorkflowSession &&
     readEditorWorkspaceRenderedPlacement(
       workspacePanelPlacements,
@@ -1099,6 +1100,8 @@ export function EditorPage({
     return {
       collapsed: <EditorUpidRail {...railProps} collapsed />,
       expanded: <EditorUpidRail {...railProps} collapsed={false} />,
+      hasActiveWorkflow: Boolean(activeWorkflowSession),
+      isPathProject: true,
       replaceRailChrome: true,
       sizing: {
         maxWidth: 360,
@@ -2715,6 +2718,7 @@ export function EditorPage({
     if (!command?.toolWindowId || !command.workflow) return;
 
     if (activeWorkflowSession?.commandId === commandId) {
+      openActiveWorkflowInCompactDrawer();
       focusWorkspacePanel(command.toolWindowId as EditorWorkspacePanelId);
       return;
     }
@@ -2748,6 +2752,7 @@ export function EditorPage({
     action?: EditorProgramTreeAction
   ) {
     if (!action && activeWorkflowSession?.commandId === command.id) {
+      openActiveWorkflowInCompactDrawer();
       focusWorkspacePanel(command.toolWindowId as EditorWorkspacePanelId);
       return;
     }
@@ -2828,6 +2833,7 @@ export function EditorPage({
         });
 
     setActiveWorkflowSession(session);
+    openActiveWorkflowInCompactDrawer();
     setEntryExitCanvasPick(null);
     setActiveWorkflowPendingReasons({});
     setWorkflowTransition(null);
@@ -2853,6 +2859,10 @@ export function EditorPage({
       return;
     }
     if (transition.kind === 'resolved') completeEditorWorkflowTransition(transition);
+  }
+
+  function openActiveWorkflowInCompactDrawer() {
+    if (window.innerWidth < 768) setCompactDrawer('workflow');
   }
 
   function dismissWorkflowTransition() {
@@ -2920,6 +2930,7 @@ export function EditorPage({
   }
 
   function readWorkspacePanelRenderedPlacement(panelId: EditorWorkspacePanelId) {
+    if (isCompactViewport && panelId === activeWorkflowSession?.panelId) return 'floating';
     return readEditorWorkspaceRenderedPlacement(
       workspacePanelPlacements,
       panelId,
@@ -3002,6 +3013,16 @@ export function EditorPage({
         onFloatFromDock={(point) => floatWorkspacePanelFromDock(panelId, point)}
         onGeometryChange={(geometry) => setWorkspacePanelGeometry(panelId, geometry)}
         onHide={requestCloseEditorWorkflow}
+        compactDrawerOpen={
+          isCompactViewport && activeWorkflowSession?.panelId === panelId && compactDrawer === 'workflow'
+        }
+        isCompactWorkflow={isCompactViewport && activeWorkflowSession?.panelId === panelId}
+        onCloseCompactDrawer={() => {
+          setCompactDrawer(null);
+          window.requestAnimationFrame(() => {
+            document.querySelector<HTMLButtonElement>('[aria-label="Open active workflow"]')?.focus();
+          });
+        }}
         placement={renderedPlacement}
         title={title}
       >

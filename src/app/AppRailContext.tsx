@@ -1,8 +1,12 @@
 import { createContext, useContext, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 
+export type EditorCompactDrawer = 'upid' | 'workflow' | null;
+
 export interface AppRailContent {
   collapsed: ReactNode;
   expanded: ReactNode;
+  hasActiveWorkflow?: boolean;
+  isPathProject?: boolean;
   replaceRailChrome?: boolean;
   sizing?: {
     maxWidth: number;
@@ -13,6 +17,9 @@ export interface AppRailContent {
 }
 
 interface AppRailContextValue {
+  compactDrawer: EditorCompactDrawer;
+  isCompactViewport: boolean;
+  setCompactDrawer: Dispatch<SetStateAction<EditorCompactDrawer>>;
   setHeaderContent: Dispatch<SetStateAction<ReactNode | null>>;
   setRailCollapsed: Dispatch<SetStateAction<boolean>>;
   setRailContent: Dispatch<SetStateAction<AppRailContent | null>>;
