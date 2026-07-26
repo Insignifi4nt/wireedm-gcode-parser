@@ -25,7 +25,7 @@ import { normalizeToISO } from '@/domain/editor/isoNormalizer';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import { evaluateMachineFit } from '@/domain/machine/machineFit';
-import { deriveVerifiedRobofilPreviewTransitions } from '@/domain/editor/previewGeometry';
+import { deriveUpidMachinePreviewTransitions } from '@/domain/editor/previewGeometry';
 import {
   initializeProjectCompensationIntents,
   machineSnapshotAuthorizesAutomaticCompensation,
@@ -63,6 +63,7 @@ import {
   translatePathSegment,
   type PathMirrorAxis
 } from '@/domain/path-editor/pathDocumentOperations';
+import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
 import {
   inferPathPoint,
   inferPerpendicularOperationOffset,
@@ -79,6 +80,7 @@ import type {
   PathPlanningDocument
 } from '@/domain/path-intel/types';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
+import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import {
   deriveActiveMachiningOperations,
   setMachiningSpanParticipation,
@@ -904,10 +906,10 @@ export function EditorPage({
       postedOperations: exportProgram.programOperations
     };
   }, [draftProject, exportPreviewOpen, pathDocumentDraft]);
-  const postedPreviewTransitions = useMemo(
+  const machinePreviewTransitions = useMemo(
     () =>
       pathDocumentDraft && draftProject
-        ? deriveVerifiedRobofilPreviewTransitions(pathDocumentDraft, draftProject.machine)
+        ? deriveUpidMachinePreviewTransitions(pathDocumentDraft, draftProject.machine)
         : undefined,
     [draftProject, pathDocumentDraft]
   );
@@ -1021,6 +1023,21 @@ export function EditorPage({
   const activeMutatingWorkflow = activeWorkflowSession?.kind === 'mutating'
     ? activeWorkflowSession
     : null;
+  const entryExitPresentedOperationId =
+    selectedPathOperationId ??
+    (pathDocumentDraft
+      ? orderedPathOperations(pathDocumentDraft.plan.operations)[0]?.id
+      : undefined);
+  const selectedOperationTransitionsAreGenerated = Boolean(
+    pathDocumentDraft &&
+    draftProject &&
+    entryExitPresentedOperationId &&
+    operationTransitionsAreGenerated(
+      pathDocumentDraft,
+      entryExitPresentedOperationId,
+      draftProject.machine
+    )
+  );
   const workflowTargetChangeBlocked = Boolean(
     activeMutatingWorkflow && (
       (
@@ -1988,6 +2005,17 @@ export function EditorPage({
     if (entryExitCanvasPick) {
       if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft) return;
       const { kind, operationId } = entryExitCanvasPick;
+      if (
+        draftProject &&
+        operationTransitionsAreGenerated(
+          pathDocumentDraft,
+          operationId,
+          draftProject.machine
+        )
+      ) {
+        setEntryExitCanvasPick(null);
+        return;
+      }
       const inferred = entryExitInferencePreview?.candidate;
       if (!inferred || inferred.operationId !== operationId) return;
       setEntryExitCanvasPick(null);
@@ -2196,6 +2224,10 @@ export function EditorPage({
 
   function handleSetOperationCircleCenterEntry(operationId: string) {
     if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
+    if (
+      draftProject &&
+      operationTransitionsAreGenerated(pathDocumentDraft, operationId, draftProject.machine)
+    ) return;
     const edited = setCircleOperationCenterPierceLeadIn(pathDocumentDraft, operationId);
     if (!edited) {
       onStatusMessage?.('Circle-center entry requires one closed circular operation.', 'warning');
@@ -2209,6 +2241,10 @@ export function EditorPage({
     point: { x: number; y: number }
   ) {
     if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
+    if (
+      draftProject &&
+      operationTransitionsAreGenerated(pathDocumentDraft, operationId, draftProject.machine)
+    ) return;
     const edited = setPathOperationManualLeadIn(pathDocumentDraft, operationId, point);
     if (edited) {
       applyPathDocumentEdit(edited, {
@@ -2220,6 +2256,10 @@ export function EditorPage({
 
   function handleSetOperationManualExit(operationId: string, point: { x: number; y: number }) {
     if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
+    if (
+      draftProject &&
+      operationTransitionsAreGenerated(pathDocumentDraft, operationId, draftProject.machine)
+    ) return;
     const operation = pathDocumentDraft.plan.operations.find(
       (candidate) => candidate.id === operationId
     );
@@ -2243,6 +2283,10 @@ export function EditorPage({
 
   function handleSetOperationNoEntry(operationId: string) {
     if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
+    if (
+      draftProject &&
+      operationTransitionsAreGenerated(pathDocumentDraft, operationId, draftProject.machine)
+    ) return;
     const operation = pathDocumentDraft.plan.operations.find(
       (candidate) => candidate.id === operationId
     );
@@ -2262,6 +2306,10 @@ export function EditorPage({
 
   function handleSetOperationNoExit(operationId: string) {
     if (!activeWorkflowOwns('machining.entry-exit') || !pathDocumentDraft || isEditorMutationLocked) return;
+    if (
+      draftProject &&
+      operationTransitionsAreGenerated(pathDocumentDraft, operationId, draftProject.machine)
+    ) return;
     const operation = pathDocumentDraft.plan.operations.find(
       (candidate) => candidate.id === operationId
     );
@@ -3301,7 +3349,7 @@ export function EditorPage({
     id: string,
     title: string,
     children: ReactNode,
-    options: { fill?: boolean } = {}
+    options: { fill?: boolean; readOnly?: boolean } = {}
   ) {
     const panelId = id as EditorWorkspacePanelId;
     const renderedPlacement = readWorkspacePanelRenderedPlacement(panelId);
@@ -3321,35 +3369,48 @@ export function EditorPage({
         {children}
         {ownedMutatingWorkflow && (
           <div className="mt-3 border-t border-border pt-2" data-editor-workflow-actions={ownedMutatingWorkflow.commandId}>
-            {!ownedMutatingWorkflow.saveAvailability.enabled && (
-              <p className="mb-1 text-[10px] leading-4 text-amber-300" data-editor-workflow-save-reason>
-                {ownedMutatingWorkflow.saveAvailability.reason}
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-1">
+            {options.readOnly && !ownedMutatingWorkflow.dirty ? (
               <button
-                aria-label={`Cancel ${ownedMutatingWorkflow.label} workflow`}
-                className="h-7 border border-border px-2 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+                aria-label={`Close ${ownedMutatingWorkflow.label} workflow`}
+                className="h-7 w-full border border-border px-2 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
                 onClick={requestCloseEditorWorkflow}
                 type="button"
               >
-                Cancel
+                Close
               </button>
-              <button
-                aria-label={`Save ${ownedMutatingWorkflow.label} workflow`}
-                className="h-7 border border-primary bg-primary px-2 text-[10px] text-primary-foreground outline-none disabled:cursor-not-allowed disabled:opacity-45"
-                disabled={!ownedMutatingWorkflow.saveAvailability.enabled}
-                onClick={saveActiveEditorWorkflow}
-                title={
-                  ownedMutatingWorkflow.saveAvailability.enabled
-                    ? `Save ${ownedMutatingWorkflow.label}`
-                    : ownedMutatingWorkflow.saveAvailability.reason
-                }
-                type="button"
-              >
-                Save
-              </button>
-            </div>
+            ) : (
+              <>
+                {!ownedMutatingWorkflow.saveAvailability.enabled && (
+                  <p className="mb-1 text-[10px] leading-4 text-amber-300" data-editor-workflow-save-reason>
+                    {ownedMutatingWorkflow.saveAvailability.reason}
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    aria-label={`Cancel ${ownedMutatingWorkflow.label} workflow`}
+                    className="h-7 border border-border px-2 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+                    onClick={requestCloseEditorWorkflow}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    aria-label={`Save ${ownedMutatingWorkflow.label} workflow`}
+                    className="h-7 border border-primary bg-primary px-2 text-[10px] text-primary-foreground outline-none disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={!ownedMutatingWorkflow.saveAvailability.enabled}
+                    onClick={saveActiveEditorWorkflow}
+                    title={
+                      ownedMutatingWorkflow.saveAvailability.enabled
+                        ? `Save ${ownedMutatingWorkflow.label}`
+                        : ownedMutatingWorkflow.saveAvailability.reason
+                    }
+                    type="button"
+                  >
+                    Save
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </>
@@ -3400,6 +3461,7 @@ export function EditorPage({
         isSaving={isEditorMutationLocked}
         key={programIdentity}
         latestMeasurementPoint={measurementPoints.at(-1) ?? null}
+        machineProfile={machineProfileDraft}
         measurementPoints={measurementPoints}
         onExpandedPathElementIdsChange={setExpandedPathElementIds}
         onHoverPathElement={setHoveredPathElement}
@@ -3919,12 +3981,28 @@ export function EditorPage({
               machine={draftProject.machine}
               onCanvasPickModeChange={(mode, operationId) => {
                 if (!activeWorkflowOwns('machining.entry-exit') || isEditorMutationLocked) return;
+                if (
+                  operationTransitionsAreGenerated(
+                    pathDocumentDraft,
+                    operationId,
+                    draftProject.machine
+                  )
+                ) return;
                 setEntryExitCanvasPick(mode ? { kind: mode, operationId } : null);
               }}
               onDraftChange={(source) => markActiveWorkflowPending(
                 'machining.entry-exit', source,
                 'Apply or correct the pending cut entry or exit coordinates before saving or changing the target contour.'
               )}
+              onOpenContourStart={(operationId) =>
+                openEditorWorkflowForTarget(
+                  { kind: 'contour-start', operationId },
+                  `${programTreeKeyForOperation(operationId)}:contour-start`
+                )
+              }
+              onOpenProjectMachine={() =>
+                openEditorWorkflowForTarget({ kind: 'machine-setup' }, 'setup:machine')
+              }
               onSelectOperation={handleSelectWorkflowOperation}
               onSetCircleCenterEntry={handleSetOperationCircleCenterEntry}
               onSetManualEntry={handleSetOperationManualEntry}
@@ -3933,7 +4011,8 @@ export function EditorPage({
               onSetNoExit={handleSetOperationNoExit}
               selectedOperationId={selectedPathOperationId}
               targetChangeBlocked={workflowTargetChangeBlocked}
-            />
+            />,
+            { readOnly: selectedOperationTransitionsAreGenerated }
           )}
         {pathDocumentDraft && draftProject &&
           renderWorkspacePanel(
@@ -3998,6 +4077,9 @@ export function EditorPage({
         style={{ '--editor-inspector-width': `${inspectorRailWidth}px` } as CSSProperties}
       >
         <EditorCanvasPanel
+          authoritativeGeneratedOperationIds={
+            machinePreviewTransitions?.authoritativeGeneratedOperationIds
+          }
           canvasMouseMode={canvasMouseMode}
           constructionPreview={constructionPreview ?? entryExitInferencePreview}
           draftProgram={draftProgram}
@@ -4054,7 +4136,7 @@ export function EditorPage({
               : undefined
           }
           pathDocument={pathDocumentDraft}
-          postedTransitions={postedPreviewTransitions}
+          postedTransitions={machinePreviewTransitions?.transitions}
           pathCount={pathCount}
           pinnedLines={pinnedLines}
           selectedPathElement={selectedPathElement}
@@ -4277,6 +4359,21 @@ function sameProgramExactTarget(
 
 function programTreeKeyForOperation(operationId: string | null) {
   return operationId ? `operation:${encodeURIComponent(operationId)}` : null;
+}
+
+function operationTransitionsAreGenerated(
+  document: PathPlanningDocument,
+  operationId: string,
+  machine: MachineProfile
+) {
+  const operation = document.plan.operations.find(
+    (candidate) => candidate.id === operationId
+  );
+  return Boolean(
+    operation &&
+    resolveOperationTransitionOwnership(operation, machine) ===
+      'generated-explicit-linear'
+  );
 }
 
 function nextMeasurementPointId(currentLength: number) {

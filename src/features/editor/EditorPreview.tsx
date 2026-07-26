@@ -55,6 +55,7 @@ import {
 } from './editorPreviewHelpers';
 
 interface EditorPreviewProps {
+  authoritativeGeneratedOperationIds?: readonly string[];
   canvasMouseMode?: CanvasMouseMode;
   constructionPreview?: EditorConstructionPreview | null;
   startPreview?: EditorStartPreview | null;
@@ -122,6 +123,7 @@ export interface EditorStartPreview {
 }
 
 export function EditorPreview({
+  authoritativeGeneratedOperationIds,
   canvasMouseMode,
   constructionPreview,
   startPreview,
@@ -154,11 +156,15 @@ export function EditorPreview({
   const preview = useMemo(
     () =>
       pathDocument
-        ? buildEditorPathDocumentPreviewGeometry(pathDocument, { padding: 1, postedTransitions })
+        ? buildEditorPathDocumentPreviewGeometry(pathDocument, {
+            authoritativeGeneratedOperationIds,
+            padding: 1,
+            postedTransitions
+          })
         : program?.parseResult
           ? buildEditorPreviewGeometry(program.parseResult, { padding: 1 })
           : null,
-    [pathDocument, postedTransitions, program]
+    [authoritativeGeneratedOperationIds, pathDocument, postedTransitions, program]
   );
   const selected = useMemo(() => new Set(selectedLines), [selectedLines]);
   const pinned = useMemo(() => new Set(pinnedLines), [pinnedLines]);

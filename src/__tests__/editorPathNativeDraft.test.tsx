@@ -20,7 +20,8 @@ import { AppRailProvider, type AppRailContent } from '@/app/AppRailContext';
 import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
 import { parseDxf } from '@/domain/dxf/parseDxf';
 import {
-  initializeProjectCompensationIntents
+  initializeProjectCompensationIntents,
+  setManualCompensationIntent
 } from '@/domain/compensation/intent';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import {
@@ -38,6 +39,7 @@ import {
 import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
+import { postUpidForMachine } from '@/domain/post/upidMachinePost';
 import { composeProjectUpidGCodeExport, withProjectUpid } from '@/domain/upid/projectUpid';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 import { EditorPage } from '@/features/editor/EditorPage';
@@ -2652,6 +2654,136 @@ describe('EditorPage UPID draft boundary', () => {
     expect(pierceButton?.title).toContain('controller compensation');
   });
 
+  it('presents generated explicit-linear transitions as the exact posted read-only workflow', async () => {
+    const project = projectWithGeneratedExplicitTransitions();
+    const operation = project.upid!.document.plan.operations[0];
+    const posted = postUpidForMachine(project.upid!.document, project.machine);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="machining.entry-exit"
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(posted.status).toBe('ready');
+    expect(container.querySelector('[data-entry-exit-generated]')).not.toBeNull();
+    expect(container.querySelector('input[aria-label="Entry X"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Pick entry point on canvas"]')).toBeNull();
+    expect(
+      container.querySelector(
+        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Close "]'
+      )
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]'
+      )
+    ).toBeNull();
+
+    const postedPaths = [...container.querySelectorAll<SVGPathElement>(
+      `path[data-preview-operation="${operation.id}"][data-preview-travel-source="posted"]`
+    )];
+    expect(postedPaths.map((path) => path.dataset.previewTravel)).toEqual([
+      'lead-in',
+      'lead-out'
+    ]);
+    expect(container.querySelector(
+      `path[data-preview-operation="${operation.id}"][data-preview-travel-source="planned"]`
+    )).toBeNull();
+
+    const generatedLead = posted.blocks.find((block) => block.kind === 'lead-in');
+    const generatedLeadOut = posted.blocks.find((block) => block.kind === 'lead-out');
+    expect(container.querySelector('[data-entry-exit-generated-lead-in]')?.textContent).toBe(
+      `${formatTestPoint(generatedLead?.startPoint)} → ${formatTestPoint(generatedLead?.endPoint)}`
+    );
+    expect(container.querySelector('[data-entry-exit-generated-lead-out]')?.textContent).toBe(
+      `${formatTestPoint(generatedLeadOut?.startPoint)} → ${formatTestPoint(generatedLeadOut?.endPoint)}`
+    );
+  });
+
+  it('hands generated transition inputs to Contour Start and Project Machine', async () => {
+    const project = projectWithGeneratedExplicitTransitions();
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="machining.entry-exit"
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement(
+      'button[aria-label="Open Contour Start for generated transition"]'
+    );
+    expect(visibleWorkflowPanelIds()).toEqual(['set-start']);
+
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    await clickElement(
+      'button[aria-label="Open Project Machine for generated transition"]'
+    );
+    expect(visibleWorkflowPanelIds()).toEqual(['machine']);
+  });
+
+  it('retains Save and Cancel when a mixed Entry / Exit session becomes dirty before selecting a generated operation', async () => {
+    const machine = generatedExplicitMachine();
+    const initialized = initializeProjectCompensationIntents(
+      pathDocumentFromIndependentRectangles(),
+      machine
+    );
+    const [generatedOperation, authoredOperation] = initialized.plan.operations;
+    const document = setManualCompensationIntent(
+      initialized,
+      authoredOperation.id,
+      'centerline'
+    )!;
+    const project = projectWithUpid(document, machine);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="machining.entry-exit"
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    const selector = container.querySelector(
+      'select[aria-label="Entry and exit operation"]'
+    ) as HTMLSelectElement;
+    await changeSelect(selector, authoredOperation.id);
+    await changeInput('input[aria-label="Entry X"]', '-3');
+    await changeInput('input[aria-label="Entry Y"]', '1');
+    await clickElement('button[aria-label="Set straight entry"]');
+    await changeSelect(selector, generatedOperation.id);
+
+    expect(container.querySelector('[data-entry-exit-generated]')).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Close "]'
+      )
+    ).toBeNull();
+    expect(
+      container.querySelector(
+        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]'
+      )
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Cancel "]'
+      )
+    ).not.toBeNull();
+  });
+
   it('offers center-pierce lead creation for the verified operation-scoped Robofil v2 lifecycle', async () => {
     const machine = markMachineProfileUserVerified(
       createCharmillesRobofil100V2CandidateProfile()
@@ -4586,6 +4718,48 @@ function projectWithUpid(
   if (machine) project.machine = structuredClone(machine);
 
   return withProjectUpid(project, pathDocument);
+}
+
+function projectWithGeneratedExplicitTransitions() {
+  const machine = generatedExplicitMachine();
+  const initialized = initializeProjectCompensationIntents(
+    pathDocumentFromCircleWithLeadIn(),
+    machine
+  );
+  return projectWithUpid(initialized, machine);
+}
+
+function generatedExplicitMachine() {
+  const sourceProject = createWorkbenchProject({
+    id: 'generated-transition-machine-source',
+    name: 'Generated transition machine source',
+    sourceKind: 'dxf'
+  });
+  const machine = structuredClone(sourceProject.machine);
+  machine.id = 'verified-generic-explicit';
+  machine.name = 'Verified generic explicit-linear';
+  machine.compensation = {
+    supported: true,
+    enabledByDefault: true,
+    offsetSelection: { address: 'D', index: 0 },
+    activation: 'linear-lead',
+    cancellation: 'linear-lead-out',
+    lifecycleScope: 'operation',
+    preActivationCodes: [],
+    validationLeadLengthMm: 2,
+    expectedMaximumOffsetMm: 0.25
+  };
+  machine.templates = { header: 'G90', footer: '' };
+  return markMachineProfileUserVerified(
+    machine,
+    new Date('2026-07-27T10:00:00.000Z')
+  );
+}
+
+function formatTestPoint(point: { x: number; y: number } | null | undefined) {
+  return point
+    ? `X${point.x.toFixed(3)} Y${point.y.toFixed(3)}`
+    : 'Unavailable';
 }
 
 function projectWithPrecisionCollapsedMachine() {

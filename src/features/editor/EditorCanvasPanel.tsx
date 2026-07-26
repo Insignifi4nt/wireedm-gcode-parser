@@ -9,6 +9,7 @@ import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 interface EditorCanvasPanelProps {
+  authoritativeGeneratedOperationIds?: readonly string[];
   canvasMouseMode: CanvasMouseMode;
   draftProgram: LoadedEditorProgram | null;
   constructionPreview?: EditorConstructionPreview | null;
@@ -41,6 +42,7 @@ interface EditorCanvasPanelProps {
 type CanvasMouseMode = 'select' | 'point';
 
 export function EditorCanvasPanel({
+  authoritativeGeneratedOperationIds,
   canvasMouseMode,
   draftProgram,
   constructionPreview,
@@ -80,6 +82,7 @@ export function EditorCanvasPanel({
         {...guideTargetProps('preview', guideHighlightTarget)}
       >
         <EditorPreview
+          authoritativeGeneratedOperationIds={authoritativeGeneratedOperationIds}
           canvasMouseMode={canvasMouseMode}
           hoveredLine={hoveredLine}
           hoveredPathElement={hoveredPathElement}
