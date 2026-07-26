@@ -134,6 +134,16 @@ test('keeps imported NC programs in the machine-program editor through edit, sav
   await expect(page.getByRole('complementary', { name: /UPID rail/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Machining menu' })).toHaveCount(0);
 
+  await expect(page.locator('details[data-editor-code-section="text"] summary')).toBeVisible();
+  expect(await page.evaluate(() => {
+    const summary = document.querySelector<HTMLElement>('details[data-editor-code-section="text"] summary');
+    const inspector = document.querySelector<HTMLElement>('[data-editor-inspector-summary]');
+    if (!summary || !inspector) return false;
+    const summaryBox = summary.getBoundingClientRect();
+    const inspectorBox = inspector.getBoundingClientRect();
+    return summaryBox.bottom <= inspectorBox.top || inspectorBox.bottom <= summaryBox.top;
+  })).toBe(true);
+
   await page.locator('details[data-editor-code-section="text"] summary').click();
   const programEditor = page.getByLabel('Program editor');
   await programEditor.fill('%\nG90\nG0 X0 Y0\nG1 X24 Y0\nM02\n%');

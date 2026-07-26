@@ -3166,13 +3166,13 @@ export function EditorPage({
   function renderInspectorPanelContent() {
     return (
       <div
-        className={`min-h-0 overflow-hidden ${
+        className={`h-full min-h-0 overflow-hidden ${
           isPathProject ? '' : 'grid lg:grid-rows-[minmax(0,1fr)_minmax(0,42vh)]'
         }`}
       >
         {!pathDocumentDraft && (
           <div
-            className="grid min-h-0 gap-2 overflow-hidden p-2 lg:grid-rows-[minmax(260px,1fr)_auto]"
+            className="grid min-h-0 gap-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)_auto]"
             data-editor-side-code-panel
           >
             <EditorProgramLinesPanel

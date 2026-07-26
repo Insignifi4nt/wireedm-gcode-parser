@@ -244,7 +244,7 @@ export function EditorProgramLinesPanel({
 
   return (
     <section
-      className={`grid min-h-[220px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/70 ${guideHighlightClass(
+      className={`grid min-h-[220px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/70 lg:min-h-0 ${guideHighlightClass(
         'program-lines',
         guideHighlightTarget
       )}`}
