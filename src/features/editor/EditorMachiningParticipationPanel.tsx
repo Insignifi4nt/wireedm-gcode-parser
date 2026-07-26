@@ -16,6 +16,7 @@ interface EditorMachiningParticipationPanelProps {
   onSetWireSide: (sourceOperationId: string, wireSide: 'left' | 'right' | null) => void;
   selectedOperationId: string | null;
   selectedSegmentId?: string | null;
+  selectedSpanId?: string | null;
   targetChangeBlocked?: boolean;
 }
 
@@ -28,6 +29,7 @@ export function EditorMachiningParticipationPanel({
   onSetWireSide,
   selectedOperationId,
   selectedSegmentId,
+  selectedSpanId = null,
   targetChangeBlocked = false
 }: EditorMachiningParticipationPanelProps) {
   const operation = document.plan.operations.find(
@@ -57,6 +59,15 @@ export function EditorMachiningParticipationPanel({
     [document.machiningParticipation?.spans, segmentIds.join('|')]
   );
   const derived = deriveActiveMachiningOperations(document);
+  const derivedSpanIds = derived.status === 'ready'
+    ? [...new Set(
+        derived.operations
+          .filter((candidate) =>
+            candidate.machiningIntent?.sourceOperationId === operation?.id
+          )
+          .flatMap((candidate) => candidate.machiningIntent?.spanIds ?? [])
+      )]
+    : [];
   const wireSide = document.machiningParticipation?.partialContourCompensation?.find(
     (setting) => setting.sourceOperationId === operation?.id
   )?.wireSide ?? '';
@@ -182,11 +193,37 @@ export function EditorMachiningParticipationPanel({
         </button>
       </div>
 
-      <div className="grid gap-1">
-        {spans.length === 0 ? (
+      <div className="grid gap-1" data-machining-span-list>
+        {derivedSpanIds.map((spanId) => (
+          <div
+            className={`border p-2 ${
+              selectedSpanId === spanId
+                ? 'border-sky-400 bg-sky-500/15 text-sky-100'
+                : 'border-border'
+            }`}
+            data-machining-span-id={spanId}
+            data-machining-span-participation="active-cut"
+            data-upid-selected={selectedSpanId === spanId ? 'true' : undefined}
+            key={spanId}
+          >
+            <div className="font-mono text-foreground">{spanId}</div>
+            <div className="text-muted-foreground">Derived active cut</div>
+          </div>
+        ))}
+        {spans.length === 0 && derivedSpanIds.length === 0 ? (
           <p className="text-muted-foreground">All source segments are active cuts.</p>
         ) : spans.map((span) => (
-          <div className="grid grid-cols-[1fr_auto] items-center gap-2 border border-border p-2" key={span.id}>
+          <div
+            className={`grid grid-cols-[1fr_auto] items-center gap-2 border p-2 ${
+              selectedSpanId === span.id
+                ? 'border-sky-400 bg-sky-500/15 text-sky-100'
+                : 'border-border'
+            }`}
+            data-machining-span-id={span.id}
+            data-machining-span-participation={span.participation}
+            data-upid-selected={selectedSpanId === span.id ? 'true' : undefined}
+            key={span.id}
+          >
             <div>
               <div className="font-mono text-foreground">{span.sourceSegmentId}</div>
               <div className="text-muted-foreground">

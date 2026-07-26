@@ -35,6 +35,7 @@ import {
   setPathOperationClassification,
   translatePathDocument
 } from '@/domain/path-editor/pathDocumentOperations';
+import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
 import { composeProjectUpidGCodeExport, withProjectUpid } from '@/domain/upid/projectUpid';
@@ -131,6 +132,133 @@ describe('EditorPage UPID draft boundary', () => {
         'button[aria-label="Undo active document change"]'
       ) as HTMLButtonElement | null)?.disabled
     ).toBe(true);
+  });
+
+  it('activates the exact inactive and derived machining spans from the program tree', async () => {
+    const originalDocument = pathDocumentFromRectangle();
+    const operation = originalDocument.plan.operations[0];
+    const pathDocument = setMachiningSpanParticipation(originalDocument, {
+      sourceSegmentId: operation.segmentRefs[0].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    });
+    expect(pathDocument).not.toBeNull();
+    const inactiveSpanId = pathDocument!.machiningParticipation!.spans[0].id;
+    const inactiveTreeKey = `operation:${operation.id}:inactive-span:${encodeURIComponent(inactiveSpanId)}`;
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={projectWithUpid(pathDocument!)}
+        />
+      );
+    });
+    await flushAsync();
+
+    await expandProgramTreeItem(`operation:${operation.id}:cut-path`);
+    const effectivePathItem = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')]
+      .find((item) =>
+        item.dataset.treeKey?.includes(':effective:') &&
+        !item.dataset.treeKey.includes(':span:')
+      );
+    expect(effectivePathItem?.dataset.treeKey).toBeTruthy();
+    await expandProgramTreeItem(effectivePathItem!.dataset.treeKey!);
+    const derivedSpanItem = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')]
+      .find((item) =>
+        item.dataset.treeKey?.includes(':effective:') &&
+        item.dataset.treeKey.includes(':span:')
+      );
+    expect(derivedSpanItem?.dataset.treeKey).toBeTruthy();
+    const derivedSpanId = decodeURIComponent(
+      derivedSpanItem!.dataset.treeKey!.split(':span:').at(-1)!
+    );
+    expect(derivedSpanId).toBeTruthy();
+
+    await pressProgramTreeItem(inactiveTreeKey, 'Enter');
+
+    expect(
+      container.querySelector(
+        `[data-machining-span-id="${inactiveSpanId}"][data-upid-selected="true"]`
+      )
+    ).not.toBeNull();
+
+    await pressProgramTreeItem(derivedSpanItem!.dataset.treeKey!, 'Enter');
+
+    expect(
+      container.querySelector(
+        `[data-machining-span-id="${derivedSpanId}"][data-upid-selected="true"]`
+      )
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        `[data-machining-span-id="${inactiveSpanId}"]`
+      )?.getAttribute('data-upid-selected')
+    ).not.toBe('true');
+  });
+
+  it('preserves the exact requested diagnostic through a dirty discard', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const operation = pathDocument.plan.operations[0];
+    const sharedSegmentId = operation.segmentRefs[0].segmentId;
+    const firstDiagnosticId = 'shared-ref-first';
+    const requestedDiagnosticId = 'shared-ref-requested';
+    const sharedDiagnostics: PathDiagnostic[] = [
+      {
+        id: firstDiagnosticId,
+        severity: 'warning',
+        code: 'endpoint-cluster-snap',
+        message: 'First diagnostic sharing a geometry reference.',
+        relatedSegmentIds: [sharedSegmentId]
+      },
+      {
+        id: requestedDiagnosticId,
+        severity: 'warning',
+        code: 'endpoint-cluster-snap',
+        message: 'Requested diagnostic sharing the same geometry reference.',
+        relatedSegmentIds: [sharedSegmentId]
+      }
+    ];
+    pathDocument.diagnostics.push(...sharedDiagnostics);
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={projectWithUpid(pathDocument)}
+        />
+      );
+    });
+    await flushAsync();
+
+    const requestedTreeKey =
+      `operation:${operation.id}:diagnostic:${requestedDiagnosticId}`;
+    await ensureProgramTreeItemExpanded('section:program');
+    await ensureProgramTreeItemExpanded(`operation:${operation.id}`);
+    expect(programTreeItem(requestedTreeKey)).not.toBeNull();
+
+    await clickProgramTreeButton(
+      `operation:${operation.id}:entry`,
+      'Edit Entry / lead-in'
+    );
+    await changeInput('input[aria-label="Entry X"]', '-2');
+    await pressProgramTreeItem(requestedTreeKey, 'Enter');
+
+    expect(visibleWorkflowPanelIds()).toEqual(['entry-exit']);
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      'before opening Path Diagnostics'
+    );
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+
+    expect(
+      container.querySelector(
+        `[data-upid-diagnostic-id="${requestedDiagnosticId}"]`
+      )?.getAttribute('data-upid-selected')
+    ).toBe('true');
+    expect(
+      container.querySelector(
+        `[data-upid-diagnostic-id="${firstDiagnosticId}"]`
+      )?.getAttribute('data-upid-selected')
+    ).not.toBe('true');
   });
 
   it('opens Entry / Exit for the explicit second operation and keeps a dirty first target on cancel', async () => {
@@ -3649,6 +3777,14 @@ describe('EditorPage UPID draft boundary', () => {
 
     await act(async () => expandButton?.click());
     await flushAsync();
+  }
+
+  async function ensureProgramTreeItemExpanded(treeKey: string) {
+    const item = programTreeItem(treeKey);
+    expect(item).not.toBeNull();
+    if (item?.getAttribute('aria-expanded') === 'false') {
+      await expandProgramTreeItem(treeKey);
+    }
   }
 
   async function clickProgramTreeButton(treeKey: string, ariaLabel: string) {

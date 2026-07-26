@@ -92,15 +92,22 @@ describe('editor workflow session', () => {
     });
   });
 
-  it('holds a switch request while the workflow is dirty', () => {
+  it('holds a switch request with its exact program-tree target while the workflow is dirty', () => {
     const session = markEditorWorkflowDirty(createSession());
+    const target = {
+      diagnosticId: 'diagnostic-2',
+      operationId: 'operation-2',
+      spanId: 'span-2',
+      stopId: null
+    };
 
     expect(requestEditorWorkflowTransition(session, {
       commandId: 'machining.entry-exit',
-      kind: 'open'
+      kind: 'open',
+      target
     })).toEqual({
       kind: 'held',
-      request: { commandId: 'machining.entry-exit', kind: 'open' },
+      request: { commandId: 'machining.entry-exit', kind: 'open', target },
       session
     });
   });

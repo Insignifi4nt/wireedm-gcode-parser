@@ -16,6 +16,8 @@ export interface EditorProgramTreeAction {
     | 'view.diagnostics';
   operationId: string | null;
   stopId: string | null;
+  spanId: string | null;
+  diagnosticId: string | null;
 }
 
 export function resolveEditorProgramTreeAction(
@@ -43,11 +45,16 @@ export function resolveEditorProgramTreeAction(
     case 'entry-exit':
       return action('machining.entry-exit', target.operationId);
     case 'machining-participation':
-      return action('machining.participation', target.operationId ?? null);
+      return action(
+        'machining.participation',
+        target.operationId ?? null,
+        null,
+        target.spanId ?? null
+      );
     case 'program-stop':
       return action('machining.program-stops', target.operationId, target.stopId);
     case 'diagnostics':
-      return action('view.diagnostics');
+      return action('view.diagnostics', null, null, null, target.diagnosticId);
     default:
       return assertNever(target);
   }
@@ -56,9 +63,11 @@ export function resolveEditorProgramTreeAction(
 function action(
   commandId: EditorProgramTreeAction['commandId'],
   operationId: string | null = null,
-  stopId: string | null = null
+  stopId: string | null = null,
+  spanId: string | null = null,
+  diagnosticId: string | null = null
 ): EditorProgramTreeAction {
-  return { commandId, operationId, stopId };
+  return { commandId, diagnosticId, operationId, spanId, stopId };
 }
 
 function assertNever(value: never): never {

@@ -111,6 +111,7 @@ interface EditorPathNavigatorPanelProps {
   pathTargetYDraft: string;
   pathTranslateXDraft: string;
   pathTranslateYDraft: string;
+  selectedDiagnosticId?: string | null;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
   onExpandedPathElementIdsChange: Dispatch<SetStateAction<Record<string, boolean>>>;
@@ -148,6 +149,7 @@ export function EditorPathNavigatorPanel({
   latestMeasurementPoint,
   measurementPoints,
   renderWorkspacePanel = (_id, _title, children) => children,
+  selectedDiagnosticId = null,
   selectedPathElement,
   selectedPathOperationId,
   onExpandedPathElementIdsChange,
@@ -1145,6 +1147,7 @@ export function EditorPathNavigatorPanel({
                     onHoverPathElement,
                     onOpenWorkspacePanel,
                     onSelectPathElement,
+                    selectedDiagnosticId,
                     selectedPathElement
                   })
                 )
@@ -1514,6 +1517,7 @@ function renderDiagnosticRow({
   onHoverPathElement,
   onOpenWorkspacePanel,
   onSelectPathElement,
+  selectedDiagnosticId,
   selectedPathElement
 }: {
   diagnostic: UpidSelectedPathDiagnostic;
@@ -1521,11 +1525,14 @@ function renderDiagnosticRow({
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onOpenWorkspacePanel?: (panelId: DiagnosticPanelActionId) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
+  selectedDiagnosticId: string | null;
   selectedPathElement: EditorPathElementRef | null;
 }) {
   const hoverElement = diagnostic.selectRef;
   const hovered = upidPathElementRefsMatch(hoverElement, hoveredPathElement);
-  const selected = upidPathElementRefsMatch(hoverElement, selectedPathElement);
+  const selected = selectedDiagnosticId !== null
+    ? diagnostic.id === selectedDiagnosticId
+    : upidPathElementRefsMatch(hoverElement, selectedPathElement);
   const selectDiagnostic = () => {
     if (hoverElement) onSelectPathElement(hoverElement);
   };

@@ -234,6 +234,8 @@ interface EditorDraftSnapshot {
   setStartInferenceMode: SetStartInferenceMode;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
+  selectedDiagnosticId: string | null;
+  selectedMachiningSpanId: string | null;
   selectedProgramTreeKey: string | null;
   selectedProgramStopId: string | null;
 }
@@ -714,6 +716,8 @@ export function EditorPage({
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [selectedPathElement, setSelectedPathElement] = useState<EditorPathElementRef | null>(null);
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
+  const [selectedDiagnosticId, setSelectedDiagnosticId] = useState<string | null>(null);
+  const [selectedMachiningSpanId, setSelectedMachiningSpanId] = useState<string | null>(null);
   const [selectedProgramTreeKey, setSelectedProgramTreeKey] = useState<string | null>(null);
   const [selectedProgramStopId, setSelectedProgramStopId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
@@ -1078,6 +1082,8 @@ export function EditorPage({
     pathClickMode,
     selectedPathElement,
     selectedPathOperationId,
+    selectedDiagnosticId,
+    selectedMachiningSpanId,
     selectedProgramStopId,
     selectedProgramTreeKey,
     workspacePanelPlacements
@@ -1138,6 +1144,8 @@ export function EditorPage({
     programTree,
     selectedPathElement,
     selectedPathOperationId,
+    selectedDiagnosticId,
+    selectedMachiningSpanId,
     selectedProgramStopId,
     selectedProgramTreeKey,
     activeHoveredPathElement,
@@ -1212,6 +1220,8 @@ export function EditorPage({
       workflowProjectSaveBlockedReason,
       selectedPathElement,
       selectedPathOperationId,
+      selectedDiagnosticId,
+      selectedMachiningSpanId,
       selectedProgramStopId,
       selectedProgramTreeKey,
       undoStack
@@ -1243,6 +1253,8 @@ export function EditorPage({
 
     setSelectedPathOperationId(null);
     setSelectedPathElement(null);
+    setSelectedDiagnosticId(null);
+    setSelectedMachiningSpanId(null);
     setSelectedProgramTreeKey(null);
     setSelectedProgramStopId(null);
     setHoveredPathElement(null);
@@ -1593,6 +1605,8 @@ export function EditorPage({
     }
     setSelectedPathOperationId(element.operationId);
     setSelectedPathElement(element);
+    setSelectedDiagnosticId(null);
+    setSelectedMachiningSpanId(null);
     return true;
   }
 
@@ -1606,6 +1620,8 @@ export function EditorPage({
     }
     setSelectedPathOperationId(operationId);
     setSelectedPathElement(null);
+    setSelectedDiagnosticId(null);
+    setSelectedMachiningSpanId(null);
   }
 
   function handleSelectPathOperation(operationId: string) {
@@ -1654,6 +1670,14 @@ export function EditorPage({
       setSelectedProgramStopId(null);
     }
 
+    setSelectedDiagnosticId(
+      node?.editTarget?.kind === 'diagnostics' ? node.editTarget.diagnosticId ?? null : null
+    );
+    setSelectedMachiningSpanId(
+      node?.editTarget?.kind === 'machining-participation'
+        ? node.editTarget.spanId ?? null
+        : null
+    );
     setSelectedProgramTreeKey(treeKey);
   }
 
@@ -2584,6 +2608,8 @@ export function EditorPage({
     });
     setSelectedPathOperationId(null);
     setSelectedPathElement(null);
+    setSelectedDiagnosticId(null);
+    setSelectedMachiningSpanId(null);
     setSelectedProgramTreeKey(null);
     setSelectedProgramStopId(null);
     setPathClickMode(null);
@@ -2606,6 +2632,8 @@ export function EditorPage({
       setStartInferenceMode,
       selectedPathElement,
       selectedPathOperationId,
+      selectedDiagnosticId,
+      selectedMachiningSpanId,
       selectedProgramTreeKey,
       selectedProgramStopId
     };
@@ -2613,7 +2641,10 @@ export function EditorPage({
 
   function snapshotForProgramTreeAction(
     snapshot: EditorDraftSnapshot,
-    action: Pick<EditorProgramTreeAction, 'operationId' | 'stopId'>,
+    action: Pick<
+      EditorProgramTreeAction,
+      'diagnosticId' | 'operationId' | 'spanId' | 'stopId'
+    >,
     selectedTreeKey: string | null
   ): EditorDraftSnapshot {
     const document = editorDraftPathDocument(snapshot.draft);
@@ -2626,6 +2657,8 @@ export function EditorPage({
       null;
     return {
       ...snapshot,
+      selectedDiagnosticId: action.diagnosticId,
+      selectedMachiningSpanId: action.spanId,
       selectedPathOperationId,
       selectedProgramTreeKey: selectedTreeKey,
       selectedPathElement: document && selectedPathOperationId
@@ -2655,6 +2688,8 @@ export function EditorPage({
     setSetStartInferenceMode(snapshot.setStartInferenceMode);
     const restoredOperationId = restoredPathDocument ? snapshot.selectedPathOperationId : null;
     setSelectedPathOperationId(restoredOperationId);
+    setSelectedDiagnosticId(snapshot.selectedDiagnosticId);
+    setSelectedMachiningSpanId(snapshot.selectedMachiningSpanId);
     setSelectedProgramTreeKey(snapshot.selectedProgramTreeKey);
     setSelectedProgramStopId(snapshot.selectedProgramStopId);
     setSelectedPathElement(
@@ -2873,7 +2908,12 @@ export function EditorPage({
         commandId: command.id,
         kind: 'open',
         ...(action ? {
-          target: { operationId: action.operationId, stopId: action.stopId }
+          target: {
+            diagnosticId: action.diagnosticId,
+            operationId: action.operationId,
+            spanId: action.spanId,
+            stopId: action.stopId
+          }
         } : {})
       });
       if (transition.kind === 'held') {
@@ -2923,6 +2963,8 @@ export function EditorPage({
     }
     setSelectedPathOperationId(openingSnapshot.selectedPathOperationId);
     setSelectedPathElement(openingSnapshot.selectedPathElement);
+    setSelectedDiagnosticId(openingSnapshot.selectedDiagnosticId);
+    setSelectedMachiningSpanId(openingSnapshot.selectedMachiningSpanId);
     setSelectedProgramTreeKey(openingSnapshot.selectedProgramTreeKey);
     setSelectedProgramStopId(openingSnapshot.selectedProgramStopId);
     const panelId = command.toolWindowId as EditorWorkspacePanelId;
@@ -3201,6 +3243,7 @@ export function EditorPage({
         pathTranslateXDraft={pathTranslateXDraft}
         pathTranslateYDraft={pathTranslateYDraft}
         renderWorkspacePanel={renderWorkspacePanel}
+        selectedDiagnosticId={selectedDiagnosticId}
         selectedPathElement={selectedPathElement}
         selectedPathOperationId={selectedPathOperationId}
         onPathTranslateXDraftChange={setPathTranslateXDraft}
@@ -3714,6 +3757,7 @@ export function EditorPage({
               onSetWireSide={handleSetPartialContourCompensationSide}
               selectedOperationId={selectedPathOperationId}
               selectedSegmentId={selectedPathElement?.segmentId ?? null}
+              selectedSpanId={selectedMachiningSpanId}
               targetChangeBlocked={workflowTargetChangeBlocked}
             />
           )}

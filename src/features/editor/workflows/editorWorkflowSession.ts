@@ -29,7 +29,9 @@ export type EditorWorkflowSession<TSnapshot = unknown> =
   | EditorViewWorkflowSession<TSnapshot>;
 
 export interface EditorWorkflowOpenTarget {
+  diagnosticId: string | null;
   operationId: string | null;
+  spanId: string | null;
   stopId: string | null;
 }
 
