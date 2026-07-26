@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   machineProfileHasCurrentVerification,
+  machineProfileVerificationFingerprint,
   markMachineProfileUserVerified
 } from '@/domain/machine/machineProfiles';
 import {
@@ -81,6 +82,38 @@ describe('updateProjectMachineProfile', () => {
       status: 'user-verified',
       verifiedAt: reviewedAt.toISOString()
     });
+    expect(machineProfileHasCurrentVerification(result.project.machine)).toBe(true);
+  });
+
+  it('creates a new current fingerprint when only the validation lead is reviewed', () => {
+    const project = createWorkbenchProject({
+      id: 'reviewed-project-machine-lead',
+      name: 'Reviewed project machine lead',
+      sourceKind: 'dxf'
+    });
+    project.machine = markMachineProfileUserVerified(
+      project.machine,
+      new Date('2026-07-27T09:00:00.000Z')
+    );
+    const originalFingerprint = machineProfileVerificationFingerprint(project.machine);
+
+    const result = updateProjectMachineProfile(
+      project,
+      {
+        ...projectMachineProfileDraft(project.machine),
+        validationLeadLengthMm: '0.5'
+      },
+      { reviewedAt: new Date('2026-07-27T10:30:00.000Z') }
+    );
+
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) throw new Error('Expected a reviewed project-machine update.');
+    expect(machineProfileVerificationFingerprint(result.project.machine)).not.toBe(
+      originalFingerprint
+    );
+    expect(result.project.machine.controller.verification.verifiedFingerprint).toBe(
+      machineProfileVerificationFingerprint(result.project.machine)
+    );
     expect(machineProfileHasCurrentVerification(result.project.machine)).toBe(true);
   });
 

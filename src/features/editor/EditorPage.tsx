@@ -262,6 +262,9 @@ const SET_START_COMMAND: EditorCommandDefinition = {
   workflow: { kind: 'mutating' }
 };
 
+const REBASE_MACHINE_WORKFLOW_REVIEW_REASON =
+  'Project machine settings changed upstream. Review and verify this machine draft again before saving.';
+
 type EditorWorkspacePanelId =
   | 'path-summary'
   | 'geometry-setup'
@@ -1306,6 +1309,12 @@ export function EditorPage({
     const nextMachineProfile = program?.project?.machine
       ? structuredClone(program.project.machine)
       : null;
+    const rebasesDirtyMachineWorkflow = Boolean(
+      !identityChanged &&
+      activeWorkflowSession?.kind === 'mutating' &&
+      activeWorkflowSession.commandId === 'machine.profile' &&
+      activeWorkflowSession.dirty
+    );
     setDraftState((current) =>
       editorDraftSignature(current) === editorDraftSignature(nextDraft) ? current : nextDraft
     );
@@ -1316,6 +1325,38 @@ export function EditorPage({
     );
 
     if (!identityChanged) {
+      setActiveWorkflowSession((current) => {
+        if (current?.commandId !== 'machine.profile') return current;
+        const rebasedOpeningSnapshot = {
+          ...current.openingSnapshot,
+          draft: cloneEditorDraftState(nextDraft),
+          machineProfile: nextMachineProfile
+            ? structuredClone(nextMachineProfile)
+            : null
+        };
+        if (current.kind === 'mutating') {
+          const rebasedSession = {
+            ...current,
+            openingSnapshot: rebasedOpeningSnapshot
+          };
+          return current.dirty
+            ? markEditorWorkflowDirty(rebasedSession, {
+                enabled: false,
+                reason: REBASE_MACHINE_WORKFLOW_REVIEW_REASON
+              })
+            : rebasedSession;
+        }
+        return {
+          ...current,
+          openingSnapshot: rebasedOpeningSnapshot
+        };
+      });
+      if (rebasesDirtyMachineWorkflow) {
+        setActiveWorkflowPendingReasons((current) => ({
+          ...current,
+          'machine-profile-form': REBASE_MACHINE_WORKFLOW_REVIEW_REASON
+        }));
+      }
       const nextPathDocument = editorDraftPathDocument(nextDraft);
       if (!nextPathDocument) return;
       if (!selectedPathOperationId && !selectedPathElement) return;
@@ -3541,6 +3582,11 @@ export function EditorPage({
                   'Review and verify valid project machine settings before saving.'
                 )}
                 onUpdateProject={handleUpdateProjectMachine}
+                preserveDraftOnProjectChange={Boolean(
+                  activeWorkflowSession?.kind === 'mutating' &&
+                  activeWorkflowSession.commandId === 'machine.profile' &&
+                  activeWorkflowSession.dirty
+                )}
                 project={draftProject}
               />
             ) : undefined

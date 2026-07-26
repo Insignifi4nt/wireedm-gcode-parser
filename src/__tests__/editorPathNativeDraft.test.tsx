@@ -2488,6 +2488,148 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBeNull();
   });
 
+  it('rebases dirty machine-workflow discard onto a same-project upstream snapshot', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    project.machine = markMachineProfileUserVerified(
+      project.machine,
+      new Date('2026-07-27T08:00:00.000Z')
+    );
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="machine.profile"
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await changeInput('input[aria-label="Output coordinate precision"]', '4');
+    await clickElement('button[aria-label="Review and verify project machine settings"]');
+
+    const upstreamProject = structuredClone(project);
+    upstreamProject.machine.output.coordinatePrecision = 5;
+    upstreamProject.machine.notes = 'Upstream machine revision';
+    upstreamProject.machine = markMachineProfileUserVerified(
+      upstreamProject.machine,
+      new Date('2026-07-27T09:00:00.000Z')
+    );
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="machine.profile"
+          onSaveEditorDraft={vi.fn()}
+          project={upstreamProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(
+      (container.querySelector(
+        'input[aria-label="Output coordinate precision"]'
+      ) as HTMLInputElement | null)?.value
+    ).toBe('4');
+    await clickElement('[data-editor-workflow-command="view.summary"]');
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      'before opening Path Summary'
+    );
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    await clickElement('[data-editor-workflow-command="machine.profile"]');
+
+    expect(
+      (container.querySelector(
+        'input[aria-label="Output coordinate precision"]'
+      ) as HTMLInputElement | null)?.value
+    ).toBe('5');
+    expect(
+      (container.querySelector(
+        'button[aria-label="Undo active document change"]'
+      ) as HTMLButtonElement | null)?.disabled
+    ).toBe(true);
+  });
+
+  it('re-reviews a rebased machine draft and records the upstream snapshot as one undo', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    project.machine = markMachineProfileUserVerified(
+      project.machine,
+      new Date('2026-07-27T08:00:00.000Z')
+    );
+    const onSaveEditorDraft = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="machine.profile"
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await changeInput('input[aria-label="Output coordinate precision"]', '4');
+    await clickElement('button[aria-label="Review and verify project machine settings"]');
+
+    const upstreamProject = structuredClone(project);
+    upstreamProject.machine.output.coordinatePrecision = 5;
+    upstreamProject.machine.notes = 'Upstream machine revision';
+    upstreamProject.machine = markMachineProfileUserVerified(
+      upstreamProject.machine,
+      new Date('2026-07-27T09:00:00.000Z')
+    );
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="machine.profile"
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={upstreamProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(
+      (container.querySelector(
+        'input[aria-label="Output coordinate precision"]'
+      ) as HTMLInputElement | null)?.value
+    ).toBe('4');
+    expect(
+      (container.querySelector(
+        '[data-editor-workflow-actions="machine.profile"] button[aria-label^="Save "]'
+      ) as HTMLButtonElement | null)?.disabled
+    ).toBe(true);
+
+    await clickElement('button[aria-label="Review and verify project machine settings"]');
+    await clickElement(
+      '[data-editor-workflow-actions="machine.profile"] button[aria-label^="Save "]'
+    );
+    await clickElement('button[aria-label="Undo active document change"]');
+    await clickElement('[data-editor-workflow-command="machine.profile"]');
+    expect(
+      (container.querySelector(
+        'input[aria-label="Output coordinate precision"]'
+      ) as HTMLInputElement | null)?.value
+    ).toBe('5');
+    await clickElement(
+      '[data-editor-workflow-actions="machine.profile"] button[aria-label^="Cancel "]'
+    );
+
+    await clickElement('button[aria-label="Redo active document change"]');
+    await clickElement('button[aria-label="Save active document"]');
+
+    const savedDraft = onSaveEditorDraft.mock.calls[0]?.[0] as EditorSaveDraft | undefined;
+    expect(savedDraft).toMatchObject({
+      model: 'upid-document',
+      machineProfile: {
+        notes: 'Upstream machine revision',
+        output: { coordinatePrecision: 4 }
+      }
+    });
+  });
+
   it('does not offer a radial center-pierce lead-in for active controller compensation', async () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     let document = initializeProjectCompensationIntents(
@@ -4463,7 +4605,7 @@ function projectWithPrecisionCollapsedMachine() {
     cancellation: 'linear-lead-out',
     lifecycleScope: 'operation',
     preActivationCodes: [],
-    validationLeadLengthMm: 2,
+    validationLeadLengthMm: 0.0004,
     expectedMaximumOffsetMm: 0.25
   };
   machine.templates = { header: 'G90', footer: '' };
@@ -4471,7 +4613,6 @@ function projectWithPrecisionCollapsedMachine() {
     machine,
     new Date('2026-07-13T00:00:00.000Z')
   );
-  verifiedMachine.compensation.validationLeadLengthMm = 0.0004;
   const document = setManualInitialWirePosition(
     initializeProjectCompensationIntents(
       dxfEntitiesToUpidDocument(parseDxf(circleDxf()).entities),

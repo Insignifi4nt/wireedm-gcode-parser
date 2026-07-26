@@ -12,6 +12,7 @@ interface EditorProjectMachinePanelProps {
   disabled: boolean;
   onDraftChange?: () => void;
   onUpdateProject: (project: WorkbenchProject) => void;
+  preserveDraftOnProjectChange?: boolean;
   project: WorkbenchProject;
 }
 
@@ -19,6 +20,7 @@ export function EditorProjectMachinePanel({
   disabled,
   onDraftChange,
   onUpdateProject,
+  preserveDraftOnProjectChange = false,
   project
 }: EditorProjectMachinePanelProps) {
   const sourceKey = useMemo(() => JSON.stringify(project.machine), [project.machine]);
@@ -30,9 +32,10 @@ export function EditorProjectMachinePanel({
   >({});
 
   useEffect(() => {
+    if (preserveDraftOnProjectChange) return;
     setDraft(projectMachineProfileDraft(project.machine));
     setErrors({});
-  }, [sourceKey, project.machine]);
+  }, [preserveDraftOnProjectChange, sourceKey, project.machine]);
 
   function updateField(field: ProjectMachineProfileDraftField, value: string) {
     setDraft((current) => ({ ...current, [field]: value }));

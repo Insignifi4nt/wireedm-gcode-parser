@@ -169,6 +169,25 @@ describe('machine profile policies', () => {
     }).controller.verification.status).toBe('unverified');
   });
 
+  it('rejects a pre-lead fingerprint after the validation lead changes', () => {
+    const verified = markMachineProfileUserVerified(
+      createCharmillesRobofilClassicProfile(),
+      new Date('2026-07-13T09:30:00.000Z')
+    );
+    const preLeadFingerprint = JSON.parse(
+      machineProfileVerificationFingerprint(verified)
+    ) as Record<string, unknown>;
+    delete preLeadFingerprint.validationLeadLengthMm;
+    const changed = structuredClone(verified);
+    changed.compensation.validationLeadLengthMm = 0.5;
+    changed.controller.verification.verifiedFingerprint =
+      JSON.stringify(preLeadFingerprint);
+
+    expect(normalizeMachineProfile(changed).controller.verification).toEqual({
+      status: 'unverified'
+    });
+  });
+
   it('preserves verification across non-controller-sensitive edits', () => {
     const verified = markMachineProfileUserVerified(
       createCharmillesRobofilClassicProfile(),
@@ -285,6 +304,7 @@ function legacyVerificationFingerprint(profile: MachineProfile) {
     cancellation: profile.compensation.cancellation,
     lifecycleScope: profile.compensation.lifecycleScope,
     preActivationCodes: profile.compensation.preActivationCodes,
+    validationLeadLengthMm: profile.compensation.validationLeadLengthMm,
     templates: profile.templates,
     lineEnding: profile.output.lineEnding,
     coordinatePrecision: profile.output.coordinatePrecision
