@@ -4069,7 +4069,11 @@ export function EditorPage({
         {isPathProject && renderInspectorPanelContent()}
       </div>
       <section
-        className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)] gap-y-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)]"
+        className={`grid min-h-0 flex-1 grid-cols-1 gap-y-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)] ${
+          isPathProject
+            ? 'grid-rows-[minmax(0,1fr)]'
+            : 'grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)]'
+        }`}
         data-editor-main-grid
         data-has-active-right-dock={hasActiveRightDock ? 'true' : 'false'}
         data-inspector-collapsed={inspectorRailCollapsed ? 'true' : 'false'}

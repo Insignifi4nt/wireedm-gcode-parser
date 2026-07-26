@@ -367,6 +367,16 @@ test('middle-width path editor defaults to a compact rail and floats remembered 
     'grid-template-columns',
     '36px 764px'
   );
+  const mainGrid = page.locator('[data-editor-main-grid]');
+  const canvas = page.locator('[data-editor-canvas-panel]');
+  await expect.poll(async () => {
+    const [mainGridBox, canvasBox] = await Promise.all([
+      mainGrid.boundingBox(),
+      canvas.boundingBox()
+    ]);
+    if (!mainGridBox || !canvasBox) return false;
+    return canvasBox.height >= mainGridBox.height - 20;
+  }).toBe(true);
   await openCompactWorkflowCommand(page, 'Machining', 'machining.entry-exit');
 
   const floatingPanel = page.locator('[data-editor-floating-panel="entry-exit"]');
@@ -374,7 +384,7 @@ test('middle-width path editor defaults to a compact rail and floats remembered 
   await page.getByRole('button', { name: 'Dock Entry / Exit right' }).click();
   await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
   await expect(floatingPanel).toBeVisible();
-  await expect(page.locator('[data-editor-main-grid]')).toHaveAttribute(
+  await expect(mainGrid).toHaveAttribute(
     'data-has-active-right-dock',
     'false'
   );
