@@ -133,7 +133,18 @@ describe('generateLinearCompensationTransition', () => {
 
     expect(transition(document, operation)).toEqual({
       status: 'blocked',
-      reason: 'sharp-manual-start'
+      reason: 'sharp-manual-start',
+      owner: 'contour-start'
+    });
+  });
+
+  it('attributes automatic sharp topology to a contour-start workflow', () => {
+    const document = rectangleDocument();
+
+    expect(transition(document, closedOperation(document))).toEqual({
+      status: 'blocked',
+      reason: 'no-safe-candidate',
+      owner: 'contour-start'
     });
   });
 
@@ -161,7 +172,8 @@ describe('generateLinearCompensationTransition', () => {
 
     expect(transition(document, closedOperation(document))).toEqual({
       status: 'blocked',
-      reason: 'collision'
+      reason: 'collision',
+      owner: 'contour-start'
     });
   });
 
@@ -177,7 +189,11 @@ describe('generateLinearCompensationTransition', () => {
       expectedMaximumOffsetMm: 0.25,
       coordinatePrecision: 3,
       workArea: { widthMm: null, lengthMm: null }
-    })).toEqual({ status: 'blocked', reason: 'collision' });
+    })).toEqual({
+      status: 'blocked',
+      reason: 'collision',
+      owner: 'contour-start'
+    });
   });
 
   it('blocks overlapping leads and non-incident contacts at the intended start point', () => {
@@ -189,10 +205,10 @@ describe('generateLinearCompensationTransition', () => {
     ]);
 
     expect(transition(overlap, overlapOperation)).toEqual({
-      status: 'blocked', reason: 'collision'
+      status: 'blocked', reason: 'collision', owner: 'contour-start'
     });
     expect(transition(externalContact, closedOperation(externalContact))).toEqual({
-      status: 'blocked', reason: 'collision'
+      status: 'blocked', reason: 'collision', owner: 'contour-start'
     });
   });
 
@@ -203,7 +219,8 @@ describe('generateLinearCompensationTransition', () => {
 
     expect(transition(document, closedOperation(document))).toEqual({
       status: 'blocked',
-      reason: 'collision'
+      reason: 'collision',
+      owner: 'contour-start'
     });
   });
 
@@ -218,7 +235,11 @@ describe('generateLinearCompensationTransition', () => {
       expectedMaximumOffsetMm: 0.5,
       coordinatePrecision: 3,
       workArea: { widthMm: 10, lengthMm: 10 }
-    })).toEqual({ status: 'blocked', reason: 'outside-work-area' });
+    })).toEqual({
+      status: 'blocked',
+      reason: 'outside-work-area',
+      owner: 'machine-profile'
+    });
   });
 
   it('blocks transition moves that collapse at configured coordinate precision', () => {
@@ -232,7 +253,28 @@ describe('generateLinearCompensationTransition', () => {
       expectedMaximumOffsetMm: 0.0001,
       coordinatePrecision: 3,
       workArea: { widthMm: null, lengthMm: null }
-    })).toEqual({ status: 'blocked', reason: 'precision-collapse' });
+    })).toEqual({
+      status: 'blocked',
+      reason: 'precision-collapse',
+      owner: 'machine-profile'
+    });
+  });
+
+  it('attributes an invalid machine lead length to the machine profile', () => {
+    const document = circleDocument();
+
+    expect(generateLinearCompensationTransition({
+      document,
+      operation: closedOperation(document),
+      leadLengthMm: 0,
+      expectedMaximumOffsetMm: 0.25,
+      coordinatePrecision: 3,
+      workArea: { widthMm: null, lengthMm: null }
+    })).toEqual({
+      status: 'blocked',
+      reason: 'no-safe-candidate',
+      owner: 'machine-profile'
+    });
   });
 
   it('requires a finite positive collision envelope', () => {
@@ -246,7 +288,11 @@ describe('generateLinearCompensationTransition', () => {
       expectedMaximumOffsetMm: null,
       coordinatePrecision: 3,
       workArea: { widthMm: null, lengthMm: null }
-    })).toEqual({ status: 'blocked', reason: 'missing-envelope' });
+    })).toEqual({
+      status: 'blocked',
+      reason: 'missing-envelope',
+      owner: 'machine-profile'
+    });
   });
 });
 

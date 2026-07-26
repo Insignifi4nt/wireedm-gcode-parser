@@ -107,6 +107,47 @@ describe('EditorEntryExitPanel', () => {
     expect(container.textContent).not.toContain('Project default');
   });
 
+  it('renders duplicate imported order indices in deterministic execution position order', async () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
+    ]);
+    const [first, second] = document.plan.operations;
+    first.orderIndex = 9;
+    second.orderIndex = 9;
+    document.plan.operations = [second, first];
+
+    await act(async () => {
+      root.render(
+        <EditorEntryExitPanel
+          canvasPickMode={null}
+          disabled={false}
+          document={document}
+          machine={createCharmillesRobofil100V2CandidateProfile()}
+          onCanvasPickModeChange={vi.fn()}
+          onSelectOperation={vi.fn()}
+          onSetCircleCenterEntry={vi.fn()}
+          onSetManualEntry={vi.fn()}
+          onSetManualExit={vi.fn()}
+          onSetNoEntry={vi.fn()}
+          onSetNoExit={vi.fn()}
+          selectedOperationId={second.id}
+        />
+      );
+    });
+
+    const select = container.querySelector<HTMLSelectElement>(
+      '[aria-label="Entry and exit operation"]'
+    )!;
+    const options = [...select.options];
+    expect(options.map((option) => option.value)).toEqual([first.id, second.id]);
+    expect(options.map((option) => option.textContent)).toEqual([
+      `01. ${first.displayName}`,
+      `02. ${second.displayName}`
+    ]);
+    expect(select.value).toBe(second.id);
+  });
+
   it('gates and emits reviewed no-entry and no-exit choices through the Robofil v2 envelope', async () => {
     const document = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }

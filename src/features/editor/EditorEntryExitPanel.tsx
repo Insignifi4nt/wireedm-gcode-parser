@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
+import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { robofilV2PostEnvelopeIsReady } from '@/domain/post/verifiedRobofilPostEnvelope';
 import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 import type { MachineProfile } from '@/domain/workbench/types';
@@ -45,9 +46,13 @@ export function EditorEntryExitPanel({
   selectedOperationId,
   targetChangeBlocked = false
 }: EditorEntryExitPanelProps) {
-  const selected = document.plan.operations.find(
+  const operations = useMemo(
+    () => orderedPathOperations(document.plan.operations),
+    [document.plan.operations]
+  );
+  const selected = operations.find(
     (operation) => operation.id === selectedOperationId
-  ) ?? document.plan.operations[0] ?? null;
+  ) ?? operations[0] ?? null;
   const transitions = selected ? readOperationTransitions(selected) : {};
   const [entryX, setEntryX] = useState('');
   const [entryY, setEntryY] = useState('');
@@ -105,9 +110,9 @@ export function EditorEntryExitPanel({
                 : undefined
           }
         >
-          {document.plan.operations.map((operation) => (
+          {operations.map((operation, executionIndex) => (
             <option key={operation.id} value={operation.id}>
-              {operation.orderIndex + 1}. {operation.displayName}
+              {String(executionIndex + 1).padStart(2, '0')}. {operation.displayName}
             </option>
           ))}
         </select>

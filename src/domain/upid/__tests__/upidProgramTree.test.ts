@@ -153,10 +153,10 @@ describe('UPID program tree projection', () => {
     expect(readyTree.programStatus).toBe('ready');
   });
 
-  it('keeps automatic no-safe-candidate ownership on Entry / lead-in', () => {
+  it('offers Contour start for no-safe-candidate and clears it with a smooth split start', () => {
     const machine = verifiedGenericExplicitMachine();
     const initialized = initializeProjectCompensationIntents(
-      createUpidFromDxfEntities(rectangleLines(0, 0, 10, 5)),
+      createUpidFromDxfEntities(sharpArcContourEntities()),
       machine
     );
     const operation = initialized.plan.operations[0];
@@ -174,22 +174,99 @@ describe('UPID program tree projection', () => {
     expect(posted.diagnostics).toContainEqual(expect.objectContaining({
       details: expect.objectContaining({ reason: 'no-safe-candidate' })
     }));
-    expect(entry).toMatchObject({
+    expect(entry?.status).toBe('ready');
+    expect(contourStart).toMatchObject({
       status: 'blocked',
       statusReason: 'no-safe-candidate',
       statusActionTarget: {
-        kind: 'entry-exit',
+        kind: 'contour-start',
         operationId: operation.id
       }
     });
-    expect(contourStart).toMatchObject({
-      status: 'ready',
-      statusReason: undefined,
-      statusActionTarget: undefined
-    });
+
+    const withSmoothSplitStart = setClosedOperationStartNearPoint(
+      document,
+      operation.id,
+      { x: 5, y: 0 }
+    )!;
+    const readyPost = postUpidForMachine(withSmoothSplitStart, machine);
+    const readyTree = buildUpidProgramTree(withSmoothSplitStart, machine);
+
+    expect(readyPost.status).toBe('ready');
+    expect(readyTree.operations[0].status).toBe('ready');
+    expect(readyTree.programStatus).toBe('ready');
   });
 
-  it('owns collision at Contour start only when an explicit start selected the failing lead', () => {
+  it('offers Machine setup for precision-collapse and clears it with verified output precision', () => {
+    const blockedMachine = verifiedGenericExplicitMachine();
+    blockedMachine.compensation.validationLeadLengthMm = 0.0004;
+    const document = compensatedCircleDocument(blockedMachine);
+
+    const blockedPost = postUpidForMachine(document, blockedMachine);
+    const blockedTree = buildUpidProgramTree(document, blockedMachine);
+    const machineSetup = blockedTree.sourceSetup.find(
+      (node) => node.editTarget?.kind === 'machine-setup'
+    );
+
+    expect(blockedPost.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({ reason: 'precision-collapse' })
+    }));
+    expect(machineSetup).toMatchObject({
+      status: 'blocked',
+      statusReason: 'precision-collapse',
+      statusActionTarget: { kind: 'machine-setup' }
+    });
+    expect(blockedTree.sourceSetup.filter(
+      (node) => node.statusReason === 'precision-collapse'
+    )).toHaveLength(1);
+    expect(blockedTree.programStatus).toBe('ready');
+
+    const editedMachine = structuredClone(blockedMachine);
+    editedMachine.output.coordinatePrecision = 4;
+    const readyMachine = markMachineProfileUserVerified(editedMachine);
+    const readyPost = postUpidForMachine(document, readyMachine);
+    const readyTree = buildUpidProgramTree(document, readyMachine);
+
+    expect(readyPost.status).toBe('ready');
+    expect(readyTree.sourceSetupStatus).toBe('ready');
+    expect(readyTree.status).toBe('ready');
+  });
+
+  it('offers Machine setup for outside-work-area and clears it with a larger work area', () => {
+    const blockedMachine = verifiedGenericExplicitMachine();
+    blockedMachine.workArea = { widthMm: 10, lengthMm: 10 };
+    const document = compensatedCircleDocument(blockedMachine);
+
+    const blockedPost = postUpidForMachine(document, blockedMachine);
+    const blockedTree = buildUpidProgramTree(document, blockedMachine);
+    const machineSetup = blockedTree.sourceSetup.find(
+      (node) => node.editTarget?.kind === 'machine-setup'
+    );
+
+    expect(blockedPost.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({ reason: 'outside-work-area' })
+    }));
+    expect(machineSetup).toMatchObject({
+      status: 'blocked',
+      statusReason: 'outside-work-area',
+      statusActionTarget: { kind: 'machine-setup' }
+    });
+    expect(blockedTree.sourceSetup.filter(
+      (node) => node.statusReason === 'outside-work-area'
+    )).toHaveLength(1);
+    expect(blockedTree.programStatus).toBe('ready');
+
+    const readyMachine = structuredClone(blockedMachine);
+    readyMachine.workArea = { widthMm: 20, lengthMm: 20 };
+    const readyPost = postUpidForMachine(document, readyMachine);
+    const readyTree = buildUpidProgramTree(document, readyMachine);
+
+    expect(readyPost.status).toBe('ready');
+    expect(readyTree.sourceSetupStatus).toBe('ready');
+    expect(readyTree.status).toBe('ready');
+  });
+
+  it('owns generated collision at Contour start with or without an explicit start', () => {
     const machine = verifiedGenericExplicitMachine();
     let initialized = initializeProjectCompensationIntents(
       createUpidFromDxfEntities([
@@ -224,14 +301,41 @@ describe('UPID program tree projection', () => {
       })
     );
     expect(automaticEntry).toMatchObject({
+      status: 'ready',
+      statusReason: undefined,
+      statusActionTarget: undefined
+    });
+    expect(automaticContourStart).toMatchObject({
       status: 'blocked',
       statusReason: 'collision',
       statusActionTarget: {
-        kind: 'entry-exit',
+        kind: 'contour-start',
         operationId: operation.id
       }
     });
-    expect(automaticContourStart?.status).toBe('ready');
+
+    const relocated = setClosedOperationStartNearPoint(
+      automatic,
+      operation.id,
+      { x: 0, y: 5 }
+    )!;
+    const relocatedPost = postUpidForMachine(relocated, machine);
+    const relocatedTree = buildUpidProgramTree(relocated, machine);
+    const relocatedRoot = relocatedTree.operations.find(
+      (node) => node.operationId === operation.id
+    )!;
+    const relocatedContourStart = relocatedRoot.children
+      .find((node) => node.label === 'Cut path')
+      ?.children.find((node) => node.label === 'Contour start');
+
+    expect(relocatedPost.status).toBe('ready');
+    expect(relocatedContourStart).toMatchObject({
+      status: 'ready',
+      statusReason: undefined,
+      statusActionTarget: undefined
+    });
+    expect(relocatedRoot.statusReason).not.toBe('collision');
+    expect(relocatedTree.programStatusReason).not.toBe('collision');
 
     const manual = setClosedOperationStartNearPoint(
       automatic,
@@ -1158,6 +1262,16 @@ function verifiedGenericExplicitMachine() {
   );
 }
 
+function compensatedCircleDocument(machine: ReturnType<typeof verifiedGenericExplicitMachine>) {
+  const initialized = initializeProjectCompensationIntents(
+    createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+    ]),
+    machine
+  );
+  return setManualInitialWirePosition(initialized, { x: 0, y: 0 })!;
+}
+
 function smoothAlternateStartEntities() {
   return [
     {
@@ -1183,6 +1297,23 @@ function smoothAlternateStartEntities() {
       end: { x: -5, y: 0 }
     },
     line(-5, 0, 5, 0)
+  ];
+}
+
+function sharpArcContourEntities() {
+  return [
+    {
+      type: 'arc' as const,
+      layer: 'CUT',
+      center: { x: 0, y: 0 },
+      radius: 5,
+      startAngle: -90,
+      endAngle: 90,
+      clockwise: false,
+      start: { x: 0, y: -5 },
+      end: { x: 0, y: 5 }
+    },
+    line(0, 5, 0, -5)
   ];
 }
 

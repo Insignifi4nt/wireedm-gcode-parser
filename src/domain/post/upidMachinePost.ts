@@ -1,4 +1,7 @@
-import { validateCompensatedExport } from '@/domain/compensation/validateCompensatedExport';
+import {
+  validateCompensatedExport,
+  type CompensatedExportReadiness
+} from '@/domain/compensation/validateCompensatedExport';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
 import { machineProfileHasCurrentVerification } from '@/domain/machine/machineProfiles';
 import {
@@ -329,7 +332,11 @@ export function prepareUpidMachinePost(
           reason: readiness.reason,
           document,
           machining,
-          issues: preparationIssues(readiness.reason, [operation])
+          issues: preparationIssues(
+            readiness.reason,
+            [operation],
+            readiness.failureOwner
+          )
         });
       }
       if (readiness.strategy !== 'explicit-linear' || !readiness.transition) {
@@ -1116,7 +1123,11 @@ function prepareRobofilV2(
         reason: readiness.reason,
         document,
         machining,
-        issues: preparationIssues(readiness.reason, [operation])
+        issues: preparationIssues(
+          readiness.reason,
+          [operation],
+          readiness.failureOwner
+        )
       });
     }
     resolutionByOperationId.set(operation.id, readiness.resolution.code);
@@ -1779,11 +1790,12 @@ function blockedReason(
 
 function operationIssue(
   operation: PathPlanningDocument['plan']['operations'][number],
-  reason: string
+  reason: string,
+  scope = preparationIssueScope(reason)
 ): UpidMachinePostPreparationIssue {
   return {
     reason,
-    scope: preparationIssueScope(reason, operation),
+    scope,
     effectiveOperationId: operation.id,
     sourceOperationId:
       operation.machiningIntent?.sourceOperationId ?? operation.id
@@ -1799,20 +1811,27 @@ function globalPreparationIssue(
 
 function preparationIssues(
   reason: string,
-  operations: readonly PathPlanningDocument['plan']['operations'][number][]
+  operations: readonly PathPlanningDocument['plan']['operations'][number][],
+  failureOwner?: Extract<
+    CompensatedExportReadiness,
+    { status: 'blocked' }
+  >['failureOwner']
 ): UpidMachinePostPreparationIssue[] {
-  const scope = preparationIssueScope(reason);
+  const scope = failureOwner === 'machine-profile'
+    ? 'machine-setup'
+    : failureOwner === 'contour-start'
+      ? 'contour-start'
+      : preparationIssueScope(reason);
   return scope === 'entry-exit' ||
     scope === 'contour-start' ||
     scope === 'cut-path' ||
     scope === 'program-stop'
-    ? operations.map((operation) => operationIssue(operation, reason))
+    ? operations.map((operation) => operationIssue(operation, reason, scope))
     : [globalPreparationIssue(reason, scope)];
 }
 
 function preparationIssueScope(
-  reason: string,
-  operation?: PathPlanningDocument['plan']['operations'][number]
+  reason: string
 ): UpidMachinePostPreparationIssue['scope'] {
   switch (reason) {
     case 'program-stop-post-unsupported':
@@ -1820,14 +1839,7 @@ function preparationIssueScope(
       return 'program-stop';
     case 'unsafe-radial-lead':
     case 'unsafe-controller-compensation-lead-in':
-    case 'outside-work-area':
-    case 'precision-collapse':
-    case 'no-safe-candidate':
       return 'entry-exit';
-    case 'sharp-manual-start':
-      return 'contour-start';
-    case 'collision':
-      return operation?.overrides?.start ? 'contour-start' : 'entry-exit';
     case 'compensation-resolution-blocked':
       return 'cut-path';
     case 'initial-wire-position-required':
@@ -1841,7 +1853,6 @@ function preparationIssueScope(
     case 'unsupported-robofil-post-envelope':
     case 'unsupported-operation-count':
     case 'unsupported-compensation-lifecycle':
-    case 'missing-envelope':
       return 'machine-setup';
     default:
       return 'cut-path';

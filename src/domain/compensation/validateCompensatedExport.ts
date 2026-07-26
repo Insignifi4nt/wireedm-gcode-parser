@@ -14,6 +14,7 @@ import type { MachineProfile } from '@/domain/workbench/types';
 import {
   generateLinearCompensationTransition,
   type LinearTransitionBlockedReason,
+  type LinearTransitionFailureOwner,
   type LinearTransitionResult
 } from './linearTransitionGeometry';
 import {
@@ -54,6 +55,7 @@ export type CompensatedExportReadiness =
   | {
       status: 'blocked';
       reason: CompensatedExportBlockedReason;
+      failureOwner?: LinearTransitionFailureOwner;
       diagnostics: PathDiagnostic[];
     };
 
@@ -177,7 +179,12 @@ export function validateCompensatedExport({
     workArea: machine.workArea
   });
   if (transition.status === 'blocked') {
-    return blocked(transition.reason, `Controller compensation transition is unsafe: ${transition.reason}.`);
+    return blocked(
+      transition.reason,
+      `Controller compensation transition is unsafe: ${transition.reason}.`,
+      {},
+      transition.owner
+    );
   }
   return {
     status: 'ready',
@@ -210,18 +217,20 @@ function matchesGenericExplicitLinearEnvelope(machine: MachineProfile) {
 function blocked(
   reason: CompensatedExportBlockedReason,
   message: string,
-  details: Record<string, unknown> = {}
+  details: Record<string, unknown> = {},
+  failureOwner?: LinearTransitionFailureOwner
 ): Extract<CompensatedExportReadiness, { status: 'blocked' }> {
   return {
     status: 'blocked' as const,
     reason,
+    ...(failureOwner ? { failureOwner } : {}),
     diagnostics: [
       {
         id: 'diag_compensated_export_0001',
         severity: 'error' as const,
         code: 'post-invalid-input' as const,
         message,
-        details: { reason, ...details }
+        details: { reason, ...details, ...(failureOwner ? { failureOwner } : {}) }
       }
     ]
   };

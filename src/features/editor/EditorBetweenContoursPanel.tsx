@@ -87,9 +87,9 @@ export function EditorBetweenContoursPanel({
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected.id}
         >
-          {operations.map((operation) => (
+          {operations.map((operation, executionIndex) => (
             <option key={operation.id} value={operation.id}>
-              {operation.orderIndex + 1}. {operation.displayName}
+              {String(executionIndex + 1).padStart(2, '0')}. {operation.displayName}
             </option>
           ))}
         </select>

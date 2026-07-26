@@ -110,12 +110,14 @@ describe('EditorBetweenContoursPanel', () => {
     expect(container.textContent).not.toContain('Operation threading mode');
   });
 
-  it('renders imported destinations and predecessors in orderIndex order', async () => {
+  it('renders gapped imported indices by deterministic execution position', async () => {
     const document = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
       { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
     ]);
     const [first, second] = document.plan.operations;
+    first.orderIndex = 5;
+    second.orderIndex = 17;
     document.plan.operations = [second, first];
 
     await act(async () => {
@@ -138,6 +140,10 @@ describe('EditorBetweenContoursPanel', () => {
       )
     ];
     expect(options.map((option) => option.value)).toEqual([first.id, second.id]);
+    expect(options.map((option) => option.textContent)).toEqual([
+      `01. ${first.displayName}`,
+      `02. ${second.displayName}`
+    ]);
     expect(container.textContent).toContain(`After ${first.displayName}`);
   });
 });

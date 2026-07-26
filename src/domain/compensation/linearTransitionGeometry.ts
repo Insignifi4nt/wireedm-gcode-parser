@@ -34,6 +34,10 @@ export type LinearTransitionBlockedReason =
   | 'precision-collapse'
   | 'no-safe-candidate';
 
+export type LinearTransitionFailureOwner =
+  | 'machine-profile'
+  | 'contour-start';
+
 export type LinearTransitionResult =
   | {
       status: 'ready';
@@ -47,6 +51,7 @@ export type LinearTransitionResult =
   | {
       status: 'blocked';
       reason: LinearTransitionBlockedReason;
+      owner: LinearTransitionFailureOwner;
     };
 
 const SMOOTH_TANGENT_DOT_MINIMUM = 1 - 1e-9;
@@ -62,10 +67,10 @@ export function generateLinearCompensationTransition(
 ): LinearTransitionResult {
   const envelope = input.expectedMaximumOffsetMm;
   if (!Number.isFinite(envelope) || envelope == null || envelope <= 0) {
-    return { status: 'blocked', reason: 'missing-envelope' };
+    return blockedTransition('missing-envelope', 'machine-profile');
   }
   if (!Number.isFinite(input.leadLengthMm) || input.leadLengthMm <= 0) {
-    return { status: 'blocked', reason: 'no-safe-candidate' };
+    return blockedTransition('no-safe-candidate', 'machine-profile');
   }
 
   const manual = Boolean(input.operation.overrides?.start);
@@ -81,15 +86,20 @@ export function generateLinearCompensationTransition(
       };
     }
     if (manual && candidate.reason === 'no-safe-candidate') {
-      return { status: 'blocked', reason: 'sharp-manual-start' };
+      return blockedTransition('sharp-manual-start', 'contour-start');
     }
     failures.add(candidate.reason);
   }
 
   for (const reason of ['precision-collapse', 'collision', 'outside-work-area'] as const) {
-    if (failures.has(reason)) return { status: 'blocked', reason };
+    if (failures.has(reason)) {
+      return blockedTransition(
+        reason,
+        reason === 'collision' ? 'contour-start' : 'machine-profile'
+      );
+    }
   }
-  return { status: 'blocked', reason: 'no-safe-candidate' };
+  return blockedTransition('no-safe-candidate', 'contour-start');
 }
 
 function evaluateCandidate(
@@ -100,17 +110,21 @@ function evaluateCandidate(
   const effectiveRefs = rotatePathRefs(input.operation.segmentRefs, candidateIndex);
   const firstRef = effectiveRefs[0];
   const lastRef = effectiveRefs.at(-1);
-  if (!firstRef || !lastRef) return { status: 'blocked', reason: 'no-safe-candidate' };
+  if (!firstRef || !lastRef) {
+    return blockedTransition('no-safe-candidate', 'contour-start');
+  }
 
   const segmentsById = segmentMap(input.document.segments);
   const first = segmentsById.get(firstRef.segmentId);
   const last = segmentsById.get(lastRef.segmentId);
-  if (!first || !last) return { status: 'blocked', reason: 'no-safe-candidate' };
+  if (!first || !last) return blockedTransition('no-safe-candidate', 'contour-start');
   const firstTangents = orientedEndpointTangents(first, firstRef);
   const lastTangents = orientedEndpointTangents(last, lastRef);
-  if (!firstTangents || !lastTangents) return { status: 'blocked', reason: 'no-safe-candidate' };
+  if (!firstTangents || !lastTangents) {
+    return blockedTransition('no-safe-candidate', 'contour-start');
+  }
   if (dot(firstTangents.start, lastTangents.end) < SMOOTH_TANGENT_DOT_MINIMUM) {
-    return { status: 'blocked', reason: 'no-safe-candidate' };
+    return blockedTransition('no-safe-candidate', 'contour-start');
   }
 
   const startPoint = orientedSegmentStart(first, firstRef);
@@ -123,13 +137,13 @@ function evaluateCandidate(
     end: addScaled(startPoint, lastTangents.end, input.leadLengthMm)
   };
   if (![startPoint, leadIn.start, leadIn.end, leadOut.start, leadOut.end].every(finitePoint)) {
-    return { status: 'blocked', reason: 'no-safe-candidate' };
+    return blockedTransition('no-safe-candidate', 'contour-start');
   }
   if (
     formattedPointsEqual(leadIn.start, leadIn.end, input.coordinatePrecision) ||
     formattedPointsEqual(leadOut.start, leadOut.end, input.coordinatePrecision)
   ) {
-    return { status: 'blocked', reason: 'precision-collapse' };
+    return blockedTransition('precision-collapse', 'machine-profile');
   }
 
   const incidentSegmentIds = new Set([firstRef.segmentId, lastRef.segmentId]);
@@ -137,10 +151,10 @@ function evaluateCandidate(
     transitionCollides(input.document, leadIn, startPoint, incidentSegmentIds, envelope, 'lead-in') ||
     transitionCollides(input.document, leadOut, startPoint, incidentSegmentIds, envelope, 'lead-out')
   ) {
-    return { status: 'blocked', reason: 'collision' };
+    return blockedTransition('collision', 'contour-start');
   }
   if (outsideWorkArea(input.document, leadIn, leadOut, envelope, input.workArea)) {
-    return { status: 'blocked', reason: 'outside-work-area' };
+    return blockedTransition('outside-work-area', 'machine-profile');
   }
 
   return {
@@ -152,6 +166,13 @@ function evaluateCandidate(
     selectedCandidateIndex: candidateIndex,
     reason: 'automatic-safe-start'
   };
+}
+
+function blockedTransition(
+  reason: LinearTransitionBlockedReason,
+  owner: LinearTransitionFailureOwner
+): Extract<LinearTransitionResult, { status: 'blocked' }> {
+  return { status: 'blocked', reason, owner };
 }
 
 function transitionCollides(
