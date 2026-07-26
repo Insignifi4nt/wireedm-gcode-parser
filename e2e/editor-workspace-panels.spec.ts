@@ -550,8 +550,7 @@ test('editor moves a selected arc center to a chosen measurement point', async (
   await page.getByRole('button', { name: 'Save Measurement & Construction workflow' }).click();
   await expect(page.locator('[data-editor-workspace-panel="measurement"]')).toHaveCount(0);
 
-  await page.getByLabel('Geometry menu').click();
-  await page.getByRole('button', { name: 'Transform Geometry' }).click();
+  await showPanels(page, ['path-transform']);
   await expect(page.locator('[data-upid-transform-center-current]')).toHaveText('0.000, 0.000');
 
   await expect(page.locator('[data-upid-transform-center-use-point="1"]')).toContainText('P1');
