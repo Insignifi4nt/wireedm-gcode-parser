@@ -74,6 +74,45 @@ describe('UPID program tree projection', () => {
     });
   });
 
+  it('posts an imported circle-center entry through the generated explicit-linear lead', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const operation = initialized.plan.operations[0];
+    const withCircleCenterEntry = setCircleOperationCenterPierceLeadIn(
+      initialized,
+      operation.id
+    )!;
+    const document = setManualInitialWirePosition(
+      withCircleCenterEntry,
+      { x: 0, y: 0 }
+    )!;
+
+    const posted = postUpidForMachine(document, machine);
+    const tree = buildUpidProgramTree(document, machine);
+    const entry = tree.operations[0].children.find(
+      (node) => node.label === 'Entry / lead-in'
+    );
+    const generatedLead = posted.blocks.find((block) => block.kind === 'lead-in');
+
+    expect(posted.status).toBe('ready');
+    expect(generatedLead).toMatchObject({
+      operationId: operation.id,
+      endPoint: operation.startPoint
+    });
+    expect(generatedLead?.startPoint).not.toEqual({ x: 0, y: 0 });
+    expect(entry).toMatchObject({
+      status: 'ready',
+      statusReason: undefined,
+      statusActionTarget: undefined
+    });
+    expect(tree.programStatus).toBe('ready');
+  });
+
   it('offers Contour start for a sharp manual start and clears the blocker after that workflow changes it', () => {
     const machine = verifiedGenericExplicitMachine();
     const initialized = initializeProjectCompensationIntents(
@@ -211,6 +250,9 @@ describe('UPID program tree projection', () => {
     expect(blockedPost.diagnostics).toContainEqual(expect.objectContaining({
       details: expect.objectContaining({ reason: 'precision-collapse' })
     }));
+    expect(blockedPost.diagnostics.find(
+      (diagnostic) => diagnostic.details?.reason === 'precision-collapse'
+    )?.details).toEqual({ reason: 'precision-collapse' });
     expect(machineSetup).toMatchObject({
       status: 'blocked',
       statusReason: 'precision-collapse',

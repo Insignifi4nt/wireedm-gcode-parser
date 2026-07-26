@@ -2,6 +2,7 @@ import { MousePointer2, RefreshCw } from 'lucide-react';
 
 import type { ManualCompensationSelection } from '@/domain/compensation/intent';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
+import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import type {
   ContourClassification,
   PathPlanningDocument
@@ -73,8 +74,9 @@ export function EditorContourSetupPanel({
   onSetCompensation: (operationId: string, selection: ManualCompensationSelection) => void;
   selectedOperationId: string | null;
 }) {
-  const selected = document.plan.operations.find((operation) => operation.id === selectedOperationId)
-    ?? document.plan.operations[0]
+  const operations = orderedPathOperations(document.plan.operations);
+  const selected = operations.find((operation) => operation.id === selectedOperationId)
+    ?? operations[0]
     ?? null;
   const compensationResolution = selected
     ? resolveControllerCompensation({ document, operation: selected })
@@ -106,9 +108,9 @@ export function EditorContourSetupPanel({
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected?.id ?? ''}
         >
-          {document.plan.operations.map((operation) => (
+          {operations.map((operation, executionIndex) => (
             <option key={operation.id} value={operation.id}>
-              {operation.orderIndex + 1}. {operation.displayName}
+              {String(executionIndex + 1).padStart(2, '0')}. {operation.displayName}
             </option>
           ))}
         </select>
@@ -232,10 +234,11 @@ export function EditorSetStartPanel({
   onSelectOperation: (operationId: string) => void;
   selectedOperationId: string | null;
 }) {
-  const selected = document.plan.operations.find(
+  const operations = orderedPathOperations(document.plan.operations);
+  const selected = operations.find(
     (operation) => operation.id === selectedOperationId && operation.closed
   )
-    ?? document.plan.operations.find((operation) => operation.closed)
+    ?? operations.find((operation) => operation.closed)
     ?? null;
 
   return (
@@ -256,11 +259,11 @@ export function EditorSetStartPanel({
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected?.id ?? ''}
         >
-          {document.plan.operations.filter((operation) => operation.closed).map((operation) => (
+          {operations.map((operation, executionIndex) => operation.closed ? (
             <option key={operation.id} value={operation.id}>
-              {operation.orderIndex + 1}. {operation.displayName}
+              {String(executionIndex + 1).padStart(2, '0')}. {operation.displayName}
             </option>
-          ))}
+          ) : null)}
         </select>
       </label>
       <label className="grid gap-1 uppercase text-muted-foreground">

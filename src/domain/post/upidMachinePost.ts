@@ -516,7 +516,8 @@ function postGenericExplicitLinear(
         ...operation,
         segmentRefs: transition.effectiveRefs.map((ref) => ({ ...ref })),
         startPoint: { ...transition.startPoint },
-        endPoint: { ...transition.startPoint }
+        endPoint: { ...transition.startPoint },
+        transitions: undefined
       };
       const geometry = postPathPlanToGcode(
         { ...document.plan, operations: [derivedOperation] },

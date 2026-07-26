@@ -152,10 +152,6 @@ export function validateCompensatedExport({
     };
   }
 
-  if (readOperationTransitions(operation).entry?.strategy === 'circle-center') {
-    return blocked('unsafe-radial-lead', 'A circle-center radial lead is unsafe under controller compensation.');
-  }
-
   if (
     machine.compensation.activation !== 'linear-lead' ||
     machine.compensation.cancellation !== 'linear-lead-out' ||
@@ -230,7 +226,7 @@ function blocked(
         severity: 'error' as const,
         code: 'post-invalid-input' as const,
         message,
-        details: { reason, ...details, ...(failureOwner ? { failureOwner } : {}) }
+        details: { reason, ...details }
       }
     ]
   };

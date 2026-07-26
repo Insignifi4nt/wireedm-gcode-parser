@@ -31,6 +31,47 @@ describe('validateCompensatedExport', () => {
     });
   });
 
+  it('ignores an imported circle-center entry for an explicit-linear generated transition', () => {
+    const machine = verifiedExplicitMachine();
+    const initialized = finishedCircle();
+    const document = setCircleOperationCenterPierceLeadIn(
+      initialized,
+      initialized.plan.operations[0].id
+    )!;
+
+    expect(validateCompensatedExport({
+      document,
+      operation: document.plan.operations[0],
+      machine
+    })).toMatchObject({
+      status: 'ready',
+      strategy: 'explicit-linear',
+      transition: { status: 'ready' }
+    });
+  });
+
+  it('keeps typed transition ownership out of public diagnostic details', () => {
+    const machine = verifiedExplicitMachine((profile) => {
+      profile.compensation.validationLeadLengthMm = 0.0004;
+    });
+    const document = finishedCircle();
+    const result = validateCompensatedExport({
+      document,
+      operation: document.plan.operations[0],
+      machine
+    });
+
+    expect(result).toMatchObject({
+      status: 'blocked',
+      reason: 'precision-collapse',
+      failureOwner: 'machine-profile'
+    });
+    if (result.status !== 'blocked') throw new Error('Expected blocked readiness.');
+    expect(result.diagnostics[0].details).toEqual({
+      reason: 'precision-collapse'
+    });
+  });
+
   it('blocks unsupported, unverified, and stale machine snapshots', () => {
     const document = finishedCircle();
     const operation = document.plan.operations[0];
@@ -335,7 +376,7 @@ describe('validateCompensatedExport', () => {
     });
   });
 
-  it('rejects a circle-center radial override before either controller lifecycle posts', () => {
+  it('rejects a circle-center radial override for the native program-scoped lifecycle', () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     const initialized = initializeProjectCompensationIntents(baseCircle(), machine);
     const document = setCircleOperationCenterPierceLeadIn(
