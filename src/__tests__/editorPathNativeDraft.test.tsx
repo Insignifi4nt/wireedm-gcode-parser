@@ -3486,15 +3486,6 @@ describe('EditorPage UPID draft boundary', () => {
       element?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushAsync();
-
-    if (workflowCommandId && container.querySelector('[role="menu"]')) {
-      await act(async () => {
-        container.querySelector<HTMLButtonElement>(
-          `button[aria-label="${workflowMenuTitle(workflowCommandId)} menu"]`
-        )?.click();
-      });
-      await flushAsync();
-    }
   }
 
   async function openWorkflowMenu(commandId: string) {

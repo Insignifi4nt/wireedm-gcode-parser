@@ -110,6 +110,20 @@ describe('EditorWorkflowMenuBar', () => {
     expect(container.querySelector('[data-editor-workflow-menu="Machining"]')).not.toBeNull();
   });
 
+  it('closes its menu after an enabled command executes', async () => {
+    await renderMenu();
+    await clickMenu('Machining');
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        '[data-editor-workflow-command="machining.command"]'
+      )?.click();
+    });
+
+    expect(groups[1].commands[0].onExecute).toHaveBeenCalledOnce();
+    expect(container.querySelector('[data-editor-workflow-menu="Machining"]')).toBeNull();
+  });
+
   it('closes an open menu after an outside pointer interaction', async () => {
     await renderMenu();
     await clickMenu('Machining');
