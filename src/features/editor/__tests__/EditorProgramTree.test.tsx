@@ -59,6 +59,12 @@ describe('editorProgramTreeState', () => {
     );
   });
 
+  it('keeps Program Sequence as the default section for an empty program', () => {
+    expect(defaultEditorProgramTreeExpansion({ ...tree, operations: [] })).toEqual(
+      new Set(['section:program'])
+    );
+  });
+
   it('drops expansion keys that are absent from the next projection', () => {
     const nextTree = { ...tree, operations: [tree.operations[0]] };
 
@@ -162,6 +168,7 @@ describe('EditorProgramTree', () => {
 
   it('activates editable child actions directly', async () => {
     const onEdit = vi.fn();
+    const onSelect = vi.fn();
 
     await act(async () => {
       root.render(
@@ -169,7 +176,7 @@ describe('EditorProgramTree', () => {
           expandedTreeKeys={new Set(['section:program', 'operation:alpha'])}
           onEdit={onEdit}
           onExpandedTreeKeysChange={vi.fn()}
-          onSelect={vi.fn()}
+          onSelect={onSelect}
           selectedTreeKey={null}
           tree={tree}
         />
@@ -178,7 +185,12 @@ describe('EditorProgramTree', () => {
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('button[data-tree-key="phase:alpha:entry"]')?.click();
+      container.querySelector<HTMLButtonElement>('button[data-tree-key="phase:alpha:entry"]')?.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: ' ' })
+      );
     });
-    expect(onEdit).toHaveBeenCalledWith({ kind: 'entry-exit', operationId: 'alpha' });
+    expect(onEdit).toHaveBeenNthCalledWith(1, { kind: 'entry-exit', operationId: 'alpha' });
+    expect(onEdit).toHaveBeenNthCalledWith(2, { kind: 'entry-exit', operationId: 'alpha' });
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

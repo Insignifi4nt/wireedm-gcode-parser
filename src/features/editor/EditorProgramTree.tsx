@@ -112,7 +112,8 @@ export function EditorProgramTree({
     }
     if (event.key === ' ') {
       event.preventDefault();
-      if (item.node) onSelect(item.node);
+      if (item.node?.kind === 'operation') onSelect(item.node);
+      else if (item.node?.editTarget) onEdit(item.node.editTarget);
       return;
     }
     if (event.key === 'Enter' && item.node?.editTarget) {

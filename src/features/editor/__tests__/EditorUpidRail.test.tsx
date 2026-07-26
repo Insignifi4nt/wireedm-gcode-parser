@@ -39,12 +39,67 @@ describe('EditorUpidRail', () => {
       );
     });
 
-    expect(container.textContent).toContain('Program sequence');
-    expect(container.textContent).not.toContain('Geometry hierarchy');
+    expect(container.querySelector<HTMLElement>('#editor-upid-rail-panel-program')?.hidden).toBe(false);
+    expect(container.querySelector<HTMLElement>('#editor-upid-rail-panel-geometry')?.hidden).toBe(true);
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Geometry lens"]')?.click();
     });
     expect(onModeChange).toHaveBeenCalledWith('geometry');
+  });
+
+  it('uses associated tabs and arrow keys to move focus between lenses', async () => {
+    const onModeChange = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorUpidRail
+          collapsed={false}
+          geometryContent={<div>Geometry hierarchy</div>}
+          mode="program"
+          onCollapseChange={vi.fn()}
+          onModeChange={onModeChange}
+          programContent={<div>Program sequence</div>}
+          selectedOperationOrdinal={null}
+          status="ready"
+        />
+      );
+    });
+
+    const programTab = container.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Program lens"]');
+    const geometryTab = container.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Geometry lens"]');
+    const programPanel = container.querySelector<HTMLElement>('#editor-upid-rail-panel-program');
+    const geometryPanel = container.querySelector<HTMLElement>('#editor-upid-rail-panel-geometry');
+
+    expect(programTab?.getAttribute('aria-controls')).toBe('editor-upid-rail-panel-program');
+    expect(geometryTab?.getAttribute('aria-controls')).toBe('editor-upid-rail-panel-geometry');
+    expect(programPanel?.getAttribute('aria-labelledby')).toBe(programTab?.id);
+    expect(geometryPanel?.getAttribute('aria-labelledby')).toBe(geometryTab?.id);
+
+    await act(async () => {
+      programTab?.focus();
+      programTab?.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }));
+    });
+    expect(document.activeElement).toBe(geometryTab);
+    expect(onModeChange).toHaveBeenLastCalledWith('geometry');
+
+    await act(async () => {
+      geometryTab?.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowLeft' }));
+    });
+    expect(document.activeElement).toBe(programTab);
+    expect(onModeChange).toHaveBeenLastCalledWith('program');
+
+    await act(async () => {
+      geometryTab?.focus();
+      geometryTab?.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }));
+    });
+    expect(document.activeElement).toBe(programTab);
+    expect(onModeChange).toHaveBeenLastCalledWith('program');
+
+    await act(async () => {
+      programTab?.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowLeft' }));
+    });
+    expect(document.activeElement).toBe(geometryTab);
+    expect(onModeChange).toHaveBeenLastCalledWith('geometry');
   });
 
   it('uses a 36px compact strip with named expand, lens, status, and ordinal controls', async () => {
