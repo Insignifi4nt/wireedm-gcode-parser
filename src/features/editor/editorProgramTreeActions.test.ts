@@ -23,6 +23,12 @@ describe('resolveEditorProgramTreeAction', () => {
       null
     ],
     [
+      { kind: 'machining-participation' },
+      'machining.participation',
+      null,
+      null
+    ],
+    [
       { kind: 'program-stop', operationId: 'op_2', stopId: 'stop-3' },
       'machining.program-stops',
       'op_2',

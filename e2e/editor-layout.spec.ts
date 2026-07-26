@@ -250,7 +250,7 @@ test('compact path editor routes program-tree edits through mutually exclusive U
 
   const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
   await expect(upidDrawer).toBeVisible();
-  await upidDrawer.getByRole('button', { name: 'Entry / lead-in · None' }).click();
+  await upidDrawer.getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
 
   const workflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
   await expect(upidDrawer).toHaveCount(0);
@@ -359,7 +359,7 @@ test('compact dirty program-tree transitions stay reachable before changing draw
 
   await page.getByRole('button', { name: 'Open UPID rail' }).click();
   await page.getByRole('dialog', { name: 'UPID rail' })
-    .getByRole('button', { name: 'Entry / lead-in · None' }).click();
+    .getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
   const workflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
   await workflowDrawer.getByRole('textbox', { name: 'Entry X' }).fill('5');
   await workflowDrawer.getByRole('textbox', { name: 'Entry Y' }).fill('6');
@@ -367,7 +367,7 @@ test('compact dirty program-tree transitions stay reachable before changing draw
 
   await page.getByRole('button', { name: 'Open UPID rail' }).click();
   const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
-  await upidDrawer.getByRole('button', { name: 'Exit / lead-out · None' }).click();
+  await upidDrawer.getByRole('treeitem', { name: 'Exit / lead-out · None' }).click();
 
   const transition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
   await expect(transition).toBeVisible();
@@ -382,7 +382,7 @@ test('compact dirty program-tree transitions stay reachable before changing draw
   await expect(underlyingUpidDrawer).not.toHaveAttribute('inert', '');
   await expect(underlyingUpidDrawer).toHaveAttribute('aria-modal', 'true');
 
-  await upidDrawer.getByRole('button', { name: 'Exit / lead-out · None' }).click();
+  await upidDrawer.getByRole('treeitem', { name: 'Exit / lead-out · None' }).click();
   await page.getByRole('dialog', { name: 'Unsaved workflow changes' })
     .getByRole('button', { name: 'Discard' }).click();
   const reopenedWorkflow = page.getByRole('dialog', { name: 'Entry / Exit' });
@@ -394,7 +394,7 @@ test('compact dirty program-tree transitions stay reachable before changing draw
 
   await page.getByRole('button', { name: 'Open UPID rail' }).click();
   await page.getByRole('dialog', { name: 'UPID rail' })
-    .getByRole('button', { name: /Entry \/ lead-in/ }).click();
+    .getByRole('treeitem', { name: /Entry \/ lead-in/ }).click();
   const saveTransition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
   await expect(saveTransition.getByRole('button', { name: 'Save' })).toBeEnabled();
   await saveTransition.getByRole('button', { name: 'Save' }).click();
@@ -448,14 +448,14 @@ test('compact held transition cleanup does not inert the next path drawer after 
 
   await page.getByRole('button', { name: 'Open UPID rail' }).click();
   await page.getByRole('dialog', { name: 'UPID rail' })
-    .getByRole('button', { name: 'Entry / lead-in · None' }).click();
+    .getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
   const workflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
   await workflowDrawer.getByRole('textbox', { name: 'Entry X' }).fill('5');
   await workflowDrawer.getByRole('textbox', { name: 'Entry Y' }).fill('6');
   await workflowDrawer.getByRole('button', { name: 'Close Entry / Exit drawer' }).click();
   await page.getByRole('button', { name: 'Open UPID rail' }).click();
   await page.getByRole('dialog', { name: 'UPID rail' })
-    .getByRole('button', { name: 'Exit / lead-out · None' }).click();
+    .getByRole('treeitem', { name: 'Exit / lead-out · None' }).click();
   const heldTransition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
   await expect(heldTransition).toBeVisible();
   await heldTransition.getByRole('button', { name: 'Discard' }).click();

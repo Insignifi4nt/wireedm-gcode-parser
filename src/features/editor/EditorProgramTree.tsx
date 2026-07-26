@@ -37,11 +37,7 @@ interface EditorProgramTreeItem {
   parentKey?: string;
   status: UpidProgramTreeStatus;
   statusReason?: string;
-}
-
-interface EditorProgramTreeStatusAction {
-  item: EditorProgramTreeItem;
-  target: UpidProgramTreeEditTarget;
+  statusActionTarget?: UpidProgramTreeEditTarget;
 }
 
 const SOURCE_SETUP_SECTION_KEY = 'section:source';
@@ -92,6 +88,15 @@ export function EditorProgramTree({
 
   function selectItem(item: EditorProgramTreeItem) {
     focusTreeItem(item.key);
+    onSelect(item.key, item.node ?? null);
+  }
+
+  function handleRowClick(item: EditorProgramTreeItem) {
+    focusTreeItem(item.key);
+    if (item.node?.kind !== 'operation' && item.node?.editTarget) {
+      onEdit(item.node.editTarget, item.key);
+      return;
+    }
     onSelect(item.key, item.node ?? null);
   }
 
@@ -154,10 +159,9 @@ export function EditorProgramTree({
       return;
     }
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-      const statusAction = findStatusAction(item);
-      if (statusAction) {
+      if (item.statusActionTarget && isActionableStatus(item.status)) {
         event.preventDefault();
-        onEdit(statusAction.target, statusAction.item.key);
+        onEdit(item.statusActionTarget, item.key);
         return;
       }
     }
@@ -177,26 +181,20 @@ export function EditorProgramTree({
     action();
   }
 
-  function handleRowDoubleClick(
-    event: MouseEvent<HTMLDivElement>,
-    item: EditorProgramTreeItem
-  ) {
-    if (event.target instanceof Element && event.target.closest('button')) return;
-    activateItem(item);
-  }
-
   function renderItem(item: EditorProgramTreeItem): React.ReactNode {
     const hasChildren = item.children.length > 0;
     const isExpanded = expandedTreeKeys.has(item.key);
     const isSelected = item.key === selectedTreeKey;
     const sequenceTarget = item.node?.sequenceEditTarget;
     const operationOrdinal = sequenceTarget ? readOperationOrdinal(item.node?.label ?? '') : null;
-    const statusAction = findStatusAction(item);
+    const statusActionTarget = isActionableStatus(item.status)
+      ? item.statusActionTarget
+      : undefined;
 
     return (
       <li
         aria-expanded={hasChildren ? isExpanded : undefined}
-        aria-keyshortcuts={readItemKeyboardShortcuts(item, statusAction)}
+        aria-keyshortcuts={readItemKeyboardShortcuts(item, statusActionTarget)}
         aria-label={item.label}
         aria-level={item.level}
         aria-selected={isSelected}
@@ -219,8 +217,7 @@ export function EditorProgramTree({
             isSelected ? 'bg-accent text-foreground' : 'text-foreground hover:bg-accent/60'
           }`}
           data-editor-program-tree-row
-          onClick={() => selectItem(item)}
-          onDoubleClick={(event) => handleRowDoubleClick(event, item)}
+          onClick={() => handleRowClick(item)}
           style={{ paddingLeft: `${(item.level - 1) * 10}px` }}
         >
           {hasChildren ? (
@@ -265,11 +262,11 @@ export function EditorProgramTree({
           </span>
           <StatusMarker
             item={item}
-            onAction={statusAction
+            onAction={statusActionTarget
               ? (event) => handleSecondaryAction(
                   event,
                   item,
-                  () => onEdit(statusAction.target, statusAction.item.key)
+                  () => onEdit(statusActionTarget, item.key)
                 )
               : undefined}
           />
@@ -357,14 +354,18 @@ function buildTreeItems(tree: UpidProgramTree): EditorProgramTreeItem[] {
       'Source & Setup',
       tree.sourceSetup,
       1,
-      tree.sourceSetupStatus ?? tree.status
+      tree.sourceSetupStatus ?? tree.status,
+      tree.sourceSetupStatusReason,
+      tree.sourceSetupStatusActionTarget
     ),
     createSection(
       PROGRAM_SEQUENCE_SECTION_KEY,
       'Program Sequence',
       tree.operations,
       1,
-      tree.programStatus ?? tree.status
+      tree.programStatus ?? tree.status,
+      tree.programStatusReason,
+      tree.programStatusActionTarget
     )
   ];
 }
@@ -374,14 +375,18 @@ function createSection(
   label: string,
   nodes: readonly UpidProgramTreeNode[],
   level: number,
-  status: UpidProgramTreeStatus
+  status: UpidProgramTreeStatus,
+  statusReason?: string,
+  statusActionTarget?: UpidProgramTreeEditTarget
 ): EditorProgramTreeItem {
   return {
     children: nodes.map((node) => createNodeItem(node, level + 1, key)),
     key,
     label,
     level,
-    status
+    status,
+    statusReason,
+    statusActionTarget
   };
 }
 
@@ -398,24 +403,9 @@ function createNodeItem(
     node,
     parentKey,
     status: node.status,
-    statusReason: node.statusReason
+    statusReason: node.statusReason,
+    statusActionTarget: node.statusActionTarget
   };
-}
-
-function findStatusAction(
-  item: EditorProgramTreeItem
-): EditorProgramTreeStatusAction | null {
-  if (item.status !== 'blocked' && item.status !== 'review-required') return null;
-
-  for (const child of item.children) {
-    if (child.status !== item.status) continue;
-    const childAction = findStatusAction(child);
-    if (childAction) return childAction;
-  }
-
-  return item.node?.editTarget
-    ? { item, target: item.node.editTarget }
-    : null;
 }
 
 function flattenVisibleTreeItems(
@@ -436,11 +426,11 @@ function readOperationOrdinal(label: string) {
 
 function readItemKeyboardShortcuts(
   item: EditorProgramTreeItem,
-  statusAction: EditorProgramTreeStatusAction | null
+  statusActionTarget: UpidProgramTreeEditTarget | undefined
 ) {
   const shortcuts = [
     item.node?.sequenceEditTarget ? 'Alt+Enter' : null,
-    statusAction ? 'Control+Enter' : null
+    statusActionTarget ? 'Control+Enter' : null
   ].filter((shortcut): shortcut is string => shortcut !== null);
   return shortcuts.length > 0 ? shortcuts.join(' ') : undefined;
 }
@@ -460,4 +450,8 @@ function formatStatus(status: UpidProgramTreeStatus) {
     blocked: 'Blocked',
     inactive: 'Inactive'
   }[status];
+}
+
+function isActionableStatus(status: UpidProgramTreeStatus) {
+  return status === 'blocked' || status === 'review-required';
 }

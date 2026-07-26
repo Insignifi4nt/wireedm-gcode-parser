@@ -248,7 +248,6 @@ describe('EditorPage UPID draft boundary', () => {
     await changeInput('input[aria-label="Translate X"]', '2');
     await clickElement('button[aria-label^="Apply translation to "]');
     await clickProgramTreeRow(exitTreeKey);
-    await pressProgramTreeItem(exitTreeKey, 'Enter');
 
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
       'before opening Entry / Exit'

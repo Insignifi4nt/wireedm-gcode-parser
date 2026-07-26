@@ -33,7 +33,7 @@ export type UpidProgramTreeEditTarget =
   | { kind: 'contour-start'; operationId: string }
   | { kind: 'incoming-connection'; operationId: string }
   | { kind: 'entry-exit'; operationId: string }
-  | { kind: 'machining-participation'; operationId: string; spanId?: string }
+  | { kind: 'machining-participation'; operationId?: string; spanId?: string }
   | { kind: 'program-stop'; operationId: string; stopId: string }
   | { kind: 'diagnostics'; diagnosticId?: string };
 
@@ -44,6 +44,7 @@ export interface UpidProgramTreeNode {
   detail?: string;
   status: UpidProgramTreeStatus;
   statusReason?: string;
+  statusActionTarget?: UpidProgramTreeEditTarget;
   operationId?: string;
   pathElementId?: string;
   editTarget?: UpidProgramTreeEditTarget;
@@ -54,8 +55,11 @@ export interface UpidProgramTreeNode {
 export interface UpidProgramTree {
   status: UpidProgramTreeStatus;
   sourceSetupStatus?: UpidProgramTreeStatus;
+  sourceSetupStatusReason?: string;
+  sourceSetupStatusActionTarget?: UpidProgramTreeEditTarget;
   programStatus?: UpidProgramTreeStatus;
   programStatusReason?: string;
+  programStatusActionTarget?: UpidProgramTreeEditTarget;
   sourceSetup: UpidProgramTreeNode[];
   operations: UpidProgramTreeNode[];
 }
@@ -102,17 +106,25 @@ export function buildUpidProgramTree(
         projection.effectiveSegments
       );
     });
-  const sourceSetupStatus = rollUpStatus(sourceSetup);
-  const programStatus = rollUpStatuses([
-    rollUpStatus(operations),
-    ...(machiningProjection.unownedFailureReason ? ['blocked' as const] : [])
-  ]);
+  const sourceSetupMetadata = rollUpNodeStatusMetadata(sourceSetup);
+  const programMetadata = machiningProjection.unownedFailureReason
+    ? {
+        status: 'blocked' as const,
+        statusReason: machiningProjection.unownedFailureReason,
+        statusActionTarget: {
+          kind: 'machining-participation' as const
+        }
+      }
+    : rollUpNodeStatusMetadata(operations);
 
   return {
-    status: rollUpStatuses([sourceSetupStatus, programStatus]),
-    sourceSetupStatus,
-    programStatus,
-    programStatusReason: machiningProjection.unownedFailureReason,
+    status: rollUpStatuses([sourceSetupMetadata.status, programMetadata.status]),
+    sourceSetupStatus: sourceSetupMetadata.status,
+    sourceSetupStatusReason: sourceSetupMetadata.statusReason,
+    sourceSetupStatusActionTarget: sourceSetupMetadata.statusActionTarget,
+    programStatus: programMetadata.status,
+    programStatusReason: programMetadata.statusReason,
+    programStatusActionTarget: programMetadata.statusActionTarget,
     sourceSetup,
     operations
   };
@@ -146,6 +158,7 @@ function buildSourceSetupNodes(
     label: 'Path summary',
     detail: `${document.plan.operations.length} operation${document.plan.operations.length === 1 ? '' : 's'}`,
     status: diagnostics.length === 0 ? 'ready' : rollUpStatus(diagnostics),
+    ...statusDetailsFromNodes(diagnostics),
     editTarget: { kind: 'path-summary' },
     children: diagnostics
   };
@@ -174,6 +187,9 @@ function buildSourceSetupNodes(
     detail: initial.status === 'ready' ? initial.source : initial.reason.replace(/-/g, ' '),
     status: initialStatus,
     statusReason: initial.status === 'ready' ? undefined : initial.reason,
+    statusActionTarget: isActionableStatus(initialStatus)
+      ? { kind: 'initial-wire' }
+      : undefined,
     editTarget: { kind: 'initial-wire' },
     children: []
   };
@@ -214,7 +230,8 @@ function buildOperationNode(
     stopsByPlacement.beforeOperationEnd,
     derivationFailure
   );
-  const diagnosticNodes = buildDiagnosticNodes(diagnostics, `operation:${operation.id}`);
+  const operationKey = operationTreeKey(operation.id);
+  const diagnosticNodes = buildDiagnosticNodes(diagnostics, operationKey);
   const sourceOperationSuppressed = effectiveOperations.length === 0 && !derivationFailure;
   const children = [
     ...stopsByPlacement.beforeEntry,
@@ -230,16 +247,19 @@ function buildOperationNode(
   const status = sourceOperationSuppressed
     ? rollUpStatuses(['inactive', ...diagnosticNodes.map((node) => node.status)])
     : rollUpStatus(children);
+  const rolledStatusDetails = statusDetailsFromNodes(children, status);
+  const statusReason = status === 'inactive'
+    ? 'operation-suppressed-by-machining-participation'
+    : rolledStatusDetails.statusReason;
 
   return {
-    treeKey: `operation:${operation.id}`,
+    treeKey: operationKey,
     kind: 'operation',
     label: `${String(operation.orderIndex + 1).padStart(2, '0')} · ${operation.displayName}`,
     detail: operation.classification,
     status,
-    statusReason: status === 'inactive'
-      ? 'operation-suppressed-by-machining-participation'
-      : undefined,
+    statusReason,
+    statusActionTarget: rolledStatusDetails.statusActionTarget,
     operationId: operation.id,
     pathElementId: pathElement?.id,
     editTarget: { kind: 'operation', operationId: operation.id },
@@ -260,12 +280,15 @@ function buildIncomingConnectionNode(
       ? 'ready'
       : initial.reason === 'review-required' ? 'review-required' : 'blocked';
     return {
-      treeKey: `operation:${operation.id}:incoming`,
+      treeKey: `${operationTreeKey(operation.id)}:incoming`,
       kind: 'phase',
       label: 'Incoming connection',
       detail: 'Initial wire position',
       status,
       statusReason: initial.status === 'ready' ? undefined : initial.reason,
+      statusActionTarget: isActionableStatus(status)
+        ? { kind: 'initial-wire' }
+        : undefined,
       operationId: operation.id,
       editTarget: { kind: 'incoming-connection', operationId: operation.id },
       children: []
@@ -274,7 +297,7 @@ function buildIncomingConnectionNode(
 
   const resolution = resolveOperationThreadingTransition(document, operation.id, machine);
   return {
-    treeKey: `operation:${operation.id}:incoming`,
+    treeKey: `${operationTreeKey(operation.id)}:incoming`,
     kind: 'phase',
     label: 'Incoming connection',
     detail: resolution.status === 'ready'
@@ -282,6 +305,9 @@ function buildIncomingConnectionNode(
       : describeThreading(operation.threadingTransition?.mode ?? document.setup?.threadingDefault?.mode ?? 'manual'),
     status: resolution.status,
     statusReason: resolution.status === 'blocked' ? resolution.reason : undefined,
+    statusActionTarget: isActionableStatus(resolution.status)
+      ? { kind: 'incoming-connection', operationId: operation.id }
+      : undefined,
     operationId: operation.id,
     editTarget: { kind: 'incoming-connection', operationId: operation.id },
     children: []
@@ -300,12 +326,15 @@ function buildTransitionNode(
   ).map((operation) => transitionStatus(operation.transitions?.[phase]));
   const status = rollUpStatuses(effectiveStatuses);
   return {
-    treeKey: `operation:${sourceOperation.id}:${phase}`,
+    treeKey: `${operationTreeKey(sourceOperation.id)}:${phase}`,
     kind: 'phase',
     label: phase === 'entry' ? 'Entry / lead-in' : 'Exit / lead-out',
     detail: transition?.strategy === 'none' || !transition ? 'None' : transition.strategy,
     status,
     statusReason: status === 'review-required' ? 'review-required' : undefined,
+    statusActionTarget: isActionableStatus(status)
+      ? { kind: 'entry-exit', operationId: sourceOperation.id }
+      : undefined,
     operationId: sourceOperation.id,
     editTarget: { kind: 'entry-exit', operationId: sourceOperation.id },
     children: []
@@ -322,7 +351,7 @@ function buildCutPathNode(
   derivationFailure: Extract<ActiveMachiningDerivation, { status: 'blocked' }>['reason'] | undefined
 ): UpidProgramTreeNode {
   const contourStart: UpidProgramTreeNode = {
-    treeKey: `operation:${operation.id}:contour-start`,
+    treeKey: `${operationTreeKey(operation.id)}:contour-start`,
     kind: 'phase',
     label: 'Contour start',
     detail: operation.closed ? undefined : 'Closed contours only',
@@ -360,21 +389,30 @@ function buildCutPathNode(
     (resolution): resolution is { status: 'blocked'; reason: string } =>
       typeof resolution !== 'string' && resolution.status === 'blocked'
   );
+  const children = [contourStart, ...stopNodes, ...effectivePathNodes, ...inactiveSpans];
+  const childStatusDetails = statusDetailsFromNodes(children, status);
   const statusReason = derivationFailure ??
     pathFailure?.reason ??
+    childStatusDetails.statusReason ??
     (effectiveOperations.length === 0
       ? 'operation-suppressed-by-machining-participation'
       : undefined);
+  const statusActionTarget = derivationFailure
+    ? { kind: 'machining-participation' as const, operationId: operation.id }
+    : pathFailure
+      ? { kind: 'operation' as const, operationId: operation.id }
+      : childStatusDetails.statusActionTarget;
 
   return {
-    treeKey: `operation:${operation.id}:cut-path`,
+    treeKey: `${operationTreeKey(operation.id)}:cut-path`,
     kind: 'phase',
     label: 'Cut path',
     detail: describeEffectiveSegmentCount(effectiveOperations),
     status,
     statusReason,
+    statusActionTarget,
     operationId: operation.id,
-    children: [contourStart, ...stopNodes, ...effectivePathNodes, ...inactiveSpans]
+    children
   };
 }
 
@@ -389,12 +427,21 @@ function buildEffectiveMachiningPathNode(
   const status = typeof resolution === 'string' ? resolution : resolution.status;
   const statusReason = typeof resolution === 'string' ? undefined : resolution.reason;
   const spans: UpidProgramTreeNode[] = intent.spanIds.map((spanId) => ({
-    treeKey: `operation:${sourceOperation.id}:effective:${effectiveOperation.id}:span:${spanId}`,
+    treeKey: `${
+      operationTreeKey(sourceOperation.id)
+    }:effective:${treeKeyComponent(effectiveOperation.id)}:span:${treeKeyComponent(spanId)}`,
     kind: 'span',
     label: `Machining span · ${spanId}`,
     detail: 'Active cut',
     status,
     statusReason,
+    statusActionTarget: isActionableStatus(status)
+      ? {
+          kind: 'machining-participation' as const,
+          operationId: sourceOperation.id,
+          spanId
+        }
+      : undefined,
     operationId: sourceOperation.id,
     editTarget: {
       kind: 'machining-participation' as const,
@@ -404,7 +451,9 @@ function buildEffectiveMachiningPathNode(
     children: []
   }));
   return {
-    treeKey: `operation:${sourceOperation.id}:effective:${effectiveOperation.id}`,
+    treeKey: `${
+      operationTreeKey(sourceOperation.id)
+    }:effective:${treeKeyComponent(effectiveOperation.id)}`,
     kind: 'phase',
     label: 'Effective machining path',
     detail: `${effectiveOperation.metrics.segmentCount} segment${
@@ -412,6 +461,9 @@ function buildEffectiveMachiningPathNode(
     }`,
     status: rollUpStatus(spans),
     statusReason,
+    statusActionTarget: isActionableStatus(status)
+      ? { kind: 'machining-participation', operationId: sourceOperation.id }
+      : undefined,
     operationId: sourceOperation.id,
     editTarget: { kind: 'machining-participation', operationId: sourceOperation.id },
     children: spans
@@ -429,7 +481,7 @@ function buildInactiveParticipationNodes(
       operationSegmentIds.has(span.sourceSegmentId)
     )
     .map((span) => ({
-      treeKey: `operation:${operation.id}:inactive-span:${span.id}`,
+      treeKey: `${operationTreeKey(operation.id)}:inactive-span:${treeKeyComponent(span.id)}`,
       kind: 'span',
       label: `Machining span · ${span.id}`,
       detail: 'Inactive reference',
@@ -452,19 +504,30 @@ function buildStopNodes(
 ): UpidProgramTreeNode[] {
   const validation = validateProgramStops(operation, machine, document.segments);
   const ordered = [...(operation.programStops ?? [])].sort(compareStops);
-  return ordered.map((stop) => ({
-    treeKey: `operation:${operation.id}:stop:${stop.id}`,
-    kind: 'stop',
-    label: `${machine.programStops.code} · ${stopPlacementLabel(stop)}`,
-    detail: stop.note ?? stop.reason.replace(/-/g, ' '),
-    status: !stop.enabled ? 'inactive' : validation.status === 'blocked' ? 'blocked' : 'ready',
-    statusReason: !stop.enabled
-      ? 'disabled'
-      : validation.status === 'blocked' ? validation.reason : undefined,
-    operationId: operation.id,
-    editTarget: { kind: 'program-stop', operationId: operation.id, stopId: stop.id },
-    children: []
-  }));
+  return ordered.map((stop) => {
+    const status = !stop.enabled
+      ? 'inactive'
+      : validation.status === 'blocked' ? 'blocked' : 'ready';
+    const editTarget = {
+      kind: 'program-stop' as const,
+      operationId: operation.id,
+      stopId: stop.id
+    };
+    return {
+      treeKey: `${operationTreeKey(operation.id)}:stop:${treeKeyComponent(stop.id)}`,
+      kind: 'stop',
+      label: `${machine.programStops.code} · ${stopPlacementLabel(stop)}`,
+      detail: stop.note ?? stop.reason.replace(/-/g, ' '),
+      status,
+      statusReason: !stop.enabled
+        ? 'disabled'
+        : validation.status === 'blocked' ? validation.reason : undefined,
+      statusActionTarget: isActionableStatus(status) ? editTarget : undefined,
+      operationId: operation.id,
+      editTarget,
+      children: []
+    };
+  });
 }
 
 function groupStopsByPlacement(operation: PathOperation, stops: UpidProgramTreeNode[]) {
@@ -668,16 +731,21 @@ function buildDiagnosticNodes(
   diagnostics: readonly PathDiagnostic[],
   treeKeyPrefix: string
 ): UpidProgramTreeNode[] {
-  return diagnostics.map((diagnostic) => ({
-    treeKey: `${treeKeyPrefix}:diagnostic:${diagnostic.id}`,
-    kind: 'phase',
-    label: diagnostic.message,
-    detail: diagnostic.code,
-    status: diagnosticStatus(diagnostic),
-    statusReason: diagnostic.code,
-    editTarget: { kind: 'diagnostics', diagnosticId: diagnostic.id },
-    children: []
-  }));
+  return diagnostics.map((diagnostic) => {
+    const status = diagnosticStatus(diagnostic);
+    const editTarget = { kind: 'diagnostics' as const, diagnosticId: diagnostic.id };
+    return {
+      treeKey: `${treeKeyPrefix}:diagnostic:${treeKeyComponent(diagnostic.id)}`,
+      kind: 'phase',
+      label: diagnostic.message,
+      detail: diagnostic.code,
+      status,
+      statusReason: diagnostic.code,
+      statusActionTarget: isActionableStatus(status) ? editTarget : undefined,
+      editTarget,
+      children: []
+    };
+  });
 }
 
 function diagnosticAffectsOperation(
@@ -728,4 +796,43 @@ function rollUpStatuses(
   if (statuses.some((status) => status === 'review-required')) return 'review-required';
   if (statuses.some((status) => status === 'ready')) return 'ready';
   return 'inactive';
+}
+
+function rollUpNodeStatusMetadata(nodes: readonly UpidProgramTreeNode[]) {
+  const status = rollUpStatus(nodes);
+  return {
+    status,
+    ...statusDetailsFromNodes(nodes, status)
+  };
+}
+
+function statusDetailsFromNodes(
+  nodes: readonly UpidProgramTreeNode[],
+  status = rollUpStatus(nodes)
+): Pick<UpidProgramTreeNode, 'statusReason' | 'statusActionTarget'> {
+  if (!isActionableStatus(status)) return {};
+  const owner = nodes.find(
+    (node) => node.status === status && node.statusActionTarget
+  );
+  const reasonOwner = owner ?? nodes.find(
+    (node) => node.status === status && node.statusReason
+  );
+  return {
+    statusReason: reasonOwner?.statusReason,
+    statusActionTarget: owner?.statusActionTarget
+  };
+}
+
+function isActionableStatus(
+  status: UpidProgramTreeStatus
+): status is 'blocked' | 'review-required' {
+  return status === 'blocked' || status === 'review-required';
+}
+
+function operationTreeKey(operationId: string) {
+  return `operation:${treeKeyComponent(operationId)}`;
+}
+
+function treeKeyComponent(value: string) {
+  return encodeURIComponent(value);
 }

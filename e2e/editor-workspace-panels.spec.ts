@@ -59,7 +59,7 @@ test('editor anchors a path project in the UPID rail and mounts only an active r
   await expect(page.locator('[data-editor-empty-dock]')).toHaveCount(0);
   await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
   await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-sidebar-collapsed', 'false');
-  await page.getByRole('button', { name: 'Entry / lead-in · None' }).click();
+  await page.getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
   await expect(page.locator('[data-editor-floating-panel="entry-exit"]')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Dock Entry / Exit right' })).toBeEnabled();
 

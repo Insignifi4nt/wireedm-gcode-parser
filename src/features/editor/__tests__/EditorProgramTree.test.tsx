@@ -2,6 +2,10 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createCharmillesRobofil100V2CandidateProfile } from '@/domain/machine/machineProfiles';
+import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { buildUpidProgramTree } from '@/domain/upid/upidProgramTree';
 import type {
   UpidProgramTree,
   UpidProgramTreeNode
@@ -32,6 +36,7 @@ const initialWireNode: UpidProgramTreeNode = {
   label: 'Initial wire position',
   status: 'review-required',
   statusReason: 'review wire origin',
+  statusActionTarget: { kind: 'initial-wire' },
   editTarget: { kind: 'initial-wire' },
   children: []
 };
@@ -72,6 +77,7 @@ const betaOperation: UpidProgramTreeNode = {
   label: '02 · Hole 2',
   status: 'blocked',
   statusReason: 'compensation unsupported',
+  statusActionTarget: { kind: 'diagnostics', diagnosticId: 'compensation' },
   operationId: 'beta',
   editTarget: { kind: 'operation', operationId: 'beta' },
   sequenceEditTarget: { kind: 'cut-sequence', operationId: 'beta' },
@@ -81,6 +87,7 @@ const betaOperation: UpidProgramTreeNode = {
     label: 'Controller compensation is unsupported',
     status: 'blocked',
     statusReason: 'compensation-unsupported',
+    statusActionTarget: { kind: 'diagnostics', diagnosticId: 'compensation' },
     editTarget: { kind: 'diagnostics', diagnosticId: 'compensation' },
     children: []
   }]
@@ -89,7 +96,11 @@ const betaOperation: UpidProgramTreeNode = {
 const tree: UpidProgramTree = {
   status: 'blocked',
   sourceSetupStatus: 'review-required',
+  sourceSetupStatusReason: 'review wire origin',
+  sourceSetupStatusActionTarget: { kind: 'initial-wire' },
   programStatus: 'blocked',
+  programStatusReason: 'compensation unsupported',
+  programStatusActionTarget: { kind: 'diagnostics', diagnosticId: 'compensation' },
   sourceSetup: [geometryNode, initialWireNode],
   operations: [alphaOperation, betaOperation]
 };
@@ -255,7 +266,7 @@ describe('EditorProgramTree', () => {
     );
   });
 
-  it('selects on row click, edits on double-click, and keeps Cut path selection-only', async () => {
+  it('activates editable child rows atomically and keeps operation and Cut path rows selection-only', async () => {
     const onEdit = vi.fn();
     const onSelect = vi.fn();
     await renderTree({ onEdit, onSelect });
@@ -271,18 +282,21 @@ describe('EditorProgramTree', () => {
     await act(async () => {
       entryRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    expect(onSelect).toHaveBeenLastCalledWith(hostileEntryTreeKey, entryNode);
-    expect(onEdit).not.toHaveBeenCalled();
-
-    await act(async () => {
-      entryRow?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-    });
     expect(onEdit).toHaveBeenLastCalledWith(
       { kind: 'entry-exit', operationId: 'alpha' },
       hostileEntryTreeKey
     );
+    expect(onSelect).not.toHaveBeenCalled();
 
     onEdit.mockClear();
+    await act(async () => {
+      treeItem(alphaOperation.treeKey)
+        ?.querySelector<HTMLElement>(':scope > [data-editor-program-tree-row]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(onSelect).toHaveBeenLastCalledWith(alphaOperation.treeKey, alphaOperation);
+    expect(onEdit).not.toHaveBeenCalled();
+
     await act(async () => {
       cutPathRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       cutPath?.dispatchEvent(new KeyboardEvent('keydown', {
@@ -290,7 +304,6 @@ describe('EditorProgramTree', () => {
         cancelable: true,
         key: 'Enter'
       }));
-      cutPathRow?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     });
 
     expect(onSelect).toHaveBeenLastCalledWith(cutPathNode.treeKey, cutPathNode);
@@ -308,11 +321,13 @@ describe('EditorProgramTree', () => {
     const blockedCutPath = {
       ...cutPathNode,
       status: 'blocked' as const,
+      statusActionTarget: blockedDiagnostic.editTarget,
       children: [blockedDiagnostic]
     };
     const blockedOperation = {
       ...alphaOperation,
       status: 'blocked' as const,
+      statusActionTarget: blockedDiagnostic.editTarget,
       children: [entryNode, blockedCutPath]
     };
     await renderTree({
@@ -341,7 +356,7 @@ describe('EditorProgramTree', () => {
     });
     expect(onEdit).toHaveBeenLastCalledWith(
       { kind: 'diagnostics', diagnosticId: 'cut-path' },
-      blockedDiagnostic.treeKey
+      blockedCutPath.treeKey
     );
   });
 
@@ -395,10 +410,10 @@ describe('EditorProgramTree', () => {
     });
 
     const sourceStatus = buttonWithLabel(
-      'Open status details for Source & Setup: Review required'
+      'Open status details for Source & Setup: Review required: review wire origin'
     );
     const programStatus = buttonWithLabel(
-      'Open status details for Program Sequence: Blocked'
+      'Open status details for Program Sequence: Blocked: compensation unsupported'
     );
 
     expect(sourceStatus).not.toBeNull();
@@ -407,13 +422,13 @@ describe('EditorProgramTree', () => {
     await act(async () => sourceStatus?.click());
     expect(onEdit).toHaveBeenLastCalledWith(
       { kind: 'initial-wire' },
-      initialWireNode.treeKey
+      'section:source'
     );
 
     await act(async () => programStatus?.click());
     expect(onEdit).toHaveBeenLastCalledWith(
       { kind: 'diagnostics', diagnosticId: 'compensation' },
-      'operation:beta:diagnostic:compensation'
+      'section:program'
     );
     expect(onSelect).not.toHaveBeenCalled();
 
@@ -435,13 +450,175 @@ describe('EditorProgramTree', () => {
     expect(onEdit).toHaveBeenNthCalledWith(
       1,
       { kind: 'initial-wire' },
-      initialWireNode.treeKey
+      'section:source'
     );
     expect(onEdit).toHaveBeenNthCalledWith(
       2,
       { kind: 'diagnostics', diagnosticId: 'compensation' },
-      'operation:beta:diagnostic:compensation'
+      'section:program'
     );
+  });
+
+  it('routes real unowned and operation-owned failures through explicit status targets', async () => {
+    const onEdit = vi.fn();
+    const document = twoRectangleDocument();
+    document.machiningParticipation = {
+      spans: [{
+        id: 'orphan-span',
+        sourceSegmentId: 'missing-segment',
+        range: { start: 0, end: 1 },
+        participation: 'inactive-reference'
+      }]
+    };
+    const unownedTree = buildUpidProgramTree(
+      document,
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+
+    await renderTree({
+      expandedTreeKeys: new Set(['section:program']),
+      onEdit,
+      tree: unownedTree
+    });
+    const programStatus = buttonWithLabel(
+      'Open status details for Program Sequence: Blocked: missing-source-segment'
+    );
+    expect(programStatus).not.toBeNull();
+    await act(async () => programStatus?.click());
+    expect(onEdit).toHaveBeenLastCalledWith(
+      { kind: 'machining-participation' },
+      'section:program'
+    );
+
+    const ownedDocument = twoRectangleDocument();
+    const source = ownedDocument.plan.operations[0];
+    const firstEdit = setMachiningSpanParticipation(ownedDocument, {
+      sourceSegmentId: source.segmentRefs[0].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+    const ownedFailure = setMachiningSpanParticipation(firstEdit, {
+      sourceSegmentId: source.segmentRefs[2].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+    const ownedTree = buildUpidProgramTree(
+      ownedFailure,
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const operation = ownedTree.operations.find((node) => node.operationId === source.id)!;
+    const cutPath = operation.children.find((node) => node.label === 'Cut path')!;
+
+    await renderTree({
+      expandedTreeKeys: new Set(['section:program', operation.treeKey]),
+      onEdit,
+      tree: ownedTree
+    });
+    onEdit.mockClear();
+
+    await act(async () => {
+      treeItem(operation.treeKey)
+        ?.querySelector<HTMLButtonElement>(
+          ':scope > [data-editor-program-tree-row] > button[aria-label^="Open status details"]'
+        )
+        ?.click();
+    });
+    expect(onEdit).toHaveBeenLastCalledWith(
+      { kind: 'machining-participation', operationId: source.id },
+      operation.treeKey
+    );
+
+    onEdit.mockClear();
+    await act(async () => {
+      treeItem(cutPath.treeKey)?.dispatchEvent(new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: 'Enter'
+      }));
+    });
+    expect(onEdit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      treeItem(cutPath.treeKey)?.dispatchEvent(new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        key: 'Enter'
+      }));
+    });
+    expect(onEdit).toHaveBeenLastCalledWith(
+      { kind: 'machining-participation', operationId: source.id },
+      cutPath.treeKey
+    );
+  });
+
+  it('keeps selection, focus, and routing distinct for colliding imported operation ids', async () => {
+    const onEdit = vi.fn();
+    const onSelect = vi.fn();
+    const pathDocument = twoRectangleDocument();
+    const [first, second] = pathDocument.plan.operations;
+    renameOperation(pathDocument, first.id, 'alpha');
+    renameOperation(pathDocument, second.id, 'alpha:entry');
+    const realTree = buildUpidProgramTree(
+      pathDocument,
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const firstRoot = realTree.operations.find((node) => node.operationId === 'alpha')!;
+    const firstEntry = firstRoot.children.find((node) => node.label === 'Entry / lead-in')!;
+    const secondRoot = realTree.operations.find((node) => node.operationId === 'alpha:entry')!;
+    const expansion = new Set(['section:program', firstRoot.treeKey, secondRoot.treeKey]);
+
+    await renderTree({
+      expandedTreeKeys: expansion,
+      onEdit,
+      onSelect,
+      selectedTreeKey: firstEntry.treeKey,
+      tree: realTree
+    });
+
+    expect(firstEntry.treeKey).not.toBe(secondRoot.treeKey);
+    expect(treeItem(firstEntry.treeKey)?.getAttribute('aria-selected')).toBe('true');
+    expect(treeItem(secondRoot.treeKey)?.getAttribute('aria-selected')).toBe('false');
+
+    await act(async () => {
+      treeItem(firstEntry.treeKey)
+        ?.querySelector<HTMLButtonElement>('button[aria-label="Edit Entry / lead-in"]')
+        ?.click();
+      treeItem(secondRoot.treeKey)
+        ?.querySelector<HTMLButtonElement>(
+          `button[aria-label="Edit ${secondRoot.label}"]`
+        )
+        ?.click();
+    });
+    expect(onEdit).toHaveBeenNthCalledWith(
+      1,
+      { kind: 'entry-exit', operationId: 'alpha' },
+      firstEntry.treeKey
+    );
+    expect(onEdit).toHaveBeenNthCalledWith(
+      2,
+      { kind: 'operation', operationId: 'alpha:entry' },
+      secondRoot.treeKey
+    );
+
+    await renderTree({
+      expandedTreeKeys: expansion,
+      onEdit,
+      onSelect,
+      selectedTreeKey: secondRoot.treeKey,
+      tree: realTree
+    });
+    expect(treeItem(firstEntry.treeKey)?.getAttribute('aria-selected')).toBe('false');
+    expect(treeItem(secondRoot.treeKey)?.getAttribute('aria-selected')).toBe('true');
+
+    await act(async () => {
+      treeItem(firstEntry.treeKey)?.focus();
+      treeItem(firstEntry.treeKey)?.dispatchEvent(new KeyboardEvent('keydown', {
+        bubbles: true,
+        key: 'ArrowLeft'
+      }));
+    });
+    expect(document.activeElement).toBe(treeItem(firstRoot.treeKey));
   });
 
   it('keeps exactly one roving treeitem target and removes descendants from the tab order', async () => {
@@ -460,3 +637,39 @@ describe('EditorProgramTree', () => {
     }
   });
 });
+
+function twoRectangleDocument() {
+  const document = createUpidFromDxfEntities([
+    ...rectangleLines(0, 0, 20, 20),
+    ...rectangleLines(5, 5, 10, 10)
+  ]);
+  document.setup = {
+    initialWirePosition: {
+      kind: 'manual',
+      point: { x: 0, y: 0 },
+      review: 'reviewed'
+    }
+  };
+  return document;
+}
+
+function renameOperation(
+  document: ReturnType<typeof twoRectangleDocument>,
+  originalId: string,
+  nextId: string
+) {
+  const operation = document.plan.operations.find((candidate) => candidate.id === originalId)!;
+  operation.id = nextId;
+  for (const pathElement of document.pathElements) {
+    if (pathElement.operationId === originalId) pathElement.operationId = nextId;
+  }
+}
+
+function rectangleLines(minX: number, minY: number, maxX: number, maxY: number) {
+  return [
+    { type: 'line' as const, layer: 'CUT', start: { x: minX, y: minY }, end: { x: maxX, y: minY } },
+    { type: 'line' as const, layer: 'CUT', start: { x: maxX, y: minY }, end: { x: maxX, y: maxY } },
+    { type: 'line' as const, layer: 'CUT', start: { x: maxX, y: maxY }, end: { x: minX, y: maxY } },
+    { type: 'line' as const, layer: 'CUT', start: { x: minX, y: maxY }, end: { x: minX, y: minY } }
+  ];
+}

@@ -9,7 +9,10 @@ import {
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 
-import { buildUpidProgramTree } from '../upidProgramTree';
+import {
+  buildUpidProgramTree,
+  type UpidProgramTreeNode
+} from '../upidProgramTree';
 
 describe('UPID program tree projection', () => {
   it('projects source setup and operations in execution order', () => {
@@ -185,10 +188,28 @@ describe('UPID program tree projection', () => {
 
     expect(cutPath).toMatchObject({
       status: 'blocked',
-      statusReason: 'multiple-active-groups-require-explicit-semantics'
+      statusReason: 'multiple-active-groups-require-explicit-semantics',
+      statusActionTarget: {
+        kind: 'machining-participation',
+        operationId: source.id
+      }
     });
-    expect(sourceRoot?.status).toBe('blocked');
+    expect(sourceRoot).toMatchObject({
+      status: 'blocked',
+      statusReason: 'multiple-active-groups-require-explicit-semantics',
+      statusActionTarget: {
+        kind: 'machining-participation',
+        operationId: source.id
+      }
+    });
     expect(tree.programStatus).toBe('blocked');
+    expect(tree.programStatusReason).toBe(
+      'multiple-active-groups-require-explicit-semantics'
+    );
+    expect(tree.programStatusActionTarget).toEqual({
+      kind: 'machining-participation',
+      operationId: source.id
+    });
   });
 
   it('keeps an untouched operation truthful when another operation cannot derive', () => {
@@ -250,6 +271,9 @@ describe('UPID program tree projection', () => {
     expect(tree.operations.every((operation) => operation.status === 'ready')).toBe(true);
     expect(tree.programStatus).toBe('blocked');
     expect(tree.programStatusReason).toBe('missing-source-segment');
+    expect(tree.programStatusActionTarget).toEqual({
+      kind: 'machining-participation'
+    });
   });
 
   it('preserves an unowned integrity failure alongside an owned derivation failure', () => {
@@ -506,7 +530,41 @@ describe('UPID program tree projection', () => {
     expect(cutPath?.operationId).toBe(operation.id);
     expect(cutPath?.editTarget).toBeUndefined();
   });
+
+  it('keeps tree keys unique when one imported operation id contains another node suffix', () => {
+    const document = twoRectangleDocument();
+    const [first, second] = document.plan.operations;
+    const firstOriginalId = first.id;
+    const secondOriginalId = second.id;
+    first.id = 'alpha';
+    second.id = 'alpha:entry';
+    for (const pathElement of document.pathElements) {
+      if (pathElement.operationId === firstOriginalId) pathElement.operationId = first.id;
+      if (pathElement.operationId === secondOriginalId) pathElement.operationId = second.id;
+    }
+
+    const tree = buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile());
+    const nodes = flattenTreeNodes([...tree.sourceSetup, ...tree.operations]);
+    const firstRoot = tree.operations.find((node) => node.operationId === first.id)!;
+    const firstEntry = firstRoot.children.find((node) => node.label === 'Entry / lead-in')!;
+    const secondRoot = tree.operations.find((node) => node.operationId === second.id)!;
+
+    expect(firstEntry.treeKey).not.toBe(secondRoot.treeKey);
+    expect(new Set(nodes.map((node) => node.treeKey))).toHaveLength(nodes.length);
+    expect(firstEntry.editTarget).toEqual({
+      kind: 'entry-exit',
+      operationId: 'alpha'
+    });
+    expect(secondRoot.editTarget).toEqual({
+      kind: 'operation',
+      operationId: 'alpha:entry'
+    });
+  });
 });
+
+function flattenTreeNodes(nodes: readonly UpidProgramTreeNode[]): UpidProgramTreeNode[] {
+  return nodes.flatMap((node) => [node, ...flattenTreeNodes(node.children)]);
+}
 
 function twoRectangleDocument() {
   const document = createUpidFromDxfEntities([

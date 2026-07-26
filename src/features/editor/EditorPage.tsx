@@ -1292,7 +1292,10 @@ export function EditorPage({
       selectedPathOperationId &&
       selectedTreeOperationId !== selectedPathOperationId
     ) {
-      setSelectedProgramTreeKey(`operation:${selectedPathOperationId}`);
+      const operationTreeKey = programTree.operations.find(
+        (node) => node.operationId === selectedPathOperationId
+      )?.treeKey;
+      setSelectedProgramTreeKey(operationTreeKey ?? null);
     } else if (!selectedPathOperationId && selectedTreeOperationId) {
       setSelectedProgramTreeKey(null);
     }

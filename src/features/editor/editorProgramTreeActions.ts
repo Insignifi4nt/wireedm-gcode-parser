@@ -43,7 +43,7 @@ export function resolveEditorProgramTreeAction(
     case 'entry-exit':
       return action('machining.entry-exit', target.operationId);
     case 'machining-participation':
-      return action('machining.participation', target.operationId);
+      return action('machining.participation', target.operationId ?? null);
     case 'program-stop':
       return action('machining.program-stops', target.operationId, target.stopId);
     case 'diagnostics':
