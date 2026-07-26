@@ -139,8 +139,8 @@ expect(tree.sourceSetup.map((node) => node.editTarget?.kind)).toEqual([
   'threading-default'
 ]);
 expect(tree.operations[0].children.map((node) => node.label)).toEqual([
-  'Incoming connection',
   'M00 · Before entry',
+  'Incoming connection',
   'Entry / lead-in',
   'Cut path',
   'M00 · After contour',
@@ -189,7 +189,7 @@ function buildOperationNode(
 function rollUpStatus(nodes: readonly UpidProgramTreeNode[]): UpidProgramTreeStatus;
 ```
 
-Sort operations by `orderIndex`. Put `before-operation-end` stops inside Cut Path sorted by resolved distance from cut start; put the other stop placements around Entry/Cut/Exit in execution order. Keep disabled stops visible with `inactive` status. Resolve machine-policy failures into `blocked` nodes without throwing.
+Sort operations by `orderIndex`. Put enabled `before-entry` stops before the incoming connection/rethread phase, put `before-operation-end` stops inside Cut Path sorted by resolved distance from cut start, and put the remaining stops around Cut/Exit in execution order. Keep disabled stops visible with `inactive` status. Resolve machine-policy failures into `blocked` nodes without throwing.
 
 - [ ] **Step 4: Run focused domain tests**
 
