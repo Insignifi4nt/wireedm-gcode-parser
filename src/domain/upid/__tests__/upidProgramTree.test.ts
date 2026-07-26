@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createCharmillesRobofil100V2CandidateProfile } from '@/domain/machine/machineProfiles';
+import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 
@@ -108,35 +109,93 @@ describe('UPID program tree projection', () => {
     expect(tree.operations[0].status).toBe('blocked');
   });
 
-  it('links partial machining spans back to their source operation', () => {
+  it('projects effective partial machining paths back onto their source operation', () => {
     const document = twoRectangleDocument();
     const source = document.plan.operations[0];
-    const derived = document.plan.operations[1];
-    derived.machiningIntent = {
-      kind: 'partial-contour',
-      sourceOperationId: source.id,
-      spanIds: ['span-a', 'span-b']
-    };
+    const inactiveSegmentId = source.segmentRefs[0].segmentId;
+    const edited = setMachiningSpanParticipation(document, {
+      sourceSegmentId: inactiveSegmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    });
 
-    const tree = buildUpidProgramTree(document, createDefaultMachineProfile());
-    const cutPath = tree.operations[1].children.find((node) => node.label === 'Cut path');
+    expect(edited).not.toBeNull();
+    const tree = buildUpidProgramTree(edited!, createCharmillesRobofil100V2CandidateProfile());
+    const sourceRoot = tree.operations.find((node) => node.operationId === source.id);
+    const cutPath = sourceRoot?.children.find((node) => node.label === 'Cut path');
+    const effectivePath = cutPath?.children.find((node) => node.label === 'Effective machining path');
+    const spans = effectivePath?.children.filter((node) => node.kind === 'span') ?? [];
 
-    expect(cutPath?.children).toContainEqual(expect.objectContaining({
-      kind: 'span',
-      editTarget: {
-        kind: 'machining-participation',
-        operationId: source.id,
-        spanId: 'span-a'
-      }
-    }));
-    expect(cutPath?.children).toContainEqual(expect.objectContaining({
-      kind: 'span',
-      editTarget: {
-        kind: 'machining-participation',
-        operationId: source.id,
-        spanId: 'span-b'
-      }
-    }));
+    expect(tree.operations).toHaveLength(document.plan.operations.length);
+    expect(effectivePath).toMatchObject({
+      detail: '3 segments',
+      operationId: source.id,
+      editTarget: { kind: 'machining-participation', operationId: source.id }
+    });
+    expect(spans).toHaveLength(3);
+    expect(spans.every((span) =>
+      span.operationId === source.id &&
+      span.editTarget?.kind === 'machining-participation' &&
+      span.editTarget.operationId === source.id
+    )).toBe(true);
+  });
+
+  it('rolls active-machining derivation failures into affected source operations', () => {
+    const document = twoRectangleDocument();
+    const source = document.plan.operations[0];
+    const firstInactive = setMachiningSpanParticipation(document, {
+      sourceSegmentId: source.segmentRefs[0].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    });
+    const splitIntoMultipleGroups = setMachiningSpanParticipation(firstInactive!, {
+      sourceSegmentId: source.segmentRefs[2].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    });
+
+    expect(splitIntoMultipleGroups).not.toBeNull();
+    const tree = buildUpidProgramTree(
+      splitIntoMultipleGroups!,
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const sourceRoot = tree.operations.find((node) => node.operationId === source.id);
+    const cutPath = sourceRoot?.children.find((node) => node.label === 'Cut path');
+
+    expect(cutPath).toMatchObject({
+      status: 'blocked',
+      statusReason: 'multiple-active-groups-require-explicit-semantics'
+    });
+    expect(sourceRoot?.status).toBe('blocked');
+    expect(tree.programStatus).toBe('blocked');
+  });
+
+  it('keeps a fully suppressed source operation visible but inactive', () => {
+    const document = twoRectangleDocument();
+    const source = document.plan.operations[0];
+    const edited = source.segmentRefs.reduce((current, ref) => {
+      const next = setMachiningSpanParticipation(current, {
+        sourceSegmentId: ref.segmentId,
+        range: { start: 0, end: 1 },
+        participation: 'inactive-reference'
+      });
+      expect(next).not.toBeNull();
+      return next!;
+    }, document);
+
+    const tree = buildUpidProgramTree(edited, createCharmillesRobofil100V2CandidateProfile());
+    const sourceRoot = tree.operations.find((node) => node.operationId === source.id);
+    const cutPath = sourceRoot?.children.find((node) => node.label === 'Cut path');
+
+    expect(sourceRoot).toMatchObject({
+      status: 'inactive',
+      statusReason: 'operation-suppressed-by-machining-participation'
+    });
+    expect(cutPath).toMatchObject({
+      detail: '0 segments',
+      status: 'inactive',
+      statusReason: 'operation-suppressed-by-machining-participation'
+    });
   });
 
   it('uses orderIndex rather than backing array order for initial wire and rethread phases', () => {
@@ -205,34 +264,83 @@ describe('UPID program tree projection', () => {
     expect(contourStart?.editTarget).toBeUndefined();
   });
 
-  it('rolls diagnostic warning and error severity into the tree status', () => {
+  it('associates related diagnostics with owning operations and reports section statuses', () => {
+    const document = twoRectangleDocument();
+    const first = document.plan.operations[0];
+    const second = document.plan.operations[1];
+    document.diagnostics = [
+      {
+        id: 'first-error',
+        severity: 'error',
+        code: 'intersecting-topology',
+        message: 'Cannot build the first path.',
+        relatedSegmentIds: [first.segmentRefs[0].segmentId]
+      },
+      {
+        id: 'second-warning',
+        severity: 'warning',
+        code: 'open-chain',
+        message: 'Review the second path.',
+        relatedChainIds: [second.chainId]
+      }
+    ];
+
+    const tree = buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile());
+    const firstRoot = tree.operations.find((node) => node.operationId === first.id);
+    const secondRoot = tree.operations.find((node) => node.operationId === second.id);
+
+    expect(firstRoot?.children).toContainEqual(expect.objectContaining({
+      label: 'Cannot build the first path.',
+      status: 'blocked',
+      editTarget: { kind: 'diagnostics', diagnosticId: 'first-error' }
+    }));
+    expect(secondRoot?.children).toContainEqual(expect.objectContaining({
+      label: 'Review the second path.',
+      status: 'review-required',
+      editTarget: { kind: 'diagnostics', diagnosticId: 'second-warning' }
+    }));
+    expect(firstRoot?.status).toBe('blocked');
+    expect(secondRoot?.status).toBe('review-required');
+    expect(tree.sourceSetupStatus).toBe('ready');
+    expect(tree.programStatus).toBe('blocked');
+    expect(tree.status).toBe('blocked');
+  });
+
+  it('keeps unowned diagnostics in Source & Setup without changing Program Sequence status', () => {
     const document = twoRectangleDocument();
     document.diagnostics = [{
-      id: 'warning',
+      id: 'source-warning',
       severity: 'warning',
-      code: 'open-chain',
-      message: 'Review the open chain.'
+      code: 'dxf-import-warning',
+      message: 'Review source units.'
     }];
-
-    expect(buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile()).status)
-      .toBe('review-required');
-
-    document.diagnostics = [{
-      ...document.diagnostics[0],
-      id: 'error',
-      severity: 'error',
-      message: 'Cannot build this path.'
-    }];
-
     const tree = buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile());
     const diagnostics = tree.sourceSetup[0].children;
 
     expect(diagnostics).toContainEqual(expect.objectContaining({
-      label: 'Cannot build this path.',
-      status: 'blocked',
-      editTarget: { kind: 'diagnostics', diagnosticId: 'error' }
+      label: 'Review source units.',
+      status: 'review-required',
+      editTarget: { kind: 'diagnostics', diagnosticId: 'source-warning' }
     }));
-    expect(tree.status).toBe('blocked');
+    expect(tree.sourceSetupStatus).toBe('review-required');
+    expect(tree.programStatus).toBe('ready');
+    expect(tree.status).toBe('review-required');
+  });
+
+  it('keeps Cut path selection-only and exposes Cut Sequence on the operation root', () => {
+    const document = twoRectangleDocument();
+    const operation = document.plan.operations[0];
+
+    const tree = buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile());
+    const operationRoot = tree.operations[0];
+    const cutPath = operationRoot.children.find((node) => node.label === 'Cut path');
+
+    expect(operationRoot.sequenceEditTarget).toEqual({
+      kind: 'cut-sequence',
+      operationId: operation.id
+    });
+    expect(cutPath?.operationId).toBe(operation.id);
+    expect(cutPath?.editTarget).toBeUndefined();
   });
 });
 
