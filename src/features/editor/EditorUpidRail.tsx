@@ -1,0 +1,139 @@
+import type { ReactNode } from 'react';
+
+import type { UpidProgramTreeStatus } from '@/domain/upid/upidProgramTree';
+
+export type EditorUpidRailMode = 'program' | 'geometry';
+
+export interface EditorUpidRailProps {
+  collapsed: boolean;
+  geometryContent: ReactNode;
+  mode: EditorUpidRailMode;
+  onCollapseChange: (collapsed: boolean) => void;
+  onModeChange: (mode: EditorUpidRailMode) => void;
+  programContent: ReactNode;
+  selectedOperationOrdinal: number | null;
+  status: UpidProgramTreeStatus;
+}
+
+export function EditorUpidRail({
+  collapsed,
+  geometryContent,
+  mode,
+  onCollapseChange,
+  onModeChange,
+  programContent,
+  selectedOperationOrdinal,
+  status
+}: EditorUpidRailProps) {
+  if (collapsed) {
+    const nextMode = mode === 'program' ? 'geometry' : 'program';
+    return (
+      <aside
+        aria-label="Collapsed UPID rail"
+        className="flex w-9 shrink-0 flex-col items-center gap-2 border-r border-border bg-card py-1 text-[10px]"
+        data-editor-upid-rail
+      >
+        <button
+          aria-label="Expand UPID rail"
+          className="flex size-7 items-center justify-center outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={() => onCollapseChange(false)}
+          title="Expand UPID rail"
+          type="button"
+        >
+          <span aria-hidden="true">›</span>
+        </button>
+        <button
+          aria-label={`Switch to ${nextMode === 'geometry' ? 'Geometry' : 'Program'} lens`}
+          className="flex size-6 items-center justify-center border border-border font-semibold outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={() => onModeChange(nextMode)}
+          title={`${formatMode(mode)} lens`}
+          type="button"
+        >
+          {mode === 'program' ? 'P' : 'G'}
+        </button>
+        <span
+          aria-label={`Program status: ${formatStatus(status)}`}
+          className={`size-2 rounded-full ${statusColor(status)}`}
+          role="img"
+          title={`Program status: ${formatStatus(status)}`}
+        />
+        {selectedOperationOrdinal === null ? null : (
+          <span
+            aria-label={`Selected operation ${selectedOperationOrdinal}`}
+            className="technical-value text-[10px] text-muted-foreground"
+            title={`Selected operation ${selectedOperationOrdinal}`}
+          >
+            {String(selectedOperationOrdinal).padStart(2, '0')}
+          </span>
+        )}
+      </aside>
+    );
+  }
+
+  return (
+    <aside
+      aria-label="UPID rail"
+      className="grid w-[260px] shrink-0 grid-rows-[auto_minmax(0,1fr)] border-r border-border bg-card text-[11px]"
+      data-editor-upid-rail
+    >
+      <div className="flex h-8 items-center border-b border-border px-1">
+        <div aria-label="UPID rail lens" className="flex min-w-0 flex-1" role="tablist">
+          <button
+            aria-label="Program lens"
+            aria-selected={mode === 'program'}
+            className={`px-2 py-1 ${mode === 'program' ? 'bg-accent font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => onModeChange('program')}
+            role="tab"
+            type="button"
+          >
+            Program
+          </button>
+          <button
+            aria-label="Geometry lens"
+            aria-selected={mode === 'geometry'}
+            className={`px-2 py-1 ${mode === 'geometry' ? 'bg-accent font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => onModeChange('geometry')}
+            role="tab"
+            type="button"
+          >
+            Geometry
+          </button>
+        </div>
+        <button
+          aria-label="Collapse UPID rail"
+          className="flex size-6 items-center justify-center outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={() => onCollapseChange(true)}
+          title="Collapse UPID rail"
+          type="button"
+        >
+          <span aria-hidden="true">‹</span>
+        </button>
+      </div>
+      <div className="min-h-0 overflow-hidden" role="tabpanel">
+        {mode === 'program' ? programContent : geometryContent}
+      </div>
+    </aside>
+  );
+}
+
+function formatMode(mode: EditorUpidRailMode) {
+  return mode === 'program' ? 'Program' : 'Geometry';
+}
+
+function formatStatus(status: UpidProgramTreeStatus) {
+  return {
+    ready: 'Ready',
+    'review-required': 'Review required',
+    blocked: 'Blocked',
+    inactive: 'Inactive'
+  }[status];
+}
+
+function statusColor(status: UpidProgramTreeStatus) {
+  return {
+    ready: 'bg-emerald-500',
+    'review-required': 'bg-amber-400',
+    blocked: 'bg-red-500',
+    inactive: 'bg-muted-foreground'
+  }[status];
+}
