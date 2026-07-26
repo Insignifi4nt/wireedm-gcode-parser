@@ -53,15 +53,26 @@ export function buildUpidProgramTree(
   document: PathPlanningDocument,
   machine: MachineProfile
 ): UpidProgramTree {
-  const sourceSetup = buildSourceSetupNodes(document, machine);
-  const operations = [...document.plan.operations]
-    .sort((left, right) => left.orderIndex - right.orderIndex || left.id.localeCompare(right.id))
-    .map((operation) => buildOperationNode(document, machine, operation));
+  const executionDocument = withExecutionOrder(document);
+  const sourceSetup = buildSourceSetupNodes(executionDocument, machine);
+  const operations = executionDocument.plan.operations
+    .map((operation) => buildOperationNode(executionDocument, machine, operation));
 
   return {
     status: rollUpStatus([...sourceSetup, ...operations]),
     sourceSetup,
     operations
+  };
+}
+
+function withExecutionOrder(document: PathPlanningDocument): PathPlanningDocument {
+  return {
+    ...document,
+    plan: {
+      ...document.plan,
+      operations: [...document.plan.operations]
+        .sort((left, right) => left.orderIndex - right.orderIndex || left.id.localeCompare(right.id))
+    }
   };
 }
 

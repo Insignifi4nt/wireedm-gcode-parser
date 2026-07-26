@@ -139,6 +139,35 @@ describe('UPID program tree projection', () => {
     }));
   });
 
+  it('uses orderIndex rather than backing array order for initial wire and rethread phases', () => {
+    const document = twoRectangleDocument();
+    const first = document.plan.operations[0];
+    const second = document.plan.operations[1];
+    second.threadingTransition = {
+      mode: 'manual',
+      wireSeparation: 'manual-before-positioning',
+      source: 'operation-override'
+    };
+    document.plan.operations = [second, first];
+
+    const tree = buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile());
+
+    expect(tree.operations.map((node) => node.label)).toEqual([
+      '01 · Hole 1',
+      '02 · Exterior 1'
+    ]);
+    expect(tree.operations[0].children[0]).toMatchObject({
+      label: 'Incoming connection',
+      detail: 'Initial wire position',
+      status: 'ready'
+    });
+    expect(tree.operations[1].children[0]).toMatchObject({
+      label: 'Incoming connection',
+      detail: 'Manual rethread',
+      status: 'ready'
+    });
+  });
+
   it('marks entry and exit phases that require review', () => {
     const document = twoRectangleDocument();
     const operation = document.plan.operations[0];
