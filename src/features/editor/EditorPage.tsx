@@ -87,7 +87,10 @@ import {
   summarizeUpidPathDocumentForEditor,
   upidPathElementIdForOperation
 } from '@/domain/upid/projectRail';
-import type { UpidProgramTreeEditTarget } from '@/domain/upid/upidProgramTree';
+import {
+  buildUpidProgramTree,
+  type UpidProgramTreeEditTarget
+} from '@/domain/upid/upidProgramTree';
 import { composeProjectUpidGCodeExport } from '@/domain/upid/projectUpid';
 import {
   createMeasurementPointPathSnapFromMagnetized,
@@ -125,6 +128,7 @@ import {
   type EditorPathElementRef
 } from './EditorPathNavigatorPanel';
 import { EditorProgramLinesPanel } from './EditorProgramLinesPanel';
+import { EditorProgramTree } from './EditorProgramTree';
 import { EditorProgramTextPanel } from './EditorProgramTextPanel';
 import { EditorStatusBar } from './EditorStatusBar';
 import { EditorUpidExportPreview } from './EditorUpidExportPreview';
@@ -132,13 +136,14 @@ import {
   clampEditorFloatingPanelGeometry,
   EDITOR_FLOATING_PANEL_GAP,
   EDITOR_FLOATING_PANEL_TOP,
-  EditorCollapsedDockZone,
   EditorPanelDockZone,
   EditorWorkspacePanelFrame,
   type EditorDockSide,
   type EditorFloatingPanelGeometry,
   type EditorPanelPlacement
 } from './EditorWorkspacePanels';
+import { EditorUpidRail, type EditorUpidRailMode } from './EditorUpidRail';
+import { defaultEditorProgramTreeExpansion } from './editorProgramTreeState';
 import {
   cloneEditorDraftState,
   createEditorDraftState,
@@ -457,7 +462,7 @@ function createDefaultWorkspaceLayout(
     placements: createDefaultWorkspacePanelPlacements(model),
     dockOrders: createDefaultWorkspaceDockOrders(model),
     floatingGeometries: { ...DEFAULT_WORKSPACE_PANEL_GEOMETRY },
-    dockWidths: { left: 360, right: 420 }
+    dockWidths: { left: window.innerWidth >= 1280 ? 260 : 220, right: 420 }
   };
 }
 
@@ -697,6 +702,11 @@ export function EditorPage({
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
   const [selectedProgramStopId, setSelectedProgramStopId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
+  const [upidRailMode, setUpidRailMode] = useState<EditorUpidRailMode>('program');
+  const [expandedProgramTreeKeys, setExpandedProgramTreeKeys] = useState<ReadonlySet<string>>(
+    new Set()
+  );
+  const [upidRailWidth, setUpidRailWidth] = useState(initialWorkspaceLayout.dockWidths.left);
   const [inspectorRailCollapsed, setInspectorRailCollapsed] = useState(false);
   const [inspectorRailWidth, setInspectorRailWidth] = useState(
     initialWorkspaceLayout.dockWidths.right
@@ -722,6 +732,12 @@ export function EditorPage({
   const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
   const draftText = editorDraftText(draftState);
   const pathDocumentDraft = editorDraftPathDocument(draftState);
+  const programTree = useMemo(
+    () => pathDocumentDraft && program?.project
+      ? buildUpidProgramTree(pathDocumentDraft, program.project.machine)
+      : null,
+    [pathDocumentDraft, program?.project]
+  );
   const savedDraftSignature = useMemo(
     () => editorDraftSignature(createEditorDraftState(program)),
     [program]
@@ -976,6 +992,18 @@ export function EditorPage({
   const lineRows = useMemo(() => (structure ? flattenStructureLines(structure) : []), [structure]);
   const bodyGroups = structure?.body.contours ?? [];
   const isPathProject = Boolean(pathDocumentDraft);
+  const selectedProgramTreeKey = selectedPathOperationId
+    ? `operation:${selectedPathOperationId}`
+    : null;
+  const hasActiveRightDock = Boolean(
+    isPathProject &&
+    activeWorkflowSession &&
+    readEditorWorkspaceRenderedPlacement(
+      workspacePanelPlacements,
+      activeWorkflowSession.panelId,
+      activeWorkflowSession.panelId
+    ) === 'docked-right'
+  );
   const editorSelectionSummary = selectedPathElement?.segmentId
     ? `Segment ${selectedPathElement.segmentId}`
     : selectedPathOperationId
@@ -1035,29 +1063,64 @@ export function EditorPage({
     selectedPathOperationId,
     workspacePanelPlacements
   ]);
-  const editorRailContent = useMemo(
-    () =>
-      pathDocumentDraft
-        ? {
-            collapsed: (
-              <EditorCollapsedDockZone
-                onExpand={() => setRailCollapsed(false)}
-                panelCount={readWorkspaceDockPanelCount('left')}
-                registerDockZone={false}
-                side="left"
-                title="Panel Dock"
-              />
-            ),
-            expanded: renderEditorDockZone('left'),
-            replaceRailChrome: true
-          }
+  const editorRailContent = useMemo(() => {
+    if (!pathDocumentDraft || !programTree) return null;
+
+    const selectedOperationOrdinal = selectedPathOperationId
+      ? programTree.operations.findIndex((node) => node.operationId === selectedPathOperationId) + 1
+      : null;
+    const programContent = (
+      <EditorProgramTree
+        expandedTreeKeys={expandedProgramTreeKeys}
+        onEdit={openEditorWorkflowForTarget}
+        onExpandedTreeKeysChange={setExpandedProgramTreeKeys}
+        onSelect={(node) => {
+          if (node.operationId) handleSelectPathOperation(node.operationId);
+        }}
+        selectedTreeKey={selectedProgramTreeKey}
+        tree={programTree}
+      />
+    );
+    const geometryContent = upidRailMode === 'geometry'
+      ? renderPathNavigatorPanel(pathDocumentDraft)
+      : null;
+    const railProps = {
+      geometryContent,
+      mode: upidRailMode,
+      onCollapseChange: setRailCollapsed,
+      onModeChange: setUpidRailMode,
+      programContent,
+      selectedOperationOrdinal: selectedOperationOrdinal && selectedOperationOrdinal > 0
+        ? selectedOperationOrdinal
         : null,
-    [
-      pathDocumentDraft,
-      workspacePanelPlacements,
-      workspaceDockOrders
-    ]
-  );
+      status: programTree.status
+    };
+
+    return {
+      collapsed: <EditorUpidRail {...railProps} collapsed />,
+      expanded: <EditorUpidRail {...railProps} collapsed={false} />,
+      replaceRailChrome: true,
+      sizing: {
+        maxWidth: 360,
+        minWidth: 190,
+        onWidthChange: setUpidRailWidth,
+        width: upidRailWidth
+      }
+    };
+  }, [
+    expandedPathElementIds,
+    expandedProgramTreeKeys,
+    pathDocumentDraft,
+    programTree,
+    selectedPathElement,
+    selectedPathOperationId,
+    selectedProgramStopId,
+    selectedProgramTreeKey,
+    activeHoveredPathElement,
+    measurementPoints,
+    upidRailMode,
+    upidRailWidth
+  ]);
   const editorHeaderContent = useMemo(
     () => (
       <EditorHeaderBar
@@ -1187,6 +1250,10 @@ export function EditorPage({
   }, [program?.filePath, program?.model]);
 
   useEffect(() => {
+    if (programTree) setExpandedProgramTreeKeys(defaultEditorProgramTreeExpansion(programTree));
+  }, [programIdentity]);
+
+  useEffect(() => {
     const pendingReason = Object.values(activeWorkflowPendingReasons)[0];
     setActiveWorkflowSession((current) =>
       current?.kind === 'mutating' && current.dirty
@@ -1205,14 +1272,14 @@ export function EditorPage({
         placements: workspacePanelPlacements,
         dockOrders: workspaceDockOrders,
         floatingGeometries: workspacePanelGeometries,
-        dockWidths: { left: initialWorkspaceLayout.dockWidths.left, right: inspectorRailWidth }
+        dockWidths: { left: upidRailWidth, right: inspectorRailWidth }
       });
     }, 200);
 
     return () => window.clearTimeout(timeoutId);
   }, [
-    initialWorkspaceLayout.dockWidths.left,
     inspectorRailWidth,
+    upidRailWidth,
     workspaceDockOrders,
     workspacePanelGeometries,
     workspacePanelPlacements
@@ -3187,17 +3254,11 @@ export function EditorPage({
   function renderEditorDockZone(side: EditorDockSide) {
     return (
       <EditorPanelDockZone
-        collapsed={side === 'right' ? inspectorRailCollapsed : false}
         panelCount={readWorkspaceDockPanelCount(side)}
         side={side}
-        title={side === 'left' ? 'Panel Dock' : 'Inspector Dock'}
+        title="Workflow Dock"
         onDropPanel={(panelId, dockSide, point) =>
           dockWorkspacePanel(panelId as EditorWorkspacePanelId, dockSide, point)
-        }
-        onToggleCollapsed={
-          side === 'right'
-            ? () => setInspectorRailCollapsed((current) => !current)
-            : () => setRailCollapsed(true)
         }
       />
     );
@@ -3228,7 +3289,7 @@ export function EditorPage({
   }
 
   function findWorkspaceDockSide(point: { x: number; y: number }): EditorDockSide | null {
-    for (const side of ['left', 'right'] as const) {
+    for (const side of ['right'] as const) {
       const dockZone = document.querySelector(`[data-editor-panel-dock-zone="${side}"]`);
       const rect = dockZone?.getBoundingClientRect();
       if (
@@ -3250,8 +3311,11 @@ export function EditorPage({
     side: EditorDockSide,
     point?: { x: number; y: number }
   ) {
-    if (side === 'left') setRailCollapsed(false);
-    else setInspectorRailCollapsed(false);
+    if (side === 'left') {
+      floatWorkspacePanel(panelId);
+      return;
+    }
+    setInspectorRailCollapsed(false);
     setWorkspacePanelPlacements((current) => ({
       ...current,
       [panelId]: `docked-${side}`
@@ -3512,6 +3576,7 @@ export function EditorPage({
       <section
         className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)] gap-y-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)]"
         data-editor-main-grid
+        data-has-active-right-dock={hasActiveRightDock ? 'true' : 'false'}
         data-inspector-collapsed={inspectorRailCollapsed ? 'true' : 'false'}
         style={{ '--editor-inspector-width': `${inspectorRailWidth}px` } as CSSProperties}
       >
@@ -3580,20 +3645,18 @@ export function EditorPage({
           startPreview={startPreview}
         />
 
-        {isPathProject ? (
+        {isPathProject ? (hasActiveRightDock ? (
           <>
-            {!inspectorRailCollapsed && (
-              <div
-                aria-label="Resize Inspector Dock"
-                className="hidden cursor-col-resize bg-border/30 transition hover:bg-primary/40 lg:block"
-                data-editor-inspector-resizer
-                onPointerDown={handleInspectorRailResizeStart}
-                role="separator"
-              />
-            )}
+            <div
+              aria-label="Resize Workflow Dock"
+              className="hidden cursor-col-resize bg-border/30 transition hover:bg-primary/40 lg:block"
+              data-editor-inspector-resizer
+              onPointerDown={handleInspectorRailResizeStart}
+              role="separator"
+            />
             {renderEditorDockZone('right')}
           </>
-        ) : inspectorRailCollapsed ? (
+        ) : null) : inspectorRailCollapsed ? (
           <div
             className="hidden min-h-0 border border-border bg-card/95 lg:flex lg:flex-col lg:items-center lg:gap-3 lg:py-2"
             data-editor-inspector-collapsed

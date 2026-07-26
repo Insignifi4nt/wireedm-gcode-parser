@@ -54,7 +54,33 @@ describe('editor workspace layout persistence', () => {
     );
 
     expect(normalized.placements).not.toHaveProperty('obsolete');
-    expect(normalized.dockOrders).toEqual({ left: ['contour-tree'], right: [] });
+    expect(normalized.dockOrders).toEqual({ left: [], right: [] });
+  });
+
+  it('migrates legacy left docks to floating while preserving hidden and right docks', () => {
+    const normalized = normalizeEditorWorkspaceLayout(
+      {
+        ...defaults,
+        placements: {
+          ...defaults.placements,
+          'contour-tree': 'docked-left',
+          'contour-setup': 'docked-right',
+          measurement: 'hidden'
+        }
+      },
+      defaults,
+      viewport()
+    );
+
+    expect(normalized.placements).toMatchObject({
+      'contour-tree': 'floating',
+      'contour-setup': 'docked-right',
+      measurement: 'hidden'
+    });
+    expect(normalized.dockOrders.left).toEqual([]);
+    expect(normalized.floatingGeometries['contour-tree']).toEqual(
+      defaults.floatingGeometries['contour-tree']
+    );
   });
 
   it('clamps floating geometry and dock widths to readable bounds', () => {
@@ -78,7 +104,7 @@ describe('editor workspace layout persistence', () => {
       width: 260,
       height: 750
     });
-    expect(normalized.dockWidths).toEqual({ left: 240, right: 800 });
+    expect(normalized.dockWidths).toEqual({ left: 190, right: 360 });
   });
 
   it('round-trips a normalized layout', () => {
@@ -89,7 +115,12 @@ describe('editor workspace layout persistence', () => {
 
     writeEditorWorkspaceLayout(layout);
 
-    expect(readEditorWorkspaceLayout(defaults, viewport())).toEqual(layout);
+    expect(readEditorWorkspaceLayout(defaults, viewport())).toMatchObject({
+      ...layout,
+      placements: { ...layout.placements, 'contour-tree': 'floating' },
+      dockOrders: { left: [], right: ['contour-setup'] },
+      dockWidths: { left: 360, right: 360 }
+    });
   });
 
   it('keeps remembered placements while rendering only the active workflow panel', () => {

@@ -4,6 +4,12 @@ export interface AppRailContent {
   collapsed: ReactNode;
   expanded: ReactNode;
   replaceRailChrome?: boolean;
+  sizing?: {
+    maxWidth: number;
+    minWidth: number;
+    onWidthChange: (width: number) => void;
+    width: number;
+  };
 }
 
 interface AppRailContextValue {

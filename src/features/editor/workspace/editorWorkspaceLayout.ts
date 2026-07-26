@@ -65,7 +65,12 @@ export function normalizeEditorWorkspaceLayout(
   const placements = Object.fromEntries(
     panelIds.map((panelId) => {
       const placement = candidatePlacements[panelId];
-      return [panelId, isPanelPlacement(placement) ? placement : defaults.placements[panelId]];
+      const normalizedPlacement = isPanelPlacement(placement)
+        ? placement === 'docked-left'
+          ? 'floating'
+          : placement
+        : defaults.placements[panelId];
+      return [panelId, normalizedPlacement];
     })
   );
 
@@ -130,7 +135,7 @@ function normalizeDockOrder(
 
 function clampDockWidth(value: unknown, fallback: number, viewportWidth: number) {
   const width = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-  return Math.min(Math.max(240, width), Math.max(240, viewportWidth - 200));
+  return Math.min(Math.max(190, width), Math.max(190, Math.min(360, viewportWidth - 200)));
 }
 
 function readGeometry(value: unknown): EditorFloatingPanelGeometry | null {

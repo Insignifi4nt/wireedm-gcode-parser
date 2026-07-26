@@ -197,7 +197,7 @@ export function EditorProgramTree({
 
   return (
     <ul
-      aria-label="UPID program"
+      aria-label="UPID program sequence"
       className="min-h-0 overflow-auto text-[11px] leading-4"
       ref={treeRef}
       role="tree"

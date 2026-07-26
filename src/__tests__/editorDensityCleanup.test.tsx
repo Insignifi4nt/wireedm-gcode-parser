@@ -65,6 +65,44 @@ describe('Editor density cleanup', () => {
     expect(shortcuts).toHaveLength(0);
   });
 
+  it('anchors a path project in the UPID rail and materializes the right dock only for its active workflow', async () => {
+    await importSimplePathProject();
+
+    expect(container.querySelector('[role="tree"][aria-label="UPID program sequence"]')).not.toBeNull();
+    expect(document.querySelector('[data-editor-empty-dock]')).toBeNull();
+    expect(document.querySelector('[data-editor-panel-dock-zone="right"]')).toBeNull();
+
+    const operation = container.querySelector<HTMLElement>('[data-tree-key^="operation:"] button[data-tree-key]');
+    expect(operation).not.toBeNull();
+    await act(async () => {
+      operation?.click();
+    });
+    await flushAsync();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        '[data-editor-workflow-command="machining.entry-exit"]'
+      )?.click();
+    });
+    await flushAsync();
+
+    const dockRight = document.querySelector<HTMLButtonElement>('button[aria-label="Dock Entry / Exit right"]');
+    expect(dockRight).not.toBeNull();
+    await act(async () => {
+      dockRight?.click();
+    });
+    await flushAsync();
+    expect(document.querySelector('[data-editor-panel-dock-zone="right"]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-main-grid]')?.getAttribute('data-has-active-right-dock')).toBe('true');
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('button[aria-label="Hide Entry / Exit"]')?.click();
+    });
+    await flushAsync();
+    expect(document.querySelector('[data-editor-panel-dock-zone="right"]')).toBeNull();
+    expect(container.querySelector('[data-editor-main-grid]')?.getAttribute('data-has-active-right-dock')).toBe('false');
+  });
+
   it('moves Contour Tree teaching content into one hover and focus explanation', async () => {
     await importSimplePathProject();
     await act(async () => {

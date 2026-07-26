@@ -92,6 +92,7 @@ export function AppShell({
   const projectCount = connectedWorkbench?.manifest.projects.length ?? 0;
   const hasRailContent = railContent !== null;
   const replaceRailChrome = Boolean(railContent?.replaceRailChrome);
+  const railWidth = railContent?.sizing?.width ?? sidebarWidth;
   const outputExtension = connectedWorkbench
     ? `.${normalizeOutputExtension(
         connectedWorkbench.manifest.output.extension,
@@ -103,11 +104,16 @@ export function AppShell({
   function handleSidebarResizeStart(event: PointerEvent<HTMLDivElement>) {
     event.preventDefault();
     const startX = event.clientX;
-    const startWidth = sidebarWidth;
+    const sizing = railContent?.sizing;
+    const startWidth = sizing?.width ?? sidebarWidth;
 
     function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      const nextWidth = Math.min(380, Math.max(160, startWidth + moveEvent.clientX - startX));
-      setSidebarWidth(nextWidth);
+      const nextWidth = Math.min(
+        sizing?.maxWidth ?? 380,
+        Math.max(sizing?.minWidth ?? 160, startWidth + moveEvent.clientX - startX)
+      );
+      if (sizing) sizing.onWidthChange(nextWidth);
+      else setSidebarWidth(nextWidth);
     }
 
     function handlePointerUp() {
@@ -171,7 +177,7 @@ export function AppShell({
         data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'}
         style={
           {
-            '--app-rail-width': `${sidebarWidth}px`,
+            '--app-rail-width': `${railWidth}px`,
             gridTemplateColumns: hasRailContent ? undefined : 'minmax(0, 1fr)'
           } as CSSProperties
         }

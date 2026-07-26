@@ -109,7 +109,7 @@ export function EditorUpidRail({
   return (
     <aside
       aria-label="UPID rail"
-      className="grid w-[260px] shrink-0 grid-rows-[auto_minmax(0,1fr)] border-r border-border bg-card text-[11px]"
+      className="grid w-full shrink-0 grid-rows-[auto_minmax(0,1fr)] border-r border-border bg-card text-[11px]"
       data-editor-upid-rail
     >
       <div className="flex h-8 items-center border-b border-border px-1">

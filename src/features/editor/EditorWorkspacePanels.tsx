@@ -10,8 +10,6 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  PanelLeftClose,
-  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   X
@@ -111,7 +109,7 @@ export function EditorCollapsedDockZone({
   title,
   onExpand
 }: EditorCollapsedDockZoneProps) {
-  const ExpandIcon = side === 'left' ? PanelLeftOpen : PanelRightOpen;
+  const ExpandIcon = PanelRightOpen;
 
   return (
     <aside
@@ -196,11 +194,7 @@ export function EditorPanelDockZone({
               title={`Collapse ${title}`}
               type="button"
             >
-              {side === 'left' ? (
-                <PanelLeftClose aria-hidden="true" className="size-3" />
-              ) : (
-                <PanelRightClose aria-hidden="true" className="size-3" />
-              )}
+              <PanelRightClose aria-hidden="true" className="size-3" />
             </button>
           )}
         </div>
@@ -401,12 +395,6 @@ function EditorPanelPlacementControls({
   title: string;
 }) {
   const commands = [
-    {
-      disabled: placement === 'docked-left',
-      label: `Dock ${title} left`,
-      shortLabel: 'L',
-      onClick: () => onDock('left')
-    },
     {
       disabled: placement === 'docked-right',
       label: `Dock ${title} right`,

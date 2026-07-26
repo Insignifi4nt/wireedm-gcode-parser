@@ -220,15 +220,23 @@ summary:focus-visible {
   [data-editor-main-grid][data-inspector-collapsed="true"] {
     grid-template-columns: minmax(0, 1fr) 42px;
   }
+
+  [data-editor-main-grid][data-has-active-right-dock="false"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-editor-main-grid][data-has-active-right-dock="true"] {
+    grid-template-columns: minmax(480px, 1fr) 4px var(--editor-inspector-width);
+  }
 }
 
 @media (min-width: 1024px) and (max-width: 1199px) {
   [data-app-workspace-grid][data-has-rail="true"][data-sidebar-collapsed="false"] {
-    grid-template-columns: min(var(--app-rail-width), 184px) 3px minmax(0, 1fr);
+    grid-template-columns: min(var(--app-rail-width), 220px) 3px minmax(0, 1fr);
   }
 
-  [data-editor-main-grid][data-inspector-collapsed="false"] {
-    grid-template-columns: minmax(400px, 1fr) 3px min(var(--editor-inspector-width), 340px);
+  [data-editor-main-grid][data-has-active-right-dock="true"] {
+    grid-template-columns: minmax(480px, 1fr) 3px min(var(--editor-inspector-width), 340px);
   }
 
   [data-editor-main-grid] {
