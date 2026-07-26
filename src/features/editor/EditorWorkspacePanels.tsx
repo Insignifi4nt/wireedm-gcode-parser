@@ -50,7 +50,13 @@ export function EditorCompactDrawerLaunchers({
   function closeDrawer(owner: Exclude<EditorCompactDrawer, null>) {
     onDrawerChange(null);
     queueMicrotask(() => {
-      (owner === 'upid' ? upidLauncherRef : workflowLauncherRef).current?.focus();
+      const launcher = (owner === 'upid' ? upidLauncherRef : workflowLauncherRef).current;
+      const middleUpidTrigger = owner === 'upid'
+        ? document.querySelector<HTMLButtonElement>('[aria-label="Expand UPID rail"]')
+        : null;
+      const visibleTarget = [launcher, middleUpidTrigger]
+        .find((target) => target && target.isConnected && target.getClientRects().length > 0);
+      (visibleTarget ?? launcher)?.focus();
     });
   }
 

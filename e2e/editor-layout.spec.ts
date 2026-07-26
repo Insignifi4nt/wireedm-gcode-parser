@@ -371,6 +371,80 @@ test('middle-width path editor defaults to a compact rail and floats remembered 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(800);
 });
 
+test('middle-width UPID strip opens its full tree as a focus-safe overlay', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'middle-width-upid-overlay.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  const workspaceGrid = page.locator('[data-app-workspace-grid]');
+  const expandUpidRail = page.getByRole('button', { name: 'Expand UPID rail' });
+  await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
+  await expect(workspaceGrid).toHaveCSS('grid-template-columns', '36px 764px');
+
+  await expandUpidRail.click();
+  const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
+  await expect(upidDrawer).toBeVisible();
+  await expect(upidDrawer).toHaveAttribute('aria-modal', 'true');
+  await expect(upidDrawer.getByRole('button', { name: 'Close UPID rail' })).toBeFocused();
+  await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(1);
+  await expect(workspaceGrid).toHaveAttribute('inert', '');
+  await expect(workspaceGrid).toHaveCSS('grid-template-columns', '36px 764px');
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(true);
+
+  await upidDrawer.getByRole('button', { name: 'Close UPID rail' }).click();
+  await expect(upidDrawer).toHaveCount(0);
+  await expect(expandUpidRail).toBeFocused();
+  await expect(workspaceGrid).not.toHaveAttribute('inert', '');
+  await expect(workspaceGrid).toHaveCSS('grid-template-columns', '36px 764px');
+
+  await expandUpidRail.click();
+  await upidDrawer.getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
+  const floatingWorkflow = page.locator('[data-editor-floating-panel="entry-exit"]');
+  await expect(upidDrawer).toHaveCount(0);
+  await expect(floatingWorkflow).toBeVisible();
+  await expect(floatingWorkflow).not.toHaveAttribute('inert', '');
+  await expect(workspaceGrid).not.toHaveAttribute('inert', '');
+  await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(0);
+  await expect(workspaceGrid).toHaveCSS('grid-template-columns', '36px 764px');
+  const floatingBox = await floatingWorkflow.boundingBox();
+  expect(floatingBox).not.toBeNull();
+  expect(floatingBox!.x).toBeGreaterThanOrEqual(36);
+  expect(floatingBox!.x + floatingBox!.width).toBeLessThanOrEqual(800);
+
+  await floatingWorkflow.getByRole('textbox', { name: 'Entry X' }).fill('5');
+  await floatingWorkflow.getByRole('textbox', { name: 'Entry Y' }).fill('6');
+  await expandUpidRail.click();
+  const underlyingUpidDrawer = page.locator('[data-editor-compact-drawer="upid"]');
+  const exitTreeItem = upidDrawer.getByRole('treeitem', { name: 'Exit / lead-out · None' });
+  await exitTreeItem.click();
+
+  const transition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
+  await expect(transition).toBeVisible();
+  await expect(transition.getByRole('button', { name: 'Discard' })).toBeFocused();
+  await expect(underlyingUpidDrawer).toHaveAttribute('inert', '');
+  await expect(underlyingUpidDrawer).toHaveAttribute('aria-hidden', 'true');
+  await expect(underlyingUpidDrawer).not.toHaveAttribute('aria-modal', 'true');
+  await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(1);
+
+  await page.keyboard.press('Escape');
+  await expect(transition).toHaveCount(0);
+  await expect(underlyingUpidDrawer).not.toHaveAttribute('inert', '');
+  await expect(underlyingUpidDrawer).not.toHaveAttribute('aria-hidden', 'true');
+  await expect(underlyingUpidDrawer).toHaveAttribute('aria-modal', 'true');
+  await expect(exitTreeItem).toBeFocused();
+  await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(800);
+});
+
 test('compact path editor routes program-tree edits through mutually exclusive UPID and workflow drawers', async ({ page }) => {
   await page.setViewportSize({ width: 767, height: 800 });
   await openReadyWorkbench(page);

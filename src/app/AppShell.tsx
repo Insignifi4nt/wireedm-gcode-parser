@@ -115,9 +115,14 @@ export function AppShell({
     if (!window.matchMedia) {
       const updateCompactViewport = () => {
         const compact = window.innerWidth < 768;
+        const middle = window.innerWidth >= 768 && window.innerWidth < 1024;
         setIsCompactViewport(compact);
-        setIsMiddleViewport(window.innerWidth >= 768 && window.innerWidth < 1024);
-        if (!compact) setCompactDrawer(null);
+        setIsMiddleViewport(middle);
+        setCompactDrawer((current) => {
+          if (!compact && !middle) return null;
+          if (middle && current === 'workflow') return null;
+          return current;
+        });
       };
       window.addEventListener('resize', updateCompactViewport);
       return () => window.removeEventListener('resize', updateCompactViewport);
@@ -127,7 +132,11 @@ export function AppShell({
     const updateCompactViewport = () => {
       setIsCompactViewport(media.matches);
       setIsMiddleViewport(middleMedia.matches);
-      if (!media.matches) setCompactDrawer(null);
+      setCompactDrawer((current) => {
+        if (!media.matches && !middleMedia.matches) return null;
+        if (middleMedia.matches && current === 'workflow') return null;
+        return current;
+      });
     };
     updateCompactViewport();
     media.addEventListener('change', updateCompactViewport);

@@ -698,19 +698,34 @@ export function EditorPage({
   >(null);
   const isCompactViewportRef = useRef(isCompactViewport);
   isCompactViewportRef.current = isCompactViewport;
+  const isMiddleViewportRef = useRef(isMiddleViewport);
+  isMiddleViewportRef.current = isMiddleViewport;
 
   function updateWorkflowTransition(
     next: EditorWorkflowTransition<EditorDraftSnapshot> | null
   ) {
     setWorkflowTransition(next);
-    setCompactTransitionOverlay(Boolean(isCompactViewportRef.current && next?.kind === 'held'));
+    setCompactTransitionOverlay(
+      Boolean(
+        (isCompactViewportRef.current || isMiddleViewportRef.current) &&
+        next?.kind === 'held'
+      )
+    );
   }
 
   useLayoutEffect(() => {
     setCompactTransitionOverlay(
-      Boolean(isCompactViewport && workflowTransition?.kind === 'held')
+      Boolean(
+        (isCompactViewport || isMiddleViewport) &&
+        workflowTransition?.kind === 'held'
+      )
     );
-  }, [isCompactViewport, setCompactTransitionOverlay, workflowTransition]);
+  }, [
+    isCompactViewport,
+    isMiddleViewport,
+    setCompactTransitionOverlay,
+    workflowTransition
+  ]);
 
   useEffect(() => () => setCompactTransitionOverlay(false), [setCompactTransitionOverlay]);
 
@@ -1128,7 +1143,13 @@ export function EditorPage({
     const railProps = {
       geometryContent,
       mode: upidRailMode,
-      onCollapseChange: setUpidRailCollapsed,
+      onCollapseChange: (collapsed: boolean) => {
+        if (!collapsed && isMiddleViewport) {
+          setCompactDrawer('upid');
+          return;
+        }
+        setUpidRailCollapsed(collapsed);
+      },
       onModeChange: setUpidRailMode,
       programContent,
       selectedOperationOrdinal: selectedOperationOrdinal && selectedOperationOrdinal > 0
@@ -1155,6 +1176,7 @@ export function EditorPage({
   }, [
     activeWorkflowSession,
     isCompactViewport,
+    isMiddleViewport,
     isEditorMutationLocked,
     workflowTargetChangeBlocked,
     expandedPathElementIds,
@@ -3061,7 +3083,11 @@ export function EditorPage({
   }
 
   function openActiveWorkflowInCompactDrawer() {
-    if (window.innerWidth < 768) setCompactDrawer('workflow');
+    if (isCompactViewportRef.current) {
+      setCompactDrawer('workflow');
+      return;
+    }
+    if (isMiddleViewportRef.current) setCompactDrawer(null);
   }
 
   function dismissWorkflowTransition() {
@@ -3691,7 +3717,7 @@ export function EditorPage({
           saveAvailability={activeWorkflowSession.saveAvailability}
           workflowLabel={activeWorkflowSession.label}
         />;
-        return isCompactViewport && compactModalHost
+        return (isCompactViewport || isMiddleViewport) && compactModalHost
           ? createPortal(transitionDialog, compactModalHost)
           : transitionDialog;
       })()}
