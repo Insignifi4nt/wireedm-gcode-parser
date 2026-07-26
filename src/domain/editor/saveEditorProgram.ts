@@ -8,7 +8,7 @@ import {
   projectUpidDocument,
   withProjectUpid
 } from '@/domain/upid/projectUpid';
-import type { WorkbenchProject } from '@/domain/workbench/types';
+import type { MachineProfile, WorkbenchProject } from '@/domain/workbench/types';
 import { isPathProjectSourceKind } from '@/domain/workbench/types';
 
 import { upidEditorDocumentPath } from './editorProjectPaths';
@@ -24,12 +24,14 @@ interface SaveEditorProgramBaseInput {
 export type EditorSaveDraft = SaveGCodeEditorDraft | SaveUpidEditorDraft;
 
 export interface SaveGCodeEditorDraft {
+  machineProfile?: never;
   model: 'gcode-text';
   pathDocument?: never;
   text: string;
 }
 
 export interface SaveUpidEditorDraft {
+  machineProfile?: MachineProfile;
   model: 'upid-document';
   pathDocument: PathPlanningDocument;
   text?: never;
@@ -58,16 +60,23 @@ export async function saveEditorProgram(
     throw new Error('UPID path saves require a workbench project.');
   }
 
-  const projectPathDocument = input.project ? projectUpidDocument(input.project) : null;
-  if (input.project && isPathProjectSourceKind(input.project.source.kind) && !projectPathDocument) {
+  const inputProject =
+    input.model === 'upid-document' && input.project && input.machineProfile
+      ? {
+          ...input.project,
+          machine: structuredClone(input.machineProfile)
+        }
+      : input.project;
+  const projectPathDocument = inputProject ? projectUpidDocument(inputProject) : null;
+  if (inputProject && isPathProjectSourceKind(inputProject.source.kind) && !projectPathDocument) {
     throw new Error(
-      input.project.source.kind === 'dxf'
+      inputProject.source.kind === 'dxf'
         ? 'DXF projects must contain a UPID document.'
         : 'UPID projects must contain a UPID document.'
     );
   }
 
-  if (input.model === 'upid-document' && input.project && !projectPathDocument) {
+  if (input.model === 'upid-document' && inputProject && !projectPathDocument) {
     throw new Error('UPID path saves require an existing UPID project.');
   }
 
@@ -87,9 +96,11 @@ export async function saveEditorProgram(
     await workbench.adapter.writeText(input.filePath, textToSave);
   }
 
-  const projectSave = savesPathDocument ? await saveProjectPathState(workbench, input) : null;
+  const projectSave = savesPathDocument
+    ? await saveProjectPathState(workbench, { ...input, project: inputProject })
+    : null;
   const updatedWorkbench = projectSave?.workbench ?? workbench;
-  const updatedProject = projectSave?.project ?? input.project;
+  const updatedProject = projectSave?.project ?? inputProject;
   const editorFilePath =
     savesPathDocument && updatedProject
       ? upidEditorDocumentPath(updatedWorkbench, updatedProject)

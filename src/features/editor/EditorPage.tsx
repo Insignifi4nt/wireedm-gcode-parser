@@ -97,6 +97,7 @@ import {
   type UpidProgramTreeNode
 } from '@/domain/upid/upidProgramTree';
 import { composeProjectUpidGCodeExport } from '@/domain/upid/projectUpid';
+import type { MachineProfile, WorkbenchProject } from '@/domain/workbench/types';
 import {
   createMeasurementPointPathSnapFromMagnetized,
   exportMeasurementPointsAsCsv,
@@ -110,6 +111,7 @@ import { EditorCanvasPanel } from './EditorCanvasPanel';
 import { EditorGuideDialog } from './EditorGuideDialog';
 import { EditorHeaderBar, type EditorDocumentContext } from './EditorHeaderBar';
 import { EditorInspectorPanel } from './EditorInspectorPanel';
+import { EditorProjectMachinePanel } from './EditorProjectMachinePanel';
 import { EditorInitialWirePositionPanel } from './EditorInitialWirePositionPanel';
 import { EditorEntryExitPanel } from './EditorEntryExitPanel';
 import { EditorBetweenContoursPanel } from './EditorBetweenContoursPanel';
@@ -155,6 +157,7 @@ import {
   createEditorDraftState,
   editorDraftPathDocument,
   editorDraftSignature,
+  editorProjectDraftSignature,
   editorDraftText,
   type EditorDraftState
 } from './editorDraftState';
@@ -226,6 +229,7 @@ interface EditorDraftSnapshot {
   draft: EditorDraftState;
   historyLabel?: string;
   gridSnapEnabled: boolean;
+  machineProfile: MachineProfile | null;
   measurementPoints: MeasurementPoint[];
   pathClickMode: 'set-start' | MagnetizeMode | null;
   pathTargetXDraft: string;
@@ -361,7 +365,7 @@ const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFlo
   'machining-participation': { x: 710, y: 170, width: 390, height: 600 },
   position: { x: 1020, y: 74, width: 300, height: 180 },
   statistics: { x: 990, y: 104, width: 360, height: 560 },
-  machine: { x: 1040, y: 134, width: 300, height: 220 },
+  machine: { x: 1040, y: 134, width: 320, height: 520 },
   measurement: { x: 250, y: 194, width: 340, height: 420 }
 };
 
@@ -418,8 +422,9 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
   {
     id: 'machine.profile', label: 'Project Machine & Source Setup',
     menuPath: ['Machine', 'Project Machine & Source Setup'],
-    scope: 'machine', toolWindowId: 'machine', prerequisites: [{ kind: 'document' }],
-    workflow: { kind: 'view' }
+    scope: 'machine', toolWindowId: 'machine', historyLabel: 'Edit project machine setup',
+    prerequisites: [{ kind: 'document' }, { kind: 'interaction-unlocked' }],
+    workflow: { kind: 'mutating' }
   },
   {
     id: 'export.preview', label: 'Controller Export',
@@ -664,6 +669,9 @@ export function EditorPage({
   const { closeCompactDrawerWithRailFocus, compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailContent } = useAppRail();
   const [initialWorkspaceLayout] = useState(() => readInitialWorkspaceLayout(program?.model));
   const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
+  const [machineProfileDraft, setMachineProfileDraft] = useState<MachineProfile | null>(
+    () => program?.project?.machine ? structuredClone(program.project.machine) : null
+  );
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
   const lastClickedLineRef = useRef<number | null>(null);
   const [pinnedLines, setPinnedLines] = useState<number[]>([]);
@@ -786,19 +794,35 @@ export function EditorPage({
   const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
   const draftText = editorDraftText(draftState);
   const pathDocumentDraft = editorDraftPathDocument(draftState);
+  const draftProject = useMemo<WorkbenchProject | null>(
+    () =>
+      program?.project && machineProfileDraft
+        ? {
+            ...program.project,
+            machine: machineProfileDraft
+          }
+        : program?.project ?? null,
+    [machineProfileDraft, program?.project]
+  );
   const programTree = useMemo(
-    () => pathDocumentDraft && program?.project
-      ? buildUpidProgramTree(pathDocumentDraft, program.project.machine)
+    () => pathDocumentDraft && draftProject
+      ? buildUpidProgramTree(pathDocumentDraft, draftProject.machine)
       : null,
-    [pathDocumentDraft, program?.project]
+    [draftProject, pathDocumentDraft]
   );
   const savedDraftSignature = useMemo(
-    () => editorDraftSignature(createEditorDraftState(program)),
+    () => editorProjectDraftSignature(
+      createEditorDraftState(program),
+      program?.project?.machine ?? null
+    ),
     [program]
   );
   const programIdentity = program ? `${program.model}:${program.filePath}` : 'empty';
   const lastProgramIdentityRef = useRef(programIdentity);
-  const draftSignature = useMemo(() => editorDraftSignature(draftState), [draftState]);
+  const draftSignature = useMemo(
+    () => editorProjectDraftSignature(draftState, machineProfileDraft),
+    [draftState, machineProfileDraft]
+  );
   const isImporting = importStatus === 'importing';
   const isSaving = saveStatus === 'saving';
   const isEditorMutationLocked = interactionLocked || isImporting || isSaving;
@@ -846,18 +870,18 @@ export function EditorPage({
     : null;
   const machineFit = useMemo(
     () =>
-      program
+      draftProject
         ? evaluateMachineFit({
             document: pathDocumentDraft,
-            profile: program.project?.machine
+            profile: draftProject.machine
           })
         : null,
-    [pathDocumentDraft, program]
+    [draftProject, pathDocumentDraft]
   );
   const upidExport = useMemo(() => {
-    if (!exportPreviewOpen || !pathDocumentDraft || !program?.project) return null;
+    if (!exportPreviewOpen || !pathDocumentDraft || !draftProject) return null;
 
-    const exportProgram = composeProjectUpidGCodeExport(program.project, pathDocumentDraft);
+    const exportProgram = composeProjectUpidGCodeExport(draftProject, pathDocumentDraft);
 
     return {
       blockingDiagnostics: exportProgram.blockingDiagnostics,
@@ -876,13 +900,13 @@ export function EditorPage({
       postMetrics: exportProgram.post.metrics,
       postedOperations: exportProgram.programOperations
     };
-  }, [exportPreviewOpen, pathDocumentDraft, program?.project]);
+  }, [draftProject, exportPreviewOpen, pathDocumentDraft]);
   const postedPreviewTransitions = useMemo(
     () =>
-      pathDocumentDraft && program?.project
-        ? deriveVerifiedRobofilPreviewTransitions(pathDocumentDraft, program.project.machine)
+      pathDocumentDraft && draftProject
+        ? deriveVerifiedRobofilPreviewTransitions(pathDocumentDraft, draftProject.machine)
         : undefined,
-    [pathDocumentDraft, program?.project]
+    [draftProject, pathDocumentDraft]
   );
   const constructionPreview = useMemo(() => {
     if (
@@ -1279,8 +1303,16 @@ export function EditorPage({
     const identityChanged = lastProgramIdentityRef.current !== programIdentity;
     lastProgramIdentityRef.current = programIdentity;
     const nextDraft = createEditorDraftState(program);
+    const nextMachineProfile = program?.project?.machine
+      ? structuredClone(program.project.machine)
+      : null;
     setDraftState((current) =>
-      editorDraftSignature(current) === savedDraftSignature ? current : nextDraft
+      editorDraftSignature(current) === editorDraftSignature(nextDraft) ? current : nextDraft
+    );
+    setMachineProfileDraft((current) =>
+      JSON.stringify(current) === JSON.stringify(nextMachineProfile)
+        ? current
+        : nextMachineProfile
     );
 
     if (!identityChanged) {
@@ -1610,6 +1642,10 @@ export function EditorPage({
     await onSaveEditorDraft(
       pathDocumentDraft
         ? {
+            ...(machineProfileDraft && JSON.stringify(machineProfileDraft) !==
+              JSON.stringify(program.project?.machine)
+              ? { machineProfile: machineProfileDraft }
+              : {}),
             model: 'upid-document',
             pathDocument: pathDocumentDraft
           }
@@ -2093,17 +2129,17 @@ export function EditorPage({
       pathDocumentDraft,
       operationId,
       classification,
-      program?.project?.machine
+      machineProfileDraft ?? undefined
     );
     if (edited) applyPathDocumentEdit(edited, { selectedPathOperationId: operationId });
   }
 
   function handleSetGeometryBasis(basis: PathPlanningDocument['geometryBasis']) {
-    if (!activeWorkflowOwns('geometry.setup') || !pathDocumentDraft || !program?.project || isEditorMutationLocked) return;
+    if (!activeWorkflowOwns('geometry.setup') || !pathDocumentDraft || !draftProject || isEditorMutationLocked) return;
     if (basis === pathDocumentDraft.geometryBasis) return;
 
-    const edited = basis === 'finished-contour' && machineSnapshotAuthorizesAutomaticCompensation(program.project.machine)
-      ? initializeProjectCompensationIntents(pathDocumentDraft, program.project.machine)
+    const edited = basis === 'finished-contour' && machineSnapshotAuthorizesAutomaticCompensation(draftProject.machine)
+      ? initializeProjectCompensationIntents(pathDocumentDraft, draftProject.machine)
       : { ...structuredClone(pathDocumentDraft), geometryBasis: basis };
     applyPathDocumentEdit(edited);
   }
@@ -2686,6 +2722,7 @@ export function EditorPage({
       draft: cloneEditorDraftState(draftState),
       gridSnapEnabled,
       historyLabel,
+      machineProfile: machineProfileDraft ? structuredClone(machineProfileDraft) : null,
       measurementPoints: structuredClone(measurementPoints),
       pathClickMode,
       pathTargetXDraft,
@@ -2739,6 +2776,9 @@ export function EditorPage({
     const restoredDraft = cloneEditorDraftState(snapshot.draft);
     const restoredPathDocument = editorDraftPathDocument(restoredDraft);
     setDraftState(restoredDraft);
+    setMachineProfileDraft(
+      snapshot.machineProfile ? structuredClone(snapshot.machineProfile) : null
+    );
     setCanvasMouseMode(snapshot.canvasMouseMode);
     setGridSnapEnabled(snapshot.gridSnapEnabled);
     setMeasurementPoints(structuredClone(snapshot.measurementPoints));
@@ -2859,6 +2899,20 @@ export function EditorPage({
     if (!activeWorkflowOwns(commandId)) return;
     setActiveWorkflowPendingReasons((current) => ({ ...current, [source]: reason }));
     markActiveWorkflowDirty(commandId, { enabled: false, reason });
+  }
+
+  function handleUpdateProjectMachine(nextProject: WorkbenchProject) {
+    if (
+      !activeWorkflowOwns('machine.profile') ||
+      isEditorMutationLocked ||
+      !machineProfileDraft ||
+      JSON.stringify(nextProject.machine) === JSON.stringify(machineProfileDraft)
+    ) {
+      return;
+    }
+    clearActiveWorkflowPending('machine-profile-form');
+    setMachineProfileDraft(structuredClone(nextProject.machine));
+    markActiveWorkflowDirty('machine.profile');
   }
 
   function clearActiveWorkflowPending(source: string) {
@@ -3155,7 +3209,10 @@ export function EditorPage({
         ? session.openingSnapshot
         : currentDraftSnapshot();
       pendingAction?.(
-        editorDraftSignature(resultingSnapshot.draft) !== savedDraftSignature
+        editorProjectDraftSignature(
+          resultingSnapshot.draft,
+          resultingSnapshot.machineProfile
+        ) !== savedDraftSignature
       );
       return;
     }
@@ -3470,7 +3527,24 @@ export function EditorPage({
           isSaving={isEditorMutationLocked}
           measurementPoints={measurementPoints}
           machineFit={machineFit}
-          machineProfile={program?.project?.machine ?? null}
+          machineProfile={machineProfileDraft}
+          machineProfileEditor={
+            draftProject && pathDocumentDraft ? (
+              <EditorProjectMachinePanel
+                disabled={
+                  isEditorMutationLocked || !activeWorkflowOwns('machine.profile')
+                }
+                key={activeWorkflowOwns('machine.profile') ? 'machine-active' : 'machine-inactive'}
+                onDraftChange={() => markActiveWorkflowPending(
+                  'machine.profile',
+                  'machine-profile-form',
+                  'Review and verify valid project machine settings before saving.'
+                )}
+                onUpdateProject={handleUpdateProjectMachine}
+                project={draftProject}
+              />
+            ) : undefined
+          }
           canReimportDxfUnits={Boolean(pathDocumentDraft && onReimportDxfUnits && !hasUnsavedChanges)}
           reimportDxfUnitsDisabledReason={
             hasUnsavedChanges ? 'Save or undo path changes before re-importing DXF units.' : null
@@ -3739,14 +3813,14 @@ export function EditorPage({
               onSetGeometryBasis={handleSetGeometryBasis}
             />
           )}
-        {pathDocumentDraft && program?.project &&
+        {pathDocumentDraft && draftProject &&
           renderWorkspacePanel(
             'contour-setup',
             'Contour Setup',
             <EditorContourSetupPanel
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
-              machine={program.project.machine}
+              machine={draftProject.machine}
               onReverse={handleReversePathOperation}
               onSelectOperation={(operationId) => {
                 setSelectedPathOperationId(operationId);
@@ -3788,7 +3862,7 @@ export function EditorPage({
               onSetManual={handleSetManualInitialWirePosition}
             />
           )}
-        {pathDocumentDraft && program?.project &&
+        {pathDocumentDraft && draftProject &&
           renderWorkspacePanel(
             'entry-exit',
             'Entry / Exit',
@@ -3796,7 +3870,7 @@ export function EditorPage({
               canvasPickMode={entryExitCanvasPick?.kind ?? null}
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
-              machine={program.project.machine}
+              machine={draftProject.machine}
               onCanvasPickModeChange={(mode, operationId) => {
                 if (!activeWorkflowOwns('machining.entry-exit') || isEditorMutationLocked) return;
                 setEntryExitCanvasPick(mode ? { kind: mode, operationId } : null);
@@ -3815,14 +3889,14 @@ export function EditorPage({
               targetChangeBlocked={workflowTargetChangeBlocked}
             />
           )}
-        {pathDocumentDraft && program?.project &&
+        {pathDocumentDraft && draftProject &&
           renderWorkspacePanel(
             'between-contours',
             'Between Contours',
             <EditorBetweenContoursPanel
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
-              machine={program.project.machine}
+              machine={draftProject.machine}
               onSelectOperation={handleSelectWorkflowOperation}
               onSetOperationThreading={handleSetOperationThreading}
               onSetProjectThreading={handleSetProjectThreading}
@@ -3850,14 +3924,14 @@ export function EditorPage({
               targetChangeBlocked={workflowTargetChangeBlocked}
             />
           )}
-        {pathDocumentDraft && program?.project &&
+        {pathDocumentDraft && draftProject &&
           renderWorkspacePanel(
             'program-stops',
             'Program Stops',
             <EditorProgramStopsPanel
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}
-              machine={program.project.machine}
+              machine={draftProject.machine}
               onDraftChange={() => markActiveWorkflowPending(
                 'machining.program-stops', 'stop-form',
                 'Add a valid program stop or discard its pending fields before saving or changing the target contour.'
@@ -4008,7 +4082,7 @@ export function EditorPage({
         hasUnsavedChanges={hasUnsavedChanges}
         isSaving={isSaving}
         machineFitStatus={machineFit?.status ?? null}
-        machineProfileName={program?.project?.machine.name ?? null}
+        machineProfileName={machineProfileDraft?.name ?? null}
         moveCount={pathCount}
         operationCount={pathDocumentDraft?.plan.operations.length ?? null}
         programLineCount={draftParseResult?.stats.totalLines ?? null}

@@ -223,6 +223,43 @@ describe('saveEditorProgram', () => {
     expect(saved.editorProgram.project?.upid?.document.plan.operations[0].direction).toBe('reverse');
   });
 
+  it('merges an edited project-machine snapshot into the persisted UPID project only', async () => {
+    const adapter = new MemoryWorkbenchAdapter();
+    const workbench = await initializeWorkbenchDirectory(adapter, {
+      now: new Date('2026-05-29T10:00:00.000Z')
+    });
+    const imported = await importDxfProject(workbench, {
+      fileName: 'machine-snapshot.dxf',
+      text: rectangleDxf(),
+      now: new Date('2026-05-29T11:00:00.000Z')
+    });
+    const machineProfile = structuredClone(imported.project.machine);
+    machineProfile.output.coordinatePrecision = 5;
+    machineProfile.workArea = { widthMm: null, lengthMm: 40 };
+
+    const saved = await saveEditorProgram(imported.workbench, {
+      filePath: imported.project.source.files[0].path,
+      machineProfile,
+      model: 'upid-document',
+      now: new Date('2026-05-29T12:00:00.000Z'),
+      pathDocument: imported.pathDocument,
+      project: imported.project
+    });
+
+    const savedProject = JSON.parse(
+      adapter.files.get('projects/machine-snapshot-2026-05-29/project.json') || '{}'
+    );
+    expect(savedProject.machine).toMatchObject({
+      id: imported.project.machine.id,
+      output: { coordinatePrecision: 5 },
+      workArea: { widthMm: null, lengthMm: 40 }
+    });
+    expect(saved.editorProgram.project?.machine).toEqual(machineProfile);
+    expect(imported.project.machine.output.coordinatePrecision).toBe(3);
+    expect(imported.workbench.activeMachineProfile.output.coordinatePrecision).toBe(3);
+    expect(imported.workbench.manifest.machineProfiles).not.toContain(machineProfile);
+  });
+
   it('saves UPID path edits even when no generated editor program file exists', async () => {
     const adapter = new MemoryWorkbenchAdapter();
     const workbench = await initializeWorkbenchDirectory(adapter, {

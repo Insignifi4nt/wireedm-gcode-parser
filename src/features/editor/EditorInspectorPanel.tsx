@@ -51,6 +51,7 @@ interface EditorInspectorPanelProps {
   isSaving: boolean;
   machineFit: MachineFitResult | null;
   machineProfile: MachineProfile | null;
+  machineProfileEditor?: ReactNode;
   measurementPoints: MeasurementPoint[];
   pathCount: number;
   pathConstructionMode?: MagnetizeMode | null;
@@ -100,6 +101,7 @@ export function EditorInspectorPanel({
   isSaving,
   machineFit,
   machineProfile,
+  machineProfileEditor,
   measurementPoints,
   pathCount,
   pathConstructionMode = null,
@@ -979,6 +981,11 @@ export function EditorInspectorPanel({
               {machineFit.issues
                 .map((issue) => `${issue.axis} ${issue.actualMm.toFixed(3)} > ${issue.limitMm.toFixed(3)} mm`)
                 .join('\n')}
+            </div>
+          )}
+          {machineProfileEditor && (
+            <div className="mt-3 border-t border-border pt-3">
+              {machineProfileEditor}
             </div>
           )}
         </section>

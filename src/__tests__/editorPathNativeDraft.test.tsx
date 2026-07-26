@@ -2375,6 +2375,119 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe(true);
   });
 
+  it('edits the exact blocked project machine snapshot with one undo and persists it on reload', async () => {
+    const project = projectWithPrecisionCollapsedMachine();
+    const onSaveEditorDraft = vi.fn();
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={onSaveEditorDraft} project={project} />);
+    });
+    await flushAsync();
+
+    await ensureProgramTreeItemExpanded('section:source');
+    const precisionAction = container.querySelector<HTMLButtonElement>(
+      'button[aria-label*="Machine setup"][aria-label*="precision-collapse"]'
+    );
+    expect(precisionAction).not.toBeNull();
+    await act(async () => precisionAction?.click());
+    await flushAsync();
+
+    expect(visibleWorkflowPanelIds()).toEqual(['machine']);
+    await changeInput('input[aria-label="Output coordinate precision"]', '4');
+    await clickElement('button[aria-label="Review and verify project machine settings"]');
+
+    expect(
+      container.querySelector(
+        'button[aria-label*="Machine setup"][aria-label*="precision-collapse"]'
+      )
+    ).toBeNull();
+    await clickElement('[data-editor-workflow-command="view.summary"]');
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      'before opening Path Summary'
+    );
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    const restoredPrecisionAction = container.querySelector<HTMLButtonElement>(
+      'button[aria-label*="Machine setup"][aria-label*="precision-collapse"]'
+    );
+    expect(restoredPrecisionAction).not.toBeNull();
+    await act(async () => restoredPrecisionAction?.click());
+    await flushAsync();
+    await changeInput('input[aria-label="Output coordinate precision"]', '4');
+    await clickElement('button[aria-label="Review and verify project machine settings"]');
+
+    expect(
+      programTreeItem('setup:machine')?.querySelector('[aria-label="Ready"]')
+    ).not.toBeNull();
+
+    await clickElement(
+      '[data-editor-workflow-actions="machine.profile"] button[aria-label^="Save "]'
+    );
+    expect(container.textContent).toContain('Unsaved');
+
+    const undoButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Undo active document change"]'
+    );
+    expect(undoButton?.disabled).toBe(false);
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(
+      container.querySelector(
+        'button[aria-label*="Machine setup"][aria-label*="precision-collapse"]'
+      )
+    ).not.toBeNull();
+    expect(
+      (container.querySelector(
+        'button[aria-label="Undo active document change"]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(true);
+
+    await clickElement('button[aria-label="Redo active document change"]');
+    expect(
+      container.querySelector(
+        'button[aria-label*="Machine setup"][aria-label*="precision-collapse"]'
+      )
+    ).toBeNull();
+    await clickElement('button[aria-label="Save active document"]');
+
+    const savedDraft = onSaveEditorDraft.mock.calls[0]?.[0] as EditorSaveDraft | undefined;
+    expect(savedDraft).toMatchObject({
+      model: 'upid-document',
+      machineProfile: {
+        id: project.machine.id,
+        controller: { verification: { status: 'user-verified' } },
+        output: { coordinatePrecision: 4 }
+      }
+    });
+    if (!savedDraft || savedDraft.model !== 'upid-document' || !savedDraft.machineProfile) {
+      throw new Error('Expected a UPID save draft.');
+    }
+    const reloadedProject = {
+      ...withProjectUpid(project, savedDraft.pathDocument),
+      machine: savedDraft.machineProfile
+    };
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="machine.profile"
+          onSaveEditorDraft={vi.fn()}
+          project={reloadedProject}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(
+      (container.querySelector(
+        'input[aria-label="Output coordinate precision"]'
+      ) as HTMLInputElement | null)?.value
+    ).toBe('4');
+    expect(
+      container.querySelector(
+        'button[aria-label*="Machine setup"][aria-label*="precision-collapse"]'
+      )
+    ).toBeNull();
+  });
+
   it('does not offer a radial center-pierce lead-in for active controller compensation', async () => {
     const machine = createVerifiedCharmillesRobofil100Profile();
     let document = initializeProjectCompensationIntents(
@@ -4331,6 +4444,43 @@ function projectWithUpid(
   if (machine) project.machine = structuredClone(machine);
 
   return withProjectUpid(project, pathDocument);
+}
+
+function projectWithPrecisionCollapsedMachine() {
+  const sourceProject = createWorkbenchProject({
+    id: 'precision-collapse-source',
+    name: 'Precision collapse source',
+    sourceKind: 'dxf'
+  });
+  const machine = structuredClone(sourceProject.machine);
+  machine.id = 'verified-project-machine';
+  machine.name = 'Verified project machine';
+  machine.compensation = {
+    supported: true,
+    enabledByDefault: true,
+    offsetSelection: { address: 'D', index: 0 },
+    activation: 'linear-lead',
+    cancellation: 'linear-lead-out',
+    lifecycleScope: 'operation',
+    preActivationCodes: [],
+    validationLeadLengthMm: 2,
+    expectedMaximumOffsetMm: 0.25
+  };
+  machine.templates = { header: 'G90', footer: '' };
+  const verifiedMachine = markMachineProfileUserVerified(
+    machine,
+    new Date('2026-07-13T00:00:00.000Z')
+  );
+  verifiedMachine.compensation.validationLeadLengthMm = 0.0004;
+  const document = setManualInitialWirePosition(
+    initializeProjectCompensationIntents(
+      dxfEntitiesToUpidDocument(parseDxf(circleDxf()).entities),
+      verifiedMachine
+    ),
+    { x: 0, y: 0 }
+  );
+  if (!document) throw new Error('Expected a valid initial wire position.');
+  return projectWithUpid(document, verifiedMachine);
 }
 
 async function changeSelect(select: HTMLSelectElement | null, value: string) {

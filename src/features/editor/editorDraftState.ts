@@ -1,6 +1,7 @@
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import type { MachineProfile } from '@/domain/workbench/types';
 
 export type EditorDraftState = EditorSaveDraft;
 
@@ -38,6 +39,13 @@ export function editorDraftPathDocument(draft: EditorDraftState): PathPlanningDo
 
 export function editorDraftSignature(draft: EditorDraftState) {
   return JSON.stringify(draft);
+}
+
+export function editorProjectDraftSignature(
+  draft: EditorDraftState,
+  machineProfile: MachineProfile | null
+) {
+  return JSON.stringify({ draft, machineProfile });
 }
 
 export function editorDraftText(draft: EditorDraftState) {
