@@ -122,12 +122,13 @@ export function buildUpidProgramTree(
   }
   const effectiveExecutionDocument = postPreparation.document;
   const operations = executionDocument.plan.operations
-    .map((operation) => {
+    .map((operation, executionIndex) => {
       const projection = machiningProjection.bySourceOperationId.get(operation.id)!;
       return buildOperationNode(
         executionDocument,
         machine,
         operation,
+        executionIndex,
         projection.effectiveOperations,
         operationDiagnostics.get(operation.id) ?? [],
         projection.failureReason,
@@ -284,6 +285,7 @@ function buildOperationNode(
   document: PathPlanningDocument,
   machine: MachineProfile,
   operation: PathOperation,
+  executionIndex: number,
   effectiveOperations: readonly PathOperation[],
   diagnostics: readonly PathDiagnostic[],
   derivationFailure: Extract<ActiveMachiningDerivation, { status: 'blocked' }>['reason'] | undefined,
@@ -361,7 +363,7 @@ function buildOperationNode(
   return {
     treeKey: operationKey,
     kind: 'operation',
-    label: `${String(operation.orderIndex + 1).padStart(2, '0')} · ${operation.displayName}`,
+    label: `${String(executionIndex + 1).padStart(2, '0')} · ${operation.displayName}`,
     detail: operation.classification,
     status,
     statusReason,
@@ -476,13 +478,19 @@ function buildCutPathNode(
   postIssues: readonly UpidMachinePostPreparationIssue[],
   authoritativeGlobalPostBlocker: boolean
 ): UpidProgramTreeNode {
+  const postIssue = postIssues.find((issue) => issue.scope === 'contour-start');
   const contourStart: UpidProgramTreeNode = {
     treeKey: `${operationTreeKey(operation.id)}:contour-start`,
     kind: 'phase',
     label: 'Contour start',
     detail: operation.closed ? undefined : 'Closed contours only',
-    status: operation.closed ? 'ready' : 'inactive',
-    statusReason: operation.closed ? undefined : 'closed-contours-only',
+    status: !operation.closed ? 'inactive' : postIssue ? 'blocked' : 'ready',
+    statusReason: !operation.closed
+      ? 'closed-contours-only'
+      : postIssue?.reason,
+    statusActionTarget: operation.closed && postIssue
+      ? { kind: 'contour-start', operationId: operation.id }
+      : undefined,
     operationId: operation.id,
     ...(operation.closed
       ? { editTarget: { kind: 'contour-start' as const, operationId: operation.id } }
@@ -517,6 +525,7 @@ function buildCutPathNode(
   const status = derivationFailure
     ? 'blocked'
     : rollUpStatuses([
+        contourStart.status,
         ...pathStatuses.map((resolution) =>
           typeof resolution === 'string' ? resolution : resolution.status
         ),
@@ -907,6 +916,10 @@ function preparationIssueActionTarget(
     case 'entry-exit':
       return issue.sourceOperationId
         ? { kind: 'entry-exit', operationId: issue.sourceOperationId }
+        : undefined;
+    case 'contour-start':
+      return issue.sourceOperationId
+        ? { kind: 'contour-start', operationId: issue.sourceOperationId }
         : undefined;
     case 'cut-path':
       return issue.sourceOperationId

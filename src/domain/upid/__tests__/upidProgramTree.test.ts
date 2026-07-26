@@ -10,6 +10,7 @@ import {
   markMachineProfileUserVerified
 } from '@/domain/machine/machineProfiles';
 import {
+  setClosedOperationStartNearPoint,
   setCircleOperationCenterPierceLeadIn,
   setManualInitialWirePosition,
   setPathOperationManualLeadIn,
@@ -70,6 +71,196 @@ describe('UPID program tree projection', () => {
     expect(tree.programStatusActionTarget).toEqual({
       kind: 'entry-exit',
       operationId: operation.id
+    });
+  });
+
+  it('offers Contour start for a sharp manual start and clears the blocker after that workflow changes it', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(smoothAlternateStartEntities()),
+      machine
+    );
+    const operation = initialized.plan.operations[0];
+    const withInitialWire = setManualInitialWirePosition(initialized, { x: 0, y: 0 })!;
+    const withSharpManualStart = setClosedOperationStartNearPoint(
+      withInitialWire,
+      operation.id,
+      operation.startPoint
+    )!;
+
+    const blockedPost = postUpidForMachine(withSharpManualStart, machine);
+    const blockedTree = buildUpidProgramTree(withSharpManualStart, machine);
+    const blockedOperation = blockedTree.operations.find(
+      (node) => node.operationId === operation.id
+    )!;
+    const blockedEntry = blockedOperation.children.find(
+      (node) => node.label === 'Entry / lead-in'
+    );
+    const blockedCutPath = blockedOperation.children.find(
+      (node) => node.label === 'Cut path'
+    );
+    const blockedContourStart = blockedCutPath?.children.find(
+      (node) => node.label === 'Contour start'
+    );
+
+    expect(blockedPost.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({ reason: 'sharp-manual-start' })
+    }));
+    expect(blockedEntry).toMatchObject({
+      status: 'ready',
+      statusReason: undefined,
+      statusActionTarget: undefined
+    });
+    expect(blockedContourStart).toMatchObject({
+      status: 'blocked',
+      statusReason: 'sharp-manual-start',
+      statusActionTarget: {
+        kind: 'contour-start',
+        operationId: operation.id
+      }
+    });
+    expect(blockedCutPath).toMatchObject({
+      status: 'blocked',
+      statusReason: 'sharp-manual-start',
+      statusActionTarget: {
+        kind: 'contour-start',
+        operationId: operation.id
+      }
+    });
+    expect(blockedTree.programStatusActionTarget).toEqual({
+      kind: 'contour-start',
+      operationId: operation.id
+    });
+
+    const withSmoothManualStart = setClosedOperationStartNearPoint(
+      withSharpManualStart,
+      operation.id,
+      { x: 0, y: 5 }
+    )!;
+    const readyPost = postUpidForMachine(withSmoothManualStart, machine);
+    const readyTree = buildUpidProgramTree(withSmoothManualStart, machine);
+    const readyContourStart = readyTree.operations
+      .find((node) => node.operationId === operation.id)!
+      .children.find((node) => node.label === 'Cut path')
+      ?.children.find((node) => node.label === 'Contour start');
+
+    expect(readyPost.status).toBe('ready');
+    expect(readyContourStart).toMatchObject({
+      status: 'ready',
+      statusReason: undefined,
+      statusActionTarget: undefined
+    });
+    expect(readyTree.programStatus).toBe('ready');
+  });
+
+  it('keeps automatic no-safe-candidate ownership on Entry / lead-in', () => {
+    const machine = verifiedGenericExplicitMachine();
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(rectangleLines(0, 0, 10, 5)),
+      machine
+    );
+    const operation = initialized.plan.operations[0];
+    const document = setManualInitialWirePosition(initialized, { x: 0, y: 0 })!;
+
+    const posted = postUpidForMachine(document, machine);
+    const operationRoot = buildUpidProgramTree(document, machine).operations[0];
+    const entry = operationRoot.children.find(
+      (node) => node.label === 'Entry / lead-in'
+    );
+    const contourStart = operationRoot.children
+      .find((node) => node.label === 'Cut path')
+      ?.children.find((node) => node.label === 'Contour start');
+
+    expect(posted.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({ reason: 'no-safe-candidate' })
+    }));
+    expect(entry).toMatchObject({
+      status: 'blocked',
+      statusReason: 'no-safe-candidate',
+      statusActionTarget: {
+        kind: 'entry-exit',
+        operationId: operation.id
+      }
+    });
+    expect(contourStart).toMatchObject({
+      status: 'ready',
+      statusReason: undefined,
+      statusActionTarget: undefined
+    });
+  });
+
+  it('owns collision at Contour start only when an explicit start selected the failing lead', () => {
+    const machine = verifiedGenericExplicitMachine();
+    let initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+        line(5.2, -2, 5.2, -0.5)
+      ]),
+      machine
+    );
+    const operation = initialized.plan.operations.find((candidate) => candidate.closed)!;
+    const obstacle = initialized.plan.operations.find((candidate) => !candidate.closed)!;
+    initialized = setMachiningSpanParticipation(initialized, {
+      sourceSegmentId: obstacle.segmentRefs[0].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+    const automatic = setManualInitialWirePosition(initialized, { x: 0, y: 0 })!;
+
+    const automaticTree = buildUpidProgramTree(automatic, machine);
+    const automaticRoot = automaticTree.operations.find(
+      (node) => node.operationId === operation.id
+    )!;
+    const automaticEntry = automaticRoot.children.find(
+      (node) => node.label === 'Entry / lead-in'
+    );
+    const automaticContourStart = automaticRoot.children
+      .find((node) => node.label === 'Cut path')
+      ?.children.find((node) => node.label === 'Contour start');
+
+    expect(postUpidForMachine(automatic, machine).diagnostics).toContainEqual(
+      expect.objectContaining({
+        details: expect.objectContaining({ reason: 'collision' })
+      })
+    );
+    expect(automaticEntry).toMatchObject({
+      status: 'blocked',
+      statusReason: 'collision',
+      statusActionTarget: {
+        kind: 'entry-exit',
+        operationId: operation.id
+      }
+    });
+    expect(automaticContourStart?.status).toBe('ready');
+
+    const manual = setClosedOperationStartNearPoint(
+      automatic,
+      operation.id,
+      operation.startPoint
+    )!;
+    const manualRoot = buildUpidProgramTree(manual, machine).operations.find(
+      (node) => node.operationId === operation.id
+    )!;
+    const manualEntry = manualRoot.children.find(
+      (node) => node.label === 'Entry / lead-in'
+    );
+    const manualContourStart = manualRoot.children
+      .find((node) => node.label === 'Cut path')
+      ?.children.find((node) => node.label === 'Contour start');
+
+    expect(postUpidForMachine(manual, machine).diagnostics).toContainEqual(
+      expect.objectContaining({
+        details: expect.objectContaining({ reason: 'collision' })
+      })
+    );
+    expect(manualEntry?.status).toBe('ready');
+    expect(manualContourStart).toMatchObject({
+      status: 'blocked',
+      statusReason: 'collision',
+      statusActionTarget: {
+        kind: 'contour-start',
+        operationId: operation.id
+      }
     });
   });
 
@@ -681,10 +872,12 @@ describe('UPID program tree projection', () => {
       .toBe('review-required');
   });
 
-  it('uses orderIndex rather than backing array order for initial wire and rethread phases', () => {
+  it('uses sorted execution position rather than gapped orderIndex or backing array order', () => {
     const document = twoRectangleDocument();
     const first = document.plan.operations[0];
     const second = document.plan.operations[1];
+    first.orderIndex = 5;
+    second.orderIndex = 17;
     second.threadingTransition = {
       mode: 'manual',
       wireSeparation: 'manual-before-positioning',
@@ -708,6 +901,34 @@ describe('UPID program tree projection', () => {
       detail: 'Manual rethread',
       status: 'ready'
     });
+  });
+
+  it('uses deterministic execution positions for duplicate orderIndex values', () => {
+    const document = twoRectangleDocument();
+    const first = document.plan.operations[0];
+    const second = document.plan.operations[1];
+    first.orderIndex = 9;
+    second.orderIndex = 9;
+    document.plan.operations = [second, first];
+
+    const tree = buildUpidProgramTree(document, createTreeMachine());
+
+    expect(tree.operations.map((node) => ({
+      label: node.label,
+      operationId: node.operationId,
+      sequenceEditTarget: node.sequenceEditTarget
+    }))).toEqual([
+      {
+        label: '01 · Hole 1',
+        operationId: first.id,
+        sequenceEditTarget: { kind: 'cut-sequence', operationId: first.id }
+      },
+      {
+        label: '02 · Exterior 1',
+        operationId: second.id,
+        sequenceEditTarget: { kind: 'cut-sequence', operationId: second.id }
+      }
+    ]);
   });
 
   it('marks entry and exit phases that require review', () => {
@@ -914,6 +1135,55 @@ function createTreeMachine() {
   const machine = createDefaultMachineProfile();
   machine.threading.manual.supported = true;
   return machine;
+}
+
+function verifiedGenericExplicitMachine() {
+  const machine = createDefaultMachineProfile();
+  machine.id = 'verified-generic-explicit';
+  machine.compensation = {
+    supported: true,
+    enabledByDefault: true,
+    offsetSelection: { address: 'D', index: 0 },
+    activation: 'linear-lead',
+    cancellation: 'linear-lead-out',
+    lifecycleScope: 'operation',
+    preActivationCodes: [],
+    validationLeadLengthMm: 2,
+    expectedMaximumOffsetMm: 0.25
+  };
+  machine.templates = { header: 'G90', footer: '' };
+  return markMachineProfileUserVerified(
+    machine,
+    new Date('2026-07-13T00:00:00.000Z')
+  );
+}
+
+function smoothAlternateStartEntities() {
+  return [
+    {
+      type: 'arc' as const,
+      layer: 'CUT',
+      center: { x: 0, y: 0 },
+      radius: 5,
+      startAngle: 0,
+      endAngle: 90,
+      clockwise: false,
+      start: { x: 5, y: 0 },
+      end: { x: 0, y: 5 }
+    },
+    {
+      type: 'arc' as const,
+      layer: 'CUT',
+      center: { x: 0, y: 0 },
+      radius: 5,
+      startAngle: 90,
+      endAngle: 180,
+      clockwise: false,
+      start: { x: 0, y: 5 },
+      end: { x: -5, y: 0 }
+    },
+    line(-5, 0, 5, 0)
+  ];
 }
 
 function stop(

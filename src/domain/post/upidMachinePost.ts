@@ -85,6 +85,7 @@ export interface UpidMachinePostPreparationIssue {
     | 'geometry-setup'
     | 'initial-wire'
     | 'entry-exit'
+    | 'contour-start'
     | 'cut-path'
     | 'program-stop';
   effectiveOperationId?: string;
@@ -1782,7 +1783,7 @@ function operationIssue(
 ): UpidMachinePostPreparationIssue {
   return {
     reason,
-    scope: preparationIssueScope(reason),
+    scope: preparationIssueScope(reason, operation),
     effectiveOperationId: operation.id,
     sourceOperationId:
       operation.machiningIntent?.sourceOperationId ?? operation.id
@@ -1802,6 +1803,7 @@ function preparationIssues(
 ): UpidMachinePostPreparationIssue[] {
   const scope = preparationIssueScope(reason);
   return scope === 'entry-exit' ||
+    scope === 'contour-start' ||
     scope === 'cut-path' ||
     scope === 'program-stop'
     ? operations.map((operation) => operationIssue(operation, reason))
@@ -1809,7 +1811,8 @@ function preparationIssues(
 }
 
 function preparationIssueScope(
-  reason: string
+  reason: string,
+  operation?: PathPlanningDocument['plan']['operations'][number]
 ): UpidMachinePostPreparationIssue['scope'] {
   switch (reason) {
     case 'program-stop-post-unsupported':
@@ -1817,12 +1820,14 @@ function preparationIssueScope(
       return 'program-stop';
     case 'unsafe-radial-lead':
     case 'unsafe-controller-compensation-lead-in':
-    case 'sharp-manual-start':
-    case 'collision':
     case 'outside-work-area':
     case 'precision-collapse':
     case 'no-safe-candidate':
       return 'entry-exit';
+    case 'sharp-manual-start':
+      return 'contour-start';
+    case 'collision':
+      return operation?.overrides?.start ? 'contour-start' : 'entry-exit';
     case 'compensation-resolution-blocked':
       return 'cut-path';
     case 'initial-wire-position-required':
