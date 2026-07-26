@@ -83,6 +83,30 @@ describe('App front-end redesign', () => {
     expect(status?.textContent).not.toContain('Temporary storage');
   });
 
+  it('keeps project library controls inside a narrow workbench viewport', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+    const input = container.querySelector('input[aria-label="Machine program file"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [new File(['G90\nM30'], 'narrow-layout.nc')]
+    });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+    await flushAsync();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Back to Dashboard"]')?.click();
+    });
+    await flushAsync();
+
+    const library = container.querySelector<HTMLElement>('[data-project-library]');
+    const controls = container.querySelector<HTMLElement>('[data-project-list-controls]');
+    const row = container.querySelector<HTMLElement>('[data-project-row]');
+    expect(library?.className).toContain('min-w-0');
+    expect(controls?.className).toContain('sm:grid-cols-');
+    expect(row?.className).toContain('lg:grid-cols-');
+    expect(row?.className).toContain('min-w-0');
+  });
+
   it('opens an imported posted file in the Machine Program workspace', async () => {
     window.showDirectoryPicker = undefined;
     await renderApp(context);

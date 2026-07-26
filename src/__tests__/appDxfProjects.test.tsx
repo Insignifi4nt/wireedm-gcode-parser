@@ -1238,12 +1238,7 @@ describe('App DXF imports and project library', () => {
     await prepareDxfImport(container, new File([rectangleDxf()], 'single-workflow.dxf'));
     await confirmPendingDxfImport(container);
 
-    await act(async () => {
-      container
-        .querySelector('[data-editor-workflow-command="geometry.transform"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await flushReactOnly();
+    await openWorkflowCommand(container, 'geometry.transform');
 
     expect(
       [...container.querySelectorAll('[data-editor-workspace-panel]')].map((panel) =>
@@ -1251,12 +1246,7 @@ describe('App DXF imports and project library', () => {
       )
     ).toEqual(['path-transform']);
 
-    await act(async () => {
-      container
-        .querySelector('[data-editor-workflow-command="view.summary"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await flushReactOnly();
+    await openWorkflowCommand(container, 'view.summary');
 
     expect(
       [...container.querySelectorAll('[data-editor-workspace-panel]')].map((panel) =>
@@ -1274,21 +1264,21 @@ describe('App DXF imports and project library', () => {
     await confirmPendingDxfImport(container);
 
     expect(
-      [...container.querySelectorAll('[data-editor-workflow-menus] summary')].map(
-        (summary) => summary.textContent
+      [...container.querySelectorAll('[data-editor-workflow-menus] button[aria-haspopup="menu"]')].map(
+        (button) => button.textContent
       )
     ).toEqual(['Geometry', 'Machining', 'Construction', 'View', 'Machine', 'Export']);
-    expect(container.querySelector('summary[aria-label="Project menu"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Project menu"]')).toBeNull();
     expect(container.querySelector('[data-editor-panel-toolbar]')).toBeNull();
     expect(container.querySelector('[data-editor-panel-shortcuts]')).toBeNull();
     expect(container.querySelector('summary[aria-label="Panels"]')).toBeNull();
     expect(
       container.querySelector('button[aria-label="Open Path Project export preview"]')
     ).toBeNull();
-    expect(container.querySelectorAll('[data-editor-workflow-command]')).toHaveLength(19);
-    expect(
-      container.querySelector('[data-editor-workflow-command="machine.profile"]')?.textContent
-    ).toContain('Project Machine & Source Setup');
+    await openWorkflowCommand(container, 'machine.profile');
+    expect(container.querySelector('[data-editor-machine-section] h3')?.textContent).toBe(
+      'Project Machine & Source Setup'
+    );
 
     await selectFirstCutSequence(container);
 
@@ -1339,14 +1329,6 @@ describe('App DXF imports and project library', () => {
     await prepareDxfImport(container, new File([rectangleDxf()], 'regrouped-workflows.dxf'));
     await confirmPendingDxfImport(container);
     await selectFirstCutSequence(container);
-
-    const commandIds = [...container.querySelectorAll('[data-editor-workflow-command]')].map(
-      (command) => command.getAttribute('data-editor-workflow-command')
-    );
-    expect(commandIds).toContain('geometry.setup');
-    expect(commandIds).toContain('machining.contour-setup');
-    expect(commandIds).not.toContain('geometry.path-actions');
-    expect(commandIds).not.toContain('construction.hover-assist');
 
     await openWorkflowCommand(container, 'geometry.setup');
     let activePanel = container.querySelector('[data-editor-workspace-panel]');
@@ -2423,10 +2405,7 @@ describe('App DXF imports and project library', () => {
       (container.querySelector('button[aria-label="Back to Dashboard"]') as HTMLButtonElement)
         .disabled
     ).toBe(true);
-    await act(async () => {
-      container.querySelector('[data-editor-workflow-command="machining.contour-setup"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+    await openWorkflowCommand(container, 'machining.contour-setup');
     expect(
       (container.querySelector('button[aria-label="Reverse path operation"]') as HTMLButtonElement)
         .disabled
@@ -4386,12 +4365,7 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
-    const openPreviewButton = container.querySelector(
-      'button[aria-label="Open UPID export preview"]'
-    ) as HTMLButtonElement | null;
-    await act(async () => {
-      openPreviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
+    await openWorkflowCommand(container, 'export.preview');
     await savePendingWorkflowTransition(container);
 
     const exportCode = container.querySelector('[data-upid-export-gcode]');
@@ -5583,12 +5557,34 @@ async function closeWorkbenchSettings(container: HTMLElement) {
 }
 
 async function openWorkflowCommand(container: HTMLElement, commandId: string) {
+  const menuTitle = getWorkflowMenuTitle(commandId);
+  const menuButton = container.querySelector(
+    `button[aria-label="${menuTitle} menu"]`
+  ) as HTMLButtonElement | null;
+  expect(menuButton).not.toBeNull();
+  await act(async () => menuButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await flushReactOnly();
   const command = container.querySelector(
     `[data-editor-workflow-command="${commandId}"]`
   ) as HTMLButtonElement | null;
   expect(command).not.toBeNull();
   await act(async () => command?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await flushReactOnly();
+}
+
+function getWorkflowMenuTitle(commandId: string) {
+  const category = commandId.split('.')[0];
+  const titles: Record<string, string> = {
+    construction: 'Construction',
+    export: 'Export',
+    geometry: 'Geometry',
+    machine: 'Machine',
+    machining: 'Machining',
+    view: 'View'
+  };
+  const title = titles[category];
+  if (!title) throw new Error(`No workflow menu owns ${commandId}.`);
+  return title;
 }
 
 async function savePendingWorkflowTransition(container: HTMLElement) {

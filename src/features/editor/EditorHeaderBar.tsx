@@ -119,7 +119,7 @@ export function EditorHeaderBar({
         <div className="flex shrink-0 items-center gap-1" data-editor-header-document-commands>
         <Button
           aria-label="Undo active document change"
-          className="h-7 px-2 text-[10px]"
+          className="h-7 px-2 text-[11px]"
           data-editor-header-command
           disabled={!undoAvailable || interactionLocked}
           onClick={onUndo}
@@ -132,7 +132,7 @@ export function EditorHeaderBar({
         </Button>
         <Button
           aria-label="Redo active document change"
-          className="h-7 px-2 text-[10px]"
+          className="h-7 px-2 text-[11px]"
           data-editor-header-command
           disabled={!redoAvailable || interactionLocked}
           onClick={onRedo}
@@ -145,7 +145,7 @@ export function EditorHeaderBar({
         </Button>
         <Button
           aria-label="Save active document"
-          className="h-7 px-2 text-[10px]"
+          className="h-7 px-2 text-[11px]"
           data-editor-header-command
           disabled={!hasUnsavedChanges || interactionLocked || Boolean(saveDisabledReason)}
           onClick={onSave}
@@ -159,7 +159,7 @@ export function EditorHeaderBar({
         {documentContext !== 'path-project' && onExport && exportLabel && (
           <Button
             aria-label={exportLabel}
-            className="h-7 px-2 text-[10px]"
+            className="h-7 px-2 text-[11px]"
             data-editor-header-command
             disabled={!exportAvailable || interactionLocked}
             onClick={onExport}
@@ -185,7 +185,7 @@ export function EditorHeaderBar({
             <Button
               {...guideTargetProps('import-program', guideHighlightTarget)}
               aria-label={isImporting ? 'Importing program' : 'Import Program'}
-              className={`h-7 px-2 text-[10px] ${guideHighlightClass(
+              className={`h-7 px-2 text-[11px] ${guideHighlightClass(
                 'import-program',
                 guideHighlightTarget
               )}`}

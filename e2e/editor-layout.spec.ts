@@ -2,17 +2,6 @@ import { expect, test } from '@playwright/test';
 
 import { confirmPendingDxfImport } from './dxf-import';
 
-const PATH_SHORTCUT_IDS = [
-  'contour-tree',
-  'path-actions',
-  'cut-sequence',
-  'path-transform',
-  'path-diagnostics',
-  'statistics',
-  'measurement',
-  'machine'
-];
-
 async function openReadyWorkbench(page: import('@playwright/test').Page) {
   await page.goto('/');
   await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
@@ -27,6 +16,7 @@ test('machine program editor uses one header and an open resizable inspector', a
     mimeType: 'text/plain',
     buffer: Buffer.from('%\nG90\nG0 X0 Y0\nG1 X20 Y0\nG1 X20 Y10\nM02\n%')
   });
+  await dismissOnboarding(page);
 
   const appHeader = page.locator('[data-app-header]');
   await expect(appHeader.getByRole('button', { name: /dashboard/i })).toBeVisible();
@@ -71,13 +61,14 @@ test('machine program line commands stay fully visible at desktop and laptop wid
     mimeType: 'text/plain',
     buffer: Buffer.from('%\nG90\nG0 X0 Y0\nG1 X20 Y0\nG1 X20 Y10\nM02\n%')
   });
+  await dismissOnboarding(page);
 
   await expectLineCommandInsideToolbar(page, 1440);
   await page.setViewportSize({ width: 1024, height: 720 });
   await expectLineCommandInsideToolbar(page, 1024);
 });
 
-test('path editor keeps direct shortcuts at 1440 and essential controls at 1024', async ({ page }) => {
+test('path editor keeps the UPID rail and essential workflow controls at 1024', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openReadyWorkbench(page);
   await page.locator('input[aria-label="DXF file"]').setInputFiles({
@@ -86,24 +77,18 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
 
   const appHeader = page.locator('[data-app-header]');
   const canvas = page.locator('[data-editor-canvas-panel]');
-  const leftDock = page.locator('[data-editor-panel-dock-zone="left"]');
-  const rightDock = page.locator('[data-editor-panel-dock-zone="right"]');
-  const workspaceToolbar = appHeader.locator('[data-editor-panel-toolbar]');
-  const workspaceTrigger = workspaceToolbar.locator('summary[aria-label="Panels"]');
-
-  for (const panelId of PATH_SHORTCUT_IDS) {
-    const shortcut = page.locator(`[data-editor-panel-shortcut="${panelId}"]`);
-    await expect(shortcut).toBeVisible();
-    await expect(shortcut).toHaveAttribute('title', /^(Show|Hide) /);
-    const shortcutBox = await shortcut.boundingBox();
-    expect(shortcutBox).not.toBeNull();
-    expect(shortcutBox!.width).toBeLessThanOrEqual(30);
-  }
+  const upidRail = page.getByRole('complementary', { name: 'UPID rail' });
+  await expect(upidRail).toBeVisible();
+  await expect(upidRail.getByRole('tree', { name: 'UPID program sequence' })).toBeVisible();
+  await expect(page.locator('[data-editor-panel-dock-zone="left"]')).toHaveCount(0);
+  await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
   await expect(appHeader.getByRole('button', { name: /import program/i })).toHaveCount(0);
 
+  await openWorkflowCommand(page, 'View', 'view.contours');
   const contourTreeHelp = page.getByRole('button', { name: 'Contour Tree help' });
   await contourTreeHelp.hover();
   const contourTreeTooltip = page.locator('[data-upid-contour-tree-tooltip]');
@@ -119,7 +104,7 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
     contourTreeBox!.x + contourTreeBox!.width
   );
 
-  await page.locator('[data-editor-panel-shortcut="cut-sequence"]').click();
+  await openWorkflowCommand(page, 'Machining', 'machining.sequence');
   const cutSequencePanel = page.locator('[data-editor-workspace-panel="cut-sequence"]');
   const cutSequenceList = cutSequencePanel.locator('[data-upid-cut-sequence-list]');
   await expect(cutSequencePanel).toBeVisible();
@@ -130,44 +115,16 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
   expect(
     await cutSequenceList.evaluate((element) => getComputedStyle(element).overflowY)
   ).toBe('visible');
-  await page.locator('[data-editor-panel-shortcut="cut-sequence"]').click();
-
-  const workspaceBox = await workspaceToolbar.boundingBox();
-  const undoBox = await appHeader
-    .getByRole('button', { name: /undo active document change/i })
-    .boundingBox();
-  expect(workspaceBox).not.toBeNull();
-  expect(undoBox).not.toBeNull();
-  expect(workspaceBox!.x + workspaceBox!.width).toBeLessThanOrEqual(undoBox!.x - 4);
-
-  const controlsBox = await appHeader
-    .getByRole('button', { name: /open usage guide/i })
-    .boundingBox();
-  const notificationsBox = await page.locator('[data-status-notification-root]').boundingBox();
-  expect(controlsBox).not.toBeNull();
-  expect(notificationsBox).not.toBeNull();
-  expect(controlsBox!.x + controlsBox!.width).toBeLessThanOrEqual(notificationsBox!.x - 4);
 
   await page.setViewportSize({ width: 1024, height: 720 });
 
   await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible();
   await expect(canvas).toBeVisible();
-  await expect(leftDock).toBeVisible();
-  await expect(rightDock).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Collapse Panel Dock' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Collapse Inspector Dock' })).toBeVisible();
+  await expect(upidRail).toBeVisible();
   await expect(page.locator('[data-editor-status-bar]')).toBeVisible();
-  await expect(workspaceTrigger).toBeVisible();
-  await expect(page.locator('[data-editor-panel-shortcuts]')).not.toBeVisible();
   await expect(appHeader.getByRole('button', { name: /import program/i })).toHaveCount(0);
-  await expect(page.locator('[data-editor-dock-panel-stack="left"]')).toHaveCSS(
-    'scrollbar-width',
-    'thin'
-  );
-  await expect(page.locator('[data-editor-dock-panel-stack="right"]')).toHaveCSS(
-    'scrollbar-width',
-    'thin'
-  );
+
+  await expectWorkflowMenusInsideViewport(page, 1024);
 
   expect(await readWidth(canvas)).toBeGreaterThanOrEqual(400);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
@@ -176,11 +133,9 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
   expect(headerBox).not.toBeNull();
   const essentialControls = [
     appHeader.getByRole('button', { name: /dashboard/i }),
-    workspaceTrigger,
     appHeader.getByRole('button', { name: /undo active document change/i }),
     appHeader.getByRole('button', { name: /redo active document change/i }),
     appHeader.getByRole('button', { name: /save active document/i }),
-    appHeader.getByRole('button', { name: /export preview/i }),
     appHeader.getByRole('button', { name: /open usage guide/i })
   ];
   for (const command of essentialControls) {
@@ -194,7 +149,7 @@ test('path editor keeps direct shortcuts at 1440 and essential controls at 1024'
   }
 });
 
-test('left and right docks expose symmetric collapsed controls', async ({ page }) => {
+test('path editor materializes a right dock only for a docked active workflow', async ({ page }) => {
   await page.setViewportSize({ width: 1708, height: 874 });
   await openReadyWorkbench(page);
   await page.locator('input[aria-label="DXF file"]').setInputFiles({
@@ -203,58 +158,21 @@ test('left and right docks expose symmetric collapsed controls', async ({ page }
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
 
-  const expandedLeftBox = await page
-    .locator('[data-editor-panel-dock-zone="left"]')
-    .boundingBox();
-  const expandedRightBox = await page
-    .locator('[data-editor-panel-dock-zone="right"]')
-    .boundingBox();
-  expect(expandedLeftBox).not.toBeNull();
-  expect(expandedRightBox).not.toBeNull();
-  expect(Math.abs(expandedLeftBox!.y - expandedRightBox!.y)).toBeLessThanOrEqual(1);
-  expect(Math.abs(expandedLeftBox!.height - expandedRightBox!.height)).toBeLessThanOrEqual(1);
-
-  await page.getByRole('button', { name: 'Collapse Inspector Dock' }).click();
-  const expandInspector = page.getByRole('button', { name: 'Expand Inspector Dock' });
-  await expect(expandInspector).toBeVisible();
-
-  await page.getByRole('button', { name: 'Collapse Panel Dock' }).click();
-  const collapsedLeft = page.locator('[data-editor-collapsed-dock="left"]');
-  const collapsedRight = page.locator('[data-editor-collapsed-dock="right"]');
-  await expect(collapsedLeft).toBeVisible();
-  await expect(collapsedRight).toBeVisible();
-
-  const leftBox = await collapsedLeft.boundingBox();
-  const rightBox = await collapsedRight.boundingBox();
-  expect(leftBox).not.toBeNull();
-  expect(rightBox).not.toBeNull();
-  expect(Math.abs(leftBox!.width - rightBox!.width)).toBeLessThanOrEqual(1);
-  expect(Math.abs(leftBox!.y - rightBox!.y)).toBeLessThanOrEqual(1);
-  expect(Math.abs(leftBox!.height - rightBox!.height)).toBeLessThanOrEqual(1);
-
-  const expandPanel = page.getByRole('button', { name: 'Expand Panel Dock' });
-  await expect(expandPanel).toBeVisible();
-  const expandPanelBox = await expandPanel.boundingBox();
-  const expandInspectorBox = await expandInspector.boundingBox();
-  expect(expandPanelBox).not.toBeNull();
-  expect(expandInspectorBox).not.toBeNull();
-  expect(expandPanelBox!.width).toBe(expandInspectorBox!.width);
-  expect(expandPanelBox!.height).toBe(expandInspectorBox!.height);
-
-  await expandPanel.click();
-  await expandInspector.click();
-  await expect(page.locator('[data-editor-panel-dock-zone="left"]')).toBeVisible();
+  await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
+  await openWorkflowCommand(page, 'Machining', 'machining.entry-exit');
+  await page.getByRole('button', { name: 'Dock Entry / Exit right' }).click();
   await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Collapse Panel Dock' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Collapse Inspector Dock' })).toBeVisible();
+  await page.getByRole('button', { name: 'Hide Entry / Exit' }).click();
+  await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
 });
 
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1024, height: 720 }
 ]) {
-  test(`path editor restores its docked Contour Tree after repeated rail collapse at ${viewport.width}px`, async ({
+  test(`path editor preserves its UPID Program rail after repeated collapse at ${viewport.width}px`, async ({
     page
   }) => {
     await page.setViewportSize(viewport);
@@ -265,35 +183,35 @@ for (const viewport of [
       buffer: Buffer.from(rectangleDxf())
     });
     await confirmPendingDxfImport(page);
+    await dismissOnboarding(page);
 
-    const contourTree = page.locator(
-      '[data-app-rail-expanded-content] [data-editor-workspace-panel="contour-tree"]'
-    );
+    const programTree = page.getByRole('tree', { name: 'UPID program sequence' });
     for (let cycle = 0; cycle < 2; cycle += 1) {
-      await expect(contourTree).toBeVisible();
-      await expect(contourTree).toHaveAttribute(
-        'data-editor-workspace-panel-placement',
-        'docked-left'
-      );
-      await expect(contourTree).toContainText('Contour Tree');
+      await expect(programTree).toBeVisible();
 
-      await page.getByRole('button', { name: 'Collapse Panel Dock' }).click();
-      await expect(page.locator('[data-app-rail-expanded-content]')).toHaveAttribute(
-        'aria-hidden',
-        'true'
-      );
-      await expect(contourTree).not.toBeVisible();
+      await page.getByRole('button', { name: 'Collapse UPID rail' }).click();
+      await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
+      await expect(programTree).not.toBeVisible();
 
-      await page.getByRole('button', { name: 'Expand Panel Dock' }).click();
-      await expect(page.locator('[data-app-rail-expanded-content]')).not.toHaveAttribute(
-        'aria-hidden',
-        'true'
-      );
+      await page.getByRole('button', { name: 'Expand UPID rail' }).click();
     }
 
-    await expect(contourTree).toBeVisible();
-    await expect(contourTree).toContainText('Contour Tree');
+    await expect(programTree).toBeVisible();
   });
+}
+
+async function openWorkflowCommand(
+  page: import('@playwright/test').Page,
+  menuTitle: string,
+  commandId: string
+) {
+  await page.getByRole('button', { name: `${menuTitle} menu` }).click();
+  await page.locator(`[data-editor-workflow-command="${commandId}"]`).click();
+}
+
+async function dismissOnboarding(page: import('@playwright/test').Page) {
+  const dialog = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
+  if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Go Build!' }).click();
 }
 
 async function drag(locator: import('@playwright/test').Locator, deltaX: number, deltaY: number) {
@@ -301,10 +219,21 @@ async function drag(locator: import('@playwright/test').Locator, deltaX: number,
   if (!box) throw new Error('Drag target is not visible.');
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
-  await locator.page().mouse.move(x, y);
-  await locator.page().mouse.down();
-  await locator.page().mouse.move(x + deltaX, y + deltaY, { steps: 8 });
-  await locator.page().mouse.up();
+  await locator.dispatchEvent('pointerdown', { button: 0, clientX: x, clientY: y, pointerType: 'mouse' });
+  await locator.page().evaluate(({ clientX, clientY, deltaX: moveX, deltaY: moveY }) => {
+    window.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true,
+      clientX: clientX + moveX,
+      clientY: clientY + moveY,
+      pointerType: 'mouse'
+    }));
+    window.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true,
+      clientX: clientX + moveX,
+      clientY: clientY + moveY,
+      pointerType: 'mouse'
+    }));
+  }, { clientX: x, clientY: y, deltaX, deltaY });
 }
 
 async function readWidth(locator: import('@playwright/test').Locator) {
@@ -337,6 +266,40 @@ async function expectLineCommandInsideToolbar(
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     viewportWidth
   );
+}
+
+async function expectWorkflowMenusInsideViewport(
+  page: import('@playwright/test').Page,
+  viewportWidth: number
+) {
+  const titles = ['Geometry', 'Machining', 'Construction', 'View', 'Machine', 'Export'];
+  for (const title of titles) {
+    const trigger = page.getByRole('button', { name: `${title} menu` });
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+
+    const menu = page.locator(`[data-editor-workflow-menu="${title}"]`);
+    await expect(menu).toBeVisible();
+    const menuBox = await menu.boundingBox();
+    expect(menuBox).not.toBeNull();
+    expect(menuBox!.x).toBeGreaterThanOrEqual(0);
+    expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(viewportWidth);
+
+    const rows = menu.locator('[data-editor-workflow-command]');
+    const rowCount = await rows.count();
+    expect(rowCount).toBeGreaterThan(0);
+    for (let index = 0; index < rowCount; index += 1) {
+      const row = rows.nth(index);
+      await expect(row).toBeVisible();
+      const rowBox = await row.boundingBox();
+      expect(rowBox).not.toBeNull();
+      expect(rowBox!.height).toBeGreaterThanOrEqual(30);
+      expect(rowBox!.height).toBeLessThanOrEqual(34);
+    }
+
+    await trigger.click();
+    await expect(menu).toHaveCount(0);
+  }
 }
 
 function rectangleDxf() {

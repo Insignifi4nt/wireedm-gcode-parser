@@ -37,7 +37,7 @@ export function ProjectListPanel({
   return (
     <section
       aria-labelledby="project-library-title"
-      className="technical-panel min-h-[260px] min-[1180px]:min-h-[420px]"
+      className="technical-panel min-w-0 min-h-[260px] min-[1180px]:min-h-[420px]"
       data-project-library
     >
       <div className="technical-panel-header justify-between">
@@ -49,7 +49,7 @@ export function ProjectListPanel({
       <div className="p-3 text-[11px]">
         {projects.length > 0 ? (
           <div className="grid gap-2">
-            <div className="grid grid-cols-[minmax(0,1fr)_150px_150px] gap-2">
+            <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(120px,150px)_minmax(120px,150px)]" data-project-list-controls>
               <input
                 aria-label="Search projects"
                 className="technical-input px-2 text-[11px] outline-none"
@@ -87,7 +87,8 @@ export function ProjectListPanel({
               {visibleProjects.length > 0 ? (
                 visibleProjects.map((project) => (
                   <div
-                    className="grid grid-cols-[minmax(0,1fr)_110px_150px_164px] items-center gap-3 p-2"
+                    className="grid min-w-0 gap-x-3 gap-y-1 p-2 lg:grid-cols-[minmax(0,1fr)_110px_minmax(120px,150px)_auto] lg:items-center"
+                    data-project-row
                     data-project-source={project.sourceKind}
                     key={project.id}
                   >
@@ -97,11 +98,11 @@ export function ProjectListPanel({
                         {project.path}
                       </p>
                     </div>
-                    <span className="whitespace-nowrap text-muted-foreground">
+                    <span className="text-[10px] text-muted-foreground lg:text-[11px]">
                       {getProjectSourceLabel(project.sourceKind)}
                     </span>
-                    <span className="technical-value truncate text-muted-foreground" title={project.updatedAt}>{project.updatedAt}</span>
-                    <div className="flex w-[164px] items-center gap-1">
+                    <span className="technical-value truncate text-[10px] text-muted-foreground" title={project.updatedAt}>{project.updatedAt}</span>
+                    <div className="flex min-w-0 items-center gap-1 lg:justify-end">
                       <Button
                         aria-label={`Open project ${project.id} in editor`}
                         disabled={interactionLocked}

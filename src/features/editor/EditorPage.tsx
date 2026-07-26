@@ -3580,6 +3580,7 @@ export function EditorPage({
         data-editor-main-grid
         data-has-active-right-dock={hasActiveRightDock ? 'true' : 'false'}
         data-inspector-collapsed={inspectorRailCollapsed ? 'true' : 'false'}
+        data-is-path-project={isPathProject ? 'true' : 'false'}
         style={{ '--editor-inspector-width': `${inspectorRailWidth}px` } as CSSProperties}
       >
         <EditorCanvasPanel

@@ -110,7 +110,6 @@ summary:focus-visible {
 .technical-panel {
   border: 1px solid var(--border);
   background: var(--card);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
 }
 
 .technical-panel-header {
@@ -221,7 +220,7 @@ summary:focus-visible {
     grid-template-columns: minmax(0, 1fr) 42px;
   }
 
-  [data-editor-main-grid][data-has-active-right-dock="false"] {
+  [data-editor-main-grid][data-is-path-project="true"][data-has-active-right-dock="false"] {
     grid-template-columns: minmax(0, 1fr);
   }
 

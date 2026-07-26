@@ -79,12 +79,7 @@ describe('Editor density cleanup', () => {
     });
     await flushAsync();
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>(
-        '[data-editor-workflow-command="machining.entry-exit"]'
-      )?.click();
-    });
-    await flushAsync();
+    await openWorkflowCommand('machining.entry-exit');
 
     const dockRight = document.querySelector<HTMLButtonElement>('button[aria-label="Dock Entry / Exit right"]');
     expect(dockRight).not.toBeNull();
@@ -105,12 +100,7 @@ describe('Editor density cleanup', () => {
 
   it('moves Contour Tree teaching content into one hover and focus explanation', async () => {
     await importSimplePathProject();
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>(
-        '[data-editor-workflow-command="view.contours"]'
-      )?.click();
-    });
-    await flushAsync();
+    await openWorkflowCommand('view.contours');
 
     expect(document.querySelector('[data-upid-contour-tree-map]')).toBeNull();
     expect(document.querySelector('[data-upid-contour-tree-help]')).toBeNull();
@@ -128,12 +118,7 @@ describe('Editor density cleanup', () => {
   it('lets each workspace panel own scrolling for its primary row collection', async () => {
     await importSimplePathProject();
 
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>(
-        '[data-editor-workflow-command="machining.sequence"]'
-      )?.click();
-    });
-    await flushAsync();
+    await openWorkflowCommand('machining.sequence');
 
     const cutSequence = document.querySelector('[data-upid-cut-sequence-list]');
     expect(cutSequence).not.toBeNull();
@@ -145,15 +130,28 @@ describe('Editor density cleanup', () => {
       ['view.endpoints', '[data-upid-endpoint-topology-list]'],
       ['view.diagnostics', '[data-upid-diagnostics-list]']
     ]) {
-      await act(async () => {
-        container.querySelector<HTMLButtonElement>(
-          `[data-editor-workflow-command="${commandId}"]`
-        )?.click();
-      });
-      await flushAsync();
+      await openWorkflowCommand(commandId);
       const primaryList = document.querySelector(selector);
       expect(primaryList).not.toBeNull();
       expect(primaryList?.className).not.toMatch(/max-h-|overflow-auto/);
     }
   });
+
+  async function openWorkflowCommand(commandId: string) {
+    const category = commandId.split('.')[0];
+    const title = {
+      construction: 'Construction',
+      machining: 'Machining',
+      view: 'View'
+    }[category];
+    if (!title) throw new Error(`No workflow menu owns ${commandId}.`);
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`button[aria-label="${title} menu"]`)?.click();
+    });
+    await flushAsync();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`[data-editor-workflow-command="${commandId}"]`)?.click();
+    });
+    await flushAsync();
+  }
 });
