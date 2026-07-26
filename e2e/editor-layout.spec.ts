@@ -445,6 +445,102 @@ test('middle-width UPID strip opens its full tree as a focus-safe overlay', asyn
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(800);
 });
 
+test('middle viewport temporarily collapses an expanded desktop UPID rail', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'live-middle-effective-collapse.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  const workspaceGrid = page.locator('[data-app-workspace-grid]');
+  const expandedRail = page.getByRole('complementary', { name: 'UPID rail', exact: true });
+  await expect(expandedRail).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(false);
+
+  await page.setViewportSize({ width: 800, height: 800 });
+  const collapsedRail = page.getByRole('complementary', { name: 'Collapsed UPID rail' });
+  const expandUpidRail = page.getByRole('button', { name: 'Expand UPID rail' });
+  await expect(collapsedRail).toBeVisible();
+  await expect(expandedRail).toHaveCount(0);
+  await expect(workspaceGrid).toHaveCSS('grid-template-columns', '36px 764px');
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(false);
+
+  await expandUpidRail.click();
+  const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
+  await expect(upidDrawer).toBeVisible();
+  await expect(workspaceGrid).toHaveCSS('grid-template-columns', '36px 764px');
+  await upidDrawer.getByRole('button', { name: 'Close UPID rail' }).click();
+  await expect(expandUpidRail).toBeFocused();
+
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await expect(upidDrawer).toHaveCount(0);
+  await expect(expandedRail).toBeVisible();
+  await expect(collapsedRail).toHaveCount(0);
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(false);
+});
+
+test('persisted expanded rail uses the middle overlay and restores focus on desktop resize', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'persisted-middle-effective-collapse.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(false);
+
+  await page.reload();
+  await expect(page.locator('[data-project-row]')).toHaveCount(1);
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.locator('[data-project-row]')
+    .getByRole('button', { name: /Open project .* in editor/ })
+    .click();
+
+  const workspaceGrid = page.locator('[data-app-workspace-grid]');
+  const expandUpidRail = page.getByRole('button', { name: 'Expand UPID rail' });
+  await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
+  await expect(workspaceGrid).toHaveCSS('grid-template-columns', '36px 764px');
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(false);
+
+  await expandUpidRail.click();
+  const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
+  await expect(upidDrawer).toBeVisible();
+  await page.setViewportSize({ width: 1024, height: 800 });
+
+  await expect(upidDrawer).toHaveCount(0);
+  const expandedRail = page.getByRole('complementary', { name: 'UPID rail', exact: true });
+  const programLens = expandedRail.getByRole('tab', { name: 'Program lens' });
+  await expect(expandedRail).toBeVisible();
+  await expect(programLens).toBeFocused();
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(false);
+});
+
 test('compact path editor routes program-tree edits through mutually exclusive UPID and workflow drawers', async ({ page }) => {
   await page.setViewportSize({ width: 767, height: 800 });
   await openReadyWorkbench(page);

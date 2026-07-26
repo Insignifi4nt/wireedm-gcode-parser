@@ -1,4 +1,11 @@
-import { useEffect, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+  type ReactNode
+} from 'react';
 import {
   Database,
   HardDrive,
@@ -65,6 +72,9 @@ export function AppShell({
   const [compactDrawer, setCompactDrawer] = useState<EditorCompactDrawer>(null);
   const [compactModalHost, setCompactModalHost] = useState<HTMLDivElement | null>(null);
   const [compactTransitionOverlay, setCompactTransitionOverlay] = useState(false);
+  const compactDrawerRef = useRef(compactDrawer);
+  compactDrawerRef.current = compactDrawer;
+  const restoreRailFocusAfterViewportCloseRef = useRef(false);
   const [isCompactViewport, setIsCompactViewport] = useState(() => window.innerWidth < 768);
   const [isMiddleViewport, setIsMiddleViewport] = useState(
     () => window.innerWidth >= 768 && window.innerWidth < 1024
@@ -100,7 +110,10 @@ export function AppShell({
   const projectCount = connectedWorkbench?.manifest.projects.length ?? 0;
   const hasRailContent = railContent !== null;
   const replaceRailChrome = Boolean(railContent?.replaceRailChrome);
-  const sidebarCollapsed = railContent?.isCollapsed ?? shellRailCollapsed;
+  const requestedSidebarCollapsed = railContent?.isCollapsed ?? shellRailCollapsed;
+  const sidebarCollapsed = Boolean(
+    requestedSidebarCollapsed || (isMiddleViewport && railContent?.isPathProject)
+  );
   const railWidth = railContent?.sizing?.width ?? sidebarWidth;
   const outputExtension = connectedWorkbench
     ? `.${normalizeOutputExtension(
@@ -116,6 +129,9 @@ export function AppShell({
       const updateCompactViewport = () => {
         const compact = window.innerWidth < 768;
         const middle = window.innerWidth >= 768 && window.innerWidth < 1024;
+        if (!compact && !middle && compactDrawerRef.current === 'upid') {
+          restoreRailFocusAfterViewportCloseRef.current = true;
+        }
         setIsCompactViewport(compact);
         setIsMiddleViewport(middle);
         setCompactDrawer((current) => {
@@ -130,6 +146,9 @@ export function AppShell({
     const media = window.matchMedia('(max-width: 767px)');
     const middleMedia = window.matchMedia('(min-width: 768px) and (max-width: 1023px)');
     const updateCompactViewport = () => {
+      if (!media.matches && !middleMedia.matches && compactDrawerRef.current === 'upid') {
+        restoreRailFocusAfterViewportCloseRef.current = true;
+      }
       setIsCompactViewport(media.matches);
       setIsMiddleViewport(middleMedia.matches);
       setCompactDrawer((current) => {
@@ -146,6 +165,26 @@ export function AppShell({
       middleMedia.removeEventListener('change', updateCompactViewport);
     };
   }, []);
+
+  useEffect(() => {
+    if (compactDrawer !== null || !restoreRailFocusAfterViewportCloseRef.current) return;
+    restoreRailFocusAfterViewportCloseRef.current = false;
+    const frame = window.requestAnimationFrame(() => {
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      const candidates = [
+        document.querySelector<HTMLElement>(
+          '[data-app-rail-expanded-content] [role="tab"][aria-selected="true"]'
+        ),
+        document.querySelector<HTMLElement>(
+          '[data-app-rail-collapsed-content] [aria-label="Expand UPID rail"]'
+        )
+      ];
+      candidates
+        .find((candidate) => candidate && candidate.getClientRects().length > 0)
+        ?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [compactDrawer, sidebarCollapsed]);
 
   useEffect(() => {
     if (!railContent || !railContent.isPathProject) {
