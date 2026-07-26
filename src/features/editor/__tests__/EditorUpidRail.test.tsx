@@ -39,8 +39,8 @@ describe('EditorUpidRail', () => {
       );
     });
 
-    expect(container.querySelector<HTMLElement>('#editor-upid-rail-panel-program')?.hidden).toBe(false);
-    expect(container.querySelector<HTMLElement>('#editor-upid-rail-panel-geometry')?.hidden).toBe(true);
+    expect(container.querySelectorAll<HTMLElement>('[role="tabpanel"]')[0]?.hidden).toBe(false);
+    expect(container.querySelectorAll<HTMLElement>('[role="tabpanel"]')[1]?.hidden).toBe(true);
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Geometry lens"]')?.click();
     });
@@ -67,11 +67,12 @@ describe('EditorUpidRail', () => {
 
     const programTab = container.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Program lens"]');
     const geometryTab = container.querySelector<HTMLButtonElement>('[role="tab"][aria-label="Geometry lens"]');
-    const programPanel = container.querySelector<HTMLElement>('#editor-upid-rail-panel-program');
-    const geometryPanel = container.querySelector<HTMLElement>('#editor-upid-rail-panel-geometry');
+    const panels = [...container.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+    const programPanel = panels[0];
+    const geometryPanel = panels[1];
 
-    expect(programTab?.getAttribute('aria-controls')).toBe('editor-upid-rail-panel-program');
-    expect(geometryTab?.getAttribute('aria-controls')).toBe('editor-upid-rail-panel-geometry');
+    expect(programTab?.getAttribute('aria-controls')).toBe(programPanel?.id);
+    expect(geometryTab?.getAttribute('aria-controls')).toBe(geometryPanel?.id);
     expect(programPanel?.getAttribute('aria-labelledby')).toBe(programTab?.id);
     expect(geometryPanel?.getAttribute('aria-labelledby')).toBe(geometryTab?.id);
 
@@ -100,6 +101,51 @@ describe('EditorUpidRail', () => {
     });
     expect(document.activeElement).toBe(geometryTab);
     expect(onModeChange).toHaveBeenLastCalledWith('geometry');
+  });
+
+  it('keeps tab and panel IDs unique and locally associated across multiple rails', async () => {
+    await act(async () => {
+      root.render(
+        <>
+          <EditorUpidRail
+            collapsed={false}
+            geometryContent={<div>First geometry</div>}
+            mode="program"
+            onCollapseChange={vi.fn()}
+            onModeChange={vi.fn()}
+            programContent={<div>First program</div>}
+            selectedOperationOrdinal={null}
+            status="ready"
+          />
+          <EditorUpidRail
+            collapsed={false}
+            geometryContent={<div>Second geometry</div>}
+            mode="geometry"
+            onCollapseChange={vi.fn()}
+            onModeChange={vi.fn()}
+            programContent={<div>Second program</div>}
+            selectedOperationOrdinal={null}
+            status="ready"
+          />
+        </>
+      );
+    });
+
+    const rails = [...container.querySelectorAll<HTMLElement>('[data-editor-upid-rail]')];
+    const ids = rails.flatMap((rail) => [
+      ...[...rail.querySelectorAll<HTMLElement>('[role="tab"]')].map((tab) => tab.id),
+      ...[...rail.querySelectorAll<HTMLElement>('[role="tabpanel"]')].map((panel) => panel.id)
+    ]);
+
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const rail of rails) {
+      const tabs = [...rail.querySelectorAll<HTMLElement>('[role="tab"]')];
+      const panels = [...rail.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+      for (const tab of tabs) {
+        const panel = panels.find(({ id }) => id === tab.getAttribute('aria-controls'));
+        expect(panel?.getAttribute('aria-labelledby')).toBe(tab.id);
+      }
+    }
   });
 
   it('uses a 36px compact strip with named expand, lens, status, and ordinal controls', async () => {

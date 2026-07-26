@@ -1,18 +1,8 @@
-import { useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
 
 import type { UpidProgramTreeStatus } from '@/domain/upid/upidProgramTree';
 
 export type EditorUpidRailMode = 'program' | 'geometry';
-
-const RAIL_TAB_IDS: Record<EditorUpidRailMode, string> = {
-  program: 'editor-upid-rail-tab-program',
-  geometry: 'editor-upid-rail-tab-geometry'
-};
-
-const RAIL_PANEL_IDS: Record<EditorUpidRailMode, string> = {
-  program: 'editor-upid-rail-panel-program',
-  geometry: 'editor-upid-rail-panel-geometry'
-};
 
 export interface EditorUpidRailProps {
   collapsed: boolean;
@@ -35,6 +25,15 @@ export function EditorUpidRail({
   selectedOperationOrdinal,
   status
 }: EditorUpidRailProps) {
+  const railId = useId();
+  const tabIds: Record<EditorUpidRailMode, string> = {
+    program: `editor-upid-rail-${railId}-tab-program`,
+    geometry: `editor-upid-rail-${railId}-tab-geometry`
+  };
+  const panelIds: Record<EditorUpidRailMode, string> = {
+    program: `editor-upid-rail-${railId}-panel-program`,
+    geometry: `editor-upid-rail-${railId}-panel-geometry`
+  };
   const tabRefs = useRef<Record<EditorUpidRailMode, HTMLButtonElement | null>>({
     program: null,
     geometry: null
@@ -46,7 +45,7 @@ export function EditorUpidRail({
   }
 
   function handleLensKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
-    const currentMode = event.currentTarget.id === RAIL_TAB_IDS.program ? 'program' : 'geometry';
+    const currentMode = event.currentTarget.id === tabIds.program ? 'program' : 'geometry';
     let nextMode: EditorUpidRailMode | null = null;
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
       nextMode = currentMode === 'program' ? 'geometry' : 'program';
@@ -117,10 +116,10 @@ export function EditorUpidRail({
         <div aria-label="UPID rail lens" className="flex min-w-0 flex-1" role="tablist">
           <button
             aria-label="Program lens"
-            aria-controls={RAIL_PANEL_IDS.program}
+            aria-controls={panelIds.program}
             aria-selected={mode === 'program'}
             className={`px-2 py-1 ${mode === 'program' ? 'bg-accent font-medium' : 'text-muted-foreground hover:text-foreground'}`}
-            id={RAIL_TAB_IDS.program}
+            id={tabIds.program}
             onClick={() => onModeChange('program')}
             onKeyDown={handleLensKeyDown}
             ref={(element) => { tabRefs.current.program = element; }}
@@ -132,10 +131,10 @@ export function EditorUpidRail({
           </button>
           <button
             aria-label="Geometry lens"
-            aria-controls={RAIL_PANEL_IDS.geometry}
+            aria-controls={panelIds.geometry}
             aria-selected={mode === 'geometry'}
             className={`px-2 py-1 ${mode === 'geometry' ? 'bg-accent font-medium' : 'text-muted-foreground hover:text-foreground'}`}
-            id={RAIL_TAB_IDS.geometry}
+            id={tabIds.geometry}
             onClick={() => onModeChange('geometry')}
             onKeyDown={handleLensKeyDown}
             ref={(element) => { tabRefs.current.geometry = element; }}
@@ -157,19 +156,19 @@ export function EditorUpidRail({
         </button>
       </div>
       <div
-        aria-labelledby={RAIL_TAB_IDS.program}
+        aria-labelledby={tabIds.program}
         className="min-h-0 overflow-hidden"
         hidden={mode !== 'program'}
-        id={RAIL_PANEL_IDS.program}
+        id={panelIds.program}
         role="tabpanel"
       >
         {programContent}
       </div>
       <div
-        aria-labelledby={RAIL_TAB_IDS.geometry}
+        aria-labelledby={tabIds.geometry}
         className="min-h-0 overflow-hidden"
         hidden={mode !== 'geometry'}
-        id={RAIL_PANEL_IDS.geometry}
+        id={panelIds.geometry}
         role="tabpanel"
       >
         {geometryContent}
