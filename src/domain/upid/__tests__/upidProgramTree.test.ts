@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { createCharmillesRobofil100V2CandidateProfile } from '@/domain/machine/machineProfiles';
-import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
+import {
+  setMachiningSpanParticipation,
+  setPartialContourEntryReview
+} from '@/domain/path-intel/machiningParticipation';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 
@@ -170,6 +173,49 @@ describe('UPID program tree projection', () => {
     expect(tree.programStatus).toBe('blocked');
   });
 
+  it('keeps an untouched operation truthful when another operation cannot derive', () => {
+    const document = twoRectangleDocument();
+    const failing = document.plan.operations[0];
+    const untouched = document.plan.operations[1];
+    const edited = setInactiveSegments(document, failing, [0, 2]);
+
+    const tree = buildUpidProgramTree(edited, createCharmillesRobofil100V2CandidateProfile());
+    const failingRoot = tree.operations.find((node) => node.operationId === failing.id);
+    const untouchedRoot = tree.operations.find((node) => node.operationId === untouched.id);
+    const untouchedCutPath = untouchedRoot?.children.find((node) => node.label === 'Cut path');
+
+    expect(failingRoot?.status).toBe('blocked');
+    expect(untouchedRoot?.status).toBe('ready');
+    expect(untouchedRoot?.statusReason).toBeUndefined();
+    expect(untouchedCutPath).toMatchObject({
+      detail: '4 segments',
+      status: 'ready'
+    });
+  });
+
+  it('preserves a valid partial path when another operation cannot derive', () => {
+    const document = twoRectangleDocument();
+    const validPartial = document.plan.operations[0];
+    const failing = document.plan.operations[1];
+    const partiallyEdited = setInactiveSegments(document, validPartial, [0]);
+    const edited = setInactiveSegments(partiallyEdited, failing, [0, 2]);
+
+    const tree = buildUpidProgramTree(edited, createCharmillesRobofil100V2CandidateProfile());
+    const validRoot = tree.operations.find((node) => node.operationId === validPartial.id);
+    const failingRoot = tree.operations.find((node) => node.operationId === failing.id);
+    const effectivePath = validRoot?.children
+      .find((node) => node.label === 'Cut path')
+      ?.children.find((node) => node.label === 'Effective machining path');
+
+    expect(validRoot?.status).toBe('ready');
+    expect(effectivePath).toMatchObject({
+      detail: '3 segments',
+      operationId: validPartial.id,
+      status: 'ready'
+    });
+    expect(failingRoot?.status).toBe('blocked');
+  });
+
   it('keeps a fully suppressed source operation visible but inactive', () => {
     const document = twoRectangleDocument();
     const source = document.plan.operations[0];
@@ -196,6 +242,57 @@ describe('UPID program tree projection', () => {
       status: 'inactive',
       statusReason: 'operation-suppressed-by-machining-participation'
     });
+  });
+
+  it('rolls derived partial entry and exit review onto the saved source operation', () => {
+    const document = twoRectangleDocument();
+    const source = document.plan.operations[0];
+    source.transitions = {
+      entry: {
+        strategy: 'manual-straight',
+        move: 'cut',
+        from: { x: -2, y: -2 },
+        to: source.startPoint,
+        review: 'reviewed'
+      },
+      exit: {
+        strategy: 'manual-straight',
+        move: 'cut',
+        from: source.endPoint,
+        to: { x: -2, y: -2 },
+        review: 'reviewed'
+      }
+    };
+    const edited = setInactiveSegments(document, source, [0]);
+
+    const tree = buildUpidProgramTree(edited, createCharmillesRobofil100V2CandidateProfile());
+    const sourceRoot = tree.operations.find((node) => node.operationId === source.id);
+    const entry = sourceRoot?.children.find((node) => node.label === 'Entry / lead-in');
+    const exit = sourceRoot?.children.find((node) => node.label === 'Exit / lead-out');
+
+    expect(entry).toMatchObject({
+      status: 'review-required',
+      operationId: source.id,
+      editTarget: { kind: 'entry-exit', operationId: source.id }
+    });
+    expect(exit).toMatchObject({
+      status: 'review-required',
+      operationId: source.id,
+      editTarget: { kind: 'entry-exit', operationId: source.id }
+    });
+    expect(sourceRoot?.status).toBe('review-required');
+
+    const reviewed = setPartialContourEntryReview(edited, source.id, true);
+    expect(reviewed).not.toBeNull();
+    const reviewedRoot = buildUpidProgramTree(
+      reviewed!,
+      createCharmillesRobofil100V2CandidateProfile()
+    ).operations.find((node) => node.operationId === source.id);
+
+    expect(reviewedRoot?.children.find((node) => node.label === 'Entry / lead-in')?.status)
+      .toBe('ready');
+    expect(reviewedRoot?.children.find((node) => node.label === 'Exit / lead-out')?.status)
+      .toBe('review-required');
   });
 
   it('uses orderIndex rather than backing array order for initial wire and rethread phases', () => {
@@ -357,6 +454,22 @@ function twoRectangleDocument() {
     }
   };
   return document;
+}
+
+function setInactiveSegments(
+  document: ReturnType<typeof twoRectangleDocument>,
+  operation: ReturnType<typeof twoRectangleDocument>['plan']['operations'][number],
+  segmentIndexes: readonly number[]
+) {
+  return segmentIndexes.reduce((current, index) => {
+    const next = setMachiningSpanParticipation(current, {
+      sourceSegmentId: operation.segmentRefs[index].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    });
+    expect(next).not.toBeNull();
+    return next!;
+  }, document);
 }
 
 function rectangleLines(minX: number, minY: number, maxX: number, maxY: number) {

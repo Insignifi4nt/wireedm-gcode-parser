@@ -7,6 +7,8 @@ import {
 import { validateProgramStops } from '@/domain/path-intel/programStops';
 import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
 import type {
+  OperationEntry,
+  OperationExit,
   OperationProgramStop,
   PathDiagnostic,
   PathOperation,
@@ -79,22 +81,19 @@ export function buildUpidProgramTree(
     machine,
     diagnostics.filter((diagnostic) => !ownedDiagnosticIds.has(diagnostic.id))
   );
-  const derivation = deriveActiveMachiningOperations(executionDocument);
-  const affectedByDerivationFailure = derivation.status === 'blocked'
-    ? operationsAffectedByDerivationFailure(executionDocument)
-    : new Set<string>();
   const operations = executionDocument.plan.operations
-    .map((operation) => buildOperationNode(
-      executionDocument,
-      machine,
-      operation,
-      effectiveOperationsForSource(operation, derivation),
-      operationDiagnostics.get(operation.id) ?? [],
-      derivation.status === 'blocked' && affectedByDerivationFailure.has(operation.id)
-        ? derivation.reason
-        : undefined,
-      derivation.status === 'ready' ? derivation.segments : executionDocument.segments
-    ));
+    .map((operation) => {
+      const derivation = deriveMachiningForSourceOperation(executionDocument, operation);
+      return buildOperationNode(
+        executionDocument,
+        machine,
+        operation,
+        effectiveOperationsForSource(operation, derivation),
+        operationDiagnostics.get(operation.id) ?? [],
+        derivation.status === 'blocked' ? derivation.reason : undefined,
+        derivation.status === 'ready' ? derivation.segments : executionDocument.segments
+      );
+    });
   const sourceSetupStatus = rollUpStatus(sourceSetup);
   const programStatus = rollUpStatus(operations);
 
@@ -192,8 +191,8 @@ function buildOperationNode(
   const stopNodes = buildStopNodes(document, machine, operation);
   const stopsByPlacement = groupStopsByPlacement(operation, stopNodes);
   const incoming = buildIncomingConnectionNode(document, machine, operation);
-  const entry = buildTransitionNode(operation, 'entry');
-  const exit = buildTransitionNode(operation, 'exit');
+  const entry = buildTransitionNode(operation, effectiveOperations, 'entry');
+  const exit = buildTransitionNode(operation, effectiveOperations, 'exit');
   const cutPath = buildCutPathNode(
     document,
     machine,
@@ -278,22 +277,25 @@ function buildIncomingConnectionNode(
 }
 
 function buildTransitionNode(
-  operation: PathOperation,
+  sourceOperation: PathOperation,
+  effectiveOperations: readonly PathOperation[],
   phase: 'entry' | 'exit'
 ): UpidProgramTreeNode {
-  const transition = operation.transitions?.[phase];
-  const review = transition?.strategy === 'none'
-    ? transition.review
-    : transition?.strategy === 'manual-straight' ? transition.review : 'reviewed';
+  const transition = sourceOperation.transitions?.[phase];
+  const effectiveStatuses = (effectiveOperations.length > 0
+    ? effectiveOperations
+    : [sourceOperation]
+  ).map((operation) => transitionStatus(operation.transitions?.[phase]));
+  const status = rollUpStatuses(effectiveStatuses);
   return {
-    treeKey: `operation:${operation.id}:${phase}`,
+    treeKey: `operation:${sourceOperation.id}:${phase}`,
     kind: 'phase',
     label: phase === 'entry' ? 'Entry / lead-in' : 'Exit / lead-out',
     detail: transition?.strategy === 'none' || !transition ? 'None' : transition.strategy,
-    status: review === 'required' ? 'review-required' : 'ready',
-    statusReason: review === 'required' ? 'review-required' : undefined,
-    operationId: operation.id,
-    editTarget: { kind: 'entry-exit', operationId: operation.id },
+    status,
+    statusReason: status === 'review-required' ? 'review-required' : undefined,
+    operationId: sourceOperation.id,
+    editTarget: { kind: 'entry-exit', operationId: sourceOperation.id },
     children: []
   };
 }
@@ -518,23 +520,49 @@ function effectiveOperationsForSource(
   );
 }
 
-function operationsAffectedByDerivationFailure(document: PathPlanningDocument) {
-  const inactiveSegmentIds = new Set(
-    (document.machiningParticipation?.spans ?? [])
-      .filter((span) => span.participation === 'inactive-reference')
-      .map((span) => span.sourceSegmentId)
+function deriveMachiningForSourceOperation(
+  document: PathPlanningDocument,
+  sourceOperation: PathOperation
+): ActiveMachiningDerivation {
+  const sourceSegmentIds = new Set(
+    sourceOperation.segmentRefs.map((ref) => ref.segmentId)
   );
-  const affected = new Set(
-    document.plan.operations
-      .filter((operation) =>
-        operation.segmentRefs.some((ref) => inactiveSegmentIds.has(ref.segmentId))
-      )
-      .map((operation) => operation.id)
-  );
-  if (affected.size === 0) {
-    document.plan.operations.forEach((operation) => affected.add(operation.id));
-  }
-  return affected;
+  const participation = document.machiningParticipation;
+  const isolatedDocument: PathPlanningDocument = {
+    ...document,
+    plan: {
+      ...document.plan,
+      operations: [sourceOperation]
+    },
+    ...(participation
+      ? {
+          machiningParticipation: {
+            ...participation,
+            spans: participation.spans.filter((span) =>
+              sourceSegmentIds.has(span.sourceSegmentId)
+            ),
+            partialContourCompensation:
+              participation.partialContourCompensation?.filter(
+                (setting) => setting.sourceOperationId === sourceOperation.id
+              ),
+            partialContourEntryReviews:
+              participation.partialContourEntryReviews?.filter(
+                (review) => review.sourceOperationId === sourceOperation.id
+              )
+          }
+        }
+      : {})
+  };
+  return deriveActiveMachiningOperations(isolatedDocument);
+}
+
+function transitionStatus(
+  transition: OperationEntry | OperationExit | undefined
+): UpidProgramTreeStatus {
+  const review = transition?.strategy === 'none'
+    ? transition.review
+    : transition?.strategy === 'manual-straight' ? transition.review : 'reviewed';
+  return review === 'required' ? 'review-required' : 'ready';
 }
 
 function resolveCutPathStatus(
