@@ -97,7 +97,7 @@ test('reviews and exports the real z39 gear with reversal-safe Robofil compensat
   expect(program.endsWith('M02\r\n')).toBe(true);
   expect(program).not.toMatch(/(?<!\r)\n/);
   expect(nonEmptyLines.slice(0, 5)).toEqual([
-    'G92 X0 Y0',
+    'G92 X0.000 Y0.000',
     'G60',
     'G38',
     compensationCodeText,
