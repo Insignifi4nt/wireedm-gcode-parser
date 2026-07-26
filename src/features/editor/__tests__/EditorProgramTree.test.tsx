@@ -59,9 +59,9 @@ describe('editorProgramTreeState', () => {
     );
   });
 
-  it('keeps Program Sequence as the default section for an empty program', () => {
+  it('starts an empty program with Source & Setup expanded', () => {
     expect(defaultEditorProgramTreeExpansion({ ...tree, operations: [] })).toEqual(
-      new Set(['section:program'])
+      new Set(['section:source'])
     );
   });
 

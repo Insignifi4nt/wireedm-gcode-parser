@@ -184,7 +184,7 @@ summary:focus-visible {
 }
 
 [data-app-workspace-grid][data-has-rail="true"][data-sidebar-collapsed="true"] {
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr);
 }
 
 [data-app-workspace-grid][data-has-rail="true"][data-sidebar-collapsed="false"] {
@@ -265,6 +265,73 @@ summary:focus-visible {
   [data-editor-header-command] {
     width: 28px;
     padding-inline: 0;
+  }
+}
+
+@media (max-width: 1023px) {
+  [data-editor-workflow-direct] {
+    display: none;
+  }
+
+  [data-editor-workflow-compact] {
+    display: block;
+  }
+}
+
+@media (max-width: 900px) {
+  [data-editor-document-identity] {
+    display: none;
+  }
+
+  [data-editor-header-actions],
+  [data-editor-header-workspace-controls] {
+    min-width: 0;
+  }
+
+  [data-editor-header-actions] {
+    flex: 1 1 auto;
+  }
+
+  [data-editor-header-workspace-controls] {
+    flex: 0 0 auto;
+  }
+
+  [data-editor-workflow-menus] {
+    width: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  [data-app-header] {
+    height: 72px;
+    flex-wrap: wrap;
+    align-content: center;
+    gap: 2px;
+    padding-inline: 4px;
+  }
+
+  [data-app-header-system-controls] {
+    order: 1;
+    margin-left: auto;
+    gap: 4px;
+  }
+
+  [data-editor-context] {
+    order: 2;
+    flex-basis: 100%;
+    margin-right: 0;
+  }
+
+  [data-editor-header-actions] {
+    gap: 3px;
+  }
+
+  [data-editor-header-workspace-controls] {
+    padding-right: 3px;
+  }
+
+  [data-editor-header-document-commands] {
+    gap: 2px;
   }
 }
 

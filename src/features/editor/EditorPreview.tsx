@@ -995,6 +995,7 @@ export function EditorPreview({
                 aria-label={path.travelRole
                   ? `${path.travelSource ?? 'planned'} ${path.travelRole} for ${path.operationId ?? 'path'}`
                   : undefined}
+                role={path.travelRole ? 'img' : undefined}
                 data-type={path.type}
                 fill="none"
                 key={`${path.type}-${path.line}-${index}`}

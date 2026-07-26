@@ -168,6 +168,70 @@ test('path editor materializes a right dock only for a docked active workflow', 
   await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
 });
 
+test('path editor persists a collapsed UPID rail across reload and project reopen', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'persisted-collapsed-rail.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  await page.getByRole('button', { name: 'Collapse UPID rail' }).click();
+  await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    return raw ? JSON.parse(raw).upidRailCollapsed : null;
+  })).toBe(true);
+
+  await page.reload();
+  await expect(page.locator('[data-project-row]')).toHaveCount(1);
+  await page.locator('[data-project-row]')
+    .getByRole('button', { name: /Open project .* in editor/ })
+    .click();
+
+  await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'UPID rail', exact: true })).toHaveCount(0);
+});
+
+test('middle-width path editor defaults to a compact rail and floats remembered right workflows', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'middle-width-layout.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  await expect(page.getByRole('complementary', { name: 'Collapsed UPID rail' })).toBeVisible();
+  await expect(page.locator('[data-app-workspace-grid]')).toHaveCSS(
+    'grid-template-columns',
+    '36px 764px'
+  );
+  await openCompactWorkflowCommand(page, 'Machining', 'machining.entry-exit');
+
+  const floatingPanel = page.locator('[data-editor-floating-panel="entry-exit"]');
+  await expect(floatingPanel).toBeVisible();
+  await page.getByRole('button', { name: 'Dock Entry / Exit right' }).click();
+  await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
+  await expect(floatingPanel).toBeVisible();
+  await expect(page.locator('[data-editor-main-grid]')).toHaveAttribute(
+    'data-has-active-right-dock',
+    'false'
+  );
+  const panelBox = await floatingPanel.boundingBox();
+  expect(panelBox).not.toBeNull();
+  expect(panelBox!.x).toBeGreaterThanOrEqual(0);
+  expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(800);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(800);
+});
+
 test('compact path editor routes program-tree edits through mutually exclusive UPID and workflow drawers', async ({ page }) => {
   await page.setViewportSize({ width: 767, height: 800 });
   await openReadyWorkbench(page);
@@ -205,6 +269,43 @@ test('compact path editor routes program-tree edits through mutually exclusive U
   await expect(page.getByRole('button', { name: 'Open active workflow' })).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(767);
 });
+
+for (const width of [767, 320]) {
+  test(`compact Workflows launcher exposes all six categories at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await openReadyWorkbench(page);
+    await page.locator('input[aria-label="DXF file"]').setInputFiles({
+      name: `compact-workflows-${width}.dxf`,
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+    await confirmPendingDxfImport(page);
+    await dismissOnboarding(page);
+
+    const launcher = page.getByRole('button', { name: 'Open Workflows' });
+    await expect(launcher).toBeVisible();
+    await expect(page.locator('[data-editor-workflow-direct]')).not.toBeVisible();
+    await launcher.click();
+
+    const titles = ['Geometry', 'Machining', 'Construction', 'View', 'Machine', 'Export'];
+    for (const title of titles) {
+      const category = page.getByRole('menuitem', { name: `Open ${title} workflows` });
+      await expect(category).toBeVisible();
+      await category.click();
+      const commandMenu = page.locator(`[data-editor-workflow-menu="${title}"]`);
+      await expect(commandMenu).toBeVisible();
+      const box = await commandMenu.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+      await commandMenu.getByRole('menuitem', { name: 'Back to workflow categories' }).click();
+    }
+
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      width
+    );
+  });
+}
 
 test('compact dirty program-tree transitions stay reachable before changing drawers', async ({ page }) => {
   await page.setViewportSize({ width: 767, height: 800 });
@@ -382,6 +483,18 @@ async function openWorkflowCommand(
 ) {
   await page.getByRole('button', { name: `${menuTitle} menu` }).click();
   await page.locator(`[data-editor-workflow-command="${commandId}"]`).click();
+}
+
+async function openCompactWorkflowCommand(
+  page: import('@playwright/test').Page,
+  menuTitle: string,
+  commandId: string
+) {
+  await page.getByRole('button', { name: 'Open Workflows' }).click();
+  await page.getByRole('menuitem', { name: `Open ${menuTitle} workflows` }).click();
+  await page.locator(
+    `[data-editor-workflow-compact] [data-editor-workflow-command="${commandId}"]`
+  ).click();
 }
 
 async function dismissOnboarding(page: import('@playwright/test').Page) {

@@ -149,6 +149,55 @@ describe('EditorWorkflowMenuBar', () => {
     expect(document.getElementById(describedBy ?? '')?.textContent).toBe('Select a contour first.');
   });
 
+  it('makes every workflow category reachable through the compact launcher', async () => {
+    await renderMenu();
+
+    await act(async () => {
+      getCompactLauncher().click();
+    });
+
+    const categoryMenu = container.querySelector('[data-editor-workflow-category-menu]');
+    expect(categoryMenu).not.toBeNull();
+    expect(
+      [...categoryMenu!.querySelectorAll<HTMLButtonElement>('button')].map(
+        (button) => button.textContent
+      )
+    ).toEqual(['Geometry', 'Machining']);
+
+    await act(async () => {
+      categoryMenu
+        ?.querySelector<HTMLButtonElement>('button[aria-label="Open Machining workflows"]')
+        ?.click();
+    });
+
+    expect(
+      container.querySelector('[data-editor-workflow-command="machining.command"]')
+    ).not.toBeNull();
+    expect(container.querySelector('[data-editor-workflow-compact-back]')).not.toBeNull();
+  });
+
+  it('returns to the compact launcher when Escape closes a compact command menu', async () => {
+    await renderMenu();
+    const launcher = getCompactLauncher();
+    await act(async () => launcher.click());
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Open Machining workflows"]')
+        ?.click();
+    });
+
+    const command = container.querySelector<HTMLButtonElement>(
+      '[data-editor-workflow-compact] [data-editor-workflow-command="machining.command"]'
+    );
+    command?.focus();
+    await act(async () => {
+      command?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-editor-workflow-compact-menu]')).toBeNull();
+    expect(document.activeElement).toBe(launcher);
+  });
+
   async function renderMenu() {
     await act(async () => root.render(<EditorWorkflowMenuBar groups={groups} />));
   }
@@ -160,6 +209,14 @@ describe('EditorWorkflowMenuBar', () => {
   function getMenuButton(title: EditorWorkflowMenuGroup['title']) {
     const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${title} menu"]`);
     if (!button) throw new Error(`${title} menu button was not rendered.`);
+    return button;
+  }
+
+  function getCompactLauncher() {
+    const button = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Open Workflows"]'
+    );
+    if (!button) throw new Error('Compact Workflows launcher was not rendered.');
     return button;
   }
 });

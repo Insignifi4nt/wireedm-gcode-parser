@@ -11,6 +11,7 @@ import {
 
 const defaults: EditorWorkspaceLayoutV1 = {
   schemaVersion: 1,
+  upidRailCollapsed: false,
   placements: {
     'contour-tree': 'docked-left',
     'contour-setup': 'docked-right',
@@ -110,6 +111,7 @@ describe('editor workspace layout persistence', () => {
   it('round-trips a normalized layout', () => {
     const layout: EditorWorkspaceLayoutV1 = {
       ...defaults,
+      upidRailCollapsed: true,
       placements: { ...defaults.placements, measurement: 'floating' }
     };
 
@@ -117,10 +119,23 @@ describe('editor workspace layout persistence', () => {
 
     expect(readEditorWorkspaceLayout(defaults, viewport())).toMatchObject({
       ...layout,
+      upidRailCollapsed: true,
       placements: { ...layout.placements, 'contour-tree': 'floating' },
       dockOrders: { left: [], right: ['contour-setup'] },
       dockWidths: { left: 360, right: 360 }
     });
+  });
+
+  it('uses the viewport default when an older stored layout has no rail collapse preference', () => {
+    const { upidRailCollapsed: _missing, ...legacyLayout } = defaults;
+
+    expect(
+      normalizeEditorWorkspaceLayout(
+        legacyLayout,
+        { ...defaults, upidRailCollapsed: true },
+        viewport()
+      ).upidRailCollapsed
+    ).toBe(true);
   });
 
   it('keeps remembered placements while rendering only the active workflow panel', () => {

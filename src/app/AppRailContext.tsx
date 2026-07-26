@@ -6,7 +6,9 @@ export interface AppRailContent {
   collapsed: ReactNode;
   expanded: ReactNode;
   hasActiveWorkflow?: boolean;
+  isCollapsed?: boolean;
   isPathProject?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
   replaceRailChrome?: boolean;
   sizing?: {
     maxWidth: number;
@@ -21,6 +23,7 @@ interface AppRailContextValue {
   compactModalHost: HTMLElement | null;
   compactTransitionOverlay: boolean;
   isCompactViewport: boolean;
+  isMiddleViewport: boolean;
   setCompactDrawer: Dispatch<SetStateAction<EditorCompactDrawer>>;
   setCompactTransitionOverlay: Dispatch<SetStateAction<boolean>>;
   setHeaderContent: Dispatch<SetStateAction<ReactNode | null>>;

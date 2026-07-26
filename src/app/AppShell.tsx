@@ -59,13 +59,16 @@ export function AppShell({
   children
 }: AppShellProps) {
   const [headerContent, setHeaderContent] = useState<ReactNode | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [shellRailCollapsed, setShellRailCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const [railContent, setRailContent] = useState<AppRailContent | null>(null);
   const [compactDrawer, setCompactDrawer] = useState<EditorCompactDrawer>(null);
   const [compactModalHost, setCompactModalHost] = useState<HTMLDivElement | null>(null);
   const [compactTransitionOverlay, setCompactTransitionOverlay] = useState(false);
   const [isCompactViewport, setIsCompactViewport] = useState(() => window.innerWidth < 768);
+  const [isMiddleViewport, setIsMiddleViewport] = useState(
+    () => window.innerWidth >= 768 && window.innerWidth < 1024
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isReady = workbenchStatus === 'ready' && connectedWorkbench;
   const isConnectingStorage =
@@ -97,6 +100,7 @@ export function AppShell({
   const projectCount = connectedWorkbench?.manifest.projects.length ?? 0;
   const hasRailContent = railContent !== null;
   const replaceRailChrome = Boolean(railContent?.replaceRailChrome);
+  const sidebarCollapsed = railContent?.isCollapsed ?? shellRailCollapsed;
   const railWidth = railContent?.sizing?.width ?? sidebarWidth;
   const outputExtension = connectedWorkbench
     ? `.${normalizeOutputExtension(
@@ -112,19 +116,26 @@ export function AppShell({
       const updateCompactViewport = () => {
         const compact = window.innerWidth < 768;
         setIsCompactViewport(compact);
+        setIsMiddleViewport(window.innerWidth >= 768 && window.innerWidth < 1024);
         if (!compact) setCompactDrawer(null);
       };
       window.addEventListener('resize', updateCompactViewport);
       return () => window.removeEventListener('resize', updateCompactViewport);
     }
     const media = window.matchMedia('(max-width: 767px)');
+    const middleMedia = window.matchMedia('(min-width: 768px) and (max-width: 1023px)');
     const updateCompactViewport = () => {
       setIsCompactViewport(media.matches);
+      setIsMiddleViewport(middleMedia.matches);
       if (!media.matches) setCompactDrawer(null);
     };
     updateCompactViewport();
     media.addEventListener('change', updateCompactViewport);
-    return () => media.removeEventListener('change', updateCompactViewport);
+    middleMedia.addEventListener('change', updateCompactViewport);
+    return () => {
+      media.removeEventListener('change', updateCompactViewport);
+      middleMedia.removeEventListener('change', updateCompactViewport);
+    };
   }, []);
 
   useEffect(() => {
@@ -176,10 +187,9 @@ export function AppShell({
             <span className="truncate">Wire EDM Workbench</span>
           </div>
         )}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2" data-app-header-system-controls>
           <StatusNotificationMenu notifications={statusNotifications} />
           <span
-            aria-label={storageStatusLabel}
             className={`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${
               storageStatusTone === 'temporary'
                 ? 'border-amber-500/50 bg-amber-500/10 text-amber-100'
@@ -235,7 +245,14 @@ export function AppShell({
                 <button
                   aria-label={sidebarCollapsed ? 'Expand workbench sidebar' : 'Collapse workbench sidebar'}
                   className="flex size-7 items-center justify-center rounded-[2px] border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => setSidebarCollapsed((current) => !current)}
+                  onClick={() => {
+                    const nextCollapsed = !sidebarCollapsed;
+                    if (railContent.onCollapsedChange) {
+                      railContent.onCollapsedChange(nextCollapsed);
+                    } else {
+                      setShellRailCollapsed(nextCollapsed);
+                    }
+                  }}
                   title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                   type="button"
                 >
@@ -275,7 +292,7 @@ export function AppShell({
           />
         )}
 
-        <AppRailProvider value={{ compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailCollapsed: setSidebarCollapsed, setRailContent }}>
+        <AppRailProvider value={{ compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailCollapsed: setShellRailCollapsed, setRailContent }}>
           <main
             className="min-h-0 min-w-0 overflow-hidden"
           >

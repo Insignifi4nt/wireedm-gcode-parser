@@ -14,6 +14,7 @@ export interface EditorWorkspaceLayoutViewport {
 
 export interface EditorWorkspaceLayoutV1 {
   schemaVersion: 1;
+  upidRailCollapsed: boolean;
   placements: Record<string, EditorPanelPlacement>;
   dockOrders: Record<EditorDockSide, string[]>;
   floatingGeometries: Record<string, EditorFloatingPanelGeometry>;
@@ -104,8 +105,19 @@ export function normalizeEditorWorkspaceLayout(
     left: clampDockWidth(candidateWidths.left, defaults.dockWidths.left, viewport.width),
     right: clampDockWidth(candidateWidths.right, defaults.dockWidths.right, viewport.width)
   };
+  const upidRailCollapsed =
+    typeof candidate.upidRailCollapsed === 'boolean'
+      ? candidate.upidRailCollapsed
+      : defaults.upidRailCollapsed;
 
-  return { schemaVersion: 1, placements, dockOrders, floatingGeometries, dockWidths };
+  return {
+    schemaVersion: 1,
+    upidRailCollapsed,
+    placements,
+    dockOrders,
+    floatingGeometries,
+    dockWidths
+  };
 }
 
 function normalizeDockOrder(

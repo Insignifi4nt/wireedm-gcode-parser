@@ -107,7 +107,10 @@ export function EditorHeaderBar({
           {DOCUMENT_CONTEXT_LABELS[documentContext]}
         </span>
       </div>
-      <div className="flex min-w-0 shrink-0 items-center justify-end gap-1.5">
+      <div
+        className="flex min-w-0 shrink-0 items-center justify-end gap-1.5"
+        data-editor-header-actions
+      >
         {workspaceControls && (
           <div
             className="flex shrink-0 items-center border-r border-border pr-1.5"

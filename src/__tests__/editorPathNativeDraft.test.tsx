@@ -3580,7 +3580,20 @@ function EditorPageHarness({
     });
   }, [headerContent, initialWorkflowId]);
   return (
-    <AppRailProvider value={{ compactDrawer, compactModalHost: null, compactTransitionOverlay: false, isCompactViewport: false, setCompactDrawer, setCompactTransitionOverlay: () => undefined, setHeaderContent, setRailCollapsed: () => undefined, setRailContent }}>
+    <AppRailProvider
+      value={{
+        compactDrawer,
+        compactModalHost: null,
+        compactTransitionOverlay: false,
+        isCompactViewport: false,
+        isMiddleViewport: false,
+        setCompactDrawer,
+        setCompactTransitionOverlay: () => undefined,
+        setHeaderContent,
+        setRailCollapsed: () => undefined,
+        setRailContent
+      }}
+    >
       <div>{headerContent}</div>
       <aside data-test-editor-project-rail>{railContent?.expanded}</aside>
       <EditorPage

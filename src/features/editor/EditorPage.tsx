@@ -460,6 +460,7 @@ function createDefaultWorkspaceLayout(
 ): EditorWorkspaceLayoutV1 {
   return {
     schemaVersion: 1,
+    upidRailCollapsed: window.innerWidth >= 768 && window.innerWidth < 1024,
     placements: createDefaultWorkspacePanelPlacements(model),
     dockOrders: createDefaultWorkspaceDockOrders(model),
     floatingGeometries: { ...DEFAULT_WORKSPACE_PANEL_GEOMETRY },
@@ -656,7 +657,7 @@ export function EditorPage({
   onSaveEditorDraft,
   onStatusMessage
 }: EditorPageProps) {
-  const { compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailCollapsed, setRailContent } = useAppRail();
+  const { compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailContent } = useAppRail();
   const [initialWorkspaceLayout] = useState(() => readInitialWorkspaceLayout(program?.model));
   const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
@@ -718,6 +719,9 @@ export function EditorPage({
     new Set()
   );
   const [upidRailWidth, setUpidRailWidth] = useState(initialWorkspaceLayout.dockWidths.left);
+  const [upidRailCollapsed, setUpidRailCollapsed] = useState(
+    initialWorkspaceLayout.upidRailCollapsed
+  );
   const [inspectorRailCollapsed, setInspectorRailCollapsed] = useState(false);
   const [inspectorRailWidth, setInspectorRailWidth] = useState(
     initialWorkspaceLayout.dockWidths.right
@@ -1009,6 +1013,7 @@ export function EditorPage({
   const hasActiveRightDock = Boolean(
     isPathProject &&
     !isCompactViewport &&
+    !isMiddleViewport &&
     activeWorkflowSession &&
     readEditorWorkspaceRenderedPlacement(
       workspacePanelPlacements,
@@ -1099,7 +1104,7 @@ export function EditorPage({
     const railProps = {
       geometryContent,
       mode: upidRailMode,
-      onCollapseChange: setRailCollapsed,
+      onCollapseChange: setUpidRailCollapsed,
       onModeChange: setUpidRailMode,
       programContent,
       selectedOperationOrdinal: selectedOperationOrdinal && selectedOperationOrdinal > 0
@@ -1112,7 +1117,9 @@ export function EditorPage({
       collapsed: <EditorUpidRail {...railProps} collapsed />,
       expanded: <EditorUpidRail {...railProps} collapsed={false} />,
       hasActiveWorkflow: Boolean(activeWorkflowSession),
+      isCollapsed: upidRailCollapsed,
       isPathProject: true,
+      onCollapsedChange: setUpidRailCollapsed,
       replaceRailChrome: true,
       sizing: {
         maxWidth: 360,
@@ -1135,6 +1142,7 @@ export function EditorPage({
     activeHoveredPathElement,
     measurementPoints,
     upidRailMode,
+    upidRailCollapsed,
     upidRailWidth
   ]);
   const editorHeaderContent = useMemo(
@@ -1262,7 +1270,6 @@ export function EditorPage({
     setInspectorRailCollapsed(false);
     setProgramLinesOpen(true);
 
-    if (program?.model === 'upid-document') setRailCollapsed(false);
   }, [program?.filePath, program?.model]);
 
   useEffect(() => {
@@ -1285,6 +1292,7 @@ export function EditorPage({
     const timeoutId = window.setTimeout(() => {
       writeEditorWorkspaceLayout({
         schemaVersion: 1,
+        upidRailCollapsed,
         placements: workspacePanelPlacements,
         dockOrders: workspaceDockOrders,
         floatingGeometries: workspacePanelGeometries,
@@ -1295,6 +1303,7 @@ export function EditorPage({
     return () => window.clearTimeout(timeoutId);
   }, [
     inspectorRailWidth,
+    upidRailCollapsed,
     upidRailWidth,
     workspaceDockOrders,
     workspacePanelGeometries,
@@ -2945,7 +2954,12 @@ export function EditorPage({
   }
 
   function readWorkspacePanelRenderedPlacement(panelId: EditorWorkspacePanelId) {
-    if (isCompactViewport && panelId === activeWorkflowSession?.panelId) return 'floating';
+    if (
+      (isCompactViewport || isMiddleViewport) &&
+      panelId === activeWorkflowSession?.panelId
+    ) {
+      return 'floating';
+    }
     return readEditorWorkspaceRenderedPlacement(
       workspacePanelPlacements,
       panelId,
@@ -2969,6 +2983,13 @@ export function EditorPage({
   ) {
     const panelId = id as EditorWorkspacePanelId;
     const renderedPlacement = readWorkspacePanelRenderedPlacement(panelId);
+    const renderedGeometry =
+      renderedPlacement === 'floating' && (isCompactViewport || isMiddleViewport)
+        ? clampEditorFloatingPanelGeometry(
+            workspacePanelGeometries[panelId],
+            readFloatingPanelViewport()
+          )
+        : workspacePanelGeometries[panelId];
     const ownedMutatingWorkflow =
       activeWorkflowSession?.kind === 'mutating' && activeWorkflowSession.panelId === panelId
         ? activeWorkflowSession
@@ -3020,7 +3041,7 @@ export function EditorPage({
       <EditorWorkspacePanelFrame
         dockOrder={readWorkspacePanelDockOrder(panelId)}
         fill={options.fill}
-        geometry={workspacePanelGeometries[panelId]}
+        geometry={renderedGeometry}
         id={id}
         onDock={(side) => dockWorkspacePanel(panelId, side)}
         onDragEnd={(point) => handleWorkspacePanelDragEnd(panelId, point)}

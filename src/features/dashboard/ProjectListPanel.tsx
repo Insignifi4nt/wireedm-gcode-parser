@@ -83,7 +83,11 @@ export function ProjectListPanel({
               </select>
             </div>
 
-            <div aria-label="Project list" className="divide-y divide-border border border-border">
+            <div
+              aria-label="Project list"
+              className="divide-y divide-border border border-border"
+              role="list"
+            >
               {visibleProjects.length > 0 ? (
                 visibleProjects.map((project) => (
                   <div
@@ -91,6 +95,7 @@ export function ProjectListPanel({
                     data-project-row
                     data-project-source={project.sourceKind}
                     key={project.id}
+                    role="listitem"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-foreground" title={project.name}>{project.name}</p>
@@ -162,13 +167,16 @@ export function ProjectListPanel({
             </div>
           </div>
         ) : (
-          <p
+          <div
             aria-label="Project list"
             className="border border-border bg-background/50 p-2 text-muted-foreground"
+            role="region"
           >
-            No projects yet. Import a DXF as a Path Project or open a Machine Program to add it to
-            the active workbench.
-          </p>
+            <p>
+              No projects yet. Import a DXF as a Path Project or open a Machine Program to add it to
+              the active workbench.
+            </p>
+          </div>
         )}
       </div>
     </section>

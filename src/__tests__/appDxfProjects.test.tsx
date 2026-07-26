@@ -1264,10 +1264,11 @@ describe('App DXF imports and project library', () => {
     await confirmPendingDxfImport(container);
 
     expect(
-      [...container.querySelectorAll('[data-editor-workflow-menus] button[aria-haspopup="menu"]')].map(
+      [...container.querySelectorAll('[data-editor-workflow-direct] button[aria-haspopup="menu"]')].map(
         (button) => button.textContent
       )
     ).toEqual(['Geometry', 'Machining', 'Construction', 'View', 'Machine', 'Export']);
+    expect(container.querySelector('button[aria-label="Open Workflows"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="Project menu"]')).toBeNull();
     expect(container.querySelector('[data-editor-panel-toolbar]')).toBeNull();
     expect(container.querySelector('[data-editor-panel-shortcuts]')).toBeNull();

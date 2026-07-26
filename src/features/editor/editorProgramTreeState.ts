@@ -4,8 +4,10 @@ const SOURCE_SETUP_SECTION_KEY = 'section:source';
 const PROGRAM_SEQUENCE_SECTION_KEY = 'section:program';
 
 export function defaultEditorProgramTreeExpansion(tree: UpidProgramTree): ReadonlySet<string> {
+  if (tree.operations.length === 0) return new Set([SOURCE_SETUP_SECTION_KEY]);
+
   const expanded = new Set([PROGRAM_SEQUENCE_SECTION_KEY]);
-  if (tree.operations[0]) expanded.add(tree.operations[0].treeKey);
+  expanded.add(tree.operations[0].treeKey);
 
   return expanded;
 }
