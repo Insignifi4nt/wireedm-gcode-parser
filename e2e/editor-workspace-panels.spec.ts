@@ -1,20 +1,43 @@
 import { expect, test } from '@playwright/test';
 
-import { confirmPendingDxfImport } from './dxf-import';
+import { confirmPendingDxfImport as confirmDxfImport } from './dxf-import';
+
+const WORKSPACE_PANEL_TITLES = [
+  ['geometry-setup', 'Geometry Setup'],
+  ['path-summary', 'Path Summary'],
+  ['path-transform', 'Transform'],
+  ['endpoint-topology', 'Endpoint Topology'],
+  ['path-diagnostics', 'Path Diagnostics'],
+  ['cut-sequence', 'Cut Sequence'],
+  ['contour-tree', 'Contour Tree'],
+  ['position', 'Position'],
+  ['statistics', 'Statistics'],
+  ['machine', 'Machine'],
+  ['measurement', 'Measurement']
+] as const;
+
+const WORKSPACE_PANEL_COMMANDS: Record<(typeof WORKSPACE_PANEL_TITLES)[number][0], string> = {
+  'geometry-setup': 'geometry.setup',
+  'path-summary': 'view.summary',
+  'path-transform': 'geometry.transform',
+  'endpoint-topology': 'view.endpoints',
+  'path-diagnostics': 'view.diagnostics',
+  'cut-sequence': 'machining.sequence',
+  'contour-tree': 'view.contours',
+  position: 'view.position',
+  statistics: 'view.statistics',
+  machine: 'machine.profile',
+  measurement: 'construction.measurement'
+};
 
 async function openReadyWorkbench(page: import('@playwright/test').Page) {
   await page.goto('/');
   await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
+  await expect(page.locator('input[aria-label="Machine program file"]')).toBeEnabled();
 }
 
-async function importPathProject(page: import('@playwright/test').Page) {
-  await page.locator('input[aria-label="DXF file"]').setInputFiles({
-    name: 'workspace-panels.dxf',
-    mimeType: 'application/dxf',
-    buffer: Buffer.from(rectangleDxf())
-  });
-  await confirmPendingDxfImport(page);
-
+async function confirmPendingDxfImport(page: import('@playwright/test').Page) {
+  await confirmDxfImport(page);
   const closeOnboarding = page.getByRole('button', { name: 'Close onboarding' });
   if (await closeOnboarding.isVisible()) await closeOnboarding.click();
 }
@@ -22,12 +45,20 @@ async function importPathProject(page: import('@playwright/test').Page) {
 test('editor anchors a path project in the UPID rail and mounts only an active right workflow dock', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await openReadyWorkbench(page);
-  await importPathProject(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'workspace-panels.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
 
   await expect(page.getByRole('tree', { name: 'UPID program sequence' })).toBeVisible();
   await expect(page.locator('[data-editor-empty-dock]')).toHaveCount(0);
   await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
-
+  await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-sidebar-collapsed', 'false');
   await page.getByRole('button', { name: 'Entry / lead-in · None' }).click();
   await expect(page.locator('[data-editor-floating-panel="entry-exit"]')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Dock Entry / Exit right' })).toBeEnabled();
@@ -44,6 +75,784 @@ test('editor anchors a path project in the UPID rail and mounts only an active r
   await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
   await expect(page.locator('[data-editor-main-grid]')).toHaveAttribute('data-has-active-right-dock', 'false');
 });
+
+test('workspace workflows expose keyboard float and right-dock placement commands', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'workspace-command-inventory.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['path-transform']);
+  await expect(page.getByRole('button', { name: 'Dock Transform right' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Float Transform' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Dock Transform right' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toBeVisible();
+  await expect(page.locator('[data-editor-workspace-panel="path-transform"]')).toHaveAttribute(
+    'data-editor-workspace-panel-placement',
+    'docked-right'
+  );
+
+  await page.getByRole('button', { name: 'Float Transform' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-editor-floating-panel="path-transform"]')).toBeVisible();
+});
+
+test('editor opens endpoint topology from its workflow command', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'endpoint-topology-discovery.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['endpoint-topology']);
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
+  await expect(page.locator('[data-upid-endpoint-topology-title]')).toContainText('Endpoint Join Map');
+  await expect(page.locator('[data-upid-endpoint-topology-summary-label="open-ends"]')).toContainText(
+    'Open chain clues'
+  );
+  await expect(page.locator('[data-upid-endpoint-topology-help]')).toContainText(
+    'pairs segment starts and ends'
+  );
+  const exactJoinRows = page.locator('[data-upid-endpoint-topology-kind="exact-endpoint-cluster"]');
+  await expect(exactJoinRows).toHaveCount(4);
+  await expect(exactJoinRows.first()).toContainText('Exact join');
+  await exactJoinRows.first().click();
+  await expect(exactJoinRows.first()).toHaveAttribute('data-upid-selected', 'true');
+  await expect(page.locator('[data-preview-path-endpoint][data-preview-selected="true"]')).toHaveCount(1);
+});
+
+test('editor contour tree labels contours, segments, and endpoint handles clearly', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'contour-tree-clarity.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['contour-tree']);
+
+  const helpButton = page.getByRole('button', { name: 'Contour Tree help' });
+  await helpButton.focus();
+  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+    'Hover or select a row to cross-highlight the canvas'
+  );
+  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+    'whole cut loop'
+  );
+  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+    'start and end endpoint handles'
+  );
+
+  const contourRow = page.locator('[data-upid-contour-row]').first();
+  await expect(contourRow).toHaveAttribute('data-upid-tree-row-kind', 'contour');
+  await expect(contourRow).toHaveAttribute('data-upid-tree-row-level', '0');
+  await expect(contourRow).toHaveAttribute('data-upid-contour-order', '1');
+  await expect(contourRow.locator('[data-upid-tree-action-hint]')).toContainText(/selects whole contour/i);
+  await expect(contourRow.locator('[data-upid-contour-field="role"]')).toContainText('exterior');
+  await expect(page.locator('[data-upid-contour-field="order"]').first()).toContainText('01');
+  await expect(contourRow.locator('[data-upid-contour-field="segments"]')).toContainText('4 steps');
+
+  await contourRow.click();
+  const segmentRow = page.locator('[data-upid-segment-row]').first();
+  await expect(segmentRow).toHaveAttribute('data-upid-tree-row-kind', 'segment');
+  await expect(segmentRow).toHaveAttribute('data-upid-tree-row-level', '1');
+  await expect(segmentRow.locator('[data-upid-tree-kind-label]')).toContainText('line');
+  await expect(segmentRow.locator('[data-upid-tree-action-hint]')).toContainText(/selects one segment/i);
+  await page.getByRole('button', { name: 'Expand segment 1 details in Exterior 1' }).click();
+  await expect(page.locator('[data-upid-segment-field="from"]').first()).toContainText('From');
+  await expect(page.locator('[data-upid-segment-field="to"]').first()).toContainText('To');
+  await expect(page.locator('[data-upid-segment-field="length"]').first()).toContainText('Length');
+  const pointRow = page.locator('[data-upid-point-row]').first();
+  await expect(pointRow).toHaveAttribute('data-upid-tree-row-kind', 'endpoint');
+  await expect(pointRow).toHaveAttribute('data-upid-tree-row-level', '2');
+  await expect(pointRow.locator('[data-upid-tree-kind-label]')).toContainText('Endpoint');
+  await expect(pointRow.locator('[data-upid-tree-action-hint]')).toContainText('selects a start/end handle');
+  await expect(pointRow.locator('[data-upid-point-field="role"]')).toContainText('Endpoint');
+});
+
+test('editor contour tree exposes hierarchy rails and endpoint topology from the tree context', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'contour-tree-topology-map.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['contour-tree']);
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Contour Tree help' }).focus();
+  await expect(page.locator('[data-upid-contour-tree-tooltip]')).toContainText(
+    'Inspect joins in Endpoint Topology from the View menu or Path Diagnostics workflow'
+  );
+  await expect(page.locator('[data-upid-contour-group]').first()).toHaveAttribute('data-upid-tree-depth', '0');
+  await expect(page.locator('[data-upid-segment-row]').first()).toHaveAttribute(
+    'data-upid-tree-row-level',
+    '1'
+  );
+  await page.getByRole('button', { name: 'Expand segment 1 details in Exterior 1' }).click();
+  await expect(page.locator('[data-upid-tree-depth-rail="endpoint"]').first()).toBeVisible();
+  await expect(page.locator('[data-upid-tree-depth-label="endpoint"]').first()).toContainText('Endpoint');
+
+  await showPanels(page, ['endpoint-topology']);
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
+  await expect(page.locator('[data-upid-endpoint-topology-title]')).toContainText('Endpoint Join Map');
+});
+
+test('editor contour tree rows cross-highlight and select canvas geometry', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'contour-tree-cross-highlight.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['contour-tree']);
+
+  const contourRow = page.locator('[data-upid-contour-row]').first();
+  const operationId = await contourRow.getAttribute('data-upid-operation-id');
+  expect(operationId).toBeTruthy();
+
+  await contourRow.hover();
+  await expect(
+    page.locator(`[data-preview-operation="${operationId}"][data-preview-hovered="true"]`)
+  ).toHaveCount(4);
+
+  await contourRow.click();
+  await expect(contourRow).toHaveAttribute('data-upid-selected', 'true');
+  await expect(
+    page.locator(`[data-preview-operation="${operationId}"][data-preview-selected="true"]`)
+  ).toHaveCount(4);
+
+  const segmentRow = page.locator('[data-upid-segment-row]').first();
+  const segmentId = await segmentRow.getAttribute('data-upid-segment-id');
+  expect(segmentId).toBeTruthy();
+
+  await segmentRow.hover();
+  await expect(
+    page.locator(
+      `[data-preview-operation="${operationId}"][data-preview-segment="${segmentId}"][data-preview-hovered="true"]`
+    )
+  ).toHaveCount(1);
+
+  await segmentRow.click();
+  await expect(segmentRow).toHaveAttribute('data-upid-selected', 'true');
+  await expect(
+    page.locator(
+      `[data-preview-operation="${operationId}"][data-preview-segment="${segmentId}"][data-preview-selected="true"]`
+    )
+  ).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Expand segment 1 details in Exterior 1' }).click();
+  const endpointRow = page.locator('[data-upid-point-row][data-upid-point-role="start"]').first();
+  await endpointRow.hover();
+  await expect(
+    page.locator(
+      `[data-preview-operation="${operationId}"][data-preview-segment="${segmentId}"][data-preview-point-role="start"][data-preview-hovered="true"]`
+    )
+  ).toHaveCount(1);
+
+  await endpointRow.locator('button[aria-pressed]').click();
+  await expect(endpointRow).toHaveAttribute('data-upid-selected', 'true');
+  await expect(
+    page.locator(
+      `[data-preview-operation="${operationId}"][data-preview-segment="${segmentId}"][data-preview-point-role="start"][data-preview-selected="true"]`
+    )
+  ).toHaveCount(1);
+});
+
+test('editor switches contour tree and endpoint topology without leaving hidden floating panels', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'tree-topology-placement.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['contour-tree']);
+  await expectFloatingPanelInsideViewport(page, 'contour-tree', 1400, 760);
+
+  await showPanels(page, ['endpoint-topology']);
+  await expect(page.locator('[data-editor-floating-panel="contour-tree"]')).toHaveCount(0);
+  await expectFloatingPanelInsideViewport(page, 'endpoint-topology', 1400, 760);
+});
+
+test('editor keeps common floating workspace panels readable through workflow switches', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'common-panel-placement.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  const panelIds = ['path-transform', 'contour-tree', 'statistics'];
+  for (const panelId of panelIds) {
+    await showPanels(page, [panelId]);
+    await expect(page.locator(`[data-editor-floating-panel="${panelId}"]`)).toBeVisible();
+  }
+
+  await showPanels(page, ['path-transform']);
+
+  await dragPanelControlBeyondViewport(
+    page,
+    page.locator('[data-editor-workspace-panel-handle="path-transform"]')
+  );
+  await expectFloatingPanelInsideViewport(page, 'path-transform', 1400, 760);
+  await dragPanelControlBeyondViewport(
+    page,
+    page.locator('[data-editor-floating-panel-resizer="path-transform"]')
+  );
+  await expect(page.locator('[data-editor-floating-panel="path-transform"]')).toBeVisible();
+});
+
+test('editor diagnostics explain what to inspect for an open chain', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'open-chain-guidance.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(simpleLineDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['path-diagnostics']);
+
+  await expect(page.locator('[data-upid-diagnostics-repair-workflow]')).toContainText(
+    'Repair workflow'
+  );
+  await expect(page.locator('[data-upid-diagnostics-repair-workflow]')).toContainText(
+    'Find the broken join'
+  );
+  await expect(page.locator('[data-upid-diagnostics-repair-workflow]')).toContainText(
+    'repair or re-import'
+  );
+
+  const diagnosticRow = page.locator(
+    '[data-upid-diagnostic-row][data-upid-diagnostic-code="open-chain"]'
+  );
+  await expect(diagnosticRow).toHaveAttribute('data-upid-diagnostic-code', 'open-chain');
+  await expect(diagnosticRow.locator('[data-upid-diagnostic-guidance]')).toContainText(
+    'Open Endpoint Topology'
+  );
+  await expect(diagnosticRow.locator('[data-upid-diagnostic-guidance]')).toContainText(
+    'affected start/end'
+  );
+
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);
+  await diagnosticRow.getByRole('button', { name: 'Open Endpoint Topology' }).click();
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
+  await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toHaveCount(0);
+  const openEndpointRows = page.locator('[data-upid-endpoint-topology-kind="open-endpoint-cluster"]');
+  await expect(openEndpointRows).toHaveCount(2);
+  await expect(openEndpointRows.first()).toContainText('Open end');
+  await expect(openEndpointRows.first()).toContainText('not paired');
+  await openEndpointRows.first().click();
+  await expect(openEndpointRows.first()).toHaveAttribute('data-upid-selected', 'true');
+  await expect(page.locator('[data-preview-path-endpoint][data-preview-selected="true"]')).toHaveCount(1);
+
+  await showPanels(page, ['path-diagnostics']);
+  await diagnosticRow.getByRole('button', { name: 'Open Endpoint Topology' }).click();
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
+
+  await showPanels(page, ['path-diagnostics']);
+  await diagnosticRow.getByRole('button', { name: 'Open Contour Tree' }).click();
+  await expect(page.locator('[data-editor-workspace-panel="contour-tree"]')).toBeVisible();
+  await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);
+});
+
+test('editor translates selected path geometry through the Transform panel', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'transform-panel.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['contour-tree']);
+  await page.locator('[data-upid-contour-row]').first().click();
+  await showPanels(page, ['path-transform']);
+  await expect(page.locator('[data-upid-transform-target]')).toContainText('Exterior');
+
+  await page.locator('[data-upid-transform-delta-x]').fill('3');
+  await page.locator('[data-upid-transform-delta-y]').fill('-4');
+  const contourPath = page.locator('[data-preview-source="path-document"][data-type="cut"]').first();
+  const originalContourPath = await contourPath.getAttribute('d');
+  await page.locator('[data-upid-transform-apply]').click();
+  await expect(contourPath).not.toHaveAttribute('d', originalContourPath ?? '');
+  await page.getByRole('button', { name: 'Save Transform Geometry workflow' }).click();
+
+  await page.locator('[data-preview-source="path-document"][data-preview-segment="seg_0001"]').first().click({ force: true });
+  await showPanels(page, ['path-transform']);
+  await page.locator('[data-upid-transform-delta-x]').fill('2');
+  await page.locator('[data-upid-transform-delta-y]').fill('1');
+  const segmentPath = page.locator('[data-preview-selected="true"][data-preview-source="path-document"]').first();
+  const originalSegmentPath = await segmentPath.getAttribute('d');
+  await page.locator('[data-upid-transform-apply]').click();
+  await expect(segmentPath).not.toHaveAttribute('d', originalSegmentPath ?? '');
+});
+
+test('editor moves a selected contour center to a precise coordinate', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'contour-center-transform.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['path-transform']);
+  await expect(page.locator('[data-upid-transform-document-center]')).toHaveText('5.000, 5.000');
+  await expect(page.locator('[data-upid-transform-origin-offset]')).toHaveText('-5.000, -5.000');
+  await expect(page.locator('[data-upid-transform-document-placement-help]')).toContainText(
+    'center to X0 Y0'
+  );
+  const transformBox = await page.locator('[data-editor-workspace-panel="path-transform"]').boundingBox();
+  expect(transformBox?.height).toBeGreaterThanOrEqual(400);
+  await showPanels(page, ['contour-tree']);
+  await page.locator('[data-upid-contour-row]').first().click();
+  await showPanels(page, ['path-transform']);
+
+  await expect(page.locator('[data-upid-transform-selection-center-current]')).toHaveText('5.000, 5.000');
+  await expect(page.locator('[data-editor-command-hint]')).toContainText('Transform active');
+
+  await page.locator('[data-upid-transform-selection-center-use-origin]').click();
+  await expect(page.locator('[data-upid-transform-selection-center-x]')).toHaveValue('0.000');
+  await expect(page.locator('[data-upid-transform-selection-center-y]')).toHaveValue('0.000');
+  await page.locator('[data-upid-transform-selection-center-apply]').click();
+
+  await expect(page.locator('[data-upid-transform-selection-center-current]')).toHaveText('0.000, 0.000');
+  await expect(page.locator('[data-upid-transform-document-center]')).toHaveText('0.000, 0.000');
+});
+
+test('editor transform panel shows DXF source placement metadata', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'source-placement.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(placedRectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['path-transform']);
+
+  await expect(page.locator('[data-upid-transform-document-bounds]')).toHaveText(
+    'X 3.000..13.000 Y 4.000..14.000'
+  );
+  await expect(page.locator('[data-upid-transform-source-extents]')).toHaveText(
+    'X -5.000..15.000 Y -6.000..16.000'
+  );
+  await expect(page.locator('[data-upid-transform-source-base]')).toHaveText('1.000, 2.000');
+  await expect(page.locator('[data-upid-transform-document-placement-help]')).toContainText(
+    'source extents come from DXF header metadata'
+  );
+});
+
+test('editor moves a selected arc center to a chosen measurement point', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'arc-center-transform.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(arcDxf())
+  });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['contour-tree']);
+  await page.locator('[data-upid-segment-row]').first().click();
+  await showPanels(page, ['measurement']);
+  await page.getByLabel('Measurement point X').fill('12');
+  await page.getByLabel('Measurement point Y').fill('-8');
+  await page.getByRole('button', { name: 'Add Point' }).click();
+  await page.getByLabel('Measurement point X').fill('-4');
+  await page.getByLabel('Measurement point Y').fill('6');
+  await page.getByRole('button', { name: 'Add Point' }).click();
+  await page.getByRole('button', { name: 'Save Measurement & Construction workflow' }).click();
+  await expect(page.locator('[data-editor-workspace-panel="measurement"]')).toHaveCount(0);
+
+  await page.getByLabel('Geometry menu').click();
+  await page.getByRole('button', { name: 'Transform Geometry' }).click();
+  await expect(page.locator('[data-upid-transform-center-current]')).toHaveText('0.000, 0.000');
+
+  await expect(page.locator('[data-upid-transform-center-use-point="1"]')).toContainText('P1');
+  await expect(page.locator('[data-upid-transform-center-use-point="2"]')).toContainText('P2');
+  await page.locator('[data-upid-transform-center-use-point="1"]').click();
+  await expect(page.locator('[data-upid-transform-center-x]')).toHaveValue('12.000');
+  await expect(page.locator('[data-upid-transform-center-y]')).toHaveValue('-8.000');
+
+  await page.locator('[data-upid-transform-center-apply]').click();
+
+  await expect(page.locator('[data-upid-transform-center-current]')).toHaveText('12.000, -8.000');
+});
+
+test('editor drags a selected arc center directly on the canvas', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'arc-center-canvas-drag.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(arcDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['contour-tree']);
+  await page.locator('[data-upid-segment-row]').first().click();
+  await showPanels(page, ['path-transform']);
+
+  const centerHandle = page.locator('[data-preview-arc-center-handle]').first();
+  await expect(centerHandle).toBeVisible();
+  await expect(centerHandle).toHaveAttribute('data-preview-selected', 'true');
+  await expect(centerHandle).toHaveAttribute('data-preview-arc-center', '0.000,0.000');
+
+  const handleBox = await centerHandle.boundingBox();
+  expect(handleBox).not.toBeNull();
+  if (!handleBox) return;
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handleBox.x + handleBox.width / 2 + 120, handleBox.y + handleBox.height / 2, {
+    steps: 8
+  });
+  await page.mouse.up();
+
+  await expect(page.locator('[data-upid-transform-center-current]')).not.toHaveText('0.000, 0.000');
+  await expect(page.locator('[data-preview-arc-center-handle]').first()).not.toHaveAttribute(
+    'data-preview-arc-center',
+    '0.000,0.000'
+  );
+});
+
+test('editor drags selected contour geometry directly on the canvas', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'canvas-drag-transform.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['contour-tree']);
+  await page.locator('[data-upid-contour-row]').first().click();
+  await showPanels(page, ['path-transform']);
+  const selectedPath = page
+    .locator('[data-preview-selected="true"][data-preview-source="path-document"][data-type="cut"]')
+    .first();
+  const originalSelectedPath = await selectedPath.getAttribute('d');
+  const box = await selectedPath.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) return;
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(selectedPath).not.toHaveAttribute('d', originalSelectedPath ?? '');
+});
+
+test('editor defaults canvas clicks to select mode before explicit point placement', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'canvas-select-mode.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['measurement']);
+
+  const preview = page.locator('svg[aria-label="UPID path preview"]');
+  const previewBox = await preview.boundingBox();
+  expect(previewBox).not.toBeNull();
+  if (!previewBox) return;
+
+  await page.mouse.click(previewBox.x + previewBox.width / 2, previewBox.y + previewBox.height / 2);
+  await expect(page.locator('[data-measurement-point-row="1"]')).toHaveCount(0);
+  await expect(page.locator('[data-editor-preview-mouse-mode-select]')).toHaveAttribute('aria-pressed', 'true');
+
+  await page.locator('[data-editor-preview-mouse-mode-point]').click();
+  await expect(page.locator('[data-editor-preview-mouse-mode-point]')).toHaveAttribute('aria-pressed', 'true');
+  await page.mouse.click(previewBox.x + previewBox.width / 2, previewBox.y + previewBox.height / 2);
+
+  await expect(page.locator('[data-measurement-point-row="1"]')).toBeVisible();
+});
+
+test('editor command hint guides measurement construction step by step', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'command-hints.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['measurement']);
+
+  const hint = page.locator('[data-editor-command-hint]');
+  await expect(hint).toContainText('Select mode');
+
+  await page.getByRole('button', { name: 'Magnetize latest point perpendicular' }).click();
+  await expect(hint).toContainText('Perpendicular mode');
+  await expect(hint).toContainText('Step 1');
+  await expect(hint).toContainText('add a measurement point');
+
+  await page.getByLabel('Measurement point X').fill('5');
+  await page.getByLabel('Measurement point Y').fill('5');
+  await page.getByRole('button', { name: 'Add Point' }).click();
+  await expect(hint).toContainText('Step 2');
+  await expect(hint).toContainText('select the target contour or segment');
+});
+
+test('editor rectangle-selects path geometry from a blank canvas drag in select mode', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 760 });
+  await openReadyWorkbench(page);
+
+  await page
+    .locator('input[aria-label="DXF file"]')
+    .setInputFiles({
+      name: 'canvas-rectangle-select.dxf',
+      mimeType: 'application/dxf',
+      buffer: Buffer.from(rectangleDxf())
+    });
+  await confirmPendingDxfImport(page);
+
+  await showPanels(page, ['measurement']);
+  await expect(page.locator('[data-editor-preview-mouse-mode-select]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('[data-preview-selected="true"][data-preview-source="path-document"]')).toHaveCount(0);
+
+  const preview = page.locator('svg[aria-label="UPID path preview"]');
+  const previewBox = await preview.boundingBox();
+  const cutBoxes = await page
+    .locator('[data-preview-source="path-document"][data-type="cut"]')
+    .evaluateAll((paths) =>
+      paths.map((path) => {
+        const box = path.getBoundingClientRect();
+        return {
+          height: box.height,
+          width: box.width,
+          x: box.x,
+          y: box.y
+        };
+      })
+    );
+
+  expect(previewBox).not.toBeNull();
+  expect(cutBoxes.length).toBeGreaterThan(0);
+  if (!previewBox || cutBoxes.length === 0) return;
+
+  const geometryBox = cutBoxes.reduce(
+    (box, current) => ({
+      maxX: Math.max(box.maxX, current.x + current.width),
+      maxY: Math.max(box.maxY, current.y + current.height),
+      minX: Math.min(box.minX, current.x),
+      minY: Math.min(box.minY, current.y)
+    }),
+    {
+      maxX: -Infinity,
+      maxY: -Infinity,
+      minX: Infinity,
+      minY: Infinity
+    }
+  );
+  const start = {
+    x: Math.max(previewBox.x + 8, geometryBox.minX - 42),
+    y: Math.max(previewBox.y + 8, geometryBox.minY - 42)
+  };
+  const end = {
+    x: Math.min(previewBox.x + previewBox.width - 8, geometryBox.maxX + 42),
+    y: Math.min(previewBox.y + previewBox.height - 8, geometryBox.maxY + 42)
+  };
+
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  await expect(page.locator('[data-preview-selection-marquee]')).toBeVisible();
+  await page.mouse.up();
+
+  await expect(page.locator('[data-preview-selection-marquee]')).toHaveCount(0);
+  await expect(page.locator('[data-preview-selected="true"][data-preview-source="path-document"][data-type="cut"]')).toHaveCount(4);
+  await expect(page.locator('[data-measurement-point-row="1"]')).toHaveCount(0);
+});
+
+type WorkspacePanelId = keyof typeof WORKSPACE_PANEL_COMMANDS;
+
+async function hidePanels(page: import('@playwright/test').Page, panelIds: WorkspacePanelId[]) {
+  await setPanelVisibility(page, panelIds, false);
+}
+
+async function showPanels(page: import('@playwright/test').Page, panelIds: WorkspacePanelId[]) {
+  await setPanelVisibility(page, panelIds, true);
+}
+
+async function setPanelVisibility(
+  page: import('@playwright/test').Page,
+  panelIds: WorkspacePanelId[],
+  visible: boolean
+) {
+  for (const panelId of panelIds) {
+    if (visible) {
+      await page.locator(`[data-editor-workflow-command="${WORKSPACE_PANEL_COMMANDS[panelId]}"]`)
+        .evaluate((button: HTMLButtonElement) => button.click());
+      await expect(page.locator(`[data-editor-workspace-panel="${panelId}"]`)).toBeVisible();
+      continue;
+    }
+
+    if (await page.locator(`[data-editor-workspace-panel="${panelId}"]`).count()) {
+      const title = WORKSPACE_PANEL_TITLES.find(([id]) => id === panelId)?.[1];
+      if (title) {
+        await page.getByRole('button', { name: `Hide ${title}` }).click();
+      }
+    }
+  }
+}
+
+async function dragHandleToDock(
+  page: import('@playwright/test').Page,
+  panelId: string,
+  side: 'left' | 'right'
+) {
+  const handle = page.locator(`[data-editor-workspace-panel-handle="${panelId}"]`);
+  const dock = page.locator(`[data-editor-panel-dock-zone="${side}"]`);
+  const handleBox = await handle.boundingBox();
+  const dockBox = await dock.boundingBox();
+
+  expect(handleBox).not.toBeNull();
+  expect(dockBox).not.toBeNull();
+  if (!handleBox || !dockBox) return;
+
+  await page.mouse.move(handleBox.x + Math.min(12, handleBox.width / 2), handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(dockBox.x + dockBox.width / 2, dockBox.y + Math.min(80, dockBox.height / 2), {
+    steps: 8
+  });
+  await page.mouse.up();
+}
+
+async function readFloatingPanelBoxes(page: import('@playwright/test').Page, panelIds: string[]) {
+  const boxes = [];
+  for (const panelId of panelIds) {
+    const box = await page.locator(`[data-editor-floating-panel="${panelId}"]`).boundingBox();
+    expect(box).not.toBeNull();
+    if (box) boxes.push(box);
+  }
+  return boxes;
+}
+
+async function dragPanelControlBeyondViewport(
+  page: import('@playwright/test').Page,
+  control: import('@playwright/test').Locator
+) {
+  const box = await control.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) return;
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(2400, 1600, { steps: 8 });
+  await page.mouse.up();
+}
+
+async function expectFloatingPanelInsideViewport(
+  page: import('@playwright/test').Page,
+  panelId: string,
+  viewportWidth: number,
+  viewportHeight: number
+) {
+  await expect
+    .poll(async () => {
+      const box = await page.locator(`[data-editor-floating-panel="${panelId}"]`).boundingBox();
+      return Boolean(
+        box &&
+          box.x >= 8 &&
+          box.y >= 42 &&
+          box.x + box.width <= viewportWidth - 8 + 0.5 &&
+          box.y + box.height <= viewportHeight - 8 + 0.5
+      );
+    })
+    .toBe(true);
+}
+
+function panelsOverlap(
+  first: { x: number; y: number; width: number; height: number },
+  second: { x: number; y: number; width: number; height: number }
+) {
+  return (
+    first.x < second.x + second.width &&
+    first.x + first.width > second.x &&
+    first.y < second.y + second.height &&
+    first.y + first.height > second.y
+  );
+}
 
 function rectangleDxf() {
   return `0
@@ -80,6 +889,144 @@ CUT
 0
 20
 10
+0
+ENDSEC
+0
+EOF
+`;
+}
+
+function placedRectangleDxf() {
+  return `0
+SECTION
+2
+HEADER
+9
+$INSBASE
+10
+1
+20
+2
+30
+0
+9
+$EXTMIN
+10
+-5
+20
+-6
+30
+0
+9
+$EXTMAX
+10
+15
+20
+16
+30
+0
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+8
+CUT
+10
+3
+20
+4
+11
+13
+21
+4
+0
+LINE
+8
+CUT
+10
+13
+20
+4
+11
+13
+21
+14
+0
+LINE
+8
+CUT
+10
+13
+20
+14
+11
+3
+21
+14
+0
+LINE
+8
+CUT
+10
+3
+20
+14
+11
+3
+21
+4
+0
+ENDSEC
+0
+EOF
+`;
+}
+
+function simpleLineDxf() {
+  return `0
+SECTION
+2
+ENTITIES
+0
+LINE
+10
+0
+20
+0
+11
+10
+21
+0
+0
+ENDSEC
+0
+EOF
+`;
+}
+
+function arcDxf() {
+  return `0
+SECTION
+2
+ENTITIES
+0
+ARC
+8
+CUT
+10
+0
+20
+0
+40
+5
+50
+0
+51
+90
 0
 ENDSEC
 0

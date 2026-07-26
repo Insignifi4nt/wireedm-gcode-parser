@@ -1108,6 +1108,7 @@ export function EditorPage({
       }
     };
   }, [
+    activeWorkflowSession,
     expandedPathElementIds,
     expandedProgramTreeKeys,
     pathDocumentDraft,

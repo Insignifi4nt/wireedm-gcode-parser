@@ -185,6 +185,32 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe(firstOperation.id);
   });
 
+  it('keeps the dirty rail-selected workflow open when a second rail action is cancelled', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickElement(`li[data-tree-key="operation:${secondOperation.id}"] button[aria-label^="Expand"]`);
+    await clickElement(`button[data-tree-key="operation:${firstOperation.id}:entry"]`);
+    await changeInput('input[aria-label="Entry X"]', '-2');
+    await clickElement(`button[data-tree-key="operation:${secondOperation.id}:entry"]`);
+
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      'before opening Entry / Exit'
+    );
+    await clickElement('button[aria-label="Dismiss workflow transition"]');
+
+    expect(container.querySelector('[data-entry-exit-panel]')).not.toBeNull();
+    expect(
+      (container.querySelector('select[aria-label="Entry and exit operation"]') as HTMLSelectElement).value
+    ).toBe(firstOperation.id);
+  });
+
   it('opens Program Stops with the exact tree-selected stop inline', async () => {
     const pathDocument = pathDocumentFromIndependentRectangles();
     const project = projectWithUpid(pathDocument);
