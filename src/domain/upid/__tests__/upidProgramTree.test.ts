@@ -252,6 +252,36 @@ describe('UPID program tree projection', () => {
     expect(tree.programStatusReason).toBe('missing-source-segment');
   });
 
+  it('preserves an unowned integrity failure alongside an owned derivation failure', () => {
+    const document = twoRectangleDocument();
+    const failing = document.plan.operations[0];
+    const untouched = document.plan.operations[1];
+    const edited = setInactiveSegments(document, failing, [0, 2]);
+    edited.machiningParticipation!.spans.push({
+      id: 'orphan-span',
+      sourceSegmentId: 'missing-segment',
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    });
+
+    const tree = buildUpidProgramTree(edited, createCharmillesRobofil100V2CandidateProfile());
+    const failingRoot = tree.operations.find((node) => node.operationId === failing.id);
+    const untouchedRoot = tree.operations.find((node) => node.operationId === untouched.id);
+
+    expect(failingRoot).toMatchObject({
+      status: 'blocked',
+      children: expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Cut path',
+          statusReason: 'multiple-active-groups-require-explicit-semantics'
+        })
+      ])
+    });
+    expect(untouchedRoot?.status).toBe('ready');
+    expect(tree.programStatus).toBe('blocked');
+    expect(tree.programStatusReason).toBe('missing-source-segment');
+  });
+
   it('keeps a fully suppressed source operation visible but inactive', () => {
     const document = twoRectangleDocument();
     const source = document.plan.operations[0];

@@ -561,10 +561,37 @@ function projectMachiningBySource(document: PathPlanningDocument) {
     }
   }
 
+  const unownedFailureReason = deriveUnownedParticipationFailure(document);
   return {
     bySourceOperationId,
-    unownedFailureReason: isolatedFailureFound ? undefined : globalDerivation.reason
+    unownedFailureReason:
+      unownedFailureReason ??
+      (isolatedFailureFound ? undefined : globalDerivation.reason)
   };
+}
+
+function deriveUnownedParticipationFailure(
+  document: PathPlanningDocument
+): Extract<ActiveMachiningDerivation, { status: 'blocked' }>['reason'] | undefined {
+  const ownedSegmentIds = new Set(
+    document.plan.operations.flatMap((operation) =>
+      operation.segmentRefs.map((ref) => ref.segmentId)
+    )
+  );
+  const unownedSpans = (document.machiningParticipation?.spans ?? []).filter(
+    (span) => !ownedSegmentIds.has(span.sourceSegmentId)
+  );
+  if (unownedSpans.length === 0) return undefined;
+
+  const derivation = deriveActiveMachiningOperations({
+    ...document,
+    machiningParticipation: { spans: unownedSpans },
+    plan: {
+      ...document.plan,
+      operations: []
+    }
+  });
+  return derivation.status === 'blocked' ? derivation.reason : undefined;
 }
 
 function deriveMachiningForSourceOperation(
