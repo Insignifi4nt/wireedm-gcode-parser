@@ -128,13 +128,11 @@ export function AppShell({
   }, []);
 
   useEffect(() => {
-    if (
-      !railContent ||
-      (compactDrawer === 'upid' && !railContent.isPathProject)
-    ) {
+    if (!railContent || !railContent.isPathProject) {
       setCompactDrawer(null);
+      setCompactTransitionOverlay(false);
     }
-  }, [compactDrawer, railContent]);
+  }, [railContent]);
 
   function handleSidebarResizeStart(event: PointerEvent<HTMLDivElement>) {
     event.preventDefault();

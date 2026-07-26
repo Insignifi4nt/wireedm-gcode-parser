@@ -697,6 +697,9 @@ export function EditorPage({
     setWorkflowTransition(next);
     setCompactTransitionOverlay(Boolean(isCompactViewport && next?.kind === 'held'));
   }
+
+  useEffect(() => () => setCompactTransitionOverlay(false), [setCompactTransitionOverlay]);
+
   const [activeWorkflowPendingReasons, setActiveWorkflowPendingReasons] = useState<
     Record<string, string>
   >({});

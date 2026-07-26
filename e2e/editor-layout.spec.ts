@@ -295,6 +295,54 @@ test('compact modal host contains shell chrome and clears its owner when the edi
   await expect(page.locator('[data-app-header]')).not.toHaveAttribute('inert', '');
 });
 
+test('compact held transition cleanup does not inert the next path drawer after unmount', async ({ page }) => {
+  await page.setViewportSize({ width: 767, height: 800 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'compact-held-transition.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  await page.getByRole('button', { name: 'Open UPID rail' }).click();
+  await page.getByRole('dialog', { name: 'UPID rail' })
+    .getByRole('button', { name: 'Entry / lead-in · None' }).click();
+  const workflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
+  await workflowDrawer.getByRole('textbox', { name: 'Entry X' }).fill('5');
+  await workflowDrawer.getByRole('textbox', { name: 'Entry Y' }).fill('6');
+  await workflowDrawer.getByRole('button', { name: 'Close Entry / Exit drawer' }).click();
+  await page.getByRole('button', { name: 'Open UPID rail' }).click();
+  await page.getByRole('dialog', { name: 'UPID rail' })
+    .getByRole('button', { name: 'Exit / lead-out · None' }).click();
+  const heldTransition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
+  await expect(heldTransition).toBeVisible();
+  await heldTransition.getByRole('button', { name: 'Discard' }).click();
+  const exitWorkflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
+  await expect(exitWorkflowDrawer).toBeVisible();
+  await exitWorkflowDrawer.getByRole('button', { name: 'Close Entry / Exit drawer' }).click();
+
+  await page.evaluate(() => {
+    document.querySelector<HTMLButtonElement>('[data-app-header] button[aria-label="Back to Dashboard"]')?.click();
+  });
+  await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'compact-fresh-path.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await page.getByRole('button', { name: 'Open UPID rail' }).click();
+  const freshUpidDrawer = page.locator('[data-editor-compact-drawer="upid"]');
+  await expect(freshUpidDrawer).toBeVisible();
+  await expect(freshUpidDrawer).not.toHaveAttribute('inert', '');
+  await expect(freshUpidDrawer).toHaveAttribute('aria-modal', 'true');
+  await expect(page.getByRole('dialog', { name: 'Unsaved workflow changes' })).toHaveCount(0);
+});
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1024, height: 720 }
