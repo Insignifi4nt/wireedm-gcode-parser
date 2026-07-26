@@ -1109,6 +1109,7 @@ export function EditorPage({
     };
   }, [
     activeWorkflowSession,
+    isEditorMutationLocked,
     expandedPathElementIds,
     expandedProgramTreeKeys,
     pathDocumentDraft,

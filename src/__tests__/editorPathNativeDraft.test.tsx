@@ -211,6 +211,36 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe(firstOperation.id);
   });
 
+  it('keeps rail actions locked when interaction state changes without a workflow session', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const project = projectWithUpid(pathDocument);
+    const [operation] = pathDocument.plan.operations;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+    await clickElement(
+      `li[data-tree-key="operation:${operation.id}:cut-path"] button[aria-label^="Expand"]`
+    );
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          interactionLocked
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement(`button[data-tree-key="operation:${operation.id}:contour-start"]`);
+
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+    expect(container.querySelector('[data-set-start-panel]')).toBeNull();
+  });
+
   it('opens Program Stops with the exact tree-selected stop inline', async () => {
     const pathDocument = pathDocumentFromIndependentRectangles();
     const project = projectWithUpid(pathDocument);
@@ -3498,6 +3528,7 @@ describe('EditorPage UPID draft boundary', () => {
 function EditorPageHarness({
   filePath = 'imports/rectangle.dxf',
   initialWorkflowId,
+  interactionLocked = false,
   onBackToDashboard = noop,
   onImportProgramFile = noop,
   onProgramTreeActionReady,
@@ -3507,6 +3538,7 @@ function EditorPageHarness({
 }: {
   filePath?: string;
   initialWorkflowId?: string;
+  interactionLocked?: boolean;
   onBackToDashboard?: () => void;
   onImportProgramFile?: (file: File) => void;
   onProgramTreeActionReady?: (open: (target: UpidProgramTreeEditTarget) => void) => void;
@@ -3536,6 +3568,7 @@ function EditorPageHarness({
       <EditorPage
         importErrorMessage={null}
         importStatus="idle"
+        interactionLocked={interactionLocked}
         onBackToDashboard={onBackToDashboard}
         onDownloadEditorFile={noop}
         onImportProgramFile={onImportProgramFile}

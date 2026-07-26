@@ -1148,9 +1148,9 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-upid-contour-row]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-stack]')).not.toBeNull();
     expect(container.querySelector('[data-upid-segment-row]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Resize Inspector Dock"]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Collapse Inspector Dock"]')).not.toBeNull();
-    expect(container.querySelector('[data-editor-panel-dock-zone="right"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Resize Inspector Dock"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Collapse Inspector Dock"]')).toBeNull();
+    expect(container.querySelector('[data-editor-panel-dock-zone="right"]')).toBeNull();
     expect(container.querySelectorAll('[data-editor-workspace-panel]')).toHaveLength(1);
     expect(container.querySelector('[data-editor-workspace-panel="contour-tree"]')).not.toBeNull();
     expect(container.querySelector('[data-app-shell]')?.getAttribute('data-sidebar-collapsed')).toBe(
@@ -1158,8 +1158,8 @@ describe('App DXF imports and project library', () => {
     );
     expect(
       container
-        .querySelector('[data-editor-panel-dock-zone="right"]')
-        ?.getAttribute('data-editor-panel-dock-zone-collapsed')
+        .querySelector('[data-editor-main-grid]')
+        ?.getAttribute('data-has-active-right-dock')
     ).toBe('false');
     expect(container.querySelector('[aria-label="Resize right bar"]')).toBeNull();
     expect(container.querySelector('[aria-label="Collapse right bar"]')).toBeNull();
@@ -1176,28 +1176,11 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).not.toContain('Header');
     expect(container.textContent).not.toContain('Footer');
 
-    const collapseInspectorButton = container.querySelector(
-      '[aria-label="Collapse Inspector Dock"]'
-    ) as HTMLButtonElement | null;
-
-    await act(async () => {
-      collapseInspectorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(
-      container
-        .querySelector('[data-editor-panel-dock-zone="right"]')
-        ?.getAttribute('data-editor-panel-dock-zone-collapsed')
-    ).toBe('true');
-    expect(container.querySelector('[aria-label="Expand Inspector Dock"]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Expand right bar"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Expand Inspector Dock"]')).toBeNull();
+    expect(container.querySelector('[data-editor-panel-dock-zone="right"]')).toBeNull();
   });
 
-  it('keeps the docked Contour Tree attached through repeated left rail collapse cycles', async () => {
+  it('keeps a floating Contour Tree active through repeated UPID rail collapse cycles', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
@@ -1214,48 +1197,38 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
     await confirmPendingDxfImport(container);
     await openWorkflowCommand(container, 'view.contours');
-    await act(async () => {
-      container.querySelector('button[aria-label="Dock Contour Tree left"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await flushReactOnly();
-
     for (let cycle = 0; cycle < 2; cycle += 1) {
       const contourTree = container.querySelector(
-        '[data-app-rail-expanded-content] [data-editor-workspace-panel="contour-tree"]'
+        '[data-editor-workspace-panel="contour-tree"]'
       );
       expect(contourTree?.isConnected).toBe(true);
-      expect(contourTree?.textContent).toContain('Contour Tree');
+      expect(contourTree?.querySelector('[data-upid-contour-tree]')).not.toBeNull();
       expect(contourTree?.getAttribute('data-editor-workspace-panel-placement')).toBe(
-        'docked-left'
+        'floating'
       );
 
       await act(async () => {
         container
-          .querySelector('button[aria-label="Collapse Panel Dock"]')
+          .querySelector('button[aria-label="Collapse UPID rail"]')
           ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
       await flushReactOnly();
-      expect(
-        container.querySelector('[data-app-rail-expanded-content]')?.getAttribute('aria-hidden')
-      ).toBe('true');
+      expect(container.querySelector('[aria-label="Collapsed UPID rail"]')).not.toBeNull();
 
       await act(async () => {
         container
-          .querySelector('button[aria-label="Expand Panel Dock"]')
+          .querySelector('button[aria-label="Expand UPID rail"]')
           ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
       await flushReactOnly();
-      expect(
-        container.querySelector('[data-app-rail-expanded-content]')?.getAttribute('aria-hidden')
-      ).toBeNull();
+      expect(container.querySelector('[aria-label="UPID rail"]')).not.toBeNull();
     }
 
     const restoredContourTree = container.querySelector(
-      '[data-app-rail-expanded-content] [data-editor-workspace-panel="contour-tree"]'
+      '[data-editor-workspace-panel="contour-tree"]'
     );
     expect(restoredContourTree?.isConnected).toBe(true);
-    expect(restoredContourTree?.textContent).toContain('Contour Tree');
+    expect(restoredContourTree?.querySelector('[data-upid-contour-tree]')).not.toBeNull();
   });
 
   it('opens and cleanly replaces one workflow panel from the workflow menus', async () => {
@@ -1476,7 +1449,7 @@ describe('App DXF imports and project library', () => {
       (container.querySelector('button[aria-label="Float Contour Tree"]') as HTMLButtonElement)
         .disabled
     ).toBe(true);
-    expect(container.querySelector('button[aria-label="Dock Contour Tree left"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Dock Contour Tree left"]')).toBeNull();
     expect(container.querySelector('button[aria-label="Dock Contour Tree right"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-workspace-panel-handle="contour-tree"]')).not.toBeNull();
 
@@ -1636,7 +1609,7 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelectorAll('[data-editor-workspace-panel]')).toHaveLength(1);
     expect(container.querySelector('[data-editor-workspace-panel="measurement"]')).not.toBeNull();
     expect(container.querySelectorAll('button[aria-label^="Float "]')).toHaveLength(1);
-    expect(container.querySelectorAll('button[aria-label^="Dock "]')).toHaveLength(2);
+    expect(container.querySelectorAll('button[aria-label^="Dock "]')).toHaveLength(1);
 
     await openWorkflowCommand(container, 'view.endpoints');
     expect(container.querySelector('[data-upid-endpoint-topology]')).not.toBeNull();

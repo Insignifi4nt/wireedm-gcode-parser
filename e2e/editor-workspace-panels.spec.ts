@@ -101,6 +101,29 @@ test('workspace workflows expose keyboard float and right-dock placement command
   await page.getByRole('button', { name: 'Float Transform' }).focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('[data-editor-floating-panel="path-transform"]')).toBeVisible();
+
+  const panel = page.locator('[data-editor-floating-panel="path-transform"]');
+  const beforeMove = await panel.boundingBox();
+  expect(beforeMove).not.toBeNull();
+  if (!beforeMove) return;
+
+  await page.getByRole('button', { name: 'Move Transform' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Shift+ArrowDown');
+  const afterMove = await panel.boundingBox();
+  expect(afterMove).not.toBeNull();
+  if (!afterMove) return;
+  expect(afterMove.x).toBeCloseTo(beforeMove.x + 10, 1);
+  expect(afterMove.y).toBeCloseTo(beforeMove.y + 1, 1);
+
+  await page.getByRole('button', { name: 'Resize Transform' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Shift+ArrowDown');
+  const afterResize = await panel.boundingBox();
+  expect(afterResize).not.toBeNull();
+  if (!afterResize) return;
+  expect(afterResize.width).toBeCloseTo(afterMove.width + 10, 1);
+  expect(afterResize.height).toBeCloseTo(afterMove.height + 1, 1);
 });
 
 test('editor opens endpoint topology from its workflow command', async ({ page }) => {
@@ -390,11 +413,15 @@ test('editor diagnostics explain what to inspect for an open chain', async ({ pa
   await expect(openEndpointRows.first()).toHaveAttribute('data-upid-selected', 'true');
   await expect(page.locator('[data-preview-path-endpoint][data-preview-selected="true"]')).toHaveCount(1);
 
-  await showPanels(page, ['path-diagnostics']);
+  await page.getByLabel('View menu').click();
+  await page.getByRole('button', { name: 'Path Diagnostics' }).click();
+  await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toBeVisible();
   await diagnosticRow.getByRole('button', { name: 'Open Endpoint Topology' }).click();
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
 
-  await showPanels(page, ['path-diagnostics']);
+  await page.getByLabel('View menu').click();
+  await page.getByRole('button', { name: 'Path Diagnostics' }).click();
+  await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toBeVisible();
   await diagnosticRow.getByRole('button', { name: 'Open Contour Tree' }).click();
   await expect(page.locator('[data-editor-workspace-panel="contour-tree"]')).toBeVisible();
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);

@@ -52,9 +52,6 @@ describe('EditorWorkspacePanelFrame', () => {
       );
     });
 
-    const dockLeft = document.querySelector(
-      'button[aria-label="Dock Transform left"]'
-    ) as HTMLButtonElement | null;
     const dockRight = document.querySelector(
       'button[aria-label="Dock Transform right"]'
     ) as HTMLButtonElement | null;
@@ -68,7 +65,7 @@ describe('EditorWorkspacePanelFrame', () => {
       'button[aria-label="Resize Transform"]'
     ) as HTMLButtonElement | null;
 
-    expect(dockLeft?.disabled).toBe(false);
+    expect(document.querySelector('button[aria-label="Dock Transform left"]')).toBeNull();
     expect(dockRight?.disabled).toBe(false);
     expect(float?.disabled).toBe(true);
     expect(move?.tabIndex).toBe(0);
@@ -77,7 +74,6 @@ describe('EditorWorkspacePanelFrame', () => {
     expect(resize?.getAttribute('data-editor-floating-panel-resizer')).toBe('path-transform');
 
     await act(async () => {
-      dockLeft?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       dockRight?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       move?.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }));
       move?.dispatchEvent(
@@ -89,7 +85,7 @@ describe('EditorWorkspacePanelFrame', () => {
       );
     });
 
-    expect(onDock.mock.calls).toEqual([['left'], ['right']]);
+    expect(onDock.mock.calls).toEqual([['right']]);
     expect(onFloat).not.toHaveBeenCalled();
     expect(onGeometryChange.mock.calls.map(([nextGeometry]) => nextGeometry)).toEqual([
       { ...geometry, x: 310 },
