@@ -690,6 +690,13 @@ export function EditorPage({
   const [workflowTransition, setWorkflowTransition] = useState<
     EditorWorkflowTransition<EditorDraftSnapshot> | null
   >(null);
+
+  function updateWorkflowTransition(
+    next: EditorWorkflowTransition<EditorDraftSnapshot> | null
+  ) {
+    setWorkflowTransition(next);
+    setCompactTransitionOverlay(Boolean(isCompactViewport && next?.kind === 'held'));
+  }
   const [activeWorkflowPendingReasons, setActiveWorkflowPendingReasons] = useState<
     Record<string, string>
   >({});
@@ -1238,7 +1245,7 @@ export function EditorPage({
     setActiveWorkflowSession(null);
     setActiveToolSession(null);
     setActiveWorkflowPendingReasons({});
-    setWorkflowTransition(null);
+    updateWorkflowTransition(null);
     pendingWorkflowExitActionRef.current = null;
     setEntryExitCanvasPick(null);
     setPathClickMode(null);
@@ -1322,13 +1329,6 @@ export function EditorPage({
   useEffect(() => {
     if (!activeWorkflowSession && compactDrawer === 'workflow') setCompactDrawer(null);
   }, [activeWorkflowSession, compactDrawer, setCompactDrawer]);
-
-  useEffect(() => {
-    setCompactTransitionOverlay(
-      Boolean(isCompactViewport && workflowTransition?.kind === 'held')
-    );
-    return () => setCompactTransitionOverlay(false);
-  }, [isCompactViewport, setCompactTransitionOverlay, workflowTransition]);
 
   useEffect(() => {
     onProgramTreeActionReady?.(openEditorWorkflowForTarget);
@@ -2701,7 +2701,7 @@ export function EditorPage({
     const transition = requestEditorWorkflowTransition(activeWorkflowSession, { kind: 'close' });
     if (transition.kind === 'held') {
       pendingWorkflowExitActionRef.current = action;
-      setWorkflowTransition(transition);
+      updateWorkflowTransition(transition);
       return;
     }
 
@@ -2778,7 +2778,7 @@ export function EditorPage({
         } : {})
       });
       if (transition.kind === 'held') {
-        setWorkflowTransition(transition);
+        updateWorkflowTransition(transition);
         return;
       }
       if (transition.kind === 'resolved') completeEditorWorkflowTransition(transition);
@@ -2813,7 +2813,7 @@ export function EditorPage({
     });
     if (!availability.enabled) {
       setActiveWorkflowSession(null);
-      setWorkflowTransition(null);
+      updateWorkflowTransition(null);
       onStatusMessage?.(availability.reason, 'warning');
       return;
     }
@@ -2848,7 +2848,7 @@ export function EditorPage({
     openActiveWorkflowInCompactDrawer();
     setEntryExitCanvasPick(null);
     setActiveWorkflowPendingReasons({});
-    setWorkflowTransition(null);
+    updateWorkflowTransition(null);
     setExportPreviewOpen(command.id === 'export.preview');
     if (command.id === SET_START_COMMAND.id) {
       const openingDocument = editorDraftPathDocument(openingSnapshot.draft);
@@ -2867,7 +2867,7 @@ export function EditorPage({
     if (!activeWorkflowSession) return;
     const transition = requestEditorWorkflowTransition(activeWorkflowSession, { kind: 'close' });
     if (transition.kind === 'held') {
-      setWorkflowTransition(transition);
+      updateWorkflowTransition(transition);
       return;
     }
     if (transition.kind === 'resolved') completeEditorWorkflowTransition(transition);
@@ -2881,7 +2881,7 @@ export function EditorPage({
     if (!workflowTransition) return;
     dismissEditorWorkflowTransition(workflowTransition);
     pendingWorkflowExitActionRef.current = null;
-    setWorkflowTransition(null);
+    updateWorkflowTransition(null);
   }
 
   function resolveWorkflowTransition(resolution: 'save' | 'discard') {
@@ -2912,7 +2912,7 @@ export function EditorPage({
     setActiveToolSession(null);
     setEntryExitCanvasPick(null);
     setPathClickMode(null);
-    setWorkflowTransition(null);
+    updateWorkflowTransition(null);
     setActiveWorkflowPendingReasons({});
     setExportPreviewOpen(false);
     if (request.kind === 'close') {
