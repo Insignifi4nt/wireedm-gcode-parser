@@ -15,7 +15,7 @@ test('loads the workbench dashboard in a real browser', async ({ page }) => {
   await expect(page).toHaveTitle(/Wire EDM Workbench/);
   await expect(page.locator('[data-app-shell]')).toBeVisible();
   await expect(page.locator('[data-workbench-page]')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Workbench' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Workbench', exact: true })).toBeVisible();
   await expect(page.locator('[data-project-library]')).toBeVisible();
   await expect(
     page.getByRole('button', { name: /Import DXF as Path Project/i })
@@ -35,7 +35,7 @@ test('loads the workbench dashboard in a real browser', async ({ page }) => {
   );
 
   const workbenchFont = await page
-    .getByRole('heading', { name: 'Workbench' })
+    .getByRole('heading', { name: 'Workbench', exact: true })
     .evaluate((element) => getComputedStyle(element).fontFamily.toLowerCase());
   expect(workbenchFont).not.toContain('mono');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
@@ -51,6 +51,7 @@ test('keeps the 1024px workbench in one readable column without clipping', async
     buffer: Buffer.from(rectangleDxf())
   });
   await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
   await page.getByRole('button', { name: /dashboard/i }).click();
   const machineProgramInput = page.locator('input[aria-label="Machine program file"]');
   await expect(machineProgramInput).toBeEnabled();
@@ -105,4 +106,9 @@ ENDSEC
 0
 EOF
 `;
+}
+
+async function dismissOnboarding(page: import('@playwright/test').Page) {
+  const dialog = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
+  if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Go Build!' }).click();
 }

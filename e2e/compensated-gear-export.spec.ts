@@ -38,10 +38,21 @@ test('reviews and exports the real z39 gear with reversal-safe Robofil compensat
   await page.locator('input[aria-label="Translate X"]:visible').fill('6.894299');
   await page.locator('input[aria-label="Translate Y"]:visible').fill('-19.024251');
   await page.getByRole('button', { name: 'Apply translation to document geometry' }).click();
+  await page.getByRole('button', { name: 'Save Transform Geometry workflow' }).click();
 
-  await page.getByRole('button', { name: 'Select Exterior 1' }).click();
+  await openWorkflow(page, 'Geometry', 'geometry.setup');
   const geometryBasis = page.locator('select[aria-label="Geometry basis"]:visible').first();
-  await expect(geometryBasis).toHaveValue('finished-contour');
+  if (await geometryBasis.inputValue() === 'wire-centre') {
+    await geometryBasis.selectOption('finished-contour');
+    await page.getByRole('button', { name: 'Save Geometry Setup workflow' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Cancel Geometry Setup workflow' }).click();
+  }
+
+  await page.locator(
+    'li[data-tree-key="section:program"] > ul > li[role="treeitem"][data-tree-key^="operation:"]'
+  ).first().getByRole('button', { name: /Edit 01/ }).click();
+  await expect(page.locator('[data-editor-workspace-panel="contour-setup"]')).toBeVisible();
 
   const keptMaterial = page.locator('[data-testid="compensation-kept-material"]:visible').first();
   const compensationCode = page.locator('[data-testid="compensation-code"]:visible').first();
@@ -52,8 +63,16 @@ test('reviews and exports the real z39 gear with reversal-safe Robofil compensat
   await page.locator('button[aria-label="Reverse path operation"]:visible').first().click();
   await expect(compensationCode).not.toHaveText(before ?? '');
   await expect(keptMaterial).toContainText('inside');
+  const compensationCodeText = (await compensationCode.textContent())!.trim();
+  await page.getByRole('button', { name: 'Save Contour Setup workflow' }).click();
 
-  await page.locator('button[aria-label="Open UPID export preview"]:visible').first().click();
+  await openWorkflow(page, 'Machining', 'machining.initial-wire');
+  await page.getByLabel('Initial wire X').fill('0');
+  await page.getByLabel('Initial wire Y').fill('0');
+  await page.getByRole('button', { name: 'Review and set manual initial wire position' }).click();
+  await page.getByRole('button', { name: 'Save Program Start / G92 workflow' }).click();
+
+  await openWorkflow(page, 'Export', 'export.preview');
   await expect(page.locator('[data-upid-export-readiness="ready"]')).toBeVisible();
   await expect(page.locator('[data-upid-export-block-kind="setup"]')).not.toHaveCount(0);
   await expect(page.locator('[data-upid-export-block-kind="compensation-activation"]')).not.toHaveCount(0);
@@ -81,7 +100,7 @@ test('reviews and exports the real z39 gear with reversal-safe Robofil compensat
     'G92 X0 Y0',
     'G60',
     'G38',
-    (await compensationCode.textContent())!.trim(),
+    compensationCodeText,
     'G90'
   ]);
   expect(nonEmptyLines[5]).toBe('G1 X-1.200 Y-18.946');
@@ -105,11 +124,15 @@ test('reviews and exports the real z39 gear with reversal-safe Robofil compensat
   }
 });
 
-async function showPanel(page: import('@playwright/test').Page, panelId: string) {
-  const item = page.locator(`[data-editor-panel-menu-item="${panelId}"]`);
-  const label = await item.getAttribute('aria-label');
-  if (label?.startsWith('Show')) {
-    await page.locator('[data-editor-panel-toolbar] summary').click();
-    await item.click();
-  }
+async function showPanel(page: import('@playwright/test').Page, panelId: 'path-transform') {
+  await openWorkflow(page, 'Geometry', panelId === 'path-transform' ? 'geometry.transform' : panelId);
+}
+
+async function openWorkflow(
+  page: import('@playwright/test').Page,
+  menu: string,
+  commandId: string
+) {
+  await page.getByRole('button', { name: `${menu} menu` }).click();
+  await page.locator(`[data-editor-workflow-command="${commandId}"]`).click();
 }

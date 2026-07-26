@@ -33,3 +33,21 @@ export async function seedWorkbenchCacheFromFolder(
 
   return seed;
 }
+
+/**
+ * Reset only this application's browser-cache namespace before a real upload
+ * journey. The caller still reaches the editor through the visible dashboard.
+ */
+export async function clearWorkbenchCache(page: Page) {
+  await page.goto('/');
+  await page.evaluate(() => {
+    const prefix = 'wire-edm-workbench:';
+    const keysToRemove: string[] = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key?.startsWith(prefix)) keysToRemove.push(key);
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+  });
+  await page.reload();
+}

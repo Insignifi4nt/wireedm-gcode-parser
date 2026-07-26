@@ -44,7 +44,7 @@ test('uses declared DXF units, opens only after confirmation, and preserves prov
   await page.getByRole('button', { name: `Open project ${projectId} in editor` }).click();
   await expect(page.locator('[data-editor-status-units]')).toContainText('inches ×25.4');
 
-  await page.getByRole('button', { name: 'Open UPID export preview' }).click();
+  await openUpidExportPreview(page);
   const trace = page.locator('[data-upid-export-document-trace]');
   await expect(trace).toHaveAttribute('data-upid-export-document-unit-declaration', 'recognized');
   await expect(trace).toHaveAttribute('data-upid-export-document-applied-units', 'inches');
@@ -137,7 +137,7 @@ test('blocks a project-snapshotted G20 profile at UPID preview and download', as
     buffer: Buffer.from(rectangleDxf(4))
   });
   await confirmPendingDxfImport(page, 'millimeters');
-  await page.getByRole('button', { name: 'Open UPID export preview' }).click();
+  await openUpidExportPreview(page);
 
   await expect(page.locator('[data-upid-export-readiness="blocked"]')).toBeVisible();
   await expect(
@@ -152,6 +152,11 @@ test('blocks a project-snapshotted G20 profile at UPID preview and download', as
 async function openReadyWorkbench(page: Page) {
   await page.goto('/');
   await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
+}
+
+async function openUpidExportPreview(page: Page) {
+  await page.getByRole('button', { name: 'Export menu' }).click();
+  await page.locator('[data-editor-workflow-command="export.preview"]').click();
 }
 
 async function seedMachineProfiles(
