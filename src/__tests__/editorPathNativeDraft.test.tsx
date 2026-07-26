@@ -38,7 +38,6 @@ import {
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
 import { composeProjectUpidGCodeExport, withProjectUpid } from '@/domain/upid/projectUpid';
-import type { UpidProgramTreeEditTarget } from '@/domain/upid/upidProgramTree';
 import type { WorkbenchProject } from '@/domain/workbench/types';
 import { EditorPage } from '@/features/editor/EditorPage';
 import { EditorUpidExportPreview } from '@/features/editor/EditorUpidExportPreview';
@@ -138,39 +137,32 @@ describe('EditorPage UPID draft boundary', () => {
     const pathDocument = pathDocumentFromIndependentRectangles();
     const project = projectWithUpid(pathDocument);
     const [firstOperation, secondOperation] = pathDocument.plan.operations;
-    let openProgramTreeTarget: ((target: UpidProgramTreeEditTarget) => void) | null = null;
+    const firstEntryTreeKey = `operation:${firstOperation.id}:entry`;
+    const secondEntryTreeKey = `operation:${secondOperation.id}:entry`;
 
     await act(async () => {
-      root.render(
-        <EditorPageHarness
-          onProgramTreeActionReady={(open) => { openProgramTreeTarget = open; }}
-          onSaveEditorDraft={vi.fn()}
-          project={project}
-        />
-      );
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
 
-    await act(async () => openProgramTreeTarget?.({
-      kind: 'entry-exit', operationId: secondOperation.id
-    }));
-    await flushAsync();
+    await expandProgramTreeItem(`operation:${secondOperation.id}`);
+    await pressProgramTreeItem(secondEntryTreeKey, ' ');
+
+    expect(programTreeItem(secondEntryTreeKey)?.getAttribute('aria-selected')).toBe('true');
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+
+    await clickProgramTreeButton(secondEntryTreeKey, 'Edit Entry / lead-in');
 
     expect(container.querySelector('[data-editor-floating-panel="entry-exit"]')?.textContent)
       .toContain('Entry / Exit');
     expect(
       (container.querySelector('select[aria-label="Entry and exit operation"]') as HTMLSelectElement).value
     ).toBe(secondOperation.id);
+    expect(programTreeItem(secondEntryTreeKey)?.getAttribute('aria-selected')).toBe('true');
 
-    await act(async () => openProgramTreeTarget?.({
-      kind: 'entry-exit', operationId: firstOperation.id
-    }));
-    await flushAsync();
+    await clickProgramTreeButton(firstEntryTreeKey, 'Edit Entry / lead-in');
     await changeInput('input[aria-label="Entry X"]', '-2');
-    await act(async () => openProgramTreeTarget?.({
-      kind: 'entry-exit', operationId: secondOperation.id
-    }));
-    await flushAsync();
+    await clickProgramTreeButton(secondEntryTreeKey, 'Edit Entry / lead-in');
 
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
       'before opening Entry / Exit'
@@ -181,6 +173,33 @@ describe('EditorPage UPID draft boundary', () => {
     expect(
       (container.querySelector('select[aria-label="Entry and exit operation"]') as HTMLSelectElement).value
     ).toBe(firstOperation.id);
+    expect(programTreeItem(firstEntryTreeKey)?.getAttribute('aria-selected')).toBe('true');
+    expect(programTreeItem(secondEntryTreeKey)?.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('opens Cut Sequence from the exact second-operation ordinal action', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const project = projectWithUpid(pathDocument);
+    const secondOperation = pathDocument.plan.operations[1];
+    const operationTreeKey = `operation:${secondOperation.id}`;
+    const ordinal = String(secondOperation.orderIndex + 1).padStart(2, '0');
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await clickProgramTreeButton(
+      operationTreeKey,
+      `Edit cut sequence for ${ordinal} · ${secondOperation.displayName}`
+    );
+
+    expect(visibleWorkflowPanelIds()).toEqual(['cut-sequence']);
+    expect(programTreeItem(operationTreeKey)?.getAttribute('aria-selected')).toBe('true');
+    const selectedSequenceRow = [
+      ...container.querySelectorAll<HTMLElement>('[data-upid-cut-sequence-row]')
+    ].find((row) => row.dataset.upidOperationId === secondOperation.id);
+    expect(selectedSequenceRow?.getAttribute('data-upid-selected')).toBe('true');
   });
 
   it('keeps the dirty rail-selected workflow open when a second rail action is cancelled', async () => {
@@ -193,10 +212,10 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    await clickElement(`li[data-tree-key="operation:${secondOperation.id}"] button[aria-label^="Expand"]`);
-    await clickElement(`button[data-tree-key="operation:${firstOperation.id}:entry"]`);
+    await expandProgramTreeItem(`operation:${secondOperation.id}`);
+    await pressProgramTreeItem(`operation:${firstOperation.id}:entry`, 'Enter');
     await changeInput('input[aria-label="Entry X"]', '-2');
-    await clickElement(`button[data-tree-key="operation:${secondOperation.id}:entry"]`);
+    await pressProgramTreeItem(`operation:${secondOperation.id}:entry`, 'Enter');
 
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
       'before opening Entry / Exit'
@@ -207,6 +226,37 @@ describe('EditorPage UPID draft boundary', () => {
     expect(
       (container.querySelector('select[aria-label="Entry and exit operation"]') as HTMLSelectElement).value
     ).toBe(firstOperation.id);
+    expect(
+      programTreeItem(`operation:${firstOperation.id}:entry`)?.getAttribute('aria-selected')
+    ).toBe('true');
+  });
+
+  it('keeps the exact child selection when a dirty same-operation activation is cancelled', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const project = projectWithUpid(pathDocument);
+    const operation = pathDocument.plan.operations[0];
+    const entryTreeKey = `operation:${operation.id}:entry`;
+    const exitTreeKey = `operation:${operation.id}:exit`;
+
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
+    });
+    await flushAsync();
+
+    await pressProgramTreeItem(entryTreeKey, ' ');
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '2');
+    await clickElement('button[aria-label^="Apply translation to "]');
+    await clickProgramTreeRow(exitTreeKey);
+    await pressProgramTreeItem(exitTreeKey, 'Enter');
+
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      'before opening Entry / Exit'
+    );
+    await clickElement('button[aria-label="Dismiss workflow transition"]');
+
+    expect(programTreeItem(entryTreeKey)?.getAttribute('aria-selected')).toBe('true');
+    expect(programTreeItem(exitTreeKey)?.getAttribute('aria-selected')).toBe('false');
   });
 
   it('dismisses a dirty rail transition with Escape without replacing its held request', async () => {
@@ -219,10 +269,16 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    await clickElement(`li[data-tree-key="operation:${secondOperation.id}"] button[aria-label^="Expand"]`);
-    await clickElement(`button[data-tree-key="operation:${firstOperation.id}:entry"]`);
+    await expandProgramTreeItem(`operation:${secondOperation.id}`);
+    await clickProgramTreeButton(
+      `operation:${firstOperation.id}:entry`,
+      'Edit Entry / lead-in'
+    );
     await changeInput('input[aria-label="Entry X"]', '-2');
-    await clickElement(`button[data-tree-key="operation:${secondOperation.id}:entry"]`);
+    await clickProgramTreeButton(
+      `operation:${secondOperation.id}:entry`,
+      'Edit Entry / lead-in'
+    );
 
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
       'before opening Entry / Exit'
@@ -246,6 +302,9 @@ describe('EditorPage UPID draft boundary', () => {
       (container.querySelector('select[aria-label="Entry and exit operation"]') as HTMLSelectElement)
         .value
     ).toBe(firstOperation.id);
+    expect(
+      programTreeItem(`operation:${firstOperation.id}:entry`)?.getAttribute('aria-selected')
+    ).toBe('true');
   });
 
   it('leaves the active workflow unchanged when Escape was already consumed', async () => {
@@ -282,9 +341,7 @@ describe('EditorPage UPID draft boundary', () => {
       root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
-    await clickElement(
-      `li[data-tree-key="operation:${operation.id}:cut-path"] button[aria-label^="Expand"]`
-    );
+    await expandProgramTreeItem(`operation:${operation.id}:cut-path`);
 
     await act(async () => {
       root.render(
@@ -297,7 +354,10 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    await clickElement(`button[data-tree-key="operation:${operation.id}:contour-start"]`);
+    await clickProgramTreeButton(
+      `operation:${operation.id}:contour-start`,
+      'Edit Contour start'
+    );
 
     expect(visibleWorkflowPanelIds()).toEqual([]);
     expect(container.querySelector('[data-set-start-panel]')).toBeNull();
@@ -311,29 +371,22 @@ describe('EditorPage UPID draft boundary', () => {
       { id: 'stop-1', enabled: true, placement: { kind: 'before-entry' }, reason: 'manual' },
       { id: 'stop-2', enabled: false, placement: { kind: 'after-exit' }, reason: 'operator-check' }
     ];
-    let openProgramTreeTarget: ((target: UpidProgramTreeEditTarget) => void) | null = null;
+    const stopTreeKey = `operation:${operation.id}:stop:stop-2`;
 
     await act(async () => {
-      root.render(
-        <EditorPageHarness
-          onProgramTreeActionReady={(open) => { openProgramTreeTarget = open; }}
-          onSaveEditorDraft={vi.fn()}
-          project={project}
-        />
-      );
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
 
-    await act(async () => openProgramTreeTarget?.({
-      kind: 'program-stop', operationId: operation.id, stopId: 'stop-2'
-    }));
-    await flushAsync();
+    await expandProgramTreeItem(`operation:${operation.id}`);
+    await clickProgramTreeButton(stopTreeKey, 'Edit M00 · After exit');
 
     expect(container.querySelector('[data-editor-floating-panel="program-stops"]')).not.toBeNull();
     expect(container.querySelector('[data-program-stop="stop-2"]')?.getAttribute('data-selected'))
       .toBe('true');
     expect((container.querySelector('[aria-label="Selected stop note"]') as HTMLInputElement).value)
       .toBe('');
+    expect(programTreeItem(stopTreeKey)?.getAttribute('aria-selected')).toBe('true');
   });
 
   it('keeps a pending stop identity until the dirty workflow transition resolves', async () => {
@@ -344,63 +397,57 @@ describe('EditorPage UPID draft boundary', () => {
       { id: 'stop-1', enabled: true, placement: { kind: 'before-entry' }, reason: 'manual' },
       { id: 'stop-2', enabled: false, placement: { kind: 'after-exit' }, reason: 'operator-check' }
     ];
-    let openProgramTreeTarget: ((target: UpidProgramTreeEditTarget) => void) | null = null;
+    const firstStopTreeKey = `operation:${operation.id}:stop:stop-1`;
+    const secondStopTreeKey = `operation:${operation.id}:stop:stop-2`;
 
     await act(async () => {
-      root.render(
-        <EditorPageHarness
-          onProgramTreeActionReady={(open) => { openProgramTreeTarget = open; }}
-          onSaveEditorDraft={vi.fn()}
-          project={project}
-        />
-      );
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
 
-    await act(async () => openProgramTreeTarget?.({
-      kind: 'program-stop', operationId: operation.id, stopId: 'stop-1'
-    }));
-    await flushAsync();
+    await expandProgramTreeItem(`operation:${operation.id}`);
+    await clickProgramTreeButton(firstStopTreeKey, 'Edit M00 · Before entry');
     await changeInput('[aria-label="Selected stop note"]', 'provisional');
-    await act(async () => openProgramTreeTarget?.({
-      kind: 'program-stop', operationId: operation.id, stopId: 'stop-2'
-    }));
-    await flushAsync();
+    await clickProgramTreeButton(secondStopTreeKey, 'Edit M00 · After exit');
 
     expect(container.querySelector('[role="dialog"]')).not.toBeNull();
     expect(container.querySelector('[data-program-stop="stop-1"]')?.getAttribute('data-selected'))
       .toBe('true');
+    expect(programTreeItem(firstStopTreeKey)?.getAttribute('aria-selected')).toBe('true');
     await clickElement('[data-editor-workflow-transition-action="discard"]');
 
     expect(container.querySelector('[data-program-stop="stop-2"]')?.getAttribute('data-selected'))
       .toBe('true');
+    expect(programTreeItem(secondStopTreeKey)?.getAttribute('aria-selected')).toBe('true');
   });
 
-  it('does not retarget an explicit open-operation Contour Start request', async () => {
+  it('keeps an open-operation Contour Start row selection-only', async () => {
     const pathDocument = pathDocumentFromIndependentRectangles();
     const openOperation = pathDocument.plan.operations[1];
     openOperation.closed = false;
     const project = projectWithUpid(pathDocument);
-    let openProgramTreeTarget: ((target: UpidProgramTreeEditTarget) => void) | null = null;
+    const operationTreeKey = `operation:${openOperation.id}`;
+    const cutPathTreeKey = `${operationTreeKey}:cut-path`;
+    const contourStartTreeKey = `${operationTreeKey}:contour-start`;
 
     await act(async () => {
-      root.render(
-        <EditorPageHarness
-          onProgramTreeActionReady={(open) => { openProgramTreeTarget = open; }}
-          onSaveEditorDraft={vi.fn()}
-          project={project}
-        />
-      );
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
 
-    await act(async () => openProgramTreeTarget?.({
-      kind: 'contour-start', operationId: openOperation.id
-    }));
-    await flushAsync();
+    await expandProgramTreeItem(operationTreeKey);
+    await expandProgramTreeItem(cutPathTreeKey);
+    expect(
+      programTreeItem(contourStartTreeKey)?.querySelector('button[aria-label^="Edit "]')
+    ).toBeNull();
+
+    await pressProgramTreeItem(contourStartTreeKey, ' ');
+    await pressProgramTreeItem(contourStartTreeKey, 'Enter');
+    await doubleClickProgramTreeItem(contourStartTreeKey);
 
     expect(container.querySelector('[data-editor-floating-panel="set-start"]')).toBeNull();
     expect(container.querySelector('[data-upid-set-start-workflow]')).toBeNull();
+    expect(programTreeItem(contourStartTreeKey)?.getAttribute('aria-selected')).toBe('true');
   });
 
   it('commits several provisional workflow edits as one Undo entry when switching with Save', async () => {
@@ -1180,7 +1227,10 @@ describe('EditorPage UPID draft boundary', () => {
     });
     await flushAsync();
 
-    await clickElement(`button[data-tree-key="operation:${firstOperation.id}:entry"]`);
+    await clickProgramTreeButton(
+      `operation:${firstOperation.id}:entry`,
+      'Edit Entry / lead-in'
+    );
     const operationTarget = container.querySelector(
       'select[aria-label="Entry and exit operation"]'
     ) as HTMLSelectElement;
@@ -1188,7 +1238,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(operationTarget.value).toBe(firstOperation.id);
     expect(operationTarget.disabled).toBe(true);
 
-    await clickElement(`button[data-tree-key="operation:${secondOperation.id}"]`);
+    await clickProgramTreeRow(`operation:${secondOperation.id}`);
 
     expect(operationTarget.value).toBe(firstOperation.id);
     expect(
@@ -1198,6 +1248,9 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).not.toContain(
       `Selection Operation ${secondOperation.id}`
     );
+    expect(
+      programTreeItem(`operation:${firstOperation.id}:entry`)?.getAttribute('aria-selected')
+    ).toBe('true');
   });
 
   it('cancels canvas exit picking with Escape without mutating the workflow draft', async () => {
@@ -3582,6 +3635,72 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
   }
 
+  function programTreeItem(treeKey: string) {
+    return [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')]
+      .find((item) => item.dataset.treeKey === treeKey) ?? null;
+  }
+
+  async function expandProgramTreeItem(treeKey: string) {
+    const item = programTreeItem(treeKey);
+    const expandButton = [
+      ...(item?.querySelector<HTMLElement>(':scope > [data-editor-program-tree-row]')
+        ?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+    ].find((button) => button.getAttribute('aria-label')?.startsWith('Expand '));
+    expect(expandButton).not.toBeNull();
+
+    await act(async () => expandButton?.click());
+    await flushAsync();
+  }
+
+  async function clickProgramTreeButton(treeKey: string, ariaLabel: string) {
+    const item = programTreeItem(treeKey);
+    const button = [
+      ...(item?.querySelector<HTMLElement>(':scope > [data-editor-program-tree-row]')
+        ?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+    ].find((candidate) => candidate.getAttribute('aria-label') === ariaLabel);
+    expect(button).not.toBeNull();
+
+    await act(async () => button?.click());
+    await flushAsync();
+  }
+
+  async function clickProgramTreeRow(treeKey: string) {
+    const row = programTreeItem(treeKey)?.querySelector<HTMLElement>(
+      ':scope > [data-editor-program-tree-row]'
+    );
+    expect(row).not.toBeNull();
+
+    await act(async () => row?.click());
+    await flushAsync();
+  }
+
+  async function pressProgramTreeItem(treeKey: string, key: string) {
+    const item = programTreeItem(treeKey);
+    expect(item).not.toBeNull();
+
+    await act(async () => {
+      item?.focus();
+      item?.dispatchEvent(new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key
+      }));
+    });
+    await flushAsync();
+  }
+
+  async function doubleClickProgramTreeItem(treeKey: string) {
+    const row = programTreeItem(treeKey)?.querySelector<HTMLElement>(
+      ':scope > [data-editor-program-tree-row]'
+    );
+    expect(row).not.toBeNull();
+
+    await act(async () => {
+      row?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    });
+    await flushAsync();
+  }
+
   async function openWorkflowMenu(commandId: string) {
     await act(async () => {
       container.querySelector<HTMLButtonElement>(
@@ -3639,7 +3758,6 @@ function EditorPageHarness({
   interactionLocked = false,
   onBackToDashboard = noop,
   onImportProgramFile = noop,
-  onProgramTreeActionReady,
   onSaveEditorDraft,
   project,
   saveStatus = 'idle'
@@ -3649,7 +3767,6 @@ function EditorPageHarness({
   interactionLocked?: boolean;
   onBackToDashboard?: () => void;
   onImportProgramFile?: (file: File) => void;
-  onProgramTreeActionReady?: (open: (target: UpidProgramTreeEditTarget) => void) => void;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void;
   project: WorkbenchProject;
   saveStatus?: 'error' | 'idle' | 'saving';
@@ -3697,7 +3814,6 @@ function EditorPageHarness({
         onBackToDashboard={onBackToDashboard}
         onDownloadEditorFile={noop}
         onImportProgramFile={onImportProgramFile}
-        onProgramTreeActionReady={onProgramTreeActionReady}
         onSaveEditorDraft={onSaveEditorDraft}
         program={{
           filePath,

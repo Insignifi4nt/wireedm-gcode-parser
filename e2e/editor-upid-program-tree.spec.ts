@@ -7,7 +7,7 @@ test('persists a second-operation tree entry edit through save, reload, and reop
   await importTwoContourDxf(page, 'tree-entry-persistence.dxf');
 
   const secondOperation = await expandOperation(page, 1);
-  await secondOperation.getByRole('button', { name: 'Entry / lead-in · None' }).click();
+  await secondOperation.getByRole('button', { name: 'Edit Entry / lead-in' }).click();
   const entryPanel = page.locator('[data-editor-workspace-panel="entry-exit"]');
   await expect(entryPanel).toBeVisible();
   await expect(entryPanel.getByLabel('Entry and exit operation')).toHaveValue(
@@ -26,10 +26,11 @@ test('persists a second-operation tree entry edit through save, reload, and reop
   await openOnlyProject(page);
   const reloadedSecondOperation = await expandOperation(page, 1);
   const entryNode = reloadedSecondOperation.locator('li[data-tree-key$=":entry"]');
-  await expect(entryNode.getByRole('button')).toHaveText('Entry / lead-in · manual-straight');
+  await expect(entryNode.locator(':scope > [data-editor-program-tree-row]'))
+    .toContainText('Entry / lead-in · manual-straight');
   await expect(entryNode.locator('span[aria-label="Ready"]')).toBeVisible();
 
-  await entryNode.getByRole('button', { name: 'Entry / lead-in · manual-straight' }).click();
+  await entryNode.getByRole('button', { name: 'Edit Entry / lead-in' }).click();
   const reloadedEntryPanel = page.locator('[data-editor-workspace-panel="entry-exit"]');
   await expect(reloadedEntryPanel.getByLabel('Entry X')).toHaveValue('42.5');
   await expect(reloadedEntryPanel.getByLabel('Entry Y')).toHaveValue('19.25');
@@ -38,7 +39,7 @@ test('persists a second-operation tree entry edit through save, reload, and reop
 test('deep-links an existing stop and keeps cancel, discard, and save tree transitions correct', async ({ page }) => {
   await importTwoContourDxf(page, 'tree-stop-transitions.dxf');
   const secondOperation = await expandOperation(page, 1);
-  await secondOperation.locator(':scope > div > button[data-tree-key]').click();
+  await secondOperation.locator(':scope > [data-editor-program-tree-row]').click();
   await openWorkflowCommand(page, 'Machining', 'machining.program-stops');
   const stopsPanel = page.locator('[data-editor-workspace-panel="program-stops"]');
   await stopsPanel.getByRole('button', { name: 'Add M00 stop' }).click();
@@ -51,7 +52,7 @@ test('deep-links an existing stop and keeps cancel, discard, and save tree trans
   await expandCutPath(persistedSecondOperation);
   const stopNode = persistedSecondOperation.locator('li[data-tree-key$=":stop:stop-1"]');
   await expect(stopNode).toBeVisible();
-  await stopNode.getByRole('button').click();
+  await stopNode.getByRole('button', { name: /^Edit M00/ }).click();
   const persistedStopsPanel = page.locator('[data-editor-workspace-panel="program-stops"]');
   await expect(persistedStopsPanel).toBeVisible();
   await expect(persistedStopsPanel.locator('[data-program-stop="stop-1"]')).toHaveAttribute(
@@ -74,7 +75,7 @@ test('deep-links an existing stop and keeps cancel, discard, and save tree trans
   await expect(entryPanel).toBeVisible();
   await entryPanel.getByRole('button', { name: 'Cancel Entry / Exit workflow' }).click();
 
-  await stopNode.getByRole('button').click();
+  await stopNode.getByRole('button', { name: /^Edit M00/ }).click();
   const reselectedStopsPanel = page.locator('[data-editor-workspace-panel="program-stops"]');
   await expect(reselectedStopsPanel.getByLabel('Selected stop note')).toHaveValue('');
   await reselectedStopsPanel.getByLabel('Selected stop note').fill('saved once');
@@ -87,12 +88,12 @@ test('deep-links an existing stop and keeps cancel, discard, and save tree trans
   const undo = page.getByRole('button', { name: 'Undo active document change' });
   await expect(undo).toBeEnabled();
   await undo.click();
-  await stopNode.getByRole('button').click();
+  await stopNode.getByRole('button', { name: /^Edit M00/ }).click();
   await expect(page.locator('[data-editor-workspace-panel="program-stops"]')
     .getByLabel('Selected stop note')).toHaveValue('');
   await page.getByRole('button', { name: 'Cancel Program Stops workflow' }).click();
   await page.getByRole('button', { name: 'Redo active document change' }).click();
-  await stopNode.getByRole('button').click();
+  await stopNode.getByRole('button', { name: /^Edit M00/ }).click();
   await expect(page.locator('[data-editor-workspace-panel="program-stops"]')
     .getByLabel('Selected stop note')).toHaveValue('saved once');
 });
@@ -196,7 +197,7 @@ async function expandOperation(page: Page, index: number) {
 
 async function openEntryFromOperation(operation: import('@playwright/test').Locator) {
   await operation.locator('li[data-tree-key$=":entry"]')
-    .getByRole('button', { name: /Entry \/ lead-in/ })
+    .getByRole('button', { name: 'Edit Entry / lead-in' })
     .click();
 }
 
@@ -221,9 +222,10 @@ async function openOnlyProject(page: Page) {
 
 async function programOperationLabels(page: Page) {
   return await page.locator(
-    'li[data-tree-key="section:program"] > ul > li[role="treeitem"][data-tree-key^="operation:"] > div > button[data-tree-key]'
-  )
-    .allTextContents();
+    'li[data-tree-key="section:program"] > ul > li[role="treeitem"][data-tree-key^="operation:"]'
+  ).evaluateAll((operations) =>
+    operations.map((operation) => operation.getAttribute('aria-label'))
+  );
 }
 
 async function dismissOnboarding(page: Page) {

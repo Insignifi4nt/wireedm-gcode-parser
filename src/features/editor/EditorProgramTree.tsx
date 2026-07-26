@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent
+} from 'react';
 
 import type {
   UpidProgramTree,
@@ -17,8 +24,8 @@ export interface EditorProgramTreeProps {
   selectedTreeKey: string | null;
   expandedTreeKeys: ReadonlySet<string>;
   onExpandedTreeKeysChange: (keys: ReadonlySet<string>) => void;
-  onSelect: (node: UpidProgramTreeNode) => void;
-  onEdit: (target: UpidProgramTreeEditTarget) => void;
+  onSelect: (treeKey: string, node: UpidProgramTreeNode | null) => void;
+  onEdit: (target: UpidProgramTreeEditTarget, treeKey: string) => void;
 }
 
 interface EditorProgramTreeItem {
@@ -32,6 +39,11 @@ interface EditorProgramTreeItem {
   statusReason?: string;
 }
 
+interface EditorProgramTreeStatusAction {
+  item: EditorProgramTreeItem;
+  target: UpidProgramTreeEditTarget;
+}
+
 const SOURCE_SETUP_SECTION_KEY = 'section:source';
 const PROGRAM_SEQUENCE_SECTION_KEY = 'section:program';
 
@@ -43,7 +55,7 @@ export function EditorProgramTree({
   selectedTreeKey,
   tree
 }: EditorProgramTreeProps) {
-  const treeRef = useRef<HTMLUListElement>(null);
+  const treeItemRefs = useRef(new Map<string, HTMLLIElement>());
   const [focusedTreeKey, setFocusedTreeKey] = useState<string>(SOURCE_SETUP_SECTION_KEY);
   const items = useMemo(() => buildTreeItems(tree), [tree]);
   const visibleItems = useMemo(
@@ -75,15 +87,26 @@ export function EditorProgramTree({
 
   function focusTreeItem(treeKey: string) {
     setFocusedTreeKey(treeKey);
-    treeRef.current
-      ?.querySelector<HTMLButtonElement>(`button[data-tree-key="${treeKey}"]`)
-      ?.focus();
+    treeItemRefs.current.get(treeKey)?.focus();
   }
 
-  function handleRowKeyDown(
-    event: KeyboardEvent<HTMLButtonElement>,
+  function selectItem(item: EditorProgramTreeItem) {
+    focusTreeItem(item.key);
+    onSelect(item.key, item.node ?? null);
+  }
+
+  function activateItem(item: EditorProgramTreeItem) {
+    if (item.node?.editTarget) {
+      onEdit(item.node.editTarget, item.key);
+    }
+  }
+
+  function handleTreeItemKeyDown(
+    event: KeyboardEvent<HTMLLIElement>,
     item: EditorProgramTreeItem
   ) {
+    if (event.target !== event.currentTarget) return;
+
     const index = visibleItems.findIndex((visibleItem) => visibleItem.key === item.key);
     const isExpanded = expandedTreeKeys.has(item.key);
     const hasChildren = item.children.length > 0;
@@ -96,6 +119,16 @@ export function EditorProgramTree({
     if (event.key === 'ArrowUp' && index > 0) {
       event.preventDefault();
       focusTreeItem(visibleItems[index - 1].key);
+      return;
+    }
+    if (event.key === 'Home' && visibleItems.length > 0) {
+      event.preventDefault();
+      focusTreeItem(visibleItems[0].key);
+      return;
+    }
+    if (event.key === 'End' && visibleItems.length > 0) {
+      event.preventDefault();
+      focusTreeItem(visibleItems[visibleItems.length - 1].key);
       return;
     }
     if (event.key === 'ArrowRight' && hasChildren) {
@@ -112,74 +145,145 @@ export function EditorProgramTree({
     }
     if (event.key === ' ') {
       event.preventDefault();
-      if (item.node?.kind === 'operation') onSelect(item.node);
-      else if (item.node?.editTarget) onEdit(item.node.editTarget);
+      selectItem(item);
       return;
     }
-    if (event.key === 'Enter' && item.node?.editTarget) {
+    if (event.key === 'Enter' && event.altKey && item.node?.sequenceEditTarget) {
       event.preventDefault();
-      onEdit(item.node.editTarget);
+      onEdit(item.node.sequenceEditTarget, item.key);
+      return;
+    }
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      const statusAction = findStatusAction(item);
+      if (statusAction) {
+        event.preventDefault();
+        onEdit(statusAction.target, statusAction.item.key);
+        return;
+      }
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      activateItem(item);
     }
   }
 
-  function handleRowClick(item: EditorProgramTreeItem) {
-    if (!item.node) {
-      if (item.children.length > 0) updateExpansion(item.key, !expandedTreeKeys.has(item.key));
-      return;
-    }
+  function handleSecondaryAction(
+    event: MouseEvent<HTMLButtonElement>,
+    item: EditorProgramTreeItem,
+    action: () => void
+  ) {
+    event.stopPropagation();
+    focusTreeItem(item.key);
+    action();
+  }
 
-    if (item.node.kind === 'operation' || !item.node.editTarget) onSelect(item.node);
-    else onEdit(item.node.editTarget);
+  function handleRowDoubleClick(
+    event: MouseEvent<HTMLDivElement>,
+    item: EditorProgramTreeItem
+  ) {
+    if (event.target instanceof Element && event.target.closest('button')) return;
+    activateItem(item);
   }
 
   function renderItem(item: EditorProgramTreeItem): React.ReactNode {
     const hasChildren = item.children.length > 0;
     const isExpanded = expandedTreeKeys.has(item.key);
-    const isSelected = item.node?.treeKey === selectedTreeKey;
-    const isOperation = item.node?.kind === 'operation';
+    const isSelected = item.key === selectedTreeKey;
+    const sequenceTarget = item.node?.sequenceEditTarget;
+    const operationOrdinal = sequenceTarget ? readOperationOrdinal(item.node?.label ?? '') : null;
+    const statusAction = findStatusAction(item);
 
     return (
       <li
         aria-expanded={hasChildren ? isExpanded : undefined}
+        aria-keyshortcuts={readItemKeyboardShortcuts(item, statusAction)}
+        aria-label={item.label}
         aria-level={item.level}
-        aria-selected={item.node ? isSelected : undefined}
+        aria-selected={isSelected}
+        className="outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
         data-tree-key={item.key}
         key={item.key}
+        onFocus={(event) => {
+          if (event.target === event.currentTarget) setFocusedTreeKey(item.key);
+        }}
+        onKeyDown={(event) => handleTreeItemKeyDown(event, item)}
+        ref={(element) => {
+          if (element) treeItemRefs.current.set(item.key, element);
+          else treeItemRefs.current.delete(item.key);
+        }}
         role="treeitem"
+        tabIndex={focusedTreeKey === item.key ? 0 : -1}
       >
-        <div className="flex min-w-0 items-center gap-1" style={{ paddingLeft: `${(item.level - 1) * 10}px` }}>
+        <div
+          className={`flex min-w-0 items-center gap-1 ${
+            isSelected ? 'bg-accent text-foreground' : 'text-foreground hover:bg-accent/60'
+          }`}
+          data-editor-program-tree-row
+          onClick={() => selectItem(item)}
+          onDoubleClick={(event) => handleRowDoubleClick(event, item)}
+          style={{ paddingLeft: `${(item.level - 1) * 10}px` }}
+        >
           {hasChildren ? (
             <button
               aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.label}`}
-              className="flex size-4 shrink-0 items-center justify-center text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
-              onClick={() => updateExpansion(item.key, !isExpanded)}
+              className="flex size-4 shrink-0 items-center justify-center text-muted-foreground outline-none hover:text-foreground"
+              onClick={(event) => handleSecondaryAction(
+                event,
+                item,
+                () => updateExpansion(item.key, !isExpanded)
+              )}
+              tabIndex={-1}
               title={`${isExpanded ? 'Collapse' : 'Expand'} ${item.label}`}
               type="button"
             >
               <span aria-hidden="true">{isExpanded ? '⌄' : '›'}</span>
             </button>
           ) : <span aria-hidden="true" className="size-4 shrink-0" />}
-          <button
-            className={`min-w-0 flex-1 truncate py-1 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-              isSelected ? 'bg-accent text-foreground' : 'text-foreground hover:bg-accent/60'
-            } ${isOperation ? 'font-medium' : ''}`}
-            data-tree-key={item.key}
-            onClick={() => handleRowClick(item)}
-            onFocus={() => setFocusedTreeKey(item.key)}
-            onKeyDown={(event) => handleRowKeyDown(event, item)}
-            tabIndex={focusedTreeKey === item.key ? 0 : -1}
-            title={item.statusReason ?? item.label}
-            type="button"
-          >
-            {item.label}
-          </button>
-          <StatusMarker reason={item.statusReason} status={item.status} />
-          {isOperation && item.node?.editTarget ? (
+          {sequenceTarget && operationOrdinal ? (
             <button
-              aria-label={`Edit ${item.label}`}
-              className="shrink-0 px-1 text-[9px] uppercase text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
-              onClick={() => onEdit(item.node!.editTarget!)}
-              title={`Edit ${item.label}`}
+              aria-label={`Edit cut sequence for ${item.node!.label}`}
+              className="min-w-5 shrink-0 px-0.5 font-mono text-[9px] text-cyan-300 outline-none hover:bg-cyan-500/15 hover:text-cyan-100"
+              onClick={(event) => handleSecondaryAction(
+                event,
+                item,
+                () => onEdit(sequenceTarget, item.key)
+              )}
+              tabIndex={-1}
+              title={`Open Cut Sequence for ${item.node!.label}`}
+              type="button"
+            >
+              {operationOrdinal}
+            </button>
+          ) : null}
+          <span
+            className={`min-w-0 flex-1 truncate py-1 text-left ${
+              item.node?.kind === 'operation' ? 'font-medium' : ''
+            }`}
+            title={item.statusReason ?? item.label}
+          >
+            {sequenceTarget ? stripOperationOrdinal(item.label) : item.label}
+          </span>
+          <StatusMarker
+            item={item}
+            onAction={statusAction
+              ? (event) => handleSecondaryAction(
+                  event,
+                  item,
+                  () => onEdit(statusAction.target, statusAction.item.key)
+                )
+              : undefined}
+          />
+          {item.node?.editTarget ? (
+            <button
+              aria-label={`Edit ${item.node.label}`}
+              className="shrink-0 px-1 text-[9px] uppercase text-muted-foreground outline-none hover:text-foreground"
+              onClick={(event) => handleSecondaryAction(
+                event,
+                item,
+                () => onEdit(item.node!.editTarget!, item.key)
+              )}
+              tabIndex={-1}
+              title={`Edit ${item.node.label}`}
               type="button"
             >
               Edit
@@ -199,7 +303,6 @@ export function EditorProgramTree({
     <ul
       aria-label="UPID program sequence"
       className="min-h-0 overflow-auto text-[11px] leading-4"
-      ref={treeRef}
       role="tree"
     >
       {items.map(renderItem)}
@@ -207,24 +310,62 @@ export function EditorProgramTree({
   );
 }
 
-function StatusMarker({ reason, status }: { reason?: string; status: UpidProgramTreeStatus }) {
-  const label = `${formatStatus(status)}${reason ? `: ${reason}` : ''}`;
+function StatusMarker({
+  item,
+  onAction
+}: {
+  item: EditorProgramTreeItem;
+  onAction?: (event: MouseEvent<HTMLButtonElement>) => void;
+}) {
+  const label = `${formatStatus(item.status)}${
+    item.statusReason ? `: ${item.statusReason}` : ''
+  }`;
   const color = {
     ready: 'bg-emerald-500',
     'review-required': 'bg-amber-400',
     blocked: 'bg-red-500',
     inactive: 'bg-muted-foreground'
-  }[status];
+  }[item.status];
+
+  if (onAction) {
+    return (
+      <button
+        aria-label={`Open status details for ${item.label}: ${label}`}
+        className={`size-2 shrink-0 rounded-full outline-none ${color}`}
+        onClick={onAction}
+        tabIndex={-1}
+        title={`${label}. Open status details.`}
+        type="button"
+      />
+    );
+  }
 
   return (
-    <span aria-label={label} className={`size-1.5 shrink-0 rounded-full ${color}`} title={label} />
+    <span
+      aria-label={label}
+      className={`size-1.5 shrink-0 rounded-full ${color}`}
+      role="img"
+      title={label}
+    />
   );
 }
 
 function buildTreeItems(tree: UpidProgramTree): EditorProgramTreeItem[] {
   return [
-    createSection(SOURCE_SETUP_SECTION_KEY, 'Source & Setup', tree.sourceSetup, 1, tree.status),
-    createSection(PROGRAM_SEQUENCE_SECTION_KEY, 'Program Sequence', tree.operations, 1, tree.status)
+    createSection(
+      SOURCE_SETUP_SECTION_KEY,
+      'Source & Setup',
+      tree.sourceSetup,
+      1,
+      tree.sourceSetupStatus ?? tree.status
+    ),
+    createSection(
+      PROGRAM_SEQUENCE_SECTION_KEY,
+      'Program Sequence',
+      tree.operations,
+      1,
+      tree.programStatus ?? tree.status
+    )
   ];
 }
 
@@ -261,6 +402,22 @@ function createNodeItem(
   };
 }
 
+function findStatusAction(
+  item: EditorProgramTreeItem
+): EditorProgramTreeStatusAction | null {
+  if (item.status !== 'blocked' && item.status !== 'review-required') return null;
+
+  for (const child of item.children) {
+    if (child.status !== item.status) continue;
+    const childAction = findStatusAction(child);
+    if (childAction) return childAction;
+  }
+
+  return item.node?.editTarget
+    ? { item, target: item.node.editTarget }
+    : null;
+}
+
 function flattenVisibleTreeItems(
   items: readonly EditorProgramTreeItem[],
   expandedTreeKeys: ReadonlySet<string>
@@ -271,6 +428,25 @@ function flattenVisibleTreeItems(
       ? flattenVisibleTreeItems(item.children, expandedTreeKeys)
       : [])
   ]);
+}
+
+function readOperationOrdinal(label: string) {
+  return /^(\d+)\s*·/.exec(label)?.[1] ?? null;
+}
+
+function readItemKeyboardShortcuts(
+  item: EditorProgramTreeItem,
+  statusAction: EditorProgramTreeStatusAction | null
+) {
+  const shortcuts = [
+    item.node?.sequenceEditTarget ? 'Alt+Enter' : null,
+    statusAction ? 'Control+Enter' : null
+  ].filter((shortcut): shortcut is string => shortcut !== null);
+  return shortcuts.length > 0 ? shortcuts.join(' ') : undefined;
+}
+
+function stripOperationOrdinal(label: string) {
+  return label.replace(/^\d+\s*·\s*/, '');
 }
 
 function areTreeKeySetsEqual(left: ReadonlySet<string>, right: ReadonlySet<string>) {

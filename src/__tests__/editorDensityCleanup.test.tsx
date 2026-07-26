@@ -72,10 +72,12 @@ describe('Editor density cleanup', () => {
     expect(document.querySelector('[data-editor-empty-dock]')).toBeNull();
     expect(document.querySelector('[data-editor-panel-dock-zone="right"]')).toBeNull();
 
-    const operation = container.querySelector<HTMLElement>('[data-tree-key^="operation:"] button[data-tree-key]');
-    expect(operation).not.toBeNull();
+    const operationRow = container.querySelector<HTMLElement>(
+      '[role="treeitem"][data-tree-key^="operation:"] > [data-editor-program-tree-row]'
+    );
+    expect(operationRow).not.toBeNull();
     await act(async () => {
-      operation?.click();
+      operationRow?.click();
     });
     await flushAsync();
 

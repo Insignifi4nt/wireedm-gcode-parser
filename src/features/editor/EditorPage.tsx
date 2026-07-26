@@ -90,7 +90,9 @@ import {
 } from '@/domain/upid/projectRail';
 import {
   buildUpidProgramTree,
-  type UpidProgramTreeEditTarget
+  type UpidProgramTree,
+  type UpidProgramTreeEditTarget,
+  type UpidProgramTreeNode
 } from '@/domain/upid/upidProgramTree';
 import { composeProjectUpidGCodeExport } from '@/domain/upid/projectUpid';
 import {
@@ -211,7 +213,6 @@ interface EditorPageProps {
   onBackToDashboard: () => void;
   onDownloadEditorFile: (fileName: string, text: string) => void;
   onImportProgramFile: (file: File) => void | Promise<void>;
-  onProgramTreeActionReady?: (open: (target: UpidProgramTreeEditTarget) => void) => void;
   onReimportDxfUnits?: () => void | Promise<void>;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void | Promise<void>;
   onStatusMessage?: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void;
@@ -233,6 +234,7 @@ interface EditorDraftSnapshot {
   setStartInferenceMode: SetStartInferenceMode;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
+  selectedProgramTreeKey: string | null;
   selectedProgramStopId: string | null;
 }
 
@@ -652,7 +654,6 @@ export function EditorPage({
   onBackToDashboard,
   onDownloadEditorFile,
   onImportProgramFile,
-  onProgramTreeActionReady,
   onReimportDxfUnits,
   onSaveEditorDraft,
   onStatusMessage
@@ -688,6 +689,7 @@ export function EditorPage({
     EditorWorkflowSession<EditorDraftSnapshot> | null
   >(null);
   const pendingWorkflowExitActionRef = useRef<null | ((unsavedAfterWorkflow: boolean) => void)>(null);
+  const pendingProgramTreeSelectionRef = useRef<string | null>(null);
   const [workflowTransition, setWorkflowTransition] = useState<
     EditorWorkflowTransition<EditorDraftSnapshot> | null
   >(null);
@@ -712,6 +714,7 @@ export function EditorPage({
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [selectedPathElement, setSelectedPathElement] = useState<EditorPathElementRef | null>(null);
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
+  const [selectedProgramTreeKey, setSelectedProgramTreeKey] = useState<string | null>(null);
   const [selectedProgramStopId, setSelectedProgramStopId] = useState<string | null>(null);
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
   const [upidRailMode, setUpidRailMode] = useState<EditorUpidRailMode>('program');
@@ -1007,9 +1010,6 @@ export function EditorPage({
   const lineRows = useMemo(() => (structure ? flattenStructureLines(structure) : []), [structure]);
   const bodyGroups = structure?.body.contours ?? [];
   const isPathProject = Boolean(pathDocumentDraft);
-  const selectedProgramTreeKey = selectedPathOperationId
-    ? `operation:${selectedPathOperationId}`
-    : null;
   const hasActiveRightDock = Boolean(
     isPathProject &&
     !isCompactViewport &&
@@ -1078,6 +1078,8 @@ export function EditorPage({
     pathClickMode,
     selectedPathElement,
     selectedPathOperationId,
+    selectedProgramStopId,
+    selectedProgramTreeKey,
     workspacePanelPlacements
   ]);
   const editorRailContent = useMemo(() => {
@@ -1091,9 +1093,7 @@ export function EditorPage({
         expandedTreeKeys={expandedProgramTreeKeys}
         onEdit={openEditorWorkflowForTarget}
         onExpandedTreeKeysChange={setExpandedProgramTreeKeys}
-        onSelect={(node) => {
-          if (node.operationId) handleSelectPathOperation(node.operationId);
-        }}
+        onSelect={handleSelectProgramTreeItem}
         selectedTreeKey={selectedProgramTreeKey}
         tree={programTree}
       />
@@ -1212,6 +1212,8 @@ export function EditorPage({
       workflowProjectSaveBlockedReason,
       selectedPathElement,
       selectedPathOperationId,
+      selectedProgramStopId,
+      selectedProgramTreeKey,
       undoStack
     ]
   );
@@ -1241,6 +1243,7 @@ export function EditorPage({
 
     setSelectedPathOperationId(null);
     setSelectedPathElement(null);
+    setSelectedProgramTreeKey(null);
     setSelectedProgramStopId(null);
     setHoveredPathElement(null);
     setPreviewCursorPoint(null);
@@ -1259,6 +1262,7 @@ export function EditorPage({
     setActiveWorkflowPendingReasons({});
     updateWorkflowTransition(null);
     pendingWorkflowExitActionRef.current = null;
+    pendingProgramTreeSelectionRef.current = null;
     setEntryExitCanvasPick(null);
     setPathClickMode(null);
     setCanvasMouseMode('select');
@@ -1276,6 +1280,23 @@ export function EditorPage({
   useEffect(() => {
     if (programTree) setExpandedProgramTreeKeys(defaultEditorProgramTreeExpansion(programTree));
   }, [programIdentity]);
+
+  useEffect(() => {
+    if (!programTree || !selectedProgramTreeKey) return;
+
+    const selectedTreeOperationId = findProgramTreeOperationId(
+      programTree,
+      selectedProgramTreeKey
+    );
+    if (
+      selectedPathOperationId &&
+      selectedTreeOperationId !== selectedPathOperationId
+    ) {
+      setSelectedProgramTreeKey(`operation:${selectedPathOperationId}`);
+    } else if (!selectedPathOperationId && selectedTreeOperationId) {
+      setSelectedProgramTreeKey(null);
+    }
+  }, [programTree, selectedPathOperationId, selectedProgramTreeKey]);
 
   useEffect(() => {
     const pendingReason = Object.values(activeWorkflowPendingReasons)[0];
@@ -1342,10 +1363,6 @@ export function EditorPage({
   useEffect(() => {
     if (!activeWorkflowSession && compactDrawer === 'workflow') setCompactDrawer(null);
   }, [activeWorkflowSession, compactDrawer, setCompactDrawer]);
-
-  useEffect(() => {
-    onProgramTreeActionReady?.(openEditorWorkflowForTarget);
-  }, [onProgramTreeActionReady, activeWorkflowSession, selectedPathOperationId, selectedProgramStopId]);
 
   useEffect(() => {
     setHeaderContent(editorHeaderContent);
@@ -1569,10 +1586,11 @@ export function EditorPage({
         'Apply or discard the pending workflow form before changing its target.',
         'warning'
       );
-      return;
+      return false;
     }
     setSelectedPathOperationId(element.operationId);
     setSelectedPathElement(element);
+    return true;
   }
 
   function handleSelectWorkflowOperation(operationId: string) {
@@ -1588,13 +1606,52 @@ export function EditorPage({
   }
 
   function handleSelectPathOperation(operationId: string) {
-    handleSelectPathElement({
+    return handleSelectPathElement({
       operationId,
       pathElementId: pathDocumentDraft
         ? upidPathElementIdForOperation(pathDocumentDraft, operationId)
         : null,
       segmentId: null
     });
+  }
+
+  function handleSelectProgramTreeItem(
+    treeKey: string,
+    node: UpidProgramTreeNode | null
+  ) {
+    const operationId = node?.operationId ??
+      (programTree ? findProgramTreeOperationId(programTree, treeKey) : null) ??
+      null;
+    if (
+      activeWorkflowSession?.dirty &&
+      treeKey !== selectedProgramTreeKey
+    ) {
+      onStatusMessage?.(
+        `Save or discard ${activeWorkflowSession.label} before changing the program-tree target.`,
+        'warning'
+      );
+      return;
+    }
+
+    if (operationId) {
+      if (!handleSelectPathOperation(operationId)) return;
+      setSelectedProgramStopId(
+        node?.editTarget?.kind === 'program-stop' ? node.editTarget.stopId : null
+      );
+    } else {
+      if (workflowTargetChangeBlocked) {
+        onStatusMessage?.(
+          'Apply or discard the pending workflow form before changing its target.',
+          'warning'
+        );
+        return;
+      }
+      setSelectedPathOperationId(null);
+      setSelectedPathElement(null);
+      setSelectedProgramStopId(null);
+    }
+
+    setSelectedProgramTreeKey(treeKey);
   }
 
   function isGroupExpanded(groupId: string) {
@@ -2524,6 +2581,8 @@ export function EditorPage({
     });
     setSelectedPathOperationId(null);
     setSelectedPathElement(null);
+    setSelectedProgramTreeKey(null);
+    setSelectedProgramStopId(null);
     setPathClickMode(null);
   }
 
@@ -2544,19 +2603,28 @@ export function EditorPage({
       setStartInferenceMode,
       selectedPathElement,
       selectedPathOperationId,
+      selectedProgramTreeKey,
       selectedProgramStopId
     };
   }
 
   function snapshotForProgramTreeAction(
     snapshot: EditorDraftSnapshot,
-    action: Pick<EditorProgramTreeAction, 'operationId' | 'stopId'>
+    action: Pick<EditorProgramTreeAction, 'operationId' | 'stopId'>,
+    selectedTreeKey: string | null
   ): EditorDraftSnapshot {
     const document = editorDraftPathDocument(snapshot.draft);
-    const selectedPathOperationId = action.operationId;
+    const selectedPathOperationId = action.operationId ??
+      (
+        selectedTreeKey && programTree
+          ? findProgramTreeOperationId(programTree, selectedTreeKey)
+          : null
+      ) ??
+      null;
     return {
       ...snapshot,
       selectedPathOperationId,
+      selectedProgramTreeKey: selectedTreeKey,
       selectedPathElement: document && selectedPathOperationId
         ? {
             operationId: selectedPathOperationId,
@@ -2584,6 +2652,7 @@ export function EditorPage({
     setSetStartInferenceMode(snapshot.setStartInferenceMode);
     const restoredOperationId = restoredPathDocument ? snapshot.selectedPathOperationId : null;
     setSelectedPathOperationId(restoredOperationId);
+    setSelectedProgramTreeKey(snapshot.selectedProgramTreeKey);
     setSelectedProgramStopId(snapshot.selectedProgramStopId);
     setSelectedPathElement(
       restoredPathDocument && (snapshot.selectedPathElement || restoredOperationId)
@@ -2741,6 +2810,7 @@ export function EditorPage({
   }
 
   function openEditorWorkflow(commandId: string) {
+    pendingProgramTreeSelectionRef.current = null;
     const command = EDITOR_COMMAND_REGISTRY.get(commandId);
     if (!command?.toolWindowId || !command.workflow) return;
 
@@ -2753,14 +2823,25 @@ export function EditorPage({
     requestEditorWorkflowOpen(command);
   }
 
-  function openEditorWorkflowForTarget(target: UpidProgramTreeEditTarget) {
-    requestProgramTreeWorkflowTransition(resolveEditorProgramTreeAction(target));
+  function openEditorWorkflowForTarget(
+    target: UpidProgramTreeEditTarget,
+    treeKey: string
+  ) {
+    requestProgramTreeWorkflowTransition(
+      resolveEditorProgramTreeAction(target),
+      treeKey
+    );
   }
 
-  function requestProgramTreeWorkflowTransition(action: EditorProgramTreeAction) {
+  function requestProgramTreeWorkflowTransition(
+    action: EditorProgramTreeAction,
+    treeKey: string
+  ) {
+    pendingProgramTreeSelectionRef.current = null;
     if (!canOpenProgramTreeAction(action)) return;
     const command = EDITOR_COMMAND_REGISTRY.get(action.commandId);
     if (!command?.toolWindowId || !command.workflow) return;
+    pendingProgramTreeSelectionRef.current = treeKey;
     requestEditorWorkflowOpen(command, action);
   }
 
@@ -2800,10 +2881,15 @@ export function EditorPage({
       return;
     }
 
-    activateEditorWorkflow(
-      command,
-      action ? snapshotForProgramTreeAction(currentDraftSnapshot(), action) : currentDraftSnapshot()
-    );
+    const openingSnapshot = action
+      ? snapshotForProgramTreeAction(
+          currentDraftSnapshot(),
+          action,
+          pendingProgramTreeSelectionRef.current
+        )
+      : currentDraftSnapshot();
+    pendingProgramTreeSelectionRef.current = null;
+    activateEditorWorkflow(command, openingSnapshot);
   }
 
   function openEditorWorkflowForPanel(panelId: EditorWorkspacePanelId) {
@@ -2834,6 +2920,7 @@ export function EditorPage({
     }
     setSelectedPathOperationId(openingSnapshot.selectedPathOperationId);
     setSelectedPathElement(openingSnapshot.selectedPathElement);
+    setSelectedProgramTreeKey(openingSnapshot.selectedProgramTreeKey);
     setSelectedProgramStopId(openingSnapshot.selectedProgramStopId);
     const panelId = command.toolWindowId as EditorWorkspacePanelId;
     const session = command.workflow.kind === 'mutating'
@@ -2896,6 +2983,7 @@ export function EditorPage({
     if (!workflowTransition) return;
     dismissEditorWorkflowTransition(workflowTransition);
     pendingWorkflowExitActionRef.current = null;
+    pendingProgramTreeSelectionRef.current = null;
     updateWorkflowTransition(null);
   }
 
@@ -2931,6 +3019,7 @@ export function EditorPage({
     setActiveWorkflowPendingReasons({});
     setExportPreviewOpen(false);
     if (request.kind === 'close') {
+      pendingProgramTreeSelectionRef.current = null;
       setActiveWorkflowSession(null);
       const pendingAction = pendingWorkflowExitActionRef.current;
       pendingWorkflowExitActionRef.current = null;
@@ -2945,15 +3034,19 @@ export function EditorPage({
 
     const nextCommand = EDITOR_COMMAND_REGISTRY.get(request.commandId);
     if (!nextCommand) {
+      pendingProgramTreeSelectionRef.current = null;
       setActiveWorkflowSession(null);
       return;
     }
-    activateEditorWorkflow(
-      nextCommand,
-      request.target
-        ? snapshotForProgramTreeAction(nextOpeningSnapshot, request.target)
-        : nextOpeningSnapshot
-    );
+    const openingSnapshot = request.target
+      ? snapshotForProgramTreeAction(
+          nextOpeningSnapshot,
+          request.target,
+          pendingProgramTreeSelectionRef.current
+        )
+      : nextOpeningSnapshot;
+    pendingProgramTreeSelectionRef.current = null;
+    activateEditorWorkflow(nextCommand, openingSnapshot);
   }
 
   function readWorkspacePanelRenderedPlacement(panelId: EditorWorkspacePanelId) {
@@ -3820,6 +3913,26 @@ export function EditorPage({
       )}
     </div>
   );
+}
+
+function findProgramTreeOperationId(
+  tree: UpidProgramTree,
+  treeKey: string
+): string | null | undefined {
+  const pending = [...tree.sourceSetup, ...tree.operations].map((node) => ({
+    inheritedOperationId: null as string | null,
+    node
+  }));
+  while (pending.length > 0) {
+    const { inheritedOperationId, node } = pending.shift()!;
+    const operationId = node.operationId ?? inheritedOperationId;
+    if (node.treeKey === treeKey) return operationId;
+    pending.unshift(...node.children.map((child) => ({
+      inheritedOperationId: operationId,
+      node: child
+    })));
+  }
+  return undefined;
 }
 
 function nextMeasurementPointId(currentLength: number) {
