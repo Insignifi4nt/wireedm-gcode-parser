@@ -2706,6 +2706,48 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
+  it('keeps partial Entry / Exit editable until an explicit controller side is selected', async () => {
+    const machine = generatedExplicitMachine();
+    let document = initializeProjectCompensationIntents(
+      pathDocumentFromIndependentRectangles(),
+      machine
+    );
+    const operation = document.plan.operations[0];
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: operation.segmentRefs[0].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+    const project = projectWithUpid(document, machine);
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="machining.entry-exit"
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(container.querySelector('[data-entry-exit-generated]')).toBeNull();
+    expect(container.querySelector(
+      '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Close "]'
+    )).toBeNull();
+    expect(container.querySelector(
+      '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Cancel "]'
+    )).not.toBeNull();
+
+    await changeInput('input[aria-label="Entry X"]', '-3');
+    await changeInput('input[aria-label="Entry Y"]', '-2');
+    await clickElement('button[aria-label="Set straight entry"]');
+
+    expect(container.querySelector<HTMLButtonElement>(
+      '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]'
+    )?.disabled).toBe(false);
+  });
+
   it('hands generated transition inputs to Contour Start and Project Machine', async () => {
     const project = projectWithGeneratedExplicitTransitions();
 

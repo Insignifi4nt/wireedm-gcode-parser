@@ -88,6 +88,7 @@ export interface UpidMachinePostPreparationIssue {
     | 'machine-setup'
     | 'geometry-setup'
     | 'initial-wire'
+    | 'machining-participation'
     | 'entry-exit'
     | 'contour-start'
     | 'cut-path'
@@ -314,6 +315,35 @@ export function prepareUpidMachinePost(
     });
   }
   const document = effectiveMachiningDocument(sourceDocument, machining);
+  const partialOperationsMissingControllerSide =
+    document.plan.operations.filter((operation) => {
+      if (
+        operation.machiningIntent?.kind !== 'partial-contour' ||
+        operation.compensationIntent?.mode === 'controller'
+      ) {
+        return false;
+      }
+      return sourceDocument.plan.operations.some(
+        (sourceOperation) =>
+          sourceOperation.id === operation.machiningIntent?.sourceOperationId &&
+          sourceOperation.compensationIntent?.mode === 'controller'
+      );
+    });
+  if (partialOperationsMissingControllerSide.length > 0) {
+    const reason = 'partial-controller-side-required';
+    return blockedPreparation(blockedReason(
+      reason,
+      'Partial machining requires an explicit controller side before compensated posting.'
+    ), {
+      reason,
+      document,
+      machining,
+      issues: partialOperationsMissingControllerSide.map(
+        (operation) =>
+          operationIssue(operation, reason, 'machining-participation')
+      )
+    });
+  }
   const enabledProgramStops = document.plan.operations.flatMap((operation) =>
     (operation.programStops ?? []).filter((stop) => stop.enabled)
   );
@@ -1909,6 +1939,8 @@ function preparationIssueScope(
       return 'cut-path';
     case 'initial-wire-position-required':
       return 'initial-wire';
+    case 'partial-controller-side-required':
+      return 'machining-participation';
     case 'unsupported-machine-profile':
     case 'invalid-offset-selection':
     case 'unverified-machine-profile':

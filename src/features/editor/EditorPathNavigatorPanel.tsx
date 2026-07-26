@@ -23,7 +23,7 @@ import {
 
 import { type PathMirrorAxis } from '@/domain/path-editor/pathDocumentOperations';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
-import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
+import { resolveSourceOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
 import { orientedSegmentEnd, orientedSegmentStart, requiredSegment, segmentMap } from '@/domain/path-intel/segments';
 import type {
   Bounds2,
@@ -2134,7 +2134,11 @@ function renderContourTreeNode({
             const transitionIsGenerated =
               operation &&
               machineProfile &&
-              resolveOperationTransitionOwnership(operation, machineProfile) ===
+              resolveSourceOperationTransitionOwnership(
+                pathDocument,
+                operation.id,
+                machineProfile
+              ) ===
                 'generated-explicit-linear';
             return entry && entry.strategy !== 'none'
               && !transitionIsGenerated

@@ -795,6 +795,54 @@ describe('postUpidForMachine', () => {
     }));
   });
 
+  it('blocks generic fallback when partial machining drops source controller intent', () => {
+    const machine = verifiedGenericExplicitMachine();
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(clockwiseRectangle(0, 0, 10, 5)),
+      machine
+    );
+    const sourceOperation = document.plan.operations[0];
+    document = setPathOperationManualLeadIn(
+      document,
+      sourceOperation.id,
+      { x: -2, y: -2 }
+    )!;
+    document = setPathOperationTransitions(document, sourceOperation.id, {
+      ...document.plan.operations[0].transitions,
+      exit: { strategy: 'none', review: 'reviewed' }
+    })!;
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: sourceOperation.segmentRefs[0].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+    document = setPartialContourEntryReview(document, sourceOperation.id, true)!;
+
+    const preparation = machinePostModule.prepareUpidMachinePost(document, machine);
+    const posted = postUpidForMachine(document, machine);
+
+    expect(preparation).toMatchObject({
+      status: 'blocked',
+      reason: 'partial-controller-side-required',
+      issues: [{
+        reason: 'partial-controller-side-required',
+        scope: 'machining-participation',
+        sourceOperationId: sourceOperation.id
+      }]
+    });
+    expect(posted).toMatchObject({
+      status: 'blocked',
+      body: '',
+      moves: [],
+      blocks: []
+    });
+    expect(posted.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({
+        reason: 'partial-controller-side-required'
+      })
+    }));
+  });
+
   it('stops before positioning when manual wire separation is required', () => {
     const machine = markMachineProfileUserVerified(
       createCharmillesRobofil100V2CandidateProfile()

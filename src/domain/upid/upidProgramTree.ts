@@ -551,6 +551,9 @@ function buildCutPathNode(
   authoritativeGlobalPostBlocker: boolean
 ): UpidProgramTreeNode {
   const postIssue = postIssues.find((issue) => issue.scope === 'contour-start');
+  const participationIssue = postIssues.find(
+    (issue) => issue.scope === 'machining-participation'
+  );
   const contourStart: UpidProgramTreeNode = {
     treeKey: `${operationTreeKey(operation.id)}:contour-start`,
     kind: 'phase',
@@ -594,7 +597,7 @@ function buildCutPathNode(
         authoritativeGlobalPostBlocker
       )
     );
-  const status = derivationFailure
+  const status = derivationFailure || participationIssue
     ? 'blocked'
     : rollUpStatuses([
         contourStart.status,
@@ -612,6 +615,7 @@ function buildCutPathNode(
   const children = [contourStart, ...stopNodes, ...effectivePathNodes, ...inactiveSpans];
   const childStatusDetails = statusDetailsFromNodes(children, status);
   const statusReason = derivationFailure ??
+    participationIssue?.reason ??
     pathFailure?.reason ??
     childStatusDetails.statusReason ??
     (effectiveOperations.length === 0
@@ -619,6 +623,8 @@ function buildCutPathNode(
       : undefined);
   const statusActionTarget = derivationFailure
     ? { kind: 'machining-participation' as const, operationId: operation.id }
+    : participationIssue
+      ? { kind: 'machining-participation' as const, operationId: operation.id }
     : pathFailure
       ? { kind: 'operation' as const, operationId: operation.id }
       : childStatusDetails.statusActionTarget;
@@ -985,6 +991,10 @@ function preparationIssueActionTarget(
       return { kind: 'geometry-setup' };
     case 'initial-wire':
       return { kind: 'initial-wire' };
+    case 'machining-participation':
+      return issue.sourceOperationId
+        ? { kind: 'machining-participation', operationId: issue.sourceOperationId }
+        : { kind: 'machining-participation' };
     case 'entry-exit':
       return issue.sourceOperationId
         ? { kind: 'entry-exit', operationId: issue.sourceOperationId }

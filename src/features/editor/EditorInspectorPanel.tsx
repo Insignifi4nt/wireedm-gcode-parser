@@ -13,7 +13,7 @@ import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { MagnetizeMode } from '@/domain/path-editor/pathPointInference';
 import type { MachineFitResult } from '@/domain/machine/machineFit';
-import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
+import { resolveSourceOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   readUpidManualOverrideRows,
@@ -147,9 +147,14 @@ export function EditorInspectorPanel({
     ? readUpidSelectedPathPoint(pathDocument, selectedPathElementModel, selectedPathElement)
     : null;
   const selectedOperationTransitionsAreGenerated = Boolean(
-    selectedPathOperation &&
+    pathDocument &&
+      selectedPathOperation &&
       machineProfile &&
-      resolveOperationTransitionOwnership(selectedPathOperation, machineProfile) ===
+      resolveSourceOperationTransitionOwnership(
+        pathDocument,
+        selectedPathOperation.id,
+        machineProfile
+      ) ===
         'generated-explicit-linear'
   );
   const selectedPathTravel = selectedPathOperation && !selectedOperationTransitionsAreGenerated

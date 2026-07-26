@@ -10,7 +10,11 @@ import {
   createBlankMachineProfile,
   markMachineProfileUserVerified
 } from '@/domain/machine/machineProfiles';
-import { setCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
+import {
+  setCircleOperationCenterPierceLeadIn,
+  setPathOperationManualLeadIn
+} from '@/domain/path-editor/pathDocumentOperations';
+import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import type { MachineProfile } from '@/domain/workbench/types';
 
@@ -119,6 +123,34 @@ describe('generated transition ownership surfaces', () => {
     expect(container.querySelector('[data-upid-manual-override="lead-in"]')).not.toBeNull();
     expect(container.querySelector('[data-upid-selected-travel]')).not.toBeNull();
   });
+
+  it('preserves stored partial transition rows when no controller side owns the effective path', async () => {
+    const machine = explicitLinearMachine();
+    const document = partialDocumentWithStoredEntry(machine);
+    const operation = document.plan.operations[0];
+    const pathElement = document.pathElements[0];
+    const selectedPathElement: EditorPathElementRef = {
+      operationId: operation.id,
+      pathElementId: pathElement.id,
+      segmentId: null,
+      travelRole: 'lead-in'
+    };
+
+    await act(async () => {
+      root.render(
+        navigator(document, machine, operation.id, pathElement.id)
+      );
+    });
+    expect(container.querySelector('[data-upid-lead-in-row]')).not.toBeNull();
+
+    await act(async () => {
+      root.render(
+        inspector(document, machine, operation.id, selectedPathElement)
+      );
+    });
+    expect(container.querySelector('[data-upid-manual-override="lead-in"]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-selected-travel]')).not.toBeNull();
+  });
 });
 
 function navigator(
@@ -219,6 +251,25 @@ function documentWithStoredEntry(machine: MachineProfile) {
     initialized,
     initialized.plan.operations[0].id
   )!;
+}
+
+function partialDocumentWithStoredEntry(machine: MachineProfile) {
+  let document = initializeProjectCompensationIntents(
+    createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 0, y: 5 } },
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 5 }, end: { x: 10, y: 5 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 5 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 0, y: 0 } }
+    ]),
+    machine
+  );
+  const operation = document.plan.operations[0];
+  document = setPathOperationManualLeadIn(document, operation.id, { x: -2, y: -2 })!;
+  return setMachiningSpanParticipation(document, {
+    sourceSegmentId: operation.segmentRefs[0].segmentId,
+    range: { start: 0, end: 1 },
+    participation: 'inactive-reference'
+  })!;
 }
 
 function explicitLinearMachine() {

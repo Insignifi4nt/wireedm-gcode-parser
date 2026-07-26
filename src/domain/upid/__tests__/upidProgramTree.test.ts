@@ -860,6 +860,34 @@ describe('UPID program tree projection', () => {
     )).toBe(true);
   });
 
+  it('routes a missing partial controller side to machining participation', () => {
+    const machine = verifiedGenericExplicitMachine();
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(rectangleLines(0, 0, 10, 5)),
+      machine
+    );
+    const source = document.plan.operations[0];
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: source.segmentRefs[0].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+
+    const tree = buildUpidProgramTree(document, machine);
+    const sourceRoot = tree.operations.find((node) => node.operationId === source.id);
+    const cutPath = sourceRoot?.children.find((node) => node.label === 'Cut path');
+
+    expect(cutPath).toMatchObject({
+      status: 'blocked',
+      statusReason: 'partial-controller-side-required',
+      statusActionTarget: {
+        kind: 'machining-participation',
+        operationId: source.id
+      }
+    });
+    expect(tree.programStatus).toBe('blocked');
+  });
+
   it('rolls active-machining derivation failures into affected source operations', () => {
     const document = twoRectangleDocument();
     const source = document.plan.operations[0];

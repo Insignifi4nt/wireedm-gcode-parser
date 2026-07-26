@@ -63,7 +63,7 @@ import {
   translatePathSegment,
   type PathMirrorAxis
 } from '@/domain/path-editor/pathDocumentOperations';
-import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
+import { resolveSourceOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
 import {
   inferPathPoint,
   inferPerpendicularOperationOffset,
@@ -4000,6 +4000,12 @@ export function EditorPage({
                   `${programTreeKeyForOperation(operationId)}:contour-start`
                 )
               }
+              onOpenMachiningParticipation={(operationId) =>
+                openEditorWorkflowForTarget(
+                  { kind: 'machining-participation', operationId },
+                  `${programTreeKeyForOperation(operationId)}:cut-path`
+                )
+              }
               onOpenProjectMachine={() =>
                 openEditorWorkflowForTarget({ kind: 'machine-setup' }, 'setup:machine')
               }
@@ -4370,14 +4376,11 @@ function operationTransitionsAreGenerated(
   operationId: string,
   machine: MachineProfile
 ) {
-  const operation = document.plan.operations.find(
-    (candidate) => candidate.id === operationId
-  );
-  return Boolean(
-    operation &&
-    resolveOperationTransitionOwnership(operation, machine) ===
-      'generated-explicit-linear'
-  );
+  return resolveSourceOperationTransitionOwnership(
+    document,
+    operationId,
+    machine
+  ) === 'generated-explicit-linear';
 }
 
 function nextMeasurementPointId(currentLength: number) {

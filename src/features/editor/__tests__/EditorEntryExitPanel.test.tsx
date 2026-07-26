@@ -12,6 +12,7 @@ import {
   setManualCompensationIntent
 } from '@/domain/compensation/intent';
 import { setCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
+import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
 import { EditorEntryExitPanel } from '../EditorEntryExitPanel';
@@ -346,6 +347,96 @@ describe('EditorEntryExitPanel', () => {
     expect(container.querySelector('input[aria-label="Entry X"]')).not.toBeNull();
     expect(container.querySelector('input[aria-label="Exit X"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="Pick entry point on canvas"]')).not.toBeNull();
+  });
+
+  it('keeps authored controls when partial machining has no explicit controller side', async () => {
+    const machine = explicitLinearMachine();
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 0, y: 5 } },
+        { type: 'line', layer: 'CUT', start: { x: 0, y: 5 }, end: { x: 10, y: 5 } },
+        { type: 'line', layer: 'CUT', start: { x: 10, y: 5 }, end: { x: 10, y: 0 } },
+        { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 0, y: 0 } }
+      ]),
+      machine
+    );
+    const operation = document.plan.operations[0];
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: operation.segmentRefs[0].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+
+    await act(async () => {
+      root.render(
+        <EditorEntryExitPanel
+          canvasPickMode={null}
+          disabled={false}
+          document={document}
+          machine={machine}
+          onCanvasPickModeChange={vi.fn()}
+          onSelectOperation={vi.fn()}
+          onSetCircleCenterEntry={vi.fn()}
+          onSetManualEntry={vi.fn()}
+          onSetManualExit={vi.fn()}
+          onSetNoEntry={vi.fn()}
+          onSetNoExit={vi.fn()}
+          selectedOperationId={operation.id}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-entry-exit-generated]')).toBeNull();
+    expect(container.querySelector('input[aria-label="Entry X"]')).not.toBeNull();
+    expect(container.querySelector('input[aria-label="Exit X"]')).not.toBeNull();
+  });
+
+  it('routes a generated blocker from another partial operation to machining participation', async () => {
+    const machine = explicitLinearMachine();
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+        { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const [selectedOperation, partialOperation] = document.plan.operations;
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: partialOperation.segmentRefs[0].segmentId,
+      range: { start: 0, end: 0.5 },
+      participation: 'inactive-reference'
+    })!;
+    const onOpenMachiningParticipation = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorEntryExitPanel
+          canvasPickMode={null}
+          disabled={false}
+          document={document}
+          machine={machine}
+          onCanvasPickModeChange={vi.fn()}
+          onOpenMachiningParticipation={onOpenMachiningParticipation}
+          onOpenProjectMachine={vi.fn()}
+          onSelectOperation={vi.fn()}
+          onSetCircleCenterEntry={vi.fn()}
+          onSetManualEntry={vi.fn()}
+          onSetManualExit={vi.fn()}
+          onSetNoEntry={vi.fn()}
+          onSetNoExit={vi.fn()}
+          selectedOperationId={selectedOperation.id}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-entry-exit-generated-blocker]')?.textContent)
+      .toContain(`Blocked by ${partialOperation.displayName}`);
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Open Machining Participation for generated transition blocker"]'
+      )?.click();
+    });
+    expect(onOpenMachiningParticipation).toHaveBeenCalledWith(partialOperation.id);
   });
 
   it('shows the authoritative post blocker instead of editable stored transitions', async () => {

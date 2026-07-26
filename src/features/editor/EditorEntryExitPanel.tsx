@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
-import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
+import { resolveSourceOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
 import {
   prepareUpidMachinePost,
   type UpidMachinePostPreparationIssue
@@ -23,6 +23,7 @@ interface EditorEntryExitPanelProps {
   ) => void;
   onDraftChange?: (source: 'entry' | 'exit') => void;
   onOpenContourStart?: (operationId: string) => void;
+  onOpenMachiningParticipation?: (operationId: string) => void;
   onOpenProjectMachine?: () => void;
   onSelectOperation: (operationId: string) => void;
   onSetCircleCenterEntry: (operationId: string) => void;
@@ -45,6 +46,7 @@ export function EditorEntryExitPanel({
   onCanvasPickModeChange,
   onDraftChange,
   onOpenContourStart,
+  onOpenMachiningParticipation,
   onOpenProjectMachine,
   onSelectOperation,
   onSetCircleCenterEntry,
@@ -64,7 +66,8 @@ export function EditorEntryExitPanel({
   ) ?? operations[0] ?? null;
   const transitions = selected ? readOperationTransitions(selected) : {};
   const generatedPresentation = selected &&
-    resolveOperationTransitionOwnership(selected, machine) === 'generated-explicit-linear'
+    resolveSourceOperationTransitionOwnership(document, selected.id, machine) ===
+      'generated-explicit-linear'
       ? readGeneratedTransitionPresentation(document, selected.id, machine)
       : null;
   const generatedContourStartOperationId =
@@ -73,6 +76,11 @@ export function EditorEntryExitPanel({
       : generatedPresentation?.issue?.scope === 'contour-start'
         ? generatedPresentation.issue.sourceOperationId
         : undefined;
+  const generatedMachiningParticipationOperationId =
+    generatedPresentation?.status === 'blocked' &&
+    generatedPresentation.issue?.scope === 'machining-participation'
+      ? generatedPresentation.issue.sourceOperationId
+      : undefined;
   const generatedProjectMachineOwned = Boolean(
     generatedPresentation?.status === 'ready' ||
     (
@@ -211,6 +219,22 @@ export function EditorEntryExitPanel({
                 Project Machine
               </button>
             )}
+            {onOpenMachiningParticipation &&
+              generatedMachiningParticipationOperationId && (
+                <button
+                  aria-label="Open Machining Participation for generated transition blocker"
+                  className="h-7 border border-border bg-background px-1.5"
+                  disabled={disabled}
+                  onClick={() =>
+                    onOpenMachiningParticipation(
+                      generatedMachiningParticipationOperationId
+                    )
+                  }
+                  type="button"
+                >
+                  Machining Participation
+                </button>
+              )}
           </div>
         </section>
       ) : (
