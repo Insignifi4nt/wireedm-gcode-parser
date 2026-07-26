@@ -360,6 +360,115 @@ describe('EditorProgramTree', () => {
     );
   });
 
+  it('dispatches row and secondary actions once for a real double-click event sequence', async () => {
+    const onEdit = vi.fn();
+    await renderTree({ onEdit });
+    const entryRow = treeItem(hostileEntryTreeKey)?.querySelector<HTMLElement>(
+      ':scope > [data-editor-program-tree-row]'
+    );
+    const entryEdit = buttonWithLabel('Edit Entry / lead-in');
+
+    await act(async () => {
+      entryRow?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      entryRow?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
+      entryRow?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, detail: 2 }));
+    });
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenLastCalledWith(
+      { kind: 'entry-exit', operationId: 'alpha' },
+      hostileEntryTreeKey
+    );
+
+    onEdit.mockClear();
+    await act(async () => {
+      entryEdit?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      entryEdit?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
+      entryEdit?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, detail: 2 }));
+    });
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenLastCalledWith(
+      { kind: 'entry-exit', operationId: 'alpha' },
+      hostileEntryTreeKey
+    );
+  });
+
+  it('selects editable non-leaves on pointer click while Enter and Edit still activate them', async () => {
+    const onEdit = vi.fn();
+    const onSelect = vi.fn();
+    const pathDocument = twoRectangleDocument();
+    pathDocument.diagnostics = [{
+      id: 'source-review',
+      severity: 'warning',
+      code: 'dxf-import-warning',
+      message: 'Review imported source.'
+    }];
+    const sourceOperation = pathDocument.plan.operations[0];
+    const edited = setMachiningSpanParticipation(pathDocument, {
+      sourceSegmentId: sourceOperation.segmentRefs[0].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+    const realTree = buildUpidProgramTree(
+      edited,
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const pathSummary = realTree.sourceSetup.find((node) => node.label === 'Path summary')!;
+    const operation = realTree.operations.find(
+      (node) => node.operationId === sourceOperation.id
+    )!;
+    const cutPath = operation.children.find((node) => node.label === 'Cut path')!;
+    const effectivePath = cutPath.children.find(
+      (node) => node.label === 'Effective machining path'
+    )!;
+
+    expect(pathSummary.children.length).toBeGreaterThan(0);
+    expect(effectivePath.children.length).toBeGreaterThan(0);
+    await renderTree({
+      expandedTreeKeys: new Set([
+        'section:source',
+        'section:program',
+        operation.treeKey,
+        cutPath.treeKey
+      ]),
+      onEdit,
+      onSelect,
+      tree: realTree
+    });
+
+    await act(async () => {
+      treeItem(pathSummary.treeKey)
+        ?.querySelector<HTMLElement>(':scope > [data-editor-program-tree-row]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      treeItem(effectivePath.treeKey)
+        ?.querySelector<HTMLElement>(':scope > [data-editor-program-tree-row]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    expect(onSelect).toHaveBeenNthCalledWith(1, pathSummary.treeKey, pathSummary);
+    expect(onSelect).toHaveBeenNthCalledWith(2, effectivePath.treeKey, effectivePath);
+    expect(onEdit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      treeItem(pathSummary.treeKey)?.dispatchEvent(new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: 'Enter'
+      }));
+      treeItem(effectivePath.treeKey)
+        ?.querySelector<HTMLButtonElement>('button[aria-label="Edit Effective machining path"]')
+        ?.click();
+    });
+    expect(onEdit).toHaveBeenNthCalledWith(
+      1,
+      { kind: 'path-summary' },
+      pathSummary.treeKey
+    );
+    expect(onEdit).toHaveBeenNthCalledWith(
+      2,
+      { kind: 'machining-participation', operationId: sourceOperation.id },
+      effectivePath.treeKey
+    );
+  });
+
   it('exposes the operation ordinal as the exact Cut Sequence action', async () => {
     const onEdit = vi.fn();
     await renderTree({ onEdit });

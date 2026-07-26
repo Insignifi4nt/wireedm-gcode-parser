@@ -91,9 +91,17 @@ export function EditorProgramTree({
     onSelect(item.key, item.node ?? null);
   }
 
-  function handleRowClick(item: EditorProgramTreeItem) {
+  function handleRowClick(
+    event: MouseEvent<HTMLDivElement>,
+    item: EditorProgramTreeItem
+  ) {
+    if (event.detail > 1) return;
     focusTreeItem(item.key);
-    if (item.node?.kind !== 'operation' && item.node?.editTarget) {
+    if (
+      item.children.length === 0 &&
+      item.node?.kind !== 'operation' &&
+      item.node?.editTarget
+    ) {
       onEdit(item.node.editTarget, item.key);
       return;
     }
@@ -177,6 +185,7 @@ export function EditorProgramTree({
     action: () => void
   ) {
     event.stopPropagation();
+    if (event.detail > 1) return;
     focusTreeItem(item.key);
     action();
   }
@@ -217,7 +226,7 @@ export function EditorProgramTree({
             isSelected ? 'bg-accent text-foreground' : 'text-foreground hover:bg-accent/60'
           }`}
           data-editor-program-tree-row
-          onClick={() => handleRowClick(item)}
+          onClick={(event) => handleRowClick(event, item)}
           style={{ paddingLeft: `${(item.level - 1) * 10}px` }}
         >
           {hasChildren ? (
