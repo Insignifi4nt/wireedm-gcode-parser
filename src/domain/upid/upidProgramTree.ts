@@ -55,8 +55,15 @@ export interface UpidProgramTree {
   status: UpidProgramTreeStatus;
   sourceSetupStatus?: UpidProgramTreeStatus;
   programStatus?: UpidProgramTreeStatus;
+  programStatusReason?: string;
   sourceSetup: UpidProgramTreeNode[];
   operations: UpidProgramTreeNode[];
+}
+
+interface SourceMachiningProjection {
+  effectiveOperations: PathOperation[];
+  effectiveSegments: PathPlanningDocument['segments'];
+  failureReason?: Extract<ActiveMachiningDerivation, { status: 'blocked' }>['reason'];
 }
 
 export function buildUpidProgramTree(
@@ -81,26 +88,31 @@ export function buildUpidProgramTree(
     machine,
     diagnostics.filter((diagnostic) => !ownedDiagnosticIds.has(diagnostic.id))
   );
+  const machiningProjection = projectMachiningBySource(executionDocument);
   const operations = executionDocument.plan.operations
     .map((operation) => {
-      const derivation = deriveMachiningForSourceOperation(executionDocument, operation);
+      const projection = machiningProjection.bySourceOperationId.get(operation.id)!;
       return buildOperationNode(
         executionDocument,
         machine,
         operation,
-        effectiveOperationsForSource(operation, derivation),
+        projection.effectiveOperations,
         operationDiagnostics.get(operation.id) ?? [],
-        derivation.status === 'blocked' ? derivation.reason : undefined,
-        derivation.status === 'ready' ? derivation.segments : executionDocument.segments
+        projection.failureReason,
+        projection.effectiveSegments
       );
     });
   const sourceSetupStatus = rollUpStatus(sourceSetup);
-  const programStatus = rollUpStatus(operations);
+  const programStatus = rollUpStatuses([
+    rollUpStatus(operations),
+    ...(machiningProjection.unownedFailureReason ? ['blocked' as const] : [])
+  ]);
 
   return {
     status: rollUpStatuses([sourceSetupStatus, programStatus]),
     sourceSetupStatus,
     programStatus,
+    programStatusReason: machiningProjection.unownedFailureReason,
     sourceSetup,
     operations
   };
@@ -509,15 +521,50 @@ function describeThreading(mode: 'manual' | 'automatic' | 'continuous') {
   }
 }
 
-function effectiveOperationsForSource(
-  sourceOperation: PathOperation,
-  derivation: ActiveMachiningDerivation
-) {
-  if (derivation.status === 'blocked') return [];
-  return derivation.operations.filter((operation) =>
-    operation.id === sourceOperation.id ||
-    operation.machiningIntent?.sourceOperationId === sourceOperation.id
+function projectMachiningBySource(document: PathPlanningDocument) {
+  const globalDerivation = deriveActiveMachiningOperations(document);
+  const bySourceOperationId = new Map<string, SourceMachiningProjection>(
+    document.plan.operations.map((operation) => [
+      operation.id,
+      {
+        effectiveOperations: [],
+        effectiveSegments: document.segments
+      }
+    ])
   );
+
+  if (globalDerivation.status === 'ready') {
+    for (const operation of globalDerivation.operations) {
+      const sourceOperationId =
+        operation.machiningIntent?.sourceOperationId ?? operation.id;
+      bySourceOperationId.get(sourceOperationId)?.effectiveOperations.push(operation);
+    }
+    bySourceOperationId.forEach((projection) => {
+      projection.effectiveSegments = globalDerivation.segments;
+    });
+    return { bySourceOperationId, unownedFailureReason: undefined };
+  }
+
+  let isolatedFailureFound = false;
+  for (const sourceOperation of document.plan.operations) {
+    const derivation = deriveMachiningForSourceOperation(document, sourceOperation);
+    const projection = bySourceOperationId.get(sourceOperation.id)!;
+    if (derivation.status === 'ready') {
+      projection.effectiveOperations = derivation.operations.filter((operation) =>
+        operation.id === sourceOperation.id ||
+        operation.machiningIntent?.sourceOperationId === sourceOperation.id
+      );
+      projection.effectiveSegments = derivation.segments;
+    } else {
+      projection.failureReason = derivation.reason;
+      isolatedFailureFound = true;
+    }
+  }
+
+  return {
+    bySourceOperationId,
+    unownedFailureReason: isolatedFailureFound ? undefined : globalDerivation.reason
+  };
 }
 
 function deriveMachiningForSourceOperation(

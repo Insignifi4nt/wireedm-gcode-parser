@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createCharmillesRobofil100V2CandidateProfile } from '@/domain/machine/machineProfiles';
+import * as machiningParticipation from '@/domain/path-intel/machiningParticipation';
 import {
   setMachiningSpanParticipation,
   setPartialContourEntryReview
@@ -78,6 +79,23 @@ describe('UPID program tree projection', () => {
       detail: 'Manual rethread',
       editTarget: { kind: 'incoming-connection', operationId: second.id }
     });
+  });
+
+  it('derives a ready multi-operation document once', () => {
+    const derive = vi.spyOn(machiningParticipation, 'deriveActiveMachiningOperations');
+    const document = twoRectangleDocument();
+
+    try {
+      const tree = buildUpidProgramTree(
+        document,
+        createCharmillesRobofil100V2CandidateProfile()
+      );
+
+      expect(tree.operations).toHaveLength(2);
+      expect(derive).toHaveBeenCalledTimes(1);
+    } finally {
+      derive.mockRestore();
+    }
   });
 
   it('keeps disabled program stops visible but inactive', () => {
@@ -216,6 +234,24 @@ describe('UPID program tree projection', () => {
     expect(failingRoot?.status).toBe('blocked');
   });
 
+  it('preserves an unowned malformed participation failure at program level', () => {
+    const document = twoRectangleDocument();
+    document.machiningParticipation = {
+      spans: [{
+        id: 'orphan-span',
+        sourceSegmentId: 'missing-segment',
+        range: { start: 0, end: 1 },
+        participation: 'inactive-reference'
+      }]
+    };
+
+    const tree = buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile());
+
+    expect(tree.operations.every((operation) => operation.status === 'ready')).toBe(true);
+    expect(tree.programStatus).toBe('blocked');
+    expect(tree.programStatusReason).toBe('missing-source-segment');
+  });
+
   it('keeps a fully suppressed source operation visible but inactive', () => {
     const document = twoRectangleDocument();
     const source = document.plan.operations[0];
@@ -281,6 +317,7 @@ describe('UPID program tree projection', () => {
       editTarget: { kind: 'entry-exit', operationId: source.id }
     });
     expect(sourceRoot?.status).toBe('review-required');
+    expect(tree.programStatus).toBe('review-required');
 
     const reviewed = setPartialContourEntryReview(edited, source.id, true);
     expect(reviewed).not.toBeNull();
