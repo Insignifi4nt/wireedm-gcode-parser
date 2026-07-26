@@ -231,9 +231,16 @@ test('compact dirty program-tree transitions stay reachable before changing draw
 
   const transition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
   await expect(transition).toBeVisible();
+  const underlyingUpidDrawer = page.locator('[data-editor-compact-drawer="upid"]');
+  await expect(underlyingUpidDrawer).toHaveAttribute('inert', '');
+  await expect(underlyingUpidDrawer).toHaveAttribute('aria-hidden', 'true');
+  await expect(underlyingUpidDrawer).not.toHaveAttribute('aria-modal', 'true');
+  expect(await page.locator('[role="dialog"][aria-modal="true"]:visible').count()).toBe(1);
   await transition.getByRole('button', { name: 'Dismiss workflow transition' }).click();
   await expect(transition).toHaveCount(0);
   await expect(upidDrawer).toBeVisible();
+  await expect(underlyingUpidDrawer).not.toHaveAttribute('inert', '');
+  await expect(underlyingUpidDrawer).toHaveAttribute('aria-modal', 'true');
 
   await upidDrawer.getByRole('button', { name: 'Exit / lead-out · None' }).click();
   await page.getByRole('dialog', { name: 'Unsaved workflow changes' })

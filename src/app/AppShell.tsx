@@ -64,6 +64,7 @@ export function AppShell({
   const [railContent, setRailContent] = useState<AppRailContent | null>(null);
   const [compactDrawer, setCompactDrawer] = useState<EditorCompactDrawer>(null);
   const [compactModalHost, setCompactModalHost] = useState<HTMLDivElement | null>(null);
+  const [compactTransitionOverlay, setCompactTransitionOverlay] = useState(false);
   const [isCompactViewport, setIsCompactViewport] = useState(() => window.innerWidth < 768);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isReady = workbenchStatus === 'ready' && connectedWorkbench;
@@ -276,7 +277,7 @@ export function AppShell({
           />
         )}
 
-        <AppRailProvider value={{ compactDrawer, compactModalHost, isCompactViewport, setCompactDrawer, setHeaderContent, setRailCollapsed: setSidebarCollapsed, setRailContent }}>
+        <AppRailProvider value={{ compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailCollapsed: setSidebarCollapsed, setRailContent }}>
           <main
             className="min-h-0 min-w-0 overflow-hidden"
           >
@@ -288,6 +289,7 @@ export function AppShell({
             hasUpidRail={Boolean(railContent?.isPathProject)}
             modalHost={compactModalHost}
             onDrawerChange={setCompactDrawer}
+            transitionOverlay={compactTransitionOverlay}
             upidContent={railContent?.expanded ?? null}
           />
         </AppRailProvider>

@@ -27,6 +27,7 @@ interface EditorCompactDrawerLaunchersProps {
   hasUpidRail: boolean;
   modalHost?: HTMLElement | null;
   onDrawerChange: (drawer: EditorCompactDrawer) => void;
+  transitionOverlay?: boolean;
   upidContent: ReactNode;
   workflowContent?: ReactNode;
 }
@@ -37,6 +38,7 @@ export function EditorCompactDrawerLaunchers({
   hasUpidRail,
   modalHost,
   onDrawerChange,
+  transitionOverlay = false,
   upidContent,
   workflowContent
 }: EditorCompactDrawerLaunchersProps) {
@@ -97,6 +99,7 @@ export function EditorCompactDrawerLaunchers({
           labelledBy={upidTitleId}
           onClose={() => closeDrawer('upid')}
           title="UPID rail"
+          transitionOverlay={transitionOverlay}
         >
           <h2 className="sr-only" id={upidTitleId}>UPID rail</h2>
           {upidContent}
@@ -122,13 +125,15 @@ interface EditorCompactDrawerSheetProps {
   labelledBy: string;
   onClose: () => void;
   title: string;
+  transitionOverlay?: boolean;
 }
 
 export function EditorCompactDrawerSheet({
   children,
   labelledBy,
   onClose,
-  title
+  title,
+  transitionOverlay = false
 }: EditorCompactDrawerSheetProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -156,11 +161,13 @@ export function EditorCompactDrawerSheet({
   return (
     <div className="fixed inset-0 z-50 bg-background/85 p-2" data-editor-compact-drawer-backdrop>
       <div
+        aria-hidden={transitionOverlay ? true : undefined}
         aria-labelledby={labelledBy}
-        aria-modal="true"
+        aria-modal={transitionOverlay ? undefined : 'true'}
         aria-label={title}
         className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-border bg-card shadow-2xl"
         data-editor-compact-drawer={title === 'UPID rail' ? 'upid' : 'workflow'}
+        inert={transitionOverlay ? true : undefined}
         onKeyDown={handleKeyDown}
         role="dialog"
       >
@@ -384,6 +391,7 @@ export function EditorPanelDockZone({
 interface EditorFloatingPanelProps {
   children: ReactNode;
   compactDrawerOpen?: boolean;
+  compactTransitionOverlay?: boolean;
   geometry: EditorFloatingPanelGeometry;
   id: string;
   isCompactWorkflow?: boolean;
@@ -399,6 +407,7 @@ interface EditorFloatingPanelProps {
 export function EditorFloatingPanel({
   children,
   compactDrawerOpen = false,
+  compactTransitionOverlay = false,
   geometry,
   id,
   isCompactWorkflow = false,
@@ -414,12 +423,12 @@ export function EditorFloatingPanel({
   const compactDrawerTitleId = useId();
 
   useEffect(() => {
-    if (!compactDrawerOpen) return;
+    if (!compactDrawerOpen || compactTransitionOverlay) return;
     compactDrawerCloseRef.current?.focus();
-  }, [compactDrawerOpen]);
+  }, [compactDrawerOpen, compactTransitionOverlay]);
 
   useEffect(() => {
-    if (!compactDrawerOpen || !onCloseCompactDrawer) return;
+    if (!compactDrawerOpen || compactTransitionOverlay || !onCloseCompactDrawer) return;
 
     function handleCompactDrawerEscape(event: globalThis.KeyboardEvent) {
       if (event.key !== 'Escape') return;
@@ -429,10 +438,10 @@ export function EditorFloatingPanel({
 
     document.addEventListener('keydown', handleCompactDrawerEscape);
     return () => document.removeEventListener('keydown', handleCompactDrawerEscape);
-  }, [compactDrawerOpen, onCloseCompactDrawer]);
+  }, [compactDrawerOpen, compactTransitionOverlay, onCloseCompactDrawer]);
 
   function handleCompactDrawerKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (!compactDrawerOpen || event.key !== 'Tab') return;
+    if (!compactDrawerOpen || compactTransitionOverlay || event.key !== 'Tab') return;
     const focusable = [...event.currentTarget.querySelectorAll<HTMLElement>(
       'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
     )];
@@ -529,14 +538,14 @@ export function EditorFloatingPanel({
 
   return (
     <aside
-      aria-hidden={isCompactWorkflow && !compactDrawerOpen ? true : undefined}
-      aria-labelledby={compactDrawerOpen ? compactDrawerTitleId : undefined}
-      aria-modal={compactDrawerOpen ? 'true' : undefined}
+      aria-hidden={isCompactWorkflow && (!compactDrawerOpen || compactTransitionOverlay) ? true : undefined}
+      aria-labelledby={compactDrawerOpen && !compactTransitionOverlay ? compactDrawerTitleId : undefined}
+      aria-modal={compactDrawerOpen && !compactTransitionOverlay ? 'true' : undefined}
       className="fixed z-30 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/98 text-[10px] shadow-2xl"
       data-editor-compact-workflow={isCompactWorkflow ? 'true' : undefined}
       data-editor-compact-workflow-open={isCompactWorkflow ? String(compactDrawerOpen) : undefined}
       data-editor-floating-panel={id}
-      inert={isCompactWorkflow && !compactDrawerOpen ? true : undefined}
+      inert={isCompactWorkflow && (!compactDrawerOpen || compactTransitionOverlay) ? true : undefined}
       onKeyDown={handleCompactDrawerKeyDown}
       role={compactDrawerOpen ? 'dialog' : undefined}
       style={
@@ -649,6 +658,7 @@ function EditorPanelPlacementControls({
 interface EditorWorkspacePanelFrameProps extends EditorWorkspacePanelController {
   children: ReactNode;
   compactDrawerOpen?: boolean;
+  compactTransitionOverlay?: boolean;
   id: string;
   isCompactWorkflow?: boolean;
   compactModalHost?: HTMLElement | null;
@@ -661,6 +671,7 @@ export function EditorWorkspacePanelFrame({
   children,
   compactModalHost,
   compactDrawerOpen = false,
+  compactTransitionOverlay = false,
   dockOrder = 0,
   fill = false,
   geometry,
@@ -718,6 +729,7 @@ export function EditorWorkspacePanelFrame({
     const panel = (
       <EditorFloatingPanel
         compactDrawerOpen={compactDrawerOpen}
+        compactTransitionOverlay={compactTransitionOverlay}
         geometry={geometry}
         id={id}
         isCompactWorkflow={isCompactWorkflow}

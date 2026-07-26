@@ -656,7 +656,7 @@ export function EditorPage({
   onSaveEditorDraft,
   onStatusMessage
 }: EditorPageProps) {
-  const { compactDrawer, compactModalHost, isCompactViewport, setCompactDrawer, setHeaderContent, setRailCollapsed, setRailContent } = useAppRail();
+  const { compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailCollapsed, setRailContent } = useAppRail();
   const [initialWorkspaceLayout] = useState(() => readInitialWorkspaceLayout(program?.model));
   const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
@@ -1322,6 +1322,13 @@ export function EditorPage({
   useEffect(() => {
     if (!activeWorkflowSession && compactDrawer === 'workflow') setCompactDrawer(null);
   }, [activeWorkflowSession, compactDrawer, setCompactDrawer]);
+
+  useEffect(() => {
+    setCompactTransitionOverlay(
+      Boolean(isCompactViewport && workflowTransition?.kind === 'held')
+    );
+    return () => setCompactTransitionOverlay(false);
+  }, [isCompactViewport, setCompactTransitionOverlay, workflowTransition]);
 
   useEffect(() => {
     onProgramTreeActionReady?.(openEditorWorkflowForTarget);
@@ -3021,6 +3028,7 @@ export function EditorPage({
         compactDrawerOpen={
           isCompactViewport && activeWorkflowSession?.panelId === panelId && compactDrawer === 'workflow'
         }
+        compactTransitionOverlay={compactTransitionOverlay}
         compactModalHost={compactModalHost}
         isCompactWorkflow={isCompactViewport && activeWorkflowSession?.panelId === panelId}
         onCloseCompactDrawer={() => {
