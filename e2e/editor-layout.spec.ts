@@ -209,6 +209,85 @@ test('path editor keeps an active right dock and its controls inside the workben
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
 });
 
+test('restored 360px rails keep the active right dock inside the workbench at 1200', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'restored-rails-1200.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  await openWorkflowCommand(page, 'Machining', 'machining.entry-exit');
+  await page.getByRole('button', { name: 'Dock Entry / Exit right' }).click();
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('wire-edm.editor-workspace-layout.v1');
+    if (!raw) return null;
+    return JSON.parse(raw).placements['entry-exit'];
+  })).toBe('docked-right');
+  await page.evaluate(() => {
+    const key = 'wire-edm.editor-workspace-layout.v1';
+    const layout = JSON.parse(localStorage.getItem(key) ?? '{}');
+    layout.dockWidths = { left: 360, right: 360 };
+    localStorage.setItem(key, JSON.stringify(layout));
+  });
+
+  await page.reload();
+  await expect(page.locator('[data-project-row]')).toHaveCount(1);
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.locator('[data-project-row]')
+    .getByRole('button', { name: /Open project .* in editor/ })
+    .click();
+  await openWorkflowCommand(page, 'Machining', 'machining.entry-exit');
+
+  await expect.poll(() => readWidth(
+    page.getByRole('complementary', { name: 'UPID rail', exact: true })
+  )).toBeGreaterThanOrEqual(359);
+  await expectActiveRightDockInsideWorkbench(page, 1200);
+
+  await page.setViewportSize({ width: 1199, height: 800 });
+  await expectActiveRightDockInsideWorkbench(page, 1199);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const restoredDockWidth = await expectActiveRightDockInsideWorkbench(page, 1440);
+  expect(restoredDockWidth).toBeGreaterThanOrEqual(359);
+  expect(restoredDockWidth).toBeLessThanOrEqual(361);
+});
+
+test('maximum right dock caps at 1200 and restores its width at 1440', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'maximum-right-dock-1200.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  await openWorkflowCommand(page, 'Machining', 'machining.entry-exit');
+  await page.getByRole('button', { name: 'Dock Entry / Exit right' }).click();
+  await drag(page.locator('[data-editor-inspector-resizer]'), -200, 0);
+  const expandedDock = page.locator('[data-editor-panel-dock-zone="right"]');
+  await expect.poll(() => readWidth(expandedDock)).toBeGreaterThanOrEqual(559);
+
+  await page.setViewportSize({ width: 1200, height: 800 });
+  const constrainedDockWidth = await expectActiveRightDockInsideWorkbench(page, 1200);
+  expect(constrainedDockWidth).toBeLessThan(560);
+
+  await page.setViewportSize({ width: 1199, height: 800 });
+  await expectActiveRightDockInsideWorkbench(page, 1199);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const restoredDockWidth = await expectActiveRightDockInsideWorkbench(page, 1440);
+  expect(restoredDockWidth).toBeGreaterThanOrEqual(559);
+  expect(restoredDockWidth).toBeLessThanOrEqual(561);
+});
+
 test('path editor materializes a right dock only for a docked active workflow', async ({ page }) => {
   await page.setViewportSize({ width: 1708, height: 874 });
   await openReadyWorkbench(page);
@@ -670,6 +749,63 @@ async function drag(locator: import('@playwright/test').Locator, deltaX: number,
 
 async function readWidth(locator: import('@playwright/test').Locator) {
   return await locator.evaluate((element) => element.getBoundingClientRect().width);
+}
+
+async function expectActiveRightDockInsideWorkbench(
+  page: import('@playwright/test').Page,
+  viewportWidth: number
+) {
+  await expect.poll(() => page.locator('[data-app-workspace-grid]').evaluate((element) =>
+    element.getAnimations().filter((animation) => animation.playState === 'running').length
+  )).toBe(0);
+
+  const mainGrid = page.locator('[data-editor-main-grid]');
+  const canvas = page.locator('[data-editor-canvas-panel]');
+  const rightDock = page.locator('[data-editor-panel-dock-zone="right"]');
+  const dockedPanel = rightDock.locator('[data-editor-workspace-panel="entry-exit"]');
+  await expect(mainGrid).toHaveAttribute('data-has-active-right-dock', 'true');
+  await expect(rightDock).toBeVisible();
+  await expect(dockedPanel).toBeVisible();
+
+  await expect.poll(async () => {
+    const [mainGridBox, canvasBox, rightDockBox] = await Promise.all([
+      mainGrid.boundingBox(),
+      canvas.boundingBox(),
+      rightDock.boundingBox()
+    ]);
+    if (!mainGridBox || !canvasBox || !rightDockBox) return false;
+    return (
+      canvasBox.width >= 480 &&
+      rightDockBox.width >= 280 &&
+      rightDockBox.x >= mainGridBox.x &&
+      rightDockBox.x + rightDockBox.width <= mainGridBox.x + mainGridBox.width &&
+      rightDockBox.x + rightDockBox.width <= viewportWidth
+    );
+  }).toBe(true);
+
+  const rightDockBox = await rightDock.boundingBox();
+  expect(rightDockBox).not.toBeNull();
+  const dockControls = [
+    dockedPanel.getByRole('button', { name: 'Float Entry / Exit' }),
+    dockedPanel.getByRole('button', { name: 'Hide Entry / Exit' }),
+    dockedPanel.getByRole('button', { name: 'Cancel Entry / Exit workflow' }),
+    dockedPanel.getByRole('button', { name: 'Save Entry / Exit workflow' })
+  ];
+  for (const control of dockControls) {
+    await expect(control).toBeVisible();
+    const controlBox = await control.boundingBox();
+    expect(controlBox).not.toBeNull();
+    expect(controlBox!.x).toBeGreaterThanOrEqual(rightDockBox!.x);
+    expect(controlBox!.x + controlBox!.width).toBeLessThanOrEqual(
+      rightDockBox!.x + rightDockBox!.width
+    );
+    expect(controlBox!.x + controlBox!.width).toBeLessThanOrEqual(viewportWidth);
+  }
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    viewportWidth
+  );
+  return rightDockBox!.width;
 }
 
 async function expectLineCommandInsideToolbar(
