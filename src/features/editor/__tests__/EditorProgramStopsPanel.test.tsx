@@ -24,6 +24,64 @@ describe('EditorProgramStopsPanel', () => {
     container.remove();
   });
 
+  it('keeps hook order stable when operations appear and disappear', async () => {
+    const emptyDocument = createUpidFromDxfEntities([]);
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+    ]);
+    const operation = document.plan.operations[0];
+    operation.programStops = [
+      {
+        id: 'stop-1',
+        enabled: false,
+        placement: { kind: 'after-exit' },
+        reason: 'operator-check',
+        note: 'inspect'
+      }
+    ];
+    const machine = createCharmillesRobofil100V2CandidateProfile();
+    const onSetStops = vi.fn();
+
+    await act(async () => root.render(
+      <EditorProgramStopsPanel
+        disabled={false}
+        document={emptyDocument}
+        machine={machine}
+        onSetStops={onSetStops}
+        selectedOperationId={null}
+      />
+    ));
+    expect(container.textContent).toContain('No operation selected.');
+
+    await act(async () => root.render(
+      <EditorProgramStopsPanel
+        disabled={false}
+        document={document}
+        machine={machine}
+        onSetStops={onSetStops}
+        selectedOperationId={operation.id}
+        selectedStopId="stop-1"
+      />
+    ));
+
+    expect(container.textContent).toContain(operation.displayName);
+    expect(container.querySelector('[data-program-stop="stop-1"]')?.getAttribute('data-selected'))
+      .toBe('true');
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Selected stop placement"]')?.value)
+      .toBe('after-exit');
+
+    await act(async () => root.render(
+      <EditorProgramStopsPanel
+        disabled={false}
+        document={emptyDocument}
+        machine={machine}
+        onSetStops={onSetStops}
+        selectedOperationId={null}
+      />
+    ));
+    expect(container.textContent).toContain('No operation selected.');
+  });
+
   it('authors a part-retention stop with an exact remaining distance', async () => {
     const document = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }

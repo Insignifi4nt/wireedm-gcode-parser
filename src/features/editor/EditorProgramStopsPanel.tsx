@@ -40,17 +40,8 @@ export function EditorProgramStopsPanel({
   const [selectedNote, setSelectedNote] = useState('');
   const [selectedEnabled, setSelectedEnabled] = useState(true);
   const selectedPlacementRef = useRef<HTMLSelectElement>(null);
-
-  if (!operation) return <p className="text-[10px] text-muted-foreground">No operation selected.</p>;
-  const stops = operation.programStops ?? [];
-  const validation = validateProgramStops(operation, machine, document.segments);
+  const stops = operation?.programStops ?? [];
   const selectedStop = stops.find((stop) => stop.id === selectedStopId) ?? null;
-  const remainingValue = Number(remaining);
-  const canAdd = placement !== 'before-operation-end' ||
-    (Number.isFinite(remainingValue) && remainingValue > 0);
-  const selectedRemainingValue = Number(selectedRemaining);
-  const canApplySelected = selectedPlacement !== 'before-operation-end' ||
-    (Number.isFinite(selectedRemainingValue) && selectedRemainingValue > 0);
 
   useEffect(() => {
     if (!selectedStop) return;
@@ -65,6 +56,15 @@ export function EditorProgramStopsPanel({
     setSelectedEnabled(selectedStop.enabled);
     selectedPlacementRef.current?.focus();
   }, [selectedStop]);
+
+  if (!operation) return <p className="text-[10px] text-muted-foreground">No operation selected.</p>;
+  const validation = validateProgramStops(operation, machine, document.segments);
+  const remainingValue = Number(remaining);
+  const canAdd = placement !== 'before-operation-end' ||
+    (Number.isFinite(remainingValue) && remainingValue > 0);
+  const selectedRemainingValue = Number(selectedRemaining);
+  const canApplySelected = selectedPlacement !== 'before-operation-end' ||
+    (Number.isFinite(selectedRemainingValue) && selectedRemainingValue > 0);
 
   function commit(nextStops: OperationProgramStop[], completeForm = false) {
     if (!disabled) onSetStops(operation!.id, nextStops, completeForm);
