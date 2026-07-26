@@ -25,6 +25,7 @@ interface EditorCompactDrawerLaunchersProps {
   drawer: EditorCompactDrawer;
   hasActiveWorkflow: boolean;
   hasUpidRail: boolean;
+  modalHost?: HTMLElement | null;
   onDrawerChange: (drawer: EditorCompactDrawer) => void;
   upidContent: ReactNode;
   workflowContent?: ReactNode;
@@ -34,6 +35,7 @@ export function EditorCompactDrawerLaunchers({
   drawer,
   hasActiveWorkflow,
   hasUpidRail,
+  modalHost,
   onDrawerChange,
   upidContent,
   workflowContent
@@ -45,7 +47,9 @@ export function EditorCompactDrawerLaunchers({
 
   function closeDrawer(owner: Exclude<EditorCompactDrawer, null>) {
     onDrawerChange(null);
-    (owner === 'upid' ? upidLauncherRef : workflowLauncherRef).current?.focus();
+    queueMicrotask(() => {
+      (owner === 'upid' ? upidLauncherRef : workflowLauncherRef).current?.focus();
+    });
   }
 
   useEffect(() => {
@@ -88,16 +92,17 @@ export function EditorCompactDrawerLaunchers({
           </button>
         )}
       </div>
-      {drawer === 'upid' && (
-        <EditorCompactDrawerSheet
+      {drawer === 'upid' && (() => {
+        const sheet = <EditorCompactDrawerSheet
           labelledBy={upidTitleId}
           onClose={() => closeDrawer('upid')}
           title="UPID rail"
         >
           <h2 className="sr-only" id={upidTitleId}>UPID rail</h2>
           {upidContent}
-        </EditorCompactDrawerSheet>
-      )}
+        </EditorCompactDrawerSheet>;
+        return modalHost ? createPortal(sheet, modalHost) : sheet;
+      })()}
       {drawer === 'workflow' && workflowContent && (
         <EditorCompactDrawerSheet
           labelledBy={workflowTitleId}
@@ -646,6 +651,7 @@ interface EditorWorkspacePanelFrameProps extends EditorWorkspacePanelController 
   compactDrawerOpen?: boolean;
   id: string;
   isCompactWorkflow?: boolean;
+  compactModalHost?: HTMLElement | null;
   onCloseCompactDrawer?: () => void;
   title: string;
   fill?: boolean;
@@ -653,6 +659,7 @@ interface EditorWorkspacePanelFrameProps extends EditorWorkspacePanelController 
 
 export function EditorWorkspacePanelFrame({
   children,
+  compactModalHost,
   compactDrawerOpen = false,
   dockOrder = 0,
   fill = false,
@@ -732,7 +739,8 @@ export function EditorWorkspacePanelFrame({
       </EditorFloatingPanel>
     );
 
-    return floatingLayer ? createPortal(panel, floatingLayer) : panel;
+    const portalTarget = isCompactWorkflow && compactModalHost ? compactModalHost : floatingLayer;
+    return portalTarget ? createPortal(panel, portalTarget) : panel;
   }
 
   const side = placement === 'docked-left' ? 'left' : 'right';

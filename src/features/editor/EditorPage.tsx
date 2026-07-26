@@ -8,6 +8,7 @@ import {
   type PointerEvent,
   type ReactNode
 } from 'react';
+import { createPortal } from 'react-dom';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 import { useAppRail } from '@/app/AppRailContext';
@@ -655,7 +656,7 @@ export function EditorPage({
   onSaveEditorDraft,
   onStatusMessage
 }: EditorPageProps) {
-  const { compactDrawer, isCompactViewport, setCompactDrawer, setHeaderContent, setRailCollapsed, setRailContent } = useAppRail();
+  const { compactDrawer, compactModalHost, isCompactViewport, setCompactDrawer, setHeaderContent, setRailCollapsed, setRailContent } = useAppRail();
   const [initialWorkspaceLayout] = useState(() => readInitialWorkspaceLayout(program?.model));
   const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
@@ -1317,6 +1318,10 @@ export function EditorPage({
     setRailContent(editorRailContent);
     return () => setRailContent(null);
   }, [editorRailContent, setRailContent]);
+
+  useEffect(() => {
+    if (!activeWorkflowSession && compactDrawer === 'workflow') setCompactDrawer(null);
+  }, [activeWorkflowSession, compactDrawer, setCompactDrawer]);
 
   useEffect(() => {
     onProgramTreeActionReady?.(openEditorWorkflowForTarget);
@@ -3016,6 +3021,7 @@ export function EditorPage({
         compactDrawerOpen={
           isCompactViewport && activeWorkflowSession?.panelId === panelId && compactDrawer === 'workflow'
         }
+        compactModalHost={compactModalHost}
         isCompactWorkflow={isCompactViewport && activeWorkflowSession?.panelId === panelId}
         onCloseCompactDrawer={() => {
           setCompactDrawer(null);
@@ -3441,8 +3447,8 @@ export function EditorPage({
         onLanguageChange={handleGuideLanguageChange}
         open={guideOpen}
       />
-      {activeWorkflowSession && (
-        <EditorWorkflowTransitionDialog
+      {activeWorkflowSession && (() => {
+        const transitionDialog = <EditorWorkflowTransitionDialog
           nextWorkflowLabel={
             workflowTransition?.kind === 'held' && workflowTransition.request.kind === 'open'
               ? EDITOR_COMMAND_REGISTRY.get(workflowTransition.request.commandId)?.label ?? null
@@ -3454,8 +3460,11 @@ export function EditorPage({
           open={workflowTransition?.kind === 'held'}
           saveAvailability={activeWorkflowSession.saveAvailability}
           workflowLabel={activeWorkflowSession.label}
-        />
-      )}
+        />;
+        return isCompactViewport && compactModalHost
+          ? createPortal(transitionDialog, compactModalHost)
+          : transitionDialog;
+      })()}
       <div data-editor-floating-layer />
       <div className="hidden" data-editor-workspace-panel-registry>
         {pathDocumentDraft && renderPathNavigatorPanel(pathDocumentDraft)}

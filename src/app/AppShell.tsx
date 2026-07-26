@@ -63,6 +63,7 @@ export function AppShell({
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const [railContent, setRailContent] = useState<AppRailContent | null>(null);
   const [compactDrawer, setCompactDrawer] = useState<EditorCompactDrawer>(null);
+  const [compactModalHost, setCompactModalHost] = useState<HTMLDivElement | null>(null);
   const [isCompactViewport, setIsCompactViewport] = useState(() => window.innerWidth < 768);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isReady = workbenchStatus === 'ready' && connectedWorkbench;
@@ -103,6 +104,7 @@ export function AppShell({
       )}`
     : 'No output';
   const lineEnding = connectedWorkbench?.manifest.output.lineEnding.toUpperCase() ?? 'No line ending';
+  const compactModalOpen = compactDrawer !== null;
 
   useEffect(() => {
     if (!window.matchMedia) {
@@ -123,6 +125,15 @@ export function AppShell({
     media.addEventListener('change', updateCompactViewport);
     return () => media.removeEventListener('change', updateCompactViewport);
   }, []);
+
+  useEffect(() => {
+    if (
+      !railContent ||
+      (compactDrawer === 'upid' && !railContent.isPathProject)
+    ) {
+      setCompactDrawer(null);
+    }
+  }, [compactDrawer, railContent]);
 
   function handleSidebarResizeStart(event: PointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -155,8 +166,10 @@ export function AppShell({
       data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'}
     >
       <header
+        aria-hidden={compactModalOpen ? true : undefined}
         className="flex h-10 shrink-0 items-center border-b border-border bg-[#11171b] px-2"
         data-app-header
+        inert={compactModalOpen ? true : undefined}
       >
         {headerContent ?? (
           <div className="mr-4 flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground">
@@ -194,10 +207,12 @@ export function AppShell({
       </header>
 
       <div
+        aria-hidden={compactModalOpen ? true : undefined}
         className="grid min-h-0 flex-1 transition-[grid-template-columns]"
         data-app-workspace-grid
         data-has-rail={hasRailContent ? 'true' : 'false'}
         data-sidebar-collapsed={sidebarCollapsed ? 'true' : 'false'}
+        inert={compactModalOpen ? true : undefined}
         style={
           {
             '--app-rail-width': `${railWidth}px`,
@@ -261,10 +276,9 @@ export function AppShell({
           />
         )}
 
-        <AppRailProvider value={{ compactDrawer, isCompactViewport, setCompactDrawer, setHeaderContent, setRailCollapsed: setSidebarCollapsed, setRailContent }}>
+        <AppRailProvider value={{ compactDrawer, compactModalHost, isCompactViewport, setCompactDrawer, setHeaderContent, setRailCollapsed: setSidebarCollapsed, setRailContent }}>
           <main
             className="min-h-0 min-w-0 overflow-hidden"
-            inert={compactDrawer === 'upid' ? true : undefined}
           >
             {children}
           </main>
@@ -272,15 +286,18 @@ export function AppShell({
             drawer={compactDrawer}
             hasActiveWorkflow={Boolean(railContent?.hasActiveWorkflow)}
             hasUpidRail={Boolean(railContent?.isPathProject)}
+            modalHost={compactModalHost}
             onDrawerChange={setCompactDrawer}
             upidContent={railContent?.expanded ?? null}
           />
         </AppRailProvider>
       </div>
       <footer
+        aria-hidden={compactModalOpen ? true : undefined}
         aria-label="Application status"
         className="technical-value flex h-6 shrink-0 items-center gap-3 overflow-hidden border-t border-border bg-[#11171b] px-3 text-[10px] text-muted-foreground"
         data-app-status-bar
+        inert={compactModalOpen ? true : undefined}
       >
         <span className="truncate text-foreground" title={activeStorageLabel}>
           {activeStorageLabel}
@@ -325,6 +342,7 @@ export function AppShell({
         storageWarningMessage={storageWarningMessage}
         workbenchStatus={workbenchStatus}
       />
+      <div data-editor-compact-modal-host ref={setCompactModalHost} />
     </div>
   );
 }

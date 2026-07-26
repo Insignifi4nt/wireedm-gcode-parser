@@ -191,7 +191,6 @@ test('compact path editor routes program-tree edits through mutually exclusive U
   const workflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
   await expect(upidDrawer).toHaveCount(0);
   await expect(workflowDrawer).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Open active workflow' })).toBeVisible();
 
   const entryX = workflowDrawer.getByRole('textbox', { name: 'Entry X' });
   await entryX.fill('5');
@@ -205,6 +204,88 @@ test('compact path editor routes program-tree edits through mutually exclusive U
   await expect(workflowDrawer).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Open active workflow' })).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(767);
+});
+
+test('compact dirty program-tree transitions stay reachable before changing drawers', async ({ page }) => {
+  await page.setViewportSize({ width: 767, height: 800 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'compact-dirty-transition.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  await page.getByRole('button', { name: 'Open UPID rail' }).click();
+  await page.getByRole('dialog', { name: 'UPID rail' })
+    .getByRole('button', { name: 'Entry / lead-in · None' }).click();
+  const workflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
+  await workflowDrawer.getByRole('textbox', { name: 'Entry X' }).fill('5');
+  await workflowDrawer.getByRole('textbox', { name: 'Entry Y' }).fill('6');
+  await workflowDrawer.getByRole('button', { name: 'Close Entry / Exit drawer' }).click();
+
+  await page.getByRole('button', { name: 'Open UPID rail' }).click();
+  const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
+  await upidDrawer.getByRole('button', { name: 'Exit / lead-out · None' }).click();
+
+  const transition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
+  await expect(transition).toBeVisible();
+  await transition.getByRole('button', { name: 'Dismiss workflow transition' }).click();
+  await expect(transition).toHaveCount(0);
+  await expect(upidDrawer).toBeVisible();
+
+  await upidDrawer.getByRole('button', { name: 'Exit / lead-out · None' }).click();
+  await page.getByRole('dialog', { name: 'Unsaved workflow changes' })
+    .getByRole('button', { name: 'Discard' }).click();
+  const reopenedWorkflow = page.getByRole('dialog', { name: 'Entry / Exit' });
+  await expect(reopenedWorkflow).toBeVisible();
+  await reopenedWorkflow.getByRole('textbox', { name: 'Entry X' }).fill('7');
+  await reopenedWorkflow.getByRole('textbox', { name: 'Entry Y' }).fill('8');
+  await reopenedWorkflow.getByRole('button', { name: 'Set straight entry' }).click();
+  await reopenedWorkflow.getByRole('button', { name: 'Close Entry / Exit drawer' }).click();
+
+  await page.getByRole('button', { name: 'Open UPID rail' }).click();
+  await page.getByRole('dialog', { name: 'UPID rail' })
+    .getByRole('button', { name: /Entry \/ lead-in/ }).click();
+  const saveTransition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
+  await expect(saveTransition.getByRole('button', { name: 'Save' })).toBeEnabled();
+  await saveTransition.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('dialog', { name: 'Entry / Exit' })).toBeVisible();
+});
+
+test('compact modal host contains shell chrome and clears its owner when the editor unmounts', async ({ page }) => {
+  await page.setViewportSize({ width: 767, height: 800 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'compact-modal-unmount.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  await page.getByRole('button', { name: 'Open UPID rail' }).click();
+  const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
+  await expect(upidDrawer).toBeVisible();
+  for (const selector of ['[data-app-header]', '[data-app-workspace-grid]', '[data-app-status-bar]']) {
+    await expect(page.locator(selector)).toHaveAttribute('inert', '');
+  }
+  await page.keyboard.press('Tab');
+  expect(await page.evaluate(() => {
+    const header = document.querySelector('[data-app-header]');
+    return !header?.contains(document.activeElement);
+  })).toBe(true);
+  await upidDrawer.getByRole('button', { name: 'Close UPID rail' }).click();
+  await expect(page.getByRole('button', { name: 'Open UPID rail' })).toBeFocused();
+  await page.getByRole('button', { name: 'Open UPID rail' }).click();
+
+  await page.evaluate(() => {
+    document.querySelector<HTMLButtonElement>('[data-app-header] button[aria-label="Back to Dashboard"]')?.click();
+  });
+  await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('[data-app-header]')).not.toHaveAttribute('inert', '');
 });
 
 for (const viewport of [

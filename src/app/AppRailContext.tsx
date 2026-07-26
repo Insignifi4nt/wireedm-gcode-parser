@@ -18,6 +18,7 @@ export interface AppRailContent {
 
 interface AppRailContextValue {
   compactDrawer: EditorCompactDrawer;
+  compactModalHost: HTMLElement | null;
   isCompactViewport: boolean;
   setCompactDrawer: Dispatch<SetStateAction<EditorCompactDrawer>>;
   setHeaderContent: Dispatch<SetStateAction<ReactNode | null>>;

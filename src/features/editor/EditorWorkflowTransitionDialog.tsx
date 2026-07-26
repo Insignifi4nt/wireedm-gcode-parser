@@ -68,7 +68,7 @@ export function EditorWorkflowTransitionDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4">
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/55 p-4">
       <div
         aria-describedby="editor-workflow-transition-description"
         aria-labelledby="editor-workflow-transition-title"
