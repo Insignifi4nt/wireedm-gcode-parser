@@ -259,6 +259,59 @@ describe('EditorEntryExitPanel', () => {
     expect(onOpenProjectMachine).toHaveBeenCalledOnce();
   });
 
+  it('names and routes the actual contour-start owner when another operation blocks posting', async () => {
+    const machine = explicitLinearMachine();
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+        { type: 'line', layer: 'REF', start: { x: 5.2, y: -2 }, end: { x: 5.2, y: -0.5 } },
+        { type: 'circle', layer: 'CUT', center: { x: 30, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const blockedOperation = document.plan.operations.find(
+      (operation) => operation.closed && operation.startPoint.x < 10
+    )!;
+    const selectedOperation = document.plan.operations.find(
+      (operation) => operation.closed && operation.startPoint.x > 10
+    )!;
+    const onOpenContourStart = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorEntryExitPanel
+          canvasPickMode={null}
+          disabled={false}
+          document={document}
+          machine={machine}
+          onCanvasPickModeChange={vi.fn()}
+          onOpenContourStart={onOpenContourStart}
+          onOpenProjectMachine={vi.fn()}
+          onSelectOperation={vi.fn()}
+          onSetCircleCenterEntry={vi.fn()}
+          onSetManualEntry={vi.fn()}
+          onSetManualExit={vi.fn()}
+          onSetNoEntry={vi.fn()}
+          onSetNoExit={vi.fn()}
+          selectedOperationId={selectedOperation.id}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-entry-exit-generated-blocker]')?.textContent)
+      .toContain(`Blocked by ${blockedOperation.displayName}`);
+    expect(container.querySelector(
+      'button[aria-label="Open Project Machine for generated transition"]'
+    )).toBeNull();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Open Contour Start for generated transition"]'
+      )?.click();
+    });
+    expect(onOpenContourStart).toHaveBeenCalledWith(blockedOperation.id);
+  });
+
   it('keeps authored controls for a centerline operation on the same explicit-linear machine', async () => {
     const machine = explicitLinearMachine();
     const initialized = initializeProjectCompensationIntents(

@@ -4,7 +4,10 @@ import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pa
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
-import { prepareUpidMachinePost } from '@/domain/post/upidMachinePost';
+import {
+  prepareUpidMachinePost,
+  type UpidMachinePostPreparationIssue
+} from '@/domain/post/upidMachinePost';
 import { robofilV2PostEnvelopeIsReady } from '@/domain/post/verifiedRobofilPostEnvelope';
 import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 import type { MachineProfile } from '@/domain/workbench/types';
@@ -64,6 +67,22 @@ export function EditorEntryExitPanel({
     resolveOperationTransitionOwnership(selected, machine) === 'generated-explicit-linear'
       ? readGeneratedTransitionPresentation(document, selected.id, machine)
       : null;
+  const generatedContourStartOperationId =
+    generatedPresentation?.status === 'ready'
+      ? selected?.id
+      : generatedPresentation?.issue?.scope === 'contour-start'
+        ? generatedPresentation.issue.sourceOperationId
+        : undefined;
+  const generatedProjectMachineOwned = Boolean(
+    generatedPresentation?.status === 'ready' ||
+    (
+      generatedPresentation?.status === 'blocked' &&
+      (
+        !generatedPresentation.issue?.sourceOperationId ||
+        generatedPresentation.issue.scope === 'machine-setup'
+      )
+    )
+  );
   const [entryX, setEntryX] = useState('');
   const [entryY, setEntryY] = useState('');
   const [exitX, setExitX] = useState('');
@@ -170,18 +189,18 @@ export function EditorEntryExitPanel({
             </p>
           )}
           <div className="grid grid-cols-2 gap-1">
-            {onOpenContourStart && (
+            {onOpenContourStart && generatedContourStartOperationId && (
               <button
                 aria-label="Open Contour Start for generated transition"
                 className="h-7 border border-border bg-background px-1.5"
                 disabled={disabled}
-                onClick={() => onOpenContourStart(selected.id)}
+                onClick={() => onOpenContourStart(generatedContourStartOperationId)}
                 type="button"
               >
                 Contour Start
               </button>
             )}
-            {onOpenProjectMachine && (
+            {onOpenProjectMachine && generatedProjectMachineOwned && (
               <button
                 aria-label="Open Project Machine for generated transition"
                 className="h-7 border border-border bg-background px-1.5"
@@ -345,7 +364,11 @@ type GeneratedTransitionPresentation =
         leadOut: { start: Point2; end: Point2 };
       }>;
     }
-  | { status: 'blocked'; message: string };
+  | {
+      status: 'blocked';
+      issue: UpidMachinePostPreparationIssue | null;
+      message: string;
+    };
 
 function readGeneratedTransitionPresentation(
   document: PathPlanningDocument,
@@ -357,21 +380,32 @@ function readGeneratedTransitionPresentation(
     const issue = preparation.issues.find((candidate) =>
       candidate.sourceOperationId === sourceOperationId ||
       candidate.effectiveOperationId === sourceOperationId
-    );
+    ) ?? preparation.issues[0] ?? null;
     const diagnostic = preparation.result.diagnostics.find(
       (candidate) => !issue || candidate.details?.reason === issue.reason
     ) ?? preparation.result.diagnostics[0];
+    const owningOperation = issue?.sourceOperationId
+      ? document.plan.operations.find(
+          (operation) => operation.id === issue.sourceOperationId
+        )
+      : null;
+    const ownerLabel = owningOperation?.displayName ?? issue?.sourceOperationId;
+    const diagnosticMessage =
+      diagnostic?.message ??
+      `The generated transition is unavailable: ${issue?.reason ?? preparation.reason ?? 'post preparation blocked'}.`;
     return {
       status: 'blocked',
-      message:
-        diagnostic?.message ??
-        `The generated transition is unavailable: ${issue?.reason ?? preparation.reason ?? 'post preparation blocked'}.`
+      issue,
+      message: ownerLabel
+        ? `Blocked by ${ownerLabel}: ${diagnosticMessage}`
+        : diagnosticMessage
     };
   }
 
   if (preparation.route !== 'explicit-linear') {
     return {
       status: 'blocked',
+      issue: null,
       message: 'The selected post does not provide an explicit-linear generated transition.'
     };
   }
@@ -393,6 +427,7 @@ function readGeneratedTransitionPresentation(
     ? { status: 'ready', transitions }
     : {
         status: 'blocked',
+        issue: null,
         message: 'The generated transition is unavailable for this operation.'
       };
 }
