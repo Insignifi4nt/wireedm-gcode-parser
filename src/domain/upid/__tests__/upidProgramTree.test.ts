@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { initializeProjectCompensationIntents } from '@/domain/compensation/intent';
+import {
+  initializeProjectCompensationIntents,
+  setManualCompensationIntent
+} from '@/domain/compensation/intent';
 import {
   createCharmillesRobofil100V2CandidateProfile,
   createVerifiedCharmillesRobofil100Profile,
@@ -99,6 +102,50 @@ describe('UPID program tree projection', () => {
     )).toBe(true);
     expect(tree.programStatus).toBe('ready');
     expect(tree.status).toBe('blocked');
+  });
+
+  it('does not duplicate an unsupported machine blocker onto compensated Cut Paths', () => {
+    const machine = createDefaultMachineProfile();
+    let document = createUpidFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    document.geometryBasis = 'finished-contour';
+    document = setManualCompensationIntent(
+      document,
+      document.plan.operations[0].id,
+      'outside'
+    )!;
+    document = setManualInitialWirePosition(document, { x: 0, y: 0 })!;
+    const operation = document.plan.operations[0];
+
+    const posted = postUpidForMachine(document, machine);
+    const tree = buildUpidProgramTree(document, machine);
+    const machineSetup = tree.sourceSetup.find(
+      (node) => node.editTarget?.kind === 'machine-setup'
+    );
+    const cutPath = tree.operations[0].children.find(
+      (node) => node.label === 'Cut path'
+    );
+
+    expect(posted.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({ reason: 'unsupported-machine-profile' })
+    }));
+    expect(machineSetup).toMatchObject({
+      status: 'blocked',
+      statusReason: 'unsupported-machine-profile',
+      statusActionTarget: { kind: 'machine-setup' }
+    });
+    expect(tree.sourceSetupStatus).toBe('blocked');
+    expect(tree.sourceSetupStatusReason).toBe('unsupported-machine-profile');
+    expect(tree.sourceSetupStatusActionTarget).toEqual({ kind: 'machine-setup' });
+    expect(cutPath).toMatchObject({
+      status: 'ready',
+      statusReason: undefined,
+      statusActionTarget: undefined
+    });
+    expect(tree.operations[0].status).toBe('ready');
+    expect(tree.programStatus).toBe('ready');
+    expect(tree.programStatusReason).toBeUndefined();
+    expect(tree.status).toBe('blocked');
+    expect(operation.compensationIntent?.mode).toBe('controller');
   });
 
   it('keeps an operation-specific compensation blocker on its Cut Path', () => {

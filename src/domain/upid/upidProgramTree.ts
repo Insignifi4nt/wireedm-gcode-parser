@@ -95,6 +95,13 @@ export function buildUpidProgramTree(
   );
   const postPreparation = prepareUpidMachinePost(executionDocument, machine);
   const postIssues = postPreparation.issues;
+  const authoritativeGlobalPostBlocker = postIssues.some((issue) =>
+    !issue.sourceOperationId &&
+    (
+      issue.scope === 'machine-setup' ||
+      issue.scope === 'geometry-setup'
+    )
+  );
   const sourceSetup = applyPreparationIssuesToSourceSetup(
     buildSourceSetupNodes(
       executionDocument,
@@ -126,7 +133,8 @@ export function buildUpidProgramTree(
         projection.failureReason,
         projection.effectiveSegments,
         projection.postIssues,
-        effectiveExecutionDocument
+        effectiveExecutionDocument,
+        authoritativeGlobalPostBlocker
       );
     });
   const sourceSetupMetadata = rollUpNodeStatusMetadata(sourceSetup);
@@ -281,7 +289,8 @@ function buildOperationNode(
   derivationFailure: Extract<ActiveMachiningDerivation, { status: 'blocked' }>['reason'] | undefined,
   effectiveSegments: PathPlanningDocument['segments'],
   postIssues: readonly UpidMachinePostPreparationIssue[],
-  effectiveExecutionDocument: PathPlanningDocument | undefined
+  effectiveExecutionDocument: PathPlanningDocument | undefined,
+  authoritativeGlobalPostBlocker: boolean
 ): UpidProgramTreeNode {
   const stopNodes = buildStopNodes(
     document,
@@ -319,7 +328,8 @@ function buildOperationNode(
     effectiveSegments,
     stopsByPlacement.beforeOperationEnd,
     derivationFailure,
-    postIssues
+    postIssues,
+    authoritativeGlobalPostBlocker
   );
   const operationKey = operationTreeKey(operation.id);
   const diagnosticNodes = buildDiagnosticNodes(diagnostics, operationKey);
@@ -463,7 +473,8 @@ function buildCutPathNode(
   effectiveSegments: PathPlanningDocument['segments'],
   stopNodes: UpidProgramTreeNode[],
   derivationFailure: Extract<ActiveMachiningDerivation, { status: 'blocked' }>['reason'] | undefined,
-  postIssues: readonly UpidMachinePostPreparationIssue[]
+  postIssues: readonly UpidMachinePostPreparationIssue[],
+  authoritativeGlobalPostBlocker: boolean
 ): UpidProgramTreeNode {
   const contourStart: UpidProgramTreeNode = {
     treeKey: `${operationTreeKey(operation.id)}:contour-start`,
@@ -487,14 +498,21 @@ function buildCutPathNode(
         machine,
         operation,
         effectiveOperation,
-        postIssues
+        postIssues,
+        authoritativeGlobalPostBlocker
       )
     );
   const inactiveSpans = buildInactiveParticipationNodes(document, operation);
   const pathStatuses = effectiveOperations.length === 0 && !derivationFailure
     ? ['inactive' as const]
     : effectiveOperations.map((effectiveOperation) =>
-      resolveCutPathStatus(effectiveDocument, machine, effectiveOperation, postIssues)
+      resolveCutPathStatus(
+        effectiveDocument,
+        machine,
+        effectiveOperation,
+        postIssues,
+        authoritativeGlobalPostBlocker
+      )
     );
   const status = derivationFailure
     ? 'blocked'
@@ -542,14 +560,16 @@ function buildEffectiveMachiningPathNode(
   machine: MachineProfile,
   sourceOperation: PathOperation,
   effectiveOperation: PathOperation,
-  postIssues: readonly UpidMachinePostPreparationIssue[]
+  postIssues: readonly UpidMachinePostPreparationIssue[],
+  authoritativeGlobalPostBlocker: boolean
 ): UpidProgramTreeNode {
   const intent = effectiveOperation.machiningIntent!;
   const resolution = resolveCutPathStatus(
     document,
     machine,
     effectiveOperation,
-    postIssues
+    postIssues,
+    authoritativeGlobalPostBlocker
   );
   const status = typeof resolution === 'string' ? resolution : resolution.status;
   const statusReason = typeof resolution === 'string' ? undefined : resolution.reason;
@@ -850,7 +870,8 @@ function resolveCutPathStatus(
   document: PathPlanningDocument,
   machine: MachineProfile,
   operation: PathOperation,
-  postIssues: readonly UpidMachinePostPreparationIssue[]
+  postIssues: readonly UpidMachinePostPreparationIssue[],
+  authoritativeGlobalPostBlocker: boolean
 ): UpidProgramTreeStatus | { status: 'blocked'; reason: string } {
   const postIssue = postIssues.find((issue) =>
     issue.scope === 'cut-path' &&
@@ -862,6 +883,7 @@ function resolveCutPathStatus(
     )
   );
   if (postIssue) return { status: 'blocked', reason: postIssue.reason };
+  if (authoritativeGlobalPostBlocker) return 'ready';
   if (operation.compensationIntent?.mode !== 'controller') return 'ready';
   if (!machine.compensation.supported) {
     return { status: 'blocked', reason: 'compensation-unsupported' };
