@@ -23,6 +23,7 @@ import {
 
 import { type PathMirrorAxis } from '@/domain/path-editor/pathDocumentOperations';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
+import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
 import { orientedSegmentEnd, orientedSegmentStart, requiredSegment, segmentMap } from '@/domain/path-intel/segments';
 import type {
   Bounds2,
@@ -56,6 +57,7 @@ import {
   type UpidProjectRail,
   type UpidProjectRailTreeNode
 } from '@/domain/upid/projectRail';
+import type { MachineProfile } from '@/domain/workbench/types';
 import {
   readBoundsAnchorPoint,
   readPathDocumentBounds,
@@ -110,6 +112,7 @@ interface EditorPathNavigatorPanelProps {
   hoveredPathElement: EditorPathElementRef | null;
   hoverAssistEnabled: boolean;
   isSaving: boolean;
+  machineProfile?: MachineProfile | null;
   pathDocument: PathPlanningDocument;
   expandedPathElementIds: Record<string, boolean>;
   renderWorkspacePanel?: (id: string, title: string, children: ReactNode, options?: { fill?: boolean }) => ReactNode;
@@ -152,6 +155,7 @@ export function EditorPathNavigatorPanel({
   hoveredPathElement,
   hoverAssistEnabled,
   isSaving,
+  machineProfile = null,
   pathDocument,
   expandedPathElementIds,
   latestMeasurementPoint,
@@ -1310,6 +1314,7 @@ export function EditorPathNavigatorPanel({
               onSelectPathElement,
               isPathElementExpanded,
               isSaving,
+              machineProfile,
               pathDocument,
               selectedPathElement,
               selectedPathOperationId,
@@ -1929,6 +1934,7 @@ function renderContourTreeNode({
   expandedSegmentDetailIds,
   hoveredPathElement,
   isSaving,
+  machineProfile,
   node,
   onHoverPathElement,
   onSelectPathElement,
@@ -1945,6 +1951,7 @@ function renderContourTreeNode({
   hoveredPathElement: EditorPathElementRef | null;
   isSaving: boolean;
   isPathElementExpanded: (pathElementId: string) => boolean;
+  machineProfile: MachineProfile | null;
   node: UpidProjectRailTreeNode;
   onHoverPathElement: (element: EditorPathElementRef | null) => void;
   onSelectPathElement: (element: EditorPathElementRef) => void;
@@ -2120,10 +2127,17 @@ function renderContourTreeNode({
             <span>{element.segmentRefs.length} steps</span>
           </div>
           {(() => {
-            const entry = pathDocument.plan.operations.find(
+            const operation = pathDocument.plan.operations.find(
               (operation) => operation.id === element.operationId
-            )?.transitions?.entry;
+            );
+            const entry = operation?.transitions?.entry;
+            const transitionIsGenerated =
+              operation &&
+              machineProfile &&
+              resolveOperationTransitionOwnership(operation, machineProfile) ===
+                'generated-explicit-linear';
             return entry && entry.strategy !== 'none'
+              && !transitionIsGenerated
               ? renderLeadInRow(
                   element,
                   entry,
@@ -2169,6 +2183,7 @@ function renderContourTreeNode({
               expandedSegmentDetailIds,
               hoveredPathElement,
               isSaving,
+              machineProfile,
               node: child,
               onHoverPathElement,
               onSelectPathElement,

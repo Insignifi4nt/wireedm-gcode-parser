@@ -3,9 +3,14 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  createBlankMachineProfile,
   createCharmillesRobofil100V2CandidateProfile,
   markMachineProfileUserVerified
 } from '@/domain/machine/machineProfiles';
+import {
+  initializeProjectCompensationIntents,
+  setManualCompensationIntent
+} from '@/domain/compensation/intent';
 import { setCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
@@ -194,10 +199,166 @@ describe('EditorEntryExitPanel', () => {
     expect(onSetNoEntry).toHaveBeenCalledWith(operationId);
     expect(onSetNoExit).toHaveBeenCalledWith(operationId);
   });
+
+  it('shows authoritative generated transitions read-only with their causal workflow actions', async () => {
+    const machine = explicitLinearMachine();
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const document = setCircleOperationCenterPierceLeadIn(
+      initialized,
+      initialized.plan.operations[0].id
+    )!;
+    const onOpenProjectMachine = vi.fn();
+    const onOpenContourStart = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorEntryExitPanel
+          canvasPickMode={null}
+          disabled={false}
+          document={document}
+          machine={machine}
+          onCanvasPickModeChange={vi.fn()}
+          onOpenContourStart={onOpenContourStart}
+          onOpenProjectMachine={onOpenProjectMachine}
+          onSelectOperation={vi.fn()}
+          onSetCircleCenterEntry={vi.fn()}
+          onSetManualEntry={vi.fn()}
+          onSetManualExit={vi.fn()}
+          onSetNoEntry={vi.fn()}
+          onSetNoExit={vi.fn()}
+          selectedOperationId={document.plan.operations[0].id}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-entry-exit-generated]')).not.toBeNull();
+    expect(container.querySelector('[data-entry-exit-generated-lead-in]')?.textContent)
+      .toMatch(/X.+Y.+→ X.+Y/);
+    expect(container.querySelector('[data-entry-exit-generated-lead-out]')?.textContent)
+      .toMatch(/X.+Y.+→ X.+Y/);
+    expect(container.textContent).toContain('Generated from Contour Start and Project Machine');
+    expect(container.querySelector('input[aria-label="Entry X"]')).toBeNull();
+    expect(container.querySelector('input[aria-label="Exit X"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Pick entry point on canvas"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Use reviewed no entry"]')).toBeNull();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Open Contour Start for generated transition"]'
+      )?.click();
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Open Project Machine for generated transition"]'
+      )?.click();
+    });
+    expect(onOpenContourStart).toHaveBeenCalledWith(document.plan.operations[0].id);
+    expect(onOpenProjectMachine).toHaveBeenCalledOnce();
+  });
+
+  it('keeps authored controls for a centerline operation on the same explicit-linear machine', async () => {
+    const machine = explicitLinearMachine();
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+    const operationId = initialized.plan.operations[0].id;
+    const document = setManualCompensationIntent(initialized, operationId, 'centerline')!;
+
+    await act(async () => {
+      root.render(
+        <EditorEntryExitPanel
+          canvasPickMode={null}
+          disabled={false}
+          document={document}
+          machine={machine}
+          onCanvasPickModeChange={vi.fn()}
+          onSelectOperation={vi.fn()}
+          onSetCircleCenterEntry={vi.fn()}
+          onSetManualEntry={vi.fn()}
+          onSetManualExit={vi.fn()}
+          onSetNoEntry={vi.fn()}
+          onSetNoExit={vi.fn()}
+          selectedOperationId={operationId}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-entry-exit-generated]')).toBeNull();
+    expect(container.querySelector('input[aria-label="Entry X"]')).not.toBeNull();
+    expect(container.querySelector('input[aria-label="Exit X"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Pick entry point on canvas"]')).not.toBeNull();
+  });
+
+  it('shows the authoritative post blocker instead of editable stored transitions', async () => {
+    const editableMachine = explicitLinearMachine();
+    editableMachine.compensation.validationLeadLengthMm = 0.0004;
+    const machine = markMachineProfileUserVerified(editableMachine);
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+      ]),
+      machine
+    );
+
+    await act(async () => {
+      root.render(
+        <EditorEntryExitPanel
+          canvasPickMode={null}
+          disabled={false}
+          document={document}
+          machine={machine}
+          onCanvasPickModeChange={vi.fn()}
+          onSelectOperation={vi.fn()}
+          onSetCircleCenterEntry={vi.fn()}
+          onSetManualEntry={vi.fn()}
+          onSetManualExit={vi.fn()}
+          onSetNoEntry={vi.fn()}
+          onSetNoExit={vi.fn()}
+          selectedOperationId={document.plan.operations[0].id}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-entry-exit-generated-blocker]')?.textContent)
+      .toContain('precision');
+    expect(container.querySelector('input[aria-label="Entry X"]')).toBeNull();
+    expect(container.querySelector('input[aria-label="Exit X"]')).toBeNull();
+  });
 });
 
 function setInput(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
   setter?.call(input, value);
   input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function explicitLinearMachine() {
+  const machine = createBlankMachineProfile('explicit-linear-panel');
+  machine.controller.family = 'generic-iso';
+  machine.controller.postVersion = 1;
+  machine.controller.blockFormatting = 'spaced';
+  machine.controller.coordinateSystem = 'template-managed';
+  machine.controller.unitsCode = 'omit';
+  machine.controller.planeCode = 'omit';
+  machine.controller.workOffsetCode = 'template-managed';
+  machine.controller.programEnd = 'template-managed';
+  machine.compensation = {
+    supported: true,
+    enabledByDefault: true,
+    offsetSelection: { address: 'D', index: 0 },
+    activation: 'linear-lead',
+    cancellation: 'linear-lead-out',
+    lifecycleScope: 'operation',
+    preActivationCodes: [],
+    validationLeadLengthMm: 2,
+    expectedMaximumOffsetMm: 0.25
+  };
+  machine.templates = { header: 'G90 G21 G17', footer: '' };
+  return markMachineProfileUserVerified(machine);
 }

@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
+import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
+import { prepareUpidMachinePost } from '@/domain/post/upidMachinePost';
 import { robofilV2PostEnvelopeIsReady } from '@/domain/post/verifiedRobofilPostEnvelope';
 import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 import type { MachineProfile } from '@/domain/workbench/types';
@@ -17,6 +19,8 @@ interface EditorEntryExitPanelProps {
     operationId: string
   ) => void;
   onDraftChange?: (source: 'entry' | 'exit') => void;
+  onOpenContourStart?: (operationId: string) => void;
+  onOpenProjectMachine?: () => void;
   onSelectOperation: (operationId: string) => void;
   onSetCircleCenterEntry: (operationId: string) => void;
   onSetManualEntry: (
@@ -37,6 +41,8 @@ export function EditorEntryExitPanel({
   machine,
   onCanvasPickModeChange,
   onDraftChange,
+  onOpenContourStart,
+  onOpenProjectMachine,
   onSelectOperation,
   onSetCircleCenterEntry,
   onSetManualEntry,
@@ -54,6 +60,10 @@ export function EditorEntryExitPanel({
     (operation) => operation.id === selectedOperationId
   ) ?? operations[0] ?? null;
   const transitions = selected ? readOperationTransitions(selected) : {};
+  const generatedPresentation = selected &&
+    resolveOperationTransitionOwnership(selected, machine) === 'generated-explicit-linear'
+      ? readGeneratedTransitionPresentation(document, selected.id, machine)
+      : null;
   const [entryX, setEntryX] = useState('');
   const [entryY, setEntryY] = useState('');
   const [exitX, setExitX] = useState('');
@@ -118,6 +128,74 @@ export function EditorEntryExitPanel({
         </select>
       </label>
 
+      {generatedPresentation ? (
+        <section
+          className="grid gap-2 border border-cyan-500/45 bg-cyan-500/5 p-2"
+          data-entry-exit-generated
+        >
+          <div>
+            <div className="font-semibold uppercase text-cyan-200">
+              Generated explicit-linear transition
+            </div>
+            <p className="mt-1 leading-4 text-muted-foreground">
+              Generated from Contour Start and Project Machine when the program is posted. Stored
+              Entry / Exit overrides are ignored for this compensated operation.
+            </p>
+          </div>
+          {generatedPresentation.status === 'ready' ? (
+            <div className="grid gap-2">
+              {generatedPresentation.transitions.map((transition, index) => (
+                <dl
+                  className="grid grid-cols-[58px_minmax(0,1fr)] gap-x-2 gap-y-1 border border-border bg-background/40 p-2"
+                  data-entry-exit-generated-group={index + 1}
+                  key={`${transition.operationId}-${index}`}
+                >
+                  <dt className="text-muted-foreground">Lead-in</dt>
+                  <dd data-entry-exit-generated-lead-in>
+                    {formatPoint(transition.leadIn.start)} → {formatPoint(transition.leadIn.end)}
+                  </dd>
+                  <dt className="text-muted-foreground">Lead-out</dt>
+                  <dd data-entry-exit-generated-lead-out>
+                    {formatPoint(transition.leadOut.start)} → {formatPoint(transition.leadOut.end)}
+                  </dd>
+                </dl>
+              ))}
+            </div>
+          ) : (
+            <p
+              className="border border-amber-500/50 bg-amber-500/10 p-2 leading-4 text-amber-200"
+              data-entry-exit-generated-blocker
+            >
+              {generatedPresentation.message}
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-1">
+            {onOpenContourStart && (
+              <button
+                aria-label="Open Contour Start for generated transition"
+                className="h-7 border border-border bg-background px-1.5"
+                disabled={disabled}
+                onClick={() => onOpenContourStart(selected.id)}
+                type="button"
+              >
+                Contour Start
+              </button>
+            )}
+            {onOpenProjectMachine && (
+              <button
+                aria-label="Open Project Machine for generated transition"
+                className="h-7 border border-border bg-background px-1.5"
+                disabled={disabled}
+                onClick={onOpenProjectMachine}
+                type="button"
+              >
+                Project Machine
+              </button>
+            )}
+          </div>
+        </section>
+      ) : (
+      <>
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
         <legend className="px-1 uppercase text-muted-foreground">Canvas point picking</legend>
         <p className="text-muted-foreground">
@@ -252,8 +330,71 @@ export function EditorEntryExitPanel({
         </button>
       </fieldset>
 
+      </>
+      )}
     </section>
   );
+}
+
+type GeneratedTransitionPresentation =
+  | {
+      status: 'ready';
+      transitions: Array<{
+        operationId: string;
+        leadIn: { start: Point2; end: Point2 };
+        leadOut: { start: Point2; end: Point2 };
+      }>;
+    }
+  | { status: 'blocked'; message: string };
+
+function readGeneratedTransitionPresentation(
+  document: PathPlanningDocument,
+  sourceOperationId: string,
+  machine: MachineProfile
+): GeneratedTransitionPresentation {
+  const preparation = prepareUpidMachinePost(document, machine);
+  if (preparation.status === 'blocked') {
+    const issue = preparation.issues.find((candidate) =>
+      candidate.sourceOperationId === sourceOperationId ||
+      candidate.effectiveOperationId === sourceOperationId
+    );
+    const diagnostic = preparation.result.diagnostics.find(
+      (candidate) => !issue || candidate.details?.reason === issue.reason
+    ) ?? preparation.result.diagnostics[0];
+    return {
+      status: 'blocked',
+      message:
+        diagnostic?.message ??
+        `The generated transition is unavailable: ${issue?.reason ?? preparation.reason ?? 'post preparation blocked'}.`
+    };
+  }
+
+  if (preparation.route !== 'explicit-linear') {
+    return {
+      status: 'blocked',
+      message: 'The selected post does not provide an explicit-linear generated transition.'
+    };
+  }
+
+  const transitions = preparation.document.plan.operations.flatMap((operation) => {
+    const operationSourceId = operation.machiningIntent?.sourceOperationId ?? operation.id;
+    if (operationSourceId !== sourceOperationId) return [];
+    const transition = preparation.readinessByOperationId.get(operation.id)?.transition;
+    return transition
+      ? [{
+          operationId: operation.id,
+          leadIn: transition.leadIn,
+          leadOut: transition.leadOut
+        }]
+      : [];
+  });
+
+  return transitions.length > 0
+    ? { status: 'ready', transitions }
+    : {
+        status: 'blocked',
+        message: 'The generated transition is unavailable for this operation.'
+      };
 }
 
 function CoordinateInputs({

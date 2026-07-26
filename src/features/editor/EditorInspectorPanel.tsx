@@ -13,6 +13,7 @@ import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { MagnetizeMode } from '@/domain/path-editor/pathPointInference';
 import type { MachineFitResult } from '@/domain/machine/machineFit';
+import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   readUpidManualOverrideRows,
@@ -145,13 +146,21 @@ export function EditorInspectorPanel({
   const selectedPathPoint = selectedPathElementModel
     ? readUpidSelectedPathPoint(pathDocument, selectedPathElementModel, selectedPathElement)
     : null;
-  const selectedPathTravel = selectedPathOperation
+  const selectedOperationTransitionsAreGenerated = Boolean(
+    selectedPathOperation &&
+      machineProfile &&
+      resolveOperationTransitionOwnership(selectedPathOperation, machineProfile) ===
+        'generated-explicit-linear'
+  );
+  const selectedPathTravel = selectedPathOperation && !selectedOperationTransitionsAreGenerated
     ? readUpidSelectedPathTravel(pathDocument, selectedPathOperationIndex, selectedPathElement)
     : null;
   const selectedPathOverrideRows = selectedPathElementModel
     ? readUpidManualOverrideRows(
         selectedPathElementModel.overrides,
         selectedPathOperation?.transitions
+      ).filter(
+        (row) => !selectedOperationTransitionsAreGenerated || row.kind !== 'lead-in'
       )
     : [];
   const selectedPathSource = selectedPathElementModel
