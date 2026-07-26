@@ -25,6 +25,7 @@ import type {
   PathSegment,
   Point2
 } from './types';
+import { orderedPathOperations } from './operationExecutionOrder';
 
 export type GcodePostedMoveKind = 'rapid' | 'cut';
 
@@ -165,6 +166,7 @@ function projectPathPlanToGcode(
   if (!plan || !Array.isArray(plan.operations) || !Array.isArray(segments)) {
     return block('Cannot post because the operation plan or segment collection is invalid.');
   }
+  const operationsInExecutionOrder = orderedPathOperations(plan.operations);
 
   const endpointTolerance = normalizedPostTolerance(
     options.endpointTolerance,
@@ -213,7 +215,7 @@ function projectPathPlanToGcode(
   }
 
   const operationIds = new Set<string>();
-  for (const operation of plan.operations) {
+  for (const operation of operationsInExecutionOrder) {
     const issue = operationIssue(
       operation,
       segmentsById,
@@ -241,7 +243,7 @@ function projectPathPlanToGcode(
     return postedMove;
   };
 
-  for (const operation of plan.operations) {
+  for (const operation of operationsInExecutionOrder) {
     const operationMoves: GcodePostedMove[] = [];
     const appendOperationMove = (
       move: Omit<GcodePostedMove, 'bodyLineIndex' | 'contourId' | 'operationId'>

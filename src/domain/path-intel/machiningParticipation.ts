@@ -21,6 +21,7 @@ import type {
   PathSegment,
   Point2
 } from './types';
+import { orderedPathOperations } from './operationExecutionOrder';
 
 interface SetMachiningSpanInput {
   sourceSegmentId: string;
@@ -154,13 +155,14 @@ export function setMachiningSpanParticipation(
 export function deriveActiveMachiningOperations(
   document: PathPlanningDocument
 ): ActiveMachiningDerivation {
+  const sourceOperations = orderedPathOperations(document.plan.operations);
   const decisions = (document.machiningParticipation?.spans ?? []).filter(
     (span) => span.participation === 'inactive-reference'
   );
   if (decisions.length === 0) {
     return {
       status: 'ready',
-      operations: structuredClone(document.plan.operations),
+      operations: structuredClone(sourceOperations),
       segments: structuredClone(document.segments)
     };
   }
@@ -193,7 +195,7 @@ export function deriveActiveMachiningOperations(
 
   const derivedSegments = new Map<string, PathSegment>();
   const operations: PathOperation[] = [];
-  for (const sourceOperation of document.plan.operations) {
+  for (const sourceOperation of sourceOperations) {
     const slots = sourceOperation.segmentRefs.flatMap((ref) => {
       const source = sourceSegments.get(ref.segmentId);
       if (!source) return [];

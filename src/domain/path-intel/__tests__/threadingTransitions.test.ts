@@ -9,6 +9,23 @@ import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { resolveOperationThreadingTransition } from '../threadingTransitions';
 
 describe('operation threading transitions', () => {
+  it('finds the predecessor by orderIndex for an unsorted imported plan', () => {
+    const document = twoClosedContours();
+    const [first, second] = document.plan.operations;
+    document.plan.operations = [second, first];
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+
+    expect(resolveOperationThreadingTransition(document, first.id, machine))
+      .toMatchObject({
+        status: 'blocked',
+        reason: 'initial-operation-has-no-rethread'
+      });
+    expect(resolveOperationThreadingTransition(document, second.id, machine))
+      .toMatchObject({ status: 'ready' });
+  });
+
   it('defaults a legacy later operation to manual rethreading', () => {
     const document = twoClosedContours();
     const machine = markMachineProfileUserVerified(

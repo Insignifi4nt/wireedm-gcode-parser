@@ -1,11 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createCharmillesRobofil100V2CandidateProfile } from '@/domain/machine/machineProfiles';
+import { initializeProjectCompensationIntents } from '@/domain/compensation/intent';
+import {
+  createCharmillesRobofil100V2CandidateProfile,
+  createVerifiedCharmillesRobofil100Profile,
+  markMachineProfileUserVerified
+} from '@/domain/machine/machineProfiles';
+import {
+  setCircleOperationCenterPierceLeadIn,
+  setManualInitialWirePosition,
+  setPathOperationManualLeadIn,
+  setPathOperationTransitions
+} from '@/domain/path-editor/pathDocumentOperations';
 import * as machiningParticipation from '@/domain/path-intel/machiningParticipation';
 import {
   setMachiningSpanParticipation,
+  setPartialContourCompensationSide,
   setPartialContourEntryReview
 } from '@/domain/path-intel/machiningParticipation';
+import { postUpidForMachine } from '@/domain/post/upidMachinePost';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 
@@ -15,6 +28,149 @@ import {
 } from '../upidProgramTree';
 
 describe('UPID program tree projection', () => {
+  it('projects the same unsafe compensated lead blocker as the authoritative post', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const initialized = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        { type: 'circle', layer: 'CUT', center: { x: 30, y: 30 }, radius: 5 }
+      ]),
+      machine
+    );
+    const operation = initialized.plan.operations[0];
+    const document = setManualInitialWirePosition(
+      setCircleOperationCenterPierceLeadIn(initialized, operation.id)!,
+      { x: 0, y: 0 }
+    )!;
+
+    const posted = postUpidForMachine(document, machine);
+    const tree = buildUpidProgramTree(document, machine);
+    const cutPath = tree.operations[0].children.find((node) => node.label === 'Cut path');
+
+    expect(posted.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({
+        reason: 'unsafe-controller-compensation-lead-in'
+      })
+    }));
+    expect(cutPath).toMatchObject({
+      status: 'blocked',
+      statusReason: 'unsafe-controller-compensation-lead-in'
+    });
+    expect(tree.programStatus).toBe('blocked');
+  });
+
+  it('blocks configured stops when the selected post cannot own them', () => {
+    const machine = createDefaultMachineProfile();
+    machine.programStops = {
+      supported: true,
+      code: 'M00',
+      allowedPlacements: ['before-entry'],
+      allowCompensationActive: false
+    };
+    const document = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
+    const operation = document.plan.operations[0];
+    operation.programStops = [stop('must-not-disappear', 'before-entry')];
+
+    const tree = buildUpidProgramTree(document, machine);
+
+    expect(postUpidForMachine(document, machine).diagnostics).toContainEqual(
+      expect.objectContaining({
+        details: expect.objectContaining({ reason: 'program-stop-post-unsupported' })
+      })
+    );
+    expect(tree.operations[0].children[0]).toMatchObject({
+      status: 'blocked',
+      statusReason: 'program-stop-post-unsupported'
+    });
+    expect(tree.programStatusReason).toBe('program-stop-post-unsupported');
+  });
+
+  it('validates remaining-distance stops against the derived partial cut path', () => {
+    const machine = markMachineProfileUserVerified(
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(rectangleLines(0, 0, 10, 5)),
+      machine
+    );
+    const source = document.plan.operations[0];
+    document = setPathOperationManualLeadIn(document, source.id, { x: -2, y: -2 })!;
+    document = setPartialContourCompensationSide(document, source.id, 'left')!;
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: source.segmentRefs[0].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+    document = setPartialContourEntryReview(document, source.id, true)!;
+    document = setPathOperationTransitions(document, source.id, {
+      ...document.plan.operations[0].transitions,
+      exit: { strategy: 'none', review: 'reviewed' }
+    })!;
+    document = setManualInitialWirePosition(document, { x: -2, y: -2 })!;
+    document.plan.operations[0].programStops = [
+      stop('too-long-for-partial-path', 'before-operation-end', 25)
+    ];
+
+    const posted = postUpidForMachine(document, machine);
+    const tree = buildUpidProgramTree(document, machine);
+    const cutPath = tree.operations[0].children.find((node) => node.label === 'Cut path');
+    const stopNode = cutPath?.children.find(
+      (node) => node.editTarget?.kind === 'program-stop'
+    );
+
+    expect(posted.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({
+        reason: 'program-stop-blocked',
+        programStopReason: 'invalid-program-stop'
+      })
+    }));
+    expect(stopNode).toMatchObject({
+      status: 'blocked',
+      statusReason: 'invalid-program-stop'
+    });
+    expect(cutPath?.status).toBe('blocked');
+  });
+
+  it('makes suppressed operation phases inactive and uses the next effective operation as first', () => {
+    const document = twoRectangleDocument();
+    const suppressed = document.plan.operations[0];
+    const next = document.plan.operations[1];
+    next.threadingTransition = {
+      mode: 'automatic',
+      wireSeparation: 'automatic-before-positioning',
+      source: 'operation-override'
+    };
+    suppressed.programStops = [stop('suppressed-stop', 'before-entry')];
+    const edited = suppressed.segmentRefs.reduce((current, ref) => {
+      const nextDocument = setMachiningSpanParticipation(current, {
+        sourceSegmentId: ref.segmentId,
+        range: { start: 0, end: 1 },
+        participation: 'inactive-reference'
+      });
+      expect(nextDocument).not.toBeNull();
+      return nextDocument!;
+    }, document);
+
+    const tree = buildUpidProgramTree(
+      edited,
+      createCharmillesRobofil100V2CandidateProfile()
+    );
+    const suppressedRoot = tree.operations.find((node) => node.operationId === suppressed.id)!;
+    const nextRoot = tree.operations.find((node) => node.operationId === next.id)!;
+    const executionChildren = suppressedRoot.children.filter(
+      (node) => node.editTarget?.kind !== 'diagnostics'
+    );
+
+    expect(executionChildren.every((node) =>
+      node.status === 'inactive' &&
+      node.statusReason === 'operation-suppressed-by-machining-participation'
+    )).toBe(true);
+    expect(nextRoot.children[0]).toMatchObject({
+      label: 'Incoming connection',
+      detail: 'Initial wire position',
+      status: 'ready'
+    });
+  });
+
   it('projects source setup and operations in execution order', () => {
     const document = twoRectangleDocument();
     const first = document.plan.operations[0];
@@ -118,7 +274,7 @@ describe('UPID program tree projection', () => {
     }));
   });
 
-  it('blocks enabled stops when the machine policy does not authorize them', () => {
+  it('blocks enabled stops at the authoritative post-ownership boundary', () => {
     const document = twoRectangleDocument();
     const operation = document.plan.operations[0];
     operation.programStops = [stop('blocked-stop', 'before-entry')];
@@ -128,7 +284,7 @@ describe('UPID program tree projection', () => {
     expect(tree.operations[0].children).toContainEqual(expect.objectContaining({
       label: 'M00 · Before entry',
       status: 'blocked',
-      statusReason: 'program-stops-unsupported'
+      statusReason: 'program-stop-post-unsupported'
     }));
     expect(tree.operations[0].status).toBe('blocked');
   });
@@ -218,7 +374,7 @@ describe('UPID program tree projection', () => {
     const untouched = document.plan.operations[1];
     const edited = setInactiveSegments(document, failing, [0, 2]);
 
-    const tree = buildUpidProgramTree(edited, createCharmillesRobofil100V2CandidateProfile());
+    const tree = buildUpidProgramTree(edited, createTreeMachine());
     const failingRoot = tree.operations.find((node) => node.operationId === failing.id);
     const untouchedRoot = tree.operations.find((node) => node.operationId === untouched.id);
     const untouchedCutPath = untouchedRoot?.children.find((node) => node.label === 'Cut path');
@@ -239,7 +395,7 @@ describe('UPID program tree projection', () => {
     const partiallyEdited = setInactiveSegments(document, validPartial, [0]);
     const edited = setInactiveSegments(partiallyEdited, failing, [0, 2]);
 
-    const tree = buildUpidProgramTree(edited, createCharmillesRobofil100V2CandidateProfile());
+    const tree = buildUpidProgramTree(edited, createTreeMachine());
     const validRoot = tree.operations.find((node) => node.operationId === validPartial.id);
     const failingRoot = tree.operations.find((node) => node.operationId === failing.id);
     const effectivePath = validRoot?.children
@@ -288,7 +444,7 @@ describe('UPID program tree projection', () => {
       participation: 'inactive-reference'
     });
 
-    const tree = buildUpidProgramTree(edited, createCharmillesRobofil100V2CandidateProfile());
+    const tree = buildUpidProgramTree(edited, createTreeMachine());
     const failingRoot = tree.operations.find((node) => node.operationId === failing.id);
     const untouchedRoot = tree.operations.find((node) => node.operationId === untouched.id);
 
@@ -355,7 +511,7 @@ describe('UPID program tree projection', () => {
     };
     const edited = setInactiveSegments(document, source, [0]);
 
-    const tree = buildUpidProgramTree(edited, createCharmillesRobofil100V2CandidateProfile());
+    const tree = buildUpidProgramTree(edited, createTreeMachine());
     const sourceRoot = tree.operations.find((node) => node.operationId === source.id);
     const entry = sourceRoot?.children.find((node) => node.label === 'Entry / lead-in');
     const exit = sourceRoot?.children.find((node) => node.label === 'Exit / lead-out');
@@ -377,7 +533,7 @@ describe('UPID program tree projection', () => {
     expect(reviewed).not.toBeNull();
     const reviewedRoot = buildUpidProgramTree(
       reviewed!,
-      createCharmillesRobofil100V2CandidateProfile()
+      createTreeMachine()
     ).operations.find((node) => node.operationId === source.id);
 
     expect(reviewedRoot?.children.find((node) => node.label === 'Entry / lead-in')?.status)
@@ -397,7 +553,7 @@ describe('UPID program tree projection', () => {
     };
     document.plan.operations = [second, first];
 
-    const tree = buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile());
+    const tree = buildUpidProgramTree(document, createTreeMachine());
 
     expect(tree.operations.map((node) => node.label)).toEqual([
       '01 · Hole 1',
@@ -439,7 +595,7 @@ describe('UPID program tree projection', () => {
     const operation = document.plan.operations[1];
     operation.closed = false;
 
-    const tree = buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile());
+    const tree = buildUpidProgramTree(document, createTreeMachine());
     const contourStart = tree.operations[1].children
       .find((node) => node.label === 'Cut path')
       ?.children.find((node) => node.label === 'Contour start');
@@ -473,7 +629,7 @@ describe('UPID program tree projection', () => {
       }
     ];
 
-    const tree = buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile());
+    const tree = buildUpidProgramTree(document, createTreeMachine());
     const firstRoot = tree.operations.find((node) => node.operationId === first.id);
     const secondRoot = tree.operations.find((node) => node.operationId === second.id);
 
@@ -502,7 +658,7 @@ describe('UPID program tree projection', () => {
       code: 'dxf-import-warning',
       message: 'Review source units.'
     }];
-    const tree = buildUpidProgramTree(document, createCharmillesRobofil100V2CandidateProfile());
+    const tree = buildUpidProgramTree(document, createTreeMachine());
     const diagnostics = tree.sourceSetup[0].children;
 
     expect(diagnostics).toContainEqual(expect.objectContaining({
@@ -604,6 +760,21 @@ function rectangleLines(minX: number, minY: number, maxX: number, maxY: number) 
     { type: 'line' as const, layer: 'CUT', start: { x: maxX, y: maxY }, end: { x: minX, y: maxY } },
     { type: 'line' as const, layer: 'CUT', start: { x: minX, y: maxY }, end: { x: minX, y: minY } }
   ];
+}
+
+function line(startX: number, startY: number, endX: number, endY: number) {
+  return {
+    type: 'line' as const,
+    layer: 'CUT',
+    start: { x: startX, y: startY },
+    end: { x: endX, y: endY }
+  };
+}
+
+function createTreeMachine() {
+  const machine = createDefaultMachineProfile();
+  machine.threading.manual.supported = true;
+  return machine;
 }
 
 function stop(

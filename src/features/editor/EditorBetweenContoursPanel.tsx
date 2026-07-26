@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 
 import { derivePlannedRapidRoutes } from '@/domain/path-editor/pathDocumentOperations';
+import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
 import type {
   OperationThreadingTransition,
@@ -35,19 +36,26 @@ export function EditorBetweenContoursPanel({
   selectedOperationId,
   targetChangeBlocked = false
 }: EditorBetweenContoursPanelProps) {
-  const selected = document.plan.operations.find(
+  const operations = useMemo(
+    () => orderedPathOperations(document.plan.operations),
+    [document.plan.operations]
+  );
+  const selected = operations.find(
     (operation) => operation.id === selectedOperationId
-  ) ?? document.plan.operations[0] ?? null;
+  ) ?? operations[0] ?? null;
+  const selectedExecutionIndex = selected
+    ? operations.findIndex((operation) => operation.id === selected.id)
+    : -1;
   const route = selected
     ? derivePlannedRapidRoutes(document).find(
         (candidate) => candidate.operationId === selected.id
       ) ?? null
     : null;
   const threading = useMemo(
-    () => selected && selected.orderIndex > 0
+    () => selected && selectedExecutionIndex > 0
       ? resolveOperationThreadingTransition(document, selected.id, machine)
       : null,
-    [document, machine, selected]
+    [document, machine, selected, selectedExecutionIndex]
   );
   const projectThreading = document.setup?.threadingDefault ?? {
     mode: 'manual' as const,
@@ -58,7 +66,7 @@ export function EditorBetweenContoursPanel({
     return <p className="text-[10px] text-muted-foreground">No operations are available.</p>;
   }
 
-  const previous = document.plan.operations[selected.orderIndex - 1] ?? null;
+  const previous = operations[selectedExecutionIndex - 1] ?? null;
 
   return (
     <section className="grid gap-2 text-[10px]" data-between-contours-panel>
@@ -79,7 +87,7 @@ export function EditorBetweenContoursPanel({
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected.id}
         >
-          {document.plan.operations.map((operation) => (
+          {operations.map((operation) => (
             <option key={operation.id} value={operation.id}>
               {operation.orderIndex + 1}. {operation.displayName}
             </option>
@@ -87,7 +95,7 @@ export function EditorBetweenContoursPanel({
         </select>
       </label>
 
-      {selected.orderIndex === 0 ? (
+      {selectedExecutionIndex === 0 ? (
         <div className="border border-sky-500/40 bg-sky-500/5 p-2 text-sky-100">
           The first connection belongs to Program Start / G92. Configure its origin there; the
           destination remains the first contour entry or contour start.

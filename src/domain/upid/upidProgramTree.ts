@@ -4,6 +4,7 @@ import {
   deriveActiveMachiningOperations,
   type ActiveMachiningDerivation
 } from '@/domain/path-intel/machiningParticipation';
+import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { validateProgramStops } from '@/domain/path-intel/programStops';
 import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
 import type {
@@ -15,6 +16,10 @@ import type {
   PathPlanningDocument
 } from '@/domain/path-intel/types';
 import type { MachineProfile } from '@/domain/workbench/types';
+import {
+  prepareUpidMachinePost,
+  type UpidMachinePostPreparationIssue
+} from '@/domain/post/upidMachinePost';
 
 export type UpidProgramTreeStatus =
   | 'ready'
@@ -67,6 +72,7 @@ export interface UpidProgramTree {
 interface SourceMachiningProjection {
   effectiveOperations: PathOperation[];
   effectiveSegments: PathPlanningDocument['segments'];
+  postIssues: UpidMachinePostPreparationIssue[];
   failureReason?: Extract<ActiveMachiningDerivation, { status: 'blocked' }>['reason'];
 }
 
@@ -92,7 +98,19 @@ export function buildUpidProgramTree(
     machine,
     diagnostics.filter((diagnostic) => !ownedDiagnosticIds.has(diagnostic.id))
   );
-  const machiningProjection = projectMachiningBySource(executionDocument);
+  const postPreparation = prepareUpidMachinePost(executionDocument, machine);
+  const machiningProjection = projectMachiningBySource(
+    executionDocument,
+    postPreparation.machining
+  );
+  const postIssues = postPreparation.issues;
+  for (const issue of postIssues) {
+    if (!issue.sourceOperationId) continue;
+    machiningProjection.bySourceOperationId
+      .get(issue.sourceOperationId)
+      ?.postIssues.push(issue);
+  }
+  const effectiveExecutionDocument = postPreparation.document;
   const operations = executionDocument.plan.operations
     .map((operation) => {
       const projection = machiningProjection.bySourceOperationId.get(operation.id)!;
@@ -103,14 +121,26 @@ export function buildUpidProgramTree(
         projection.effectiveOperations,
         operationDiagnostics.get(operation.id) ?? [],
         projection.failureReason,
-        projection.effectiveSegments
+        projection.effectiveSegments,
+        projection.postIssues,
+        effectiveExecutionDocument
       );
     });
   const sourceSetupMetadata = rollUpNodeStatusMetadata(sourceSetup);
-  const programMetadata = machiningProjection.unownedFailureReason
+  const unownedPostReason =
+    postPreparation.status === 'blocked' &&
+    postPreparation.reason &&
+    (
+      postPreparation.reason !== 'machining-participation-blocked' ||
+      postPreparation.machining?.status === 'ready'
+    ) &&
+    postPreparation.issues.length === 0
+      ? postPreparation.reason
+      : undefined;
+  const programMetadata = machiningProjection.unownedFailureReason || unownedPostReason
     ? {
         status: 'blocked' as const,
-        statusReason: machiningProjection.unownedFailureReason,
+        statusReason: machiningProjection.unownedFailureReason ?? unownedPostReason,
         statusActionTarget: {
           kind: 'machining-participation' as const
         }
@@ -135,8 +165,7 @@ function withExecutionOrder(document: PathPlanningDocument): PathPlanningDocumen
     ...document,
     plan: {
       ...document.plan,
-      operations: [...document.plan.operations]
-        .sort((left, right) => left.orderIndex - right.orderIndex || left.id.localeCompare(right.id))
+      operations: orderedPathOperations(document.plan.operations)
     }
   };
 }
@@ -214,11 +243,26 @@ function buildOperationNode(
   effectiveOperations: readonly PathOperation[],
   diagnostics: readonly PathDiagnostic[],
   derivationFailure: Extract<ActiveMachiningDerivation, { status: 'blocked' }>['reason'] | undefined,
-  effectiveSegments: PathPlanningDocument['segments']
+  effectiveSegments: PathPlanningDocument['segments'],
+  postIssues: readonly UpidMachinePostPreparationIssue[],
+  effectiveExecutionDocument: PathPlanningDocument | undefined
 ): UpidProgramTreeNode {
-  const stopNodes = buildStopNodes(document, machine, operation);
+  const stopNodes = buildStopNodes(
+    document,
+    machine,
+    operation,
+    effectiveOperations,
+    effectiveSegments,
+    postIssues
+  );
   const stopsByPlacement = groupStopsByPlacement(operation, stopNodes);
-  const incoming = buildIncomingConnectionNode(document, machine, operation);
+  const incoming = buildIncomingConnectionNode(
+    document,
+    effectiveExecutionDocument,
+    machine,
+    operation,
+    effectiveOperations
+  );
   const entry = buildTransitionNode(operation, effectiveOperations, 'entry');
   const exit = buildTransitionNode(operation, effectiveOperations, 'exit');
   const cutPath = buildCutPathNode(
@@ -228,12 +272,13 @@ function buildOperationNode(
     effectiveOperations,
     effectiveSegments,
     stopsByPlacement.beforeOperationEnd,
-    derivationFailure
+    derivationFailure,
+    postIssues
   );
   const operationKey = operationTreeKey(operation.id);
   const diagnosticNodes = buildDiagnosticNodes(diagnostics, operationKey);
   const sourceOperationSuppressed = effectiveOperations.length === 0 && !derivationFailure;
-  const children = [
+  const projectedChildren = [
     ...stopsByPlacement.beforeEntry,
     incoming,
     entry,
@@ -243,6 +288,11 @@ function buildOperationNode(
     ...stopsByPlacement.afterExit,
     ...diagnosticNodes
   ];
+  const children = sourceOperationSuppressed
+    ? projectedChildren.map((node) =>
+        diagnosticNodes.includes(node) ? node : inactiveExecutionNode(node)
+      )
+    : projectedChildren;
   const pathElement = document.pathElements.find((element) => element.operationId === operation.id);
   const status = sourceOperationSuppressed
     ? rollUpStatuses(['inactive', ...diagnosticNodes.map((node) => node.status)])
@@ -269,11 +319,18 @@ function buildOperationNode(
 }
 
 function buildIncomingConnectionNode(
-  document: PathPlanningDocument,
+  sourceDocument: PathPlanningDocument,
+  effectiveDocument: PathPlanningDocument | undefined,
   machine: MachineProfile,
-  operation: PathOperation
+  operation: PathOperation,
+  effectiveOperations: readonly PathOperation[]
 ): UpidProgramTreeNode {
-  const operationIndex = document.plan.operations.findIndex((candidate) => candidate.id === operation.id);
+  const effectiveOperation = effectiveOperations[0];
+  const document = effectiveDocument ?? sourceDocument;
+  const operationId = effectiveOperation?.id ?? operation.id;
+  const operationIndex = document.plan.operations.findIndex(
+    (candidate) => candidate.id === operationId
+  );
   if (operationIndex <= 0) {
     const initial = resolveInitialWirePosition(document);
     const status = initial.status === 'ready'
@@ -295,14 +352,19 @@ function buildIncomingConnectionNode(
     };
   }
 
-  const resolution = resolveOperationThreadingTransition(document, operation.id, machine);
+  const resolution = resolveOperationThreadingTransition(document, operationId, machine);
   return {
     treeKey: `${operationTreeKey(operation.id)}:incoming`,
     kind: 'phase',
     label: 'Incoming connection',
     detail: resolution.status === 'ready'
       ? describeThreading(resolution.transition.mode)
-      : describeThreading(operation.threadingTransition?.mode ?? document.setup?.threadingDefault?.mode ?? 'manual'),
+      : describeThreading(
+          effectiveOperation?.threadingTransition?.mode ??
+          operation.threadingTransition?.mode ??
+          document.setup?.threadingDefault?.mode ??
+          'manual'
+        ),
     status: resolution.status,
     statusReason: resolution.status === 'blocked' ? resolution.reason : undefined,
     statusActionTarget: isActionableStatus(resolution.status)
@@ -348,7 +410,8 @@ function buildCutPathNode(
   effectiveOperations: readonly PathOperation[],
   effectiveSegments: PathPlanningDocument['segments'],
   stopNodes: UpidProgramTreeNode[],
-  derivationFailure: Extract<ActiveMachiningDerivation, { status: 'blocked' }>['reason'] | undefined
+  derivationFailure: Extract<ActiveMachiningDerivation, { status: 'blocked' }>['reason'] | undefined,
+  postIssues: readonly UpidMachinePostPreparationIssue[]
 ): UpidProgramTreeNode {
   const contourStart: UpidProgramTreeNode = {
     treeKey: `${operationTreeKey(operation.id)}:contour-start`,
@@ -367,13 +430,19 @@ function buildCutPathNode(
   const effectivePathNodes = effectiveOperations
     .filter((effectiveOperation) => effectiveOperation.machiningIntent?.kind === 'partial-contour')
     .map((effectiveOperation) =>
-      buildEffectiveMachiningPathNode(effectiveDocument, machine, operation, effectiveOperation)
+      buildEffectiveMachiningPathNode(
+        effectiveDocument,
+        machine,
+        operation,
+        effectiveOperation,
+        postIssues
+      )
     );
   const inactiveSpans = buildInactiveParticipationNodes(document, operation);
   const pathStatuses = effectiveOperations.length === 0 && !derivationFailure
     ? ['inactive' as const]
     : effectiveOperations.map((effectiveOperation) =>
-      resolveCutPathStatus(effectiveDocument, machine, effectiveOperation)
+      resolveCutPathStatus(effectiveDocument, machine, effectiveOperation, postIssues)
     );
   const status = derivationFailure
     ? 'blocked'
@@ -420,10 +489,16 @@ function buildEffectiveMachiningPathNode(
   document: PathPlanningDocument,
   machine: MachineProfile,
   sourceOperation: PathOperation,
-  effectiveOperation: PathOperation
+  effectiveOperation: PathOperation,
+  postIssues: readonly UpidMachinePostPreparationIssue[]
 ): UpidProgramTreeNode {
   const intent = effectiveOperation.machiningIntent!;
-  const resolution = resolveCutPathStatus(document, machine, effectiveOperation);
+  const resolution = resolveCutPathStatus(
+    document,
+    machine,
+    effectiveOperation,
+    postIssues
+  );
   const status = typeof resolution === 'string' ? resolution : resolution.status;
   const statusReason = typeof resolution === 'string' ? undefined : resolution.reason;
   const spans: UpidProgramTreeNode[] = intent.spanIds.map((spanId) => ({
@@ -500,14 +575,29 @@ function buildInactiveParticipationNodes(
 function buildStopNodes(
   document: PathPlanningDocument,
   machine: MachineProfile,
-  operation: PathOperation
+  operation: PathOperation,
+  effectiveOperations: readonly PathOperation[],
+  effectiveSegments: PathPlanningDocument['segments'],
+  postIssues: readonly UpidMachinePostPreparationIssue[]
 ): UpidProgramTreeNode[] {
-  const validation = validateProgramStops(operation, machine, document.segments);
+  const validationOperation = effectiveOperations[0] ?? operation;
+  const validation = validateProgramStops(
+    validationOperation,
+    machine,
+    effectiveOperations.length > 0 ? effectiveSegments : document.segments
+  );
+  const postIssue = postIssues.find((issue) =>
+    issue.reason === 'program-stop-post-unsupported' ||
+    issue.reason === 'program-stop-blocked'
+  );
+  const blockedReason = postIssue?.programStopReason ??
+    postIssue?.reason ??
+    (validation.status === 'blocked' ? validation.reason : undefined);
   const ordered = [...(operation.programStops ?? [])].sort(compareStops);
   return ordered.map((stop) => {
     const status = !stop.enabled
       ? 'inactive'
-      : validation.status === 'blocked' ? 'blocked' : 'ready';
+      : blockedReason ? 'blocked' : 'ready';
     const editTarget = {
       kind: 'program-stop' as const,
       operationId: operation.id,
@@ -521,7 +611,7 @@ function buildStopNodes(
       status,
       statusReason: !stop.enabled
         ? 'disabled'
-        : validation.status === 'blocked' ? validation.reason : undefined,
+        : blockedReason,
       statusActionTarget: isActionableStatus(status) ? editTarget : undefined,
       operationId: operation.id,
       editTarget,
@@ -584,14 +674,19 @@ function describeThreading(mode: 'manual' | 'automatic' | 'continuous') {
   }
 }
 
-function projectMachiningBySource(document: PathPlanningDocument) {
-  const globalDerivation = deriveActiveMachiningOperations(document);
+function projectMachiningBySource(
+  document: PathPlanningDocument,
+  preparedDerivation?: ReturnType<typeof deriveActiveMachiningOperations>
+) {
+  const globalDerivation =
+    preparedDerivation ?? deriveActiveMachiningOperations(document);
   const bySourceOperationId = new Map<string, SourceMachiningProjection>(
     document.plan.operations.map((operation) => [
       operation.id,
       {
         effectiveOperations: [],
-        effectiveSegments: document.segments
+        effectiveSegments: document.segments,
+        postIssues: []
       }
     ])
   );
@@ -705,8 +800,20 @@ function transitionStatus(
 function resolveCutPathStatus(
   document: PathPlanningDocument,
   machine: MachineProfile,
-  operation: PathOperation
+  operation: PathOperation,
+  postIssues: readonly UpidMachinePostPreparationIssue[]
 ): UpidProgramTreeStatus | { status: 'blocked'; reason: string } {
+  const postIssue = postIssues.find((issue) =>
+    issue.reason !== 'program-stop-blocked' &&
+    issue.reason !== 'program-stop-post-unsupported' &&
+    (
+      !issue.effectiveOperationId ||
+      issue.effectiveOperationId === operation.id ||
+      issue.sourceOperationId ===
+        (operation.machiningIntent?.sourceOperationId ?? operation.id)
+    )
+  );
+  if (postIssue) return { status: 'blocked', reason: postIssue.reason };
   if (operation.compensationIntent?.mode !== 'controller') return 'ready';
   if (!machine.compensation.supported) {
     return { status: 'blocked', reason: 'compensation-unsupported' };
@@ -715,6 +822,16 @@ function resolveCutPathStatus(
   return compensation.status === 'blocked'
     ? { status: 'blocked', reason: compensation.reason }
     : 'ready';
+}
+
+function inactiveExecutionNode(node: UpidProgramTreeNode): UpidProgramTreeNode {
+  return {
+    ...node,
+    status: 'inactive',
+    statusReason: 'operation-suppressed-by-machining-participation',
+    statusActionTarget: undefined,
+    children: node.children.map(inactiveExecutionNode)
+  };
 }
 
 function describeEffectiveSegmentCount(

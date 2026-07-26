@@ -37,6 +37,28 @@ import {
 import * as machinePostModule from '../upidMachinePost';
 
 describe('postUpidForMachine', () => {
+  it('posts an unsorted imported document in orderIndex execution order without mutating it', () => {
+    const machine = createDefaultMachineProfile();
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 3 },
+      { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 3 }
+    ]);
+    const [first, second] = document.plan.operations;
+    document.plan.operations = [second, first];
+
+    const posted = postUpidForMachine(document, machine);
+
+    expect(posted.status).toBe('ready');
+    expect(posted.operations.map((operation) => operation.operationId)).toEqual([
+      first.id,
+      second.id
+    ]);
+    expect(document.plan.operations.map((operation) => operation.id)).toEqual([
+      second.id,
+      first.id
+    ]);
+  });
+
   it('blocks any enabled program stop when the selected post cannot emit it', () => {
     const machine = createDefaultMachineProfile();
     const document = createUpidFromDxfEntities([line(0, 0, 10, 0)]);

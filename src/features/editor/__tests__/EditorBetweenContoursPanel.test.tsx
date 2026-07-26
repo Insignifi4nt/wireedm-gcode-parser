@@ -109,6 +109,37 @@ describe('EditorBetweenContoursPanel', () => {
     expect(container.textContent).toContain('Program Start / G92');
     expect(container.textContent).not.toContain('Operation threading mode');
   });
+
+  it('renders imported destinations and predecessors in orderIndex order', async () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
+    ]);
+    const [first, second] = document.plan.operations;
+    document.plan.operations = [second, first];
+
+    await act(async () => {
+      root.render(
+        <EditorBetweenContoursPanel
+          disabled={false}
+          document={document}
+          machine={createCharmillesRobofil100V2CandidateProfile()}
+          onSelectOperation={vi.fn()}
+          onSetOperationThreading={vi.fn()}
+          onSetProjectThreading={vi.fn()}
+          selectedOperationId={second.id}
+        />
+      );
+    });
+
+    const options = [
+      ...container.querySelectorAll<HTMLOptionElement>(
+        '[aria-label="Between contours destination operation"] option'
+      )
+    ];
+    expect(options.map((option) => option.value)).toEqual([first.id, second.id]);
+    expect(container.textContent).toContain(`After ${first.displayName}`);
+  });
 });
 
 function setSelect(select: HTMLSelectElement, value: string) {

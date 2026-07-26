@@ -38,6 +38,7 @@ import {
   operationExitPoint as resolvedOperationExitPoint,
   operationTransitionCutLength
 } from '@/domain/path-intel/operationTransitions';
+import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import {
   inferPathPoint,
   type InferredPathPoint
@@ -93,7 +94,7 @@ export function derivePlannedRapidRoutes(
   const initialWire = resolveInitialWirePosition(document);
   let currentPoint =
     initialWire.status === 'ready' ? initialWire.point : document.options.startPoint;
-  return document.plan.operations.map((operation, orderIndex) => {
+  return orderedPathOperations(document.plan.operations).map((operation, orderIndex) => {
     const entry = operation.transitions?.entry;
     const endPoint = resolvedOperationEntryPoint(operation);
     const route = {

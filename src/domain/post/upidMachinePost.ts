@@ -14,8 +14,13 @@ import {
   operationEntryPoint
 } from '@/domain/path-intel/operationTransitions';
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
+import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
-import { resolveProgramStopPoints, validateProgramStops } from '@/domain/path-intel/programStops';
+import {
+  resolveProgramStopPoints,
+  validateProgramStops,
+  type ProgramStopValidation
+} from '@/domain/path-intel/programStops';
 import type { PathDiagnostic, PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 import type { MachineProfile } from '@/domain/workbench/types';
@@ -72,6 +77,65 @@ export interface UpidMachinePostResult extends GcodePostResult {
   programOwned: boolean;
 }
 
+export interface UpidMachinePostPreparationIssue {
+  reason: string;
+  effectiveOperationId?: string;
+  sourceOperationId?: string;
+  programStopReason?: Extract<
+    ProgramStopValidation,
+    { status: 'blocked' }
+  >['reason'];
+}
+
+type ReadyMachiningDerivation = Extract<
+  ReturnType<typeof deriveActiveMachiningOperations>,
+  { status: 'ready' }
+>;
+
+interface ReadyUpidMachinePostPreparationBase {
+  status: 'ready';
+  document: PathPlanningDocument;
+  machining: ReadyMachiningDerivation;
+  issues: UpidMachinePostPreparationIssue[];
+  programOwned: boolean;
+}
+
+export type ReadyUpidMachinePostPreparation =
+  | (ReadyUpidMachinePostPreparationBase & {
+      route: 'generic';
+    })
+  | (ReadyUpidMachinePostPreparationBase & {
+      route: 'explicit-linear';
+      readinessByOperationId: Map<
+        string,
+        Extract<ReturnType<typeof validateCompensatedExport>, { status: 'ready' }>
+      >;
+    })
+  | (ReadyUpidMachinePostPreparationBase & {
+      route: 'robofil-v1';
+      compensationCode: 'G41' | 'G42';
+      initialWirePoint: Point2;
+      initialWireWords: string;
+    })
+  | (ReadyUpidMachinePostPreparationBase & {
+      route: 'robofil-v2';
+      initialWirePoint: Point2;
+      initialWireWords: string;
+      resolutionByOperationId: Map<string, 'G41' | 'G42'>;
+      programStopsByOperationId: Map<string, ProgramStopValidation>;
+    });
+
+export type UpidMachinePostPreparation =
+  | ReadyUpidMachinePostPreparation
+  | {
+      status: 'blocked';
+      result: UpidMachinePostResult;
+      reason?: string;
+      document?: PathPlanningDocument;
+      machining?: ReturnType<typeof deriveActiveMachiningOperations>;
+      issues: UpidMachinePostPreparationIssue[];
+    };
+
 export type VerifiedRobofilPreviewPostBlock = Pick<
   GcodePostedBlock,
   'bodyLineIndex' | 'kind' | 'operationId' | 'startPoint' | 'endPoint'
@@ -111,6 +175,34 @@ export function postUpidForMachine(
   machine: MachineProfile,
   _options: UpidMachinePostOptions = {}
 ): UpidMachinePostResult {
+  const preparation = prepareUpidMachinePost(sourceDocument, machine);
+  if (preparation.status === 'blocked') return preparation.result;
+
+  if (preparation.route === 'generic') {
+    const posted = postPathPlanToGcode(
+      preparation.document.plan,
+      preparation.document.segments,
+      genericPostOptions(preparation.document, machine)
+    );
+    return machineResultFromGenericPost(posted);
+  }
+  if (preparation.route === 'explicit-linear') {
+    return postGenericExplicitLinear(
+      preparation.document,
+      machine,
+      preparation.readinessByOperationId
+    );
+  }
+  if (preparation.route === 'robofil-v2') {
+    return postRobofilV2(preparation.document, machine, preparation);
+  }
+  return postVerifiedRobofil(preparation.document, machine, preparation);
+}
+
+export function prepareUpidMachinePost(
+  sourceDocument: PathPlanningDocument,
+  machine: MachineProfile
+): UpidMachinePostPreparation {
   const structuredCompensationRequested =
     Array.isArray(sourceDocument?.plan?.operations) &&
     sourceDocument.plan.operations.some(
@@ -118,26 +210,32 @@ export function postUpidForMachine(
     );
   const validation = validateUpidDocument(sourceDocument);
   if (!validation.valid) {
-    return blockedMachinePost(
+    return blockedPreparation(blockedMachinePost(
       validation.blockingDiagnostics,
       machine.controller.family === 'charmilles-robofil-classic' ||
       structuredCompensationRequested
-    );
+    ));
   }
 
   const machining = deriveActiveMachiningOperations(sourceDocument);
   if (machining.status === 'blocked') {
-    return blockedReason(
+    return blockedPreparation(blockedReason(
       'machining-participation-blocked',
       `Machining participation could not be resolved: ${machining.reason}.`,
       { machiningParticipationReason: machining.reason }
-    );
+    ), {
+      reason: 'machining-participation-blocked',
+      machining
+    });
   }
   if (machining.operations.length === 0) {
-    return blockedReason(
+    return blockedPreparation(blockedReason(
       'machining-participation-blocked',
       'Machining participation leaves no active cutting operations.'
-    );
+    ), {
+      reason: 'machining-participation-blocked',
+      machining
+    });
   }
   const document = effectiveMachiningDocument(sourceDocument, machining);
   const enabledProgramStops = document.plan.operations.flatMap((operation) =>
@@ -148,10 +246,20 @@ export function postUpidForMachine(
     machine.controller.postVersion === 2 &&
     machine.compensation.activation === 'charmilles-g38';
   if (enabledProgramStops.length > 0 && !postOwnsProgramStops) {
-    return blockedReason(
+    const issues = document.plan.operations.flatMap((operation) =>
+      (operation.programStops ?? []).some((stop) => stop.enabled)
+        ? [operationIssue(operation, 'program-stop-post-unsupported')]
+        : []
+    );
+    return blockedPreparation(blockedReason(
       'program-stop-post-unsupported',
       'The selected post cannot emit configured program stops; export is blocked rather than dropping M00 intent.'
-    );
+    ), {
+      reason: 'program-stop-post-unsupported',
+      document,
+      machining,
+      issues
+    });
   }
 
   const compensatedOperations = document.plan.operations.filter(
@@ -162,50 +270,111 @@ export function postUpidForMachine(
     compensatedOperations.length === 0
   ) {
     if (!machineProfileHasCurrentVerification(machine)) {
-      return blockedReason(
+      return blockedPreparation(blockedReason(
         'unverified-machine-profile',
         'Robofil compensated posting requires a current user-verified project machine snapshot.'
-      );
+      ), {
+        reason: 'unverified-machine-profile',
+        document,
+        machining,
+        issues: document.plan.operations.map((operation) =>
+          operationIssue(operation, 'unverified-machine-profile')
+        )
+      });
     }
     const reason = document.geometryBasis === 'wire-centre' ? 'wire-centre' : 'missing-intent';
-    return blockedReason(
+    return blockedPreparation(blockedReason(
       'compensation-resolution-blocked',
       `Controller compensation could not be resolved: ${reason}.`,
       { compensationReason: reason }
-    );
+    ), {
+      reason: 'compensation-resolution-blocked',
+      document,
+      machining,
+      issues: document.plan.operations.map((operation) =>
+        operationIssue(operation, 'compensation-resolution-blocked')
+      )
+    });
   }
   if (compensatedOperations.length === 0) {
-    const posted = postPathPlanToGcode(document.plan, document.segments, {
-      ...document.options,
-      arcCenterMode:
-        machineArcCenterMode(machine),
-      coordinatePrecision: machine.output.coordinatePrecision,
-      endpointTolerance: effectiveDocumentEndpointTolerance(document),
-      coincidenceEpsilon: document.options.coincidenceEpsilon
-    });
-    return machineResultFromGenericPost(posted);
+    return {
+      status: 'ready',
+      route: 'generic',
+      document,
+      machining,
+      issues: [],
+      programOwned: false
+    };
   }
 
   if (machine.compensation.activation === 'linear-lead') {
-    return postGenericExplicitLinear(document, machine, compensatedOperations);
+    const readinessByOperationId = new Map<
+      string,
+      Extract<ReturnType<typeof validateCompensatedExport>, { status: 'ready' }>
+    >();
+    for (const operation of compensatedOperations) {
+      const readiness = validateCompensatedExport({ document, operation, machine });
+      if (readiness.status === 'blocked') {
+        return blockedPreparation(blockedMachinePost(readiness.diagnostics, true), {
+          reason: readiness.reason,
+          document,
+          machining,
+          issues: [operationIssue(operation, readiness.reason)]
+        });
+      }
+      if (readiness.strategy !== 'explicit-linear' || !readiness.transition) {
+        return blockedPreparation(blockedReason(
+          'unsupported-compensation-lifecycle',
+          'The selected lifecycle is not explicit-linear.'
+        ), {
+          reason: 'unsupported-compensation-lifecycle',
+          document,
+          machining,
+          issues: [operationIssue(operation, 'unsupported-compensation-lifecycle')]
+        });
+      }
+      readinessByOperationId.set(operation.id, readiness);
+    }
+    return {
+      status: 'ready',
+      route: 'explicit-linear',
+      document,
+      machining,
+      readinessByOperationId,
+      issues: [],
+      programOwned: true
+    };
   }
 
   if (machine.controller.family !== 'charmilles-robofil-classic') {
-    return blockedReason('unsupported-compensation-lifecycle', 'The selected native compensation lifecycle is unsupported.');
+    return blockedPreparation(
+      blockedReason(
+        'unsupported-compensation-lifecycle',
+        'The selected native compensation lifecycle is unsupported.'
+      ),
+      {
+        reason: 'unsupported-compensation-lifecycle',
+        document,
+        machining,
+        issues: compensatedOperations.map((operation) =>
+          operationIssue(operation, 'unsupported-compensation-lifecycle')
+        )
+      }
+    );
   }
 
   if (machine.controller.postVersion === 2) {
-    return postRobofilV2(document, machine, compensatedOperations);
+    return prepareRobofilV2(document, machine, machining, compensatedOperations);
   }
 
-  return postVerifiedRobofil(document, machine, compensatedOperations);
+  return prepareVerifiedRobofil(document, machine, machining, compensatedOperations);
 }
 
 function effectiveMachiningDocument(
   source: PathPlanningDocument,
   machining: Extract<ReturnType<typeof deriveActiveMachiningOperations>, { status: 'ready' }>
 ): PathPlanningDocument {
-  const operations = structuredClone(machining.operations);
+  const operations = structuredClone(orderedPathOperations(machining.operations));
   return {
     ...structuredClone(source),
     segments: structuredClone(machining.segments),
@@ -227,24 +396,27 @@ function effectiveMachiningDocument(
   };
 }
 
+function genericPostOptions(
+  document: PathPlanningDocument,
+  machine: MachineProfile
+) {
+  return {
+    ...document.options,
+    arcCenterMode: machineArcCenterMode(machine),
+    coordinatePrecision: machine.output.coordinatePrecision,
+    endpointTolerance: effectiveDocumentEndpointTolerance(document),
+    coincidenceEpsilon: document.options.coincidenceEpsilon
+  };
+}
+
 function postGenericExplicitLinear(
   document: PathPlanningDocument,
   machine: MachineProfile,
-  compensatedOperations: PathPlanningDocument['plan']['operations']
-): UpidMachinePostResult {
-  const readinessByOperationId = new Map<
+  readinessByOperationId: Map<
     string,
     Extract<ReturnType<typeof validateCompensatedExport>, { status: 'ready' }>
-  >();
-  for (const operation of compensatedOperations) {
-    const readiness = validateCompensatedExport({ document, operation, machine });
-    if (readiness.status === 'blocked') return blockedMachinePost(readiness.diagnostics, true);
-    if (readiness.strategy !== 'explicit-linear' || !readiness.transition) {
-      return blockedReason('unsupported-compensation-lifecycle', 'The selected lifecycle is not explicit-linear.');
-    }
-    readinessByOperationId.set(operation.id, readiness);
-  }
-
+  >
+): UpidMachinePostResult {
   const lines: string[] = [];
   const moves: GcodePostedMove[] = [];
   const operations: GcodePostedOperation[] = [];
@@ -584,27 +756,49 @@ export function auditGenericExplicitLinearPost(
   return null;
 }
 
-function postVerifiedRobofil(
+function prepareVerifiedRobofil(
   document: PathPlanningDocument,
   machine: MachineProfile,
+  machining: ReadyMachiningDerivation,
   compensatedOperations: PathPlanningDocument['plan']['operations']
-): UpidMachinePostResult {
+): UpidMachinePostPreparation {
+  const blockedForOperations = (
+    reason: string,
+    result: UpidMachinePostResult,
+    operations = compensatedOperations
+  ) => blockedPreparation(result, {
+    reason,
+    document,
+    machining,
+    issues: operations.map((operation) => operationIssue(operation, reason))
+  });
+
   if (!machineProfileHasCurrentVerification(machine)) {
-    return blockedReason(
+    return blockedForOperations(
       'unverified-machine-profile',
-      'Robofil compensated posting requires a current user-verified project machine snapshot.'
+      blockedReason(
+        'unverified-machine-profile',
+        'Robofil compensated posting requires a current user-verified project machine snapshot.'
+      )
     );
   }
   if (!matchesVerifiedRobofilPostEnvelope(machine)) {
-    return blockedReason(
+    return blockedForOperations(
       'unsupported-robofil-post-envelope',
-      'This Robofil snapshot is outside the physically verified post-version-1 envelope.'
+      blockedReason(
+        'unsupported-robofil-post-envelope',
+        'This Robofil snapshot is outside the physically verified post-version-1 envelope.'
+      )
     );
   }
   if (document.plan.operations.length !== 1 || compensatedOperations.length !== 1) {
-    return blockedReason(
+    return blockedForOperations(
       'unsupported-operation-count',
-      'The verified program-scoped Robofil lifecycle supports exactly one compensated operation.'
+      blockedReason(
+        'unsupported-operation-count',
+        'The verified program-scoped Robofil lifecycle supports exactly one compensated operation.'
+      ),
+      document.plan.operations
     );
   }
 
@@ -614,46 +808,82 @@ function postVerifiedRobofil(
     footer: machine.templates.footer
   });
   if (!templatePolicy.valid) {
-    return blockedReason(
+    return blockedForOperations(
       'template-modal-conflict',
-      templatePolicy.diagnostics.map((diagnostic) => diagnostic.message).join(' '),
-      { templateDiagnostics: templatePolicy.diagnostics }
+      blockedReason(
+        'template-modal-conflict',
+        templatePolicy.diagnostics.map((diagnostic) => diagnostic.message).join(' '),
+        { templateDiagnostics: templatePolicy.diagnostics }
+      )
     );
   }
 
   const operation = compensatedOperations[0];
   const resolution = resolveControllerCompensation({ document, operation });
   if (resolution.status === 'blocked') {
-    return blockedReason(
+    return blockedForOperations(
       'compensation-resolution-blocked',
-      `Controller compensation could not be resolved: ${resolution.reason}.`,
-      { compensationReason: resolution.reason }
+      blockedReason(
+        'compensation-resolution-blocked',
+        `Controller compensation could not be resolved: ${resolution.reason}.`,
+        { compensationReason: resolution.reason }
+      )
     );
   }
   if (readOperationTransitions(operation).entry?.strategy === 'circle-center') {
-    return blockedReason(
+    return blockedForOperations(
       'unsafe-controller-compensation-lead-in',
-      'A radial circle-center lead-in is unsafe while Robofil controller compensation is active.'
+      blockedReason(
+        'unsafe-controller-compensation-lead-in',
+        'A radial circle-center lead-in is unsafe while Robofil controller compensation is active.'
+      )
     );
   }
   const initialWire = resolveInitialWirePosition(document);
   if (initialWire.status === 'blocked') {
-    return blockedReason(
+    return blockedForOperations(
       'initial-wire-position-required',
-      'Review Initial Wire Position before exporting with the verified Robofil post.',
-      { initialWireReason: initialWire.reason }
+      blockedReason(
+        'initial-wire-position-required',
+        'Review Initial Wire Position before exporting with the verified Robofil post.',
+        { initialWireReason: initialWire.reason }
+      )
     );
   }
-  const g92Words = formatGcodePointWords(
+  const initialWireWords = formatGcodePointWords(
     initialWire.point,
     machine.output.coordinatePrecision
   );
-  if (!g92Words) {
-    return blockedReason(
+  if (!initialWireWords) {
+    return blockedForOperations(
       'initial-wire-position-required',
-      'Initial Wire Position could not be formatted for the selected machine.'
+      blockedReason(
+        'initial-wire-position-required',
+        'Initial Wire Position could not be formatted for the selected machine.'
+      )
     );
   }
+
+  return {
+    status: 'ready',
+    route: 'robofil-v1',
+    document,
+    machining,
+    compensationCode: resolution.code,
+    initialWirePoint: { ...initialWire.point },
+    initialWireWords,
+    issues: [],
+    programOwned: true
+  };
+}
+
+function postVerifiedRobofil(
+  document: PathPlanningDocument,
+  machine: MachineProfile,
+  preparation: Extract<ReadyUpidMachinePostPreparation, { route: 'robofil-v1' }>
+): UpidMachinePostResult {
+  const operation = document.plan.operations[0];
+  const g92Words = preparation.initialWireWords;
 
   const geometry = postPathPlanToGcode(document.plan, document.segments, {
     ...document.options,
@@ -662,7 +892,7 @@ function postVerifiedRobofil(
     coordinatePrecision: machine.output.coordinatePrecision,
     endpointTolerance: effectiveDocumentEndpointTolerance(document),
     coincidenceEpsilon: document.options.coincidenceEpsilon,
-    initialPosition: initialWire.point,
+    initialPosition: preparation.initialWirePoint,
     operationStartMode: 'linear'
   });
   if (geometry.status === 'blocked') {
@@ -678,7 +908,11 @@ function postVerifiedRobofil(
   const headerLines = templateLines(machine.templates.header);
   const footerLines = templateLines(machine.templates.footer);
   const dIndex = machine.compensation.offsetSelection.index;
-  const structuredPrefix = verifiedRobofilStructuredPrefix(machine, resolution.code, g92Words);
+  const structuredPrefix = verifiedRobofilStructuredPrefix(
+    machine,
+    preparation.compensationCode,
+    g92Words
+  );
   const prefixLines = [...headerLines, ...structuredPrefix];
   const contourLines = geometry.body ? geometry.body.split('\n') : [];
   const lines = [...prefixLines, ...contourLines, ...footerLines, 'M02'];
@@ -688,7 +922,7 @@ function postVerifiedRobofil(
     headerLineCount: headerLines.length,
     structuredPrefix,
     contourLineCount: contourLines.length,
-    expectedCompensation: resolution.code,
+    expectedCompensation: preparation.compensationCode,
     dIndex
   });
   if (auditIssue) return blockedReason('post-audit-failed', auditIssue);
@@ -707,8 +941,9 @@ function postVerifiedRobofil(
     operationId: string | null = null
   ) => {
     const after =
-      text === resolution.code || text.startsWith(`${resolution.code} `)
-        ? resolution.code
+      text === preparation.compensationCode ||
+      text.startsWith(`${preparation.compensationCode} `)
+        ? preparation.compensationCode
         : compensation;
     blocks.push({
       bodyLineIndex: blocks.length,
@@ -729,7 +964,11 @@ function postVerifiedRobofil(
   appendModalBlock(`G92 ${g92Words}`, 'setup');
   machine.compensation.preActivationCodes.forEach((line) => appendModalBlock(line, 'setup'));
   appendModalBlock('G38', 'compensation-activation', operation.id);
-  appendModalBlock(`${resolution.code} D${dIndex}`, 'compensation-activation', operation.id);
+  appendModalBlock(
+    `${preparation.compensationCode} D${dIndex}`,
+    'compensation-activation',
+    operation.id
+  );
   appendModalBlock(machine.controller.distanceMode, 'setup', operation.id);
   moves.forEach((move) => {
     blocks.push({
@@ -765,49 +1004,77 @@ function postVerifiedRobofil(
   };
 }
 
-function postRobofilV2(
+function prepareRobofilV2(
   document: PathPlanningDocument,
   machine: MachineProfile,
+  machining: ReadyMachiningDerivation,
   compensatedOperations: PathPlanningDocument['plan']['operations']
-): UpidMachinePostResult {
+): UpidMachinePostPreparation {
+  const blockedForOperations = (
+    reason: string,
+    result: UpidMachinePostResult,
+    operations = compensatedOperations
+  ) => blockedPreparation(result, {
+    reason,
+    document,
+    machining,
+    issues: operations.map((operation) => operationIssue(operation, reason))
+  });
+
   if (!machineProfileHasCurrentVerification(machine)) {
-    return blockedReason(
+    return blockedForOperations(
       'unverified-machine-profile',
-      'Robofil v2 compensated posting requires a current user-verified project machine snapshot.'
+      blockedReason(
+        'unverified-machine-profile',
+        'Robofil v2 compensated posting requires a current user-verified project machine snapshot.'
+      )
     );
   }
   if (!matchesRobofilV2PostEnvelope(machine)) {
-    return blockedReason(
+    return blockedForOperations(
       'unsupported-robofil-post-envelope',
-      'This Robofil snapshot is outside the operation-scoped post-version-2 envelope.'
+      blockedReason(
+        'unsupported-robofil-post-envelope',
+        'This Robofil snapshot is outside the operation-scoped post-version-2 envelope.'
+      )
     );
   }
   if (
     document.plan.operations.length === 0 ||
     compensatedOperations.length !== document.plan.operations.length
   ) {
-    return blockedReason(
+    return blockedForOperations(
       'unsupported-operation-count',
-      'Robofil v2 requires every posted operation to have a resolved controller-compensation intent.'
+      blockedReason(
+        'unsupported-operation-count',
+        'Robofil v2 requires every posted operation to have a resolved controller-compensation intent.'
+      ),
+      document.plan.operations
     );
   }
 
   const initialWire = resolveInitialWirePosition(document);
   if (initialWire.status === 'blocked') {
-    return blockedReason(
+    return blockedForOperations(
       'initial-wire-position-required',
-      'Review Initial Wire Position before exporting with Robofil v2.',
-      { initialWireReason: initialWire.reason }
+      blockedReason(
+        'initial-wire-position-required',
+        'Review Initial Wire Position before exporting with Robofil v2.',
+        { initialWireReason: initialWire.reason }
+      )
     );
   }
-  const g92Words = formatGcodePointWords(
+  const initialWireWords = formatGcodePointWords(
     initialWire.point,
     machine.output.coordinatePrecision
   );
-  if (!g92Words) {
-    return blockedReason(
+  if (!initialWireWords) {
+    return blockedForOperations(
       'initial-wire-position-required',
-      'Initial Wire Position could not be formatted for the selected machine.'
+      blockedReason(
+        'initial-wire-position-required',
+        'Initial Wire Position could not be formatted for the selected machine.'
+      )
     );
   }
 
@@ -817,28 +1084,62 @@ function postRobofilV2(
     footer: machine.templates.footer
   });
   if (!templatePolicy.valid) {
-    return blockedReason(
+    return blockedForOperations(
       'template-modal-conflict',
-      templatePolicy.diagnostics.map((diagnostic) => diagnostic.message).join(' '),
-      { templateDiagnostics: templatePolicy.diagnostics }
+      blockedReason(
+        'template-modal-conflict',
+        templatePolicy.diagnostics.map((diagnostic) => diagnostic.message).join(' '),
+        { templateDiagnostics: templatePolicy.diagnostics }
+      )
     );
   }
 
   const resolutionByOperationId = new Map<string, 'G41' | 'G42'>();
   for (const operation of document.plan.operations) {
     const readiness = validateCompensatedExport({ document, operation, machine });
-    if (readiness.status === 'blocked') return blockedMachinePost(readiness.diagnostics, true);
-    const resolution = resolveControllerCompensation({ document, operation });
-    if (resolution.status === 'blocked') {
-      return blockedReason(
-        'compensation-resolution-blocked',
-        `Controller compensation could not be resolved for ${operation.displayName}: ${resolution.reason}.`,
-        { compensationReason: resolution.reason, operationId: operation.id }
-      );
+    if (readiness.status === 'blocked') {
+      return blockedPreparation(blockedMachinePost(readiness.diagnostics, true), {
+        reason: readiness.reason,
+        document,
+        machining,
+        issues: [operationIssue(operation, readiness.reason)]
+      });
     }
-    resolutionByOperationId.set(operation.id, resolution.code);
+    resolutionByOperationId.set(operation.id, readiness.resolution.code);
   }
 
+  const programStopsByOperationId = new Map<string, ProgramStopValidation>();
+  const issues: UpidMachinePostPreparationIssue[] = [];
+  for (const operation of document.plan.operations) {
+    const validation = validateProgramStops(operation, machine, document.segments);
+    programStopsByOperationId.set(operation.id, validation);
+    if (validation.status === 'blocked') {
+      issues.push({
+        ...operationIssue(operation, 'program-stop-blocked'),
+        programStopReason: validation.reason
+      });
+    }
+  }
+
+  return {
+    status: 'ready',
+    route: 'robofil-v2',
+    document,
+    machining,
+    initialWirePoint: { ...initialWire.point },
+    initialWireWords,
+    resolutionByOperationId,
+    programStopsByOperationId,
+    issues,
+    programOwned: true
+  };
+}
+
+function postRobofilV2(
+  document: PathPlanningDocument,
+  machine: MachineProfile,
+  preparation: Extract<ReadyUpidMachinePostPreparation, { route: 'robofil-v2' }>
+): UpidMachinePostResult {
   const geometry = postPathPlanToGcode(document.plan, document.segments, {
     ...document.options,
     arcCenterMode:
@@ -846,7 +1147,7 @@ function postRobofilV2(
     coordinatePrecision: machine.output.coordinatePrecision,
     endpointTolerance: effectiveDocumentEndpointTolerance(document),
     coincidenceEpsilon: document.options.coincidenceEpsilon,
-    initialPosition: initialWire.point,
+    initialPosition: preparation.initialWirePoint,
     operationStartMode: 'rapid'
   });
   if (geometry.status === 'blocked') return blockedMachinePost(geometry.diagnostics, true);
@@ -856,7 +1157,7 @@ function postRobofilV2(
   const moves: GcodePostedMove[] = [];
   const operations: GcodePostedOperation[] = [];
   let compensation: 'G40' | 'G41' | 'G42' = 'G40';
-  let currentPosition: Point2 = { ...initialWire.point };
+  let currentPosition: Point2 = { ...preparation.initialWirePoint };
 
   const appendModal = (
     text: string,
@@ -911,7 +1212,7 @@ function postRobofilV2(
   };
 
   templateLines(machine.templates.header).forEach((line) => appendModal(line, 'template'));
-  appendModal(`G92 ${g92Words}`, 'setup');
+  appendModal(`G92 ${preparation.initialWireWords}`, 'setup');
   machine.compensation.preActivationCodes.forEach((line) => appendModal(line, 'setup'));
   appendModal('G38', 'compensation-activation');
   appendModal(machine.controller.distanceMode, 'setup');
@@ -927,7 +1228,7 @@ function postRobofilV2(
       );
     }
     const operationStart = lines.length;
-    const programStops = validateProgramStops(operation, machine, document.segments);
+    const programStops = preparation.programStopsByOperationId.get(operation.id)!;
     if (programStops.status === 'blocked') {
       return blockedReason(
         'program-stop-blocked',
@@ -1010,7 +1311,7 @@ function postRobofilV2(
         appendModal(code, 'automatic-rethread', operation.id)
       );
     }
-    const compensationCode = resolutionByOperationId.get(operation.id)!;
+    const compensationCode = preparation.resolutionByOperationId.get(operation.id)!;
     appendModal(
       `${compensationCode} D${machine.compensation.offsetSelection.index}`,
       'compensation-activation',
@@ -1460,6 +1761,37 @@ function blockedReason(
     ],
     true
   );
+}
+
+function operationIssue(
+  operation: PathPlanningDocument['plan']['operations'][number],
+  reason: string
+): UpidMachinePostPreparationIssue {
+  return {
+    reason,
+    effectiveOperationId: operation.id,
+    sourceOperationId:
+      operation.machiningIntent?.sourceOperationId ?? operation.id
+  };
+}
+
+function blockedPreparation(
+  result: UpidMachinePostResult,
+  options: {
+    reason?: string;
+    document?: PathPlanningDocument;
+    machining?: ReturnType<typeof deriveActiveMachiningOperations>;
+    issues?: UpidMachinePostPreparationIssue[];
+  } = {}
+): Extract<UpidMachinePostPreparation, { status: 'blocked' }> {
+  return {
+    status: 'blocked',
+    result,
+    ...(options.reason ? { reason: options.reason } : {}),
+    ...(options.document ? { document: options.document } : {}),
+    ...(options.machining ? { machining: options.machining } : {}),
+    issues: options.issues ?? []
+  };
 }
 
 function blockedMachinePost(

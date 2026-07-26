@@ -1,6 +1,7 @@
 import type { MachineProfile } from '@/domain/workbench/types';
 
 import { distance } from './segments';
+import { orderedPathOperations } from './operationExecutionOrder';
 
 import type {
   OperationThreadingTransition,
@@ -38,7 +39,8 @@ export function resolveOperationThreadingTransition(
   operationId: string,
   machine: MachineProfile
 ): OperationThreadingResolution {
-  const operationIndex = document.plan.operations.findIndex(
+  const operations = orderedPathOperations(document.plan.operations);
+  const operationIndex = operations.findIndex(
     (operation) => operation.id === operationId
   );
   if (operationIndex < 0) {
@@ -51,8 +53,8 @@ export function resolveOperationThreadingTransition(
     );
   }
 
-  const operation = document.plan.operations[operationIndex];
-  const previous = document.plan.operations[operationIndex - 1];
+  const operation = operations[operationIndex];
+  const previous = operations[operationIndex - 1];
   const transition = operation.threadingTransition
     ? { ...operation.threadingTransition, source: 'operation-override' as const }
     : document.setup?.threadingDefault

@@ -11,6 +11,27 @@ import {
 } from '../machiningParticipation';
 
 describe('machining participation', () => {
+  it('derives imported operations and rapid metrics in authoritative execution order', () => {
+    const source = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 3 },
+      { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 3 }
+    ]);
+    const [first, second] = source.plan.operations;
+    source.plan.operations = [second, first];
+
+    const derived = deriveActiveMachiningOperations(source);
+
+    expect(derived.status).toBe('ready');
+    expect(derived.operations.map((operation) => operation.id)).toEqual([
+      first.id,
+      second.id
+    ]);
+    expect(source.plan.operations.map((operation) => operation.id)).toEqual([
+      second.id,
+      first.id
+    ]);
+  });
+
   it('disables and re-enables a whole source segment without deleting geometry', () => {
     const source = rectangleDocument();
     const sourceIds = source.segments.map((segment) => segment.id);
