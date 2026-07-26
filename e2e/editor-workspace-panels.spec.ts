@@ -413,14 +413,12 @@ test('editor diagnostics explain what to inspect for an open chain', async ({ pa
   await expect(openEndpointRows.first()).toHaveAttribute('data-upid-selected', 'true');
   await expect(page.locator('[data-preview-path-endpoint][data-preview-selected="true"]')).toHaveCount(1);
 
-  await page.getByLabel('View menu').click();
-  await page.getByRole('button', { name: 'Path Diagnostics' }).click();
+  await showPanels(page, ['path-diagnostics']);
   await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toBeVisible();
   await diagnosticRow.getByRole('button', { name: 'Open Endpoint Topology' }).click();
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
 
-  await page.getByLabel('View menu').click();
-  await page.getByRole('button', { name: 'Path Diagnostics' }).click();
+  await showPanels(page, ['path-diagnostics']);
   await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toBeVisible();
   await diagnosticRow.getByRole('button', { name: 'Open Contour Tree' }).click();
   await expect(page.locator('[data-editor-workspace-panel="contour-tree"]')).toBeVisible();
@@ -788,8 +786,9 @@ async function setPanelVisibility(
 ) {
   for (const panelId of panelIds) {
     if (visible) {
-      await page.locator(`[data-editor-workflow-command="${WORKSPACE_PANEL_COMMANDS[panelId]}"]`)
-        .evaluate((button: HTMLButtonElement) => button.click());
+      const commandId = WORKSPACE_PANEL_COMMANDS[panelId];
+      await page.getByRole('button', { name: `${workflowMenuForCommand(commandId)} menu` }).click();
+      await page.locator(`[data-editor-workflow-command="${commandId}"]`).click();
       await expect(page.locator(`[data-editor-workspace-panel="${panelId}"]`)).toBeVisible();
       continue;
     }
@@ -801,6 +800,17 @@ async function setPanelVisibility(
       }
     }
   }
+}
+
+function workflowMenuForCommand(commandId: string) {
+  const prefix = commandId.split('.', 1)[0];
+  return {
+    geometry: 'Geometry',
+    machining: 'Machining',
+    construction: 'Construction',
+    view: 'View',
+    machine: 'Machine'
+  }[prefix] ?? 'View';
 }
 
 async function dragHandleToDock(

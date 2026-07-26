@@ -3167,7 +3167,7 @@ export function EditorPage({
     return (
       <div
         className={`min-h-0 overflow-hidden ${
-          isPathProject ? '' : 'grid lg:grid-rows-[minmax(0,1fr)_auto]'
+          isPathProject ? '' : 'grid lg:grid-rows-[minmax(0,1fr)_minmax(0,42vh)]'
         }`}
       >
         {!pathDocumentDraft && (
