@@ -246,7 +246,10 @@ summary:focus-visible {
   }
 
   [data-editor-main-grid][data-has-active-right-dock="true"] {
-    grid-template-columns: minmax(480px, 1fr) 3px min(var(--editor-inspector-width), 340px);
+    grid-template-columns:
+      minmax(480px, 1fr)
+      3px
+      min(var(--editor-inspector-width), calc(100% - 483px));
   }
 
   [data-editor-main-grid] {

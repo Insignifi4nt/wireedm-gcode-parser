@@ -149,6 +149,66 @@ test('path editor keeps the UPID rail and essential workflow controls at 1024', 
   }
 });
 
+test('path editor keeps an active right dock and its controls inside the workbench at 1024', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 1024, height: 720 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'active-right-dock-1024.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  await openWorkflowCommand(page, 'Machining', 'machining.entry-exit');
+  await page.getByRole('button', { name: 'Dock Entry / Exit right' }).click();
+
+  const mainGrid = page.locator('[data-editor-main-grid]');
+  const canvas = page.locator('[data-editor-canvas-panel]');
+  const rightDock = page.locator('[data-editor-panel-dock-zone="right"]');
+  const dockedPanel = rightDock.locator('[data-editor-workspace-panel="entry-exit"]');
+  await expect(mainGrid).toHaveAttribute('data-has-active-right-dock', 'true');
+  await expect(rightDock).toBeVisible();
+  await expect(dockedPanel).toBeVisible();
+
+  const [mainGridBox, canvasBox, rightDockBox] = await Promise.all([
+    mainGrid.boundingBox(),
+    canvas.boundingBox(),
+    rightDock.boundingBox()
+  ]);
+  expect(mainGridBox).not.toBeNull();
+  expect(canvasBox).not.toBeNull();
+  expect(rightDockBox).not.toBeNull();
+  expect(canvasBox!.width).toBeGreaterThanOrEqual(480);
+  expect(rightDockBox!.width).toBeGreaterThanOrEqual(280);
+  expect(rightDockBox!.x).toBeGreaterThanOrEqual(mainGridBox!.x);
+  expect(rightDockBox!.x + rightDockBox!.width).toBeLessThanOrEqual(
+    mainGridBox!.x + mainGridBox!.width
+  );
+  expect(rightDockBox!.x + rightDockBox!.width).toBeLessThanOrEqual(1024);
+
+  const dockControls = [
+    dockedPanel.getByRole('button', { name: 'Float Entry / Exit' }),
+    dockedPanel.getByRole('button', { name: 'Hide Entry / Exit' }),
+    dockedPanel.getByRole('button', { name: 'Cancel Entry / Exit workflow' }),
+    dockedPanel.getByRole('button', { name: 'Save Entry / Exit workflow' })
+  ];
+  for (const control of dockControls) {
+    await expect(control).toBeVisible();
+    const controlBox = await control.boundingBox();
+    expect(controlBox).not.toBeNull();
+    expect(controlBox!.x).toBeGreaterThanOrEqual(rightDockBox!.x);
+    expect(controlBox!.x + controlBox!.width).toBeLessThanOrEqual(
+      rightDockBox!.x + rightDockBox!.width
+    );
+    expect(controlBox!.x + controlBox!.width).toBeLessThanOrEqual(1024);
+  }
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
+});
+
 test('path editor materializes a right dock only for a docked active workflow', async ({ page }) => {
   await page.setViewportSize({ width: 1708, height: 874 });
   await openReadyWorkbench(page);
@@ -399,6 +459,51 @@ test('compact dirty program-tree transitions stay reachable before changing draw
   await expect(saveTransition.getByRole('button', { name: 'Save' })).toBeEnabled();
   await saveTransition.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('dialog', { name: 'Entry / Exit' })).toBeVisible();
+});
+
+test('desktop-born dirty tree transitions keep one compact modal owner after live resize', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'live-resize-dirty-transition.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  const desktopTree = page.getByRole('tree', { name: 'UPID program sequence' });
+  await desktopTree.getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
+  const workflowPanel = page.locator('[data-editor-workspace-panel="entry-exit"]');
+  await workflowPanel.getByRole('textbox', { name: 'Entry X' }).fill('5');
+  await workflowPanel.getByRole('textbox', { name: 'Entry Y' }).fill('6');
+
+  await page.setViewportSize({ width: 767, height: 800 });
+  await page.getByRole('button', { name: 'Open UPID rail' }).click();
+  const underlyingUpidDrawer = page.locator('[data-editor-compact-drawer="upid"]');
+  const exitTreeItem = underlyingUpidDrawer.getByRole('treeitem', {
+    name: 'Exit / lead-out · None'
+  });
+  await exitTreeItem.click();
+
+  const transition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
+  await expect(transition).toBeVisible();
+  await expect(transition.getByRole('button', { name: 'Discard' })).toBeFocused();
+  await expect(underlyingUpidDrawer).toHaveAttribute('inert', '');
+  await expect(underlyingUpidDrawer).toHaveAttribute('aria-hidden', 'true');
+  await expect(underlyingUpidDrawer).not.toHaveAttribute('aria-modal', 'true');
+  await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(1);
+  expect(await transition.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+
+  await page.keyboard.press('Escape');
+  await expect(transition).toHaveCount(0);
+  await expect(underlyingUpidDrawer).not.toHaveAttribute('inert', '');
+  await expect(underlyingUpidDrawer).not.toHaveAttribute('aria-hidden', 'true');
+  await expect(underlyingUpidDrawer).toHaveAttribute('aria-modal', 'true');
+  await expect(exitTreeItem).toBeFocused();
+  await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(1);
 });
 
 test('compact modal host contains shell chrome and clears its owner when the editor unmounts', async ({ page }) => {

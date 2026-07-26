@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -695,13 +696,21 @@ export function EditorPage({
   const [workflowTransition, setWorkflowTransition] = useState<
     EditorWorkflowTransition<EditorDraftSnapshot> | null
   >(null);
+  const isCompactViewportRef = useRef(isCompactViewport);
+  isCompactViewportRef.current = isCompactViewport;
 
   function updateWorkflowTransition(
     next: EditorWorkflowTransition<EditorDraftSnapshot> | null
   ) {
     setWorkflowTransition(next);
-    setCompactTransitionOverlay(Boolean(isCompactViewport && next?.kind === 'held'));
+    setCompactTransitionOverlay(Boolean(isCompactViewportRef.current && next?.kind === 'held'));
   }
+
+  useLayoutEffect(() => {
+    setCompactTransitionOverlay(
+      Boolean(isCompactViewport && workflowTransition?.kind === 'held')
+    );
+  }, [isCompactViewport, setCompactTransitionOverlay, workflowTransition]);
 
   useEffect(() => () => setCompactTransitionOverlay(false), [setCompactTransitionOverlay]);
 
@@ -1077,6 +1086,7 @@ export function EditorPage({
   }, [
     activeToolSession,
     activeWorkflowSession,
+    isCompactViewport,
     isEditorMutationLocked,
     pathDocumentDraft,
     pathClickMode,
@@ -1136,6 +1146,7 @@ export function EditorPage({
     };
   }, [
     activeWorkflowSession,
+    isCompactViewport,
     isEditorMutationLocked,
     workflowTargetChangeBlocked,
     expandedPathElementIds,
@@ -1202,6 +1213,7 @@ export function EditorPage({
       draftSignature,
       draftText,
       exportAvailable,
+      editorWorkflowMenus,
       guideHighlightTarget,
       hasUnsavedChanges,
       importErrorMessage,
@@ -1500,7 +1512,7 @@ export function EditorPage({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeToolSession, activeWorkflowSession, canvasMouseMode, draftText, entryExitCanvasPick, isEditorMutationLocked, measurementPoints.length, pathClickMode, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
+  }, [activeToolSession, activeWorkflowSession, canvasMouseMode, draftText, entryExitCanvasPick, isCompactViewport, isEditorMutationLocked, measurementPoints.length, pathClickMode, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
 
   function handleBackToDashboard() {
     if (isEditorMutationLocked) return;
