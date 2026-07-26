@@ -285,6 +285,9 @@ describe('App dashboard and workbench shell', () => {
     expect(container.querySelector('main')?.parentElement?.style.gridTemplateColumns).toBe(
       'minmax(0, 1fr)'
     );
+    const storageStatus = container.querySelector('[data-storage-status]');
+    expect(storageStatus?.getAttribute('role')).toBe('status');
+    expect(storageStatus?.getAttribute('aria-label')).toBe('Browser cache active');
   });
 
   it('saves custom workbench templates and output settings in the browser cache', async () => {
@@ -1041,6 +1044,12 @@ describe('App dashboard and workbench shell', () => {
 
     expect(projectText()).not.toContain('Zeta repair');
     expect(projectText()).toContain('No projects match the active filters.');
+    expect(
+      container.querySelector('[role="list"][aria-label="Project list"]')
+    ).toBeNull();
+    expect(
+      container.querySelector('[role="status"][aria-label="Project list"]')?.textContent
+    ).toContain('No projects match the active filters.');
     expect(container.querySelector('button[aria-label="Rename project new-gcode"]')).toBeNull();
   });
 });

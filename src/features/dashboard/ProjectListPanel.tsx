@@ -83,13 +83,13 @@ export function ProjectListPanel({
               </select>
             </div>
 
-            <div
-              aria-label="Project list"
-              className="divide-y divide-border border border-border"
-              role="list"
-            >
-              {visibleProjects.length > 0 ? (
-                visibleProjects.map((project) => (
+            {visibleProjects.length > 0 ? (
+              <div
+                aria-label="Project list"
+                className="divide-y divide-border border border-border"
+                role="list"
+              >
+                {visibleProjects.map((project) => (
                   <div
                     className="grid min-w-0 gap-x-3 gap-y-1 p-2 lg:grid-cols-[minmax(0,1fr)_110px_minmax(120px,150px)_auto] lg:items-center"
                     data-project-row
@@ -158,13 +158,17 @@ export function ProjectListPanel({
                       )}
                     </div>
                   </div>
-                ))
-              ) : (
-                <div className="bg-background/50 p-2 text-muted-foreground">
-                  No projects match the active filters.
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div
+                aria-label="Project list"
+                className="border border-border bg-background/50 p-2 text-muted-foreground"
+                role="status"
+              >
+                No projects match the active filters.
+              </div>
+            )}
           </div>
         ) : (
           <div

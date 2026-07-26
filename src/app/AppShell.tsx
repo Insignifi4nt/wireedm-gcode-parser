@@ -190,6 +190,7 @@ export function AppShell({
         <div className="ml-auto flex items-center gap-2" data-app-header-system-controls>
           <StatusNotificationMenu notifications={statusNotifications} />
           <span
+            aria-label={storageStatusLabel}
             className={`inline-flex h-7 items-center gap-2 rounded-[2px] border px-2 text-[10px] ${
               storageStatusTone === 'temporary'
                 ? 'border-amber-500/50 bg-amber-500/10 text-amber-100'
@@ -197,6 +198,8 @@ export function AppShell({
                   ? 'border-destructive/60 bg-destructive/10 text-destructive'
                   : 'border-border bg-background/60 text-muted-foreground'
             }`}
+            data-storage-status
+            role="status"
             title={storageStatusLabel}
           >
             <Database className="size-3.5" />

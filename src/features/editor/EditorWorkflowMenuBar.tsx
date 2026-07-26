@@ -20,14 +20,17 @@ type MenuAlignment = 'left' | 'right';
 export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGroup[] }) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [compactOpen, setCompactOpen] = useState(false);
+  const [activeCompactCategory, setActiveCompactCategory] = useState<string | null>(null);
   const [activeCommandId, setActiveCommandId] = useState<string | null>(null);
   const [menuAlignment, setMenuAlignment] = useState<MenuAlignment>('left');
   const [compactMenuPosition, setCompactMenuPosition] = useState({ left: 4, top: 36 });
   const navRef = useRef<HTMLElement>(null);
   const compactTriggerRef = useRef<HTMLButtonElement>(null);
+  const categoryRefs = useRef(new Map<string, HTMLButtonElement>());
   const triggerRefs = useRef(new Map<string, HTMLButtonElement>());
   const commandRefs = useRef(new Map<string, HTMLButtonElement>());
   const focusFirstCommandFor = useRef<string | null>(null);
+  const focusCategoryAfterRender = useRef<string | null>(null);
   const visibleGroups = groups.filter((group) => group.commands.length > 0);
 
   useEffect(() => {
@@ -50,12 +53,21 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
   }, [compactOpen, openMenu, visibleGroups]);
 
   useEffect(() => {
+    const category = focusCategoryAfterRender.current;
+    if (!compactOpen || openMenu !== null || !category) return;
+
+    categoryRefs.current.get(category)?.focus();
+    focusCategoryAfterRender.current = null;
+  }, [compactOpen, openMenu]);
+
+  useEffect(() => {
     if (!openMenu && !compactOpen) return;
 
     const handleOutsidePointer = (event: PointerEvent) => {
       if (navRef.current?.contains(event.target as Node)) return;
       setOpenMenu(null);
       setCompactOpen(false);
+      setActiveCompactCategory(null);
       setActiveCommandId(null);
     };
 
@@ -76,7 +88,9 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
 
   function closeMenu(returnFocusTo?: string) {
     setOpenMenu(null);
+    setActiveCompactCategory(null);
     setActiveCommandId(null);
+    focusCategoryAfterRender.current = null;
     if (compactOpen) {
       setCompactOpen(false);
       compactTriggerRef.current?.focus();
@@ -102,6 +116,22 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
     const next = enabledCommands[nextIndex];
     setActiveCommandId(next.id);
     commandRefs.current.get(next.id)?.focus();
+  }
+
+  function moveCategoryFocus(currentTitle: string, key: string) {
+    const currentIndex = visibleGroups.findIndex((group) => group.title === currentTitle);
+    if (currentIndex === -1 || visibleGroups.length === 0) return;
+
+    let nextIndex: number | null = null;
+    if (key === 'ArrowDown') nextIndex = (currentIndex + 1) % visibleGroups.length;
+    if (key === 'ArrowUp') nextIndex = (currentIndex - 1 + visibleGroups.length) % visibleGroups.length;
+    if (key === 'Home') nextIndex = 0;
+    if (key === 'End') nextIndex = visibleGroups.length - 1;
+    if (nextIndex === null) return;
+
+    const nextTitle = visibleGroups[nextIndex].title;
+    setActiveCompactCategory(nextTitle);
+    categoryRefs.current.get(nextTitle)?.focus();
   }
 
   function positionCompactMenu(trigger: HTMLButtonElement) {
@@ -155,6 +185,8 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
               className="h-6 px-1.5 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
               data-editor-workflow-compact-back
               onClick={() => {
+                focusCategoryAfterRender.current = group.title;
+                setActiveCompactCategory(group.title);
                 setOpenMenu(null);
                 setActiveCommandId(null);
               }}
@@ -224,6 +256,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           setOpenMenu(null);
           setCompactOpen(false);
+          setActiveCompactCategory(null);
           setActiveCommandId(null);
         }
       }}
@@ -278,7 +311,13 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
       <div className="hidden" data-editor-workflow-compact>
         <button
           ref={compactTriggerRef}
-          aria-controls={compactOpen ? 'editor-workflow-compact-popover' : undefined}
+          aria-controls={
+            compactOpen
+              ? openMenu
+                ? `editor-workflow-menu-compact-${openMenu.toLowerCase()}`
+                : 'editor-workflow-compact-popover'
+              : undefined
+          }
           aria-expanded={compactOpen}
           aria-haspopup="menu"
           aria-label="Open Workflows"
@@ -287,7 +326,16 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
             positionCompactMenu(event.currentTarget);
             setOpenMenu(null);
             setActiveCommandId(null);
-            setCompactOpen((current) => !current);
+            if (compactOpen) {
+              setCompactOpen(false);
+              setActiveCompactCategory(null);
+              focusCategoryAfterRender.current = null;
+            } else {
+              const firstCategory = visibleGroups[0]?.title ?? null;
+              setActiveCompactCategory(firstCategory);
+              focusCategoryAfterRender.current = firstCategory;
+              setCompactOpen(true);
+            }
           }}
           type="button"
         >
@@ -298,16 +346,44 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
             className="fixed z-[60] w-[min(260px,calc(100vw-8px))] overflow-hidden border border-border bg-card p-1"
             data-editor-workflow-category-menu
             id="editor-workflow-compact-popover"
+            onKeyDown={(event) => {
+              const category = (event.target as HTMLElement).dataset.editorWorkflowCategory;
+              if (!category) return;
+              if (
+                event.key === 'ArrowDown' ||
+                event.key === 'ArrowUp' ||
+                event.key === 'Home' ||
+                event.key === 'End'
+              ) {
+                event.preventDefault();
+                moveCategoryFocus(category, event.key);
+              }
+            }}
             role="menu"
             style={compactMenuPosition}
           >
-            {visibleGroups.map((group) => (
+            {visibleGroups.map((group, index) => (
               <button
+                ref={(element) => {
+                  if (element) categoryRefs.current.set(group.title, element);
+                  else categoryRefs.current.delete(group.title);
+                }}
                 aria-label={`Open ${group.title} workflows`}
                 className="flex min-h-8 w-full items-center border-b border-border px-2 text-left text-[11px] text-foreground outline-none last:border-b-0 hover:bg-accent"
+                data-editor-workflow-category={group.title}
                 key={group.title}
-                onClick={() => openMenuFor(group.title, true)}
+                onClick={() => {
+                  setActiveCompactCategory(group.title);
+                  openMenuFor(group.title, true);
+                }}
+                onFocus={() => setActiveCompactCategory(group.title)}
                 role="menuitem"
+                tabIndex={
+                  activeCompactCategory === group.title ||
+                  (activeCompactCategory === null && index === 0)
+                    ? 0
+                    : -1
+                }
                 type="button"
               >
                 {group.title}

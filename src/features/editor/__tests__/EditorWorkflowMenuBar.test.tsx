@@ -184,6 +184,73 @@ describe('EditorWorkflowMenuBar', () => {
     expect(container.querySelector('[data-editor-workflow-compact-back]')).not.toBeNull();
   });
 
+  it('moves focus into the compact categories and roves with arrow, Home, and End keys', async () => {
+    await renderMenu();
+    const launcher = getCompactLauncher();
+    launcher.focus();
+
+    await act(async () => launcher.click());
+
+    const geometry = getCompactCategory('Geometry');
+    const machining = getCompactCategory('Machining');
+    expect(document.activeElement).toBe(geometry);
+
+    await pressKey(geometry, 'ArrowDown');
+    expect(document.activeElement).toBe(machining);
+    await pressKey(machining, 'Home');
+    expect(document.activeElement).toBe(geometry);
+    await pressKey(geometry, 'End');
+    expect(document.activeElement).toBe(machining);
+    await pressKey(machining, 'ArrowDown');
+    expect(document.activeElement).toBe(geometry);
+    await pressKey(geometry, 'ArrowUp');
+    expect(document.activeElement).toBe(machining);
+  });
+
+  it('keeps compact aria-controls truthful and restores category focus from Back', async () => {
+    await renderMenu();
+    const launcher = getCompactLauncher();
+    await act(async () => launcher.click());
+
+    expect(launcher.getAttribute('aria-controls')).toBe('editor-workflow-compact-popover');
+    await act(async () => getCompactCategory('Machining').click());
+
+    const commandMenu = container.querySelector<HTMLElement>(
+      '[data-editor-workflow-compact-menu]'
+    );
+    expect(commandMenu).not.toBeNull();
+    expect(launcher.getAttribute('aria-controls')).toBe(commandMenu?.id);
+    expect(document.getElementById('editor-workflow-compact-popover')).toBeNull();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-editor-workflow-compact-back]')?.click();
+    });
+
+    expect(launcher.getAttribute('aria-controls')).toBe('editor-workflow-compact-popover');
+    expect(document.activeElement).toBe(getCompactCategory('Machining'));
+  });
+
+  it('closes a compact category menu with Escape and restores its launcher', async () => {
+    await renderMenu();
+    const launcher = getCompactLauncher();
+    launcher.focus();
+    await act(async () => launcher.click());
+
+    const geometry = getCompactCategory('Geometry');
+    const escapeEvent = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Escape'
+    });
+    await act(async () => geometry.dispatchEvent(escapeEvent));
+
+    expect(escapeEvent.defaultPrevented).toBe(true);
+    expect(container.querySelector('[data-editor-workflow-category-menu]')).toBeNull();
+    expect(launcher.getAttribute('aria-expanded')).toBe('false');
+    expect(launcher.hasAttribute('aria-controls')).toBe(false);
+    expect(document.activeElement).toBe(launcher);
+  });
+
   it('owns Escape after mouse-opening a compact command menu and returns to its launcher', async () => {
     await renderMenu();
     const launcher = getCompactLauncher();
@@ -237,5 +304,19 @@ describe('EditorWorkflowMenuBar', () => {
     );
     if (!button) throw new Error('Compact Workflows launcher was not rendered.');
     return button;
+  }
+
+  function getCompactCategory(title: EditorWorkflowMenuGroup['title']) {
+    const button = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="Open ${title} workflows"]`
+    );
+    if (!button) throw new Error(`${title} compact workflow category was not rendered.`);
+    return button;
+  }
+
+  async function pressKey(target: HTMLElement, key: string) {
+    await act(async () => {
+      target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    });
   }
 });

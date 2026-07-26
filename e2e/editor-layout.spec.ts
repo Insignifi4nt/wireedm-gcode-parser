@@ -307,6 +307,45 @@ for (const width of [767, 320]) {
   });
 }
 
+test('compact Workflows launcher owns keyboard focus and popup state at 320px', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await openReadyWorkbench(page);
+  await page.locator('input[aria-label="DXF file"]').setInputFiles({
+    name: 'compact-workflows-keyboard.dxf',
+    mimeType: 'application/dxf',
+    buffer: Buffer.from(rectangleDxf())
+  });
+  await confirmPendingDxfImport(page);
+  await dismissOnboarding(page);
+
+  await expect(page.getByRole('status', { name: 'Browser cache active' })).toBeVisible();
+  const launcher = page.getByRole('button', { name: 'Open Workflows' });
+  await launcher.focus();
+  await page.keyboard.press('Enter');
+  const geometry = page.getByRole('menuitem', { name: 'Open Geometry workflows' });
+  const machining = page.getByRole('menuitem', { name: 'Open Machining workflows' });
+  await expect(geometry).toBeFocused();
+
+  await page.keyboard.press('ArrowDown');
+  await expect(machining).toBeFocused();
+  await page.keyboard.press('Enter');
+  const machiningMenu = page.locator('[data-editor-workflow-compact-menu]');
+  await expect(machiningMenu.locator('[data-editor-workflow-command]:focus')).toHaveCount(1);
+  await expect(launcher).toHaveAttribute('aria-controls', await machiningMenu.getAttribute('id') ?? '');
+
+  const back = machiningMenu.getByRole('menuitem', { name: 'Back to workflow categories' });
+  await back.focus();
+  await page.keyboard.press('Enter');
+  await expect(machining).toBeFocused();
+  await expect(launcher).toHaveAttribute('aria-controls', 'editor-workflow-compact-popover');
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-editor-workflow-category-menu]')).toHaveCount(0);
+  await expect(launcher).toBeFocused();
+  await expect(launcher).toHaveAttribute('aria-expanded', 'false');
+  await expect(launcher).not.toHaveAttribute('aria-controls');
+});
+
 test('compact dirty program-tree transitions stay reachable before changing drawers', async ({ page }) => {
   await page.setViewportSize({ width: 767, height: 800 });
   await openReadyWorkbench(page);
