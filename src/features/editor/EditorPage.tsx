@@ -1328,14 +1328,20 @@ export function EditorPage({
       programTree,
       selectedProgramTreeKey
     );
+    const operationTreeKey = selectedPathOperationId
+      ? programTree.operations.find(
+          (node) => node.operationId === selectedPathOperationId
+        )?.treeKey ?? null
+      : null;
+    if (selectedTreeOperationId === undefined) {
+      setSelectedProgramTreeKey(operationTreeKey);
+      return;
+    }
     if (
       selectedPathOperationId &&
       selectedTreeOperationId !== selectedPathOperationId
     ) {
-      const operationTreeKey = programTree.operations.find(
-        (node) => node.operationId === selectedPathOperationId
-      )?.treeKey;
-      setSelectedProgramTreeKey(operationTreeKey ?? null);
+      setSelectedProgramTreeKey(operationTreeKey);
     } else if (!selectedPathOperationId && selectedTreeOperationId) {
       setSelectedProgramTreeKey(null);
     }
@@ -4018,6 +4024,7 @@ function findProgramTreeOperationId(
   tree: UpidProgramTree,
   treeKey: string
 ): string | null | undefined {
+  if (treeKey === 'section:source' || treeKey === 'section:program') return null;
   const pending = [...tree.sourceSetup, ...tree.operations].map((node) => ({
     inheritedOperationId: null as string | null,
     node
@@ -4041,10 +4048,20 @@ function exactTargetForProgramTreeEditTarget(
     return { diagnosticId: target.diagnosticId, kind: 'diagnostic' };
   }
   if (target?.kind === 'machining-participation' && target.spanId) {
-    return { kind: 'machining-span', spanId: target.spanId };
+    return target.operationId
+      ? {
+          kind: 'machining-span',
+          operationId: target.operationId,
+          spanId: target.spanId
+        }
+      : null;
   }
   if (target?.kind === 'program-stop') {
-    return { kind: 'program-stop', stopId: target.stopId };
+    return {
+      kind: 'program-stop',
+      operationId: target.operationId,
+      stopId: target.stopId
+    };
   }
   return null;
 }
@@ -4062,18 +4079,28 @@ function reconcileProgramExactTarget(
       : null;
   }
   if (target.kind === 'program-stop') {
-    return document.plan.operations.some((operation) =>
-      operation.programStops?.some((stop) => stop.id === target.stopId)
-    )
+    return document.plan.operations.find(
+      (operation) => operation.id === target.operationId
+    )?.programStops?.some((stop) => stop.id === target.stopId)
       ? target
       : null;
   }
-  if (document.machiningParticipation?.spans.some((span) => span.id === target.spanId)) {
+  const sourceOperation = document.plan.operations.find(
+    (operation) => operation.id === target.operationId
+  );
+  const sourceSegmentIds = new Set(
+    sourceOperation?.segmentRefs.map((reference) => reference.segmentId) ?? []
+  );
+  if (document.machiningParticipation?.spans.some(
+    (span) => span.id === target.spanId && sourceSegmentIds.has(span.sourceSegmentId)
+  )) {
     return target;
   }
   const derived = deriveActiveMachiningOperations(document);
   return derived.status === 'ready' && derived.operations.some(
-    (operation) => operation.machiningIntent?.spanIds.includes(target.spanId)
+    (operation) =>
+      operation.machiningIntent?.sourceOperationId === target.operationId &&
+      operation.machiningIntent.spanIds.includes(target.spanId)
   )
     ? target
     : null;
@@ -4089,10 +4116,11 @@ function sameProgramExactTarget(
     return left.diagnosticId === right.diagnosticId;
   }
   if (left.kind === 'machining-span' && right.kind === 'machining-span') {
-    return left.spanId === right.spanId;
+    return left.operationId === right.operationId && left.spanId === right.spanId;
   }
   return left.kind === 'program-stop' &&
     right.kind === 'program-stop' &&
+    left.operationId === right.operationId &&
     left.stopId === right.stopId;
 }
 

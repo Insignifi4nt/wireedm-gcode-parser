@@ -100,7 +100,11 @@ describe('editor workflow session', () => {
     },
     {
       commandId: 'machining.participation',
-      exactTarget: { kind: 'machining-span' as const, spanId: 'span-2' },
+      exactTarget: {
+        kind: 'machining-span' as const,
+        operationId: 'operation-2',
+        spanId: 'span-2'
+      },
       operationId: 'operation-2'
     }
   ])('holds a $exactTarget.kind target while the workflow is dirty', (target) => {

@@ -395,6 +395,199 @@ describe('EditorPage UPID draft boundary', () => {
     expect(programTreeItem(diagnosticTreeKey)?.getAttribute('aria-selected')).toBe('false');
   });
 
+  it('clears an operation-local stop target when an external update leaves the same ID elsewhere', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+    const repeatedStop = {
+      enabled: true,
+      id: 'stop-1',
+      placement: { kind: 'before-entry' as const },
+      reason: 'manual' as const
+    };
+    firstOperation.programStops = [structuredClone(repeatedStop)];
+    secondOperation.programStops = [structuredClone(repeatedStop)];
+    const firstStopTreeKey = `operation:${firstOperation.id}:stop:${repeatedStop.id}`;
+    const onSaveEditorDraft = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={projectWithUpid(pathDocument)}
+        />
+      );
+    });
+    await flushAsync();
+    await ensureProgramTreeItemExpanded('section:program');
+    await ensureProgramTreeItemExpanded(`operation:${firstOperation.id}`);
+    await pressProgramTreeItem(firstStopTreeKey, 'Enter');
+    expect(
+      container.querySelector(`[data-program-stop="${repeatedStop.id}"]`)
+        ?.getAttribute('data-selected')
+    ).toBe('true');
+
+    const withoutFirstStop = structuredClone(pathDocument);
+    withoutFirstStop.plan.operations[0].programStops = [];
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={projectWithUpid(withoutFirstStop)}
+        />
+      );
+    });
+    await flushAsync();
+    expect(
+      programTreeItem(`operation:${firstOperation.id}`)?.getAttribute('aria-selected')
+    ).toBe('true');
+
+    const reintroducedFirstStop = structuredClone(withoutFirstStop);
+    reintroducedFirstStop.plan.operations[0].programStops = [structuredClone(repeatedStop)];
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={projectWithUpid(reintroducedFirstStop)}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(
+      container.querySelector(`[data-program-stop="${repeatedStop.id}"]`)
+        ?.getAttribute('data-selected')
+    ).not.toBe('true');
+    expect(programTreeItem(firstStopTreeKey)?.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('clears a span target when an external update reassigns its ID to another operation', async () => {
+    const pathDocument = pathDocumentFromIndependentRectangles();
+    const [firstOperation, secondOperation] = pathDocument.plan.operations;
+    const span = {
+      id: 'span-shared-across-updates',
+      participation: 'inactive-reference' as const,
+      range: { start: 0, end: 1 },
+      sourceSegmentId: firstOperation.segmentRefs[0].segmentId
+    };
+    pathDocument.machiningParticipation = { spans: [span] };
+    const spanTreeKey =
+      `operation:${firstOperation.id}:inactive-span:${encodeURIComponent(span.id)}`;
+    const onSaveEditorDraft = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={projectWithUpid(pathDocument)}
+        />
+      );
+    });
+    await flushAsync();
+    await ensureProgramTreeItemExpanded('section:program');
+    await ensureProgramTreeItemExpanded(`operation:${firstOperation.id}`);
+    await ensureProgramTreeItemExpanded(`operation:${firstOperation.id}:cut-path`);
+    await pressProgramTreeItem(spanTreeKey, 'Enter');
+    expect(
+      container.querySelector(`[data-machining-span-id="${span.id}"]`)
+        ?.getAttribute('aria-current')
+    ).toBe('true');
+
+    const reassignedSpan = structuredClone(pathDocument);
+    reassignedSpan.machiningParticipation!.spans[0].sourceSegmentId =
+      secondOperation.segmentRefs[0].segmentId;
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={projectWithUpid(reassignedSpan)}
+        />
+      );
+    });
+    await flushAsync();
+    expect(
+      programTreeItem(`operation:${firstOperation.id}`)?.getAttribute('aria-selected')
+    ).toBe('true');
+
+    const reintroducedSpan = structuredClone(reassignedSpan);
+    reintroducedSpan.machiningParticipation!.spans[0].sourceSegmentId =
+      firstOperation.segmentRefs[0].segmentId;
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={projectWithUpid(reintroducedSpan)}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(
+      container.querySelector(`[data-machining-span-id="${span.id}"]`)
+        ?.getAttribute('aria-current')
+    ).not.toBe('true');
+    expect(programTreeItem(spanTreeKey)?.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('does not resurrect a removed global diagnostic tree selection after an external update', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const diagnostic: PathDiagnostic = {
+      code: 'endpoint-cluster-snap',
+      id: 'global-external-diagnostic',
+      message: 'Global diagnostic removed and later reintroduced.',
+      severity: 'warning'
+    };
+    pathDocument.diagnostics.push(diagnostic);
+    const diagnosticTreeKey = `setup:diagnostic:${diagnostic.id}`;
+    const onSaveEditorDraft = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={projectWithUpid(pathDocument)}
+        />
+      );
+    });
+    await flushAsync();
+    await ensureProgramTreeItemExpanded('section:source');
+    await ensureProgramTreeItemExpanded('setup:path-summary');
+    await pressProgramTreeItem(diagnosticTreeKey, 'Enter');
+    expect(programTreeItem(diagnosticTreeKey)?.getAttribute('aria-selected')).toBe('true');
+
+    const withoutDiagnostic = structuredClone(pathDocument);
+    withoutDiagnostic.diagnostics = withoutDiagnostic.diagnostics.filter(
+      (candidate) => candidate.id !== diagnostic.id
+    );
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={projectWithUpid(withoutDiagnostic)}
+        />
+      );
+    });
+    await flushAsync();
+    expect(programTreeItem(diagnosticTreeKey)).toBeNull();
+
+    const reintroducedDiagnostic = structuredClone(withoutDiagnostic);
+    reintroducedDiagnostic.diagnostics.push(diagnostic);
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={onSaveEditorDraft}
+          project={projectWithUpid(reintroducedDiagnostic)}
+        />
+      );
+    });
+    await flushAsync();
+
+    expect(programTreeItem(diagnosticTreeKey)?.getAttribute('aria-selected')).toBe('false');
+    expect(
+      container.querySelector(`[data-upid-diagnostic-id="${diagnostic.id}"]`)
+        ?.getAttribute('aria-current')
+    ).not.toBe('true');
+  });
+
   it('opens Entry / Exit for the explicit second operation and keeps a dirty first target on cancel', async () => {
     const pathDocument = pathDocumentFromIndependentRectangles();
     const project = projectWithUpid(pathDocument);

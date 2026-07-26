@@ -2,8 +2,8 @@ import type { UpidProgramTreeEditTarget } from '@/domain/upid/upidProgramTree';
 
 export type EditorProgramTreeExactTarget =
   | { diagnosticId: string; kind: 'diagnostic' }
-  | { kind: 'machining-span'; spanId: string }
-  | { kind: 'program-stop'; stopId: string };
+  | { kind: 'machining-span'; operationId: string; spanId: string }
+  | { kind: 'program-stop'; operationId: string; stopId: string };
 
 export interface EditorProgramTreeAction {
   commandId:
@@ -51,15 +51,23 @@ export function resolveEditorProgramTreeAction(
       return action(
         'machining.participation',
         target.operationId ?? null,
-        target.spanId
-          ? { kind: 'machining-span', spanId: target.spanId }
+        target.operationId && target.spanId
+          ? {
+              kind: 'machining-span',
+              operationId: target.operationId,
+              spanId: target.spanId
+            }
           : null
       );
     case 'program-stop':
       return action(
         'machining.program-stops',
         target.operationId,
-        { kind: 'program-stop', stopId: target.stopId }
+        {
+          kind: 'program-stop',
+          operationId: target.operationId,
+          stopId: target.stopId
+        }
       );
     case 'diagnostics':
       return action(

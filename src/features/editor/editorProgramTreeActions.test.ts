@@ -28,7 +28,7 @@ describe('resolveEditorProgramTreeAction', () => {
       { kind: 'machining-participation', operationId: 'op-6', spanId: 'span-6' },
       'machining.participation',
       'op-6',
-      { kind: 'machining-span', spanId: 'span-6' }
+      { kind: 'machining-span', operationId: 'op-6', spanId: 'span-6' }
     ],
     [
       { kind: 'machining-participation' },
@@ -40,7 +40,7 @@ describe('resolveEditorProgramTreeAction', () => {
       { kind: 'program-stop', operationId: 'op_2', stopId: 'stop-3' },
       'machining.program-stops',
       'op_2',
-      { kind: 'program-stop', stopId: 'stop-3' }
+      { kind: 'program-stop', operationId: 'op_2', stopId: 'stop-3' }
     ],
     [
       { kind: 'diagnostics', diagnosticId: 'diagnostic-1' },
