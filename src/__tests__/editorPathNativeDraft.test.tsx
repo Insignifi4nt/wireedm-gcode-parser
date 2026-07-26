@@ -50,10 +50,21 @@ const noop = () => undefined;
 
 describe('EditorPage UPID draft boundary', () => {
   let container: HTMLDivElement;
+  let originalScrollIntoView: PropertyDescriptor | undefined;
   let root: Root;
+  let scrollIntoViewSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     postUpidForMachineSpy.mockClear();
+    originalScrollIntoView = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'scrollIntoView'
+    );
+    scrollIntoViewSpy = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoViewSpy
+    });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -62,6 +73,11 @@ describe('EditorPage UPID draft boundary', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    if (originalScrollIntoView) {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView);
+    } else {
+      Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+    }
     vi.restoreAllMocks();
   });
 
@@ -179,22 +195,89 @@ describe('EditorPage UPID draft boundary', () => {
 
     expect(
       container.querySelector(
-        `[data-machining-span-id="${inactiveSpanId}"][data-upid-selected="true"]`
-      )
-    ).not.toBeNull();
+        `[data-machining-span-id="${inactiveSpanId}"]`
+      )?.getAttribute('aria-current')
+    ).toBe('true');
+    expect(scrollIntoViewSpy.mock.instances.some(
+      (instance) => instance instanceof HTMLElement &&
+        instance.dataset.machiningSpanId === inactiveSpanId
+    )).toBe(true);
 
     await pressProgramTreeItem(derivedSpanItem!.dataset.treeKey!, 'Enter');
 
     expect(
       container.querySelector(
-        `[data-machining-span-id="${derivedSpanId}"][data-upid-selected="true"]`
-      )
-    ).not.toBeNull();
+        `[data-machining-span-id="${derivedSpanId}"]`
+      )?.getAttribute('aria-current')
+    ).toBe('true');
+    expect(scrollIntoViewSpy.mock.instances.some(
+      (instance) => instance instanceof HTMLElement &&
+        instance.dataset.machiningSpanId === derivedSpanId
+    )).toBe(true);
     expect(
       container.querySelector(
         `[data-machining-span-id="${inactiveSpanId}"]`
       )?.getAttribute('data-upid-selected')
     ).not.toBe('true');
+  });
+
+  it('re-homes a removed exact span without resurrecting it through add, Save, Undo, or Redo', async () => {
+    const originalDocument = pathDocumentFromRectangle();
+    const operation = originalDocument.plan.operations[0];
+    const pathDocument = setMachiningSpanParticipation(originalDocument, {
+      sourceSegmentId: operation.segmentRefs[0].segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+    const spanId = pathDocument.machiningParticipation!.spans[0].id;
+    const spanTreeKey =
+      `operation:${operation.id}:inactive-span:${encodeURIComponent(spanId)}`;
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={projectWithUpid(pathDocument)}
+        />
+      );
+    });
+    await flushAsync();
+    await expandProgramTreeItem(`operation:${operation.id}:cut-path`);
+    await pressProgramTreeItem(spanTreeKey, 'Enter');
+
+    await clickElement(`button[aria-label="Restore ${spanId} to active cut"]`);
+
+    expect(container.querySelector(`[data-machining-span-id="${spanId}"]`)).toBeNull();
+    expect(programTreeItem(`operation:${operation.id}`)?.getAttribute('aria-selected')).toBe('true');
+
+    const markInactive = [...container.querySelectorAll<HTMLButtonElement>(
+      '[data-machining-participation-panel] button'
+    )].find((button) => button.textContent?.trim() === 'Mark inactive reference');
+    await act(async () => markInactive?.click());
+    await flushAsync();
+    expect(
+      container.querySelector(`[data-machining-span-id="${spanId}"]`)
+        ?.getAttribute('aria-current')
+    ).not.toBe('true');
+
+    await clickElement(`button[aria-label="Restore ${spanId} to active cut"]`);
+    await clickElement(
+      '[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]'
+    );
+
+    await clickElement('button[aria-label="Undo active document change"]');
+    await clickElement('[data-editor-workflow-command="machining.participation"]');
+    expect(
+      container.querySelector(`[data-machining-span-id="${spanId}"]`)
+        ?.getAttribute('aria-current')
+    ).not.toBe('true');
+    await clickElement(
+      '[data-editor-workflow-actions="machining.participation"] button[aria-label^="Cancel "]'
+    );
+
+    await clickElement('button[aria-label="Redo active document change"]');
+    await clickElement('[data-editor-workflow-command="machining.participation"]');
+    expect(container.querySelector(`[data-machining-span-id="${spanId}"]`)).toBeNull();
   });
 
   it('preserves the exact requested diagnostic through a dirty discard', async () => {
@@ -252,13 +335,64 @@ describe('EditorPage UPID draft boundary', () => {
     expect(
       container.querySelector(
         `[data-upid-diagnostic-id="${requestedDiagnosticId}"]`
-      )?.getAttribute('data-upid-selected')
+      )?.getAttribute('aria-current')
     ).toBe('true');
+    expect(scrollIntoViewSpy.mock.instances.some(
+      (instance) => instance instanceof HTMLElement &&
+        instance.dataset.upidDiagnosticId === requestedDiagnosticId
+    )).toBe(true);
     expect(
       container.querySelector(
         `[data-upid-diagnostic-id="${firstDiagnosticId}"]`
       )?.getAttribute('data-upid-selected')
     ).not.toBe('true');
+  });
+
+  it('clears an exact diagnostic target on terminal Escape', async () => {
+    const pathDocument = pathDocumentFromRectangle();
+    const operation = pathDocument.plan.operations[0];
+    const diagnosticId = 'escape-diagnostic';
+    pathDocument.diagnostics.push({
+      id: diagnosticId,
+      severity: 'warning',
+      code: 'endpoint-cluster-snap',
+      message: 'Diagnostic selected before terminal Escape.',
+      relatedSegmentIds: [operation.segmentRefs[0].segmentId]
+    });
+    const diagnosticTreeKey = `operation:${operation.id}:diagnostic:${diagnosticId}`;
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          onSaveEditorDraft={vi.fn()}
+          project={projectWithUpid(pathDocument)}
+        />
+      );
+    });
+    await flushAsync();
+    await ensureProgramTreeItemExpanded('section:program');
+    await ensureProgramTreeItemExpanded(`operation:${operation.id}`);
+    await pressProgramTreeItem(diagnosticTreeKey, 'Enter');
+    expect(
+      container.querySelector(`[data-upid-diagnostic-id="${diagnosticId}"]`)
+        ?.getAttribute('aria-current')
+    ).toBe('true');
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+    });
+    await flushAsync();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }));
+    });
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="view.diagnostics"]');
+
+    expect(
+      container.querySelector(`[data-upid-diagnostic-id="${diagnosticId}"]`)
+        ?.getAttribute('aria-current')
+    ).not.toBe('true');
+    expect(programTreeItem(diagnosticTreeKey)?.getAttribute('aria-selected')).toBe('false');
   });
 
   it('opens Entry / Exit for the explicit second operation and keeps a dirty first target on cancel', async () => {

@@ -1,3 +1,5 @@
+import type { EditorProgramTreeExactTarget } from '../editorProgramTreeActions';
+
 export type EditorWorkflowSaveAvailability =
   | { enabled: true }
   | { enabled: false; reason: string };
@@ -29,10 +31,8 @@ export type EditorWorkflowSession<TSnapshot = unknown> =
   | EditorViewWorkflowSession<TSnapshot>;
 
 export interface EditorWorkflowOpenTarget {
-  diagnosticId: string | null;
+  exactTarget: EditorProgramTreeExactTarget | null;
   operationId: string | null;
-  spanId: string | null;
-  stopId: string | null;
 }
 
 export type EditorWorkflowTransitionRequest =

@@ -11,7 +11,15 @@ import {
   RotateCcw,
   RotateCw
 } from 'lucide-react';
-import { useEffect, useState, type Dispatch, type MouseEvent, type ReactNode, type SetStateAction } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type MouseEvent,
+  type ReactNode,
+  type SetStateAction
+} from 'react';
 
 import { type PathMirrorAxis } from '@/domain/path-editor/pathDocumentOperations';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
@@ -178,6 +186,8 @@ export function EditorPathNavigatorPanel({
   pathTranslateYDraft,
   transformTargetChangeBlocked = false
 }: EditorPathNavigatorPanelProps) {
+  const diagnosticsListRef = useRef<HTMLDivElement>(null);
+
   function setUserTargetX(value: string) {
     onPathTargetXDraftChange(value);
     onTransformDraftChange?.('target');
@@ -205,6 +215,16 @@ export function EditorPathNavigatorPanel({
   const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
   const endpointTopologyPanel = summarizeEndpointTopologyPanel(pathDocument);
   const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
+  useEffect(() => {
+    if (!selectedDiagnosticId) return;
+    const selectedRow = [...(
+      diagnosticsListRef.current?.querySelectorAll<HTMLElement>('[data-upid-diagnostic-id]') ?? []
+    )].find((row) => row.dataset.upidDiagnosticId === selectedDiagnosticId);
+    selectedRow?.scrollIntoView?.({ block: 'nearest' });
+  }, [
+    selectedDiagnosticId,
+    pathDiagnostics.map((diagnostic) => diagnostic.id).join('|')
+  ]);
   const pathTreeElementIds = projectRail.operationElements.map((element) => element.id);
   const selectedEndpointSegmentKey = readSelectedEndpointSegmentKey(
     projectRail.operationElements,
@@ -1138,7 +1158,11 @@ export function EditorPathNavigatorPanel({
                 </ol>
               </div>
             )}
-            <div className="border border-border bg-background/35" data-upid-diagnostics-list>
+            <div
+              className="border border-border bg-background/35"
+              data-upid-diagnostics-list
+              ref={diagnosticsListRef}
+            >
               {pathDiagnostics.length > 0 ? (
                 pathDiagnostics.map((diagnostic) =>
                   renderDiagnosticRow({
@@ -1540,6 +1564,7 @@ function renderDiagnosticRow({
   return (
     <div
       aria-disabled={hoverElement ? undefined : true}
+      aria-current={selected ? 'true' : undefined}
       className={`grid w-full gap-0.5 border-b border-border px-2 py-1.5 text-left outline-none last:border-b-0 hover:bg-accent ${
         selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
       }`}

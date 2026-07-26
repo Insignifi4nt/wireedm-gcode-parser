@@ -1,5 +1,10 @@
 import type { UpidProgramTreeEditTarget } from '@/domain/upid/upidProgramTree';
 
+export type EditorProgramTreeExactTarget =
+  | { diagnosticId: string; kind: 'diagnostic' }
+  | { kind: 'machining-span'; spanId: string }
+  | { kind: 'program-stop'; stopId: string };
+
 export interface EditorProgramTreeAction {
   commandId:
     | 'view.summary'
@@ -14,10 +19,8 @@ export interface EditorProgramTreeAction {
     | 'machining.participation'
     | 'machining.program-stops'
     | 'view.diagnostics';
+  exactTarget: EditorProgramTreeExactTarget | null;
   operationId: string | null;
-  stopId: string | null;
-  spanId: string | null;
-  diagnosticId: string | null;
 }
 
 export function resolveEditorProgramTreeAction(
@@ -48,13 +51,24 @@ export function resolveEditorProgramTreeAction(
       return action(
         'machining.participation',
         target.operationId ?? null,
-        null,
-        target.spanId ?? null
+        target.spanId
+          ? { kind: 'machining-span', spanId: target.spanId }
+          : null
       );
     case 'program-stop':
-      return action('machining.program-stops', target.operationId, target.stopId);
+      return action(
+        'machining.program-stops',
+        target.operationId,
+        { kind: 'program-stop', stopId: target.stopId }
+      );
     case 'diagnostics':
-      return action('view.diagnostics', null, null, null, target.diagnosticId);
+      return action(
+        'view.diagnostics',
+        null,
+        target.diagnosticId
+          ? { diagnosticId: target.diagnosticId, kind: 'diagnostic' }
+          : null
+      );
     default:
       return assertNever(target);
   }
@@ -63,11 +77,9 @@ export function resolveEditorProgramTreeAction(
 function action(
   commandId: EditorProgramTreeAction['commandId'],
   operationId: string | null = null,
-  stopId: string | null = null,
-  spanId: string | null = null,
-  diagnosticId: string | null = null
+  exactTarget: EditorProgramTreeExactTarget | null = null
 ): EditorProgramTreeAction {
-  return { commandId, diagnosticId, operationId, spanId, stopId };
+  return { commandId, exactTarget, operationId };
 }
 
 function assertNever(value: never): never {

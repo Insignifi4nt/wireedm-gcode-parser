@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
@@ -42,6 +42,7 @@ export function EditorMachiningParticipationPanel({
   const [sourceSegmentId, setSourceSegmentId] = useState(initialSegmentId);
   const [rangeStart, setRangeStart] = useState('0');
   const [rangeEnd, setRangeEnd] = useState('1');
+  const spanListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (targetChangeBlocked) return;
@@ -68,6 +69,17 @@ export function EditorMachiningParticipationPanel({
           .flatMap((candidate) => candidate.machiningIntent?.spanIds ?? [])
       )]
     : [];
+  useEffect(() => {
+    if (!selectedSpanId) return;
+    const selectedRow = [...(
+      spanListRef.current?.querySelectorAll<HTMLElement>('[data-machining-span-id]') ?? []
+    )].find((row) => row.dataset.machiningSpanId === selectedSpanId);
+    selectedRow?.scrollIntoView?.({ block: 'nearest' });
+  }, [
+    selectedSpanId,
+    derivedSpanIds.join('|'),
+    spans.map((span) => span.id).join('|')
+  ]);
   const wireSide = document.machiningParticipation?.partialContourCompensation?.find(
     (setting) => setting.sourceOperationId === operation?.id
   )?.wireSide ?? '';
@@ -193,7 +205,7 @@ export function EditorMachiningParticipationPanel({
         </button>
       </div>
 
-      <div className="grid gap-1" data-machining-span-list>
+      <div className="grid gap-1" data-machining-span-list ref={spanListRef}>
         {derivedSpanIds.map((spanId) => (
           <div
             className={`border p-2 ${
@@ -201,6 +213,7 @@ export function EditorMachiningParticipationPanel({
                 ? 'border-sky-400 bg-sky-500/15 text-sky-100'
                 : 'border-border'
             }`}
+            aria-current={selectedSpanId === spanId ? 'true' : undefined}
             data-machining-span-id={spanId}
             data-machining-span-participation="active-cut"
             data-upid-selected={selectedSpanId === spanId ? 'true' : undefined}
@@ -219,6 +232,7 @@ export function EditorMachiningParticipationPanel({
                 ? 'border-sky-400 bg-sky-500/15 text-sky-100'
                 : 'border-border'
             }`}
+            aria-current={selectedSpanId === span.id ? 'true' : undefined}
             data-machining-span-id={span.id}
             data-machining-span-participation={span.participation}
             data-upid-selected={selectedSpanId === span.id ? 'true' : undefined}

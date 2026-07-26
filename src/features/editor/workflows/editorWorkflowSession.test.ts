@@ -92,22 +92,27 @@ describe('editor workflow session', () => {
     });
   });
 
-  it('holds a switch request with its exact program-tree target while the workflow is dirty', () => {
+  it.each([
+    {
+      commandId: 'view.diagnostics',
+      exactTarget: { diagnosticId: 'diagnostic-2', kind: 'diagnostic' as const },
+      operationId: 'operation-2'
+    },
+    {
+      commandId: 'machining.participation',
+      exactTarget: { kind: 'machining-span' as const, spanId: 'span-2' },
+      operationId: 'operation-2'
+    }
+  ])('holds a $exactTarget.kind target while the workflow is dirty', (target) => {
     const session = markEditorWorkflowDirty(createSession());
-    const target = {
-      diagnosticId: 'diagnostic-2',
-      operationId: 'operation-2',
-      spanId: 'span-2',
-      stopId: null
-    };
 
     expect(requestEditorWorkflowTransition(session, {
-      commandId: 'machining.entry-exit',
+      commandId: target.commandId,
       kind: 'open',
       target
     })).toEqual({
       kind: 'held',
-      request: { commandId: 'machining.entry-exit', kind: 'open', target },
+      request: { commandId: target.commandId, kind: 'open', target },
       session
     });
   });

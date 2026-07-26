@@ -80,6 +80,7 @@ import type {
 } from '@/domain/path-intel/types';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import {
+  deriveActiveMachiningOperations,
   setMachiningSpanParticipation,
   setPartialContourEntryReview,
   setPartialContourCompensationSide
@@ -120,7 +121,8 @@ import {
 import { EditorProgramStopsPanel } from './EditorProgramStopsPanel';
 import {
   resolveEditorProgramTreeAction,
-  type EditorProgramTreeAction
+  type EditorProgramTreeAction,
+  type EditorProgramTreeExactTarget
 } from './editorProgramTreeActions';
 import { EditorMachiningParticipationPanel } from './EditorMachiningParticipationPanel';
 import {
@@ -235,10 +237,8 @@ interface EditorDraftSnapshot {
   setStartInferenceMode: SetStartInferenceMode;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
-  selectedDiagnosticId: string | null;
-  selectedMachiningSpanId: string | null;
+  selectedProgramExactTarget: EditorProgramTreeExactTarget | null;
   selectedProgramTreeKey: string | null;
-  selectedProgramStopId: string | null;
 }
 
 type SetStartInferenceMode = Extract<
@@ -725,10 +725,18 @@ export function EditorPage({
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [selectedPathElement, setSelectedPathElement] = useState<EditorPathElementRef | null>(null);
   const [selectedPathOperationId, setSelectedPathOperationId] = useState<string | null>(null);
-  const [selectedDiagnosticId, setSelectedDiagnosticId] = useState<string | null>(null);
-  const [selectedMachiningSpanId, setSelectedMachiningSpanId] = useState<string | null>(null);
+  const [selectedProgramExactTarget, setSelectedProgramExactTarget] =
+    useState<EditorProgramTreeExactTarget | null>(null);
   const [selectedProgramTreeKey, setSelectedProgramTreeKey] = useState<string | null>(null);
-  const [selectedProgramStopId, setSelectedProgramStopId] = useState<string | null>(null);
+  const selectedDiagnosticId = selectedProgramExactTarget?.kind === 'diagnostic'
+    ? selectedProgramExactTarget.diagnosticId
+    : null;
+  const selectedMachiningSpanId = selectedProgramExactTarget?.kind === 'machining-span'
+    ? selectedProgramExactTarget.spanId
+    : null;
+  const selectedProgramStopId = selectedProgramExactTarget?.kind === 'program-stop'
+    ? selectedProgramExactTarget.stopId
+    : null;
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
   const [upidRailMode, setUpidRailMode] = useState<EditorUpidRailMode>('program');
   const [expandedProgramTreeKeys, setExpandedProgramTreeKeys] = useState<ReadonlySet<string>>(
@@ -1265,10 +1273,8 @@ export function EditorPage({
 
     setSelectedPathOperationId(null);
     setSelectedPathElement(null);
-    setSelectedDiagnosticId(null);
-    setSelectedMachiningSpanId(null);
+    setSelectedProgramExactTarget(null);
     setSelectedProgramTreeKey(null);
-    setSelectedProgramStopId(null);
     setHoveredPathElement(null);
     setPreviewCursorPoint(null);
     setMeasurementPoints([]);
@@ -1304,6 +1310,16 @@ export function EditorPage({
   useEffect(() => {
     if (programTree) setExpandedProgramTreeKeys(defaultEditorProgramTreeExpansion(programTree));
   }, [programIdentity]);
+
+  useEffect(() => {
+    const reconciledExactTarget = reconcileProgramExactTarget(
+      selectedProgramExactTarget,
+      pathDocumentDraft
+    );
+    if (!sameProgramExactTarget(selectedProgramExactTarget, reconciledExactTarget)) {
+      setSelectedProgramExactTarget(reconciledExactTarget);
+    }
+  }, [pathDocumentDraft, selectedProgramExactTarget]);
 
   useEffect(() => {
     if (!programTree || !selectedProgramTreeKey) return;
@@ -1472,6 +1488,8 @@ export function EditorPage({
         setSelectedLines([]);
         setSelectedPathElement(null);
         setSelectedPathOperationId(null);
+        setSelectedProgramExactTarget(null);
+        setSelectedProgramTreeKey(null);
         setPathClickMode(null);
         return;
       }
@@ -1617,8 +1635,8 @@ export function EditorPage({
     }
     setSelectedPathOperationId(element.operationId);
     setSelectedPathElement(element);
-    setSelectedDiagnosticId(null);
-    setSelectedMachiningSpanId(null);
+    setSelectedProgramExactTarget(null);
+    setSelectedProgramTreeKey(programTreeKeyForOperation(element.operationId));
     return true;
   }
 
@@ -1632,8 +1650,8 @@ export function EditorPage({
     }
     setSelectedPathOperationId(operationId);
     setSelectedPathElement(null);
-    setSelectedDiagnosticId(null);
-    setSelectedMachiningSpanId(null);
+    setSelectedProgramExactTarget(null);
+    setSelectedProgramTreeKey(programTreeKeyForOperation(operationId));
   }
 
   function handleSelectPathOperation(operationId: string) {
@@ -1666,9 +1684,6 @@ export function EditorPage({
 
     if (operationId) {
       if (!handleSelectPathOperation(operationId)) return;
-      setSelectedProgramStopId(
-        node?.editTarget?.kind === 'program-stop' ? node.editTarget.stopId : null
-      );
     } else {
       if (workflowTargetChangeBlocked) {
         onStatusMessage?.(
@@ -1679,17 +1694,9 @@ export function EditorPage({
       }
       setSelectedPathOperationId(null);
       setSelectedPathElement(null);
-      setSelectedProgramStopId(null);
     }
 
-    setSelectedDiagnosticId(
-      node?.editTarget?.kind === 'diagnostics' ? node.editTarget.diagnosticId ?? null : null
-    );
-    setSelectedMachiningSpanId(
-      node?.editTarget?.kind === 'machining-participation'
-        ? node.editTarget.spanId ?? null
-        : null
-    );
+    setSelectedProgramExactTarget(exactTargetForProgramTreeEditTarget(node?.editTarget));
     setSelectedProgramTreeKey(treeKey);
   }
 
@@ -2565,6 +2572,13 @@ export function EditorPage({
           candidateSelectedPathElement
         )
       : null;
+    const nextProgramExactTarget = reconcileProgramExactTarget(
+      selectedProgramExactTarget,
+      nextPathDocument
+    );
+    const exactTargetRemoved = Boolean(
+      selectedProgramExactTarget && !nextProgramExactTarget
+    );
 
     if (activeWorkflowSession?.kind === 'mutating') {
       setActiveWorkflowSession((current) =>
@@ -2579,6 +2593,10 @@ export function EditorPage({
     setDraftState(clonedDraft);
     setSelectedPathOperationId(nextSelectedPathOperationId);
     setSelectedPathElement(nextSelectedPathElement);
+    setSelectedProgramExactTarget(nextProgramExactTarget);
+    if (exactTargetRemoved) {
+      setSelectedProgramTreeKey(programTreeKeyForOperation(nextSelectedPathOperationId));
+    }
     if (!nextPathDocument) setPathClickMode(null);
   }
 
@@ -2620,14 +2638,16 @@ export function EditorPage({
     });
     setSelectedPathOperationId(null);
     setSelectedPathElement(null);
-    setSelectedDiagnosticId(null);
-    setSelectedMachiningSpanId(null);
+    setSelectedProgramExactTarget(null);
     setSelectedProgramTreeKey(null);
-    setSelectedProgramStopId(null);
     setPathClickMode(null);
   }
 
   function currentDraftSnapshot(historyLabel?: string): EditorDraftSnapshot {
+    const reconciledExactTarget = reconcileProgramExactTarget(
+      selectedProgramExactTarget,
+      pathDocumentDraft
+    );
     return {
       canvasMouseMode,
       draft: cloneEditorDraftState(draftState),
@@ -2644,10 +2664,10 @@ export function EditorPage({
       setStartInferenceMode,
       selectedPathElement,
       selectedPathOperationId,
-      selectedDiagnosticId,
-      selectedMachiningSpanId,
-      selectedProgramTreeKey,
-      selectedProgramStopId
+      selectedProgramExactTarget: reconciledExactTarget,
+      selectedProgramTreeKey: selectedProgramExactTarget && !reconciledExactTarget
+        ? programTreeKeyForOperation(selectedPathOperationId)
+        : selectedProgramTreeKey
     };
   }
 
@@ -2655,7 +2675,7 @@ export function EditorPage({
     snapshot: EditorDraftSnapshot,
     action: Pick<
       EditorProgramTreeAction,
-      'diagnosticId' | 'operationId' | 'spanId' | 'stopId'
+      'exactTarget' | 'operationId'
     >,
     selectedTreeKey: string | null
   ): EditorDraftSnapshot {
@@ -2669,8 +2689,7 @@ export function EditorPage({
       null;
     return {
       ...snapshot,
-      selectedDiagnosticId: action.diagnosticId,
-      selectedMachiningSpanId: action.spanId,
+      selectedProgramExactTarget: action.exactTarget,
       selectedPathOperationId,
       selectedProgramTreeKey: selectedTreeKey,
       selectedPathElement: document && selectedPathOperationId
@@ -2679,8 +2698,7 @@ export function EditorPage({
             pathElementId: upidPathElementIdForOperation(document, selectedPathOperationId),
             segmentId: null
           }
-        : null,
-      selectedProgramStopId: action.stopId
+        : null
     };
   }
 
@@ -2699,11 +2717,17 @@ export function EditorPage({
     setPointYDraft(snapshot.pointYDraft);
     setSetStartInferenceMode(snapshot.setStartInferenceMode);
     const restoredOperationId = restoredPathDocument ? snapshot.selectedPathOperationId : null;
+    const restoredExactTarget = reconcileProgramExactTarget(
+      snapshot.selectedProgramExactTarget,
+      restoredPathDocument
+    );
     setSelectedPathOperationId(restoredOperationId);
-    setSelectedDiagnosticId(snapshot.selectedDiagnosticId);
-    setSelectedMachiningSpanId(snapshot.selectedMachiningSpanId);
-    setSelectedProgramTreeKey(snapshot.selectedProgramTreeKey);
-    setSelectedProgramStopId(snapshot.selectedProgramStopId);
+    setSelectedProgramExactTarget(restoredExactTarget);
+    setSelectedProgramTreeKey(
+      snapshot.selectedProgramExactTarget && !restoredExactTarget
+        ? programTreeKeyForOperation(restoredOperationId)
+        : snapshot.selectedProgramTreeKey
+    );
     setSelectedPathElement(
       restoredPathDocument && (snapshot.selectedPathElement || restoredOperationId)
         ? normalizeUpidPathElementSelection(
@@ -2921,10 +2945,8 @@ export function EditorPage({
         kind: 'open',
         ...(action ? {
           target: {
-            diagnosticId: action.diagnosticId,
-            operationId: action.operationId,
-            spanId: action.spanId,
-            stopId: action.stopId
+            exactTarget: action.exactTarget,
+            operationId: action.operationId
           }
         } : {})
       });
@@ -2975,10 +2997,8 @@ export function EditorPage({
     }
     setSelectedPathOperationId(openingSnapshot.selectedPathOperationId);
     setSelectedPathElement(openingSnapshot.selectedPathElement);
-    setSelectedDiagnosticId(openingSnapshot.selectedDiagnosticId);
-    setSelectedMachiningSpanId(openingSnapshot.selectedMachiningSpanId);
+    setSelectedProgramExactTarget(openingSnapshot.selectedProgramExactTarget);
     setSelectedProgramTreeKey(openingSnapshot.selectedProgramTreeKey);
-    setSelectedProgramStopId(openingSnapshot.selectedProgramStopId);
     const panelId = command.toolWindowId as EditorWorkspacePanelId;
     const session = command.workflow.kind === 'mutating'
       ? createEditorWorkflowSession({
@@ -3017,6 +3037,8 @@ export function EditorPage({
       if (operationId) {
         setSelectedPathOperationId(operationId);
         setSelectedPathElement(null);
+        setSelectedProgramExactTarget(null);
+        setSelectedProgramTreeKey(programTreeKeyForOperation(operationId));
       }
     }
     window.requestAnimationFrame(() => focusWorkspacePanel(panelId));
@@ -3060,9 +3082,21 @@ export function EditorPage({
       : currentDraftSnapshot();
 
     if (resolution === 'save' && session.kind === 'mutating') {
+      const openingSnapshot = sameProgramExactTarget(
+        session.openingSnapshot.selectedProgramExactTarget,
+        selectedProgramExactTarget
+      )
+        ? session.openingSnapshot
+        : {
+            ...session.openingSnapshot,
+            selectedProgramExactTarget: null,
+            selectedProgramTreeKey: programTreeKeyForOperation(
+              session.openingSnapshot.selectedPathOperationId
+            )
+          };
       setUndoStack((current) => [
         ...current,
-        { ...session.openingSnapshot, historyLabel: session.historyLabel }
+        { ...openingSnapshot, historyLabel: session.historyLabel }
       ]);
       setRedoStack([]);
     } else if (resolution === 'discard') {
@@ -3300,6 +3334,8 @@ export function EditorPage({
     if (!activeWorkflowOwns(SET_START_COMMAND.id) || isEditorMutationLocked) return;
     setSelectedPathOperationId(operationId);
     setSelectedPathElement(null);
+    setSelectedProgramExactTarget(null);
+    setSelectedProgramTreeKey(programTreeKeyForOperation(operationId));
     setActiveToolSession(
       createEditorToolSession({
         commandId: SET_START_COMMAND.id,
@@ -3316,6 +3352,8 @@ export function EditorPage({
     if (!activeWorkflowOwns(SET_START_COMMAND.id) || isEditorMutationLocked) return;
     setSelectedPathOperationId(operationId);
     setSelectedPathElement(null);
+    setSelectedProgramExactTarget(null);
+    setSelectedProgramTreeKey(programTreeKeyForOperation(operationId));
     setActiveToolSession(null);
     setPathClickMode(null);
   }
@@ -3676,6 +3714,8 @@ export function EditorPage({
               onSelectOperation={(operationId) => {
                 setSelectedPathOperationId(operationId);
                 setSelectedPathElement(null);
+                setSelectedProgramExactTarget(null);
+                setSelectedProgramTreeKey(programTreeKeyForOperation(operationId));
               }}
               onSetClassification={handleSetPathOperationClassification}
               onSetCompensation={handleSetManualCompensation}
@@ -3992,6 +4032,72 @@ function findProgramTreeOperationId(
     })));
   }
   return undefined;
+}
+
+function exactTargetForProgramTreeEditTarget(
+  target: UpidProgramTreeEditTarget | undefined
+): EditorProgramTreeExactTarget | null {
+  if (target?.kind === 'diagnostics' && target.diagnosticId) {
+    return { diagnosticId: target.diagnosticId, kind: 'diagnostic' };
+  }
+  if (target?.kind === 'machining-participation' && target.spanId) {
+    return { kind: 'machining-span', spanId: target.spanId };
+  }
+  if (target?.kind === 'program-stop') {
+    return { kind: 'program-stop', stopId: target.stopId };
+  }
+  return null;
+}
+
+function reconcileProgramExactTarget(
+  target: EditorProgramTreeExactTarget | null,
+  document: PathPlanningDocument | null
+): EditorProgramTreeExactTarget | null {
+  if (!target || !document) return null;
+  if (target.kind === 'diagnostic') {
+    return [...document.diagnostics, ...document.plan.diagnostics].some(
+      (diagnostic) => diagnostic.id === target.diagnosticId
+    )
+      ? target
+      : null;
+  }
+  if (target.kind === 'program-stop') {
+    return document.plan.operations.some((operation) =>
+      operation.programStops?.some((stop) => stop.id === target.stopId)
+    )
+      ? target
+      : null;
+  }
+  if (document.machiningParticipation?.spans.some((span) => span.id === target.spanId)) {
+    return target;
+  }
+  const derived = deriveActiveMachiningOperations(document);
+  return derived.status === 'ready' && derived.operations.some(
+    (operation) => operation.machiningIntent?.spanIds.includes(target.spanId)
+  )
+    ? target
+    : null;
+}
+
+function sameProgramExactTarget(
+  left: EditorProgramTreeExactTarget | null,
+  right: EditorProgramTreeExactTarget | null
+) {
+  if (left?.kind !== right?.kind) return false;
+  if (!left || !right) return true;
+  if (left.kind === 'diagnostic' && right.kind === 'diagnostic') {
+    return left.diagnosticId === right.diagnosticId;
+  }
+  if (left.kind === 'machining-span' && right.kind === 'machining-span') {
+    return left.spanId === right.spanId;
+  }
+  return left.kind === 'program-stop' &&
+    right.kind === 'program-stop' &&
+    left.stopId === right.stopId;
+}
+
+function programTreeKeyForOperation(operationId: string | null) {
+  return operationId ? `operation:${encodeURIComponent(operationId)}` : null;
 }
 
 function nextMeasurementPointId(currentLength: number) {
