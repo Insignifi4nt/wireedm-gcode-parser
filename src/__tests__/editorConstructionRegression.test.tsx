@@ -46,21 +46,12 @@ describe('Editor construction regressions', () => {
     await flushAsync();
     await confirmPendingDxfImport(container);
 
+    await openWorkflowCommand('view.contours');
     await act(async () => {
-      container.querySelector<HTMLButtonElement>(
-        '[data-editor-workflow-command="view.contours"]'
-      )?.click();
+      container.querySelector<HTMLInputElement>('input[aria-label="Toggle canvas hover assist"]')?.click();
     });
     await flushAsync();
-    await act(async () => {
-      container.querySelector<HTMLInputElement>(
-        'input[aria-label="Toggle canvas hover assist"]'
-      )?.click();
-      container.querySelector<HTMLButtonElement>(
-        '[data-editor-workflow-command="construction.measurement"]'
-      )?.click();
-    });
-    await flushAsync();
+    await openWorkflowCommand('construction.measurement');
 
     expect(
       container.querySelector('[data-upid-cut-sequence-row][data-upid-selected="true"]')
@@ -145,6 +136,22 @@ describe('Editor construction regressions', () => {
       previewOperationId
     );
   });
+
+  async function openWorkflowCommand(commandId: string) {
+    const title = {
+      construction: 'Construction',
+      view: 'View'
+    }[commandId.split('.')[0]];
+    if (!title) throw new Error(`No workflow menu owns ${commandId}.`);
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`button[aria-label="${title} menu"]`)?.click();
+    });
+    await flushAsync();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`[data-editor-workflow-command="${commandId}"]`)?.click();
+    });
+    await flushAsync();
+  }
 });
 
 function rectangleDxf() {

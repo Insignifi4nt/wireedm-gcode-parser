@@ -88,12 +88,10 @@ describe('EditorPage UPID draft boundary', () => {
       container.querySelector('button[aria-label="Redo active document change"]')
     ).not.toBeNull();
     expect(container.querySelector('button[aria-label="Save active document"]')).not.toBeNull();
-    expect(
-      container.querySelector('button[aria-label="Open UPID export preview"]')
-    ).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Export menu"]')).not.toBeNull();
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain('Saved');
 
-    await clickElement('button[aria-label="Open UPID export preview"]');
+    await clickElement('[data-editor-workflow-command="export.preview"]');
     expect(container.querySelector('[data-upid-export-preview]')).not.toBeNull();
   });
 
@@ -2250,13 +2248,17 @@ describe('EditorPage UPID draft boundary', () => {
     for (const ariaLabel of [
       'Save active document',
       'Undo active document change',
-      'Redo active document change',
-      'Open UPID export preview'
+      'Redo active document change'
     ]) {
       expect(
         (container.querySelector(`button[aria-label="${ariaLabel}"]`) as HTMLButtonElement).disabled
       ).toBe(true);
     }
+    await openWorkflowMenu('export.preview');
+    expect(
+      (container.querySelector('[data-editor-workflow-command="export.preview"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
   });
 
   it('guards Back only after the active path draft is modified', async () => {
@@ -3474,11 +3476,32 @@ describe('EditorPage UPID draft boundary', () => {
   });
 
   async function clickElement(selector: string) {
+    const workflowCommandId = selector.match(/data-editor-workflow-command="([^"]+)"/)?.[1];
+    if (workflowCommandId) await openWorkflowMenu(workflowCommandId);
+
     const element = container.querySelector(selector) as HTMLElement | null;
     expect(element).not.toBeNull();
 
     await act(async () => {
       element?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    if (workflowCommandId && container.querySelector('[role="menu"]')) {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>(
+          `button[aria-label="${workflowMenuTitle(workflowCommandId)} menu"]`
+        )?.click();
+      });
+      await flushAsync();
+    }
+  }
+
+  async function openWorkflowMenu(commandId: string) {
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(
+        `button[aria-label="${workflowMenuTitle(commandId)} menu"]`
+      )?.click();
     });
     await flushAsync();
   }
@@ -3554,12 +3577,15 @@ function EditorPageHarness({
     if (!initialWorkflowId || !headerContent || openedInitialWorkflowRef.current === initialWorkflowId) {
       return;
     }
-    const command = document.querySelector(
-      `[data-editor-workflow-command="${initialWorkflowId}"]`
-    ) as HTMLButtonElement | null;
-    if (!command) return;
     openedInitialWorkflowRef.current = initialWorkflowId;
-    command.click();
+    document.querySelector<HTMLButtonElement>(
+      `button[aria-label="${workflowMenuTitle(initialWorkflowId)} menu"]`
+    )?.click();
+    queueMicrotask(() => {
+      document.querySelector<HTMLButtonElement>(
+        `[data-editor-workflow-command="${initialWorkflowId}"]`
+      )?.click();
+    });
   }, [headerContent, initialWorkflowId]);
   return (
     <AppRailProvider value={{ setHeaderContent, setRailCollapsed: () => undefined, setRailContent }}>
@@ -3587,6 +3613,21 @@ function EditorPageHarness({
       />
     </AppRailProvider>
   );
+}
+
+function workflowMenuTitle(commandId: string) {
+  const category = commandId.split('.')[0];
+  const titles: Record<string, string> = {
+    construction: 'Construction',
+    export: 'Export',
+    geometry: 'Geometry',
+    machine: 'Machine',
+    machining: 'Machining',
+    view: 'View'
+  };
+  const title = titles[category];
+  if (!title) throw new Error(`No workflow menu owns ${commandId}.`);
+  return title;
 }
 
 function projectWithUpid(
