@@ -766,6 +766,28 @@ describe('path-intel DXF planning', () => {
     );
   });
 
+  it('blocks malformed operation records before execution-order sorting can throw', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([line(0, 0, 10, 0)]);
+    const malformedPlan = {
+      ...document.plan,
+      operations: [document.plan.operations[0], null]
+    } as unknown as typeof document.plan;
+
+    expect(() => postPathPlanToGcode(malformedPlan, document.segments)).not.toThrow();
+    expect(postPathPlanToGcode(malformedPlan, document.segments)).toMatchObject({
+      status: 'blocked',
+      body: '',
+      moves: [],
+      operations: [],
+      diagnostics: [
+        expect.objectContaining({
+          code: 'post-invalid-input',
+          message: 'Cannot post an invalid operation record.'
+        })
+      ]
+    });
+  });
+
   it('formats every coordinate word at the normalized post precision', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       line(-0.0004, -0, 1.234567, -0.0004)

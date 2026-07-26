@@ -45,17 +45,109 @@ describe('UPID program tree projection', () => {
     const posted = postUpidForMachine(document, machine);
     const tree = buildUpidProgramTree(document, machine);
     const cutPath = tree.operations[0].children.find((node) => node.label === 'Cut path');
+    const entry = tree.operations[0].children.find(
+      (node) => node.label === 'Entry / lead-in'
+    );
 
     expect(posted.diagnostics).toContainEqual(expect.objectContaining({
       details: expect.objectContaining({
         reason: 'unsafe-controller-compensation-lead-in'
       })
     }));
+    expect(entry).toMatchObject({
+      status: 'blocked',
+      statusReason: 'unsafe-controller-compensation-lead-in',
+      statusActionTarget: {
+        kind: 'entry-exit',
+        operationId: operation.id
+      }
+    });
+    expect(cutPath?.status).toBe('ready');
+    expect(tree.programStatus).toBe('blocked');
+    expect(tree.programStatusActionTarget).toEqual({
+      kind: 'entry-exit',
+      operationId: operation.id
+    });
+  });
+
+  it('owns an unverified machine blocker once in Source & Setup', () => {
+    const machine = createCharmillesRobofil100V2CandidateProfile();
+    const document = initializeProjectCompensationIntents(
+      twoRectangleDocument(),
+      machine
+    );
+
+    const posted = postUpidForMachine(document, machine);
+    const tree = buildUpidProgramTree(document, machine);
+    const machineSetup = tree.sourceSetup.find(
+      (node) => node.editTarget?.kind === 'machine-setup'
+    );
+
+    expect(posted.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({ reason: 'unverified-machine-profile' })
+    }));
+    expect(machineSetup).toMatchObject({
+      status: 'blocked',
+      statusReason: 'unverified-machine-profile',
+      statusActionTarget: { kind: 'machine-setup' }
+    });
+    expect(tree.sourceSetupStatus).toBe('blocked');
+    expect(tree.sourceSetupStatusReason).toBe('unverified-machine-profile');
+    expect(tree.sourceSetupStatusActionTarget).toEqual({ kind: 'machine-setup' });
+    expect(tree.operations.every((operation) =>
+      operation.statusReason !== 'unverified-machine-profile'
+    )).toBe(true);
+    expect(tree.programStatus).toBe('ready');
+    expect(tree.status).toBe('blocked');
+  });
+
+  it('keeps an operation-specific compensation blocker on its Cut Path', () => {
+    const machine = createVerifiedCharmillesRobofil100Profile();
+    const document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities(rectangleLines(0, 0, 10, 5)),
+      machine
+    );
+    const operation = document.plan.operations[0];
+    document.diagnostics = [{
+      id: 'imported-topology-review',
+      severity: 'warning',
+      code: 'intersecting-topology',
+      message: 'Imported topology requires compensation review.',
+      relatedSegmentIds: [operation.segmentRefs[0].segmentId]
+    }];
+    document.setup = {
+      initialWirePosition: {
+        kind: 'manual',
+        point: { x: 0, y: 0 },
+        review: 'reviewed'
+      }
+    };
+
+    const posted = postUpidForMachine(document, machine);
+    const tree = buildUpidProgramTree(document, machine);
+    const operationRoot = tree.operations[0];
+    const entry = operationRoot.children.find((node) => node.label === 'Entry / lead-in');
+    const cutPath = operationRoot.children.find((node) => node.label === 'Cut path');
+
+    expect(posted.diagnostics).toContainEqual(expect.objectContaining({
+      details: expect.objectContaining({ reason: 'compensation-resolution-blocked' })
+    }));
+    expect(entry?.status).toBe('ready');
     expect(cutPath).toMatchObject({
       status: 'blocked',
-      statusReason: 'unsafe-controller-compensation-lead-in'
+      statusReason: 'compensation-resolution-blocked',
+      statusActionTarget: {
+        kind: 'operation',
+        operationId: operation.id
+      }
     });
+    expect(tree.sourceSetupStatus).toBe('ready');
     expect(tree.programStatus).toBe('blocked');
+    expect(tree.programStatusReason).toBe('compensation-resolution-blocked');
+    expect(tree.programStatusActionTarget).toEqual({
+      kind: 'operation',
+      operationId: operation.id
+    });
   });
 
   it('blocks configured stops when the selected post cannot own them', () => {

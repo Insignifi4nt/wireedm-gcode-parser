@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
@@ -27,6 +27,25 @@ describe('operation execution order', () => {
 
     expect(orderedPathOperations([first, second]).map((operation) => operation.id))
       .toEqual(['operation-a', 'operation-z']);
+  });
+
+  it('uses locale-independent code-unit ordering for Unicode operation ids', () => {
+    const document = twoContourDocument();
+    const [first, second] = document.plan.operations;
+    first.orderIndex = 4;
+    second.orderIndex = 4;
+    first.id = 'operation-ä';
+    second.id = 'operation-z';
+    const localeCompare = vi.spyOn(String.prototype, 'localeCompare')
+      .mockImplementation(() => -1);
+
+    try {
+      expect(orderedPathOperations([first, second]).map((operation) => operation.id))
+        .toEqual(['operation-z', 'operation-ä']);
+      expect(localeCompare).not.toHaveBeenCalled();
+    } finally {
+      localeCompare.mockRestore();
+    }
   });
 });
 

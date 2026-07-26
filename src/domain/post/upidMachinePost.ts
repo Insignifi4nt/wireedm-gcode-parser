@@ -79,6 +79,14 @@ export interface UpidMachinePostResult extends GcodePostResult {
 
 export interface UpidMachinePostPreparationIssue {
   reason: string;
+  scope:
+    | 'program'
+    | 'machine-setup'
+    | 'geometry-setup'
+    | 'initial-wire'
+    | 'entry-exit'
+    | 'cut-path'
+    | 'program-stop';
   effectiveOperationId?: string;
   sourceOperationId?: string;
   programStopReason?: Extract<
@@ -277,9 +285,7 @@ export function prepareUpidMachinePost(
         reason: 'unverified-machine-profile',
         document,
         machining,
-        issues: document.plan.operations.map((operation) =>
-          operationIssue(operation, 'unverified-machine-profile')
-        )
+        issues: [globalPreparationIssue('unverified-machine-profile')]
       });
     }
     const reason = document.geometryBasis === 'wire-centre' ? 'wire-centre' : 'missing-intent';
@@ -291,9 +297,12 @@ export function prepareUpidMachinePost(
       reason: 'compensation-resolution-blocked',
       document,
       machining,
-      issues: document.plan.operations.map((operation) =>
-        operationIssue(operation, 'compensation-resolution-blocked')
-      )
+      issues: [
+        globalPreparationIssue(
+          'compensation-resolution-blocked',
+          'geometry-setup'
+        )
+      ]
     });
   }
   if (compensatedOperations.length === 0) {
@@ -319,7 +328,7 @@ export function prepareUpidMachinePost(
           reason: readiness.reason,
           document,
           machining,
-          issues: [operationIssue(operation, readiness.reason)]
+          issues: preparationIssues(readiness.reason, [operation])
         });
       }
       if (readiness.strategy !== 'explicit-linear' || !readiness.transition) {
@@ -330,7 +339,10 @@ export function prepareUpidMachinePost(
           reason: 'unsupported-compensation-lifecycle',
           document,
           machining,
-          issues: [operationIssue(operation, 'unsupported-compensation-lifecycle')]
+          issues: preparationIssues(
+            'unsupported-compensation-lifecycle',
+            [operation]
+          )
         });
       }
       readinessByOperationId.set(operation.id, readiness);
@@ -356,8 +368,9 @@ export function prepareUpidMachinePost(
         reason: 'unsupported-compensation-lifecycle',
         document,
         machining,
-        issues: compensatedOperations.map((operation) =>
-          operationIssue(operation, 'unsupported-compensation-lifecycle')
+        issues: preparationIssues(
+          'unsupported-compensation-lifecycle',
+          compensatedOperations
         )
       }
     );
@@ -770,7 +783,7 @@ function prepareVerifiedRobofil(
     reason,
     document,
     machining,
-    issues: operations.map((operation) => operationIssue(operation, reason))
+    issues: preparationIssues(reason, operations)
   });
 
   if (!machineProfileHasCurrentVerification(machine)) {
@@ -1018,7 +1031,7 @@ function prepareRobofilV2(
     reason,
     document,
     machining,
-    issues: operations.map((operation) => operationIssue(operation, reason))
+    issues: preparationIssues(reason, operations)
   });
 
   if (!machineProfileHasCurrentVerification(machine)) {
@@ -1102,7 +1115,7 @@ function prepareRobofilV2(
         reason: readiness.reason,
         document,
         machining,
-        issues: [operationIssue(operation, readiness.reason)]
+        issues: preparationIssues(readiness.reason, [operation])
       });
     }
     resolutionByOperationId.set(operation.id, readiness.resolution.code);
@@ -1769,10 +1782,65 @@ function operationIssue(
 ): UpidMachinePostPreparationIssue {
   return {
     reason,
+    scope: preparationIssueScope(reason),
     effectiveOperationId: operation.id,
     sourceOperationId:
       operation.machiningIntent?.sourceOperationId ?? operation.id
   };
+}
+
+function globalPreparationIssue(
+  reason: string,
+  scope = preparationIssueScope(reason)
+): UpidMachinePostPreparationIssue {
+  return { reason, scope };
+}
+
+function preparationIssues(
+  reason: string,
+  operations: readonly PathPlanningDocument['plan']['operations'][number][]
+): UpidMachinePostPreparationIssue[] {
+  const scope = preparationIssueScope(reason);
+  return scope === 'entry-exit' ||
+    scope === 'cut-path' ||
+    scope === 'program-stop'
+    ? operations.map((operation) => operationIssue(operation, reason))
+    : [globalPreparationIssue(reason, scope)];
+}
+
+function preparationIssueScope(
+  reason: string
+): UpidMachinePostPreparationIssue['scope'] {
+  switch (reason) {
+    case 'program-stop-post-unsupported':
+    case 'program-stop-blocked':
+      return 'program-stop';
+    case 'unsafe-radial-lead':
+    case 'unsafe-controller-compensation-lead-in':
+    case 'sharp-manual-start':
+    case 'collision':
+    case 'outside-work-area':
+    case 'precision-collapse':
+    case 'no-safe-candidate':
+      return 'entry-exit';
+    case 'compensation-resolution-blocked':
+      return 'cut-path';
+    case 'initial-wire-position-required':
+      return 'initial-wire';
+    case 'unsupported-machine-profile':
+    case 'invalid-offset-selection':
+    case 'unverified-machine-profile':
+    case 'units-mode-conflict':
+    case 'template-modal-conflict':
+    case 'unsupported-generic-post-envelope':
+    case 'unsupported-robofil-post-envelope':
+    case 'unsupported-operation-count':
+    case 'unsupported-compensation-lifecycle':
+    case 'missing-envelope':
+      return 'machine-setup';
+    default:
+      return 'cut-path';
+  }
 }
 
 function blockedPreparation(

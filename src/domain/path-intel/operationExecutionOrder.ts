@@ -10,6 +10,12 @@ export function orderedPathOperations<T extends Pick<PathOperation, 'id' | 'orde
   return [...operations].sort(
     (left, right) =>
       left.orderIndex - right.orderIndex ||
-      left.id.localeCompare(right.id)
+      compareCodeUnits(left.id, right.id)
   );
+}
+
+function compareCodeUnits(left: string, right: string) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }

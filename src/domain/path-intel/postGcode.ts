@@ -166,6 +166,14 @@ function projectPathPlanToGcode(
   if (!plan || !Array.isArray(plan.operations) || !Array.isArray(segments)) {
     return block('Cannot post because the operation plan or segment collection is invalid.');
   }
+  for (const operation of plan.operations) {
+    if (!operation || typeof operation.id !== 'string') {
+      return block('Cannot post an invalid operation record.');
+    }
+    if (!Number.isFinite(operation.orderIndex)) {
+      return block(`Cannot post operation ${operation.id} with an invalid execution order.`);
+    }
+  }
   const operationsInExecutionOrder = orderedPathOperations(plan.operations);
 
   const endpointTolerance = normalizedPostTolerance(

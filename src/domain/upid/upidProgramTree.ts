@@ -93,17 +93,20 @@ export function buildUpidProgramTree(
   const ownedDiagnosticIds = new Set(
     [...operationDiagnostics.values()].flat().map((diagnostic) => diagnostic.id)
   );
-  const sourceSetup = buildSourceSetupNodes(
-    executionDocument,
-    machine,
-    diagnostics.filter((diagnostic) => !ownedDiagnosticIds.has(diagnostic.id))
-  );
   const postPreparation = prepareUpidMachinePost(executionDocument, machine);
+  const postIssues = postPreparation.issues;
+  const sourceSetup = applyPreparationIssuesToSourceSetup(
+    buildSourceSetupNodes(
+      executionDocument,
+      machine,
+      diagnostics.filter((diagnostic) => !ownedDiagnosticIds.has(diagnostic.id))
+    ),
+    postIssues
+  );
   const machiningProjection = projectMachiningBySource(
     executionDocument,
     postPreparation.machining
   );
-  const postIssues = postPreparation.issues;
   for (const issue of postIssues) {
     if (!issue.sourceOperationId) continue;
     machiningProjection.bySourceOperationId
@@ -137,13 +140,23 @@ export function buildUpidProgramTree(
     postPreparation.issues.length === 0
       ? postPreparation.reason
       : undefined;
-  const programMetadata = machiningProjection.unownedFailureReason || unownedPostReason
+  const programPostIssue = postIssues.find((issue) => issue.scope === 'program');
+  const programMetadata =
+    machiningProjection.unownedFailureReason ||
+    unownedPostReason ||
+    programPostIssue
     ? {
         status: 'blocked' as const,
-        statusReason: machiningProjection.unownedFailureReason ?? unownedPostReason,
-        statusActionTarget: {
-          kind: 'machining-participation' as const
-        }
+        statusReason:
+          machiningProjection.unownedFailureReason ??
+          unownedPostReason ??
+          programPostIssue?.reason,
+        statusActionTarget:
+          machiningProjection.unownedFailureReason || unownedPostReason
+            ? { kind: 'machining-participation' as const }
+            : programPostIssue
+              ? preparationIssueActionTarget(programPostIssue)
+              : undefined
       }
     : rollUpNodeStatusMetadata(operations);
 
@@ -236,6 +249,29 @@ function buildSourceSetupNodes(
   return [summary, geometry, machineSetup, initialWire, threading];
 }
 
+function applyPreparationIssuesToSourceSetup(
+  nodes: readonly UpidProgramTreeNode[],
+  issues: readonly UpidMachinePostPreparationIssue[]
+): UpidProgramTreeNode[] {
+  return nodes.map((node) => {
+    const issue = issues.find((candidate) =>
+      (candidate.scope === 'machine-setup' &&
+        node.editTarget?.kind === 'machine-setup') ||
+      (candidate.scope === 'geometry-setup' &&
+        node.editTarget?.kind === 'geometry-setup') ||
+      (candidate.scope === 'initial-wire' &&
+        node.editTarget?.kind === 'initial-wire')
+    );
+    if (!issue) return node;
+    return {
+      ...node,
+      status: 'blocked',
+      statusReason: issue.reason,
+      statusActionTarget: preparationIssueActionTarget(issue)
+    };
+  });
+}
+
 function buildOperationNode(
   document: PathPlanningDocument,
   machine: MachineProfile,
@@ -263,8 +299,18 @@ function buildOperationNode(
     operation,
     effectiveOperations
   );
-  const entry = buildTransitionNode(operation, effectiveOperations, 'entry');
-  const exit = buildTransitionNode(operation, effectiveOperations, 'exit');
+  const entry = buildTransitionNode(
+    operation,
+    effectiveOperations,
+    'entry',
+    postIssues
+  );
+  const exit = buildTransitionNode(
+    operation,
+    effectiveOperations,
+    'exit',
+    postIssues
+  );
   const cutPath = buildCutPathNode(
     document,
     machine,
@@ -379,21 +425,27 @@ function buildIncomingConnectionNode(
 function buildTransitionNode(
   sourceOperation: PathOperation,
   effectiveOperations: readonly PathOperation[],
-  phase: 'entry' | 'exit'
+  phase: 'entry' | 'exit',
+  postIssues: readonly UpidMachinePostPreparationIssue[]
 ): UpidProgramTreeNode {
   const transition = sourceOperation.transitions?.[phase];
   const effectiveStatuses = (effectiveOperations.length > 0
     ? effectiveOperations
     : [sourceOperation]
   ).map((operation) => transitionStatus(operation.transitions?.[phase]));
-  const status = rollUpStatuses(effectiveStatuses);
+  const postIssue = phase === 'entry'
+    ? postIssues.find((issue) => issue.scope === 'entry-exit')
+    : undefined;
+  const status = postIssue ? 'blocked' : rollUpStatuses(effectiveStatuses);
   return {
     treeKey: `${operationTreeKey(sourceOperation.id)}:${phase}`,
     kind: 'phase',
     label: phase === 'entry' ? 'Entry / lead-in' : 'Exit / lead-out',
     detail: transition?.strategy === 'none' || !transition ? 'None' : transition.strategy,
     status,
-    statusReason: status === 'review-required' ? 'review-required' : undefined,
+    statusReason:
+      postIssue?.reason ??
+      (status === 'review-required' ? 'review-required' : undefined),
     statusActionTarget: isActionableStatus(status)
       ? { kind: 'entry-exit', operationId: sourceOperation.id }
       : undefined,
@@ -586,10 +638,7 @@ function buildStopNodes(
     machine,
     effectiveOperations.length > 0 ? effectiveSegments : document.segments
   );
-  const postIssue = postIssues.find((issue) =>
-    issue.reason === 'program-stop-post-unsupported' ||
-    issue.reason === 'program-stop-blocked'
-  );
+  const postIssue = postIssues.find((issue) => issue.scope === 'program-stop');
   const blockedReason = postIssue?.programStopReason ??
     postIssue?.reason ??
     (validation.status === 'blocked' ? validation.reason : undefined);
@@ -804,8 +853,7 @@ function resolveCutPathStatus(
   postIssues: readonly UpidMachinePostPreparationIssue[]
 ): UpidProgramTreeStatus | { status: 'blocked'; reason: string } {
   const postIssue = postIssues.find((issue) =>
-    issue.reason !== 'program-stop-blocked' &&
-    issue.reason !== 'program-stop-post-unsupported' &&
+    issue.scope === 'cut-path' &&
     (
       !issue.effectiveOperationId ||
       issue.effectiveOperationId === operation.id ||
@@ -822,6 +870,31 @@ function resolveCutPathStatus(
   return compensation.status === 'blocked'
     ? { status: 'blocked', reason: compensation.reason }
     : 'ready';
+}
+
+function preparationIssueActionTarget(
+  issue: UpidMachinePostPreparationIssue
+): UpidProgramTreeEditTarget | undefined {
+  switch (issue.scope) {
+    case 'machine-setup':
+      return { kind: 'machine-setup' };
+    case 'geometry-setup':
+      return { kind: 'geometry-setup' };
+    case 'initial-wire':
+      return { kind: 'initial-wire' };
+    case 'entry-exit':
+      return issue.sourceOperationId
+        ? { kind: 'entry-exit', operationId: issue.sourceOperationId }
+        : undefined;
+    case 'cut-path':
+      return issue.sourceOperationId
+        ? { kind: 'operation', operationId: issue.sourceOperationId }
+        : undefined;
+    case 'program':
+      return { kind: 'path-summary' };
+    case 'program-stop':
+      return undefined;
+  }
 }
 
 function inactiveExecutionNode(node: UpidProgramTreeNode): UpidProgramTreeNode {
