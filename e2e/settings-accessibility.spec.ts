@@ -10,6 +10,11 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await page.goto('/');
 
+    await expect(page.getByRole('button', { name: 'Open Editor' })).toBeVisible();
+    const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
+    await expect(onboarding).toBeVisible();
+    await onboarding.getByRole('button', { name: 'Go Build!' }).click();
+
     const storageBadge = page.locator('[data-storage-status-label]');
     await expect(storageBadge).toHaveText('Browser cache active');
     await expect(storageBadge.locator('..')).not.toHaveClass(/destructive/);
