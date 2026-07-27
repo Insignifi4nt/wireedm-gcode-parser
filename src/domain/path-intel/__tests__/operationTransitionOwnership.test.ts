@@ -24,6 +24,29 @@ describe('source operation transition ownership', () => {
       resolveSourceOperationTransitionOwnership(document, sourceOperation.id, machine)
     ).toBe('authored');
   });
+
+  it('isolates partial ownership when another operation has invalid active groups', () => {
+    const machine = explicitLinearMachine();
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        ...rectangleLines(0),
+        ...rectangleLines(30)
+      ]),
+      machine
+    );
+    const [partialOperation, invalidOperation] = document.plan.operations;
+    document = markInactive(document, partialOperation.segmentRefs[0].segmentId);
+    document = markInactive(document, invalidOperation.segmentRefs[0].segmentId);
+    document = markInactive(document, invalidOperation.segmentRefs[2].segmentId);
+
+    expect(
+      resolveSourceOperationTransitionOwnership(
+        document,
+        partialOperation.id,
+        machine
+      )
+    ).toBe('authored');
+  });
 });
 
 function explicitLinearMachine() {
@@ -43,13 +66,24 @@ function explicitLinearMachine() {
   return markMachineProfileUserVerified(machine);
 }
 
-function rectangleLines() {
+function rectangleLines(offsetX = 0) {
   return [
-    line(0, 0, 0, 5),
-    line(0, 5, 10, 5),
-    line(10, 5, 10, 0),
-    line(10, 0, 0, 0)
+    line(offsetX, 0, offsetX, 5),
+    line(offsetX, 5, offsetX + 10, 5),
+    line(offsetX + 10, 5, offsetX + 10, 0),
+    line(offsetX + 10, 0, offsetX, 0)
   ];
+}
+
+function markInactive(
+  document: ReturnType<typeof createUpidFromDxfEntities>,
+  sourceSegmentId: string
+) {
+  return setMachiningSpanParticipation(document, {
+    sourceSegmentId,
+    range: { start: 0, end: 1 },
+    participation: 'inactive-reference'
+  })!;
 }
 
 function line(startX: number, startY: number, endX: number, endY: number) {

@@ -1,6 +1,9 @@
 import type { MachineProfile } from '@/domain/workbench/types';
 
-import { deriveActiveMachiningOperations } from './machiningParticipation';
+import {
+  deriveActiveMachiningOperations,
+  deriveSourceMachiningOperations
+} from './machiningParticipation';
 import type { PathOperation, PathPlanningDocument } from './types';
 
 export type OperationTransitionOwnership =
@@ -28,11 +31,14 @@ export function resolveSourceOperationTransitionOwnership(
   if (!sourceOperation) return 'authored';
 
   const machining = deriveActiveMachiningOperations(document);
-  if (machining.status === 'blocked') {
+  const effectiveMachining = machining.status === 'ready'
+    ? machining
+    : deriveSourceMachiningOperations(document, sourceOperationId);
+  if (!effectiveMachining || effectiveMachining.status === 'blocked') {
     return resolveOperationTransitionOwnership(sourceOperation, machine);
   }
 
-  const effectiveOperations = machining.operations.filter(
+  const effectiveOperations = effectiveMachining.operations.filter(
     (operation) =>
       (operation.machiningIntent?.sourceOperationId ?? operation.id) ===
       sourceOperationId

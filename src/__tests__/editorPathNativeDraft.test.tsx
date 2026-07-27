@@ -2706,18 +2706,28 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
-  it('keeps partial Entry / Exit editable until an explicit controller side is selected', async () => {
+  it('keeps an isolated partial Entry / Exit editable when another operation has invalid active groups', async () => {
     const machine = generatedExplicitMachine();
     let document = initializeProjectCompensationIntents(
       pathDocumentFromIndependentRectangles(),
       machine
     );
-    const operation = document.plan.operations[0];
+    const [operation, invalidOperation] = document.plan.operations;
     document = setMachiningSpanParticipation(document, {
       sourceSegmentId: operation.segmentRefs[0].segmentId,
       range: { start: 0, end: 1 },
       participation: 'inactive-reference'
     })!;
+    for (const segmentId of [
+      invalidOperation.segmentRefs[0].segmentId,
+      invalidOperation.segmentRefs[2].segmentId
+    ]) {
+      document = setMachiningSpanParticipation(document, {
+        sourceSegmentId: segmentId,
+        range: { start: 0, end: 1 },
+        participation: 'inactive-reference'
+      })!;
+    }
     const project = projectWithUpid(document, machine);
 
     await act(async () => {

@@ -16,9 +16,15 @@ import {
   readOperationTransitions,
   operationEntryPoint
 } from '@/domain/path-intel/operationTransitions';
-import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
+import {
+  deriveActiveMachiningOperations,
+  deriveSourceMachiningOperations
+} from '@/domain/path-intel/machiningParticipation';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
-import { resolveOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
+import {
+  resolveOperationTransitionOwnership,
+  resolveSourceOperationTransitionOwnership
+} from '@/domain/path-intel/operationTransitionOwnership';
 import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
 import {
   resolveProgramStopPoints,
@@ -176,12 +182,18 @@ export function deriveUpidPreviewPostProjection(
   const preparation = prepareUpidMachinePost(document, machine);
   if (preparation.status === 'blocked') {
     return {
-      authoritativeGeneratedOperationIds: generatedOwnedOperationIds(
+      authoritativeGeneratedOperationIds:
         preparation.machining?.status === 'ready'
-          ? preparation.machining.operations
-          : document.plan.operations,
-        machine
-      ),
+          ? generatedOwnedOperationIds(preparation.machining.operations, machine)
+          : document.plan.operations.flatMap((operation) =>
+              resolveSourceOperationTransitionOwnership(
+                document,
+                operation.id,
+                machine
+              ) === 'generated-explicit-linear'
+                ? [operation.id]
+                : []
+            ),
       blocks: []
     };
   }
@@ -296,13 +308,25 @@ export function prepareUpidMachinePost(
 
   const machining = deriveActiveMachiningOperations(sourceDocument);
   if (machining.status === 'blocked') {
+    const reason = 'machining-participation-blocked';
+    const issues = sourceDocument.plan.operations.flatMap((operation) =>
+      deriveSourceMachiningOperations(sourceDocument, operation.id)?.status ===
+        'blocked'
+        ? [{
+            reason,
+            scope: 'machining-participation' as const,
+            sourceOperationId: operation.id
+          }]
+        : []
+    );
     return blockedPreparation(blockedReason(
-      'machining-participation-blocked',
+      reason,
       `Machining participation could not be resolved: ${machining.reason}.`,
       { machiningParticipationReason: machining.reason }
     ), {
-      reason: 'machining-participation-blocked',
-      machining
+      reason,
+      machining,
+      issues
     });
   }
   if (machining.operations.length === 0) {

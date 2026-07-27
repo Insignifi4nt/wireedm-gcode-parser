@@ -124,7 +124,7 @@ describe('generated transition ownership surfaces', () => {
     expect(container.querySelector('[data-upid-selected-travel]')).not.toBeNull();
   });
 
-  it('preserves stored partial transition rows when no controller side owns the effective path', async () => {
+  it('preserves isolated authored rows when another operation blocks machining derivation', async () => {
     const machine = explicitLinearMachine();
     const document = partialDocumentWithStoredEntry(machine);
     const operation = document.plan.operations[0];
@@ -259,17 +259,32 @@ function partialDocumentWithStoredEntry(machine: MachineProfile) {
       { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 0, y: 5 } },
       { type: 'line', layer: 'CUT', start: { x: 0, y: 5 }, end: { x: 10, y: 5 } },
       { type: 'line', layer: 'CUT', start: { x: 10, y: 5 }, end: { x: 10, y: 0 } },
-      { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 0, y: 0 } }
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 0, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 30, y: 0 }, end: { x: 30, y: 5 } },
+      { type: 'line', layer: 'CUT', start: { x: 30, y: 5 }, end: { x: 40, y: 5 } },
+      { type: 'line', layer: 'CUT', start: { x: 40, y: 5 }, end: { x: 40, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 40, y: 0 }, end: { x: 30, y: 0 } }
     ]),
     machine
   );
-  const operation = document.plan.operations[0];
-  document = setPathOperationManualLeadIn(document, operation.id, { x: -2, y: -2 })!;
-  return setMachiningSpanParticipation(document, {
-    sourceSegmentId: operation.segmentRefs[0].segmentId,
-    range: { start: 0, end: 1 },
-    participation: 'inactive-reference'
-  })!;
+  const [operation, invalidOperation] = document.plan.operations;
+  document = setPathOperationManualLeadIn(
+    document,
+    operation.id,
+    { x: -2, y: -2 }
+  )!;
+  for (const segmentId of [
+    operation.segmentRefs[0].segmentId,
+    invalidOperation.segmentRefs[0].segmentId,
+    invalidOperation.segmentRefs[2].segmentId
+  ]) {
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: segmentId,
+      range: { start: 0, end: 1 },
+      participation: 'inactive-reference'
+    })!;
+  }
+  return document;
 }
 
 function explicitLinearMachine() {

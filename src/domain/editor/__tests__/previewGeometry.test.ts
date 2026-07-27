@@ -12,6 +12,7 @@ import {
 import {
   setCircleOperationCenterPierceLeadIn,
   setManualInitialWirePosition,
+  setPathOperationManualLeadIn,
   setPathOperationTransitions,
   translatePathDocument
 } from '@/domain/path-editor/pathDocumentOperations';
@@ -548,6 +549,51 @@ describe('buildEditorPreviewGeometry', () => {
     expect(preview.paths.some((path) => path.travelSource === 'posted')).toBe(false);
   });
 
+  it('keeps an isolated authored partial transition visible when another operation blocks derivation', () => {
+    const machine = verifiedGenericExplicitMachine();
+    let document = initializeProjectCompensationIntents(
+      createPathPlanningDocumentFromDxfEntities([
+        ...rectangleLines(0),
+        ...rectangleLines(30)
+      ]),
+      machine
+    );
+    const [partialOperation, invalidOperation] = document.plan.operations;
+    document = setPathOperationManualLeadIn(
+      document,
+      partialOperation.id,
+      { x: -3, y: -2 }
+    )!;
+    for (const segmentId of [
+      partialOperation.segmentRefs[0].segmentId,
+      invalidOperation.segmentRefs[0].segmentId,
+      invalidOperation.segmentRefs[2].segmentId
+    ]) {
+      document = setMachiningSpanParticipation(document, {
+        sourceSegmentId: segmentId,
+        range: { start: 0, end: 1 },
+        participation: 'inactive-reference'
+      })!;
+    }
+
+    const projection = deriveUpidMachinePreviewTransitions(document, machine);
+    const preview = buildEditorPathDocumentPreviewGeometry(document, {
+      authoritativeGeneratedOperationIds:
+        projection?.authoritativeGeneratedOperationIds,
+      postedTransitions: projection?.transitions
+    });
+
+    expect(projection).toEqual({
+      authoritativeGeneratedOperationIds: [invalidOperation.id],
+      transitions: []
+    });
+    expect(preview.paths).toContainEqual(expect.objectContaining({
+      operationId: partialOperation.id,
+      travelRole: 'lead-in',
+      travelSource: 'planned'
+    }));
+  });
+
   it('replaces planned travel only for generated operations in a mixed explicit-linear program', () => {
     const machine = verifiedGenericExplicitMachine();
     const initialized = initializeProjectCompensationIntents(
@@ -774,6 +820,15 @@ describe('buildEditorPreviewGeometry', () => {
     });
   });
 });
+
+function rectangleLines(offsetX: number) {
+  return [
+    line(offsetX, 0, offsetX, 5),
+    line(offsetX, 5, offsetX + 10, 5),
+    line(offsetX + 10, 5, offsetX + 10, 0),
+    line(offsetX + 10, 0, offsetX, 0)
+  ];
+}
 
 function line(startX: number, startY: number, endX: number, endY: number) {
   return {

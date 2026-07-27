@@ -843,6 +843,41 @@ describe('postUpidForMachine', () => {
     }));
   });
 
+  it('owns a global participation failure with the source that has disjoint active groups', () => {
+    const machine = verifiedGenericExplicitMachine();
+    let document = initializeProjectCompensationIntents(
+      createUpidFromDxfEntities([
+        ...clockwiseRectangle(0, 0, 10, 5),
+        ...clockwiseRectangle(30, 0, 40, 5)
+      ]),
+      machine
+    );
+    const [partialOperation, invalidOperation] = document.plan.operations;
+    for (const segmentId of [
+      partialOperation.segmentRefs[0].segmentId,
+      invalidOperation.segmentRefs[0].segmentId,
+      invalidOperation.segmentRefs[2].segmentId
+    ]) {
+      document = setMachiningSpanParticipation(document, {
+        sourceSegmentId: segmentId,
+        range: { start: 0, end: 1 },
+        participation: 'inactive-reference'
+      })!;
+    }
+
+    const preparation = machinePostModule.prepareUpidMachinePost(document, machine);
+
+    expect(preparation).toMatchObject({
+      status: 'blocked',
+      reason: 'machining-participation-blocked',
+      issues: [{
+        reason: 'machining-participation-blocked',
+        scope: 'machining-participation',
+        sourceOperationId: invalidOperation.id
+      }]
+    });
+  });
+
   it('stops before positioning when manual wire separation is required', () => {
     const machine = markMachineProfileUserVerified(
       createCharmillesRobofil100V2CandidateProfile()

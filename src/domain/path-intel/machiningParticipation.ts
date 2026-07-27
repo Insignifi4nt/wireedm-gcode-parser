@@ -261,6 +261,47 @@ export function deriveActiveMachiningOperations(
   return { status: 'ready', operations, segments: allSegments };
 }
 
+export function deriveSourceMachiningOperations(
+  document: PathPlanningDocument,
+  sourceOperationId: string
+): ActiveMachiningDerivation | null {
+  const sourceOperation = document.plan.operations.find(
+    (operation) => operation.id === sourceOperationId
+  );
+  if (!sourceOperation) return null;
+
+  const sourceSegmentIds = new Set(
+    sourceOperation.segmentRefs.map((ref) => ref.segmentId)
+  );
+  const participation = document.machiningParticipation;
+  const isolatedDocument: PathPlanningDocument = {
+    ...document,
+    plan: {
+      ...document.plan,
+      operations: [sourceOperation]
+    },
+    ...(participation
+      ? {
+          machiningParticipation: {
+            ...participation,
+            spans: participation.spans.filter((span) =>
+              sourceSegmentIds.has(span.sourceSegmentId)
+            ),
+            partialContourCompensation:
+              participation.partialContourCompensation?.filter(
+                (setting) => setting.sourceOperationId === sourceOperation.id
+              ),
+            partialContourEntryReviews:
+              participation.partialContourEntryReviews?.filter(
+                (review) => review.sourceOperationId === sourceOperation.id
+              )
+          }
+        }
+      : {})
+  };
+  return deriveActiveMachiningOperations(isolatedDocument);
+}
+
 function buildPartialOperation(
   source: PathOperation,
   refs: OrientedSegmentRef[],

@@ -2,6 +2,7 @@ import { resolveControllerCompensation } from '@/domain/compensation/resolveCont
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
 import {
   deriveActiveMachiningOperations,
+  deriveSourceMachiningOperations,
   type ActiveMachiningDerivation
 } from '@/domain/path-intel/machiningParticipation';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
@@ -861,7 +862,10 @@ function projectMachiningBySource(
 
   let isolatedFailureFound = false;
   for (const sourceOperation of document.plan.operations) {
-    const derivation = deriveMachiningForSourceOperation(document, sourceOperation);
+    const derivation = deriveSourceMachiningOperations(
+      document,
+      sourceOperation.id
+    )!;
     const projection = bySourceOperationId.get(sourceOperation.id)!;
     if (derivation.status === 'ready') {
       projection.effectiveOperations = derivation.operations.filter((operation) =>
@@ -906,42 +910,6 @@ function deriveUnownedParticipationFailure(
     }
   });
   return derivation.status === 'blocked' ? derivation.reason : undefined;
-}
-
-function deriveMachiningForSourceOperation(
-  document: PathPlanningDocument,
-  sourceOperation: PathOperation
-): ActiveMachiningDerivation {
-  const sourceSegmentIds = new Set(
-    sourceOperation.segmentRefs.map((ref) => ref.segmentId)
-  );
-  const participation = document.machiningParticipation;
-  const isolatedDocument: PathPlanningDocument = {
-    ...document,
-    plan: {
-      ...document.plan,
-      operations: [sourceOperation]
-    },
-    ...(participation
-      ? {
-          machiningParticipation: {
-            ...participation,
-            spans: participation.spans.filter((span) =>
-              sourceSegmentIds.has(span.sourceSegmentId)
-            ),
-            partialContourCompensation:
-              participation.partialContourCompensation?.filter(
-                (setting) => setting.sourceOperationId === sourceOperation.id
-              ),
-            partialContourEntryReviews:
-              participation.partialContourEntryReviews?.filter(
-                (review) => review.sourceOperationId === sourceOperation.id
-              )
-          }
-        }
-      : {})
-  };
-  return deriveActiveMachiningOperations(isolatedDocument);
 }
 
 function transitionStatus(
