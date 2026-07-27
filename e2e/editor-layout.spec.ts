@@ -68,6 +68,49 @@ test('machine program line commands stay fully visible at desktop and laptop wid
   await expectLineCommandInsideToolbar(page, 1024);
 });
 
+for (const width of [767, 320]) {
+  test(`raw machine program keeps two usable stacked panes at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await openReadyWorkbench(page);
+    await page.locator('input[aria-label="Machine program file"]').setInputFiles({
+      name: `compact-machine-${width}.nc`,
+      mimeType: 'text/plain',
+      buffer: Buffer.from('%\nG90\nG0 X0 Y0\nG1 X20 Y0\nG1 X20 Y10\nM02\n%')
+    });
+    await dismissOnboarding(page);
+
+    const mainGrid = page.locator('[data-editor-main-grid]');
+    const canvas = page.locator('[data-editor-canvas-panel]');
+    const inspector = page.locator('[data-editor-inspector-rail]');
+    await expect(mainGrid).toBeVisible();
+    await expect(canvas).toBeVisible();
+    await expect(inspector).toBeVisible();
+
+    await expect.poll(async () => {
+      const [mainGridBox, canvasBox, inspectorBox] = await Promise.all([
+        mainGrid.boundingBox(),
+        canvas.boundingBox(),
+        inspector.boundingBox()
+      ]);
+      if (!mainGridBox || !canvasBox || !inspectorBox) return false;
+      const visibleInspectorHeight = Math.max(
+        0,
+        Math.min(inspectorBox.y + inspectorBox.height, mainGridBox.y + mainGridBox.height) -
+          Math.max(inspectorBox.y, mainGridBox.y)
+      );
+      return (
+        canvasBox.height >= 300 &&
+        visibleInspectorHeight >= 280 &&
+        inspectorBox.y >= canvasBox.y + canvasBox.height
+      );
+    }).toBe(true);
+
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      width
+    );
+  });
+}
+
 test('path editor keeps the UPID rail and essential workflow controls at 1024', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openReadyWorkbench(page);

@@ -217,8 +217,11 @@ summary:focus-visible {
   }
 
   [data-editor-main-grid] {
-    grid-template-rows: minmax(0, 1fr);
     padding: 4px;
+  }
+
+  [data-editor-main-grid][data-is-path-project="true"] {
+    grid-template-rows: minmax(0, 1fr);
   }
 }
 
