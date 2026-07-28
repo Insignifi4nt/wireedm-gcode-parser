@@ -1131,24 +1131,26 @@ export function EditorPage({
     };
     return EDITOR_WORKFLOW_MENU_TITLES.map((title) => ({
       title,
-      commands: EDITOR_COMMAND_REGISTRY.commandsForMenu(title).map((command) => {
-        const availability = evaluateEditorCommand(command, context);
-        return {
-          ariaLabel: command.id === 'export.preview' ? 'Open UPID export preview' : undefined,
-          id: command.id,
-          label: command.label,
-          description: command.id === 'export.preview'
-            ? 'Review exact controller output, readiness, transitions, and diagnostics.'
-            : command.toolWindowId
-              ? EDITOR_WORKSPACE_PANEL_DESCRIPTIONS[command.toolWindowId as EditorWorkspacePanelId]
-              : undefined,
-          enabled: availability.enabled,
-          disabledReason: availability.enabled ? undefined : availability.reason,
-          onExecute: () => {
-            if (command.toolWindowId) openEditorWorkflow(command.id);
-          }
-        };
-      })
+      commands: EDITOR_COMMAND_REGISTRY.commandsForMenu(title)
+        .filter((command) => command.id !== 'view.contours')
+        .map((command) => {
+          const availability = evaluateEditorCommand(command, context);
+          return {
+            ariaLabel: command.id === 'export.preview' ? 'Open UPID export preview' : undefined,
+            id: command.id,
+            label: command.label,
+            description: command.id === 'export.preview'
+              ? 'Review exact controller output, readiness, transitions, and diagnostics.'
+              : command.toolWindowId
+                ? EDITOR_WORKSPACE_PANEL_DESCRIPTIONS[command.toolWindowId as EditorWorkspacePanelId]
+                : undefined,
+            enabled: availability.enabled,
+            disabledReason: availability.enabled ? undefined : availability.reason,
+            onExecute: () => {
+              if (command.toolWindowId) openEditorWorkflow(command.id);
+            }
+          };
+        })
     }));
   }, [
     activeToolSession,
@@ -1182,7 +1184,7 @@ export function EditorPage({
       />
     );
     const geometryContent = upidRailMode === 'geometry'
-      ? renderPathNavigatorPanel(pathDocumentDraft)
+      ? renderPathNavigatorPanel(pathDocumentDraft, 'contour-tree')
       : null;
     const railProps = {
       geometryContent,
@@ -1231,6 +1233,7 @@ export function EditorPage({
     expandedPathElementIds,
     expandedProgramTreeKeys,
     pathDocumentDraft,
+    pathHoverAssistEnabled,
     programTree,
     selectedPathElement,
     selectedPathOperationId,
@@ -1743,7 +1746,6 @@ export function EditorPage({
   }
 
   function handleTogglePathHoverAssist() {
-    if (!activeWorkflowOwns('view.contours')) return;
     setPathHoverAssistEnabled((current) => {
       if (current) {
         setHoveredPathElement(null);
@@ -2082,7 +2084,7 @@ export function EditorPage({
       !element.operationId ||
       element.operationId !== selectedPathOperationId ||
       !element.segmentId ||
-      !element.pointRole ||
+      (element.pointRole !== 'start' && element.pointRole !== 'end') ||
       isEditorMutationLocked
     ) {
       return;
@@ -3452,7 +3454,10 @@ export function EditorPage({
     );
   }
 
-  function renderPathNavigatorPanel(pathDocument: PathPlanningDocument) {
+  function renderPathNavigatorPanel(
+    pathDocument: PathPlanningDocument,
+    presentation: 'workspace' | 'contour-tree' = 'workspace'
+  ) {
     return (
       <EditorPathNavigatorPanel
         expandedPathElementIds={expandedPathElementIds}
@@ -3485,7 +3490,8 @@ export function EditorPage({
         pathTargetYDraft={pathTargetYDraft}
         pathTranslateXDraft={pathTranslateXDraft}
         pathTranslateYDraft={pathTranslateYDraft}
-        renderWorkspacePanel={renderWorkspacePanel}
+        presentation={presentation}
+        {...(presentation === 'workspace' ? { renderWorkspacePanel } : {})}
         selectedDiagnosticId={selectedDiagnosticId}
         selectedPathElement={selectedPathElement}
         selectedPathOperationId={selectedPathOperationId}
@@ -3875,6 +3881,15 @@ export function EditorPage({
   }
 
   function showWorkspacePanel(panelId: EditorWorkspacePanelId) {
+    if (panelId === 'contour-tree') {
+      setUpidRailMode('geometry');
+      if (isCompactViewport || isMiddleViewport) {
+        setCompactDrawer('upid');
+      } else {
+        setUpidRailCollapsed(false);
+      }
+      return;
+    }
     openEditorWorkflowForPanel(panelId);
   }
 

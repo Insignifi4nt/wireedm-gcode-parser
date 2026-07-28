@@ -374,6 +374,7 @@ export function EditorPreview({
   );
   const gridLabelInset = gridLabelFontSize * 1.8;
   const zoomPercent = Math.round(zoom * 100);
+  const pathEndpointHandles = readPathEndpointHandles(activePreview.paths);
   const selectedArcCenterHandles = readSelectedArcCenterHandles(activePreview.paths, selectedPathElement);
 
   function handlePreviewClick(event: MouseEvent<SVGSVGElement>) {
@@ -1061,78 +1062,70 @@ export function EditorPreview({
           })}
         </g>
         <g>
-          {activePreview.paths.map((path, index) => {
-            if (path.source !== 'path-document' || !path.operationId || !path.segmentId) return null;
+          {pathEndpointHandles.map((handle) => {
+            const highlight = pathEndpointMatches(handle, handle.role, selectedPathElement)
+              ? 'selected'
+              : pathEndpointMatches(handle, handle.role, hoveredPathElement)
+                ? 'hover'
+                : undefined;
+            const color = highlight ? highlightColor(highlight) : '#67e8f9';
+            const svgY = flipY - handle.point.y;
+            const endpointActionable = Boolean(
+              onPathEndpointClick &&
+              (
+                pathEndpointActionOperationId == null ||
+                handle.operationId === pathEndpointActionOperationId
+              )
+            );
+            const element: EditorPathElementRef = {
+              operationId: handle.operationId,
+              pathElementId: handle.pathElementId ?? null,
+              pointRole: handle.role,
+              segmentId: handle.segmentId
+            };
 
-            return (['start', 'end'] as const).map((role) => {
-              const point = role === 'start' ? path.start : path.end;
-              const highlight = pathEndpointMatches(path, role, selectedPathElement)
-                ? 'selected'
-                : pathEndpointMatches(path, role, hoveredPathElement)
-                  ? 'hover'
-                  : undefined;
-              const color = highlight ? highlightColor(highlight) : '#67e8f9';
-              const svgY = flipY - point.y;
-              const endpointActionable = Boolean(
-                onPathEndpointClick &&
-                (pathEndpointActionOperationId == null || path.operationId === pathEndpointActionOperationId)
-              );
-
-              return (
-                <circle
-                  aria-disabled={onPathEndpointClick && !endpointActionable ? true : undefined}
-                  className={onPathElementClick || endpointActionable ? 'cursor-pointer' : undefined}
-                  cx={point.x}
-                  cy={svgY}
-                  data-preview-hovered={highlight === 'hover' ? 'true' : undefined}
-                  data-preview-operation={path.operationId}
-                  data-preview-path-element-id={path.pathElementId}
-                  data-preview-path-endpoint
-                  data-preview-point-role={role}
-                  data-preview-selected={highlight === 'selected' ? 'true' : undefined}
-                  data-preview-segment={path.segmentId}
-                  fill={highlight ? color : '#0f172a'}
-                  fillOpacity={highlight ? '0.95' : '0.78'}
-                  key={`endpoint-${path.operationId}-${path.segmentId}-${index}-${role}`}
-                  onClick={(event) => {
-                    const element = {
-                      operationId: path.operationId ?? null,
-                      pathElementId: path.pathElementId ?? null,
-                      pointRole: role,
-                      segmentId: path.segmentId ?? null
-                    };
-                    if (onPathEndpointClick) {
-                      event.stopPropagation();
-                      if (endpointActionable) onPathEndpointClick(element);
-                      return;
-                    }
-                    if (!onPathElementClick) return;
+            return (
+              <circle
+                aria-disabled={onPathEndpointClick && !endpointActionable ? true : undefined}
+                className={onPathElementClick || endpointActionable ? 'cursor-pointer' : undefined}
+                cx={handle.point.x}
+                cy={svgY}
+                data-preview-hovered={highlight === 'hover' ? 'true' : undefined}
+                data-preview-operation={handle.operationId}
+                data-preview-path-element-id={handle.pathElementId}
+                data-preview-path-endpoint
+                data-preview-point-role={handle.role}
+                data-preview-selected={highlight === 'selected' ? 'true' : undefined}
+                data-preview-segment={handle.segmentId}
+                fill={highlight ? color : '#0f172a'}
+                fillOpacity={highlight ? '0.95' : '0.78'}
+                key={`endpoint-${handle.operationId}-${handle.pathElementId ?? ''}-${handle.segmentId}-${handle.role}`}
+                onClick={(event) => {
+                  if (onPathEndpointClick) {
                     event.stopPropagation();
-                    onPathElementClick(element);
-                  }}
-                  onMouseEnter={() => {
-                    onPathElementHover?.({
-                      operationId: path.operationId ?? null,
-                      pathElementId: path.pathElementId ?? null,
-                      pointRole: role,
-                      segmentId: path.segmentId ?? null
-                    });
-                  }}
-                  onMouseLeave={() => onPathElementHover?.(null)}
-                  r={highlight ? highlightedPointRadius * 0.78 : highlightedPointRadius * 0.52}
-                  stroke={color}
-                  strokeOpacity={highlight ? '0.95' : '0.58'}
-                  strokeWidth={highlightedPointRadius * 0.18}
-                  vectorEffect="non-scaling-stroke"
-                />
-              );
-            });
+                    if (endpointActionable) onPathEndpointClick(element);
+                    return;
+                  }
+                  if (!onPathElementClick) return;
+                  event.stopPropagation();
+                  onPathElementClick(element);
+                }}
+                onMouseEnter={() => onPathElementHover?.(element)}
+                onMouseLeave={() => onPathElementHover?.(null)}
+                r={highlight ? highlightedPointRadius * 0.78 : highlightedPointRadius * 0.52}
+                stroke={color}
+                strokeOpacity={highlight ? '0.95' : '0.58'}
+                strokeWidth={highlightedPointRadius * 0.18}
+                vectorEffect="non-scaling-stroke"
+              />
+            );
           })}
           {selectedArcCenterHandles.map((handle) => {
             const svgY = flipY - handle.center.y;
             const element = {
               operationId: handle.operationId,
               pathElementId: handle.pathElementId ?? null,
+              pointRole: 'center' as const,
               segmentId: handle.segmentId
             };
 
@@ -1177,6 +1170,7 @@ export function EditorPreview({
                   data-preview-arc-center-handle
                   data-preview-operation={handle.operationId}
                   data-preview-path-element-id={handle.pathElementId}
+                  data-preview-point-role="center"
                   data-preview-selected="true"
                   data-preview-segment={handle.segmentId}
                   fill="#f59e0b"
@@ -1500,6 +1494,65 @@ function pathElementMatches(
   return element.segmentId ? path.segmentId === element.segmentId : true;
 }
 
+interface PreviewPathEndpointHandle {
+  operationId: string;
+  pathElementId?: string;
+  point: { x: number; y: number };
+  role: 'start' | 'end';
+  segmentId: string;
+}
+
+function readPathEndpointHandles(paths: EditorPreviewPath[]): PreviewPathEndpointHandle[] {
+  const segmentPaths = new Map<
+    string,
+    {
+      first: EditorPreviewPath;
+      last: EditorPreviewPath;
+    }
+  >();
+
+  for (const path of paths) {
+    if (path.source !== 'path-document' || !path.operationId || !path.segmentId) continue;
+
+    const key = `${path.operationId}:${path.pathElementId ?? ''}:${path.segmentId}`;
+    const grouped = segmentPaths.get(key);
+    if (grouped) {
+      grouped.last = path;
+    } else {
+      segmentPaths.set(key, { first: path, last: path });
+    }
+  }
+
+  return [...segmentPaths.values()].flatMap(({ first, last }) => {
+    const start: PreviewPathEndpointHandle = {
+      operationId: first.operationId!,
+      pathElementId: first.pathElementId,
+      point: first.start,
+      role: 'start',
+      segmentId: first.segmentId!
+    };
+    if (previewPointsEqual(first.start, last.end)) return [start];
+
+    return [
+      start,
+      {
+        operationId: last.operationId!,
+        pathElementId: last.pathElementId,
+        point: last.end,
+        role: 'end',
+        segmentId: last.segmentId!
+      }
+    ];
+  });
+}
+
+function previewPointsEqual(
+  first: { x: number; y: number },
+  second: { x: number; y: number }
+) {
+  return Math.abs(first.x - second.x) <= 1e-9 && Math.abs(first.y - second.y) <= 1e-9;
+}
+
 function pathEndpointMatches(
   path: { operationId?: string; pathElementId?: string; segmentId?: string },
   role: 'start' | 'end',
@@ -1543,7 +1596,7 @@ function readSelectedArcCenterHandles(
       !path.center ||
       !path.operationId ||
       !path.segmentId ||
-      !pathElementMatches(path, selectedPathElement)
+      !pathArcCenterMatches(path, selectedPathElement)
     ) {
       continue;
     }
@@ -1557,6 +1610,17 @@ function readSelectedArcCenterHandles(
   }
 
   return [...handles.values()];
+}
+
+function pathArcCenterMatches(
+  path: { operationId?: string; pathElementId?: string; segmentId?: string },
+  element: EditorPathElementRef | null | undefined
+) {
+  if (!element?.operationId || path.operationId !== element.operationId) return false;
+  if (element.pathElementId && path.pathElementId !== element.pathElementId) return false;
+  if (element.travelRole || (element.pointRole && element.pointRole !== 'center')) return false;
+  if (!path.segmentId) return false;
+  return element.segmentId ? path.segmentId === element.segmentId : true;
 }
 
 function selectionMarqueeMoveThreshold(viewBox: EditorPreviewViewBox) {

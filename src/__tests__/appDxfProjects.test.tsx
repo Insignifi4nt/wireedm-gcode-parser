@@ -625,6 +625,122 @@ describe('App DXF imports and project library', () => {
     expect(container.textContent).toContain('Open in Editor');
   });
 
+  it('shows a compact imported contour tree when switching the sidebar to the Geometry lens', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+
+    await prepareDxfImport(container, new File([simpleLineDxf()], 'geometry-lens.dxf'));
+    await confirmPendingDxfImport(container);
+
+    const geometryLens = container.querySelector<HTMLButtonElement>(
+      '[role="tab"][aria-label="Geometry lens"]'
+    );
+    expect(geometryLens).not.toBeNull();
+
+    await act(async () => geometryLens?.click());
+    await flushAsync();
+
+    const geometryPanel = container.querySelector<HTMLElement>(
+      '[role="tabpanel"][aria-labelledby$="-tab-geometry"]:not([hidden])'
+    );
+    expect(geometryPanel).not.toBeNull();
+    expect(geometryPanel?.querySelector('[data-upid-path-navigator]')).not.toBeNull();
+    expect(geometryPanel?.querySelector('[data-upid-contour-tree]')).not.toBeNull();
+    expect(geometryPanel?.querySelector('[data-upid-path-transform]')).toBeNull();
+    expect(geometryPanel?.querySelector('[data-upid-cut-sequence]')).toBeNull();
+    expect(geometryPanel?.querySelector('[data-upid-endpoint-topology]')).toBeNull();
+    expect(geometryPanel?.querySelector('[data-upid-diagnostics-list]')).toBeNull();
+    expect(geometryPanel?.textContent).not.toContain('UPID Path Navigator');
+    expect(geometryPanel?.querySelector('[data-upid-contour-row]')).not.toBeNull();
+    expect(geometryPanel?.querySelector('[data-upid-segment-stack]')).toBeNull();
+    expect(geometryPanel?.querySelector('[data-upid-segment-row]')).toBeNull();
+
+    const cutPathDisclosure = geometryPanel?.querySelector<HTMLButtonElement>(
+      'button[aria-label="Expand cut path in Open Chain 1"]'
+    );
+    expect(cutPathDisclosure).not.toBeNull();
+    expect(cutPathDisclosure?.textContent).toContain('Cut path');
+    expect(cutPathDisclosure?.textContent).toContain('1 segment');
+
+    await act(async () => cutPathDisclosure?.click());
+    await flushAsync();
+
+    const segmentRow = geometryPanel?.querySelector('[data-upid-segment-row]');
+    expect(segmentRow).not.toBeNull();
+    expect(segmentRow?.textContent).toContain('LINE');
+    expect(segmentRow?.textContent).toContain('10.000');
+
+    expect(
+      geometryPanel?.querySelector('input[aria-label="Toggle canvas hover assist"]')
+    ).toBeNull();
+    const optionsButton = geometryPanel?.querySelector<HTMLButtonElement>(
+      'button[aria-label="Geometry tree options"]'
+    );
+    expect(optionsButton).not.toBeNull();
+    await act(async () => optionsButton?.click());
+    await flushAsync();
+
+    const hoverAssist = geometryPanel?.querySelector<HTMLInputElement>(
+      'input[aria-label="Toggle canvas hover assist"]'
+    );
+    expect(hoverAssist).not.toBeNull();
+    const openingHoverAssist = hoverAssist?.checked;
+    await act(async () => {
+      hoverAssist?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+    expect(
+      container.querySelector<HTMLInputElement>(
+        '[role="tabpanel"][aria-labelledby$="-tab-geometry"]:not([hidden]) input[aria-label="Toggle canvas hover assist"]'
+      )?.checked
+    ).toBe(!openingHoverAssist);
+
+    await act(async () => {
+      geometryPanel
+        ?.querySelector<HTMLButtonElement>('button[aria-label="Collapse cut path in Open Chain 1"]')
+        ?.click();
+    });
+    await flushAsync();
+    expect(geometryPanel?.querySelector('[data-upid-segment-stack]')).toBeNull();
+
+    const canvasEndpoint = container.querySelector<SVGCircleElement>(
+      'svg[aria-label="UPID path preview"] circle[data-preview-path-endpoint][data-preview-point-role="start"]'
+    );
+    expect(canvasEndpoint).not.toBeNull();
+    await act(async () => {
+      canvasEndpoint?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(geometryPanel?.querySelector('[data-upid-segment-stack]')).not.toBeNull();
+    expect(
+      geometryPanel?.querySelector('[data-upid-segment-group][data-upid-segment-details-expanded="true"]')
+    ).not.toBeNull();
+    expect(
+      geometryPanel?.querySelector('[data-upid-point-row][data-upid-selected="true"]')
+    ).not.toBeNull();
+  });
+
+  it('removes Contour Tree from the View menu when Geometry owns the hierarchy', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+
+    await prepareDxfImport(container, new File([simpleLineDxf()], 'geometry-menu.dxf'));
+    await confirmPendingDxfImport(container);
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="View menu"]')?.click();
+    });
+    await flushAsync();
+
+    const viewMenu = container.querySelector<HTMLElement>(
+      '[data-editor-workflow-menu="View"]'
+    );
+    expect(viewMenu).not.toBeNull();
+    expect(viewMenu?.querySelector('[data-editor-workflow-command="view.contours"]')).toBeNull();
+    expect(viewMenu?.textContent).not.toContain('Contour Tree');
+  });
+
   it('opens a stored project from the dashboard library instead of only the latest import panel', async () => {
     window.showDirectoryPicker = undefined;
 
@@ -1151,8 +1267,7 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[aria-label="Resize Inspector Dock"]')).toBeNull();
     expect(container.querySelector('[aria-label="Collapse Inspector Dock"]')).toBeNull();
     expect(container.querySelector('[data-editor-panel-dock-zone="right"]')).toBeNull();
-    expect(container.querySelectorAll('[data-editor-workspace-panel]')).toHaveLength(1);
-    expect(container.querySelector('[data-editor-workspace-panel="contour-tree"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-editor-workspace-panel]')).toHaveLength(0);
     expect(container.querySelector('[data-app-shell]')?.getAttribute('data-sidebar-collapsed')).toBe(
       'false'
     );
@@ -1169,7 +1284,6 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-editor-code-section="text"]')).toBeNull();
     expect(container.querySelector('[data-editor-structure="header"]')).toBeNull();
     expect(container.querySelector('[data-editor-structure="footer"]')).toBeNull();
-    expect(container.textContent).toContain('Contour Tree');
     expect(container.textContent).not.toContain('Posted Body');
     expect(container.textContent).not.toContain('Program Lines');
     expect(container.textContent).not.toContain('Program Text');
@@ -1180,7 +1294,7 @@ describe('App DXF imports and project library', () => {
     expect(container.querySelector('[data-editor-panel-dock-zone="right"]')).toBeNull();
   });
 
-  it('keeps a floating Contour Tree active through repeated UPID rail collapse cycles', async () => {
+  it('keeps the Geometry contour tree active through repeated UPID rail collapse cycles', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
@@ -1198,14 +1312,9 @@ describe('App DXF imports and project library', () => {
     await confirmPendingDxfImport(container);
     await openWorkflowCommand(container, 'view.contours');
     for (let cycle = 0; cycle < 2; cycle += 1) {
-      const contourTree = container.querySelector(
-        '[data-editor-workspace-panel="contour-tree"]'
-      );
+      const contourTree = container.querySelector('[data-upid-contour-tree]');
       expect(contourTree?.isConnected).toBe(true);
-      expect(contourTree?.querySelector('[data-upid-contour-tree]')).not.toBeNull();
-      expect(contourTree?.getAttribute('data-editor-workspace-panel-placement')).toBe(
-        'floating'
-      );
+      expect(container.querySelector('[data-editor-workspace-panel="contour-tree"]')).toBeNull();
 
       await act(async () => {
         container
@@ -1224,11 +1333,8 @@ describe('App DXF imports and project library', () => {
       expect(container.querySelector('[aria-label="UPID rail"]')).not.toBeNull();
     }
 
-    const restoredContourTree = container.querySelector(
-      '[data-editor-workspace-panel="contour-tree"]'
-    );
+    const restoredContourTree = container.querySelector('[data-upid-contour-tree]');
     expect(restoredContourTree?.isConnected).toBe(true);
-    expect(restoredContourTree?.querySelector('[data-upid-contour-tree]')).not.toBeNull();
   });
 
   it('opens and cleanly replaces one workflow panel from the workflow menus', async () => {
@@ -1295,7 +1401,6 @@ describe('App DXF imports and project library', () => {
       ['machining.program-stops', 'program-stops'],
       ['machining.participation', 'machining-participation'],
       ['construction.measurement', 'measurement'],
-      ['view.contours', 'contour-tree'],
       ['view.summary', 'path-summary'],
       ['view.endpoints', 'endpoint-topology'],
       ['view.diagnostics', 'path-diagnostics'],
@@ -1394,7 +1499,7 @@ describe('App DXF imports and project library', () => {
     ).toBeNull();
   });
 
-  it('floats and restores editor panels without losing panel state', async () => {
+  it('preserves Geometry lens state while opening and closing workspace panels', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
@@ -1423,42 +1528,17 @@ describe('App DXF imports and project library', () => {
 
     expect(hoverAssistToggle?.checked).toBe(true);
 
-    expect(
-      container
-        .querySelector('[data-editor-workspace-panel="contour-tree"]')
-        ?.getAttribute('data-editor-workspace-panel-placement')
-    ).toBe('floating');
-    expect(
-      (container.querySelector('button[aria-label="Float Contour Tree"]') as HTMLButtonElement)
-        .disabled
-    ).toBe(true);
-    expect(container.querySelector('button[aria-label="Dock Contour Tree left"]')).toBeNull();
-    expect(container.querySelector('button[aria-label="Dock Contour Tree right"]')).not.toBeNull();
-    expect(container.querySelector('[data-editor-workspace-panel-handle="contour-tree"]')).not.toBeNull();
-
-    const hideHoverAssistButton = container.querySelector(
-      'button[aria-label="Hide Contour Tree"]'
-    ) as HTMLButtonElement | null;
-
-    await act(async () => {
-      hideHoverAssistButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    await flushReactOnly();
-
     expect(container.querySelector('[data-editor-workspace-panel="contour-tree"]')).toBeNull();
+
+    await openWorkflowCommand(container, 'construction.measurement');
+    expect(container.querySelector('[data-editor-workspace-panel="measurement"]')).not.toBeNull();
     await openWorkflowCommand(container, 'view.contours');
 
     const restoredHoverAssistToggle = container.querySelector(
-      '[data-editor-workspace-panel="contour-tree"] input[aria-label="Toggle canvas hover assist"]'
+      '[role="tabpanel"][aria-labelledby$="-tab-geometry"]:not([hidden]) input[aria-label="Toggle canvas hover assist"]'
     ) as HTMLInputElement | null;
     expect(restoredHoverAssistToggle?.checked).toBe(true);
-    expect(
-      container
-        .querySelector('[data-editor-workspace-panel="contour-tree"]')
-        ?.getAttribute('data-editor-workspace-panel-placement')
-    ).toBe('floating');
 
-    await openWorkflowCommand(container, 'construction.measurement');
     const gridSnapToggle = container.querySelector(
       'button[aria-label="Toggle preview grid snap"]'
     ) as HTMLButtonElement | null;
@@ -1723,7 +1803,7 @@ describe('App DXF imports and project library', () => {
     await flushAsync();
 
     const pointRow = container.querySelector('[data-upid-point-row]');
-    expect(pointRow?.querySelector('[data-upid-point-role-label]')?.textContent).toMatch(/START|END/);
+    expect(pointRow?.querySelector('[data-upid-point-label]')?.textContent).toMatch(/Start|End/);
     const pointSelect = pointRow?.querySelector('button[data-upid-point-select]');
     expect(pointSelect?.getAttribute('title')).toContain('Endpoint cluster');
     expect(pointSelect?.getAttribute('aria-describedby')).toMatch(/^upid-endpoint-help-/);
@@ -2170,8 +2250,13 @@ describe('App DXF imports and project library', () => {
     });
 
     expect(roleSelect?.value).toBe('hole');
+    const saveContourSetup = container.querySelector<HTMLButtonElement>(
+      '[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]'
+    );
+    expect(saveContourSetup).not.toBeNull();
+    await act(async () => saveContourSetup?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flushReactOnly();
     await openWorkflowCommand(container, 'view.contours');
-    await savePendingWorkflowTransition(container);
     expect(container.querySelector('[data-upid-contour-row]')?.getAttribute('data-upid-contour-role')).toBe(
       'hole'
     );
@@ -4082,8 +4167,13 @@ describe('App DXF imports and project library', () => {
     });
     await flushAsync();
 
+    const saveContourSetup = container.querySelector<HTMLButtonElement>(
+      '[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]'
+    );
+    expect(saveContourSetup).not.toBeNull();
+    await act(async () => saveContourSetup?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flushReactOnly();
     await openWorkflowCommand(container, 'view.contours');
-    await savePendingWorkflowTransition(container);
 
     expect(container.querySelector('[data-editor-posted-body-preview]')).toBeNull();
     expect(container.querySelector('[data-upid-contour-row]')?.getAttribute('data-upid-contour-manual')).toContain(
@@ -5558,6 +5648,28 @@ async function closeWorkbenchSettings(container: HTMLElement) {
 }
 
 async function openWorkflowCommand(container: HTMLElement, commandId: string) {
+  if (commandId === 'view.contours') {
+    const geometryLens = container.querySelector(
+      '[role="tab"][aria-label="Geometry lens"]'
+    ) as HTMLButtonElement | null;
+    expect(geometryLens).not.toBeNull();
+    await act(async () => geometryLens?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flushReactOnly();
+    const cutPathDisclosures = [
+      ...container.querySelectorAll<HTMLButtonElement>('button[aria-label^="Expand cut path in "]')
+    ];
+    await act(async () => {
+      cutPathDisclosures.forEach((button) => button.click());
+    });
+    await flushReactOnly();
+    const optionsButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Geometry tree options"][aria-expanded="false"]'
+    );
+    await act(async () => optionsButton?.click());
+    await flushReactOnly();
+    return;
+  }
+
   const menuTitle = getWorkflowMenuTitle(commandId);
   const menuButton = container.querySelector(
     `button[aria-label="${menuTitle} menu"]`

@@ -5,7 +5,7 @@ import {
   MousePointer2,
   Trash2
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import type { GCodeStructure } from '@/domain/editor/gcodeStructure';
@@ -27,14 +27,19 @@ import {
   readUpidSelectedPathPoint,
   readUpidSelectedPathSegment,
   readUpidSelectedPathTravel,
+  summarizeUpidDiagnosticsForPathElementRef,
   type UpidSelectedPathDiagnostic,
-  type UpidSelectedPathSegmentGeometry
 } from '@/domain/upid/projectRail';
 import type { MachineProfile } from '@/domain/workbench/types';
 
 import type { EditorGuideTarget } from './editorGuideContent';
 import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
+import {
+  buildSegmentGeometryPresentation,
+  type SegmentGeometryFieldPresentation,
+  type SegmentGeometryPresentation
+} from './segmentGeometryPresentation';
 
 type MeasurementExportFormat = 'csv' | 'gcode' | 'iso';
 type CanvasMouseMode = 'select' | 'point';
@@ -197,6 +202,40 @@ export function EditorInspectorPanel({
   const selectedPathDiagnostics = pathDocument && selectedPathElement
     ? readUpidPathElementDiagnostics(pathDocument, selectedPathElement)
     : [];
+  const selectedSegmentStartDiagnostics =
+    pathDocument && selectedPathElementModel && selectedPathSegment && selectedPathElement?.segmentId
+      ? summarizeUpidDiagnosticsForPathElementRef(pathDocument, {
+          operationId: selectedPathElementModel.operationId,
+          pathElementId: selectedPathElementModel.id,
+          pointRole: 'start',
+          segmentId: selectedPathElement.segmentId
+        })
+      : null;
+  const selectedSegmentEndDiagnostics =
+    pathDocument && selectedPathElementModel && selectedPathSegment && selectedPathElement?.segmentId
+      ? summarizeUpidDiagnosticsForPathElementRef(pathDocument, {
+          operationId: selectedPathElementModel.operationId,
+          pathElementId: selectedPathElementModel.id,
+          pointRole: 'end',
+          segmentId: selectedPathElement.segmentId
+        })
+      : null;
+  const selectedSegmentPresentation = selectedPathSegment
+    ? buildSegmentGeometryPresentation({
+        end: selectedPathSegment.end,
+        geometry: selectedPathSegment.geometry,
+        length: selectedPathSegment.length,
+        showCircleClosureSides:
+          selectedPathSegment.geometry.kind === 'circle' &&
+          (Math.hypot(
+            selectedPathSegment.end.x - selectedPathSegment.start.x,
+            selectedPathSegment.end.y - selectedPathSegment.start.y
+          ) > 1e-6 ||
+            (selectedSegmentStartDiagnostics?.count ?? 0) > 0 ||
+            (selectedSegmentEndDiagnostics?.count ?? 0) > 0),
+        start: selectedPathSegment.start
+      })
+    : null;
   const selectedPathStart = selectedPathElementModel
     ? readUpidPathElementPointByRole(selectedPathElementModel, 'start')
     : null;
@@ -625,7 +664,7 @@ export function EditorInspectorPanel({
           </section>
         )}
 
-        {selectedPathSegment && (
+        {selectedPathSegment && selectedSegmentPresentation && (
           <section
             className="mt-3 border-t border-border pt-3"
             data-upid-selected-segment
@@ -635,13 +674,89 @@ export function EditorInspectorPanel({
             }
             data-upid-selected-segment-index={selectedPathSegmentSequenceContext?.current.index}
           >
-            <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Selected Segment</h3>
-            <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
-              <dt className="text-muted-foreground">Type</dt>
-              <dd data-upid-selected-segment-kind>{selectedPathSegment.kind}</dd>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h3 className="text-[10px] font-semibold uppercase text-muted-foreground">Selected Segment</h3>
+              <span className="font-mono text-[9px] uppercase text-foreground" data-upid-selected-segment-kind>
+                {selectedPathSegmentSequenceContext
+                  ? `S${selectedPathSegmentSequenceContext.current.index + 1} · `
+                  : ''}
+                {selectedPathSegment.kind}
+              </span>
+            </div>
+
+            <section
+              className="border-t border-border/60 pt-2"
+              data-upid-selected-segment-section="geometry"
+            >
+              <h4 className="mb-1.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Geometry
+              </h4>
+              <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+                {renderSelectedSegmentSummary(selectedSegmentPresentation)}
+                {selectedSegmentPresentation.points.map((point) => (
+                  <Fragment key={point.key}>
+                    <dt className="text-muted-foreground">{point.label}</dt>
+                    <dd
+                      className="font-mono"
+                      data-upid-selected-segment-geometry={
+                        point.key === 'center' ? 'center' : undefined
+                      }
+                      data-upid-selected-segment-point={point.key}
+                    >
+                      {formatPoint(point.point)}
+                    </dd>
+                  </Fragment>
+                ))}
+                {selectedSegmentPresentation.derivedFields.map((field) => (
+                  <Fragment key={field.key}>
+                    <dt className="text-muted-foreground">{field.label}</dt>
+                    <dd
+                      className="font-mono"
+                      data-upid-selected-segment-geometry={field.key}
+                    >
+                      {formatSelectedSegmentField(field)}
+                    </dd>
+                  </Fragment>
+                ))}
+              </dl>
+              {selectedSegmentPresentation.advancedFields.length > 0 && (
+                <details
+                  className="mt-2 border-t border-border/50 pt-1.5"
+                  data-upid-selected-segment-section="advanced"
+                >
+                  <summary className="cursor-pointer select-none text-[9px] uppercase tracking-wide text-muted-foreground outline-none hover:text-foreground">
+                    Advanced geometry
+                  </summary>
+                  <dl className="mt-1.5 grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+                    {selectedSegmentPresentation.advancedFields.map((field) => (
+                      <Fragment key={field.key}>
+                        <dt className="text-muted-foreground">{field.label}</dt>
+                        <dd
+                          className="font-mono"
+                          data-upid-selected-segment-geometry={field.key}
+                        >
+                          {formatSelectedSegmentField(field)}
+                        </dd>
+                      </Fragment>
+                    ))}
+                  </dl>
+                </details>
+              )}
+            </section>
+
+            <section
+              className="mt-2 border-t border-border/60 pt-2"
+              data-upid-selected-segment-section="path"
+            >
+              <h4 className="mb-1.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Path
+              </h4>
+              <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+                <dt className="text-muted-foreground">Direction</dt>
+                <dd>{selectedPathSegment.reversed ? 'Reversed' : 'Forward'}</dd>
               {selectedPathSegmentSequenceContext && (
                 <>
-                  <dt className="text-muted-foreground">Segment Seq</dt>
+                    <dt className="text-muted-foreground">Sequence</dt>
                   <dd
                     className="flex min-w-0 flex-wrap items-center gap-1"
                     data-upid-selected-segment="sequence-neighbors"
@@ -718,62 +833,65 @@ export function EditorInspectorPanel({
                   </dd>
                 </>
               )}
-              <dt className="text-muted-foreground">Direction</dt>
-              <dd>{selectedPathSegment.reversed ? 'reversed' : 'forward'}</dd>
-              <dt className="text-muted-foreground">Layer</dt>
-              <dd>{selectedPathSegment.layer ?? '-'}</dd>
-              <dt className="text-muted-foreground">Length</dt>
-              <dd>{selectedPathSegment.length.toFixed(3)}</dd>
-              {renderSelectedSegmentGeometry(selectedPathSegment.geometry)}
-              <dt className="text-muted-foreground">Start</dt>
-              <dd>{formatPoint(selectedPathSegment.start)}</dd>
-              <dt className="text-muted-foreground">End</dt>
-              <dd>{formatPoint(selectedPathSegment.end)}</dd>
-              <dt className="text-muted-foreground">Source</dt>
-              <dd data-upid-selected-segment-source="type">{selectedPathSegment.source.type}</dd>
-              <dt className="text-muted-foreground">Entity</dt>
-              <dd data-upid-selected-segment-source="entity">{selectedPathSegment.source.entityIndex}</dd>
-              {selectedPathSegment.source.handle && (
-                <>
-                  <dt className="text-muted-foreground">Handle</dt>
-                  <dd data-upid-selected-segment-source="handle">{selectedPathSegment.source.handle}</dd>
-                </>
-              )}
-              <dt className="text-muted-foreground">Part</dt>
-              <dd data-upid-selected-segment-source="sub">{selectedPathSegment.source.subIndex ?? '-'}</dd>
-              <dt className="text-muted-foreground">Exact</dt>
-              <dd data-upid-selected-segment-source="exact">
-                {selectedPathSegment.source.exact ? 'exact' : 'approximated'}
-              </dd>
-              {selectedPathSegment.source.edit && (
-                <>
-                  <dt className="text-muted-foreground">Edit</dt>
-                  <dd data-upid-selected-segment-source-edit-kind>
-                    {selectedPathSegment.source.edit.kind}
-                  </dd>
-                  <dt className="text-muted-foreground">Parent</dt>
-                  <dd data-upid-selected-segment-source-edit-parent>
-                    {selectedPathSegment.source.edit.parentSegmentId}
-                  </dd>
-                  <dt className="text-muted-foreground">Split At</dt>
-                  <dd data-upid-selected-segment-source-edit-point>
-                    {formatPoint(selectedPathSegment.source.edit.point)}
-                  </dd>
-                </>
-              )}
-              {selectedPathSegment.source.block && (
-                <>
-                  <dt className="text-muted-foreground">Block</dt>
-                  <dd data-upid-selected-segment-source="block">{selectedPathSegment.source.block}</dd>
-                </>
-              )}
-              {selectedPathSegment.source.insert && (
-                <>
-                  <dt className="text-muted-foreground">Insert</dt>
-                  <dd data-upid-selected-segment-source="insert">{selectedPathSegment.source.insert}</dd>
-                </>
-              )}
-            </dl>
+              </dl>
+            </section>
+
+            <section
+              className="mt-2 border-t border-border/60 pt-2"
+              data-upid-selected-segment-section="source"
+            >
+              <h4 className="mb-1.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Source
+              </h4>
+              <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+                <dt className="text-muted-foreground">Layer</dt>
+                <dd>{selectedPathSegment.layer ?? '-'}</dd>
+                <dt className="text-muted-foreground">Entity type</dt>
+                <dd data-upid-selected-segment-source="type">{selectedPathSegment.source.type}</dd>
+                <dt className="text-muted-foreground">Entity</dt>
+                <dd data-upid-selected-segment-source="entity">{selectedPathSegment.source.entityIndex}</dd>
+                {selectedPathSegment.source.handle && (
+                  <>
+                    <dt className="text-muted-foreground">Handle</dt>
+                    <dd data-upid-selected-segment-source="handle">{selectedPathSegment.source.handle}</dd>
+                  </>
+                )}
+                <dt className="text-muted-foreground">Part</dt>
+                <dd data-upid-selected-segment-source="sub">{selectedPathSegment.source.subIndex ?? '-'}</dd>
+                <dt className="text-muted-foreground">Precision</dt>
+                <dd data-upid-selected-segment-source="exact">
+                  {selectedPathSegment.source.exact ? 'exact' : 'approximated'}
+                </dd>
+                {selectedPathSegment.source.edit && (
+                  <>
+                    <dt className="text-muted-foreground">Edit</dt>
+                    <dd data-upid-selected-segment-source-edit-kind>
+                      {selectedPathSegment.source.edit.kind}
+                    </dd>
+                    <dt className="text-muted-foreground">Parent</dt>
+                    <dd data-upid-selected-segment-source-edit-parent>
+                      {selectedPathSegment.source.edit.parentSegmentId}
+                    </dd>
+                    <dt className="text-muted-foreground">Split at</dt>
+                    <dd data-upid-selected-segment-source-edit-point>
+                      {formatPoint(selectedPathSegment.source.edit.point)}
+                    </dd>
+                  </>
+                )}
+                {selectedPathSegment.source.block && (
+                  <>
+                    <dt className="text-muted-foreground">Block</dt>
+                    <dd data-upid-selected-segment-source="block">{selectedPathSegment.source.block}</dd>
+                  </>
+                )}
+                {selectedPathSegment.source.insert && (
+                  <>
+                    <dt className="text-muted-foreground">Insert</dt>
+                    <dd data-upid-selected-segment-source="insert">{selectedPathSegment.source.insert}</dd>
+                  </>
+                )}
+              </dl>
+            </section>
           </section>
         )}
 
@@ -1386,60 +1504,63 @@ function renderSelectedPathDiagnosticRow({
   );
 }
 
-function renderSelectedSegmentGeometry(geometry: UpidSelectedPathSegmentGeometry) {
-  if (geometry.kind === 'line') {
-    return (
-      <>
-        <dt className="text-muted-foreground">Vector</dt>
-        <dd data-upid-selected-segment-geometry="vector">
-          {geometry.vector ? formatPoint(geometry.vector) : '-'}
-        </dd>
-        <dt className="text-muted-foreground">Heading</dt>
-        <dd data-upid-selected-segment-geometry="heading">{formatDegrees(geometry.headingDegrees)}</dd>
-        <dt className="text-muted-foreground">Tangent</dt>
-        <dd data-upid-selected-segment-geometry="start-tangent">
-          {formatPoint(geometry.startTangent)}
-        </dd>
-      </>
-    );
-  }
+function renderSelectedSegmentSummary(presentation: SegmentGeometryPresentation) {
+  const { summary } = presentation;
+  const summaryLengthKey =
+    presentation.kind === 'circle'
+      ? 'circumference'
+      : presentation.kind === 'arc'
+        ? 'arc-length'
+        : 'length';
 
   return (
     <>
-      <dt className="text-muted-foreground">Center</dt>
-      <dd data-upid-selected-segment-geometry="center">
-        {geometry.center ? formatPoint(geometry.center) : '-'}
-      </dd>
-      <dt className="text-muted-foreground">Radius</dt>
-      <dd data-upid-selected-segment-geometry="radius">{formatNumber(geometry.radius)}</dd>
-      <dt className="text-muted-foreground">Orient</dt>
-      <dd data-upid-selected-segment-geometry="orientation">
-        {geometry.clockwise ? 'cw' : 'ccw'}
-      </dd>
-      <dt className="text-muted-foreground">Sweep</dt>
-      <dd data-upid-selected-segment-geometry="sweep">{formatDegrees(geometry.sweepDegrees)}</dd>
-      <dt className="text-muted-foreground">Angles</dt>
-      <dd data-upid-selected-segment-geometry="angles">
-        {formatDegrees(geometry.startAngleDegrees)} - {formatDegrees(geometry.endAngleDegrees)}
-      </dd>
-      <dt className="text-muted-foreground">Start Tan</dt>
-      <dd data-upid-selected-segment-geometry="start-tangent">
-        {formatPoint(geometry.startTangent)}
-      </dd>
-      <dt className="text-muted-foreground">End Tan</dt>
-      <dd data-upid-selected-segment-geometry="end-tangent">
-        {formatPoint(geometry.endTangent)}
+      {typeof summary.radius === 'number' && (
+        <>
+          <dt className="text-muted-foreground">Radius</dt>
+          <dd className="font-mono" data-upid-selected-segment-geometry="radius">
+            {formatNumber(summary.radius)}
+          </dd>
+        </>
+      )}
+      {presentation.kind === 'arc' && (
+        <>
+          <dt className="text-muted-foreground">Direction</dt>
+          <dd className="font-mono" data-upid-selected-segment-geometry="direction-sweep">
+            {summary.direction} {formatNumber(summary.sweepDegrees)}°
+          </dd>
+        </>
+      )}
+      {presentation.kind === 'circle' && (
+        <>
+          <dt className="text-muted-foreground">Direction</dt>
+          <dd className="font-mono" data-upid-selected-segment-geometry="direction">
+            {summary.direction}
+          </dd>
+        </>
+      )}
+      <dt className="text-muted-foreground">{summary.lengthLabel}</dt>
+      <dd
+        className="font-mono"
+        data-upid-selected-segment-summary={summaryLengthKey}
+      >
+        {formatNumber(summary.length)}
       </dd>
     </>
   );
 }
 
-function formatNumber(value: number | undefined) {
-  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : '-';
+function formatSelectedSegmentField(field: SegmentGeometryFieldPresentation) {
+  if (field.format === 'point') {
+    return typeof field.value === 'number' ? '-' : formatPoint(field.value);
+  }
+  if (typeof field.value !== 'number') return '-';
+  if (field.format === 'degrees') return `${formatNumber(field.value)}°`;
+  return formatNumber(field.value);
 }
 
-function formatDegrees(value: number | undefined) {
-  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(3)} deg` : '-';
+function formatNumber(value: number | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : '-';
 }
 
 function formatOperationOrderStrategy(strategy: PathPlanningDocument['options']['operationOrderStrategy']) {

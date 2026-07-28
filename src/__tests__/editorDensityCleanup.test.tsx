@@ -140,6 +140,16 @@ describe('Editor density cleanup', () => {
   });
 
   async function openWorkflowCommand(commandId: string) {
+    if (commandId === 'view.contours') {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>(
+          '[role="tab"][aria-label="Geometry lens"]'
+        )?.click();
+      });
+      await flushAsync();
+      return;
+    }
+
     const category = commandId.split('.')[0];
     const title = {
       construction: 'Construction',

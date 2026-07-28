@@ -138,6 +138,16 @@ describe('Editor construction regressions', () => {
   });
 
   async function openWorkflowCommand(commandId: string) {
+    if (commandId === 'view.contours') {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>(
+          '[role="tab"][aria-label="Geometry lens"]'
+        )?.click();
+      });
+      await flushAsync();
+      return;
+    }
+
     const title = {
       construction: 'Construction',
       view: 'View'

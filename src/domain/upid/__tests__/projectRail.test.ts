@@ -930,6 +930,37 @@ describe('UPID project rail projection', () => {
     });
   });
 
+  it('resolves a selected circle center without endpoint topology metadata', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
+    ]);
+    const operation = document.plan.operations[0];
+    const pathElement = readUpidOperationPathElement(document, operation.id, null);
+    const segmentId = operation.segmentRefs[0].segmentId;
+
+    expect(
+      readUpidPathElementPoint(document, {
+        operationId: operation.id,
+        pathElementId: pathElement!.id,
+        pointRole: 'center',
+        segmentId
+      })
+    ).toEqual({ x: 10, y: 20 });
+    expect(
+      readUpidSelectedPathPoint(document, pathElement!, {
+        operationId: operation.id,
+        pathElementId: pathElement!.id,
+        pointRole: 'center',
+        segmentId
+      })
+    ).toEqual({
+      endpointCluster: null,
+      point: { x: 10, y: 20 },
+      role: 'center',
+      segmentKind: 'circle'
+    });
+  });
+
   it('summarizes path-document preview stats without posting G-code', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       line(0, 0, 10, 0),

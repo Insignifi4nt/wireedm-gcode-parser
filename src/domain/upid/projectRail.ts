@@ -44,10 +44,12 @@ export type { UpidManualDecisionKind } from './manualDecisions';
 export interface UpidPathElementRef {
   operationId: string | null;
   pathElementId?: string | null;
-  pointRole?: 'start' | 'end' | null;
+  pointRole?: UpidPathPointRole | null;
   segmentId: SegmentId | null;
   travelRole?: 'rapid-in' | 'lead-in' | 'lead-out' | null;
 }
+
+export type UpidPathPointRole = Extract<PathElementPointRole, 'start' | 'end'> | 'center';
 
 export type UpidOperationPathElement = PathElement & {
   direction: NonNullable<PathElement['direction']>;
@@ -199,7 +201,7 @@ export type UpidSelectedPathSegmentGeometry =
 export interface UpidSelectedPathPoint {
   endpointCluster: UpidSelectedEndpointCluster | null;
   point: Point2;
-  role: Extract<PathElementPointRole, 'start' | 'end'>;
+  role: UpidPathPointRole;
   segmentKind: string;
 }
 
@@ -942,7 +944,12 @@ export function readUpidPathElementPoint(
   if (!ref) return null;
 
   const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
-  return element.pointRole === 'start' ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref);
+  if (element.pointRole === 'center') {
+    return segment.kind === 'arc' || segment.kind === 'circle' ? { ...segment.center } : null;
+  }
+  return element.pointRole === 'start'
+    ? orientedSegmentStart(segment, ref)
+    : orientedSegmentEnd(segment, ref);
 }
 
 export function readUpidPathElementPointByRole(
@@ -1056,6 +1063,16 @@ export function readUpidSelectedPathPoint(
 
   const segment = segmentMap(document.segments).get(ref.segmentId);
   if (!segment) return null;
+
+  if (element.pointRole === 'center') {
+    if (segment.kind !== 'arc' && segment.kind !== 'circle') return null;
+    return {
+      endpointCluster: null,
+      point: { ...segment.center },
+      role: 'center',
+      segmentKind: segment.kind
+    };
+  }
 
   return {
     endpointCluster: readUpidSelectedEndpointCluster(document, ref, element.pointRole),

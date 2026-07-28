@@ -2859,8 +2859,10 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('button[aria-label="Add center pierce lead-in"]');
     await clickElement('button[aria-label="Use reviewed no exit"]');
+    await clickElement(
+      '[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]'
+    );
     await clickElement('[data-editor-workflow-command="view.contours"]');
-    await clickElement('[data-editor-workflow-transition-action="save"]');
     expect(container.querySelector('[data-upid-lead-in-row]')).not.toBeNull();
     expect(container.querySelector(
       'path[data-preview-travel-source="posted"]'
@@ -3517,6 +3519,7 @@ describe('EditorPage UPID draft boundary', () => {
     expectContourExpanded('contour_0001', true);
     expectContourExpanded('contour_0002', false);
 
+    await clickElement('button[aria-label="Geometry tree options"]');
     await clickElement('button[aria-label="Expand entire contour tree"]');
 
     expectContourExpanded('contour_0001', true);
@@ -3566,6 +3569,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-segment-row][data-upid-selected="true"]')).toBeNull();
 
     await clickElement('button[aria-label="Collapse entire contour tree"]');
+    await clickElement('button[aria-label="Geometry tree options"]');
     await clickElement('button[aria-label="Expand entire contour tree"]');
 
     expect(segmentDetailStates()).toEqual([
@@ -3657,7 +3661,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     expect(contourRow?.getAttribute('aria-label')).toBe('Select Exterior 1');
     expect(segmentRow?.getAttribute('aria-label')).toBe('Select segment 1 in Exterior 1');
-    expect(endpointSelect?.getAttribute('aria-label')).toBe('Select start endpoint of segment 1 in Exterior 1');
+    expect(endpointSelect?.getAttribute('aria-label')).toBe('Select cut start of segment 1 in Exterior 1');
     expect(leadInRow?.getAttribute('aria-label')).toBe('Select lead-in for Exterior 1');
 
     for (const [row, focusTarget] of [
@@ -3984,10 +3988,11 @@ describe('EditorPage UPID draft boundary', () => {
     expect(firstSegmentRow?.getAttribute('data-upid-segment-length')).toBe('10.000');
     expect(firstSegmentRow?.getAttribute('data-upid-segment-reversed')).toBe('false');
     expect(firstSegmentRow?.querySelector('[data-upid-segment-field="length"]')).toBeNull();
-    await clickElement('button[aria-label^="Expand segment 1 details in "]');
-    expect(container.querySelector('[data-upid-segment-group] [data-upid-segment-field="length"]')?.textContent).toContain(
+    expect(firstSegmentRow?.querySelector('[data-upid-segment-summary="length"]')?.textContent).toContain(
       '10.000'
     );
+    await clickElement('button[aria-label^="Expand segment 1 details in "]');
+    expect(container.querySelector('[data-upid-segment-group] [data-upid-segment-field="length"]')).toBeNull();
 
     await clickElement('[data-editor-workflow-command="machining.contour-setup"]');
     await clickElement('button[aria-label="Reverse path operation"]');
@@ -4006,7 +4011,7 @@ describe('EditorPage UPID draft boundary', () => {
       await act(async () => reversedDisclosure.dispatchEvent(new MouseEvent('click', { bubbles: true })));
       await flushAsync();
     }
-    expect(reversedGroup?.querySelector('[data-upid-segment-field="length"]')?.textContent).toContain('10.000');
+    expect(reversedGroup?.querySelector('[data-upid-segment-summary="length"]')?.textContent).toContain('10.000');
   });
 
   it('shows exact arc geometry in the selected segment inspector', async () => {
@@ -4032,18 +4037,73 @@ describe('EditorPage UPID draft boundary', () => {
         .querySelector('[data-upid-selected-segment-geometry]')
         ?.getAttribute('data-upid-selected-segment-geometry')
     ).toBe('arc');
+    expect(container.querySelector('[data-upid-selected-segment-section="geometry"]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-selected-segment-section="path"]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-selected-segment-section="source"]')).not.toBeNull();
     expect(container.querySelector('[data-upid-selected-segment-geometry="center"]')?.textContent).toBe(
       '0.000, 0.000'
     );
     expect(container.querySelector('[data-upid-selected-segment-geometry="radius"]')?.textContent).toBe(
       '10.000'
     );
-    expect(container.querySelector('[data-upid-selected-segment-geometry="sweep"]')?.textContent).toBe(
-      '90.000 deg'
+    expect(
+      container.querySelector('[data-upid-selected-segment-geometry="direction-sweep"]')?.textContent
+    ).toBe(
+      'CCW 90.000°'
     );
-    expect(container.querySelector('[data-upid-selected-segment-geometry="orientation"]')?.textContent).toBe(
-      'ccw'
-    );
+    const advanced = container.querySelector(
+      'details[data-upid-selected-segment-section="advanced"]'
+    ) as HTMLDetailsElement | null;
+    expect(advanced).not.toBeNull();
+    expect(advanced?.open).toBe(false);
+    expect(
+      advanced?.querySelector('[data-upid-selected-segment-geometry="start-angle"]')?.textContent
+    ).toBe('0.000°');
+    expect(
+      advanced?.querySelector('[data-upid-selected-segment-geometry="end-angle"]')?.textContent
+    ).toBe('90.000°');
+  });
+
+  it('shows a selected full circle without endpoint or 360-degree duplication', async () => {
+    const project = projectWithUpid(pathDocumentFromCircleWithLeadIn());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="view.contours"
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('[data-upid-segment-row]');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
+
+    const selectedSegment = container.querySelector('[data-upid-selected-segment]');
+    expect(selectedSegment?.getAttribute('data-upid-selected-segment-geometry')).toBe('circle');
+    expect(
+      selectedSegment?.querySelector('[data-upid-selected-segment-geometry="radius"]')?.textContent
+    ).toBe('10.000');
+    expect(
+      selectedSegment?.querySelector('[data-upid-selected-segment-summary="circumference"]')
+        ?.textContent
+    ).toBe('62.832');
+    expect(
+      selectedSegment?.querySelector('[data-upid-selected-segment-geometry="direction"]')?.textContent
+    ).toBe('CCW');
+    expect(
+      selectedSegment?.querySelector('[data-upid-selected-segment-point="center"]')?.textContent
+    ).toBe('0.000, 0.000');
+    expect(
+      selectedSegment?.querySelector('[data-upid-selected-segment-point="cut-start"]')?.textContent
+    ).toBe('10.000, 0.000');
+    expect(selectedSegment?.querySelector('[data-upid-selected-segment-point="end"]')).toBeNull();
+    expect(selectedSegment?.querySelector('[data-upid-selected-segment-geometry="sweep"]')).toBeNull();
+    expect(
+      selectedSegment?.querySelector('[data-upid-selected-segment-geometry="end-angle"]')
+    ).toBeNull();
   });
 
   it('shows endpoint cluster snap metadata in the selected point inspector', async () => {
@@ -4376,9 +4436,165 @@ describe('EditorPage UPID draft boundary', () => {
     expect(segmentRow?.getAttribute('data-upid-segment-sweep')).toBe('90.000');
     expect(segmentRow?.getAttribute('data-upid-segment-orientation')).toBe('ccw');
     await clickElement('button[aria-label^="Expand segment 1 details in "]');
-    expect(container.querySelector('[data-upid-segment-group]')?.textContent).toContain(
-      'R 10.000 / sweep 90.000 deg / ccw'
+    expect(container.querySelector('[data-upid-segment-summary="direction"]')?.textContent).toBe(
+      'CCW'
     );
+    expect(container.querySelector('[data-upid-segment-detail-metric="radius"]')?.textContent).toContain(
+      '10.000'
+    );
+    expect(container.querySelector('[data-upid-segment-detail-metric="sweep"]')?.textContent).toContain(
+      '90.000°'
+    );
+    expect(
+      container.querySelector('[data-upid-segment-summary="arc-length"]')?.textContent
+    ).toBe('L 15.708');
+    expect(
+      container.querySelector('[data-upid-geometry-point-row][data-upid-geometry-point-key="center"]')
+        ?.textContent
+    ).toContain('Center');
+    expect(container.querySelector('[data-upid-segment-field="from"]')).toBeNull();
+    expect(container.querySelector('[data-upid-segment-field="to"]')).toBeNull();
+  });
+
+  it('shows line-specific geometry without repeating endpoint facts', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="view.contours"
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('button[aria-label^="Expand segment 1 details in "]');
+
+    expect(container.querySelector('[data-upid-segment-summary="length"]')?.textContent).toBe(
+      'L 10.000'
+    );
+    expect(container.querySelector('[data-upid-segment-derived="delta-x"]')?.textContent).toContain(
+      '10.000'
+    );
+    expect(container.querySelector('[data-upid-segment-derived="delta-y"]')?.textContent).toContain(
+      '0.000'
+    );
+    expect(container.querySelector('[data-upid-segment-derived="heading"]')?.textContent).toContain(
+      '0.000°'
+    );
+    expect(
+      [...container.querySelectorAll('[data-upid-point-row]')].map(
+        (row) => row.querySelector('[data-upid-point-label]')?.textContent
+      )
+    ).toEqual(['Start', 'End']);
+    expect(container.querySelector('[data-upid-point-field="role"]')).toBeNull();
+    expect(container.querySelector('[data-upid-segment-field="from"]')).toBeNull();
+    expect(container.querySelector('[data-upid-segment-field="to"]')).toBeNull();
+  });
+
+  it('shows a clean full circle as center and one selectable cut start', async () => {
+    const project = projectWithUpid(pathDocumentFromCircleWithLeadIn());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="view.contours"
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('button[aria-label^="Expand segment 1 details in "]');
+
+    expect(container.querySelector('[data-upid-segment-summary="direction"]')?.textContent).toBe(
+      'CCW'
+    );
+    expect(container.querySelector('[data-upid-segment-detail-metric="radius"]')?.textContent).toContain(
+      '10.000'
+    );
+    expect(
+      container.querySelector('[data-upid-segment-summary="circumference"]')?.textContent
+    ).toBe('Circ 62.832');
+    expect(
+      container.querySelector('[data-upid-geometry-point-row][data-upid-geometry-point-key="center"]')
+        ?.textContent
+    ).toContain('Center');
+
+    const pointRows = [...container.querySelectorAll('[data-upid-point-row]')];
+    expect(pointRows).toHaveLength(2);
+    expect(
+      pointRows.map((row) => row.querySelector('[data-upid-point-label]')?.textContent)
+    ).toEqual(['Center', 'Cut start']);
+    const cutStartRow = pointRows.find((row) => row.getAttribute('data-upid-point-role') === 'start');
+    expect(cutStartRow).toBeTruthy();
+    expect(cutStartRow?.querySelector('button')?.getAttribute('aria-label')).toContain('cut start');
+    expect(container.querySelector('[data-upid-segment-sweep="360.000"]')).not.toBeNull();
+    expect(container.querySelector('[data-upid-segment-details]')?.textContent).not.toContain('360');
+
+    await act(async () => {
+      cutStartRow?.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(cutStartRow?.getAttribute('data-upid-selected')).toBe('true');
+    const segmentId = cutStartRow?.getAttribute('data-upid-segment-id');
+    const circleEndpointHandles = [...container.querySelectorAll(
+      `circle[data-preview-path-endpoint][data-preview-segment="${segmentId}"]`
+    )];
+    expect(circleEndpointHandles).toHaveLength(1);
+    expect(
+      circleEndpointHandles.filter((handle) => handle.getAttribute('data-preview-selected') === 'true')
+    ).toHaveLength(1);
+    expect(
+      container.querySelector('path[data-preview-travel="lead-in"]')?.getAttribute('d')
+    ).toBe('M 0 0 L 10 0');
+  });
+
+  it('selects a circle center from the geometry tree and projects it on canvas', async () => {
+    const project = projectWithUpid(pathDocumentFromCircleWithLeadIn());
+
+    await act(async () => {
+      root.render(
+        <EditorPageHarness
+          initialWorkflowId="view.contours"
+          onSaveEditorDraft={vi.fn()}
+          project={project}
+        />
+      );
+    });
+    await flushAsync();
+
+    await clickElement('button[aria-label^="Expand segment 1 details in "]');
+
+    const centerRow = container.querySelector(
+      '[data-upid-geometry-point-row][data-upid-geometry-point-key="center"]'
+    );
+    const centerButton = centerRow?.querySelector('button[data-upid-point-select]');
+    expect(centerButton).not.toBeNull();
+
+    await act(async () => {
+      centerButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(centerRow?.getAttribute('data-upid-point-role')).toBe('center');
+    expect(centerRow?.getAttribute('data-upid-selected')).toBe('true');
+    const centerHandle = container.querySelector(
+      'circle[data-preview-arc-center-handle][data-preview-selected="true"]'
+    );
+    expect(centerHandle?.getAttribute('data-preview-arc-center')).toBe('0.000,0.000');
+    expect(centerHandle?.getAttribute('data-preview-point-role')).toBe('center');
+
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
+    expect(container.querySelector('[data-upid-selected-point-role]')?.textContent).toBe('center');
+    expect(container.querySelector('[data-upid-selected-point-coordinate]')?.textContent).toBe(
+      '0.000, 0.000'
+    );
+    expect(container.querySelector('[data-upid-selected-point-cluster]')).toBeNull();
   });
 
   it('reveals collapsed contour groups when selecting path geometry on canvas', async () => {
@@ -4517,6 +4733,29 @@ describe('EditorPage UPID draft boundary', () => {
 
   async function clickElement(selector: string) {
     const workflowCommandId = selector.match(/data-editor-workflow-command="([^"]+)"/)?.[1];
+    if (workflowCommandId === 'view.contours') {
+      const geometryLens = container.querySelector(
+        '[role="tab"][aria-label="Geometry lens"]'
+      ) as HTMLElement | null;
+      expect(geometryLens).not.toBeNull();
+      await act(async () => {
+        geometryLens?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      await flushAsync();
+      const cutPathDisclosures = [
+        ...container.querySelectorAll<HTMLButtonElement>('button[aria-label^="Expand cut path in "]')
+      ];
+      await act(async () => {
+        cutPathDisclosures.forEach((button) => button.click());
+      });
+      await flushAsync();
+      const optionsButton = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Geometry tree options"][aria-expanded="false"]'
+      );
+      await act(async () => optionsButton?.click());
+      await flushAsync();
+      return;
+    }
     if (workflowCommandId) await openWorkflowMenu(workflowCommandId);
 
     const element = container.querySelector(selector) as HTMLElement | null;
@@ -4679,10 +4918,28 @@ function EditorPageHarness({
   const openedInitialWorkflowRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!initialWorkflowId || !headerContent || openedInitialWorkflowRef.current === initialWorkflowId) {
+    if (
+      !initialWorkflowId ||
+      openedInitialWorkflowRef.current === initialWorkflowId ||
+      (initialWorkflowId === 'view.contours' ? !railContent : !headerContent)
+    ) {
       return;
     }
     openedInitialWorkflowRef.current = initialWorkflowId;
+    if (initialWorkflowId === 'view.contours') {
+      document.querySelector<HTMLButtonElement>(
+        '[role="tab"][aria-label="Geometry lens"]'
+      )?.click();
+      queueMicrotask(() => {
+        document
+          .querySelectorAll<HTMLButtonElement>('button[aria-label^="Expand cut path in "]')
+          .forEach((button) => button.click());
+        document
+          .querySelector<HTMLButtonElement>('button[aria-label="Geometry tree options"][aria-expanded="false"]')
+          ?.click();
+      });
+      return;
+    }
     document.querySelector<HTMLButtonElement>(
       `button[aria-label="${workflowMenuTitle(initialWorkflowId)} menu"]`
     )?.click();
@@ -4691,7 +4948,7 @@ function EditorPageHarness({
         `[data-editor-workflow-command="${initialWorkflowId}"]`
       )?.click();
     });
-  }, [headerContent, initialWorkflowId]);
+  }, [headerContent, initialWorkflowId, railContent]);
   return (
     <AppRailProvider
       value={{
