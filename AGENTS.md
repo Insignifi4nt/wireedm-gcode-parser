@@ -6,10 +6,17 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 
 ## Commands
 
-- `npm run dev` - start Vite on port 3000
+- `npm run dev` - start Vite on port **3777**
 - `npm test -- --run` - run tests once
 - `npm run build` - type-check and build
-- `npm run preview` - preview production build
+- `npm run preview` - preview production build on port **3778**
+
+## Dev Server Port
+
+- Always run this app's Vite server on the configured obscure port **3777** (`strictPort`). Preview uses **3778**. Playwright owns **3107**.
+- Never start this app on common development ports (`3000`, `3001`, `5173`, `4173`, etc.), even as a temporary fallback when 3777 is busy.
+- The app registers browser workers that are not reliably cleaned up after the tab/session ends. A leftover worker bound to a previous port can interfere with other projects that later reuse that same port—which is why this app stays off commonly used ports.
+- If 3777 is occupied by this app's own leftover process, stop that WireEDM process and restart on 3777. Do not fall back to another port. Do not kill unrelated projects' servers.
 
 ## Stack
 

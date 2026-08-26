@@ -20,12 +20,14 @@ export default defineConfig({
     }
   },
   server: {
-    port: 3000,
+    port: 3777,
+    strictPort: true,
     open: true,
     host: 'localhost'
   },
   preview: {
-    port: 4173,
+    port: 3778,
+    strictPort: true,
     open: true
   },
   base: '/wireedm-gcode-parser/'

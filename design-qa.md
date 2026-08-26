@@ -12,7 +12,7 @@ presentation:
 
 ## Verification Environment
 
-- URL: `http://localhost:3000/wireedm-gcode-parser/`
+- URL: `http://localhost:3777/wireedm-gcode-parser/`
 - Browser: `npx agent-browser`
 - Viewport: 1355 × 898
 - Real project: `DXF-test-subjects/z18f25.dxf`
