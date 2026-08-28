@@ -225,7 +225,7 @@ type WireEdmPost = {
 
 The runtime API can emit registered dialect commands, formatted structured words, comments, and diagnostics. It cannot access the DOM, storage, network, clipboard, timers, randomness, wall-clock time, or mutable application objects. Every required execution event must be emitted, deliberately consumed under a declared capability, or rejected.
 
-Custom JavaScript execution does not ship until it has worker isolation, termination, memory/time limits, a narrow capability-free API, and deterministic tests. Built-in posts migrate through the same event contract first. Uploaded packages may be installed and inspected before executable custom-post support is enabled, but the UI must label them non-runnable rather than pretending success.
+Custom JavaScript execution does not ship until it has isolation, termination, memory/time limits, a narrow capability-free API, and deterministic tests. Exact registered built-ins dispatch only to their built-in implementation. Uploaded packages dispatch only to the isolated custom runtime and must pass declared conformance fixtures against the canonical fixture registry before installation; neither installation nor execution may fall back to a built-in.
 
 ## Agent-first authoring contract
 

@@ -65,32 +65,56 @@ export function evaluatePhysicalMachineFit(input: {
 }): PhysicalMachineFitResult {
   const measured = measureDocumentEnvelope(input.document);
   if (!measured.ok) return measured;
+  return evaluatePhysicalMachineEnvelopeFit({
+    bounds: measured.bounds,
+    machine: input.machine
+  });
+}
+
+export function evaluatePhysicalMachineEnvelopeFit(input: {
+  readonly bounds: MachineEnvelopeBounds;
+  readonly machine: MachineDefinition | null;
+}): PhysicalMachineFitResult {
+  if (
+    !Number.isFinite(input.bounds.xSpanMm) ||
+    !Number.isFinite(input.bounds.ySpanMm) ||
+    input.bounds.xSpanMm < 0 ||
+    input.bounds.ySpanMm < 0
+  ) {
+    return {
+      ok: false,
+      error: {
+        code: 'MACHINE_FIT_BOUNDS_INVALID',
+        message: 'Machine fit cannot be evaluated because the geometry bounds are invalid.'
+      }
+    };
+  }
   if (input.machine === null) {
     return {
       ok: true,
       fit: {
         status: 'not-evaluated',
         reason: 'no-machine-selected',
-        bounds: measured.bounds
+        bounds: input.bounds
       }
     };
   }
 
   const issues: MachineFitIssue[] = [];
   const unknownAxes: ('x' | 'y')[] = [];
-  compareLimit('x', measured.bounds.xSpanMm, input.machine.limits.xTravel, issues, unknownAxes);
-  compareLimit('y', measured.bounds.ySpanMm, input.machine.limits.yTravel, issues, unknownAxes);
+  compareLimit('x', input.bounds.xSpanMm, input.machine.limits.xTravel, issues, unknownAxes);
+  compareLimit('y', input.bounds.ySpanMm, input.machine.limits.yTravel, issues, unknownAxes);
 
   if (issues.length > 0) {
-    return { ok: true, fit: { status: 'too-large', bounds: measured.bounds, issues } };
+    return { ok: true, fit: { status: 'too-large', bounds: input.bounds, issues } };
   }
   if (unknownAxes.length > 0) {
     return {
       ok: true,
-      fit: { status: 'indeterminate', bounds: measured.bounds, unknownAxes }
+      fit: { status: 'indeterminate', bounds: input.bounds, unknownAxes }
     };
   }
-  return { ok: true, fit: { status: 'fits', bounds: measured.bounds } };
+  return { ok: true, fit: { status: 'fits', bounds: input.bounds } };
 }
 
 function measureDocumentEnvelope(

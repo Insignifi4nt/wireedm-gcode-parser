@@ -10,6 +10,8 @@ import { MachineLibraryDocumentSchema } from '../src/domain/machine-definition/m
 import { WorkbenchCatalogManifestSchema } from '../src/domain/workbench-catalog/workbenchCatalog.ts';
 import { WorkbenchProjectDocumentSchema } from '../src/domain/workbench-catalog/workbenchProject.ts';
 import { CUSTOM_POST_DIAGNOSTIC_CODES } from '../src/domain/post-processor/custom-runtime/customPostRuntime.ts';
+import { runCustomPostConformance } from '../src/domain/post-processor/custom-runtime/customPostConformance.ts';
+import { CANONICAL_POST_PLAN_FIXTURES } from '../src/domain/post-processor/custom-runtime/canonicalPostConformanceFixtures.ts';
 import {
   CUSTOM_POST_EVENT_KINDS,
   CUSTOM_POST_SDK_DECLARATION
@@ -59,6 +61,13 @@ const generatedFiles = [
 const example = parseWireEdmPostPackage(await readFile(examplePath, 'utf8'));
 if (!example.ok) {
   throw new Error(`Minimal post example is invalid: ${JSON.stringify(example.diagnostics)}`);
+}
+const exampleConformance = await runCustomPostConformance({
+  packageValue: example.package,
+  planFixtures: CANONICAL_POST_PLAN_FIXTURES
+});
+if (!exampleConformance.ok) {
+  throw new Error(`Minimal post example is nonconformant: ${JSON.stringify(exampleConformance.diagnostics)}`);
 }
 
 if (process.argv.includes('--check')) {

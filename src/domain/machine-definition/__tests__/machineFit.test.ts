@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { DxfEntity } from '@/domain/dxf/types';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 
-import { evaluatePhysicalMachineFit } from '../machineFit';
+import {
+  evaluatePhysicalMachineEnvelopeFit,
+  evaluatePhysicalMachineFit
+} from '../machineFit';
 import { machineDefinitionFixture, machineDefinitionValue } from './machineDefinitionFixture';
 import { parseMachineDefinition } from '../machineDefinition';
 
@@ -85,6 +88,19 @@ describe('physical machine fit', () => {
       error: {
         code: 'MACHINE_FIT_GEOMETRY_EMPTY',
         message: 'Machine fit cannot be evaluated because the UPID contains no geometry.'
+      }
+    });
+  });
+
+  it('evaluates reviewed import bounds without creating a machine-bearing design', () => {
+    expect(evaluatePhysicalMachineEnvelopeFit({
+      bounds: { xSpanMm: 240, ySpanMm: 10 },
+      machine: machineDefinitionFixture()
+    })).toMatchObject({
+      ok: true,
+      fit: {
+        status: 'too-large',
+        issues: [{ axis: 'x', actualMm: 240, limitMm: 220 }]
       }
     });
   });

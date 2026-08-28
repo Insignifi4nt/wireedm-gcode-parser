@@ -55,6 +55,42 @@ describe('versioned post library', () => {
     });
   });
 
+  it('does not install a custom package that fails canonical conformance', async () => {
+    const nonconformingInput = minimalPostPackage();
+    nonconformingInput.fixtures[0].expectedProgram = 'DIFFERENT';
+
+    const installed = await installPostPackage(
+      createEmptyPostLibrary(),
+      parsedPackage(nonconformingInput)
+    );
+
+    expect(installed).toMatchObject({
+      ok: false,
+      error: {
+        code: 'POST_LIBRARY_CONFORMANCE_FAILED',
+        diagnostics: [{ code: 'POST_CONFORMANCE_EXPECTED_PROGRAM_MISMATCH' }]
+      }
+    });
+    expect(installed).not.toHaveProperty('library');
+    expect(installed).not.toHaveProperty('installation');
+  });
+
+  it('rejects custom fixtures outside the canonical plan registry', async () => {
+    const unknownFixtureInput = minimalPostPackage();
+    unknownFixtureInput.fixtures[0].planFixture = 'author.private-plan.v1';
+
+    expect(await installPostPackage(
+      createEmptyPostLibrary(),
+      parsedPackage(unknownFixtureInput)
+    )).toMatchObject({
+      ok: false,
+      error: {
+        code: 'POST_LIBRARY_CONFORMANCE_FAILED',
+        diagnostics: [{ code: 'POST_CONFORMANCE_PLAN_FIXTURE_NOT_FOUND' }]
+      }
+    });
+  });
+
   it('resolves only an exact ID, version, and hash', async () => {
     const installed = await installPostPackage(createEmptyPostLibrary(), parsedPackage());
     if (!installed.ok) throw new Error(installed.error.message);

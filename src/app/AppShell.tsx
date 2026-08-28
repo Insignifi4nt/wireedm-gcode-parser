@@ -17,22 +17,19 @@ import {
 
 import { StatusNotificationMenu, type StatusToast } from '@/components/StatusToasts';
 import { Button } from '@/components/ui/button';
-import { normalizeOutputExtension } from '@/domain/post/gcodeTemplates';
-import type { UpdateWorkbenchSettingsInput } from '@/domain/storage/updateWorkbenchSettings';
-import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import { AppRailProvider, type AppRailContent, type EditorCompactDrawer } from './AppRailContext';
-import type { MachineProfileSettingsActions } from './MachineOutputSettingsPanel';
+import type { MachinePostSettingsActions } from './MachinePostSettingsPanel';
 import { WorkbenchSettingsDialog } from './WorkbenchSettingsDialog';
 import { EditorCompactDrawerLaunchers } from '@/features/editor/EditorWorkspacePanels';
 
-interface AppShellProps extends MachineProfileSettingsActions {
+interface AppShellProps extends MachinePostSettingsActions {
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
-  connectedWorkbench: ConnectedWorkbench | null;
+  connectedWorkbench: ConnectedWorkbenchCatalog | null;
   errorMessage: string | null;
   interactionLocked: boolean;
   onConnectWorkbench: () => void | Promise<void>;
-  onSaveWorkbenchSettings: (input: UpdateWorkbenchSettingsInput) => void | Promise<void>;
   settingsErrorMessage: string | null;
   settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
   storageSwitchDisabled: boolean;
@@ -48,16 +45,16 @@ export function AppShell({
   errorMessage,
   interactionLocked,
   onConnectWorkbench,
-  onAcknowledgeMachineProfile,
-  onCreateBlankMachineProfile,
-  onCreateRobofilV2CandidateProfile,
-  onDeleteMachineProfile,
-  onDuplicateMachineProfile,
-  onExportMachineProfile,
-  onImportMachineProfileFile,
-  onSaveMachineProfile,
-  onSaveWorkbenchSettings,
-  onSetDefaultMachineProfile,
+  onCreateMachineBinding,
+  onDuplicateMachineBinding,
+  onExportMachineDefinition,
+  onImportMachineDefinition,
+  onImportPostPackage,
+  onRemoveMachineBinding,
+  onRemoveMachineDefinition,
+  onRemovePostInstallation,
+  onReplaceMachineDefinition,
+  onSaveCatalogPreferences,
   settingsErrorMessage,
   settingsStatus,
   storageSwitchDisabled,
@@ -116,13 +113,17 @@ export function AppShell({
     requestedSidebarCollapsed || (isMiddleViewport && railContent?.isPathProject)
   );
   const railWidth = railContent?.sizing?.width ?? sidebarWidth;
-  const outputExtension = connectedWorkbench
-    ? `.${normalizeOutputExtension(
-        connectedWorkbench.manifest.output.extension,
-        connectedWorkbench.manifest.output.customExtension
-      )}`
-    : 'No output';
-  const lineEnding = connectedWorkbench?.manifest.output.lineEnding.toUpperCase() ?? 'No line ending';
+  const exportPreference = connectedWorkbench?.manifest.preferences.export;
+  const outputExtension = exportPreference?.status === 'configured'
+    ? `.${exportPreference.fileExtension.extension}`
+    : 'Export unconfigured';
+  const lineEnding = exportPreference?.status === 'configured'
+    ? exportPreference.lineEnding.toUpperCase()
+    : 'No line ending';
+  const planningMachineId = connectedWorkbench?.manifest.preferences.recentPlanningMachineId;
+  const planningMachine = connectedWorkbench?.machines.machines.find(
+    ({ id }) => id === planningMachineId
+  );
   const compactModalOpen = compactDrawer !== null;
   const closeCompactDrawerWithRailFocus = useCallback(() => {
     restoreRailFocusAfterDrawerCloseRef.current = true;
@@ -381,9 +382,9 @@ export function AppShell({
         <span aria-hidden="true">•</span>
         <span
           className="truncate"
-          title={connectedWorkbench?.activeMachineProfile.name ?? 'No machine profile'}
+          title={planningMachine?.name ?? 'No planning machine'}
         >
-          {connectedWorkbench?.activeMachineProfile.name ?? 'No machine profile'}
+          {planningMachine?.name ?? 'No planning machine'}
         </span>
         <span aria-hidden="true">•</span>
         <span>{outputExtension}</span>
@@ -398,18 +399,18 @@ export function AppShell({
         connectedWorkbench={connectedWorkbench}
         errorMessage={errorMessage}
         interactionLocked={interactionLocked}
-        onAcknowledgeMachineProfile={onAcknowledgeMachineProfile}
         onClose={() => setSettingsOpen(false)}
         onConnectWorkbench={onConnectWorkbench}
-        onCreateBlankMachineProfile={onCreateBlankMachineProfile}
-        onCreateRobofilV2CandidateProfile={onCreateRobofilV2CandidateProfile}
-        onDeleteMachineProfile={onDeleteMachineProfile}
-        onDuplicateMachineProfile={onDuplicateMachineProfile}
-        onExportMachineProfile={onExportMachineProfile}
-        onImportMachineProfileFile={onImportMachineProfileFile}
-        onSaveMachineProfile={onSaveMachineProfile}
-        onSaveWorkbenchSettings={onSaveWorkbenchSettings}
-        onSetDefaultMachineProfile={onSetDefaultMachineProfile}
+        onCreateMachineBinding={onCreateMachineBinding}
+        onDuplicateMachineBinding={onDuplicateMachineBinding}
+        onExportMachineDefinition={onExportMachineDefinition}
+        onImportMachineDefinition={onImportMachineDefinition}
+        onImportPostPackage={onImportPostPackage}
+        onRemoveMachineBinding={onRemoveMachineBinding}
+        onRemoveMachineDefinition={onRemoveMachineDefinition}
+        onRemovePostInstallation={onRemovePostInstallation}
+        onReplaceMachineDefinition={onReplaceMachineDefinition}
+        onSaveCatalogPreferences={onSaveCatalogPreferences}
         open={settingsOpen}
         settingsErrorMessage={settingsErrorMessage}
         settingsStatus={settingsStatus}

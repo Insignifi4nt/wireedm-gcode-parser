@@ -97,8 +97,6 @@ describe('wire EDM post package boundary', () => {
       requires: [],
       evidenceRefs: ['robofil-program']
     };
-    input.evidence[0].supports.push({ kind: 'command', id: 'motion.linear' });
-
     const result = parseWireEdmPostPackage(JSON.stringify(input));
 
     expect(result).toMatchObject({

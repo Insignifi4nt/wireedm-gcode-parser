@@ -113,11 +113,17 @@ describe('exact-hash built-in post engine', () => {
   it('rejects modified package content instead of choosing a post by ID or version', async () => {
     const modified = structuredClone(builtInPostPackage('generic-iso')) as WireEdmPostPackageValue;
     modified.source.code += '\n// modified package content';
-    const installed = await installPostPackage(createEmptyPostLibrary(), modified);
-    if (!installed.ok) throw new Error(installed.error.message);
+    const installation: PostInstallation = {
+      ref: {
+        packageId: modified.manifest.id,
+        version: modified.manifest.version,
+        contentHash: '0'.repeat(64)
+      },
+      package: modified
+    };
 
     expect(runBuiltInPost(compilePlan(centerlineRectangle()), {
-      installation: installed.installation,
+      installation,
       properties: { coordinatePrecision: 3, arcCenterMode: 'incremental' }
     })).toMatchObject({
       ok: false,

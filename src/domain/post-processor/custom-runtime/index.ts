@@ -16,5 +16,6 @@ export {
   type CustomPostConformanceResult,
   type RunCustomPostConformanceInput
 } from './customPostConformance';
+export { CANONICAL_POST_PLAN_FIXTURES } from './canonicalPostConformanceFixtures';
 
 export { CUSTOM_POST_EVENT_KINDS } from './postAuthoringContract';

@@ -257,6 +257,7 @@ function runtimeFixture() {
   if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
 
   const packageValue = minimalPostPackage();
+  packageValue.manifest.capabilities.circularInterpolation = 'both';
   packageValue.manifest.capabilities.controllerCompensation = 'none';
   packageValue.manifest.capabilities.threading = 'none';
   packageValue.manifest.execution.compensationLifecycle = 'none';
@@ -271,7 +272,6 @@ function runtimeFixture() {
     requires: ['distance.absolute'],
     evidenceRefs: ['robofil-program']
   };
-  packageValue.evidence[0].supports.push({ kind: 'command', id: 'motion.linear' });
   packageValue.source.code = `
     export function createPost(api) {
       api.getProperty('coordinatePrecision');

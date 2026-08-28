@@ -6,7 +6,6 @@ import {
 import {
   prepareDxfProjectImport,
   previewDxfProjectImport,
-  unitCandidatesForDxfImport,
   type DxfImportPreparation
 } from '@/domain/dxf/prepareDxfProjectImport';
 import {
@@ -18,108 +17,78 @@ import {
   type ImportExternalProgramInput,
   type ImportExternalProgramResult
 } from '@/domain/editor/importExternalProgram';
+import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
+import { openWorkbenchProject } from '@/domain/editor/openWorkbenchProject';
+import { saveEditorProgram } from '@/domain/editor/saveEditorProgram';
 import {
-  loadEditorProgram
-} from '@/domain/editor/loadEditorProgram';
+  createStoredMachinePostBinding,
+  duplicateStoredMachinePostBinding,
+  installStoredMachineDefinition,
+  removeStoredMachineDefinition,
+  removeStoredMachinePostBinding,
+  replaceStoredMachineDefinition
+} from '@/domain/machine-definition/machineLibraryMutations';
+import { downloadProgramFile } from '@/domain/post/downloadProgramFile';
 import {
-  openWorkbenchProject,
-  type OpenWorkbenchProjectResult
-} from '@/domain/editor/openWorkbenchProject';
-import {
-  saveEditorProgram,
-  type SaveEditorProgramInput,
-  type SaveEditorProgramResult
-} from '@/domain/editor/saveEditorProgram';
-import {
-  downloadProgramFile,
-  type DownloadProgramFileInput
-} from '@/domain/post/downloadProgramFile';
+  installStoredPostPackage,
+  removeStoredPostInstallation
+} from '@/domain/post-processor/postLibraryMutations';
 import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
 import {
   connectRememberedWorkbenchDirectory,
   connectWorkbenchDirectory
 } from '@/domain/storage/connectWorkbenchDirectory';
-import {
-  updateWorkbenchSettings,
-  type UpdateWorkbenchSettingsInput
-} from '@/domain/storage/updateWorkbenchSettings';
-import {
-  addMachineProfile,
-  deleteMachineProfile,
-  duplicateMachineProfile,
-  importMachineProfile,
-  setActiveMachineProfile,
-  updateMachineProfileLibrary
-} from '@/domain/storage/updateMachineProfileLibrary';
-import {
-  renameWorkbenchProject,
-  type RenameWorkbenchProjectInput,
-  type RenameWorkbenchProjectResult
-} from '@/domain/storage/renameWorkbenchProject';
-import {
-  deleteWorkbenchProject,
-  type DeleteWorkbenchProjectInput,
-  type DeleteWorkbenchProjectResult
-} from '@/domain/storage/deleteWorkbenchProject';
-import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
-import type { MachineProfile } from '@/domain/workbench/types';
+import { deleteWorkbenchProject } from '@/domain/storage/deleteWorkbenchProject';
+import { renameWorkbenchProject } from '@/domain/storage/renameWorkbenchProject';
 import {
   exportPortableUpidProject,
   importPortableUpidProject
 } from '@/domain/upid/portableUpidProject';
+import {
+  createSavedWireEdmJobRevision,
+  generateControllerArtifact,
+  saveStoredWireEdmJobRevision
+} from '@/domain/wire-edm-job';
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
+import { updateWorkbenchCatalogPreferences } from '@/domain/workbench-catalog/storage/updateWorkbenchCatalogPreferences';
 
 export interface AppServices {
-  connectCachedWorkbench: () => Promise<ConnectedWorkbench>;
-  connectRememberedWorkbenchDirectory: typeof connectRememberedWorkbenchDirectory;
-  connectWorkbenchDirectory: () => Promise<ConnectedWorkbench>;
-  prepareDxfProjectImport: typeof prepareDxfProjectImport;
-  previewDxfProjectImport: typeof previewDxfProjectImport;
-  unitCandidatesForDxfImport: typeof unitCandidatesForDxfImport;
-  commitDxfProjectImport: (
-    workbench: ConnectedWorkbench,
+  readonly connectCachedWorkbench: typeof connectCachedWorkbench;
+  readonly connectRememberedWorkbenchDirectory: typeof connectRememberedWorkbenchDirectory;
+  readonly connectWorkbenchDirectory: typeof connectWorkbenchDirectory;
+  readonly prepareDxfProjectImport: typeof prepareDxfProjectImport;
+  readonly previewDxfProjectImport: typeof previewDxfProjectImport;
+  readonly commitDxfProjectImport: (
+    workbench: ConnectedWorkbenchCatalog,
     preparation: DxfImportPreparation,
     decision: DxfImportDecision
   ) => Promise<ImportDxfProjectResult>;
-  prepareDxfProjectReimport: typeof prepareDxfProjectReimport;
-  commitDxfProjectReimport: typeof commitDxfProjectReimport;
-  exportPortableUpidProject: typeof exportPortableUpidProject;
-  importPortableUpidProject: typeof importPortableUpidProject;
-  importExternalProgram: (
-    workbench: ConnectedWorkbench,
+  readonly prepareDxfProjectReimport: typeof prepareDxfProjectReimport;
+  readonly commitDxfProjectReimport: typeof commitDxfProjectReimport;
+  readonly exportPortableUpidProject: typeof exportPortableUpidProject;
+  readonly importPortableUpidProject: typeof importPortableUpidProject;
+  readonly importExternalProgram: (
+    workbench: ConnectedWorkbenchCatalog,
     input: ImportExternalProgramInput
   ) => Promise<ImportExternalProgramResult>;
-  loadEditorProgram: typeof loadEditorProgram;
-  openWorkbenchProject: (
-    workbench: ConnectedWorkbench,
-    projectPath: string
-  ) => Promise<OpenWorkbenchProjectResult>;
-  saveEditorProgram: (
-    workbench: ConnectedWorkbench,
-    input: SaveEditorProgramInput
-  ) => Promise<SaveEditorProgramResult>;
-  renameWorkbenchProject: (
-    workbench: ConnectedWorkbench,
-    input: RenameWorkbenchProjectInput
-  ) => Promise<RenameWorkbenchProjectResult>;
-  deleteWorkbenchProject: (
-    workbench: ConnectedWorkbench,
-    input: DeleteWorkbenchProjectInput
-  ) => Promise<DeleteWorkbenchProjectResult>;
-  updateWorkbenchSettings: (
-    workbench: ConnectedWorkbench,
-    input: UpdateWorkbenchSettingsInput
-  ) => Promise<ConnectedWorkbench>;
-  addMachineProfile: typeof addMachineProfile;
-  duplicateMachineProfile: typeof duplicateMachineProfile;
-  deleteMachineProfile: typeof deleteMachineProfile;
-  setActiveMachineProfile: typeof setActiveMachineProfile;
-  importMachineProfile: typeof importMachineProfile;
-  replaceMachineProfile: (
-    workbench: ConnectedWorkbench,
-    profile: MachineProfile
-  ) => Promise<ConnectedWorkbench>;
-  downloadGeneratedProgram: (input: DownloadProgramFileInput) => void;
-  downloadTextFile: (input: DownloadProgramFileInput) => void;
+  readonly loadEditorProgram: typeof loadEditorProgram;
+  readonly openWorkbenchProject: typeof openWorkbenchProject;
+  readonly saveEditorProgram: typeof saveEditorProgram;
+  readonly renameWorkbenchProject: typeof renameWorkbenchProject;
+  readonly deleteWorkbenchProject: typeof deleteWorkbenchProject;
+  readonly updateWorkbenchCatalogPreferences: typeof updateWorkbenchCatalogPreferences;
+  readonly installStoredMachineDefinition: typeof installStoredMachineDefinition;
+  readonly replaceStoredMachineDefinition: typeof replaceStoredMachineDefinition;
+  readonly removeStoredMachineDefinition: typeof removeStoredMachineDefinition;
+  readonly createStoredMachinePostBinding: typeof createStoredMachinePostBinding;
+  readonly duplicateStoredMachinePostBinding: typeof duplicateStoredMachinePostBinding;
+  readonly removeStoredMachinePostBinding: typeof removeStoredMachinePostBinding;
+  readonly installStoredPostPackage: typeof installStoredPostPackage;
+  readonly removeStoredPostInstallation: typeof removeStoredPostInstallation;
+  readonly createSavedWireEdmJobRevision: typeof createSavedWireEdmJobRevision;
+  readonly saveStoredWireEdmJobRevision: typeof saveStoredWireEdmJobRevision;
+  readonly generateControllerArtifact: typeof generateControllerArtifact;
+  readonly downloadTextFile: typeof downloadProgramFile;
 }
 
 export const defaultAppServices: AppServices = {
@@ -128,7 +97,6 @@ export const defaultAppServices: AppServices = {
   connectWorkbenchDirectory,
   prepareDxfProjectImport,
   previewDxfProjectImport,
-  unitCandidatesForDxfImport,
   commitDxfProjectImport,
   prepareDxfProjectReimport,
   commitDxfProjectReimport,
@@ -140,14 +108,17 @@ export const defaultAppServices: AppServices = {
   saveEditorProgram,
   renameWorkbenchProject,
   deleteWorkbenchProject,
-  updateWorkbenchSettings,
-  addMachineProfile,
-  duplicateMachineProfile,
-  deleteMachineProfile,
-  setActiveMachineProfile,
-  importMachineProfile,
-  replaceMachineProfile: (workbench, profile) =>
-    updateMachineProfileLibrary(workbench, { kind: 'replace', profile }),
-  downloadGeneratedProgram: downloadProgramFile,
+  updateWorkbenchCatalogPreferences,
+  installStoredMachineDefinition,
+  replaceStoredMachineDefinition,
+  removeStoredMachineDefinition,
+  createStoredMachinePostBinding,
+  duplicateStoredMachinePostBinding,
+  removeStoredMachinePostBinding,
+  installStoredPostPackage,
+  removeStoredPostInstallation,
+  createSavedWireEdmJobRevision,
+  saveStoredWireEdmJobRevision,
+  generateControllerArtifact,
   downloadTextFile: downloadProgramFile
 };

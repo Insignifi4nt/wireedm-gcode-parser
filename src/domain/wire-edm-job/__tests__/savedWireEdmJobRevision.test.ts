@@ -400,25 +400,73 @@ describe('saved Wire EDM job revision', () => {
     expect(generated.artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it('returns a typed not-runnable result for a valid custom package snapshot', async () => {
-    const custom = structuredClone(builtInPostPackage('generic-iso')) as WireEdmPostPackageValue;
-    custom.manifest.id = 'fixture.custom-post';
-    custom.source.code = 'export function createPost() { return {}; }';
-    const fixture = await revisionFixture(custom);
-
-    expect(await generateControllerArtifact(fixture.revision, {
+  it('generates an audited artifact through an installed custom package', async () => {
+    const fixture = await revisionFixture(customPostPackage(false));
+    const generated = await generateControllerArtifact(fixture.revision, {
       status: 'configured',
       fileExtension: { kind: 'standard', extension: 'iso' },
       lineEnding: 'lf'
-    })).toMatchObject({
-      ok: false,
-      error: {
-        code: 'CONTROLLER_ARTIFACT_POST_NOT_RUNNABLE',
-        post: fixture.installation.ref
+    });
+
+    expect(generated).toMatchObject({
+      ok: true,
+      artifact: {
+        program: {
+          lines: ['G90', 'G1 X0 Y0', 'G1 X10 Y0', 'G1 X10 Y10', 'G1 X0 Y10', 'G1 X0 Y0', 'M30']
+        }
       }
     });
   });
+
+  it('returns custom runtime diagnostics without a partial artifact', async () => {
+    const fixture = await revisionFixture(customPostPackage(true));
+    const generated = await generateControllerArtifact(fixture.revision, {
+      status: 'configured',
+      fileExtension: { kind: 'standard', extension: 'iso' },
+      lineEnding: 'lf'
+    });
+
+    expect(generated).toMatchObject({
+      ok: false,
+      error: {
+        code: 'CONTROLLER_ARTIFACT_POST_FAILED',
+        diagnostics: [expect.objectContaining({ code: 'POST_CUSTOM_RUNTIME_FAILED' })]
+      }
+    });
+    expect(generated).not.toHaveProperty('artifact');
+  });
 });
+
+function customPostPackage(failOnPosition: boolean): WireEdmPostPackageValue {
+  const packageValue = structuredClone(builtInPostPackage('generic-iso')) as WireEdmPostPackageValue;
+  packageValue.manifest.id = failOnPosition
+    ? 'fixture.custom-post.position-failure'
+    : 'fixture.custom-post';
+  packageValue.source.code = `
+    export function createPost(api) {
+      return { onEvent(event) {
+        if (event.kind === 'program-start') return api.emitCommand('distance.absolute', {});
+        if (event.kind === 'position') {
+          ${failOnPosition ? "throw new Error('Position rejected after conformance.');" : "return api.emitMotion('motion.linear', { x: event.to.x, y: event.to.y });"}
+        }
+        if (event.kind === 'motion' && event.motion === 'linear') {
+          return api.emitMotion('motion.linear', { x: event.end.x, y: event.end.y });
+        }
+        if (event.kind === 'program-end') return api.emitCommand('program.end', {});
+        api.consume('No controller block is required for this event.');
+      } };
+    }
+  `;
+  packageValue.fixtures[0].expectedProgram = [
+    'G90',
+    'G1 X10 Y0',
+    'G1 X10 Y10',
+    'G1 X0 Y10',
+    'G1 X0 Y0',
+    'M30'
+  ].join('\n');
+  return packageValue;
+}
 
 async function revisionFixture(packageValue?: WireEdmPostPackageValue) {
   const selected = await machineAndPostFixture(packageValue);

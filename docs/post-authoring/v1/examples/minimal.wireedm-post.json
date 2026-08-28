@@ -15,7 +15,7 @@
       }
     ],
     "capabilities": {
-      "circularInterpolation": "both",
+      "circularInterpolation": "none",
       "controllerCompensation": "none",
       "operations": "single",
       "passes": "single",
@@ -53,6 +53,24 @@
         "requires": [],
         "evidenceRefs": ["linuxcnc-g90"]
       },
+      "motion.linear": {
+        "template": "G1 X{x} Y{y}",
+        "parameters": {
+          "x": {
+            "type": "number",
+            "role": "motion.end-x",
+            "description": "X endpoint coordinate."
+          },
+          "y": {
+            "type": "number",
+            "role": "motion.end-y",
+            "description": "Y endpoint coordinate."
+          }
+        },
+        "effects": ["position.changed"],
+        "requires": ["distance.absolute"],
+        "evidenceRefs": ["linuxcnc-g1"]
+      },
       "program.end": {
         "template": "M02",
         "parameters": {},
@@ -65,7 +83,7 @@
   "source": {
     "language": "javascript",
     "entrypoint": "createPost",
-    "code": "export function createPost(api) {\n  return {\n    onEvent(event) {\n      if (event.kind === 'program-start') return api.emitCommand('distance.absolute', {});\n      if (event.kind === 'program-end') return api.emitCommand('program.end', {});\n      if (event.kind === 'motion' || event.kind === 'position') throw new Error('Add registered motion commands before using this teaching package.');\n      api.consume('No controller block is required for this event.');\n    }\n  };\n}"
+    "code": "export function createPost(api) {\n  return {\n    onEvent(event) {\n      if (event.kind === 'program-start') return api.emitCommand('distance.absolute', {});\n      if (event.kind === 'position') return api.emitMotion('motion.linear', { x: event.to.x, y: event.to.y });\n      if (event.kind === 'motion' && event.motion === 'linear') return api.emitMotion('motion.linear', { x: event.end.x, y: event.end.y });\n      if (event.kind === 'motion') throw new Error('Circular motion is not supported.');\n      if (event.kind === 'program-end') return api.emitCommand('program.end', {});\n      api.consume('No controller block is required for this event.');\n    }\n  };\n}"
   },
   "sources": [
     {
@@ -121,16 +139,37 @@
         "reviewer": "wire-edm-workbench-research",
         "reviewedAt": "2026-08-28T00:00:00.000Z"
       }
+    },
+    {
+      "id": "linuxcnc-g1",
+      "sourceRef": "source.linuxcnc-gcode-2.9",
+      "selector": {
+        "location": "G0, G1 — Linear Move",
+        "section": "G-code quick reference",
+        "exact": "G0, G1 — Linear Move"
+      },
+      "claim": "LinuxCNC 2.9 assigns G1 to coordinated linear motion.",
+      "supports": [{ "kind": "command", "id": "motion.linear" }],
+      "appliesTo": {
+        "controllerModels": ["LinuxCNC 2.9"],
+        "machineModels": [],
+        "firmware": "2.9"
+      },
+      "review": {
+        "status": "reviewed",
+        "reviewer": "wire-edm-workbench-research",
+        "reviewedAt": "2026-08-28T00:00:00.000Z"
+      }
     }
   ],
   "fixtures": [
     {
       "id": "single-closed-contour",
-      "description": "One closed contour with manual threading.",
+      "description": "One linear closed contour without threading.",
       "planFixture": "core.single-closed-contour.v1",
       "properties": { "coordinatePrecision": 3 },
-      "expectedProgram": "G90\nM02",
-      "evidenceRefs": ["linuxcnc-g90", "linuxcnc-m2"]
+      "expectedProgram": "G90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nM02",
+      "evidenceRefs": ["linuxcnc-g90", "linuxcnc-g1", "linuxcnc-m2"]
     }
   ]
 }

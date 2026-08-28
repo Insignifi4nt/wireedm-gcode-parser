@@ -14,10 +14,14 @@ import {
   type PostEventDisposition
 } from './controllerProgram';
 import { preflightPostCapabilities, type PostCapabilityDiagnostic } from './postCapabilityPreflight';
+import {
+  runCustomPost,
+  type CustomPostDiagnostic
+} from './custom-runtime/customPostRuntime';
 import type { PostInstallation } from './postLibrary';
 import type { PostPropertyValue } from './postProperties';
 
-export type PostEngineDiagnostic =
+export type BuiltInPostEngineDiagnostic =
   | PostCapabilityDiagnostic
   | ControllerProgramAuditDiagnostic
   | {
@@ -30,6 +34,8 @@ export type PostEngineDiagnostic =
       readonly eventId: string | null;
     };
 
+export type PostEngineDiagnostic = BuiltInPostEngineDiagnostic | CustomPostDiagnostic;
+
 export type ControllerProgramResult =
   | { readonly ok: true; readonly program: ControllerProgram }
   | { readonly ok: false; readonly diagnostics: readonly PostEngineDiagnostic[] };
@@ -37,6 +43,34 @@ export type ControllerProgramResult =
 export interface RunBuiltInPostInput {
   readonly installation: PostInstallation;
   readonly properties: Readonly<Record<string, PostPropertyValue>>;
+}
+
+export type PostExecutionImplementation =
+  | { readonly kind: 'built-in'; readonly key: BuiltInPostKey }
+  | { readonly kind: 'custom' };
+
+export function resolvePostExecutionImplementation(
+  installation: PostInstallation
+): PostExecutionImplementation {
+  const key = resolveBuiltInPostKey(installation.package);
+  return key ? { kind: 'built-in', key } : { kind: 'custom' };
+}
+
+export async function runPost(
+  plan: WireEdmExecutionPlan,
+  input: RunBuiltInPostInput
+): Promise<ControllerProgramResult> {
+  const implementation = resolvePostExecutionImplementation(input.installation);
+  switch (implementation.kind) {
+    case 'built-in':
+      return runBuiltInPost(plan, input);
+    case 'custom':
+      return runCustomPost({
+        package: input.installation.package,
+        plan,
+        properties: input.properties
+      });
+  }
 }
 
 type BuiltInRenderConfiguration =
@@ -627,7 +661,7 @@ function invalidLifecycle(
 }
 
 function blocked(
-  code: Extract<PostEngineDiagnostic, { eventId: string | null }>['code'],
+  code: Extract<BuiltInPostEngineDiagnostic, { eventId: string | null }>['code'],
   message: string,
   eventId: string | null = null
 ): Extract<ControllerProgramResult, { ok: false }> {

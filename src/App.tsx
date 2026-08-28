@@ -18,12 +18,14 @@ interface AppProps {
 }
 
 export default function App({ services }: AppProps = {}) {
-  const [onboardingOpen, setOnboardingOpen] = useState(
-    () => !hasDismissedOnboarding()
-  );
+  const [onboardingOpen, setOnboardingOpen] = useState(() => !hasDismissedOnboarding());
   const app = useWorkbenchAppController(services);
+  const planningMachineId = app.connectedWorkbench?.manifest.preferences.recentPlanningMachineId;
+  const planningMachine = app.connectedWorkbench?.machines.machines.find(
+    ({ id }) => id === planningMachineId
+  ) ?? null;
 
-  function handleDismissOnboarding() {
+  function dismissOnboarding() {
     setOnboardingOpen(false);
     rememberOnboardingDismissal();
   }
@@ -33,44 +35,46 @@ export default function App({ services }: AppProps = {}) {
       connectedWorkbench={app.connectedWorkbench}
       errorMessage={app.errorMessage}
       interactionLocked={app.workbenchInteractionLocked}
-      onAcknowledgeMachineProfile={app.handleAcknowledgeMachineProfile}
       onConnectWorkbench={app.handleConnectWorkbench}
-      onCreateBlankMachineProfile={app.handleCreateBlankMachineProfile}
-      onCreateRobofilV2CandidateProfile={app.handleCreateRobofilV2CandidateProfile}
-      onDeleteMachineProfile={app.handleDeleteMachineProfile}
-      onDuplicateMachineProfile={app.handleDuplicateMachineProfile}
-      onExportMachineProfile={app.handleExportMachineProfile}
-      onImportMachineProfileFile={app.handleImportMachineProfileFile}
-      onSaveMachineProfile={app.handleSaveMachineProfile}
-      onSaveWorkbenchSettings={app.handleSaveWorkbenchSettings}
-      onSetDefaultMachineProfile={app.handleSetDefaultMachineProfile}
+      onCreateMachineBinding={app.handleCreateMachineBinding}
+      onDuplicateMachineBinding={app.handleDuplicateMachineBinding}
+      onExportMachineDefinition={app.handleExportMachineDefinition}
+      onImportMachineDefinition={app.handleImportMachineDefinition}
+      onImportPostPackage={app.handleImportPostPackage}
+      onRemoveMachineBinding={app.handleRemoveMachineBinding}
+      onRemoveMachineDefinition={app.handleRemoveMachineDefinition}
+      onRemovePostInstallation={app.handleRemovePostInstallation}
+      onReplaceMachineDefinition={app.handleReplaceMachineDefinition}
+      onSaveCatalogPreferences={app.handleSaveCatalogPreferences}
       settingsErrorMessage={app.settingsErrorMessage}
       settingsStatus={app.settingsStatus}
-      storageSwitchDisabled={
-        app.activeView === 'editor' || app.workbenchInteractionLocked
-      }
-      storageActionLabel={app.storageActionLabel}
       statusNotifications={app.statusNotifications}
+      storageActionLabel={app.storageActionLabel}
+      storageSwitchDisabled={app.activeView === 'editor' || app.workbenchInteractionLocked}
       storageWarningMessage={app.storageWarningMessage}
       workbenchStatus={app.workbenchStatus}
     >
       <StatusToastList onDismiss={app.dismissStatusToast} toasts={app.statusToasts} />
-      {app.activeView === 'editor' ? (
+      {app.activeView === 'editor' && app.connectedWorkbench ? (
         <EditorPage
-          interactionLocked={app.workbenchInteractionLocked}
+          exportPreference={app.connectedWorkbench.manifest.preferences.export}
           importErrorMessage={app.editorImportErrorMessage}
           importStatus={app.editorImportStatus}
+          interactionLocked={app.workbenchInteractionLocked}
           key={`${app.loadedEditorProgram?.filePath ?? 'empty-editor'}:${app.editorProgramRevision}`}
+          machines={app.connectedWorkbench.machines.machines}
           onBackToDashboard={app.handleBackToDashboard}
-          onDownloadEditorFile={app.handleDownloadEditorFile}
+          onDownloadEditorFile={(fileName, text) => app.handleDownloadEditorFile({ fileName, text })}
+          onGenerateControllerArtifact={app.handleGenerateControllerArtifact}
           onImportProgramFile={app.handleImportExternalProgram}
           onReimportDxfUnits={
-            app.loadedEditorProgram?.project?.source.kind === 'dxf'
+            app.loadedEditorProgram?.project.source.kind === 'dxf'
               ? app.handlePrepareDxfReimport
               : undefined
           }
-          onSaveEditorDraft={app.handleSaveEditorDraft}
+          onSaveEditorDraft={async (draft) => { await app.handleSaveEditorDraft(draft); }}
           onStatusMessage={app.showStatusToast}
+          planningMachine={planningMachine}
           program={app.loadedEditorProgram}
           saveErrorMessage={app.editorSaveErrorMessage}
           saveStatus={app.editorSaveStatus}
@@ -82,21 +86,20 @@ export default function App({ services }: AppProps = {}) {
           importStatus={app.importStatus}
           interactionLocked={app.workbenchInteractionLocked}
           latestImport={app.latestImport}
-          pendingDxfImport={app.pendingDxfImport}
           onCancelDxfImport={app.handleCancelDxfImport}
           onConfirmDxfImport={app.handleConfirmDxfImport}
-          onDxfImportMachineProfileChange={app.handleDxfImportMachineProfileChange}
+          onDeleteProject={app.handleDeleteWorkbenchProject}
           onDxfImportOverrideAcknowledgedChange={app.handleDxfImportOverrideAcknowledgedChange}
           onDxfImportUnitCandidateChange={app.handleDxfImportUnitCandidateChange}
+          onExportUpidProject={app.handleExportUpidProject}
           onImportDxfFile={app.handleImportDxfFile}
-          onImportUpidFile={app.handleImportUpidFile}
           onImportProgramFile={app.handleImportExternalProgram}
-          onDeleteProject={app.handleDeleteWorkbenchProject}
+          onImportUpidFile={app.handleImportUpidFile}
           onOpenEditor={app.handleOpenEditor}
           onOpenLatestImportInEditor={app.handleOpenLatestImportInEditor}
           onOpenProject={app.handleOpenWorkbenchProject}
-          onExportUpidProject={app.handleExportUpidProject}
           onRenameProject={app.handleRenameWorkbenchProject}
+          pendingDxfImport={app.pendingDxfImport}
           programImportErrorMessage={app.editorImportErrorMessage}
           programImportStatus={app.editorImportStatus}
           workbenchStatus={app.workbenchStatus}
@@ -104,34 +107,25 @@ export default function App({ services }: AppProps = {}) {
       )}
       {app.pendingDxfReimport && (
         <DxfImportConfirmationDialog
-          declaredUnitOverrideAcknowledged={
-            app.pendingDxfReimport.declaredUnitOverrideAcknowledged
-          }
+          declaredUnitOverrideAcknowledged={app.pendingDxfReimport.declaredUnitOverrideAcknowledged}
           errorMessage={app.dxfReimportErrorMessage}
-          machineProfileLocked
           mode="reimport"
           onCancel={app.handleCancelDxfReimport}
           onConfirm={app.handleConfirmDxfReimport}
-          onMachineProfileChange={() => undefined}
-          onOverrideAcknowledgedChange={
-            app.handleDxfReimportOverrideAcknowledgedChange
-          }
-          onRebuildAcknowledgedChange={
-            app.handleDxfReimportRebuildAcknowledgedChange
-          }
+          onOverrideAcknowledgedChange={app.handleDxfReimportOverrideAcknowledgedChange}
+          onRebuildAcknowledgedChange={app.handleDxfReimportRebuildAcknowledgedChange}
           onUnitCandidateChange={app.handleDxfReimportUnitCandidateChange}
-          preparation={app.pendingDxfReimport.preparation}
-          preview={app.pendingDxfReimport.preview}
-          previewErrorMessage={app.pendingDxfReimport.previewErrorMessage}
+          planningMachineFit={app.pendingDxfReimport.planningMachineFit}
+          preparationResult={{ ok: true, preparation: app.pendingDxfReimport.preparation }}
+          previewResult={app.pendingDxfReimport.previewResult}
           rebuildAcknowledged={app.pendingDxfReimport.rebuildAcknowledged}
           rebuildRequired={app.pendingDxfReimport.rebuildRequired}
-          selection={app.pendingDxfReimport.selection}
+          selectedUnitCandidateId={app.pendingDxfReimport.selectedUnitCandidateId}
           submitting={app.dxfReimportStatus === 'importing'}
-          unitCandidates={app.pendingDxfReimport.unitCandidates}
         />
       )}
       <OnboardingDialog
-        onDismiss={handleDismissOnboarding}
+        onDismiss={dismissOnboarding}
         open={onboardingOpen && app.workbenchStatus === 'ready'}
       />
     </AppShell>

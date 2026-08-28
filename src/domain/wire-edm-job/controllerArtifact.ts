@@ -3,7 +3,7 @@ import { Value } from '@sinclair/typebox/value';
 
 import type { ControllerProgram } from '@/domain/post-processor/controllerProgram';
 import {
-  runBuiltInPost,
+  runPost,
   type PostEngineDiagnostic
 } from '@/domain/post-processor/postEngine';
 import type { PostInstallationRef } from '@/domain/post-processor/postLibrary';
@@ -120,21 +120,11 @@ export async function generateControllerArtifact(
     });
   }
 
-  const posted = runBuiltInPost(revision.executionPlan, {
+  const posted = await runPost(revision.executionPlan, {
     installation: revision.post.installation,
     properties: revision.post.properties
   });
   if (!posted.ok) {
-    const notRunnable = posted.diagnostics.find(
-      ({ code }) => code === 'POST_BUILTIN_NOT_RUNNABLE'
-    );
-    if (notRunnable) {
-      return artifactFailure({
-        code: 'CONTROLLER_ARTIFACT_POST_NOT_RUNNABLE',
-        message: notRunnable.message,
-        post: structuredClone(revision.post.installation.ref)
-      });
-    }
     return artifactFailure({
       code: 'CONTROLLER_ARTIFACT_POST_FAILED',
       message: 'The exact saved post could not generate an audited controller program.',

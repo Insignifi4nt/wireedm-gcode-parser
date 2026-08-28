@@ -18,7 +18,7 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
         }
       ],
       capabilities: {
-        circularInterpolation: 'both',
+        circularInterpolation: 'none',
         controllerCompensation: 'left-right',
         operations: 'single',
         passes: 'single',
@@ -56,6 +56,24 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
           requires: [],
           evidenceRefs: ['robofil-program']
         },
+        'motion.linear': {
+          template: 'G1 X{x} Y{y}',
+          parameters: {
+            x: {
+              type: 'number',
+              role: 'motion.end-x',
+              description: 'X endpoint coordinate.'
+            },
+            y: {
+              type: 'number',
+              role: 'motion.end-y',
+              description: 'Y endpoint coordinate.'
+            }
+          },
+          effects: ['position.changed'],
+          requires: ['distance.absolute'],
+          evidenceRefs: ['robofil-program']
+        },
         'program.end': {
           template: 'M02',
           parameters: {},
@@ -71,9 +89,14 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
       code: [
         'export function createPost(api) {',
         '  return {',
-        "    onOpen() { api.emitCommand('distance.absolute'); },",
-        '    onEvent() {},',
-        "    onClose() { api.emitCommand('program.end'); }",
+        '    onEvent(event) {',
+        "      if (event.kind === 'program-start') return api.emitCommand('distance.absolute', {});",
+        "      if (event.kind === 'position') return api.emitMotion('motion.linear', { x: event.to.x, y: event.to.y });",
+        "      if (event.kind === 'motion' && event.motion === 'linear') return api.emitMotion('motion.linear', { x: event.end.x, y: event.end.y });",
+        "      if (event.kind === 'motion') throw new Error('Circular motion is not supported.');",
+        "      if (event.kind === 'program-end') return api.emitCommand('program.end', {});",
+        "      api.consume('No controller block is required for this event.');",
+        '    }',
         '  };',
         '}'
       ].join('\n')
@@ -98,9 +121,10 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
           location: 'G90 setup and M02 ending',
           exact: 'G90 ... M02'
         },
-        claim: 'The evidenced local program uses G90 setup and M02 program ending.',
+        claim: 'The evidenced local program uses G90 setup, G1 linear motion, and M02 program ending.',
         supports: [
           { kind: 'command', id: 'distance.absolute' },
+          { kind: 'command', id: 'motion.linear' },
           { kind: 'command', id: 'program.end' }
         ],
         appliesTo: {
@@ -117,10 +141,17 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
     fixtures: [
       {
         id: 'single-closed-contour',
-        description: 'One closed contour with manual threading.',
+        description: 'One linear closed contour without threading.',
         planFixture: 'core.single-closed-contour.v1',
         properties: { coordinatePrecision: 3 },
-        expectedProgram: ['G90', 'M02'].join('\n'),
+        expectedProgram: [
+          'G90',
+          'G1 X10 Y0',
+          'G1 X10 Y10',
+          'G1 X0 Y10',
+          'G1 X0 Y0',
+          'M02'
+        ].join('\n'),
         evidenceRefs: ['robofil-program']
       }
     ]

@@ -69,6 +69,20 @@ describe('persisted post library mutations', () => {
     expect(adapter.files.has(POST_LIBRARY_PATH)).toBe(false);
   });
 
+  it('leaves the stored library unchanged when custom conformance fails', async () => {
+    const adapter = new MemoryAdapter();
+    await initializePostLibraryStorage(adapter);
+    const storedBeforeInstall = adapter.files.get(POST_LIBRARY_PATH);
+    const nonconforming = minimalPostPackage();
+    nonconforming.fixtures[0].expectedProgram = 'DIFFERENT';
+
+    expect(await installStoredPostPackage(adapter, JSON.stringify(nonconforming))).toMatchObject({
+      ok: false,
+      error: { code: 'POST_LIBRARY_CONFORMANCE_FAILED' }
+    });
+    expect(adapter.files.get(POST_LIBRARY_PATH)).toBe(storedBeforeInstall);
+  });
+
   it('loads the authoritative machine index before removing a post installation', async () => {
     const adapter = new MemoryAdapter();
     await initializePostLibraryStorage(adapter);
