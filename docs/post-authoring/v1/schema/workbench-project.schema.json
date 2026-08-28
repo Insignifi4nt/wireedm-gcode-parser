@@ -1,0 +1,429 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wire-edm.local/schemas/wire-edm-project-v2.json",
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "format",
+        "schemaVersion",
+        "id",
+        "name",
+        "createdAt",
+        "updatedAt",
+        "editor",
+        "savedRevisionIds",
+        "source",
+        "content"
+      ],
+      "properties": {
+        "format": {
+          "const": "wire-edm-project",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 2,
+          "type": "number"
+        },
+        "id": {
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "maxLength": 160,
+          "type": "string"
+        },
+        "createdAt": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "type": "string"
+        },
+        "updatedAt": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "type": "string"
+        },
+        "editor": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "pinnedLineNumbers"
+          ],
+          "properties": {
+            "pinnedLineNumbers": {
+              "maxItems": 100000,
+              "uniqueItems": true,
+              "type": "array",
+              "items": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "savedRevisionIds": {
+          "maxItems": 100000,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+            "type": "string"
+          }
+        },
+        "source": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "files"
+          ],
+          "properties": {
+            "kind": {
+              "const": "dxf",
+              "type": "string"
+            },
+            "files": {
+              "maxItems": 10000,
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "path",
+                  "createdAt",
+                  "kind"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "pattern": "^(imports|projects)/[^\\u0000]+$",
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "dxf",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "content": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "document"
+          ],
+          "properties": {
+            "kind": {
+              "const": "upid-document",
+              "type": "string"
+            },
+            "document": {
+              "description": "A structurally valid Universal Path Intelligence Document."
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "format",
+        "schemaVersion",
+        "id",
+        "name",
+        "createdAt",
+        "updatedAt",
+        "editor",
+        "savedRevisionIds",
+        "source",
+        "content"
+      ],
+      "properties": {
+        "format": {
+          "const": "wire-edm-project",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 2,
+          "type": "number"
+        },
+        "id": {
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "maxLength": 160,
+          "type": "string"
+        },
+        "createdAt": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "type": "string"
+        },
+        "updatedAt": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "type": "string"
+        },
+        "editor": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "pinnedLineNumbers"
+          ],
+          "properties": {
+            "pinnedLineNumbers": {
+              "maxItems": 100000,
+              "uniqueItems": true,
+              "type": "array",
+              "items": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "savedRevisionIds": {
+          "maxItems": 100000,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+            "type": "string"
+          }
+        },
+        "source": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "files"
+          ],
+          "properties": {
+            "kind": {
+              "const": "upid",
+              "type": "string"
+            },
+            "files": {
+              "maxItems": 10000,
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "path",
+                  "createdAt",
+                  "kind"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "pattern": "^(imports|projects)/[^\\u0000]+$",
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "upid",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "content": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "document"
+          ],
+          "properties": {
+            "kind": {
+              "const": "upid-document",
+              "type": "string"
+            },
+            "document": {
+              "description": "A structurally valid Universal Path Intelligence Document."
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "format",
+        "schemaVersion",
+        "id",
+        "name",
+        "createdAt",
+        "updatedAt",
+        "editor",
+        "savedRevisionIds",
+        "source",
+        "content"
+      ],
+      "properties": {
+        "format": {
+          "const": "wire-edm-project",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 2,
+          "type": "number"
+        },
+        "id": {
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "maxLength": 160,
+          "type": "string"
+        },
+        "createdAt": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "type": "string"
+        },
+        "updatedAt": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "type": "string"
+        },
+        "editor": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "pinnedLineNumbers"
+          ],
+          "properties": {
+            "pinnedLineNumbers": {
+              "maxItems": 100000,
+              "uniqueItems": true,
+              "type": "array",
+              "items": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "savedRevisionIds": {
+          "maxItems": 100000,
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+            "type": "string"
+          }
+        },
+        "source": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "files"
+          ],
+          "properties": {
+            "kind": {
+              "const": "external-gcode",
+              "type": "string"
+            },
+            "files": {
+              "maxItems": 10000,
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "path",
+                  "createdAt",
+                  "kind"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "pattern": "^(imports|projects)/[^\\u0000]+$",
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "external-gcode",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "content": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "activeFilePath"
+          ],
+          "properties": {
+            "kind": {
+              "const": "external-gcode",
+              "type": "string"
+            },
+            "activeFilePath": {
+              "minLength": 1,
+              "maxLength": 1024,
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

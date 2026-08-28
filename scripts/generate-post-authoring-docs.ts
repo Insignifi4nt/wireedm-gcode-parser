@@ -5,6 +5,10 @@ import process from 'node:process';
 import { PostLibraryDocumentSchema } from '../src/domain/post-processor/postLibraryStorage.ts';
 import { parseWireEdmPostPackage } from '../src/domain/post-processor/postPackage.ts';
 import { WireEdmPostPackageSchema } from '../src/domain/post-processor/postPackageSchema.ts';
+import { MachineDefinitionSchema } from '../src/domain/machine-definition/machineDefinition.ts';
+import { MachineLibraryDocumentSchema } from '../src/domain/machine-definition/machineLibraryStorage.ts';
+import { WorkbenchCatalogManifestSchema } from '../src/domain/workbench-catalog/workbenchCatalog.ts';
+import { WorkbenchProjectDocumentSchema } from '../src/domain/workbench-catalog/workbenchProject.ts';
 
 const root = process.cwd();
 const examplePath = path.join(root, 'docs/post-authoring/v1/examples/minimal.wireedm-post.json');
@@ -16,6 +20,22 @@ const generatedFiles = [
   {
     path: path.join(root, 'docs/post-authoring/v1/schema/post-library.schema.json'),
     contents: `${JSON.stringify(PostLibraryDocumentSchema, null, 2)}\n`
+  },
+  {
+    path: path.join(root, 'docs/post-authoring/v1/schema/machine-definition.schema.json'),
+    contents: `${JSON.stringify(MachineDefinitionSchema, null, 2)}\n`
+  },
+  {
+    path: path.join(root, 'docs/post-authoring/v1/schema/machine-library.schema.json'),
+    contents: `${JSON.stringify(MachineLibraryDocumentSchema, null, 2)}\n`
+  },
+  {
+    path: path.join(root, 'docs/post-authoring/v1/schema/workbench.schema.json'),
+    contents: `${JSON.stringify(WorkbenchCatalogManifestSchema, null, 2)}\n`
+  },
+  {
+    path: path.join(root, 'docs/post-authoring/v1/schema/workbench-project.schema.json'),
+    contents: `${JSON.stringify(WorkbenchProjectDocumentSchema, null, 2)}\n`
   }
 ];
 

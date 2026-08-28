@@ -1,10 +1,19 @@
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { machineBindingReferences } from '@/domain/machine-definition/machineLibrary';
+import {
+  readMachineLibraryStorage,
+  type MachineLibraryStorageError
+} from '@/domain/machine-definition/machineLibraryStorage';
 
 import {
   installPostPackage,
+  removePostInstallation,
   type InstallPostPackageResult,
+  type PostInstallationRef,
   type PostInstallation,
-  type PostLibrary
+  type PostLibrary,
+  type RemovePostInstallationResult
 } from './postLibrary';
 import {
   readPostLibraryStorage,
@@ -17,15 +26,23 @@ import {
 } from './postPackage';
 
 type InstallDomainError = Extract<InstallPostPackageResult, { ok: false }>['error'];
+type RemoveDomainError = Extract<RemovePostInstallationResult, { ok: false }>['error'];
 
-export type PostLibraryMutationError =
+type InvalidPostPackageError = {
+  code: 'POST_PACKAGE_INVALID';
+  message: string;
+  diagnostics: readonly PostPackageDiagnostic[];
+};
+
+export type InstallStoredPostPackageError =
   | PostLibraryStorageError
   | InstallDomainError
-  | {
-      code: 'POST_PACKAGE_INVALID';
-      message: string;
-      diagnostics: readonly PostPackageDiagnostic[];
-    };
+  | InvalidPostPackageError;
+
+export type RemoveStoredPostInstallationError =
+  | PostLibraryStorageError
+  | MachineLibraryStorageError
+  | RemoveDomainError;
 
 export type InstallStoredPostPackageResult =
   | {
@@ -34,9 +51,20 @@ export type InstallStoredPostPackageResult =
       library: PostLibrary;
       installation: PostInstallation;
     }
-  | { ok: false; error: PostLibraryMutationError };
+  | { ok: false; error: InstallStoredPostPackageError };
+
+export type RemoveStoredPostInstallationResult =
+  | { ok: true; library: PostLibrary; removed: PostInstallation }
+  | { ok: false; error: RemoveStoredPostInstallationError };
 
 export async function installStoredPostPackage(
+  adapter: WorkbenchStorageAdapter,
+  rawPackageText: string
+): Promise<InstallStoredPostPackageResult> {
+  return withWorkbenchMutationLock(adapter, () => installStoredPostPackageUnlocked(adapter, rawPackageText));
+}
+
+async function installStoredPostPackageUnlocked(
   adapter: WorkbenchStorageAdapter,
   rawPackageText: string
 ): Promise<InstallStoredPostPackageResult> {
@@ -59,4 +87,31 @@ export async function installStoredPostPackage(
 
   const written = await writePostLibraryStorage(adapter, installed.library);
   return written.ok ? installed : written;
+}
+
+export async function removeStoredPostInstallation(
+  adapter: WorkbenchStorageAdapter,
+  ref: PostInstallationRef
+): Promise<RemoveStoredPostInstallationResult> {
+  return withWorkbenchMutationLock(adapter, () => removeStoredPostInstallationUnlocked(adapter, ref));
+}
+
+async function removeStoredPostInstallationUnlocked(
+  adapter: WorkbenchStorageAdapter,
+  ref: PostInstallationRef
+): Promise<RemoveStoredPostInstallationResult> {
+  const posts = await readPostLibraryStorage(adapter);
+  if (!posts.ok) return posts;
+  const machines = await readMachineLibraryStorage(adapter, posts.library);
+  if (!machines.ok) return machines;
+
+  const removed = removePostInstallation(
+    posts.library,
+    ref,
+    machineBindingReferences(machines.library)
+  );
+  if (!removed.ok) return removed;
+
+  const written = await writePostLibraryStorage(adapter, removed.library);
+  return written.ok ? removed : written;
 }

@@ -8,9 +8,12 @@ import {
   installPostPackage,
   postInstallationRefsEqual,
   type PostInstallation,
-  type PostInstallationRef,
   type PostLibrary
 } from './postLibrary';
+import {
+  PostInstallationRefSchema,
+  type PostInstallationRef
+} from './postFormatPrimitives';
 import {
   validateWireEdmPostPackageValue,
   type PostPackageDiagnostic
@@ -21,12 +24,6 @@ export const POST_LIBRARY_DIRECTORY = 'posts';
 export const POST_LIBRARY_PATH = `${POST_LIBRARY_DIRECTORY}/library.json`;
 export const MAX_POST_LIBRARY_BYTES = 16 * 1024 * 1024;
 export const MAX_POST_INSTALLATIONS = 256;
-
-const PostInstallationRefSchema = Type.Object({
-  packageId: Type.String({ minLength: 1, maxLength: 80 }),
-  version: Type.String({ minLength: 5, maxLength: 80 }),
-  contentHash: Type.String({ pattern: '^[a-f0-9]{64}$' })
-}, { additionalProperties: false });
 
 export const PostLibraryDocumentSchema = Type.Object({
   format: Type.Literal('wire-edm-post-library'),

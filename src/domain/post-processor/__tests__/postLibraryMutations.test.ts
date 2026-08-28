@@ -1,8 +1,25 @@
 import { describe, expect, it } from 'vitest';
 
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import {
+  removeMachinePostBinding
+} from '@/domain/machine-definition/machineDefinition';
+import {
+  boundMachineFixture
+} from '@/domain/machine-definition/__tests__/machineDefinitionFixture';
+import {
+  createEmptyMachineLibrary,
+  installMachineDefinition
+} from '@/domain/machine-definition/machineLibrary';
+import {
+  initializeMachineLibraryStorage,
+  writeMachineLibraryStorage
+} from '@/domain/machine-definition/machineLibraryStorage';
 
-import { installStoredPostPackage } from '../postLibraryMutations';
+import {
+  installStoredPostPackage,
+  removeStoredPostInstallation
+} from '../postLibraryMutations';
 import {
   initializePostLibraryStorage,
   POST_LIBRARY_PATH
@@ -50,5 +67,33 @@ describe('persisted post library mutations', () => {
       }
     });
     expect(adapter.files.has(POST_LIBRARY_PATH)).toBe(false);
+  });
+
+  it('loads the authoritative machine index before removing a post installation', async () => {
+    const adapter = new MemoryAdapter();
+    await initializePostLibraryStorage(adapter);
+    const installedPost = await installStoredPostPackage(adapter, JSON.stringify(minimalPostPackage()));
+    if (!installedPost.ok) throw new Error(installedPost.error.message);
+    await initializeMachineLibraryStorage(adapter, installedPost.library);
+
+    const bound = await boundMachineFixture();
+    const machineInstall = installMachineDefinition(createEmptyMachineLibrary(), bound.machine);
+    if (!machineInstall.ok) throw new Error(machineInstall.error.message);
+    await writeMachineLibraryStorage(adapter, machineInstall.library);
+
+    expect(await removeStoredPostInstallation(adapter, installedPost.installation.ref)).toMatchObject({
+      ok: false,
+      error: { code: 'POST_LIBRARY_INSTALLATION_IN_USE' }
+    });
+
+    const unbound = removeMachinePostBinding(bound.machine, 'production');
+    if (!unbound.ok) throw new Error(unbound.error.message);
+    const unboundLibrary = installMachineDefinition(createEmptyMachineLibrary(), unbound.machine);
+    if (!unboundLibrary.ok) throw new Error(unboundLibrary.error.message);
+    await writeMachineLibraryStorage(adapter, unboundLibrary.library);
+    expect(await removeStoredPostInstallation(adapter, installedPost.installation.ref)).toMatchObject({
+      ok: true,
+      library: { installations: [] }
+    });
   });
 });

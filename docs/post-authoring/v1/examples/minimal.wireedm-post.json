@@ -16,15 +16,20 @@
     ],
     "capabilities": {
       "circularInterpolation": "both",
-      "controllerCompensation": "left-right",
+      "controllerCompensation": "none",
       "operations": "single",
       "passes": "single",
-      "threading": "manual",
+      "threading": "none",
       "wireSeparation": false,
-      "programStops": true,
+      "programStops": false,
       "taperAxes": false,
       "technologySelection": false,
       "initialWirePosition": true
+    },
+    "execution": {
+      "initialWirePosition": "required",
+      "compensationLifecycle": "none",
+      "compensationRequiredForEveryOperation": false
     },
     "properties": {
       "coordinatePrecision": {
@@ -44,7 +49,7 @@
       "distance.absolute": {
         "template": "G90",
         "parameters": {},
-        "effects": ["distance-mode.absolute"],
+        "effects": ["distance.absolute"],
         "requires": [],
         "evidenceRefs": ["linuxcnc-g90"]
       },

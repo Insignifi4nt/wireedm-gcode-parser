@@ -27,6 +27,11 @@ export function minimalPostPackage() {
         technologySelection: false,
         initialWirePosition: true
       },
+      execution: {
+        initialWirePosition: 'required',
+        compensationLifecycle: 'controller-native-program',
+        compensationRequiredForEveryOperation: true
+      },
       properties: {
         coordinatePrecision: {
           type: 'integer',
@@ -45,7 +50,7 @@ export function minimalPostPackage() {
         'distance.absolute': {
           template: 'G90',
           parameters: {},
-          effects: ['distance-mode.absolute'],
+          effects: ['distance.absolute'],
           requires: [],
           evidenceRefs: ['robofil-program']
         },

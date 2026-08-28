@@ -1,11 +1,8 @@
 import { canonicalJson } from './canonicalJson';
+import type { PostInstallationRef } from './postFormatPrimitives';
 import type { WireEdmPostPackage } from './postPackageSchema';
 
-export interface PostInstallationRef {
-  readonly packageId: string;
-  readonly version: string;
-  readonly contentHash: string;
-}
+export type { PostInstallationRef } from './postFormatPrimitives';
 
 export interface PostInstallation {
   readonly ref: PostInstallationRef;

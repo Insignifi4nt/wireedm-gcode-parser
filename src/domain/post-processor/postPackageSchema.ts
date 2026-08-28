@@ -1,14 +1,13 @@
 import { Type, type Static } from '@sinclair/typebox';
 
-const strictObject = { additionalProperties: false } as const;
-export const POST_IDENTIFIER_PATTERN = '^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$';
-const semverPattern = '^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$';
+import {
+  POST_IDENTIFIER_PATTERN,
+  PostIdentifierSchema,
+  PostVersionSchema,
+  Sha256Schema
+} from './postFormatPrimitives';
 
-const IdentifierSchema = Type.String({
-  minLength: 1,
-  maxLength: 80,
-  pattern: POST_IDENTIFIER_PATTERN
-});
+const strictObject = { additionalProperties: false } as const;
 
 const LabelSchema = Type.String({ minLength: 1, maxLength: 160 });
 const DescriptionSchema = Type.String({ minLength: 1, maxLength: 4_096 });
@@ -92,15 +91,33 @@ const CommandParameterSchema = Type.Union([
   }, strictObject)
 ]);
 
+export const DialectStateTokenSchema = Type.Union([
+  Type.Literal('program.delimiter'),
+  Type.Literal('program.ended'),
+  Type.Literal('program.paused'),
+  Type.Literal('distance.absolute'),
+  Type.Literal('units.millimeters'),
+  Type.Literal('plane.xy'),
+  Type.Literal('work-offset.selected'),
+  Type.Literal('origin.wire-position-set'),
+  Type.Literal('position.changed'),
+  Type.Literal('compensation.prepared'),
+  Type.Literal('compensation.left'),
+  Type.Literal('compensation.right'),
+  Type.Literal('compensation.off'),
+  Type.Literal('wire.separated'),
+  Type.Literal('wire.threaded')
+]);
+
 const DialectCommandSchema = Type.Object({
   template: Type.String({ minLength: 1, maxLength: 512, pattern: '^[^\\r\\n\\u0000]+$' }),
   parameters: Type.Record(Type.String({ pattern: POST_IDENTIFIER_PATTERN }), CommandParameterSchema, {
     unevaluatedProperties: false,
     maxProperties: 32
   }),
-  effects: Type.Array(IdentifierSchema, { minItems: 1, maxItems: 32, uniqueItems: true }),
-  requires: Type.Array(IdentifierSchema, { maxItems: 32, uniqueItems: true }),
-  evidenceRefs: Type.Array(IdentifierSchema, { minItems: 1, maxItems: 32, uniqueItems: true })
+  effects: Type.Array(DialectStateTokenSchema, { minItems: 1, maxItems: 32, uniqueItems: true }),
+  requires: Type.Array(DialectStateTokenSchema, { maxItems: 32, uniqueItems: true }),
+  evidenceRefs: Type.Array(PostIdentifierSchema, { minItems: 1, maxItems: 32, uniqueItems: true })
 }, strictObject);
 
 const PostTargetSchema = Type.Object({
@@ -132,12 +149,23 @@ const PostCapabilitiesSchema = Type.Object({
   initialWirePosition: Type.Boolean()
 }, strictObject);
 
+const PostExecutionContractSchema = Type.Object({
+  initialWirePosition: Type.Literal('required'),
+  compensationLifecycle: Type.Union([
+    Type.Literal('none'),
+    Type.Literal('authored-linear'),
+    Type.Literal('controller-native-program'),
+    Type.Literal('controller-native-operation')
+  ]),
+  compensationRequiredForEveryOperation: Type.Boolean()
+}, strictObject);
+
 const EvidenceSourceIdentity = {
-  id: IdentifierSchema,
+  id: PostIdentifierSchema,
   name: LabelSchema,
   uri: Type.String({ minLength: 1, maxLength: 2_048 }),
   mediaType: Type.String({ minLength: 1, maxLength: 160, pattern: '^[a-z0-9][a-z0-9.+-]*/[a-z0-9][a-z0-9.+-]*$' }),
-  contentSha256: Type.String({ pattern: '^[a-f0-9]{64}$' })
+  contentSha256: Sha256Schema
 };
 
 const EvidenceSourceSchema = Type.Union([
@@ -190,48 +218,49 @@ const EvidenceReviewSchema = Type.Union([
 ]);
 
 const EvidenceSchema = Type.Object({
-  id: IdentifierSchema,
-  sourceRef: IdentifierSchema,
+  id: PostIdentifierSchema,
+  sourceRef: PostIdentifierSchema,
   selector: EvidenceSelectorSchema,
   claim: Type.String({ minLength: 1, maxLength: 4_096 }),
   supports: Type.Array(Type.Object({
     kind: Type.Literal('command'),
-    id: IdentifierSchema
+    id: PostIdentifierSchema
   }, strictObject), { minItems: 1, maxItems: 64, uniqueItems: true }),
   appliesTo: EvidenceApplicabilitySchema,
   review: EvidenceReviewSchema
 }, strictObject);
 
 const FixtureSchema = Type.Object({
-  id: IdentifierSchema,
+  id: PostIdentifierSchema,
   description: DescriptionSchema,
-  planFixture: IdentifierSchema,
+  planFixture: PostIdentifierSchema,
   properties: Type.Record(Type.String({ pattern: POST_IDENTIFIER_PATTERN }), PropertyValueSchema, {
     unevaluatedProperties: false,
     maxProperties: 128
   }),
   expectedProgram: Type.String({ maxLength: 262_144 }),
-  evidenceRefs: Type.Array(IdentifierSchema, { minItems: 1, maxItems: 32, uniqueItems: true })
+  evidenceRefs: Type.Array(PostIdentifierSchema, { minItems: 1, maxItems: 32, uniqueItems: true })
 }, strictObject);
 
 export const WireEdmPostPackageSchema = Type.Object({
   format: Type.Literal('wire-edm-post'),
   schemaVersion: Type.Literal(1),
   manifest: Type.Object({
-    id: IdentifierSchema,
+    id: PostIdentifierSchema,
     name: LabelSchema,
-    version: Type.String({ minLength: 5, maxLength: 80, pattern: semverPattern }),
+    version: PostVersionSchema,
     engineApiVersion: Type.Literal('1'),
     description: DescriptionSchema,
     targets: Type.Array(PostTargetSchema, { minItems: 1, maxItems: 64 }),
     capabilities: PostCapabilitiesSchema,
+    execution: PostExecutionContractSchema,
     properties: Type.Record(Type.String({ pattern: POST_IDENTIFIER_PATTERN }), PostPropertyDefinitionSchema, {
       unevaluatedProperties: false,
       maxProperties: 128
     })
   }, strictObject),
   dialect: Type.Object({
-    id: IdentifierSchema,
+    id: PostIdentifierSchema,
     description: DescriptionSchema,
     commands: Type.Record(Type.String({ pattern: POST_IDENTIFIER_PATTERN }), DialectCommandSchema, {
       unevaluatedProperties: false,

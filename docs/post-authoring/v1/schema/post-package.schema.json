@@ -34,6 +34,7 @@
         "description",
         "targets",
         "capabilities",
+        "execution",
         "properties"
       ],
       "properties": {
@@ -204,6 +205,44 @@
               "type": "boolean"
             },
             "initialWirePosition": {
+              "type": "boolean"
+            }
+          }
+        },
+        "execution": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "initialWirePosition",
+            "compensationLifecycle",
+            "compensationRequiredForEveryOperation"
+          ],
+          "properties": {
+            "initialWirePosition": {
+              "const": "required",
+              "type": "string"
+            },
+            "compensationLifecycle": {
+              "anyOf": [
+                {
+                  "const": "none",
+                  "type": "string"
+                },
+                {
+                  "const": "authored-linear",
+                  "type": "string"
+                },
+                {
+                  "const": "controller-native-program",
+                  "type": "string"
+                },
+                {
+                  "const": "controller-native-operation",
+                  "type": "string"
+                }
+              ]
+            },
+            "compensationRequiredForEveryOperation": {
               "type": "boolean"
             }
           }
@@ -517,10 +556,68 @@
                   "uniqueItems": true,
                   "type": "array",
                   "items": {
-                    "minLength": 1,
-                    "maxLength": 80,
-                    "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "program.delimiter",
+                        "type": "string"
+                      },
+                      {
+                        "const": "program.ended",
+                        "type": "string"
+                      },
+                      {
+                        "const": "program.paused",
+                        "type": "string"
+                      },
+                      {
+                        "const": "distance.absolute",
+                        "type": "string"
+                      },
+                      {
+                        "const": "units.millimeters",
+                        "type": "string"
+                      },
+                      {
+                        "const": "plane.xy",
+                        "type": "string"
+                      },
+                      {
+                        "const": "work-offset.selected",
+                        "type": "string"
+                      },
+                      {
+                        "const": "origin.wire-position-set",
+                        "type": "string"
+                      },
+                      {
+                        "const": "position.changed",
+                        "type": "string"
+                      },
+                      {
+                        "const": "compensation.prepared",
+                        "type": "string"
+                      },
+                      {
+                        "const": "compensation.left",
+                        "type": "string"
+                      },
+                      {
+                        "const": "compensation.right",
+                        "type": "string"
+                      },
+                      {
+                        "const": "compensation.off",
+                        "type": "string"
+                      },
+                      {
+                        "const": "wire.separated",
+                        "type": "string"
+                      },
+                      {
+                        "const": "wire.threaded",
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "requires": {
@@ -528,10 +625,68 @@
                   "uniqueItems": true,
                   "type": "array",
                   "items": {
-                    "minLength": 1,
-                    "maxLength": 80,
-                    "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "const": "program.delimiter",
+                        "type": "string"
+                      },
+                      {
+                        "const": "program.ended",
+                        "type": "string"
+                      },
+                      {
+                        "const": "program.paused",
+                        "type": "string"
+                      },
+                      {
+                        "const": "distance.absolute",
+                        "type": "string"
+                      },
+                      {
+                        "const": "units.millimeters",
+                        "type": "string"
+                      },
+                      {
+                        "const": "plane.xy",
+                        "type": "string"
+                      },
+                      {
+                        "const": "work-offset.selected",
+                        "type": "string"
+                      },
+                      {
+                        "const": "origin.wire-position-set",
+                        "type": "string"
+                      },
+                      {
+                        "const": "position.changed",
+                        "type": "string"
+                      },
+                      {
+                        "const": "compensation.prepared",
+                        "type": "string"
+                      },
+                      {
+                        "const": "compensation.left",
+                        "type": "string"
+                      },
+                      {
+                        "const": "compensation.right",
+                        "type": "string"
+                      },
+                      {
+                        "const": "compensation.off",
+                        "type": "string"
+                      },
+                      {
+                        "const": "wire.separated",
+                        "type": "string"
+                      },
+                      {
+                        "const": "wire.threaded",
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "evidenceRefs": {

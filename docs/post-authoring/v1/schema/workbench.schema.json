@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wire-edm.local/schemas/wire-edm-workbench-v2.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "format",
+    "schemaVersion",
+    "name",
+    "createdAt",
+    "updatedAt",
+    "preferences",
+    "projects"
+  ],
+  "properties": {
+    "format": {
+      "const": "wire-edm-workbench",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 2,
+      "type": "number"
+    },
+    "name": {
+      "minLength": 1,
+      "maxLength": 160,
+      "type": "string"
+    },
+    "createdAt": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "type": "string"
+    },
+    "updatedAt": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "type": "string"
+    },
+    "preferences": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "importUnits",
+        "export",
+        "recentPlanningMachineId"
+      ],
+      "properties": {
+        "importUnits": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "ask",
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "mode",
+                "unit"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "fixed",
+                  "type": "string"
+                },
+                "unit": {
+                  "anyOf": [
+                    {
+                      "const": "millimeters",
+                      "type": "string"
+                    },
+                    {
+                      "const": "inches",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "export": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "const": "unconfigured",
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "status",
+                "fileExtension",
+                "lineEnding"
+              ],
+              "properties": {
+                "status": {
+                  "const": "configured",
+                  "type": "string"
+                },
+                "fileExtension": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "extension"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "standard",
+                          "type": "string"
+                        },
+                        "extension": {
+                          "anyOf": [
+                            {
+                              "const": "iso",
+                              "type": "string"
+                            },
+                            {
+                              "const": "nc",
+                              "type": "string"
+                            },
+                            {
+                              "const": "gcode",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "extension"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "custom",
+                          "type": "string"
+                        },
+                        "extension": {
+                          "minLength": 1,
+                          "maxLength": 16,
+                          "pattern": "^[A-Za-z0-9]+$",
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "lineEnding": {
+                  "anyOf": [
+                    {
+                      "const": "lf",
+                      "type": "string"
+                    },
+                    {
+                      "const": "crlf",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "recentPlanningMachineId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "maxLength": 80,
+              "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "projects": {
+      "maxItems": 10000,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "path",
+          "sourceKind",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "maxLength": 160,
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^projects/[^\\u0000]+\\.json$",
+            "type": "string"
+          },
+          "sourceKind": {
+            "anyOf": [
+              {
+                "const": "dxf",
+                "type": "string"
+              },
+              {
+                "const": "upid",
+                "type": "string"
+              },
+              {
+                "const": "external-gcode",
+                "type": "string"
+              }
+            ]
+          },
+          "updatedAt": {
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

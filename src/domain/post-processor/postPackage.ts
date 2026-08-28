@@ -1,12 +1,12 @@
 import { Value } from '@sinclair/typebox/value';
 
 import {
-  POST_IDENTIFIER_PATTERN,
   WireEdmPostPackageSchema,
   type DeepReadonly,
   type WireEdmPostPackage,
   type WireEdmPostPackageValue
 } from './postPackageSchema';
+import { POST_IDENTIFIER_PATTERN } from './postFormatPrimitives';
 import {
   collectPostPropertyIssues,
   propertyValueDiagnostic
@@ -25,6 +25,7 @@ export type PostPackageDiagnosticCode =
   | 'POST_PACKAGE_EVIDENCE_NOT_FOUND'
   | 'POST_PACKAGE_EVIDENCE_TARGET_NOT_FOUND'
   | 'POST_PACKAGE_EVIDENCE_SCOPE_MISMATCH'
+  | 'POST_PACKAGE_EXECUTION_CONTRACT_INVALID'
   | 'POST_PACKAGE_PROPERTY_DEFINITION_INVALID'
   | 'POST_PACKAGE_FIXTURE_PROPERTY_INVALID';
 
@@ -93,6 +94,7 @@ function validatePackageSemantics(packageValue: WireEdmPostPackageValue) {
   appendDuplicateIdDiagnostics(diagnostics, packageValue.sources, '/sources');
   appendDuplicateIdDiagnostics(diagnostics, packageValue.evidence, '/evidence');
   appendDuplicateIdDiagnostics(diagnostics, packageValue.fixtures, '/fixtures');
+  appendExecutionContractDiagnostics(diagnostics, packageValue);
 
   const sourceIds = new Set(packageValue.sources.map(({ id }) => id));
   for (const [evidenceIndex, evidence] of packageValue.evidence.entries()) {
@@ -174,6 +176,46 @@ function validatePackageSemantics(packageValue: WireEdmPostPackageValue) {
   }
 
   return diagnostics;
+}
+
+function appendExecutionContractDiagnostics(
+  diagnostics: PostPackageDiagnostic[],
+  packageValue: WireEdmPostPackageValue
+) {
+  const { capabilities, execution } = packageValue.manifest;
+  const compensationDeclared = capabilities.controllerCompensation === 'left-right';
+  const lifecycleDeclared = execution.compensationLifecycle !== 'none';
+  if (compensationDeclared !== lifecycleDeclared) {
+    diagnostics.push({
+      code: 'POST_PACKAGE_EXECUTION_CONTRACT_INVALID',
+      path: '/manifest/execution/compensationLifecycle',
+      message: 'The compensation lifecycle and controllerCompensation capability must either both be enabled or both be disabled.'
+    });
+  }
+  if (execution.compensationRequiredForEveryOperation && !lifecycleDeclared) {
+    diagnostics.push({
+      code: 'POST_PACKAGE_EXECUTION_CONTRACT_INVALID',
+      path: '/manifest/execution/compensationRequiredForEveryOperation',
+      message: 'Compensation cannot be required for every operation when compensationLifecycle is none.'
+    });
+  }
+  if (
+    execution.compensationLifecycle === 'controller-native-program' &&
+    capabilities.operations !== 'single'
+  ) {
+    diagnostics.push({
+      code: 'POST_PACKAGE_EXECUTION_CONTRACT_INVALID',
+      path: '/manifest/capabilities/operations',
+      message: 'A program-scoped native compensation lifecycle must declare single-operation capability.'
+    });
+  }
+  if (!capabilities.initialWirePosition) {
+    diagnostics.push({
+      code: 'POST_PACKAGE_EXECUTION_CONTRACT_INVALID',
+      path: '/manifest/capabilities/initialWirePosition',
+      message: 'Engine API v1 requires every post to consume the explicit initial wire position.'
+    });
+  }
 }
 
 function appendRecordKeyDiagnostics(
