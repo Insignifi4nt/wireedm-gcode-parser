@@ -1,36 +1,29 @@
-import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
-import { normalizeMachineProfile } from '@/domain/machine/machineProfiles';
-import type { WorkbenchProject } from '@/domain/workbench/types';
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
+import type { WorkbenchProjectDocument } from '@/domain/workbench-catalog/workbenchProject';
 
-import { loadEditorProgram, type LoadedEditorProgram } from './loadEditorProgram';
+import {
+  loadEditorProgram,
+  type LoadedEditorProgram,
+  type LoadEditorProgramError
+} from './loadEditorProgram';
 
-export interface OpenWorkbenchProjectResult {
-  project: WorkbenchProject;
-  editorProgram: LoadedEditorProgram;
-}
+export type OpenWorkbenchProjectResult =
+  | {
+      readonly ok: true;
+      readonly project: WorkbenchProjectDocument;
+      readonly editorProgram: LoadedEditorProgram;
+    }
+  | { readonly ok: false; readonly error: LoadEditorProgramError };
 
 export async function openWorkbenchProject(
-  workbench: ConnectedWorkbench,
-  projectPath: string
+  workbench: ConnectedWorkbenchCatalog,
+  projectId: string
 ): Promise<OpenWorkbenchProjectResult> {
-  const projectText = await workbench.adapter.readText(projectPath);
-  if (projectText === null) {
-    throw new Error(`Workbench project file not found: ${projectPath}`);
-  }
-
-  let project: WorkbenchProject;
-  try {
-    project = JSON.parse(projectText) as WorkbenchProject;
-  } catch {
-    throw new Error(`Workbench project file is not valid JSON: ${projectPath}`);
-  }
-  project = {
-    ...project,
-    machine: normalizeMachineProfile(project.machine)
-  };
-
+  const loaded = await loadEditorProgram(workbench, projectId);
+  if (!loaded.ok) return loaded;
   return {
-    project,
-    editorProgram: await loadEditorProgram(workbench, project)
+    ok: true,
+    project: loaded.editorProgram.project,
+    editorProgram: loaded.editorProgram
   };
 }

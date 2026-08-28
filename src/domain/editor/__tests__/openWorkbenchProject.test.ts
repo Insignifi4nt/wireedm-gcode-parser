@@ -1,180 +1,40 @@
 import { describe, expect, it } from 'vitest';
 
-import { importDxfProject } from '@/domain/dxf/importDxfProject';
-import { initializeWorkbenchDirectory } from '@/domain/storage/workbenchStorage';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
+import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
+import { importExternalProgram } from '../importExternalProgram';
 import { openWorkbenchProject } from '../openWorkbenchProject';
 
-class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
-  readonly kind = 'memory';
-  readonly directories = new Set<string>();
-  readonly files = new Map<string, string>();
-
-  constructor(readonly name = 'cache-workbench') {}
-
-  async ensureDirectory(path: string) {
-    this.directories.add(path);
-  }
-
-  async readText(path: string) {
-    return this.files.get(path) ?? null;
-  }
-
-  async writeText(path: string, contents: string) {
-    this.files.set(path, contents);
-  }
-
-  async deleteText(path: string) {
-    this.files.delete(path);
-  }
-}
-
 describe('openWorkbenchProject', () => {
-  it('loads a stored UPID project file as the editor source without generated G-code text', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
+  it('opens a strict project by ID and returns its loaded editor program', async () => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const imported = await importExternalProgram(initialized.workbench, {
+      fileName: 'fixture.nc',
+      text: ['%', 'G0 X0 Y0', 'M02'].join('\n')
     });
-    const imported = await importDxfProject(workbench, {
-      fileName: 'library-part.dxf',
-      text: simpleLineDxf(),
-      now: new Date('2026-05-29T11:00:00.000Z')
+    if (!imported.ok) throw new Error(imported.error.message);
+
+    expect(await openWorkbenchProject(imported.workbench, imported.project.id)).toMatchObject({
+      ok: true,
+      project: imported.project,
+      editorProgram: { model: 'gcode-text', text: 'G0 X0 Y0' }
     });
-    const projectPath = imported.workbench.manifest.projects[0].path;
-
-    const opened = await openWorkbenchProject(imported.workbench, projectPath);
-
-    expect(opened.project.id).toBe('library-part-2026-05-29');
-    expect(opened.editorProgram.filePath).toBe('projects/library-part-2026-05-29/project.json');
-    expect(opened.editorProgram.text).toBe('');
-    expect(opened.editorProgram.parseResult).toBeNull();
-    expect(opened.editorProgram.project?.upid?.document.plan.operations).toHaveLength(1);
-  });
-
-  it('throws a clear error when the stored project file is missing', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter);
-
-    await expect(openWorkbenchProject(workbench, 'projects/missing/project.json')).rejects.toThrow(
-      'Workbench project file not found'
-    );
-  });
-
-  it('normalizes a legacy stored machine while preserving its configured values', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
+    expect(await openWorkbenchProject(imported.workbench, 'projects/fixture.nc')).toMatchObject({
+      ok: false,
+      error: { code: 'WORKBENCH_CATALOG_PROJECT_NOT_FOUND' }
     });
-    const imported = await importDxfProject(workbench, {
-      fileName: 'legacy-machine.dxf',
-      text: simpleLineDxf(),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const projectPath = imported.workbench.manifest.projects[0].path;
-    const legacyProject = JSON.parse(adapter.files.get(projectPath)!) as Record<string, any>;
-    legacyProject.machine = {
-      ...legacyProject.machine,
-      id: 'legacy-wire',
-      name: 'Legacy Wire',
-      templates: {
-        header: 'LEGACY HEADER',
-        footer: 'LEGACY FOOTER'
-      },
-      output: {
-        extension: 'nc',
-        lineEnding: 'lf'
-      },
-      workArea: {
-        widthMm: 640,
-        lengthMm: 480
-      },
-      notes: 'Keep this machine configuration.'
-    };
-    adapter.files.set(projectPath, JSON.stringify(legacyProject));
-
-    const opened = await openWorkbenchProject(imported.workbench, projectPath);
-
-    expect(opened.project.machine).toEqual({
-      id: 'legacy-wire',
-      name: 'Legacy Wire',
-      preferredDxfImportUnit: null,
-      controller: {
-        family: 'generic-iso',
-        postVersion: 1,
-        verification: { status: 'unverified' },
-        blockFormatting: 'spaced',
-        coordinateSystem: 'template-managed',
-        unitsCode: 'omit',
-        planeCode: 'omit',
-        workOffsetCode: 'template-managed',
-        distanceMode: 'G90',
-        arcCenterMode: 'incremental-from-start',
-        programEnd: 'template-managed'
-      },
-      compensation: {
-        supported: false,
-        enabledByDefault: false,
-        offsetSelection: { address: 'D', index: 0 },
-        activation: 'linear-lead',
-        cancellation: 'linear-lead-out',
-        lifecycleScope: 'operation',
-        preActivationCodes: [],
-        validationLeadLengthMm: 2,
-        expectedMaximumOffsetMm: null
-      },
-      threading: {
-        manual: { supported: false, stopCode: 'M00' },
-        automatic: {
-          supported: false,
-          beforePositioningCodes: [],
-          afterPositioningCodes: []
-        }
-      },
-      programStops: {
-        supported: false,
-        code: 'M00',
-        allowedPlacements: [],
-        allowCompensationActive: false
-      },
-      templates: {
-        header: 'LEGACY HEADER',
-        footer: 'LEGACY FOOTER'
-      },
-      output: {
-        extension: 'nc',
-        lineEnding: 'lf',
-        coordinatePrecision: 3
-      },
-      workArea: {
-        widthMm: 640,
-        lengthMm: 480
-      },
-      notes: 'Keep this machine configuration.'
-    });
-    expect(opened.editorProgram.project?.machine).toEqual(opened.project.machine);
   });
 });
 
-function simpleLineDxf() {
-  return [
-    '0',
-    'SECTION',
-    '2',
-    'ENTITIES',
-    '0',
-    'LINE',
-    '10',
-    '0',
-    '20',
-    '0',
-    '11',
-    '10',
-    '21',
-    '0',
-    '0',
-    'ENDSEC',
-    '0',
-    'EOF'
-  ].join('\n');
+class MemoryAdapter implements WorkbenchStorageAdapter {
+  readonly name = 'Editor open';
+  readonly kind = 'memory';
+  readonly files = new Map<string, string>();
+  async ensureDirectory() {}
+  async readText(path: string) { return this.files.get(path) ?? null; }
+  async deleteText(path: string) { this.files.delete(path); }
+  async writeText(path: string, contents: string) { this.files.set(path, contents); }
 }

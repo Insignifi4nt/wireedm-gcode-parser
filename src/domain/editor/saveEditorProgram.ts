@@ -1,193 +1,139 @@
-import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
-import {
-  WORKBENCH_MANIFEST_FILE,
-  type WorkbenchManifest
-} from '@/domain/storage/workbenchStorage';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import {
-  projectUpidDocument,
-  withProjectUpid
-} from '@/domain/upid/projectUpid';
-import type { MachineProfile, WorkbenchProject } from '@/domain/workbench/types';
-import { isPathProjectSourceKind } from '@/domain/workbench/types';
+  readStoredWorkbenchProject,
+  replaceStoredWorkbenchProject,
+  type ReadStoredWorkbenchProjectError,
+  type ReplaceStoredWorkbenchProjectResult
+} from '@/domain/workbench-catalog/workbenchCatalogMutations';
+import {
+  parseWorkbenchProjectDocument,
+  type WorkbenchProjectDocument,
+  type WorkbenchProjectError
+} from '@/domain/workbench-catalog/workbenchProject';
+import { workbenchProjectDocumentPath } from '@/domain/workbench-catalog/workbenchProjectStorage';
 
-import { upidEditorDocumentPath } from './editorProjectPaths';
 import { parseGCodeProgram } from './gcodeParser';
 import type { LoadedEditorProgram } from './loadEditorProgram';
 
-interface SaveEditorProgramBaseInput {
-  filePath: string;
-  now?: Date;
-  project?: WorkbenchProject;
+export type EditorSaveDraft =
+  | {
+      readonly model: 'gcode-text';
+      readonly text: string;
+    }
+  | {
+      readonly model: 'upid-document';
+      readonly pathDocument: PathPlanningDocument;
+    };
+
+export interface SaveEditorProgramInput {
+  readonly projectId: string;
+  readonly draft: EditorSaveDraft;
+  readonly now?: Date;
 }
 
-export type EditorSaveDraft = SaveGCodeEditorDraft | SaveUpidEditorDraft;
+export type SaveEditorProgramError =
+  | WorkbenchProjectError
+  | ReadStoredWorkbenchProjectError
+  | Extract<ReplaceStoredWorkbenchProjectResult, { readonly ok: false }>['error']
+  | {
+      readonly code: 'EDITOR_SAVE_MODEL_MISMATCH';
+      readonly message: string;
+      readonly projectModel: 'gcode-text' | 'upid-document';
+      readonly draftModel: EditorSaveDraft['model'];
+    }
+  | { readonly code: 'EDITOR_SAVE_TIMESTAMP_INVALID'; readonly message: string };
 
-export interface SaveGCodeEditorDraft {
-  machineProfile?: never;
-  model: 'gcode-text';
-  pathDocument?: never;
-  text: string;
-}
-
-export interface SaveUpidEditorDraft {
-  machineProfile?: MachineProfile;
-  model: 'upid-document';
-  pathDocument: PathPlanningDocument;
-  text?: never;
-}
-
-export type SaveEditorProgramInput =
-  | (SaveEditorProgramBaseInput & SaveGCodeEditorDraft)
-  | (SaveEditorProgramBaseInput & SaveUpidEditorDraft);
-
-type SaveUpidEditorProgramInput = SaveEditorProgramBaseInput & SaveUpidEditorDraft;
-
-export interface SaveEditorProgramResult {
-  editorProgram: LoadedEditorProgram;
-  workbench: ConnectedWorkbench;
-}
+export type SaveEditorProgramResult =
+  | {
+      readonly ok: true;
+      readonly editorProgram: LoadedEditorProgram;
+      readonly project: WorkbenchProjectDocument;
+      readonly workbench: ConnectedWorkbenchCatalog;
+    }
+  | { readonly ok: false; readonly error: SaveEditorProgramError };
 
 export async function saveEditorProgram(
-  workbench: ConnectedWorkbench,
+  workbench: ConnectedWorkbenchCatalog,
   input: SaveEditorProgramInput
 ): Promise<SaveEditorProgramResult> {
-  if (!isSaveEditorProgramModel(input)) {
-    throw new Error('Editor save model is required.');
-  }
-
-  if (input.model === 'upid-document' && !input.project) {
-    throw new Error('UPID path saves require a workbench project.');
-  }
-
-  const inputProject =
-    input.model === 'upid-document' && input.project && input.machineProfile
-      ? {
-          ...input.project,
-          machine: structuredClone(input.machineProfile)
-        }
-      : input.project;
-  const projectPathDocument = inputProject ? projectUpidDocument(inputProject) : null;
-  if (inputProject && isPathProjectSourceKind(inputProject.source.kind) && !projectPathDocument) {
-    throw new Error(
-      inputProject.source.kind === 'dxf'
-        ? 'DXF projects must contain a UPID document.'
-        : 'UPID projects must contain a UPID document.'
-    );
-  }
-
-  if (input.model === 'upid-document' && inputProject && !projectPathDocument) {
-    throw new Error('UPID path saves require an existing UPID project.');
-  }
-
-  if (projectPathDocument && input.model !== 'upid-document') {
-    throw new Error('UPID path projects must be saved with a path document.');
-  }
-
-  const savesPathDocument = input.model === 'upid-document';
-  const textToSave = input.model === 'gcode-text' ? input.text : '';
-
-  if (!savesPathDocument) {
-    const existingText = await workbench.adapter.readText(input.filePath);
-    if (existingText === null) {
-      throw new Error(`Editor program file not found: ${input.filePath}`);
-    }
-
-    await workbench.adapter.writeText(input.filePath, textToSave);
-  }
-
-  const projectSave = savesPathDocument
-    ? await saveProjectPathState(workbench, { ...input, project: inputProject })
-    : null;
-  const updatedWorkbench = projectSave?.workbench ?? workbench;
-  const updatedProject = projectSave?.project ?? inputProject;
-  const editorFilePath =
-    savesPathDocument && updatedProject
-      ? upidEditorDocumentPath(updatedWorkbench, updatedProject)
-      : input.filePath;
-  const editorProgram: LoadedEditorProgram =
-    input.model === 'upid-document'
-      ? {
-          filePath: editorFilePath,
-          model: 'upid-document',
-          pathDocument: updatedProject?.upid?.document ?? input.pathDocument,
-          parseResult: null,
-          project: updatedProject,
-          text: ''
-        }
-      : {
-          filePath: editorFilePath,
-          model: 'gcode-text',
-          parseResult: parseGCodeProgram(textToSave),
-          project: updatedProject,
-          text: textToSave
-        };
-
-  return {
-    workbench: updatedWorkbench,
-    editorProgram
-  };
-}
-
-async function saveProjectPathState(
-  workbench: ConnectedWorkbench,
-  input: SaveUpidEditorProgramInput
-) {
-  if (!input.project) return null;
-
-  const timestamp = (input.now ?? new Date()).toISOString();
-  const projectEntry = workbench.manifest.projects.find((entry) => entry.id === input.project?.id);
-  if (!projectEntry) {
-    throw new Error(`Project index entry not found: ${input.project.id}`);
-  }
-
-  let nextProject: WorkbenchProject = {
-    ...input.project,
-    updatedAt: timestamp
-  };
-
-  nextProject = withProjectUpid(
-    {
-      ...nextProject,
-      editor: {
-        ...nextProject.editor,
-        activeFilePath: null
+  const read = await readStoredWorkbenchProject(workbench, input.projectId);
+  if (!read.ok) return read;
+  const projectModel = read.project.content.kind === 'upid-document'
+    ? 'upid-document'
+    : 'gcode-text';
+  if (projectModel !== input.draft.model) {
+    return {
+      ok: false,
+      error: {
+        code: 'EDITOR_SAVE_MODEL_MISMATCH',
+        message: `Project ${input.projectId} uses ${projectModel}, not ${input.draft.model}.`,
+        projectModel,
+        draftModel: input.draft.model
       }
-    },
-    input.pathDocument
-  );
+    };
+  }
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) {
+    return {
+      ok: false,
+      error: { code: 'EDITOR_SAVE_TIMESTAMP_INVALID', message: 'Editor save timestamp is invalid.' }
+    };
+  }
+  const updatedAt = now.toISOString();
+  const nextValue = input.draft.model === 'upid-document'
+    ? {
+        ...read.project,
+        updatedAt,
+        content: {
+          kind: 'upid-document' as const,
+          document: jsonSnapshot(input.draft.pathDocument)
+        }
+      }
+    : { ...read.project, updatedAt };
+  const parsed = parseWorkbenchProjectDocument(JSON.stringify(nextValue));
+  if (!parsed.ok) return parsed;
+  const ownedFileChanges = input.draft.model === 'gcode-text' &&
+    parsed.project.content.kind === 'external-gcode'
+    ? [{
+        kind: 'write' as const,
+        path: parsed.project.content.activeFilePath,
+        contents: input.draft.text
+      }]
+    : [];
+  const replaced = await replaceStoredWorkbenchProject(workbench, {
+    project: parsed.project,
+    ownedFileChanges
+  });
+  if (!replaced.ok) return replaced;
 
-  await workbench.adapter.writeText(projectEntry.path, JSON.stringify(nextProject, null, 2));
-
-  const updatedManifest: WorkbenchManifest = {
-    ...workbench.manifest,
-    updatedAt: timestamp,
-    projects: workbench.manifest.projects.map((entry) =>
-      entry.id === nextProject.id
-        ? {
-            ...entry,
-            name: nextProject.name,
-            sourceKind: nextProject.source.kind,
-            updatedAt: timestamp
-          }
-        : entry
-    )
-  };
-
-  await workbench.adapter.writeText(
-    WORKBENCH_MANIFEST_FILE,
-    JSON.stringify(updatedManifest, null, 2)
-  );
-
+  const editorProgram: LoadedEditorProgram = input.draft.model === 'upid-document'
+    ? {
+        filePath: workbenchProjectDocumentPath(replaced.project.id),
+        model: 'upid-document',
+        pathDocument: (replaced.project.content as {
+          readonly kind: 'upid-document';
+          readonly document: PathPlanningDocument;
+        }).document,
+        parseResult: null,
+        text: '',
+        project: replaced.project
+      }
+    : {
+        filePath: ownedFileChanges[0].path,
+        model: 'gcode-text',
+        parseResult: parseGCodeProgram(input.draft.text),
+        text: input.draft.text,
+        project: replaced.project
+      };
   return {
-    project: nextProject,
-    workbench: {
-      ...workbench,
-      manifest: updatedManifest
-    }
+    ok: true,
+    editorProgram,
+    project: replaced.project,
+    workbench: replaced.workbench
   };
 }
 
-function isSaveEditorProgramModel(input: SaveEditorProgramInput) {
-  return input.model === 'gcode-text' || input.model === 'upid-document';
+function jsonSnapshot<Value>(value: Value): Value {
+  return JSON.parse(JSON.stringify(value)) as Value;
 }

@@ -1,257 +1,159 @@
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
-import { initializeProjectCompensationIntents } from '@/domain/compensation/intent';
-import { normalizeMachineProfile } from '@/domain/machine/machineProfiles';
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import {
-  WORKBENCH_MANIFEST_FILE,
-  type ConnectedWorkbench,
-  type WorkbenchManifest
-} from '@/domain/storage/workbenchStorage';
-import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
-import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
-import { baseNameFromFileName, uniqueProjectId } from '@/domain/workbench/projectNaming';
-import type { WorkbenchProject } from '@/domain/workbench/types';
-import { createProjectUpid } from '@/domain/upid/projectUpid';
+  addStoredWorkbenchProject,
+  type AddStoredWorkbenchProjectResult
+} from '@/domain/workbench-catalog/workbenchCatalogMutations';
+import { importedProjectIdentity } from '@/domain/workbench-catalog/importedProjectIdentity';
+import {
+  createWorkbenchProjectDocument,
+  type WorkbenchProjectDocument,
+  type WorkbenchProjectError
+} from '@/domain/workbench-catalog/workbenchProject';
 
-import {
-  buildDxfImportUnitCandidates,
-  type DxfImportUnitCandidate
-} from './dxfImportUnits';
+import { buildDxfImportUnitCandidates, type DxfImportUnitCandidate } from './dxfImportUnits';
 import { dxfEntitiesToUpidDocument } from './dxfToUpid';
-import { parseDxf } from './parseDxf';
-import type { DxfImportPreparation, DxfImportSelection } from './prepareDxfProjectImport';
+import {
+  prepareDxfProjectImport,
+  type DxfImportPreparation,
+  type DxfImportPreparationError
+} from './prepareDxfProjectImport';
 import type { DxfParseResult } from './types';
 
 export interface ImportDxfProjectInput {
-  fileName: string;
-  text: string;
-  now?: Date;
+  readonly fileName: string;
+  readonly text: string;
+  readonly unitCandidateId: string;
+  readonly declaredUnitOverrideAcknowledged: boolean;
+  readonly now?: Date;
 }
 
-export interface ImportDxfProjectResult {
-  workbench: ConnectedWorkbench;
-  project: WorkbenchProject;
-  parseResult: DxfParseResult;
-  entityCount: number;
-  pathDocument: PathPlanningDocument;
-  pathDiagnostics: PathDiagnostic[];
+export interface DxfImportDecision {
+  readonly unitCandidateId: string;
+  readonly confirmed: boolean;
+  readonly declaredUnitOverrideAcknowledged: boolean;
 }
 
-export interface DxfImportDecision extends DxfImportSelection {
-  confirmed: boolean;
-  declaredUnitOverrideAcknowledged: boolean;
+export interface ImportedDxfProject {
+  readonly workbench: ConnectedWorkbenchCatalog;
+  readonly project: WorkbenchProjectDocument;
+  readonly parseResult: DxfParseResult;
+  readonly entityCount: number;
+  readonly pathDocument: PathPlanningDocument;
+  readonly pathDiagnostics: readonly PathDiagnostic[];
 }
 
-interface DxfCommitState {
-  latestManifest?: WorkbenchManifest;
-  reservedProjectIds: Set<string>;
-  tail: Promise<void>;
-}
+export type DxfProjectImportError =
+  | DxfImportPreparationError
+  | WorkbenchProjectError
+  | Extract<AddStoredWorkbenchProjectResult, { readonly ok: false }>['error']
+  | {
+      readonly code:
+        | 'DXF_IMPORT_CONFIRMATION_REQUIRED'
+        | 'DXF_IMPORT_DECLARED_UNIT_OVERRIDE_UNACKNOWLEDGED'
+        | 'DXF_IMPORT_GEOMETRY_REQUIRED';
+      readonly message: string;
+    }
+  | {
+      readonly code: 'DXF_IMPORT_UNIT_CANDIDATE_NOT_FOUND';
+      readonly message: string;
+      readonly candidateId: string;
+    }
+  | {
+      readonly code: 'DXF_IMPORT_REVIEW_CHANGED';
+      readonly message: string;
+      readonly candidateId: string;
+    };
 
-const dxfCommitStates = new WeakMap<WorkbenchStorageAdapter, DxfCommitState>();
+export type ImportDxfProjectResult =
+  | ({ readonly ok: true } & ImportedDxfProject)
+  | { readonly ok: false; readonly error: DxfProjectImportError };
 
 export async function commitDxfProjectImport(
-  workbench: ConnectedWorkbench,
+  workbench: ConnectedWorkbenchCatalog,
   preparation: DxfImportPreparation,
   decision: DxfImportDecision
 ): Promise<ImportDxfProjectResult> {
   if (!decision.confirmed) {
-    throw new Error('DXF import must be confirmed before it can be committed.');
+    return failure('DXF_IMPORT_CONFIRMATION_REQUIRED', 'DXF import requires explicit confirmation.');
   }
-
-  const storedMachine = workbench.manifest.machineProfiles.find(
-    ({ id }) => id === decision.machineProfileId
-  );
-  if (!storedMachine) {
-    throw new Error(
-      `Selected machine profile is no longer available: ${decision.machineProfileId}.`
-    );
-  }
-  const reviewedMachine = preparation.machineProfiles.find(
-    ({ id }) => id === decision.machineProfileId
-  );
-  if (!reviewedMachine) {
-    throw new Error(
-      `Selected machine profile was not part of DXF import review: ${decision.machineProfileId}.`
-    );
-  }
-  const machineProfile = normalizeMachineProfile(structuredClone(storedMachine));
-  const reviewedMachineProfile = normalizeMachineProfile(structuredClone(reviewedMachine));
-  if (!sameReviewSemantics(machineProfile, reviewedMachineProfile)) {
-    throw new Error('Selected machine profile changed after DXF import review.');
-  }
-  const currentUnitCandidate = buildDxfImportUnitCandidates(
+  const reviewed = preparation.unitCandidates.find(({ id }) => id === decision.unitCandidateId);
+  if (!reviewed) return candidateNotFound(decision.unitCandidateId);
+  const current = buildDxfImportUnitCandidates(
     preparation.parseResult.unitDeclaration,
-    machineProfile
+    workbench.manifest.preferences.importUnits
   ).find(({ id }) => id === decision.unitCandidateId);
-  const reviewedUnitCandidates = decision.machineProfileId === preparation.activeMachineProfileId
-    ? preparation.unitCandidates
-    : buildDxfImportUnitCandidates(
-        preparation.parseResult.unitDeclaration,
-        reviewedMachineProfile
-      );
-  const reviewedUnitCandidate = reviewedUnitCandidates.find(
-    ({ id }) => id === decision.unitCandidateId
-  );
-  if (!currentUnitCandidate || !reviewedUnitCandidate) {
-    throw new Error(
-      `DXF unit candidate is no longer available for selected machine: ${decision.unitCandidateId}.`
+  if (!current || JSON.stringify(current) !== JSON.stringify(reviewed)) {
+    return {
+      ok: false,
+      error: {
+        code: 'DXF_IMPORT_REVIEW_CHANGED',
+        message: `DXF unit candidate changed after review: ${decision.unitCandidateId}.`,
+        candidateId: decision.unitCandidateId
+      }
+    };
+  }
+  const declaration = preparation.parseResult.unitDeclaration;
+  const declaredScale = declaration.status === 'recognized'
+    ? declaration.units.scaleToMillimeters
+    : null;
+  const overridesDeclaration = declaredScale !== null && declaredScale !== current.scaleToMillimeters;
+  if (overridesDeclaration && !decision.declaredUnitOverrideAcknowledged) {
+    return failure(
+      'DXF_IMPORT_DECLARED_UNIT_OVERRIDE_UNACKNOWLEDGED',
+      'Changing declared DXF units requires explicit acknowledgement.'
     );
   }
-  if (!sameReviewSemantics(currentUnitCandidate, reviewedUnitCandidate)) {
-    throw new Error('Selected DXF unit candidate changed after import review.');
-  }
 
-  const declaration = preparation.parseResult.unitDeclaration;
-  const declaredUnits = declaration.status === 'recognized' ? declaration.units : null;
-  const overridesDeclaration =
-    declaredUnits?.scaleToMillimeters != null &&
-    currentUnitCandidate.scaleToMillimeters !== declaredUnits.scaleToMillimeters;
-  if (overridesDeclaration && !decision.declaredUnitOverrideAcknowledged) {
-    throw new Error('Changing declared DXF units requires explicit acknowledgement.');
-  }
-
-  const timestamp = preparation.preparedAt;
-  const now = new Date(timestamp);
-  if (Number.isNaN(now.getTime())) {
-    throw new Error('DXF import preparation time is invalid.');
-  }
-
-  return serializeDxfCommit(workbench.adapter, (state) => commitValidatedDxfProject({
-    workbench,
-    preparation,
-    machineProfile,
-    unitCandidate: currentUnitCandidate,
-    declaredUnits,
-    overridesDeclaration,
-    timestamp,
-    now,
-    state
-  }));
-}
-
-async function commitValidatedDxfProject(input: {
-  workbench: ConnectedWorkbench;
-  preparation: DxfImportPreparation;
-  machineProfile: WorkbenchProject['machine'];
-  unitCandidate: DxfImportUnitCandidate;
-  declaredUnits: DxfParseResult['units'] | null;
-  overridesDeclaration: boolean;
-  timestamp: string;
-  now: Date;
-  state: DxfCommitState;
-}): Promise<ImportDxfProjectResult> {
-  const {
-    workbench,
-    preparation,
-    machineProfile,
-    unitCandidate,
-    declaredUnits,
-    overridesDeclaration,
-    timestamp,
-    now,
-    state
-  } = input;
-  const manifest = mergeCommitManifest(workbench.manifest, state.latestManifest);
-  const projectName = baseNameFromFileName(preparation.fileName, {
-    fallback: 'DXF Import',
-    stripExtension: /\.dxf$/i
-  });
-  const initialProject = createWorkbenchProject({
-    name: projectName,
-    sourceKind: 'dxf',
-    now
-  });
-  const projectId = uniqueProjectId(
-    initialProject.id,
-    [
-      ...manifest.projects.map(({ id }) => id),
-      ...state.reservedProjectIds
-    ]
-  );
-  state.reservedProjectIds.add(projectId);
-  const project = projectId === initialProject.id
-    ? initialProject
-    : createWorkbenchProject({
-        id: projectId,
-        name: projectName,
-        sourceKind: 'dxf',
-        now
-      });
-  const overrideWarning = overridesDeclaration
-    ? `Declared DXF units "${declaredUnits!.label}" were overridden with confirmed units "${unitCandidate.label}".`
-    : null;
-  const importWarnings = [
-    ...preparation.parseResult.warnings,
-    ...(overrideWarning ? [overrideWarning] : [])
-  ];
-  const importedPathDocument = dxfEntitiesToUpidDocument(preparation.parseResult.entities, {}, {
+  const identity = importedProjectIdentity({
     fileName: preparation.fileName,
-    importedAt: timestamp,
-    importWarnings,
-    projectId: project.id,
-    unitDeclaration: preparation.parseResult.unitDeclaration,
-    appliedUnits: {
-      label: unitCandidate.label,
-      scaleToMillimeters: unitCandidate.scaleToMillimeters,
-      basis: unitCandidate.source === 'dxf-declared' ? 'dxf-declared' : 'user-confirmed',
-      confirmed: true,
-      confirmedAt: timestamp,
-      ...(unitCandidate.suggestion
-        ? { suggestion: { ...unitCandidate.suggestion } }
-        : {})
-    },
-    ...(preparation.parseResult.drawing
-      ? { drawing: preparation.parseResult.drawing }
-      : {}),
-    ...(preparation.parseResult.units ? { units: preparation.parseResult.units } : {})
+    fallbackName: 'DXF Import',
+    stripExtension: /\.dxf$/i,
+    timestamp: preparation.preparedAt,
+    existingIds: workbench.manifest.projects.map(({ id }) => id)
   });
-  const pathDocument = initializeProjectCompensationIntents(
-    importedPathDocument,
-    machineProfile
-  );
-  if (pathDocument.segments.length === 0 || pathDocument.plan.operations.length === 0) {
-    throw new Error('DXF did not contain valid cut geometry.');
+  let pathDocument: PathPlanningDocument;
+  try {
+    pathDocument = jsonSnapshot(dxfEntitiesToUpidDocument(
+      preparation.parseResult.entities,
+      {},
+      sourceMetadata(preparation, identity.id, current, overridesDeclaration)
+    ));
+  } catch (error) {
+    return failure(
+      'DXF_IMPORT_GEOMETRY_REQUIRED',
+      error instanceof Error ? error.message : String(error)
+    );
   }
-
-  const sourcePath = `imports/${project.id}.dxf`;
-  const projectDirectory = `projects/${project.id}`;
-  const projectPath = `${projectDirectory}/project.json`;
-  project.machine = machineProfile;
-  project.upid = createProjectUpid(project, pathDocument);
-  project.source.files = [{
-    name: `${project.id}.dxf`,
-    path: sourcePath,
-    kind: 'dxf',
-    createdAt: timestamp
-  }];
-
-  const updatedManifest: WorkbenchManifest = {
-    ...manifest,
-    updatedAt: timestamp,
-    projects: [
-      ...manifest.projects,
-      {
-        id: project.id,
-        name: project.name,
-        path: projectPath,
-        sourceKind: 'dxf',
-        updatedAt: timestamp
-      }
-    ]
-  };
-
-  await workbench.adapter.ensureDirectory(projectDirectory);
-  await workbench.adapter.writeText(sourcePath, preparation.text);
-  await workbench.adapter.writeText(projectPath, JSON.stringify(project, null, 2));
-  await workbench.adapter.writeText(
-    WORKBENCH_MANIFEST_FILE,
-    JSON.stringify(updatedManifest, null, 2)
-  );
-  state.latestManifest = updatedManifest;
-
+  if (pathDocument.segments.length === 0 || pathDocument.plan.operations.length === 0) {
+    return failure('DXF_IMPORT_GEOMETRY_REQUIRED', 'DXF did not contain valid cut geometry.');
+  }
+  const sourcePath = `imports/${identity.id}.dxf`;
+  const created = createWorkbenchProjectDocument({
+    id: identity.id,
+    name: identity.name,
+    source: {
+      kind: 'dxf',
+      files: [{
+        name: preparation.fileName,
+        path: sourcePath,
+        kind: 'dxf',
+        createdAt: preparation.preparedAt
+      }]
+    },
+    content: { kind: 'upid-document', document: pathDocument },
+    now: new Date(preparation.preparedAt)
+  });
+  if (!created.ok) return created;
+  const stored = await addStoredWorkbenchProject(workbench, {
+    project: created.project,
+    ownedFiles: [{ path: sourcePath, contents: preparation.text }]
+  });
+  if (!stored.ok) return stored;
   return {
-    workbench: { ...workbench, manifest: updatedManifest },
-    project,
+    ok: true,
+    workbench: stored.workbench,
+    project: stored.project,
     parseResult: preparation.parseResult,
     entityCount: preparation.entityCount,
     pathDocument,
@@ -259,158 +161,80 @@ async function commitValidatedDxfProject(input: {
   };
 }
 
-function serializeDxfCommit<T>(
-  adapter: WorkbenchStorageAdapter,
-  action: (state: DxfCommitState) => Promise<T>
-): Promise<T> {
-  let state = dxfCommitStates.get(adapter);
-  if (!state) {
-    state = {
-      reservedProjectIds: new Set<string>(),
-      tail: Promise.resolve()
-    };
-    dxfCommitStates.set(adapter, state);
-  }
-  const result = state.tail.then(() => action(state!));
-  state.tail = result.then(() => undefined, () => undefined);
-  return result;
-}
-
-function mergeCommitManifest(
-  current: WorkbenchManifest,
-  latest: WorkbenchManifest | undefined
-): WorkbenchManifest {
-  if (!latest) return current;
-  const projects = new Map(latest.projects.map((project) => [project.id, project]));
-  current.projects.forEach((project) => projects.set(project.id, project));
-  return {
-    ...current,
-    projects: [...projects.values()]
-  };
-}
-
-function sameReviewSemantics(left: unknown, right: unknown) {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
 export async function importDxfProject(
-  workbench: ConnectedWorkbench,
+  workbench: ConnectedWorkbenchCatalog,
   input: ImportDxfProjectInput
 ): Promise<ImportDxfProjectResult> {
-  const timestamp = (input.now ?? new Date()).toISOString();
-  const projectName = baseNameFromFileName(input.fileName, {
-    fallback: 'DXF Import',
-    stripExtension: /\.dxf$/i
+  const prepared = prepareDxfProjectImport(workbench, input);
+  if (!prepared.ok) return prepared;
+  return commitDxfProjectImport(workbench, prepared.preparation, {
+    unitCandidateId: input.unitCandidateId,
+    confirmed: true,
+    declaredUnitOverrideAcknowledged: input.declaredUnitOverrideAcknowledged
   });
-  const initialProject = createWorkbenchProject({
-    name: projectName,
-    sourceKind: 'dxf',
-    now: input.now
-  });
-  const projectId = uniqueProjectId(
-    initialProject.id,
-    workbench.manifest.projects.map((project) => project.id)
-  );
-  const project =
-    projectId === initialProject.id
-      ? initialProject
-      : createWorkbenchProject({
-          id: projectId,
-          name: projectName,
-          sourceKind: 'dxf',
-          now: input.now
-        });
+}
 
-  const parseResult = parseDxf(input.text);
-  if (parseResult.entities.length === 0) {
-    throw new Error('DXF did not contain supported cut geometry.');
-  }
-
-  const pathDocument = dxfEntitiesToUpidDocument(parseResult.entities, {}, {
-    fileName: input.fileName,
-    importedAt: timestamp,
-    importWarnings: parseResult.warnings,
-    projectId: project.id,
-    unitDeclaration: parseResult.unitDeclaration,
-    appliedUnits: legacyAppliedUnits(parseResult),
-    ...(parseResult.drawing ? { drawing: parseResult.drawing } : {}),
-    ...(parseResult.units ? { units: parseResult.units } : {})
-  });
-  if (pathDocument.segments.length === 0 || pathDocument.plan.operations.length === 0) {
-    throw new Error('DXF did not contain valid cut geometry.');
-  }
-
-  const machineProfile = workbench.activeMachineProfile;
-
-  const sourcePath = `imports/${project.id}.dxf`;
-  const projectDirectory = `projects/${project.id}`;
-  const projectPath = `${projectDirectory}/project.json`;
-
-  project.machine = normalizeMachineProfile(machineProfile);
-  project.upid = createProjectUpid(project, pathDocument);
-  project.source.files = [
-    {
-      name: `${project.id}.dxf`,
-      path: sourcePath,
-      kind: 'dxf',
-      createdAt: timestamp
-    }
-  ];
-
-  await workbench.adapter.ensureDirectory(projectDirectory);
-  await workbench.adapter.writeText(sourcePath, input.text);
-  await workbench.adapter.writeText(projectPath, JSON.stringify(project, null, 2));
-
-  const updatedManifest: WorkbenchManifest = {
-    ...workbench.manifest,
-    updatedAt: timestamp,
-    projects: [
-      ...workbench.manifest.projects.filter((entry) => entry.id !== project.id),
-      {
-        id: project.id,
-        name: project.name,
-        path: projectPath,
-        sourceKind: 'dxf',
-        updatedAt: timestamp
-      }
-    ]
-  };
-
-  await workbench.adapter.writeText(
-    WORKBENCH_MANIFEST_FILE,
-    JSON.stringify(updatedManifest, null, 2)
-  );
-
+function sourceMetadata(
+  preparation: DxfImportPreparation,
+  projectId: string,
+  candidate: DxfImportUnitCandidate,
+  overridesDeclaration: boolean
+) {
+  const declared = preparation.parseResult.unitDeclaration.status === 'recognized'
+    ? preparation.parseResult.unitDeclaration.units
+    : null;
+  const overrideWarning = overridesDeclaration
+    ? `Declared DXF units "${declared?.label}" were overridden with confirmed units "${candidate.label}".`
+    : null;
   return {
-    workbench: {
-      ...workbench,
-      manifest: updatedManifest
-    },
-    project,
-    parseResult,
-    entityCount: parseResult.entities.length,
-    pathDocument,
-    pathDiagnostics: pathDocument.diagnostics
+    fileName: preparation.fileName,
+    importedAt: preparation.preparedAt,
+    importWarnings: [
+      ...preparation.parseResult.warnings,
+      ...(overrideWarning ? [overrideWarning] : [])
+    ],
+    projectId,
+    unitDeclaration: preparation.parseResult.unitDeclaration,
+    appliedUnits: candidate.source === 'dxf-declared'
+      ? {
+          label: candidate.label,
+          scaleToMillimeters: candidate.scaleToMillimeters,
+          basis: 'dxf-declared' as const,
+          confirmed: true
+        }
+      : {
+          label: candidate.label,
+          scaleToMillimeters: candidate.scaleToMillimeters,
+          basis: 'user-confirmed' as const,
+          confirmed: true,
+          confirmedAt: preparation.preparedAt
+        },
+    ...(preparation.parseResult.drawing ? { drawing: preparation.parseResult.drawing } : {}),
+    ...(preparation.parseResult.units ? { units: preparation.parseResult.units } : {})
   };
 }
 
-function legacyAppliedUnits(parseResult: DxfParseResult) {
-  const declaration = parseResult.unitDeclaration;
-  if (
-    declaration.status === 'recognized' &&
-    declaration.units.scaleToMillimeters != null
-  ) {
-    return {
-      label: declaration.units.label,
-      scaleToMillimeters: declaration.units.scaleToMillimeters,
-      basis: 'dxf-declared' as const,
-      confirmed: true
-    };
-  }
+function candidateNotFound(candidateId: string): ImportDxfProjectResult {
   return {
-    label: 'millimeters',
-    scaleToMillimeters: 1,
-    basis: 'legacy-assumed' as const,
-    confirmed: false
+    ok: false,
+    error: {
+      code: 'DXF_IMPORT_UNIT_CANDIDATE_NOT_FOUND',
+      message: `DXF unit candidate was not reviewed: ${candidateId}.`,
+      candidateId
+    }
   };
+}
+
+function failure(
+  code:
+    | 'DXF_IMPORT_CONFIRMATION_REQUIRED'
+    | 'DXF_IMPORT_DECLARED_UNIT_OVERRIDE_UNACKNOWLEDGED'
+    | 'DXF_IMPORT_GEOMETRY_REQUIRED',
+  message: string
+): { readonly ok: false; readonly error: DxfProjectImportError } {
+  return { ok: false, error: { code, message } };
+}
+
+function jsonSnapshot<Value>(value: Value): Value {
+  return JSON.parse(JSON.stringify(value)) as Value;
 }

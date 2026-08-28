@@ -1,567 +1,104 @@
 import { describe, expect, it } from 'vitest';
 
 import { importDxfProject } from '@/domain/dxf/importDxfProject';
-import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
-import { setManualCompensationIntent } from '@/domain/compensation/intent';
-import type { DxfEntity } from '@/domain/dxf/types';
-import {
-  reversePathOperation,
-  setPathOperationClassification
-} from '@/domain/path-editor/pathDocumentOperations';
-import { initializeWorkbenchDirectory } from '@/domain/storage/workbenchStorage';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
+import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import { importExternalProgram } from '../importExternalProgram';
 import { saveEditorProgram } from '../saveEditorProgram';
 
-class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
-  readonly kind = 'memory';
-  readonly directories = new Set<string>();
-  readonly files = new Map<string, string>();
-
-  constructor(readonly name = 'cache-workbench') {}
-
-  async ensureDirectory(path: string) {
-    this.directories.add(path);
-  }
-
-  async readText(path: string) {
-    return this.files.get(path) ?? null;
-  }
-
-  async writeText(path: string, contents: string) {
-    this.files.set(path, contents);
-  }
-
-  async deleteText(path: string) {
-    this.files.delete(path);
-  }
-}
-
 describe('saveEditorProgram', () => {
-  it('overwrites an existing editor file and returns a fresh parse result', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
+  it('replaces only the catalog-owned editable external file and strict project document', async () => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const originalText = ['%', 'G0 X0 Y0', 'M02'].join('\n');
+    const imported = await importExternalProgram(initialized.workbench, {
+      fileName: 'fixture.iso',
+      text: originalText,
+      now: new Date('2026-08-28T09:00:00.000Z')
     });
-    const imported = await importExternalProgram(workbench, {
-      fileName: 'fixture.nc',
-      text: ['%', 'G90 G21', 'G0 X0 Y0', 'G1 X5 Y0', 'M30', '%'].join('\n'),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const updatedText = [
-      '%',
-      'G90 G21',
-      'G0 X0 Y0',
-      'G1 X12 Y4',
-      'G2 X16 Y4 I2 J0',
-      'M30',
-      '%'
-    ].join('\n');
+    if (!imported.ok) throw new Error(imported.error.message);
 
     const saved = await saveEditorProgram(imported.workbench, {
-      filePath: imported.editorProgram.filePath,
-      model: 'gcode-text',
-      text: updatedText
+      projectId: imported.project.id,
+      draft: { model: 'gcode-text', text: 'G0 X2 Y3' },
+      now: new Date('2026-08-28T10:00:00.000Z')
     });
+    if (!saved.ok) throw new Error(saved.error.message);
 
-    expect(adapter.files.get(imported.editorProgram.filePath)).toBe(updatedText);
-    expect(saved.editorProgram).toMatchObject({
-      filePath: imported.editorProgram.filePath,
-      model: 'gcode-text',
-      text: updatedText
-    });
-    expect(saved.editorProgram.parseResult).not.toBeNull();
-    expect(saved.editorProgram.parseResult?.stats.linearMoves).toBe(2);
-    expect(saved.editorProgram.parseResult?.stats.arcMoves).toBe(1);
-    expect(saved.editorProgram.parseResult?.path.at(1)).toMatchObject({
-      type: 'cut',
-      x: 12,
-      y: 4,
-      line: 4
-    });
+    const [originalFile, editableFile] = saved.project.source.files;
+    expect(adapter.files.get(originalFile.path)).toBe(originalText);
+    expect(adapter.files.get(editableFile.path)).toBe('G0 X2 Y3');
+    expect(saved.project.updatedAt).toBe('2026-08-28T10:00:00.000Z');
+    expect(saved.editorProgram).toMatchObject({ model: 'gcode-text', text: 'G0 X2 Y3' });
   });
 
-  it('does not cache generated body state while saving external editor text', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
+  it('replaces a UPID document without accepting machine or post draft state', async () => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const imported = await importDxfProject(initialized.workbench, {
+      fileName: 'path.dxf',
+      text: lineDxf(),
+      unitCandidateId: 'millimeters',
+      declaredUnitOverrideAcknowledged: false
     });
-    const imported = await importExternalProgram(workbench, {
-      fileName: 'external-edit.nc',
-      text: ['%', 'G90 G21', 'G0 X0 Y0', 'G1 X5 Y0', 'M30', '%'].join('\n'),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const updatedText = ['%', 'G90 G21', 'G0 X0 Y0', 'G1 X12 Y4', 'M30', '%'].join('\n');
-
-    const saved = await saveEditorProgram(imported.workbench, {
-      filePath: imported.editorProgram.filePath,
-      model: 'gcode-text',
-      project: imported.project,
-      text: updatedText
-    });
-
-    const storedProject = JSON.parse(
-      adapter.files.get('projects/external-edit-2026-05-29/project.json') || '{}'
-    );
-
-    expect(adapter.files.get(imported.editorProgram.filePath)).toBe(updatedText);
-    expect('generated' in storedProject).toBe(false);
-    expect('generated' in (saved.editorProgram.project ?? {})).toBe(false);
-  });
-
-  it('rejects saves to files that are not already part of the workbench', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-
-    await expect(
-      saveEditorProgram(workbench, {
-        filePath: 'imports/missing.nc',
-        model: 'gcode-text',
-        text: 'G0 X0 Y0'
-      })
-    ).rejects.toThrow('Editor program file not found: imports/missing.nc');
-    expect(adapter.files.has('imports/missing.nc')).toBe(false);
-  });
-
-  it('rejects unmodeled editor save payloads', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const imported = await importExternalProgram(workbench, {
-      fileName: 'unmodeled.nc',
-      text: 'G0 X0 Y0',
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-
-    await expect(
-      saveEditorProgram(imported.workbench, {
-        filePath: imported.editorProgram.filePath,
-        text: 'G1 X1 Y0'
-      } as never)
-    ).rejects.toThrow('Editor save model is required.');
-  });
-
-  it('persists edited path documents and project metadata without generated body state', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const imported = await importDxfProject(workbench, {
-      fileName: 'rectangle.dxf',
-      text: rectangleDxf(),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const reversedDocument = reversePathOperation(
-      imported.pathDocument,
-      imported.pathDocument.plan.operations[0].id
-    );
-    expect(reversedDocument).not.toBeNull();
-    const classifiedDocument = setPathOperationClassification(
-      reversedDocument!,
-      reversedDocument!.plan.operations[0].id,
-      'hole'
-    );
-    expect(classifiedDocument).not.toBeNull();
-    classifiedDocument!.geometryBasis = 'finished-contour';
-    const editedDocument = setManualCompensationIntent(
-      classifiedDocument!,
-      classifiedDocument!.plan.operations[0].id,
-      'outside'
-    );
-    expect(editedDocument).not.toBeNull();
-
-    const saved = await saveEditorProgram(imported.workbench, {
-      filePath: imported.project.source.files[0].path,
-      model: 'upid-document',
-      now: new Date('2026-05-29T12:00:00.000Z'),
-      pathDocument: editedDocument!,
-      project: imported.project
-    });
-
-    const projectPath = 'projects/rectangle-2026-05-29/project.json';
-    const bodyPath = 'generated/rectangle-2026-05-29.body.gcode';
-    const savedProject = JSON.parse(adapter.files.get(projectPath) || '{}');
-    const savedManifest = JSON.parse(adapter.files.get('workbench.json') || '{}');
-
-    expect(adapter.files.has(bodyPath)).toBe(false);
-    expect('generated' in savedProject).toBe(false);
-    expect(savedProject.editor.activeFilePath).toBeNull();
-    expect(savedProject.upid.format).toBe('upid');
-    expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
-    expect(savedProject.upid.document.plan.operations[0].overrides.direction).toEqual({
-      direction: 'reverse',
-      kind: 'manual'
-    });
-    expect(savedProject.upid.document.plan.operations[0].classification).toBe('hole');
-    expect(savedProject.upid.document.plan.operations[0].overrides.classification).toEqual({
-      classification: 'hole',
-      kind: 'manual'
-    });
-    expect(savedProject.upid.document.geometryBasis).toBe('finished-contour');
-    expect(savedProject.upid.document.plan.operations[0].compensationIntent).toEqual({
-      mode: 'controller',
-      keptMaterial: 'outside',
-      source: 'manual'
-    });
-    expect(savedProject.pathPlanning).toBeUndefined();
-    expect(savedProject.updatedAt).toBe('2026-05-29T12:00:00.000Z');
-    expect(saved.editorProgram.text).toBe('');
-    expect(saved.editorProgram.model).toBe('upid-document');
-    expect(saved.editorProgram.pathDocument).toBe(editedDocument);
-    expect(saved.editorProgram.parseResult).toBeNull();
-    expect(saved.editorProgram.filePath).toBe(projectPath);
-    expect(adapter.files.get(imported.project.source.files[0].path)).toBe(rectangleDxf());
-    expect(savedManifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
-    expect(saved.workbench.manifest.projects[0].updatedAt).toBe('2026-05-29T12:00:00.000Z');
-    expect('pathPlanning' in (saved.editorProgram.project ?? {})).toBe(false);
-    expect(saved.editorProgram.project?.upid?.document.plan.operations[0].direction).toBe('reverse');
-  });
-
-  it('merges an edited project-machine snapshot into the persisted UPID project only', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const imported = await importDxfProject(workbench, {
-      fileName: 'machine-snapshot.dxf',
-      text: rectangleDxf(),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const machineProfile = structuredClone(imported.project.machine);
-    machineProfile.output.coordinatePrecision = 5;
-    machineProfile.workArea = { widthMm: null, lengthMm: 40 };
-
-    const saved = await saveEditorProgram(imported.workbench, {
-      filePath: imported.project.source.files[0].path,
-      machineProfile,
-      model: 'upid-document',
-      now: new Date('2026-05-29T12:00:00.000Z'),
-      pathDocument: imported.pathDocument,
-      project: imported.project
-    });
-
-    const savedProject = JSON.parse(
-      adapter.files.get('projects/machine-snapshot-2026-05-29/project.json') || '{}'
-    );
-    expect(savedProject.machine).toMatchObject({
-      id: imported.project.machine.id,
-      output: { coordinatePrecision: 5 },
-      workArea: { widthMm: null, lengthMm: 40 }
-    });
-    expect(saved.editorProgram.project?.machine).toEqual(machineProfile);
-    expect(imported.project.machine.output.coordinatePrecision).toBe(3);
-    expect(imported.workbench.activeMachineProfile.output.coordinatePrecision).toBe(3);
-    expect(imported.workbench.manifest.machineProfiles).not.toContain(machineProfile);
-  });
-
-  it('saves UPID path edits even when no generated editor program file exists', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const imported = await importDxfProject(workbench, {
-      fileName: 'missing-generated.dxf',
-      text: rectangleDxf(),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const reversedDocument = reversePathOperation(
-      imported.pathDocument,
-      imported.pathDocument.plan.operations[0].id
-    );
-    expect(reversedDocument).not.toBeNull();
-    const saved = await saveEditorProgram(imported.workbench, {
-      filePath: imported.project.source.files[0].path,
-      model: 'upid-document',
-      now: new Date('2026-05-29T12:00:00.000Z'),
-      pathDocument: reversedDocument!,
-      project: imported.project
-    });
-
-    const savedProject = JSON.parse(
-      adapter.files.get('projects/missing-generated-2026-05-29/project.json') || '{}'
-    );
-
-    expect([...adapter.files.keys()].some((path) => path.startsWith('generated/'))).toBe(false);
-    expect(saved.editorProgram.text).toBe('');
-    expect(saved.editorProgram.model).toBe('upid-document');
-    expect(saved.editorProgram.pathDocument).toBe(reversedDocument);
-    expect(saved.editorProgram.parseResult).toBeNull();
-    expect(saved.editorProgram.filePath).toBe('projects/missing-generated-2026-05-29/project.json');
-    expect(savedProject.upid.document.plan.operations[0].direction).toBe('reverse');
-    expect('generated' in savedProject).toBe(false);
-  });
-
-  it('stamps saved UPID path documents with the current workbench project id', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const imported = await importDxfProject(workbench, {
-      fileName: 'stamp-project.dxf',
-      text: rectangleDxf(),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const projectlessDocument = dxfEntitiesToUpidDocument(rectangleLines(0, 0, 10, 5));
-
-    expect(projectlessDocument.source.projectId).toBeUndefined();
-
-    const saved = await saveEditorProgram(imported.workbench, {
-      filePath: imported.project.source.files[0].path,
-      model: 'upid-document',
-      now: new Date('2026-05-29T12:00:00.000Z'),
-      pathDocument: projectlessDocument,
-      project: imported.project
-    });
-
-    const savedProject = JSON.parse(
-      adapter.files.get('projects/stamp-project-2026-05-29/project.json') || '{}'
-    );
-
-    expect(savedProject.upid.document.source.projectId).toBe(imported.project.id);
-    expect(projectlessDocument.source.projectId).toBeUndefined();
-    expect(saved.editorProgram.model).toBe('upid-document');
-    expect(saved.editorProgram.pathDocument!.source.projectId).toBe(imported.project.id);
-  });
-
-  it('rejects saved UPID path documents attached to a different workbench project id', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const imported = await importDxfProject(workbench, {
-      fileName: 'reject-wrong-project.dxf',
-      text: rectangleDxf(),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const wrongProjectDocument = dxfEntitiesToUpidDocument(rectangleLines(0, 0, 10, 5), {}, {
-      projectId: 'other-project'
-    });
-
-    await expect(
-      saveEditorProgram(imported.workbench, {
-        filePath: imported.project.source.files[0].path,
-        model: 'upid-document',
-        now: new Date('2026-05-29T12:00:00.000Z'),
-        pathDocument: wrongProjectDocument,
-        project: imported.project
-      })
-    ).rejects.toThrow(
-      'UPID document project mismatch: other-project cannot be used by reject-wrong-project-2026-05-29.'
-    );
-
-    const savedProject = JSON.parse(
-      adapter.files.get('projects/reject-wrong-project-2026-05-29/project.json') || '{}'
-    );
-
-    expect(savedProject.upid.document.source.projectId).toBe(imported.project.id);
-  });
-
-  it('rejects UPID path saves that are not attached to a workbench project', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const document = dxfEntitiesToUpidDocument(rectangleLines(0, 0, 10, 5));
-
-    await expect(
-      saveEditorProgram(workbench, {
-        filePath: 'projects/loose-upid/project.json',
-        model: 'upid-document',
-        now: new Date('2026-05-29T12:00:00.000Z'),
-        pathDocument: document
-      })
-    ).rejects.toThrow('UPID path saves require a workbench project.');
-
-    expect(adapter.files.has('projects/loose-upid/project.json')).toBe(false);
-  });
-
-  it('rejects UPID path saves for external G-code projects without UPID state', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const imported = await importExternalProgram(workbench, {
-      fileName: 'external-path-save.nc',
-      text: 'G0 X0 Y0\nG1 X1 Y0',
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const document = dxfEntitiesToUpidDocument(rectangleLines(0, 0, 10, 5));
-
-    await expect(
-      saveEditorProgram(imported.workbench, {
-        filePath: imported.editorProgram.filePath,
-        model: 'upid-document',
-        now: new Date('2026-05-29T12:00:00.000Z'),
-        pathDocument: document,
-        project: imported.project
-      })
-    ).rejects.toThrow('UPID path saves require an existing UPID project.');
-
-    const savedProject = JSON.parse(
-      adapter.files.get('projects/external-path-save-2026-05-29/project.json') || '{}'
-    );
-
-    expect(savedProject.upid).toBeUndefined();
-    expect(adapter.files.get(imported.editorProgram.filePath)).toBe('G0 X0 Y0\nG1 X1 Y0');
-  });
-
-  it('does not persist export-time post diagnostics while saving a UPID path document', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const imported = await importDxfProject(workbench, {
-      fileName: 'healed-save.dxf',
-      text: rectangleDxf(),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const healedDocument = dxfEntitiesToUpidDocument(gappedRectangle(0.004), {
-      endpointTolerance: 0.01
-    });
-
-    await saveEditorProgram(imported.workbench, {
-      filePath: imported.project.source.files[0].path,
-      model: 'upid-document',
-      now: new Date('2026-05-29T12:00:00.000Z'),
-      pathDocument: healedDocument,
-      project: imported.project
-    });
-
-    const savedProject = JSON.parse(adapter.files.get('projects/healed-save-2026-05-29/project.json') || '{}');
-
-    expect(
-      savedProject.upid.document.diagnostics.some(
-        (diagnostic: { code: string }) => diagnostic.code === 'endpoint-cluster-snap'
-      )
-    ).toBe(true);
-    expect('postDiagnostics' in savedProject.upid).toBe(false);
-  });
-
-  it('rejects text-mode saves for UPID projects instead of clearing path state', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const imported = await importDxfProject(workbench, {
-      fileName: 'manual-edit.dxf',
-      text: rectangleDxf(),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const text = 'G1 X999.000 Y999.000\n(MANUAL EDIT)';
-
-    await expect(
-      saveEditorProgram(imported.workbench, {
-        filePath: imported.project.source.files[0].path,
-        model: 'gcode-text',
-        now: new Date('2026-05-29T12:00:00.000Z'),
-        project: imported.project,
-        text
-      })
-    ).rejects.toThrow('UPID path projects must be saved with a path document.');
-
-    const projectPath = 'projects/manual-edit-2026-05-29/project.json';
-    const savedProject = JSON.parse(adapter.files.get(projectPath) || '{}');
-
-    expect(adapter.files.get(imported.project.source.files[0].path)).toBe(rectangleDxf());
-    expect(savedProject.upid?.format).toBe('upid');
-    expect('generated' in savedProject).toBe(false);
-  });
-
-  it('rejects text-mode saves for DXF projects that do not contain UPID state', async () => {
-    const adapter = new MemoryWorkbenchAdapter();
-    const workbench = await initializeWorkbenchDirectory(adapter, {
-      now: new Date('2026-05-29T10:00:00.000Z')
-    });
-    const imported = await importDxfProject(workbench, {
-      fileName: 'stale-dxf.dxf',
-      text: rectangleDxf(),
-      now: new Date('2026-05-29T11:00:00.000Z')
-    });
-    const staleFilePath = 'generated/stale-dxf.iso';
-    const staleProject = {
-      ...imported.project,
-      upid: undefined,
-      editor: {
-        ...imported.project.editor,
-        activeFilePath: staleFilePath
+    if (!imported.ok) throw new Error(imported.error.message);
+    const document = structuredClone(imported.pathDocument);
+    document.setup = {
+      initialWirePosition: {
+        kind: 'manual',
+        point: { x: -1, y: 0 },
+        review: 'reviewed'
       }
     };
-    await adapter.writeText(staleFilePath, 'G0 X0 Y0');
 
-    await expect(
-      saveEditorProgram(imported.workbench, {
-        filePath: staleFilePath,
-        model: 'gcode-text',
-        now: new Date('2026-05-29T12:00:00.000Z'),
-        project: staleProject,
-        text: 'G1 X999.000 Y999.000'
-      })
-    ).rejects.toThrow('DXF projects must contain a UPID document.');
+    const saved = await saveEditorProgram(imported.workbench, {
+      projectId: imported.project.id,
+      draft: { model: 'upid-document', pathDocument: document }
+    });
+    expect(saved).toMatchObject({
+      ok: true,
+      project: {
+        content: {
+          kind: 'upid-document',
+          document: { setup: document.setup }
+        }
+      },
+      editorProgram: { model: 'upid-document' }
+    });
+    if (saved.ok) {
+      expect('machine' in saved.project).toBe(false);
+      expect('post' in saved.project).toBe(false);
+    }
 
-    expect(adapter.files.get(staleFilePath)).toBe('G0 X0 Y0');
+    if (!saved.ok) throw new Error(saved.error.message);
+    expect(await saveEditorProgram(saved.workbench, {
+      projectId: imported.project.id,
+      draft: { model: 'gcode-text', text: 'G0 X0' }
+    })).toMatchObject({
+      ok: false,
+      error: { code: 'EDITOR_SAVE_MODEL_MISMATCH' }
+    });
   });
 });
 
-function rectangleDxf() {
+class MemoryAdapter implements WorkbenchStorageAdapter {
+  readonly name = 'Editor save';
+  readonly kind = 'memory';
+  readonly files = new Map<string, string>();
+  async ensureDirectory() {}
+  async readText(path: string) { return this.files.get(path) ?? null; }
+  async deleteText(path: string) { this.files.delete(path); }
+  async writeText(path: string, contents: string) { this.files.set(path, contents); }
+}
+
+function lineDxf() {
   return [
-    '0',
-    'SECTION',
-    '2',
-    'ENTITIES',
-    ...rectangleLines(0, 0, 10, 5).flatMap(lineEntityToDxf),
-    '0',
-    'ENDSEC',
-    '0',
-    'EOF'
+    '0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', '4',
+    '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES',
+    '0', 'LINE', '8', 'CUT', '10', '0', '20', '0', '11', '1', '21', '0',
+    '0', 'ENDSEC', '0', 'EOF'
   ].join('\n');
-}
-
-function rectangleLines(minX: number, minY: number, maxX: number, maxY: number): DxfEntity[] {
-  return [
-    line(minX, minY, maxX, minY),
-    line(maxX, minY, maxX, maxY),
-    line(maxX, maxY, minX, maxY),
-    line(minX, maxY, minX, minY)
-  ];
-}
-
-function gappedRectangle(gap: number): DxfEntity[] {
-  return [
-    line(0, 0, 10, 0),
-    line(10 + gap, 0, 10, 5),
-    line(10, 5, 0, 5),
-    line(0, 5, 0, 0)
-  ];
-}
-
-function line(startX: number, startY: number, endX: number, endY: number): DxfEntity {
-  return {
-    type: 'line',
-    layer: 'CUT',
-    start: { x: startX, y: startY },
-    end: { x: endX, y: endY }
-  };
-}
-
-function lineEntityToDxf(entity: DxfEntity) {
-  if (entity.type !== 'line') return [];
-
-  return [
-    '0',
-    'LINE',
-    '8',
-    entity.layer ?? 'CUT',
-    '10',
-    String(entity.start.x),
-    '20',
-    String(entity.start.y),
-    '11',
-    String(entity.end.x),
-    '21',
-    String(entity.end.y)
-  ];
 }

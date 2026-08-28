@@ -1,16 +1,11 @@
-import {
-  evaluateMachineFitBounds,
-  type MachineFitResult
-} from '@/domain/machine/machineFit';
-import { normalizeMachineProfile } from '@/domain/machine/machineProfiles';
 import { pathSegmentsFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import { mergeBounds } from '@/domain/path-intel/segments';
 import type { Bounds2 } from '@/domain/path-intel/types';
-import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
-import type { MachineProfile } from '@/domain/workbench/types';
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import {
   buildDxfImportUnitCandidates,
+  defaultDxfImportUnitCandidateId,
   type DxfImportUnitCandidate
 } from './dxfImportUnits';
 import { DEFAULT_DXF_UPID_OPTIONS } from './dxfToUpid';
@@ -19,130 +14,147 @@ import { parseDxf } from './parseDxf';
 import type { DxfParseResult } from './types';
 
 export interface DxfImportSelection {
-  machineProfileId: string;
-  unitCandidateId: string;
+  readonly unitCandidateId: string;
 }
 
 export interface DxfImportPreparation {
-  fileName: string;
-  text: string;
-  preparedAt: string;
-  parseResult: DxfParseResult;
-  entityCount: number;
-  unsupportedEntityCount: number;
-  warningCount: number;
-  machineProfiles: MachineProfile[];
-  activeMachineProfileId: string;
-  unitCandidates: DxfImportUnitCandidate[];
-  defaultSelection: DxfImportSelection;
+  readonly fileName: string;
+  readonly text: string;
+  readonly preparedAt: string;
+  readonly parseResult: DxfParseResult;
+  readonly entityCount: number;
+  readonly unsupportedEntityCount: number;
+  readonly warningCount: number;
+  readonly unitCandidates: readonly DxfImportUnitCandidate[];
+  readonly defaultUnitCandidateId: string | null;
 }
 
 export interface DxfImportPreview {
-  boundsMm: Bounds2;
-  sizeMm: { widthMm: number; lengthMm: number };
-  machineFit: MachineFitResult;
-  machineProfile: MachineProfile;
-  unitCandidate: DxfImportUnitCandidate;
-  unitCandidates: DxfImportUnitCandidate[];
+  readonly boundsMm: Bounds2;
+  readonly sizeMm: { readonly widthMm: number; readonly lengthMm: number };
+  readonly unitCandidate: DxfImportUnitCandidate;
 }
+
+export type DxfImportPreparationError =
+  | { readonly code: 'DXF_IMPORT_TIMESTAMP_INVALID'; readonly message: string }
+  | { readonly code: 'DXF_IMPORT_GEOMETRY_REQUIRED'; readonly message: string };
+
+export type DxfImportPreviewError =
+  | {
+      readonly code: 'DXF_IMPORT_UNIT_CANDIDATE_NOT_FOUND';
+      readonly message: string;
+      readonly candidateId: string;
+    }
+  | { readonly code: 'DXF_IMPORT_PREVIEW_INVALID'; readonly message: string };
+
+export type DxfImportPreparationResult =
+  | { readonly ok: true; readonly preparation: DxfImportPreparation }
+  | { readonly ok: false; readonly error: DxfImportPreparationError };
+
+export type DxfImportPreviewResult =
+  | { readonly ok: true; readonly preview: DxfImportPreview }
+  | { readonly ok: false; readonly error: DxfImportPreviewError };
 
 export function prepareDxfProjectImport(
-  workbench: ConnectedWorkbench,
-  input: { fileName: string; text: string; now?: Date }
-): DxfImportPreparation {
-  const parseResult = parseDxf(input.text);
-  const rawSegments = pathSegmentsFromDxfEntities(
-    parseResult.entities,
-    DEFAULT_DXF_UPID_OPTIONS
-  );
-  if (rawSegments.segments.length === 0) {
-    throw new Error('DXF did not contain supported cut geometry.');
+  workbench: ConnectedWorkbenchCatalog,
+  input: { readonly fileName: string; readonly text: string; readonly now?: Date }
+): DxfImportPreparationResult {
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) {
+    return {
+      ok: false,
+      error: { code: 'DXF_IMPORT_TIMESTAMP_INVALID', message: 'DXF import timestamp is invalid.' }
+    };
   }
-
-  const machineProfiles = workbench.manifest.machineProfiles.map(normalizeMachineProfile);
-  const activeMachineProfileId = workbench.manifest.activeMachineProfileId;
-  const activeMachine = requireMachineProfile(machineProfiles, activeMachineProfileId);
-  const unitCandidates = buildDxfImportUnitCandidates(
-    parseResult.unitDeclaration,
-    activeMachine
-  );
-
+  const preparedAt = now.toISOString();
+  const parseResult = deepFreeze(jsonSnapshot(parseDxf(input.text)));
+  const rawSegments = pathSegmentsFromDxfEntities(parseResult.entities, DEFAULT_DXF_UPID_OPTIONS);
+  if (rawSegments.segments.length === 0) {
+    return {
+      ok: false,
+      error: {
+        code: 'DXF_IMPORT_GEOMETRY_REQUIRED',
+        message: 'DXF did not contain supported cut geometry.'
+      }
+    };
+  }
+  const preference = workbench.manifest.preferences.importUnits;
   return {
-    fileName: input.fileName,
-    text: input.text,
-    preparedAt: (input.now ?? new Date()).toISOString(),
-    parseResult,
-    entityCount: parseResult.entities.length,
-    unsupportedEntityCount: parseResult.unsupportedEntities.length,
-    warningCount: parseResult.warnings.length,
-    machineProfiles,
-    activeMachineProfileId,
-    unitCandidates,
-    defaultSelection: {
-      machineProfileId: activeMachineProfileId,
-      unitCandidateId: unitCandidates[0].id
-    }
+    ok: true,
+    preparation: deepFreeze({
+      fileName: input.fileName,
+      text: input.text,
+      preparedAt,
+      parseResult,
+      entityCount: parseResult.entities.length,
+      unsupportedEntityCount: parseResult.unsupportedEntities.length,
+      warningCount: parseResult.warnings.length,
+      unitCandidates: buildDxfImportUnitCandidates(parseResult.unitDeclaration, preference),
+      defaultUnitCandidateId: defaultDxfImportUnitCandidateId(
+        parseResult.unitDeclaration,
+        preference
+      )
+    })
   };
-}
-
-export function unitCandidatesForDxfImport(
-  preparation: DxfImportPreparation,
-  machineProfileId: string
-) {
-  const machine = requireMachineProfile(preparation.machineProfiles, machineProfileId);
-  return buildDxfImportUnitCandidates(preparation.parseResult.unitDeclaration, machine);
 }
 
 export function previewDxfProjectImport(
   preparation: DxfImportPreparation,
   selection: DxfImportSelection
-): DxfImportPreview {
-  const machineProfile = requireMachineProfile(
-    preparation.machineProfiles,
-    selection.machineProfileId
+): DxfImportPreviewResult {
+  const unitCandidate = preparation.unitCandidates.find(
+    ({ id }) => id === selection.unitCandidateId
   );
-  const unitCandidates = buildDxfImportUnitCandidates(
-    preparation.parseResult.unitDeclaration,
-    machineProfile
-  );
-  const unitCandidate = unitCandidates.find(({ id }) => id === selection.unitCandidateId);
   if (!unitCandidate) {
-    throw new Error(`DXF unit candidate not found for selected machine: ${selection.unitCandidateId}.`);
+    return {
+      ok: false,
+      error: {
+        code: 'DXF_IMPORT_UNIT_CANDIDATE_NOT_FOUND',
+        message: `DXF unit candidate was not reviewed: ${selection.unitCandidateId}.`,
+        candidateId: selection.unitCandidateId
+      }
+    };
   }
-
-  const normalized = normalizeDxfGeometry({
-    entities: preparation.parseResult.entities,
-    options: DEFAULT_DXF_UPID_OPTIONS,
-    sourceMetadata: { units: unitCandidate.units }
-  });
-  const segmentBuild = pathSegmentsFromDxfEntities(normalized.entities, normalized.options);
-  const boundsMm = boundsForSegments(segmentBuild.segments.map(({ bounds }) => bounds));
-  if (!boundsMm) {
-    throw new Error('DXF unit preview did not contain valid supported cut geometry.');
+  try {
+    const normalized = normalizeDxfGeometry({
+      entities: preparation.parseResult.entities,
+      options: DEFAULT_DXF_UPID_OPTIONS,
+      sourceMetadata: { units: unitCandidate.units }
+    });
+    const built = pathSegmentsFromDxfEntities(normalized.entities, normalized.options);
+    const boundsMm = boundsForSegments(built.segments.map(({ bounds }) => bounds));
+    if (!boundsMm) return previewInvalid('DXF unit preview did not contain supported cut geometry.');
+    const widthMm = boundsMm.maxX - boundsMm.minX;
+    const lengthMm = boundsMm.maxY - boundsMm.minY;
+    if (!Number.isFinite(widthMm) || !Number.isFinite(lengthMm)) {
+      return previewInvalid('DXF unit preview produced invalid millimeter bounds.');
+    }
+    return {
+      ok: true,
+      preview: { boundsMm, sizeMm: { widthMm, lengthMm }, unitCandidate }
+    };
+  } catch (error) {
+    return previewInvalid(error instanceof Error ? error.message : String(error));
   }
-
-  const machineFit = evaluateMachineFitBounds({ bounds: boundsMm, profile: machineProfile });
-  if (!machineFit.bounds) {
-    throw new Error('DXF unit preview produced invalid millimeter bounds.');
-  }
-
-  return {
-    boundsMm,
-    sizeMm: { ...machineFit.bounds },
-    machineFit,
-    machineProfile,
-    unitCandidate,
-    unitCandidates
-  };
 }
 
-function requireMachineProfile(profiles: MachineProfile[], profileId: string) {
-  const profile = profiles.find(({ id }) => id === profileId);
-  if (!profile) throw new Error(`Machine profile not found: ${profileId}.`);
-  return profile;
-}
-
-function boundsForSegments(segmentBounds: Bounds2[]): Bounds2 | null {
+function boundsForSegments(segmentBounds: readonly Bounds2[]) {
   if (segmentBounds.length === 0) return null;
   return segmentBounds.reduce((bounds, current) => mergeBounds(bounds, current));
+}
+
+function previewInvalid(message: string): DxfImportPreviewResult {
+  return { ok: false, error: { code: 'DXF_IMPORT_PREVIEW_INVALID', message } };
+}
+
+function jsonSnapshot<Value>(value: Value): Value {
+  return JSON.parse(JSON.stringify(value)) as Value;
+}
+
+function deepFreeze<Value>(value: Value): Value {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    Object.values(value).forEach((entry) => deepFreeze(entry));
+  }
+  return value;
 }

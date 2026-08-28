@@ -1,348 +1,115 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { normalizeMachineProfile } from '@/domain/machine/machineProfiles';
-import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
-import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
-import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
-import type { MachineProfile } from '@/domain/workbench/types';
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import {
   prepareDxfProjectImport,
-  previewDxfProjectImport,
-  unitCandidatesForDxfImport
+  previewDxfProjectImport
 } from '../prepareDxfProjectImport';
 
 describe('prepareDxfProjectImport', () => {
-  it('orders and deduplicates candidates for the selected machine profile', () => {
-    const inchMachine = machine('inch-machine', 'inches');
-    const millimeterMachine = machine('millimeter-machine', 'millimeters');
-    const automaticMachine = machine('automatic-machine', null);
-    const workbench = createWorkbench(
-      [inchMachine, millimeterMachine, automaticMachine],
-      inchMachine.id
-    );
-    const prepared = prepareDxfProjectImport(workbench, {
-      fileName: 'declared-feet.dxf',
-      text: lineDxf({ unitsCode: 2 })
-    });
-
-    expect(prepared.unitCandidates.map(({ id, source }) => [id, source])).toEqual([
-      ['dxf-insunits-2', 'dxf-declared'],
-      ['inches', 'machine-suggestion'],
-      ['millimeters', 'fallback']
-    ]);
-    expect(
-      unitCandidatesForDxfImport(prepared, millimeterMachine.id).map(({ id, source }) => [
-        id,
-        source
-      ])
-    ).toEqual([
-      ['dxf-insunits-2', 'dxf-declared'],
-      ['millimeters', 'machine-suggestion']
-    ]);
-    expect(
-      unitCandidatesForDxfImport(prepared, automaticMachine.id).map(({ id, source }) => [
-        id,
-        source
-      ])
-    ).toEqual([
-      ['dxf-insunits-2', 'dxf-declared'],
-      ['millimeters', 'fallback']
-    ]);
-    expect(prepared.defaultSelection).toEqual({
-      machineProfileId: inchMachine.id,
-      unitCandidateId: 'dxf-insunits-2'
-    });
-  });
-
-  it('keeps the declared source when it duplicates the machine suggestion', () => {
-    const selectedMachine = machine('inch-machine', 'inches');
+  it('uses the explicit workbench unit preference without machine state', () => {
     const prepared = prepareDxfProjectImport(
-      createWorkbench([selectedMachine], selectedMachine.id),
-      { fileName: 'declared-inch.dxf', text: lineDxf({ unitsCode: 1 }) }
-    );
-
-    expect(prepared.unitCandidates.map(({ id, source }) => [id, source])).toEqual([
-      ['inches', 'dxf-declared'],
-      ['millimeters', 'fallback']
-    ]);
-  });
-
-  it('uses only the machine suggestion and millimeter fallback for unitless DXF', () => {
-    const selectedMachine = machine('inch-machine', 'inches');
-    const prepared = prepareDxfProjectImport(
-      createWorkbench([selectedMachine], selectedMachine.id),
-      { fileName: 'unitless.dxf', text: lineDxf({ unitsCode: 0 }) }
-    );
-
-    expect(prepared.unitCandidates.map(({ id, source }) => [id, source])).toEqual([
-      ['inches', 'machine-suggestion'],
-      ['millimeters', 'fallback']
-    ]);
-  });
-
-  it.each([
-    ['malformed', lineDxf({ unitsRawValue: 'not-a-code' })],
-    ['unknown', lineDxf({ unitsCode: 99 })]
-  ])('does not treat a $label INSUNITS declaration as a declared candidate', (
-    _label,
-    text
-  ) => {
-    const selectedMachine = machine('inch-machine', 'inches');
-    const prepared = prepareDxfProjectImport(
-      createWorkbench([selectedMachine], selectedMachine.id),
-      { fileName: 'unresolved-units.dxf', text }
-    );
-
-    expect(prepared.unitCandidates.map(({ id, source }) => [id, source])).toEqual([
-      ['inches', 'machine-suggestion'],
-      ['millimeters', 'fallback']
-    ]);
-  });
-
-  it('previews an additional recognized finite DXF unit in millimeters', () => {
-    const selectedMachine = machine('selected-machine', null);
-    const prepared = prepareDxfProjectImport(
-      createWorkbench([selectedMachine], selectedMachine.id),
-      { fileName: 'declared-feet.dxf', text: lineDxf({ unitsCode: 2, endX: 2 }) }
-    );
-
-    expect(previewDxfProjectImport(prepared, {
-      machineProfileId: selectedMachine.id,
-      unitCandidateId: 'dxf-insunits-2'
-    })).toMatchObject({
-      boundsMm: { minX: 0, minY: 0, maxX: 609.6, maxY: 0 },
-      sizeMm: { widthMm: 609.6, lengthMm: 0 },
-      unitCandidate: { source: 'dxf-declared', scaleToMillimeters: 304.8 }
-    });
-  });
-
-  it('prepares and previews without any adapter activity', () => {
-    const selectedMachine = machine('inch-machine', 'inches', {
-      widthMm: 250,
-      lengthMm: 130
-    });
-    const workbench = createWorkbench([selectedMachine], selectedMachine.id);
-    const prepared = prepareDxfProjectImport(workbench, {
-      fileName: 'bounded.dxf',
-      text: lineDxf({
-        endX: 10,
-        endY: 5,
-        extents: { minX: -500, minY: -500, maxX: 500, maxY: 500 }
-      })
-    });
-    const rawEntities = structuredClone(prepared.parseResult.entities);
-    const preview = previewDxfProjectImport(prepared, {
-      machineProfileId: selectedMachine.id,
-      unitCandidateId: 'inches'
-    });
-
-    expect(prepared).toMatchObject({
-      fileName: 'bounded.dxf',
-      entityCount: 1,
-      warningCount: 0,
-      unsupportedEntityCount: 0
-    });
-    expect(preview.boundsMm).toEqual({ minX: 0, minY: 0, maxX: 254, maxY: 127 });
-    expect(preview.sizeMm).toEqual({ widthMm: 254, lengthMm: 127 });
-    expect(preview.machineFit).toMatchObject({
-      status: 'too-large',
-      issues: [{ axis: 'width', actualMm: 254, limitMm: 250 }]
-    });
-    expect(preview.unitCandidates.map(({ id }) => id)).toEqual(['inches', 'millimeters']);
-    expect(prepared.parseResult.drawing?.extents).toEqual({
-      min: { x: -500, y: -500 },
-      max: { x: 500, y: 500 }
-    });
-    expect(prepared.parseResult.entities).toEqual(rawEntities);
-    expect(adapterActivity(workbench.adapter)).toEqual({
-      deleteText: 0,
-      ensureDirectory: 0,
-      readText: 0,
-      writeText: 0
-    });
-  });
-
-  it('rejects missing machine profiles and candidates instead of falling back silently', () => {
-    const selectedMachine = machine('selected-machine', null);
-    const prepared = prepareDxfProjectImport(
-      createWorkbench([selectedMachine], selectedMachine.id),
-      { fileName: 'part.dxf', text: lineDxf({}) }
-    );
-
-    expect(() => unitCandidatesForDxfImport(prepared, 'deleted-machine')).toThrow(
-      /machine profile.*deleted-machine/i
-    );
-    expect(() => previewDxfProjectImport(prepared, {
-      machineProfileId: selectedMachine.id,
-      unitCandidateId: 'inches'
-    })).toThrow(/unit candidate.*inches/i);
-  });
-
-  it('rejects files without valid supported cut geometry during preparation', () => {
-    const selectedMachine = machine('selected-machine', null);
-
-    expect(() => prepareDxfProjectImport(
-      createWorkbench([selectedMachine], selectedMachine.id),
-      { fileName: 'empty.dxf', text: unsupportedOnlyDxf() }
-    )).toThrow(/supported cut geometry/i);
-  });
-
-  it('rejects a selected scale that makes supported geometry non-finite', () => {
-    const selectedMachine = machine('selected-machine', null);
-    const prepared = prepareDxfProjectImport(
-      createWorkbench([selectedMachine], selectedMachine.id),
+      workbenchWithImportUnits({ mode: 'fixed', unit: 'inches' }),
       {
-        fileName: 'overflow.dxf',
-        text: lineDxf({ unitsCode: 20, endX: 1e300 })
+        fileName: 'declared-mm.dxf',
+        text: lineDxf(4),
+        now: new Date('2026-08-28T10:00:00.000Z')
       }
     );
+    if (!prepared.ok) throw new Error(prepared.error.message);
 
-    expect(() => previewDxfProjectImport(prepared, {
-      machineProfileId: selectedMachine.id,
-      unitCandidateId: 'dxf-insunits-20'
-    })).toThrow(/non-finite coordinate/i);
+    expect(prepared.preparation.defaultUnitCandidateId).toBe('inches');
+    expect(prepared.preparation.unitCandidates.map(({ id, source }) => [id, source])).toEqual([
+      ['inches', 'workbench-preference'],
+      ['millimeters', 'dxf-declared']
+    ]);
+    expect('machineProfiles' in prepared.preparation).toBe(false);
+
+    expect(previewDxfProjectImport(prepared.preparation, {
+      unitCandidateId: 'inches'
+    })).toMatchObject({
+      ok: true,
+      preview: {
+        boundsMm: { minX: 0, minY: 0, maxX: 25.4, maxY: 0 },
+        sizeMm: { widthMm: 25.4, lengthMm: 0 }
+      }
+    });
   });
 
-  it('fails preview when finite supported extrema produce a non-finite span', () => {
-    const selectedMachine = machine('selected-machine', null);
+  it('requires an explicit choice for a unitless DXF when the preference is ask', () => {
     const prepared = prepareDxfProjectImport(
-      createWorkbench([selectedMachine], selectedMachine.id),
-      { fileName: 'overflow-span.dxf', text: extremeSpanDxf() }
+      workbenchWithImportUnits({ mode: 'ask' }),
+      { fileName: 'unitless.dxf', text: lineDxf(0) }
     );
+    if (!prepared.ok) throw new Error(prepared.error.message);
 
-    expect(() => previewDxfProjectImport(prepared, {
-      machineProfileId: selectedMachine.id,
-      unitCandidateId: 'millimeters'
-    })).toThrow(/invalid millimeter bounds/i);
+    expect(prepared.preparation.defaultUnitCandidateId).toBeNull();
+    expect(prepared.preparation.unitCandidates.map(({ id, source }) => [id, source])).toEqual([
+      ['millimeters', 'explicit-choice'],
+      ['inches', 'explicit-choice']
+    ]);
+  });
+
+  it('returns typed errors for missing geometry and an unknown reviewed candidate', () => {
+    const workbench = workbenchWithImportUnits({ mode: 'ask' });
+    expect(prepareDxfProjectImport(workbench, {
+      fileName: 'empty.dxf',
+      text: ['0', 'SECTION', '2', 'ENTITIES', '0', 'TEXT', '1', 'note', '0', 'ENDSEC', '0', 'EOF'].join('\n')
+    })).toMatchObject({
+      ok: false,
+      error: { code: 'DXF_IMPORT_GEOMETRY_REQUIRED' }
+    });
+
+    const prepared = prepareDxfProjectImport(workbench, {
+      fileName: 'part.dxf',
+      text: lineDxf(0)
+    });
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    expect(previewDxfProjectImport(prepared.preparation, {
+      unitCandidateId: 'deleted-choice'
+    })).toMatchObject({
+      ok: false,
+      error: { code: 'DXF_IMPORT_UNIT_CANDIDATE_NOT_FOUND' }
+    });
   });
 });
 
-function machine(
-  id: string,
-  preferredDxfImportUnit: MachineProfile['preferredDxfImportUnit'],
-  workArea: MachineProfile['workArea'] = { widthMm: null, lengthMm: null }
-) {
-  return normalizeMachineProfile({
-    ...createDefaultMachineProfile(),
-    id,
-    name: id,
-    preferredDxfImportUnit,
-    workArea
-  });
-}
-
-function createWorkbench(profiles: MachineProfile[], activeMachineProfileId: string): ConnectedWorkbench {
-  const activeMachineProfile = profiles.find(({ id }) => id === activeMachineProfileId)!;
-  const activity = {
-    deleteText: vi.fn(async () => undefined),
-    ensureDirectory: vi.fn(async () => undefined),
-    readText: vi.fn(async () => null),
-    writeText: vi.fn(async () => undefined)
-  };
-  const adapter: WorkbenchStorageAdapter = {
-    kind: 'memory',
-    name: 'Preparation test',
-    ...activity
-  };
-
+function workbenchWithImportUnits(
+  importUnits: ConnectedWorkbenchCatalog['manifest']['preferences']['importUnits']
+): ConnectedWorkbenchCatalog {
   return {
-    adapter,
+    adapter: {
+      name: 'DXF preparation',
+      kind: 'memory',
+      ensureDirectory: async () => undefined,
+      readText: async () => null,
+      deleteText: async () => undefined,
+      writeText: async () => undefined
+    },
     manifest: {
-      schemaVersion: 1,
-      name: 'Preparation test',
-      createdAt: '2026-07-13T10:00:00.000Z',
-      updatedAt: '2026-07-13T10:00:00.000Z',
-      templates: {
-        headerPath: 'templates/header.gcode',
-        footerPath: 'templates/footer.gcode'
+      format: 'wire-edm-workbench',
+      schemaVersion: 2,
+      name: 'DXF preparation',
+      createdAt: '2026-08-28T09:00:00.000Z',
+      updatedAt: '2026-08-28T09:00:00.000Z',
+      preferences: {
+        importUnits,
+        export: { status: 'unconfigured' },
+        recentPlanningMachineId: null
       },
-      output: activeMachineProfile.output,
-      activeMachineProfileId,
-      machineProfiles: profiles,
       projects: []
     },
-    activeMachineProfile,
-    header: activeMachineProfile.templates.header,
-    footer: activeMachineProfile.templates.footer
+    posts: { schemaVersion: 1, installations: [] },
+    machines: { schemaVersion: 1, machines: [] }
   };
 }
 
-function adapterActivity(adapter: WorkbenchStorageAdapter) {
-  return {
-    deleteText: vi.mocked(adapter.deleteText).mock.calls.length,
-    ensureDirectory: vi.mocked(adapter.ensureDirectory).mock.calls.length,
-    readText: vi.mocked(adapter.readText).mock.calls.length,
-    writeText: vi.mocked(adapter.writeText).mock.calls.length
-  };
-}
-
-function lineDxf({
-  endX = 10,
-  endY = 0,
-  extents,
-  unitsCode,
-  unitsRawValue
-}: {
-  endX?: number;
-  endY?: number;
-  extents?: { minX: number; minY: number; maxX: number; maxY: number };
-  unitsCode?: number;
-  unitsRawValue?: string;
-}) {
-  const headerVariables = [
-    ...(unitsCode === undefined && unitsRawValue === undefined
-      ? []
-      : ['9', '$INSUNITS', '70', unitsRawValue ?? String(unitsCode)]),
-    ...(extents === undefined
-      ? []
-      : [
-          '9', '$EXTMIN', '10', String(extents.minX), '20', String(extents.minY),
-          '9', '$EXTMAX', '10', String(extents.maxX), '20', String(extents.maxY)
-        ])
-  ];
-
+function lineDxf(unitsCode: number) {
   return [
-    '0', 'SECTION', '2', 'HEADER',
-    ...headerVariables,
-    '0', 'ENDSEC',
-    '0', 'SECTION', '2', 'ENTITIES',
-    '0', 'LINE', '8', 'CUT',
-    '10', '0', '20', '0', '11', String(endX), '21', String(endY),
+    '0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', String(unitsCode),
+    '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES',
+    '0', 'LINE', '8', 'CUT', '10', '0', '20', '0', '11', '1', '21', '0',
     '0', 'ENDSEC', '0', 'EOF'
   ].join('\n');
-}
-
-function extremeSpanDxf() {
-  const maximum = Number.MAX_VALUE;
-  const half = maximum / 2;
-  return [
-    '0', 'SECTION', '2', 'ENTITIES',
-    '0', 'LINE', '8', 'CUT',
-    '10', String(-maximum), '20', '0', '11', String(-half), '21', '0',
-    '0', 'LINE', '8', 'CUT',
-    '10', String(half), '20', '0', '11', String(maximum), '21', '0',
-    '0', 'ENDSEC', '0', 'EOF'
-  ].join('\n');
-}
-
-function unsupportedOnlyDxf() {
-  return `
-0
-SECTION
-2
-ENTITIES
-0
-TEXT
-1
-NO CUT GEOMETRY
-10
-0
-20
-0
-0
-ENDSEC
-0
-EOF
-`;
 }

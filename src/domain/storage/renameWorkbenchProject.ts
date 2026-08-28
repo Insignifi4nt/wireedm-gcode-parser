@@ -1,80 +1,77 @@
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import {
-  WORKBENCH_MANIFEST_FILE,
-  type ConnectedWorkbench,
-  type WorkbenchManifest
-} from './workbenchStorage';
-import type { WorkbenchProject } from '@/domain/workbench/types';
+  readStoredWorkbenchProject,
+  replaceStoredWorkbenchProject,
+  type ReadStoredWorkbenchProjectError,
+  type ReplaceStoredWorkbenchProjectResult
+} from '@/domain/workbench-catalog/workbenchCatalogMutations';
+import {
+  parseWorkbenchProjectDocument,
+  type WorkbenchProjectDocument,
+  type WorkbenchProjectError
+} from '@/domain/workbench-catalog/workbenchProject';
 
 export interface RenameWorkbenchProjectInput {
-  projectId: string;
-  name: string;
-  now?: Date;
+  readonly projectId: string;
+  readonly name: string;
+  readonly now?: Date;
 }
 
-export interface RenameWorkbenchProjectResult {
-  project: WorkbenchProject;
-  workbench: ConnectedWorkbench;
-}
+export type RenameWorkbenchProjectError =
+  | WorkbenchProjectError
+  | ReadStoredWorkbenchProjectError
+  | Extract<ReplaceStoredWorkbenchProjectResult, { readonly ok: false }>['error']
+  | { readonly code: 'WORKBENCH_PROJECT_NAME_INVALID'; readonly message: string }
+  | { readonly code: 'WORKBENCH_PROJECT_RENAME_TIMESTAMP_INVALID'; readonly message: string };
+
+export type RenameWorkbenchProjectResult =
+  | {
+      readonly ok: true;
+      readonly project: WorkbenchProjectDocument;
+      readonly workbench: ConnectedWorkbenchCatalog;
+    }
+  | { readonly ok: false; readonly error: RenameWorkbenchProjectError };
 
 export async function renameWorkbenchProject(
-  workbench: ConnectedWorkbench,
+  workbench: ConnectedWorkbenchCatalog,
   input: RenameWorkbenchProjectInput
 ): Promise<RenameWorkbenchProjectResult> {
-  const timestamp = (input.now ?? new Date()).toISOString();
-  const nextName = input.name.trim();
-  if (!nextName) {
-    throw new Error('Project name cannot be empty.');
+  const name = input.name.trim();
+  if (name.length === 0 || name.length > 160) {
+    return {
+      ok: false,
+      error: {
+        code: 'WORKBENCH_PROJECT_NAME_INVALID',
+        message: 'Project name must contain 1 to 160 characters after trimming.'
+      }
+    };
   }
-
-  const projectEntry = workbench.manifest.projects.find((entry) => entry.id === input.projectId);
-  if (!projectEntry) {
-    throw new Error(`Project index entry not found: ${input.projectId}`);
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) {
+    return {
+      ok: false,
+      error: {
+        code: 'WORKBENCH_PROJECT_RENAME_TIMESTAMP_INVALID',
+        message: 'Project rename timestamp is invalid.'
+      }
+    };
   }
-
-  const projectText = await workbench.adapter.readText(projectEntry.path);
-  if (projectText === null) {
-    throw new Error(`Workbench project file not found: ${projectEntry.path}`);
-  }
-
-  let project: WorkbenchProject;
-  try {
-    project = JSON.parse(projectText) as WorkbenchProject;
-  } catch {
-    throw new Error(`Workbench project file is not valid JSON: ${projectEntry.path}`);
-  }
-
-  const updatedProject: WorkbenchProject = {
-    ...project,
-    name: nextName,
-    updatedAt: timestamp
-  };
-
-  await workbench.adapter.writeText(projectEntry.path, JSON.stringify(updatedProject, null, 2));
-
-  const updatedManifest: WorkbenchManifest = {
-    ...workbench.manifest,
-    updatedAt: timestamp,
-    projects: workbench.manifest.projects.map((entry) =>
-      entry.id === input.projectId
-        ? {
-            ...entry,
-            name: nextName,
-            updatedAt: timestamp
-          }
-        : entry
-    )
-  };
-
-  await workbench.adapter.writeText(
-    WORKBENCH_MANIFEST_FILE,
-    JSON.stringify(updatedManifest, null, 2)
-  );
-
+  const read = await readStoredWorkbenchProject(workbench, input.projectId);
+  if (!read.ok) return read;
+  const parsed = parseWorkbenchProjectDocument(JSON.stringify({
+    ...read.project,
+    name,
+    updatedAt: now.toISOString()
+  }));
+  if (!parsed.ok) return parsed;
+  const replaced = await replaceStoredWorkbenchProject(workbench, {
+    project: parsed.project,
+    ownedFileChanges: []
+  });
+  if (!replaced.ok) return replaced;
   return {
-    project: updatedProject,
-    workbench: {
-      ...workbench,
-      manifest: updatedManifest
-    }
+    ok: true,
+    project: replaced.project,
+    workbench: replaced.workbench
   };
 }

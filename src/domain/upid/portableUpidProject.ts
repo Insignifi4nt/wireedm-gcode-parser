@@ -1,156 +1,201 @@
-import { normalizeMachineProfile } from '@/domain/machine/machineProfiles';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import {
-  WORKBENCH_MANIFEST_FILE,
-  type ConnectedWorkbench,
-  type WorkbenchManifest
-} from '@/domain/storage/workbenchStorage';
-import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
-import { baseNameFromFileName } from '@/domain/workbench/projectNaming';
-import type { WorkbenchProject, WorkbenchUpidState } from '@/domain/workbench/types';
+  addStoredWorkbenchProject,
+  readStoredWorkbenchProject,
+  type AddStoredWorkbenchProjectResult,
+  type ReadStoredWorkbenchProjectError
+} from '@/domain/workbench-catalog/workbenchCatalogMutations';
+import { importedProjectIdentity } from '@/domain/workbench-catalog/importedProjectIdentity';
+import {
+  createWorkbenchProjectDocument,
+  type WorkbenchProjectDocument,
+  type WorkbenchProjectError
+} from '@/domain/workbench-catalog/workbenchProject';
 
-import { createProjectUpid, projectUpidDocument } from './projectUpid';
 import { assertPortableUpidV1Shape } from './portableUpidV1Shape';
 import { validateUpidDocument } from './validateUpidDocument';
 
 export interface PortableUpidProjectExport {
-  fileName: string;
-  text: string;
+  readonly fileName: string;
+  readonly text: string;
 }
 
 export interface ImportPortableUpidProjectInput {
-  fileName: string;
-  text: string;
-  now?: Date;
+  readonly fileName: string;
+  readonly text: string;
+  readonly now?: Date;
 }
 
-export interface ImportPortableUpidProjectResult {
-  workbench: ConnectedWorkbench;
-  project: WorkbenchProject;
-  pathDocument: PathPlanningDocument;
-}
+export type PortableUpidProjectError =
+  | WorkbenchProjectError
+  | ReadStoredWorkbenchProjectError
+  | Extract<AddStoredWorkbenchProjectResult, { readonly ok: false }>['error']
+  | { readonly code: 'PORTABLE_UPID_JSON_INVALID'; readonly message: string }
+  | { readonly code: 'PORTABLE_UPID_SCHEMA_INVALID'; readonly message: string }
+  | {
+      readonly code: 'PORTABLE_UPID_VERSION_UNSUPPORTED';
+      readonly message: string;
+      readonly foundVersion: number;
+      readonly supportedVersion: 1;
+    }
+  | { readonly code: 'PORTABLE_UPID_DOCUMENT_INVALID'; readonly message: string }
+  | { readonly code: 'PORTABLE_UPID_PROJECT_REQUIRED'; readonly message: string }
+  | { readonly code: 'PORTABLE_UPID_TIMESTAMP_INVALID'; readonly message: string };
+
+export type ExportPortableUpidProjectResult =
+  | { readonly ok: true; readonly file: PortableUpidProjectExport }
+  | { readonly ok: false; readonly error: PortableUpidProjectError };
+
+export type ImportPortableUpidProjectResult =
+  | {
+      readonly ok: true;
+      readonly workbench: ConnectedWorkbenchCatalog;
+      readonly project: WorkbenchProjectDocument;
+      readonly pathDocument: PathPlanningDocument;
+    }
+  | { readonly ok: false; readonly error: PortableUpidProjectError };
 
 export async function exportPortableUpidProject(
-  workbench: ConnectedWorkbench,
-  projectPath: string
-): Promise<PortableUpidProjectExport> {
-  const projectText = await workbench.adapter.readText(projectPath);
-  if (projectText === null) {
-    throw new Error(`Workbench project file not found: ${projectPath}`);
+  workbench: ConnectedWorkbenchCatalog,
+  projectId: string
+): Promise<ExportPortableUpidProjectResult> {
+  const read = await readStoredWorkbenchProject(workbench, projectId);
+  if (!read.ok) return read;
+  if (read.project.content.kind !== 'upid-document') {
+    return ownFailure(
+      'PORTABLE_UPID_PROJECT_REQUIRED',
+      'Only DXF or UPID projects can be exported as portable UPID.'
+    );
   }
-
-  const project = parseWorkbenchProject(projectText, projectPath);
-  const pathDocument = projectUpidDocument(project);
-  const document = pathDocument ? portableDocumentClone(pathDocument) : null;
-  if (!document) {
-    throw new Error('Only path projects can be exported as UPID.');
+  const document = detachedPortableDocument(
+    read.project.content.document as PathPlanningDocument
+  );
+  try {
+    assertPortableUpidV1Shape(document);
+  } catch (error) {
+    return ownFailure(
+      'PORTABLE_UPID_DOCUMENT_INVALID',
+      error instanceof Error ? error.message : String(error)
+    );
   }
-  delete document.source.projectId;
-
-  const portable: WorkbenchUpidState = {
-    format: 'upid',
-    schemaVersion: 1,
-    document
+  const file = {
+    fileName: `${portableFileBaseName(read.project.name)}.upid.json`,
+    text: JSON.stringify({ format: 'upid', schemaVersion: 1, document }, null, 2)
   };
-
-  return {
-    fileName: `${portableFileBaseName(project.name)}.upid.json`,
-    text: JSON.stringify(portable, null, 2)
-  };
+  return { ok: true, file };
 }
 
 export async function importPortableUpidProject(
-  workbench: ConnectedWorkbench,
+  workbench: ConnectedWorkbenchCatalog,
   input: ImportPortableUpidProjectInput
 ): Promise<ImportPortableUpidProjectResult> {
-  const portable = parsePortableUpid(input.text);
-  const report = validateUpidDocument(portable.document);
-  if (!report.structurallyValid) {
-    throw new Error(
-      `Invalid UPID document: ${report.structuralDiagnostics
-        .map((diagnostic) => diagnostic.message)
-        .join('; ')}`
+  const parsed = parsePortableUpid(input.text);
+  if (!parsed.ok) return parsed;
+  const document = detachedPortableDocument(parsed.document);
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) {
+    return ownFailure(
+      'PORTABLE_UPID_TIMESTAMP_INVALID',
+      'Portable UPID import timestamp is invalid.'
     );
   }
-
-  const timestamp = (input.now ?? new Date()).toISOString();
-  const projectName = baseNameFromFileName(input.fileName, {
-    fallback: 'UPID Import',
-    stripExtension: /\.upid\.json$/i
+  const timestamp = now.toISOString();
+  const identity = importedProjectIdentity({
+    fileName: input.fileName,
+    fallbackName: 'UPID Import',
+    stripExtension: /\.upid\.json$/i,
+    timestamp,
+    existingIds: workbench.manifest.projects.map(({ id }) => id)
   });
-  const initialProject = createWorkbenchProject({
-    name: projectName,
-    sourceKind: 'upid',
-    now: input.now
+  const sourcePath = `imports/${identity.id}.upid.json`;
+  const portableText = JSON.stringify({ format: 'upid', schemaVersion: 1, document }, null, 2);
+  const created = createWorkbenchProjectDocument({
+    id: identity.id,
+    name: identity.name,
+    source: {
+      kind: 'upid',
+      files: [{
+        name: input.fileName,
+        path: sourcePath,
+        kind: 'upid',
+        createdAt: timestamp
+      }]
+    },
+    content: { kind: 'upid-document', document },
+    now: new Date(timestamp)
   });
-  const projectId = await availableProjectId(workbench, initialProject.id);
-  const project = projectId === initialProject.id
-    ? initialProject
-    : createWorkbenchProject({
-        id: projectId,
-        name: projectName,
-        sourceKind: 'upid',
-        now: input.now
-      });
-  project.machine = normalizeMachineProfile(structuredClone(workbench.activeMachineProfile));
-  const importedDocument = portableDocumentClone(portable.document);
-  delete importedDocument.source.projectId;
-  project.upid = createProjectUpid(project, importedDocument);
-
-  const projectDirectory = `projects/${project.id}`;
-  const projectPath = `${projectDirectory}/project.json`;
-  const updatedManifest: WorkbenchManifest = {
-    ...workbench.manifest,
-    updatedAt: timestamp,
-    projects: [
-      ...workbench.manifest.projects,
-      {
-        id: project.id,
-        name: project.name,
-        path: projectPath,
-        sourceKind: 'upid',
-        updatedAt: timestamp
-      }
-    ]
-  };
-
-  await workbench.adapter.ensureDirectory(projectDirectory);
-  await workbench.adapter.writeText(projectPath, JSON.stringify(project, null, 2));
-  await workbench.adapter.writeText(
-    WORKBENCH_MANIFEST_FILE,
-    JSON.stringify(updatedManifest, null, 2)
-  );
-
+  if (!created.ok) return created;
+  const stored = await addStoredWorkbenchProject(workbench, {
+    project: created.project,
+    ownedFiles: [{ path: sourcePath, contents: portableText }]
+  });
+  if (!stored.ok) return stored;
   return {
-    workbench: { ...workbench, manifest: updatedManifest },
-    project,
-    pathDocument: project.upid.document
+    ok: true,
+    workbench: stored.workbench,
+    project: stored.project,
+    pathDocument: document
   };
 }
 
-function parseWorkbenchProject(text: string, projectPath: string): WorkbenchProject {
+function parsePortableUpid(
+  text: string
+): { readonly ok: true; readonly document: PathPlanningDocument } |
+  { readonly ok: false; readonly error: PortableUpidProjectError } {
+  let value: unknown;
   try {
-    return JSON.parse(text) as WorkbenchProject;
+    value = JSON.parse(text);
   } catch {
-    throw new Error(`Workbench project file is not valid JSON: ${projectPath}`);
+    return ownFailure('PORTABLE_UPID_JSON_INVALID', 'Portable UPID is not valid JSON.');
   }
+  if (!isRecord(value)) {
+    return ownFailure('PORTABLE_UPID_SCHEMA_INVALID', 'Portable UPID must be an object.');
+  }
+  if (typeof value.schemaVersion === 'number' && value.schemaVersion !== 1) {
+    return {
+      ok: false,
+      error: {
+        code: 'PORTABLE_UPID_VERSION_UNSUPPORTED',
+        message: `Portable UPID schema version ${value.schemaVersion} is unsupported.`,
+        foundVersion: value.schemaVersion,
+        supportedVersion: 1
+      }
+    };
+  }
+  if (
+    value.format !== 'upid' ||
+    value.schemaVersion !== 1 ||
+    Object.keys(value).sort().join(',') !== 'document,format,schemaVersion'
+  ) {
+    return ownFailure('PORTABLE_UPID_SCHEMA_INVALID', 'Portable UPID must match the strict schema.');
+  }
+  const document = value.document as PathPlanningDocument;
+  try {
+    assertPortableUpidV1Shape(document);
+  } catch (error) {
+    return ownFailure(
+      'PORTABLE_UPID_SCHEMA_INVALID',
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+  const report = validateUpidDocument(document);
+  if (!report.structurallyValid) {
+    return ownFailure(
+      'PORTABLE_UPID_DOCUMENT_INVALID',
+      report.structuralDiagnostics.map(({ message }) => message).join('; ')
+    );
+  }
+  return { ok: true, document: jsonSnapshot(document) };
 }
 
-function parsePortableUpid(text: string): WorkbenchUpidState {
-  let parsed: Partial<WorkbenchUpidState>;
-  try {
-    parsed = JSON.parse(text) as Partial<WorkbenchUpidState>;
-  } catch {
-    throw new Error('UPID project file is not valid JSON.');
+function detachedPortableDocument(document: PathPlanningDocument) {
+  const clone = jsonSnapshot(document);
+  delete clone.source.projectId;
+  if (clone.source.appliedUnits?.suggestion) {
+    delete clone.source.appliedUnits.suggestion;
   }
-
-  if (parsed.format !== 'upid') {
-    throw new Error(`Unsupported UPID project format: ${String(parsed.format)}.`);
-  }
-  if (parsed.schemaVersion !== 1) {
-    throw new Error(`Unsupported UPID project schema version: ${String(parsed.schemaVersion)}.`);
-  }
-  return parsed as WorkbenchUpidState;
+  return clone;
 }
 
 function portableFileBaseName(name: string) {
@@ -161,20 +206,22 @@ function portableFileBaseName(name: string) {
   return safe || 'UPID Project';
 }
 
-async function availableProjectId(workbench: ConnectedWorkbench, baseId: string) {
-  const manifestIds = new Set(workbench.manifest.projects.map(({ id }) => id));
-
-  for (let suffix = 1; suffix < Number.MAX_SAFE_INTEGER; suffix++) {
-    const candidate = suffix === 1 ? baseId : `${baseId}-${suffix}`;
-    if (manifestIds.has(candidate)) continue;
-    const projectPath = `projects/${candidate}/project.json`;
-    if (await workbench.adapter.readText(projectPath) === null) return candidate;
-  }
-
-  throw new Error('Could not create a unique project ID.');
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function portableDocumentClone(document: PathPlanningDocument) {
-  assertPortableUpidV1Shape(document);
-  return structuredClone(document);
+function ownFailure(
+  code:
+    | 'PORTABLE_UPID_JSON_INVALID'
+    | 'PORTABLE_UPID_SCHEMA_INVALID'
+    | 'PORTABLE_UPID_DOCUMENT_INVALID'
+    | 'PORTABLE_UPID_PROJECT_REQUIRED'
+    | 'PORTABLE_UPID_TIMESTAMP_INVALID',
+  message: string
+): { readonly ok: false; readonly error: PortableUpidProjectError } {
+  return { ok: false, error: { code, message } };
+}
+
+function jsonSnapshot<Value>(value: Value): Value {
+  return JSON.parse(JSON.stringify(value)) as Value;
 }
