@@ -44,7 +44,7 @@ describe('App front-end redesign', () => {
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     const machineOutputSettingsButton = [...container.querySelectorAll('button')].find(
-      (button) => button.getAttribute('aria-label') === 'Machine & Output settings'
+      (button) => button.textContent?.trim() === 'Machines & posts'
     );
     expect(machineOutputSettingsButton).not.toBeNull();
     await act(async () => {
@@ -55,10 +55,11 @@ describe('App front-end redesign', () => {
     const dialog = container.querySelector(
       '[role="dialog"][aria-label="Workbench settings"]'
     );
-    expect(dialog?.querySelector('input[aria-label="Machine profile name"]')).not.toBeNull();
-    expect(dialog?.querySelector('textarea[aria-label="Header template"]')).not.toBeNull();
-    expect(dialog?.querySelector('select[aria-label="Output extension"]')).not.toBeNull();
-    expect(container.querySelector('main textarea[aria-label="Header template"]')).toBeNull();
+    expect(dialog?.querySelector('select[aria-label="Controller export"]')).not.toBeNull();
+    expect(dialog?.querySelector('select[aria-label="Recent planning machine"]')).not.toBeNull();
+    expect(dialog?.textContent).toContain('Physical machine library');
+    expect(dialog?.textContent).toContain('Versioned post library');
+    expect(dialog?.querySelector('textarea[aria-label="Header template"]')).toBeNull();
   });
 
   it('shows storage, machine, output, and project state in the application status bar', async () => {
@@ -67,9 +68,9 @@ describe('App front-end redesign', () => {
 
     const status = container.querySelector('[data-app-status-bar]');
     expect(status?.textContent).toContain('Browser cache');
-    expect(status?.textContent).toContain('Default Wire EDM');
-    expect(status?.textContent).toContain('.iso');
-    expect(status?.textContent).toContain('CRLF');
+    expect(status?.textContent).toContain('No planning machine');
+    expect(status?.textContent).toContain('Export unconfigured');
+    expect(status?.textContent).toContain('No line ending');
     expect(status?.textContent).toContain('0 projects');
   });
 

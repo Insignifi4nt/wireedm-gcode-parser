@@ -139,10 +139,21 @@ export async function prepareDxfImport(container: HTMLElement, file: File) {
   await flushAsync();
 }
 
-export async function confirmPendingDxfImport(container: HTMLElement) {
+export async function confirmPendingDxfImport(
+  container: HTMLElement,
+  unitCandidateId: 'millimeters' | 'inches'
+) {
   const dialog = container.querySelector(
     '[role="dialog"][aria-label="Review DXF import"]'
   );
+  const unitSelect = dialog?.querySelector(
+    'select[aria-label="DXF units"]'
+  ) as HTMLSelectElement | null;
+  if (!unitSelect) throw new Error('DXF unit selection is not available.');
+
+  await act(async () => setSelectValue(unitSelect, unitCandidateId));
+  await flushAsync();
+
   const button = [...(dialog?.querySelectorAll('button') ?? [])].find(
     (candidate) => candidate.textContent?.trim() === 'Import and open'
   ) as HTMLButtonElement | undefined;

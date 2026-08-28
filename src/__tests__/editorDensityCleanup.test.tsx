@@ -43,7 +43,7 @@ describe('Editor density cleanup', () => {
       input?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
-    await confirmPendingDxfImport(container);
+    await confirmPendingDxfImport(container, 'millimeters');
   }
 
   it('keeps canonical workflows directly accessible in a compact Path Project header', async () => {
@@ -68,12 +68,12 @@ describe('Editor density cleanup', () => {
   it('anchors a path project in the UPID rail and materializes the right dock only for its active workflow', async () => {
     await importSimplePathProject();
 
-    expect(container.querySelector('[role="tree"][aria-label="UPID program sequence"]')).not.toBeNull();
+    expect(container.querySelector('[role="tree"][aria-label="UPID execution plan"]')).not.toBeNull();
     expect(document.querySelector('[data-editor-empty-dock]')).toBeNull();
     expect(document.querySelector('[data-editor-panel-dock-zone="right"]')).toBeNull();
 
     const operationRow = container.querySelector<HTMLElement>(
-      '[role="treeitem"][data-tree-key^="operation:"] > [data-editor-program-tree-row]'
+      '[role="treeitem"][data-tree-key^="operation:"] > div'
     );
     expect(operationRow).not.toBeNull();
     await act(async () => {

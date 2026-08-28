@@ -75,7 +75,7 @@ describe('Editor import, export, and parse feedback', () => {
     });
     await flushAsync();
 
-    expect(container.textContent).toContain('editor/shop-output-');
+    expect(container.textContent).toContain('projects/shop-output-');
     expect(container.textContent).toContain('G1 X12 Y4');
     expect(container.textContent).toContain('2 path items');
     expect(container.querySelector('[data-editor-layout="canvas-first"]')).not.toBeNull();
@@ -234,8 +234,9 @@ describe('Editor import, export, and parse feedback', () => {
     );
 
     expect(project.source.kind).toBe('external-gcode');
-    expect('sourceRequiresCleanup' in project.editor).toBe(false);
-    expect(project.editor.activeFilePath).toMatch(/^editor\/shop-output-\d{4}-\d{2}-\d{2}\.nc$/);
+    expect(project.content.activeFilePath).toMatch(
+      /^projects\/shop-output-\d{4}-\d{2}-\d{2}\/editable\.nc$/
+    );
 
     const updatedProgramText = [
       '%',
@@ -278,7 +279,7 @@ describe('Editor import, export, and parse feedback', () => {
     expect(container.textContent).toContain('3 path items');
     expect(container.textContent).toContain('1');
     expect(
-      window.localStorage.getItem(`wire-edm-workbench:file:${project.editor.activeFilePath}`)
+      window.localStorage.getItem(`wire-edm-workbench:file:${project.content.activeFilePath}`)
     ).toBe(updatedProgramText);
   });
 
@@ -316,8 +317,7 @@ describe('Editor import, export, and parse feedback', () => {
 
       const toast = container.querySelector('[data-status-toast="success"]') as HTMLButtonElement | null;
       expect(toast).not.toBeNull();
-      expect(toast?.textContent).toContain('Program imported');
-      expect(toast?.textContent).toContain('toast-import.nc');
+      expect(toast?.textContent).toContain('Program imported: toast-import.nc.');
 
       Object.defineProperty(fileInput, 'files', {
         value: [new File(['G0 X1 Y1\nM30'], 'toast-import-2.nc')],
@@ -355,9 +355,9 @@ describe('Editor import, export, and parse feedback', () => {
 
   it('exports the current editor draft as a normalized ISO file without mutating the draft', async () => {
     window.showDirectoryPicker = undefined;
-    const downloadGeneratedProgram = vi.fn();
+    const downloadTextFile = vi.fn();
 
-    await renderApp(context, { downloadGeneratedProgram });
+    await renderApp(context, { downloadTextFile });
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Open Editor')
@@ -401,7 +401,7 @@ describe('Editor import, export, and parse feedback', () => {
       exportIsoButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(downloadGeneratedProgram).toHaveBeenCalledWith({
+    expect(downloadTextFile).toHaveBeenCalledWith({
       fileName: expect.stringMatching(/^normalized-\d{4}-\d{2}-\d{2}\.iso$/),
       text: ['%', 'N10 G0 X0 Y0', 'N20 G1 X1 Y0', 'N30 M30', 'N40 M02', ''].join('\r\n')
     });
@@ -411,9 +411,9 @@ describe('Editor import, export, and parse feedback', () => {
 
   it('keeps G20 available in the external machine-program text workflow', async () => {
     window.showDirectoryPicker = undefined;
-    const downloadGeneratedProgram = vi.fn();
+    const downloadTextFile = vi.fn();
 
-    await renderApp(context, { downloadGeneratedProgram });
+    await renderApp(context, { downloadTextFile });
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Open Editor')
     );
@@ -449,7 +449,7 @@ describe('Editor import, export, and parse feedback', () => {
       exportIsoButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(downloadGeneratedProgram).toHaveBeenCalledWith(
+    expect(downloadTextFile).toHaveBeenCalledWith(
       expect.objectContaining({ text: expect.stringContaining('G20') })
     );
     expect(programEditor?.value).toBe('G20\nG0 X0 Y0\nG1 X1 Y0\nM30');
@@ -583,7 +583,7 @@ describe('Editor import, export, and parse feedback', () => {
     expect(replacedProgramEditor?.value).toContain('G1 X8 Y8');
   });
 
-  it('serializes replacement import behind save and preserves same-document history', async () => {
+  it('rejects replacement import while saving without corrupting the active draft', async () => {
     window.showDirectoryPicker = undefined;
     const saveGate = createDeferred<void>();
     const saveEditorProgram = vi.fn(async (...args: Parameters<typeof saveEditorProgramService>) => {
@@ -653,6 +653,10 @@ describe('Editor import, export, and parse feedback', () => {
     expect(fileInput?.disabled).toBe(true);
     expect(programEditor?.disabled).toBe(true);
     expect(undoButton?.disabled).toBe(true);
+    await act(async () => {
+      undoButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(programEditor?.value).toBe('G0 X0 Y0\nG1 X9 Y9\nM30');
 
     await act(async () => {
       window.dispatchEvent(
@@ -669,12 +673,9 @@ describe('Editor import, export, and parse feedback', () => {
 
     expect(container.textContent).not.toContain('Unsaved');
     expect(programEditor?.value).toBe('G0 X0 Y0\nG1 X9 Y9\nM30');
-    expect(undoButton?.disabled).toBe(false);
-    await act(async () => {
-      undoButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    expect(programEditor?.value).toBe('G0 X0 Y0\nG1 X5 Y5\nM30');
-    expect(container.textContent).not.toContain('must-not-import.nc');
+    expect(container.textContent).toContain(
+      'Cannot import must-not-import.nc while editor-save is in progress.'
+    );
   });
 
   it('locks dashboard project and settings mutations while a program import is pending', async () => {
@@ -739,15 +740,15 @@ describe('Editor import, export, and parse feedback', () => {
         .querySelector('button[aria-label="Open settings"]')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    const connectButton = container.querySelector(
-      'button[aria-label="Choose Workbench Folder"]'
-    ) as HTMLButtonElement | null;
+    const connectButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.includes('Choose Workbench Folder')
+    ) as HTMLButtonElement | undefined;
     expect(connectButton?.disabled).toBe(true);
     await act(async () => {
       connectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     const machineSettingsButton = [...container.querySelectorAll('button')].find(
-      (button) => button.getAttribute('aria-label') === 'Machine & Output settings'
+      (button) => button.textContent?.trim() === 'Machines & posts'
     );
     expect(machineSettingsButton).not.toBeNull();
     await act(async () => {
@@ -755,7 +756,7 @@ describe('Editor import, export, and parse feedback', () => {
       await Promise.resolve();
     });
     const saveSettingsButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Save Settings')
+      button.textContent?.includes('Save preferences')
     );
     expect(saveSettingsButton?.disabled).toBe(true);
     expect(connectWorkbenchDirectory).not.toHaveBeenCalled();

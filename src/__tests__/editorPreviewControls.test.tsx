@@ -305,7 +305,7 @@ describe('Editor preview controls and guide', () => {
     expect(container.querySelector('[data-editor-cursor="y"]')?.textContent).toBe('-');
   });
 
-  it('shows old sidebar-style path stats, bounds, and file name', async () => {
+  it('shows path stats, bounds, and the catalog-owned editable file name', async () => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
@@ -342,7 +342,7 @@ describe('Editor preview controls and guide', () => {
     expect(container.querySelector('[data-editor-stat="bounds"]')?.textContent).toContain(
       'Y0.000..10.000'
     );
-    expect(container.querySelector('[data-editor-stat="file"]')?.textContent).toContain('stats');
+    expect(container.querySelector('[data-editor-stat="file"]')?.textContent).toBe('editable.nc');
   });
 
   it('opens a centered bilingual editor manual and highlights real controls', async () => {

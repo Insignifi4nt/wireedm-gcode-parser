@@ -55,7 +55,14 @@ export default function App({ services }: AppProps = {}) {
       workbenchStatus={app.workbenchStatus}
     >
       <StatusToastList onDismiss={app.dismissStatusToast} toasts={app.statusToasts} />
-      {app.activeView === 'editor' && app.connectedWorkbench ? (
+      {app.workbenchStatus === 'error' && !app.connectedWorkbench ? (
+        <section className="grid h-full place-items-center p-6" role="alert">
+          <div className="max-w-2xl border border-destructive bg-destructive/10 p-4 font-mono text-xs text-destructive">
+            <h1 className="mb-2 font-sans text-sm font-semibold">Workbench could not be opened</h1>
+            <p>{app.errorMessage ?? 'The workbench failed without a diagnostic.'}</p>
+          </div>
+        </section>
+      ) : app.activeView === 'editor' && app.connectedWorkbench ? (
         <EditorPage
           exportPreference={app.connectedWorkbench.manifest.preferences.export}
           importErrorMessage={app.editorImportErrorMessage}

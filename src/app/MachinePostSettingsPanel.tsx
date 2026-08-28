@@ -205,7 +205,7 @@ export function MachinePostSettingsPanel({
           <TextField label="Acknowledged by" disabled={disabled || !machine} value={acknowledgedBy} onChange={setAcknowledgedBy} />
           <TextField label="Compatibility notes" disabled={disabled || !machine} value={compatibilityNotes} onChange={setCompatibilityNotes} />
         </div>
-        <label className="grid gap-1 text-[10px] text-muted-foreground">Post properties JSON<textarea className="technical-input min-h-20 p-2 font-mono text-[10px] text-foreground" disabled={disabled || !machine} onChange={(event) => setPropertiesText(event.currentTarget.value)} spellCheck={false} value={propertiesText} /></label>
+        <label className="grid gap-1 text-[10px] text-muted-foreground">Post properties JSON<textarea aria-label="Post properties JSON" className="technical-input min-h-20 p-2 font-mono text-[10px] text-foreground" disabled={disabled || !machine} onChange={(event) => setPropertiesText(event.currentTarget.value)} spellCheck={false} value={propertiesText} /></label>
         <Button className="w-fit" disabled={disabled || !machine} size="sm" type="submit" variant="outline"><Plus />Create binding</Button>
         {machine?.bindings.map((binding) => (
           <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border border-border p-2 text-[10px]" key={binding.id}>
@@ -287,9 +287,9 @@ function SectionTitle({ title }: { title: string }) {
 }
 
 function Select({ disabled, label, onChange, options, value }: { disabled: boolean; label: string; onChange: (value: string) => void; options: readonly (readonly [string, string])[]; value: string }) {
-  return <label className="grid gap-1 text-[10px] text-muted-foreground">{label}<select className="technical-input h-8 px-2 text-[10px] text-foreground" disabled={disabled} onChange={(event) => onChange(event.currentTarget.value)} value={value}>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></label>;
+  return <label className="grid gap-1 text-[10px] text-muted-foreground">{label}<select aria-label={label} className="technical-input h-8 px-2 text-[10px] text-foreground" disabled={disabled} onChange={(event) => onChange(event.currentTarget.value)} value={value}>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></label>;
 }
 
 function TextField({ disabled, label, onChange, value }: { disabled: boolean; label: string; onChange: (value: string) => void; value: string }) {
-  return <label className="grid gap-1 text-[10px] text-muted-foreground">{label}<input className="technical-input h-8 px-2 text-[10px] text-foreground" disabled={disabled} onChange={(event) => onChange(event.currentTarget.value)} value={value} /></label>;
+  return <label className="grid gap-1 text-[10px] text-muted-foreground">{label}<input aria-label={label} className="technical-input h-8 px-2 text-[10px] text-foreground" disabled={disabled} onChange={(event) => onChange(event.currentTarget.value)} value={value} /></label>;
 }

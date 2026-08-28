@@ -33,9 +33,9 @@ describe('Editor measurement points', () => {
 
   it('adds measurement points, inserts them into the editor draft, and exports them', async () => {
     window.showDirectoryPicker = undefined;
-    const downloadGeneratedProgram = vi.fn();
+    const downloadTextFile = vi.fn();
 
-    await renderApp(context, { downloadGeneratedProgram });
+    await renderApp(context, { downloadTextFile });
 
     const openEditorButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Open Editor')
@@ -121,19 +121,19 @@ describe('Editor measurement points', () => {
       exportPointIsoButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(downloadGeneratedProgram).toHaveBeenCalledWith({
+    expect(downloadTextFile).toHaveBeenCalledWith({
       fileName: expect.stringMatching(/^measurement-points-\d{4}-\d{2}-\d{2}\.csv$/),
       text: ['Point,X,Y', 'P1,12.500,-3.000', 'P2,1.000,2.000'].join('\n')
     });
-    expect(downloadGeneratedProgram).toHaveBeenCalledWith({
+    expect(downloadTextFile).toHaveBeenCalledWith({
       fileName: expect.stringMatching(/^measurement-points-\d{4}-\d{2}-\d{2}\.gcode$/),
       text: expect.stringContaining('G0 X12.500 Y-3.000')
     });
-    expect(downloadGeneratedProgram).toHaveBeenCalledWith({
+    expect(downloadTextFile).toHaveBeenCalledWith({
       fileName: expect.stringMatching(/^measurement-points-\d{4}-\d{2}-\d{2}\.iso$/),
       text: expect.stringContaining('N70 G1 X1.000 Y2.000')
     });
-    expect(downloadGeneratedProgram).not.toHaveBeenCalledWith({
+    expect(downloadTextFile).not.toHaveBeenCalledWith({
       fileName: expect.stringMatching(/^measurement-points-\d{4}-\d{2}-\d{2}\.iso$/),
       text: expect.stringContaining('F1000')
     });

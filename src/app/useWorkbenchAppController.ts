@@ -66,7 +66,9 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
   const [settingsStatus, setSettingsStatus] = useState<SettingsStatus>('idle');
   const [settingsErrorMessage, setSettingsErrorMessage] = useState<string | null>(null);
   const [statusToasts, setStatusToasts] = useState<StatusToast[]>([]);
+  const [statusNotifications, setStatusNotifications] = useState<StatusToast[]>([]);
   const initializationStarted = useRef(false);
+  const activeMutation = useRef<'editor-save' | 'program-import' | null>(null);
   const toastSequence = useRef(0);
 
   useEffect(() => {
@@ -123,6 +125,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       durationMs: type === 'error' ? undefined : 4500
     };
     setStatusToasts((current) => [...current.slice(-19), toast]);
+    setStatusNotifications((current) => [toast, ...current].slice(0, 100));
   }
 
   function dismissStatusToast(id: string) {
@@ -235,6 +238,15 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     setLatestImport(imported);
     setPendingDxfImport(null);
     setImportStatus('idle');
+    const loaded = await services.loadEditorProgram(imported.workbench, imported.project.id);
+    if (!loaded.ok) {
+      showStatusToast(
+        `DXF was committed, but its editor document could not be opened: ${loaded.error.message}`,
+        'error'
+      );
+      return;
+    }
+    openEditorProgram(loaded.editorProgram);
     showStatusToast(`Imported ${imported.project.name}.`, 'success');
   }
 
@@ -251,6 +263,11 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       if (!imported.ok) return setImportFailure(imported.error.message);
       setConnectedWorkbench(imported.workbench);
       setImportStatus('idle');
+      const loaded = await services.loadEditorProgram(imported.workbench, imported.project.id);
+      if (!loaded.ok) return setImportFailure(
+        `UPID was committed, but its editor document could not be opened: ${loaded.error.message}`
+      );
+      openEditorProgram(loaded.editorProgram);
       showStatusToast(`Imported ${imported.project.name}.`, 'success');
     } catch (error) {
       setImportFailure(errorText(error));
@@ -260,6 +277,12 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
   async function handleImportExternalProgram(file: File) {
     const workbench = requireWorkbench();
     if (!workbench) return setEditorImportFailure('Connect a valid workbench before importing a program.');
+    if (activeMutation.current) {
+      return setEditorImportFailure(
+        `Cannot import ${file.name} while ${activeMutation.current} is in progress.`
+      );
+    }
+    activeMutation.current = 'program-import';
     setEditorImportStatus('importing');
     setEditorImportErrorMessage(null);
     try {
@@ -271,9 +294,11 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       setConnectedWorkbench(imported.workbench);
       openEditorProgram(imported.editorProgram);
       setEditorImportStatus('idle');
-      showStatusToast(`Imported ${imported.project.name}.`, 'success');
+      showStatusToast(`Program imported: ${file.name}.`, 'success');
     } catch (error) {
       setEditorImportFailure(errorText(error));
+    } finally {
+      activeMutation.current = null;
     }
   }
 
@@ -315,22 +340,42 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       setEditorSaveErrorMessage('A catalog-owned project must be open before saving.');
       return null;
     }
-    setEditorSaveStatus('saving');
-    setEditorSaveErrorMessage(null);
-    const saved = await services.saveEditorProgram(workbench, {
-      projectId: program.project.id,
-      draft
-    });
-    if (!saved.ok) {
+    if (activeMutation.current) {
       setEditorSaveStatus('error');
-      setEditorSaveErrorMessage(saved.error.message);
+      setEditorSaveErrorMessage(`Cannot save while ${activeMutation.current} is in progress.`);
       return null;
     }
-    setConnectedWorkbench(saved.workbench);
-    setLoadedEditorProgram(saved.editorProgram);
-    setEditorSaveStatus('idle');
-    showStatusToast('Project saved.', 'success');
-    return saved.editorProgram;
+    activeMutation.current = 'editor-save';
+    setEditorSaveStatus('saving');
+    setEditorSaveErrorMessage(null);
+    try {
+      const saved = await services.saveEditorProgram(workbench, {
+        projectId: program.project.id,
+        draft
+      });
+      if (!saved.ok) {
+        setEditorSaveStatus('error');
+        setEditorSaveErrorMessage(saved.error.message);
+        return null;
+      }
+      setConnectedWorkbench(saved.workbench);
+      setLoadedEditorProgram(saved.editorProgram);
+      setLatestImport((current) => current?.project.id === saved.project.id
+        ? {
+            ...current,
+            workbench: saved.workbench,
+            project: saved.project,
+            pathDocument: saved.editorProgram.model === 'upid-document'
+              ? saved.editorProgram.pathDocument
+              : current.pathDocument
+          }
+        : current);
+      setEditorSaveStatus('idle');
+      showStatusToast('Project saved.', 'success');
+      return saved.editorProgram;
+    } finally {
+      activeMutation.current = null;
+    }
   }
 
   async function handlePrepareDxfReimport() {
@@ -698,7 +743,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     settingsErrorMessage,
     settingsStatus,
     showStatusToast,
-    statusNotifications: statusToasts,
+    statusNotifications,
     statusToasts,
     storageActionLabel: connectedWorkbench?.adapter.kind === 'directory'
       ? 'Choose another Workbench Folder'

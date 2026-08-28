@@ -44,7 +44,7 @@ describe('Editor construction regressions', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await flushAsync();
-    await confirmPendingDxfImport(container);
+    await confirmPendingDxfImport(container, 'millimeters');
 
     await openWorkflowCommand('view.contours');
     await act(async () => {
