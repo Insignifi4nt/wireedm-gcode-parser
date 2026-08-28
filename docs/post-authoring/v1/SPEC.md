@@ -1,0 +1,121 @@
+# Wire EDM Post Package Specification v1
+
+## 1. Scope and authority
+
+This specification defines the portable input accepted by Wire EDM Workbench's post platform. It is written for coding agents and humans producing a post from controller evidence. It does not define a universal G-code dialect.
+
+The key words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative only when capitalized, as described by RFC 2119 and RFC 8174.
+
+Authority is ordered by concern, not by file priority:
+
+1. `schema/post-package.schema.json` governs serialized shape.
+2. the package semantic validator governs references, evidence scope, property coherence, and execution-contract coherence;
+3. the post runtime API governs executable behavior;
+4. the conformance runner governs fixtures, event coverage, trace integrity, determinism, and resource limits;
+5. this document governs requirements that cannot be expressed by those executable contracts.
+
+Generated schemas, declarations, catalogues, examples, prompts, and `AGENTS.md` files cannot weaken an executable contract. A disagreement MUST stop generation or installation; an implementation MUST NOT choose a fallback interpretation.
+
+## 2. Design boundary
+
+The application compiles controller-neutral UPID into an ordered execution plan. The compiler owns geometry, operation order, passes, entry and exit motion, threading intent, wire separation, program stops, compensation intent, and source trace. A post owns controller words, command ordering, modal state, formatting, and controller-specific lifecycle rules.
+
+A post MUST NOT:
+
+- change, heal, reorder, omit, or invent cutting geometry;
+- choose an unspecified machine, binding, coordinate mode, unit mode, compensation side, offset, thread action, or output preference;
+- infer one controller's command meaning from another controller;
+- emit a machine-ready artifact after a parse, capability, lifecycle, trace, audit, resource, or determinism failure.
+
+Names such as `distance.absolute` and `compensation.finish` are semantic vocabulary identifiers. They do not imply a G-code word. For example, a package may associate `distance.absolute` with `G90` only when its target controller evidence supports that association. The application assigns no global meaning to `G60`, `G90`, or any other controller token.
+
+## 3. Identity and immutability
+
+A package identity is the tuple `(manifest.id, manifest.version, canonical content SHA-256)`. Every machine binding MUST reference that exact tuple. `latest`, version ranges, filename identity, mutable aliases, and same-version content replacement are forbidden.
+
+The package `schemaVersion` and `manifest.engineApiVersion` MUST be supported exactly. Unsupported versions MUST produce a version error; they MUST NOT be normalized, migrated, or interpreted as a nearby version.
+
+Changing code, dialect declarations, evidence, fixtures, properties, capabilities, targets, or execution policy changes package content identity. Such a change SHOULD also receive a new semantic version.
+
+## 4. Dialect vocabulary
+
+Every controller command emitted by a post MUST be registered under `dialect.commands` with:
+
+- a stable semantic command ID;
+- one single-line template;
+- closed, typed parameters;
+- modal state preconditions in `requires`;
+- modal state effects in `effects`;
+- at least one evidence reference.
+
+Command IDs describe intent, not spelling. Templates contain controller spelling. A post MUST NOT emit an unregistered controller command. A command MUST NOT be emitted when its declared preconditions are false. Conflicting or incomplete state transitions MUST fail the run.
+
+Property values are supplied by an exact machine binding. Required values MUST be present and valid. Suggested values are authoring hints only; the engine MUST NOT substitute them for missing binding values.
+
+## 5. Evidence
+
+Every command MUST be supported by evidence applicable to the declared controller target. Evidence MUST identify its source, a stable content digest, a selector, a concrete claim, supported command IDs, target applicability, and review state.
+
+Manufacturer manuals and controller references SHOULD be preferred. A verified program or operator test MAY supplement them but MUST record when and how it was obtained. An agent MUST NOT fabricate a source digest, page, quotation, review, machine test, or firmware range.
+
+Cross-controller inference is prohibited. Similar spelling is not evidence of equal semantics. If the available material does not establish a required command or lifecycle, the package MUST remain incomplete and conformance MUST fail with a specific diagnostic.
+
+Documentation evidence and physical verification are separate. Passing schema and conformance proves contract compliance and reproducibility; it does not prove that a program is safe on a physical machine. New and changed bindings remain `unverified` until an explicit verification record covers the exact machine hash, post hash, and property hash.
+
+## 6. Capabilities and execution lifecycle
+
+`manifest.capabilities` declares what the post can acknowledge. `manifest.execution` declares lifecycle constraints. Both MUST describe the implementation completely and consistently.
+
+The engine delivers events in plan order. Every event MUST receive exactly one disposition:
+
+- `emitted`, with the exact output block IDs caused by that event; or
+- `consumed`, with a non-empty reason explaining why no controller block is required.
+
+Motion and positioning events MUST preserve their structured motion trace. Output audits compare that trace with the neutral plan. Consuming a required motion event, changing its endpoints or center, or emitting an unaudited motion MUST fail.
+
+The post MUST end with all lifecycle state in the state required by its execution contract. Pending positioning, compensation, threading, program termination, or an unacknowledged event MUST fail. Partial output from a failed run is diagnostic data only and MUST NOT be downloadable as a machine-ready artifact.
+
+## 7. Source program
+
+`source.code` exports the exact `createPost` entrypoint defined by the generated SDK declaration. The source receives only the documented deterministic host API. It MUST NOT depend on network access, browser APIs, local storage, wall-clock time, randomness, locale, ambient machine state, dynamic imports, or undeclared files.
+
+Custom source is executed only in the isolated runtime with imports disabled and explicit CPU, memory, stack, output, and event limits. Installation and execution are separate decisions: a structurally valid package MAY be installed for inspection while its source is not runnable. In that state the engine MUST return `POST_NOT_RUNNABLE`; it MUST NOT select a built-in implementation or another package as a substitute.
+
+## 8. Fixtures and conformance
+
+Each fixture binds an exact plan-fixture ID, a complete property set, exact expected program text, and evidence references. A package MUST cover every declared command family, capability, lifecycle branch, property boundary, and known failure mode across its fixtures.
+
+Conformance MUST perform, at minimum:
+
+1. schema and semantic validation;
+2. exact source, evidence, and command-reference validation;
+3. property validation;
+4. capability preflight;
+5. isolated source execution within resource limits;
+6. exactly-once event disposition validation;
+7. command-registration and modal-state validation;
+8. motion and source-trace audit;
+9. exact fixture comparison;
+10. repeated-run determinism comparison.
+
+Any failure produces a non-zero result and structured diagnostics. Conformance MUST NOT rewrite the package, insert properties, skip fixtures, normalize expected output, retry through another post, or downgrade an error to a warning.
+
+## 9. Saved revisions and artifacts
+
+Controller output is generated only from a persisted, validated saved job revision. That revision snapshots the UPID, neutral execution plan, physical machine, exact binding and verification state, exact package, resolved properties, engine version, and content hashes.
+
+File extension and line ending are explicit artifact-writing preferences. They MAY change the filename or encoded line separators. They MUST NOT change semantic controller blocks. Draft editor state, an unconfigured export preference, a missing binding, a dangling post reference, a modified package, or a hash mismatch MUST stop generation with a specific error.
+
+## 10. Agent completion criteria
+
+An authored package is complete only when the agent has:
+
+- recorded target controller and firmware scope without inference;
+- added source records and command-scoped evidence;
+- declared complete capabilities, execution policy, properties, and dialect state;
+- implemented the documented runtime API without ambient dependencies;
+- added meaningful exact fixtures;
+- run generation and conformance successfully;
+- reported unresolved evidence or physical-verification limits explicitly.
+
+The agent MUST NOT claim physical verification from conformance alone.

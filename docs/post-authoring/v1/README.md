@@ -11,6 +11,7 @@ npm run post:docs:check
 
 Current contents:
 
+- `SPEC.md` is the normative interoperability, safety, evidence, lifecycle, and determinism contract.
 - `schema/post-package.schema.json` validates installable `.wireedm-post.json` documents.
 - `schema/post-library.schema.json` validates the local persisted post library.
 - `schema/machine-definition.schema.json` validates portable physical-machine definitions and exact post bindings.
@@ -19,4 +20,6 @@ Current contents:
 - `schema/workbench-project.schema.json` validates machine- and post-neutral editable project state.
 - `examples/minimal.wireedm-post.json` is the smallest reviewed example currently used to explain the package shape.
 
-The normative lifecycle specification, callback declarations, event and diagnostic catalogues, conformance runner, and production packages land with the post engine. Until that engine is present, a valid uploaded JavaScript package is installable and inspectable but not executable.
+The package schema and semantic validator are implemented. Exact built-in packages are executable through the audited neutral-event engine. Custom JavaScript packages remain installable and inspectable but are explicitly non-runnable until the isolated runtime and its resource-limit tests are present; no built-in or alternate package is selected as a substitute.
+
+Agent authors working in `post-packages/` must also follow the scoped `post-packages/AGENTS.md` instructions.
