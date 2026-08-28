@@ -12,7 +12,6 @@ import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { CreateMachinePostBindingInput } from '@/domain/machine-definition/machineDefinition';
 import { serializeMachineDefinition } from '@/domain/machine-definition/machineDefinition';
 import { evaluatePhysicalMachineEnvelopeFit } from '@/domain/machine-definition/machineFit';
-import type { DuplicateStoredMachinePostBindingInput } from '@/domain/machine-definition/machineLibraryMutations';
 import type { DownloadProgramFileInput } from '@/domain/post/downloadProgramFile';
 import type { PostInstallationRef } from '@/domain/post-processor/postLibrary';
 import type { ControllerArtifactResult } from '@/domain/wire-edm-job';
@@ -602,15 +601,6 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     }, 'Exact post binding created.');
   }
 
-  async function handleDuplicateMachineBinding(machineId: string, sourceBindingId: string, input: DuplicateStoredMachinePostBindingInput) {
-    const workbench = requireWorkbench();
-    if (!workbench) return settingsFailure('Connect a valid workbench before duplicating a binding.');
-    await runSettingsMutation(async () => {
-      const result = await services.duplicateStoredMachinePostBinding(workbench, machineId, sourceBindingId, input);
-      return result.ok ? { ok: true as const, workbench: result.workbench } : result;
-    }, 'Post binding duplicated with verification reset.');
-  }
-
   async function handleRemoveMachineBinding(machineId: string, bindingId: string) {
     const workbench = requireWorkbench();
     if (!workbench) return settingsFailure('Connect a valid workbench before removing a binding.');
@@ -714,7 +704,6 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     handleDxfReimportRebuildAcknowledgedChange,
     handleDxfReimportUnitCandidateChange,
     handleDownloadEditorFile,
-    handleDuplicateMachineBinding,
     handleExportMachineDefinition,
     handleExportUpidProject,
     handleGenerateControllerArtifact,

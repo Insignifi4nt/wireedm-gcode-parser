@@ -46,7 +46,6 @@ export function AppShell({
   interactionLocked,
   onConnectWorkbench,
   onCreateMachineBinding,
-  onDuplicateMachineBinding,
   onExportMachineDefinition,
   onImportMachineDefinition,
   onImportPostPackage,
@@ -402,7 +401,6 @@ export function AppShell({
         onClose={() => setSettingsOpen(false)}
         onConnectWorkbench={onConnectWorkbench}
         onCreateMachineBinding={onCreateMachineBinding}
-        onDuplicateMachineBinding={onDuplicateMachineBinding}
         onExportMachineDefinition={onExportMachineDefinition}
         onImportMachineDefinition={onImportMachineDefinition}
         onImportPostPackage={onImportPostPackage}

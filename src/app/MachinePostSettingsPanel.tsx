@@ -6,7 +6,6 @@ import type {
   CreateMachinePostBindingInput,
   MachinePostCompatibility
 } from '@/domain/machine-definition/machineDefinition';
-import type { DuplicateStoredMachinePostBindingInput } from '@/domain/machine-definition/machineLibraryMutations';
 import type { PostInstallationRef } from '@/domain/post-processor/postLibrary';
 import type {
   ConnectedWorkbenchCatalog,
@@ -18,11 +17,6 @@ export interface MachinePostSettingsActions {
     machineId: string,
     post: PostInstallationRef,
     input: CreateMachinePostBindingInput
-  ) => void | Promise<void>;
-  readonly onDuplicateMachineBinding: (
-    machineId: string,
-    sourceBindingId: string,
-    input: DuplicateStoredMachinePostBindingInput
   ) => void | Promise<void>;
   readonly onExportMachineDefinition: (machineId: string) => void;
   readonly onImportMachineDefinition: (file: File) => void | Promise<void>;
@@ -48,11 +42,11 @@ interface MachinePostSettingsPanelProps extends MachinePostSettingsActions {
 
 type PreferenceDraft = {
   importMode: 'ask' | 'fixed';
-  importUnit: 'millimeters' | 'inches';
+  importUnit: '' | 'millimeters' | 'inches';
   exportStatus: 'unconfigured' | 'configured';
-  extensionKind: 'standard' | 'custom';
+  extensionKind: '' | 'standard' | 'custom';
   extension: string;
-  lineEnding: 'lf' | 'crlf';
+  lineEnding: '' | 'lf' | 'crlf';
   planningMachineId: string;
 };
 
@@ -60,7 +54,6 @@ export function MachinePostSettingsPanel({
   connectedWorkbench,
   interactionLocked,
   onCreateMachineBinding,
-  onDuplicateMachineBinding,
   onExportMachineDefinition,
   onImportMachineDefinition,
   onImportPostPackage,
@@ -148,13 +141,13 @@ export function MachinePostSettingsPanel({
       <form className="grid gap-3 border-b border-border pb-6" onSubmit={handlePreferenceSubmit}>
         <SectionTitle title="Workbench preferences" />
         <div className="grid grid-cols-2 gap-3 max-[720px]:grid-cols-1">
-          <Select label="DXF import units" disabled={disabled} value={preferences.importMode} onChange={(value) => setPreferences((draft) => ({ ...draft, importMode: value as PreferenceDraft['importMode'] }))} options={[["ask", "Ask for every import"], ["fixed", "Use an explicit unit"]]} />
-          <Select label="Fixed import unit" disabled={disabled || preferences.importMode !== 'fixed'} value={preferences.importUnit} onChange={(value) => setPreferences((draft) => ({ ...draft, importUnit: value as PreferenceDraft['importUnit'] }))} options={[["millimeters", "Millimeters"], ["inches", "Inches"]]} />
-          <Select label="Controller export" disabled={disabled} value={preferences.exportStatus} onChange={(value) => setPreferences((draft) => ({ ...draft, exportStatus: value as PreferenceDraft['exportStatus'] }))} options={[["unconfigured", "Unconfigured"], ["configured", "Configured"]]} />
-          <Select label="Line ending" disabled={disabled || preferences.exportStatus !== 'configured'} value={preferences.lineEnding} onChange={(value) => setPreferences((draft) => ({ ...draft, lineEnding: value as PreferenceDraft['lineEnding'] }))} options={[["lf", "LF"], ["crlf", "CRLF"]]} />
-          <Select label="Extension type" disabled={disabled || preferences.exportStatus !== 'configured'} value={preferences.extensionKind} onChange={(value) => setPreferences((draft) => ({ ...draft, extensionKind: value as PreferenceDraft['extensionKind'], extension: value === 'standard' ? 'iso' : '' }))} options={[["standard", "Standard"], ["custom", "Custom"]]} />
+          <Select label="DXF import units" disabled={disabled} value={preferences.importMode} onChange={(importMode) => setPreferences((draft) => ({ ...draft, importMode }))} options={[["ask", "Ask for every import"], ["fixed", "Use an explicit unit"]]} />
+          <Select label="Fixed import unit" disabled={disabled || preferences.importMode !== 'fixed'} value={preferences.importUnit} onChange={(importUnit) => setPreferences((draft) => ({ ...draft, importUnit }))} options={[["", "Select a unit"], ["millimeters", "Millimeters"], ["inches", "Inches"]]} />
+          <Select label="Controller export" disabled={disabled} value={preferences.exportStatus} onChange={(exportStatus) => setPreferences((draft) => ({ ...draft, exportStatus }))} options={[["unconfigured", "Unconfigured"], ["configured", "Configured"]]} />
+          <Select label="Line ending" disabled={disabled || preferences.exportStatus !== 'configured'} value={preferences.lineEnding} onChange={(lineEnding) => setPreferences((draft) => ({ ...draft, lineEnding }))} options={[["", "Select a line ending"], ["lf", "LF"], ["crlf", "CRLF"]]} />
+          <Select label="Extension type" disabled={disabled || preferences.exportStatus !== 'configured'} value={preferences.extensionKind} onChange={(extensionKind) => setPreferences((draft) => ({ ...draft, extensionKind, extension: '' }))} options={[["", "Select an extension type"], ["standard", "Standard"], ["custom", "Custom"]]} />
           {preferences.extensionKind === 'standard' ? (
-            <Select label="Extension" disabled={disabled || preferences.exportStatus !== 'configured'} value={preferences.extension} onChange={(extension) => setPreferences((draft) => ({ ...draft, extension }))} options={[["iso", ".iso"], ["nc", ".nc"], ["gcode", ".gcode"]]} />
+            <Select label="Extension" disabled={disabled || preferences.exportStatus !== 'configured'} value={preferences.extension} onChange={(extension) => setPreferences((draft) => ({ ...draft, extension }))} options={[["", "Select an extension"], ["iso", ".iso"], ["nc", ".nc"], ["gcode", ".gcode"]]} />
           ) : (
             <TextField label="Custom extension" disabled={disabled || preferences.exportStatus !== 'configured'} value={preferences.extension} onChange={(extension) => setPreferences((draft) => ({ ...draft, extension }))} />
           )}
@@ -208,9 +201,8 @@ export function MachinePostSettingsPanel({
         <label className="grid gap-1 text-[10px] text-muted-foreground">Post properties JSON<textarea aria-label="Post properties JSON" className="technical-input min-h-20 p-2 font-mono text-[10px] text-foreground" disabled={disabled || !machine} onChange={(event) => setPropertiesText(event.currentTarget.value)} spellCheck={false} value={propertiesText} /></label>
         <Button className="w-fit" disabled={disabled || !machine} size="sm" type="submit" variant="outline"><Plus />Create binding</Button>
         {machine?.bindings.map((binding) => (
-          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border border-border p-2 text-[10px]" key={binding.id}>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border border-border p-2 text-[10px]" key={binding.id}>
             <div className="min-w-0"><div className="truncate text-foreground">{binding.name}</div><div className="truncate font-mono text-muted-foreground">{binding.id} → {binding.post.packageId}@{binding.post.version}</div></div>
-            <Button disabled={disabled} onClick={() => onDuplicateMachineBinding(machine.id, binding.id, { id: `${binding.id}-copy`, name: `${binding.name} copy`, compatibility: compatibilityClaim(acknowledgedBy, compatibilityNotes) })} size="sm" type="button" variant="outline">Duplicate</Button>
             <Button aria-label={`Remove binding ${binding.id}`} disabled={disabled} onClick={() => onRemoveMachineBinding(machine.id, binding.id)} size="icon" type="button" variant="ghost"><Trash2 /></Button>
           </div>
         ))}
@@ -235,11 +227,11 @@ function preferenceDraft(workbench: ConnectedWorkbenchCatalog): PreferenceDraft 
   const { preferences } = workbench.manifest;
   return {
     importMode: preferences.importUnits.mode,
-    importUnit: preferences.importUnits.mode === 'fixed' ? preferences.importUnits.unit : 'millimeters',
+    importUnit: preferences.importUnits.mode === 'fixed' ? preferences.importUnits.unit : '',
     exportStatus: preferences.export.status,
-    extensionKind: preferences.export.status === 'configured' ? preferences.export.fileExtension.kind : 'standard',
-    extension: preferences.export.status === 'configured' ? preferences.export.fileExtension.extension : 'iso',
-    lineEnding: preferences.export.status === 'configured' ? preferences.export.lineEnding : 'lf',
+    extensionKind: preferences.export.status === 'configured' ? preferences.export.fileExtension.kind : '',
+    extension: preferences.export.status === 'configured' ? preferences.export.fileExtension.extension : '',
+    lineEnding: preferences.export.status === 'configured' ? preferences.export.lineEnding : '',
     planningMachineId: preferences.recentPlanningMachineId ?? ''
   };
 }
@@ -247,31 +239,65 @@ function preferenceDraft(workbench: ConnectedWorkbenchCatalog): PreferenceDraft 
 function preferencesFromDraft(draft: PreferenceDraft):
   | { ok: true; preferences: WorkbenchCatalogManifest['preferences'] }
   | { ok: false; message: string } {
+  let importUnits: WorkbenchCatalogManifest['preferences']['importUnits'];
+  if (draft.importMode === 'ask') {
+    importUnits = { mode: 'ask' };
+  } else {
+    if (draft.importUnit === '') {
+      return { ok: false, message: 'Select the fixed DXF import unit.' };
+    }
+    importUnits = { mode: 'fixed', unit: draft.importUnit };
+  }
+  if (draft.exportStatus === 'unconfigured') {
+    return {
+      ok: true,
+      preferences: {
+        importUnits,
+        export: { status: 'unconfigured' },
+        recentPlanningMachineId: draft.planningMachineId === '' ? null : draft.planningMachineId
+      }
+    };
+  }
+  if (draft.extensionKind === '') {
+    return { ok: false, message: 'Select an output extension type.' };
+  }
+  if (draft.lineEnding === '') {
+    return { ok: false, message: 'Select an output line ending.' };
+  }
   const extension = draft.extension.trim().replace(/^\./, '');
-  if (draft.exportStatus === 'configured' && !/^[A-Za-z0-9]{1,16}$/.test(extension)) {
+  if (!/^[A-Za-z0-9]{1,16}$/.test(extension)) {
     return { ok: false, message: 'Configured output extension must contain 1–16 letters or digits.' };
   }
-  if (draft.extensionKind === 'standard' && !['iso', 'nc', 'gcode'].includes(extension)) {
-    return { ok: false, message: 'Select one of the declared standard extensions.' };
+  let fileExtension: Extract<
+    WorkbenchCatalogManifest['preferences']['export'],
+    { readonly status: 'configured' }
+  >['fileExtension'];
+  if (draft.extensionKind === 'standard') {
+    const standardExtension = parseStandardExtension(extension);
+    if (standardExtension === null) {
+      return { ok: false, message: 'Select one of the declared standard extensions.' };
+    }
+    fileExtension = { kind: 'standard', extension: standardExtension };
+  } else {
+    fileExtension = { kind: 'custom', extension };
   }
   return {
     ok: true,
     preferences: {
-      importUnits: draft.importMode === 'ask'
-        ? { mode: 'ask' }
-        : { mode: 'fixed', unit: draft.importUnit },
-      export: draft.exportStatus === 'unconfigured'
-        ? { status: 'unconfigured' }
-        : {
-            status: 'configured',
-            fileExtension: draft.extensionKind === 'standard'
-              ? { kind: 'standard', extension: extension as 'iso' | 'nc' | 'gcode' }
-              : { kind: 'custom', extension },
-            lineEnding: draft.lineEnding
-          },
-      recentPlanningMachineId: draft.planningMachineId || null
+      importUnits,
+      export: {
+        status: 'configured',
+        fileExtension,
+        lineEnding: draft.lineEnding
+      },
+      recentPlanningMachineId: draft.planningMachineId === '' ? null : draft.planningMachineId
     }
   };
+}
+
+function parseStandardExtension(value: string): 'iso' | 'nc' | 'gcode' | null {
+  if (value === 'iso' || value === 'nc' || value === 'gcode') return value;
+  return null;
 }
 
 function postRefKey(ref: PostInstallationRef) {
@@ -286,8 +312,13 @@ function SectionTitle({ title }: { title: string }) {
   return <h3 className="text-xs font-semibold text-foreground">{title}</h3>;
 }
 
-function Select({ disabled, label, onChange, options, value }: { disabled: boolean; label: string; onChange: (value: string) => void; options: readonly (readonly [string, string])[]; value: string }) {
-  return <label className="grid gap-1 text-[10px] text-muted-foreground">{label}<select aria-label={label} className="technical-input h-8 px-2 text-[10px] text-foreground" disabled={disabled} onChange={(event) => onChange(event.currentTarget.value)} value={value}>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></label>;
+function Select<Value extends string>({ disabled, label, onChange, options, value }: { disabled: boolean; label: string; onChange: (value: Value) => void; options: readonly (readonly [Value, string])[]; value: Value }) {
+  function handleChange(rawValue: string) {
+    const selected = options.find(([optionValue]) => optionValue === rawValue);
+    if (!selected) throw new Error(`Select ${label} received an undeclared option: ${rawValue}.`);
+    onChange(selected[0]);
+  }
+  return <label className="grid gap-1 text-[10px] text-muted-foreground">{label}<select aria-label={label} className="technical-input h-8 px-2 text-[10px] text-foreground" disabled={disabled} onChange={(event) => handleChange(event.currentTarget.value)} value={value}>{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></label>;
 }
 
 function TextField({ disabled, label, onChange, value }: { disabled: boolean; label: string; onChange: (value: string) => void; value: string }) {

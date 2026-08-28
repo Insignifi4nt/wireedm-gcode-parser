@@ -22,7 +22,6 @@ import { openWorkbenchProject } from '@/domain/editor/openWorkbenchProject';
 import { saveEditorProgram } from '@/domain/editor/saveEditorProgram';
 import {
   createStoredMachinePostBinding,
-  duplicateStoredMachinePostBinding,
   installStoredMachineDefinition,
   removeStoredMachineDefinition,
   removeStoredMachinePostBinding,
@@ -81,7 +80,6 @@ export interface AppServices {
   readonly replaceStoredMachineDefinition: typeof replaceStoredMachineDefinition;
   readonly removeStoredMachineDefinition: typeof removeStoredMachineDefinition;
   readonly createStoredMachinePostBinding: typeof createStoredMachinePostBinding;
-  readonly duplicateStoredMachinePostBinding: typeof duplicateStoredMachinePostBinding;
   readonly removeStoredMachinePostBinding: typeof removeStoredMachinePostBinding;
   readonly installStoredPostPackage: typeof installStoredPostPackage;
   readonly removeStoredPostInstallation: typeof removeStoredPostInstallation;
@@ -113,7 +111,6 @@ export const defaultAppServices: AppServices = {
   replaceStoredMachineDefinition,
   removeStoredMachineDefinition,
   createStoredMachinePostBinding,
-  duplicateStoredMachinePostBinding,
   removeStoredMachinePostBinding,
   installStoredPostPackage,
   removeStoredPostInstallation,

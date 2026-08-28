@@ -21,15 +21,12 @@ import {
   createMachinePostBinding,
   parseMachineDefinition,
   removeMachinePostBinding,
-  resolveMachinePostBinding,
   validateMachinePostBindings,
   type CreateMachinePostBindingInput,
   type CreateMachinePostBindingResult,
   type MachineDefinition,
-  type MachinePostCompatibility,
   type MachinePostBinding,
   type RemoveMachinePostBindingResult,
-  type ResolveMachinePostBindingResult
 } from './machineDefinition';
 import {
   installMachineDefinition,
@@ -50,7 +47,6 @@ import {
 
 type CreateBindingError = Extract<CreateMachinePostBindingResult, { ok: false }>['error'];
 type RemoveBindingError = Extract<RemoveMachinePostBindingResult, { ok: false }>['error'];
-type ResolveBindingError = Extract<ResolveMachinePostBindingResult, { ok: false }>['error'];
 type InstallMachineError = Extract<InstallMachineDefinitionResult, { ok: false }>['error'];
 type ReplaceMachineError = Extract<ReplaceMachineDefinitionResult, { ok: false }>['error'];
 type RemoveMachineError = Extract<RemoveMachineDefinitionResult, { ok: false }>['error'];
@@ -185,30 +181,6 @@ export type RemoveStoredMachineDefinitionResult =
     }
   | { ok: false; error: RemoveStoredMachineDefinitionError };
 
-export interface DuplicateStoredMachinePostBindingInput {
-  readonly id: string;
-  readonly name: string;
-  readonly compatibility: MachinePostCompatibility;
-}
-
-export type DuplicateStoredMachinePostBindingError =
-  | WorkbenchCatalogError
-  | MachineMutationCatalogMissingError
-  | ReplaceMachineError
-  | ResolveBindingError
-  | CreateBindingError
-  | MachineLibraryMutationPersistenceError;
-
-export type DuplicateStoredMachinePostBindingResult =
-  | {
-      ok: true;
-      workbench: ConnectedWorkbenchCatalog;
-      library: MachineLibrary;
-      machine: MachineDefinition;
-      binding: MachinePostBinding;
-    }
-  | { ok: false; error: DuplicateStoredMachinePostBindingError };
-
 export async function installStoredMachineDefinition(
   adapter: WorkbenchStorageAdapter,
   rawMachineText: string
@@ -277,48 +249,6 @@ export async function removeStoredMachineDefinition(
       removed: removed.removed,
       library: removed.library,
       workbench: Object.freeze({ ...state.workbench, machines: removed.library })
-    };
-  });
-}
-
-export async function duplicateStoredMachinePostBinding(
-  workbench: ConnectedWorkbenchCatalog,
-  machineId: string,
-  sourceBindingId: string,
-  input: DuplicateStoredMachinePostBindingInput
-): Promise<DuplicateStoredMachinePostBindingResult> {
-  return withWorkbenchMutationLock(workbench.adapter, async () => {
-    const state = await readAuthoritativeCatalog(workbench.adapter);
-    if (!state.ok) return state;
-    const machine = state.workbench.machines.machines.find(({ id }) => id === machineId);
-    if (!machine) return machineNotFound(machineId);
-    const source = await resolveMachinePostBinding(
-      machine,
-      state.workbench.posts,
-      sourceBindingId
-    );
-    if (!source.ok) return source;
-    const created = createMachinePostBinding(machine, source.installation, {
-      id: input.id,
-      name: input.name,
-      properties: source.binding.properties,
-      compatibility: input.compatibility
-    });
-    if (!created.ok) return created;
-    const replaced = replaceMachineDefinition(state.workbench.machines, created.machine);
-    if (!replaced.ok) return replaced;
-    const written = await persistMachineLibrary(
-      workbench.adapter,
-      state.machineLibraryRaw,
-      replaced.library
-    );
-    if (!written.ok) return written;
-    return {
-      ok: true,
-      machine: replaced.machine,
-      binding: created.binding,
-      library: replaced.library,
-      workbench: Object.freeze({ ...state.workbench, machines: replaced.library })
     };
   });
 }

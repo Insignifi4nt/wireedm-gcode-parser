@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
-import { canonicalJson } from '@/domain/post-processor/canonicalJson';
 import { createEmptyPostLibrary } from '@/domain/post-processor/postLibrary';
 import {
   installStoredPostPackage,
   removeStoredPostInstallation
 } from '@/domain/post-processor/postLibraryMutations';
 import {
-  initializePostLibraryStorage,
-  POST_LIBRARY_PATH
+  initializePostLibraryStorage
 } from '@/domain/post-processor/postLibraryStorage';
 import { minimalPostPackage } from '@/domain/post-processor/__tests__/postPackageFixture';
 import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
@@ -25,7 +23,6 @@ import {
 } from '../machineDefinition';
 import {
   createStoredMachinePostBinding,
-  duplicateStoredMachinePostBinding,
   installStoredMachineDefinition,
   removeStoredMachineDefinition,
   removeStoredMachinePostBinding,
@@ -262,169 +259,6 @@ describe('persisted machine library mutations', () => {
     expect(adapter.files.get(revisionPath)).toBe(revisionBytes);
   });
 
-  it('duplicates an exact binding property preset with new identity and acknowledgment', async () => {
-    const adapter = new MemoryAdapter();
-    const initialized = await initializeWorkbenchCatalog(adapter, {
-      now: new Date('2026-08-28T12:00:00.000Z')
-    });
-    if (!initialized.ok) throw new Error(initialized.error.message);
-    const post = await installStoredPostPackage(adapter, JSON.stringify(minimalPostPackage()));
-    if (!post.ok) throw new Error(post.error.message);
-    const installed = await installStoredMachineDefinition(adapter, unboundMachineText());
-    if (!installed.ok) throw new Error(installed.error.message);
-    const source = await createStoredMachinePostBinding(
-      adapter,
-      installed.machine.id,
-      post.installation.ref,
-      {
-        id: 'production',
-        name: 'Production',
-        properties: { coordinatePrecision: 3 },
-        compatibility: compatibilityFixture()
-      }
-    );
-    if (!source.ok) throw new Error(source.error.message);
-    const evidence = [{
-      id: 'production-test',
-      name: 'Production test',
-      uri: 'local://production-test',
-      contentSha256: '1'.repeat(64)
-    }];
-    const machineDefinitionHash = await sha256(canonicalJson({
-      format: source.machine.format,
-      schemaVersion: source.machine.schemaVersion,
-      id: source.machine.id,
-      name: source.machine.name,
-      identity: source.machine.identity,
-      limits: source.machine.limits,
-      hardware: source.machine.hardware,
-      evidence,
-      notes: source.machine.notes
-    }));
-    const propertiesHash = await sha256(canonicalJson(source.binding.properties));
-    const claimed = parseMachineDefinition(JSON.stringify({
-      ...source.machine,
-      evidence,
-      bindings: source.machine.bindings.map((binding) => ({
-        ...binding,
-        verification: {
-          status: 'claimed',
-          verifiedAt: '2026-08-28T14:00:00.000Z',
-          verifiedBy: 'Cristian',
-          machineDefinitionHash,
-          postContentHash: binding.post.contentHash,
-          propertiesHash,
-          evidenceRefs: ['production-test'],
-          notes: 'Validated fixture claim.'
-        }
-      }))
-    }));
-    if (!claimed.ok) throw new Error(JSON.stringify(claimed.diagnostics));
-    adapter.files.set(MACHINE_LIBRARY_PATH, JSON.stringify({
-      format: 'wire-edm-machine-library',
-      schemaVersion: 1,
-      machines: [claimed.machine]
-    }, null, 2));
-    const duplicateCompatibility = {
-      ...compatibilityFixture(),
-      acknowledgedAt: '2026-08-28T15:00:00.000Z',
-      notes: 'Acknowledged separately for the duplicated preset.'
-    };
-
-    const result = await duplicateStoredMachinePostBinding(
-      initialized.workbench,
-      installed.machine.id,
-      'production',
-      {
-        id: 'roughing',
-        name: 'Roughing',
-        compatibility: duplicateCompatibility
-      }
-    );
-
-    expect(result).toMatchObject({
-      ok: true,
-      binding: {
-        id: 'roughing',
-        name: 'Roughing',
-        post: post.installation.ref,
-        properties: { coordinatePrecision: 3 },
-        compatibility: duplicateCompatibility,
-        verification: { status: 'unverified' }
-      },
-      machine: {
-        bindings: [
-          { id: 'production', verification: { status: 'claimed' } },
-          { id: 'roughing', verification: { status: 'unverified' } }
-        ]
-      }
-    });
-  });
-
-  it('rejects duplicate binding identity conflicts and dangling source post references', async () => {
-    const adapter = new MemoryAdapter();
-    const initialized = await initializeWorkbenchCatalog(adapter, {
-      now: new Date('2026-08-28T12:00:00.000Z')
-    });
-    if (!initialized.ok) throw new Error(initialized.error.message);
-    const post = await installStoredPostPackage(adapter, JSON.stringify(minimalPostPackage()));
-    if (!post.ok) throw new Error(post.error.message);
-    const installed = await installStoredMachineDefinition(adapter, unboundMachineText());
-    if (!installed.ok) throw new Error(installed.error.message);
-    const source = await createStoredMachinePostBinding(
-      adapter,
-      installed.machine.id,
-      post.installation.ref,
-      {
-        id: 'production',
-        name: 'Production',
-        properties: { coordinatePrecision: 3 },
-        compatibility: compatibilityFixture()
-      }
-    );
-    if (!source.ok) throw new Error(source.error.message);
-    const before = adapter.files.get(MACHINE_LIBRARY_PATH);
-
-    expect(await duplicateStoredMachinePostBinding(
-      initialized.workbench,
-      installed.machine.id,
-      'production',
-      {
-        id: 'production',
-        name: 'Conflict',
-        compatibility: compatibilityFixture()
-      }
-    )).toMatchObject({
-      ok: false,
-      error: { code: 'MACHINE_POST_BINDING_ID_CONFLICT', bindingId: 'production' }
-    });
-    expect(adapter.files.get(MACHINE_LIBRARY_PATH)).toBe(before);
-
-    adapter.files.set(POST_LIBRARY_PATH, JSON.stringify({
-      format: 'wire-edm-post-library',
-      schemaVersion: 1,
-      installations: []
-    }));
-    expect(await duplicateStoredMachinePostBinding(
-      initialized.workbench,
-      installed.machine.id,
-      'production',
-      {
-        id: 'roughing',
-        name: 'Roughing',
-        compatibility: compatibilityFixture()
-      }
-    )).toMatchObject({
-      ok: false,
-      error: {
-        code: 'MACHINE_LIBRARY_STORAGE_DANGLING_POST_BINDING',
-        machineId: 'shop.robofil-100',
-        bindingId: 'production'
-      }
-    });
-    expect(adapter.files.get(MACHINE_LIBRARY_PATH)).toBe(before);
-  });
-
   it('installs a portable machine and persists exact binding add/remove operations', async () => {
     const adapter = new MemoryAdapter();
     await initializePostLibraryStorage(adapter);
@@ -515,10 +349,3 @@ describe('persisted machine library mutations', () => {
     });
   });
 });
-
-async function sha256(value: string) {
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}

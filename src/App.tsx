@@ -37,7 +37,6 @@ export default function App({ services }: AppProps = {}) {
       interactionLocked={app.workbenchInteractionLocked}
       onConnectWorkbench={app.handleConnectWorkbench}
       onCreateMachineBinding={app.handleCreateMachineBinding}
-      onDuplicateMachineBinding={app.handleDuplicateMachineBinding}
       onExportMachineDefinition={app.handleExportMachineDefinition}
       onImportMachineDefinition={app.handleImportMachineDefinition}
       onImportPostPackage={app.handleImportPostPackage}
