@@ -2,16 +2,15 @@ import { act, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { normalizeMachineProfile } from '@/domain/machine/machineProfiles';
+import { createEmptyMachineLibrary } from '@/domain/machine-definition/machineLibrary';
+import { createEmptyPostLibrary } from '@/domain/post-processor/postLibrary';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import {
   prepareDxfProjectImport,
   previewDxfProjectImport,
-  unitCandidatesForDxfImport
+  type DxfImportPreparationResult
 } from '@/domain/dxf/prepareDxfProjectImport';
-import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
-import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
-import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
-import type { MachineProfile } from '@/domain/workbench/types';
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import { DxfImportConfirmationDialog } from '../DxfImportConfirmationDialog';
 
@@ -32,256 +31,136 @@ describe('DxfImportConfirmationDialog', () => {
     container.remove();
   });
 
-  it('shows the reviewed unit, millimeter bounds, counts, fit, and live selectors', async () => {
-    const selected = machine('inch-machine', 'inches', { widthMm: 250, lengthMm: 130 });
-    const other = machine('other-machine', null, { widthMm: 500, lengthMm: 500 });
-    const preparation = prepareDxfProjectImport(workbench([selected, other], selected.id), {
-      fileName: 'unitless-part.dxf',
-      text: lineDxf({ endX: 10, endY: 5 })
-    });
-    const selection = preparation.defaultSelection;
-    const preview = previewDxfProjectImport(preparation, selection);
-    const onMachineProfileChange = vi.fn();
+  it('requires an explicit unit candidate and exposes no machine selector or default', async () => {
+    const preparationResult = prepare(lineDxf({ endX: 10, endY: 5 }));
     const onUnitCandidateChange = vi.fn();
 
-    await renderDialog({
-      preparation,
-      preview,
-      selection,
-      unitCandidates: preview.unitCandidates,
-      onMachineProfileChange,
-      onUnitCandidateChange
-    });
+    await renderDialog({ preparationResult, onUnitCandidateChange });
 
-    expect(dialog()?.textContent).toContain('unitless-part.dxf');
-    expect(dialog()?.textContent).toContain('Machine suggestion');
-    expect(dialog()?.textContent).toContain('1 supported');
-    expect(dialog()?.textContent).toContain('0 unsupported');
-    expect(dialog()?.textContent).toContain('0 warnings');
-    expect(container.querySelector('[data-testid="dxf-import-size"]')?.textContent).toContain(
-      '254.000 × 127.000 mm'
-    );
-    expect(container.querySelector('[data-dxf-import-machine-fit="too-large"]')?.textContent).toContain(
-      'width 254.000 > 250.000 mm'
-    );
-    expect(select('DXF units')?.value).toBe('inches');
-    expect(select('Machine profile')?.value).toBe(selected.id);
+    expect(select('DXF units')?.value).toBe('');
+    expect(button('Import and open')?.disabled).toBe(true);
+    expect(select('Machine profile')).toBeNull();
+    expect(container.textContent).not.toContain('Machine work-area limits');
 
-    await act(async () => {
-      setSelectValue(select('DXF units')!, 'millimeters');
-      setSelectValue(select('Machine profile')!, other.id);
-    });
+    await act(async () => setSelectValue(select('DXF units')!, 'inches'));
 
-    expect(onUnitCandidateChange).toHaveBeenCalledWith('millimeters');
-    expect(onMachineProfileChange).toHaveBeenCalledWith(other.id);
+    expect(onUnitCandidateChange).toHaveBeenCalledWith('inches');
   });
 
-  it('blocks a declared-unit override until it is explicitly acknowledged', async () => {
-    const selected = machine('selected-machine', null);
-    const preparation = prepareDxfProjectImport(workbench([selected], selected.id), {
-      fileName: 'declared-inch.dxf',
-      text: lineDxf({ unitsCode: 1, endX: 1 })
-    });
-    const selection = {
-      machineProfileId: selected.id,
+  it('shows the exact preview and gates a declared-unit conflict on acknowledgement', async () => {
+    const preparationResult = prepare(lineDxf({ unitsCode: 1, endX: 2, endY: 1 }));
+    const previewResult = previewDxfProjectImport(preparationResult.preparation, {
       unitCandidateId: 'millimeters'
-    };
-    const preview = previewDxfProjectImport(preparation, selection);
-    const onOverrideAcknowledgedChange = vi.fn();
-
-    await renderDialog({
-      preparation,
-      preview,
-      selection,
-      unitCandidates: unitCandidatesForDxfImport(preparation, selected.id),
-      onOverrideAcknowledgedChange
     });
+    const onConfirm = vi.fn();
+    const onOverrideAcknowledgedChange = vi.fn();
+    const common = {
+      preparationResult,
+      previewResult,
+      selectedUnitCandidateId: 'millimeters',
+      onConfirm,
+      onOverrideAcknowledgedChange
+    };
 
-    expect(dialog()?.textContent).toContain('User override');
+    await renderDialog(common);
+
+    expect(container.textContent).toContain('Declared unit override');
+    expect(container.querySelector('[data-testid="dxf-import-size"]')?.textContent).toContain(
+      '2.000 × 1.000 mm'
+    );
     expect(button('Import and open')?.disabled).toBe(true);
+
     const acknowledgement = container.querySelector(
       'input[aria-label="Override declared DXF units"]'
-    ) as HTMLInputElement | null;
-    expect(acknowledgement).not.toBeNull();
-
-    await act(async () => acknowledgement?.click());
-
+    ) as HTMLInputElement;
+    await act(async () => acknowledgement.click());
     expect(onOverrideAcknowledgedChange).toHaveBeenCalledWith(true);
+
+    await renderDialog({ ...common, declaredUnitOverrideAcknowledged: true });
+    await act(async () => button('Import and open')?.click());
+    expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
-  it('reports preview errors and keeps confirmation disabled', async () => {
-    const selected = machine('selected-machine', null);
-    const preparation = prepareDxfProjectImport(workbench([selected], selected.id), {
-      fileName: 'bad-preview.dxf',
-      text: lineDxf({})
-    });
+  it('renders typed preparation and preview errors and never enables confirmation', async () => {
+    const preparationError: DxfImportPreparationResult = {
+      ok: false,
+      error: {
+        code: 'DXF_IMPORT_GEOMETRY_REQUIRED',
+        message: 'DXF did not contain supported cut geometry.'
+      }
+    };
+    await renderDialog({ preparationResult: preparationError });
 
+    expect(alertMessages()).toContain('DXF did not contain supported cut geometry.');
+    expect(button('Import and open')?.disabled).toBe(true);
+
+    const preparationResult = prepare(lineDxf({}));
     await renderDialog({
-      preparation,
-      preview: null,
-      previewErrorMessage: 'DXF unit preview produced invalid millimeter bounds.',
-      selection: preparation.defaultSelection,
-      unitCandidates: preparation.unitCandidates
+      preparationResult,
+      selectedUnitCandidateId: 'missing-candidate',
+      previewResult: previewDxfProjectImport(preparationResult.preparation, {
+        unitCandidateId: 'missing-candidate'
+      })
     });
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      'invalid millimeter bounds'
-    );
+    expect(alertMessages()).toContain('DXF unit candidate was not reviewed: missing-candidate.');
     expect(button('Import and open')?.disabled).toBe(true);
   });
 
-  it('focuses and traps the modal, cancels on Escape while idle, and restores focus', async () => {
-    const opener = document.createElement('button');
-    opener.textContent = 'Import DXF';
-    document.body.insertBefore(opener, container);
-    opener.focus();
-    const selected = machine('selected-machine', null);
-    const preparation = prepareDxfProjectImport(workbench([selected], selected.id), {
-      fileName: 'focus.dxf',
-      text: lineDxf({})
-    });
-    const preview = previewDxfProjectImport(preparation, preparation.defaultSelection);
-    const onCancel = vi.fn();
-
-    await renderDialog({
-      preparation,
-      preview,
-      selection: preparation.defaultSelection,
-      unitCandidates: preview.unitCandidates,
-      onCancel
-    });
-
-    const background = container.querySelector('[data-dialog-background]') as HTMLElement;
-    expect(background.inert).toBe(true);
-    expect(background.getAttribute('aria-hidden')).toBe('true');
-    expect(opener.inert).toBe(true);
-    expect(opener.getAttribute('aria-hidden')).toBe('true');
-    expect(document.activeElement).toBe(select('DXF units'));
-    const last = button('Import and open')!;
-    last.focus();
-    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Tab', bubbles: true, cancelable: true
-    })));
-    expect(document.activeElement).toBe(
-      container.querySelector('button[aria-label="Close DXF import review"]')
-    );
-
-    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Escape', bubbles: true, cancelable: true
-    })));
-    expect(onCancel).toHaveBeenCalledTimes(1);
-
-    await act(async () => root.render(<main aria-hidden="false" data-dialog-background />));
-    const restoredBackground = container.querySelector('[data-dialog-background]') as HTMLElement;
-    expect(restoredBackground.inert).toBeUndefined();
-    expect(restoredBackground.getAttribute('aria-hidden')).toBe('false');
-    expect(opener.inert).toBeUndefined();
-    expect(opener.getAttribute('aria-hidden')).toBeNull();
-    expect(document.activeElement).toBe(opener);
-    opener.remove();
-  });
-
-  it('cannot be dismissed while a confirmed import is being committed', async () => {
-    const selected = machine('selected-machine', null);
-    const preparation = prepareDxfProjectImport(workbench([selected], selected.id), {
-      fileName: 'busy.dxf',
-      text: lineDxf({})
-    });
-    const preview = previewDxfProjectImport(preparation, preparation.defaultSelection);
-    const onCancel = vi.fn();
-
-    await renderDialog({
-      preparation,
-      preview,
-      selection: preparation.defaultSelection,
-      unitCandidates: preview.unitCandidates,
-      submitting: true,
-      onCancel
-    });
-
-    await act(async () => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      container.querySelector('[data-dxf-import-overlay]')?.dispatchEvent(
-        new MouseEvent('mousedown', { bubbles: true })
-      );
-    });
-
-    expect(onCancel).not.toHaveBeenCalled();
-    expect(button('Cancel')?.disabled).toBe(true);
-    expect(button('Importing...')?.disabled).toBe(true);
-  });
-
-  it('locks the project machine and requires destructive acknowledgement in reimport mode', async () => {
-    const selected = machine('project-machine', null);
-    const preparation = prepareDxfProjectImport(workbench([selected], selected.id), {
-      fileName: 'persisted-raw.dxf',
-      text: lineDxf({ unitsCode: 1 })
-    });
-    const selection = {
-      machineProfileId: selected.id,
+  it('shows physical fit only for an explicitly resolved planning machine', async () => {
+    const preparationResult = prepare(lineDxf({ unitsCode: 4 }));
+    const previewResult = previewDxfProjectImport(preparationResult.preparation, {
       unitCandidateId: 'millimeters'
+    });
+    const common = {
+      preparationResult,
+      previewResult,
+      selectedUnitCandidateId: 'millimeters'
     };
-    const preview = previewDxfProjectImport(preparation, selection);
-    const onRebuildAcknowledgedChange = vi.fn();
+
+    await renderDialog(common);
+    expect(container.querySelector('[data-dxf-import-machine-fit]')).toBeNull();
 
     await renderDialog({
-      mode: 'reimport',
-      machineProfileLocked: true,
-      rebuildRequired: true,
-      rebuildAcknowledged: false,
-      preparation,
-      preview,
-      selection,
-      unitCandidates: preview.unitCandidates,
-      declaredUnitOverrideAcknowledged: true,
-      onRebuildAcknowledgedChange
+      ...common,
+      planningMachineFit: {
+        machine: { id: 'robofil-100', name: 'Robofil 100' },
+        result: {
+          ok: true,
+          fit: {
+            status: 'too-large',
+            bounds: { xSpanMm: 10, ySpanMm: 0 },
+            issues: [{ axis: 'x', actualMm: 10, limitMm: 8 }]
+          }
+        }
+      }
     });
 
-    expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe(
-      'Review DXF unit re-import'
-    );
-    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
-      'Re-import DXF with Different Units'
-    );
-    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
-      'saved geometry-derived edits'
-    );
-    expect(select('Machine profile')?.disabled).toBe(true);
-    expect(button('Re-import and open')?.disabled).toBe(true);
-    const acknowledgement = container.querySelector(
-      'input[aria-label="Rebuild path geometry from raw DXF"]'
-    ) as HTMLInputElement;
-
-    await act(async () => acknowledgement.click());
-
-    expect(onRebuildAcknowledgedChange).toHaveBeenCalledWith(true);
+    expect(container.querySelector('[data-dxf-import-machine-fit="too-large"]')?.textContent)
+      .toContain('Robofil 100 does not fit: X 10.000 > 8.000 mm');
   });
 
-  async function renderDialog(overrides: Partial<ComponentProps<typeof DxfImportConfirmationDialog>> & Pick<ComponentProps<typeof DxfImportConfirmationDialog>, 'preparation' | 'preview' | 'selection' | 'unitCandidates'>) {
+  async function renderDialog(
+    overrides: Partial<ComponentProps<typeof DxfImportConfirmationDialog>> &
+      Pick<ComponentProps<typeof DxfImportConfirmationDialog>, 'preparationResult'>
+  ) {
     await act(async () => {
       root.render(
-        <>
-          <main aria-hidden="false" data-dialog-background />
-          <DxfImportConfirmationDialog
-            declaredUnitOverrideAcknowledged={false}
-            errorMessage={null}
-            onCancel={vi.fn()}
-            onConfirm={vi.fn()}
-            onMachineProfileChange={vi.fn()}
-            onOverrideAcknowledgedChange={vi.fn()}
-            onRebuildAcknowledgedChange={vi.fn()}
-            onUnitCandidateChange={vi.fn()}
-            previewErrorMessage={null}
-            submitting={false}
-            {...overrides}
-          />
-        </>
+        <DxfImportConfirmationDialog
+          declaredUnitOverrideAcknowledged={false}
+          errorMessage={null}
+          onCancel={vi.fn()}
+          onConfirm={vi.fn()}
+          onOverrideAcknowledgedChange={vi.fn()}
+          onUnitCandidateChange={vi.fn()}
+          planningMachineFit={null}
+          previewResult={null}
+          selectedUnitCandidateId={null}
+          submitting={false}
+          {...overrides}
+        />
       );
     });
-  }
-
-  function dialog() {
-    return container.querySelector('[role="dialog"][aria-label="Review DXF import"]');
   }
 
   function select(label: string) {
@@ -293,48 +172,48 @@ describe('DxfImportConfirmationDialog', () => {
       (candidate) => candidate.textContent?.trim() === label
     ) as HTMLButtonElement | undefined;
   }
+
+  function alertMessages() {
+    return [...container.querySelectorAll('[role="alert"]')].map(({ textContent }) => textContent);
+  }
 });
 
-function machine(
-  id: string,
-  preferredDxfImportUnit: MachineProfile['preferredDxfImportUnit'],
-  workArea: MachineProfile['workArea'] = { widthMm: null, lengthMm: null }
-) {
-  return normalizeMachineProfile({
-    ...createDefaultMachineProfile(),
-    id,
-    name: id,
-    preferredDxfImportUnit,
-    workArea
+function prepare(text: string) {
+  const result = prepareDxfProjectImport(workbench(), {
+    fileName: 'part.dxf',
+    text,
+    now: new Date('2026-08-28T10:00:00.000Z')
   });
+  if (!result.ok) throw new Error(result.error.message);
+  return result;
 }
 
-function workbench(profiles: MachineProfile[], activeMachineProfileId: string): ConnectedWorkbench {
+function workbench(): ConnectedWorkbenchCatalog {
   const adapter: WorkbenchStorageAdapter = {
     kind: 'memory',
-    name: 'Dialog test',
+    name: 'Dashboard tests',
     deleteText: async () => undefined,
     ensureDirectory: async () => undefined,
     readText: async () => null,
     writeText: async () => undefined
   };
-  const activeMachineProfile = profiles.find(({ id }) => id === activeMachineProfileId)!;
   return {
     adapter,
+    machines: createEmptyMachineLibrary(),
+    posts: createEmptyPostLibrary(),
     manifest: {
-      schemaVersion: 1,
-      name: 'Dialog test',
-      createdAt: '2026-07-13T10:00:00.000Z',
-      updatedAt: '2026-07-13T10:00:00.000Z',
-      templates: { headerPath: 'templates/header.gcode', footerPath: 'templates/footer.gcode' },
-      output: activeMachineProfile.output,
-      activeMachineProfileId,
-      machineProfiles: profiles,
+      format: 'wire-edm-workbench',
+      schemaVersion: 2,
+      name: 'Dashboard tests',
+      createdAt: '2026-08-28T10:00:00.000Z',
+      updatedAt: '2026-08-28T10:00:00.000Z',
+      preferences: {
+        importUnits: { mode: 'ask' },
+        export: { status: 'unconfigured' },
+        recentPlanningMachineId: null
+      },
       projects: []
-    },
-    activeMachineProfile,
-    header: activeMachineProfile.templates.header,
-    footer: activeMachineProfile.templates.footer
+    }
   };
 }
 

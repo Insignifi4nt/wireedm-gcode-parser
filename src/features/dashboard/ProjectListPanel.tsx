@@ -2,18 +2,19 @@ import { useState } from 'react';
 import { Forward, Pencil, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import type { WorkbenchProjectIndexEntry } from '@/domain/storage/workbenchStorage';
-import { isPathProjectSourceKind } from '@/domain/workbench/types';
+import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
+
+type WorkbenchProjectIndexEntry = WorkbenchCatalogManifest['projects'][number];
 
 type ProjectSourceFilter = 'all' | 'dxf' | 'external-gcode';
 type ProjectSortMode = 'updated-desc' | 'updated-asc' | 'name-asc' | 'name-desc' | 'type';
 
 interface ProjectListPanelProps {
   interactionLocked: boolean;
-  projects: WorkbenchProjectIndexEntry[];
-  onOpenProject: (projectPath: string) => void | Promise<void>;
+  projects: readonly WorkbenchProjectIndexEntry[];
+  onOpenProject: (projectId: string) => void | Promise<void>;
   onDeleteProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
-  onExportUpidProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
+  onExportUpidProject: (projectId: string) => void | Promise<void>;
   onRenameProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
 }
 
@@ -111,7 +112,7 @@ export function ProjectListPanel({
                       <Button
                         aria-label={`Open project ${project.id} in editor`}
                         disabled={interactionLocked}
-                        onClick={() => onOpenProject(project.path)}
+                        onClick={() => onOpenProject(project.id)}
                         size="sm"
                         type="button"
                         variant="outline"
@@ -147,7 +148,7 @@ export function ProjectListPanel({
                           aria-label={`Export UPID project ${project.id}`}
                           className="size-7 text-muted-foreground hover:text-foreground"
                           disabled={interactionLocked}
-                          onClick={() => onExportUpidProject(project)}
+                          onClick={() => onExportUpidProject(project.id)}
                           size="icon"
                           title="Export UPID"
                           type="button"
@@ -191,8 +192,14 @@ function getProjectSourceLabel(sourceKind: WorkbenchProjectIndexEntry['sourceKin
   return isPathProjectSourceKind(sourceKind) ? 'Path Project' : 'Machine Program';
 }
 
+function isPathProjectSourceKind(
+  sourceKind: WorkbenchProjectIndexEntry['sourceKind']
+): sourceKind is 'dxf' | 'upid' {
+  return sourceKind === 'dxf' || sourceKind === 'upid';
+}
+
 function getVisibleProjects(
-  projects: WorkbenchProjectIndexEntry[],
+  projects: readonly WorkbenchProjectIndexEntry[],
   searchText: string,
   sourceFilter: ProjectSourceFilter,
   sortMode: ProjectSortMode

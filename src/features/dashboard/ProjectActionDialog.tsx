@@ -2,8 +2,9 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import type { WorkbenchProjectIndexEntry } from '@/domain/storage/workbenchStorage';
-import { isPathProjectSourceKind } from '@/domain/workbench/types';
+import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
+
+type WorkbenchProjectIndexEntry = WorkbenchCatalogManifest['projects'][number];
 
 export type ProjectAction =
   | { kind: 'rename'; project: WorkbenchProjectIndexEntry }
@@ -160,4 +161,10 @@ export function ProjectActionDialog({
       </form>
     </div>
   );
+}
+
+function isPathProjectSourceKind(
+  sourceKind: WorkbenchProjectIndexEntry['sourceKind']
+): sourceKind is 'dxf' | 'upid' {
+  return sourceKind === 'dxf' || sourceKind === 'upid';
 }

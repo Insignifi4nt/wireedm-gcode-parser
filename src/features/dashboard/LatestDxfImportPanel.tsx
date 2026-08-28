@@ -1,9 +1,9 @@
 import { Button } from '@/components/ui/button';
-import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
+import type { ImportedDxfProject } from '@/domain/dxf/importDxfProject';
 
 interface LatestDxfImportPanelProps {
   interactionLocked: boolean;
-  latestImport: ImportDxfProjectResult;
+  latestImport: ImportedDxfProject;
   onOpenLatestImportInEditor: () => void;
 }
 

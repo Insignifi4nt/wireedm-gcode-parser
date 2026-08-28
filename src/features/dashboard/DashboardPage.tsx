@@ -1,8 +1,7 @@
 import { useState } from 'react';
 
-import type { PendingDxfImport } from '@/app/useWorkbenchAppController';
-import type { ImportDxfProjectResult } from '@/domain/dxf/importDxfProject';
-import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import type { ImportedDxfProject } from '@/domain/dxf/importDxfProject';
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import { DashboardHeader } from './DashboardHeader';
 import { DxfImportConfirmationDialog } from './DxfImportConfirmationDialog';
@@ -10,28 +9,28 @@ import { LatestDxfImportPanel } from './LatestDxfImportPanel';
 import { ProjectActionDialog, type ProjectAction } from './ProjectActionDialog';
 import { ProjectListPanel } from './ProjectListPanel';
 import { StartWorkPanel } from './StartWorkPanel';
+import type { PendingDashboardDxfImport } from './dashboardTypes';
 
 interface DashboardPageProps {
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
-  connectedWorkbench: ConnectedWorkbench | null;
+  connectedWorkbench: ConnectedWorkbenchCatalog | null;
   importStatus: 'idle' | 'importing' | 'error';
   importErrorMessage: string | null;
   interactionLocked: boolean;
   programImportStatus: 'idle' | 'importing' | 'error';
   programImportErrorMessage: string | null;
-  latestImport: ImportDxfProjectResult | null;
-  pendingDxfImport: PendingDxfImport | null;
+  latestImport: ImportedDxfProject | null;
+  pendingDxfImport: PendingDashboardDxfImport | null;
   onOpenEditor: () => void;
   onOpenLatestImportInEditor: () => void;
-  onOpenProject: (projectPath: string) => void | Promise<void>;
+  onOpenProject: (projectId: string) => void | Promise<void>;
   onDeleteProject: (projectId: string) => Promise<void>;
-  onExportUpidProject: (projectPath: string) => Promise<void>;
+  onExportUpidProject: (projectId: string) => Promise<void>;
   onRenameProject: (projectId: string, name: string) => Promise<void>;
   onImportDxfFile: (file: File) => void | Promise<void>;
   onImportUpidFile: (file: File) => void | Promise<void>;
   onCancelDxfImport: () => void;
   onConfirmDxfImport: () => void | Promise<void>;
-  onDxfImportMachineProfileChange: (profileId: string) => void;
   onDxfImportOverrideAcknowledgedChange: (acknowledged: boolean) => void;
   onDxfImportUnitCandidateChange: (candidateId: string) => void;
   onImportProgramFile: (file: File) => void | Promise<void>;
@@ -57,7 +56,6 @@ export function DashboardPage({
   onImportUpidFile,
   onCancelDxfImport,
   onConfirmDxfImport,
-  onDxfImportMachineProfileChange,
   onDxfImportOverrideAcknowledgedChange,
   onDxfImportUnitCandidateChange,
   onImportProgramFile
@@ -86,7 +84,7 @@ export function DashboardPage({
         <ProjectListPanel
           interactionLocked={interactionLocked}
           onDeleteProject={(project) => setProjectAction({ kind: 'delete', project })}
-          onExportUpidProject={(project) => onExportUpidProject(project.path)}
+          onExportUpidProject={onExportUpidProject}
           onOpenProject={onOpenProject}
           onRenameProject={(project) => setProjectAction({ kind: 'rename', project })}
           projects={projects}
@@ -130,15 +128,13 @@ export function DashboardPage({
           errorMessage={importErrorMessage}
           onCancel={onCancelDxfImport}
           onConfirm={onConfirmDxfImport}
-          onMachineProfileChange={onDxfImportMachineProfileChange}
           onOverrideAcknowledgedChange={onDxfImportOverrideAcknowledgedChange}
           onUnitCandidateChange={onDxfImportUnitCandidateChange}
-          preparation={pendingDxfImport.preparation}
-          preview={pendingDxfImport.preview}
-          previewErrorMessage={pendingDxfImport.previewErrorMessage}
-          selection={pendingDxfImport.selection}
+          planningMachineFit={pendingDxfImport.planningMachineFit}
+          preparationResult={pendingDxfImport.preparationResult}
+          previewResult={pendingDxfImport.previewResult}
+          selectedUnitCandidateId={pendingDxfImport.selectedUnitCandidateId}
           submitting={importStatus === 'importing'}
-          unitCandidates={pendingDxfImport.unitCandidates}
         />
       )}
     </div>

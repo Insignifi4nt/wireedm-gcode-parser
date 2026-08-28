@@ -1,7 +1,7 @@
-import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 interface DashboardHeaderProps {
-  connectedWorkbench: ConnectedWorkbench | null;
+  connectedWorkbench: ConnectedWorkbenchCatalog | null;
   workbenchStatus: 'initializing' | 'ready' | 'connecting-storage' | 'error';
 }
 
@@ -20,7 +20,10 @@ export function DashboardHeader({
   );
 }
 
-function getStorageLabel(connectedWorkbench: ConnectedWorkbench | null, isPreparing: boolean) {
+function getStorageLabel(
+  connectedWorkbench: ConnectedWorkbenchCatalog | null,
+  isPreparing: boolean
+) {
   if (isPreparing) return 'Preparing local storage workbench';
   if (!connectedWorkbench) return 'Storage not connected';
   if (connectedWorkbench.adapter.kind === 'directory') return 'Workbench folder active';
