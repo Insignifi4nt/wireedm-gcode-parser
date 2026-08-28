@@ -20,28 +20,36 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
   readonly files = new Map<string, string>();
   readonly mutations: string[] = [];
-  private failure: { operation: 'write' | 'delete'; path: string } | null = null;
+  private failure: { operation: 'write' | 'delete'; path: string; afterMutation: boolean } | null = null;
 
   constructor(readonly name = 'catalog-mutations') {}
   async ensureDirectory() {}
   async readText(path: string) { return this.files.get(path) ?? null; }
   async writeText(path: string, contents: string) {
     this.mutations.push(`write:${path}`);
-    if (this.consumeFailure('write', path)) throw new Error('injected write failure');
+    const failure = this.consumeFailure('write', path);
+    if (failure && !failure.afterMutation) throw new Error('injected write failure');
     this.files.set(path, contents);
+    if (failure) throw new Error('injected partial write failure');
   }
   async deleteText(path: string) {
     this.mutations.push(`delete:${path}`);
-    if (this.consumeFailure('delete', path)) throw new Error('injected delete failure');
+    const failure = this.consumeFailure('delete', path);
+    if (failure && !failure.afterMutation) throw new Error('injected delete failure');
     this.files.delete(path);
+    if (failure) throw new Error('injected partial delete failure');
   }
   failNext(operation: 'write' | 'delete', path: string) {
-    this.failure = { operation, path };
+    this.failure = { operation, path, afterMutation: false };
+  }
+  failNextAfterMutation(operation: 'write' | 'delete', path: string) {
+    this.failure = { operation, path, afterMutation: true };
   }
   private consumeFailure(operation: 'write' | 'delete', path: string) {
-    if (this.failure?.operation !== operation || this.failure.path !== path) return false;
+    if (this.failure?.operation !== operation || this.failure.path !== path) return null;
+    const failure = this.failure;
     this.failure = null;
-    return true;
+    return failure;
   }
 }
 
@@ -132,10 +140,10 @@ describe('strict V2 workbench project persistence', () => {
     expect(adapter.files.has('projects/fixture.json')).toBe(false);
   });
 
-  it('does not roll back paths that were never changed', async () => {
+  it('restores the captured path when a write reports failure after it may have partially changed storage', async () => {
     const { adapter, workbench } = await initializedWorkbench();
     adapter.mutations.length = 0;
-    adapter.failNext('write', 'imports/fixture.dxf');
+    adapter.failNextAfterMutation('write', 'imports/fixture.dxf');
 
     expect(await addStoredWorkbenchProject(workbench, {
       project: projectFixture('imports/fixture.dxf'),
@@ -144,7 +152,11 @@ describe('strict V2 workbench project persistence', () => {
       ok: false,
       error: { code: 'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED', operation: 'write' }
     });
-    expect(adapter.mutations).toEqual(['write:imports/fixture.dxf']);
+    expect(adapter.mutations).toEqual([
+      'write:imports/fixture.dxf',
+      'delete:imports/fixture.dxf'
+    ]);
+    expect(adapter.files.has('imports/fixture.dxf')).toBe(false);
   });
 
   it('rejects a stale catalog snapshot instead of overwriting a completed mutation', async () => {

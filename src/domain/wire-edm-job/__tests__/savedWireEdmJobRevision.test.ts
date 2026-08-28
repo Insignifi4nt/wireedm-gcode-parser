@@ -6,6 +6,7 @@ import {
   type MachineDefinitionValue
 } from '@/domain/machine-definition/machineDefinition';
 import { builtInPostPackage } from '@/domain/post-processor/builtInPostPackages';
+import { minimalPostPackage } from '@/domain/post-processor/__tests__/postPackageFixture';
 import { createEmptyPostLibrary, installPostPackage } from '@/domain/post-processor/postLibrary';
 import type { WireEdmPostPackageValue } from '@/domain/post-processor/postPackageSchema';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
@@ -213,7 +214,7 @@ describe('saved Wire EDM job revision', () => {
       ok: false,
       error: { code: 'SAVED_REVISION_STORAGE_WRITE_FAILED' }
     });
-    expect(deleteAttempts).toBe(0);
+    expect(deleteAttempts).toBe(1);
   });
 
   it('recompiles and verifies both the plan and hashes when parsing', async () => {
@@ -412,7 +413,7 @@ describe('saved Wire EDM job revision', () => {
       ok: true,
       artifact: {
         program: {
-          lines: ['G90', 'G1 X0 Y0', 'G1 X10 Y0', 'G1 X10 Y10', 'G1 X0 Y10', 'G1 X0 Y0', 'M30']
+          lines: ['G90', 'G1 X0 Y0', 'G1 X10 Y0', 'G1 X10 Y10', 'G1 X0 Y10', 'G1 X0 Y0', 'M02']
         }
       }
     });
@@ -438,7 +439,7 @@ describe('saved Wire EDM job revision', () => {
 });
 
 function customPostPackage(failOnPosition: boolean): WireEdmPostPackageValue {
-  const packageValue = structuredClone(builtInPostPackage('generic-iso')) as WireEdmPostPackageValue;
+  const packageValue = minimalPostPackage();
   packageValue.manifest.id = failOnPosition
     ? 'fixture.custom-post.position-failure'
     : 'fixture.custom-post';
@@ -457,14 +458,6 @@ function customPostPackage(failOnPosition: boolean): WireEdmPostPackageValue {
       } };
     }
   `;
-  packageValue.fixtures[0].expectedProgram = [
-    'G90',
-    'G1 X10 Y0',
-    'G1 X10 Y10',
-    'G1 X0 Y10',
-    'G1 X0 Y0',
-    'M30'
-  ].join('\n');
   return packageValue;
 }
 
@@ -518,7 +511,9 @@ async function machineAndPostFixture(packageValue?: WireEdmPostPackageValue) {
   const bound = createMachinePostBinding(parsedMachine.machine, installed.installation, {
     id: 'production',
     name: 'Production',
-    properties: { coordinatePrecision: 3, arcCenterMode: 'incremental' },
+    properties: Object.hasOwn(installed.installation.package.manifest.properties, 'arcCenterMode')
+      ? { coordinatePrecision: 3, arcCenterMode: 'incremental' }
+      : { coordinatePrecision: 3 },
     compatibility: {
       status: 'acknowledged',
       acknowledgedAt: '2026-08-28T12:00:00.000Z',

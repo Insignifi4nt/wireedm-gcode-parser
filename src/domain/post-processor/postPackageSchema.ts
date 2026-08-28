@@ -92,6 +92,25 @@ const ArcCenterReferenceSchema = Type.Union([
   }, strictObject)
 ]);
 
+const NumberFractionDigitsSchema = Type.Union([
+  Type.Object({
+    kind: Type.Literal('fixed'),
+    value: Type.Integer({ minimum: 0, maximum: 12 })
+  }, strictObject),
+  Type.Object({
+    kind: Type.Literal('property'),
+    property: PostIdentifierSchema
+  }, strictObject)
+]);
+
+const NumberFormatSchema = Type.Object({
+  style: Type.Literal('fixed'),
+  fractionDigits: NumberFractionDigitsSchema,
+  decimalSeparator: Type.Union([Type.Literal('.'), Type.Literal(',')]),
+  trimTrailingZeros: Type.Boolean(),
+  negativeZero: Type.Union([Type.Literal('zero'), Type.Literal('preserve')])
+}, strictObject);
+
 const CommandParameterSchema = Type.Union([
   Type.Object({
     type: Type.Literal('integer'),
@@ -104,6 +123,7 @@ const CommandParameterSchema = Type.Union([
     type: Type.Literal('number'),
     role: Type.Literal('none'),
     description: ParameterDescription,
+    format: NumberFormatSchema,
     minimum: Type.Optional(Type.Number()),
     maximum: Type.Optional(Type.Number())
   }, strictObject),
@@ -111,6 +131,7 @@ const CommandParameterSchema = Type.Union([
     type: Type.Literal('number'),
     role: MotionEndRoleSchema,
     description: ParameterDescription,
+    format: NumberFormatSchema,
     minimum: Type.Optional(Type.Number()),
     maximum: Type.Optional(Type.Number())
   }, strictObject),
@@ -119,6 +140,7 @@ const CommandParameterSchema = Type.Union([
     role: MotionCenterRoleSchema,
     centerReference: ArcCenterReferenceSchema,
     description: ParameterDescription,
+    format: NumberFormatSchema,
     minimum: Type.Optional(Type.Number()),
     maximum: Type.Optional(Type.Number())
   }, strictObject),

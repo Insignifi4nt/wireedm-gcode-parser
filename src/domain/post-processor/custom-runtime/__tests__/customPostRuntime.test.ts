@@ -27,6 +27,28 @@ describe('isolated custom JavaScript post runtime', () => {
     ]);
   });
 
+  it('renders numeric parameters with the declared deterministic controller format', async () => {
+    const fixture = runtimeFixture();
+    const command = fixture.package.dialect.commands['motion.linear'];
+    for (const parameter of Object.values(command.parameters)) {
+      if (parameter.type !== 'number') continue;
+      parameter.format.decimalSeparator = ',';
+      parameter.format.trimTrailingZeros = false;
+      parameter.format.negativeZero = 'zero';
+    }
+    fixture.plan = {
+      ...fixture.plan,
+      events: fixture.plan.events.map((event) => event.kind === 'motion'
+        ? { ...event, end: { ...event.end, x: -0.0004 } }
+        : event)
+    };
+    const result = await runCustomPost(fixture);
+
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    expect(result.program.text).toBe('G90\nG1 X0,000 Y0,000\nG1 X0,000 Y0,000\nM02');
+    expect(result.program.blocks[2].motion?.end.x).toBe(-0.0004);
+  });
+
   it('derives an audited circular center from the same declared offset parameters rendered in text', async () => {
     const fixture = runtimeFixture();
     const document = createUpidFromDxfEntities([{
@@ -45,23 +67,26 @@ describe('isolated custom JavaScript post runtime', () => {
     const compiled = compileWireEdmExecutionPlan(document);
     if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
     fixture.plan = compiled.plan;
+    fixture.package.manifest.capabilities.circularInterpolation = 'both';
     for (const id of ['motion.arc-clockwise', 'motion.arc-counterclockwise']) {
       fixture.package.dialect.commands[id] = {
         template: `${id === 'motion.arc-clockwise' ? 'G2' : 'G3'} X{x} Y{y} I{i} J{j}`,
         parameters: {
-          x: { type: 'number', role: 'motion.end-x', description: 'X endpoint.' },
-          y: { type: 'number', role: 'motion.end-y', description: 'Y endpoint.' },
+          x: { type: 'number', role: 'motion.end-x', description: 'X endpoint.', format: numberFormat() },
+          y: { type: 'number', role: 'motion.end-y', description: 'Y endpoint.', format: numberFormat() },
           i: {
             type: 'number',
             role: 'motion.center-x',
             centerReference: { kind: 'fixed', mode: 'incremental' },
-            description: 'Incremental X center.'
+            description: 'Incremental X center.',
+            format: numberFormat()
           },
           j: {
             type: 'number',
             role: 'motion.center-y',
             centerReference: { kind: 'fixed', mode: 'incremental' },
-            description: 'Incremental Y center.'
+            description: 'Incremental Y center.',
+            format: numberFormat()
           }
         },
         effects: ['position.changed'],
@@ -224,7 +249,11 @@ describe('isolated custom JavaScript post runtime', () => {
     });
     expect(conformance).toMatchObject({
       ok: true,
-      fixtures: [{ fixtureId: 'runtime-plan' }]
+      fixtures: [
+        { fixtureId: 'runtime-plan' },
+        { fixtureId: 'runtime-precision-minimum' },
+        { fixtureId: 'runtime-precision-maximum' }
+      ]
     });
 
     const mismatch = runtimeFixture();
@@ -235,6 +264,61 @@ describe('isolated custom JavaScript post runtime', () => {
     })).resolves.toMatchObject({
       ok: false,
       diagnostics: [{ code: 'POST_CONFORMANCE_EXPECTED_PROGRAM_MISMATCH' }]
+    });
+  });
+
+  it('rejects incomplete fixture coverage and an unfinished final lifecycle', async () => {
+    const uncovered = runtimeFixture();
+    uncovered.package.manifest.capabilities.programStops = true;
+    uncovered.package.dialect.commands['program.alternate-end'] = {
+      template: 'M30',
+      parameters: {},
+      effects: ['program.ended'],
+      requires: [],
+      evidenceRefs: ['robofil-program']
+    };
+    uncovered.package.evidence[0].supports.push({ kind: 'command', id: 'program.alternate-end' });
+    uncovered.package.fixtures = uncovered.package.fixtures.filter(({ id }) => id !== 'runtime-precision-maximum');
+    const coverage = await runCustomPostConformance({
+      packageValue: uncovered.package,
+      planFixtures: { 'core.test-plan.v1': uncovered.plan }
+    });
+    expect(coverage).toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: 'POST_CONFORMANCE_COMMAND_NOT_COVERED' }),
+        expect.objectContaining({ code: 'POST_CONFORMANCE_CAPABILITY_NOT_COVERED' }),
+        expect.objectContaining({ code: 'POST_CONFORMANCE_PROPERTY_BOUNDARY_NOT_COVERED' })
+      ])
+    });
+
+    const unfinished = runtimeFixture();
+    unfinished.package.source.code = unfinished.package.source.code.replace(
+      "if (event.kind === 'program-end') return api.emitCommand('program.end', {});",
+      "if (event.kind === 'program-end') return api.consume('No explicit program end.');"
+    );
+    expect(await runCustomPost(unfinished)).toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({ code: 'POST_CUSTOM_LIFECYCLE_INVALID' })]
+    });
+
+    const terminatedEarly = runtimeFixture();
+    terminatedEarly.package.dialect.commands['program.end'].effects = [
+      'program.ended',
+      'distance.absolute'
+    ];
+    terminatedEarly.package.source.code = terminatedEarly.package.source.code
+      .replace(
+        "if (event.kind === 'program-start') return api.emitCommand('distance.absolute', {});",
+        "if (event.kind === 'program-start') return api.emitCommand('program.end', {});"
+      )
+      .replace(
+        "if (event.kind === 'program-end') return api.emitCommand('program.end', {});",
+        "if (event.kind === 'program-end') return api.consume('Program was ended early.');"
+      );
+    expect(await runCustomPost(terminatedEarly)).toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({ code: 'POST_CUSTOM_LIFECYCLE_INVALID' })]
     });
   });
 });
@@ -257,7 +341,7 @@ function runtimeFixture() {
   if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
 
   const packageValue = minimalPostPackage();
-  packageValue.manifest.capabilities.circularInterpolation = 'both';
+  packageValue.manifest.capabilities.circularInterpolation = 'none';
   packageValue.manifest.capabilities.controllerCompensation = 'none';
   packageValue.manifest.capabilities.threading = 'none';
   packageValue.manifest.execution.compensationLifecycle = 'none';
@@ -265,8 +349,8 @@ function runtimeFixture() {
   packageValue.dialect.commands['motion.linear'] = {
     template: 'G1 X{x} Y{y}',
     parameters: {
-      x: { type: 'number', role: 'motion.end-x', description: 'X endpoint.' },
-      y: { type: 'number', role: 'motion.end-y', description: 'Y endpoint.' }
+      x: { type: 'number', role: 'motion.end-x', description: 'X endpoint.', format: numberFormat() },
+      y: { type: 'number', role: 'motion.end-y', description: 'Y endpoint.', format: numberFormat() }
     },
     effects: ['position.changed'],
     requires: ['distance.absolute'],
@@ -278,14 +362,32 @@ function runtimeFixture() {
       return ${handlerSource()};
     }
   `;
-  packageValue.fixtures = [{
-    id: 'runtime-plan',
-    description: 'Exact runtime plan fixture.',
-    planFixture: 'core.test-plan.v1',
-    properties: { coordinatePrecision: 3 },
-    expectedProgram: 'G90\nG1 X0 Y0\nG1 X10 Y0\nM02',
-    evidenceRefs: ['robofil-program']
-  }];
+  packageValue.fixtures = [
+    {
+      id: 'runtime-plan',
+      description: 'Exact runtime plan fixture.',
+      planFixture: 'core.test-plan.v1',
+      properties: { coordinatePrecision: 3 },
+      expectedProgram: 'G90\nG1 X0 Y0\nG1 X10 Y0\nM02',
+      evidenceRefs: ['robofil-program']
+    },
+    {
+      id: 'runtime-precision-minimum',
+      description: 'Minimum coordinate precision fixture.',
+      planFixture: 'core.test-plan.v1',
+      properties: { coordinatePrecision: 0 },
+      expectedProgram: 'G90\nG1 X0 Y0\nG1 X10 Y0\nM02',
+      evidenceRefs: ['robofil-program']
+    },
+    {
+      id: 'runtime-precision-maximum',
+      description: 'Maximum coordinate precision fixture.',
+      planFixture: 'core.test-plan.v1',
+      properties: { coordinatePrecision: 6 },
+      expectedProgram: 'G90\nG1 X0 Y0\nG1 X10 Y0\nM02',
+      evidenceRefs: ['robofil-program']
+    }
+  ];
   return {
     package: packageValue,
     plan: compiled.plan,
@@ -301,4 +403,14 @@ function handlerSource() {
     if (event.kind === 'program-end') return api.emitCommand('program.end', {});
     api.consume('No controller block required.');
   } })`;
+}
+
+function numberFormat() {
+  return {
+    style: 'fixed' as const,
+    fractionDigits: { kind: 'property' as const, property: 'coordinatePrecision' },
+    decimalSeparator: '.' as const,
+    trimTrailingZeros: true,
+    negativeZero: 'zero' as const
+  };
 }

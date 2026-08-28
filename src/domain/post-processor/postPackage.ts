@@ -141,6 +141,13 @@ function validatePackageSemantics(packageValue: WireEdmPostPackageValue) {
         message: `Evidence ${evidenceRef} does not declare support for command ${commandName}.`
       });
     }
+    appendEvidenceTargetScopeDiagnostics(
+      diagnostics,
+      packageValue,
+      commandName,
+      command.evidenceRefs,
+      evidenceById
+    );
   }
 
   for (const [propertyName, definition] of Object.entries(packageValue.manifest.properties)) {
@@ -180,6 +187,63 @@ function validatePackageSemantics(packageValue: WireEdmPostPackageValue) {
   return diagnostics;
 }
 
+function appendEvidenceTargetScopeDiagnostics(
+  diagnostics: PostPackageDiagnostic[],
+  packageValue: WireEdmPostPackageValue,
+  commandName: string,
+  evidenceRefs: readonly string[],
+  evidenceById: ReadonlyMap<string, WireEdmPostPackageValue['evidence'][number]>
+) {
+  const path = `/dialect/commands/${escapeJsonPointer(commandName)}/evidenceRefs`;
+  const referenced = evidenceRefs
+    .map((reference) => evidenceById.get(reference))
+    .filter((evidence) => evidence !== undefined);
+  for (const [referenceIndex, evidenceRef] of evidenceRefs.entries()) {
+    const evidence = evidenceById.get(evidenceRef);
+    if (!evidence || packageValue.manifest.targets.some((target) => evidenceIntersectsTarget(evidence, target))) {
+      continue;
+    }
+    diagnostics.push({
+      code: 'POST_PACKAGE_EVIDENCE_SCOPE_MISMATCH',
+      path: `${path}/${referenceIndex}`,
+      message: `Evidence ${evidenceRef} is not applicable to any declared controller target.`
+    });
+  }
+  for (const [targetIndex, target] of packageValue.manifest.targets.entries()) {
+    const machineScopes = target.machineModels.length === 0 ? [null] : target.machineModels;
+    for (const machineModel of machineScopes) {
+      if (referenced.some((evidence) => evidenceCoversTargetScope(evidence, target.controller, machineModel))) {
+        continue;
+      }
+      diagnostics.push({
+        code: 'POST_PACKAGE_EVIDENCE_SCOPE_MISMATCH',
+        path,
+        message: `Command ${commandName} has no evidence covering target /manifest/targets/${targetIndex} (${target.controller}${machineModel === null ? ' without a machine restriction' : ` / ${machineModel}`}).`
+      });
+    }
+  }
+}
+
+function evidenceIntersectsTarget(
+  evidence: WireEdmPostPackageValue['evidence'][number],
+  target: WireEdmPostPackageValue['manifest']['targets'][number]
+) {
+  if (!evidence.appliesTo.controllerModels.includes(target.controller)) return false;
+  if (evidence.appliesTo.machineModels.length === 0 || target.machineModels.length === 0) return true;
+  return evidence.appliesTo.machineModels.some((machine) => target.machineModels.includes(machine));
+}
+
+function evidenceCoversTargetScope(
+  evidence: WireEdmPostPackageValue['evidence'][number],
+  controller: string,
+  machineModel: string | null
+) {
+  if (!evidence.appliesTo.controllerModels.includes(controller)) return false;
+  return machineModel === null
+    ? evidence.appliesTo.machineModels.length === 0
+    : evidence.appliesTo.machineModels.length === 0 || evidence.appliesTo.machineModels.includes(machineModel);
+}
+
 function appendCommandParameterDiagnostics(
   diagnostics: PostPackageDiagnostic[],
   packageValue: WireEdmPostPackageValue,
@@ -211,6 +275,24 @@ function appendCommandParameterDiagnostics(
       });
     }
     roleNames.add(parameter.role);
+    if (parameter.type === 'number' && parameter.format.fractionDigits.kind === 'property') {
+      const precisionProperty = packageValue.manifest.properties[
+        parameter.format.fractionDigits.property
+      ];
+      if (
+        precisionProperty?.type !== 'integer' ||
+        precisionProperty.minimum === undefined ||
+        precisionProperty.minimum < 0 ||
+        precisionProperty.maximum === undefined ||
+        precisionProperty.maximum > 12
+      ) {
+        diagnostics.push({
+          code: 'POST_PACKAGE_COMMAND_PARAMETER_INVALID',
+          path: `${path}/parameters/${escapeJsonPointer(parameterName)}/format/fractionDigits/property`,
+          message: `Numeric format property ${parameter.format.fractionDigits.property} must be an integer constrained to the inclusive range 0 through 12.`
+        });
+      }
+    }
     if (parameter.role !== 'motion.center-x' && parameter.role !== 'motion.center-y') continue;
     if (parameter.centerReference.kind !== 'property') continue;
     const property = packageValue.manifest.properties[parameter.centerReference.property];

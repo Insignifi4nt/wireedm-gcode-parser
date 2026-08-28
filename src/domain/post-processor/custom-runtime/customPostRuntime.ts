@@ -33,7 +33,7 @@ export const DEFAULT_CUSTOM_POST_RUNTIME_LIMITS: CustomPostRuntimeLimits = Objec
   memoryBytes: 16 * 1024 * 1024,
   stackBytes: 512 * 1024,
   interruptCycles: 100_000,
-  deadlineMs: 250,
+  deadlineMs: 1_000,
   events: 20_000,
   actions: 100_000,
   outputBytes: 4 * 1024 * 1024
@@ -55,6 +55,7 @@ export const CUSTOM_POST_DIAGNOSTIC_CODES = [
   'POST_CUSTOM_OUTPUT_LIMIT',
   'POST_CUSTOM_EVENT_DISPOSITION_INVALID',
   'POST_CUSTOM_MOTION_ROLE_INVALID',
+  'POST_CUSTOM_LIFECYCLE_INVALID',
   'POST_CUSTOM_AUDIT_FAILED',
   'POST_CUSTOM_NONDETERMINISTIC'
 ] as const;
@@ -246,6 +247,15 @@ async function executeOnce(
         ))
       };
     }
+    const lifecycleProblem = finalLifecycleProblem(
+      packageValue,
+      plan,
+      program,
+      state.dialectState
+    );
+    if (lifecycleProblem) {
+      return failure('POST_CUSTOM_LIFECYCLE_INVALID', lifecycleProblem);
+    }
     return { ok: true, program };
   } finally {
     for (const handle of ownedHandles.reverse()) {
@@ -254,6 +264,44 @@ async function executeOnce(
     context.dispose();
     runtime.dispose();
   }
+}
+
+function finalLifecycleProblem(
+  packageValue: WireEdmPostPackage,
+  plan: WireEdmExecutionPlan,
+  program: ControllerProgram,
+  state: ReadonlySet<string>
+) {
+  if (!state.has('program.ended')) {
+    return 'The final dialect state does not contain program.ended.';
+  }
+  const programEndEvent = plan.events.find(({ kind }) => kind === 'program-end');
+  if (!programEndEvent) return 'The execution plan has no program-end event.';
+  const terminationBlocks = program.blocks.filter((block) => block.commandIds.some((commandId) => (
+    packageValue.dialect.commands[commandId]?.effects.includes('program.ended')
+  )));
+  if (
+    terminationBlocks.length !== 1 ||
+    terminationBlocks[0].eventId !== programEndEvent.id
+  ) {
+    return `Exactly one program.ended command must be emitted by program-end event ${programEndEvent.id}.`;
+  }
+  if (
+    packageValue.manifest.execution.compensationLifecycle !== 'none' &&
+    !state.has('compensation.off')
+  ) {
+    return 'The declared compensation lifecycle did not end in compensation.off.';
+  }
+  const finalWireEvent = [...plan.events].reverse().find((event) => (
+    event.kind === 'wire-separate' || event.kind === 'wire-thread'
+  ));
+  if (finalWireEvent?.kind === 'wire-separate' && !state.has('wire.separated')) {
+    return `Wire-separation event ${finalWireEvent.id} did not leave wire.separated in the final dialect state.`;
+  }
+  if (finalWireEvent?.kind === 'wire-thread' && !state.has('wire.threaded')) {
+    return `Wire-thread event ${finalWireEvent.id} did not leave wire.threaded in the final dialect state.`;
+  }
+  return null;
 }
 
 function createGuestApi(
@@ -430,7 +478,17 @@ function emitCommand(
     ));
     return;
   }
-  const text = renderTemplate(command.template, parameters.values);
+  const rendered = renderTemplate(command.template, command, parameters.values, properties);
+  if (!rendered.ok) {
+    recordFatal(state, diagnostic(
+      'POST_CUSTOM_PARAMETER_INVALID',
+      rendered.message,
+      event.id,
+      commandValue
+    ));
+    return;
+  }
+  const text = rendered.text;
   if (text.length === 0 || /[\r\n\u0000]/.test(text)) {
     recordFatal(state, diagnostic(
       'POST_CUSTOM_PARAMETER_INVALID',
@@ -624,8 +682,51 @@ function hasCenterRole(command: RuntimeCommand) {
   ));
 }
 
-function renderTemplate(template: string, values: Readonly<Record<string, string | number>>) {
-  return template.replace(/\{([A-Za-z0-9._-]+)\}/g, (_placeholder, name: string) => String(values[name]));
+function renderTemplate(
+  template: string,
+  command: RuntimeCommand,
+  values: Readonly<Record<string, string | number>>,
+  properties: Readonly<Record<string, PostPropertyValue>>
+): { readonly ok: true; readonly text: string } | { readonly ok: false; readonly message: string } {
+  const rendered: Record<string, string> = {};
+  for (const [name, definition] of Object.entries(command.parameters)) {
+    const value = values[name];
+    if (typeof value === 'number' && definition.type === 'number') {
+      const formatted = formatNumberParameter(name, value, definition.format, properties);
+      if (!formatted.ok) return formatted;
+      rendered[name] = formatted.text;
+    } else {
+      rendered[name] = String(value);
+    }
+  }
+  return {
+    ok: true,
+    text: template.replace(/\{([A-Za-z0-9._-]+)\}/g, (_placeholder, name: string) => rendered[name])
+  };
+}
+
+function formatNumberParameter(
+  name: string,
+  value: number,
+  format: Extract<RuntimeParameter, { readonly type: 'number' }>['format'],
+  properties: Readonly<Record<string, PostPropertyValue>>
+): { readonly ok: true; readonly text: string } | { readonly ok: false; readonly message: string } {
+  const fractionDigits = format.fractionDigits.kind === 'fixed'
+    ? format.fractionDigits.value
+    : properties[format.fractionDigits.property];
+  if (!Number.isInteger(fractionDigits) || typeof fractionDigits !== 'number' || fractionDigits < 0 || fractionDigits > 12) {
+    return {
+      ok: false,
+      message: `Numeric parameter ${name} requires an integer fraction-digit value from 0 through 12.`
+    };
+  }
+  let text = value.toFixed(fractionDigits);
+  if (format.negativeZero === 'zero' && Number(text) === 0) text = text.replace(/^-/, '');
+  if (format.trimTrailingZeros && text.includes('.')) {
+    text = text.replace(/0+$/, '').replace(/\.$/, '');
+  }
+  if (format.decimalSeparator === ',') text = text.replace('.', ',');
+  return { ok: true, text };
 }
 
 function appendBlock(

@@ -688,11 +688,11 @@ export function saveStoredWireEdmJobRevision(
       return catalogMutationFailure(catalogStorageAccessFailure('write', path, error));
     }
     const serializedRevision = serializeSavedWireEdmJobRevision(candidate);
+    journalCatalogSnapshot(applied, snapshots.snapshots, path);
     const revisionWrite = await writeCatalogTransactionText(workbench, path, serializedRevision);
     if (!revisionWrite.ok) {
-      return catalogMutationFailure(revisionWrite.error);
+      return rollbackCatalogRevision(workbench, applied, revisionWrite.error);
     }
-    journalCatalogSnapshot(applied, snapshots.snapshots, path);
     const revisionReadback = await readCatalogTransactionText(workbench, path);
     if (!revisionReadback.ok) {
       return rollbackCatalogRevision(workbench, applied, revisionReadback.error);
@@ -704,11 +704,11 @@ export function saveStoredWireEdmJobRevision(
       ));
     }
     const serializedProject = `${JSON.stringify(nextProject.project, null, 2)}\n`;
+    journalCatalogSnapshot(applied, snapshots.snapshots, documentPath);
     const projectWrite = await writeCatalogTransactionText(workbench, documentPath, serializedProject);
     if (!projectWrite.ok) {
       return rollbackCatalogRevision(workbench, applied, projectWrite.error);
     }
-    journalCatalogSnapshot(applied, snapshots.snapshots, documentPath);
     const projectReadback = await readCatalogTransactionText(workbench, documentPath);
     if (!projectReadback.ok) {
       return rollbackCatalogRevision(workbench, applied, projectReadback.error);
@@ -721,11 +721,11 @@ export function saveStoredWireEdmJobRevision(
       });
     }
     const serializedManifest = `${JSON.stringify(nextManifest, null, 2)}\n`;
+    journalCatalogSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
     const manifestWrite = await writeCatalogManifest(workbench, nextManifest);
     if (!manifestWrite.ok) {
       return rollbackCatalogRevision(workbench, applied, manifestWrite.error);
     }
-    journalCatalogSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
     const manifestReadback = await readCatalogTransactionText(workbench, WORKBENCH_CATALOG_PATH);
     if (!manifestReadback.ok) {
       return rollbackCatalogRevision(workbench, applied, manifestReadback.error);
@@ -797,10 +797,10 @@ async function persistSavedWireEdmJobRevisionUnlocked(
   try {
     await adapter.writeText(path, serialized);
   } catch (error) {
-    return storageFailure(
+    return rollbackNewRevision(adapter, path, storageFailure(
       'SAVED_REVISION_STORAGE_WRITE_FAILED',
       `Could not persist saved revision at ${path}: ${errorMessage(error)}.`
-    );
+    ));
   }
 
   let readBack: string | null;

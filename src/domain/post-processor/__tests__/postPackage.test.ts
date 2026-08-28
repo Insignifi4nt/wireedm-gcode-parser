@@ -90,8 +90,8 @@ describe('wire EDM post package boundary', () => {
     input.dialect.commands['motion.linear'] = {
       template: 'G1 X{x} Y{y}',
       parameters: {
-        x: { type: 'number', role: 'motion.end-x', description: 'X endpoint.' },
-        y: { type: 'number', role: 'motion.end-x', description: 'Incorrect duplicate role.' }
+        x: { type: 'number', role: 'motion.end-x', description: 'X endpoint.', format: coordinateFormat() },
+        y: { type: 'number', role: 'motion.end-x', description: 'Incorrect duplicate role.', format: coordinateFormat() }
       },
       effects: ['position.changed'],
       requires: [],
@@ -154,6 +154,34 @@ describe('wire EDM post package boundary', () => {
     ]));
   });
 
+  it('rejects command evidence that does not cover every declared controller and machine target', () => {
+    const input = minimalPostPackage();
+    input.manifest.targets.push({
+      manufacturer: 'Charmilles',
+      controller: 'Robofil New',
+      machineModels: ['Robofil 200']
+    });
+    input.evidence[0].appliesTo.controllerModels = ['Unrelated Controller'];
+    input.evidence[0].appliesTo.machineModels = [];
+
+    const result = parseWireEdmPostPackage(JSON.stringify(input));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected package parsing to fail.');
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'POST_PACKAGE_EVIDENCE_SCOPE_MISMATCH',
+        path: '/dialect/commands/distance.absolute/evidenceRefs/0',
+        message: expect.stringContaining('not applicable to any declared controller target')
+      }),
+      expect.objectContaining({
+        code: 'POST_PACKAGE_EVIDENCE_SCOPE_MISMATCH',
+        path: '/dialect/commands/distance.absolute/evidenceRefs',
+        message: expect.stringContaining('Robofil New / Robofil 200')
+      })
+    ]));
+  });
+
   it('returns a precise JSON diagnostic for malformed input', () => {
     expect(parseWireEdmPostPackage('{')).toEqual({
       ok: false,
@@ -167,3 +195,13 @@ describe('wire EDM post package boundary', () => {
     });
   });
 });
+
+function coordinateFormat() {
+  return {
+    style: 'fixed' as const,
+    fractionDigits: { kind: 'property' as const, property: 'coordinatePrecision' },
+    decimalSeparator: '.' as const,
+    trimTrailingZeros: true,
+    negativeZero: 'zero' as const
+  };
+}

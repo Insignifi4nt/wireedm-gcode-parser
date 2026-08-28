@@ -19,20 +19,20 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
       ],
       capabilities: {
         circularInterpolation: 'none',
-        controllerCompensation: 'left-right',
+        controllerCompensation: 'none',
         operations: 'single',
         passes: 'single',
-        threading: 'manual',
+        threading: 'none',
         wireSeparation: false,
-        programStops: true,
+        programStops: false,
         taperAxes: false,
         technologySelection: false,
         initialWirePosition: true
       },
       execution: {
         initialWirePosition: 'required',
-        compensationLifecycle: 'controller-native-program',
-        compensationRequiredForEveryOperation: true
+        compensationLifecycle: 'none',
+        compensationRequiredForEveryOperation: false
       },
       properties: {
         coordinatePrecision: {
@@ -62,12 +62,14 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
             x: {
               type: 'number',
               role: 'motion.end-x',
-              description: 'X endpoint coordinate.'
+              description: 'X endpoint coordinate.',
+              format: coordinateFormat()
             },
             y: {
               type: 'number',
               role: 'motion.end-y',
-              description: 'Y endpoint coordinate.'
+              description: 'Y endpoint coordinate.',
+              format: coordinateFormat()
             }
           },
           effects: ['position.changed'],
@@ -153,7 +155,47 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
           'M02'
         ].join('\n'),
         evidenceRefs: ['robofil-program']
+      },
+      {
+        id: 'coordinate-precision-minimum',
+        description: 'Minimum coordinate precision boundary.',
+        planFixture: 'core.single-closed-contour.v1',
+        properties: { coordinatePrecision: 0 },
+        expectedProgram: [
+          'G90',
+          'G1 X10 Y0',
+          'G1 X10 Y10',
+          'G1 X0 Y10',
+          'G1 X0 Y0',
+          'M02'
+        ].join('\n'),
+        evidenceRefs: ['robofil-program']
+      },
+      {
+        id: 'coordinate-precision-maximum',
+        description: 'Maximum coordinate precision boundary.',
+        planFixture: 'core.single-closed-contour.v1',
+        properties: { coordinatePrecision: 6 },
+        expectedProgram: [
+          'G90',
+          'G1 X10 Y0',
+          'G1 X10 Y10',
+          'G1 X0 Y10',
+          'G1 X0 Y0',
+          'M02'
+        ].join('\n'),
+        evidenceRefs: ['robofil-program']
       }
     ]
+  };
+}
+
+function coordinateFormat() {
+  return {
+    style: 'fixed' as const,
+    fractionDigits: { kind: 'property' as const, property: 'coordinatePrecision' },
+    decimalSeparator: '.' as const,
+    trimTrailingZeros: true,
+    negativeZero: 'zero' as const
   };
 }

@@ -201,14 +201,15 @@ export async function addStoredWorkbenchProject(
     if (occupied) return projectConflict(input.project.id, occupied.path, 'existing unindexed storage');
 
     for (const file of input.ownedFiles) {
+      journalAppliedSnapshot(applied, snapshots.snapshots, file.path);
       const written = await writeStorageText(workbench, file.path, file.contents);
       if (!written.ok) return rollbackOrError(workbench, applied, written.error);
-      journalAppliedSnapshot(applied, snapshots.snapshots, file.path);
     }
+    journalAppliedSnapshot(applied, snapshots.snapshots, path);
     const documentWrite = await writeProjectDocument(workbench, path, input.project);
     if (!documentWrite.ok) return rollbackOrError(workbench, applied, documentWrite.error);
-    journalAppliedSnapshot(applied, snapshots.snapshots, path);
     const nextManifest = withProjectEntry(workbench.manifest, input.project, path);
+    journalAppliedSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
     const manifestWrite = await writeManifest(workbench, nextManifest);
     if (!manifestWrite.ok) return rollbackOrError(workbench, applied, manifestWrite.error);
     return { ok: true, project: input.project, workbench: freezeWorkbench(workbench, nextManifest) };
@@ -271,20 +272,21 @@ export async function replaceStoredWorkbenchProject(
 
     for (const change of input.ownedFileChanges) {
       if (change.kind === 'write') {
+        journalAppliedSnapshot(applied, snapshots.snapshots, change.path);
         const written = await writeStorageText(workbench, change.path, change.contents);
         if (!written.ok) return rollbackOrError(workbench, applied, written.error);
-        journalAppliedSnapshot(applied, snapshots.snapshots, change.path);
       }
     }
     for (const change of input.ownedFileChanges.filter(({ kind }) => kind === 'delete')) {
+      journalAppliedSnapshot(applied, snapshots.snapshots, change.path);
       const deleted = await deleteStorageText(workbench, change.path);
       if (!deleted.ok) return rollbackOrError(workbench, applied, deleted.error);
-      journalAppliedSnapshot(applied, snapshots.snapshots, change.path);
     }
+    journalAppliedSnapshot(applied, snapshots.snapshots, entry.path);
     const documentWrite = await writeProjectDocument(workbench, entry.path, input.project);
     if (!documentWrite.ok) return rollbackOrError(workbench, applied, documentWrite.error);
-    journalAppliedSnapshot(applied, snapshots.snapshots, entry.path);
     const nextManifest = replaceProjectEntry(workbench.manifest, input.project, entry.path);
+    journalAppliedSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
     const manifestWrite = await writeManifest(workbench, nextManifest);
     if (!manifestWrite.ok) return rollbackOrError(workbench, applied, manifestWrite.error);
     return { ok: true, project: input.project, workbench: freezeWorkbench(workbench, nextManifest) };
@@ -331,15 +333,16 @@ export async function deleteStoredWorkbenchProject(
     if (dangling) return { ok: false, error: ownedFileDangling(input.projectId, dangling.path) };
 
     for (const path of ownedPaths) {
+      journalAppliedSnapshot(applied, snapshots.snapshots, path);
       const deleted = await deleteStorageText(workbench, path);
       if (!deleted.ok) return rollbackOrError(workbench, applied, deleted.error);
-      journalAppliedSnapshot(applied, snapshots.snapshots, path);
     }
     const nextManifest = deepFreeze({
       ...workbench.manifest,
       updatedAt: input.deletedAt.toISOString(),
       projects: workbench.manifest.projects.filter(({ id }) => id !== input.projectId)
     } satisfies WorkbenchCatalogManifestValue);
+    journalAppliedSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
     const manifestWrite = await writeManifest(workbench, nextManifest);
     if (!manifestWrite.ok) return rollbackOrError(workbench, applied, manifestWrite.error);
     return {

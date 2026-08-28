@@ -344,13 +344,15 @@ function commandParameters(
         type: 'number',
         role: 'motion.center-x',
         centerReference,
-        description: 'Arc-center X coordinate.'
+        description: 'Arc-center X coordinate.',
+        format: coordinateNumberFormat()
       },
       j: {
         type: 'number',
         role: 'motion.center-y',
         centerReference,
-        description: 'Arc-center Y coordinate.'
+        description: 'Arc-center Y coordinate.',
+        format: coordinateNumberFormat()
       }
     };
   }
@@ -377,7 +379,22 @@ function coordinateParameter(
   role: 'none' | 'motion.end-x' | 'motion.end-y',
   description: string
 ) {
-  return { type: 'number' as const, role, description };
+  return {
+    type: 'number' as const,
+    role,
+    description,
+    format: coordinateNumberFormat()
+  };
+}
+
+function coordinateNumberFormat() {
+  return {
+    style: 'fixed' as const,
+    fractionDigits: { kind: 'property' as const, property: 'coordinatePrecision' },
+    decimalSeparator: '.' as const,
+    trimTrailingZeros: false,
+    negativeZero: 'zero' as const
+  };
 }
 
 function commandEffects(
