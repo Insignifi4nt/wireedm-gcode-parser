@@ -4,9 +4,9 @@ import {
   initializeWorkbenchDirectory,
   WORKBENCH_MANIFEST_FILE,
   HEADER_TEMPLATE_PATH,
-  FOOTER_TEMPLATE_PATH,
-  type WorkbenchStorageAdapter
+  FOOTER_TEMPLATE_PATH
 } from '../workbenchStorage';
+import type { WorkbenchStorageAdapter } from '../workbenchStorageAdapter';
 import { updateWorkbenchSettings } from '../updateWorkbenchSettings';
 
 class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {

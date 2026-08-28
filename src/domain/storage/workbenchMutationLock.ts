@@ -1,4 +1,4 @@
-import type { WorkbenchStorageAdapter } from './workbenchStorage';
+import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 const mutationTails = new WeakMap<WorkbenchStorageAdapter, Promise<void>>();
 

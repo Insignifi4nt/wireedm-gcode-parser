@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { normalizeMachineProfile } from '@/domain/machine/machineProfiles';
-import type { ConnectedWorkbench, WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import type { MachineProfile } from '@/domain/workbench/types';
 

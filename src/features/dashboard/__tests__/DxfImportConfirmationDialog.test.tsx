@@ -8,7 +8,8 @@ import {
   previewDxfProjectImport,
   unitCandidatesForDxfImport
 } from '@/domain/dxf/prepareDxfProjectImport';
-import type { ConnectedWorkbench, WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import type { ConnectedWorkbench } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 import type { MachineProfile } from '@/domain/workbench/types';
 

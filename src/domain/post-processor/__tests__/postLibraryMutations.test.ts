@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import {
   removeMachinePostBinding
 } from '@/domain/machine-definition/machineDefinition';

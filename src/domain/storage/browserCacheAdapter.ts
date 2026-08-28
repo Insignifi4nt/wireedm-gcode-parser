@@ -1,4 +1,4 @@
-import type { WorkbenchStorageAdapter } from './workbenchStorage';
+import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 interface BrowserCacheAdapterOptions {
   kind?: 'browser-cache' | 'memory';

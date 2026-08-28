@@ -8,9 +8,9 @@ import {
   WORKBENCH_MANIFEST_FILE,
   writeWorkbenchManifest,
   type ConnectedWorkbench,
-  type WorkbenchStorageAdapter,
   type WorkbenchManifest
 } from './workbenchStorage';
+import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 const MAX_PROFILE_ID_LENGTH = 64;
 const MAX_PROFILE_NAME_LENGTH = 120;

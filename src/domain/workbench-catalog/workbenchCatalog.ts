@@ -1,7 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 
-import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { PostIdentifierSchema } from '@/domain/post-processor/postFormatPrimitives';
 import {
   initializePostLibraryStorage,

@@ -5,7 +5,7 @@ import {
   connectWorkbenchDirectory,
   type WorkbenchDirectoryHandleStore
 } from '../connectWorkbenchDirectory';
-import type { WorkbenchStorageAdapter } from '../workbenchStorage';
+import type { WorkbenchStorageAdapter } from '../workbenchStorageAdapter';
 
 class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';

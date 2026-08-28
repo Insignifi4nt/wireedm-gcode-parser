@@ -5,7 +5,8 @@ import {
   createVerifiedCharmillesRobofil100Profile,
   markMachineProfileUserVerified
 } from '@/domain/machine/machineProfiles';
-import { initializeWorkbenchDirectory, type WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import { initializeWorkbenchDirectory } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 
 import { commitDxfProjectImport, importDxfProject } from '../importDxfProject';

@@ -1,4 +1,4 @@
-import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import {
   resolvePostInstallation,

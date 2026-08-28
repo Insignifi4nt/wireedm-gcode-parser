@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { importDxfProject } from '@/domain/dxf/importDxfProject';
-import { initializeWorkbenchDirectory, type WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import { initializeWorkbenchDirectory } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 
 import { openWorkbenchProject } from '../openWorkbenchProject';
 

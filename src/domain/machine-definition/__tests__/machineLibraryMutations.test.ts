@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { createEmptyPostLibrary } from '@/domain/post-processor/postLibrary';
 import {
   installStoredPostPackage,

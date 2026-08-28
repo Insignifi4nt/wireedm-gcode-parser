@@ -3,10 +3,8 @@ import {
   requestWorkbenchDirectory,
   supportsWorkbenchDirectoryAccess
 } from './fileSystemAccess';
-import {
-  initializeWorkbenchDirectory,
-  type WorkbenchStorageAdapter
-} from './workbenchStorage';
+import { initializeWorkbenchDirectory } from './workbenchStorage';
+import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 const DIRECTORY_HANDLE_DB = 'wire-edm-workbench-directory';
 const DIRECTORY_HANDLE_STORE = 'handles';

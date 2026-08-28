@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { MACHINE_LIBRARY_PATH } from '@/domain/machine-definition/machineLibraryStorage';
 import { POST_LIBRARY_PATH } from '@/domain/post-processor/postLibraryStorage';
 

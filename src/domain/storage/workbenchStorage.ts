@@ -8,6 +8,7 @@ import {
   normalizeMachineProfile
 } from '@/domain/machine/machineProfiles';
 import type { MachineProfile, OutputFormat, WorkbenchSourceKind } from '../workbench/types';
+import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 export const WORKBENCH_MANIFEST_FILE = 'workbench.json';
 export const HEADER_TEMPLATE_PATH = 'templates/header.gcode';
@@ -20,15 +21,6 @@ export const WORKBENCH_DIRECTORIES = [
   'editor',
   'projects'
 ] as const;
-
-export interface WorkbenchStorageAdapter {
-  readonly name: string;
-  readonly kind: 'browser-cache' | 'directory' | 'memory';
-  ensureDirectory(path: string): Promise<void>;
-  readText(path: string): Promise<string | null>;
-  deleteText(path: string): Promise<void>;
-  writeText(path: string, contents: string): Promise<void>;
-}
 
 export interface WorkbenchProjectIndexEntry {
   id: string;

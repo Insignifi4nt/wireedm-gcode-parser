@@ -23,9 +23,9 @@ import {
   FOOTER_TEMPLATE_PATH,
   HEADER_TEMPLATE_PATH,
   WORKBENCH_MANIFEST_FILE,
-  type ConnectedWorkbench,
-  type WorkbenchStorageAdapter
+  type ConnectedWorkbench
 } from '../workbenchStorage';
+import type { WorkbenchStorageAdapter } from '../workbenchStorageAdapter';
 
 const now = new Date('2026-07-13T12:00:00.000Z');
 

@@ -8,10 +8,8 @@ import {
   reversePathOperation,
   setPathOperationClassification
 } from '@/domain/path-editor/pathDocumentOperations';
-import {
-  initializeWorkbenchDirectory,
-  type WorkbenchStorageAdapter
-} from '@/domain/storage/workbenchStorage';
+import { initializeWorkbenchDirectory } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 
 import { importExternalProgram } from '../importExternalProgram';
 import { saveEditorProgram } from '../saveEditorProgram';

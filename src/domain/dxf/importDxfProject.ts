@@ -4,9 +4,9 @@ import { normalizeMachineProfile } from '@/domain/machine/machineProfiles';
 import {
   WORKBENCH_MANIFEST_FILE,
   type ConnectedWorkbench,
-  type WorkbenchManifest,
-  type WorkbenchStorageAdapter
+  type WorkbenchManifest
 } from '@/domain/storage/workbenchStorage';
+import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { createWorkbenchProject } from '@/domain/workbench/defaultProject';
 import { baseNameFromFileName, uniqueProjectId } from '@/domain/workbench/projectNaming';
 import type { WorkbenchProject } from '@/domain/workbench/types';

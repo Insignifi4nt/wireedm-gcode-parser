@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { createDefaultMachineProfile } from '@/domain/workbench/defaultProject';
 
-import { initializeWorkbenchDirectory, type WorkbenchStorageAdapter } from '../workbenchStorage';
+import { initializeWorkbenchDirectory } from '../workbenchStorage';
+import type { WorkbenchStorageAdapter } from '../workbenchStorageAdapter';
 
 class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
