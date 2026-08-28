@@ -142,6 +142,21 @@ export type WorkbenchCatalogError =
       rollbackErrors: readonly WorkbenchCatalogAccessError[];
     };
 
+export type WorkbenchCatalogManifestError = Extract<
+  WorkbenchCatalogError,
+  { code:
+      | 'WORKBENCH_CATALOG_VERSION_UNSUPPORTED'
+      | 'WORKBENCH_CATALOG_JSON_INVALID'
+      | 'WORKBENCH_CATALOG_SCHEMA_INVALID'
+      | 'WORKBENCH_CATALOG_TIMESTAMP_INVALID'
+      | 'WORKBENCH_CATALOG_DUPLICATE_PROJECT'
+      | 'WORKBENCH_CATALOG_MACHINE_NOT_FOUND' }
+>;
+
+export type ParseWorkbenchCatalogManifestResult =
+  | { ok: true; manifest: WorkbenchCatalogManifest }
+  | { ok: false; error: WorkbenchCatalogManifestError };
+
 export type InitializeWorkbenchCatalogResult =
   | { ok: true; kind: 'created' | 'opened'; workbench: ConnectedWorkbenchCatalog }
   | { ok: false; error: WorkbenchCatalogError };
@@ -312,6 +327,15 @@ function parseCatalogJson(rawText: string) {
     };
   }
   return { ok: true as const, value };
+}
+
+export function parseWorkbenchCatalogManifest(
+  rawText: string,
+  machines: MachineLibrary
+): ParseWorkbenchCatalogManifestResult {
+  const parsed = parseCatalogJson(rawText);
+  if (!parsed.ok) return parsed;
+  return validateWorkbenchCatalogValue(parsed.value, machines);
 }
 
 function validateWorkbenchCatalogValue(value: unknown, machines: MachineLibrary) {

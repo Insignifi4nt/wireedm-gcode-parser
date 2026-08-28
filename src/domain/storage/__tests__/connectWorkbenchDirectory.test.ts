@@ -58,25 +58,32 @@ describe('connectWorkbenchDirectory', () => {
     window.showDirectoryPicker = originalPicker;
   });
 
-  it('requests a directory handle, adapts it, and initializes the workbench folder', async () => {
+  it('requests a directory and creates a strict V2 catalog', async () => {
     const adapter = new MemoryWorkbenchAdapter('wire-jobs');
     const handleStore = new MemoryHandleStore();
     const pickedHandle = directoryHandle('wire-jobs');
+
     const result = await connectWorkbenchDirectory({
       requestDirectory: async () => pickedHandle,
       createAdapter: () => adapter,
       handleStore,
-      now: new Date('2026-05-29T12:00:00.000Z')
+      now: new Date('2026-08-28T12:00:00.000Z')
     });
 
-    expect(result.manifest.name).toBe('wire-jobs');
-    expect(result.header).toContain('G90 G21 G17 G40');
-    expect(result.footer).toContain('M30');
-    expect(adapter.files.has('workbench.json')).toBe(true);
+    expect(result).toMatchObject({
+      ok: true,
+      kind: 'created',
+      workbench: {
+        manifest: { schemaVersion: 2, name: 'wire-jobs' },
+        posts: { installations: [] },
+        machines: { machines: [] }
+      }
+    });
+    expect(JSON.parse(adapter.files.get('workbench.json') ?? '')).toMatchObject({ schemaVersion: 2 });
     expect(handleStore.handle).toBe(pickedHandle);
   });
 
-  it('reuses a remembered directory handle before showing the folder picker', async () => {
+  it('reuses a permitted remembered directory before showing the picker', async () => {
     const adapter = new MemoryWorkbenchAdapter('remembered-jobs');
     const handleStore = new MemoryHandleStore();
     handleStore.handle = directoryHandle('remembered-jobs');
@@ -87,14 +94,33 @@ describe('connectWorkbenchDirectory', () => {
       },
       createAdapter: () => adapter,
       handleStore,
-      now: new Date('2026-05-29T12:00:00.000Z')
+      now: new Date('2026-08-28T12:00:00.000Z')
     });
 
-    expect(result.manifest.name).toBe('remembered-jobs');
-    expect(adapter.files.has('workbench.json')).toBe(true);
+    expect(result).toMatchObject({ ok: true, kind: 'created' });
   });
 
-  it('restores a remembered directory only when permission is already granted', async () => {
+  it('propagates a V1 directory error without rewriting it', async () => {
+    const adapter = new MemoryWorkbenchAdapter('legacy-jobs');
+    const handleStore = new MemoryHandleStore();
+    const handle = directoryHandle('legacy-jobs');
+    const original = JSON.stringify({ schemaVersion: 1, machineProfiles: [] });
+    adapter.files.set('workbench.json', original);
+
+    const result = await connectWorkbenchDirectory({
+      requestDirectory: async () => handle,
+      createAdapter: () => adapter,
+      handleStore
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'WORKBENCH_CATALOG_VERSION_UNSUPPORTED', foundVersion: 1 }
+    });
+    expect(adapter.files.get('workbench.json')).toBe(original);
+  });
+
+  it('returns the V2 initialization result directly for a permitted remembered folder', async () => {
     const adapter = new MemoryWorkbenchAdapter('remembered-jobs');
     const handleStore = new MemoryHandleStore();
     handleStore.handle = directoryHandle('remembered-jobs', 'granted');
@@ -103,39 +129,61 @@ describe('connectWorkbenchDirectory', () => {
     const restored = await connectRememberedWorkbenchDirectory({
       createAdapter: () => adapter,
       handleStore,
-      now: new Date('2026-05-29T12:00:00.000Z')
+      now: new Date('2026-08-28T12:00:00.000Z')
     });
 
-    expect(restored.status).toBe('connected');
-    if (restored.status === 'connected') {
-      expect(restored.workbench.manifest.name).toBe('remembered-jobs');
-    }
+    expect(restored).toMatchObject({
+      ok: true,
+      kind: 'created',
+      workbench: { manifest: { schemaVersion: 2, name: 'remembered-jobs' } }
+    });
   });
 
-  it('reports permission-needed for remembered folders that need a user gesture', async () => {
+  it('propagates a remembered V1 catalog error as the typed initialization result', async () => {
+    const adapter = new MemoryWorkbenchAdapter('legacy-remembered');
+    const handleStore = new MemoryHandleStore();
+    handleStore.handle = directoryHandle('legacy-remembered', 'granted');
+    adapter.files.set('workbench.json', JSON.stringify({ schemaVersion: 1 }));
+    window.showDirectoryPicker = async () => handleStore.handle!;
+
+    expect(await connectRememberedWorkbenchDirectory({
+      createAdapter: () => adapter,
+      handleStore
+    })).toMatchObject({
+      ok: false,
+      error: { code: 'WORKBENCH_CATALOG_VERSION_UNSUPPORTED', foundVersion: 1 }
+    });
+  });
+
+  it('keeps a missing remembered folder explicit', async () => {
+    const handleStore = new MemoryHandleStore();
+    window.showDirectoryPicker = async () => directoryHandle('unused');
+
+    expect(await connectRememberedWorkbenchDirectory({ handleStore })).toEqual({
+      status: 'missing'
+    });
+  });
+
+  it('keeps permission-needed explicit for a remembered folder requiring a gesture', async () => {
     const handleStore = new MemoryHandleStore();
     handleStore.handle = directoryHandle('remembered-jobs', 'prompt');
     window.showDirectoryPicker = async () => handleStore.handle!;
 
-    const restored = await connectRememberedWorkbenchDirectory({
-      handleStore
+    expect(await connectRememberedWorkbenchDirectory({ handleStore })).toEqual({
+      status: 'permission-needed'
     });
-
-    expect(restored.status).toBe('permission-needed');
   });
 
-  it('returns an error result when the remembered handle store read rejects', async () => {
+  it('keeps remembered-handle store failures explicit', async () => {
     window.showDirectoryPicker = async () => directoryHandle('unused');
 
-    const result = await connectRememberedWorkbenchDirectory({
+    expect(await connectRememberedWorkbenchDirectory({
       handleStore: {
         read: async () => {
           throw new Error('IndexedDB failed');
         },
         write: async () => {}
       }
-    });
-
-    expect(result).toEqual({ status: 'error', message: 'IndexedDB failed' });
+    })).toEqual({ status: 'error', message: 'IndexedDB failed' });
   });
 });

@@ -1,5 +1,6 @@
+import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
+
 import { createBrowserCacheAdapter } from './browserCacheAdapter';
-import { initializeWorkbenchDirectory } from './workbenchStorage';
 
 export const BROWSER_WORKBENCH_NAMESPACE = 'wire-edm-workbench';
 
@@ -18,7 +19,7 @@ export async function connectCachedWorkbench(options: ConnectCachedWorkbenchOpti
     namespace: BROWSER_WORKBENCH_NAMESPACE
   });
 
-  return initializeWorkbenchDirectory(adapter, {
+  return initializeWorkbenchCatalog(adapter, {
     now: options.now
   });
 }

@@ -1,9 +1,13 @@
+import {
+  initializeWorkbenchCatalog,
+  type InitializeWorkbenchCatalogResult
+} from '@/domain/workbench-catalog/workbenchCatalog';
+
 import { createBrowserDirectoryAdapter } from './browserDirectoryAdapter';
 import {
   requestWorkbenchDirectory,
   supportsWorkbenchDirectoryAccess
 } from './fileSystemAccess';
-import { initializeWorkbenchDirectory } from './workbenchStorage';
 import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 const DIRECTORY_HANDLE_DB = 'wire-edm-workbench-directory';
@@ -30,14 +34,9 @@ interface ConnectWorkbenchDirectoryOptions {
 }
 
 export type RememberedWorkbenchDirectoryResult =
-  | {
-      status: 'connected';
-      workbench: Awaited<ReturnType<typeof initializeWorkbenchDirectory>>;
-    }
-  | {
-      status: 'missing' | 'permission-needed' | 'unsupported' | 'error';
-      message?: string;
-    };
+  | InitializeWorkbenchCatalogResult
+  | { status: 'missing' | 'permission-needed' | 'unsupported' }
+  | { status: 'error'; message: string };
 
 export async function connectWorkbenchDirectory(
   options: ConnectWorkbenchDirectoryOptions = {}
@@ -54,7 +53,7 @@ export async function connectWorkbenchDirectory(
   }
   const adapter = createAdapter(directoryHandle);
 
-  return initializeWorkbenchDirectory(adapter, {
+  return initializeWorkbenchCatalog(adapter, {
     now: options.now
   });
 }
@@ -81,10 +80,9 @@ export async function connectRememberedWorkbenchDirectory(
     }
 
     const adapter = createAdapter(directoryHandle);
-    const workbench = await initializeWorkbenchDirectory(adapter, {
+    return initializeWorkbenchCatalog(adapter, {
       now: options.now
     });
-    return { status: 'connected', workbench };
   } catch (error) {
     return {
       status: 'error',
