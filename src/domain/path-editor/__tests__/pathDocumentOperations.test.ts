@@ -2,11 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { DxfEntity } from '@/domain/dxf/types';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
-import { pathPlanToGcodeBody } from '@/domain/path-intel/postGcode';
 import { arcParameterAtAngle } from '@/domain/path-intel/segments';
-import { composeUpidGCodeExport } from '@/domain/upid/upidDocument';
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
-import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
 
 import {
   derivePlannedRapidRoutes,
@@ -269,7 +266,6 @@ describe('pathDocumentOperations', () => {
       to: operation.startPoint
     });
     expect(Object.keys(withLead?.plan.operations[0].overrides ?? {})).not.toContain('leadIn');
-    expect(pathPlanToGcodeBody(withLead!.plan, withLead!.segments)).toContain('G1 X0.000 Y0.000');
   });
 
   it('reorders planned operations without editing raw G-code text', () => {
@@ -284,7 +280,6 @@ describe('pathDocumentOperations', () => {
       second.contourId,
       first.contourId
     ]);
-    expect(pathPlanToGcodeBody(moved!.plan, moved!.segments).split('\n')[0]).toBe('G0 X20.000 Y0.000');
   });
 
   it('replans operation order from a UPID strategy preference', () => {
@@ -552,8 +547,6 @@ describe('pathDocumentOperations', () => {
     ]);
 
     const translated = translatePathDocument(document, { x: -10, y: 4 });
-    const body = pathPlanToGcodeBody(translated!.plan, translated!.segments);
-
     expect(translated?.pathElements.map((element) => element.bounds)).toEqual(expect.arrayContaining([
       { minX: -10, minY: 4, maxX: 0, maxY: 9 },
       { minX: 15, minY: 19, maxX: 25, maxY: 29 }
@@ -562,7 +555,6 @@ describe('pathDocumentOperations', () => {
       { x: 0, y: 4 },
       { x: 25, y: 24 }
     ]));
-    expect(body.split('\n')).toContain('G0 X25.000 Y24.000');
     expect(document.pathElements.map((element) => element.bounds)).toEqual(expect.arrayContaining([
       { minX: 0, minY: 0, maxX: 10, maxY: 5 },
       { minX: 25, minY: 15, maxX: 35, maxY: 25 }
@@ -581,17 +573,7 @@ describe('pathDocumentOperations', () => {
     expect(document.diagnostics.map((diagnostic) => diagnostic.code)).toContain('duplicate-segment');
 
     const translated = translatePathDocument(document, { x: 10, y: 20 });
-    const exportResult = composeUpidGCodeExport(translated!, {
-      header: 'G90 G90.1 G17',
-      footer: 'M30'
-    });
-
     expect(translated?.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
-      'duplicate-segment'
-    );
-    expect(exportResult.canDownload).toBe(false);
-    expect(exportResult.body).toBe('');
-    expect(exportResult.blockingDiagnostics.map((diagnostic) => diagnostic.code)).toContain(
       'duplicate-segment'
     );
   });
@@ -607,19 +589,11 @@ describe('pathDocumentOperations', () => {
     expect(duplicated?.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       'duplicate-segment'
     );
-    expect(
-      composeUpidGCodeExport(duplicated!, { header: 'G90 G90.1 G17', footer: 'M30' })
-        .canDownload
-    ).toBe(false);
 
     const restored = translatePathSegment(duplicated!, movedSegmentId, { x: 10, y: 0 });
     expect(restored?.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
       'duplicate-segment'
     );
-    expect(
-      composeUpidGCodeExport(restored!, { header: 'G90 G90.1 G17', footer: 'M30' })
-        .canDownload
-    ).toBe(true);
   });
 
   it('translates an arc segment by moving its endpoints and center as one geometry', () => {
@@ -747,28 +721,22 @@ describe('pathDocumentOperations', () => {
     expect(movedSegment?.length).toBeCloseTo(document.segments[0].length, 6);
   });
 
-  it('posts a translated circle contour with shifted endpoints and stable center offsets', () => {
+  it('translates a circle contour with shifted endpoints and a stable center', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
     ]);
     const operation = document.plan.operations[0];
 
     const translated = translatePathElement(document, document.pathElements[0].id, { x: -7, y: 3 });
-    const body = pathPlanToGcodeBody(translated!.plan, translated!.segments);
-
     expect(translated?.plan.operations[0]).toMatchObject({
       id: operation.id,
       startPoint: { x: 8, y: 23 },
       endPoint: { x: 8, y: 23 }
     });
-    expect(body.split('\n')).toEqual([
-      'G0 X8.000 Y23.000',
-      'G3 X-2.000 Y23.000 I-5.000 J0.000',
-      'G3 X8.000 Y23.000 I5.000 J0.000'
-    ]);
+    expect(translated?.segments[0]).toMatchObject({ center: { x: 3, y: 23 } });
   });
 
-  it('rotates an imported document around a chosen origin before posting G-code', () => {
+  it('rotates an imported document around a chosen origin', () => {
     const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
 
     const rotated = rotatePathDocument(document, 180, { x: 0, y: 0 });
@@ -785,10 +753,6 @@ describe('pathDocumentOperations', () => {
       maxX: 0,
       maxY: 0
     });
-    expect(pathPlanToGcodeBody(rotated!.plan, rotated!.segments).split('\n').slice(0, 2)).toEqual([
-      'G0 X0.000 Y0.000',
-      'G1 X-10.000 Y0.000'
-    ]);
   });
 
   it('mirrors imported arcs across an axis and flips their cutting direction', () => {
@@ -815,10 +779,6 @@ describe('pathDocumentOperations', () => {
       center: { x: 0, y: 0 },
       clockwise: true
     });
-    expect(pathPlanToGcodeBody(mirrored!.plan, mirrored!.segments).split('\n')).toEqual([
-      'G0 X5.000 Y0.000',
-      'G2 X0.000 Y-5.000 I-5.000 J0.000'
-    ]);
   });
 
   it('rotates a circle preferred start point with the document', () => {
@@ -827,18 +787,11 @@ describe('pathDocumentOperations', () => {
     ]);
 
     const rotated = rotatePathDocument(document, 180, { x: 0, y: 0 });
-    const body = pathPlanToGcodeBody(rotated!.plan, rotated!.segments);
-
     expect(rotated?.segments[0]).toMatchObject({
       kind: 'circle',
       center: { x: -10, y: 0 },
       preferredStart: { x: -15, y: 0 }
     });
-    expect(body.split('\n')).toEqual([
-      'G0 X-15.000 Y0.000',
-      'G3 X-5.000 Y0.000 I5.000 J0.000',
-      'G3 X-15.000 Y0.000 I-5.000 J0.000'
-    ]);
   });
 
   it('keeps a manually selected circle start stable after translating the contour', () => {
@@ -849,15 +802,8 @@ describe('pathDocumentOperations', () => {
     const started = setClosedOperationStartNearPoint(document, operation.id, { x: 10, y: 25 });
 
     const translated = translatePathElement(started!, started!.pathElements[0].id, { x: -7, y: 3 });
-    const body = pathPlanToGcodeBody(translated!.plan, translated!.segments);
-
     expect(translated?.plan.operations[0].startPoint.x).toBeCloseTo(3, 6);
     expect(translated?.plan.operations[0].startPoint.y).toBeCloseTo(28, 6);
-    expect(body.split('\n')).toEqual([
-      'G0 X3.000 Y28.000',
-      'G3 X3.000 Y18.000 I0.000 J-5.000',
-      'G3 X3.000 Y28.000 I0.000 J5.000'
-    ]);
   });
 
   it('does not move a line segment center because lines have no circle center', () => {
@@ -919,16 +865,8 @@ describe('pathDocumentOperations', () => {
     const operation = document.plan.operations[0];
 
     const reversed = reversePathOperation(document, operation.id);
-    const body = pathPlanToGcodeBody(reversed!.plan, reversed!.segments);
-
     expect(reversed?.plan.operations[0].direction).toBe('reverse');
-    expect(body.split('\n')).toEqual([
-      'G0 X0.000 Y0.000',
-      'G1 X0.000 Y5.000',
-      'G1 X10.000 Y5.000',
-      'G1 X10.000 Y0.000',
-      'G1 X0.000 Y0.000'
-    ]);
+    expect(reversed?.plan.operations[0].segmentRefs).toHaveLength(4);
   });
 
   it('sets a closed operation start at a clicked point by splitting the containing line segment', () => {
@@ -936,18 +874,8 @@ describe('pathDocumentOperations', () => {
     const operation = document.plan.operations[0];
 
     const edited = setClosedOperationStartNearPoint(document, operation.id, { x: 5, y: 0 });
-    const body = pathPlanToGcodeBody(edited!.plan, edited!.segments);
-
     expect(edited?.plan.operations[0].startPoint).toEqual({ x: 5, y: 0 });
     expect(edited?.plan.operations[0].segmentRefs).toHaveLength(5);
-    expect(body.split('\n')).toEqual([
-      'G0 X5.000 Y0.000',
-      'G1 X10.000 Y0.000',
-      'G1 X10.000 Y5.000',
-      'G1 X0.000 Y5.000',
-      'G1 X0.000 Y0.000',
-      'G1 X5.000 Y0.000'
-    ]);
   });
 
   it('refreshes active UPID topology after splitting a segment for a new start point', () => {
@@ -1041,13 +969,9 @@ describe('pathDocumentOperations', () => {
       x: 5,
       y: 5
     });
-    const body = pathPlanToGcodeBody(edited!.plan, edited!.segments);
-
     expect(edited?.plan.operations[0].startPoint.x).toBeCloseTo(5, 6);
     expect(edited?.plan.operations[0].startPoint.y).toBeCloseTo(5, 6);
     expect(edited?.plan.operations[0].segmentRefs).toHaveLength(5);
-    expect(body.split('\n')[0]).toBe('G0 X5.000 Y5.000');
-    expect(body).toContain('G3 X0.000 Y0.000 I0.000 J-5.000');
   });
 
   it.each([
@@ -1100,11 +1024,8 @@ describe('pathDocumentOperations', () => {
     const operation = document.plan.operations[0];
 
     const edited = setClosedOperationStartNearPoint(document, operation.id, { x: 0, y: 5 });
-    const body = pathPlanToGcodeBody(edited!.plan, edited!.segments);
-
     expect(edited?.plan.operations[0].startPoint.x).toBeCloseTo(0, 6);
     expect(edited?.plan.operations[0].startPoint.y).toBeCloseTo(5, 6);
-    expect(body.split('\n')[0]).toBe('G0 X0.000 Y5.000');
   });
 
   it('projects a circle center start pick to a valid circumference start point', () => {
@@ -1114,14 +1035,7 @@ describe('pathDocumentOperations', () => {
     const operation = document.plan.operations[0];
 
     const edited = setClosedOperationStartNearPoint(document, operation.id, { x: 10, y: 20 });
-    const body = pathPlanToGcodeBody(edited!.plan, edited!.segments);
-
     expect(edited?.plan.operations[0].startPoint).toEqual({ x: 15, y: 20 });
-    expect(body.split('\n')).toEqual([
-      'G0 X15.000 Y20.000',
-      'G3 X5.000 Y20.000 I-5.000 J0.000',
-      'G3 X15.000 Y20.000 I5.000 J0.000'
-    ]);
   });
 
   it('adds a cut lead-in from the circle center to the contour start', () => {
@@ -1131,8 +1045,6 @@ describe('pathDocumentOperations', () => {
     const operation = document.plan.operations[0];
 
     const edited = setCircleOperationCenterPierceLeadIn(document, operation.id);
-    const body = pathPlanToGcodeBody(edited!.plan, edited!.segments);
-
     expect(edited?.plan.operations[0].transitions?.entry).toMatchObject({
       from: { x: 10, y: 20 },
       move: 'cut',
@@ -1140,12 +1052,6 @@ describe('pathDocumentOperations', () => {
     });
     expect(Object.keys(edited?.plan.operations[0].overrides ?? {})).not.toContain('leadIn');
     expect(edited?.plan.operations[0].metrics.cutLength).toBeCloseTo(2 * Math.PI * 5 + 5, 6);
-    expect(body.split('\n')).toEqual([
-      'G0 X10.000 Y20.000',
-      'G1 X15.000 Y20.000',
-      'G3 X5.000 Y20.000 I-5.000 J0.000',
-      'G3 X15.000 Y20.000 I5.000 J0.000'
-    ]);
   });
 
   it('replaces lead geometry and reviewed no-entry intent through one canonical transition', () => {
@@ -1188,17 +1094,11 @@ describe('pathDocumentOperations', () => {
     const edited = setCircleOperationCenterPierceLeadIn(document, operation.id);
 
     const moved = translatePathDocument(edited!, { x: 2, y: -3 });
-    const body = pathPlanToGcodeBody(moved!.plan, moved!.segments);
-
     expect(moved?.plan.operations[0].transitions?.entry).toMatchObject({
       from: { x: 12, y: 17 },
       to: { x: 17, y: 17 }
     });
     expect(Object.keys(moved?.plan.operations[0].overrides ?? {})).not.toContain('leadIn');
-    expect(body.split('\n').slice(0, 2)).toEqual([
-      'G0 X12.000 Y17.000',
-      'G1 X17.000 Y17.000'
-    ]);
   });
 
   it('magnetizes a point to the nearest contour feature with tangent metadata', () => {
@@ -1356,7 +1256,7 @@ describe('pathDocumentOperations', () => {
     });
   });
 
-  it('removes automatic intent on a classification edit without an authorized machine snapshot', () => {
+  it('refreshes automatic semantic intent after a classification edit', () => {
     const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
     document.geometryBasis = 'finished-contour';
     document.plan.operations[0].compensationIntent = {
@@ -1367,60 +1267,18 @@ describe('pathDocumentOperations', () => {
 
     const hole = setPathOperationClassification(document, document.plan.operations[0].id, 'hole');
 
-    expect(hole?.plan.operations[0].compensationIntent).toBeUndefined();
-  });
-
-  it('refreshes automatic intent only with an authorized project machine snapshot', () => {
-    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
-    document.geometryBasis = 'finished-contour';
-    document.plan.operations[0].compensationIntent = {
-      mode: 'controller',
-      keptMaterial: 'inside',
-      source: 'automatic'
-    };
-    const machine = createVerifiedCharmillesRobofil100Profile(
-      'project-machine',
-      new Date('2026-07-13T10:00:00Z')
-    );
-
-    const hole = setPathOperationClassification(
-      document,
-      document.plan.operations[0].id,
-      'hole',
-      machine
-    );
-    const ambiguous = setPathOperationClassification(
-      hole!,
-      document.plan.operations[0].id,
-      'ambiguous',
-      machine
-    );
-
     expect(hole?.plan.operations[0].compensationIntent).toEqual({
       mode: 'controller',
       keptMaterial: 'outside',
       source: 'automatic'
     });
-    expect(ambiguous?.plan.operations[0].compensationIntent).toBeUndefined();
-  });
-
-  it('removes automatic intent when the supplied machine verification fingerprint is stale', () => {
-    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
-    document.geometryBasis = 'finished-contour';
-    document.plan.operations[0].compensationIntent = {
-      mode: 'controller', keptMaterial: 'inside', source: 'automatic'
-    };
-    const machine = createVerifiedCharmillesRobofil100Profile();
-    machine.compensation.offsetSelection.index = 7;
-
-    const changed = setPathOperationClassification(
-      document,
+    const ambiguous = setPathOperationClassification(
+      hole!,
       document.plan.operations[0].id,
-      'hole',
-      machine
+      'ambiguous'
     );
 
-    expect(changed?.plan.operations[0].compensationIntent).toBeUndefined();
+    expect(ambiguous?.plan.operations[0].compensationIntent).toBeUndefined();
   });
 });
 

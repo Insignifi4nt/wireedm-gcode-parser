@@ -17,7 +17,6 @@
     "test:e2e:workbench": "playwright test e2e/editor-existing-project.spec.ts",
     "post:docs:generate": "tsx scripts/generate-post-authoring-docs.ts",
     "post:docs:check": "tsx scripts/generate-post-authoring-docs.ts --check",
-    "artifacts:prisma": "node scripts/generate-robofil-v2-artifacts.mjs",
     "pw:open": "playwright-cli open http://127.0.0.1:3777/wireedm-gcode-parser/ --headed && playwright-cli resize 1920 1200",
     "pw:seed": "node scripts/seed-playwright-workbench.mjs",
     "pw:seed:reload": "node scripts/seed-playwright-workbench.mjs --reload"

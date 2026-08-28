@@ -1,5 +1,3 @@
-import type { MachineProfile } from '@/domain/workbench/types';
-
 import {
   orientedCircleClockwise,
   orientedSegmentEnd,
@@ -16,79 +14,6 @@ import type {
   PathPlanningDocument,
   Point2
 } from './types';
-
-export type ProgramStopValidation =
-  | { status: 'ready'; stops: OperationProgramStop[]; code: 'M00' }
-  | {
-      status: 'blocked';
-      reason:
-        | 'program-stops-unsupported'
-        | 'program-stop-placement-unsupported'
-        | 'program-stop-compensation-state-unsupported'
-        | 'invalid-program-stop'
-        | 'duplicate-program-stop';
-      message: string;
-    };
-
-export function validateProgramStops(
-  operation: PathOperation,
-  machine: MachineProfile,
-  segments?: PathPlanningDocument['segments']
-): ProgramStopValidation {
-  const stops = (operation.programStops ?? []).filter((stop) => stop.enabled);
-  if (stops.length === 0) return { status: 'ready', stops: [], code: 'M00' };
-  if (!machine.programStops.supported) {
-    return blocked(
-      'program-stops-unsupported',
-      'The selected machine profile does not authorize program-stop output.'
-    );
-  }
-  const seenIds = new Set<string>();
-  const seenPlacements = new Set<string>();
-  for (const stop of stops) {
-    if (
-      !stop.id ||
-      seenIds.has(stop.id) ||
-      !['operator-check', 'part-retention', 'manual'].includes(stop.reason)
-    ) {
-      return blocked('invalid-program-stop', 'Program stops require unique IDs and a valid reason.');
-    }
-    seenIds.add(stop.id);
-    const kind = stop.placement.kind;
-    if (!machine.programStops.allowedPlacements.includes(kind)) {
-      return blocked(
-        'program-stop-placement-unsupported',
-        `The selected machine profile does not authorize ${kind} stops.`
-      );
-    }
-    const activeCompensation = kind !== 'before-entry';
-    if (activeCompensation && !machine.programStops.allowCompensationActive) {
-      return blocked(
-        'program-stop-compensation-state-unsupported',
-        `The selected machine profile does not authorize ${kind} while compensation is active.`
-      );
-    }
-    const placementKey = kind === 'before-operation-end'
-      ? `${kind}:${stop.placement.remainingCutLengthMm}`
-      : kind;
-    if (seenPlacements.has(placementKey)) {
-      return blocked('duplicate-program-stop', 'Two enabled program stops resolve to the same placement.');
-    }
-    seenPlacements.add(placementKey);
-    if (
-      kind === 'before-operation-end' &&
-      (!Number.isFinite(stop.placement.remainingCutLengthMm) ||
-        stop.placement.remainingCutLengthMm <= 0 ||
-        stop.placement.remainingCutLengthMm >= contourCutLength(operation, segments))
-    ) {
-      return blocked(
-        'invalid-program-stop',
-        'Remaining cut length must be finite, positive, and shorter than the contour cut length.'
-      );
-    }
-  }
-  return { status: 'ready', stops: structuredClone(stops), code: machine.programStops.code };
-}
 
 export function resolveProgramStopPoints(
   document: PathPlanningDocument,
@@ -158,20 +83,4 @@ function pointAtParameter(
   const startAngle = Math.atan2(start.y - segment.center.y, start.x - segment.center.x);
   const direction = orientedCircleClockwise(segment, ref) ? -1 : 1;
   return pointOnCircle(segment.center, segment.radius, startAngle + direction * Math.PI * 2 * clamped);
-}
-
-function contourCutLength(
-  operation: PathOperation,
-  segments: PathPlanningDocument['segments'] | undefined
-) {
-  return segments
-    ? pathCutLength(operation.segmentRefs, segmentMap(segments))
-    : operation.metrics.cutLength;
-}
-
-function blocked(
-  reason: Extract<ProgramStopValidation, { status: 'blocked' }>['reason'],
-  message: string
-): ProgramStopValidation {
-  return { status: 'blocked', reason, message };
 }

@@ -62,10 +62,8 @@ function source(value: unknown, path: string) {
 
 function appliedUnits(value: unknown, path: string) {
   assertKeys(value, [
-    'label', 'scaleToMillimeters', 'basis', 'confirmed', 'confirmedAt', 'suggestion'
+    'label', 'scaleToMillimeters', 'basis', 'confirmed', 'confirmedAt'
   ], path);
-  const object = record(value);
-  assertKeys(object?.suggestion, ['kind', 'profileId'], `${path}.suggestion`);
 }
 
 function drawing(value: unknown, path: string) {

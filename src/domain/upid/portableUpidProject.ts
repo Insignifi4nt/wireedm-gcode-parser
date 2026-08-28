@@ -192,9 +192,6 @@ function parsePortableUpid(
 function detachedPortableDocument(document: PathPlanningDocument) {
   const clone = jsonSnapshot(document);
   delete clone.source.projectId;
-  if (clone.source.appliedUnits?.suggestion) {
-    delete clone.source.appliedUnits.suggestion;
-  }
   return clone;
 }
 

@@ -642,7 +642,7 @@ function validateSource(value: unknown, context: ValidationContext) {
       context,
       { positive: true }
     );
-    if (!['dxf-declared', 'user-confirmed', 'legacy-assumed'].includes(appliedUnits.basis)) {
+    if (!['dxf-declared', 'user-confirmed'].includes(appliedUnits.basis)) {
       context.add('upid-invalid-value', 'source.appliedUnits.basis is unsupported.');
     }
     if (typeof appliedUnits.confirmed !== 'boolean') {
@@ -654,21 +654,6 @@ function validateSource(value: unknown, context: ValidationContext) {
         Number.isNaN(Date.parse(appliedUnits.confirmedAt)))
     ) {
       context.add('upid-invalid-value', 'source.appliedUnits.confirmedAt must be a valid date string.');
-    }
-    const suggestion = appliedUnits.suggestion == null ? null : record(appliedUnits.suggestion);
-    if (appliedUnits.suggestion != null && !suggestion) {
-      context.add('upid-invalid-value', 'source.appliedUnits.suggestion must be an object when present.');
-    }
-    if (suggestion) {
-      if (suggestion.kind !== 'machine-profile') {
-        context.add('upid-invalid-value', 'source.appliedUnits.suggestion.kind is unsupported.');
-      }
-      optionalString(
-        suggestion.profileId,
-        'source.appliedUnits.suggestion.profileId',
-        context,
-        true
-      );
     }
     if (
       validScale &&
@@ -804,12 +789,6 @@ function validateAppliedDxfUnitInvariants(
   declaration: Record<string, any> | null,
   context: ValidationContext
 ) {
-  if (applied.suggestion != null && applied.basis !== 'user-confirmed') {
-    context.add(
-      'upid-invalid-value',
-      'source.appliedUnits.suggestion is only valid for user-confirmed units.'
-    );
-  }
   if (applied.basis === 'user-confirmed') {
     if (applied.confirmed !== true) {
       context.add('upid-invalid-value', 'User-confirmed source.appliedUnits must be confirmed.');
@@ -830,20 +809,6 @@ function validateAppliedDxfUnitInvariants(
       context.add(
         'upid-invalid-value',
         'User-confirmed source.appliedUnits label and scale are inconsistent.'
-      );
-    }
-    return;
-  }
-  if (applied.basis === 'legacy-assumed') {
-    if (
-      applied.confirmed !== false ||
-      applied.scaleToMillimeters !== 1 ||
-      applied.label !== 'millimeters' ||
-      applied.confirmedAt != null
-    ) {
-      context.add(
-        'upid-invalid-value',
-        'Legacy-assumed source.appliedUnits must be unconfirmed millimeters without a timestamp.'
       );
     }
     return;
@@ -898,7 +863,6 @@ function validateOptions(value: unknown, schemaVersion: unknown, context: Valida
     context.add('upid-invalid-value', 'options.operationOrderStrategy is unsupported.');
   }
   for (const key of ['includeLayers', 'excludeLayers'] as const) {
-    if (schemaVersion === 1 && options[key] === undefined) continue;
     const values = array(options[key]);
     if (!Array.isArray(options[key]) || values.some((item) => typeof item !== 'string')) {
       context.add('upid-invalid-value', `options.${key} must be an array of strings.`);
@@ -2268,7 +2232,7 @@ function validateCompensationIntent(
 
   const validCenterline =
     intent.mode === 'centerline' &&
-    (intent.source === 'manual' || intent.source === 'legacy') &&
+    intent.source === 'manual' &&
     hasOnlyKeys(intent, ['mode', 'source']);
   if (!validCenterline) {
     context.add('upid-invalid-value', `${path} has an invalid centerline intent shape.`);

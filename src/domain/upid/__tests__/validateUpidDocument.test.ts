@@ -12,9 +12,7 @@ import {
 import type { PathDiagnostic } from '@/domain/path-intel/types';
 
 import {
-  composeUpidGCodeExport,
   createUpidFromDxfEntities,
-  postUpidToGcode,
   type UniversalPathIntelligenceDocument
 } from '../upidDocument';
 import { validateUpidDocument } from '../validateUpidDocument';
@@ -108,7 +106,7 @@ describe('validateUpidDocument', () => {
     );
   });
 
-  it('accepts a normal closed contour and a valid open G40 centreline', () => {
+  it('accepts normal closed and open neutral contours', () => {
     const closed = closedDocument();
     const open = createUpidFromDxfEntities([line(0, 0, 10, 0)]);
 
@@ -126,17 +124,13 @@ describe('validateUpidDocument', () => {
     });
   });
 
-  it('accepts legacy schema-v1 documents that predate layer-filter options', () => {
-    const legacy = closedDocument();
-    delete (legacy.options as Partial<typeof legacy.options>).includeLayers;
-    delete (legacy.options as Partial<typeof legacy.options>).excludeLayers;
+  it('rejects documents with missing required layer-filter options', () => {
+    const document = closedDocument();
+    delete (document.options as Partial<typeof document.options>).includeLayers;
 
-    expect(validateUpidDocument(legacy)).toMatchObject({
-      structurallyValid: true,
-      valid: true,
-      blockingDiagnostics: [],
-      structuralDiagnostics: []
-    });
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(
+      expect.objectContaining({ code: 'upid-invalid-value' })
+    );
   });
 
   it('accepts valid applied DXF unit provenance that agrees with the coordinate scale', () => {
@@ -147,28 +141,17 @@ describe('validateUpidDocument', () => {
       scaleToMillimeters: 25.4,
       basis: 'user-confirmed',
       confirmed: true,
-      confirmedAt: '2026-07-13T09:00:00.000Z',
-      suggestion: { kind: 'machine-profile', profileId: 'shop-machine' }
+      confirmedAt: '2026-07-13T09:00:00.000Z'
     };
 
     expect(validateUpidDocument(document).structuralDiagnostics).toEqual([]);
   });
 
-  it('accepts internally consistent declared and legacy-assumed provenance', () => {
+  it('accepts internally consistent declared provenance', () => {
     const declared = closedDocument();
     setDeclaredInchProvenance(declared);
-    const legacyAssumed = closedDocument();
-    legacyAssumed.source.coordinateScaleToMillimeters = 1;
-    legacyAssumed.source.unitDeclaration = { status: 'missing' };
-    legacyAssumed.source.appliedUnits = {
-      label: 'millimeters',
-      scaleToMillimeters: 1,
-      basis: 'legacy-assumed',
-      confirmed: false
-    };
 
     expect(validateUpidDocument(declared).structuralDiagnostics).toEqual([]);
-    expect(validateUpidDocument(legacyAssumed).structuralDiagnostics).toEqual([]);
   });
 
   it.each([
@@ -235,27 +218,6 @@ describe('validateUpidDocument', () => {
     ['a user choice without a confirmation timestamp', (document: UniversalPathIntelligenceDocument) => {
       delete document.source.appliedUnits!.confirmedAt;
     }],
-    ['a confirmed legacy assumption', (document: UniversalPathIntelligenceDocument) => {
-      document.source.appliedUnits = {
-        label: 'millimeters', scaleToMillimeters: 1,
-        basis: 'legacy-assumed', confirmed: true
-      };
-      document.source.coordinateScaleToMillimeters = 1;
-    }],
-    ['a non-millimeter legacy assumption', (document: UniversalPathIntelligenceDocument) => {
-      document.source.appliedUnits = {
-        label: 'inches', scaleToMillimeters: 25.4,
-        basis: 'legacy-assumed', confirmed: false
-      };
-    }],
-    ['a suggestion on legacy provenance', (document: UniversalPathIntelligenceDocument) => {
-      document.source.appliedUnits = {
-        label: 'millimeters', scaleToMillimeters: 1,
-        basis: 'legacy-assumed', confirmed: false,
-        suggestion: { kind: 'machine-profile', profileId: 'shop-machine' }
-      };
-      document.source.coordinateScaleToMillimeters = 1;
-    }],
     ['declared provenance without a recognized declaration', (document: UniversalPathIntelligenceDocument) => {
       setDeclaredInchProvenance(document);
       document.source.unitDeclaration = { status: 'missing' };
@@ -264,12 +226,6 @@ describe('validateUpidDocument', () => {
     ['declared provenance with a mismatched label', (document: UniversalPathIntelligenceDocument) => {
       setDeclaredInchProvenance(document);
       document.source.appliedUnits!.label = 'inch-ish';
-    }],
-    ['a suggestion on declared provenance', (document: UniversalPathIntelligenceDocument) => {
-      setDeclaredInchProvenance(document);
-      document.source.appliedUnits!.suggestion = {
-        kind: 'machine-profile', profileId: 'shop-machine'
-      };
     }]
   ])('rejects inconsistent applied-unit provenance with %s', (_label, mutate) => {
     const document = closedDocument();
@@ -304,18 +260,6 @@ describe('validateUpidDocument', () => {
     ['an invalid confirmation time', (document: UniversalPathIntelligenceDocument) => {
       document.source.appliedUnits!.confirmedAt = 'not-a-date';
     }],
-    ['an invalid suggestion profile', (document: UniversalPathIntelligenceDocument) => {
-      document.source.appliedUnits!.suggestion = {
-        kind: 'machine-profile',
-        profileId: ''
-      };
-    }],
-    ['an invalid suggestion kind', (document: UniversalPathIntelligenceDocument) => {
-      document.source.appliedUnits!.suggestion = {
-        kind: 'user-setting',
-        profileId: 'shop-machine'
-      } as never;
-    }],
     ['a coordinate-scale disagreement', (document: UniversalPathIntelligenceDocument) => {
       document.source.coordinateScaleToMillimeters = 1;
     }]
@@ -327,8 +271,7 @@ describe('validateUpidDocument', () => {
       scaleToMillimeters: 25.4,
       basis: 'user-confirmed',
       confirmed: true,
-      confirmedAt: '2026-07-13T09:00:00.000Z',
-      suggestion: { kind: 'machine-profile', profileId: 'shop-machine' }
+      confirmedAt: '2026-07-13T09:00:00.000Z'
     };
     mutate(document);
 
@@ -431,7 +374,7 @@ describe('validateUpidDocument', () => {
     );
   });
 
-  it('blocks overlaid duplicate circle graphs when legacy diagnostics are empty', () => {
+  it('blocks overlaid duplicate circle graphs when persisted diagnostics are empty', () => {
     const legacy = createUpidFromDxfEntities([
       circle(0, 0, 5),
       circle(20, 0, 5)
@@ -493,8 +436,6 @@ describe('validateUpidDocument', () => {
       0
     );
 
-    delete (legacy.options as Partial<typeof legacy.options>).includeLayers;
-    delete (legacy.options as Partial<typeof legacy.options>).excludeLayers;
     legacy.diagnostics = [];
     legacy.plan.diagnostics = [];
     legacy.chains.forEach((chain) => { chain.diagnosticIds = []; });
@@ -503,12 +444,6 @@ describe('validateUpidDocument', () => {
 
     const beforeValidation = structuredClone(legacy);
     const report = validateUpidDocument(legacy);
-    const post = postUpidToGcode(legacy);
-    const exportProgram = composeUpidGCodeExport(legacy, {
-      header: '%\nG90 G21 G17 G40',
-      footer: 'M30\n%',
-      lineEnding: 'lf'
-    });
 
     expect(report.structurallyValid).toBe(true);
     expect(report.valid).toBe(false);
@@ -519,12 +454,10 @@ describe('validateUpidDocument', () => {
         relatedSegmentIds: expect.arrayContaining([first.id, second.id])
       })
     );
-    expect(post).toMatchObject({ status: 'blocked', body: '', moves: [] });
-    expect(exportProgram).toMatchObject({ canDownload: false, body: '' });
     expect(legacy).toEqual(beforeValidation);
   });
 
-  it('recomputes T-branch safety when a legacy document only records an old warning', () => {
+  it('recomputes T-branch safety when a persisted document only records an old warning', () => {
     const legacy = createUpidFromDxfEntities([
       line(-1, 0, 0, 0),
       line(0, 0, 1, 0),
@@ -556,14 +489,11 @@ describe('validateUpidDocument', () => {
       id: 'diag_upid_live_0001',
       severity: 'info',
       code: 'layer-filtered',
-      message: 'Legacy diagnostic intentionally reserves the first live-audit ID.'
+      message: 'Persisted diagnostic intentionally reserves the first live-audit ID.'
     });
-    delete (legacy.options as Partial<typeof legacy.options>).includeLayers;
-    delete (legacy.options as Partial<typeof legacy.options>).excludeLayers;
 
     const beforeValidation = structuredClone(legacy);
     const report = validateUpidDocument(legacy);
-    const post = postUpidToGcode(legacy);
 
     expect(report.structurallyValid).toBe(true);
     expect(report.valid).toBe(false);
@@ -580,25 +510,20 @@ describe('validateUpidDocument', () => {
     expect(liveBranch.relatedSegmentIds?.every((segmentId) =>
       legacy.segments.some((segment) => segment.id === segmentId)
     )).toBe(true);
-    expect(post).toMatchObject({ status: 'blocked', body: '', moves: [] });
     expect(legacy).toEqual(beforeValidation);
   });
 
-  it('keeps multiple disjoint legacy G40 open centrelines valid', () => {
+  it('keeps multiple disjoint open centrelines valid', () => {
     const legacy = createUpidFromDxfEntities([
       line(0, 0, 5, 0),
       line(10, 0, 15, 0),
       line(20, 0, 25, 0)
     ]);
-    delete (legacy.options as Partial<typeof legacy.options>).includeLayers;
-    delete (legacy.options as Partial<typeof legacy.options>).excludeLayers;
-
     expect(validateUpidDocument(legacy)).toMatchObject({
       structurallyValid: true,
       valid: true,
       blockingDiagnostics: []
     });
-    expect(postUpidToGcode(legacy).status).toBe('ready');
   });
 
   it('blocks non-finite executable geometry revealed by canonical derived metrics', () => {
@@ -642,7 +567,6 @@ describe('validateUpidDocument', () => {
     expect(report.blockingDiagnostics).toContainEqual(
       expect.objectContaining({ code: 'non-finite-geometry', severity: 'error' })
     );
-    expect(postUpidToGcode(legacy)).toMatchObject({ status: 'blocked', body: '' });
     expect(legacy).toEqual(beforeValidation);
   });
 
@@ -688,14 +612,12 @@ describe('validateUpidDocument', () => {
 
     const beforeValidation = structuredClone(legacy);
     const report = validateUpidDocument(legacy);
-    const post = postUpidToGcode(legacy);
 
     expect(report.structurallyValid).toBe(true);
     expect(report.valid).toBe(false);
     expect(report.blockingDiagnostics).toContainEqual(
       expect.objectContaining({ code, severity: 'error' })
     );
-    expect(post).toMatchObject({ status: 'blocked', body: '', moves: [] });
     expect(legacy).toEqual(beforeValidation);
   });
 
@@ -742,27 +664,8 @@ describe('validateUpidDocument', () => {
     mutate(document);
 
     const report = validateUpidDocument(document);
-    const post = postUpidToGcode(document);
-    const exportProgram = composeUpidGCodeExport(document, {
-      header: '%\nG90 G21 G17 G40',
-      footer: 'M30\n%',
-      lineEnding: 'lf'
-    });
-
     expect(report.structurallyValid).toBe(false);
-    expect(post).toMatchObject({
-      status: 'blocked',
-      body: '',
-      moves: [],
-      operations: [],
-      metrics: { rapidCount: 0, cutMoveCount: 0 }
-    });
-    expect(post.metrics.cutMoveCount).not.toBe(8);
-    expect(exportProgram).toMatchObject({
-      body: '',
-      canDownload: false,
-      programOperations: []
-    });
+    expect(report.structuralDiagnostics).not.toHaveLength(0);
   });
 
   it.each([
@@ -885,7 +788,7 @@ describe('validateUpidDocument', () => {
   });
 
   it.each(['missing', 'non-array'])(
-    'rejects %s top-level diagnostics without throwing during composition',
+    'rejects %s top-level diagnostics without throwing',
     (variant) => {
       const document = closedDocument();
       if (variant === 'missing') {
@@ -895,23 +798,10 @@ describe('validateUpidDocument', () => {
       }
 
       const report = validateUpidDocument(document);
-      const compose = () =>
-        composeUpidGCodeExport(document, {
-          header: '%\nG90 G21 G17 G40',
-          footer: 'M30\n%',
-          lineEnding: 'lf'
-        });
-
       expect(report.structurallyValid).toBe(false);
       expect(report.structuralDiagnostics).toContainEqual(
         expect.objectContaining({ code: 'upid-invalid-value', severity: 'error' })
       );
-      expect(compose).not.toThrow();
-      expect(compose()).toMatchObject({
-        canDownload: false,
-        body: '',
-        programOperations: []
-      });
     }
   );
 
@@ -1732,7 +1622,7 @@ describe('validateUpidDocument', () => {
     expect(validateUpidDocument(widened).structurallyValid).toBe(false);
   });
 
-  it('validates and posts the bundled z18f25 compatibility joins', () => {
+  it('validates the bundled z18f25 compatibility joins', () => {
     const filePath = join(process.cwd(), 'DXF-test-subjects/z18f25.dxf');
     const parsed = parseDxf(readFileSync(filePath, 'utf8'));
     const document = dxfEntitiesToUpidDocument(parsed.entities, {}, {
@@ -1741,16 +1631,9 @@ describe('validateUpidDocument', () => {
       fileName: 'z18f25.dxf'
     });
     const report = validateUpidDocument(document);
-    const posted = postUpidToGcode(document);
-
     expect(document.segments).toHaveLength(72);
     expect(report.structuralDiagnostics).toEqual([]);
     expect(report).toMatchObject({ structurallyValid: true, valid: true });
-    expect(posted.status).toBe('ready');
-    expect(posted.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
-      'post-unexpected-gap'
-    );
-    expect(posted.body.split('\n').filter((line) => line.startsWith('G0 '))).toHaveLength(1);
   });
 });
 

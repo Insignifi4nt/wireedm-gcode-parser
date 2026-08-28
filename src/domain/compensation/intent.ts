@@ -1,8 +1,4 @@
 import {
-  machineProfileHasCurrentVerification,
-  normalizeMachineProfile
-} from '@/domain/machine/machineProfiles';
-import {
   orientedSegmentEnd,
   orientedSegmentStart,
   pointsEqual,
@@ -15,7 +11,6 @@ import type {
   PathOperation,
   PathPlanningDocument
 } from '@/domain/path-intel/types';
-import type { MachineProfile } from '@/domain/workbench/types';
 
 export interface CompensationIntentSuggestionInput {
   document: PathPlanningDocument;
@@ -78,49 +73,6 @@ export function suggestCompensationIntent({
     keptMaterial,
     source: 'automatic'
   };
-}
-
-export function initializeProjectCompensationIntents(
-  document: PathPlanningDocument,
-  projectMachineSnapshot: MachineProfile
-): PathPlanningDocument {
-  const next = structuredClone(document);
-  const compensationEnabled = machineSnapshotAuthorizesAutomaticCompensation(
-    projectMachineSnapshot
-  );
-
-  next.geometryBasis = compensationEnabled ? 'finished-contour' : 'wire-centre';
-  next.plan.operations.forEach((operation) => {
-    if (operation.compensationIntent?.source === 'manual') return;
-
-    const suggestion = compensationEnabled
-      ? suggestCompensationIntent({ document: next, operation })
-      : undefined;
-    if (suggestion) operation.compensationIntent = suggestion;
-    else delete operation.compensationIntent;
-  });
-  const operationsById = new Map(next.plan.operations.map((operation) => [operation.id, operation]));
-  next.pathElements.forEach((element) => {
-    const intent = element.operationId
-      ? operationsById.get(element.operationId)?.compensationIntent
-      : undefined;
-    if (intent) element.compensationIntent = structuredClone(intent);
-    else delete element.compensationIntent;
-  });
-
-  return next;
-}
-
-export function machineSnapshotAuthorizesAutomaticCompensation(
-  projectMachineSnapshot: MachineProfile | null | undefined
-) {
-  if (!projectMachineSnapshot) return false;
-  const machine = normalizeMachineProfile(projectMachineSnapshot);
-  return (
-    machine.compensation.supported &&
-    machine.compensation.enabledByDefault &&
-    machineProfileHasCurrentVerification(machine)
-  );
 }
 
 export function setManualCompensationIntent(

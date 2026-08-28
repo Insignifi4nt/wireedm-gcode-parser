@@ -294,7 +294,7 @@ export type ClosedContourCompensationIntent =
     }
   | {
       mode: 'centerline';
-      source: 'manual' | 'legacy';
+      source: 'manual';
     };
 
 export interface PathContour {

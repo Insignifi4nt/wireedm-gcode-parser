@@ -31,10 +31,6 @@ import type {
   SegmentId
 } from '@/domain/path-intel/types';
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
-import {
-  deriveUpidPreviewPostProjection
-} from '@/domain/post/upidMachinePost';
-import type { MachineProfile } from '@/domain/workbench/types';
 
 export interface EditorPreviewPath {
   type: 'rapid' | 'cut' | 'arc';
@@ -100,61 +96,6 @@ export interface PostedPreviewTransition {
   programLineNumber: number;
   replacesPlanned?: boolean;
   startPoint: Point2;
-}
-
-export interface UpidMachinePreviewTransitions {
-  authoritativeGeneratedOperationIds: readonly string[];
-  transitions: PostedPreviewTransition[];
-}
-
-export function deriveUpidMachinePreviewTransitions(
-  document: PathPlanningDocument,
-  machine: MachineProfile
-): UpidMachinePreviewTransitions | undefined {
-  const projection = deriveUpidPreviewPostProjection(document, machine);
-  if (!projection) return undefined;
-  const authoritativeGeneratedOperationIds = new Set(
-    projection.authoritativeGeneratedOperationIds
-  );
-  const transitions = projection.blocks.flatMap((block) => {
-    if (
-      (
-        block.kind !== 'rapid' &&
-        block.kind !== 'position-for-threading' &&
-        block.kind !== 'lead-in' &&
-        block.kind !== 'lead-out'
-      ) ||
-      !block.operationId ||
-      !block.startPoint ||
-      !block.endPoint
-    ) {
-      return [];
-    }
-    const replacesPlanned = authoritativeGeneratedOperationIds.has(block.operationId);
-    return [{
-      kind: block.kind === 'position-for-threading' ? 'rapid' : block.kind,
-      operationId: block.operationId,
-      programLineNumber: block.bodyLineIndex + 1,
-      ...(replacesPlanned ? { replacesPlanned: true } : {}),
-      startPoint: block.startPoint,
-      endPoint: block.endPoint
-    }];
-  });
-  return {
-    authoritativeGeneratedOperationIds:
-      projection.authoritativeGeneratedOperationIds,
-    transitions
-  };
-}
-
-export function deriveVerifiedRobofilPreviewTransitions(
-  document: PathPlanningDocument,
-  machine: MachineProfile
-): PostedPreviewTransition[] | undefined {
-  if (machine.controller.family !== 'charmilles-robofil-classic') {
-    return undefined;
-  }
-  return deriveUpidMachinePreviewTransitions(document, machine)?.transitions ?? [];
 }
 
 export function buildEditorPreviewGeometry(

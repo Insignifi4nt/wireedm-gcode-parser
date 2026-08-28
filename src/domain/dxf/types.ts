@@ -53,13 +53,9 @@ export type DxfUnitDeclaration =
 export interface AppliedDxfUnits {
   label: string;
   scaleToMillimeters: number;
-  basis: 'dxf-declared' | 'user-confirmed' | 'legacy-assumed';
+  basis: 'dxf-declared' | 'user-confirmed';
   confirmed: boolean;
   confirmedAt?: string;
-  suggestion?: {
-    kind: 'machine-profile';
-    profileId: string;
-  };
 }
 
 export interface DxfDrawingMetadata {

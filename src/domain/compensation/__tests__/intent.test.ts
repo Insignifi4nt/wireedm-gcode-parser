@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { createVerifiedCharmillesRobofil100Profile } from '@/domain/machine/machineProfiles';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 
 import {
-  initializeProjectCompensationIntents,
   setManualCompensationIntent,
   suggestCompensationIntent
 } from '../intent';
@@ -71,34 +69,6 @@ describe('compensation intent', () => {
     expect(document.chains[0].closed).toBe(true);
     expect(suggestCompensationIntent({ document, operation: document.plan.operations[0] }))
       .toBeUndefined();
-  });
-
-  it('initializes only with a supported, enabled, validly verified project machine snapshot', () => {
-    const profile = createVerifiedCharmillesRobofil100Profile('project-machine', new Date('2026-07-13T10:00:00Z'));
-    const document = createPathPlanningDocumentFromDxfEntities(rectangle());
-
-    const initialized = initializeProjectCompensationIntents(document, profile);
-
-    expect(initialized.geometryBasis).toBe('finished-contour');
-    expect(initialized.plan.operations[0].compensationIntent).toEqual({
-      mode: 'controller',
-      keptMaterial: 'inside',
-      source: 'automatic'
-    });
-    expect(document.geometryBasis).toBe('wire-centre');
-    expect(document.plan.operations[0].compensationIntent).toBeUndefined();
-
-    const disabled = structuredClone(profile);
-    disabled.compensation.enabledByDefault = false;
-    const disabledResult = initializeProjectCompensationIntents(document, disabled);
-    expect(disabledResult.geometryBasis).toBe('wire-centre');
-    expect(disabledResult.plan.operations[0].compensationIntent).toBeUndefined();
-
-    const staleVerification = structuredClone(profile);
-    staleVerification.compensation.offsetSelection.index = 7;
-    const staleResult = initializeProjectCompensationIntents(document, staleVerification);
-    expect(staleResult.geometryBasis).toBe('wire-centre');
-    expect(staleResult.plan.operations[0].compensationIntent).toBeUndefined();
   });
 
   it('sets semantic manual intent without persisting a literal controller code', () => {

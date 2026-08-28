@@ -9,9 +9,11 @@ export function buildWorkbenchCacheSeed(options = {}) {
   const folder = resolveWorkbenchFolder(options.folder);
   const manifestPath = path.join(folder, 'workbench.json');
   const manifest = readJsonFile(manifestPath, 'workbench.json');
-  const selectedProject = selectProject(manifest.projects ?? [], options.project ?? 'latest');
+  requireV2Manifest(manifest);
+  const selectedProject = selectProject(manifest.projects, options.project ?? 'latest');
   const projectPath = normalizeStoragePath(selectedProject.path, 'project path');
   const projectDocument = readJsonFile(path.join(folder, projectPath), projectPath);
+  requireV2Project(projectDocument, selectedProject.id);
   const files = collectReferencedFiles(manifest, selectedProject, projectDocument);
   const directories = collectDirectories(files);
   const entries = [
@@ -85,12 +87,13 @@ export function selectProject(projects, selector = 'latest') {
 function collectReferencedFiles(manifest, selectedProject, projectDocument) {
   return uniqueSorted([
     'workbench.json',
+    'machines/library.json',
+    'posts/library.json',
     selectedProject.path,
-    manifest.templates?.headerPath,
-    manifest.templates?.footerPath,
-    projectDocument.editor?.activeFilePath,
-    ...readFileRefs(projectDocument.source?.files),
-    ...readFileRefs(projectDocument.generated?.files)
+    projectDocument.content.kind === 'external-gcode'
+      ? projectDocument.content.activeFilePath
+      : null,
+    ...readFileRefs(projectDocument.source.files)
   ].map((filePath) => filePath && normalizeStoragePath(filePath, 'file path')));
 }
 
@@ -131,6 +134,28 @@ function readJsonFile(filePath, displayPath) {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch (error) {
     throw new Error(`Unable to read ${displayPath}: ${error.message}`);
+  }
+}
+
+function requireV2Manifest(manifest) {
+  if (
+    manifest?.format !== 'wire-edm-workbench' ||
+    manifest?.schemaVersion !== 2 ||
+    !Array.isArray(manifest.projects)
+  ) {
+    throw new Error('Playwright seeding requires a strict Wire EDM workbench schema version 2 manifest.');
+  }
+}
+
+function requireV2Project(project, expectedId) {
+  if (
+    project?.format !== 'wire-edm-project' ||
+    project?.schemaVersion !== 2 ||
+    project?.id !== expectedId ||
+    !Array.isArray(project?.source?.files) ||
+    !['upid-document', 'external-gcode'].includes(project?.content?.kind)
+  ) {
+    throw new Error(`Playwright seeding requires an exact schema version 2 project: ${expectedId}.`);
   }
 }
 
