@@ -108,34 +108,13 @@ describe('Editor measurement points', () => {
     const exportCsvButton = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Export CSV')
     );
-    const exportGCodeButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Export G-code')
-    );
-    const exportPointIsoButton = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Export Point ISO')
-    );
-
     await act(async () => {
       exportCsvButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      exportGCodeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      exportPointIsoButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(downloadTextFile).toHaveBeenCalledWith({
       fileName: expect.stringMatching(/^measurement-points-\d{4}-\d{2}-\d{2}\.csv$/),
       text: ['Point,X,Y', 'P1,12.500,-3.000', 'P2,1.000,2.000'].join('\n')
-    });
-    expect(downloadTextFile).toHaveBeenCalledWith({
-      fileName: expect.stringMatching(/^measurement-points-\d{4}-\d{2}-\d{2}\.gcode$/),
-      text: expect.stringContaining('G0 X12.500 Y-3.000')
-    });
-    expect(downloadTextFile).toHaveBeenCalledWith({
-      fileName: expect.stringMatching(/^measurement-points-\d{4}-\d{2}-\d{2}\.iso$/),
-      text: expect.stringContaining('N70 G1 X1.000 Y2.000')
-    });
-    expect(downloadTextFile).not.toHaveBeenCalledWith({
-      fileName: expect.stringMatching(/^measurement-points-\d{4}-\d{2}-\d{2}\.iso$/),
-      text: expect.stringContaining('F1000')
     });
   });
 

@@ -13,11 +13,11 @@ import { resolveControllerCompensation } from '../resolveControllerCompensation'
 
 describe('resolveControllerCompensation', () => {
   it.each([
-    ['inside', 'ccw', 'right', 'G42'],
-    ['inside', 'cw', 'left', 'G41'],
-    ['outside', 'ccw', 'left', 'G41'],
-    ['outside', 'cw', 'right', 'G42']
-  ] as const)('maps keep-%s %s to %s/%s', (keptMaterial, winding, wireSide, code) => {
+    ['inside', 'ccw', 'right'],
+    ['inside', 'cw', 'left'],
+    ['outside', 'ccw', 'left'],
+    ['outside', 'cw', 'right']
+  ] as const)('maps keep-%s %s to wire-%s intent', (keptMaterial, winding, wireSide) => {
     const document = rectangleDocument();
     orient(document, winding);
     document.plan.operations[0].compensationIntent = {
@@ -30,12 +30,11 @@ describe('resolveControllerCompensation', () => {
       status: 'ready',
       winding,
       keptMaterial,
-      wireSide,
-      code
+      wireSide
     });
   });
 
-  it('reversal flips code while start rotation preserves it and kept material', () => {
+  it('reversal flips wire side while start rotation preserves it and kept material', () => {
     const original = rectangleDocument();
     original.plan.operations[0].compensationIntent = {
       mode: 'controller',
@@ -51,8 +50,8 @@ describe('resolveControllerCompensation', () => {
     const reversedResult = ready(resolve(reversed));
     const rotatedResult = ready(resolve(rotated));
 
-    expect(reversedResult.code).not.toBe(originalResult.code);
-    expect(rotatedResult.code).toBe(originalResult.code);
+    expect(reversedResult.wireSide).not.toBe(originalResult.wireSide);
+    expect(rotatedResult.wireSide).toBe(originalResult.wireSide);
     expect(reversedResult.keptMaterial).toBe(originalResult.keptMaterial);
     expect(rotatedResult.signedArea).toBeCloseTo(originalResult.signedArea!, 12);
   });
@@ -86,7 +85,7 @@ describe('resolveControllerCompensation', () => {
     document.contours[0].orientation = 'ccw';
     document.contours[0].signedArea = 50;
 
-    expect(resolve(document)).toMatchObject({ status: 'ready', winding: 'cw', code: 'G41' });
+    expect(resolve(document)).toMatchObject({ status: 'ready', winding: 'cw', wireSide: 'left' });
   });
 
   it.each([
@@ -172,8 +171,7 @@ describe('resolveControllerCompensation', () => {
       signedArea: null,
       winding: null,
       keptMaterial: null,
-      wireSide: 'left',
-      code: 'G41'
+      wireSide: 'left'
     });
   });
 

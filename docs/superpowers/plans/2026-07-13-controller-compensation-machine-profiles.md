@@ -1,5 +1,7 @@
 # Controller Compensation and Machine Profiles Implementation Plan
 
+> Historical plan, superseded by the standalone post-package platform. Controller commands, formatting, and lifecycle policy described below must not be implemented in application code; they belong to an explicitly installed package.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build portable reusable machine profiles and reversal-safe controller compensation, then reproduce the physically verified Robofil 100 z39 dialect from a project-snapshotted editable profile: G92/G60/G38, derived G41/G42 D0, G90, absolute I/J, M02, CRLF, and three decimals.

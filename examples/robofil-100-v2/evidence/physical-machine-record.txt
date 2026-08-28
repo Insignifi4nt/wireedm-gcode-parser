@@ -1,0 +1,12 @@
+Cristian's Robofil 100 physical-machine record
+Recorded by the prior Wire EDM implementation handoff on 2026-07-14.
+
+Machine: Charmilles Robofil 100 / Classic
+X travel: 150 mm (called maximum width by the prior application)
+Y travel: 200 mm (called maximum length by the prior application)
+Manual threading: available
+Automatic threading: not established
+
+Provenance: docs/superpowers/2026-07-14-workflow-redesign-implementation-handoff.md
+This is local machine evidence, not a manufacturer-wide specification. Serial number,
+controller firmware, and the V2 post's physical verification remain unrecorded.

@@ -20,7 +20,6 @@ export type CompensationResolution =
       winding: 'cw' | 'ccw' | null;
       keptMaterial: 'inside' | 'outside' | null;
       wireSide: 'left' | 'right';
-      code: 'G41' | 'G42';
     }
   | {
       status: 'blocked';
@@ -64,8 +63,7 @@ export function resolveControllerCompensation({
       signedArea: null,
       winding: null,
       keptMaterial: null,
-      wireSide: intent.wireSide,
-      code: intent.wireSide === 'left' ? 'G41' : 'G42'
+      wireSide: intent.wireSide
     };
   }
 
@@ -91,8 +89,7 @@ export function resolveControllerCompensation({
     signedArea,
     winding,
     keptMaterial,
-    wireSide,
-    code: wireSide === 'left' ? 'G41' : 'G42'
+    wireSide
   };
 }
 

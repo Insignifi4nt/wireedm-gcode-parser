@@ -2,6 +2,7 @@ export {
   SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION,
   SavedWireEdmJobRevisionSchema,
   WIRE_EDM_ENGINE_VERSION,
+  createSavedWireEdmJobRevisionId,
   createSavedWireEdmJobRevision,
   isValidatedSavedWireEdmJobRevision,
   loadSavedWireEdmJobRevision,

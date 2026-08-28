@@ -184,8 +184,8 @@ export function EditorMachiningParticipationPanel({
           value={wireSide}
         >
           <option value="">Required for controller compensation</option>
-          <option value="left">Wire left of travel (G41)</option>
-          <option value="right">Wire right of travel (G42)</option>
+          <option value="left">Wire left of travel</option>
+          <option value="right">Wire right of travel</option>
         </select>
       </label>
 

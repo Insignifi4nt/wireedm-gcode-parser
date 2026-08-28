@@ -40,7 +40,7 @@ import {
   type SegmentGeometryPresentation
 } from './segmentGeometryPresentation';
 
-type MeasurementExportFormat = 'csv' | 'gcode' | 'iso';
+type MeasurementExportFormat = 'csv';
 type CanvasMouseMode = 'select' | 'point';
 
 interface EditorInspectorPanelProps {
@@ -1311,40 +1311,16 @@ export function EditorInspectorPanel({
             <ArrowRightFromLine />
             Insert Points
           </Button>
-          <div className="grid grid-cols-2 gap-1.5">
-            <Button
-              className="h-6 px-2 text-[10px]"
-              disabled={measurementPoints.length === 0}
-              onClick={() => onExportMeasurementPoints('csv')}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <Download />
-              Export CSV
-            </Button>
-            <Button
-              className="h-6 px-2 text-[10px]"
-              disabled={measurementPoints.length === 0}
-              onClick={() => onExportMeasurementPoints('gcode')}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <Download />
-              Export G-code
-            </Button>
-          </div>
           <Button
             className="h-6 px-2 text-[10px]"
             disabled={measurementPoints.length === 0}
-            onClick={() => onExportMeasurementPoints('iso')}
+            onClick={() => onExportMeasurementPoints('csv')}
             size="sm"
             type="button"
             variant="outline"
           >
             <Download />
-            Export Point ISO
+            Export CSV
           </Button>
         </div>
       </section>

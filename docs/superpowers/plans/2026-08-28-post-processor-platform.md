@@ -65,21 +65,21 @@ resolveMachinePostBinding(machine, library, bindingId): ResolvedMachinePostBindi
 
 Gate 2 emphasizes new-schema integrity, project snapshot integrity, binding lifecycle, illegal states, removal of compatibility mirrors/fallback selection, and persistence-test value.
 
-## Milestone 3 — Neutral execution plan and built-in posts
+## Milestone 3 — Neutral execution plan and standalone posts
 
 Public seams:
 
 ```ts
 compileWireEdmExecutionPlan(savedRevision): ExecutionPlanResult
 preflightPostCapabilities(plan, package, properties): PostDiagnostic[]
-runBuiltInPost(plan, resolvedBinding): ControllerProgramResult
+runPost(plan, resolvedBinding): Promise<ControllerProgramResult>
 auditControllerProgram(plan, blocks): PostDiagnostic[]
 ```
 
 - [ ] Extract geometry, operations, passes, transitions, threading, stops, and compensation intent into ordered typed events.
 - [ ] Keep controller words and output formatting out of the execution plan.
-- [ ] Adapt generic, explicit-linear, Robofil v1, and Robofil v2 generation to one post-engine contract.
-- [ ] Define complete built-in package manifests, dialect evidence, properties, and fixtures alongside those adapters; do not install placeholder metadata.
+- [ ] Express every controller implementation as an ordinary package executed by the public isolated runtime.
+- [ ] Define complete standalone package manifests, source, dialect evidence, properties, and fixtures; do not add application-owned renderer adapters.
 - [ ] Preserve source trace and exact physically intentional controller outputs as new-contract fixtures, without preserving legacy APIs.
 - [ ] Remove `programOwned` and consolidate header/body/footer ownership under posts.
 - [ ] Audit required-event acknowledgment and motion equivalence.

@@ -60,6 +60,7 @@ export const WIRE_EDM_ENGINE_VERSION = '1' as const;
 const MAX_SAVED_REVISION_BYTES = 128 * 1024 * 1024;
 const strictObject = { additionalProperties: false } as const;
 const canonicalTimestampPattern = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$';
+const randomUuidV4Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const revisionCandidateBrand = Symbol('saved-wire-edm-job-revision-candidate');
 const persistedRevisionBrand = Symbol('persisted-saved-wire-edm-job-revision');
 
@@ -326,6 +327,13 @@ export type SaveStoredWireEdmJobRevisionResult =
       readonly ok: false;
       readonly error: SavedRevisionCatalogMutationError | SavedRevisionCatalogRollbackError;
     };
+
+export function createSavedWireEdmJobRevisionId(randomUuid: string) {
+  if (!randomUuidV4Pattern.test(randomUuid)) {
+    throw new Error('Saved revision IDs require a canonical lowercase UUID v4 source.');
+  }
+  return `revision.${randomUuid}`;
+}
 
 export async function createSavedWireEdmJobRevision(
   input: CreateSavedWireEdmJobRevisionInput

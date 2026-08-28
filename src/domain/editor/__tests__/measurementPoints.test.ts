@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   createMeasurementPointPathSnapFromMagnetized,
   exportMeasurementPointsAsCsv,
-  exportMeasurementPointsAsGCode,
-  exportMeasurementPointsAsISO,
   insertMeasurementPointsIntoText
 } from '../measurementPoints';
 
@@ -32,34 +30,9 @@ describe('measurementPoints', () => {
     expect(result.insertedLineNumbers).toEqual([2, 3]);
   });
 
-  it('exports points as CSV and G-code using legacy precision', () => {
+  it('exports controller-neutral point coordinates as CSV', () => {
     expect(exportMeasurementPointsAsCsv(points)).toBe(
       ['Point,X,Y', 'P1,1.000,2.000', 'P2,-3.457,4.200'].join('\n')
-    );
-
-    expect(exportMeasurementPointsAsGCode(points, { includeHeader: true })).toContain(
-      '; Total points: 2'
-    );
-    expect(exportMeasurementPointsAsGCode(points, { includeHeader: false })).toBe(
-      ['; Point 1', 'G0 X1.000 Y2.000', '; Point 2', 'G0 X-3.457 Y4.200', ''].join(
-        '\n'
-      )
-    );
-  });
-
-  it('exports points as an ISO point program using the old point-export structure', () => {
-    const program = exportMeasurementPointsAsISO(points);
-
-    expect(program).toContain('%\r\nN10 G92\r\nN20 G60\r\nN30 G38\r\n');
-    expect(program).toContain('N60 G0 X1.000 Y2.000');
-    expect(program).toContain('N70 G1 X-3.457 Y4.200');
-    expect(program).not.toContain('F1000');
-    expect(program.endsWith('N80 M02\r\n')).toBe(true);
-  });
-
-  it('only adds an ISO feed word for point exports when explicitly requested', () => {
-    expect(exportMeasurementPointsAsISO(points, { feed: 850 })).toContain(
-      'N70 G1 X-3.457 Y4.200 F850'
     );
   });
 

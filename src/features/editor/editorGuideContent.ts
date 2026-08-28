@@ -109,7 +109,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Delete individual points from the list, or use Clear Points to empty the list. Remaining points are reindexed automatically.'
           },
           {
-            text: 'Insert Points is for external posted programs. DXF path projects keep measurement and magnetized points on the canvas; Export CSV, Export G-code, and Export Point ISO write point-only files for outside use.'
+            text: 'Insert Points is for external posted programs. DXF path projects keep measurement and magnetized points on the canvas; Export CSV writes controller-neutral point data for outside use.'
           },
           {
             text: 'While Measurement & Construction is open, Alt/Option+Shift+C clears all points when focus is not inside an input.'
@@ -120,7 +120,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator Or Program Lines',
         steps: [
           {
-            text: 'DXF path projects use one workflow per responsibility: Cut Sequence for order, Contour Setup for role and direction, Contour Start for optional start overrides, Program Start / G92 for the initial wire coordinate, Entry / Exit for cutting transitions, Between Contours for derived travel and rethreading, and View workflows for inspection.',
+            text: 'DXF path projects use one workflow per responsibility: Cut Sequence for order, Contour Setup for role and direction, Contour Start for optional start overrides, Initial wire position for the first wire coordinate, Entry / Exit for cutting transitions, Between Contours for derived travel and rethreading, and View workflows for inspection.',
             highlightTarget: 'program-lines'
           },
           {
@@ -244,7 +244,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Sterge puncte individual din lista sau foloseste Clear Points pentru lista goala. Punctele ramase se reindexeaza automat.'
           },
           {
-            text: 'Insert Points este pentru programe externe postate. Proiectele DXF pastreaza punctele de masurare si punctele magnetizate pe canvas; Export CSV, Export G-code si Export Point ISO scriu fisiere doar cu punctele.'
+            text: 'Insert Points este pentru programe externe postate. Proiectele DXF pastreaza punctele de masurare si punctele magnetizate pe canvas; Export CSV scrie date neutre despre puncte pentru utilizare externa.'
           },
           {
             text: 'Cat timp Measurement & Construction este deschis, Alt/Option+Shift+C curata toate punctele cand focusul nu este intr-un input.'
@@ -255,7 +255,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '5. UPID Path Navigator sau Program Lines',
         steps: [
           {
-            text: 'Proiectele DXF folosesc cate un workflow pentru fiecare responsabilitate: Cut Sequence pentru ordine, Contour Setup pentru rol si directie, Contour Start pentru suprascrierea optionala a startului, Program Start / G92 pentru coordonata initiala a sarmei, Entry / Exit pentru tranzitiile de taiere, Between Contours pentru deplasare si refiletare, iar workflow-urile View pentru inspectie.',
+            text: 'Proiectele DXF folosesc cate un workflow pentru fiecare responsabilitate: Cut Sequence pentru ordine, Contour Setup pentru rol si directie, Contour Start pentru suprascrierea optionala a startului, Initial wire position pentru prima coordonata a sarmei, Entry / Exit pentru tranzitiile de taiere, Between Contours pentru deplasare si refiletare, iar workflow-urile View pentru inspectie.',
             highlightTarget: 'program-lines'
           },
           {

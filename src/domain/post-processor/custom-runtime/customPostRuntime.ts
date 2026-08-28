@@ -90,6 +90,7 @@ interface MutableRunState {
   readonly dialectState: Set<string>;
   currentEvent: WireEdmExecutionEvent | null;
   currentDisposition: 'none' | 'emitted' | 'consumed';
+  currentMotionEnd: Point2 | null;
   actionCount: number;
   outputBytes: number;
   readonly outputLimit: number;
@@ -161,6 +162,7 @@ async function executeOnce(
     dialectState: new Set(),
     currentEvent: null,
     currentDisposition: 'none',
+    currentMotionEnd: null,
     actionCount: 0,
     outputBytes: 0,
     outputLimit: limits.outputBytes,
@@ -210,6 +212,7 @@ async function executeOnce(
     for (const event of plan.events) {
       state.currentEvent = event;
       state.currentDisposition = 'none';
+      state.currentMotionEnd = null;
       const eventValue = evaluate(
         context,
         `(${JSON.stringify(event)})`,
@@ -458,7 +461,7 @@ function emitCommand(
     return;
   }
   const motion = motionAction
-    ? deriveMotion(event, command, parameters.values, properties)
+    ? deriveMotion(event, command, parameters.values, properties, state.currentMotionEnd)
     : { ok: true as const, motion: null };
   if (!motion.ok) {
     recordFatal(state, diagnostic(
@@ -499,6 +502,7 @@ function emitCommand(
     return;
   }
   appendBlock(state, event, commandValue, text, motion.motion);
+  if (motion.motion) state.currentMotionEnd = copyPoint(motion.motion.end);
   applyEffects(state.dialectState, command.effects);
   state.currentDisposition = 'emitted';
 }
@@ -583,7 +587,8 @@ function deriveMotion(
   event: WireEdmExecutionEvent,
   command: RuntimeCommand,
   values: Readonly<Record<string, string | number>>,
-  properties: Readonly<Record<string, PostPropertyValue>>
+  properties: Readonly<Record<string, PostPropertyValue>>,
+  previousEnd: Point2 | null
 ): { ok: true; motion: ControllerMotionTrace } | { ok: false; message: string } {
   if (event.kind !== 'motion' && event.kind !== 'position') {
     return { ok: false, message: `emitMotion cannot be used for ${event.kind}.` };
@@ -593,7 +598,7 @@ function deriveMotion(
   if (endX === null || endY === null) {
     return { ok: false, message: 'A motion command requires one motion.end-x and one motion.end-y parameter.' };
   }
-  const start = event.kind === 'position' ? event.from : event.start;
+  const start = previousEnd ?? (event.kind === 'position' ? event.from : event.start);
   const end = { x: endX, y: endY };
   if (event.kind === 'position') {
     return { ok: true, motion: { motion: 'linear', role: 'position', start: copyPoint(start), end } };
@@ -615,9 +620,15 @@ function deriveMotion(
       end,
       center: center.point,
       ...(event.clockwise === undefined ? {} : { clockwise: event.clockwise }),
-      ...(event.fullCircle === undefined ? {} : { fullCircle: event.fullCircle })
+      ...(event.fullCircle === undefined
+        ? {}
+        : { fullCircle: pointsCoincide(start, end) })
     }
   };
+}
+
+function pointsCoincide(first: Point2, second: Point2) {
+  return first.x === second.x && first.y === second.y;
 }
 
 function deriveCenter(

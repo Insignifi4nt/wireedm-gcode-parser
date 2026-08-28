@@ -4,6 +4,14 @@ import { parseWireEdmPostPackage } from '../postPackage';
 import { minimalPostPackage } from './postPackageFixture';
 
 describe('wire EDM post package boundary', () => {
+  it('accepts package-owned dialect state tokens without teaching them to the application', () => {
+    const input = minimalPostPackage();
+    input.dialect.commands['distance.absolute'].effects = ['robofil.g60-issued'];
+    input.dialect.commands['motion.linear'].requires = ['robofil.g60-issued'];
+
+    expect(parseWireEdmPostPackage(JSON.stringify(input))).toMatchObject({ ok: true });
+  });
+
   it('parses one complete package without changing its declared values', () => {
     const input = minimalPostPackage();
     const result = parseWireEdmPostPackage(JSON.stringify(input));

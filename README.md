@@ -1,6 +1,6 @@
 # Wire EDM Workbench
 
-A local-first Wire EDM workbench for DXF import, clean IJ G-code generation, editing, verification, and export.
+A local-first Wire EDM workbench that preserves controller-neutral CAM state and generates exact machine programs through explicitly installed post-processor packages.
 
 ## Commands
 

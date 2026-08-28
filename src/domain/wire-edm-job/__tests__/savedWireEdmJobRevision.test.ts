@@ -5,7 +5,6 @@ import {
   parseMachineDefinition,
   type MachineDefinitionValue
 } from '@/domain/machine-definition/machineDefinition';
-import { builtInPostPackage } from '@/domain/post-processor/builtInPostPackages';
 import { minimalPostPackage } from '@/domain/post-processor/__tests__/postPackageFixture';
 import { createEmptyPostLibrary, installPostPackage } from '@/domain/post-processor/postLibrary';
 import type { WireEdmPostPackageValue } from '@/domain/post-processor/postPackageSchema';
@@ -14,6 +13,7 @@ import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { createWorkbenchProjectDocument } from '@/domain/workbench-catalog/workbenchProject';
 
 import {
+  createSavedWireEdmJobRevisionId,
   createSavedWireEdmJobRevision,
   loadSavedWireEdmJobRevision,
   parseSavedWireEdmJobRevision,
@@ -24,6 +24,13 @@ import { generateControllerArtifact } from '../controllerArtifact';
 import type { SavedWireEdmJobRevision } from '../savedWireEdmJobRevision';
 
 describe('saved Wire EDM job revision', () => {
+  it('creates schema-valid revision IDs even when the UUID begins with a digit', () => {
+    expect(createSavedWireEdmJobRevisionId('01234567-89ab-4cde-8f01-23456789abcd'))
+      .toBe('revision.01234567-89ab-4cde-8f01-23456789abcd');
+    expect(() => createSavedWireEdmJobRevisionId('not-a-random-uuid'))
+      .toThrow('canonical lowercase UUID v4');
+  });
+
   it('snapshots one strict version-2 UPID project and exact resolved machine binding', async () => {
     const fixture = await revisionFixture();
 
@@ -48,7 +55,7 @@ describe('saved Wire EDM job revision', () => {
           post: fixture.installation.ref
         },
         installation: fixture.installation,
-        properties: { coordinatePrecision: 3, arcCenterMode: 'incremental' }
+        properties: { coordinatePrecision: 3 }
       }
     });
     expect('bindings' in fixture.revision.machine).toBe(false);
@@ -503,7 +510,7 @@ async function revisionFixture(packageValue?: WireEdmPostPackageValue) {
 async function machineAndPostFixture(packageValue?: WireEdmPostPackageValue) {
   const installed = await installPostPackage(
     createEmptyPostLibrary(),
-    packageValue ?? builtInPostPackage('generic-iso')
+    packageValue ?? minimalPostPackage()
   );
   if (!installed.ok) throw new Error(installed.error.message);
   const parsedMachine = parseMachineDefinition(JSON.stringify(machineValue()));
@@ -511,9 +518,7 @@ async function machineAndPostFixture(packageValue?: WireEdmPostPackageValue) {
   const bound = createMachinePostBinding(parsedMachine.machine, installed.installation, {
     id: 'production',
     name: 'Production',
-    properties: Object.hasOwn(installed.installation.package.manifest.properties, 'arcCenterMode')
-      ? { coordinatePrecision: 3, arcCenterMode: 'incremental' }
-      : { coordinatePrecision: 3 },
+    properties: { coordinatePrecision: 3 },
     compatibility: {
       status: 'acknowledged',
       acknowledgedAt: '2026-08-28T12:00:00.000Z',

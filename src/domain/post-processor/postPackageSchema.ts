@@ -151,23 +151,7 @@ const CommandParameterSchema = Type.Union([
   }, strictObject)
 ]);
 
-export const DialectStateTokenSchema = Type.Union([
-  Type.Literal('program.delimiter'),
-  Type.Literal('program.ended'),
-  Type.Literal('program.paused'),
-  Type.Literal('distance.absolute'),
-  Type.Literal('units.millimeters'),
-  Type.Literal('plane.xy'),
-  Type.Literal('work-offset.selected'),
-  Type.Literal('origin.wire-position-set'),
-  Type.Literal('position.changed'),
-  Type.Literal('compensation.prepared'),
-  Type.Literal('compensation.left'),
-  Type.Literal('compensation.right'),
-  Type.Literal('compensation.off'),
-  Type.Literal('wire.separated'),
-  Type.Literal('wire.threaded')
-]);
+export const DialectStateTokenSchema = PostIdentifierSchema;
 
 const DialectCommandSchema = Type.Object({
   template: Type.String({ minLength: 1, maxLength: 512, pattern: '^[^\\r\\n\\u0000]+$' }),

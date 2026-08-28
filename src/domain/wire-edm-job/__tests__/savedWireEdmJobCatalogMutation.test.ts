@@ -5,7 +5,7 @@ import {
   parseMachineDefinition,
   type MachineDefinitionValue
 } from '@/domain/machine-definition/machineDefinition';
-import { builtInPostPackage } from '@/domain/post-processor/builtInPostPackages';
+import { minimalPostPackage } from '@/domain/post-processor/__tests__/postPackageFixture';
 import { createEmptyPostLibrary, installPostPackage } from '@/domain/post-processor/postLibrary';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
@@ -164,7 +164,7 @@ async function catalogRevisionFixture() {
 
   const installed = await installPostPackage(
     createEmptyPostLibrary(),
-    builtInPostPackage('generic-iso')
+    minimalPostPackage()
   );
   if (!installed.ok) throw new Error(installed.error.message);
   const parsedMachine = parseMachineDefinition(JSON.stringify(machineValue()));
@@ -172,7 +172,7 @@ async function catalogRevisionFixture() {
   const bound = createMachinePostBinding(parsedMachine.machine, installed.installation, {
     id: 'production',
     name: 'Production',
-    properties: { coordinatePrecision: 3, arcCenterMode: 'incremental' },
+    properties: { coordinatePrecision: 3 },
     compatibility: {
       status: 'acknowledged',
       acknowledgedAt: '2026-08-28T12:00:00.000Z',

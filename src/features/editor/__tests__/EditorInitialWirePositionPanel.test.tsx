@@ -22,7 +22,7 @@ describe('EditorInitialWirePositionPanel', () => {
     container.remove();
   });
 
-  it('sets exact reviewed coordinates and previews the resulting G92', async () => {
+  it('sets and previews exact reviewed controller-neutral coordinates', async () => {
     const onSetManual = vi.fn();
     const document = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: -17.5, y: 24.9 }, radius: 8 }
@@ -47,7 +47,7 @@ describe('EditorInitialWirePositionPanel', () => {
     });
 
     expect(onSetManual).toHaveBeenCalledWith({ x: -17.5, y: 24.9 });
-    expect(container.textContent).toContain('G92 X-17.500 Y24.900');
+    expect(container.textContent).toContain('X-17.500 Y24.900');
   });
 
   it('offers circle centers as semantic transform-linked points', async () => {

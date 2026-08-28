@@ -2634,7 +2634,7 @@ function renderLeadInRow(
             </span>
             <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-lead-in-field="length">
               <span className="uppercase text-muted-foreground">Length</span>
-              <span className="truncate text-foreground">{length.toFixed(3)} / G1</span>
+              <span className="truncate text-foreground">{length.toFixed(3)} mm</span>
             </span>
           </span>
         </span>

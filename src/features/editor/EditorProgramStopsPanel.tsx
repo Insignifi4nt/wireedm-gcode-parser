@@ -179,7 +179,7 @@ export function EditorProgramStopsPanel({
           onClick={addStop}
           type="button"
         >
-          Add M00 stop
+          Add program stop
         </button>
       </fieldset>
 
@@ -337,7 +337,7 @@ function replaceStop(
 
 function placementLabel(placement: OperationProgramStopPlacement) {
   if (placement.kind === 'before-operation-end') {
-    return `M00 with ${placement.remainingCutLengthMm.toFixed(3)} mm remaining`;
+    return `Stop with ${placement.remainingCutLengthMm.toFixed(3)} mm remaining`;
   }
-  return `M00 ${placement.kind.replaceAll('-', ' ')}`;
+  return `Stop ${placement.kind.replaceAll('-', ' ')}`;
 }

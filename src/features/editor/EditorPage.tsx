@@ -95,8 +95,6 @@ import { buildUpidEditorTree, type UpidEditorTree } from '@/domain/upid/upidEdit
 import {
   createMeasurementPointPathSnapFromMagnetized,
   exportMeasurementPointsAsCsv,
-  exportMeasurementPointsAsGCode,
-  exportMeasurementPointsAsISO,
   insertMeasurementPointsIntoText,
   type MeasurementPoint
 } from '@/domain/editor/measurementPoints';
@@ -290,7 +288,7 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   'path-diagnostics': 'Path Diagnostics',
   'cut-sequence': 'Cut Sequence',
   'contour-tree': 'Contour Tree',
-  'initial-wire-position': 'Program Start / G92',
+  'initial-wire-position': 'Initial wire position',
   'entry-exit': 'Entry / Exit',
   'between-contours': 'Between Contours',
   'program-stops': 'Program Stops',
@@ -311,10 +309,10 @@ const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string
   'path-diagnostics': 'warnings and linked rows for broken or risky path geometry',
   'cut-sequence': 'operation order, rapid moves, and cut direction',
   'contour-tree': 'nested contours, segments, endpoints, and canvas cross-highlighting',
-  'initial-wire-position': 'reviewed project G92 coordinates and first connection origin',
+  'initial-wire-position': 'reviewed initial wire coordinates and first connection origin',
   'entry-exit': 'per-operation cutting entry and exit geometry',
   'between-contours': 'derived rapid travel and manual or automatic rethread policy',
-  'program-stops': 'typed unconditional M00 events at operation boundaries or remaining cut distance',
+  'program-stops': 'typed unconditional stop events at operation boundaries or remaining cut distance',
   'machining-participation': 'source-preserving active cuts, inactive reference spans, and explicit open-path compensation side',
   position: 'cursor position and grid snap state',
   statistics: 'bounds, move counts, and selected geometry details',
@@ -390,7 +388,7 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
   SET_START_COMMAND,
   ...([
     ['machining.sequence', 'Cut Sequence', 'cut-sequence'],
-    ['machining.initial-wire', 'Program Start / G92', 'initial-wire-position'],
+    ['machining.initial-wire', 'Initial wire position', 'initial-wire-position'],
     ['machining.entry-exit', 'Entry / Exit', 'entry-exit'],
     ['machining.between-contours', 'Between Contours', 'between-contours'],
     ['machining.participation', 'Machining Participation', 'machining-participation'],
@@ -2491,29 +2489,13 @@ export function EditorPage({
     setSelectedLines(result.insertedLineNumbers);
   }
 
-  function handleExportMeasurementPoints(format: 'csv' | 'gcode' | 'iso') {
+  function handleExportMeasurementPoints(format: 'csv') {
     if (measurementPoints.length === 0) return;
 
     const dateStamp = new Date().toISOString().slice(0, 10);
-    if (format === 'csv') {
-      onDownloadEditorFile(
-        `measurement-points-${dateStamp}.csv`,
-        exportMeasurementPointsAsCsv(measurementPoints)
-      );
-      return;
-    }
-
-    if (format === 'iso') {
-      onDownloadEditorFile(
-        `measurement-points-${dateStamp}.iso`,
-        exportMeasurementPointsAsISO(measurementPoints)
-      );
-      return;
-    }
-
     onDownloadEditorFile(
-      `measurement-points-${dateStamp}.gcode`,
-      exportMeasurementPointsAsGCode(measurementPoints)
+      `measurement-points-${dateStamp}.${format}`,
+      exportMeasurementPointsAsCsv(measurementPoints)
     );
   }
 
@@ -3759,7 +3741,7 @@ export function EditorPage({
         {pathDocumentDraft &&
           renderWorkspacePanel(
             'initial-wire-position',
-            'Program Start / G92',
+            'Initial wire position',
             <EditorInitialWirePositionPanel
               disabled={Boolean(isEditorMutationLocked)}
               document={pathDocumentDraft}

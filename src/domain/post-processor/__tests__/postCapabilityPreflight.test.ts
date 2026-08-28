@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
-import { builtInPostPackage } from '../builtInPostPackages';
+import { minimalPostPackage } from './postPackageFixture';
 import { preflightPostCapabilities } from '../postCapabilityPreflight';
 
 describe('post capability preflight', () => {
@@ -29,7 +29,7 @@ describe('post capability preflight', () => {
     const compiled = compileWireEdmExecutionPlan(document);
     if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
 
-    expect(preflightPostCapabilities(compiled.plan, builtInPostPackage('generic-iso')))
+    expect(preflightPostCapabilities(compiled.plan, minimalPostPackage()))
       .toEqual(expect.arrayContaining([
         expect.objectContaining({ code: 'POST_CAPABILITY_PROGRAM_STOPS_UNSUPPORTED' }),
         expect.objectContaining({ code: 'POST_CAPABILITY_THREADING_UNSUPPORTED' }),
@@ -37,7 +37,7 @@ describe('post capability preflight', () => {
       ]));
   });
 
-  it('accepts a Robofil v2 plan whose required event classes are all declared', () => {
+  it('accepts a package whose required event classes are all declared', () => {
     const document = createUpidFromDxfEntities(rectangle());
     document.setup = {
       initialWirePosition: {
@@ -47,7 +47,7 @@ describe('post capability preflight', () => {
     const compiled = compileWireEdmExecutionPlan(document);
     if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
 
-    expect(preflightPostCapabilities(compiled.plan, builtInPostPackage('robofil-v2'))).toEqual([]);
+    expect(preflightPostCapabilities(compiled.plan, minimalPostPackage())).toEqual([]);
   });
 });
 

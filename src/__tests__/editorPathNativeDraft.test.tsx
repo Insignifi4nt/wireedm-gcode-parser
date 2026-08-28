@@ -380,8 +380,8 @@ describe('EditorPage UPID draft boundary', () => {
           await clickElement('button[aria-label="Review and set manual initial wire position"]');
         },
         assertPreserved: () => expect(
-          container.querySelector('[data-initial-wire-g92-preview]')?.textContent
-        ).toBe('G92 X3.000 Y4.000')
+          container.querySelector('[data-initial-wire-position-preview]')?.textContent
+        ).toBe('X3.000 Y4.000')
       },
       {
         commandId: 'machining.entry-exit',
@@ -414,13 +414,13 @@ describe('EditorPage UPID draft boundary', () => {
         commandId: 'machining.program-stops',
         mutate: async () => {
           const add = [...container.querySelectorAll<HTMLButtonElement>('[data-program-stops-panel] button')]
-            .find((button) => button.textContent?.trim() === 'Add M00 stop');
+            .find((button) => button.textContent?.trim() === 'Add program stop');
           expect(add).not.toBeUndefined();
           await act(async () => add?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
           await flushAsync();
         },
         assertPreserved: () => expect(container.querySelector('[data-program-stops-panel]')?.textContent)
-          .toContain('M00 with 1.000 mm remaining')
+          .toContain('Stop with 1.000 mm remaining')
       },
       {
         commandId: 'machining.participation',
@@ -1455,7 +1455,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-between-contours-panel]')).not.toBeNull();
     expect(container.querySelector('[data-upid-planned-rapid-editor]')).toBeNull();
     expect(container.querySelector('input[aria-label^="Planned rapid"]')).toBeNull();
-    expect(container.textContent).toContain('Program Start / G92');
+    expect(container.textContent).toContain('Initial wire position');
   });
 
   it('creates and edits a manual cut entry with undo and redo', async () => {

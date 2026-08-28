@@ -9,20 +9,6 @@ export interface NormalizeToISOOptions {
   stripSemicolon?: boolean;
 }
 
-export interface BuildISOFromPointsOptions {
-  startN?: number;
-  step?: number;
-  crlf?: boolean;
-  precision?: number;
-  feed?: number | null;
-  headerCodes?: string[];
-}
-
-export interface XYPoint {
-  x: number;
-  y: number;
-}
-
 export function normalizeToISO(inputText: string, options: NormalizeToISOOptions = {}) {
   const {
     startN = 10,
@@ -79,49 +65,6 @@ export function normalizeToISO(inputText: string, options: NormalizeToISOOptions
 
   const eol = crlf ? '\r\n' : '\n';
   return `${outLines.join(eol)}${eol}`;
-}
-
-export function buildISOFromPoints(points: XYPoint[], options: BuildISOFromPointsOptions = {}) {
-  const {
-    startN = 10,
-    step = 10,
-    crlf = true,
-    precision = DEFAULT_PRECISION,
-    feed = null,
-    headerCodes = ['G92', 'G60', 'G38', 'G42 D0', 'G90']
-  } = options;
-
-  const out = ['%'];
-  let n = startN;
-
-  for (const code of headerCodes) {
-    out.push(`N${n} ${code}`);
-    n += step;
-  }
-
-  if (!points.length) {
-    out.push(`N${n} M02`);
-    const eol = crlf ? '\r\n' : '\n';
-    return `${out.join(eol)}${eol}`;
-  }
-
-  const format = (value: number) => Number(value).toFixed(precision);
-  const [firstPoint, ...cutPoints] = points;
-  out.push(`N${n} G0 X${format(firstPoint.x)} Y${format(firstPoint.y)}`);
-  n += step;
-
-  cutPoints.forEach((point, index) => {
-    const line =
-      index === 0 && typeof feed === 'number'
-        ? `N${n} G1 X${format(point.x)} Y${format(point.y)} F${feed}`
-        : `N${n} G1 X${format(point.x)} Y${format(point.y)}`;
-    out.push(line);
-    n += step;
-  });
-
-  out.push(`N${n} M02`);
-  const eol = crlf ? '\r\n' : '\n';
-  return `${out.join(eol)}${eol}`;
 }
 
 export function stripForEditing(inputText: string) {

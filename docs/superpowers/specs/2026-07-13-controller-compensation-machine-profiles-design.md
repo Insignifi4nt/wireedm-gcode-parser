@@ -1,5 +1,7 @@
 # Controller Compensation and Machine Profiles Design
 
+> Historical design, superseded by the standalone post-package platform. Machine definitions now contain physical facts and explicit bindings; controller realization belongs solely to an installed post package.
+
 Date: 2026-07-13
 
 ## Goal

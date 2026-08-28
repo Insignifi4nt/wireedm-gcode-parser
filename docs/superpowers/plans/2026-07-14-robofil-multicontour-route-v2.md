@@ -1,5 +1,7 @@
 # Robofil Multi-Contour Route V2 Implementation Plan
 
+> Historical plan, superseded by the standalone post-package platform. Robofil V1 is inactive archive material; Robofil V2 is an ordinary installable package under `examples/robofil-100-v2/`. No application renderer implements either controller.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver a versioned Robofil v2 multi-contour post, editable optimized travel, browser-agent controls, and verified Prisma test artifacts.

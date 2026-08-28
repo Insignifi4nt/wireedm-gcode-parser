@@ -101,11 +101,19 @@ describe('isolated custom JavaScript post runtime', () => {
           if (event.kind === 'program-start') return api.emitCommand('distance.absolute', {});
           if (event.kind === 'motion') {
             const command = event.clockwise ? 'motion.arc-clockwise' : 'motion.arc-counterclockwise';
+            if (event.fullCircle) {
+              api.emitMotion(command, {
+                x: 2 * event.center.x - event.start.x,
+                y: 2 * event.center.y - event.start.y,
+                i: event.center.x - event.start.x,
+                j: event.center.y - event.start.y
+              });
+            }
             return api.emitMotion(command, {
               x: event.end.x,
               y: event.end.y,
-              i: event.center.x - event.start.x,
-              j: event.center.y - event.start.y
+              i: event.center.x - (event.fullCircle ? 2 * event.center.x - event.start.x : event.start.x),
+              j: event.center.y - (event.fullCircle ? 2 * event.center.y - event.start.y : event.start.y)
             });
           }
           if (event.kind === 'program-end') return api.emitCommand('program.end', {});
@@ -117,11 +125,13 @@ describe('isolated custom JavaScript post runtime', () => {
     const result = await runCustomPost(fixture);
 
     if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
-    const motion = result.program.blocks.find(({ motion }) => motion?.motion === 'circular');
-    expect(motion).toMatchObject({
+    const motions = result.program.blocks.filter(({ motion }) => motion?.motion === 'circular');
+    expect(motions).toHaveLength(2);
+    expect(motions[0]).toMatchObject({
       text: expect.stringMatching(/ I-2 J0$/),
       motion: { center: { x: 5, y: 5 } }
     });
+    expect(motions[1]?.motion?.start).toEqual(motions[0]?.motion?.end);
   });
 
   it('keeps property access exact and preserves a caught host failure as fatal', async () => {

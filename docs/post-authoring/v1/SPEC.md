@@ -52,7 +52,7 @@ Every parameter declaration MUST include a closed semantic `role`. Non-motion pa
 
 Command IDs describe intent, not spelling. Templates contain controller spelling. A post MUST NOT emit an unregistered controller command. A command MUST NOT be emitted when its declared preconditions are false. Conflicting or incomplete state transitions MUST fail the run.
 
-Dialect state starts empty for each run. The runtime checks every `requires` token before rendering that command, then applies its `effects` in emission order. Most effects remain set for the rest of the run. `compensation.left`, `compensation.right`, and `compensation.off` replace one another; `wire.separated` and `wire.threaded` replace one another. Version 1 has no other implicit state clearing. A command author MUST declare the state transition that its evidenced controller word actually performs and MUST NOT use an unrelated effect only to satisfy the schema.
+Dialect state starts empty for each run. State tokens are package-owned identifiers. The runtime checks every `requires` token before rendering that command, then applies its `effects` in emission order. Most effects remain set for the rest of the run. The host reserves only the audited lifecycle groups: `compensation.left`, `compensation.right`, and `compensation.off` replace one another; `wire.separated` and `wire.threaded` replace one another. Version 1 has no other implicit state clearing. A command author MUST declare the state transition that its evidenced controller word actually performs and MUST NOT use an unrelated effect only to satisfy the schema.
 
 Property values are supplied by an exact machine binding. Required values MUST be present and valid. Suggested values are authoring hints only; the engine MUST NOT substitute them for missing binding values.
 
@@ -75,7 +75,7 @@ The engine delivers events in plan order. Every event MUST receive exactly one d
 - `emitted`, with the exact output block IDs caused by that event; or
 - `consumed`, with a non-empty reason explaining why no controller block is required.
 
-Motion and positioning events MUST preserve their structured motion trace. Output audits compare that trace with the neutral plan. Consuming a required motion event, changing its endpoints or center, or emitting an unaudited motion MUST fail.
+Motion and positioning events MUST preserve their structured motion trace. One neutral motion MAY emit one block or a continuous sequence of blocks. A composite linear sequence must preserve its endpoints and total path length. A composite circular sequence must preserve continuity, center, radius, direction, endpoints, and total swept angle. This permits package-owned full-circle splitting without controller logic in the application. Consuming a required motion event, changing its geometry, or emitting an unaudited motion MUST fail.
 
 The post MUST end with all lifecycle state in the state required by its execution contract. Pending positioning, compensation, threading, program termination, or an unacknowledged event MUST fail. Partial output from a failed run is diagnostic data only and MUST NOT be downloadable as a machine-ready artifact.
 
@@ -86,12 +86,12 @@ The post MUST end with all lifecycle state in the state required by its executio
 `createPost(api)` MUST return exactly `{ onEvent(event) }`. The engine calls `onEvent` synchronously once for each neutral event in plan order. During that call the handler MUST use one of these dispositions:
 
 - one or more `emitCommand(commandId, parameters)` calls for a non-motion event;
-- exactly one `emitMotion(commandId, parameters)` call for a motion or positioning event; or
+- one or more `emitMotion(commandId, parameters)` calls for a motion or positioning event; or
 - one `consume(reason)` call for a non-motion event that requires no controller block.
 
 `getProperty(name)` reads only an explicitly bound property and may be called during `createPost` or `onEvent`. Missing properties are errors; suggested values are never substituted. Emit/consume calls outside the active `onEvent` call, mixed dispositions, consumed motion, unknown commands, undeclared or mistyped parameters, false state preconditions, or invalid effects fail the complete run.
 
-Custom source is executed in a fresh isolated runtime and context for every run, with imports and ambient host capabilities disabled and explicit memory, stack, interrupt-cycle, wall-deadline, event, action, and UTF-8 output-byte limits. Successful conformance repeats execution in another fresh runtime and requires an identical structured result. An exact registered built-in package executes only through its built-in implementation. Every other package is custom and MUST pass all declared fixtures against the canonical fixture registry before installation. Execution failure returns structured diagnostics without a partial program; it MUST NOT select a built-in implementation or another package as a substitute.
+Package source is executed in a fresh isolated runtime and context for every run, with imports and ambient host capabilities disabled and explicit memory, stack, interrupt-cycle, wall-deadline, event, action, and UTF-8 output-byte limits. Successful conformance repeats execution in another fresh runtime and requires an identical structured result. Every package uses this exact execution path and MUST pass all declared fixtures against the canonical fixture registry before installation. Execution failure returns structured diagnostics without a partial program; it MUST NOT select another package or implementation as a substitute.
 
 Every number parameter MUST declare its spelling through the closed v1 number-format object. Version 1 supports fixed fractional digits, a `.` or `,` decimal separator, optional trailing-zero trimming, and explicit negative-zero handling. Fractional digits MAY be a fixed integer or an exact integer binding property constrained to the inclusive range 0 through 12. The runtime formats template text from that declaration but derives motion trace from the original finite numeric value. A controller requirement outside the closed format schema is not representable in v1. The author MUST report that limitation and MUST NOT approximate the required spelling.
 

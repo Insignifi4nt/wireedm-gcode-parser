@@ -15,3 +15,4 @@ Wire EDM Workbench will keep physical machine facts in machine definitions and a
 - A saved job revision snapshots the exact selected post package, content hash, properties, and verification state. Generated controller text is an artifact, not editable source state.
 - Extension and line ending remain host file-writing preferences. They cannot alter generated program semantics.
 - The replacement uses new authoritative schemas and APIs without a legacy compatibility layer. Obsolete persisted data and unresolved references fail with actionable errors rather than being normalized, inherited, or assigned a fallback.
+- Bundled examples remain ordinary package files. They install, conform, execute, fail, and can be removed through the same interfaces as uploaded packages. Application code contains no controller renderer or built-in dispatch registry.

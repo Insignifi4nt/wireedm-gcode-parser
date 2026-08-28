@@ -131,19 +131,22 @@ export function auditControllerProgram(
 
   for (const event of plan.events) {
     if (event.kind !== 'motion' && event.kind !== 'position') continue;
-    const blocks = program.blocks.filter(({ eventId }) => eventId === event.id);
-    if (blocks.length !== 1 || !blocks[0].motion) {
+    const motions = program.blocks
+      .filter(({ eventId, motion }) => eventId === event.id && motion !== null)
+      .map(({ motion }) => motion)
+      .filter((motion) => motion !== null);
+    if (motions.length === 0) {
       diagnostics.push({
         code: 'POST_AUDIT_MOTION_MISSING',
-        message: `Motion event ${event.id} must own exactly one structured motion block.`,
+        message: `Motion event ${event.id} must own at least one structured motion block.`,
         eventId: event.id
       });
       continue;
     }
-    if (!sameMotion(event, blocks[0].motion, plan.tolerance.endpointMm)) {
+    if (!sameMotionSequence(event, motions, plan.tolerance.endpointMm)) {
       diagnostics.push({
         code: 'POST_AUDIT_MOTION_MISMATCH',
-        message: `Controller block ${blocks[0].id} does not preserve motion event ${event.id}.`,
+        message: `Controller motion blocks do not preserve motion event ${event.id}.`,
         eventId: event.id
       });
     }
@@ -151,37 +154,82 @@ export function auditControllerProgram(
   return diagnostics;
 }
 
-function sameMotion(
+function sameMotionSequence(
   event: Extract<WireEdmExecutionEvent, { kind: 'motion' | 'position' }>,
-  motion: ControllerMotionTrace,
+  motions: readonly ControllerMotionTrace[],
   toleranceMm: number
 ) {
+  const expectedStart = event.kind === 'position' ? event.from : event.start;
+  const expectedEnd = event.kind === 'position' ? event.to : event.end;
+  if (
+    !samePoint(motions[0].start, expectedStart, toleranceMm) ||
+    !samePoint(motions.at(-1)!.end, expectedEnd, toleranceMm) ||
+    motions.some((motion, index) => (
+      index > 0 && !samePoint(motions[index - 1].end, motion.start, toleranceMm)
+    ))
+  ) return false;
   if (event.kind === 'position') {
-    return motion.motion === 'linear' &&
-      motion.role === 'position' &&
-      samePoint(motion.start, event.from, toleranceMm) &&
-      samePoint(motion.end, event.to, toleranceMm);
+    return sameLinearPath(motions, 'position', expectedStart, expectedEnd, toleranceMm);
   }
-  return motion.motion === event.motion &&
-    motion.role === event.role &&
-    samePoint(motion.start, event.start, toleranceMm) &&
-    samePoint(motion.end, event.end, toleranceMm) &&
-    sameOptionalPoint(motion.center, event.center, toleranceMm) &&
-    motion.clockwise === event.clockwise &&
-    motion.fullCircle === event.fullCircle;
+  if (event.motion === 'linear') {
+    return sameLinearPath(motions, event.role, expectedStart, expectedEnd, toleranceMm);
+  }
+  if (!event.center || event.clockwise === undefined) return false;
+  const radius = distance(event.center, event.start);
+  if (!Number.isFinite(radius) || radius <= 0) return false;
+  if (motions.some((motion) => (
+    motion.motion !== 'circular' ||
+    motion.role !== event.role ||
+    !motion.center ||
+    !samePoint(motion.center, event.center!, toleranceMm) ||
+    motion.clockwise !== event.clockwise ||
+    Math.abs(distance(event.center!, motion.start) - radius) > toleranceMm ||
+    Math.abs(distance(event.center!, motion.end) - radius) > toleranceMm ||
+    motion.fullCircle !== samePoint(motion.start, motion.end, toleranceMm)
+  ))) return false;
+  const expectedSweep = event.fullCircle
+    ? Math.PI * 2
+    : circularSweep(event.start, event.end, event.center, event.clockwise);
+  const emittedSweep = motions.reduce((total, motion) => total + (
+    motion.fullCircle
+      ? Math.PI * 2
+      : circularSweep(motion.start, motion.end, motion.center!, motion.clockwise!)
+  ), 0);
+  return radius * Math.abs(expectedSweep - emittedSweep) <= toleranceMm;
 }
 
-function sameOptionalPoint(
-  first: Point2 | undefined,
-  second: Point2 | undefined,
+function sameLinearPath(
+  motions: readonly ControllerMotionTrace[],
+  role: ControllerMotionTrace['role'],
+  start: Point2,
+  end: Point2,
   toleranceMm: number
 ) {
-  return first === undefined && second === undefined ||
-    first !== undefined && second !== undefined && samePoint(first, second, toleranceMm);
+  if (motions.some((motion) => motion.motion !== 'linear' || motion.role !== role)) return false;
+  const expectedLength = distance(start, end);
+  const emittedLength = motions.reduce((total, motion) => total + distance(motion.start, motion.end), 0);
+  return Math.abs(expectedLength - emittedLength) <= toleranceMm;
+}
+
+function circularSweep(start: Point2, end: Point2, center: Point2, clockwise: boolean) {
+  const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+  const endAngle = Math.atan2(end.y - center.y, end.x - center.x);
+  return clockwise
+    ? positiveAngle(startAngle - endAngle)
+    : positiveAngle(endAngle - startAngle);
+}
+
+function positiveAngle(value: number) {
+  const fullTurn = Math.PI * 2;
+  return ((value % fullTurn) + fullTurn) % fullTurn;
 }
 
 function samePoint(first: Point2, second: Point2, toleranceMm: number) {
   return Number.isFinite(first.x) &&
     Number.isFinite(first.y) &&
     Math.hypot(first.x - second.x, first.y - second.y) <= toleranceMm;
+}
+
+function distance(first: Point2, second: Point2) {
+  return Math.hypot(first.x - second.x, first.y - second.y);
 }

@@ -85,7 +85,7 @@ describe('EditorBetweenContoursPanel', () => {
     );
   });
 
-  it('directs the first connection to Program Start / G92', async () => {
+  it('directs the first connection to Initial wire position', async () => {
     const document = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
     ]);
@@ -103,7 +103,7 @@ describe('EditorBetweenContoursPanel', () => {
       );
     });
 
-    expect(container.textContent).toContain('Program Start / G92');
+    expect(container.textContent).toContain('Initial wire position');
     expect(container.textContent).not.toContain('Operation threading mode');
   });
 

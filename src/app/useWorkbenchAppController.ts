@@ -14,7 +14,10 @@ import { serializeMachineDefinition } from '@/domain/machine-definition/machineD
 import { evaluatePhysicalMachineEnvelopeFit } from '@/domain/machine-definition/machineFit';
 import type { DownloadProgramFileInput } from '@/domain/post/downloadProgramFile';
 import type { PostInstallationRef } from '@/domain/post-processor/postLibrary';
-import type { ControllerArtifactResult } from '@/domain/wire-edm-job';
+import {
+  createSavedWireEdmJobRevisionId,
+  type ControllerArtifactResult
+} from '@/domain/wire-edm-job';
 import type {
   ConnectedWorkbenchCatalog,
   WorkbenchCatalogManifest
@@ -519,7 +522,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       return artifactAppFailure('Secure UUID generation is unavailable; a saved revision cannot be identified exactly.');
     }
     const candidate = await services.createSavedWireEdmJobRevision({
-      revisionId: globalThis.crypto.randomUUID(),
+      revisionId: createSavedWireEdmJobRevisionId(globalThis.crypto.randomUUID()),
       savedAt: new Date().toISOString(),
       project: program.project,
       machine,

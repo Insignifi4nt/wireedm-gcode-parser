@@ -88,7 +88,7 @@ export function EditorBetweenContoursPanel({
 
       {selectedExecutionIndex === 0 ? (
         <div className="border border-sky-500/40 bg-sky-500/5 p-2 text-sky-100">
-          The first connection belongs to Program Start / G92. Configure its origin there; the
+          The first connection belongs to Initial wire position. Configure its origin there; the
           destination remains the first contour entry or contour start.
         </div>
       ) : (

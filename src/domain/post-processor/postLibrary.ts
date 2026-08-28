@@ -1,5 +1,4 @@
 import { canonicalJson } from './canonicalJson';
-import { resolveBuiltInPostKey } from './builtInPostPackages';
 import { CANONICAL_POST_PLAN_FIXTURES } from './custom-runtime/canonicalPostConformanceFixtures';
 import {
   runCustomPostConformance,
@@ -116,21 +115,19 @@ export async function installPostPackage(
     };
   }
 
-  if (!resolveBuiltInPostKey(packageValue)) {
-    const conformance = await runCustomPostConformance({
-      packageValue,
-      planFixtures: CANONICAL_POST_PLAN_FIXTURES
-    });
-    if (!conformance.ok) {
-      return {
-        ok: false,
-        error: {
-          code: 'POST_LIBRARY_CONFORMANCE_FAILED',
-          message: `${packageId}@${version} failed custom post conformance and was not installed.`,
-          diagnostics: conformance.diagnostics
-        }
-      };
-    }
+  const conformance = await runCustomPostConformance({
+    packageValue,
+    planFixtures: CANONICAL_POST_PLAN_FIXTURES
+  });
+  if (!conformance.ok) {
+    return {
+      ok: false,
+      error: {
+        code: 'POST_LIBRARY_CONFORMANCE_FAILED',
+        message: `${packageId}@${version} failed post conformance and was not installed.`,
+        diagnostics: conformance.diagnostics
+      }
+    };
   }
 
   const installation = Object.freeze({

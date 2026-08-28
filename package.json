@@ -2,7 +2,7 @@
   "name": "wire-edm-workbench",
   "homepage": "https://insignifi4nt.github.io/wireedm-gcode-parser",
   "version": "0.1.0",
-  "description": "A local-first Wire EDM workbench for DXF import, clean IJ G-code generation, editing, verification, and export.",
+  "description": "A local-first Wire EDM workbench with controller-neutral CAM state and installable post-processor packages.",
   "type": "module",
   "scripts": {
     "dev": "vite",

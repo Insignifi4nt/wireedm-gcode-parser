@@ -962,68 +962,10 @@
                   "uniqueItems": true,
                   "type": "array",
                   "items": {
-                    "anyOf": [
-                      {
-                        "const": "program.delimiter",
-                        "type": "string"
-                      },
-                      {
-                        "const": "program.ended",
-                        "type": "string"
-                      },
-                      {
-                        "const": "program.paused",
-                        "type": "string"
-                      },
-                      {
-                        "const": "distance.absolute",
-                        "type": "string"
-                      },
-                      {
-                        "const": "units.millimeters",
-                        "type": "string"
-                      },
-                      {
-                        "const": "plane.xy",
-                        "type": "string"
-                      },
-                      {
-                        "const": "work-offset.selected",
-                        "type": "string"
-                      },
-                      {
-                        "const": "origin.wire-position-set",
-                        "type": "string"
-                      },
-                      {
-                        "const": "position.changed",
-                        "type": "string"
-                      },
-                      {
-                        "const": "compensation.prepared",
-                        "type": "string"
-                      },
-                      {
-                        "const": "compensation.left",
-                        "type": "string"
-                      },
-                      {
-                        "const": "compensation.right",
-                        "type": "string"
-                      },
-                      {
-                        "const": "compensation.off",
-                        "type": "string"
-                      },
-                      {
-                        "const": "wire.separated",
-                        "type": "string"
-                      },
-                      {
-                        "const": "wire.threaded",
-                        "type": "string"
-                      }
-                    ]
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+                    "type": "string"
                   }
                 },
                 "requires": {
@@ -1031,68 +973,10 @@
                   "uniqueItems": true,
                   "type": "array",
                   "items": {
-                    "anyOf": [
-                      {
-                        "const": "program.delimiter",
-                        "type": "string"
-                      },
-                      {
-                        "const": "program.ended",
-                        "type": "string"
-                      },
-                      {
-                        "const": "program.paused",
-                        "type": "string"
-                      },
-                      {
-                        "const": "distance.absolute",
-                        "type": "string"
-                      },
-                      {
-                        "const": "units.millimeters",
-                        "type": "string"
-                      },
-                      {
-                        "const": "plane.xy",
-                        "type": "string"
-                      },
-                      {
-                        "const": "work-offset.selected",
-                        "type": "string"
-                      },
-                      {
-                        "const": "origin.wire-position-set",
-                        "type": "string"
-                      },
-                      {
-                        "const": "position.changed",
-                        "type": "string"
-                      },
-                      {
-                        "const": "compensation.prepared",
-                        "type": "string"
-                      },
-                      {
-                        "const": "compensation.left",
-                        "type": "string"
-                      },
-                      {
-                        "const": "compensation.right",
-                        "type": "string"
-                      },
-                      {
-                        "const": "compensation.off",
-                        "type": "string"
-                      },
-                      {
-                        "const": "wire.separated",
-                        "type": "string"
-                      },
-                      {
-                        "const": "wire.threaded",
-                        "type": "string"
-                      }
-                    ]
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+                    "type": "string"
                   }
                 },
                 "evidenceRefs": {

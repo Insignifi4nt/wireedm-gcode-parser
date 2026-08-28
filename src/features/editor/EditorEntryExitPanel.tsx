@@ -199,7 +199,7 @@ export function EditorEntryExitPanel({
             ? `Reviewed no exit`
             : transitions.exit
             ? `Reviewed straight exit · ${formatPoint(transitions.exit.from)} → ${formatPoint(transitions.exit.to)}`
-            : 'Exit decision not reviewed'}
+            : 'Direct contour exit · no lead geometry'}
         </div>
         <CoordinateInputs
           label="Exit"
@@ -273,7 +273,7 @@ function CoordinateInputs({
 function entryStrategyLabel(
   entry: ReturnType<typeof readOperationTransitions>['entry']
 ) {
-  if (!entry) return 'Entry decision not reviewed';
+  if (!entry) return 'Direct contour entry · no lead geometry';
   if (entry.strategy === 'none') return 'Reviewed no entry';
   const strategy = entry.strategy === 'circle-center' ? 'Circle-center entry' : 'Reviewed straight entry';
   return `${strategy} · ${formatPoint(entry.from)} → ${formatPoint(entry.to)}`;

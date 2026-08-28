@@ -43,7 +43,7 @@ export function EditorInitialWirePositionPanel({
   return (
     <section className="grid gap-2 text-[10px]" data-initial-wire-position>
       <p className="leading-4 text-muted-foreground">
-        Program Start / G92 declares the wire position once at program start. It supplies only the
+        Initial wire position declares the wire coordinates once at program start. It supplies only the
         first connection; use Contour Start for each contour and Entry / Exit for cutting transitions.
       </p>
       <div className="border border-border bg-background/35 p-2">
@@ -53,8 +53,8 @@ export function EditorInitialWirePositionPanel({
             ? `${resolution.source === 'geometry-linked' ? 'Geometry-linked' : 'Manual'} · reviewed`
             : initialWireBlockedLabel(resolution.reason)}
         </div>
-        <div className="mt-1 font-mono text-foreground" data-initial-wire-g92-preview>
-          {previewPoint ? formatG92(previewPoint) : 'G92 requires a reviewed point'}
+        <div className="mt-1 font-mono text-foreground" data-initial-wire-position-preview>
+          {previewPoint ? formatPoint(previewPoint) : 'A reviewed point is required'}
         </div>
       </div>
 
@@ -137,8 +137,8 @@ function readFinitePoint(xDraft: string, yDraft: string): Point2 | null {
   return Number.isFinite(point.x) && Number.isFinite(point.y) ? point : null;
 }
 
-function formatG92(point: Point2) {
-  return `G92 X${point.x.toFixed(3)} Y${point.y.toFixed(3)}`;
+function formatPoint(point: Point2) {
+  return `X${point.x.toFixed(3)} Y${point.y.toFixed(3)}`;
 }
 
 function initialWireBlockedLabel(reason: string) {

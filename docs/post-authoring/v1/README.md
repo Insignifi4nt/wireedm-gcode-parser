@@ -24,8 +24,9 @@ Current contents:
 - `compatibility.json` lists exact supported contract versions and fixture IDs. It does not claim controller or firmware compatibility.
 - `AUTHORING_TASK.md` is a copyable input and completion contract for an authoring agent.
 - `examples/minimal.wireedm-post.json` demonstrates the smallest conformant custom package. It is not a production post and MUST NOT be used as a dialect fallback.
+- `../../../examples/robofil-100-v2/` contains an ordinary installable Robofil 100 V2 test package, an unbound physical-machine file, and its evidence. It has no privileged runtime path and is never selected automatically.
 
-Exact built-in packages run through their registered built-in implementations. Every other package runs only in the isolated custom runtime and must pass its declared fixtures against the canonical fixture registry before installation. Neither path selects another package after a failure.
+Every package runs through the same isolated public runtime and must pass its declared fixtures against the canonical fixture registry before installation. The application has no built-in controller renderer, registered package hash, package-key dispatch, or fallback post.
 
 ## Authoring commands
 

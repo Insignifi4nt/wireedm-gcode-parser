@@ -37,6 +37,9 @@ describe('EditorEntryExitPanel', () => {
         onSetNoExit={onSetNoExit} selectedOperationId={operationId} />
     ));
 
+    expect(container.textContent).toContain('Direct contour entry · no lead geometry');
+    expect(container.textContent).toContain('Direct contour exit · no lead geometry');
+
     await click('Use reviewed no entry');
     await click('Use reviewed no exit');
     expect(onSetNoEntry).toHaveBeenCalledWith(operationId);

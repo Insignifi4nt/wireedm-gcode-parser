@@ -96,7 +96,7 @@ describe('EditorProgramStopsPanel', () => {
         '2.5'
       );
       [...container.querySelectorAll('button')]
-        .find((button) => button.textContent?.includes('Add M00 stop'))
+        .find((button) => button.textContent?.includes('Add program stop'))
         ?.click();
     });
 

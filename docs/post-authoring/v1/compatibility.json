@@ -11,7 +11,9 @@
     "command": "npm run post:conformance -- <package.wireedm-post.json>",
     "canonicalFixtureRegistryVersion": "1",
     "canonicalFixtureIds": [
-      "core.single-closed-contour.v1"
+      "core.single-closed-contour.v1",
+      "core.single-compensated-direct.v1",
+      "core.multi-compensated-manual.v1"
     ]
   }
 }

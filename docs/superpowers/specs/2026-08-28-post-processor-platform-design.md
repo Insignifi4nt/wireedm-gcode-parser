@@ -225,7 +225,7 @@ type WireEdmPost = {
 
 The runtime API can emit registered dialect commands, formatted structured words, comments, and diagnostics. It cannot access the DOM, storage, network, clipboard, timers, randomness, wall-clock time, or mutable application objects. Every required execution event must be emitted, deliberately consumed under a declared capability, or rejected.
 
-Custom JavaScript execution does not ship until it has isolation, termination, memory/time limits, a narrow capability-free API, and deterministic tests. Exact registered built-ins dispatch only to their built-in implementation. Uploaded packages dispatch only to the isolated custom runtime and must pass declared conformance fixtures against the canonical fixture registry before installation; neither installation nor execution may fall back to a built-in.
+JavaScript package execution ships only with isolation, termination, memory/time limits, a narrow capability-free API, and deterministic tests. Bundled and uploaded packages use the same isolated runtime and must pass declared conformance fixtures against the canonical fixture registry before installation. The application contains no registered built-in implementation and neither installation nor execution may fall back to another package.
 
 ## Agent-first authoring contract
 
@@ -263,7 +263,7 @@ The code changes in controlled vertical slices, but the resulting public model h
 1. Introduce the authoritative post-package and post-library APIs.
 2. Replace `MachineProfile` with `MachineDefinition` and exact post bindings in a new workbench schema. Opening an obsolete manifest reports that its schema is unsupported and explains that a new workbench is required.
 3. Extract the geometry-dependent work in `postGcode.ts` into an immutable execution-plan compiler.
-4. Re-express the physically relevant generic and Robofil behavior as built-in packages using the common post contract and golden fixtures. These fixtures protect controller behavior, not API compatibility.
+4. Re-express physically relevant controller behavior as ordinary standalone package files using the public runtime and golden fixtures. Bundling an example cannot give it a privileged renderer or installation path.
 5. Replace export composition with selected-package execution and delete the `programOwned` header/body/footer fork and legacy posting APIs.
 6. Require a saved job revision before controller export. Portable UPID import remains unbound rather than inheriting an active machine or controller policy.
 7. Replace the settings panel with machine, post-binding, and export-preference ownership boundaries.
