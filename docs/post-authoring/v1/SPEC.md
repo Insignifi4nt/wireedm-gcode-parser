@@ -48,6 +48,8 @@ Every controller command emitted by a post MUST be registered under `dialect.com
 - modal state effects in `effects`;
 - at least one evidence reference.
 
+Every parameter declaration MUST include a closed semantic `role`. Non-motion parameters use `none`. Motion endpoints use `motion.end-x` and `motion.end-y`; circular centers use `motion.center-x` and `motion.center-y` plus an explicit fixed or property-driven absolute/incremental reference. The engine MUST derive the structured motion trace from those same numeric parameter values after template substitution. Parameter names are never interpreted as geometry.
+
 Command IDs describe intent, not spelling. Templates contain controller spelling. A post MUST NOT emit an unregistered controller command. A command MUST NOT be emitted when its declared preconditions are false. Conflicting or incomplete state transitions MUST fail the run.
 
 Property values are supplied by an exact machine binding. Required values MUST be present and valid. Suggested values are authoring hints only; the engine MUST NOT substitute them for missing binding values.
@@ -79,7 +81,15 @@ The post MUST end with all lifecycle state in the state required by its executio
 
 `source.code` exports the exact `createPost` entrypoint defined by the generated SDK declaration. The source receives only the documented deterministic host API. It MUST NOT depend on network access, browser APIs, local storage, wall-clock time, randomness, locale, ambient machine state, dynamic imports, or undeclared files.
 
-Custom source is executed only in the isolated runtime with imports disabled and explicit CPU, memory, stack, output, and event limits. Installation and execution are separate decisions: a structurally valid package MAY be installed for inspection while its source is not runnable. In that state the engine MUST return `POST_NOT_RUNNABLE`; it MUST NOT select a built-in implementation or another package as a substitute.
+`createPost(api)` MUST return exactly `{ onEvent(event) }`. The engine calls `onEvent` synchronously once for each neutral event in plan order. During that call the handler MUST use one of these dispositions:
+
+- one or more `emitCommand(commandId, parameters)` calls for a non-motion event;
+- exactly one `emitMotion(commandId, parameters)` call for a motion or positioning event; or
+- one `consume(reason)` call for a non-motion event that requires no controller block.
+
+`getProperty(name)` reads only an explicitly bound property and may be called during `createPost` or `onEvent`. Missing properties are errors; suggested values are never substituted. Emit/consume calls outside the active `onEvent` call, mixed dispositions, consumed motion, unknown commands, undeclared or mistyped parameters, false state preconditions, or invalid effects fail the complete run.
+
+Custom source is executed in a fresh isolated runtime and context for every run, with imports and ambient host capabilities disabled and explicit memory, stack, interrupt-cycle, wall-deadline, event, action, and UTF-8 output-byte limits. Successful conformance repeats execution in another fresh runtime and requires an identical structured result. Installation and execution are separate decisions: a structurally valid package MAY be installed for inspection while its source is not runnable. In that state the engine MUST return `POST_NOT_RUNNABLE`; it MUST NOT select a built-in implementation or another package as a substitute.
 
 ## 8. Fixtures and conformance
 

@@ -27,6 +27,7 @@ export type PostPackageDiagnosticCode =
   | 'POST_PACKAGE_EVIDENCE_SCOPE_MISMATCH'
   | 'POST_PACKAGE_EXECUTION_CONTRACT_INVALID'
   | 'POST_PACKAGE_PROPERTY_DEFINITION_INVALID'
+  | 'POST_PACKAGE_COMMAND_PARAMETER_INVALID'
   | 'POST_PACKAGE_FIXTURE_PROPERTY_INVALID';
 
 export interface PostPackageDiagnostic {
@@ -87,6 +88,7 @@ function validatePackageSemantics(packageValue: WireEdmPostPackageValue) {
       command.parameters,
       `/dialect/commands/${escapeJsonPointer(commandName)}/parameters`
     );
+    appendCommandParameterDiagnostics(diagnostics, packageValue, commandName, command);
   }
   for (const [fixtureIndex, fixture] of packageValue.fixtures.entries()) {
     appendRecordKeyDiagnostics(diagnostics, fixture.properties, `/fixtures/${fixtureIndex}/properties`);
@@ -176,6 +178,56 @@ function validatePackageSemantics(packageValue: WireEdmPostPackageValue) {
   }
 
   return diagnostics;
+}
+
+function appendCommandParameterDiagnostics(
+  diagnostics: PostPackageDiagnostic[],
+  packageValue: WireEdmPostPackageValue,
+  commandName: string,
+  command: WireEdmPostPackageValue['dialect']['commands'][string]
+) {
+  const path = `/dialect/commands/${escapeJsonPointer(commandName)}`;
+  const placeholders = [...command.template.matchAll(/\{([A-Za-z0-9._-]+)\}/g)].map((match) => match[1]);
+  const declared = Object.keys(command.parameters);
+  const uniquePlaceholders = [...new Set(placeholders)];
+  if (
+    uniquePlaceholders.length !== placeholders.length ||
+    uniquePlaceholders.length !== declared.length ||
+    uniquePlaceholders.some((name) => !Object.hasOwn(command.parameters, name))
+  ) {
+    diagnostics.push({
+      code: 'POST_PACKAGE_COMMAND_PARAMETER_INVALID',
+      path: `${path}/parameters`,
+      message: `Command ${commandName} must declare each template placeholder exactly once and no unused parameters.`
+    });
+  }
+  const roleNames = new Set<string>();
+  for (const [parameterName, parameter] of Object.entries(command.parameters)) {
+    if (parameter.role !== 'none' && roleNames.has(parameter.role)) {
+      diagnostics.push({
+        code: 'POST_PACKAGE_COMMAND_PARAMETER_INVALID',
+        path: `${path}/parameters/${escapeJsonPointer(parameterName)}/role`,
+        message: `Command ${commandName} declares motion role ${parameter.role} more than once.`
+      });
+    }
+    roleNames.add(parameter.role);
+    if (parameter.role !== 'motion.center-x' && parameter.role !== 'motion.center-y') continue;
+    if (parameter.centerReference.kind !== 'property') continue;
+    const property = packageValue.manifest.properties[parameter.centerReference.property];
+    if (
+      property?.type === 'choice' &&
+      property.choices.length === 2 &&
+      property.choices.includes('absolute') &&
+      property.choices.includes('incremental')
+    ) {
+      continue;
+    }
+    diagnostics.push({
+      code: 'POST_PACKAGE_COMMAND_PARAMETER_INVALID',
+      path: `${path}/parameters/${escapeJsonPointer(parameterName)}/centerReference/property`,
+      message: `Arc-center reference property ${parameter.centerReference.property} must be a closed absolute/incremental choice.`
+    });
+  }
 }
 
 function appendExecutionContractDiagnostics(

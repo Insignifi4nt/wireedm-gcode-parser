@@ -72,22 +72,60 @@ export const PostPropertyDefinitionSchema = Type.Union([
   ChoicePropertySchema
 ]);
 
+const ParameterDescription = Type.String({ minLength: 1, maxLength: 512 });
+const MotionEndRoleSchema = Type.Union([
+  Type.Literal('motion.end-x'),
+  Type.Literal('motion.end-y')
+]);
+const MotionCenterRoleSchema = Type.Union([
+  Type.Literal('motion.center-x'),
+  Type.Literal('motion.center-y')
+]);
+const ArcCenterReferenceSchema = Type.Union([
+  Type.Object({
+    kind: Type.Literal('fixed'),
+    mode: Type.Union([Type.Literal('absolute'), Type.Literal('incremental')])
+  }, strictObject),
+  Type.Object({
+    kind: Type.Literal('property'),
+    property: PostIdentifierSchema
+  }, strictObject)
+]);
+
 const CommandParameterSchema = Type.Union([
   Type.Object({
     type: Type.Literal('integer'),
-    description: Type.String({ minLength: 1, maxLength: 512 }),
+    role: Type.Literal('none'),
+    description: ParameterDescription,
     minimum: Type.Optional(Type.Integer()),
     maximum: Type.Optional(Type.Integer())
   }, strictObject),
   Type.Object({
     type: Type.Literal('number'),
-    description: Type.String({ minLength: 1, maxLength: 512 }),
+    role: Type.Literal('none'),
+    description: ParameterDescription,
+    minimum: Type.Optional(Type.Number()),
+    maximum: Type.Optional(Type.Number())
+  }, strictObject),
+  Type.Object({
+    type: Type.Literal('number'),
+    role: MotionEndRoleSchema,
+    description: ParameterDescription,
+    minimum: Type.Optional(Type.Number()),
+    maximum: Type.Optional(Type.Number())
+  }, strictObject),
+  Type.Object({
+    type: Type.Literal('number'),
+    role: MotionCenterRoleSchema,
+    centerReference: ArcCenterReferenceSchema,
+    description: ParameterDescription,
     minimum: Type.Optional(Type.Number()),
     maximum: Type.Optional(Type.Number())
   }, strictObject),
   Type.Object({
     type: Type.Literal('string'),
-    description: Type.String({ minLength: 1, maxLength: 512 })
+    role: Type.Literal('none'),
+    description: ParameterDescription
   }, strictObject)
 ]);
 

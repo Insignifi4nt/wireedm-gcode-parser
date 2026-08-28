@@ -9,6 +9,11 @@ import { MachineDefinitionSchema } from '../src/domain/machine-definition/machin
 import { MachineLibraryDocumentSchema } from '../src/domain/machine-definition/machineLibraryStorage.ts';
 import { WorkbenchCatalogManifestSchema } from '../src/domain/workbench-catalog/workbenchCatalog.ts';
 import { WorkbenchProjectDocumentSchema } from '../src/domain/workbench-catalog/workbenchProject.ts';
+import { CUSTOM_POST_DIAGNOSTIC_CODES } from '../src/domain/post-processor/custom-runtime/customPostRuntime.ts';
+import {
+  CUSTOM_POST_EVENT_KINDS,
+  CUSTOM_POST_SDK_DECLARATION
+} from '../src/domain/post-processor/custom-runtime/postAuthoringContract.ts';
 
 const root = process.cwd();
 const examplePath = path.join(root, 'docs/post-authoring/v1/examples/minimal.wireedm-post.json');
@@ -36,6 +41,18 @@ const generatedFiles = [
   {
     path: path.join(root, 'docs/post-authoring/v1/schema/workbench-project.schema.json'),
     contents: `${JSON.stringify(WorkbenchProjectDocumentSchema, null, 2)}\n`
+  },
+  {
+    path: path.join(root, 'docs/post-authoring/v1/sdk/wire-edm-post-sdk.d.ts'),
+    contents: CUSTOM_POST_SDK_DECLARATION
+  },
+  {
+    path: path.join(root, 'docs/post-authoring/v1/sdk/event-diagnostic-catalog.json'),
+    contents: `${JSON.stringify({
+      engineApiVersion: '1',
+      eventKinds: CUSTOM_POST_EVENT_KINDS,
+      runtimeDiagnosticCodes: CUSTOM_POST_DIAGNOSTIC_CODES
+    }, null, 2)}\n`
   }
 ];
 

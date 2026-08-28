@@ -65,7 +65,7 @@
   "source": {
     "language": "javascript",
     "entrypoint": "createPost",
-    "code": "export function createPost(api) {\n  return {\n    onOpen() { api.emitCommand('distance.absolute'); },\n    onEvent() {},\n    onClose() { api.emitCommand('program.end'); }\n  };\n}"
+    "code": "export function createPost(api) {\n  return {\n    onEvent(event) {\n      if (event.kind === 'program-start') return api.emitCommand('distance.absolute', {});\n      if (event.kind === 'program-end') return api.emitCommand('program.end', {});\n      if (event.kind === 'motion' || event.kind === 'position') throw new Error('Add registered motion commands before using this teaching package.');\n      api.consume('No controller block is required for this event.');\n    }\n  };\n}"
   },
   "sources": [
     {

@@ -1,4 +1,6 @@
-export function minimalPostPackage() {
+import type { WireEdmPostPackageValue } from '../postPackageSchema';
+
+export function minimalPostPackage(): WireEdmPostPackageValue {
   return {
     format: 'wire-edm-post',
     schemaVersion: 1,

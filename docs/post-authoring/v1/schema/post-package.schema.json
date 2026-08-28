@@ -482,6 +482,7 @@
                           "type": "object",
                           "required": [
                             "type",
+                            "role",
                             "description"
                           ],
                           "properties": {
@@ -489,6 +490,10 @@
                               "const": "integer",
                               "type": "string"
                             },
+                            "role": {
+                              "const": "none",
+                              "type": "string"
+                            },
                             "description": {
                               "minLength": 1,
                               "maxLength": 512,
@@ -507,6 +512,7 @@
                           "type": "object",
                           "required": [
                             "type",
+                            "role",
                             "description"
                           ],
                           "properties": {
@@ -514,6 +520,10 @@
                               "const": "number",
                               "type": "string"
                             },
+                            "role": {
+                              "const": "none",
+                              "type": "string"
+                            },
                             "description": {
                               "minLength": 1,
                               "maxLength": 512,
@@ -532,11 +542,143 @@
                           "type": "object",
                           "required": [
                             "type",
+                            "role",
+                            "description"
+                          ],
+                          "properties": {
+                            "type": {
+                              "const": "number",
+                              "type": "string"
+                            },
+                            "role": {
+                              "anyOf": [
+                                {
+                                  "const": "motion.end-x",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "motion.end-y",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "description": {
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "type": "string"
+                            },
+                            "minimum": {
+                              "type": "number"
+                            },
+                            "maximum": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "type",
+                            "role",
+                            "centerReference",
+                            "description"
+                          ],
+                          "properties": {
+                            "type": {
+                              "const": "number",
+                              "type": "string"
+                            },
+                            "role": {
+                              "anyOf": [
+                                {
+                                  "const": "motion.center-x",
+                                  "type": "string"
+                                },
+                                {
+                                  "const": "motion.center-y",
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "centerReference": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "type": "object",
+                                  "required": [
+                                    "kind",
+                                    "mode"
+                                  ],
+                                  "properties": {
+                                    "kind": {
+                                      "const": "fixed",
+                                      "type": "string"
+                                    },
+                                    "mode": {
+                                      "anyOf": [
+                                        {
+                                          "const": "absolute",
+                                          "type": "string"
+                                        },
+                                        {
+                                          "const": "incremental",
+                                          "type": "string"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "type": "object",
+                                  "required": [
+                                    "kind",
+                                    "property"
+                                  ],
+                                  "properties": {
+                                    "kind": {
+                                      "const": "property",
+                                      "type": "string"
+                                    },
+                                    "property": {
+                                      "minLength": 1,
+                                      "maxLength": 80,
+                                      "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+                                      "type": "string"
+                                    }
+                                  }
+                                }
+                              ]
+                            },
+                            "description": {
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "type": "string"
+                            },
+                            "minimum": {
+                              "type": "number"
+                            },
+                            "maximum": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "type",
+                            "role",
                             "description"
                           ],
                           "properties": {
                             "type": {
                               "const": "string",
+                              "type": "string"
+                            },
+                            "role": {
+                              "const": "none",
                               "type": "string"
                             },
                             "description": {

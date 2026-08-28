@@ -1,0 +1,38 @@
+{
+  "engineApiVersion": "1",
+  "eventKinds": [
+    "program-start",
+    "operation-start",
+    "pass-start",
+    "wire-continue",
+    "wire-separate",
+    "wire-thread",
+    "position",
+    "compensation-start",
+    "motion",
+    "program-stop",
+    "compensation-end",
+    "pass-end",
+    "operation-end",
+    "program-end"
+  ],
+  "runtimeDiagnosticCodes": [
+    "POST_CUSTOM_PROPERTY_INVALID",
+    "POST_CUSTOM_CAPABILITY_UNSUPPORTED",
+    "POST_CUSTOM_EVENT_LIMIT",
+    "POST_CUSTOM_SOURCE_INVALID",
+    "POST_CUSTOM_EXPORT_INVALID",
+    "POST_CUSTOM_HANDLER_INVALID",
+    "POST_CUSTOM_RUNTIME_FAILED",
+    "POST_CUSTOM_RESOURCE_LIMIT",
+    "POST_CUSTOM_API_MISUSE",
+    "POST_CUSTOM_COMMAND_UNKNOWN",
+    "POST_CUSTOM_PARAMETER_INVALID",
+    "POST_CUSTOM_STATE_REQUIRED",
+    "POST_CUSTOM_OUTPUT_LIMIT",
+    "POST_CUSTOM_EVENT_DISPOSITION_INVALID",
+    "POST_CUSTOM_MOTION_ROLE_INVALID",
+    "POST_CUSTOM_AUDIT_FAILED",
+    "POST_CUSTOM_NONDETERMINISTIC"
+  ]
+}

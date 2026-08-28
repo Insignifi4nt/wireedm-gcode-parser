@@ -214,7 +214,7 @@ function createPackage(descriptor: BuiltInDescriptor): WireEdmPostPackage {
     id,
     {
       template,
-      parameters: commandParameters(template),
+      parameters: commandParameters(id, descriptor),
       effects: commandEffects(id),
       requires: [],
       evidenceRefs: [evidenceId]
@@ -323,25 +323,61 @@ function execution(
   };
 }
 
-function commandParameters(template: string) {
-  const parameters: Record<string, {
-    type: 'integer' | 'number';
-    description: string;
-    minimum?: number;
-  }> = {};
-  for (const name of ['x', 'y', 'i', 'j']) {
-    if (template.includes(`{${name}}`)) {
-      parameters[name] = { type: 'number', description: `${name.toUpperCase()} coordinate value.` };
-    }
-  }
-  if (template.includes('{offset}')) {
-    parameters.offset = {
-      type: 'integer',
-      description: 'Compensation table index.',
-      minimum: 0
+function commandParameters(
+  commandId: string,
+  descriptor: BuiltInDescriptor
+): WireEdmPostPackageValue['dialect']['commands'][string]['parameters'] {
+  if (commandId === 'motion.rapid' || commandId === 'motion.linear') {
+    return {
+      x: coordinateParameter('motion.end-x', 'X endpoint coordinate.'),
+      y: coordinateParameter('motion.end-y', 'Y endpoint coordinate.')
     };
   }
-  return parameters;
+  if (commandId === 'motion.arc-clockwise' || commandId === 'motion.arc-counterclockwise') {
+    const centerReference = Object.hasOwn(descriptor.properties, 'arcCenterMode')
+      ? { kind: 'property' as const, property: 'arcCenterMode' }
+      : { kind: 'fixed' as const, mode: 'absolute' as const };
+    return {
+      x: coordinateParameter('motion.end-x', 'X endpoint coordinate.'),
+      y: coordinateParameter('motion.end-y', 'Y endpoint coordinate.'),
+      i: {
+        type: 'number',
+        role: 'motion.center-x',
+        centerReference,
+        description: 'Arc-center X coordinate.'
+      },
+      j: {
+        type: 'number',
+        role: 'motion.center-y',
+        centerReference,
+        description: 'Arc-center Y coordinate.'
+      }
+    };
+  }
+  if (commandId === 'origin.set-wire-position') {
+    return {
+      x: coordinateParameter('none', 'X wire-position coordinate.'),
+      y: coordinateParameter('none', 'Y wire-position coordinate.')
+    };
+  }
+  if (commandId === 'compensation.left' || commandId === 'compensation.right') {
+    return {
+      offset: {
+        type: 'integer',
+        role: 'none',
+        description: 'Compensation table index.',
+        minimum: 0
+      }
+    };
+  }
+  return {};
+}
+
+function coordinateParameter(
+  role: 'none' | 'motion.end-x' | 'motion.end-y',
+  description: string
+) {
+  return { type: 'number' as const, role, description };
 }
 
 function commandEffects(

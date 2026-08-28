@@ -15,7 +15,7 @@ describe('wire EDM post package boundary', () => {
     {
       label: 'obsolete schema',
       mutate: (input: ReturnType<typeof minimalPostPackage>) => {
-        input.schemaVersion = 0;
+        Object.assign(input, { schemaVersion: 0 });
       },
       code: 'POST_PACKAGE_SCHEMA_INVALID',
       path: '/schemaVersion'
@@ -52,7 +52,7 @@ describe('wire EDM post package boundary', () => {
     Object.assign(input.manifest.properties, { 'INVALID PROPERTY': input.manifest.properties.coordinatePrecision });
     Object.assign(input.dialect.commands, { 'INVALID COMMAND': input.dialect.commands['program.end'] });
     Object.assign(input.dialect.commands['distance.absolute'].parameters, {
-      'INVALID PARAMETER': { type: 'string', description: 'Invalid key fixture.' }
+      'INVALID PARAMETER': { type: 'string', role: 'none', description: 'Invalid key fixture.' }
     });
     Object.assign(input.fixtures[0].properties, { 'INVALID FIXTURE PROPERTY': true });
 
@@ -72,7 +72,7 @@ describe('wire EDM post package boundary', () => {
     const input = minimalPostPackage();
     Object.assign(input.manifest.properties.coordinatePrecision, { pattern: '(a+)+$' });
     Object.assign(input.dialect.commands['distance.absolute'].parameters, {
-      text: { type: 'string', description: 'Unsafe pattern fixture.', pattern: '[' }
+      text: { type: 'string', role: 'none', description: 'Unsafe pattern fixture.', pattern: '[' }
     });
 
     const result = parseWireEdmPostPackage(JSON.stringify(input));
@@ -83,6 +83,28 @@ describe('wire EDM post package boundary', () => {
       expect.objectContaining({ path: '/manifest/properties/coordinatePrecision' }),
       expect.objectContaining({ path: '/dialect/commands/distance.absolute/parameters/text' })
     ]));
+  });
+
+  it('requires exact placeholders and closed motion roles instead of inferring parameter names', () => {
+    const input = minimalPostPackage();
+    input.dialect.commands['motion.linear'] = {
+      template: 'G1 X{x} Y{y}',
+      parameters: {
+        x: { type: 'number', role: 'motion.end-x', description: 'X endpoint.' },
+        y: { type: 'number', role: 'motion.end-x', description: 'Incorrect duplicate role.' }
+      },
+      effects: ['position.changed'],
+      requires: [],
+      evidenceRefs: ['robofil-program']
+    };
+    input.evidence[0].supports.push({ kind: 'command', id: 'motion.linear' });
+
+    const result = parseWireEdmPostPackage(JSON.stringify(input));
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [{ code: 'POST_PACKAGE_COMMAND_PARAMETER_INVALID' }]
+    });
   });
 
   it('rejects dialect and fixture evidence references that do not exist', () => {
