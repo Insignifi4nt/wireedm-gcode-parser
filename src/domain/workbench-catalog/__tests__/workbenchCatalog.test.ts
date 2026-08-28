@@ -198,6 +198,75 @@ describe('clean-break workbench catalog', () => {
       }
     });
   });
+
+  it('rejects source, document, and revision path ownership shared across projects', async () => {
+    const adapter = new MemoryAdapter();
+    const created = await initializeWorkbenchCatalog(adapter, {
+      now: new Date('2026-08-28T12:00:00.000Z')
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const firstProject = projectWithSourceFixture('first', 'imports/shared.upid');
+    const first = await addStoredWorkbenchProject(created.workbench, {
+      project: firstProject,
+      ownedFiles: [{ path: 'imports/shared.upid', contents: 'SOURCE' }]
+    });
+    if (!first.ok) throw new Error(first.error.message);
+    const secondProject = projectWithSourceFixture('second', 'imports/shared.upid');
+    adapter.files.set('projects/second.json', `${JSON.stringify(secondProject, null, 2)}\n`);
+    adapter.files.set(WORKBENCH_CATALOG_PATH, JSON.stringify({
+      ...first.workbench.manifest,
+      projects: [...first.workbench.manifest.projects, {
+        id: secondProject.id,
+        name: secondProject.name,
+        path: 'projects/second.json',
+        sourceKind: secondProject.source.kind,
+        updatedAt: secondProject.updatedAt
+      }]
+    }));
+
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({
+      ok: false,
+      error: {
+        code: 'WORKBENCH_CATALOG_PROJECT_PATH_COLLISION',
+        path: 'imports/shared.upid',
+        firstProjectId: 'first',
+        secondProjectId: 'second'
+      }
+    });
+  });
+
+  it('rejects an indexed saved revision whose exact file is missing', async () => {
+    const adapter = new MemoryAdapter();
+    const created = await initializeWorkbenchCatalog(adapter, {
+      now: new Date('2026-08-28T12:00:00.000Z')
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const added = await addStoredWorkbenchProject(created.workbench, {
+      project: projectFixture(),
+      ownedFiles: []
+    });
+    if (!added.ok) throw new Error(added.error.message);
+    const updatedAt = '2026-08-28T13:00:00.000Z';
+    const storedProject = JSON.parse(adapter.files.get('projects/fixture.json') ?? '');
+    storedProject.savedRevisionIds = ['revision.0001'];
+    storedProject.updatedAt = updatedAt;
+    adapter.files.set('projects/fixture.json', JSON.stringify(storedProject));
+    adapter.files.set(WORKBENCH_CATALOG_PATH, JSON.stringify({
+      ...added.workbench.manifest,
+      updatedAt,
+      projects: added.workbench.manifest.projects.map((entry) => ({ ...entry, updatedAt }))
+    }));
+
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({
+      ok: false,
+      error: {
+        code: 'WORKBENCH_CATALOG_PROJECT_REVISION_DANGLING',
+        projectId: 'fixture',
+        revisionId: 'revision.0001',
+        path: 'projects/fixture/revisions/revision.0001.wireedm-job.json'
+      }
+    });
+  });
 });
 
 function projectFixture() {
@@ -217,17 +286,17 @@ function projectFixture() {
   return created.project;
 }
 
-function projectWithSourceFixture() {
+function projectWithSourceFixture(id = 'sourced', sourcePath = 'imports/fixture.upid') {
   const created = createWorkbenchProjectDocument({
-    id: 'sourced',
-    name: 'Sourced',
+    id,
+    name: id,
     now: new Date('2026-08-28T12:00:00.000Z'),
     source: {
       kind: 'upid',
       files: [{
         kind: 'upid',
         name: 'fixture.upid',
-        path: 'imports/fixture.upid',
+        path: sourcePath,
         createdAt: '2026-08-28T12:00:00.000Z'
       }]
     },

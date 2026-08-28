@@ -131,7 +131,7 @@ function measureDocumentEnvelope(
   }
   return {
     ok: true,
-    bounds: { xSpanMm: round(xSpanMm), ySpanMm: round(ySpanMm) }
+    bounds: { xSpanMm, ySpanMm }
   };
 }
 
@@ -149,8 +149,4 @@ function compareLimit(
   if (actualMm > limit.millimeters) {
     issues.push({ axis, actualMm, limitMm: limit.millimeters });
   }
-}
-
-function round(value: number) {
-  return Number(value.toFixed(6));
 }

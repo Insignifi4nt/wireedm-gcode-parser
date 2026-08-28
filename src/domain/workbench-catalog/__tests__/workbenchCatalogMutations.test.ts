@@ -86,6 +86,32 @@ describe('strict V2 workbench project persistence', () => {
     expect(adapter.files.has('projects/fixture.json')).toBe(false);
   });
 
+  it('reserves saved revision IDs for the atomic revision mutation', async () => {
+    const { workbench } = await initializedWorkbench();
+    const imported = structuredClone(projectFixture('imports/fixture.dxf')) as WorkbenchProjectDocumentValue;
+    imported.savedRevisionIds = ['revision.0001'];
+    expect(await addStoredWorkbenchProject(workbench, {
+      project: imported,
+      ownedFiles: [{ path: 'imports/fixture.dxf', contents: 'SOURCE' }]
+    })).toMatchObject({
+      ok: false,
+      error: { code: 'WORKBENCH_CATALOG_REVISION_PLAN_INVALID', projectId: 'fixture' }
+    });
+
+    const added = await addStoredWorkbenchProject(workbench, {
+      project: projectFixture('imports/fixture.dxf'),
+      ownedFiles: [{ path: 'imports/fixture.dxf', contents: 'SOURCE' }]
+    });
+    if (!added.ok) throw new Error(added.error.message);
+    expect(await replaceStoredWorkbenchProject(added.workbench, {
+      project: imported,
+      ownedFileChanges: []
+    })).toMatchObject({
+      ok: false,
+      error: { code: 'WORKBENCH_CATALOG_REVISION_PLAN_INVALID', projectId: 'fixture' }
+    });
+  });
+
   it('rolls back every owned file and the project document when the manifest commit fails', async () => {
     const { adapter, workbench } = await initializedWorkbench();
     const manifestBefore = adapter.files.get(WORKBENCH_CATALOG_PATH);
@@ -120,6 +146,28 @@ describe('strict V2 workbench project persistence', () => {
     });
     expect(adapter.files.has('imports/second.dxf')).toBe(false);
     expect(first.workbench.manifest.projects.map(({ id }) => id)).toEqual(['fixture']);
+  });
+
+  it('rejects a new project that claims a path owned by another project', async () => {
+    const { workbench } = await initializedWorkbench();
+    const first = await addStoredWorkbenchProject(workbench, {
+      project: projectFixture('imports/shared.dxf'),
+      ownedFiles: [{ path: 'imports/shared.dxf', contents: 'FIRST' }]
+    });
+    if (!first.ok) throw new Error(first.error.message);
+
+    expect(await addStoredWorkbenchProject(first.workbench, {
+      project: projectFixture('imports/shared.dxf', 'second'),
+      ownedFiles: [{ path: 'imports/shared.dxf', contents: 'SECOND' }]
+    })).toMatchObject({
+      ok: false,
+      error: {
+        code: 'WORKBENCH_CATALOG_PROJECT_PATH_COLLISION',
+        path: 'imports/shared.dxf',
+        firstProjectId: 'fixture',
+        secondProjectId: 'second'
+      }
+    });
   });
 
   it('replaces owned files only through an explicit, complete change set', async () => {

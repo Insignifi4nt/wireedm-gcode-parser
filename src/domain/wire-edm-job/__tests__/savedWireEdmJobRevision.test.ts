@@ -229,6 +229,119 @@ describe('saved Wire EDM job revision', () => {
     });
   });
 
+  it('blocks machine-ready revisions when travel is exceeded or unknown', async () => {
+    const fixture = await revisionFixture();
+    const exceeded = JSON.parse(serializeSavedWireEdmJobRevision(fixture.revision));
+    exceeded.machine.limits.xTravel = { status: 'known', millimeters: 5 };
+    expect(await parseSavedWireEdmJobRevision(JSON.stringify(exceeded))).toMatchObject({
+      ok: false,
+      error: {
+        code: 'SAVED_REVISION_MACHINE_PHYSICAL_INVALID',
+        physicalError: { code: 'MACHINE_PHYSICAL_PREFLIGHT_TRAVEL_EXCEEDED' }
+      }
+    });
+
+    const selected = await machineAndPostFixture();
+    const unknownMachine = structuredClone(selected.machine) as MachineDefinitionValue;
+    unknownMachine.limits.yTravel = { status: 'unknown' };
+    const unknown = parseMachineDefinition(JSON.stringify(unknownMachine));
+    if (!unknown.ok) throw new Error(JSON.stringify(unknown.diagnostics));
+    const unknownDocument = createUpidFromDxfEntities(rectangle());
+    unknownDocument.setup = {
+      initialWirePosition: { kind: 'manual', point: { x: -2, y: 0 }, review: 'reviewed' }
+    };
+    const project = upidProject('unknown-travel.part', unknownDocument);
+    expect(await createSavedWireEdmJobRevision({
+      revisionId: 'revision.unknown',
+      savedAt: '2026-08-28T12:30:00.000Z',
+      project,
+      machine: unknown.machine,
+      bindingId: 'production',
+      postLibrary: selected.library
+    })).toMatchObject({
+      ok: false,
+      error: {
+        code: 'SAVED_REVISION_MACHINE_PHYSICAL_INVALID',
+        physicalError: {
+          code: 'MACHINE_PHYSICAL_PREFLIGHT_TRAVEL_UNKNOWN',
+          unknownAxes: ['y']
+        }
+      }
+    });
+  });
+
+  it('blocks a revision when the machine lacks required threading hardware', async () => {
+    const selected = await machineAndPostFixture();
+    const noManual = structuredClone(selected.machine) as MachineDefinitionValue;
+    noManual.hardware.manualThreading = false;
+    const machine = parseMachineDefinition(JSON.stringify(noManual));
+    if (!machine.ok) throw new Error(JSON.stringify(machine.diagnostics));
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 2 },
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 0 }, radius: 2 }
+    ]);
+    document.setup = {
+      initialWirePosition: { kind: 'manual', point: { x: 2, y: 0 }, review: 'reviewed' }
+    };
+    document.plan.operations[1].threadingTransition = {
+      mode: 'manual',
+      wireSeparation: 'manual-before-positioning',
+      source: 'operation-override'
+    };
+
+    expect(await createSavedWireEdmJobRevision({
+      revisionId: 'revision.threading',
+      savedAt: '2026-08-28T12:30:00.000Z',
+      project: upidProject('threading.part', document),
+      machine: machine.machine,
+      bindingId: 'production',
+      postLibrary: selected.library
+    })).toMatchObject({
+      ok: false,
+      error: {
+        code: 'SAVED_REVISION_MACHINE_PHYSICAL_INVALID',
+        physicalError: {
+          code: 'MACHINE_PHYSICAL_PREFLIGHT_THREADING_UNSUPPORTED',
+          methods: ['manual']
+        }
+      }
+    });
+  });
+
+  it('blocks automatic threading when the selected machine lacks automatic hardware', async () => {
+    const selected = await machineAndPostFixture();
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 2 },
+      { type: 'circle', layer: 'CUT', center: { x: 10, y: 0 }, radius: 2 }
+    ]);
+    document.setup = {
+      initialWirePosition: { kind: 'manual', point: { x: 2, y: 0 }, review: 'reviewed' }
+    };
+    document.plan.operations[1].threadingTransition = {
+      mode: 'automatic',
+      wireSeparation: 'automatic-before-positioning',
+      source: 'operation-override'
+    };
+
+    expect(await createSavedWireEdmJobRevision({
+      revisionId: 'revision.automatic',
+      savedAt: '2026-08-28T12:30:00.000Z',
+      project: upidProject('automatic.part', document),
+      machine: selected.machine,
+      bindingId: 'production',
+      postLibrary: selected.library
+    })).toMatchObject({
+      ok: false,
+      error: {
+        code: 'SAVED_REVISION_MACHINE_PHYSICAL_INVALID',
+        physicalError: {
+          code: 'MACHINE_PHYSICAL_PREFLIGHT_THREADING_UNSUPPORTED',
+          methods: ['automatic']
+        }
+      }
+    });
+  });
+
   it('generates an artifact only from the validated revision and explicit file preferences', async () => {
     const fixture = await revisionFixture();
     expect(await generateControllerArtifact(
@@ -400,4 +513,19 @@ function createMemoryAdapter(): WorkbenchStorageAdapter {
       files.set(path, contents);
     }
   };
+}
+
+function upidProject(
+  id: string,
+  document: ReturnType<typeof createUpidFromDxfEntities>
+) {
+  const project = createWorkbenchProjectDocument({
+    id,
+    name: id,
+    source: { kind: 'upid', files: [] },
+    content: { kind: 'upid-document', document },
+    now: new Date('2026-08-28T12:00:00.000Z')
+  });
+  if (!project.ok) throw new Error(project.error.message);
+  return project.project;
 }

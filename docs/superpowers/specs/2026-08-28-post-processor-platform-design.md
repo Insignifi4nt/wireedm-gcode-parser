@@ -34,6 +34,8 @@ A UPID document can be imported, created, edited, reviewed, and saved without an
 
 A machine may be selected before or during planning to check physical feasibility: work envelope, supported axes, taper limits, threading hardware, and similar facts. Machine selection must not choose G-codes, compensation sequences, arc-center conventions, headers, footers, precision, or program endings.
 
+Unknown travel remains an explicit valid planning state, but it blocks creation of a machine-ready saved revision because physical fit cannot be proven. Known travel must contain the project envelope, and every manual or automatic threading requirement in the compiled plan must be supported by the selected machine hardware.
+
 Controller capability feedback may be shown early when a tentative post binding is selected, but only export requires a binding. Changing that binding cannot mutate geometry or manufacturing intent.
 
 ### Machine definitions own physical facts

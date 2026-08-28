@@ -146,6 +146,44 @@ describe('exact-hash built-in post engine', () => {
       expect.objectContaining({ code: 'POST_AUDIT_MOTION_MISMATCH' })
     ]));
   });
+
+  it('rejects linear coordinates rounded beyond the execution-plan tolerance', async () => {
+    const plan = compilePlan(fractionalRectangle());
+    const installation = await installationFor('generic-iso');
+
+    expect(runBuiltInPost(plan, {
+      installation,
+      properties: { coordinatePrecision: 0, arcCenterMode: 'incremental' }
+    })).toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: 'POST_AUDIT_MOTION_MISMATCH' })
+      ])
+    });
+  });
+
+  it('rejects arc coordinates and centers rounded beyond the execution-plan tolerance', async () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0.4, y: 0.4 }, radius: 0.4 }
+    ]);
+    document.setup = {
+      initialWirePosition: {
+        kind: 'manual', point: { x: 0.8, y: 0.4 }, review: 'reviewed'
+      }
+    };
+    const plan = compilePlan(document);
+    const installation = await installationFor('generic-iso');
+
+    expect(runBuiltInPost(plan, {
+      installation,
+      properties: { coordinatePrecision: 0, arcCenterMode: 'absolute' }
+    })).toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: 'POST_AUDIT_MOTION_MISMATCH' })
+      ])
+    });
+  });
 });
 
 function centerlineRectangle() {
@@ -164,6 +202,19 @@ function compensatedRectangle() {
   const operation = source.plan.operations[0];
   const document = setManualCompensationIntent(source, operation.id, 'outside');
   if (!document) throw new Error('Expected a closed contour fixture.');
+  return document;
+}
+
+function fractionalRectangle() {
+  const document = createUpidFromDxfEntities([
+    { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 0.4, y: 0 } },
+    { type: 'line', layer: 'CUT', start: { x: 0.4, y: 0 }, end: { x: 0.4, y: 1 } },
+    { type: 'line', layer: 'CUT', start: { x: 0.4, y: 1 }, end: { x: 0, y: 1 } },
+    { type: 'line', layer: 'CUT', start: { x: 0, y: 1 }, end: { x: 0, y: 0 } }
+  ]);
+  document.setup = {
+    initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' }
+  };
   return document;
 }
 

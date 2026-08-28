@@ -377,11 +377,19 @@ function emitCanonicalMotion(
   const arcCenter = arcCenterMode === 'absolute'
     ? center
     : { x: center.x - event.start.x, y: center.y - event.start.y };
+  const emittedStart = quantizePoint(event.start, state.precision);
+  const emittedCenter = arcCenterMode === 'absolute'
+    ? quantizePoint(center, state.precision)
+    : {
+        x: emittedStart.x + quantizeNumber(arcCenter.x, state.precision),
+        y: emittedStart.y + quantizeNumber(arcCenter.y, state.precision)
+      };
   emitMotion(
     state,
     event,
     `${command} ${formatPoint(event.end, state.precision)} I${formatNumber(arcCenter.x, state.precision)} J${formatNumber(arcCenter.y, state.precision)}`,
-    [commandId]
+    [commandId],
+    emittedCenter
   );
 }
 
@@ -389,21 +397,22 @@ function emitMotion(
   state: RenderState,
   event: Extract<WireEdmExecutionEvent, { kind: 'motion' | 'position' }>,
   text: string,
-  commandIds: readonly string[]
+  commandIds: readonly string[],
+  emittedCenter?: Point2
 ) {
   const motion: ControllerMotionTrace = event.kind === 'position'
     ? {
         motion: 'linear',
         role: 'position',
-        start: copyPoint(event.from),
-        end: copyPoint(event.to)
+        start: quantizePoint(event.from, state.precision),
+        end: quantizePoint(event.to, state.precision)
       }
     : {
         motion: event.motion,
         role: event.role,
-        start: copyPoint(event.start),
-        end: copyPoint(event.end),
-        ...(event.center ? { center: copyPoint(event.center) } : {}),
+        start: quantizePoint(event.start, state.precision),
+        end: quantizePoint(event.end, state.precision),
+        ...(emittedCenter ? { center: emittedCenter } : {}),
         ...(event.clockwise === undefined ? {} : { clockwise: event.clockwise }),
         ...(event.fullCircle === undefined ? {} : { fullCircle: event.fullCircle })
       };
@@ -538,6 +547,18 @@ function formatNumber(value: number, precision: number) {
   if (!Number.isFinite(value)) throw new Error('Execution plan contains a non-finite coordinate.');
   const text = value.toFixed(precision);
   return Number(text) === 0 ? (0).toFixed(precision) : text;
+}
+
+function quantizePoint(point: Point2, precision: number): Point2 {
+  return {
+    x: quantizeNumber(point.x, precision),
+    y: quantizeNumber(point.y, precision)
+  };
+}
+
+function quantizeNumber(value: number, precision: number) {
+  const quantized = Number(value.toFixed(precision));
+  return Object.is(quantized, -0) ? 0 : quantized;
 }
 
 function requiredOffset(state: RenderState) {

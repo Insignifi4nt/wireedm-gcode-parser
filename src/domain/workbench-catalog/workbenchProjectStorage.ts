@@ -48,6 +48,20 @@ export type WorkbenchProjectIndexIntegrityError =
       message: string;
       projectId: string;
       path: string;
+    }
+  | {
+      code: 'WORKBENCH_CATALOG_PROJECT_REVISION_DANGLING';
+      message: string;
+      projectId: string;
+      revisionId: string;
+      path: string;
+    }
+  | {
+      code: 'WORKBENCH_CATALOG_PROJECT_PATH_COLLISION';
+      message: string;
+      path: string;
+      firstProjectId: string;
+      secondProjectId: string;
     };
 
 export type ReadWorkbenchProjectStorageResult =
@@ -79,6 +93,75 @@ export async function readWorkbenchProjectStorage(
 
 export function workbenchProjectDocumentPath(projectId: string) {
   return `projects/${projectId}.json`;
+}
+
+export function workbenchProjectRevisionPath(projectId: string, revisionId: string) {
+  return `projects/${projectId}/revisions/${revisionId}.wireedm-job.json`;
+}
+
+export function workbenchProjectOwnedPaths(project: WorkbenchProjectDocument) {
+  return [
+    workbenchProjectDocumentPath(project.id),
+    ...project.source.files.map(({ path }) => path),
+    ...project.savedRevisionIds.map((revisionId) => (
+      workbenchProjectRevisionPath(project.id, revisionId)
+    ))
+  ];
+}
+
+export async function validateWorkbenchProjectPathOwnership(
+  adapter: WorkbenchStorageAdapter,
+  entries: readonly StoredWorkbenchProjectIndexEntry[]
+): Promise<
+  | { ok: true; projects: readonly WorkbenchProjectDocument[] }
+  | { ok: false; error: WorkbenchProjectStorageError | WorkbenchProjectIndexIntegrityError }
+> {
+  const projects: WorkbenchProjectDocument[] = [];
+  const ownerByPath = new Map<string, string>();
+  for (const entry of entries) {
+    const read = await readIndexedWorkbenchProjectStorage(adapter, entry);
+    if (!read.ok) return read;
+    projects.push(read.project);
+    const claimedPaths = workbenchProjectOwnedPaths(read.project);
+    for (const path of claimedPaths) {
+      const firstProjectId = ownerByPath.get(path);
+      if (firstProjectId !== undefined) {
+        return {
+          ok: false,
+          error: {
+            code: 'WORKBENCH_CATALOG_PROJECT_PATH_COLLISION',
+            message: `Workbench path ${path} is claimed by both ${firstProjectId} and ${read.project.id}.`,
+            path,
+            firstProjectId,
+            secondProjectId: read.project.id
+          }
+        };
+      }
+      ownerByPath.set(path, read.project.id);
+    }
+    for (const revisionId of read.project.savedRevisionIds) {
+      const path = workbenchProjectRevisionPath(read.project.id, revisionId);
+      let contents: string | null;
+      try {
+        contents = await adapter.readText(path);
+      } catch (error) {
+        return accessFailure('read', path, error);
+      }
+      if (contents === null) {
+        return {
+          ok: false,
+          error: {
+            code: 'WORKBENCH_CATALOG_PROJECT_REVISION_DANGLING',
+            message: `Project ${read.project.id} indexes a missing saved revision: ${revisionId}.`,
+            projectId: read.project.id,
+            revisionId,
+            path
+          }
+        };
+      }
+    }
+  }
+  return { ok: true, projects };
 }
 
 export async function readIndexedWorkbenchProjectStorage(

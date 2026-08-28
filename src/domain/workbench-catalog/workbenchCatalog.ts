@@ -19,7 +19,7 @@ import {
 } from '@/domain/machine-definition/machineLibraryStorage';
 import type { MachineLibrary } from '@/domain/machine-definition/machineLibrary';
 import {
-  readIndexedWorkbenchProjectStorage,
+  validateWorkbenchProjectPathOwnership,
   type WorkbenchProjectIndexIntegrityError,
   type WorkbenchProjectStorageError
 } from './workbenchProjectStorage';
@@ -181,10 +181,11 @@ export async function initializeWorkbenchCatalog(
   if (!machines.ok) return machines;
   const manifest = validateWorkbenchCatalogValue(parsedValue.value, machines.library);
   if (!manifest.ok) return manifest;
-  for (const entry of manifest.manifest.projects) {
-    const project = await readIndexedWorkbenchProjectStorage(adapter, entry);
-    if (!project.ok) return project;
-  }
+  const ownership = await validateWorkbenchProjectPathOwnership(
+    adapter,
+    manifest.manifest.projects
+  );
+  if (!ownership.ok) return ownership;
 
   return {
     ok: true,

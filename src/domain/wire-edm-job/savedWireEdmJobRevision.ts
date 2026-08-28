@@ -10,6 +10,10 @@ import {
   type MachinePostBinding
 } from '@/domain/machine-definition/machineDefinition';
 import {
+  preflightMachinePhysicalRequirements,
+  type MachinePhysicalPreflightError
+} from '@/domain/machine-definition/machinePhysicalPreflight';
+import {
   compileWireEdmExecutionPlan,
   type ExecutionPlanDiagnostic,
   type WireEdmExecutionPlan
@@ -36,6 +40,19 @@ import {
   type WorkbenchProjectDocument,
   type WorkbenchProjectError
 } from '@/domain/workbench-catalog/workbenchProject';
+import {
+  WORKBENCH_CATALOG_PATH,
+  type ConnectedWorkbenchCatalog,
+  type WorkbenchCatalogManifestValue
+} from '@/domain/workbench-catalog/workbenchCatalog';
+import {
+  validateWorkbenchProjectPathOwnership,
+  workbenchProjectDocumentPath,
+  workbenchProjectOwnedPaths,
+  workbenchProjectRevisionPath,
+  type WorkbenchProjectIndexIntegrityError,
+  type WorkbenchProjectStorageError
+} from '@/domain/workbench-catalog/workbenchProjectStorage';
 
 export const SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION = 1 as const;
 export const WIRE_EDM_ENGINE_VERSION = '1' as const;
@@ -162,6 +179,11 @@ export type SavedWireEdmJobRevisionError =
     }
   | { readonly code: 'SAVED_REVISION_UPID_PROJECT_REQUIRED'; readonly message: string }
   | { readonly code: 'SAVED_REVISION_MACHINE_INVALID'; readonly message: string }
+  | {
+      readonly code: 'SAVED_REVISION_MACHINE_PHYSICAL_INVALID';
+      readonly message: string;
+      readonly physicalError: MachinePhysicalPreflightError;
+    }
   | { readonly code: 'SAVED_REVISION_BINDING_INVALID'; readonly message: string }
   | {
       readonly code: 'SAVED_REVISION_PACKAGE_INVALID';
@@ -203,6 +225,70 @@ export type PersistSavedWireEdmJobRevisionResult =
   | {
       readonly ok: false;
       readonly error: SavedWireEdmJobRevisionError | SavedWireEdmJobRevisionStorageError;
+    };
+
+type SavedRevisionCatalogMutationError =
+  | SavedWireEdmJobRevisionStorageError
+  | WorkbenchProjectStorageError
+  | WorkbenchProjectIndexIntegrityError
+  | {
+      readonly code: 'SAVED_REVISION_CATALOG_PROJECT_NOT_FOUND';
+      readonly message: string;
+      readonly projectId: string;
+    }
+  | {
+      readonly code: 'SAVED_REVISION_CATALOG_PROJECT_STALE';
+      readonly message: string;
+      readonly projectId: string;
+    }
+  | {
+      readonly code: 'SAVED_REVISION_CATALOG_PROJECT_UPDATE_INVALID';
+      readonly message: string;
+      readonly projectError: WorkbenchProjectError;
+    }
+  | {
+      readonly code: 'SAVED_REVISION_CATALOG_MANIFEST_STALE';
+      readonly message: string;
+      readonly path: typeof WORKBENCH_CATALOG_PATH;
+    }
+  | {
+      readonly code: 'SAVED_REVISION_CATALOG_REVISION_CONFLICT';
+      readonly message: string;
+      readonly projectId: string;
+      readonly revisionId: string;
+      readonly path: string;
+    }
+  | {
+      readonly code: 'SAVED_REVISION_CATALOG_MANIFEST_WRITE_FAILED';
+      readonly message: string;
+      readonly path: typeof WORKBENCH_CATALOG_PATH;
+    }
+  | {
+      readonly code:
+        | 'SAVED_REVISION_CATALOG_PROJECT_READBACK_MISMATCH'
+        | 'SAVED_REVISION_CATALOG_MANIFEST_READBACK_MISMATCH';
+      readonly message: string;
+      readonly path: string;
+    };
+
+type SavedRevisionCatalogRollbackError = {
+  readonly code: 'SAVED_REVISION_CATALOG_ROLLBACK_FAILED';
+  readonly message: string;
+  readonly originalError: SavedRevisionCatalogMutationError;
+  readonly rollbackErrors: readonly WorkbenchProjectStorageError[];
+};
+
+export type SaveStoredWireEdmJobRevisionResult =
+  | {
+      readonly ok: true;
+      readonly path: string;
+      readonly revision: SavedWireEdmJobRevision;
+      readonly project: WorkbenchProjectDocument;
+      readonly workbench: ConnectedWorkbenchCatalog;
+    }
+  | {
+      readonly ok: false;
+      readonly error: SavedRevisionCatalogMutationError | SavedRevisionCatalogRollbackError;
     };
 
 export async function createSavedWireEdmJobRevision(
@@ -263,6 +349,12 @@ export async function createSavedWireEdmJobRevision(
       diagnostics: compiled.diagnostics
     });
   }
+  const physical = preflightMachinePhysicalRequirements({
+    document: project.project.content.document,
+    machine: resolved.machine,
+    plan: compiled.plan
+  });
+  if (!physical.ok) return physicalFailure(physical.error);
 
   const machine = jsonSnapshot(physicalMachineSnapshot(resolved.machine));
   const post: SavedPostBindingSnapshot = {
@@ -405,6 +497,12 @@ export async function parseSavedWireEdmJobRevision(
     });
   }
   const executionPlan = jsonSnapshot(compiled.plan);
+  const physical = preflightMachinePhysicalRequirements({
+    document: project.project.content.document,
+    machine: parsedMachine.machine,
+    plan: executionPlan
+  });
+  if (!physical.ok) return physicalFailure(physical.error);
   if (canonicalJson(candidate.executionPlan) !== canonicalJson(executionPlan)) {
     return failure({
       code: 'SAVED_REVISION_EXECUTION_PLAN_MISMATCH',
@@ -458,6 +556,150 @@ export function persistSavedWireEdmJobRevision(
     adapter,
     candidate
   ));
+}
+
+export function saveStoredWireEdmJobRevision(
+  workbench: ConnectedWorkbenchCatalog,
+  candidate: SavedWireEdmJobRevisionCandidate
+): Promise<SaveStoredWireEdmJobRevisionResult> {
+  return withWorkbenchMutationLock(workbench.adapter, async () => {
+    if (!isSavedWireEdmJobRevisionCandidate(candidate)) {
+      return catalogMutationFailure(savedRevisionStorageError(
+        'SAVED_REVISION_STORAGE_WRITE_FAILED',
+        'Only a revision candidate returned by the creator or parser can be persisted.'
+      ));
+    }
+    const manifestCurrent = await verifyCatalogManifestCurrent(workbench);
+    if (!manifestCurrent.ok) return manifestCurrent;
+    const ownership = await validateWorkbenchProjectPathOwnership(
+      workbench.adapter,
+      workbench.manifest.projects
+    );
+    if (!ownership.ok) return ownership;
+    const project = ownership.projects.find(({ id }) => id === candidate.project.id);
+    if (!project) {
+      return catalogMutationFailure({
+        code: 'SAVED_REVISION_CATALOG_PROJECT_NOT_FOUND',
+        message: `Workbench project is not indexed: ${candidate.project.id}.`,
+        projectId: candidate.project.id
+      });
+    }
+    if (canonicalJson(project) !== canonicalJson(candidate.project)) {
+      return catalogMutationFailure({
+        code: 'SAVED_REVISION_CATALOG_PROJECT_STALE',
+        message: `Saved revision ${candidate.revisionId} was created from stale project ${project.id}.`,
+        projectId: project.id
+      });
+    }
+
+    const path = workbenchProjectRevisionPath(project.id, candidate.revisionId);
+    if (project.savedRevisionIds.includes(candidate.revisionId)) {
+      return catalogMutationFailure(revisionCatalogConflict(project.id, candidate.revisionId, path));
+    }
+    const existingOwner = ownership.projects.find((storedProject) => (
+      workbenchProjectOwnedPaths(storedProject).includes(path)
+    ));
+    if (existingOwner) {
+      return catalogMutationFailure({
+        code: 'WORKBENCH_CATALOG_PROJECT_PATH_COLLISION',
+        message: `Workbench path ${path} is already claimed by ${existingOwner.id}.`,
+        path,
+        firstProjectId: existingOwner.id,
+        secondProjectId: project.id
+      });
+    }
+
+    const nextProjectValue = {
+      ...project,
+      updatedAt: candidate.savedAt,
+      savedRevisionIds: [...project.savedRevisionIds, candidate.revisionId]
+    };
+    const nextProject = parseWorkbenchProjectDocument(JSON.stringify(nextProjectValue));
+    if (!nextProject.ok) {
+      return catalogMutationFailure({
+        code: 'SAVED_REVISION_CATALOG_PROJECT_UPDATE_INVALID',
+        message: nextProject.error.message,
+        projectError: nextProject.error
+      });
+    }
+    const nextManifest = deepFreeze({
+      ...workbench.manifest,
+      updatedAt: candidate.savedAt,
+      projects: workbench.manifest.projects.map((entry) => entry.id === project.id
+        ? { ...entry, updatedAt: candidate.savedAt }
+        : entry)
+    } satisfies WorkbenchCatalogManifestValue);
+    const documentPath = workbenchProjectDocumentPath(project.id);
+    const snapshots = await captureCatalogSnapshots(
+      workbench,
+      [path, documentPath, WORKBENCH_CATALOG_PATH]
+    );
+    if (!snapshots.ok) return snapshots;
+    const revisionSnapshot = snapshots.snapshots.find((snapshot) => snapshot.path === path);
+    if (revisionSnapshot?.contents !== null) {
+      return catalogMutationFailure(revisionCatalogConflict(project.id, candidate.revisionId, path));
+    }
+
+    try {
+      await workbench.adapter.ensureDirectory(`projects/${project.id}/revisions`);
+    } catch (error) {
+      return catalogMutationFailure(catalogStorageAccessFailure('write', path, error));
+    }
+    const serializedRevision = serializeSavedWireEdmJobRevision(candidate);
+    const revisionWrite = await writeCatalogTransactionText(workbench, path, serializedRevision);
+    if (!revisionWrite.ok) {
+      return rollbackCatalogRevision(workbench, snapshots.snapshots, revisionWrite.error);
+    }
+    const revisionReadback = await readCatalogTransactionText(workbench, path);
+    if (!revisionReadback.ok) {
+      return rollbackCatalogRevision(workbench, snapshots.snapshots, revisionReadback.error);
+    }
+    if (revisionReadback.contents !== serializedRevision) {
+      return rollbackCatalogRevision(workbench, snapshots.snapshots, savedRevisionStorageError(
+        'SAVED_REVISION_STORAGE_READBACK_MISMATCH',
+        `Saved revision at ${path} did not read back byte-for-byte.`
+      ));
+    }
+    const serializedProject = `${JSON.stringify(nextProject.project, null, 2)}\n`;
+    const projectWrite = await writeCatalogTransactionText(workbench, documentPath, serializedProject);
+    if (!projectWrite.ok) {
+      return rollbackCatalogRevision(workbench, snapshots.snapshots, projectWrite.error);
+    }
+    const projectReadback = await readCatalogTransactionText(workbench, documentPath);
+    if (!projectReadback.ok) {
+      return rollbackCatalogRevision(workbench, snapshots.snapshots, projectReadback.error);
+    }
+    if (projectReadback.contents !== serializedProject) {
+      return rollbackCatalogRevision(workbench, snapshots.snapshots, {
+        code: 'SAVED_REVISION_CATALOG_PROJECT_READBACK_MISMATCH',
+        message: `Updated project at ${documentPath} did not read back byte-for-byte.`,
+        path: documentPath
+      });
+    }
+    const serializedManifest = `${JSON.stringify(nextManifest, null, 2)}\n`;
+    const manifestWrite = await writeCatalogManifest(workbench, nextManifest);
+    if (!manifestWrite.ok) {
+      return rollbackCatalogRevision(workbench, snapshots.snapshots, manifestWrite.error);
+    }
+    const manifestReadback = await readCatalogTransactionText(workbench, WORKBENCH_CATALOG_PATH);
+    if (!manifestReadback.ok) {
+      return rollbackCatalogRevision(workbench, snapshots.snapshots, manifestReadback.error);
+    }
+    if (manifestReadback.contents !== serializedManifest) {
+      return rollbackCatalogRevision(workbench, snapshots.snapshots, {
+        code: 'SAVED_REVISION_CATALOG_MANIFEST_READBACK_MISMATCH',
+        message: `Updated manifest at ${WORKBENCH_CATALOG_PATH} did not read back byte-for-byte.`,
+        path: WORKBENCH_CATALOG_PATH
+      });
+    }
+    return {
+      ok: true,
+      path,
+      revision: persistedSuccess(candidate),
+      project: nextProject.project,
+      workbench: Object.freeze({ ...workbench, manifest: nextManifest })
+    };
+  });
 }
 
 async function persistSavedWireEdmJobRevisionUnlocked(
@@ -706,12 +948,188 @@ function isSavedWireEdmJobRevisionCandidate(
   );
 }
 
+interface CatalogStorageSnapshot {
+  readonly path: string;
+  readonly contents: string | null;
+}
+
+async function verifyCatalogManifestCurrent(workbench: ConnectedWorkbenchCatalog) {
+  const read = await readCatalogTransactionText(workbench, WORKBENCH_CATALOG_PATH);
+  if (!read.ok) return read;
+  if (read.contents === null) {
+    return catalogMutationFailure({
+      code: 'SAVED_REVISION_CATALOG_MANIFEST_STALE',
+      message: 'Workbench manifest disappeared after this catalog snapshot was opened.',
+      path: WORKBENCH_CATALOG_PATH
+    });
+  }
+  let stored: unknown;
+  try {
+    stored = JSON.parse(read.contents);
+  } catch {
+    return catalogMutationFailure({
+      code: 'SAVED_REVISION_CATALOG_MANIFEST_STALE',
+      message: 'Workbench manifest became invalid after this catalog snapshot was opened.',
+      path: WORKBENCH_CATALOG_PATH
+    });
+  }
+  if (JSON.stringify(stored) !== JSON.stringify(workbench.manifest)) {
+    return catalogMutationFailure({
+      code: 'SAVED_REVISION_CATALOG_MANIFEST_STALE',
+      message: 'Workbench manifest changed after this catalog snapshot was opened.',
+      path: WORKBENCH_CATALOG_PATH
+    });
+  }
+  return { ok: true as const };
+}
+
+async function captureCatalogSnapshots(
+  workbench: ConnectedWorkbenchCatalog,
+  paths: readonly string[]
+) {
+  const snapshots: CatalogStorageSnapshot[] = [];
+  for (const path of new Set(paths)) {
+    const read = await readCatalogTransactionText(workbench, path);
+    if (!read.ok) return read;
+    snapshots.push({ path, contents: read.contents });
+  }
+  return { ok: true as const, snapshots };
+}
+
+async function readCatalogTransactionText(
+  workbench: ConnectedWorkbenchCatalog,
+  path: string
+) {
+  try {
+    return { ok: true as const, contents: await workbench.adapter.readText(path) };
+  } catch (error) {
+    return { ok: false as const, error: catalogStorageAccessFailure('read', path, error) };
+  }
+}
+
+async function writeCatalogTransactionText(
+  workbench: ConnectedWorkbenchCatalog,
+  path: string,
+  contents: string
+) {
+  try {
+    await workbench.adapter.writeText(path, contents);
+    return { ok: true as const };
+  } catch (error) {
+    return { ok: false as const, error: catalogStorageAccessFailure('write', path, error) };
+  }
+}
+
+async function deleteCatalogTransactionText(
+  workbench: ConnectedWorkbenchCatalog,
+  path: string
+) {
+  try {
+    await workbench.adapter.deleteText(path);
+    return { ok: true as const };
+  } catch (error) {
+    return { ok: false as const, error: catalogStorageAccessFailure('delete', path, error) };
+  }
+}
+
+async function writeCatalogManifest(
+  workbench: ConnectedWorkbenchCatalog,
+  manifest: WorkbenchCatalogManifestValue
+) {
+  try {
+    await workbench.adapter.writeText(
+      WORKBENCH_CATALOG_PATH,
+      `${JSON.stringify(manifest, null, 2)}\n`
+    );
+    return { ok: true as const };
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: {
+        code: 'SAVED_REVISION_CATALOG_MANIFEST_WRITE_FAILED' as const,
+        message: `Workbench manifest write failed: ${errorMessage(error)}.`,
+        path: WORKBENCH_CATALOG_PATH as typeof WORKBENCH_CATALOG_PATH
+      }
+    };
+  }
+}
+
+async function rollbackCatalogRevision(
+  workbench: ConnectedWorkbenchCatalog,
+  snapshots: readonly CatalogStorageSnapshot[],
+  originalError: SavedRevisionCatalogMutationError
+): Promise<Extract<SaveStoredWireEdmJobRevisionResult, { readonly ok: false }>> {
+  const rollbackErrors: WorkbenchProjectStorageError[] = [];
+  for (const snapshot of [...snapshots].reverse()) {
+    const restored = snapshot.contents === null
+      ? await deleteCatalogTransactionText(workbench, snapshot.path)
+      : await writeCatalogTransactionText(workbench, snapshot.path, snapshot.contents);
+    if (!restored.ok) rollbackErrors.push(restored.error);
+  }
+  if (rollbackErrors.length === 0) return catalogMutationFailure(originalError);
+  return {
+    ok: false,
+    error: {
+      code: 'SAVED_REVISION_CATALOG_ROLLBACK_FAILED',
+      message: `Saved revision transaction failed and ${rollbackErrors.length} rollback operation(s) also failed.`,
+      originalError,
+      rollbackErrors
+    }
+  };
+}
+
+function revisionCatalogConflict(
+  projectId: string,
+  revisionId: string,
+  path: string
+): Extract<
+  SavedRevisionCatalogMutationError,
+  { code: 'SAVED_REVISION_CATALOG_REVISION_CONFLICT' }
+> {
+  return {
+    code: 'SAVED_REVISION_CATALOG_REVISION_CONFLICT',
+    message: `Project ${projectId} already owns saved revision ${revisionId} at ${path}.`,
+    projectId,
+    revisionId,
+    path
+  };
+}
+
+function catalogStorageAccessFailure(
+  operation: 'read' | 'write' | 'delete',
+  path: string,
+  error: unknown
+): Extract<
+  WorkbenchProjectStorageError,
+  { code: 'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED' }
+> {
+  return {
+    code: 'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED',
+    message: `Workbench project ${operation} failed at ${path}: ${errorMessage(error)}.`,
+    operation,
+    path
+  };
+}
+
+function catalogMutationFailure(
+  error: SavedRevisionCatalogMutationError
+): { readonly ok: false; readonly error: SavedRevisionCatalogMutationError } {
+  return { ok: false, error };
+}
+
+function savedRevisionStorageError(
+  code: SavedWireEdmJobRevisionStorageError['code'],
+  message: string
+): SavedWireEdmJobRevisionStorageError {
+  return { code, message };
+}
+
 function savedRevisionDirectory(projectId: string) {
   return `projects/${projectId}/revisions`;
 }
 
 function savedRevisionPath(projectId: string, revisionId: string) {
-  return `${savedRevisionDirectory(projectId)}/${revisionId}.wireedm-job.json`;
+  return workbenchProjectRevisionPath(projectId, revisionId);
 }
 
 function schemaFailure(
@@ -742,6 +1160,16 @@ function hashUnavailable(): Extract<
   return failure({
     code: 'SAVED_REVISION_HASH_UNAVAILABLE',
     message: 'SHA-256 is unavailable; a reproducible saved revision cannot be created or verified.'
+  });
+}
+
+function physicalFailure(
+  physicalError: MachinePhysicalPreflightError
+): Extract<SavedWireEdmJobRevisionCandidateResult, { readonly ok: false }> {
+  return failure({
+    code: 'SAVED_REVISION_MACHINE_PHYSICAL_INVALID',
+    message: physicalError.message,
+    physicalError
   });
 }
 

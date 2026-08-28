@@ -9,7 +9,9 @@ import {
 import type { WorkbenchProjectDocument } from './workbenchProject';
 import {
   readIndexedWorkbenchProjectStorage,
+  validateWorkbenchProjectPathOwnership,
   workbenchProjectDocumentPath,
+  workbenchProjectOwnedPaths,
   type WorkbenchProjectIndexIntegrityError,
   type WorkbenchProjectStorageError
 } from './workbenchProjectStorage';
@@ -64,6 +66,12 @@ type OwnedFileDanglingError = {
   path: string;
 };
 
+type RevisionPlanError = {
+  code: 'WORKBENCH_CATALOG_REVISION_PLAN_INVALID';
+  message: string;
+  projectId: string;
+};
+
 type TimestampError = {
   code: 'WORKBENCH_CATALOG_MUTATION_TIMESTAMP_INVALID';
   message: string;
@@ -92,6 +100,7 @@ type MutationError =
   | ProjectConflictError
   | OwnedFilePlanError
   | OwnedFileDanglingError
+  | RevisionPlanError
   | TimestampError
   | ManifestWriteError
   | ManifestStateError;
@@ -129,7 +138,17 @@ export async function addStoredWorkbenchProject(
   return withWorkbenchMutationLock(workbench.adapter, async () => {
     const current = await verifyManifestCurrent(workbench);
     if (!current.ok) return current;
+    const ownership = await validateWorkbenchProjectPathOwnership(
+      workbench.adapter,
+      workbench.manifest.projects
+    );
+    if (!ownership.ok) return ownership;
     const path = workbenchProjectDocumentPath(input.project.id);
+    if (input.project.savedRevisionIds.length > 0) {
+      return { ok: false, error: revisionPlanInvalid(input.project.id) };
+    }
+    const collision = projectPathCollision(input.project, ownership.projects);
+    if (collision) return { ok: false, error: collision };
     const planError = validateAddOwnedFilePlan(input.project, input.ownedFiles, path);
     if (planError) return { ok: false, error: planError };
     const conflict = workbench.manifest.projects.find(
@@ -174,10 +193,26 @@ export async function replaceStoredWorkbenchProject(
   return withWorkbenchMutationLock(workbench.adapter, async () => {
     const current = await verifyManifestCurrent(workbench);
     if (!current.ok) return current;
+    const ownership = await validateWorkbenchProjectPathOwnership(
+      workbench.adapter,
+      workbench.manifest.projects
+    );
+    if (!ownership.ok) return ownership;
     const entry = workbench.manifest.projects.find(({ id }) => id === input.project.id);
     if (!entry) return projectNotFound(input.project.id);
     const previous = await readIndexedWorkbenchProjectStorage(workbench.adapter, entry);
     if (!previous.ok) return previous;
+    if (
+      JSON.stringify(previous.project.savedRevisionIds) !==
+      JSON.stringify(input.project.savedRevisionIds)
+    ) {
+      return { ok: false, error: revisionPlanInvalid(input.project.id) };
+    }
+    const collision = projectPathCollision(
+      input.project,
+      ownership.projects.filter(({ id }) => id !== input.project.id)
+    );
+    if (collision) return { ok: false, error: collision };
     const planError = validateReplaceOwnedFilePlan(previous.project, input.project, input.ownedFileChanges, entry.path);
     if (planError) return { ok: false, error: planError };
 
@@ -221,6 +256,11 @@ export async function deleteStoredWorkbenchProject(
   return withWorkbenchMutationLock(workbench.adapter, async () => {
     const current = await verifyManifestCurrent(workbench);
     if (!current.ok) return current;
+    const ownership = await validateWorkbenchProjectPathOwnership(
+      workbench.adapter,
+      workbench.manifest.projects
+    );
+    if (!ownership.ok) return ownership;
     if (!Number.isFinite(input.deletedAt.getTime())) {
       return {
         ok: false,
@@ -236,9 +276,10 @@ export async function deleteStoredWorkbenchProject(
     const previous = await readIndexedWorkbenchProjectStorage(workbench.adapter, entry);
     if (!previous.ok) return previous;
     const sourcePaths = previous.project.source.files.map(({ path }) => path);
+    const ownedPaths = workbenchProjectOwnedPaths(previous.project);
     const snapshots = await captureSnapshots(
       workbench,
-      [...sourcePaths, entry.path, WORKBENCH_CATALOG_PATH]
+      [...ownedPaths, WORKBENCH_CATALOG_PATH]
     );
     if (!snapshots.ok) return snapshots;
     const dangling = snapshots.snapshots.find(
@@ -246,7 +287,7 @@ export async function deleteStoredWorkbenchProject(
     );
     if (dangling) return { ok: false, error: ownedFileDangling(input.projectId, dangling.path) };
 
-    for (const path of [...sourcePaths, entry.path]) {
+    for (const path of ownedPaths) {
       const deleted = await deleteStorageText(workbench, path);
       if (!deleted.ok) return rollbackOrError(workbench, snapshots.snapshots, deleted.error);
     }
@@ -503,6 +544,41 @@ function ownedFileDangling(projectId: string, path: string): OwnedFileDanglingEr
     projectId,
     path
   };
+}
+
+function revisionPlanInvalid(projectId: string): RevisionPlanError {
+  return {
+    code: 'WORKBENCH_CATALOG_REVISION_PLAN_INVALID',
+    message: `Project ${projectId} revision IDs may change only through the atomic saved-revision mutation.`,
+    projectId
+  };
+}
+
+function projectPathCollision(
+  project: WorkbenchProjectDocument,
+  existingProjects: readonly WorkbenchProjectDocument[]
+): Extract<
+  WorkbenchProjectIndexIntegrityError,
+  { code: 'WORKBENCH_CATALOG_PROJECT_PATH_COLLISION' }
+> | null {
+  const ownerByPath = new Map<string, string>();
+  for (const existing of existingProjects) {
+    for (const path of workbenchProjectOwnedPaths(existing)) ownerByPath.set(path, existing.id);
+  }
+  for (const path of workbenchProjectOwnedPaths(project)) {
+    const firstProjectId = ownerByPath.get(path);
+    if (firstProjectId !== undefined) {
+      return {
+        code: 'WORKBENCH_CATALOG_PROJECT_PATH_COLLISION',
+        message: `Workbench path ${path} is claimed by both ${firstProjectId} and ${project.id}.`,
+        path,
+        firstProjectId,
+        secondProjectId: project.id
+      };
+    }
+    ownerByPath.set(path, project.id);
+  }
+  return null;
 }
 
 function manifestStateFailure(code: ManifestStateError['code'], message: string) {

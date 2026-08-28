@@ -7,6 +7,7 @@ export {
   loadSavedWireEdmJobRevision,
   parseSavedWireEdmJobRevision,
   persistSavedWireEdmJobRevision,
+  saveStoredWireEdmJobRevision,
   serializeSavedWireEdmJobRevision,
   type CreateSavedWireEdmJobRevisionInput,
   type MachinePhysicalSnapshot,
@@ -19,6 +20,7 @@ export {
   type SavedWireEdmJobRevisionData,
   type SavedWireEdmJobRevisionError,
   type SavedWireEdmJobRevisionStorageError,
+  type SaveStoredWireEdmJobRevisionResult,
   type UpidWorkbenchProjectDocument
 } from './savedWireEdmJobRevision';
 

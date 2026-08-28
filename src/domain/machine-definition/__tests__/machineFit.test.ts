@@ -59,6 +59,25 @@ describe('physical machine fit', () => {
     });
   });
 
+  it('does not round a slightly exceeded physical limit into a fit', () => {
+    const value = machineDefinitionValue();
+    value.limits.xTravel = { status: 'known', millimeters: 10 };
+    value.limits.yTravel = { status: 'known', millimeters: 10 };
+    const parsed = parseMachineDefinition(JSON.stringify(value));
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+
+    expect(evaluatePhysicalMachineFit({
+      document: rectangle(10.0000004, 5),
+      machine: parsed.machine
+    })).toMatchObject({
+      ok: true,
+      fit: {
+        status: 'too-large',
+        issues: [{ axis: 'x', actualMm: 10.0000004, limitMm: 10 }]
+      }
+    });
+  });
+
   it('returns a diagnostic instead of treating empty geometry as unchecked', () => {
     const empty = createPathPlanningDocumentFromDxfEntities([]);
     expect(evaluatePhysicalMachineFit({ document: empty, machine: null })).toEqual({

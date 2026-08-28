@@ -140,7 +140,7 @@ export function auditControllerProgram(
       });
       continue;
     }
-    if (!sameMotion(event, blocks[0].motion)) {
+    if (!sameMotion(event, blocks[0].motion, plan.tolerance.endpointMm)) {
       diagnostics.push({
         code: 'POST_AUDIT_MOTION_MISMATCH',
         message: `Controller block ${blocks[0].id} does not preserve motion event ${event.id}.`,
@@ -153,28 +153,35 @@ export function auditControllerProgram(
 
 function sameMotion(
   event: Extract<WireEdmExecutionEvent, { kind: 'motion' | 'position' }>,
-  motion: ControllerMotionTrace
+  motion: ControllerMotionTrace,
+  toleranceMm: number
 ) {
   if (event.kind === 'position') {
     return motion.motion === 'linear' &&
       motion.role === 'position' &&
-      samePoint(motion.start, event.from) &&
-      samePoint(motion.end, event.to);
+      samePoint(motion.start, event.from, toleranceMm) &&
+      samePoint(motion.end, event.to, toleranceMm);
   }
   return motion.motion === event.motion &&
     motion.role === event.role &&
-    samePoint(motion.start, event.start) &&
-    samePoint(motion.end, event.end) &&
-    sameOptionalPoint(motion.center, event.center) &&
+    samePoint(motion.start, event.start, toleranceMm) &&
+    samePoint(motion.end, event.end, toleranceMm) &&
+    sameOptionalPoint(motion.center, event.center, toleranceMm) &&
     motion.clockwise === event.clockwise &&
     motion.fullCircle === event.fullCircle;
 }
 
-function sameOptionalPoint(first: Point2 | undefined, second: Point2 | undefined) {
+function sameOptionalPoint(
+  first: Point2 | undefined,
+  second: Point2 | undefined,
+  toleranceMm: number
+) {
   return first === undefined && second === undefined ||
-    first !== undefined && second !== undefined && samePoint(first, second);
+    first !== undefined && second !== undefined && samePoint(first, second, toleranceMm);
 }
 
-function samePoint(first: Point2, second: Point2) {
-  return Object.is(first.x, second.x) && Object.is(first.y, second.y);
+function samePoint(first: Point2, second: Point2, toleranceMm: number) {
+  return Number.isFinite(first.x) &&
+    Number.isFinite(first.y) &&
+    Math.hypot(first.x - second.x, first.y - second.y) <= toleranceMm;
 }
