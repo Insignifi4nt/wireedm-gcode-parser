@@ -31,6 +31,13 @@ export type ReplaceMachineDefinitionResult =
       error: { code: 'MACHINE_LIBRARY_MACHINE_NOT_FOUND'; message: string; machineId: string };
     };
 
+export type RemoveMachineDefinitionResult =
+  | { ok: true; library: MachineLibrary; removed: MachineDefinition }
+  | {
+      ok: false;
+      error: { code: 'MACHINE_LIBRARY_MACHINE_NOT_FOUND'; message: string; machineId: string };
+    };
+
 export function createEmptyMachineLibrary(): MachineLibrary {
   return Object.freeze({ schemaVersion: 1, machines: Object.freeze([]) });
 }
@@ -100,5 +107,30 @@ export function replaceMachineDefinition(
       )))
     }),
     machine
+  };
+}
+
+export function removeMachineDefinition(
+  library: MachineLibrary,
+  machineId: string
+): RemoveMachineDefinitionResult {
+  const removed = library.machines.find(({ id }) => id === machineId);
+  if (!removed) {
+    return {
+      ok: false,
+      error: {
+        code: 'MACHINE_LIBRARY_MACHINE_NOT_FOUND',
+        message: `Machine definition not found: ${machineId}.`,
+        machineId
+      }
+    };
+  }
+  return {
+    ok: true,
+    library: Object.freeze({
+      schemaVersion: 1,
+      machines: Object.freeze(library.machines.filter(({ id }) => id !== machineId))
+    }),
+    removed
   };
 }

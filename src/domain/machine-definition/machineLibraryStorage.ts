@@ -122,17 +122,21 @@ export async function writeMachineLibraryStorage(
   adapter: WorkbenchStorageAdapter,
   library: MachineLibrary
 ): Promise<WriteMachineLibraryStorageResult> {
-  const document = {
-    format: 'wire-edm-machine-library',
-    schemaVersion: 1,
-    machines: [...library.machines]
-  } as const;
-  const rawText = JSON.stringify(document, null, 2);
+  const rawText = serializeMachineLibraryStorage(library);
   const sizeError = machineLibrarySizeError(rawText);
   if (sizeError) return { ok: false, error: sizeError };
   return accessStorage('write', MACHINE_LIBRARY_PATH, () => (
     adapter.writeText(MACHINE_LIBRARY_PATH, rawText)
   ));
+}
+
+export function serializeMachineLibraryStorage(library: MachineLibrary) {
+  const document = {
+    format: 'wire-edm-machine-library',
+    schemaVersion: 1,
+    machines: [...library.machines]
+  } as const;
+  return JSON.stringify(document, null, 2);
 }
 
 async function parseStoredMachineLibrary(
