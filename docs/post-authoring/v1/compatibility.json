@@ -1,0 +1,17 @@
+{
+  "authoringKitVersion": "1",
+  "postPackageSchemaVersions": [
+    1
+  ],
+  "engineApiVersions": [
+    "1"
+  ],
+  "conformance": {
+    "runnerVersion": "1",
+    "command": "npm run post:conformance -- <package.wireedm-post.json>",
+    "canonicalFixtureRegistryVersion": "1",
+    "canonicalFixtureIds": [
+      "core.single-closed-contour.v1"
+    ]
+  }
+}

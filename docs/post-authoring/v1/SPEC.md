@@ -52,6 +52,8 @@ Every parameter declaration MUST include a closed semantic `role`. Non-motion pa
 
 Command IDs describe intent, not spelling. Templates contain controller spelling. A post MUST NOT emit an unregistered controller command. A command MUST NOT be emitted when its declared preconditions are false. Conflicting or incomplete state transitions MUST fail the run.
 
+Dialect state starts empty for each run. The runtime checks every `requires` token before rendering that command, then applies its `effects` in emission order. Most effects remain set for the rest of the run. `compensation.left`, `compensation.right`, and `compensation.off` replace one another; `wire.separated` and `wire.threaded` replace one another. Version 1 has no other implicit state clearing. A command author MUST declare the state transition that its evidenced controller word actually performs and MUST NOT use an unrelated effect only to satisfy the schema.
+
 Property values are supplied by an exact machine binding. Required values MUST be present and valid. Suggested values are authoring hints only; the engine MUST NOT substitute them for missing binding values.
 
 ## 5. Evidence
@@ -79,7 +81,7 @@ The post MUST end with all lifecycle state in the state required by its executio
 
 ## 7. Source program
 
-`source.code` exports the exact `createPost` entrypoint defined by the generated SDK declaration. The source receives only the documented deterministic host API. It MUST NOT depend on network access, browser APIs, local storage, wall-clock time, randomness, locale, ambient machine state, dynamic imports, or undeclared files.
+`source.code` exports exactly one binding named `createPost`, as defined by the generated SDK declaration. The source receives only the documented deterministic host API. It MUST NOT depend on network access, browser APIs, local storage, wall-clock time, randomness, locale, ambient machine state, dynamic imports, or undeclared files. The generated event and diagnostic catalogue lists the globals removed from the guest and the exact default runtime limits.
 
 `createPost(api)` MUST return exactly `{ onEvent(event) }`. The engine calls `onEvent` synchronously once for each neutral event in plan order. During that call the handler MUST use one of these dispositions:
 
@@ -90,6 +92,8 @@ The post MUST end with all lifecycle state in the state required by its executio
 `getProperty(name)` reads only an explicitly bound property and may be called during `createPost` or `onEvent`. Missing properties are errors; suggested values are never substituted. Emit/consume calls outside the active `onEvent` call, mixed dispositions, consumed motion, unknown commands, undeclared or mistyped parameters, false state preconditions, or invalid effects fail the complete run.
 
 Custom source is executed in a fresh isolated runtime and context for every run, with imports and ambient host capabilities disabled and explicit memory, stack, interrupt-cycle, wall-deadline, event, action, and UTF-8 output-byte limits. Successful conformance repeats execution in another fresh runtime and requires an identical structured result. An exact registered built-in package executes only through its built-in implementation. Every other package is custom and MUST pass all declared fixtures against the canonical fixture registry before installation. Execution failure returns structured diagnostics without a partial program; it MUST NOT select a built-in implementation or another package as a substitute.
+
+Every number parameter MUST declare its spelling through the closed v1 number-format object. Version 1 supports fixed fractional digits, a `.` or `,` decimal separator, optional trailing-zero trimming, and explicit negative-zero handling. Fractional digits MAY be a fixed integer or an exact integer binding property constrained to the inclusive range 0 through 12. The runtime formats template text from that declaration but derives motion trace from the original finite numeric value. A controller requirement outside the closed format schema is not representable in v1. The author MUST report that limitation and MUST NOT approximate the required spelling.
 
 ## 8. Fixtures and conformance
 
@@ -109,6 +113,8 @@ Conformance MUST perform, at minimum:
 10. repeated-run determinism comparison.
 
 Any failure produces a non-zero result and structured diagnostics. Conformance MUST NOT rewrite the package, insert properties, skip fixtures, normalize expected output, retry through another post, or downgrade an error to a warning.
+
+The checked-in canonical registry is the complete fixture input available to installation conformance. Its exact plans are published in `sdk/canonical-plan-fixtures.json`, and its IDs are repeated in `compatibility.json`. The runner rejects declared commands and positive capability claims that no successful fixture exercises. It also checks boolean choices, every declared choice, and explicit minimum and maximum values for bounded integer and number properties. These executable checks do not establish complete string-boundary, lifecycle-branch, or known-failure coverage. An author and reviewer MUST compare the remaining package claims with its declared fixtures. If the registry cannot exercise a claimed capability, lifecycle branch, property boundary, or known failure, the package is incomplete even if its declared fixtures pass.
 
 ## 9. Saved revisions and artifacts
 

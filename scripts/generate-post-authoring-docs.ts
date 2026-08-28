@@ -3,14 +3,23 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { PostLibraryDocumentSchema } from '../src/domain/post-processor/postLibraryStorage.ts';
-import { parseWireEdmPostPackage } from '../src/domain/post-processor/postPackage.ts';
+import {
+  parseWireEdmPostPackage,
+  type PostPackageDiagnosticCode
+} from '../src/domain/post-processor/postPackage.ts';
 import { WireEdmPostPackageSchema } from '../src/domain/post-processor/postPackageSchema.ts';
 import { MachineDefinitionSchema } from '../src/domain/machine-definition/machineDefinition.ts';
 import { MachineLibraryDocumentSchema } from '../src/domain/machine-definition/machineLibraryStorage.ts';
 import { WorkbenchCatalogManifestSchema } from '../src/domain/workbench-catalog/workbenchCatalog.ts';
 import { WorkbenchProjectDocumentSchema } from '../src/domain/workbench-catalog/workbenchProject.ts';
-import { CUSTOM_POST_DIAGNOSTIC_CODES } from '../src/domain/post-processor/custom-runtime/customPostRuntime.ts';
-import { runCustomPostConformance } from '../src/domain/post-processor/custom-runtime/customPostConformance.ts';
+import {
+  CUSTOM_POST_DIAGNOSTIC_CODES,
+  DEFAULT_CUSTOM_POST_RUNTIME_LIMITS
+} from '../src/domain/post-processor/custom-runtime/customPostRuntime.ts';
+import {
+  CUSTOM_POST_CONFORMANCE_DIAGNOSTIC_CODES,
+  runCustomPostConformance,
+} from '../src/domain/post-processor/custom-runtime/customPostConformance.ts';
 import { CANONICAL_POST_PLAN_FIXTURES } from '../src/domain/post-processor/custom-runtime/canonicalPostConformanceFixtures.ts';
 import {
   CUSTOM_POST_EVENT_KINDS,
@@ -19,6 +28,26 @@ import {
 
 const root = process.cwd();
 const examplePath = path.join(root, 'docs/post-authoring/v1/examples/minimal.wireedm-post.json');
+const packageDiagnosticCodes = [
+  'POST_PACKAGE_FILE_TOO_LARGE',
+  'POST_PACKAGE_JSON_INVALID',
+  'POST_PACKAGE_SCHEMA_INVALID',
+  'POST_PACKAGE_RECORD_KEY_INVALID',
+  'POST_PACKAGE_DUPLICATE_ID',
+  'POST_PACKAGE_SOURCE_NOT_FOUND',
+  'POST_PACKAGE_EVIDENCE_NOT_FOUND',
+  'POST_PACKAGE_EVIDENCE_TARGET_NOT_FOUND',
+  'POST_PACKAGE_EVIDENCE_SCOPE_MISMATCH',
+  'POST_PACKAGE_EXECUTION_CONTRACT_INVALID',
+  'POST_PACKAGE_PROPERTY_DEFINITION_INVALID',
+  'POST_PACKAGE_COMMAND_PARAMETER_INVALID',
+  'POST_PACKAGE_FIXTURE_PROPERTY_INVALID'
+] as const satisfies readonly PostPackageDiagnosticCode[];
+const allPackageDiagnosticCodesPublished: Exclude<
+  PostPackageDiagnosticCode,
+  typeof packageDiagnosticCodes[number]
+> extends never ? true : false = true;
+void allPackageDiagnosticCodesPublished;
 const generatedFiles = [
   {
     path: path.join(root, 'docs/post-authoring/v1/schema/post-package.schema.json'),
@@ -53,7 +82,68 @@ const generatedFiles = [
     contents: `${JSON.stringify({
       engineApiVersion: '1',
       eventKinds: CUSTOM_POST_EVENT_KINDS,
-      runtimeDiagnosticCodes: CUSTOM_POST_DIAGNOSTIC_CODES
+      packageDiagnosticCodes,
+      conformanceDiagnosticCodes: CUSTOM_POST_CONFORMANCE_DIAGNOSTIC_CODES,
+      runtimeDiagnosticCodes: CUSTOM_POST_DIAGNOSTIC_CODES,
+      cliDiagnosticCodes: [
+        'POST_CONFORMANCE_ARGUMENT_INVALID',
+        'POST_CONFORMANCE_INPUT_UNREADABLE'
+      ],
+      cliReport: {
+        discriminator: 'ok',
+        commonFields: ['conformanceRunnerVersion', 'ok', 'stage'],
+        stages: ['invocation', 'input', 'package-validation', 'conformance'],
+        failureField: 'diagnostics',
+        successFields: ['package', 'fixtures']
+      },
+      defaultRuntimeLimits: DEFAULT_CUSTOM_POST_RUNTIME_LIMITS,
+      deniedGuestGlobals: [
+        'Date',
+        'eval',
+        'Function',
+        'WebAssembly',
+        'performance',
+        'crypto',
+        'fetch',
+        'XMLHttpRequest',
+        'WebSocket',
+        'navigator',
+        'localStorage',
+        'sessionStorage',
+        'indexedDB',
+        'caches',
+        'document',
+        'window',
+        'self',
+        'Intl',
+        'WeakRef',
+        'FinalizationRegistry',
+        'Atomics',
+        'SharedArrayBuffer',
+        'Temporal',
+        'Math.random'
+      ]
+    }, null, 2)}\n`
+  },
+  {
+    path: path.join(root, 'docs/post-authoring/v1/sdk/canonical-plan-fixtures.json'),
+    contents: `${JSON.stringify({
+      registryVersion: '1',
+      fixtures: CANONICAL_POST_PLAN_FIXTURES
+    }, null, 2)}\n`
+  },
+  {
+    path: path.join(root, 'docs/post-authoring/v1/compatibility.json'),
+    contents: `${JSON.stringify({
+      authoringKitVersion: '1',
+      postPackageSchemaVersions: [1],
+      engineApiVersions: ['1'],
+      conformance: {
+        runnerVersion: '1',
+        command: 'npm run post:conformance -- <package.wireedm-post.json>',
+        canonicalFixtureRegistryVersion: '1',
+        canonicalFixtureIds: Object.keys(CANONICAL_POST_PLAN_FIXTURES)
+      }
     }, null, 2)}\n`
   }
 ];

@@ -34,7 +34,7 @@
     "properties": {
       "coordinatePrecision": {
         "type": "integer",
-        "description": "Digits after the decimal separator.",
+        "description": "Digits after the decimal separator before optional trailing-zero trimming.",
         "required": true,
         "minimum": 0,
         "maximum": 6,
@@ -59,12 +59,26 @@
           "x": {
             "type": "number",
             "role": "motion.end-x",
-            "description": "X endpoint coordinate."
+            "description": "X endpoint coordinate.",
+            "format": {
+              "style": "fixed",
+              "fractionDigits": { "kind": "property", "property": "coordinatePrecision" },
+              "decimalSeparator": ".",
+              "trimTrailingZeros": true,
+              "negativeZero": "zero"
+            }
           },
           "y": {
             "type": "number",
             "role": "motion.end-y",
-            "description": "Y endpoint coordinate."
+            "description": "Y endpoint coordinate.",
+            "format": {
+              "style": "fixed",
+              "fractionDigits": { "kind": "property", "property": "coordinatePrecision" },
+              "decimalSeparator": ".",
+              "trimTrailingZeros": true,
+              "negativeZero": "zero"
+            }
           }
         },
         "effects": ["position.changed"],
@@ -164,10 +178,18 @@
   ],
   "fixtures": [
     {
-      "id": "single-closed-contour",
-      "description": "One linear closed contour without threading.",
+      "id": "single-closed-contour-minimum-precision",
+      "description": "One linear closed contour at the minimum coordinate precision.",
       "planFixture": "core.single-closed-contour.v1",
-      "properties": { "coordinatePrecision": 3 },
+      "properties": { "coordinatePrecision": 0 },
+      "expectedProgram": "G90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nM02",
+      "evidenceRefs": ["linuxcnc-g90", "linuxcnc-g1", "linuxcnc-m2"]
+    },
+    {
+      "id": "single-closed-contour-maximum-precision",
+      "description": "One linear closed contour at the maximum coordinate precision.",
+      "planFixture": "core.single-closed-contour.v1",
+      "properties": { "coordinatePrecision": 6 },
       "expectedProgram": "G90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nM02",
       "evidenceRefs": ["linuxcnc-g90", "linuxcnc-g1", "linuxcnc-m2"]
     }

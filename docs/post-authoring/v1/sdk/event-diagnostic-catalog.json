@@ -16,6 +16,30 @@
     "operation-end",
     "program-end"
   ],
+  "packageDiagnosticCodes": [
+    "POST_PACKAGE_FILE_TOO_LARGE",
+    "POST_PACKAGE_JSON_INVALID",
+    "POST_PACKAGE_SCHEMA_INVALID",
+    "POST_PACKAGE_RECORD_KEY_INVALID",
+    "POST_PACKAGE_DUPLICATE_ID",
+    "POST_PACKAGE_SOURCE_NOT_FOUND",
+    "POST_PACKAGE_EVIDENCE_NOT_FOUND",
+    "POST_PACKAGE_EVIDENCE_TARGET_NOT_FOUND",
+    "POST_PACKAGE_EVIDENCE_SCOPE_MISMATCH",
+    "POST_PACKAGE_EXECUTION_CONTRACT_INVALID",
+    "POST_PACKAGE_PROPERTY_DEFINITION_INVALID",
+    "POST_PACKAGE_COMMAND_PARAMETER_INVALID",
+    "POST_PACKAGE_FIXTURE_PROPERTY_INVALID"
+  ],
+  "conformanceDiagnosticCodes": [
+    "POST_CONFORMANCE_PACKAGE_INVALID",
+    "POST_CONFORMANCE_PLAN_FIXTURE_NOT_FOUND",
+    "POST_CONFORMANCE_RUNTIME_FAILED",
+    "POST_CONFORMANCE_EXPECTED_PROGRAM_MISMATCH",
+    "POST_CONFORMANCE_COMMAND_NOT_COVERED",
+    "POST_CONFORMANCE_CAPABILITY_NOT_COVERED",
+    "POST_CONFORMANCE_PROPERTY_BOUNDARY_NOT_COVERED"
+  ],
   "runtimeDiagnosticCodes": [
     "POST_CUSTOM_PROPERTY_INVALID",
     "POST_CUSTOM_CAPABILITY_UNSUPPORTED",
@@ -32,7 +56,66 @@
     "POST_CUSTOM_OUTPUT_LIMIT",
     "POST_CUSTOM_EVENT_DISPOSITION_INVALID",
     "POST_CUSTOM_MOTION_ROLE_INVALID",
+    "POST_CUSTOM_LIFECYCLE_INVALID",
     "POST_CUSTOM_AUDIT_FAILED",
     "POST_CUSTOM_NONDETERMINISTIC"
+  ],
+  "cliDiagnosticCodes": [
+    "POST_CONFORMANCE_ARGUMENT_INVALID",
+    "POST_CONFORMANCE_INPUT_UNREADABLE"
+  ],
+  "cliReport": {
+    "discriminator": "ok",
+    "commonFields": [
+      "conformanceRunnerVersion",
+      "ok",
+      "stage"
+    ],
+    "stages": [
+      "invocation",
+      "input",
+      "package-validation",
+      "conformance"
+    ],
+    "failureField": "diagnostics",
+    "successFields": [
+      "package",
+      "fixtures"
+    ]
+  },
+  "defaultRuntimeLimits": {
+    "memoryBytes": 16777216,
+    "stackBytes": 524288,
+    "interruptCycles": 100000,
+    "deadlineMs": 1000,
+    "events": 20000,
+    "actions": 100000,
+    "outputBytes": 4194304
+  },
+  "deniedGuestGlobals": [
+    "Date",
+    "eval",
+    "Function",
+    "WebAssembly",
+    "performance",
+    "crypto",
+    "fetch",
+    "XMLHttpRequest",
+    "WebSocket",
+    "navigator",
+    "localStorage",
+    "sessionStorage",
+    "indexedDB",
+    "caches",
+    "document",
+    "window",
+    "self",
+    "Intl",
+    "WeakRef",
+    "FinalizationRegistry",
+    "Atomics",
+    "SharedArrayBuffer",
+    "Temporal",
+    "Math.random"
   ]
 }

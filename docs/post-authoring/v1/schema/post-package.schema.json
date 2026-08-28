@@ -513,7 +513,8 @@
                           "required": [
                             "type",
                             "role",
-                            "description"
+                            "description",
+                            "format"
                           ],
                           "properties": {
                             "type": {
@@ -529,6 +530,93 @@
                               "maxLength": 512,
                               "type": "string"
                             },
+                            "format": {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "style",
+                                "fractionDigits",
+                                "decimalSeparator",
+                                "trimTrailingZeros",
+                                "negativeZero"
+                              ],
+                              "properties": {
+                                "style": {
+                                  "const": "fixed",
+                                  "type": "string"
+                                },
+                                "fractionDigits": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "type": "object",
+                                      "required": [
+                                        "kind",
+                                        "value"
+                                      ],
+                                      "properties": {
+                                        "kind": {
+                                          "const": "fixed",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "minimum": 0,
+                                          "maximum": 12,
+                                          "type": "integer"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "type": "object",
+                                      "required": [
+                                        "kind",
+                                        "property"
+                                      ],
+                                      "properties": {
+                                        "kind": {
+                                          "const": "property",
+                                          "type": "string"
+                                        },
+                                        "property": {
+                                          "minLength": 1,
+                                          "maxLength": 80,
+                                          "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+                                          "type": "string"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                },
+                                "decimalSeparator": {
+                                  "anyOf": [
+                                    {
+                                      "const": ".",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": ",",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "trimTrailingZeros": {
+                                  "type": "boolean"
+                                },
+                                "negativeZero": {
+                                  "anyOf": [
+                                    {
+                                      "const": "zero",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "preserve",
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              }
+                            },
                             "minimum": {
                               "type": "number"
                             },
@@ -543,7 +631,8 @@
                           "required": [
                             "type",
                             "role",
-                            "description"
+                            "description",
+                            "format"
                           ],
                           "properties": {
                             "type": {
@@ -567,6 +656,93 @@
                               "maxLength": 512,
                               "type": "string"
                             },
+                            "format": {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "style",
+                                "fractionDigits",
+                                "decimalSeparator",
+                                "trimTrailingZeros",
+                                "negativeZero"
+                              ],
+                              "properties": {
+                                "style": {
+                                  "const": "fixed",
+                                  "type": "string"
+                                },
+                                "fractionDigits": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "type": "object",
+                                      "required": [
+                                        "kind",
+                                        "value"
+                                      ],
+                                      "properties": {
+                                        "kind": {
+                                          "const": "fixed",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "minimum": 0,
+                                          "maximum": 12,
+                                          "type": "integer"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "type": "object",
+                                      "required": [
+                                        "kind",
+                                        "property"
+                                      ],
+                                      "properties": {
+                                        "kind": {
+                                          "const": "property",
+                                          "type": "string"
+                                        },
+                                        "property": {
+                                          "minLength": 1,
+                                          "maxLength": 80,
+                                          "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+                                          "type": "string"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                },
+                                "decimalSeparator": {
+                                  "anyOf": [
+                                    {
+                                      "const": ".",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": ",",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "trimTrailingZeros": {
+                                  "type": "boolean"
+                                },
+                                "negativeZero": {
+                                  "anyOf": [
+                                    {
+                                      "const": "zero",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "preserve",
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              }
+                            },
                             "minimum": {
                               "type": "number"
                             },
@@ -582,7 +758,8 @@
                             "type",
                             "role",
                             "centerReference",
-                            "description"
+                            "description",
+                            "format"
                           ],
                           "properties": {
                             "type": {
@@ -655,6 +832,93 @@
                               "minLength": 1,
                               "maxLength": 512,
                               "type": "string"
+                            },
+                            "format": {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "style",
+                                "fractionDigits",
+                                "decimalSeparator",
+                                "trimTrailingZeros",
+                                "negativeZero"
+                              ],
+                              "properties": {
+                                "style": {
+                                  "const": "fixed",
+                                  "type": "string"
+                                },
+                                "fractionDigits": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "type": "object",
+                                      "required": [
+                                        "kind",
+                                        "value"
+                                      ],
+                                      "properties": {
+                                        "kind": {
+                                          "const": "fixed",
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "minimum": 0,
+                                          "maximum": 12,
+                                          "type": "integer"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "type": "object",
+                                      "required": [
+                                        "kind",
+                                        "property"
+                                      ],
+                                      "properties": {
+                                        "kind": {
+                                          "const": "property",
+                                          "type": "string"
+                                        },
+                                        "property": {
+                                          "minLength": 1,
+                                          "maxLength": 80,
+                                          "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+                                          "type": "string"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                },
+                                "decimalSeparator": {
+                                  "anyOf": [
+                                    {
+                                      "const": ".",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": ",",
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "trimTrailingZeros": {
+                                  "type": "boolean"
+                                },
+                                "negativeZero": {
+                                  "anyOf": [
+                                    {
+                                      "const": "zero",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "const": "preserve",
+                                      "type": "string"
+                                    }
+                                  ]
+                                }
+                              }
                             },
                             "minimum": {
                               "type": "number"
