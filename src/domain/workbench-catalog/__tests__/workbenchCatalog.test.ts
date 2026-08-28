@@ -8,6 +8,9 @@ import {
   initializeWorkbenchCatalog,
   WORKBENCH_CATALOG_PATH
 } from '../workbenchCatalog';
+import { addStoredWorkbenchProject } from '../workbenchCatalogMutations';
+import { createWorkbenchProjectDocument } from '../workbenchProject';
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
 class MemoryAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
@@ -118,4 +121,123 @@ describe('clean-break workbench catalog', () => {
     expect(adapter.files.has(MACHINE_LIBRARY_PATH)).toBe(false);
     expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: true, kind: 'created' });
   });
+
+  it('rejects a dangling project index entry while opening the catalog', async () => {
+    const adapter = new MemoryAdapter();
+    const created = await initializeWorkbenchCatalog(adapter, {
+      now: new Date('2026-08-28T12:00:00.000Z')
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    adapter.files.set(WORKBENCH_CATALOG_PATH, JSON.stringify({
+      ...created.workbench.manifest,
+      projects: [{
+        id: 'missing',
+        name: 'Missing',
+        path: 'projects/missing.json',
+        sourceKind: 'upid',
+        updatedAt: '2026-08-28T12:00:00.000Z'
+      }]
+    }));
+
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({
+      ok: false,
+      error: {
+        code: 'WORKBENCH_CATALOG_PROJECT_DANGLING',
+        projectId: 'missing',
+        path: 'projects/missing.json'
+      }
+    });
+  });
+
+  it('rejects a manifest index field that disagrees with its stored project', async () => {
+    const adapter = new MemoryAdapter();
+    const created = await initializeWorkbenchCatalog(adapter, {
+      now: new Date('2026-08-28T12:00:00.000Z')
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const project = projectFixture();
+    const added = await addStoredWorkbenchProject(created.workbench, { project, ownedFiles: [] });
+    if (!added.ok) throw new Error(added.error.message);
+    adapter.files.set(WORKBENCH_CATALOG_PATH, JSON.stringify({
+      ...added.workbench.manifest,
+      projects: added.workbench.manifest.projects.map((entry) => ({ ...entry, name: 'Tampered' }))
+    }));
+
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({
+      ok: false,
+      error: {
+        code: 'WORKBENCH_CATALOG_PROJECT_INDEX_MISMATCH',
+        projectId: 'fixture',
+        field: 'name',
+        expected: 'Tampered',
+        actual: 'Fixture'
+      }
+    });
+  });
+
+  it('rejects an indexed project whose declared owned source is missing', async () => {
+    const adapter = new MemoryAdapter();
+    const created = await initializeWorkbenchCatalog(adapter, {
+      now: new Date('2026-08-28T12:00:00.000Z')
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const project = projectWithSourceFixture();
+    const added = await addStoredWorkbenchProject(created.workbench, {
+      project,
+      ownedFiles: [{ path: 'imports/fixture.upid', contents: 'SOURCE' }]
+    });
+    if (!added.ok) throw new Error(added.error.message);
+    adapter.files.delete('imports/fixture.upid');
+
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({
+      ok: false,
+      error: {
+        code: 'WORKBENCH_CATALOG_PROJECT_SOURCE_DANGLING',
+        projectId: 'sourced',
+        path: 'imports/fixture.upid'
+      }
+    });
+  });
 });
+
+function projectFixture() {
+  const created = createWorkbenchProjectDocument({
+    id: 'fixture',
+    name: 'Fixture',
+    now: new Date('2026-08-28T12:00:00.000Z'),
+    source: { kind: 'upid', files: [] },
+    content: {
+      kind: 'upid-document',
+      document: createUpidFromDxfEntities([
+        { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 1, y: 0 } }
+      ])
+    }
+  });
+  if (!created.ok) throw new Error(created.error.message);
+  return created.project;
+}
+
+function projectWithSourceFixture() {
+  const created = createWorkbenchProjectDocument({
+    id: 'sourced',
+    name: 'Sourced',
+    now: new Date('2026-08-28T12:00:00.000Z'),
+    source: {
+      kind: 'upid',
+      files: [{
+        kind: 'upid',
+        name: 'fixture.upid',
+        path: 'imports/fixture.upid',
+        createdAt: '2026-08-28T12:00:00.000Z'
+      }]
+    },
+    content: {
+      kind: 'upid-document',
+      document: createUpidFromDxfEntities([
+        { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 1, y: 0 } }
+      ])
+    }
+  });
+  if (!created.ok) throw new Error(created.error.message);
+  return created.project;
+}

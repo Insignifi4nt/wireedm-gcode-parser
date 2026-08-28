@@ -18,6 +18,11 @@ import {
   type MachineLibraryStorageError
 } from '@/domain/machine-definition/machineLibraryStorage';
 import type { MachineLibrary } from '@/domain/machine-definition/machineLibrary';
+import {
+  readIndexedWorkbenchProjectStorage,
+  type WorkbenchProjectIndexIntegrityError,
+  type WorkbenchProjectStorageError
+} from './workbenchProjectStorage';
 
 export const WORKBENCH_CATALOG_PATH = 'workbench.json';
 export const WORKBENCH_SCHEMA_VERSION = 2 as const;
@@ -106,6 +111,8 @@ type WorkbenchCatalogAccessError = {
 export type WorkbenchCatalogError =
   | PostLibraryStorageError
   | MachineLibraryStorageError
+  | WorkbenchProjectStorageError
+  | WorkbenchProjectIndexIntegrityError
   | {
       code: 'WORKBENCH_CATALOG_VERSION_UNSUPPORTED';
       message: string;
@@ -174,6 +181,10 @@ export async function initializeWorkbenchCatalog(
   if (!machines.ok) return machines;
   const manifest = validateWorkbenchCatalogValue(parsedValue.value, machines.library);
   if (!manifest.ok) return manifest;
+  for (const entry of manifest.manifest.projects) {
+    const project = await readIndexedWorkbenchProjectStorage(adapter, entry);
+    if (!project.ok) return project;
+  }
 
   return {
     ok: true,
@@ -330,10 +341,10 @@ function validateWorkbenchCatalogValue(value: unknown, machines: MachineLibrary)
       }
     };
   }
-  const firstProjectIndex = new Map<string, number>();
+  const firstProjectIdIndex = new Map<string, number>();
+  const firstProjectPathIndex = new Map<string, number>();
   for (const [index, project] of manifest.projects.entries()) {
-    const identity = `${project.id}\u0000${project.path}`;
-    const firstIndex = firstProjectIndex.get(identity);
+    const firstIndex = firstProjectIdIndex.get(project.id) ?? firstProjectPathIndex.get(project.path);
     if (firstIndex !== undefined) {
       return {
         ok: false as const,
@@ -344,7 +355,8 @@ function validateWorkbenchCatalogValue(value: unknown, machines: MachineLibrary)
         }
       };
     }
-    firstProjectIndex.set(identity, index);
+    firstProjectIdIndex.set(project.id, index);
+    firstProjectPathIndex.set(project.path, index);
   }
   const machineId = manifest.preferences.recentPlanningMachineId;
   if (machineId !== null && !machines.machines.some(({ id }) => id === machineId)) {

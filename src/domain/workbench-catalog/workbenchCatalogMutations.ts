@@ -8,199 +8,255 @@ import {
 } from './workbenchCatalog';
 import type { WorkbenchProjectDocument } from './workbenchProject';
 import {
-  deleteWorkbenchProjectStorage,
-  readWorkbenchProjectStorage,
-  writeWorkbenchProjectStorage,
+  readIndexedWorkbenchProjectStorage,
+  workbenchProjectDocumentPath,
+  type WorkbenchProjectIndexIntegrityError,
   type WorkbenchProjectStorageError
 } from './workbenchProjectStorage';
 
-type CatalogMutationAccessError = Extract<
-  WorkbenchProjectStorageError,
-  { code: 'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED' }
-> | {
+export interface OwnedWorkbenchFileWrite {
+  readonly path: string;
+  readonly contents: string;
+}
+
+export type OwnedWorkbenchFileChange =
+  | ({ readonly kind: 'write' } & OwnedWorkbenchFileWrite)
+  | { readonly kind: 'delete'; readonly path: string };
+
+interface AddStoredWorkbenchProjectInput {
+  readonly project: WorkbenchProjectDocument;
+  readonly ownedFiles: readonly OwnedWorkbenchFileWrite[];
+}
+
+interface ReplaceStoredWorkbenchProjectInput {
+  readonly project: WorkbenchProjectDocument;
+  readonly ownedFileChanges: readonly OwnedWorkbenchFileChange[];
+}
+
+interface DeleteStoredWorkbenchProjectInput {
+  readonly projectId: string;
+  readonly deletedAt: Date;
+}
+
+type ProjectNotFoundError = {
+  code: 'WORKBENCH_CATALOG_PROJECT_NOT_FOUND';
+  message: string;
+  projectId: string;
+};
+
+type ProjectConflictError = {
+  code: 'WORKBENCH_CATALOG_PROJECT_CONFLICT';
+  message: string;
+  projectId: string;
+  path: string;
+};
+
+type OwnedFilePlanError = {
+  code: 'WORKBENCH_CATALOG_OWNED_FILE_PLAN_INVALID';
+  message: string;
+  path: string;
+};
+
+type OwnedFileDanglingError = {
+  code: 'WORKBENCH_CATALOG_OWNED_FILE_DANGLING';
+  message: string;
+  projectId: string;
+  path: string;
+};
+
+type TimestampError = {
+  code: 'WORKBENCH_CATALOG_MUTATION_TIMESTAMP_INVALID';
+  message: string;
+  projectId: string;
+};
+
+type ManifestWriteError = {
   code: 'WORKBENCH_CATALOG_MUTATION_MANIFEST_WRITE_FAILED';
   message: string;
   path: typeof WORKBENCH_CATALOG_PATH;
 };
 
+type ManifestStateError = {
+  code:
+    | 'WORKBENCH_CATALOG_MUTATION_MANIFEST_MISSING'
+    | 'WORKBENCH_CATALOG_MUTATION_MANIFEST_INVALID'
+    | 'WORKBENCH_CATALOG_MUTATION_MANIFEST_STALE';
+  message: string;
+  path: typeof WORKBENCH_CATALOG_PATH;
+};
+
+type MutationError =
+  | WorkbenchProjectStorageError
+  | WorkbenchProjectIndexIntegrityError
+  | ProjectNotFoundError
+  | ProjectConflictError
+  | OwnedFilePlanError
+  | OwnedFileDanglingError
+  | TimestampError
+  | ManifestWriteError
+  | ManifestStateError;
+
 type CatalogRollbackError = {
   code: 'WORKBENCH_CATALOG_MUTATION_ROLLBACK_FAILED';
   message: string;
-  originalError: CatalogMutationAccessError;
-  rollbackError: CatalogMutationAccessError;
+  originalError: MutationError;
+  rollbackErrors: readonly WorkbenchProjectStorageError[];
 };
 
 export type AddStoredWorkbenchProjectResult =
   | { ok: true; workbench: ConnectedWorkbenchCatalog; project: WorkbenchProjectDocument }
-  | {
-      ok: false;
-      error:
-        | WorkbenchProjectStorageError
-        | CatalogMutationAccessError
-        | CatalogRollbackError
-        | {
-            code: 'WORKBENCH_CATALOG_PROJECT_CONFLICT';
-            message: string;
-            projectId: string;
-            path: string;
-          };
-    };
+  | { ok: false; error: MutationError | CatalogRollbackError };
 
-export type ReplaceStoredWorkbenchProjectResult =
-  | { ok: true; workbench: ConnectedWorkbenchCatalog; project: WorkbenchProjectDocument }
-  | {
-      ok: false;
-      error:
-        | WorkbenchProjectStorageError
-        | CatalogMutationAccessError
-        | CatalogRollbackError
-        | {
-            code: 'WORKBENCH_CATALOG_PROJECT_NOT_FOUND';
-            message: string;
-            projectId: string;
-          }
-        | {
-            code: 'WORKBENCH_CATALOG_PROJECT_ID_MISMATCH';
-            message: string;
-            expectedProjectId: string;
-            actualProjectId: string;
-          };
-    };
+export type ReadStoredWorkbenchProjectResult =
+  | { ok: true; project: WorkbenchProjectDocument }
+  | { ok: false; error: MutationError };
+
+export type ReplaceStoredWorkbenchProjectResult = AddStoredWorkbenchProjectResult;
 
 export type DeleteStoredWorkbenchProjectResult =
   | { ok: true; workbench: ConnectedWorkbenchCatalog; deleted: WorkbenchProjectDocument }
-  | {
-      ok: false;
-      error:
-        | WorkbenchProjectStorageError
-        | CatalogMutationAccessError
-        | CatalogRollbackError
-        | {
-            code: 'WORKBENCH_CATALOG_PROJECT_NOT_FOUND';
-            message: string;
-            projectId: string;
-          };
-    };
+  | { ok: false; error: MutationError | CatalogRollbackError };
+
+interface StorageSnapshot {
+  readonly path: string;
+  readonly contents: string | null;
+}
 
 export async function addStoredWorkbenchProject(
   workbench: ConnectedWorkbenchCatalog,
-  project: WorkbenchProjectDocument
+  input: AddStoredWorkbenchProjectInput
 ): Promise<AddStoredWorkbenchProjectResult> {
   return withWorkbenchMutationLock(workbench.adapter, async () => {
-    const path = projectPath(project.id);
+    const current = await verifyManifestCurrent(workbench);
+    if (!current.ok) return current;
+    const path = workbenchProjectDocumentPath(input.project.id);
+    const planError = validateAddOwnedFilePlan(input.project, input.ownedFiles, path);
+    if (planError) return { ok: false, error: planError };
     const conflict = workbench.manifest.projects.find(
-      (entry) => entry.id === project.id || entry.path === path
+      (entry) => entry.id === input.project.id || entry.path === path
     );
-    if (conflict) {
-      return {
-        ok: false,
-        error: {
-          code: 'WORKBENCH_CATALOG_PROJECT_CONFLICT',
-          message: `Workbench project conflicts with ${conflict.id} at ${conflict.path}.`,
-          projectId: project.id,
-          path
-        }
-      };
-    }
-    let existing: string | null;
-    try {
-      existing = await workbench.adapter.readText(path);
-    } catch (error) {
-      return projectAccessFailure('read', path, error);
-    }
-    if (existing !== null) {
-      return {
-        ok: false,
-        error: {
-          code: 'WORKBENCH_CATALOG_PROJECT_CONFLICT',
-          message: `Unindexed project storage already exists at ${path}.`,
-          projectId: project.id,
-          path
-        }
-      };
-    }
+    if (conflict) return projectConflict(input.project.id, path, `indexed project ${conflict.id}`);
 
-    const written = await writeWorkbenchProjectStorage(workbench.adapter, path, project);
-    if (!written.ok) return written;
-    const nextManifest = withProjectEntry(workbench.manifest, project, path);
-    const manifestWrite = await writeManifest(workbench, nextManifest);
-    if (!manifestWrite.ok) {
-      const rollback = await deleteWorkbenchProjectStorage(workbench.adapter, path);
-      if (!rollback.ok) return rollbackFailure(manifestWrite.error, rollback.error);
-      return manifestWrite;
+    const paths = [...input.ownedFiles.map(({ path: ownedPath }) => ownedPath), path, WORKBENCH_CATALOG_PATH];
+    const snapshots = await captureSnapshots(workbench, paths);
+    if (!snapshots.ok) return snapshots;
+    const occupied = snapshots.snapshots.find(
+      (snapshot) => snapshot.path !== WORKBENCH_CATALOG_PATH && snapshot.contents !== null
+    );
+    if (occupied) return projectConflict(input.project.id, occupied.path, 'existing unindexed storage');
+
+    for (const file of input.ownedFiles) {
+      const written = await writeStorageText(workbench, file.path, file.contents);
+      if (!written.ok) return rollbackOrError(workbench, snapshots.snapshots, written.error);
     }
-    return {
-      ok: true,
-      project,
-      workbench: freezeWorkbench(workbench, nextManifest)
-    };
+    const documentWrite = await writeProjectDocument(workbench, path, input.project);
+    if (!documentWrite.ok) return rollbackOrError(workbench, snapshots.snapshots, documentWrite.error);
+    const nextManifest = withProjectEntry(workbench.manifest, input.project, path);
+    const manifestWrite = await writeManifest(workbench, nextManifest);
+    if (!manifestWrite.ok) return rollbackOrError(workbench, snapshots.snapshots, manifestWrite.error);
+    return { ok: true, project: input.project, workbench: freezeWorkbench(workbench, nextManifest) };
   });
+}
+
+export async function readStoredWorkbenchProject(
+  workbench: ConnectedWorkbenchCatalog,
+  projectId: string
+): Promise<ReadStoredWorkbenchProjectResult> {
+  const entry = workbench.manifest.projects.find(({ id }) => id === projectId);
+  if (!entry) return projectNotFound(projectId);
+  return readIndexedWorkbenchProjectStorage(workbench.adapter, entry);
 }
 
 export async function replaceStoredWorkbenchProject(
   workbench: ConnectedWorkbenchCatalog,
-  project: WorkbenchProjectDocument
+  input: ReplaceStoredWorkbenchProjectInput
 ): Promise<ReplaceStoredWorkbenchProjectResult> {
   return withWorkbenchMutationLock(workbench.adapter, async () => {
-    const entry = workbench.manifest.projects.find(({ id }) => id === project.id);
-    if (!entry) return projectNotFound(project.id);
-    const previous = await readWorkbenchProjectStorage(workbench.adapter, entry.path);
+    const current = await verifyManifestCurrent(workbench);
+    if (!current.ok) return current;
+    const entry = workbench.manifest.projects.find(({ id }) => id === input.project.id);
+    if (!entry) return projectNotFound(input.project.id);
+    const previous = await readIndexedWorkbenchProjectStorage(workbench.adapter, entry);
     if (!previous.ok) return previous;
-    if (previous.project.id !== project.id) {
-      return {
-        ok: false,
-        error: {
-          code: 'WORKBENCH_CATALOG_PROJECT_ID_MISMATCH',
-          message: `Project ${entry.path} contains ${previous.project.id}, expected ${project.id}.`,
-          expectedProjectId: project.id,
-          actualProjectId: previous.project.id
-        }
-      };
+    const planError = validateReplaceOwnedFilePlan(previous.project, input.project, input.ownedFileChanges, entry.path);
+    if (planError) return { ok: false, error: planError };
+
+    const paths = [...input.ownedFileChanges.map(({ path }) => path), entry.path, WORKBENCH_CATALOG_PATH];
+    const snapshots = await captureSnapshots(workbench, paths);
+    if (!snapshots.ok) return snapshots;
+    const previousPaths = new Set(previous.project.source.files.map(({ path }) => path));
+    for (const change of input.ownedFileChanges) {
+      const snapshot = snapshots.snapshots.find(({ path }) => path === change.path);
+      if (change.kind === 'delete' && snapshot?.contents === null) {
+        return { ok: false, error: ownedFileDangling(input.project.id, change.path) };
+      }
+      if (change.kind === 'write' && !previousPaths.has(change.path) && snapshot?.contents !== null) {
+        return projectConflict(input.project.id, change.path, 'existing unowned storage');
+      }
     }
-    const written = await writeWorkbenchProjectStorage(workbench.adapter, entry.path, project);
-    if (!written.ok) return written;
-    const nextManifest = replaceProjectEntry(workbench.manifest, project, entry.path);
+
+    for (const change of input.ownedFileChanges) {
+      if (change.kind === 'write') {
+        const written = await writeStorageText(workbench, change.path, change.contents);
+        if (!written.ok) return rollbackOrError(workbench, snapshots.snapshots, written.error);
+      }
+    }
+    for (const change of input.ownedFileChanges.filter(({ kind }) => kind === 'delete')) {
+      const deleted = await deleteStorageText(workbench, change.path);
+      if (!deleted.ok) return rollbackOrError(workbench, snapshots.snapshots, deleted.error);
+    }
+    const documentWrite = await writeProjectDocument(workbench, entry.path, input.project);
+    if (!documentWrite.ok) return rollbackOrError(workbench, snapshots.snapshots, documentWrite.error);
+    const nextManifest = replaceProjectEntry(workbench.manifest, input.project, entry.path);
     const manifestWrite = await writeManifest(workbench, nextManifest);
-    if (!manifestWrite.ok) {
-      const rollback = await writeWorkbenchProjectStorage(
-        workbench.adapter,
-        entry.path,
-        previous.project
-      );
-      if (!rollback.ok) return rollbackFailure(manifestWrite.error, rollback.error);
-      return manifestWrite;
-    }
-    return {
-      ok: true,
-      project,
-      workbench: freezeWorkbench(workbench, nextManifest)
-    };
+    if (!manifestWrite.ok) return rollbackOrError(workbench, snapshots.snapshots, manifestWrite.error);
+    return { ok: true, project: input.project, workbench: freezeWorkbench(workbench, nextManifest) };
   });
 }
 
 export async function deleteStoredWorkbenchProject(
   workbench: ConnectedWorkbenchCatalog,
-  projectId: string,
-  deletedAt: Date
+  input: DeleteStoredWorkbenchProjectInput
 ): Promise<DeleteStoredWorkbenchProjectResult> {
   return withWorkbenchMutationLock(workbench.adapter, async () => {
-    const entry = workbench.manifest.projects.find(({ id }) => id === projectId);
-    if (!entry) return projectNotFound(projectId);
-    const previous = await readWorkbenchProjectStorage(workbench.adapter, entry.path);
+    const current = await verifyManifestCurrent(workbench);
+    if (!current.ok) return current;
+    if (!Number.isFinite(input.deletedAt.getTime())) {
+      return {
+        ok: false,
+        error: {
+          code: 'WORKBENCH_CATALOG_MUTATION_TIMESTAMP_INVALID',
+          message: `Project deletion timestamp is invalid for ${input.projectId}.`,
+          projectId: input.projectId
+        }
+      };
+    }
+    const entry = workbench.manifest.projects.find(({ id }) => id === input.projectId);
+    if (!entry) return projectNotFound(input.projectId);
+    const previous = await readIndexedWorkbenchProjectStorage(workbench.adapter, entry);
     if (!previous.ok) return previous;
+    const sourcePaths = previous.project.source.files.map(({ path }) => path);
+    const snapshots = await captureSnapshots(
+      workbench,
+      [...sourcePaths, entry.path, WORKBENCH_CATALOG_PATH]
+    );
+    if (!snapshots.ok) return snapshots;
+    const dangling = snapshots.snapshots.find(
+      (snapshot) => sourcePaths.includes(snapshot.path) && snapshot.contents === null
+    );
+    if (dangling) return { ok: false, error: ownedFileDangling(input.projectId, dangling.path) };
+
+    for (const path of [...sourcePaths, entry.path]) {
+      const deleted = await deleteStorageText(workbench, path);
+      if (!deleted.ok) return rollbackOrError(workbench, snapshots.snapshots, deleted.error);
+    }
     const nextManifest = deepFreeze({
       ...workbench.manifest,
-      updatedAt: deletedAt.toISOString(),
-      projects: workbench.manifest.projects.filter(({ id }) => id !== projectId)
+      updatedAt: input.deletedAt.toISOString(),
+      projects: workbench.manifest.projects.filter(({ id }) => id !== input.projectId)
     } satisfies WorkbenchCatalogManifestValue);
     const manifestWrite = await writeManifest(workbench, nextManifest);
-    if (!manifestWrite.ok) return manifestWrite;
-    const deleted = await deleteWorkbenchProjectStorage(workbench.adapter, entry.path);
-    if (!deleted.ok) {
-      const rollback = await writeManifest(workbench, workbench.manifest);
-      if (!rollback.ok) return rollbackFailure(deleted.error, rollback.error);
-      return deleted;
-    }
+    if (!manifestWrite.ok) return rollbackOrError(workbench, snapshots.snapshots, manifestWrite.error);
     return {
       ok: true,
       deleted: previous.project,
@@ -209,8 +265,170 @@ export async function deleteStoredWorkbenchProject(
   });
 }
 
-function projectPath(projectId: string) {
-  return `projects/${projectId}.json`;
+function validateAddOwnedFilePlan(
+  project: WorkbenchProjectDocument,
+  writes: readonly OwnedWorkbenchFileWrite[],
+  documentPath: string
+) {
+  const declared = new Set(project.source.files.map(({ path }) => path));
+  const seen = new Set<string>();
+  for (const write of writes) {
+    if (seen.has(write.path)) return ownedFilePlanInvalid(write.path, 'is duplicated');
+    seen.add(write.path);
+    if (!declared.has(write.path)) return ownedFilePlanInvalid(write.path, 'is not declared by the project');
+  }
+  if (declared.has(documentPath)) return ownedFilePlanInvalid(documentPath, 'collides with the project document');
+  for (const path of declared) {
+    if (!seen.has(path)) return ownedFilePlanInvalid(path, 'has no explicit write');
+  }
+  return null;
+}
+
+function validateReplaceOwnedFilePlan(
+  previous: WorkbenchProjectDocument,
+  next: WorkbenchProjectDocument,
+  changes: readonly OwnedWorkbenchFileChange[],
+  documentPath: string
+) {
+  const previousPaths = new Set(previous.source.files.map(({ path }) => path));
+  const nextPaths = new Set(next.source.files.map(({ path }) => path));
+  if (nextPaths.has(documentPath)) return ownedFilePlanInvalid(documentPath, 'collides with the project document');
+  const seen = new Set<string>();
+  const deleted = new Set<string>();
+  const written = new Set<string>();
+  for (const change of changes) {
+    if (seen.has(change.path)) return ownedFilePlanInvalid(change.path, 'has more than one change');
+    seen.add(change.path);
+    if (change.kind === 'delete') {
+      if (!previousPaths.has(change.path) || nextPaths.has(change.path)) {
+        return ownedFilePlanInvalid(change.path, 'is not a removed owned file');
+      }
+      deleted.add(change.path);
+    } else {
+      if (!nextPaths.has(change.path)) return ownedFilePlanInvalid(change.path, 'is not owned by the replacement project');
+      written.add(change.path);
+    }
+  }
+  for (const path of previousPaths) {
+    if (!nextPaths.has(path) && !deleted.has(path)) return ownedFilePlanInvalid(path, 'has no explicit delete');
+  }
+  for (const path of nextPaths) {
+    if (!previousPaths.has(path) && !written.has(path)) return ownedFilePlanInvalid(path, 'has no explicit write');
+  }
+  return null;
+}
+
+async function captureSnapshots(workbench: ConnectedWorkbenchCatalog, paths: readonly string[]) {
+  const snapshots: StorageSnapshot[] = [];
+  for (const path of new Set(paths)) {
+    try {
+      snapshots.push({ path, contents: await workbench.adapter.readText(path) });
+    } catch (error) {
+      return projectAccessFailure('read', path, error);
+    }
+  }
+  return { ok: true as const, snapshots };
+}
+
+async function verifyManifestCurrent(workbench: ConnectedWorkbenchCatalog) {
+  let rawText: string | null;
+  try {
+    rawText = await workbench.adapter.readText(WORKBENCH_CATALOG_PATH);
+  } catch (error) {
+    return projectAccessFailure('read', WORKBENCH_CATALOG_PATH, error);
+  }
+  if (rawText === null) {
+    return manifestStateFailure(
+      'WORKBENCH_CATALOG_MUTATION_MANIFEST_MISSING',
+      'Workbench manifest disappeared after the catalog was opened.'
+    );
+  }
+  let stored: unknown;
+  try {
+    stored = JSON.parse(rawText);
+  } catch {
+    return manifestStateFailure(
+      'WORKBENCH_CATALOG_MUTATION_MANIFEST_INVALID',
+      'Workbench manifest became invalid JSON after the catalog was opened.'
+    );
+  }
+  if (JSON.stringify(stored) !== JSON.stringify(workbench.manifest)) {
+    return manifestStateFailure(
+      'WORKBENCH_CATALOG_MUTATION_MANIFEST_STALE',
+      'Workbench manifest changed after this catalog snapshot was opened.'
+    );
+  }
+  return { ok: true as const };
+}
+
+async function rollbackOrError(
+  workbench: ConnectedWorkbenchCatalog,
+  snapshots: readonly StorageSnapshot[],
+  originalError: MutationError
+): Promise<{ ok: false; error: MutationError | CatalogRollbackError }> {
+  const rollbackErrors: WorkbenchProjectStorageError[] = [];
+  for (const snapshot of [...snapshots].reverse()) {
+    const restored = snapshot.contents === null
+      ? await deleteStorageText(workbench, snapshot.path)
+      : await writeStorageText(workbench, snapshot.path, snapshot.contents);
+    if (!restored.ok) rollbackErrors.push(restored.error);
+  }
+  if (rollbackErrors.length === 0) return { ok: false, error: originalError };
+  return {
+    ok: false,
+    error: {
+      code: 'WORKBENCH_CATALOG_MUTATION_ROLLBACK_FAILED',
+      message: `Workbench project mutation failed and ${rollbackErrors.length} rollback operation(s) also failed.`,
+      originalError,
+      rollbackErrors
+    }
+  };
+}
+
+async function writeProjectDocument(
+  workbench: ConnectedWorkbenchCatalog,
+  path: string,
+  project: WorkbenchProjectDocument
+) {
+  return writeStorageText(workbench, path, `${JSON.stringify(project, null, 2)}\n`);
+}
+
+async function writeStorageText(workbench: ConnectedWorkbenchCatalog, path: string, contents: string) {
+  try {
+    await workbench.adapter.writeText(path, contents);
+    return { ok: true as const };
+  } catch (error) {
+    return projectAccessFailure('write', path, error);
+  }
+}
+
+async function deleteStorageText(workbench: ConnectedWorkbenchCatalog, path: string) {
+  try {
+    await workbench.adapter.deleteText(path);
+    return { ok: true as const };
+  } catch (error) {
+    return projectAccessFailure('delete', path, error);
+  }
+}
+
+async function writeManifest(
+  workbench: ConnectedWorkbenchCatalog,
+  manifest: WorkbenchCatalogManifest
+) {
+  try {
+    await workbench.adapter.writeText(WORKBENCH_CATALOG_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
+    return { ok: true as const };
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false as const,
+      error: {
+        code: 'WORKBENCH_CATALOG_MUTATION_MANIFEST_WRITE_FAILED' as const,
+        message: `Workbench manifest write failed at ${WORKBENCH_CATALOG_PATH}: ${cause}`,
+        path: WORKBENCH_CATALOG_PATH as typeof WORKBENCH_CATALOG_PATH
+      }
+    };
+  }
 }
 
 function withProjectEntry(
@@ -233,9 +451,7 @@ function replaceProjectEntry(
   return deepFreeze({
     ...manifest,
     updatedAt: project.updatedAt,
-    projects: manifest.projects.map((entry) =>
-      entry.id === project.id ? projectEntry(project, path) : entry
-    )
+    projects: manifest.projects.map((entry) => entry.id === project.id ? projectEntry(project, path) : entry)
   } satisfies WorkbenchCatalogManifestValue);
 }
 
@@ -249,27 +465,51 @@ function projectEntry(project: WorkbenchProjectDocument, path: string) {
   };
 }
 
-async function writeManifest(
-  workbench: ConnectedWorkbenchCatalog,
-  manifest: WorkbenchCatalogManifest
-) {
-  try {
-    await workbench.adapter.writeText(
-      WORKBENCH_CATALOG_PATH,
-      `${JSON.stringify(manifest, null, 2)}\n`
-    );
-    return { ok: true as const };
-  } catch (error) {
-    const cause = error instanceof Error ? error.message : String(error);
-    return {
-      ok: false as const,
-      error: {
-        code: 'WORKBENCH_CATALOG_MUTATION_MANIFEST_WRITE_FAILED' as const,
-        message: `Workbench manifest write failed at ${WORKBENCH_CATALOG_PATH}: ${cause}`,
-        path: WORKBENCH_CATALOG_PATH as typeof WORKBENCH_CATALOG_PATH
-      }
-    };
-  }
+function projectNotFound(projectId: string) {
+  return {
+    ok: false as const,
+    error: {
+      code: 'WORKBENCH_CATALOG_PROJECT_NOT_FOUND' as const,
+      message: `Workbench project is not indexed: ${projectId}.`,
+      projectId
+    }
+  };
+}
+
+function projectConflict(projectId: string, path: string, reason: string) {
+  return {
+    ok: false as const,
+    error: {
+      code: 'WORKBENCH_CATALOG_PROJECT_CONFLICT' as const,
+      message: `Cannot store project ${projectId} at ${path}; ${reason} already exists.`,
+      projectId,
+      path
+    }
+  };
+}
+
+function ownedFilePlanInvalid(path: string, reason: string): OwnedFilePlanError {
+  return {
+    code: 'WORKBENCH_CATALOG_OWNED_FILE_PLAN_INVALID',
+    message: `Owned-file change for ${path} is invalid: ${reason}.`,
+    path
+  };
+}
+
+function ownedFileDangling(projectId: string, path: string): OwnedFileDanglingError {
+  return {
+    code: 'WORKBENCH_CATALOG_OWNED_FILE_DANGLING',
+    message: `Project ${projectId} owns a missing source file: ${path}.`,
+    projectId,
+    path
+  };
+}
+
+function manifestStateFailure(code: ManifestStateError['code'], message: string) {
+  return {
+    ok: false as const,
+    error: { code, message, path: WORKBENCH_CATALOG_PATH as typeof WORKBENCH_CATALOG_PATH }
+  };
 }
 
 function projectAccessFailure(
@@ -285,32 +525,6 @@ function projectAccessFailure(
       message: `Workbench project ${operation} failed at ${path}: ${cause}`,
       operation,
       path
-    }
-  };
-}
-
-function projectNotFound(projectId: string) {
-  return {
-    ok: false as const,
-    error: {
-      code: 'WORKBENCH_CATALOG_PROJECT_NOT_FOUND' as const,
-      message: `Workbench project is not indexed: ${projectId}.`,
-      projectId
-    }
-  };
-}
-
-function rollbackFailure(
-  originalError: CatalogMutationAccessError,
-  rollbackError: CatalogMutationAccessError
-) {
-  return {
-    ok: false as const,
-    error: {
-      code: 'WORKBENCH_CATALOG_MUTATION_ROLLBACK_FAILED' as const,
-      message: `Workbench project mutation failed and rollback also failed: ${rollbackError.message}`,
-      originalError,
-      rollbackError
     }
   };
 }
