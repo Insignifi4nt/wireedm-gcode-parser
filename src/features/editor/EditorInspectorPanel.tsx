@@ -12,8 +12,8 @@ import type { GCodeStructure } from '@/domain/editor/gcodeStructure';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { MagnetizeMode } from '@/domain/path-editor/pathPointInference';
-import type { MachineFitResult } from '@/domain/machine/machineFit';
-import { resolveSourceOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
+import type { MachineDefinition } from '@/domain/machine-definition/machineDefinition';
+import type { PhysicalMachineFitResult } from '@/domain/machine-definition/machineFit';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import {
   readUpidManualOverrideRows,
@@ -30,7 +30,6 @@ import {
   summarizeUpidDiagnosticsForPathElementRef,
   type UpidSelectedPathDiagnostic,
 } from '@/domain/upid/projectRail';
-import type { MachineProfile } from '@/domain/workbench/types';
 
 import type { EditorGuideTarget } from './editorGuideContent';
 import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
@@ -55,9 +54,8 @@ interface EditorInspectorPanelProps {
   guideHighlightTarget: EditorGuideTarget | null;
   fullHeight?: boolean;
   isSaving: boolean;
-  machineFit: MachineFitResult | null;
-  machineProfile: MachineProfile | null;
-  machineProfileEditor?: ReactNode;
+  machineFit: PhysicalMachineFitResult | null;
+  planningMachine: MachineDefinition | null;
   measurementPoints: MeasurementPoint[];
   pathCount: number;
   pathConstructionMode?: MagnetizeMode | null;
@@ -106,8 +104,7 @@ export function EditorInspectorPanel({
   fullHeight = false,
   isSaving,
   machineFit,
-  machineProfile,
-  machineProfileEditor,
+  planningMachine,
   measurementPoints,
   pathCount,
   pathConstructionMode = null,
@@ -151,26 +148,13 @@ export function EditorInspectorPanel({
   const selectedPathPoint = selectedPathElementModel
     ? readUpidSelectedPathPoint(pathDocument, selectedPathElementModel, selectedPathElement)
     : null;
-  const selectedOperationTransitionsAreGenerated = Boolean(
-    pathDocument &&
-      selectedPathOperation &&
-      machineProfile &&
-      resolveSourceOperationTransitionOwnership(
-        pathDocument,
-        selectedPathOperation.id,
-        machineProfile
-      ) ===
-        'generated-explicit-linear'
-  );
-  const selectedPathTravel = selectedPathOperation && !selectedOperationTransitionsAreGenerated
+  const selectedPathTravel = selectedPathOperation
     ? readUpidSelectedPathTravel(pathDocument, selectedPathOperationIndex, selectedPathElement)
     : null;
   const selectedPathOverrideRows = selectedPathElementModel
     ? readUpidManualOverrideRows(
         selectedPathElementModel.overrides,
         selectedPathOperation?.transitions
-      ).filter(
-        (row) => !selectedOperationTransitionsAreGenerated || row.kind !== 'lead-in'
       )
     : [];
   const selectedPathSource = selectedPathElementModel
@@ -1043,19 +1027,15 @@ export function EditorInspectorPanel({
       </details>
       ), { fill: true })}
 
-      {machineProfile && (
-        renderWorkspacePanel('machine', 'Project Machine & Source Setup', (
+      {pathDocument && (
+        renderWorkspacePanel('machine', 'Planning Machine & Source Setup', (
         <section data-editor-machine-section>
-          <h3 className="mb-2 text-[11px] font-semibold">Project Machine & Source Setup</h3>
+          <h3 className="mb-2 text-[11px] font-semibold">Planning Machine & Source Setup</h3>
           <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
-            <dt className="text-muted-foreground">Profile</dt>
-            <dd className="truncate" data-editor-machine="profile" title={machineProfile.name}>
-              {machineProfile.name}
+            <dt className="text-muted-foreground">Machine</dt>
+            <dd className="truncate" data-editor-machine="definition" title={planningMachine?.name}>
+              {planningMachine?.name ?? 'Not selected'}
             </dd>
-            <dt className="text-muted-foreground">Max W</dt>
-            <dd data-editor-machine="max-width">{formatLimit(machineProfile.workArea?.widthMm ?? null)}</dd>
-            <dt className="text-muted-foreground">Max L</dt>
-            <dd data-editor-machine="max-length">{formatLimit(machineProfile.workArea?.lengthMm ?? null)}</dd>
           </dl>
           {pathDocument?.source.appliedUnits && (
             <div
@@ -1105,19 +1085,14 @@ export function EditorInspectorPanel({
               )}
             </div>
           )}
-          {machineFit?.status === 'too-large' && (
+          {machineFit?.ok && machineFit.fit.status === 'too-large' && (
             <div
               className="mt-2 border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200"
               data-editor-machine-fit="too-large"
             >
-              {machineFit.issues
+              {machineFit.fit.issues
                 .map((issue) => `${issue.axis} ${issue.actualMm.toFixed(3)} > ${issue.limitMm.toFixed(3)} mm`)
                 .join('\n')}
-            </div>
-          )}
-          {machineProfileEditor && (
-            <div className="mt-3 border-t border-border pt-3">
-              {machineProfileEditor}
             </div>
           )}
         </section>

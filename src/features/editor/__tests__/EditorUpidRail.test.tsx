@@ -163,7 +163,7 @@ describe('EditorUpidRail', () => {
           onModeChange={onModeChange}
           programContent={<div>Program sequence</div>}
           selectedOperationOrdinal={2}
-          status="review-required"
+          status="unresolved"
         />
       );
     });
@@ -174,7 +174,7 @@ describe('EditorUpidRail', () => {
     expect(rail?.className).toContain('w-9');
     expect(expand).not.toBeNull();
     expect(lens).not.toBeNull();
-    expect(container.querySelector('[aria-label="Program status: Review required"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Program status: Unresolved"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Selected operation 2"]')?.textContent).toBe('02');
 
     await act(async () => {

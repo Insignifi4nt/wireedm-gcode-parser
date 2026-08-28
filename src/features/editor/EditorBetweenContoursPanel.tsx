@@ -2,18 +2,15 @@ import { useMemo } from 'react';
 
 import { derivePlannedRapidRoutes } from '@/domain/path-editor/pathDocumentOperations';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
-import { resolveOperationThreadingTransition } from '@/domain/path-intel/threadingTransitions';
 import type {
   OperationThreadingTransition,
   PathPlanningDocument,
   Point2
 } from '@/domain/path-intel/types';
-import type { MachineProfile } from '@/domain/workbench/types';
 
 interface EditorBetweenContoursPanelProps {
   disabled: boolean;
   document: PathPlanningDocument;
-  machine: MachineProfile;
   onSelectOperation: (operationId: string) => void;
   onSetOperationThreading: (
     operationId: string,
@@ -29,7 +26,6 @@ interface EditorBetweenContoursPanelProps {
 export function EditorBetweenContoursPanel({
   disabled,
   document,
-  machine,
   onSelectOperation,
   onSetOperationThreading,
   onSetProjectThreading,
@@ -51,12 +47,7 @@ export function EditorBetweenContoursPanel({
         (candidate) => candidate.operationId === selected.id
       ) ?? null
     : null;
-  const threading = useMemo(
-    () => selected && selectedExecutionIndex > 0
-      ? resolveOperationThreadingTransition(document, selected.id, machine)
-      : null,
-    [document, machine, selected, selectedExecutionIndex]
-  );
+  const threading = selected?.threadingTransition ?? document.setup?.threadingDefault ?? null;
   const projectThreading = document.setup?.threadingDefault ?? {
     mode: 'manual' as const,
     wireSeparation: 'already-separated' as const
@@ -172,12 +163,10 @@ export function EditorBetweenContoursPanel({
                 </select>
               </label>
             )}
-            <p className={threading?.status === 'blocked' ? 'text-amber-300' : 'text-emerald-300'}>
-              {threading?.status === 'ready'
-                ? threading.transition.mode === 'manual'
-                  ? 'Manual: separate if required, rapid to the entry, stop for threading, then cut.'
-                  : `${threading.transition.mode} transition is authorized.`
-                : threading?.message}
+            <p className={threading ? 'text-emerald-300' : 'text-amber-300'}>
+              {threading
+                ? `${threading.mode} threading · ${threading.wireSeparation}`
+                : 'Choose an explicit project or operation threading transition.'}
             </p>
           </fieldset>
         </>

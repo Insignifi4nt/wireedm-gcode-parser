@@ -1,4 +1,4 @@
-import type { MachineFitStatus } from '@/domain/machine/machineFit';
+import type { PhysicalMachineFitResult } from '@/domain/machine-definition/machineFit';
 
 import type { EditorDocumentContext } from './EditorHeaderBar';
 
@@ -8,8 +8,8 @@ interface EditorStatusBarProps {
   diagnosticCount: number;
   hasUnsavedChanges: boolean;
   isSaving: boolean;
-  machineFitStatus: MachineFitStatus | null;
-  machineProfileName: string | null;
+  machineFit: PhysicalMachineFitResult | null;
+  planningMachineName: string | null;
   moveCount: number;
   operationCount: number | null;
   programLineCount: number | null;
@@ -31,8 +31,8 @@ export function EditorStatusBar({
   diagnosticCount,
   hasUnsavedChanges,
   isSaving,
-  machineFitStatus,
-  machineProfileName,
+  machineFit,
+  planningMachineName,
   moveCount,
   operationCount,
   programLineCount,
@@ -75,8 +75,8 @@ export function EditorStatusBar({
         <span data-editor-program-lines>Program Lines {programLineCount}</span>
       )}
       <span data-editor-status-diagnostics>Diagnostics {diagnosticCount}</span>
-      <span data-editor-status-machine>Machine {machineProfileName ?? '—'}</span>
-      <span data-editor-status-machine-fit>Fit {formatMachineFit(machineFitStatus)}</span>
+      <span data-editor-status-machine>Planning machine {planningMachineName ?? '—'}</span>
+      <span data-editor-status-machine-fit>Fit {formatMachineFit(machineFit)}</span>
       {unitSummary && <span data-editor-status-units>Units {unitSummary}</span>}
     </footer>
   );
@@ -87,8 +87,10 @@ function formatCoordinate(value: number | undefined) {
   return Number.isInteger(value) ? String(value) : value.toFixed(3);
 }
 
-function formatMachineFit(status: MachineFitStatus | null) {
-  if (status === 'fits') return 'Fits';
-  if (status === 'too-large') return 'Too large';
+function formatMachineFit(result: PhysicalMachineFitResult | null) {
+  if (!result || !result.ok) return 'Unchecked';
+  if (result.fit.status === 'fits') return 'Fits';
+  if (result.fit.status === 'too-large') return 'Too large';
+  if (result.fit.status === 'indeterminate') return 'Indeterminate';
   return 'Unchecked';
 }

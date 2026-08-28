@@ -1,4 +1,4 @@
-import type { UpidProgramTreeEditTarget } from '@/domain/upid/upidProgramTree';
+import type { EditorProgramTreeNode } from './EditorProgramTree';
 
 export type EditorProgramTreeExactTarget =
   | { diagnosticId: string; kind: 'diagnostic' }
@@ -6,80 +6,56 @@ export type EditorProgramTreeExactTarget =
   | { kind: 'program-stop'; operationId: string; stopId: string };
 
 export interface EditorProgramTreeAction {
-  commandId:
+  readonly commandId:
     | 'view.summary'
     | 'geometry.setup'
-    | 'machine.profile'
     | 'machining.initial-wire'
     | 'machining.between-contours'
     | 'machining.contour-setup'
-    | 'machining.sequence'
     | 'machining.set-start'
     | 'machining.entry-exit'
-    | 'machining.participation'
     | 'machining.program-stops'
     | 'view.diagnostics';
-  exactTarget: EditorProgramTreeExactTarget | null;
-  operationId: string | null;
+  readonly exactTarget: EditorProgramTreeExactTarget | null;
+  readonly operationId: string | null;
 }
 
-export function resolveEditorProgramTreeAction(
-  target: UpidProgramTreeEditTarget
-): EditorProgramTreeAction {
-  switch (target.kind) {
-    case 'path-summary':
-      return action('view.summary');
-    case 'geometry-setup':
-      return action('geometry.setup');
-    case 'machine-setup':
-      return action('machine.profile');
-    case 'initial-wire':
-      return action('machining.initial-wire');
-    case 'threading-default':
-      return action('machining.between-contours');
-    case 'operation':
-      return action('machining.contour-setup', target.operationId);
-    case 'cut-sequence':
-      return action('machining.sequence', target.operationId);
-    case 'contour-start':
-      return action('machining.set-start', target.operationId);
-    case 'incoming-connection':
-      return action('machining.between-contours', target.operationId);
-    case 'entry-exit':
-      return action('machining.entry-exit', target.operationId);
-    case 'machining-participation':
-      return action(
-        'machining.participation',
-        target.operationId ?? null,
-        target.operationId && target.spanId
-          ? {
-              kind: 'machining-span',
-              operationId: target.operationId,
-              spanId: target.spanId
-            }
-          : null
-      );
-    case 'program-stop':
-      return action(
-        'machining.program-stops',
-        target.operationId,
-        {
-          kind: 'program-stop',
-          operationId: target.operationId,
-          stopId: target.stopId
-        }
-      );
-    case 'diagnostics':
-      return action(
-        'view.diagnostics',
-        null,
-        target.diagnosticId
-          ? { diagnosticId: target.diagnosticId, kind: 'diagnostic' }
-          : null
-      );
-    default:
-      return assertNever(target);
+export function resolveEditorProgramTreeAction(node: EditorProgramTreeNode): EditorProgramTreeAction {
+  if (node.kind === 'source') {
+    switch (node.sourceKind) {
+      case 'path-summary': return action('view.summary');
+      case 'geometry': return action('geometry.setup');
+      case 'initial-wire': return action('machining.initial-wire');
+      case 'threading-default': return action('machining.between-contours');
+    }
   }
+  if (node.kind === 'operation') return action('machining.contour-setup', node.operationId);
+  if (node.kind === 'diagnostic') {
+    return action('view.diagnostics', node.operationId, {
+      kind: 'diagnostic',
+      diagnosticId: node.treeKey
+    });
+  }
+  if (node.eventKind === 'program-start') return action('machining.initial-wire');
+  if (node.eventKind === 'wire-continue' || node.eventKind === 'wire-separate' ||
+      node.eventKind === 'wire-thread' || node.eventKind === 'position') {
+    return action('machining.between-contours', node.operationId);
+  }
+  if (node.eventKind === 'program-stop') {
+    const source = node.sourceTrace.find((candidate) => candidate.kind === 'program-stop');
+    return source?.kind === 'program-stop'
+      ? action('machining.program-stops', source.operationId, {
+          kind: 'program-stop', operationId: source.operationId, stopId: source.stopId
+        })
+      : action('machining.program-stops', node.operationId);
+  }
+  if (node.eventKind === 'motion') {
+    const transition = node.sourceTrace.find((candidate) => candidate.kind === 'transition');
+    if (transition?.kind === 'transition' && (transition.role === 'entry' || transition.role === 'exit')) {
+      return action('machining.entry-exit', node.operationId);
+    }
+  }
+  return action('machining.contour-setup', node.operationId);
 }
 
 function action(
@@ -88,8 +64,4 @@ function action(
   exactTarget: EditorProgramTreeExactTarget | null = null
 ): EditorProgramTreeAction {
   return { commandId, exactTarget, operationId };
-}
-
-function assertNever(value: never): never {
-  throw new Error(`Unsupported UPID program-tree edit target: ${JSON.stringify(value)}`);
 }

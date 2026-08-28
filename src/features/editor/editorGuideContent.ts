@@ -66,7 +66,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '2. Import Flows',
         steps: [
           {
-            text: 'From the dashboard, import a DXF to create a clean internal path project. G-code is posted later from the active path plan and machine profile.'
+            text: 'From the dashboard, import a DXF to create a clean internal path project. A controller artifact is generated later from a saved revision and an explicitly selected machine binding.'
           },
           {
             text: 'From the editor, click Import Program to choose a .gcode, .nc, .iso, or .txt file. External programs pass through the cleanup/display pipeline before canvas display and editing.',
@@ -201,7 +201,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '2. Flow-uri de import',
         steps: [
           {
-            text: 'Din dashboard, importa un DXF ca sa creezi un proiect intern de path. G-code-ul se posteaza mai tarziu din planul de path si profilul de masina activ.'
+            text: 'Din dashboard, importa un DXF ca sa creezi un proiect intern de path. Artifactul pentru controller este generat ulterior dintr-o revizie salvata si o asociere de masina aleasa explicit.'
           },
           {
             text: 'Din editor, apasa Import Program pentru a alege un fisier .gcode, .nc, .iso ori .txt. Programele externe trec prin pipeline-ul de cleanup/display inainte de afisare pe canvas si editare.',

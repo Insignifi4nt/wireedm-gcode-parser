@@ -7,7 +7,6 @@ import type {
   ContourClassification,
   PathPlanningDocument
 } from '@/domain/path-intel/types';
-import type { MachineProfile } from '@/domain/workbench/types';
 
 const buttonClass =
   'flex h-7 items-center justify-center gap-1 border border-border px-1.5 text-[10px] text-muted-foreground outline-none transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40';
@@ -58,7 +57,6 @@ export function EditorGeometrySetupPanel({
 export function EditorContourSetupPanel({
   disabled,
   document,
-  machine,
   onReverse,
   onSelectOperation,
   onSetClassification,
@@ -67,7 +65,6 @@ export function EditorContourSetupPanel({
 }: {
   disabled: boolean;
   document: PathPlanningDocument;
-  machine: MachineProfile;
   onReverse: (operationId: string) => void;
   onSelectOperation: (operationId: string) => void;
   onSetClassification: (operationId: string, classification: ContourClassification) => void;
@@ -193,16 +190,6 @@ export function EditorContourSetupPanel({
             {compensationResolution?.status === 'ready' && compensationResolution.winding
               ? compensationResolution.winding.toUpperCase()
               : '—'}
-          </dd>
-          <dt className="text-muted-foreground">Controller</dt>
-          <dd data-testid="compensation-code">
-            {compensationResolution?.status === 'ready'
-              ? `${compensationResolution.code} D${machine.compensation.offsetSelection.index}`
-              : '—'}
-          </dd>
-          <dt className="text-muted-foreground">Snapshot</dt>
-          <dd data-testid="compensation-machine-status">
-            {machine.controller.verification.status}
           </dd>
         </dl>
         {compensationResolution?.status === 'blocked' && (

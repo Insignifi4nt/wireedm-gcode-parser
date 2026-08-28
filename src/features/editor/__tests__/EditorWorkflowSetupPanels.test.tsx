@@ -2,7 +2,6 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createCharmillesRobofil100V2CandidateProfile } from '@/domain/machine/machineProfiles';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
 import {
@@ -39,7 +38,6 @@ describe('canonical workflow target fallbacks', () => {
         <EditorContourSetupPanel
           disabled={false}
           document={document}
-          machine={createCharmillesRobofil100V2CandidateProfile()}
           onReverse={onReverse}
           onSelectOperation={vi.fn()}
           onSetClassification={onSetClassification}
@@ -122,7 +120,6 @@ describe('canonical workflow target fallbacks', () => {
         <EditorContourSetupPanel
           disabled={false}
           document={document}
-          machine={createCharmillesRobofil100V2CandidateProfile()}
           onReverse={vi.fn()}
           onSelectOperation={vi.fn()}
           onSetClassification={vi.fn()}

@@ -1,6 +1,6 @@
 import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
 
-import type { UpidProgramTreeStatus } from '@/domain/upid/upidProgramTree';
+import type { UpidEditorTree } from '@/domain/upid/upidEditorTree';
 
 export type EditorUpidRailMode = 'program' | 'geometry';
 
@@ -12,7 +12,7 @@ export interface EditorUpidRailProps {
   onModeChange: (mode: EditorUpidRailMode) => void;
   programContent: ReactNode;
   selectedOperationOrdinal: number | null;
-  status: UpidProgramTreeStatus;
+  status: UpidEditorTree['status'];
 }
 
 export function EditorUpidRail({
@@ -181,20 +181,18 @@ function formatMode(mode: EditorUpidRailMode) {
   return mode === 'program' ? 'Program' : 'Geometry';
 }
 
-function formatStatus(status: UpidProgramTreeStatus) {
+function formatStatus(status: UpidEditorTree['status']) {
   return {
     ready: 'Ready',
-    'review-required': 'Review required',
-    blocked: 'Blocked',
-    inactive: 'Inactive'
+    invalid: 'Invalid',
+    unresolved: 'Unresolved'
   }[status];
 }
 
-function statusColor(status: UpidProgramTreeStatus) {
+function statusColor(status: UpidEditorTree['status']) {
   return {
     ready: 'bg-emerald-500',
-    'review-required': 'bg-amber-400',
-    blocked: 'bg-red-500',
-    inactive: 'bg-muted-foreground'
+    invalid: 'bg-red-500',
+    unresolved: 'bg-amber-400'
   }[status];
 }

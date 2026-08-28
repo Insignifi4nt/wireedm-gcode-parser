@@ -2,7 +2,6 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createCharmillesRobofil100V2CandidateProfile } from '@/domain/machine/machineProfiles';
 import {
   setManualInitialWirePosition,
   setPathOperationTransitions
@@ -60,7 +59,6 @@ describe('EditorBetweenContoursPanel', () => {
         <EditorBetweenContoursPanel
           disabled={false}
           document={document}
-          machine={createCharmillesRobofil100V2CandidateProfile()}
           onSelectOperation={vi.fn()}
           onSetOperationThreading={onSetOperationThreading}
           onSetProjectThreading={vi.fn()}
@@ -97,7 +95,6 @@ describe('EditorBetweenContoursPanel', () => {
         <EditorBetweenContoursPanel
           disabled={false}
           document={document}
-          machine={createCharmillesRobofil100V2CandidateProfile()}
           onSelectOperation={vi.fn()}
           onSetOperationThreading={vi.fn()}
           onSetProjectThreading={vi.fn()}
@@ -125,7 +122,6 @@ describe('EditorBetweenContoursPanel', () => {
         <EditorBetweenContoursPanel
           disabled={false}
           document={document}
-          machine={createCharmillesRobofil100V2CandidateProfile()}
           onSelectOperation={vi.fn()}
           onSetOperationThreading={vi.fn()}
           onSetProjectThreading={vi.fn()}

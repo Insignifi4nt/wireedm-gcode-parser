@@ -3,28 +3,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
-import { resolveSourceOperationTransitionOwnership } from '@/domain/path-intel/operationTransitionOwnership';
-import {
-  prepareUpidMachinePost,
-  type UpidMachinePostPreparationIssue
-} from '@/domain/post/upidMachinePost';
-import { robofilV2PostEnvelopeIsReady } from '@/domain/post/verifiedRobofilPostEnvelope';
 import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
-import type { MachineProfile } from '@/domain/workbench/types';
 
 interface EditorEntryExitPanelProps {
   canvasPickMode: 'entry' | 'exit' | null;
   disabled: boolean;
   document: PathPlanningDocument;
-  machine: MachineProfile;
   onCanvasPickModeChange: (
     mode: 'entry' | 'exit' | null,
     operationId: string
   ) => void;
   onDraftChange?: (source: 'entry' | 'exit') => void;
-  onOpenContourStart?: (operationId: string) => void;
-  onOpenMachiningParticipation?: (operationId: string) => void;
-  onOpenProjectMachine?: () => void;
   onSelectOperation: (operationId: string) => void;
   onSetCircleCenterEntry: (operationId: string) => void;
   onSetManualEntry: (
@@ -42,12 +31,8 @@ export function EditorEntryExitPanel({
   canvasPickMode,
   disabled,
   document,
-  machine,
   onCanvasPickModeChange,
   onDraftChange,
-  onOpenContourStart,
-  onOpenMachiningParticipation,
-  onOpenProjectMachine,
   onSelectOperation,
   onSetCircleCenterEntry,
   onSetManualEntry,
@@ -65,32 +50,6 @@ export function EditorEntryExitPanel({
     (operation) => operation.id === selectedOperationId
   ) ?? operations[0] ?? null;
   const transitions = selected ? readOperationTransitions(selected) : {};
-  const generatedPresentation = selected &&
-    resolveSourceOperationTransitionOwnership(document, selected.id, machine) ===
-      'generated-explicit-linear'
-      ? readGeneratedTransitionPresentation(document, selected.id, machine)
-      : null;
-  const generatedContourStartOperationId =
-    generatedPresentation?.status === 'ready'
-      ? selected?.id
-      : generatedPresentation?.issue?.scope === 'contour-start'
-        ? generatedPresentation.issue.sourceOperationId
-        : undefined;
-  const generatedMachiningParticipationOperationId =
-    generatedPresentation?.status === 'blocked' &&
-    generatedPresentation.issue?.scope === 'machining-participation'
-      ? generatedPresentation.issue.sourceOperationId
-      : undefined;
-  const generatedProjectMachineOwned = Boolean(
-    generatedPresentation?.status === 'ready' ||
-    (
-      generatedPresentation?.status === 'blocked' &&
-      (
-        !generatedPresentation.issue?.sourceOperationId ||
-        generatedPresentation.issue.scope === 'machine-setup'
-      )
-    )
-  );
   const [entryX, setEntryX] = useState('');
   const [entryY, setEntryY] = useState('');
   const [exitX, setExitX] = useState('');
@@ -113,16 +72,9 @@ export function EditorEntryExitPanel({
 
   const entryPoint = readFinitePoint(entryX, entryY);
   const exitPoint = readFinitePoint(exitX, exitY);
-  const robofilV2OperationLifecycle = robofilV2PostEnvelopeIsReady(machine);
-  const centerPierceBlockedByControllerCompensation = Boolean(
-    document.geometryBasis === 'finished-contour' &&
-    selected?.compensationIntent?.mode === 'controller' &&
-    !robofilV2OperationLifecycle
-  );
   const canSetCircleCenterEntry = Boolean(
     selected &&
-    canSetCircleOperationCenterPierceLeadIn(document, selected.id) &&
-    !centerPierceBlockedByControllerCompensation
+    canSetCircleOperationCenterPierceLeadIn(document, selected.id)
   );
 
   if (!selected) {
@@ -155,90 +107,6 @@ export function EditorEntryExitPanel({
         </select>
       </label>
 
-      {generatedPresentation ? (
-        <section
-          className="grid gap-2 border border-cyan-500/45 bg-cyan-500/5 p-2"
-          data-entry-exit-generated
-        >
-          <div>
-            <div className="font-semibold uppercase text-cyan-200">
-              Generated explicit-linear transition
-            </div>
-            <p className="mt-1 leading-4 text-muted-foreground">
-              Generated from Contour Start and Project Machine when the program is posted. Stored
-              Entry / Exit overrides are ignored for this compensated operation.
-            </p>
-          </div>
-          {generatedPresentation.status === 'ready' ? (
-            <div className="grid gap-2">
-              {generatedPresentation.transitions.map((transition, index) => (
-                <dl
-                  className="grid grid-cols-[58px_minmax(0,1fr)] gap-x-2 gap-y-1 border border-border bg-background/40 p-2"
-                  data-entry-exit-generated-group={index + 1}
-                  key={`${transition.operationId}-${index}`}
-                >
-                  <dt className="text-muted-foreground">Lead-in</dt>
-                  <dd data-entry-exit-generated-lead-in>
-                    {formatPoint(transition.leadIn.start)} → {formatPoint(transition.leadIn.end)}
-                  </dd>
-                  <dt className="text-muted-foreground">Lead-out</dt>
-                  <dd data-entry-exit-generated-lead-out>
-                    {formatPoint(transition.leadOut.start)} → {formatPoint(transition.leadOut.end)}
-                  </dd>
-                </dl>
-              ))}
-            </div>
-          ) : (
-            <p
-              className="border border-amber-500/50 bg-amber-500/10 p-2 leading-4 text-amber-200"
-              data-entry-exit-generated-blocker
-            >
-              {generatedPresentation.message}
-            </p>
-          )}
-          <div className="grid grid-cols-2 gap-1">
-            {onOpenContourStart && generatedContourStartOperationId && (
-              <button
-                aria-label="Open Contour Start for generated transition"
-                className="h-7 border border-border bg-background px-1.5"
-                disabled={disabled}
-                onClick={() => onOpenContourStart(generatedContourStartOperationId)}
-                type="button"
-              >
-                Contour Start
-              </button>
-            )}
-            {onOpenProjectMachine && generatedProjectMachineOwned && (
-              <button
-                aria-label="Open Project Machine for generated transition"
-                className="h-7 border border-border bg-background px-1.5"
-                disabled={disabled}
-                onClick={onOpenProjectMachine}
-                type="button"
-              >
-                Project Machine
-              </button>
-            )}
-            {onOpenMachiningParticipation &&
-              generatedMachiningParticipationOperationId && (
-                <button
-                  aria-label="Open Machining Participation for generated transition blocker"
-                  className="h-7 border border-border bg-background px-1.5"
-                  disabled={disabled}
-                  onClick={() =>
-                    onOpenMachiningParticipation(
-                      generatedMachiningParticipationOperationId
-                    )
-                  }
-                  type="button"
-                >
-                  Machining Participation
-                </button>
-              )}
-          </div>
-        </section>
-      ) : (
-      <>
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
         <legend className="px-1 uppercase text-muted-foreground">Canvas point picking</legend>
         <p className="text-muted-foreground">
@@ -307,11 +175,7 @@ export function EditorEntryExitPanel({
             className="h-7 border border-border bg-background disabled:opacity-40"
             disabled={!canSetCircleCenterEntry}
             onClick={() => onSetCircleCenterEntry(selected.id)}
-            title={
-              centerPierceBlockedByControllerCompensation
-                ? 'Center pierce is unavailable while controller compensation is active.'
-                : 'Use circle center entry'
-            }
+            title="Use circle center entry"
             type="button"
           >
             Use circle center
@@ -320,13 +184,8 @@ export function EditorEntryExitPanel({
         <button
           aria-label="Use reviewed no entry"
           className="h-7 border border-border bg-background disabled:opacity-40"
-          disabled={!robofilV2OperationLifecycle}
           onClick={() => onSetNoEntry(selected.id)}
-          title={
-            robofilV2OperationLifecycle
-              ? 'Review and use direct contour entry with no lead-in move.'
-              : 'Reviewed no-entry intent is available only for a verified Robofil v2 lifecycle.'
-          }
+          title="Review and use direct contour entry with no lead-in move."
           type="button"
         >
           Use no entry (reviewed)
@@ -360,100 +219,16 @@ export function EditorEntryExitPanel({
         <button
           aria-label="Use reviewed no exit"
           className="h-7 border border-border bg-background disabled:opacity-40"
-          disabled={!robofilV2OperationLifecycle}
           onClick={() => onSetNoExit(selected.id)}
-          title={
-            robofilV2OperationLifecycle
-              ? 'Review and end at the contour endpoint with no lead-out move.'
-              : 'Reviewed no-exit intent is available only for a verified Robofil v2 lifecycle.'
-          }
+          title="Review and end at the contour endpoint with no lead-out move."
           type="button"
         >
           Use no exit (reviewed)
         </button>
       </fieldset>
 
-      </>
-      )}
     </section>
   );
-}
-
-type GeneratedTransitionPresentation =
-  | {
-      status: 'ready';
-      transitions: Array<{
-        operationId: string;
-        leadIn: { start: Point2; end: Point2 };
-        leadOut: { start: Point2; end: Point2 };
-      }>;
-    }
-  | {
-      status: 'blocked';
-      issue: UpidMachinePostPreparationIssue | null;
-      message: string;
-    };
-
-function readGeneratedTransitionPresentation(
-  document: PathPlanningDocument,
-  sourceOperationId: string,
-  machine: MachineProfile
-): GeneratedTransitionPresentation {
-  const preparation = prepareUpidMachinePost(document, machine);
-  if (preparation.status === 'blocked') {
-    const issue = preparation.issues.find((candidate) =>
-      candidate.sourceOperationId === sourceOperationId ||
-      candidate.effectiveOperationId === sourceOperationId
-    ) ?? preparation.issues[0] ?? null;
-    const diagnostic = preparation.result.diagnostics.find(
-      (candidate) => !issue || candidate.details?.reason === issue.reason
-    ) ?? preparation.result.diagnostics[0];
-    const owningOperation = issue?.sourceOperationId
-      ? document.plan.operations.find(
-          (operation) => operation.id === issue.sourceOperationId
-        )
-      : null;
-    const ownerLabel = owningOperation?.displayName ?? issue?.sourceOperationId;
-    const diagnosticMessage =
-      diagnostic?.message ??
-      `The generated transition is unavailable: ${issue?.reason ?? preparation.reason ?? 'post preparation blocked'}.`;
-    return {
-      status: 'blocked',
-      issue,
-      message: ownerLabel
-        ? `Blocked by ${ownerLabel}: ${diagnosticMessage}`
-        : diagnosticMessage
-    };
-  }
-
-  if (preparation.route !== 'explicit-linear') {
-    return {
-      status: 'blocked',
-      issue: null,
-      message: 'The selected post does not provide an explicit-linear generated transition.'
-    };
-  }
-
-  const transitions = preparation.document.plan.operations.flatMap((operation) => {
-    const operationSourceId = operation.machiningIntent?.sourceOperationId ?? operation.id;
-    if (operationSourceId !== sourceOperationId) return [];
-    const transition = preparation.readinessByOperationId.get(operation.id)?.transition;
-    return transition
-      ? [{
-          operationId: operation.id,
-          leadIn: transition.leadIn,
-          leadOut: transition.leadOut
-        }]
-      : [];
-  });
-
-  return transitions.length > 0
-    ? { status: 'ready', transitions }
-    : {
-        status: 'blocked',
-        issue: null,
-        message: 'The generated transition is unavailable for this operation.'
-      };
 }
 
 function CoordinateInputs({

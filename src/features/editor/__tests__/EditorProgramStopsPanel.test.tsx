@@ -2,7 +2,6 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createCharmillesRobofil100V2CandidateProfile } from '@/domain/machine/machineProfiles';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
 import { EditorProgramStopsPanel } from '../EditorProgramStopsPanel';
@@ -39,14 +38,12 @@ describe('EditorProgramStopsPanel', () => {
         note: 'inspect'
       }
     ];
-    const machine = createCharmillesRobofil100V2CandidateProfile();
     const onSetStops = vi.fn();
 
     await act(async () => root.render(
       <EditorProgramStopsPanel
         disabled={false}
         document={emptyDocument}
-        machine={machine}
         onSetStops={onSetStops}
         selectedOperationId={null}
       />
@@ -57,7 +54,6 @@ describe('EditorProgramStopsPanel', () => {
       <EditorProgramStopsPanel
         disabled={false}
         document={document}
-        machine={machine}
         onSetStops={onSetStops}
         selectedOperationId={operation.id}
         selectedStopId="stop-1"
@@ -74,7 +70,6 @@ describe('EditorProgramStopsPanel', () => {
       <EditorProgramStopsPanel
         disabled={false}
         document={emptyDocument}
-        machine={machine}
         onSetStops={onSetStops}
         selectedOperationId={null}
       />
@@ -91,7 +86,6 @@ describe('EditorProgramStopsPanel', () => {
       <EditorProgramStopsPanel
         disabled={false}
         document={document}
-        machine={createCharmillesRobofil100V2CandidateProfile()}
         onSetStops={onSetStops}
         selectedOperationId={document.plan.operations[0].id}
       />
@@ -141,7 +135,6 @@ describe('EditorProgramStopsPanel', () => {
       <EditorProgramStopsPanel
         disabled={false}
         document={document}
-        machine={createCharmillesRobofil100V2CandidateProfile()}
         onSetStops={onSetStops}
         selectedOperationId={operation.id}
         selectedStopId="stop-2"
@@ -200,7 +193,6 @@ describe('EditorProgramStopsPanel', () => {
       <EditorProgramStopsPanel
         disabled={false}
         document={document}
-        machine={createCharmillesRobofil100V2CandidateProfile()}
         onSetStops={onSetStops}
         selectedOperationId={operation.id}
         selectedStopId="stop-2"

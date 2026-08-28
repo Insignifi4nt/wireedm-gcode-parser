@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { validateProgramStops } from '@/domain/path-intel/programStops';
 import type {
   OperationProgramStop,
   OperationProgramStopPlacement,
   PathPlanningDocument
 } from '@/domain/path-intel/types';
-import type { MachineProfile } from '@/domain/workbench/types';
 
 interface EditorProgramStopsPanelProps {
   disabled: boolean;
   document: PathPlanningDocument;
-  machine: MachineProfile;
   onDraftChange?: () => void;
   onSetStops: (operationId: string, stops: OperationProgramStop[], completeForm?: boolean) => void;
   selectedOperationId: string | null;
@@ -21,7 +18,6 @@ interface EditorProgramStopsPanelProps {
 export function EditorProgramStopsPanel({
   disabled,
   document,
-  machine,
   onDraftChange,
   onSetStops,
   selectedOperationId,
@@ -58,7 +54,6 @@ export function EditorProgramStopsPanel({
   }, [selectedStop]);
 
   if (!operation) return <p className="text-[10px] text-muted-foreground">No operation selected.</p>;
-  const validation = validateProgramStops(operation, machine, document.segments);
   const remainingValue = Number(remaining);
   const canAdd = placement !== 'before-operation-end' ||
     (Number.isFinite(remainingValue) && remainingValue > 0);
@@ -110,13 +105,9 @@ export function EditorProgramStopsPanel({
     <section className="grid gap-2 text-[10px]" data-program-stops-panel>
       <div className="border border-border bg-background/35 p-2">
         <div className="uppercase text-muted-foreground">{operation.displayName}</div>
-        <p className={validation.status === 'ready' ? 'text-emerald-300' : 'text-amber-300'}>
-          {validation.status === 'ready'
-            ? `Machine policy ready · canonical ${validation.code}`
-            : validation.message}
-        </p>
         <p className="mt-1 text-muted-foreground">
-          These are unconditional program stops. M0 and M00 intent is emitted as M00; M01 is not used.
+          These are unconditional, user-authored stop intents. Controller encoding is decided only
+          when the saved revision is generated with an exact machine binding.
         </p>
       </div>
 
