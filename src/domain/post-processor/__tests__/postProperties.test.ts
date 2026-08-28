@@ -21,7 +21,9 @@ function packageFixture() {
       suggestedValue: 'M02'
     }
   });
-  Object.assign(input.fixtures[0].properties, { endCode: 'M02' });
+  for (const fixture of input.fixtures) {
+    Object.assign(fixture.properties, { endCode: 'M02' });
+  }
   const result = parseWireEdmPostPackage(JSON.stringify(input));
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   return result.package;

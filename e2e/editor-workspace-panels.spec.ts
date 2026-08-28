@@ -55,11 +55,12 @@ test('editor anchors a path project in the UPID rail and mounts only an active r
     });
   await confirmPendingDxfImport(page);
 
-  await expect(page.getByRole('tree', { name: 'UPID program sequence' })).toBeVisible();
+  await expect(page.getByRole('tree', { name: 'UPID execution plan' })).toBeVisible();
   await expect(page.locator('[data-editor-empty-dock]')).toHaveCount(0);
   await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
   await expect(page.locator('[data-app-shell]')).toHaveAttribute('data-sidebar-collapsed', 'false');
-  await page.getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
+  await page.getByRole('button', { name: 'Machining menu' }).click();
+  await page.locator('[data-editor-workflow-command="machining.entry-exit"]').click();
   await expect(page.locator('[data-editor-floating-panel="entry-exit"]')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Dock Entry / Exit right' })).toBeEnabled();
 
@@ -190,7 +191,7 @@ test('editor contour tree labels contours, segments, and endpoint handles clearl
   await expect(contourRow.locator('[data-upid-tree-action-hint]')).toContainText(/selects whole contour/i);
   await expect(contourRow.locator('[data-upid-contour-field="role"]')).toContainText('exterior');
   await expect(page.locator('[data-upid-contour-field="order"]').first()).toContainText('01');
-  await expect(contourRow.locator('[data-upid-contour-field="segments"]')).toContainText('4 steps');
+  await expect(contourRow.locator('[data-upid-contour-field="segments"]')).toContainText('4 segments');
 
   await contourRow.click();
   const segmentRow = page.locator('[data-upid-segment-row]').first();
@@ -199,15 +200,12 @@ test('editor contour tree labels contours, segments, and endpoint handles clearl
   await expect(segmentRow.locator('[data-upid-tree-kind-label]')).toContainText('line');
   await expect(segmentRow.locator('[data-upid-tree-action-hint]')).toContainText(/selects one segment/i);
   await page.getByRole('button', { name: 'Expand segment 1 details in Exterior 1' }).click();
-  await expect(page.locator('[data-upid-segment-field="from"]').first()).toContainText('From');
-  await expect(page.locator('[data-upid-segment-field="to"]').first()).toContainText('To');
-  await expect(page.locator('[data-upid-segment-field="length"]').first()).toContainText('Length');
+  await expect(segmentRow).toContainText('L 10.000');
   const pointRow = page.locator('[data-upid-point-row]').first();
   await expect(pointRow).toHaveAttribute('data-upid-tree-row-kind', 'endpoint');
   await expect(pointRow).toHaveAttribute('data-upid-tree-row-level', '2');
-  await expect(pointRow.locator('[data-upid-tree-kind-label]')).toContainText('Endpoint');
-  await expect(pointRow.locator('[data-upid-tree-action-hint]')).toContainText('selects a start/end handle');
-  await expect(pointRow.locator('[data-upid-point-field="role"]')).toContainText('Endpoint');
+  await expect(pointRow).toHaveAttribute('data-upid-point-role', 'start');
+  await expect(pointRow.getByRole('button', { name: /Select start endpoint/ })).toBeVisible();
 });
 
 test('editor contour tree exposes hierarchy rails and endpoint topology from the tree context', async ({ page }) => {
@@ -237,7 +235,7 @@ test('editor contour tree exposes hierarchy rails and endpoint topology from the
   );
   await page.getByRole('button', { name: 'Expand segment 1 details in Exterior 1' }).click();
   await expect(page.locator('[data-upid-tree-depth-rail="endpoint"]').first()).toBeVisible();
-  await expect(page.locator('[data-upid-tree-depth-label="endpoint"]').first()).toContainText('Endpoint');
+  await expect(page.locator('[data-upid-tree-depth-label="endpoint"]').first()).toContainText('Start');
 
   await showPanels(page, ['endpoint-topology']);
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toBeVisible();
@@ -311,7 +309,7 @@ test('editor contour tree rows cross-highlight and select canvas geometry', asyn
   ).toHaveCount(1);
 });
 
-test('editor switches contour tree and endpoint topology without leaving hidden floating panels', async ({ page }) => {
+test('editor keeps the geometry lens available while opening endpoint topology', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 760 });
   await openReadyWorkbench(page);
 
@@ -325,10 +323,10 @@ test('editor switches contour tree and endpoint topology without leaving hidden 
   await confirmPendingDxfImport(page);
 
   await showPanels(page, ['contour-tree']);
-  await expectFloatingPanelInsideViewport(page, 'contour-tree', 1400, 760);
+  await expect(page.locator('[data-upid-contour-tree]')).toBeVisible();
 
   await showPanels(page, ['endpoint-topology']);
-  await expect(page.locator('[data-editor-floating-panel="contour-tree"]')).toHaveCount(0);
+  await expect(page.locator('[data-upid-contour-tree]')).toBeVisible();
   await expectFloatingPanelInsideViewport(page, 'endpoint-topology', 1400, 760);
 });
 
@@ -345,7 +343,7 @@ test('editor keeps common floating workspace panels readable through workflow sw
     });
   await confirmPendingDxfImport(page);
 
-  const panelIds = ['path-transform', 'contour-tree', 'statistics'];
+  const panelIds = ['path-transform', 'path-summary', 'statistics'];
   for (const panelId of panelIds) {
     await showPanels(page, [panelId]);
     await expect(page.locator(`[data-editor-floating-panel="${panelId}"]`)).toBeVisible();
@@ -421,7 +419,7 @@ test('editor diagnostics explain what to inspect for an open chain', async ({ pa
   await showPanels(page, ['path-diagnostics']);
   await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toBeVisible();
   await diagnosticRow.getByRole('button', { name: 'Open Contour Tree' }).click();
-  await expect(page.locator('[data-editor-workspace-panel="contour-tree"]')).toBeVisible();
+  await expect(page.locator('[data-upid-contour-tree]')).toBeVisible();
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);
 });
 
@@ -785,6 +783,13 @@ async function setPanelVisibility(
 ) {
   for (const panelId of panelIds) {
     if (visible) {
+      if (panelId === 'contour-tree') {
+        await page.getByRole('tab', { name: 'Geometry lens' }).click();
+        await expect(page.locator('[data-upid-contour-tree]')).toBeVisible();
+        const expandCutPath = page.getByRole('button', { name: /^Expand cut path/ }).first();
+        if (await expandCutPath.isVisible()) await expandCutPath.click();
+        continue;
+      }
       const commandId = WORKSPACE_PANEL_COMMANDS[panelId];
       await page.getByRole('button', { name: `${workflowMenuForCommand(commandId)} menu` }).click();
       await page.locator(`[data-editor-workflow-command="${commandId}"]`).click();

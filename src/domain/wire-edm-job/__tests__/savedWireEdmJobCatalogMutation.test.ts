@@ -95,7 +95,7 @@ describe('catalog-owned saved revision persistence', () => {
     expect(fixture.adapter.files.get(WORKBENCH_CATALOG_PATH)).toBe(manifestBefore);
   });
 
-  it('does not restore project paths when the revision write never succeeds', async () => {
+  it('removes a possibly partial revision after its write reports failure', async () => {
     const fixture = await catalogRevisionFixture();
     const revisionPath = workbenchProjectRevisionPath('fixture.part', 'revision.0001');
     fixture.adapter.mutations.length = 0;
@@ -108,7 +108,10 @@ describe('catalog-owned saved revision persistence', () => {
       ok: false,
       error: { code: 'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED', operation: 'write' }
     });
-    expect(fixture.adapter.mutations).toEqual([`write:${revisionPath}`]);
+    expect(fixture.adapter.mutations).toEqual([
+      `write:${revisionPath}`,
+      `delete:${revisionPath}`
+    ]);
   });
 
   it('restores an indexed revision when project deletion cannot commit its manifest', async () => {

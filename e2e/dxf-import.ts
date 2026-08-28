@@ -6,8 +6,12 @@ export async function confirmPendingDxfImport(
 ) {
   const dialog = page.getByRole('dialog', { name: 'Review DXF import' });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel('DXF units')).toHaveValue(expectedUnitCandidateId);
-  await dialog.getByRole('button', { name: 'Import and open' }).click();
+  const units = dialog.getByLabel('DXF units');
+  await units.selectOption(expectedUnitCandidateId);
+  await expect(units).toHaveValue(expectedUnitCandidateId);
+  const importButton = dialog.getByRole('button', { name: 'Import and open' });
+  await expect(importButton).toBeEnabled();
+  await importButton.click();
   const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
   if (await onboarding.isVisible()) await onboarding.getByRole('button', { name: 'Go Build!' }).click();
 }

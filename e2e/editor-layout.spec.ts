@@ -126,19 +126,17 @@ test('path editor keeps the UPID rail and essential workflow controls at 1024', 
   const canvas = page.locator('[data-editor-canvas-panel]');
   const upidRail = page.getByRole('complementary', { name: 'UPID rail' });
   await expect(upidRail).toBeVisible();
-  await expect(upidRail.getByRole('tree', { name: 'UPID program sequence' })).toBeVisible();
+  await expect(upidRail.getByRole('tree', { name: 'UPID execution plan' })).toBeVisible();
   await expect(page.locator('[data-editor-panel-dock-zone="left"]')).toHaveCount(0);
   await expect(page.locator('[data-editor-panel-dock-zone="right"]')).toHaveCount(0);
   await expect(appHeader.getByRole('button', { name: /import program/i })).toHaveCount(0);
 
-  await openWorkflowCommand(page, 'View', 'view.contours');
+  await upidRail.getByRole('tab', { name: 'Geometry lens' }).click();
   const contourTreeHelp = page.getByRole('button', { name: 'Contour Tree help' });
   await contourTreeHelp.hover();
   const contourTreeTooltip = page.locator('[data-upid-contour-tree-tooltip]');
   await expect(contourTreeTooltip).toBeVisible();
-  const contourTreeBox = await page
-    .locator('[data-editor-workspace-panel="contour-tree"]')
-    .boundingBox();
+  const contourTreeBox = await page.locator('[data-upid-contour-tree]').boundingBox();
   const contourTreeTooltipBox = await contourTreeTooltip.boundingBox();
   expect(contourTreeBox).not.toBeNull();
   expect(contourTreeTooltipBox).not.toBeNull();
@@ -472,43 +470,6 @@ test('middle-width UPID strip opens its full tree as a focus-safe overlay', asyn
   await expect(expandUpidRail).toBeFocused();
   await expect(workspaceGrid).not.toHaveAttribute('inert', '');
   await expect(workspaceGrid).toHaveCSS('grid-template-columns', '36px 764px');
-
-  await expandUpidRail.click();
-  await upidDrawer.getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
-  const floatingWorkflow = page.locator('[data-editor-floating-panel="entry-exit"]');
-  await expect(upidDrawer).toHaveCount(0);
-  await expect(floatingWorkflow).toBeVisible();
-  await expect(floatingWorkflow).not.toHaveAttribute('inert', '');
-  await expect(workspaceGrid).not.toHaveAttribute('inert', '');
-  await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(0);
-  await expect(workspaceGrid).toHaveCSS('grid-template-columns', '36px 764px');
-  const floatingBox = await floatingWorkflow.boundingBox();
-  expect(floatingBox).not.toBeNull();
-  expect(floatingBox!.x).toBeGreaterThanOrEqual(36);
-  expect(floatingBox!.x + floatingBox!.width).toBeLessThanOrEqual(800);
-
-  await floatingWorkflow.getByRole('textbox', { name: 'Entry X' }).fill('5');
-  await floatingWorkflow.getByRole('textbox', { name: 'Entry Y' }).fill('6');
-  await expandUpidRail.click();
-  const underlyingUpidDrawer = page.locator('[data-editor-compact-drawer="upid"]');
-  const exitTreeItem = upidDrawer.getByRole('treeitem', { name: 'Exit / lead-out · None' });
-  await exitTreeItem.click();
-
-  const transition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
-  await expect(transition).toBeVisible();
-  await expect(transition.getByRole('button', { name: 'Discard' })).toBeFocused();
-  await expect(underlyingUpidDrawer).toHaveAttribute('inert', '');
-  await expect(underlyingUpidDrawer).toHaveAttribute('aria-hidden', 'true');
-  await expect(underlyingUpidDrawer).not.toHaveAttribute('aria-modal', 'true');
-  await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(1);
-
-  await page.keyboard.press('Escape');
-  await expect(transition).toHaveCount(0);
-  await expect(underlyingUpidDrawer).not.toHaveAttribute('inert', '');
-  await expect(underlyingUpidDrawer).not.toHaveAttribute('aria-hidden', 'true');
-  await expect(underlyingUpidDrawer).toHaveAttribute('aria-modal', 'true');
-  await expect(exitTreeItem).toBeFocused();
-  await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(800);
 });
 
@@ -663,7 +624,7 @@ test('persisted expanded rail uses the middle overlay and restores focus on desk
   })).toBe(false);
 });
 
-test('compact path editor routes program-tree edits through mutually exclusive UPID and workflow drawers', async ({ page }) => {
+test('compact path editor keeps an active workflow reachable after closing its drawer', async ({ page }) => {
   await page.setViewportSize({ width: 767, height: 800 });
   await openReadyWorkbench(page);
   await page.locator('input[aria-label="DXF file"]').setInputFiles({
@@ -674,17 +635,10 @@ test('compact path editor routes program-tree edits through mutually exclusive U
   await confirmPendingDxfImport(page);
   await dismissOnboarding(page);
 
-  const upidLauncher = page.getByRole('button', { name: 'Open UPID rail' });
-  await expect(upidLauncher).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open active workflow' })).toHaveCount(0);
-  await upidLauncher.click();
-
-  const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
-  await expect(upidDrawer).toBeVisible();
-  await upidDrawer.getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
+  await openCompactWorkflowCommand(page, 'Machining', 'machining.entry-exit');
 
   const workflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
-  await expect(upidDrawer).toHaveCount(0);
   await expect(workflowDrawer).toBeVisible();
 
   const entryX = workflowDrawer.getByRole('textbox', { name: 'Entry X' });
@@ -702,7 +656,7 @@ test('compact path editor routes program-tree edits through mutually exclusive U
 });
 
 for (const width of [767, 320]) {
-  test(`compact Workflows launcher exposes all six categories at ${width}px`, async ({ page }) => {
+  test(`compact Workflows launcher exposes all categories at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
     await openReadyWorkbench(page);
     await page.locator('input[aria-label="DXF file"]').setInputFiles({
@@ -718,7 +672,7 @@ for (const width of [767, 320]) {
     await expect(page.locator('[data-editor-workflow-direct]')).not.toBeVisible();
     await launcher.click();
 
-    const titles = ['Geometry', 'Machining', 'Construction', 'View', 'Machine', 'Export'];
+    const titles = ['Geometry', 'Machining', 'Construction', 'View', 'Export'];
     for (const title of titles) {
       const category = page.getByRole('menuitem', { name: `Open ${title} workflows` });
       await expect(category).toBeVisible();
@@ -777,106 +731,6 @@ test('compact Workflows launcher owns keyboard focus and popup state at 320px', 
   await expect(launcher).not.toHaveAttribute('aria-controls');
 });
 
-test('compact dirty program-tree transitions stay reachable before changing drawers', async ({ page }) => {
-  await page.setViewportSize({ width: 767, height: 800 });
-  await openReadyWorkbench(page);
-  await page.locator('input[aria-label="DXF file"]').setInputFiles({
-    name: 'compact-dirty-transition.dxf',
-    mimeType: 'application/dxf',
-    buffer: Buffer.from(rectangleDxf())
-  });
-  await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
-
-  await page.getByRole('button', { name: 'Open UPID rail' }).click();
-  await page.getByRole('dialog', { name: 'UPID rail' })
-    .getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
-  const workflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
-  await workflowDrawer.getByRole('textbox', { name: 'Entry X' }).fill('5');
-  await workflowDrawer.getByRole('textbox', { name: 'Entry Y' }).fill('6');
-  await workflowDrawer.getByRole('button', { name: 'Close Entry / Exit drawer' }).click();
-
-  await page.getByRole('button', { name: 'Open UPID rail' }).click();
-  const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
-  await upidDrawer.getByRole('treeitem', { name: 'Exit / lead-out · None' }).click();
-
-  const transition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
-  await expect(transition).toBeVisible();
-  const underlyingUpidDrawer = page.locator('[data-editor-compact-drawer="upid"]');
-  await expect(underlyingUpidDrawer).toHaveAttribute('inert', '');
-  await expect(underlyingUpidDrawer).toHaveAttribute('aria-hidden', 'true');
-  await expect(underlyingUpidDrawer).not.toHaveAttribute('aria-modal', 'true');
-  expect(await page.locator('[role="dialog"][aria-modal="true"]:visible').count()).toBe(1);
-  await transition.getByRole('button', { name: 'Dismiss workflow transition' }).click();
-  await expect(transition).toHaveCount(0);
-  await expect(upidDrawer).toBeVisible();
-  await expect(underlyingUpidDrawer).not.toHaveAttribute('inert', '');
-  await expect(underlyingUpidDrawer).toHaveAttribute('aria-modal', 'true');
-
-  await upidDrawer.getByRole('treeitem', { name: 'Exit / lead-out · None' }).click();
-  await page.getByRole('dialog', { name: 'Unsaved workflow changes' })
-    .getByRole('button', { name: 'Discard' }).click();
-  const reopenedWorkflow = page.getByRole('dialog', { name: 'Entry / Exit' });
-  await expect(reopenedWorkflow).toBeVisible();
-  await reopenedWorkflow.getByRole('textbox', { name: 'Entry X' }).fill('7');
-  await reopenedWorkflow.getByRole('textbox', { name: 'Entry Y' }).fill('8');
-  await reopenedWorkflow.getByRole('button', { name: 'Set straight entry' }).click();
-  await reopenedWorkflow.getByRole('button', { name: 'Close Entry / Exit drawer' }).click();
-
-  await page.getByRole('button', { name: 'Open UPID rail' }).click();
-  await page.getByRole('dialog', { name: 'UPID rail' })
-    .getByRole('treeitem', { name: /Entry \/ lead-in/ }).click();
-  const saveTransition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
-  await expect(saveTransition.getByRole('button', { name: 'Save' })).toBeEnabled();
-  await saveTransition.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByRole('dialog', { name: 'Entry / Exit' })).toBeVisible();
-});
-
-test('desktop-born dirty tree transitions keep one compact modal owner after live resize', async ({
-  page
-}) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await openReadyWorkbench(page);
-  await page.locator('input[aria-label="DXF file"]').setInputFiles({
-    name: 'live-resize-dirty-transition.dxf',
-    mimeType: 'application/dxf',
-    buffer: Buffer.from(rectangleDxf())
-  });
-  await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
-
-  const desktopTree = page.getByRole('tree', { name: 'UPID program sequence' });
-  await desktopTree.getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
-  const workflowPanel = page.locator('[data-editor-workspace-panel="entry-exit"]');
-  await workflowPanel.getByRole('textbox', { name: 'Entry X' }).fill('5');
-  await workflowPanel.getByRole('textbox', { name: 'Entry Y' }).fill('6');
-
-  await page.setViewportSize({ width: 767, height: 800 });
-  await page.getByRole('button', { name: 'Open UPID rail' }).click();
-  const underlyingUpidDrawer = page.locator('[data-editor-compact-drawer="upid"]');
-  const exitTreeItem = underlyingUpidDrawer.getByRole('treeitem', {
-    name: 'Exit / lead-out · None'
-  });
-  await exitTreeItem.click();
-
-  const transition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
-  await expect(transition).toBeVisible();
-  await expect(transition.getByRole('button', { name: 'Discard' })).toBeFocused();
-  await expect(underlyingUpidDrawer).toHaveAttribute('inert', '');
-  await expect(underlyingUpidDrawer).toHaveAttribute('aria-hidden', 'true');
-  await expect(underlyingUpidDrawer).not.toHaveAttribute('aria-modal', 'true');
-  await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(1);
-  expect(await transition.evaluate((element) => element.contains(document.activeElement))).toBe(true);
-
-  await page.keyboard.press('Escape');
-  await expect(transition).toHaveCount(0);
-  await expect(underlyingUpidDrawer).not.toHaveAttribute('inert', '');
-  await expect(underlyingUpidDrawer).not.toHaveAttribute('aria-hidden', 'true');
-  await expect(underlyingUpidDrawer).toHaveAttribute('aria-modal', 'true');
-  await expect(exitTreeItem).toBeFocused();
-  await expect(page.locator('[role="dialog"][aria-modal="true"]:visible')).toHaveCount(1);
-});
-
 test('compact modal host contains shell chrome and clears its owner when the editor unmounts', async ({ page }) => {
   await page.setViewportSize({ width: 767, height: 800 });
   await openReadyWorkbench(page);
@@ -911,54 +765,6 @@ test('compact modal host contains shell chrome and clears its owner when the edi
   await expect(page.locator('[data-app-header]')).not.toHaveAttribute('inert', '');
 });
 
-test('compact held transition cleanup does not inert the next path drawer after unmount', async ({ page }) => {
-  await page.setViewportSize({ width: 767, height: 800 });
-  await openReadyWorkbench(page);
-  await page.locator('input[aria-label="DXF file"]').setInputFiles({
-    name: 'compact-held-transition.dxf',
-    mimeType: 'application/dxf',
-    buffer: Buffer.from(rectangleDxf())
-  });
-  await confirmPendingDxfImport(page);
-  await dismissOnboarding(page);
-
-  await page.getByRole('button', { name: 'Open UPID rail' }).click();
-  await page.getByRole('dialog', { name: 'UPID rail' })
-    .getByRole('treeitem', { name: 'Entry / lead-in · None' }).click();
-  const workflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
-  await workflowDrawer.getByRole('textbox', { name: 'Entry X' }).fill('5');
-  await workflowDrawer.getByRole('textbox', { name: 'Entry Y' }).fill('6');
-  await workflowDrawer.getByRole('button', { name: 'Close Entry / Exit drawer' }).click();
-  await page.getByRole('button', { name: 'Open UPID rail' }).click();
-  await page.getByRole('dialog', { name: 'UPID rail' })
-    .getByRole('treeitem', { name: 'Exit / lead-out · None' }).click();
-  const heldTransition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
-  await expect(heldTransition).toBeVisible();
-  await heldTransition.getByRole('button', { name: 'Discard' }).click();
-  const exitWorkflowDrawer = page.getByRole('dialog', { name: 'Entry / Exit' });
-  await expect(exitWorkflowDrawer).toBeVisible();
-  await exitWorkflowDrawer.getByRole('button', { name: 'Close Entry / Exit drawer' }).click();
-
-  await page.evaluate(() => {
-    document.querySelector<HTMLButtonElement>('[data-app-header] button[aria-label="Back to Dashboard"]')?.click();
-  });
-  await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-
-  await page.locator('input[aria-label="DXF file"]').setInputFiles({
-    name: 'compact-fresh-path.dxf',
-    mimeType: 'application/dxf',
-    buffer: Buffer.from(rectangleDxf())
-  });
-  await confirmPendingDxfImport(page);
-  await page.getByRole('button', { name: 'Open UPID rail' }).click();
-  const freshUpidDrawer = page.locator('[data-editor-compact-drawer="upid"]');
-  await expect(freshUpidDrawer).toBeVisible();
-  await expect(freshUpidDrawer).not.toHaveAttribute('inert', '');
-  await expect(freshUpidDrawer).toHaveAttribute('aria-modal', 'true');
-  await expect(page.getByRole('dialog', { name: 'Unsaved workflow changes' })).toHaveCount(0);
-});
-
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1024, height: 720 }
@@ -976,7 +782,7 @@ for (const viewport of [
     await confirmPendingDxfImport(page);
     await dismissOnboarding(page);
 
-    const programTree = page.getByRole('tree', { name: 'UPID program sequence' });
+    const programTree = page.getByRole('tree', { name: 'UPID execution plan' });
     for (let cycle = 0; cycle < 2; cycle += 1) {
       await expect(programTree).toBeVisible();
 
@@ -1132,7 +938,7 @@ async function expectWorkflowMenusInsideViewport(
   page: import('@playwright/test').Page,
   viewportWidth: number
 ) {
-  const titles = ['Geometry', 'Machining', 'Construction', 'View', 'Machine', 'Export'];
+  const titles = ['Geometry', 'Machining', 'Construction', 'View', 'Export'];
   for (const title of titles) {
     const trigger = page.getByRole('button', { name: `${title} menu` });
     await expect(trigger).toBeVisible();

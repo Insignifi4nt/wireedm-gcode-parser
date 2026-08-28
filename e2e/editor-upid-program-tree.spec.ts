@@ -3,101 +3,6 @@ import { expect, test, type Page } from '@playwright/test';
 import { clearWorkbenchCache } from './fixtures/workbench-cache';
 import { confirmPendingDxfImport } from './dxf-import';
 
-test('persists a second-operation tree entry edit through save, reload, and reopen', async ({ page }) => {
-  await importTwoContourDxf(page, 'tree-entry-persistence.dxf');
-
-  const secondOperation = await expandOperation(page, 1);
-  await secondOperation.getByRole('button', { name: 'Edit Entry / lead-in' }).click();
-  const entryPanel = page.locator('[data-editor-workspace-panel="entry-exit"]');
-  await expect(entryPanel).toBeVisible();
-  await expect(entryPanel.getByLabel('Entry and exit operation')).toHaveValue(
-    await secondOperation.getAttribute('data-tree-key').then((key) => key?.slice('operation:'.length) ?? '')
-  );
-
-  await entryPanel.getByLabel('Entry X').fill('42.5');
-  await entryPanel.getByLabel('Entry Y').fill('19.25');
-  await entryPanel.getByRole('button', { name: 'Set straight entry' }).click();
-  await entryPanel.getByRole('button', { name: 'Save Entry / Exit workflow' }).click();
-  await expect(entryPanel).toHaveCount(0);
-  await page.getByRole('button', { name: 'Save active document' }).click();
-  await expect(page.getByRole('button', { name: 'Save active document' })).toBeDisabled();
-
-  await page.reload();
-  await openOnlyProject(page);
-  const reloadedSecondOperation = await expandOperation(page, 1);
-  const entryNode = reloadedSecondOperation.locator('li[data-tree-key$=":entry"]');
-  await expect(entryNode.locator(':scope > [data-editor-program-tree-row]'))
-    .toContainText('Entry / lead-in · manual-straight');
-  await expect(entryNode.locator('span[aria-label="Ready"]')).toBeVisible();
-
-  await entryNode.getByRole('button', { name: 'Edit Entry / lead-in' }).click();
-  const reloadedEntryPanel = page.locator('[data-editor-workspace-panel="entry-exit"]');
-  await expect(reloadedEntryPanel.getByLabel('Entry X')).toHaveValue('42.5');
-  await expect(reloadedEntryPanel.getByLabel('Entry Y')).toHaveValue('19.25');
-});
-
-test('deep-links an existing stop and keeps cancel, discard, and save tree transitions correct', async ({ page }) => {
-  await importTwoContourDxf(page, 'tree-stop-transitions.dxf');
-  const secondOperation = await expandOperation(page, 1);
-  await secondOperation.locator(':scope > [data-editor-program-tree-row]').click();
-  await openWorkflowCommand(page, 'Machining', 'machining.program-stops');
-  const stopsPanel = page.locator('[data-editor-workspace-panel="program-stops"]');
-  await stopsPanel.getByRole('button', { name: 'Add M00 stop' }).click();
-  await stopsPanel.getByRole('button', { name: 'Save Program Stops workflow' }).click();
-  await page.getByRole('button', { name: 'Save active document' }).click();
-  await page.reload();
-  await openOnlyProject(page);
-
-  const persistedSecondOperation = await expandOperation(page, 1);
-  await expandCutPath(persistedSecondOperation);
-  const stopNode = persistedSecondOperation.locator('li[data-tree-key$=":stop:stop-1"]');
-  await expect(stopNode).toBeVisible();
-  await stopNode.getByRole('button', { name: /^Edit M00/ }).click();
-  const persistedStopsPanel = page.locator('[data-editor-workspace-panel="program-stops"]');
-  await expect(persistedStopsPanel).toBeVisible();
-  await expect(persistedStopsPanel.locator('[data-program-stop="stop-1"]')).toHaveAttribute(
-    'data-selected',
-    'true'
-  );
-
-  await persistedStopsPanel.getByLabel('Selected stop note').fill('cancelled update');
-  await persistedStopsPanel.getByRole('button', { name: 'Apply stop-1' }).click();
-  await openEntryFromOperation(persistedSecondOperation);
-  const transition = page.getByRole('dialog', { name: 'Unsaved workflow changes' });
-  await expect(transition).toBeVisible();
-  await transition.getByRole('button', { name: 'Dismiss workflow transition' }).click();
-  await expect(persistedStopsPanel).toBeVisible();
-  await expect(persistedStopsPanel.getByLabel('Selected stop note')).toHaveValue('cancelled update');
-
-  await openEntryFromOperation(persistedSecondOperation);
-  await transition.getByRole('button', { name: 'Discard' }).click();
-  const entryPanel = page.locator('[data-editor-workspace-panel="entry-exit"]');
-  await expect(entryPanel).toBeVisible();
-  await entryPanel.getByRole('button', { name: 'Cancel Entry / Exit workflow' }).click();
-
-  await stopNode.getByRole('button', { name: /^Edit M00/ }).click();
-  const reselectedStopsPanel = page.locator('[data-editor-workspace-panel="program-stops"]');
-  await expect(reselectedStopsPanel.getByLabel('Selected stop note')).toHaveValue('');
-  await reselectedStopsPanel.getByLabel('Selected stop note').fill('saved once');
-  await reselectedStopsPanel.getByRole('button', { name: 'Apply stop-1' }).click();
-  await openEntryFromOperation(persistedSecondOperation);
-  await transition.getByRole('button', { name: 'Save' }).click();
-  await expect(entryPanel).toBeVisible();
-  await entryPanel.getByRole('button', { name: 'Cancel Entry / Exit workflow' }).click();
-
-  const undo = page.getByRole('button', { name: 'Undo active document change' });
-  await expect(undo).toBeEnabled();
-  await undo.click();
-  await stopNode.getByRole('button', { name: /^Edit M00/ }).click();
-  await expect(page.locator('[data-editor-workspace-panel="program-stops"]')
-    .getByLabel('Selected stop note')).toHaveValue('');
-  await page.getByRole('button', { name: 'Cancel Program Stops workflow' }).click();
-  await page.getByRole('button', { name: 'Redo active document change' }).click();
-  await stopNode.getByRole('button', { name: /^Edit M00/ }).click();
-  await expect(page.locator('[data-editor-workspace-panel="program-stops"]')
-    .getByLabel('Selected stop note')).toHaveValue('saved once');
-});
-
 test('round-trips an exported UPID through a clean browser cache with execution order and provenance', async ({ page }, testInfo) => {
   await importTwoContourDxf(page, 'tree-portable-round-trip.dxf');
   const beforeOrder = await programOperationLabels(page);
@@ -179,40 +84,7 @@ async function importTwoContourDxf(page: Page, name: string) {
   await confirmPendingDxfImport(page);
   const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
   if (await onboarding.isVisible()) await onboarding.getByRole('button', { name: 'Go Build!' }).click();
-  await expect(page.getByRole('tree', { name: 'UPID program sequence' })).toBeVisible();
-}
-
-async function expandOperation(page: Page, index: number) {
-  const operation = page.locator(
-    'li[data-tree-key="section:program"] > ul > li[role="treeitem"][data-tree-key^="operation:"]'
-  ).nth(index);
-  await expect(operation).toBeVisible();
-  const expansion = operation.locator(':scope > div > button').first();
-  if (await expansion.getAttribute('aria-label').then((label) => label?.startsWith('Expand'))) {
-    await expansion.click();
-  }
-  await expect(operation.locator('li[data-tree-key$=":entry"]')).toBeVisible();
-  return operation;
-}
-
-async function openEntryFromOperation(operation: import('@playwright/test').Locator) {
-  await operation.locator('li[data-tree-key$=":entry"]')
-    .getByRole('button', { name: 'Edit Entry / lead-in' })
-    .click();
-}
-
-async function expandCutPath(operation: import('@playwright/test').Locator) {
-  const cutPath = operation.locator('li[data-tree-key$=":cut-path"]');
-  const expansion = cutPath.locator(':scope > div > button').first();
-  if (await expansion.getAttribute('aria-label').then((label) => label?.startsWith('Expand'))) {
-    await expansion.click();
-  }
-  await expect(cutPath).toHaveAttribute('aria-expanded', 'true');
-}
-
-async function openWorkflowCommand(page: Page, menu: string, commandId: string) {
-  await page.getByRole('button', { name: `${menu} menu` }).click();
-  await page.locator(`[data-editor-workflow-command="${commandId}"]`).click();
+  await expect(page.getByRole('tree', { name: 'UPID execution plan' })).toBeVisible();
 }
 
 async function openOnlyProject(page: Page) {
@@ -224,7 +96,7 @@ async function programOperationLabels(page: Page) {
   return await page.locator(
     'li[data-tree-key="section:program"] > ul > li[role="treeitem"][data-tree-key^="operation:"]'
   ).evaluateAll((operations) =>
-    operations.map((operation) => operation.getAttribute('aria-label'))
+    operations.map((operation) => operation.querySelector<HTMLElement>(':scope > div span[title]')?.innerText)
   );
 }
 

@@ -111,7 +111,7 @@ export function WorkbenchSettingsDialog({
   const canConnect = Boolean(storageActionLabel) && !connecting;
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" data-workbench-settings-overlay onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} ref={overlayRef}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" data-workbench-settings-overlay onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} ref={overlayRef}>
       <div aria-label="Workbench settings" aria-modal="true" className="grid h-[86vh] w-full max-w-4xl grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role="dialog" tabIndex={-1}>
         <aside className="min-h-0 border-r border-border bg-background/45 p-3">
           <button aria-label="Close settings" className="mb-4 flex size-8 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent hover:text-foreground" onClick={onClose} ref={closeButtonRef} type="button"><X className="size-4" /></button>
