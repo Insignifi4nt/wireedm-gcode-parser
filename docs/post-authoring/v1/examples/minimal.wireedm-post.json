@@ -1,0 +1,131 @@
+{
+  "format": "wire-edm-post",
+  "schemaVersion": 1,
+  "manifest": {
+    "id": "example.linuxcnc-wire-edm",
+    "name": "Example LinuxCNC Wire EDM",
+    "version": "1.0.0",
+    "engineApiVersion": "1",
+    "description": "Minimal deterministic fixture post.",
+    "targets": [
+      {
+          "manufacturer": "LinuxCNC",
+          "controller": "LinuxCNC 2.9",
+          "machineModels": []
+      }
+    ],
+    "capabilities": {
+      "circularInterpolation": "both",
+      "controllerCompensation": "left-right",
+      "operations": "single",
+      "passes": "single",
+      "threading": "manual",
+      "wireSeparation": false,
+      "programStops": true,
+      "taperAxes": false,
+      "technologySelection": false,
+      "initialWirePosition": true
+    },
+    "properties": {
+      "coordinatePrecision": {
+        "type": "integer",
+        "description": "Digits after the decimal separator.",
+        "required": true,
+        "minimum": 0,
+        "maximum": 6,
+        "suggestedValue": 3
+      }
+    }
+  },
+  "dialect": {
+    "id": "linuxcnc.gcode-2.9",
+    "description": "Small vocabulary evidenced from the LinuxCNC 2.9 G-code quick reference.",
+    "commands": {
+      "distance.absolute": {
+        "template": "G90",
+        "parameters": {},
+        "effects": ["distance-mode.absolute"],
+        "requires": [],
+        "evidenceRefs": ["linuxcnc-g90"]
+      },
+      "program.end": {
+        "template": "M02",
+        "parameters": {},
+        "effects": ["program.ended"],
+        "requires": [],
+        "evidenceRefs": ["linuxcnc-m2"]
+      }
+    }
+  },
+  "source": {
+    "language": "javascript",
+    "entrypoint": "createPost",
+    "code": "export function createPost(api) {\n  return {\n    onOpen() { api.emitCommand('distance.absolute'); },\n    onEvent() {},\n    onClose() { api.emitCommand('program.end'); }\n  };\n}"
+  },
+  "sources": [
+    {
+      "id": "source.linuxcnc-gcode-2.9",
+      "kind": "controller-reference",
+      "name": "LinuxCNC 2.9 G-code Quick Reference",
+      "uri": "https://linuxcnc.org/docs/html/gcode.html",
+      "mediaType": "text/html",
+      "contentSha256": "e8a33470af7a15eea446ee55d42ec30c4688d589e98019a0c62dba1634a3d319",
+      "documentNumber": "LinuxCNC G-Code Quick Reference",
+      "revision": "2.9 fetched 2026-08-28"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "linuxcnc-g90",
+      "sourceRef": "source.linuxcnc-gcode-2.9",
+      "selector": {
+        "location": "G90, G91 — Distance Mode",
+        "section": "G-code quick reference",
+        "exact": "G90, G91 — Distance Mode"
+      },
+      "claim": "LinuxCNC 2.9 assigns G90 to absolute distance mode.",
+      "supports": [{ "kind": "command", "id": "distance.absolute" }],
+      "appliesTo": {
+        "controllerModels": ["LinuxCNC 2.9"],
+        "machineModels": [],
+        "firmware": "2.9"
+      },
+      "review": {
+        "status": "reviewed",
+        "reviewer": "wire-edm-workbench-research",
+        "reviewedAt": "2026-08-28T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "linuxcnc-m2",
+      "sourceRef": "source.linuxcnc-gcode-2.9",
+      "selector": {
+        "location": "M2, M30 — Program End",
+        "section": "M-code quick reference",
+        "exact": "M2, M30 — Program End"
+      },
+      "claim": "LinuxCNC 2.9 assigns M2 to program end.",
+      "supports": [{ "kind": "command", "id": "program.end" }],
+      "appliesTo": {
+        "controllerModels": ["LinuxCNC 2.9"],
+        "machineModels": [],
+        "firmware": "2.9"
+      },
+      "review": {
+        "status": "reviewed",
+        "reviewer": "wire-edm-workbench-research",
+        "reviewedAt": "2026-08-28T00:00:00.000Z"
+      }
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "single-closed-contour",
+      "description": "One closed contour with manual threading.",
+      "planFixture": "core.single-closed-contour.v1",
+      "properties": { "coordinatePrecision": 3 },
+      "expectedProgram": "G90\nM02",
+      "evidenceRefs": ["linuxcnc-g90", "linuxcnc-m2"]
+    }
+  ]
+}
