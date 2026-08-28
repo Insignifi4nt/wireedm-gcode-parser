@@ -39,14 +39,35 @@ export interface RunBuiltInPostInput {
   readonly properties: Readonly<Record<string, PostPropertyValue>>;
 }
 
+type BuiltInRenderConfiguration =
+  | {
+      readonly key: 'generic-iso';
+      readonly precision: number;
+      readonly arcCenterMode: 'absolute' | 'incremental';
+    }
+  | {
+      readonly key: 'generic-explicit-linear';
+      readonly precision: number;
+      readonly offsetIndex: number;
+      readonly arcCenterMode: 'absolute' | 'incremental';
+    }
+  | {
+      readonly key: 'robofil-v1';
+      readonly precision: number;
+      readonly offsetIndex: number;
+    }
+  | {
+      readonly key: 'robofil-v2';
+      readonly precision: number;
+      readonly offsetIndex: number;
+    };
+
 interface RenderState {
   readonly plan: WireEdmExecutionPlan;
-  readonly key: BuiltInPostKey;
-  readonly precision: number;
-  readonly offsetIndex: number | null;
-  readonly arcCenterMode: 'absolute' | 'incremental';
+  readonly configuration: BuiltInRenderConfiguration;
   readonly lines: string[];
   readonly blocks: ControllerProgramBlock[];
+  readonly blockIdsByEvent: Map<string, string[]>;
   readonly acknowledged: Map<string, { reason: string }>;
   compensation: 'off' | 'pending-left' | 'pending-right' | 'active-left' | 'active-right';
   pendingPosition: Extract<WireEdmExecutionEvent, { kind: 'position' }> | null;
@@ -73,12 +94,10 @@ export function runBuiltInPost(
 
   const state: RenderState = {
     plan,
-    key,
-    precision: properties.precision,
-    offsetIndex: properties.offsetIndex,
-    arcCenterMode: properties.arcCenterMode,
+    configuration: properties.configuration,
     lines: [],
     blocks: [],
+    blockIdsByEvent: new Map(),
     acknowledged: new Map(),
     compensation: 'off',
     pendingPosition: null
@@ -111,23 +130,26 @@ function renderEvent(
   state: RenderState,
   event: WireEdmExecutionEvent
 ): { ok: true; reason: string } | Extract<ControllerProgramResult, { ok: false }> {
-  switch (state.key) {
+  switch (state.configuration.key) {
     case 'generic-iso':
-      return renderGenericIso(state, event, false);
     case 'generic-explicit-linear':
-      return renderGenericIso(state, event, true);
+      return renderGenericIso(state, event, state.configuration);
     case 'robofil-v1':
-      return renderRobofilV1(state, event);
+      return renderRobofilV1(state, event, state.configuration);
     case 'robofil-v2':
-      return renderRobofilV2(state, event);
+      return renderRobofilV2(state, event, state.configuration);
   }
 }
 
 function renderGenericIso(
   state: RenderState,
   event: WireEdmExecutionEvent,
-  explicitCompensation: boolean
+  configuration: Extract<
+    BuiltInRenderConfiguration,
+    { key: 'generic-iso' | 'generic-explicit-linear' }
+  >
 ): ReturnType<typeof renderEvent> {
+  const explicitCompensation = configuration.key === 'generic-explicit-linear';
   switch (event.kind) {
     case 'program-start':
       emitCommands(state, event, [
@@ -152,7 +174,7 @@ function renderGenericIso(
       emit(state, event, 'M00', ['program.stop']);
       return rendered('manual wire separation stop');
     case 'position':
-      emitMotion(state, event, `G0 ${formatPoint(event.to, state.precision)}`, ['motion.rapid']);
+      emitMotion(state, event, `G0 ${formatPoint(event.to, configuration.precision)}`, ['motion.rapid']);
       return rendered('explicit positioning move');
     case 'wire-thread':
       if (!explicitCompensation || event.method !== 'manual') return unsupported(event);
@@ -163,7 +185,7 @@ function renderGenericIso(
       state.compensation = event.wireSide === 'left' ? 'pending-left' : 'pending-right';
       return rendered('activation is emitted with the reviewed entry motion');
     case 'motion':
-      return renderGenericMotion(state, event, explicitCompensation);
+      return renderGenericMotion(state, event, configuration);
     case 'program-stop':
       if (!explicitCompensation) return unsupported(event);
       emit(state, event, 'M00', ['program.stop']);
@@ -187,10 +209,14 @@ function renderGenericIso(
 function renderGenericMotion(
   state: RenderState,
   event: Extract<WireEdmExecutionEvent, { kind: 'motion' }>,
-  explicitCompensation: boolean
+  configuration: Extract<
+    BuiltInRenderConfiguration,
+    { key: 'generic-iso' | 'generic-explicit-linear' }
+  >
 ): ReturnType<typeof renderEvent> {
+  const explicitCompensation = configuration.key === 'generic-explicit-linear';
   if (state.compensation === 'pending-left' || state.compensation === 'pending-right') {
-    if (!explicitCompensation || event.role !== 'entry' || event.motion !== 'linear') {
+    if (configuration.key !== 'generic-explicit-linear' || event.role !== 'entry' || event.motion !== 'linear') {
       return invalidLifecycle(event, 'Explicit compensation requires a reviewed linear entry motion.');
     }
     const commandId = state.compensation === 'pending-left'
@@ -200,7 +226,7 @@ function renderGenericMotion(
     emitMotion(
       state,
       event,
-      `${word} D${requiredOffset(state)} G1 ${formatPoint(event.end, state.precision)}`,
+      `${word} D${configuration.offsetIndex} G1 ${formatPoint(event.end, configuration.precision)}`,
       [commandId, 'motion.linear']
     );
     state.compensation = state.compensation === 'pending-left' ? 'active-left' : 'active-right';
@@ -215,24 +241,25 @@ function renderGenericMotion(
     emitMotion(
       state,
       event,
-      `G40 G1 ${formatPoint(event.end, state.precision)}`,
+      `G40 G1 ${formatPoint(event.end, configuration.precision)}`,
       ['compensation.cancel', 'motion.linear']
     );
     state.compensation = 'off';
     return rendered('compensation cancellation and exit motion');
   }
-  emitCanonicalMotion(state, event);
+  emitCanonicalMotion(state, event, configuration.arcCenterMode);
   return rendered('cutting motion');
 }
 
 function renderRobofilV1(
   state: RenderState,
-  event: WireEdmExecutionEvent
+  event: WireEdmExecutionEvent,
+  configuration: Extract<BuiltInRenderConfiguration, { key: 'robofil-v1' }>
 ): ReturnType<typeof renderEvent> {
   switch (event.kind) {
     case 'program-start':
       emitCommands(state, event, [
-        ['origin.set-wire-position', `G92 ${formatPoint(event.initialWirePosition, state.precision)}`],
+        ['origin.set-wire-position', `G92 ${formatPoint(event.initialWirePosition, configuration.precision)}`],
         ['controller.prepare', 'G60'],
         ['compensation.prepare', 'G38']
       ]);
@@ -250,7 +277,7 @@ function renderRobofilV1(
       if (state.compensation !== 'off') return invalidLifecycle(event);
       const commandId = event.wireSide === 'left' ? 'compensation.left' : 'compensation.right';
       const word = event.wireSide === 'left' ? 'G41' : 'G42';
-      emit(state, event, `${word} D${requiredOffset(state)}`, [commandId]);
+      emit(state, event, `${word} D${configuration.offsetIndex}`, [commandId]);
       emit(state, event, 'G90', ['distance.absolute']);
       state.compensation = event.wireSide === 'left' ? 'active-left' : 'active-right';
       if (state.pendingPosition) {
@@ -258,7 +285,7 @@ function renderRobofilV1(
         emitMotion(
           state,
           position,
-          `G1 ${formatPoint(position.to, state.precision)}`,
+          `G1 ${formatPoint(position.to, configuration.precision)}`,
           ['motion.linear']
         );
         state.pendingPosition = null;
@@ -291,12 +318,13 @@ function renderRobofilV1(
 
 function renderRobofilV2(
   state: RenderState,
-  event: WireEdmExecutionEvent
+  event: WireEdmExecutionEvent,
+  configuration: Extract<BuiltInRenderConfiguration, { key: 'robofil-v2' }>
 ): ReturnType<typeof renderEvent> {
   switch (event.kind) {
     case 'program-start':
       emitCommands(state, event, [
-        ['origin.set-wire-position', `G92 ${formatPoint(event.initialWirePosition, state.precision)}`],
+        ['origin.set-wire-position', `G92 ${formatPoint(event.initialWirePosition, configuration.precision)}`],
         ['controller.prepare', 'G60'],
         ['compensation.prepare', 'G38'],
         ['distance.absolute', 'G90']
@@ -320,7 +348,7 @@ function renderRobofilV2(
       return rendered('manual wire separation stop');
     case 'position':
       if (state.compensation !== 'off') return invalidLifecycle(event);
-      emitMotion(state, event, `G0 ${formatPoint(event.to, state.precision)}`, ['motion.rapid']);
+      emitMotion(state, event, `G0 ${formatPoint(event.to, configuration.precision)}`, ['motion.rapid']);
       return rendered('positioning while compensation is off');
     case 'wire-thread':
       if (event.method !== 'manual') return unsupported(event);
@@ -330,7 +358,7 @@ function renderRobofilV2(
       if (state.compensation !== 'off') return invalidLifecycle(event);
       const commandId = event.wireSide === 'left' ? 'compensation.left' : 'compensation.right';
       const word = event.wireSide === 'left' ? 'G41' : 'G42';
-      emit(state, event, `${word} D${requiredOffset(state)}`, [commandId]);
+      emit(state, event, `${word} D${configuration.offsetIndex}`, [commandId]);
       state.compensation = event.wireSide === 'left' ? 'active-left' : 'active-right';
       return rendered('operation-scoped compensation activation');
     }
@@ -363,10 +391,11 @@ function renderRobofilV2(
 function emitCanonicalMotion(
   state: RenderState,
   event: Extract<WireEdmExecutionEvent, { kind: 'motion' }>,
-  arcCenterMode = state.arcCenterMode
+  arcCenterMode: 'absolute' | 'incremental'
 ) {
+  const { precision } = state.configuration;
   if (event.motion === 'linear') {
-    emitMotion(state, event, `G1 ${formatPoint(event.end, state.precision)}`, ['motion.linear']);
+    emitMotion(state, event, `G1 ${formatPoint(event.end, precision)}`, ['motion.linear']);
     return;
   }
   const command = event.clockwise ? 'G2' : 'G3';
@@ -377,17 +406,17 @@ function emitCanonicalMotion(
   const arcCenter = arcCenterMode === 'absolute'
     ? center
     : { x: center.x - event.start.x, y: center.y - event.start.y };
-  const emittedStart = quantizePoint(event.start, state.precision);
+  const emittedStart = quantizePoint(event.start, precision);
   const emittedCenter = arcCenterMode === 'absolute'
-    ? quantizePoint(center, state.precision)
+    ? quantizePoint(center, precision)
     : {
-        x: emittedStart.x + quantizeNumber(arcCenter.x, state.precision),
-        y: emittedStart.y + quantizeNumber(arcCenter.y, state.precision)
+        x: emittedStart.x + quantizeNumber(arcCenter.x, precision),
+        y: emittedStart.y + quantizeNumber(arcCenter.y, precision)
       };
   emitMotion(
     state,
     event,
-    `${command} ${formatPoint(event.end, state.precision)} I${formatNumber(arcCenter.x, state.precision)} J${formatNumber(arcCenter.y, state.precision)}`,
+    `${command} ${formatPoint(event.end, precision)} I${formatNumber(arcCenter.x, precision)} J${formatNumber(arcCenter.y, precision)}`,
     [commandId],
     emittedCenter
   );
@@ -400,18 +429,19 @@ function emitMotion(
   commandIds: readonly string[],
   emittedCenter?: Point2
 ) {
+  const { precision } = state.configuration;
   const motion: ControllerMotionTrace = event.kind === 'position'
     ? {
         motion: 'linear',
         role: 'position',
-        start: quantizePoint(event.from, state.precision),
-        end: quantizePoint(event.to, state.precision)
+        start: quantizePoint(event.from, precision),
+        end: quantizePoint(event.to, precision)
       }
     : {
         motion: event.motion,
         role: event.role,
-        start: quantizePoint(event.start, state.precision),
-        end: quantizePoint(event.end, state.precision),
+        start: quantizePoint(event.start, precision),
+        end: quantizePoint(event.end, precision),
         ...(emittedCenter ? { center: emittedCenter } : {}),
         ...(event.clockwise === undefined ? {} : { clockwise: event.clockwise }),
         ...(event.fullCircle === undefined ? {} : { fullCircle: event.fullCircle })
@@ -435,15 +465,19 @@ function emit(
   motion: ControllerMotionTrace | null = null
 ) {
   const lineIndex = state.lines.length;
+  const blockId = `block-${String(lineIndex + 1).padStart(6, '0')}`;
   state.lines.push(text);
   state.blocks.push({
-    id: `block-${String(lineIndex + 1).padStart(6, '0')}`,
+    id: blockId,
     lineIndex,
     text,
     eventId: event.id,
     commandIds: [...commandIds],
     motion
   });
+  const blockIds = state.blockIdsByEvent.get(event.id);
+  if (blockIds) blockIds.push(blockId);
+  else state.blockIdsByEvent.set(event.id, [blockId]);
 }
 
 function acknowledge(state: RenderState, event: WireEdmExecutionEvent, reason: string) {
@@ -455,9 +489,7 @@ function acknowledge(state: RenderState, event: WireEdmExecutionEvent, reason: s
 
 function freezeProgram(state: RenderState): ControllerProgram {
   const dispositions: PostEventDisposition[] = state.plan.events.map((event) => {
-    const blockIds = state.blocks
-      .filter(({ eventId }) => eventId === event.id)
-      .map(({ id }) => id);
+    const blockIds = state.blockIdsByEvent.get(event.id) ?? [];
     if (blockIds.length > 0) return { kind: 'emitted', eventId: event.id, blockIds };
     const acknowledgement = state.acknowledged.get(event.id);
     if (!acknowledgement) {
@@ -478,40 +510,47 @@ function readEngineProperties(
   key: BuiltInPostKey,
   properties: Readonly<Record<string, PostPropertyValue>>
 ):
-  | { ok: true; precision: number; offsetIndex: number | null; arcCenterMode: 'absolute' | 'incremental' }
+  | { ok: true; configuration: BuiltInRenderConfiguration }
   | Extract<ControllerProgramResult, { ok: false }> {
   const precision = properties.coordinatePrecision;
-  if (!Number.isSafeInteger(precision) || (precision as number) < 0 || (precision as number) > 6) {
+  if (typeof precision !== 'number' || !Number.isSafeInteger(precision) || precision < 0 || precision > 6) {
     return blocked(
       'POST_ENGINE_PROPERTY_INVALID',
       'coordinatePrecision must be an explicit integer from 0 through 6.'
     );
   }
-  const needsOffset = key !== 'generic-iso';
   const offsetIndex = properties.offsetIndex;
-  if (
-    needsOffset &&
-    (!Number.isSafeInteger(offsetIndex) || (offsetIndex as number) < 0 || (offsetIndex as number) > 99)
-  ) {
+  const arcCenterMode = properties.arcCenterMode;
+  if (key === 'generic-iso') {
+    if (!isArcCenterMode(arcCenterMode)) return invalidArcCenterMode();
+    return { ok: true, configuration: { key, precision, arcCenterMode } };
+  }
+  if (!isOffsetIndex(offsetIndex)) {
     return blocked(
       'POST_ENGINE_PROPERTY_INVALID',
       'offsetIndex must be an explicit integer from 0 through 99.'
     );
   }
-  const needsArcMode = key === 'generic-iso' || key === 'generic-explicit-linear';
-  const arcCenterMode = properties.arcCenterMode;
-  if (needsArcMode && arcCenterMode !== 'absolute' && arcCenterMode !== 'incremental') {
-    return blocked(
-      'POST_ENGINE_PROPERTY_INVALID',
-      'arcCenterMode must be explicitly set to absolute or incremental.'
-    );
+  if (key === 'generic-explicit-linear') {
+    if (!isArcCenterMode(arcCenterMode)) return invalidArcCenterMode();
+    return { ok: true, configuration: { key, precision, offsetIndex, arcCenterMode } };
   }
-  return {
-    ok: true,
-    precision: precision as number,
-    offsetIndex: needsOffset ? offsetIndex as number : null,
-    arcCenterMode: needsArcMode ? arcCenterMode as 'absolute' | 'incremental' : 'absolute'
-  };
+  return { ok: true, configuration: { key, precision, offsetIndex } };
+}
+
+function isOffsetIndex(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 99;
+}
+
+function isArcCenterMode(value: unknown): value is 'absolute' | 'incremental' {
+  return value === 'absolute' || value === 'incremental';
+}
+
+function invalidArcCenterMode(): Extract<ControllerProgramResult, { ok: false }> {
+  return blocked(
+    'POST_ENGINE_PROPERTY_INVALID',
+    'arcCenterMode must be explicitly set to absolute or incremental.'
+  );
 }
 
 function validatePlanForBuiltIn(
@@ -559,11 +598,6 @@ function quantizePoint(point: Point2, precision: number): Point2 {
 function quantizeNumber(value: number, precision: number) {
   const quantized = Number(value.toFixed(precision));
   return Object.is(quantized, -0) ? 0 : quantized;
-}
-
-function requiredOffset(state: RenderState) {
-  if (state.offsetIndex === null) throw new Error(`${state.key} has no compensation offset property.`);
-  return state.offsetIndex;
 }
 
 function requiredCenter(event: Extract<WireEdmExecutionEvent, { kind: 'motion' }>) {

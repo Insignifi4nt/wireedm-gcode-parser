@@ -208,9 +208,27 @@ export type SavedWireEdmJobRevisionError =
     }
   | { readonly code: 'SAVED_REVISION_HASH_UNAVAILABLE'; readonly message: string };
 
-export type SavedWireEdmJobRevisionCandidateResult =
+export type CreateSavedWireEdmJobRevisionError = Exclude<
+  SavedWireEdmJobRevisionError,
+  { readonly code:
+      | 'SAVED_REVISION_VERSION_UNSUPPORTED'
+      | 'SAVED_REVISION_FILE_TOO_LARGE'
+      | 'SAVED_REVISION_JSON_INVALID'
+      | 'SAVED_REVISION_EXECUTION_PLAN_MISMATCH' }
+>;
+
+export type ParseSavedWireEdmJobRevisionError = SavedWireEdmJobRevisionError;
+
+type SavedWireEdmJobRevisionCandidateSuccess =
+  { readonly ok: true; readonly candidate: SavedWireEdmJobRevisionCandidate };
+
+export type CreateSavedWireEdmJobRevisionResult =
+  | SavedWireEdmJobRevisionCandidateSuccess
+  | { readonly ok: false; readonly error: CreateSavedWireEdmJobRevisionError };
+
+export type ParseSavedWireEdmJobRevisionResult =
   | { readonly ok: true; readonly candidate: SavedWireEdmJobRevisionCandidate }
-  | { readonly ok: false; readonly error: SavedWireEdmJobRevisionError };
+  | { readonly ok: false; readonly error: ParseSavedWireEdmJobRevisionError };
 
 export type SavedWireEdmJobRevisionStorageError =
   | { readonly code: 'SAVED_REVISION_STORAGE_WRITE_FAILED'; readonly message: string }
@@ -224,7 +242,25 @@ export type PersistSavedWireEdmJobRevisionResult =
   | { readonly ok: true; readonly path: string; readonly revision: SavedWireEdmJobRevision }
   | {
       readonly ok: false;
-      readonly error: SavedWireEdmJobRevisionError | SavedWireEdmJobRevisionStorageError;
+      readonly error: Exclude<
+        SavedWireEdmJobRevisionStorageError,
+        { readonly code: 'SAVED_REVISION_STORAGE_NOT_FOUND' }
+      >;
+    };
+
+export type LoadSavedWireEdmJobRevisionResult =
+  | { readonly ok: true; readonly path: string; readonly revision: SavedWireEdmJobRevision }
+  | {
+      readonly ok: false;
+      readonly error:
+        | ParseSavedWireEdmJobRevisionError
+        | Extract<
+            SavedWireEdmJobRevisionStorageError,
+            { readonly code:
+                | 'SAVED_REVISION_STORAGE_READ_FAILED'
+                | 'SAVED_REVISION_STORAGE_READBACK_MISMATCH'
+                | 'SAVED_REVISION_STORAGE_NOT_FOUND' }
+          >;
     };
 
 type SavedRevisionCatalogMutationError =
@@ -293,7 +329,7 @@ export type SaveStoredWireEdmJobRevisionResult =
 
 export async function createSavedWireEdmJobRevision(
   input: CreateSavedWireEdmJobRevisionInput
-): Promise<SavedWireEdmJobRevisionCandidateResult> {
+): Promise<CreateSavedWireEdmJobRevisionResult> {
   const project = validateUpidProject(input.project);
   if (!project.ok) return project;
   if (!isCanonicalTimestamp(input.savedAt)) {
@@ -356,22 +392,25 @@ export async function createSavedWireEdmJobRevision(
   });
   if (!physical.ok) return physicalFailure(physical.error);
 
-  const machine = jsonSnapshot(physicalMachineSnapshot(resolved.machine));
-  const post: SavedPostBindingSnapshot = {
-    binding: jsonSnapshot(resolved.binding),
-    installation: jsonSnapshot({
-      ref: resolved.installation.ref,
-      package: parsedPackage.package
-    }),
-    properties: jsonSnapshot(resolved.properties)
-  };
-  const executionPlan = jsonSnapshot(compiled.plan);
-  const hashes = await calculateHashes({
-    upid: project.project.content.document,
-    executionPlan,
-    machine,
-    post
+  const snapshot = jsonSnapshot({
+    project: project.project,
+    machine: physicalMachineSnapshot(resolved.machine),
+    post: {
+      binding: resolved.binding,
+      installation: {
+        ref: resolved.installation.ref,
+        package: parsedPackage.package
+      },
+      properties: resolved.properties
+    } satisfies SavedPostBindingSnapshot,
+    executionPlan: compiled.plan
   });
+  const hashes = await calculateHashes({
+    upid: snapshot.project.content.document,
+    executionPlan: snapshot.executionPlan,
+    machine: snapshot.machine,
+    post: snapshot.post
+  }, packageHash);
   if (!hashes) return hashUnavailable();
 
   const candidate: SavedWireEdmJobRevisionData = {
@@ -380,10 +419,10 @@ export async function createSavedWireEdmJobRevision(
     engineVersion: WIRE_EDM_ENGINE_VERSION,
     revisionId: input.revisionId,
     savedAt: input.savedAt,
-    project: jsonSnapshot(project.project),
-    machine,
-    post,
-    executionPlan,
+    project: snapshot.project,
+    machine: snapshot.machine,
+    post: snapshot.post,
+    executionPlan: snapshot.executionPlan,
     hashes
   };
   const schemaError = Value.Errors(SavedWireEdmJobRevisionSchema, candidate).First();
@@ -393,7 +432,7 @@ export async function createSavedWireEdmJobRevision(
 
 export async function parseSavedWireEdmJobRevision(
   rawText: string
-): Promise<SavedWireEdmJobRevisionCandidateResult> {
+): Promise<ParseSavedWireEdmJobRevisionResult> {
   if (new TextEncoder().encode(rawText).byteLength > MAX_SAVED_REVISION_BYTES) {
     return failure({
       code: 'SAVED_REVISION_FILE_TOO_LARGE',
@@ -496,32 +535,34 @@ export async function parseSavedWireEdmJobRevision(
       diagnostics: compiled.diagnostics
     });
   }
-  const executionPlan = jsonSnapshot(compiled.plan);
   const physical = preflightMachinePhysicalRequirements({
     document: project.project.content.document,
     machine: parsedMachine.machine,
-    plan: executionPlan
+    plan: compiled.plan
   });
   if (!physical.ok) return physicalFailure(physical.error);
-  if (canonicalJson(candidate.executionPlan) !== canonicalJson(executionPlan)) {
+  const snapshot = jsonSnapshot({
+    project: project.project,
+    machine: physicalMachineSnapshot(resolved.machine),
+    post: {
+      binding: resolved.binding,
+      installation: resolved.installation,
+      properties: resolved.properties
+    } satisfies SavedPostBindingSnapshot,
+    executionPlan: compiled.plan
+  });
+  if (canonicalJson(candidate.executionPlan) !== canonicalJson(snapshot.executionPlan)) {
     return failure({
       code: 'SAVED_REVISION_EXECUTION_PLAN_MISMATCH',
       message: 'Saved execution plan does not match a fresh compilation of the saved UPID.'
     });
   }
-
-  const machine = jsonSnapshot(physicalMachineSnapshot(resolved.machine));
-  const post: SavedPostBindingSnapshot = {
-    binding: jsonSnapshot(resolved.binding),
-    installation: jsonSnapshot(resolved.installation),
-    properties: jsonSnapshot(resolved.properties)
-  };
   const hashes = await calculateHashes({
-    upid: project.project.content.document,
-    executionPlan,
-    machine,
-    post
-  });
+    upid: snapshot.project.content.document,
+    executionPlan: snapshot.executionPlan,
+    machine: snapshot.machine,
+    post: snapshot.post
+  }, packageHash);
   if (!hashes) return hashUnavailable();
   for (const field of hashFields) {
     if (candidate.hashes[field] === hashes[field]) continue;
@@ -534,10 +575,10 @@ export async function parseSavedWireEdmJobRevision(
     engineVersion: WIRE_EDM_ENGINE_VERSION,
     revisionId: candidate.revisionId,
     savedAt: candidate.savedAt,
-    project: jsonSnapshot(project.project),
-    machine,
-    post,
-    executionPlan,
+    project: snapshot.project,
+    machine: snapshot.machine,
+    post: snapshot.post,
+    executionPlan: snapshot.executionPlan,
     hashes
   });
 }
@@ -635,6 +676,7 @@ export function saveStoredWireEdmJobRevision(
       [path, documentPath, WORKBENCH_CATALOG_PATH]
     );
     if (!snapshots.ok) return snapshots;
+    const applied: CatalogStorageSnapshot[] = [];
     const revisionSnapshot = snapshots.snapshots.find((snapshot) => snapshot.path === path);
     if (revisionSnapshot?.contents !== null) {
       return catalogMutationFailure(revisionCatalogConflict(project.id, candidate.revisionId, path));
@@ -648,14 +690,15 @@ export function saveStoredWireEdmJobRevision(
     const serializedRevision = serializeSavedWireEdmJobRevision(candidate);
     const revisionWrite = await writeCatalogTransactionText(workbench, path, serializedRevision);
     if (!revisionWrite.ok) {
-      return rollbackCatalogRevision(workbench, snapshots.snapshots, revisionWrite.error);
+      return catalogMutationFailure(revisionWrite.error);
     }
+    journalCatalogSnapshot(applied, snapshots.snapshots, path);
     const revisionReadback = await readCatalogTransactionText(workbench, path);
     if (!revisionReadback.ok) {
-      return rollbackCatalogRevision(workbench, snapshots.snapshots, revisionReadback.error);
+      return rollbackCatalogRevision(workbench, applied, revisionReadback.error);
     }
     if (revisionReadback.contents !== serializedRevision) {
-      return rollbackCatalogRevision(workbench, snapshots.snapshots, savedRevisionStorageError(
+      return rollbackCatalogRevision(workbench, applied, savedRevisionStorageError(
         'SAVED_REVISION_STORAGE_READBACK_MISMATCH',
         `Saved revision at ${path} did not read back byte-for-byte.`
       ));
@@ -663,14 +706,15 @@ export function saveStoredWireEdmJobRevision(
     const serializedProject = `${JSON.stringify(nextProject.project, null, 2)}\n`;
     const projectWrite = await writeCatalogTransactionText(workbench, documentPath, serializedProject);
     if (!projectWrite.ok) {
-      return rollbackCatalogRevision(workbench, snapshots.snapshots, projectWrite.error);
+      return rollbackCatalogRevision(workbench, applied, projectWrite.error);
     }
+    journalCatalogSnapshot(applied, snapshots.snapshots, documentPath);
     const projectReadback = await readCatalogTransactionText(workbench, documentPath);
     if (!projectReadback.ok) {
-      return rollbackCatalogRevision(workbench, snapshots.snapshots, projectReadback.error);
+      return rollbackCatalogRevision(workbench, applied, projectReadback.error);
     }
     if (projectReadback.contents !== serializedProject) {
-      return rollbackCatalogRevision(workbench, snapshots.snapshots, {
+      return rollbackCatalogRevision(workbench, applied, {
         code: 'SAVED_REVISION_CATALOG_PROJECT_READBACK_MISMATCH',
         message: `Updated project at ${documentPath} did not read back byte-for-byte.`,
         path: documentPath
@@ -679,14 +723,15 @@ export function saveStoredWireEdmJobRevision(
     const serializedManifest = `${JSON.stringify(nextManifest, null, 2)}\n`;
     const manifestWrite = await writeCatalogManifest(workbench, nextManifest);
     if (!manifestWrite.ok) {
-      return rollbackCatalogRevision(workbench, snapshots.snapshots, manifestWrite.error);
+      return rollbackCatalogRevision(workbench, applied, manifestWrite.error);
     }
+    journalCatalogSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
     const manifestReadback = await readCatalogTransactionText(workbench, WORKBENCH_CATALOG_PATH);
     if (!manifestReadback.ok) {
-      return rollbackCatalogRevision(workbench, snapshots.snapshots, manifestReadback.error);
+      return rollbackCatalogRevision(workbench, applied, manifestReadback.error);
     }
     if (manifestReadback.contents !== serializedManifest) {
-      return rollbackCatalogRevision(workbench, snapshots.snapshots, {
+      return rollbackCatalogRevision(workbench, applied, {
         code: 'SAVED_REVISION_CATALOG_MANIFEST_READBACK_MISMATCH',
         message: `Updated manifest at ${WORKBENCH_CATALOG_PATH} did not read back byte-for-byte.`,
         path: WORKBENCH_CATALOG_PATH
@@ -732,21 +777,29 @@ async function persistSavedWireEdmJobRevisionUnlocked(
       );
     }
     const parsed = await parseSavedWireEdmJobRevision(existing);
-    if (!parsed.ok) return parsed;
+    if (!parsed.ok) {
+      return storageFailure(
+        'SAVED_REVISION_STORAGE_READBACK_MISMATCH',
+        `Existing saved revision at ${path} is not the valid candidate it matches: ${parsed.error.message}`
+      );
+    }
     return { ok: true, path, revision: persistedSuccess(parsed.candidate) };
   }
 
   try {
     await adapter.ensureDirectory(directory);
+  } catch (error) {
+    return storageFailure(
+      'SAVED_REVISION_STORAGE_WRITE_FAILED',
+      `Could not prepare saved revision directory ${directory}: ${errorMessage(error)}.`
+    );
+  }
+  try {
     await adapter.writeText(path, serialized);
   } catch (error) {
-    return rollbackNewRevision(
-      adapter,
-      path,
-      storageFailure(
-        'SAVED_REVISION_STORAGE_WRITE_FAILED',
-        `Could not persist saved revision at ${path}: ${errorMessage(error)}.`
-      )
+    return storageFailure(
+      'SAVED_REVISION_STORAGE_WRITE_FAILED',
+      `Could not persist saved revision at ${path}: ${errorMessage(error)}.`
     );
   }
 
@@ -774,7 +827,12 @@ async function persistSavedWireEdmJobRevisionUnlocked(
     );
   }
   const parsed = await parseSavedWireEdmJobRevision(readBack);
-  if (!parsed.ok) return rollbackNewRevision(adapter, path, parsed);
+  if (!parsed.ok) {
+    return rollbackNewRevision(adapter, path, storageFailure(
+      'SAVED_REVISION_STORAGE_READBACK_MISMATCH',
+      `Saved revision at ${path} failed validation after write: ${parsed.error.message}`
+    ));
+  }
   return { ok: true, path, revision: persistedSuccess(parsed.candidate) };
 }
 
@@ -782,7 +840,7 @@ export async function loadSavedWireEdmJobRevision(
   adapter: WorkbenchStorageAdapter,
   projectId: string,
   revisionId: string
-): Promise<PersistSavedWireEdmJobRevisionResult> {
+): Promise<LoadSavedWireEdmJobRevisionResult> {
   if (!Value.Check(PostIdentifierSchema, projectId)) {
     return schemaFailure('/projectId', 'Expected a valid project identifier');
   }
@@ -829,7 +887,12 @@ export function isValidatedSavedWireEdmJobRevision(
 
 function validateUpidProject(
   projectValue: WorkbenchProjectDocument
-): { ok: true; project: UpidWorkbenchProjectDocument } | Extract<SavedWireEdmJobRevisionCandidateResult, { ok: false }> {
+):
+  | { ok: true; project: UpidWorkbenchProjectDocument }
+  | { ok: false; error: Extract<
+      SavedWireEdmJobRevisionError,
+      { code: 'SAVED_REVISION_PROJECT_INVALID' | 'SAVED_REVISION_UPID_PROJECT_REQUIRED' }
+    > } {
   const parsed = parseWorkbenchProjectDocument(JSON.stringify(projectValue));
   if (!parsed.ok) {
     return failure({
@@ -851,7 +914,7 @@ function validateUpidProject(
 }
 
 function physicalMachineSnapshot(machine: MachineDefinition): MachinePhysicalSnapshot {
-  const { bindings: _bindings, ...physical } = structuredClone(machine);
+  const { bindings: _bindings, ...physical } = machine;
   return physical;
 }
 
@@ -864,13 +927,12 @@ async function calculateHashes(input: {
   readonly executionPlan: WireEdmExecutionPlan;
   readonly machine: MachinePhysicalSnapshot;
   readonly post: SavedPostBindingSnapshot;
-}): Promise<SavedRevisionHashes | null> {
-  const [upid, executionPlan, machine, binding, postPackage, postProperties] = await Promise.all([
+}, postPackage: string): Promise<SavedRevisionHashes | null> {
+  const [upid, executionPlan, machine, binding, postProperties] = await Promise.all([
     sha256(canonicalJson(input.upid)),
     sha256(canonicalJson(input.executionPlan)),
     sha256(canonicalJson(input.machine)),
     sha256(canonicalJson(input.post.binding)),
-    sha256(canonicalJson(input.post.installation.package)),
     sha256(canonicalJson(input.post.properties))
   ]);
   if (!upid || !executionPlan || !machine || !binding || !postPackage || !postProperties) {
@@ -912,9 +974,8 @@ function objectRecord(value: unknown) {
 
 function candidateSuccess(
   data: SavedWireEdmJobRevisionData
-): SavedWireEdmJobRevisionCandidateResult {
-  const revision = structuredClone(data);
-  Object.defineProperty(revision, revisionCandidateBrand, {
+): SavedWireEdmJobRevisionCandidateSuccess {
+  Object.defineProperty(data, revisionCandidateBrand, {
     value: true,
     enumerable: false,
     configurable: false,
@@ -922,12 +983,12 @@ function candidateSuccess(
   });
   return {
     ok: true,
-    candidate: deepFreeze(revision) as SavedWireEdmJobRevisionCandidate
+    candidate: deepFreeze(data) as SavedWireEdmJobRevisionCandidate
   };
 }
 
 function persistedSuccess(candidate: SavedWireEdmJobRevisionCandidate): SavedWireEdmJobRevision {
-  const revision = structuredClone(candidate) as SavedWireEdmJobRevisionData;
+  const revision = jsonSnapshot(candidate) as SavedWireEdmJobRevisionData;
   Object.defineProperty(revision, persistedRevisionBrand, {
     value: true,
     enumerable: false,
@@ -1054,6 +1115,16 @@ async function writeCatalogManifest(
   }
 }
 
+function journalCatalogSnapshot(
+  applied: CatalogStorageSnapshot[],
+  snapshots: readonly CatalogStorageSnapshot[],
+  path: string
+) {
+  const snapshot = snapshots.find((entry) => entry.path === path);
+  if (!snapshot) throw new Error(`Missing captured catalog snapshot for ${path}.`);
+  applied.push(snapshot);
+}
+
 async function rollbackCatalogRevision(
   workbench: ConnectedWorkbenchCatalog,
   snapshots: readonly CatalogStorageSnapshot[],
@@ -1135,7 +1206,10 @@ function savedRevisionPath(projectId: string, revisionId: string) {
 function schemaFailure(
   path: string,
   detail: string
-): Extract<SavedWireEdmJobRevisionCandidateResult, { readonly ok: false }> {
+): { readonly ok: false; readonly error: Extract<
+    SavedWireEdmJobRevisionError,
+    { readonly code: 'SAVED_REVISION_SCHEMA_INVALID' }
+  > } {
   return failure({
     code: 'SAVED_REVISION_SCHEMA_INVALID',
     message: `Saved revision schema violation at ${path || '/'}: ${detail}.`,
@@ -1145,7 +1219,10 @@ function schemaFailure(
 
 function hashMismatch(
   field: keyof SavedRevisionHashes
-): Extract<SavedWireEdmJobRevisionCandidateResult, { readonly ok: false }> {
+): { readonly ok: false; readonly error: Extract<
+    SavedWireEdmJobRevisionError,
+    { readonly code: 'SAVED_REVISION_HASH_MISMATCH' }
+  > } {
   return failure({
     code: 'SAVED_REVISION_HASH_MISMATCH',
     message: `Saved revision ${field} hash does not match its snapshotted content.`,
@@ -1153,10 +1230,10 @@ function hashMismatch(
   });
 }
 
-function hashUnavailable(): Extract<
-  SavedWireEdmJobRevisionCandidateResult,
-  { readonly ok: false }
-> {
+function hashUnavailable(): { readonly ok: false; readonly error: Extract<
+  SavedWireEdmJobRevisionError,
+  { readonly code: 'SAVED_REVISION_HASH_UNAVAILABLE' }
+> } {
   return failure({
     code: 'SAVED_REVISION_HASH_UNAVAILABLE',
     message: 'SHA-256 is unavailable; a reproducible saved revision cannot be created or verified.'
@@ -1165,7 +1242,10 @@ function hashUnavailable(): Extract<
 
 function physicalFailure(
   physicalError: MachinePhysicalPreflightError
-): Extract<SavedWireEdmJobRevisionCandidateResult, { readonly ok: false }> {
+): { readonly ok: false; readonly error: Extract<
+    SavedWireEdmJobRevisionError,
+    { readonly code: 'SAVED_REVISION_MACHINE_PHYSICAL_INVALID' }
+  > } {
   return failure({
     code: 'SAVED_REVISION_MACHINE_PHYSICAL_INVALID',
     message: physicalError.message,
@@ -1173,18 +1253,23 @@ function physicalFailure(
   });
 }
 
-function failure(error: SavedWireEdmJobRevisionError): Extract<
-  SavedWireEdmJobRevisionCandidateResult,
-  { readonly ok: false }
-> {
+function failure<Error extends SavedWireEdmJobRevisionError>(
+  error: Error
+): { readonly ok: false; readonly error: Error } {
   return { ok: false, error };
 }
 
-function storageFailure(
-  code: SavedWireEdmJobRevisionStorageError['code'],
+function storageFailure<Code extends SavedWireEdmJobRevisionStorageError['code']>(
+  code: Code,
   message: string
-): Extract<PersistSavedWireEdmJobRevisionResult, { readonly ok: false }> {
-  return { ok: false, error: { code, message } };
+): { readonly ok: false; readonly error: Extract<
+    SavedWireEdmJobRevisionStorageError,
+    { readonly code: Code }
+  > } {
+  return { ok: false, error: { code, message } } as {
+    readonly ok: false;
+    readonly error: Extract<SavedWireEdmJobRevisionStorageError, { readonly code: Code }>;
+  };
 }
 
 async function rollbackNewRevision(

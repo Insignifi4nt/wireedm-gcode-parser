@@ -19,16 +19,19 @@ import {
 class MemoryAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
   readonly files = new Map<string, string>();
+  readonly mutations: string[] = [];
   private failure: { operation: 'write' | 'delete'; path: string } | null = null;
 
   constructor(readonly name = 'catalog-mutations') {}
   async ensureDirectory() {}
   async readText(path: string) { return this.files.get(path) ?? null; }
   async writeText(path: string, contents: string) {
+    this.mutations.push(`write:${path}`);
     if (this.consumeFailure('write', path)) throw new Error('injected write failure');
     this.files.set(path, contents);
   }
   async deleteText(path: string) {
+    this.mutations.push(`delete:${path}`);
     if (this.consumeFailure('delete', path)) throw new Error('injected delete failure');
     this.files.delete(path);
   }
@@ -127,6 +130,21 @@ describe('strict V2 workbench project persistence', () => {
     expect(adapter.files.get(WORKBENCH_CATALOG_PATH)).toBe(manifestBefore);
     expect(adapter.files.has('imports/fixture.dxf')).toBe(false);
     expect(adapter.files.has('projects/fixture.json')).toBe(false);
+  });
+
+  it('does not roll back paths that were never changed', async () => {
+    const { adapter, workbench } = await initializedWorkbench();
+    adapter.mutations.length = 0;
+    adapter.failNext('write', 'imports/fixture.dxf');
+
+    expect(await addStoredWorkbenchProject(workbench, {
+      project: projectFixture('imports/fixture.dxf'),
+      ownedFiles: [{ path: 'imports/fixture.dxf', contents: 'DXF SOURCE' }]
+    })).toMatchObject({
+      ok: false,
+      error: { code: 'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED', operation: 'write' }
+    });
+    expect(adapter.mutations).toEqual(['write:imports/fixture.dxf']);
   });
 
   it('rejects a stale catalog snapshot instead of overwriting a completed mutation', async () => {

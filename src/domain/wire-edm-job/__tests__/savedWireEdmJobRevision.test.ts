@@ -196,6 +196,24 @@ describe('saved Wire EDM job revision', () => {
       ok: false,
       error: { code: 'SAVED_REVISION_STORAGE_ROLLBACK_FAILED' }
     });
+
+    let deleteAttempts = 0;
+    const failedWriteAdapter: WorkbenchStorageAdapter = {
+      name: 'Failed write adapter',
+      kind: 'memory',
+      ensureDirectory: async () => undefined,
+      readText: async () => null,
+      writeText: async () => { throw new Error('write unavailable'); },
+      deleteText: async () => { deleteAttempts += 1; }
+    };
+    expect(await persistSavedWireEdmJobRevision(
+      failedWriteAdapter,
+      fixture.candidate
+    )).toMatchObject({
+      ok: false,
+      error: { code: 'SAVED_REVISION_STORAGE_WRITE_FAILED' }
+    });
+    expect(deleteAttempts).toBe(0);
   });
 
   it('recompiles and verifies both the plan and hashes when parsing', async () => {

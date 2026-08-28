@@ -26,19 +26,24 @@ import {
 class MemoryAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
   readonly files = new Map<string, string>();
+  readonly mutations: string[] = [];
   private failurePath: string | null = null;
 
   constructor(readonly name = 'saved-revision-catalog') {}
   async ensureDirectory() {}
   async readText(path: string) { return this.files.get(path) ?? null; }
   async writeText(path: string, contents: string) {
+    this.mutations.push(`write:${path}`);
     if (path === this.failurePath) {
       this.failurePath = null;
       throw new Error('injected write failure');
     }
     this.files.set(path, contents);
   }
-  async deleteText(path: string) { this.files.delete(path); }
+  async deleteText(path: string) {
+    this.mutations.push(`delete:${path}`);
+    this.files.delete(path);
+  }
   failNextWrite(path: string) { this.failurePath = path; }
 }
 
@@ -88,6 +93,22 @@ describe('catalog-owned saved revision persistence', () => {
     )).toBe(false);
     expect(fixture.adapter.files.get('projects/fixture.part.json')).toBe(projectBefore);
     expect(fixture.adapter.files.get(WORKBENCH_CATALOG_PATH)).toBe(manifestBefore);
+  });
+
+  it('does not restore project paths when the revision write never succeeds', async () => {
+    const fixture = await catalogRevisionFixture();
+    const revisionPath = workbenchProjectRevisionPath('fixture.part', 'revision.0001');
+    fixture.adapter.mutations.length = 0;
+    fixture.adapter.failNextWrite(revisionPath);
+
+    expect(await saveStoredWireEdmJobRevision(
+      fixture.workbench,
+      fixture.candidate
+    )).toMatchObject({
+      ok: false,
+      error: { code: 'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED', operation: 'write' }
+    });
+    expect(fixture.adapter.mutations).toEqual([`write:${revisionPath}`]);
   });
 
   it('restores an indexed revision when project deletion cannot commit its manifest', async () => {

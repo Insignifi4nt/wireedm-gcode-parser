@@ -105,26 +105,61 @@ type MutationError =
   | ManifestWriteError
   | ManifestStateError;
 
-type CatalogRollbackError = {
+type MutationStateError =
+  | WorkbenchProjectStorageError
+  | WorkbenchProjectIndexIntegrityError
+  | ManifestStateError;
+
+export type AddStoredWorkbenchProjectError =
+  | MutationStateError
+  | ProjectConflictError
+  | OwnedFilePlanError
+  | RevisionPlanError
+  | ManifestWriteError;
+
+export type ReadStoredWorkbenchProjectError =
+  | WorkbenchProjectStorageError
+  | WorkbenchProjectIndexIntegrityError
+  | ProjectNotFoundError;
+
+export type ReplaceStoredWorkbenchProjectError =
+  | MutationStateError
+  | ProjectNotFoundError
+  | ProjectConflictError
+  | OwnedFilePlanError
+  | OwnedFileDanglingError
+  | RevisionPlanError
+  | ManifestWriteError;
+
+export type DeleteStoredWorkbenchProjectError =
+  | MutationStateError
+  | ProjectNotFoundError
+  | OwnedFileDanglingError
+  | TimestampError
+  | ManifestWriteError;
+
+type CatalogRollbackError<Error extends MutationError> = {
   code: 'WORKBENCH_CATALOG_MUTATION_ROLLBACK_FAILED';
   message: string;
-  originalError: MutationError;
+  originalError: Error;
   rollbackErrors: readonly WorkbenchProjectStorageError[];
 };
 
 export type AddStoredWorkbenchProjectResult =
   | { ok: true; workbench: ConnectedWorkbenchCatalog; project: WorkbenchProjectDocument }
-  | { ok: false; error: MutationError | CatalogRollbackError };
+  | { ok: false; error: AddStoredWorkbenchProjectError | CatalogRollbackError<AddStoredWorkbenchProjectError> };
 
 export type ReadStoredWorkbenchProjectResult =
   | { ok: true; project: WorkbenchProjectDocument }
-  | { ok: false; error: MutationError };
+  | { ok: false; error: ReadStoredWorkbenchProjectError };
 
-export type ReplaceStoredWorkbenchProjectResult = AddStoredWorkbenchProjectResult;
+export type ReplaceStoredWorkbenchProjectResult =
+  | { ok: true; workbench: ConnectedWorkbenchCatalog; project: WorkbenchProjectDocument }
+  | { ok: false; error: ReplaceStoredWorkbenchProjectError | CatalogRollbackError<ReplaceStoredWorkbenchProjectError> };
 
 export type DeleteStoredWorkbenchProjectResult =
   | { ok: true; workbench: ConnectedWorkbenchCatalog; deleted: WorkbenchProjectDocument }
-  | { ok: false; error: MutationError | CatalogRollbackError };
+  | { ok: false; error: DeleteStoredWorkbenchProjectError | CatalogRollbackError<DeleteStoredWorkbenchProjectError> };
 
 interface StorageSnapshot {
   readonly path: string;
@@ -159,6 +194,7 @@ export async function addStoredWorkbenchProject(
     const paths = [...input.ownedFiles.map(({ path: ownedPath }) => ownedPath), path, WORKBENCH_CATALOG_PATH];
     const snapshots = await captureSnapshots(workbench, paths);
     if (!snapshots.ok) return snapshots;
+    const applied: StorageSnapshot[] = [];
     const occupied = snapshots.snapshots.find(
       (snapshot) => snapshot.path !== WORKBENCH_CATALOG_PATH && snapshot.contents !== null
     );
@@ -166,13 +202,15 @@ export async function addStoredWorkbenchProject(
 
     for (const file of input.ownedFiles) {
       const written = await writeStorageText(workbench, file.path, file.contents);
-      if (!written.ok) return rollbackOrError(workbench, snapshots.snapshots, written.error);
+      if (!written.ok) return rollbackOrError(workbench, applied, written.error);
+      journalAppliedSnapshot(applied, snapshots.snapshots, file.path);
     }
     const documentWrite = await writeProjectDocument(workbench, path, input.project);
-    if (!documentWrite.ok) return rollbackOrError(workbench, snapshots.snapshots, documentWrite.error);
+    if (!documentWrite.ok) return rollbackOrError(workbench, applied, documentWrite.error);
+    journalAppliedSnapshot(applied, snapshots.snapshots, path);
     const nextManifest = withProjectEntry(workbench.manifest, input.project, path);
     const manifestWrite = await writeManifest(workbench, nextManifest);
-    if (!manifestWrite.ok) return rollbackOrError(workbench, snapshots.snapshots, manifestWrite.error);
+    if (!manifestWrite.ok) return rollbackOrError(workbench, applied, manifestWrite.error);
     return { ok: true, project: input.project, workbench: freezeWorkbench(workbench, nextManifest) };
   });
 }
@@ -219,6 +257,7 @@ export async function replaceStoredWorkbenchProject(
     const paths = [...input.ownedFileChanges.map(({ path }) => path), entry.path, WORKBENCH_CATALOG_PATH];
     const snapshots = await captureSnapshots(workbench, paths);
     if (!snapshots.ok) return snapshots;
+    const applied: StorageSnapshot[] = [];
     const previousPaths = new Set(previous.project.source.files.map(({ path }) => path));
     for (const change of input.ownedFileChanges) {
       const snapshot = snapshots.snapshots.find(({ path }) => path === change.path);
@@ -233,18 +272,21 @@ export async function replaceStoredWorkbenchProject(
     for (const change of input.ownedFileChanges) {
       if (change.kind === 'write') {
         const written = await writeStorageText(workbench, change.path, change.contents);
-        if (!written.ok) return rollbackOrError(workbench, snapshots.snapshots, written.error);
+        if (!written.ok) return rollbackOrError(workbench, applied, written.error);
+        journalAppliedSnapshot(applied, snapshots.snapshots, change.path);
       }
     }
     for (const change of input.ownedFileChanges.filter(({ kind }) => kind === 'delete')) {
       const deleted = await deleteStorageText(workbench, change.path);
-      if (!deleted.ok) return rollbackOrError(workbench, snapshots.snapshots, deleted.error);
+      if (!deleted.ok) return rollbackOrError(workbench, applied, deleted.error);
+      journalAppliedSnapshot(applied, snapshots.snapshots, change.path);
     }
     const documentWrite = await writeProjectDocument(workbench, entry.path, input.project);
-    if (!documentWrite.ok) return rollbackOrError(workbench, snapshots.snapshots, documentWrite.error);
+    if (!documentWrite.ok) return rollbackOrError(workbench, applied, documentWrite.error);
+    journalAppliedSnapshot(applied, snapshots.snapshots, entry.path);
     const nextManifest = replaceProjectEntry(workbench.manifest, input.project, entry.path);
     const manifestWrite = await writeManifest(workbench, nextManifest);
-    if (!manifestWrite.ok) return rollbackOrError(workbench, snapshots.snapshots, manifestWrite.error);
+    if (!manifestWrite.ok) return rollbackOrError(workbench, applied, manifestWrite.error);
     return { ok: true, project: input.project, workbench: freezeWorkbench(workbench, nextManifest) };
   });
 }
@@ -282,6 +324,7 @@ export async function deleteStoredWorkbenchProject(
       [...ownedPaths, WORKBENCH_CATALOG_PATH]
     );
     if (!snapshots.ok) return snapshots;
+    const applied: StorageSnapshot[] = [];
     const dangling = snapshots.snapshots.find(
       (snapshot) => sourcePaths.includes(snapshot.path) && snapshot.contents === null
     );
@@ -289,7 +332,8 @@ export async function deleteStoredWorkbenchProject(
 
     for (const path of ownedPaths) {
       const deleted = await deleteStorageText(workbench, path);
-      if (!deleted.ok) return rollbackOrError(workbench, snapshots.snapshots, deleted.error);
+      if (!deleted.ok) return rollbackOrError(workbench, applied, deleted.error);
+      journalAppliedSnapshot(applied, snapshots.snapshots, path);
     }
     const nextManifest = deepFreeze({
       ...workbench.manifest,
@@ -297,7 +341,7 @@ export async function deleteStoredWorkbenchProject(
       projects: workbench.manifest.projects.filter(({ id }) => id !== input.projectId)
     } satisfies WorkbenchCatalogManifestValue);
     const manifestWrite = await writeManifest(workbench, nextManifest);
-    if (!manifestWrite.ok) return rollbackOrError(workbench, snapshots.snapshots, manifestWrite.error);
+    if (!manifestWrite.ok) return rollbackOrError(workbench, applied, manifestWrite.error);
     return {
       ok: true,
       deleted: previous.project,
@@ -402,11 +446,21 @@ async function verifyManifestCurrent(workbench: ConnectedWorkbenchCatalog) {
   return { ok: true as const };
 }
 
-async function rollbackOrError(
+function journalAppliedSnapshot(
+  applied: StorageSnapshot[],
+  snapshots: readonly StorageSnapshot[],
+  path: string
+) {
+  const snapshot = snapshots.find((entry) => entry.path === path);
+  if (!snapshot) throw new Error(`Missing captured storage snapshot for ${path}.`);
+  applied.push(snapshot);
+}
+
+async function rollbackOrError<Error extends MutationError>(
   workbench: ConnectedWorkbenchCatalog,
   snapshots: readonly StorageSnapshot[],
-  originalError: MutationError
-): Promise<{ ok: false; error: MutationError | CatalogRollbackError }> {
+  originalError: Error
+): Promise<{ ok: false; error: Error | CatalogRollbackError<Error> }> {
   const rollbackErrors: WorkbenchProjectStorageError[] = [];
   for (const snapshot of [...snapshots].reverse()) {
     const restored = snapshot.contents === null
