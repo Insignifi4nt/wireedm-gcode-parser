@@ -13,6 +13,7 @@
     "hardware",
     "evidence",
     "bindings",
+    "activeBindingId",
     "notes"
   ],
   "properties": {
@@ -402,6 +403,19 @@
           }
         }
       }
+    },
+    "activeBindingId": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "notes": {
       "maxLength": 8192,

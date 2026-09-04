@@ -2,7 +2,9 @@
 
 Date: 2026-08-28
 
-Status: Accepted architecture; implementation will land in gated milestones.
+Status: Superseded for installation and controller-file ownership by `2026-09-04-complete-machine-package-installation-design.md`. The replacement specification incorporates those decisions; this document remains technical background for controller-neutral planning, post runtime, evidence, conformance, and reproducibility.
+
+The complete `.wireedm-package` and post-owned controller-file rules in the 2026-09-04 design take precedence over the standalone-installation and host-output-preference language retained below for historical context.
 
 ## Goal
 

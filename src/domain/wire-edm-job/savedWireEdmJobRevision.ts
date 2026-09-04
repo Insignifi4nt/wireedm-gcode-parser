@@ -35,6 +35,12 @@ import type { PostPropertyDiagnostic, PostPropertyValue } from '@/domain/post-pr
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import {
+  beginSavedRevisionTransaction,
+  finishSavedRevisionTransaction,
+  recoverSavedRevisionTransaction,
+  type SavedRevisionTransactionError
+} from '@/domain/storage/savedRevisionTransaction';
+import {
   parseWorkbenchProjectDocument,
   WorkbenchProjectDocumentSchema,
   type WorkbenchProjectDocument,
@@ -64,7 +70,7 @@ const randomUuidV4Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f
 const revisionCandidateBrand = Symbol('saved-wire-edm-job-revision-candidate');
 const persistedRevisionBrand = Symbol('persisted-saved-wire-edm-job-revision');
 
-const MachinePhysicalSnapshotSchema = Type.Omit(MachineDefinitionSchema, ['bindings']);
+const MachinePhysicalSnapshotSchema = Type.Omit(MachineDefinitionSchema, ['bindings', 'activeBindingId']);
 const PostPropertyValueSchema = Type.Union([
   Type.Boolean(),
   Type.Number(),
@@ -115,7 +121,7 @@ export type UpidWorkbenchProjectDocument = WorkbenchProjectDocument & {
   };
 };
 
-export type MachinePhysicalSnapshot = Omit<MachineDefinition, 'bindings'>;
+export type MachinePhysicalSnapshot = Omit<MachineDefinition, 'bindings' | 'activeBindingId'>;
 
 export interface SavedPostBindingSnapshot {
   readonly binding: MachinePostBinding;
@@ -265,6 +271,7 @@ export type LoadSavedWireEdmJobRevisionResult =
     };
 
 type SavedRevisionCatalogMutationError =
+  | SavedRevisionTransactionError
   | SavedWireEdmJobRevisionStorageError
   | WorkbenchProjectStorageError
   | WorkbenchProjectIndexIntegrityError
@@ -498,7 +505,8 @@ export async function parseSavedWireEdmJobRevision(
 
   const machineValue = {
     ...candidate.machine,
-    bindings: [candidate.post.binding]
+    bindings: [candidate.post.binding],
+    activeBindingId: candidate.post.binding.id
   };
   const parsedMachine = validateMachineDefinitionValue(machineValue);
   if (!parsedMachine.ok) {
@@ -618,6 +626,8 @@ export function saveStoredWireEdmJobRevision(
         'Only a revision candidate returned by the creator or parser can be persisted.'
       ));
     }
+    const recovered = await recoverSavedRevisionTransaction(workbench.adapter);
+    if (!recovered.ok) return recovered;
     const manifestCurrent = await verifyCatalogManifestCurrent(workbench);
     if (!manifestCurrent.ok) return manifestCurrent;
     const ownership = await validateWorkbenchProjectPathOwnership(
@@ -696,6 +706,23 @@ export function saveStoredWireEdmJobRevision(
       return catalogMutationFailure(catalogStorageAccessFailure('write', path, error));
     }
     const serializedRevision = serializeSavedWireEdmJobRevision(candidate);
+    const serializedProject = `${JSON.stringify(nextProject.project, null, 2)}\n`;
+    const serializedManifest = `${JSON.stringify(nextManifest, null, 2)}\n`;
+    const previousProject = snapshots.snapshots.find((snapshot) => snapshot.path === documentPath)?.contents;
+    const previousManifest = snapshots.snapshots.find((snapshot) => snapshot.path === WORKBENCH_CATALOG_PATH)?.contents;
+    if (previousProject == null || previousManifest == null) {
+      return catalogMutationFailure(savedRevisionStorageError('SAVED_REVISION_STORAGE_CONFLICT', 'Project or manifest disappeared before saving the revision.'));
+    }
+    const begun = await beginSavedRevisionTransaction(workbench.adapter, {
+      projectId: project.id,
+      revisionId: candidate.revisionId,
+      previousProject,
+      previousManifest,
+      nextRevision: serializedRevision,
+      nextProject: serializedProject,
+      nextManifest: serializedManifest
+    });
+    if (!begun.ok) return begun;
     journalCatalogSnapshot(applied, snapshots.snapshots, path);
     const revisionWrite = await writeCatalogTransactionText(workbench, path, serializedRevision);
     if (!revisionWrite.ok) {
@@ -711,7 +738,6 @@ export function saveStoredWireEdmJobRevision(
         `Saved revision at ${path} did not read back byte-for-byte.`
       ));
     }
-    const serializedProject = `${JSON.stringify(nextProject.project, null, 2)}\n`;
     journalCatalogSnapshot(applied, snapshots.snapshots, documentPath);
     const projectWrite = await writeCatalogTransactionText(workbench, documentPath, serializedProject);
     if (!projectWrite.ok) {
@@ -728,7 +754,6 @@ export function saveStoredWireEdmJobRevision(
         path: documentPath
       });
     }
-    const serializedManifest = `${JSON.stringify(nextManifest, null, 2)}\n`;
     journalCatalogSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
     const manifestWrite = await writeCatalogManifest(workbench, nextManifest);
     if (!manifestWrite.ok) {
@@ -745,6 +770,8 @@ export function saveStoredWireEdmJobRevision(
         path: WORKBENCH_CATALOG_PATH
       });
     }
+    const finished = await finishSavedRevisionTransaction(workbench.adapter);
+    if (!finished.ok) return finished;
     return {
       ok: true,
       path,
@@ -922,7 +949,7 @@ function validateUpidProject(
 }
 
 function physicalMachineSnapshot(machine: MachineDefinition): MachinePhysicalSnapshot {
-  const { bindings: _bindings, ...physical } = machine;
+  const { bindings: _bindings, activeBindingId: _activeBindingId, ...physical } = machine;
   return physical;
 }
 
@@ -1144,8 +1171,18 @@ async function rollbackCatalogRevision(
       ? await deleteCatalogTransactionText(workbench, snapshot.path)
       : await writeCatalogTransactionText(workbench, snapshot.path, snapshot.contents);
     if (!restored.ok) rollbackErrors.push(restored.error);
+    else {
+      const readback = await readCatalogTransactionText(workbench, snapshot.path);
+      if (!readback.ok) rollbackErrors.push(readback.error);
+      else if (readback.contents !== snapshot.contents) {
+        rollbackErrors.push(catalogStorageAccessFailure('write', snapshot.path, 'Rollback did not read back exactly'));
+      }
+    }
   }
-  if (rollbackErrors.length === 0) return catalogMutationFailure(originalError);
+  if (rollbackErrors.length === 0) {
+    const finished = await finishSavedRevisionTransaction(workbench.adapter);
+    return finished.ok ? catalogMutationFailure(originalError) : finished;
+  }
   return {
     ok: false,
     error: {

@@ -5,7 +5,7 @@ import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageA
 
 import {
   createEmptyPostLibrary,
-  installPostPackage,
+  hashPostPackage,
   postInstallationRefsEqual,
   type PostInstallation,
   type PostLibrary
@@ -198,18 +198,23 @@ async function parseStoredPostLibrary(rawText: string): Promise<ReadPostLibraryS
     }
     installationClaims.add(claim);
 
-    const installed = await installPostPackage(createEmptyPostLibrary(), packageResult.package);
-    if (!installed.ok) {
+    const contentHash = await hashPostPackage(packageResult.package);
+    if (!contentHash) {
       return {
         ok: false,
         error: {
           code: 'POST_LIBRARY_STORAGE_HASH_UNAVAILABLE',
-          message: installed.error.message,
+          message: 'SHA-256 is unavailable; the stored post package cannot be opened without verifying its content identity.',
           path: `/installations/${index}`
         }
       };
     }
-    if (!postInstallationRefsEqual(installed.installation.ref, stored.ref)) {
+    const ref = Object.freeze({
+      packageId: packageResult.package.manifest.id,
+      version: packageResult.package.manifest.version,
+      contentHash
+    });
+    if (!postInstallationRefsEqual(ref, stored.ref)) {
       return {
         ok: false,
         error: {
@@ -217,11 +222,11 @@ async function parseStoredPostLibrary(rawText: string): Promise<ReadPostLibraryS
           message: `Stored post reference at /installations/${index}/ref does not match its package content.`,
           path: `/installations/${index}/ref`,
           stored: stored.ref,
-          computed: installed.installation.ref
+          computed: ref
         }
       };
     }
-    installations.push(installed.installation);
+    installations.push(Object.freeze({ ref, package: packageResult.package }));
   }
 
   return {

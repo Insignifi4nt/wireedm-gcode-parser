@@ -13,7 +13,9 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
       targets: [
         {
           manufacturer: 'Charmilles',
+          controllerManufacturer: 'Charmilles',
           controller: 'Robofil Classic',
+          firmware: { status: 'known', versions: ['Local verified configuration'] },
           machineModels: ['Robofil 100']
         }
       ],
@@ -33,6 +35,14 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
         initialWirePosition: 'required',
         compensationLifecycle: 'none',
         compensationRequiredForEveryOperation: false
+      },
+      output: {
+        fileExtension: 'iso',
+        lineEnding: 'crlf',
+        encoding: 'ascii',
+        finalNewline: true,
+        blockNumbering: { mode: 'none' },
+        programEnvelope: { prefix: [], suffix: [] }
       },
       properties: {
         coordinatePrecision: {
@@ -130,8 +140,10 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
           { kind: 'command', id: 'program.end' }
         ],
         appliesTo: {
+          controllerManufacturers: ['Charmilles'],
           controllerModels: ['Robofil Classic'],
-          machineModels: ['Robofil 100']
+          machineModels: ['Robofil 100'],
+          firmware: 'Local verified configuration'
         },
         review: {
           status: 'reviewed',
@@ -154,6 +166,7 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
           'G1 X0 Y0',
           'M02'
         ].join('\n'),
+        expectedArtifact: ['G90', 'G1 X10 Y0', 'G1 X10 Y10', 'G1 X0 Y10', 'G1 X0 Y0', 'M02', ''].join('\r\n'),
         evidenceRefs: ['robofil-program']
       },
       {
@@ -169,6 +182,7 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
           'G1 X0 Y0',
           'M02'
         ].join('\n'),
+        expectedArtifact: ['G90', 'G1 X10 Y0', 'G1 X10 Y10', 'G1 X0 Y10', 'G1 X0 Y0', 'M02', ''].join('\r\n'),
         evidenceRefs: ['robofil-program']
       },
       {
@@ -184,6 +198,7 @@ export function minimalPostPackage(): WireEdmPostPackageValue {
           'G1 X0 Y0',
           'M02'
         ].join('\n'),
+        expectedArtifact: ['G90', 'G1 X10 Y0', 'G1 X10 Y10', 'G1 X0 Y10', 'G1 X0 Y0', 'M02', ''].join('\r\n'),
         evidenceRefs: ['robofil-program']
       }
     ]

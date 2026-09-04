@@ -89,13 +89,12 @@ function workbenchWithImportUnits(
     },
     manifest: {
       format: 'wire-edm-workbench',
-      schemaVersion: 2,
+      schemaVersion: 3,
       name: 'DXF preparation',
       createdAt: '2026-08-28T09:00:00.000Z',
       updatedAt: '2026-08-28T09:00:00.000Z',
       preferences: {
         importUnits,
-        export: { status: 'unconfigured' },
         recentPlanningMachineId: null
       },
       projects: []

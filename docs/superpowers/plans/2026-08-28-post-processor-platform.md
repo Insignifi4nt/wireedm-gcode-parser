@@ -6,6 +6,12 @@ Design: `docs/superpowers/specs/2026-08-28-post-processor-platform-design.md`
 
 Research: `docs/superpowers/2026-08-28-wire-edm-post-processor-architecture-research.md`
 
+> Historical plan note: this plan predates complete machine-package installation. Its
+> internal post-runtime and reproducibility milestones remain useful background, but
+> standalone post installation, manual binding assembly, and host-owned output rules
+> are superseded by `docs/superpowers/specs/2026-09-04-complete-machine-package-installation-design.md`.
+> The checkboxes below record the plan's state at that date. They are not a current task list.
+
 ## Delivery discipline
 
 Implementation proceeds in five substantial milestones. Every milestone is API-first, leaves the repository working, and ends in exactly two bounded review passes:

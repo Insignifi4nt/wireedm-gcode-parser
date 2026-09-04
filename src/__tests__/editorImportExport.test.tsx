@@ -748,7 +748,7 @@ describe('Editor import, export, and parse feedback', () => {
       connectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     const machineSettingsButton = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Machines & posts'
+      (button) => button.textContent?.trim() === 'Machines & setups'
     );
     expect(machineSettingsButton).not.toBeNull();
     await act(async () => {

@@ -1,12 +1,12 @@
-import { Type } from '@sinclair/typebox';
-import { Value } from '@sinclair/typebox/value';
-
 import type { ControllerProgram } from '@/domain/post-processor/controllerProgram';
+import { serializeControllerOutput } from '@/domain/post-processor/controllerOutput';
 import {
   runPost,
   type PostEngineDiagnostic
 } from '@/domain/post-processor/postEngine';
 import type { PostInstallationRef } from '@/domain/post-processor/postLibrary';
+import type { WireEdmPostPackage } from '@/domain/post-processor/postPackageSchema';
+import type { ExecutionPlanDiagnostic } from '@/domain/execution-plan/executionPlan';
 
 import {
   WIRE_EDM_ENGINE_VERSION,
@@ -17,44 +17,6 @@ import {
 
 export const CONTROLLER_PROGRAM_ARTIFACT_SCHEMA_VERSION = 1 as const;
 
-const strictObject = { additionalProperties: false } as const;
-const ConfiguredControllerArtifactPreferenceSchema = Type.Object({
-  status: Type.Literal('configured'),
-  fileExtension: Type.Union([
-    Type.Object({
-      kind: Type.Literal('standard'),
-      extension: Type.Union([
-        Type.Literal('iso'),
-        Type.Literal('nc'),
-        Type.Literal('gcode')
-      ])
-    }, strictObject),
-    Type.Object({
-      kind: Type.Literal('custom'),
-      extension: Type.String({ minLength: 1, maxLength: 16, pattern: '^[A-Za-z0-9]+$' })
-    }, strictObject)
-  ]),
-  lineEnding: Type.Union([Type.Literal('lf'), Type.Literal('crlf')])
-}, strictObject);
-
-export type ConfiguredControllerArtifactPreference =
-  | {
-      readonly status: 'configured';
-      readonly fileExtension: {
-        readonly kind: 'standard';
-        readonly extension: 'iso' | 'nc' | 'gcode';
-      };
-      readonly lineEnding: 'lf' | 'crlf';
-    }
-  | {
-      readonly status: 'configured';
-      readonly fileExtension: {
-        readonly kind: 'custom';
-        readonly extension: string;
-      };
-      readonly lineEnding: 'lf' | 'crlf';
-    };
-
 export interface ControllerProgramArtifact {
   readonly format: 'wire-edm-controller-artifact';
   readonly schemaVersion: typeof CONTROLLER_PROGRAM_ARTIFACT_SCHEMA_VERSION;
@@ -62,7 +24,7 @@ export interface ControllerProgramArtifact {
   readonly revisionId: string;
   readonly revisionHashes: SavedRevisionHashes;
   readonly fileName: string;
-  readonly preference: Omit<ConfiguredControllerArtifactPreference, 'status'>;
+  readonly output: WireEdmPostPackage['manifest']['output'];
   readonly post: PostInstallationRef;
   readonly program: ControllerProgram;
   readonly text: string;
@@ -74,11 +36,8 @@ export type ControllerArtifactError =
       readonly code: 'CONTROLLER_ARTIFACT_REVISION_UNVALIDATED';
       readonly message: string;
     }
-  | {
-      readonly code: 'CONTROLLER_ARTIFACT_PREFERENCE_INVALID';
-      readonly message: string;
-      readonly path: string;
-    }
+  | { readonly code: 'CONTROLLER_ARTIFACT_ENCODING_INVALID'; readonly message: string }
+  | { readonly code: 'CONTROLLER_ARTIFACT_NUMBERING_OVERFLOW'; readonly message: string }
   | {
       readonly code: 'CONTROLLER_ARTIFACT_POST_NOT_RUNNABLE';
       readonly message: string;
@@ -90,6 +49,11 @@ export type ControllerArtifactError =
       readonly diagnostics: readonly PostEngineDiagnostic[];
     }
   | {
+      readonly code: 'CONTROLLER_ARTIFACT_EXECUTION_PLAN_INVALID';
+      readonly message: string;
+      readonly diagnostics: readonly ExecutionPlanDiagnostic[];
+    }
+  | {
       readonly code: 'CONTROLLER_ARTIFACT_HASH_UNAVAILABLE';
       readonly message: string;
     };
@@ -99,8 +63,7 @@ export type ControllerArtifactResult =
   | { readonly ok: false; readonly error: ControllerArtifactError };
 
 export async function generateControllerArtifact(
-  revision: SavedWireEdmJobRevision,
-  preference: ConfiguredControllerArtifactPreference
+  revision: SavedWireEdmJobRevision
 ): Promise<ControllerArtifactResult> {
   if (!isValidatedSavedWireEdmJobRevision(revision)) {
     return artifactFailure({
@@ -108,18 +71,6 @@ export async function generateControllerArtifact(
       message: 'Controller artifacts require a saved revision returned by the revision creator or parser.'
     });
   }
-  const preferenceError = Value.Errors(
-    ConfiguredControllerArtifactPreferenceSchema,
-    preference
-  ).First();
-  if (preferenceError) {
-    return artifactFailure({
-      code: 'CONTROLLER_ARTIFACT_PREFERENCE_INVALID',
-      message: `Controller artifact preference is invalid at ${preferenceError.path || '/'}: ${preferenceError.message}.`,
-      path: preferenceError.path
-    });
-  }
-
   const posted = await runPost(revision.executionPlan, {
     installation: revision.post.installation,
     properties: revision.post.properties
@@ -132,16 +83,22 @@ export async function generateControllerArtifact(
     });
   }
 
-  const separator = preference.lineEnding === 'crlf' ? '\r\n' : '\n';
-  const text = posted.program.text.replace(/\r\n|\r|\n/g, separator);
-  const hash = await sha256(text);
+  const output = revision.post.installation.package.manifest.output;
+  const serialized = serializeControllerOutput(posted.program, output);
+  if (!serialized.ok) {
+    return artifactFailure(serialized.error.code === 'POST_OUTPUT_ENCODING_INVALID'
+      ? { code: 'CONTROLLER_ARTIFACT_ENCODING_INVALID', message: serialized.error.message }
+      : { code: 'CONTROLLER_ARTIFACT_NUMBERING_OVERFLOW', message: serialized.error.message });
+  }
+  const { bytes, text } = serialized;
+  const hash = await sha256(bytes);
   if (!hash) {
     return artifactFailure({
       code: 'CONTROLLER_ARTIFACT_HASH_UNAVAILABLE',
       message: 'SHA-256 is unavailable; the controller artifact cannot be identified exactly.'
     });
   }
-  const extension = preference.fileExtension.extension;
+  const extension = output.fileExtension;
   return {
     ok: true,
     artifact: deepFreeze({
@@ -151,10 +108,7 @@ export async function generateControllerArtifact(
       revisionId: revision.revisionId,
       revisionHashes: structuredClone(revision.hashes),
       fileName: `${revision.project.id}.${extension}`,
-      preference: {
-        fileExtension: structuredClone(preference.fileExtension),
-        lineEnding: preference.lineEnding
-      },
+      output: structuredClone(output),
       post: structuredClone(revision.post.installation.ref),
       program: structuredClone(posted.program),
       text,
@@ -163,11 +117,13 @@ export async function generateControllerArtifact(
   };
 }
 
-async function sha256(value: string) {
+async function sha256(value: Uint8Array) {
   if (!globalThis.crypto?.subtle) return null;
+  const copied = new Uint8Array(value.byteLength);
+  copied.set(value);
   const digest = await globalThis.crypto.subtle.digest(
     'SHA-256',
-    new TextEncoder().encode(value)
+    copied.buffer
   );
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, '0'))

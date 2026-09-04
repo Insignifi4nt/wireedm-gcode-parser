@@ -106,6 +106,7 @@ export const MachineDefinitionSchema = Type.Object({
   }, strictObject),
   evidence: Type.Array(MachineEvidenceSchema, { maxItems: 128 }),
   bindings: Type.Array(MachinePostBindingSchema, { maxItems: 256 }),
+  activeBindingId: Type.Union([PostIdentifierSchema, Type.Null()]),
   notes: NotesSchema
 }, {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -142,6 +143,7 @@ export type MachineDefinitionDiagnosticCode =
   | 'MACHINE_DEFINITION_SCHEMA_INVALID'
   | 'MACHINE_DEFINITION_RECORD_KEY_INVALID'
   | 'MACHINE_DEFINITION_DUPLICATE_ID'
+  | 'MACHINE_DEFINITION_ACTIVE_BINDING_NOT_FOUND'
   | 'MACHINE_DEFINITION_EVIDENCE_NOT_FOUND'
   | 'MACHINE_DEFINITION_TIMESTAMP_INVALID'
   | 'MACHINE_DEFINITION_VERIFICATION_MISMATCH';
@@ -183,6 +185,7 @@ export type ResolveMachinePostBindingResult =
       error:
         | { code: 'MACHINE_POST_BINDING_NOT_FOUND'; message: string; bindingId: string }
         | { code: 'MACHINE_POST_BINDING_INSTALLATION_NOT_FOUND'; message: string; bindingId: string }
+        | { code: 'MACHINE_POST_BINDING_TARGET_MISMATCH'; message: string; bindingId: string }
         | {
             code: 'MACHINE_POST_BINDING_PROPERTIES_INVALID';
             message: string;
@@ -194,6 +197,13 @@ export type ResolveMachinePostBindingResult =
 
 export type RemoveMachinePostBindingResult =
   | { ok: true; machine: MachineDefinition; removed: MachinePostBinding }
+  | {
+      ok: false;
+      error: { code: 'MACHINE_POST_BINDING_NOT_FOUND'; message: string; bindingId: string };
+    };
+
+export type ActivateMachinePostBindingResult =
+  | { ok: true; machine: MachineDefinition; binding: MachinePostBinding }
   | {
       ok: false;
       error: { code: 'MACHINE_POST_BINDING_NOT_FOUND'; message: string; bindingId: string };
@@ -317,6 +327,19 @@ export function createMachinePostBinding(
   return { ok: true, machine: nextMachine, binding };
 }
 
+export function activateMachinePostBinding(
+  machine: MachineDefinition,
+  bindingId: string
+): ActivateMachinePostBindingResult {
+  const binding = machine.bindings.find(({ id }) => id === bindingId);
+  if (!binding) return bindingNotFound(bindingId);
+  return {
+    ok: true,
+    machine: deepFreeze({ ...machine, activeBindingId: bindingId }),
+    binding
+  };
+}
+
 export async function resolveMachinePostBinding(
   machine: MachineDefinition,
   library: PostLibrary,
@@ -353,6 +376,18 @@ async function resolveMachinePostBindingValue(
       error: {
         code: 'MACHINE_POST_BINDING_INSTALLATION_NOT_FOUND',
         message: `Binding ${bindingId} references an unavailable exact post installation: ${installed.error.message}`,
+        bindingId
+      }
+    };
+  }
+
+  if (!postTargetsMachine(installed.installation, machine)) {
+    const controller = machine.identity.controller;
+    return {
+      ok: false,
+      error: {
+        code: 'MACHINE_POST_BINDING_TARGET_MISMATCH',
+        message: `Binding ${bindingId} post does not target ${machine.identity.manufacturer} ${machine.identity.model} with controller ${controller.manufacturer} ${controller.model} firmware ${controller.firmware ?? 'unknown'}.`,
         bindingId
       }
     };
@@ -398,6 +433,19 @@ async function resolveMachinePostBindingValue(
   };
 }
 
+function postTargetsMachine(installation: PostInstallation, machine: MachineDefinition) {
+  return installation.package.manifest.targets.some((target) => (
+    target.manufacturer === machine.identity.manufacturer &&
+    target.controllerManufacturer === machine.identity.controller.manufacturer &&
+    target.controller === machine.identity.controller.model &&
+    (target.firmware.status === 'unknown'
+      ? machine.identity.controller.firmware === undefined
+      : machine.identity.controller.firmware !== undefined &&
+        target.firmware.versions.includes(machine.identity.controller.firmware)) &&
+    (target.machineModels.length === 0 || target.machineModels.includes(machine.identity.model))
+  ));
+}
+
 export function removeMachinePostBinding(
   machine: MachineDefinition,
   bindingId: string
@@ -408,7 +456,8 @@ export function removeMachinePostBinding(
     ok: true,
     machine: deepFreeze({
       ...machine,
-      bindings: machine.bindings.filter(({ id }) => id !== bindingId)
+      bindings: machine.bindings.filter(({ id }) => id !== bindingId),
+      activeBindingId: machine.activeBindingId === bindingId ? null : machine.activeBindingId
     }),
     removed: binding
   };
@@ -418,6 +467,16 @@ function collectMachineDefinitionSemanticDiagnostics(machine: MachineDefinitionV
   const diagnostics: MachineDefinitionDiagnostic[] = [];
   appendDuplicateIdDiagnostics(diagnostics, machine.evidence, '/evidence');
   appendDuplicateIdDiagnostics(diagnostics, machine.bindings, '/bindings');
+  if (
+    machine.activeBindingId !== null &&
+    !machine.bindings.some(({ id }) => id === machine.activeBindingId)
+  ) {
+    diagnostics.push({
+      code: 'MACHINE_DEFINITION_ACTIVE_BINDING_NOT_FOUND',
+      path: '/activeBindingId',
+      message: `Active machine setup not found: ${machine.activeBindingId}.`
+    });
+  }
   const evidenceIds = new Set(machine.evidence.map(({ id }) => id));
   for (const [bindingIndex, binding] of machine.bindings.entries()) {
     appendTimestampDiagnostic(

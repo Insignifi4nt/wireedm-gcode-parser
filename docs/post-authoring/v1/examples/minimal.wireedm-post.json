@@ -10,7 +10,12 @@
     "targets": [
       {
           "manufacturer": "LinuxCNC",
+          "controllerManufacturer": "LinuxCNC",
           "controller": "LinuxCNC 2.9",
+          "firmware": {
+            "status": "known",
+            "versions": ["2.9"]
+          },
           "machineModels": []
       }
     ],
@@ -30,6 +35,19 @@
       "initialWirePosition": "required",
       "compensationLifecycle": "none",
       "compensationRequiredForEveryOperation": false
+    },
+    "output": {
+      "fileExtension": "ngc",
+      "lineEnding": "lf",
+      "encoding": "utf-8",
+      "finalNewline": true,
+      "blockNumbering": {
+        "mode": "none"
+      },
+      "programEnvelope": {
+        "prefix": [],
+        "suffix": []
+      }
     },
     "properties": {
       "coordinatePrecision": {
@@ -123,6 +141,7 @@
       "claim": "LinuxCNC 2.9 assigns G90 to absolute distance mode.",
       "supports": [{ "kind": "command", "id": "distance.absolute" }],
       "appliesTo": {
+        "controllerManufacturers": ["LinuxCNC"],
         "controllerModels": ["LinuxCNC 2.9"],
         "machineModels": [],
         "firmware": "2.9"
@@ -144,6 +163,7 @@
       "claim": "LinuxCNC 2.9 assigns M2 to program end.",
       "supports": [{ "kind": "command", "id": "program.end" }],
       "appliesTo": {
+        "controllerManufacturers": ["LinuxCNC"],
         "controllerModels": ["LinuxCNC 2.9"],
         "machineModels": [],
         "firmware": "2.9"
@@ -165,6 +185,7 @@
       "claim": "LinuxCNC 2.9 assigns G1 to coordinated linear motion.",
       "supports": [{ "kind": "command", "id": "motion.linear" }],
       "appliesTo": {
+        "controllerManufacturers": ["LinuxCNC"],
         "controllerModels": ["LinuxCNC 2.9"],
         "machineModels": [],
         "firmware": "2.9"
@@ -183,6 +204,7 @@
       "planFixture": "core.single-closed-contour.v1",
       "properties": { "coordinatePrecision": 0 },
       "expectedProgram": "G90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nM02",
+      "expectedArtifact": "G90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nM02\n",
       "evidenceRefs": ["linuxcnc-g90", "linuxcnc-g1", "linuxcnc-m2"]
     },
     {
@@ -191,6 +213,7 @@
       "planFixture": "core.single-closed-contour.v1",
       "properties": { "coordinatePrecision": 6 },
       "expectedProgram": "G90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nM02",
+      "expectedArtifact": "G90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nM02\n",
       "evidenceRefs": ["linuxcnc-g90", "linuxcnc-g1", "linuxcnc-m2"]
     }
   ]

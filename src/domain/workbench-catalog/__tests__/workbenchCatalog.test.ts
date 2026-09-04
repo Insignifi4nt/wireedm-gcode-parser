@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { MACHINE_LIBRARY_PATH } from '@/domain/machine-definition/machineLibraryStorage';
@@ -34,6 +34,29 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
 }
 
 describe('clean-break workbench catalog', () => {
+  it('holds the named cross-tab mutation lock while initializing and recovering storage', async () => {
+    const previousLocks = Object.getOwnPropertyDescriptor(navigator, 'locks');
+    const request = vi.fn(async (_name: string, callback: () => Promise<unknown>) => callback());
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: { request }
+    });
+
+    try {
+      expect(await initializeWorkbenchCatalog(new MemoryAdapter('Locked shop'))).toMatchObject({
+        ok: true,
+        kind: 'created'
+      });
+      expect(request).toHaveBeenCalledWith(
+        'wire-edm-workbench:memory:Locked shop',
+        expect.any(Function)
+      );
+    } finally {
+      if (previousLocks) Object.defineProperty(navigator, 'locks', previousLocks);
+      else Reflect.deleteProperty(navigator, 'locks');
+    }
+  });
+
   it('creates explicit empty state without a default machine, post, or export configuration', async () => {
     const adapter = new MemoryAdapter('Shop workbench');
 
@@ -47,11 +70,10 @@ describe('clean-break workbench catalog', () => {
       workbench: {
         manifest: {
           format: 'wire-edm-workbench',
-          schemaVersion: 2,
+          schemaVersion: 3,
           name: 'Shop workbench',
           preferences: {
             importUnits: { mode: 'ask' },
-            export: { status: 'unconfigured' },
             recentPlanningMachineId: null
           },
           projects: []
@@ -63,27 +85,143 @@ describe('clean-break workbench catalog', () => {
     expect(adapter.files.has(POST_LIBRARY_PATH)).toBe(true);
     expect(adapter.files.has(MACHINE_LIBRARY_PATH)).toBe(true);
     expect(JSON.parse(adapter.files.get(WORKBENCH_CATALOG_PATH) ?? '')).toMatchObject({
-      schemaVersion: 2
+      schemaVersion: 3
     });
   });
 
-  it('rejects a version-1 manifest without rewriting or creating companion libraries', async () => {
-    const adapter = new MemoryAdapter();
-    const original = JSON.stringify({ schemaVersion: 1, machineProfiles: [] });
-    adapter.files.set(WORKBENCH_CATALOG_PATH, original);
+  it('migrates a version-1 workbench and its projects without inventing a machine package', async () => {
+    const adapter = new MemoryAdapter('Legacy shop');
+    const projectPath = 'projects/legacy-part.json';
+    const timestamp = '2026-08-28T12:00:00.000Z';
+    adapter.files.set(projectPath, JSON.stringify({
+      schemaVersion: 1,
+      id: 'legacy-part',
+      name: 'Legacy part',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      source: { kind: 'upid', files: [] },
+      upid: { format: 'upid', schemaVersion: 1, document: createUpidFromDxfEntities([]) },
+      machine: { id: 'legacy-profile' },
+      editor: { activeFilePath: null, pinnedLineNumbers: [] }
+    }));
+    adapter.files.set(WORKBENCH_CATALOG_PATH, JSON.stringify({
+      schemaVersion: 1,
+      name: 'Legacy shop',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      templates: { headerPath: 'templates/header.gcode', footerPath: 'templates/footer.gcode' },
+      output: { extension: 'iso', lineEnding: 'crlf', coordinatePrecision: 3 },
+      activeMachineProfileId: 'legacy-profile',
+      machineProfiles: [{ id: 'legacy-profile', preferredDxfImportUnit: 'millimeters' }],
+      projects: [{ id: 'legacy-part', name: 'Legacy part', path: projectPath, sourceKind: 'upid', updatedAt: timestamp }]
+    }));
 
-    expect(await initializeWorkbenchCatalog(adapter)).toEqual({
-      ok: false,
-      error: {
-        code: 'WORKBENCH_CATALOG_VERSION_UNSUPPORTED',
-        message: 'Workbench schema version 1 is unsupported. Create a new version-2 workbench.',
-        foundVersion: 1,
-        supportedVersion: 2
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({
+      ok: true,
+      workbench: {
+        manifest: {
+          schemaVersion: 3,
+          preferences: { importUnits: { mode: 'fixed', unit: 'millimeters' }, recentPlanningMachineId: null },
+          projects: [{ id: 'legacy-part' }]
+        },
+        posts: { installations: [] },
+        machines: { machines: [] }
       }
     });
-    expect(adapter.files.get(WORKBENCH_CATALOG_PATH)).toBe(original);
-    expect(adapter.files.has(POST_LIBRARY_PATH)).toBe(false);
-    expect(adapter.files.has(MACHINE_LIBRARY_PATH)).toBe(false);
+    expect(JSON.parse(adapter.files.get(projectPath) ?? '{}')).toMatchObject({
+      format: 'wire-edm-project',
+      schemaVersion: 2,
+      id: 'legacy-part'
+    });
+    expect(adapter.files.get('legacy/v1/workbench.json')).toContain('"schemaVersion":1');
+    expect(adapter.files.get('legacy/v1/projects/legacy-part.json')).toContain('"legacy-profile"');
+  });
+
+  it('resumes version-1 migration from empty companion catalogs left before manifest replacement', async () => {
+    const adapter = new MemoryAdapter('Interrupted legacy shop');
+    const projectPath = 'projects/interrupted.json';
+    const timestamp = '2026-08-28T12:00:00.000Z';
+    const legacyProject = JSON.stringify({
+      schemaVersion: 1,
+      id: 'interrupted',
+      name: 'Interrupted',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      source: { kind: 'upid', files: [] },
+      upid: { format: 'upid', schemaVersion: 1, document: createUpidFromDxfEntities([]) },
+      machine: { id: 'legacy-profile' },
+      editor: { activeFilePath: null, pinnedLineNumbers: [] }
+    });
+    const legacyManifest = JSON.stringify({
+      schemaVersion: 1,
+      name: 'Interrupted legacy shop',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      templates: { headerPath: null, footerPath: null },
+      output: { extension: 'iso', lineEnding: 'crlf', coordinatePrecision: 3 },
+      activeMachineProfileId: 'legacy-profile',
+      machineProfiles: [{ id: 'legacy-profile', preferredDxfImportUnit: 'millimeters' }],
+      projects: [{ id: 'interrupted', name: 'Interrupted', path: projectPath, sourceKind: 'upid', updatedAt: timestamp }]
+    });
+    adapter.files.set(projectPath, legacyProject);
+    adapter.files.set(WORKBENCH_CATALOG_PATH, legacyManifest);
+    adapter.files.set('legacy/v1/workbench.json', legacyManifest);
+    adapter.files.set('legacy/v1/projects/interrupted.json', legacyProject);
+    adapter.files.set(POST_LIBRARY_PATH, JSON.stringify({
+      format: 'wire-edm-post-library', schemaVersion: 1, installations: []
+    }, null, 2));
+    adapter.files.set(MACHINE_LIBRARY_PATH, JSON.stringify({
+      format: 'wire-edm-machine-library', schemaVersion: 1, machines: []
+    }, null, 2));
+
+    const reopened = await initializeWorkbenchCatalog(adapter);
+    if (!reopened.ok) throw new Error(JSON.stringify(reopened.error));
+
+    expect(reopened).toMatchObject({
+      ok: true,
+      kind: 'opened',
+      workbench: { manifest: { schemaVersion: 3 }, posts: { installations: [] }, machines: { machines: [] } }
+    });
+    expect(JSON.parse(adapter.files.get(projectPath) ?? '{}')).toMatchObject({
+      format: 'wire-edm-project', schemaVersion: 2, id: 'interrupted'
+    });
+  });
+
+  it('migrates a valid version-2 manifest by removing legacy export preferences', async () => {
+    const adapter = new MemoryAdapter('Legacy workbench');
+    const created = await initializeWorkbenchCatalog(adapter, {
+      now: new Date('2026-08-28T12:00:00.000Z')
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    adapter.files.set(WORKBENCH_CATALOG_PATH, JSON.stringify({
+      ...created.workbench.manifest,
+      schemaVersion: 2,
+      preferences: {
+        ...created.workbench.manifest.preferences,
+        export: {
+          status: 'configured',
+          fileExtension: { kind: 'custom', extension: 'tap' },
+          lineEnding: 'lf'
+        }
+      }
+    }));
+
+    const reopened = await initializeWorkbenchCatalog(adapter);
+
+    expect(reopened).toMatchObject({
+      ok: true,
+      kind: 'opened',
+      workbench: {
+        manifest: {
+          schemaVersion: 3,
+          preferences: {
+            importUnits: { mode: 'ask' },
+            recentPlanningMachineId: null
+          }
+        }
+      }
+    });
+    expect(JSON.parse(adapter.files.get(WORKBENCH_CATALOG_PATH) ?? '')).not.toHaveProperty('preferences.export');
   });
 
   it('rejects a remembered planning machine that does not exist instead of selecting another', async () => {

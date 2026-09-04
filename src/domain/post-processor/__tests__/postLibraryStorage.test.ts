@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import robofilPost from '../../../../examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json';
 
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 
@@ -13,6 +15,7 @@ import {
 } from '../postLibraryStorage';
 import { parseWireEdmPostPackage } from '../postPackage';
 import { minimalPostPackage } from './postPackageFixture';
+import { canonicalJson } from '../canonicalJson';
 
 class MemoryAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
@@ -77,6 +80,32 @@ describe('post library storage', () => {
     expect(await readPostLibraryStorage(adapter)).toEqual({ ok: true, library: installed.library });
   });
 
+  it('reopens unchanged legacy arc packages without rerunning installation conformance', async () => {
+    const legacy = structuredClone(robofilPost);
+    for (const command of Object.values(legacy.dialect.commands)) {
+      Reflect.deleteProperty(command, 'arcDirection');
+    }
+    const parsed = parseWireEdmPostPackage(JSON.stringify(legacy));
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+    const adapter = new MemoryAdapter();
+    const library = {
+      schemaVersion: 1 as const,
+      installations: [{
+        ref: {
+          packageId: legacy.manifest.id,
+          version: legacy.manifest.version,
+          contentHash: createHash('sha256').update(canonicalJson(legacy)).digest('hex')
+        },
+        package: parsed.package
+      }]
+    };
+    expect(await writePostLibraryStorage(adapter, library)).toEqual({ ok: true });
+    expect(await initializePostLibraryStorage(adapter)).toEqual({ ok: true, kind: 'opened', library });
+    expect(await installPostPackage(createEmptyPostLibrary(), parsed.package)).toMatchObject({
+      ok: false, error: { code: 'POST_LIBRARY_CONFORMANCE_FAILED' }
+    });
+  });
+
   it.each([
     {
       label: 'obsolete schema',
@@ -84,6 +113,22 @@ describe('post library storage', () => {
         document.schemaVersion = 0;
       },
       code: 'POST_LIBRARY_STORAGE_SCHEMA_INVALID'
+    },
+    {
+      label: 'malformed package',
+      mutate: (document: Record<string, unknown>) => {
+        const installations = document.installations as Array<Record<string, unknown>>;
+        installations[0].package = {};
+      },
+      code: 'POST_LIBRARY_STORAGE_PACKAGE_INVALID'
+    },
+    {
+      label: 'tampered reference hash',
+      mutate: (document: Record<string, unknown>) => {
+        const installations = document.installations as Array<{ ref: { contentHash: string } }>;
+        installations[0].ref.contentHash = '0'.repeat(64);
+      },
+      code: 'POST_LIBRARY_STORAGE_HASH_MISMATCH'
     },
     {
       label: 'tampered package content',

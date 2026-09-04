@@ -9,11 +9,14 @@ import type { ImportedDxfProject } from '@/domain/dxf/importDxfProject';
 import type { DxfImportPreviewResult } from '@/domain/dxf/prepareDxfProjectImport';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
-import type { CreateMachinePostBindingInput } from '@/domain/machine-definition/machineDefinition';
-import { serializeMachineDefinition } from '@/domain/machine-definition/machineDefinition';
 import { evaluatePhysicalMachineEnvelopeFit } from '@/domain/machine-definition/machineFit';
+import type {
+  MachinePackageInstallationResolution,
+  PreparedMachinePackageInstallation,
+  PrepareStoredMachinePackageInstallationResult
+} from '@/domain/machine-package';
+import { MAX_MACHINE_PACKAGE_ARCHIVE_BYTES } from '@/domain/machine-package';
 import type { DownloadProgramFileInput } from '@/domain/post/downloadProgramFile';
-import type { PostInstallationRef } from '@/domain/post-processor/postLibrary';
 import {
   createSavedWireEdmJobRevisionId,
   type ControllerArtifactResult
@@ -67,10 +70,11 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
   const [dxfReimportErrorMessage, setDxfReimportErrorMessage] = useState<string | null>(null);
   const [settingsStatus, setSettingsStatus] = useState<SettingsStatus>('idle');
   const [settingsErrorMessage, setSettingsErrorMessage] = useState<string | null>(null);
+  const [controllerArtifactGenerating, setControllerArtifactGenerating] = useState(false);
   const [statusToasts, setStatusToasts] = useState<StatusToast[]>([]);
   const [statusNotifications, setStatusNotifications] = useState<StatusToast[]>([]);
   const initializationStarted = useRef(false);
-  const activeMutation = useRef<'editor-save' | 'program-import' | null>(null);
+  const activeMutation = useRef<'controller-artifact' | 'editor-save' | 'program-import' | null>(null);
   const toastSequence = useRef(0);
 
   useEffect(() => {
@@ -506,40 +510,60 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
 
   async function handleGenerateControllerArtifact(input: {
     readonly machineId: string;
-    readonly bindingId: string;
   }): Promise<ControllerArtifactResult> {
     const workbench = requireWorkbench();
     const program = loadedEditorProgram;
     if (!workbench || !program || program.model !== 'upid-document') {
       return artifactAppFailure('A saved catalog-owned UPID project must be open.');
     }
-    if (workbench.manifest.preferences.export.status !== 'configured') {
-      return artifactAppFailure('Configure the output extension and line ending before export.');
-    }
     const machine = workbench.machines.machines.find(({ id }) => id === input.machineId);
     if (!machine) return artifactAppFailure(`Machine not found: ${input.machineId}.`);
+    if (machine.activeBindingId === null) {
+      return artifactAppFailure(`Machine ${machine.name} has no active setup.`);
+    }
     if (!globalThis.crypto?.randomUUID) {
       return artifactAppFailure('Secure UUID generation is unavailable; a saved revision cannot be identified exactly.');
     }
-    const candidate = await services.createSavedWireEdmJobRevision({
-      revisionId: createSavedWireEdmJobRevisionId(globalThis.crypto.randomUUID()),
-      savedAt: new Date().toISOString(),
-      project: program.project,
-      machine,
-      bindingId: input.bindingId,
-      postLibrary: workbench.posts
-    });
-    if (!candidate.ok) return artifactAppFailure(candidate.error.message);
-    const saved = await services.saveStoredWireEdmJobRevision(workbench, candidate.candidate);
-    if (!saved.ok) return artifactAppFailure(saved.error.message);
-    setConnectedWorkbench(saved.workbench);
-    setLoadedEditorProgram((current) => current ? { ...current, project: saved.project } : current);
-    const artifact = await services.generateControllerArtifact(
-      saved.revision,
-      configuredArtifactPreference(workbench.manifest.preferences.export)
-    );
-    if (artifact.ok) showStatusToast(`Generated exact revision ${saved.revision.revisionId}.`, 'success');
-    return artifact;
+    if (activeMutation.current) {
+      return artifactAppFailure(`Cannot generate a controller artifact while ${activeMutation.current} is in progress.`);
+    }
+    activeMutation.current = 'controller-artifact';
+    setControllerArtifactGenerating(true);
+    try {
+      const candidate = await services.createSavedWireEdmJobRevision({
+        revisionId: createSavedWireEdmJobRevisionId(globalThis.crypto.randomUUID()),
+        savedAt: new Date().toISOString(),
+        project: program.project,
+        machine,
+        bindingId: machine.activeBindingId,
+        postLibrary: workbench.posts
+      });
+      if (!candidate.ok) {
+        if (candidate.error.code === 'SAVED_REVISION_EXECUTION_PLAN_INVALID') {
+          return {
+            ok: false,
+            error: {
+              code: 'CONTROLLER_ARTIFACT_EXECUTION_PLAN_INVALID',
+              message: candidate.error.message,
+              diagnostics: candidate.error.diagnostics
+            }
+          };
+        }
+        return artifactAppFailure(candidate.error.message);
+      }
+      const saved = await services.saveStoredWireEdmJobRevision(workbench, candidate.candidate);
+      if (!saved.ok) return artifactAppFailure(saved.error.message);
+      setConnectedWorkbench(saved.workbench);
+      setLoadedEditorProgram((current) => current === program
+        ? { ...current, project: saved.project }
+        : current);
+      const artifact = await services.generateControllerArtifact(saved.revision);
+      if (artifact.ok) showStatusToast(`Generated exact revision ${saved.revision.revisionId}.`, 'success');
+      return artifact;
+    } finally {
+      activeMutation.current = null;
+      setControllerArtifactGenerating(false);
+    }
   }
 
   async function handleSaveCatalogPreferences(preferences: WorkbenchCatalogManifest['preferences']) {
@@ -554,24 +578,60 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     }, 'Workbench preferences saved.');
   }
 
-  async function handleImportMachineDefinition(file: File) {
+  async function handlePrepareMachinePackage(file: File): Promise<PrepareStoredMachinePackageInstallationResult> {
     const workbench = requireWorkbench();
-    if (!workbench) return settingsFailure('Connect a valid workbench before installing a machine.');
-    await runSettingsMutation(async () => {
-      const result = await services.installStoredMachineDefinition(workbench.adapter, await file.text());
+    if (!workbench) {
+      const message = 'Connect a valid workbench before installing a machine package.';
+      settingsFailure(message);
+      return { ok: false, error: { code: 'MACHINE_PACKAGE_WORKBENCH_MISSING', message } };
+    }
+    setSettingsStatus('saving');
+    setSettingsErrorMessage(null);
+    try {
+      if (file.size > MAX_MACHINE_PACKAGE_ARCHIVE_BYTES) {
+        const message = `Machine package is ${file.size} bytes; the maximum is ${MAX_MACHINE_PACKAGE_ARCHIVE_BYTES}.`;
+        settingsFailure(message);
+        return {
+          ok: false,
+          error: { code: 'MACHINE_PACKAGE_ARCHIVE_TOO_LARGE', message }
+        };
+      }
+      const result = await services.prepareStoredMachinePackageInstallation(
+        workbench,
+        new Uint8Array(await file.arrayBuffer())
+      );
+      if (!result.ok) {
+        settingsFailure(result.error.message);
+        return result;
+      }
+      setSettingsStatus('idle');
+      return result;
+    } catch (error) {
+      const message = errorText(error);
+      settingsFailure(message);
+      return { ok: false, error: { code: 'MACHINE_PACKAGE_READ_FAILED', message } };
+    }
+  }
+
+  async function handleCommitMachinePackage(
+    prepared: PreparedMachinePackageInstallation,
+    resolution: MachinePackageInstallationResolution
+  ) {
+    return runSettingsMutation(async () => {
+      const result = await services.commitStoredMachinePackageInstallation(prepared, resolution);
+      return result.ok ? { ok: true as const, workbench: result.workbench } : result;
+    }, 'Machine package installed.');
+  }
+
+  async function handleActivateMachineSetup(machineId: string, setupId: string) {
+    const workbench = requireWorkbench();
+    if (!workbench) return false;
+    return runSettingsMutation(async () => {
+      const result = await services.activateStoredMachinePostBinding(workbench.adapter, machineId, setupId);
       return result.ok
         ? { ok: true as const, workbench: Object.freeze({ ...workbench, machines: result.library }) }
         : result;
-    }, 'Machine definition installed.');
-  }
-
-  async function handleReplaceMachineDefinition(file: File) {
-    const workbench = requireWorkbench();
-    if (!workbench) return settingsFailure('Connect a valid workbench before replacing a machine.');
-    await runSettingsMutation(async () => {
-      const result = await services.replaceStoredMachineDefinition(workbench, await file.text());
-      return result.ok ? { ok: true as const, workbench: result.workbench } : result;
-    }, 'Machine definition replaced.');
+    }, 'Active machine setup changed.');
   }
 
   async function handleRemoveMachineDefinition(machineId: string) {
@@ -581,60 +641,6 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       const result = await services.removeStoredMachineDefinition(workbench, machineId);
       return result.ok ? { ok: true as const, workbench: result.workbench } : result;
     }, 'Machine definition removed.');
-  }
-
-  function handleExportMachineDefinition(machineId: string) {
-    const machine = connectedWorkbench?.machines.machines.find(({ id }) => id === machineId);
-    if (!machine) return settingsFailure(`Machine not found: ${machineId}.`);
-    services.downloadTextFile({
-      fileName: `${machine.id}.wireedm-machine.json`,
-      text: serializeMachineDefinition(machine),
-      mimeType: 'application/json;charset=utf-8'
-    });
-  }
-
-  async function handleCreateMachineBinding(machineId: string, post: PostInstallationRef, input: CreateMachinePostBindingInput) {
-    const workbench = requireWorkbench();
-    if (!workbench) return settingsFailure('Connect a valid workbench before creating a binding.');
-    await runSettingsMutation(async () => {
-      const result = await services.createStoredMachinePostBinding(workbench.adapter, machineId, post, input);
-      return result.ok
-        ? { ok: true as const, workbench: Object.freeze({ ...workbench, machines: result.library }) }
-        : result;
-    }, 'Exact post binding created.');
-  }
-
-  async function handleRemoveMachineBinding(machineId: string, bindingId: string) {
-    const workbench = requireWorkbench();
-    if (!workbench) return settingsFailure('Connect a valid workbench before removing a binding.');
-    await runSettingsMutation(async () => {
-      const result = await services.removeStoredMachinePostBinding(workbench.adapter, machineId, bindingId);
-      return result.ok
-        ? { ok: true as const, workbench: Object.freeze({ ...workbench, machines: result.library }) }
-        : result;
-    }, 'Post binding removed.');
-  }
-
-  async function handleImportPostPackage(file: File) {
-    const workbench = requireWorkbench();
-    if (!workbench) return settingsFailure('Connect a valid workbench before installing a post.');
-    await runSettingsMutation(async () => {
-      const result = await services.installStoredPostPackage(workbench.adapter, await file.text());
-      return result.ok
-        ? { ok: true as const, workbench: Object.freeze({ ...workbench, posts: result.library }) }
-        : result;
-    }, 'Post package installed.');
-  }
-
-  async function handleRemovePostInstallation(post: PostInstallationRef) {
-    const workbench = requireWorkbench();
-    if (!workbench) return settingsFailure('Connect a valid workbench before removing a post.');
-    await runSettingsMutation(async () => {
-      const result = await services.removeStoredPostInstallation(workbench.adapter, post);
-      return result.ok
-        ? { ok: true as const, workbench: Object.freeze({ ...workbench, posts: result.library }) }
-        : result;
-    }, 'Post installation removed.');
   }
 
   async function runSettingsMutation(
@@ -648,12 +654,17 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     setSettingsErrorMessage(null);
     try {
       const result = await action();
-      if (!result.ok) return settingsFailure(result.error.message);
+      if (!result.ok) {
+        settingsFailure(result.error.message);
+        return false;
+      }
       setConnectedWorkbench(result.workbench);
       setSettingsStatus('saved');
       showStatusToast(successMessage, 'success');
+      return true;
     } catch (error) {
       settingsFailure(errorText(error));
+      return false;
     }
   }
 
@@ -679,7 +690,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
   }
 
   const interactionLocked = [importStatus, editorImportStatus, dxfReimportStatus].includes('importing') ||
-    editorSaveStatus === 'saving' || settingsStatus === 'saving';
+    controllerArtifactGenerating || editorSaveStatus === 'saving' || settingsStatus === 'saving';
 
   return {
     activeView,
@@ -699,7 +710,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     handleConfirmDxfImport,
     handleConfirmDxfReimport,
     handleConnectWorkbench,
-    handleCreateMachineBinding,
+    handleActivateMachineSetup,
+    handleCommitMachinePackage,
     handleDeleteWorkbenchProject,
     handleDxfImportOverrideAcknowledgedChange,
     handleDxfImportUnitCandidateChange,
@@ -707,23 +719,18 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     handleDxfReimportRebuildAcknowledgedChange,
     handleDxfReimportUnitCandidateChange,
     handleDownloadEditorFile,
-    handleExportMachineDefinition,
     handleExportUpidProject,
     handleGenerateControllerArtifact,
     handleImportDxfFile,
     handleImportExternalProgram,
-    handleImportMachineDefinition,
-    handleImportPostPackage,
     handleImportUpidFile,
     handleOpenEditor,
     handleOpenLatestImportInEditor,
     handleOpenWorkbenchProject,
     handlePrepareDxfReimport,
-    handleRemoveMachineBinding,
+    handlePrepareMachinePackage,
     handleRemoveMachineDefinition,
-    handleRemovePostInstallation,
     handleRenameWorkbenchProject,
-    handleReplaceMachineDefinition,
     handleSaveCatalogPreferences,
     handleSaveEditorDraft,
     importErrorMessage,
@@ -771,28 +778,6 @@ function resolvePlanningMachineFit(
     machine: { id: machine.id, name: machine.name },
     result: { ok: true, fit: result.fit }
   };
-}
-
-function configuredArtifactPreference(
-  preference: Extract<WorkbenchCatalogManifest['preferences']['export'], { status: 'configured' }>
-) {
-  return preference.fileExtension.kind === 'standard'
-    ? {
-        status: 'configured' as const,
-        fileExtension: {
-          kind: 'standard' as const,
-          extension: preference.fileExtension.extension
-        },
-        lineEnding: preference.lineEnding
-      }
-    : {
-        status: 'configured' as const,
-        fileExtension: {
-          kind: 'custom' as const,
-          extension: preference.fileExtension.extension
-        },
-        lineEnding: preference.lineEnding
-      };
 }
 
 function artifactAppFailure(message: string): ControllerArtifactResult {

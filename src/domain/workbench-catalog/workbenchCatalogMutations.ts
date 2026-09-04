@@ -1,4 +1,5 @@
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { recoverSavedRevisionTransaction, type SavedRevisionTransactionError } from '@/domain/storage/savedRevisionTransaction';
 
 import {
   WORKBENCH_CATALOG_PATH,
@@ -94,6 +95,7 @@ type ManifestStateError = {
 };
 
 type MutationError =
+  | SavedRevisionTransactionError
   | WorkbenchProjectStorageError
   | WorkbenchProjectIndexIntegrityError
   | ProjectNotFoundError
@@ -106,6 +108,7 @@ type MutationError =
   | ManifestStateError;
 
 type MutationStateError =
+  | SavedRevisionTransactionError
   | WorkbenchProjectStorageError
   | WorkbenchProjectIndexIntegrityError
   | ManifestStateError;
@@ -419,6 +422,8 @@ async function captureSnapshots(workbench: ConnectedWorkbenchCatalog, paths: rea
 }
 
 async function verifyManifestCurrent(workbench: ConnectedWorkbenchCatalog) {
+  const recovered = await recoverSavedRevisionTransaction(workbench.adapter);
+  if (!recovered.ok) return recovered;
   let rawText: string | null;
   try {
     rawText = await workbench.adapter.readText(WORKBENCH_CATALOG_PATH);

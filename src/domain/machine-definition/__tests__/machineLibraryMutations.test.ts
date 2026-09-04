@@ -1,187 +1,100 @@
 import { describe, expect, it } from 'vitest';
 
+import {
+  buildMachinePackageArchive,
+  commitStoredMachinePackageInstallation,
+  prepareStoredMachinePackageInstallation
+} from '@/domain/machine-package';
+import { machinePackageFixture } from '@/domain/machine-package/__tests__/machinePackageFixture';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
-import { createEmptyPostLibrary } from '@/domain/post-processor/postLibrary';
 import {
-  installStoredPostPackage,
-  removeStoredPostInstallation
-} from '@/domain/post-processor/postLibraryMutations';
-import {
-  initializePostLibraryStorage
-} from '@/domain/post-processor/postLibraryStorage';
-import { minimalPostPackage } from '@/domain/post-processor/__tests__/postPackageFixture';
-import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
-import { updateWorkbenchCatalogPreferences } from '@/domain/workbench-catalog/storage/updateWorkbenchCatalogPreferences';
+  beginCatalogPairTransaction,
+  CATALOG_PAIR_TRANSACTION_PATH
+} from '@/domain/storage/catalogPairTransaction';
+import { POST_LIBRARY_PATH } from '@/domain/post-processor/postLibraryStorage';
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { addStoredWorkbenchProject } from '@/domain/workbench-catalog/workbenchCatalogMutations';
 import { createWorkbenchProjectDocument } from '@/domain/workbench-catalog/workbenchProject';
-import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
+import { updateWorkbenchCatalogPreferences } from '@/domain/workbench-catalog/storage/updateWorkbenchCatalogPreferences';
 
 import {
-  parseMachineDefinition,
-  serializeMachineDefinition,
-  type MachineDefinitionValue
-} from '../machineDefinition';
-import {
-  createStoredMachinePostBinding,
-  installStoredMachineDefinition,
-  removeStoredMachineDefinition,
-  removeStoredMachinePostBinding,
-  replaceStoredMachineDefinition
+  activateStoredMachinePostBinding,
+  removeStoredMachineDefinition
 } from '../machineLibraryMutations';
-import {
-  initializeMachineLibraryStorage,
-  MACHINE_LIBRARY_PATH,
-  readMachineLibraryStorage
-} from '../machineLibraryStorage';
-import {
-  compatibilityFixture,
-  machineDefinitionFixture,
-  machineDefinitionValue
-} from './machineDefinitionFixture';
+import { MACHINE_LIBRARY_PATH } from '../machineLibraryStorage';
 
 class MemoryAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
   readonly files = new Map<string, string>();
-  corruptNextMachineWrite = false;
   constructor(readonly name = 'machine-mutations') {}
   async ensureDirectory() {}
   async readText(path: string) { return this.files.get(path) ?? null; }
-  async writeText(path: string, contents: string) {
-    this.files.set(
-      path,
-      path === MACHINE_LIBRARY_PATH && this.corruptNextMachineWrite
-        ? `${contents}corrupt`
-        : contents
-    );
-    this.corruptNextMachineWrite = false;
-  }
+  async writeText(path: string, contents: string) { this.files.set(path, contents); }
   async deleteText(path: string) { this.files.delete(path); }
 }
 
-function unboundMachineText() {
-  return serializeMachineDefinition(machineDefinitionFixture());
+async function workbenchWithMachine(adapter: MemoryAdapter) {
+  const initialized = await initializeWorkbenchCatalog(adapter, {
+    now: new Date('2026-09-04T08:00:00.000Z')
+  });
+  if (!initialized.ok) throw new Error(initialized.error.message);
+  const built = await buildMachinePackageArchive(await machinePackageFixture());
+  if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
+  const prepared = await prepareStoredMachinePackageInstallation(initialized.workbench, built.archive);
+  if (!prepared.ok) throw new Error(prepared.error.message);
+  const committed = await commitStoredMachinePackageInstallation(
+    prepared.prepared,
+    { kind: 'install-new' }
+  );
+  if (!committed.ok) throw new Error(committed.error.message);
+  return committed.workbench;
 }
 
 describe('persisted machine library mutations', () => {
-  it('replaces one exact portable machine definition against authoritative catalog state', async () => {
+  it('activates an installed setup without exposing loose machine or post installation APIs', async () => {
     const adapter = new MemoryAdapter();
-    const initialized = await initializeWorkbenchCatalog(adapter, {
-      now: new Date('2026-08-28T12:00:00.000Z')
-    });
-    if (!initialized.ok) throw new Error(initialized.error.message);
-    const installed = await installStoredMachineDefinition(adapter, unboundMachineText());
-    if (!installed.ok) throw new Error(installed.error.message);
-    const replacement = machineDefinitionValue('Renamed Robofil 100');
-    replacement.limits.yTravel = { status: 'known', millimeters: 160 };
+    const first = await workbenchWithMachine(adapter);
+    const built = await buildMachinePackageArchive(await machinePackageFixture({
+      packageVersion: '2.0.0',
+      postVersion: '2.0.0',
+      bindingId: 'production-v2'
+    }));
+    if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
+    const prepared = await prepareStoredMachinePackageInstallation(first, built.archive);
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    const second = await commitStoredMachinePackageInstallation(
+      prepared.prepared,
+      { kind: 'reuse-existing', machineId: 'shop.robofil-100', activate: 'keep-current' }
+    );
+    if (!second.ok) throw new Error(second.error.message);
 
-    const result = await replaceStoredMachineDefinition(
-      initialized.workbench,
-      JSON.stringify(replacement)
+    const activated = await activateStoredMachinePostBinding(
+      adapter,
+      'shop.robofil-100',
+      'production-v2'
     );
 
-    expect(result).toMatchObject({
+    expect(activated).toMatchObject({
       ok: true,
-      machine: {
-        id: 'shop.robofil-100',
-        name: 'Renamed Robofil 100',
-        limits: { yTravel: { status: 'known', millimeters: 160 } }
-      },
-      workbench: {
-        machines: {
-          machines: [{ id: 'shop.robofil-100', name: 'Renamed Robofil 100' }]
-        }
-      }
+      machine: { id: 'shop.robofil-100', activeBindingId: 'production-v2' }
     });
-    if (!result.ok) throw new Error(result.error.message);
-    expect(await readMachineLibraryStorage(adapter, result.workbench.posts))
-      .toMatchObject({
-        ok: true,
-        library: { machines: [{ name: 'Renamed Robofil 100' }] }
-      });
-  });
-
-  it('rejects replacement with a dangling exact post reference and preserves stored bytes', async () => {
-    const adapter = new MemoryAdapter();
-    const initialized = await initializeWorkbenchCatalog(adapter, {
-      now: new Date('2026-08-28T12:00:00.000Z')
-    });
-    if (!initialized.ok) throw new Error(initialized.error.message);
-    const installed = await installStoredMachineDefinition(adapter, unboundMachineText());
-    if (!installed.ok) throw new Error(installed.error.message);
-    const replacement = machineDefinitionValue('Invalid replacement');
-    replacement.bindings.push({
-      id: 'dangling',
-      name: 'Dangling',
-      post: { packageId: 'missing.post', version: '1.0.0', contentHash: '0'.repeat(64) },
-      properties: {},
-      compatibility: compatibilityFixture(),
-      verification: { status: 'unverified' }
-    });
-    const before = adapter.files.get(MACHINE_LIBRARY_PATH);
-
-    const result = await replaceStoredMachineDefinition(
-      initialized.workbench,
-      JSON.stringify(replacement)
-    );
-
-    expect(result).toMatchObject({
-      ok: false,
-      error: {
-        code: 'MACHINE_LIBRARY_MUTATION_DANGLING_POST_BINDING',
-        machineId: 'shop.robofil-100',
-        bindingId: 'dangling'
-      }
-    });
-    expect(adapter.files.get(MACHINE_LIBRARY_PATH)).toBe(before);
-  });
-
-  it('restores exact machine-library bytes when a replacement fails readback', async () => {
-    const adapter = new MemoryAdapter();
-    const initialized = await initializeWorkbenchCatalog(adapter, {
-      now: new Date('2026-08-28T12:00:00.000Z')
-    });
-    if (!initialized.ok) throw new Error(initialized.error.message);
-    const installed = await installStoredMachineDefinition(adapter, unboundMachineText());
-    if (!installed.ok) throw new Error(installed.error.message);
-    const before = adapter.files.get(MACHINE_LIBRARY_PATH);
-    adapter.corruptNextMachineWrite = true;
-
-    const result = await replaceStoredMachineDefinition(
-      initialized.workbench,
-      JSON.stringify(machineDefinitionValue('Corrupted replacement'))
-    );
-
-    expect(result).toMatchObject({
-      ok: false,
-      error: { code: 'MACHINE_LIBRARY_MUTATION_READBACK_MISMATCH' }
-    });
-    expect(adapter.files.get(MACHINE_LIBRARY_PATH)).toBe(before);
   });
 
   it('requires an explicit preference change before removing the remembered planning machine', async () => {
     const adapter = new MemoryAdapter();
-    const initialized = await initializeWorkbenchCatalog(adapter, {
-      now: new Date('2026-08-28T12:00:00.000Z')
-    });
-    if (!initialized.ok) throw new Error(initialized.error.message);
-    const installed = await installStoredMachineDefinition(adapter, unboundMachineText());
-    if (!installed.ok) throw new Error(installed.error.message);
-    const reopened = await initializeWorkbenchCatalog(adapter);
-    if (!reopened.ok) throw new Error(reopened.error.message);
-    const selected = await updateWorkbenchCatalogPreferences(reopened.workbench, {
+    const workbench = await workbenchWithMachine(adapter);
+    const selected = await updateWorkbenchCatalogPreferences(workbench, {
       preferences: {
-        ...reopened.workbench.manifest.preferences,
-        recentPlanningMachineId: installed.machine.id
+        ...workbench.manifest.preferences,
+        recentPlanningMachineId: 'shop.robofil-100'
       },
-      updatedAt: new Date('2026-08-28T13:00:00.000Z')
+      updatedAt: new Date('2026-09-04T09:00:00.000Z')
     });
     if (!selected.ok) throw new Error(selected.error.message);
     const before = adapter.files.get(MACHINE_LIBRARY_PATH);
 
-    expect(await removeStoredMachineDefinition(
-      selected.workbench,
-      installed.machine.id
-    )).toMatchObject({
+    expect(await removeStoredMachineDefinition(selected.workbench, 'shop.robofil-100')).toMatchObject({
       ok: false,
       error: {
         code: 'MACHINE_LIBRARY_MUTATION_MACHINE_IS_RECENT',
@@ -195,33 +108,23 @@ describe('persisted machine library mutations', () => {
         ...selected.workbench.manifest.preferences,
         recentPlanningMachineId: null
       },
-      updatedAt: new Date('2026-08-28T14:00:00.000Z')
+      updatedAt: new Date('2026-09-04T10:00:00.000Z')
     });
     if (!cleared.ok) throw new Error(cleared.error.message);
-    const removed = await removeStoredMachineDefinition(cleared.workbench, installed.machine.id);
-
-    expect(removed).toMatchObject({
+    expect(await removeStoredMachineDefinition(cleared.workbench, 'shop.robofil-100')).toMatchObject({
       ok: true,
       removed: { id: 'shop.robofil-100' },
-      workbench: {
-        manifest: { preferences: { recentPlanningMachineId: null } },
-        machines: { machines: [] }
-      }
+      workbench: { machines: { machines: [] } }
     });
   });
 
   it('removes a machine while leaving immutable saved-revision snapshots untouched', async () => {
     const adapter = new MemoryAdapter();
-    const initialized = await initializeWorkbenchCatalog(adapter, {
-      now: new Date('2026-08-28T12:00:00.000Z')
-    });
-    if (!initialized.ok) throw new Error(initialized.error.message);
-    const installed = await installStoredMachineDefinition(adapter, unboundMachineText());
-    if (!installed.ok) throw new Error(installed.error.message);
+    const workbench = await workbenchWithMachine(adapter);
     const project = createWorkbenchProjectDocument({
       id: 'revision-owner',
       name: 'Revision owner',
-      now: new Date('2026-08-28T12:00:00.000Z'),
+      now: new Date('2026-09-04T08:00:00.000Z'),
       source: { kind: 'upid', files: [] },
       content: {
         kind: 'upid-document',
@@ -231,121 +134,42 @@ describe('persisted machine library mutations', () => {
       }
     });
     if (!project.ok) throw new Error(project.error.message);
-    const added = await addStoredWorkbenchProject(initialized.workbench, {
-      project: project.project,
-      ownedFiles: []
-    });
+    const added = await addStoredWorkbenchProject(workbench, { project: project.project, ownedFiles: [] });
     if (!added.ok) throw new Error(added.error.message);
     const revisionId = 'revision.0001';
-    const updatedAt = '2026-08-28T13:00:00.000Z';
-    const storedProject = JSON.parse(adapter.files.get('projects/revision-owner.json') ?? '');
-    storedProject.savedRevisionIds = [revisionId];
-    storedProject.updatedAt = updatedAt;
-    adapter.files.set('projects/revision-owner.json', JSON.stringify(storedProject));
     const revisionPath = `projects/revision-owner/revisions/${revisionId}.wireedm-job.json`;
-    const revisionBytes = JSON.stringify({ machine: { id: installed.machine.id } });
+    const revisionBytes = JSON.stringify({ machine: { id: 'shop.robofil-100' } });
     adapter.files.set(revisionPath, revisionBytes);
-    const storedManifest = JSON.parse(adapter.files.get('workbench.json') ?? '');
-    storedManifest.updatedAt = updatedAt;
-    storedManifest.projects[0].updatedAt = updatedAt;
-    adapter.files.set('workbench.json', JSON.stringify(storedManifest));
 
-    const removed = await removeStoredMachineDefinition(
-      added.workbench,
-      installed.machine.id
-    );
+    const removed = await removeStoredMachineDefinition(added.workbench, 'shop.robofil-100');
 
     expect(removed).toMatchObject({ ok: true, removed: { id: 'shop.robofil-100' } });
     expect(adapter.files.get(revisionPath)).toBe(revisionBytes);
   });
 
-  it('installs a portable machine and persists exact binding add/remove operations', async () => {
+  it('recovers an interrupted package transaction before another catalog mutation', async () => {
     const adapter = new MemoryAdapter();
-    await initializePostLibraryStorage(adapter);
-    const post = await installStoredPostPackage(adapter, JSON.stringify(minimalPostPackage()));
-    if (!post.ok) throw new Error(post.error.message);
-    await initializeMachineLibraryStorage(adapter, post.library);
-
-    expect(await installStoredMachineDefinition(adapter, unboundMachineText())).toMatchObject({
-      ok: true,
-      kind: 'installed',
-      machine: { id: 'shop.robofil-100', bindings: [] }
+    const workbench = await workbenchWithMachine(adapter);
+    const previousPosts = adapter.files.get(POST_LIBRARY_PATH);
+    const previousMachines = adapter.files.get(MACHINE_LIBRARY_PATH);
+    if (previousPosts === undefined || previousMachines === undefined) {
+      throw new Error('Expected initialized machine and post catalogs.');
+    }
+    const nextPosts = `${previousPosts} interrupted`;
+    const nextMachines = `${previousMachines} interrupted`;
+    const begun = await beginCatalogPairTransaction(adapter, {
+      previousPosts,
+      previousMachines,
+      nextPosts,
+      nextMachines
     });
-    expect(await createStoredMachinePostBinding(adapter, 'shop.robofil-100', post.installation.ref, {
-      id: 'production',
-      name: 'Production',
-      properties: { coordinatePrecision: 3 },
-      compatibility: compatibilityFixture()
-    })).toMatchObject({ ok: true, binding: { id: 'production' } });
+    if (!begun.ok) throw new Error(begun.error.message);
+    adapter.files.set(POST_LIBRARY_PATH, nextPosts);
 
-    expect(await removeStoredMachinePostBinding(adapter, 'shop.robofil-100', 'production')).toMatchObject({
-      ok: true,
-      removed: { id: 'production' }
-    });
-    expect(await readMachineLibraryStorage(adapter, post.library)).toMatchObject({
-      ok: true,
-      library: { machines: [{ id: 'shop.robofil-100', bindings: [] }] }
-    });
-  });
+    const removed = await removeStoredMachineDefinition(workbench, 'shop.robofil-100');
 
-  it('rejects an imported machine with a dangling post and preserves stored bytes', async () => {
-    const adapter = new MemoryAdapter();
-    await initializePostLibraryStorage(adapter);
-    await initializeMachineLibraryStorage(adapter, createEmptyPostLibrary());
-    const installed = await installStoredMachineDefinition(adapter, unboundMachineText());
-    if (!installed.ok) throw new Error(installed.error.message);
-    const tampered = structuredClone(installed.machine) as MachineDefinitionValue;
-    tampered.bindings.push({
-      id: 'dangling',
-      name: 'Dangling',
-      post: { packageId: 'missing.post', version: '1.0.0', contentHash: '0'.repeat(64) },
-      properties: {},
-      compatibility: {
-        status: 'acknowledged',
-        acknowledgedAt: '2026-08-28T12:00:00.000Z',
-        acknowledgedBy: 'Cristian',
-        notes: 'Fixture.'
-      },
-      verification: { status: 'unverified' }
-    });
-    const before = adapter.files.get(MACHINE_LIBRARY_PATH);
-
-    expect(await installStoredMachineDefinition(adapter, serializeMachineDefinition(tampered))).toMatchObject({
-      ok: false,
-      error: { code: 'MACHINE_LIBRARY_MUTATION_DANGLING_POST_BINDING' }
-    });
-    expect(adapter.files.get(MACHINE_LIBRARY_PATH)).toBe(before);
-  });
-
-  it('serializes binding creation with post removal so persisted references cannot race', async () => {
-    const adapter = new MemoryAdapter();
-    await initializePostLibraryStorage(adapter);
-    const post = await installStoredPostPackage(adapter, JSON.stringify(minimalPostPackage()));
-    if (!post.ok) throw new Error(post.error.message);
-    await initializeMachineLibraryStorage(adapter, post.library);
-    const machine = await installStoredMachineDefinition(adapter, unboundMachineText());
-    if (!machine.ok) throw new Error(machine.error.message);
-
-    const [binding, removal] = await Promise.all([
-      createStoredMachinePostBinding(adapter, machine.machine.id, post.installation.ref, {
-        id: 'production',
-        name: 'Production',
-        properties: { coordinatePrecision: 3 },
-        compatibility: compatibilityFixture()
-      }),
-      removeStoredPostInstallation(adapter, post.installation.ref)
-    ]);
-
-    expect(binding).toMatchObject({ ok: true, binding: { id: 'production' } });
-    expect(removal).toMatchObject({
-      ok: false,
-      error: { code: 'POST_LIBRARY_INSTALLATION_IN_USE' }
-    });
-    expect(await readMachineLibraryStorage(adapter, post.library)).toMatchObject({
-      ok: true,
-      library: {
-        machines: [{ id: 'shop.robofil-100', bindings: [{ id: 'production' }] }]
-      }
-    });
+    expect(removed).toMatchObject({ ok: true, removed: { id: 'shop.robofil-100' } });
+    expect(adapter.files.get(POST_LIBRARY_PATH)).toBe(previousPosts);
+    expect(adapter.files.has(CATALOG_PAIR_TRANSACTION_PATH)).toBe(false);
   });
 });

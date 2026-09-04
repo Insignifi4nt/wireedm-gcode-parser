@@ -44,7 +44,7 @@ describe('App front-end redesign', () => {
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     const machineOutputSettingsButton = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Machines & posts'
+      (button) => button.textContent?.trim() === 'Machines & setups'
     );
     expect(machineOutputSettingsButton).not.toBeNull();
     await act(async () => {
@@ -55,10 +55,10 @@ describe('App front-end redesign', () => {
     const dialog = container.querySelector(
       '[role="dialog"][aria-label="Workbench settings"]'
     );
-    expect(dialog?.querySelector('select[aria-label="Controller export"]')).not.toBeNull();
-    expect(dialog?.querySelector('select[aria-label="Recent planning machine"]')).not.toBeNull();
-    expect(dialog?.textContent).toContain('Physical machine library');
-    expect(dialog?.textContent).toContain('Versioned post library');
+    expect(dialog?.querySelector('select[aria-label="Controller export"]')).toBeNull();
+    expect(dialog?.querySelector('select[aria-label="Default planning machine"]')).not.toBeNull();
+    expect(dialog?.textContent).toContain('Install a machine package');
+    expect(dialog?.textContent).toContain('Installed machines');
     expect(dialog?.querySelector('textarea[aria-label="Header template"]')).toBeNull();
   });
 
@@ -69,8 +69,8 @@ describe('App front-end redesign', () => {
     const status = container.querySelector('[data-app-status-bar]');
     expect(status?.textContent).toContain('Browser cache');
     expect(status?.textContent).toContain('No planning machine');
-    expect(status?.textContent).toContain('Export unconfigured');
-    expect(status?.textContent).toContain('No line ending');
+    expect(status?.textContent).toContain('No active output');
+    expect(status?.textContent).toContain('No active setup');
     expect(status?.textContent).toContain('0 projects');
   });
 

@@ -36,14 +36,10 @@ export default function App({ services }: AppProps = {}) {
       errorMessage={app.errorMessage}
       interactionLocked={app.workbenchInteractionLocked}
       onConnectWorkbench={app.handleConnectWorkbench}
-      onCreateMachineBinding={app.handleCreateMachineBinding}
-      onExportMachineDefinition={app.handleExportMachineDefinition}
-      onImportMachineDefinition={app.handleImportMachineDefinition}
-      onImportPostPackage={app.handleImportPostPackage}
-      onRemoveMachineBinding={app.handleRemoveMachineBinding}
+      onActivateMachineSetup={app.handleActivateMachineSetup}
+      onCommitMachinePackage={app.handleCommitMachinePackage}
+      onPrepareMachinePackage={app.handlePrepareMachinePackage}
       onRemoveMachineDefinition={app.handleRemoveMachineDefinition}
-      onRemovePostInstallation={app.handleRemovePostInstallation}
-      onReplaceMachineDefinition={app.handleReplaceMachineDefinition}
       onSaveCatalogPreferences={app.handleSaveCatalogPreferences}
       settingsErrorMessage={app.settingsErrorMessage}
       settingsStatus={app.settingsStatus}
@@ -63,12 +59,12 @@ export default function App({ services }: AppProps = {}) {
         </section>
       ) : app.activeView === 'editor' && app.connectedWorkbench ? (
         <EditorPage
-          exportPreference={app.connectedWorkbench.manifest.preferences.export}
           importErrorMessage={app.editorImportErrorMessage}
           importStatus={app.editorImportStatus}
           interactionLocked={app.workbenchInteractionLocked}
           key={`${app.loadedEditorProgram?.filePath ?? 'empty-editor'}:${app.editorProgramRevision}`}
           machines={app.connectedWorkbench.machines.machines}
+          posts={app.connectedWorkbench.posts}
           onBackToDashboard={app.handleBackToDashboard}
           onDownloadEditorFile={(fileName, text) => app.handleDownloadEditorFile({ fileName, text })}
           onGenerateControllerArtifact={app.handleGenerateControllerArtifact}

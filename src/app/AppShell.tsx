@@ -45,14 +45,10 @@ export function AppShell({
   errorMessage,
   interactionLocked,
   onConnectWorkbench,
-  onCreateMachineBinding,
-  onExportMachineDefinition,
-  onImportMachineDefinition,
-  onImportPostPackage,
-  onRemoveMachineBinding,
+  onActivateMachineSetup,
+  onCommitMachinePackage,
+  onPrepareMachinePackage,
   onRemoveMachineDefinition,
-  onRemovePostInstallation,
-  onReplaceMachineDefinition,
   onSaveCatalogPreferences,
   settingsErrorMessage,
   settingsStatus,
@@ -112,17 +108,22 @@ export function AppShell({
     requestedSidebarCollapsed || (isMiddleViewport && railContent?.isPathProject)
   );
   const railWidth = railContent?.sizing?.width ?? sidebarWidth;
-  const exportPreference = connectedWorkbench?.manifest.preferences.export;
-  const outputExtension = exportPreference?.status === 'configured'
-    ? `.${exportPreference.fileExtension.extension}`
-    : 'Export unconfigured';
-  const lineEnding = exportPreference?.status === 'configured'
-    ? exportPreference.lineEnding.toUpperCase()
-    : 'No line ending';
   const planningMachineId = connectedWorkbench?.manifest.preferences.recentPlanningMachineId;
   const planningMachine = connectedWorkbench?.machines.machines.find(
     ({ id }) => id === planningMachineId
   );
+  const planningSetup = planningMachine?.bindings.find(({ id }) => id === planningMachine.activeBindingId);
+  const planningPost = planningSetup && connectedWorkbench?.posts.installations.find(({ ref }) => (
+    ref.packageId === planningSetup.post.packageId &&
+    ref.version === planningSetup.post.version &&
+    ref.contentHash === planningSetup.post.contentHash
+  ));
+  const outputExtension = planningPost
+    ? `.${planningPost.package.manifest.output.fileExtension}`
+    : 'No active output';
+  const lineEnding = planningPost
+    ? planningPost.package.manifest.output.lineEnding.toUpperCase()
+    : 'No active setup';
   const compactModalOpen = compactDrawer !== null;
   const closeCompactDrawerWithRailFocus = useCallback(() => {
     restoreRailFocusAfterDrawerCloseRef.current = true;
@@ -400,14 +401,10 @@ export function AppShell({
         interactionLocked={interactionLocked}
         onClose={() => setSettingsOpen(false)}
         onConnectWorkbench={onConnectWorkbench}
-        onCreateMachineBinding={onCreateMachineBinding}
-        onExportMachineDefinition={onExportMachineDefinition}
-        onImportMachineDefinition={onImportMachineDefinition}
-        onImportPostPackage={onImportPostPackage}
-        onRemoveMachineBinding={onRemoveMachineBinding}
+        onActivateMachineSetup={onActivateMachineSetup}
+        onCommitMachinePackage={onCommitMachinePackage}
+        onPrepareMachinePackage={onPrepareMachinePackage}
         onRemoveMachineDefinition={onRemoveMachineDefinition}
-        onRemovePostInstallation={onRemovePostInstallation}
-        onReplaceMachineDefinition={onReplaceMachineDefinition}
         onSaveCatalogPreferences={onSaveCatalogPreferences}
         open={settingsOpen}
         settingsErrorMessage={settingsErrorMessage}

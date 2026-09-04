@@ -1,4 +1,5 @@
 import type { WireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
+import { serializeControllerOutput } from '@/domain/post-processor/controllerOutput';
 import {
   validateWireEdmPostPackageValue,
   type PostPackageDiagnostic
@@ -16,6 +17,8 @@ export const CUSTOM_POST_CONFORMANCE_DIAGNOSTIC_CODES = [
   'POST_CONFORMANCE_PLAN_FIXTURE_NOT_FOUND',
   'POST_CONFORMANCE_RUNTIME_FAILED',
   'POST_CONFORMANCE_EXPECTED_PROGRAM_MISMATCH',
+  'POST_CONFORMANCE_ARTIFACT_INVALID',
+  'POST_CONFORMANCE_EXPECTED_ARTIFACT_MISMATCH',
   'POST_CONFORMANCE_COMMAND_NOT_COVERED',
   'POST_CONFORMANCE_CAPABILITY_NOT_COVERED',
   'POST_CONFORMANCE_PROPERTY_BOUNDARY_NOT_COVERED'
@@ -50,6 +53,18 @@ export type CustomPostConformanceDiagnostic =
       readonly actualProgram: string;
     }
   | {
+      readonly code: 'POST_CONFORMANCE_ARTIFACT_INVALID';
+      readonly fixtureId: string;
+      readonly message: string;
+    }
+  | {
+      readonly code: 'POST_CONFORMANCE_EXPECTED_ARTIFACT_MISMATCH';
+      readonly fixtureId: string;
+      readonly message: string;
+      readonly expectedArtifact: string;
+      readonly actualArtifact: string;
+    }
+  | {
       readonly code:
         | 'POST_CONFORMANCE_COMMAND_NOT_COVERED'
         | 'POST_CONFORMANCE_CAPABILITY_NOT_COVERED'
@@ -62,6 +77,7 @@ export interface CustomPostConformanceFixtureSuccess {
   readonly fixtureId: string;
   readonly planFixture: string;
   readonly programText: string;
+  readonly artifactText: string;
   readonly commandIds: readonly string[];
   readonly emittedEventIds: readonly string[];
 }
@@ -135,10 +151,30 @@ async function runValidatedPackageConformance(
       });
       continue;
     }
+    const serialized = serializeControllerOutput(run.program, packageValue.manifest.output);
+    if (!serialized.ok) {
+      diagnostics.push({
+        code: 'POST_CONFORMANCE_ARTIFACT_INVALID',
+        fixtureId: fixture.id,
+        message: serialized.error.message
+      });
+      continue;
+    }
+    if (serialized.text !== fixture.expectedArtifact) {
+      diagnostics.push({
+        code: 'POST_CONFORMANCE_EXPECTED_ARTIFACT_MISMATCH',
+        fixtureId: fixture.id,
+        message: `Fixture ${fixture.id} final controller artifact differs from its exact expected bytes.`,
+        expectedArtifact: fixture.expectedArtifact,
+        actualArtifact: serialized.text
+      });
+      continue;
+    }
     fixtures.push({
       fixtureId: fixture.id,
       planFixture: fixture.planFixture,
       programText: run.program.text,
+      artifactText: serialized.text,
       commandIds: [...new Set(run.program.blocks.flatMap(({ commandIds }) => commandIds))],
       emittedEventIds: run.program.eventDispositions
         .filter(({ kind }) => kind === 'emitted')

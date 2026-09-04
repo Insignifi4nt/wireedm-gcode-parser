@@ -185,7 +185,7 @@ function sameMotionSequence(
     motion.clockwise !== event.clockwise ||
     Math.abs(distance(event.center!, motion.start) - radius) > toleranceMm ||
     Math.abs(distance(event.center!, motion.end) - radius) > toleranceMm ||
-    motion.fullCircle !== samePoint(motion.start, motion.end, toleranceMm)
+    motion.fullCircle !== (motion.start.x === motion.end.x && motion.start.y === motion.end.y)
   ))) return false;
   const expectedSweep = event.fullCircle
     ? Math.PI * 2
@@ -208,7 +208,35 @@ function sameLinearPath(
   if (motions.some((motion) => motion.motion !== 'linear' || motion.role !== role)) return false;
   const expectedLength = distance(start, end);
   const emittedLength = motions.reduce((total, motion) => total + distance(motion.start, motion.end), 0);
-  return Math.abs(expectedLength - emittedLength) <= toleranceMm;
+  if (Math.abs(expectedLength - emittedLength) > toleranceMm) return false;
+  if (expectedLength === 0) {
+    return motions.every((motion) => (
+      samePoint(motion.start, start, toleranceMm) && samePoint(motion.end, start, toleranceMm)
+    ));
+  }
+  const directionX = (end.x - start.x) / expectedLength;
+  const directionY = (end.y - start.y) / expectedLength;
+  // Positional tolerance permits rounding, but must not authorize backwards travel.
+  const roundoff = Number.EPSILON * Math.max(
+    1, expectedLength, Math.abs(start.x), Math.abs(start.y), Math.abs(end.x), Math.abs(end.y)
+  ) * 8;
+  let previousProgress = -Infinity;
+  for (const motion of motions) {
+    for (const point of [motion.start, motion.end]) {
+      const x = point.x - start.x;
+      const y = point.y - start.y;
+      const progress = x * directionX + y * directionY;
+      const deviation = Math.abs(x * directionY - y * directionX);
+      if (
+        !Number.isFinite(progress) || !Number.isFinite(deviation) ||
+        deviation > toleranceMm ||
+        progress < -toleranceMm || progress > expectedLength + toleranceMm ||
+        progress < previousProgress - roundoff
+      ) return false;
+      previousProgress = progress;
+    }
+  }
+  return true;
 }
 
 function circularSweep(start: Point2, end: Point2, center: Point2, clockwise: boolean) {

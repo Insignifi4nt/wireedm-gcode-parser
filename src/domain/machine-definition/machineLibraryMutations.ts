@@ -1,10 +1,9 @@
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
-import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import {
-  resolvePostInstallation,
-  type PostInstallationRef,
-  type PostLibrary
-} from '@/domain/post-processor/postLibrary';
+  recoverCatalogPairTransaction,
+  type CatalogPairTransactionError
+} from '@/domain/storage/catalogPairTransaction';
+import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import {
   readPostLibraryStorage,
   type PostLibraryStorageError
@@ -17,22 +16,10 @@ import {
 } from '@/domain/workbench-catalog/workbenchCatalog';
 import { validateWorkbenchProjectPathOwnership } from '@/domain/workbench-catalog/workbenchProjectStorage';
 
+import { activateMachinePostBinding, type MachineDefinition } from './machineDefinition';
 import {
-  createMachinePostBinding,
-  parseMachineDefinition,
-  removeMachinePostBinding,
-  validateMachinePostBindings,
-  type CreateMachinePostBindingInput,
-  type CreateMachinePostBindingResult,
-  type MachineDefinition,
-  type MachinePostBinding,
-  type RemoveMachinePostBindingResult,
-} from './machineDefinition';
-import {
-  installMachineDefinition,
   removeMachineDefinition,
   replaceMachineDefinition,
-  type InstallMachineDefinitionResult,
   type MachineLibrary,
   type RemoveMachineDefinitionResult,
   type ReplaceMachineDefinitionResult
@@ -45,9 +32,7 @@ import {
   type MachineLibraryStorageError
 } from './machineLibraryStorage';
 
-type CreateBindingError = Extract<CreateMachinePostBindingResult, { ok: false }>['error'];
-type RemoveBindingError = Extract<RemoveMachinePostBindingResult, { ok: false }>['error'];
-type InstallMachineError = Extract<InstallMachineDefinitionResult, { ok: false }>['error'];
+type ActivateBindingError = Extract<ReturnType<typeof activateMachinePostBinding>, { ok: false }>['error'];
 type ReplaceMachineError = Extract<ReplaceMachineDefinitionResult, { ok: false }>['error'];
 type RemoveMachineError = Extract<RemoveMachineDefinitionResult, { ok: false }>['error'];
 
@@ -55,12 +40,6 @@ type MachineMutationCatalogMissingError = {
   code: 'MACHINE_LIBRARY_MUTATION_CATALOG_MISSING';
   message: string;
   path: typeof WORKBENCH_CATALOG_PATH;
-};
-
-type MachineDefinitionInputError = {
-  code: 'MACHINE_LIBRARY_MUTATION_MACHINE_INVALID';
-  message: string;
-  diagnostics: Extract<ReturnType<typeof parseMachineDefinition>, { ok: false }>['diagnostics'];
 };
 
 type MachineLibraryMutationReadbackError = {
@@ -80,84 +59,18 @@ type MachineLibraryMutationPersistenceError =
   | MachineLibraryMutationReadbackError
   | MachineLibraryMutationRollbackError;
 
-type MachineImportError =
-  | PostLibraryStorageError
-  | MachineLibraryStorageError
-  | InstallMachineError
-  | MachineDefinitionInputError
+export type ActivateStoredMachinePostBindingResult =
+  | { ok: true; library: MachineLibrary; machine: MachineDefinition }
   | {
-      code: 'MACHINE_LIBRARY_MUTATION_DANGLING_POST_BINDING';
-      message: string;
-      machineId: string;
-      bindingId: string;
-    }
-  | {
-      code: 'MACHINE_LIBRARY_MUTATION_BINDING_INVALID';
-      message: string;
-      machineId: string;
-      bindingId: string;
+      ok: false;
+      error:
+        | PostLibraryStorageError
+        | MachineLibraryStorageError
+        | CatalogPairTransactionError
+        | ActivateBindingError
+        | ReplaceMachineError
+        | MachineLibraryMutationPersistenceError;
     };
-
-type CreateStoredMachinePostBindingError =
-  | PostLibraryStorageError
-  | MachineLibraryStorageError
-  | CreateBindingError
-  | ReplaceMachineError
-  | { code: 'MACHINE_LIBRARY_MUTATION_POST_NOT_FOUND'; message: string };
-
-type RemoveStoredMachinePostBindingError =
-  | PostLibraryStorageError
-  | MachineLibraryStorageError
-  | RemoveBindingError
-  | ReplaceMachineError;
-
-export type InstallStoredMachineDefinitionResult =
-  | {
-      ok: true;
-      kind: 'installed' | 'already-installed';
-      library: MachineLibrary;
-      machine: MachineDefinition;
-    }
-  | { ok: false; error: MachineImportError };
-
-export type CreateStoredMachinePostBindingResult =
-  | {
-      ok: true;
-      library: MachineLibrary;
-      machine: MachineDefinition;
-      binding: MachinePostBinding;
-    }
-  | { ok: false; error: CreateStoredMachinePostBindingError };
-
-export type RemoveStoredMachinePostBindingResult =
-  | {
-      ok: true;
-      library: MachineLibrary;
-      machine: MachineDefinition;
-      removed: MachinePostBinding;
-    }
-  | { ok: false; error: RemoveStoredMachinePostBindingError };
-
-export type ReplaceStoredMachineDefinitionError =
-  | WorkbenchCatalogError
-  | MachineMutationCatalogMissingError
-  | MachineDefinitionInputError
-  | Extract<MachineImportError, {
-      code:
-        | 'MACHINE_LIBRARY_MUTATION_DANGLING_POST_BINDING'
-        | 'MACHINE_LIBRARY_MUTATION_BINDING_INVALID';
-    }>
-  | ReplaceMachineError
-  | MachineLibraryMutationPersistenceError;
-
-export type ReplaceStoredMachineDefinitionResult =
-  | {
-      ok: true;
-      workbench: ConnectedWorkbenchCatalog;
-      library: MachineLibrary;
-      machine: MachineDefinition;
-    }
-  | { ok: false; error: ReplaceStoredMachineDefinitionError };
 
 type MachineIsRecentError = {
   code: 'MACHINE_LIBRARY_MUTATION_MACHINE_IS_RECENT';
@@ -180,44 +93,6 @@ export type RemoveStoredMachineDefinitionResult =
       removed: MachineDefinition;
     }
   | { ok: false; error: RemoveStoredMachineDefinitionError };
-
-export async function installStoredMachineDefinition(
-  adapter: WorkbenchStorageAdapter,
-  rawMachineText: string
-): Promise<InstallStoredMachineDefinitionResult> {
-  return withWorkbenchMutationLock(adapter, () => installStoredMachineDefinitionUnlocked(
-    adapter,
-    rawMachineText
-  ));
-}
-
-export async function replaceStoredMachineDefinition(
-  workbench: ConnectedWorkbenchCatalog,
-  rawMachineText: string
-): Promise<ReplaceStoredMachineDefinitionResult> {
-  return withWorkbenchMutationLock(workbench.adapter, async () => {
-    const parsed = parseMachineDefinition(rawMachineText);
-    if (!parsed.ok) return invalidMachineDefinition(parsed.diagnostics);
-    const state = await readAuthoritativeCatalog(workbench.adapter);
-    if (!state.ok) return state;
-    const bindingsValid = await validateImportedBindings(parsed.machine, state.workbench.posts);
-    if (!bindingsValid.ok) return bindingsValid;
-    const replaced = replaceMachineDefinition(state.workbench.machines, parsed.machine);
-    if (!replaced.ok) return replaced;
-    const written = await persistMachineLibrary(
-      workbench.adapter,
-      state.machineLibraryRaw,
-      replaced.library
-    );
-    if (!written.ok) return written;
-    return {
-      ok: true,
-      machine: replaced.machine,
-      library: replaced.library,
-      workbench: Object.freeze({ ...state.workbench, machines: replaced.library })
-    };
-  });
-}
 
 export async function removeStoredMachineDefinition(
   workbench: ConnectedWorkbenchCatalog,
@@ -253,105 +128,30 @@ export async function removeStoredMachineDefinition(
   });
 }
 
-async function installStoredMachineDefinitionUnlocked(
-  adapter: WorkbenchStorageAdapter,
-  rawMachineText: string
-): Promise<InstallStoredMachineDefinitionResult> {
-  const parsed = parseMachineDefinition(rawMachineText);
-  if (!parsed.ok) {
-    return {
-      ok: false,
-      error: {
-        code: 'MACHINE_LIBRARY_MUTATION_MACHINE_INVALID',
-        message: 'Uploaded machine definition is invalid.',
-        diagnostics: parsed.diagnostics
-      }
-    };
-  }
-  const posts = await readPostLibraryStorage(adapter);
-  if (!posts.ok) return posts;
-  const bindingsValid = await validateImportedBindings(parsed.machine, posts.library);
-  if (!bindingsValid.ok) return bindingsValid;
-  const machines = await readMachineLibraryStorage(adapter, posts.library);
-  if (!machines.ok) return machines;
-  const installed = installMachineDefinition(machines.library, parsed.machine);
-  if (!installed.ok || installed.kind === 'already-installed') return installed;
-  const written = await writeMachineLibraryStorage(adapter, installed.library);
-  return written.ok ? installed : written;
-}
-
-export async function createStoredMachinePostBinding(
-  adapter: WorkbenchStorageAdapter,
-  machineId: string,
-  postRef: PostInstallationRef,
-  input: CreateMachinePostBindingInput
-): Promise<CreateStoredMachinePostBindingResult> {
-  return withWorkbenchMutationLock(adapter, () => createStoredMachinePostBindingUnlocked(
-    adapter,
-    machineId,
-    postRef,
-    input
-  ));
-}
-
-async function createStoredMachinePostBindingUnlocked(
-  adapter: WorkbenchStorageAdapter,
-  machineId: string,
-  postRef: PostInstallationRef,
-  input: CreateMachinePostBindingInput
-): Promise<CreateStoredMachinePostBindingResult> {
-  const state = await readMutationState(adapter, machineId);
-  if (!state.ok) return state;
-  const installation = resolvePostInstallation(state.posts, postRef);
-  if (!installation.ok) {
-    return {
-      ok: false,
-      error: {
-        code: 'MACHINE_LIBRARY_MUTATION_POST_NOT_FOUND',
-        message: installation.error.message
-      }
-    };
-  }
-  const created = createMachinePostBinding(state.machine, installation.installation, input);
-  if (!created.ok) return created;
-  const replaced = replaceMachineDefinition(state.machines, created.machine);
-  if (!replaced.ok) return replaced;
-  const written = await writeMachineLibraryStorage(adapter, replaced.library);
-  return written.ok
-    ? { ...replaced, binding: created.binding }
-    : written;
-}
-
-export async function removeStoredMachinePostBinding(
+export async function activateStoredMachinePostBinding(
   adapter: WorkbenchStorageAdapter,
   machineId: string,
   bindingId: string
-): Promise<RemoveStoredMachinePostBindingResult> {
-  return withWorkbenchMutationLock(adapter, () => removeStoredMachinePostBindingUnlocked(
-    adapter,
-    machineId,
-    bindingId
-  ));
-}
-
-async function removeStoredMachinePostBindingUnlocked(
-  adapter: WorkbenchStorageAdapter,
-  machineId: string,
-  bindingId: string
-): Promise<RemoveStoredMachinePostBindingResult> {
-  const state = await readMutationState(adapter, machineId);
-  if (!state.ok) return state;
-  const removed = removeMachinePostBinding(state.machine, bindingId);
-  if (!removed.ok) return removed;
-  const replaced = replaceMachineDefinition(state.machines, removed.machine);
-  if (!replaced.ok) return replaced;
-  const written = await writeMachineLibraryStorage(adapter, replaced.library);
-  return written.ok
-    ? { ...replaced, removed: removed.removed }
-    : written;
+): Promise<ActivateStoredMachinePostBindingResult> {
+  return withWorkbenchMutationLock(adapter, async () => {
+    const state = await readMutationState(adapter, machineId);
+    if (!state.ok) return state;
+    const activated = activateMachinePostBinding(state.machine, bindingId);
+    if (!activated.ok) return activated;
+    const replaced = replaceMachineDefinition(state.machines, activated.machine);
+    if (!replaced.ok) return replaced;
+    const previousRaw = await readMachineLibraryRaw(adapter);
+    if (!previousRaw.ok) return previousRaw;
+    const written = await persistMachineLibrary(adapter, previousRaw.rawText, replaced.library);
+    return written.ok
+      ? { ok: true, machine: activated.machine, library: replaced.library }
+      : written;
+  });
 }
 
 async function readMutationState(adapter: WorkbenchStorageAdapter, machineId: string) {
+  const recovered = await recoverCatalogPairTransaction(adapter);
+  if (!recovered.ok) return recovered;
   const posts = await readPostLibraryStorage(adapter);
   if (!posts.ok) return posts;
   const machines = await readMachineLibraryStorage(adapter, posts.library);
@@ -367,26 +167,12 @@ async function readMutationState(adapter: WorkbenchStorageAdapter, machineId: st
       }
     };
   }
-  return {
-    ok: true as const,
-    posts: posts.library,
-    machines: machines.library,
-    machine
-  };
-}
-
-function machineNotFound(machineId: string) {
-  return {
-    ok: false as const,
-    error: {
-      code: 'MACHINE_LIBRARY_MACHINE_NOT_FOUND' as const,
-      message: `Machine definition not found: ${machineId}.`,
-      machineId
-    }
-  };
+  return { ok: true as const, machines: machines.library, machine };
 }
 
 async function readAuthoritativeCatalog(adapter: WorkbenchStorageAdapter) {
+  const recovered = await recoverCatalogPairTransaction(adapter);
+  if (!recovered.ok) return recovered;
   let rawManifest: string | null;
   try {
     rawManifest = await adapter.readText(WORKBENCH_CATALOG_PATH);
@@ -402,9 +188,7 @@ async function readAuthoritativeCatalog(adapter: WorkbenchStorageAdapter) {
       }
     };
   }
-  if (rawManifest === null) {
-    return catalogMissing();
-  }
+  if (rawManifest === null) return catalogMissing();
   const posts = await readPostLibraryStorage(adapter);
   if (!posts.ok) return posts;
   const machines = await readMachineLibraryStorage(adapter, posts.library);
@@ -413,10 +197,7 @@ async function readAuthoritativeCatalog(adapter: WorkbenchStorageAdapter) {
   if (!machineLibraryRaw.ok) return machineLibraryRaw;
   const manifest = parseWorkbenchCatalogManifest(rawManifest, machines.library);
   if (!manifest.ok) return manifest;
-  const ownership = await validateWorkbenchProjectPathOwnership(
-    adapter,
-    manifest.manifest.projects
-  );
+  const ownership = await validateWorkbenchProjectPathOwnership(adapter, manifest.manifest.projects);
   if (!ownership.ok) return ownership;
   return {
     ok: true as const,
@@ -437,39 +218,6 @@ function catalogMissing(): { ok: false; error: MachineMutationCatalogMissingErro
       code: 'MACHINE_LIBRARY_MUTATION_CATALOG_MISSING',
       message: `Connected workbench manifest is missing: ${WORKBENCH_CATALOG_PATH}.`,
       path: WORKBENCH_CATALOG_PATH
-    }
-  };
-}
-
-async function validateImportedBindings(
-  machine: MachineDefinition,
-  posts: PostLibrary
-) {
-  const validated = await validateMachinePostBindings(machine, posts);
-  if (validated.ok) return validated;
-  const dangling = validated.error.code === 'MACHINE_POST_BINDING_INSTALLATION_NOT_FOUND';
-  return {
-    ok: false as const,
-    error: {
-      code: dangling
-        ? 'MACHINE_LIBRARY_MUTATION_DANGLING_POST_BINDING' as const
-        : 'MACHINE_LIBRARY_MUTATION_BINDING_INVALID' as const,
-      message: `Imported machine binding ${machine.id}/${validated.binding.id} is invalid: ${validated.error.message}`,
-      machineId: machine.id,
-      bindingId: validated.binding.id
-    }
-  };
-}
-
-function invalidMachineDefinition(
-  diagnostics: MachineDefinitionInputError['diagnostics']
-): { ok: false; error: MachineDefinitionInputError } {
-  return {
-    ok: false,
-    error: {
-      code: 'MACHINE_LIBRARY_MUTATION_MACHINE_INVALID',
-      message: 'Uploaded machine definition is invalid.',
-      diagnostics
     }
   };
 }
@@ -537,10 +285,7 @@ async function writeMachineLibraryRaw(adapter: WorkbenchStorageAdapter, rawText:
   }
 }
 
-function machineLibraryAccessFailure(
-  operation: 'read' | 'write',
-  error: unknown
-) {
+function machineLibraryAccessFailure(operation: 'read' | 'write', error: unknown) {
   const cause = error instanceof Error ? error.message : String(error);
   return {
     ok: false as const,

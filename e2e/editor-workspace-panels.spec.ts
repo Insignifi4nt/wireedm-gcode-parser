@@ -38,8 +38,11 @@ async function openReadyWorkbench(page: import('@playwright/test').Page) {
 
 async function confirmPendingDxfImport(page: import('@playwright/test').Page) {
   await confirmDxfImport(page);
-  const closeOnboarding = page.getByRole('button', { name: 'Close onboarding' });
-  if (await closeOnboarding.isVisible()) await closeOnboarding.click();
+  const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
+  await onboarding.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
+  if (await onboarding.isVisible()) {
+    await onboarding.getByRole('button', { name: 'Go Build!' }).click();
+  }
 }
 
 test('editor anchors a path project in the UPID rail and mounts only an active right workflow dock', async ({ page }) => {

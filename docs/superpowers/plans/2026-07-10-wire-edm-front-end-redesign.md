@@ -1,5 +1,7 @@
 # Wire EDM Front-End Redesign Implementation Plan
 
+> Historical implementation plan. The current UI and machine-package architecture supersede its file paths, settings labels, and output ownership model.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the current dashboard-plus-hidden-panels interface with a compact Workbench start screen and clearly differentiated Path Project and Machine Program workspaces while preserving every implemented domain behavior.

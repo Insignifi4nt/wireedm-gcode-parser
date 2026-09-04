@@ -368,25 +368,16 @@ describe('saved Wire EDM job revision', () => {
     });
   });
 
-  it('generates an artifact only from the validated revision and explicit file preferences', async () => {
+  it('generates an artifact only from the validated revision and its exact post-owned file rules', async () => {
     const fixture = await revisionFixture();
     expect(await generateControllerArtifact(
-      fixture.candidate as unknown as SavedWireEdmJobRevision,
-      {
-        status: 'configured',
-        fileExtension: { kind: 'custom', extension: 'CUT' },
-        lineEnding: 'crlf'
-      }
+      fixture.candidate as unknown as SavedWireEdmJobRevision
     )).toMatchObject({
       ok: false,
       error: { code: 'CONTROLLER_ARTIFACT_REVISION_UNVALIDATED' }
     });
 
-    const generated = await generateControllerArtifact(fixture.revision, {
-      status: 'configured',
-      fileExtension: { kind: 'custom', extension: 'CUT' },
-      lineEnding: 'crlf'
-    });
+    const generated = await generateControllerArtifact(fixture.revision);
     if (!generated.ok) throw new Error(generated.error.message);
 
     expect(generated.artifact).toMatchObject({
@@ -394,27 +385,25 @@ describe('saved Wire EDM job revision', () => {
       schemaVersion: 1,
       revisionId: 'revision.0001',
       revisionHashes: fixture.revision.hashes,
-      fileName: 'fixture.part.CUT',
-      preference: {
-        fileExtension: { kind: 'custom', extension: 'CUT' },
-        lineEnding: 'crlf'
+      fileName: 'fixture.part.iso',
+      output: {
+        fileExtension: 'iso',
+        lineEnding: 'crlf',
+        encoding: 'ascii',
+        finalNewline: true
       },
       post: fixture.installation.ref
     });
     expect(generated.artifact.text).toContain('\r\n');
     expect(generated.artifact.text.replaceAll('\r\n', '\n')).toBe(
-      generated.artifact.program.text
+      `${generated.artifact.program.text}\n`
     );
     expect(generated.artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('generates an audited artifact through an installed custom package', async () => {
     const fixture = await revisionFixture(customPostPackage(false));
-    const generated = await generateControllerArtifact(fixture.revision, {
-      status: 'configured',
-      fileExtension: { kind: 'standard', extension: 'iso' },
-      lineEnding: 'lf'
-    });
+    const generated = await generateControllerArtifact(fixture.revision);
 
     expect(generated).toMatchObject({
       ok: true,
@@ -426,13 +415,46 @@ describe('saved Wire EDM job revision', () => {
     });
   });
 
+  it('applies post-owned envelope and sequence-number rules to the artifact only', async () => {
+    const packageValue = minimalPostPackage();
+    packageValue.manifest.output = {
+      ...packageValue.manifest.output,
+      lineEnding: 'lf',
+      finalNewline: false,
+      blockNumbering: {
+        mode: 'sequential',
+        prefix: 'N',
+        start: 10,
+        increment: 10,
+        minimumWidth: 4
+      },
+      programEnvelope: { prefix: ['%'], suffix: ['%'] }
+    };
+    for (const fixture of packageValue.fixtures) {
+      fixture.expectedArtifact = [
+        '%',
+        ...fixture.expectedProgram
+          .split('\n')
+          .map((line, index) => `N${String((index + 1) * 10).padStart(4, '0')} ${line}`),
+        '%'
+      ].join('\n');
+    }
+    const fixture = await revisionFixture(packageValue);
+    const generated = await generateControllerArtifact(fixture.revision);
+    if (!generated.ok) throw new Error(generated.error.message);
+
+    expect(generated.artifact.program.text).not.toContain('N0010');
+    expect(generated.artifact.text.split('\n')).toEqual([
+      '%',
+      ...generated.artifact.program.lines.map((line, index) => `N${String((index + 1) * 10).padStart(4, '0')} ${line}`),
+      '%'
+    ]);
+    expect(generated.artifact.text.endsWith('\n')).toBe(false);
+  });
+
   it('returns custom runtime diagnostics without a partial artifact', async () => {
     const fixture = await revisionFixture(customPostPackage(true));
-    const generated = await generateControllerArtifact(fixture.revision, {
-      status: 'configured',
-      fileExtension: { kind: 'standard', extension: 'iso' },
-      lineEnding: 'lf'
-    });
+    const generated = await generateControllerArtifact(fixture.revision);
 
     expect(generated).toMatchObject({
       ok: false,
@@ -541,9 +563,13 @@ function machineValue(): MachineDefinitionValue {
     id: 'fixture.machine',
     name: 'Fixture machine',
     identity: {
-      manufacturer: 'Fixture',
-      model: 'Machine 1',
-      controller: { manufacturer: 'Fixture', model: 'Controller 1' }
+      manufacturer: 'Charmilles',
+      model: 'Robofil 100',
+      controller: {
+        manufacturer: 'Charmilles',
+        model: 'Robofil Classic',
+        firmware: 'Local verified configuration'
+      }
     },
     limits: {
       xTravel: { status: 'known', millimeters: 200 },
@@ -552,6 +578,7 @@ function machineValue(): MachineDefinitionValue {
     hardware: { manualThreading: true, automaticThreading: false },
     evidence: [],
     bindings: [],
+    activeBindingId: null,
     notes: 'Physical facts only.'
   };
 }

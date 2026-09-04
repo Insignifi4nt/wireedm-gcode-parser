@@ -3,30 +3,54 @@ import { expect, test, type Page } from '@playwright/test';
 import { clearWorkbenchCache } from './fixtures/workbench-cache';
 import { confirmPendingDxfImport } from './dxf-import';
 
-test('round-trips an exported UPID through a clean browser cache with execution order and provenance', async ({ page }, testInfo) => {
+test('round-trips an exported UPID through a clean browser cache with execution order and provenance', async ({ page }) => {
   await importTwoContourDxf(page, 'tree-portable-round-trip.dxf');
   const beforeOrder = await programOperationLabels(page);
   await page.getByRole('button', { name: 'Back to Dashboard' }).click();
+  await captureNextTextDownload(page);
 
   const exportButton = page.locator('[data-project-row][data-project-source="dxf"]')
     .getByRole('button', { name: /Export UPID project/ });
-  const downloadPromise = page.waitForEvent('download');
   await exportButton.click();
-  const download = await downloadPromise;
-  const portableProjectPath = testInfo.outputPath('tree-portable-round-trip.upid.json');
-  await download.saveAs(portableProjectPath);
-  expect(download.suggestedFilename()).toMatch(/\.upid\.json$/);
+  await page.waitForFunction(() => (
+    typeof (window as Window & { __capturedTextDownload?: { text?: string } }).__capturedTextDownload?.text === 'string'
+  ));
+  const captured = await page.evaluate(() => (
+    (window as Window & { __capturedTextDownload: { name: string; text: string } }).__capturedTextDownload
+  ));
+  const portableProject = Buffer.from(captured.text);
+  expect(captured.name).toMatch(/\.upid\.json$/);
+  expect(portableProject.toString('utf8').trimStart()).toMatch(/^\{/);
 
   await clearWorkbenchCache(page);
   await expect(page.locator('[data-project-row]')).toHaveCount(0);
   await page.getByRole('button', { name: 'More path project import options' }).click();
-  await page.locator('input[aria-label="UPID path project file"]').setInputFiles(portableProjectPath);
+  await page.locator('input[aria-label="UPID path project file"]').setInputFiles({
+    name: 'tree-portable-round-trip.upid.json',
+    mimeType: 'application/json',
+    buffer: portableProject
+  });
   await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible();
   await expect(page.locator('[data-editor-status-units]')).toContainText('millimeters');
   await expect(programOperationLabels(page)).resolves.toEqual(beforeOrder);
   await page.getByRole('button', { name: 'Back to Dashboard' }).click();
   await expect(page.locator('[data-project-row][data-project-source="upid"]')).toHaveCount(1);
 });
+
+async function captureNextTextDownload(page: Page) {
+  await page.evaluate(() => {
+    const capture: { name: string; text?: string } = { name: '' };
+    (window as Window & { __capturedTextDownload?: typeof capture }).__capturedTextDownload = capture;
+    const createObjectUrl = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (object: Blob | MediaSource) => {
+      if (object instanceof Blob) void object.text().then((text) => { capture.text = text; });
+      return createObjectUrl(object);
+    };
+    HTMLAnchorElement.prototype.click = function captureDownloadClick() {
+      capture.name = this.download;
+    };
+  });
+}
 
 test('keeps imported NC programs in the machine-program editor through edit, save, reload, and export', async ({ page }) => {
   await openReadyWorkbench(page);
@@ -82,8 +106,7 @@ async function importTwoContourDxf(page: Page, name: string) {
     buffer: Buffer.from(twoContourDxf())
   });
   await confirmPendingDxfImport(page);
-  const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
-  if (await onboarding.isVisible()) await onboarding.getByRole('button', { name: 'Go Build!' }).click();
+  await dismissOnboarding(page);
   await expect(page.getByRole('tree', { name: 'UPID execution plan' })).toBeVisible();
 }
 
@@ -102,6 +125,7 @@ async function programOperationLabels(page: Page) {
 
 async function dismissOnboarding(page: Page) {
   const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
+  await onboarding.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
   if (await onboarding.isVisible()) await onboarding.getByRole('button', { name: 'Go Build!' }).click();
 }
 

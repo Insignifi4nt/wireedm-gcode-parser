@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://wire-edm.local/schemas/wire-edm-workbench-v2.json",
+  "$id": "https://wire-edm.local/schemas/wire-edm-workbench-v3.json",
   "additionalProperties": false,
   "type": "object",
   "required": [
@@ -18,7 +18,7 @@
       "type": "string"
     },
     "schemaVersion": {
-      "const": 2,
+      "const": 3,
       "type": "number"
     },
     "name": {
@@ -39,7 +39,6 @@
       "type": "object",
       "required": [
         "importUnits",
-        "export",
         "recentPlanningMachineId"
       ],
       "properties": {
@@ -78,104 +77,6 @@
                     },
                     {
                       "const": "inches",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            }
-          ]
-        },
-        "export": {
-          "anyOf": [
-            {
-              "additionalProperties": false,
-              "type": "object",
-              "required": [
-                "status"
-              ],
-              "properties": {
-                "status": {
-                  "const": "unconfigured",
-                  "type": "string"
-                }
-              }
-            },
-            {
-              "additionalProperties": false,
-              "type": "object",
-              "required": [
-                "status",
-                "fileExtension",
-                "lineEnding"
-              ],
-              "properties": {
-                "status": {
-                  "const": "configured",
-                  "type": "string"
-                },
-                "fileExtension": {
-                  "anyOf": [
-                    {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "kind",
-                        "extension"
-                      ],
-                      "properties": {
-                        "kind": {
-                          "const": "standard",
-                          "type": "string"
-                        },
-                        "extension": {
-                          "anyOf": [
-                            {
-                              "const": "iso",
-                              "type": "string"
-                            },
-                            {
-                              "const": "nc",
-                              "type": "string"
-                            },
-                            {
-                              "const": "gcode",
-                              "type": "string"
-                            }
-                          ]
-                        }
-                      }
-                    },
-                    {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "kind",
-                        "extension"
-                      ],
-                      "properties": {
-                        "kind": {
-                          "const": "custom",
-                          "type": "string"
-                        },
-                        "extension": {
-                          "minLength": 1,
-                          "maxLength": 16,
-                          "pattern": "^[A-Za-z0-9]+$",
-                          "type": "string"
-                        }
-                      }
-                    }
-                  ]
-                },
-                "lineEnding": {
-                  "anyOf": [
-                    {
-                      "const": "lf",
-                      "type": "string"
-                    },
-                    {
-                      "const": "crlf",
                       "type": "string"
                     }
                   ]

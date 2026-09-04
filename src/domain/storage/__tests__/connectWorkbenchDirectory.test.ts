@@ -74,12 +74,12 @@ describe('connectWorkbenchDirectory', () => {
       ok: true,
       kind: 'created',
       workbench: {
-        manifest: { schemaVersion: 2, name: 'wire-jobs' },
+        manifest: { schemaVersion: 3, name: 'wire-jobs' },
         posts: { installations: [] },
         machines: { machines: [] }
       }
     });
-    expect(JSON.parse(adapter.files.get('workbench.json') ?? '')).toMatchObject({ schemaVersion: 2 });
+    expect(JSON.parse(adapter.files.get('workbench.json') ?? '')).toMatchObject({ schemaVersion: 3 });
     expect(handleStore.handle).toBe(pickedHandle);
   });
 
@@ -100,7 +100,7 @@ describe('connectWorkbenchDirectory', () => {
     expect(result).toMatchObject({ ok: true, kind: 'created' });
   });
 
-  it('propagates a V1 directory error without rewriting it', async () => {
+  it('propagates an invalid V1 directory error without rewriting it', async () => {
     const adapter = new MemoryWorkbenchAdapter('legacy-jobs');
     const handleStore = new MemoryHandleStore();
     const handle = directoryHandle('legacy-jobs');
@@ -115,7 +115,7 @@ describe('connectWorkbenchDirectory', () => {
 
     expect(result).toMatchObject({
       ok: false,
-      error: { code: 'WORKBENCH_CATALOG_VERSION_UNSUPPORTED', foundVersion: 1 }
+      error: { code: 'WORKBENCH_CATALOG_SCHEMA_INVALID', path: '/name' }
     });
     expect(adapter.files.get('workbench.json')).toBe(original);
   });
@@ -135,11 +135,11 @@ describe('connectWorkbenchDirectory', () => {
     expect(restored).toMatchObject({
       ok: true,
       kind: 'created',
-      workbench: { manifest: { schemaVersion: 2, name: 'remembered-jobs' } }
+      workbench: { manifest: { schemaVersion: 3, name: 'remembered-jobs' } }
     });
   });
 
-  it('propagates a remembered V1 catalog error as the typed initialization result', async () => {
+  it('propagates an invalid remembered V1 catalog as the typed initialization result', async () => {
     const adapter = new MemoryWorkbenchAdapter('legacy-remembered');
     const handleStore = new MemoryHandleStore();
     handleStore.handle = directoryHandle('legacy-remembered', 'granted');
@@ -151,7 +151,7 @@ describe('connectWorkbenchDirectory', () => {
       handleStore
     })).toMatchObject({
       ok: false,
-      error: { code: 'WORKBENCH_CATALOG_VERSION_UNSUPPORTED', foundVersion: 1 }
+      error: { code: 'WORKBENCH_CATALOG_SCHEMA_INVALID', path: '/name' }
     });
   });
 

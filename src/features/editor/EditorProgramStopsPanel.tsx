@@ -107,7 +107,7 @@ export function EditorProgramStopsPanel({
         <div className="uppercase text-muted-foreground">{operation.displayName}</div>
         <p className="mt-1 text-muted-foreground">
           These are unconditional, user-authored stop intents. Controller encoding is decided only
-          when the saved revision is generated with an exact machine binding.
+          when the saved revision is generated with the exact active machine setup.
         </p>
       </div>
 

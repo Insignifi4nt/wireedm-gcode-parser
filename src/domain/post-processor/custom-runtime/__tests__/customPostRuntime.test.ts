@@ -46,10 +46,48 @@ describe('isolated custom JavaScript post runtime', () => {
 
     if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
     expect(result.program.text).toBe('G90\nG1 X0,000 Y0,000\nG1 X0,000 Y0,000\nM02');
-    expect(result.program.blocks[2].motion?.end.x).toBe(-0.0004);
+    expect(result.program.blocks[2].motion?.end.x).toBe(0);
   });
 
-  it('derives an audited circular center from the same declared offset parameters rendered in text', async () => {
+  it('rejects controller precision that rounds away the requested cut', async () => {
+    const fixture = runtimeFixture();
+    fixture.properties.coordinatePrecision = 0;
+    fixture.plan = {
+      ...fixture.plan,
+      events: fixture.plan.events.map((event) => event.kind === 'motion'
+        ? { ...event, end: { x: 0.1, y: 0 } }
+        : event)
+    };
+
+    await expect(runCustomPost(fixture)).resolves.toMatchObject({
+      ok: false,
+      diagnostics: [{ code: 'POST_CUSTOM_AUDIT_FAILED' }]
+    });
+  });
+
+  it('starts each motion at the previous formatted endpoint across events', async () => {
+    const fixture = runtimeFixture();
+    fixture.plan = {
+      ...fixture.plan,
+      events: fixture.plan.events.map((event) => {
+        if (event.kind === 'position') return { ...event, to: { x: 0.0004, y: 0 } };
+        if (event.kind === 'motion') return { ...event, start: { x: 0.0004, y: 0 } };
+        return event;
+      })
+    };
+
+    const result = await runCustomPost(fixture);
+
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    expect(result.program.blocks[2].motion?.start).toEqual({ x: 0, y: 0 });
+  });
+
+  it.each([
+    { name: 'correct direction', reverseCommand: false, splitAtStop: false },
+    { name: 'reversed direction', reverseCommand: true, splitAtStop: false },
+    { name: 'missing legacy direction', reverseCommand: false, splitAtStop: false },
+    { name: 'a stop leaving a short final arc', reverseCommand: false, splitAtStop: true }
+  ])('audits circular centers and $name', async ({ name, reverseCommand, splitAtStop }) => {
     const fixture = runtimeFixture();
     const document = createUpidFromDxfEntities([{
       type: 'circle',
@@ -64,6 +102,18 @@ describe('isolated custom JavaScript post runtime', () => {
         review: 'reviewed'
       }
     };
+    if (splitAtStop) {
+      document.plan.operations[0].programStops = [{
+        id: 'retain-part', enabled: true, reason: 'part-retention',
+        placement: { kind: 'before-operation-end', remainingCutLengthMm: 0.0005 }
+      }];
+      fixture.properties.coordinatePrecision = 6;
+      fixture.package.manifest.capabilities.programStops = true;
+      fixture.package.dialect.commands['operator.stop'] = {
+        template: 'M00', parameters: {}, effects: ['operator.stopped'],
+        requires: [], evidenceRefs: ['robofil-program']
+      };
+    }
     const compiled = compileWireEdmExecutionPlan(document);
     if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
     fixture.plan = compiled.plan;
@@ -71,6 +121,7 @@ describe('isolated custom JavaScript post runtime', () => {
     for (const id of ['motion.arc-clockwise', 'motion.arc-counterclockwise']) {
       fixture.package.dialect.commands[id] = {
         template: `${id === 'motion.arc-clockwise' ? 'G2' : 'G3'} X{x} Y{y} I{i} J{j}`,
+        arcDirection: id === 'motion.arc-clockwise' ? 'clockwise' : 'counterclockwise',
         parameters: {
           x: { type: 'number', role: 'motion.end-x', description: 'X endpoint.', format: numberFormat() },
           y: { type: 'number', role: 'motion.end-y', description: 'Y endpoint.', format: numberFormat() },
@@ -93,14 +144,16 @@ describe('isolated custom JavaScript post runtime', () => {
         requires: ['distance.absolute'],
         evidenceRefs: ['robofil-program']
       };
+      if (name === 'missing legacy direction') delete fixture.package.dialect.commands[id].arcDirection;
       fixture.package.evidence[0].supports.push({ kind: 'command', id });
     }
     fixture.package.source.code = `
       export function createPost(api) {
         return { onEvent(event) {
           if (event.kind === 'program-start') return api.emitCommand('distance.absolute', {});
+          if (event.kind === 'program-stop') return api.emitCommand('operator.stop', {});
           if (event.kind === 'motion') {
-            const command = event.clockwise ? 'motion.arc-clockwise' : 'motion.arc-counterclockwise';
+            const command = ${reverseCommand ? '!event.clockwise' : 'event.clockwise'} ? 'motion.arc-clockwise' : 'motion.arc-counterclockwise';
             if (event.fullCircle) {
               api.emitMotion(command, {
                 x: 2 * event.center.x - event.start.x,
@@ -124,6 +177,20 @@ describe('isolated custom JavaScript post runtime', () => {
 
     const result = await runCustomPost(fixture);
 
+    if (name === 'missing legacy direction') {
+      expect(result).toMatchObject({
+        ok: false,
+        diagnostics: [{ code: 'POST_CUSTOM_MOTION_ROLE_INVALID', message: expect.stringContaining('no arcDirection') }]
+      });
+      return;
+    }
+    if (reverseCommand) {
+      expect(result).toMatchObject({
+        ok: false,
+        diagnostics: [{ code: 'POST_CUSTOM_AUDIT_FAILED' }]
+      });
+      return;
+    }
     if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
     const motions = result.program.blocks.filter(({ motion }) => motion?.motion === 'circular');
     expect(motions).toHaveLength(2);
@@ -132,6 +199,11 @@ describe('isolated custom JavaScript post runtime', () => {
       motion: { center: { x: 5, y: 5 } }
     });
     expect(motions[1]?.motion?.start).toEqual(motions[0]?.motion?.end);
+    if (splitAtStop) {
+      expect(result.program.lines).toContain('M00');
+      expect(motions.every(({ motion }) => motion?.fullCircle === false)).toBe(true);
+      expect(motions[1]?.motion?.start.y).toBeCloseTo(4.9995, 6);
+    }
   });
 
   it('keeps property access exact and preserves a caught host failure as fatal', async () => {
@@ -148,6 +220,19 @@ describe('isolated custom JavaScript post runtime', () => {
     await expect(runCustomPost(fixture)).resolves.toMatchObject({
       ok: false,
       diagnostics: [{ code: 'POST_CUSTOM_API_MISUSE' }]
+    });
+  });
+
+  it('rejects untraced movement emitted as an ordinary lifecycle command', async () => {
+    const fixture = runtimeFixture();
+    fixture.package.source.code = fixture.package.source.code.replace(
+      "if (event.kind === 'program-end') return api.emitCommand('program.end', {});",
+      "if (event.kind === 'program-end') { api.emitCommand('motion.linear', { x: 1000, y: 1000 }); return api.emitCommand('program.end', {}); }"
+    );
+
+    await expect(runCustomPost(fixture)).resolves.toMatchObject({
+      ok: false,
+      diagnostics: [{ code: 'POST_CUSTOM_MOTION_ROLE_INVALID', commandId: 'motion.linear' }]
     });
   });
 
@@ -275,6 +360,18 @@ describe('isolated custom JavaScript post runtime', () => {
       ok: false,
       diagnostics: [{ code: 'POST_CONFORMANCE_EXPECTED_PROGRAM_MISMATCH' }]
     });
+
+    const artifactMismatch = runtimeFixture();
+    artifactMismatch.package.manifest.output.programEnvelope.prefix = ['%'];
+    await expect(runCustomPostConformance({
+      packageValue: artifactMismatch.package,
+      planFixtures: { 'core.test-plan.v1': artifactMismatch.plan }
+    })).resolves.toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: 'POST_CONFORMANCE_EXPECTED_ARTIFACT_MISMATCH' })
+      ])
+    });
   });
 
   it('rejects incomplete fixture coverage and an unfinished final lifecycle', async () => {
@@ -379,6 +476,7 @@ function runtimeFixture() {
       planFixture: 'core.test-plan.v1',
       properties: { coordinatePrecision: 3 },
       expectedProgram: 'G90\nG1 X0 Y0\nG1 X10 Y0\nM02',
+      expectedArtifact: 'G90\r\nG1 X0 Y0\r\nG1 X10 Y0\r\nM02\r\n',
       evidenceRefs: ['robofil-program']
     },
     {
@@ -387,6 +485,7 @@ function runtimeFixture() {
       planFixture: 'core.test-plan.v1',
       properties: { coordinatePrecision: 0 },
       expectedProgram: 'G90\nG1 X0 Y0\nG1 X10 Y0\nM02',
+      expectedArtifact: 'G90\r\nG1 X0 Y0\r\nG1 X10 Y0\r\nM02\r\n',
       evidenceRefs: ['robofil-program']
     },
     {
@@ -395,6 +494,7 @@ function runtimeFixture() {
       planFixture: 'core.test-plan.v1',
       properties: { coordinatePrecision: 6 },
       expectedProgram: 'G90\nG1 X0 Y0\nG1 X10 Y0\nM02',
+      expectedArtifact: 'G90\r\nG1 X0 Y0\r\nG1 X10 Y0\r\nM02\r\n',
       evidenceRefs: ['robofil-program']
     }
   ];

@@ -42,8 +42,8 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 - DXF converted by this app is treated as clean internal geometry.
 - Browser-cache and one-off imports must stay supported even when directory picker APIs are unavailable.
 - External `.gcode`, `.nc`, `.iso`, and `.txt` files should keep the old cleanup/display pipeline when ported.
-- V1 output is header/body/footer G-code. Do not add feed generation by default.
-- Output extension is a file-writing choice; it should not change the generated program text by itself.
+- V1 output is generated from a saved revision and the active machine setup supplied by a complete `.wireedm-package`. Do not add feed generation by default.
+- Controller-file rules (extension, encoding, line endings, wrappers, and numbering) belong to the exact post processor inside the machine package; do not add workbench-level output preferences.
 
 ## Style
 

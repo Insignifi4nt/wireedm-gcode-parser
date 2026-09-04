@@ -45,11 +45,10 @@ describe('connectCachedWorkbench', () => {
       workbench: {
         adapter: { kind: 'browser-cache' },
         manifest: {
-          schemaVersion: 2,
+          schemaVersion: 3,
           name: 'Local storage',
           preferences: {
             importUnits: { mode: 'ask' },
-            export: { status: 'unconfigured' },
             recentPlanningMachineId: null
           },
           projects: []
@@ -59,7 +58,7 @@ describe('connectCachedWorkbench', () => {
       }
     });
     expect(storage.getItem('wire-edm-workbench:file:workbench.json')).toContain(
-      '"schemaVersion": 2'
+      '"schemaVersion": 3'
     );
     expect(storage.getItem('wire-edm-workbench:file:posts/library.json')).not.toBeNull();
     expect(storage.getItem('wire-edm-workbench:file:machines/library.json')).not.toBeNull();
@@ -92,7 +91,7 @@ describe('connectCachedWorkbench', () => {
     expect(storage.getItem('wire-edm-workbench:file:workbench.json')).toBe(storedBefore);
   });
 
-  it('returns the typed unsupported-version error without rewriting a V1 cache', async () => {
+  it('rejects an invalid V1 cache without rewriting it', async () => {
     const storage = new MemoryStorage();
     const original = JSON.stringify({ schemaVersion: 1, machineProfiles: [] });
     storage.setItem('wire-edm-workbench:file:workbench.json', original);
@@ -100,10 +99,9 @@ describe('connectCachedWorkbench', () => {
     expect(await connectCachedWorkbench({ storage })).toEqual({
       ok: false,
       error: {
-        code: 'WORKBENCH_CATALOG_VERSION_UNSUPPORTED',
-        message: 'Workbench schema version 1 is unsupported. Create a new version-2 workbench.',
-        foundVersion: 1,
-        supportedVersion: 2
+        code: 'WORKBENCH_CATALOG_SCHEMA_INVALID',
+        message: 'Legacy workbench manifest schema violation at /name: Expected required property.',
+        path: '/name'
       }
     });
     expect(storage.getItem('wire-edm-workbench:file:workbench.json')).toBe(original);
@@ -129,7 +127,7 @@ describe('connectCachedWorkbench', () => {
         kind: 'created',
         workbench: {
           adapter: { kind: 'memory' },
-          manifest: { schemaVersion: 2, name: 'Temporary storage' }
+          manifest: { schemaVersion: 3, name: 'Temporary storage' }
         }
       });
     } finally {

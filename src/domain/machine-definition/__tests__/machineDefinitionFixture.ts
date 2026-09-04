@@ -31,6 +31,7 @@ export function machineDefinitionValue(name = 'Shop Robofil 100'): MachineDefini
     hardware: { manualThreading: true, automaticThreading: false },
     evidence: [],
     bindings: [],
+    activeBindingId: null,
     notes: 'Physical facts only.'
   };
 }

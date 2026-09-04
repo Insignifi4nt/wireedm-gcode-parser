@@ -1,5 +1,7 @@
 # Guided Workflow and Production Path Implementation Plan
 
+> Historical implementation plan. Retained for design history; do not treat its tasks or controller examples as current instructions.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver the approved guided editor architecture and the G92, entry/exit, and partial-contour production capabilities without weakening local-first or controller safety.

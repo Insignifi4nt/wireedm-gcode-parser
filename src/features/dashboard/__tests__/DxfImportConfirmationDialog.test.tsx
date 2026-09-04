@@ -203,13 +203,12 @@ function workbench(): ConnectedWorkbenchCatalog {
     posts: createEmptyPostLibrary(),
     manifest: {
       format: 'wire-edm-workbench',
-      schemaVersion: 2,
+      schemaVersion: 3,
       name: 'Dashboard tests',
       createdAt: '2026-08-28T10:00:00.000Z',
       updatedAt: '2026-08-28T10:00:00.000Z',
       preferences: {
         importUnits: { mode: 'ask' },
-        export: { status: 'unconfigured' },
         recentPlanningMachineId: null
       },
       projects: []

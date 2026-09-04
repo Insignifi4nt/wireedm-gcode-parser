@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wire-edm.local/schemas/wire-edm-machine-package-source-v1.json",
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "format",
+    "schemaVersion",
+    "manifest",
+    "machineFile",
+    "postFiles",
+    "activeBindingId"
+  ],
+  "properties": {
+    "format": {
+      "const": "wire-edm-machine-package-source",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1,
+      "type": "number"
+    },
+    "manifest": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "version",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "maxLength": 160,
+          "type": "string"
+        },
+        "version": {
+          "minLength": 5,
+          "maxLength": 80,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "maxLength": 4096,
+          "type": "string"
+        }
+      }
+    },
+    "machineFile": {
+      "minLength": 1,
+      "maxLength": 1024,
+      "type": "string"
+    },
+    "postFiles": {
+      "minItems": 1,
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+        "minLength": 1,
+        "maxLength": 1024,
+        "type": "string"
+      }
+    },
+    "activeBindingId": {
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+      "type": "string"
+    }
+  }
+}

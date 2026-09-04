@@ -1,6 +1,6 @@
 # Controller Compensation and Machine Profiles Implementation Plan
 
-> Historical plan, superseded by the standalone post-package platform. Controller commands, formatting, and lifecycle policy described below must not be implemented in application code; they belong to an explicitly installed package.
+> Historical plan, superseded by the complete machine-package platform. Controller commands, formatting, and lifecycle policy described below must not be implemented in application code; they belong to the exact post inside an installed `.wireedm-package`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

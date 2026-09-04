@@ -2,6 +2,12 @@ import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
+import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { recoverSavedRevisionTransaction, type SavedRevisionTransactionError } from '@/domain/storage/savedRevisionTransaction';
+import {
+  recoverCatalogPairTransaction,
+  type CatalogPairTransactionError
+} from '@/domain/storage/catalogPairTransaction';
 import { PostIdentifierSchema } from '@/domain/post-processor/postFormatPrimitives';
 import {
   initializePostLibraryStorage,
@@ -9,7 +15,7 @@ import {
   readPostLibraryStorage,
   type PostLibraryStorageError
 } from '@/domain/post-processor/postLibraryStorage';
-import type { PostLibrary } from '@/domain/post-processor/postLibrary';
+import { createEmptyPostLibrary, type PostLibrary } from '@/domain/post-processor/postLibrary';
 import type { DeepReadonly } from '@/domain/post-processor/postPackageSchema';
 import {
   initializeMachineLibraryStorage,
@@ -18,6 +24,7 @@ import {
   type MachineLibraryStorageError
 } from '@/domain/machine-definition/machineLibraryStorage';
 import type { MachineLibrary } from '@/domain/machine-definition/machineLibrary';
+import { parseWorkbenchProjectDocument } from './workbenchProject';
 import {
   validateWorkbenchProjectPathOwnership,
   type WorkbenchProjectIndexIntegrityError,
@@ -25,8 +32,10 @@ import {
 } from './workbenchProjectStorage';
 
 export const WORKBENCH_CATALOG_PATH = 'workbench.json';
-export const WORKBENCH_SCHEMA_VERSION = 2 as const;
+export const WORKBENCH_SCHEMA_VERSION = 3 as const;
 export const WORKBENCH_CATALOG_DIRECTORIES = ['imports', 'exports', 'projects'] as const;
+const LEGACY_V1_BACKUP_DIRECTORY = 'legacy/v1';
+const LEGACY_V1_MANIFEST_BACKUP_PATH = `${LEGACY_V1_BACKUP_DIRECTORY}/workbench.json`;
 const MAX_WORKBENCH_CATALOG_BYTES = 1024 * 1024;
 const strictObject = { additionalProperties: false } as const;
 const TimestampSchema = Type.String({
@@ -53,7 +62,7 @@ const ImportUnitPreferenceSchema = Type.Union([
   }, strictObject)
 ]);
 
-const OutputExtensionPreferenceSchema = Type.Union([
+const LegacyOutputExtensionPreferenceSchema = Type.Union([
   Type.Object({
     kind: Type.Literal('standard'),
     extension: Type.Union([Type.Literal('iso'), Type.Literal('nc'), Type.Literal('gcode')])
@@ -64,11 +73,11 @@ const OutputExtensionPreferenceSchema = Type.Union([
   }, strictObject)
 ]);
 
-const ExportPreferenceSchema = Type.Union([
+const LegacyExportPreferenceSchema = Type.Union([
   Type.Object({ status: Type.Literal('unconfigured') }, strictObject),
   Type.Object({
     status: Type.Literal('configured'),
-    fileExtension: OutputExtensionPreferenceSchema,
+    fileExtension: LegacyOutputExtensionPreferenceSchema,
     lineEnding: Type.Union([Type.Literal('lf'), Type.Literal('crlf')])
   }, strictObject)
 ]);
@@ -81,15 +90,40 @@ export const WorkbenchCatalogManifestSchema = Type.Object({
   updatedAt: TimestampSchema,
   preferences: Type.Object({
     importUnits: ImportUnitPreferenceSchema,
-    export: ExportPreferenceSchema,
     recentPlanningMachineId: Type.Union([PostIdentifierSchema, Type.Null()])
   }, strictObject),
   projects: Type.Array(ProjectIndexEntrySchema, { maxItems: 10_000 })
 }, {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  $id: 'https://wire-edm.local/schemas/wire-edm-workbench-v2.json',
+  $id: 'https://wire-edm.local/schemas/wire-edm-workbench-v3.json',
   additionalProperties: false
 });
+
+const LegacyWorkbenchCatalogManifestSchema = Type.Object({
+  format: Type.Literal('wire-edm-workbench'),
+  schemaVersion: Type.Literal(2),
+  name: Type.String({ minLength: 1, maxLength: 160 }),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+  preferences: Type.Object({
+    importUnits: ImportUnitPreferenceSchema,
+    export: LegacyExportPreferenceSchema,
+    recentPlanningMachineId: Type.Union([PostIdentifierSchema, Type.Null()])
+  }, strictObject),
+  projects: Type.Array(ProjectIndexEntrySchema, { maxItems: 10_000 })
+}, strictObject);
+
+const LegacyV1WorkbenchManifestSchema = Type.Object({
+  schemaVersion: Type.Literal(1),
+  name: Type.String({ minLength: 1, maxLength: 160 }),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+  templates: Type.Unknown(),
+  output: Type.Unknown(),
+  activeMachineProfileId: Type.String({ minLength: 1 }),
+  machineProfiles: Type.Array(Type.Unknown()),
+  projects: Type.Array(ProjectIndexEntrySchema, { maxItems: 10_000 })
+}, strictObject);
 
 export type WorkbenchCatalogManifestValue = Static<typeof WorkbenchCatalogManifestSchema>;
 export type WorkbenchCatalogManifest = DeepReadonly<WorkbenchCatalogManifestValue>;
@@ -109,10 +143,12 @@ type WorkbenchCatalogAccessError = {
 };
 
 export type WorkbenchCatalogError =
+  | SavedRevisionTransactionError
   | PostLibraryStorageError
   | MachineLibraryStorageError
   | WorkbenchProjectStorageError
   | WorkbenchProjectIndexIntegrityError
+  | CatalogPairTransactionError
   | {
       code: 'WORKBENCH_CATALOG_VERSION_UNSUPPORTED';
       message: string;
@@ -169,6 +205,18 @@ export async function initializeWorkbenchCatalog(
   adapter: WorkbenchStorageAdapter,
   options: InitializeWorkbenchCatalogOptions = {}
 ): Promise<InitializeWorkbenchCatalogResult> {
+  return withWorkbenchMutationLock(adapter, () => (
+    initializeWorkbenchCatalogUnderMutationLock(adapter, options)
+  ));
+}
+
+/** Internal integration point for callers that already own the workbench mutation lock. */
+export async function initializeWorkbenchCatalogUnderMutationLock(
+  adapter: WorkbenchStorageAdapter,
+  options: InitializeWorkbenchCatalogOptions = {}
+): Promise<InitializeWorkbenchCatalogResult> {
+  const recoveredRevision = await recoverSavedRevisionTransaction(adapter);
+  if (!recoveredRevision.ok) return recoveredRevision;
   const catalogRead = await readStorageText(adapter, WORKBENCH_CATALOG_PATH);
   if (!catalogRead.ok) return catalogRead;
 
@@ -188,14 +236,36 @@ export async function initializeWorkbenchCatalog(
     return createWorkbenchCatalog(adapter, options.now ?? new Date());
   }
 
-  const parsedValue = parseCatalogJson(catalogRead.rawText);
+  const parsedValue = parseCatalogJson(catalogRead.rawText, true);
   if (!parsedValue.ok) return parsedValue;
+  const legacyMigration = await migrateLegacyV1WorkbenchCatalog(
+    adapter,
+    parsedValue.value,
+    catalogRead.rawText
+  );
+  if (!legacyMigration.ok) return legacyMigration;
+  if (legacyMigration.migrated) {
+    return initializeWorkbenchCatalogUnderMutationLock(adapter, options);
+  }
+  const recovered = await recoverCatalogPairTransaction(adapter);
+  if (!recovered.ok) return recovered;
   const posts = await readPostLibraryStorage(adapter);
   if (!posts.ok) return posts;
   const machines = await readMachineLibraryStorage(adapter, posts.library);
   if (!machines.ok) return machines;
-  const manifest = validateWorkbenchCatalogValue(parsedValue.value, machines.library);
+  const migrated = migrateLegacyWorkbenchCatalogValue(parsedValue.value);
+  if (!migrated.ok) return migrated;
+  const manifest = validateWorkbenchCatalogValue(migrated.value, machines.library);
   if (!manifest.ok) return manifest;
+  if (migrated.kind === 'migrated') {
+    const written = await accessStorage(
+      adapter,
+      'write',
+      WORKBENCH_CATALOG_PATH,
+      () => adapter.writeText(WORKBENCH_CATALOG_PATH, `${JSON.stringify(manifest.manifest, null, 2)}\n`)
+    );
+    if (!written.ok) return written;
+  }
   const ownership = await validateWorkbenchProjectPathOwnership(
     adapter,
     manifest.manifest.projects
@@ -241,7 +311,6 @@ async function createWorkbenchCatalog(
     updatedAt: timestamp,
     preferences: Object.freeze({
       importUnits: Object.freeze({ mode: 'ask' as const }),
-      export: Object.freeze({ status: 'unconfigured' as const }),
       recentPlanningMachineId: null
     }),
     projects: Object.freeze([])
@@ -284,7 +353,7 @@ async function createWorkbenchCatalog(
   };
 }
 
-function parseCatalogJson(rawText: string) {
+function parseCatalogJson(rawText: string, allowLegacyV2 = false) {
   const actualBytes = new TextEncoder().encode(rawText).byteLength;
   if (actualBytes > MAX_WORKBENCH_CATALOG_BYTES) {
     return {
@@ -314,19 +383,250 @@ function parseCatalogJson(rawText: string) {
   if (
     record &&
     typeof record.schemaVersion === 'number' &&
-    record.schemaVersion !== WORKBENCH_SCHEMA_VERSION
+    record.schemaVersion !== WORKBENCH_SCHEMA_VERSION &&
+    !(allowLegacyV2 && (record.schemaVersion === 1 || record.schemaVersion === 2))
   ) {
     return {
       ok: false as const,
       error: {
         code: 'WORKBENCH_CATALOG_VERSION_UNSUPPORTED' as const,
-        message: `Workbench schema version ${record.schemaVersion} is unsupported. Create a new version-2 workbench.`,
+        message: `Workbench schema version ${record.schemaVersion} is unsupported. Create a new version-${WORKBENCH_SCHEMA_VERSION} workbench.`,
         foundVersion: record.schemaVersion,
         supportedVersion: WORKBENCH_SCHEMA_VERSION
       }
     };
   }
   return { ok: true as const, value };
+}
+
+async function migrateLegacyV1WorkbenchCatalog(
+  adapter: WorkbenchStorageAdapter,
+  value: unknown,
+  originalManifest: string
+): Promise<
+  | { readonly ok: true; readonly migrated: boolean }
+  | { readonly ok: false; readonly error: WorkbenchCatalogError }
+> {
+  const record = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+  if (record?.schemaVersion !== 1) return { ok: true, migrated: false };
+  const schemaError = Value.Errors(LegacyV1WorkbenchManifestSchema, value).First();
+  if (schemaError) {
+    return {
+      ok: false,
+      error: {
+        code: 'WORKBENCH_CATALOG_SCHEMA_INVALID',
+        message: `Legacy workbench manifest schema violation at ${schemaError.path || '/'}: ${schemaError.message}.`,
+        path: schemaError.path
+      }
+    };
+  }
+  const legacy = Value.Decode(LegacyV1WorkbenchManifestSchema, value);
+  const projectTexts = new Map<string, { readonly previous: string; readonly next: string }>();
+  const backupTexts = new Map<string, { readonly existed: boolean; readonly text: string }>();
+  const placeholderPaths = new Map<string, boolean>();
+  const manifestBackup = await readStorageText(adapter, LEGACY_V1_MANIFEST_BACKUP_PATH);
+  if (!manifestBackup.ok) return manifestBackup;
+  if (manifestBackup.rawText !== null && manifestBackup.rawText !== originalManifest) {
+    return {
+      ok: false,
+      error: {
+        code: 'WORKBENCH_CATALOG_INCOMPLETE',
+        message: 'Legacy workbench migration found a conflicting version-1 manifest backup.',
+        existingPaths: [LEGACY_V1_MANIFEST_BACKUP_PATH]
+      }
+    };
+  }
+  backupTexts.set(LEGACY_V1_MANIFEST_BACKUP_PATH, {
+    existed: manifestBackup.rawText !== null,
+    text: originalManifest
+  });
+  for (const entry of legacy.projects) {
+    let raw: string | null;
+    try {
+      raw = await adapter.readText(entry.path);
+    } catch (error) {
+      return storageAccessFailure('read', entry.path, error);
+    }
+    if (raw === null) {
+      return {
+        ok: false,
+        error: {
+          code: 'WORKBENCH_CATALOG_PROJECT_DANGLING',
+          message: `Legacy workbench project file is missing: ${entry.path}.`,
+          projectId: entry.id,
+          path: entry.path
+        }
+      };
+    }
+    const backupPath = `${LEGACY_V1_BACKUP_DIRECTORY}/projects/${entry.id}.json`;
+    const backup = await readStorageText(adapter, backupPath);
+    if (!backup.ok) return backup;
+    const originalProject = backup.rawText ?? raw;
+    const parsed = parseWorkbenchProjectDocument(originalProject);
+    if (!parsed.ok) return parsed;
+    backupTexts.set(backupPath, {
+      existed: backup.rawText !== null,
+      text: originalProject
+    });
+    if (
+      parsed.project.content.kind === 'external-gcode' &&
+      parsed.project.content.activeFilePath === `projects/${entry.id}/legacy-empty.txt`
+    ) {
+      const placeholder = await readStorageText(adapter, parsed.project.content.activeFilePath);
+      if (!placeholder.ok) return placeholder;
+      if (placeholder.rawText !== null && placeholder.rawText !== '') {
+        return {
+          ok: false,
+          error: {
+            code: 'WORKBENCH_CATALOG_INCOMPLETE',
+            message: 'Legacy workbench migration found conflicting content at its empty-program placeholder path.',
+            existingPaths: [parsed.project.content.activeFilePath]
+          }
+        };
+      }
+      placeholderPaths.set(parsed.project.content.activeFilePath, placeholder.rawText !== null);
+    }
+    projectTexts.set(entry.path, { previous: raw, next: JSON.stringify(parsed.project, null, 2) });
+  }
+  const activeProfile = legacy.machineProfiles.find((candidate) => (
+    candidate !== null && typeof candidate === 'object' && !Array.isArray(candidate) &&
+    (candidate as Record<string, unknown>).id === legacy.activeMachineProfileId
+  ));
+  const preferredUnit = activeProfile !== null && typeof activeProfile === 'object' && !Array.isArray(activeProfile)
+    ? (activeProfile as Record<string, unknown>).preferredDxfImportUnit
+    : null;
+  const manifest: WorkbenchCatalogManifestValue = {
+    format: 'wire-edm-workbench',
+    schemaVersion: WORKBENCH_SCHEMA_VERSION,
+    name: legacy.name,
+    createdAt: legacy.createdAt,
+    updatedAt: legacy.updatedAt,
+    preferences: {
+      importUnits: preferredUnit === 'millimeters' || preferredUnit === 'inches'
+        ? { mode: 'fixed', unit: preferredUnit }
+        : { mode: 'ask' },
+      recentPlanningMachineId: null
+    },
+    projects: legacy.projects
+  };
+  const existingPosts = await readStorageText(adapter, POST_LIBRARY_PATH);
+  if (!existingPosts.ok) return existingPosts;
+  const existingMachines = await readStorageText(adapter, MACHINE_LIBRARY_PATH);
+  if (!existingMachines.ok) return existingMachines;
+  // Empty companion catalogs are a durable checkpoint left by an interrupted migration.
+  // They can be opened safely; a non-empty catalog could contain unrelated user data.
+  let resumablePosts = createEmptyPostLibrary();
+  if (existingPosts.rawText !== null) {
+    const openedPosts = await readPostLibraryStorage(adapter);
+    if (!openedPosts.ok) return openedPosts;
+    if (openedPosts.library.installations.length > 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'WORKBENCH_CATALOG_INCOMPLETE',
+          message: 'Legacy workbench migration found a non-empty new-format post catalog.',
+          existingPaths: [POST_LIBRARY_PATH]
+        }
+      };
+    }
+    resumablePosts = openedPosts.library;
+  }
+  if (existingMachines.rawText !== null) {
+    const openedMachines = await readMachineLibraryStorage(adapter, resumablePosts);
+    if (!openedMachines.ok) return openedMachines;
+    if (openedMachines.library.machines.length > 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'WORKBENCH_CATALOG_INCOMPLETE',
+          message: 'Legacy workbench migration found a non-empty new-format machine catalog.',
+          existingPaths: [MACHINE_LIBRARY_PATH]
+        }
+      };
+    }
+  }
+  try {
+    for (const directory of WORKBENCH_CATALOG_DIRECTORIES) await adapter.ensureDirectory(directory);
+    await adapter.ensureDirectory('legacy');
+    await adapter.ensureDirectory(LEGACY_V1_BACKUP_DIRECTORY);
+    await adapter.ensureDirectory(`${LEGACY_V1_BACKUP_DIRECTORY}/projects`);
+    for (const [path, backup] of backupTexts) {
+      if (!backup.existed) await adapter.writeText(path, backup.text);
+      if (await adapter.readText(path) !== backup.text) {
+        throw new Error(`Legacy backup did not read back exactly: ${path}.`);
+      }
+    }
+    for (const [path, existed] of placeholderPaths) {
+      await adapter.ensureDirectory(path.slice(0, path.lastIndexOf('/')));
+      if (!existed) await adapter.writeText(path, '');
+    }
+    for (const [path, texts] of projectTexts) await adapter.writeText(path, texts.next);
+    const posts = await initializePostLibraryStorage(adapter);
+    if (!posts.ok) throw new Error(posts.error.message);
+    const machines = await initializeMachineLibraryStorage(adapter, posts.library);
+    if (!machines.ok) throw new Error(machines.error.message);
+    await adapter.writeText(WORKBENCH_CATALOG_PATH, JSON.stringify(manifest, null, 2));
+    return { ok: true, migrated: true };
+  } catch (error) {
+    try {
+      for (const [path, texts] of projectTexts) await adapter.writeText(path, texts.previous);
+      await adapter.writeText(WORKBENCH_CATALOG_PATH, originalManifest);
+      if (existingPosts.rawText === null) await adapter.deleteText(POST_LIBRARY_PATH);
+      if (existingMachines.rawText === null) await adapter.deleteText(MACHINE_LIBRARY_PATH);
+      for (const [path, backup] of backupTexts) {
+        if (!backup.existed) await adapter.deleteText(path);
+      }
+      for (const [path, existed] of placeholderPaths) {
+        if (!existed) await adapter.deleteText(path);
+      }
+    } catch (rollbackError) {
+      return {
+        ok: false,
+        error: {
+          code: 'WORKBENCH_CATALOG_ROLLBACK_FAILED',
+          message: `Legacy workbench migration failed and rollback also failed: ${errorMessage(rollbackError)}.`,
+          originalError: storageAccessFailure('write', WORKBENCH_CATALOG_PATH, error).error,
+          rollbackErrors: [storageAccessFailure('write', WORKBENCH_CATALOG_PATH, rollbackError).error]
+        }
+      };
+    }
+    return storageAccessFailure('write', WORKBENCH_CATALOG_PATH, error);
+  }
+}
+
+function migrateLegacyWorkbenchCatalogValue(value: unknown):
+  | { readonly ok: true; readonly kind: 'current' | 'migrated'; readonly value: unknown }
+  | { readonly ok: false; readonly error: WorkbenchCatalogManifestError } {
+  const record = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+  if (record?.schemaVersion !== 2) return { ok: true, kind: 'current', value };
+  const schemaError = Value.Errors(LegacyWorkbenchCatalogManifestSchema, value).First();
+  if (schemaError) {
+    return {
+      ok: false,
+      error: {
+        code: 'WORKBENCH_CATALOG_SCHEMA_INVALID',
+        message: `Legacy workbench manifest schema violation at ${schemaError.path || '/'}: ${schemaError.message}.`,
+        path: schemaError.path
+      }
+    };
+  }
+  const legacy = value as Static<typeof LegacyWorkbenchCatalogManifestSchema>;
+  return {
+    ok: true,
+    kind: 'migrated',
+    value: {
+      ...legacy,
+      schemaVersion: WORKBENCH_SCHEMA_VERSION,
+      preferences: {
+        importUnits: legacy.preferences.importUnits,
+        recentPlanningMachineId: legacy.preferences.recentPlanningMachineId
+      }
+    }
+  };
 }
 
 export function parseWorkbenchCatalogManifest(
@@ -459,6 +759,10 @@ function storageAccessFailure(
 function isCanonicalTimestamp(value: string) {
   const milliseconds = Date.parse(value);
   return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function deepFreeze<T>(value: T): T {

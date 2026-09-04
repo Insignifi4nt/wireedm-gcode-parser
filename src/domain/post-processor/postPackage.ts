@@ -211,15 +211,18 @@ function appendEvidenceTargetScopeDiagnostics(
   }
   for (const [targetIndex, target] of packageValue.manifest.targets.entries()) {
     const machineScopes = target.machineModels.length === 0 ? [null] : target.machineModels;
+    const firmwareScopes = target.firmware.status === 'known' ? target.firmware.versions : [null];
     for (const machineModel of machineScopes) {
-      if (referenced.some((evidence) => evidenceCoversTargetScope(evidence, target.controller, machineModel))) {
-        continue;
+      for (const firmware of firmwareScopes) {
+        if (referenced.some((evidence) => evidenceCoversTargetScope(evidence, target, machineModel, firmware))) {
+          continue;
+        }
+        diagnostics.push({
+          code: 'POST_PACKAGE_EVIDENCE_SCOPE_MISMATCH',
+          path,
+          message: `Command ${commandName} has no evidence covering target /manifest/targets/${targetIndex} (${target.controllerManufacturer} ${target.controller}${machineModel === null ? ' without a machine restriction' : ` / ${machineModel}`}${firmware === null ? ' / firmware unknown' : ` / firmware ${firmware}`}).`
+        });
       }
-      diagnostics.push({
-        code: 'POST_PACKAGE_EVIDENCE_SCOPE_MISMATCH',
-        path,
-        message: `Command ${commandName} has no evidence covering target /manifest/targets/${targetIndex} (${target.controller}${machineModel === null ? ' without a machine restriction' : ` / ${machineModel}`}).`
-      });
     }
   }
 }
@@ -228,17 +231,29 @@ function evidenceIntersectsTarget(
   evidence: WireEdmPostPackageValue['evidence'][number],
   target: WireEdmPostPackageValue['manifest']['targets'][number]
 ) {
+  if (!evidence.appliesTo.controllerManufacturers.includes(target.controllerManufacturer)) return false;
   if (!evidence.appliesTo.controllerModels.includes(target.controller)) return false;
+  if (target.firmware.status === 'unknown') {
+    if (evidence.appliesTo.firmware !== undefined) return false;
+  } else if (
+    evidence.appliesTo.firmware === undefined ||
+    !target.firmware.versions.includes(evidence.appliesTo.firmware)
+  ) return false;
   if (evidence.appliesTo.machineModels.length === 0 || target.machineModels.length === 0) return true;
   return evidence.appliesTo.machineModels.some((machine) => target.machineModels.includes(machine));
 }
 
 function evidenceCoversTargetScope(
   evidence: WireEdmPostPackageValue['evidence'][number],
-  controller: string,
-  machineModel: string | null
+  target: WireEdmPostPackageValue['manifest']['targets'][number],
+  machineModel: string | null,
+  firmware: string | null
 ) {
-  if (!evidence.appliesTo.controllerModels.includes(controller)) return false;
+  if (!evidence.appliesTo.controllerManufacturers.includes(target.controllerManufacturer)) return false;
+  if (!evidence.appliesTo.controllerModels.includes(target.controller)) return false;
+  if (firmware === null ? evidence.appliesTo.firmware !== undefined : evidence.appliesTo.firmware !== firmware) {
+    return false;
+  }
   return machineModel === null
     ? evidence.appliesTo.machineModels.length === 0
     : evidence.appliesTo.machineModels.length === 0 || evidence.appliesTo.machineModels.includes(machineModel);
@@ -308,6 +323,15 @@ function appendCommandParameterDiagnostics(
       code: 'POST_PACKAGE_COMMAND_PARAMETER_INVALID',
       path: `${path}/parameters/${escapeJsonPointer(parameterName)}/centerReference/property`,
       message: `Arc-center reference property ${parameter.centerReference.property} must be a closed absolute/incremental choice.`
+    });
+  }
+  if (command.arcDirection !== undefined && ![
+    'motion.end-x', 'motion.end-y', 'motion.center-x', 'motion.center-y'
+  ].every((role) => roleNames.has(role))) {
+    diagnostics.push({
+      code: 'POST_PACKAGE_COMMAND_PARAMETER_INVALID',
+      path: `${path}/arcDirection`,
+      message: `Command ${commandName} may declare arcDirection only with both endpoint and both arc-center roles.`
     });
   }
 }

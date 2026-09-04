@@ -3324,11 +3324,11 @@ function EditorPageHarness({
       <div>{headerContent}</div>
       <aside data-test-editor-project-rail>{railContent?.expanded}</aside>
       <EditorPage
-        exportPreference={{ status: 'unconfigured' }}
         importErrorMessage={null}
         importStatus="idle"
         interactionLocked={interactionLocked}
         machines={[]}
+        posts={{ schemaVersion: 1, installations: [] }}
         onBackToDashboard={onBackToDashboard}
         onDownloadEditorFile={noop}
         onGenerateControllerArtifact={async () => ({

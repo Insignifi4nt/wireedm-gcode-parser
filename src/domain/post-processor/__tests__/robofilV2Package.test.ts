@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperations';
 import {
   createMachinePostBinding,
   parseMachineDefinition
@@ -10,6 +13,7 @@ import {
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { createWorkbenchProjectDocument } from '@/domain/workbench-catalog/workbenchProject';
 import { generateControllerArtifact } from '@/domain/wire-edm-job/controllerArtifact';
+import { parseMachinePackageArchive } from '@/domain/machine-package';
 import {
   createSavedWireEdmJobRevision,
   persistSavedWireEdmJobRevision
@@ -22,12 +26,48 @@ import { createEmptyPostLibrary, installPostPackage } from '../postLibrary';
 import { parseWireEdmPostPackage } from '../postPackage';
 
 describe('standalone Robofil 100 V2 package', () => {
-  it('ships an unbound physical machine candidate that requires explicit selection', () => {
+  it('ships one complete human-installable machine package', async () => {
+    const archive = new Uint8Array(await readFile(resolve(
+      process.cwd(),
+      'examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-package'
+    )));
+    const parsed = await parseMachinePackageArchive(archive);
+
+    expect(parsed).toMatchObject({
+      ok: true,
+      package: {
+        document: {
+          manifest: { id: 'cristian.robofil-100.v2-candidate-package', version: '2.2.0' },
+          machine: { id: 'cristian.robofil-100', activeBindingId: 'robofil-v2-candidate-2-2-0' },
+          posts: [{
+            manifest: {
+              id: 'cristian.robofil-100.v2-candidate',
+              version: '2.2.0',
+              output: {
+                fileExtension: 'iso',
+                blockNumbering: { mode: 'sequential', prefix: 'N', start: 10 },
+                programEnvelope: { prefix: ['%'] }
+              }
+            }
+          }]
+        }
+      }
+    });
+  });
+
+  it('ships a complete machine with its exact candidate setup selected', () => {
     expect(parseMachineDefinition(JSON.stringify(machineJson))).toMatchObject({
       ok: true,
       machine: {
         id: 'cristian.robofil-100',
-        bindings: []
+        activeBindingId: 'robofil-v2-candidate-2-2-0',
+        bindings: [{
+          id: 'robofil-v2-candidate-2-2-0',
+          post: {
+            packageId: 'cristian.robofil-100.v2-candidate',
+            version: '2.2.0'
+          }
+        }]
       }
     });
   });
@@ -45,18 +85,14 @@ describe('standalone Robofil 100 V2 package', () => {
     expect(reviewedNone.text).toBe(absent.text);
     expect(absent.lines).toEqual([
       'G92 X0.000 Y0.000',
-      'G60',
-      'G38',
-      'G90',
-      'G39',
-      'G40',
-      'G41 D0',
+      'G41',
+      'G38 D0',
       'G1 X10.000 Y0.000',
       'G1 X10.000 Y10.000',
       'G1 X0.000 Y10.000',
       'G1 X0.000 Y0.000',
-      'G39',
       'G40',
+      'G39',
       'M02'
     ]);
     expect(absent.text).not.toMatch(/(?:^|\n)G0\b/);
@@ -90,6 +126,75 @@ describe('standalone Robofil 100 V2 package', () => {
         expect.objectContaining({ text: 'G1 X0.000 Y0.000' }),
         expect.objectContaining({ text: 'G1 X-2.000 Y0.000' })
       ]);
+  });
+
+  it('keeps one compensation lifecycle across same-side continuous contours', async () => {
+    const installation = await installRobofilV2();
+    const program = await post(installation, compensatedTwoRectangles());
+
+    expect(program.lines).toEqual([
+      'G92 X0.000 Y0.000',
+      'G41',
+      'G38 D0',
+      'G1 X10.000 Y0.000',
+      'G1 X10.000 Y10.000',
+      'G1 X0.000 Y10.000',
+      'G1 X0.000 Y0.000',
+      'G0 X20.000 Y0.000',
+      'G1 X30.000 Y0.000',
+      'G1 X30.000 Y10.000',
+      'G1 X20.000 Y10.000',
+      'G1 X20.000 Y0.000',
+      'G40',
+      'G39',
+      'M02'
+    ]);
+  });
+
+  it('blocks a continuous multi-contour program when the compensation side changes', async () => {
+    const installation = await installRobofilV2();
+    const source = compensatedTwoRectangles();
+    const reversed = reversePathOperation(source, source.plan.operations[1].id);
+    if (!reversed) throw new Error('Expected the second contour to be reversible.');
+    const compiled = compileWireEdmExecutionPlan(reversed);
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+
+    const result = await runPost(compiled.plan, {
+      installation,
+      properties: { coordinatePrecision: 3, offsetIndex: 0 }
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({
+        code: 'POST_CUSTOM_RUNTIME_FAILED',
+        message: expect.stringContaining('must keep the same compensation side')
+      })]
+    });
+  });
+
+  it('blocks unverified wire separation and rethread transitions', async () => {
+    const installation = await installRobofilV2();
+    const document = compensatedTwoRectangles();
+    document.plan.operations[1].threadingTransition = {
+      mode: 'manual',
+      wireSeparation: 'manual-before-positioning',
+      source: 'operation-override'
+    };
+    const compiled = compileWireEdmExecutionPlan(document);
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+
+    const result = await runPost(compiled.plan, {
+      installation,
+      properties: { coordinatePrecision: 3, offsetIndex: 0 }
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: 'POST_CUSTOM_CAPABILITY_UNSUPPORTED' })
+      ])
+    });
   });
 
   it('exports an exact persisted no-lead revision through an explicit machine binding', async () => {
@@ -132,29 +237,23 @@ describe('standalone Robofil 100 V2 package', () => {
     );
     if (!persisted.ok) throw new Error(persisted.error.message);
 
-    const generated = await generateControllerArtifact(persisted.revision, {
-      status: 'configured',
-      fileExtension: { kind: 'standard', extension: 'iso' },
-      lineEnding: 'crlf'
-    });
+    const generated = await generateControllerArtifact(persisted.revision);
     if (!generated.ok) throw new Error(generated.error.message);
 
     expect(generated.artifact.fileName).toBe('robofil.no-lead-test.iso');
     expect(generated.artifact.text).toBe([
-      'G92 X0.000 Y0.000',
-      'G60',
-      'G38',
-      'G90',
-      'G39',
-      'G40',
-      'G41 D0',
-      'G1 X10.000 Y0.000',
-      'G1 X10.000 Y10.000',
-      'G1 X0.000 Y10.000',
-      'G1 X0.000 Y0.000',
-      'G39',
-      'G40',
-      'M02'
+      '%',
+      'N10 G92 X0.000 Y0.000',
+      'N20 G41',
+      'N30 G38 D0',
+      'N40 G1 X10.000 Y0.000',
+      'N50 G1 X10.000 Y10.000',
+      'N60 G1 X0.000 Y10.000',
+      'N70 G1 X0.000 Y0.000',
+      'N80 G40',
+      'N90 G39',
+      'N100 M02',
+      ''
     ].join('\r\n'));
     expect(new TextEncoder().encode(generated.artifact.text).byteLength).toBeGreaterThan(0);
   });
@@ -199,6 +298,35 @@ function compensatedRectangle(initialWirePosition = { x: 0, y: 0 }) {
   };
   const document = setManualCompensationIntent(source, source.plan.operations[0].id, 'outside');
   if (!document) throw new Error('Expected a closed compensated contour.');
+  return document;
+}
+
+function compensatedTwoRectangles() {
+  const source = createUpidFromDxfEntities([
+    { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+    { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 10, y: 10 } },
+    { type: 'line', layer: 'CUT', start: { x: 10, y: 10 }, end: { x: 0, y: 10 } },
+    { type: 'line', layer: 'CUT', start: { x: 0, y: 10 }, end: { x: 0, y: 0 } },
+    { type: 'line', layer: 'CUT', start: { x: 20, y: 0 }, end: { x: 30, y: 0 } },
+    { type: 'line', layer: 'CUT', start: { x: 30, y: 0 }, end: { x: 30, y: 10 } },
+    { type: 'line', layer: 'CUT', start: { x: 30, y: 10 }, end: { x: 20, y: 10 } },
+    { type: 'line', layer: 'CUT', start: { x: 20, y: 10 }, end: { x: 20, y: 0 } }
+  ]);
+  source.geometryBasis = 'finished-contour';
+  source.setup = {
+    initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' }
+  };
+  let document = source;
+  for (const operation of source.plan.operations) {
+    const updated = setManualCompensationIntent(document, operation.id, 'outside');
+    if (!updated) throw new Error('Expected two closed compensated contours.');
+    document = updated;
+  }
+  document.plan.operations[1].threadingTransition = {
+    mode: 'continuous',
+    wireSeparation: 'already-separated',
+    source: 'operation-override'
+  };
   return document;
 }
 

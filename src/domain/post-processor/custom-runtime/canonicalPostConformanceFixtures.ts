@@ -184,11 +184,70 @@ const multiCompensatedManualContour: WireEdmExecutionPlan = {
   }
 };
 
+const multiCompensatedContinuousContour: WireEdmExecutionPlan = {
+  format: 'wire-edm-execution-plan',
+  schemaVersion: 1,
+  coordinateFrame: { units: 'millimeters', axes: 'xy', geometryBasis: 'finished-contour' },
+  tolerance: { endpointMm: 0.001, coincidenceMm: 0.001 },
+  source: { upidSchemaVersion: 1, operationIds: ['canonical.first', 'canonical.second'] },
+  events: [
+    programStart(1, { x: 0, y: 0 }),
+    operationStart(2, 'canonical.first', 'First clockwise circle', 0),
+    passStart(3, 'canonical.first'),
+    operationEvent(4, 'canonical.first', {
+      kind: 'compensation-start',
+      wireSide: 'right',
+      keptMaterial: 'inside',
+      source: 'manual'
+    }),
+    circleMotion(5, 'canonical.first', 'circle.first', { x: 0, y: 0 }, { x: 5, y: 0 }, true),
+    operationEvent(6, 'canonical.first', {
+      kind: 'program-stop',
+      stopId: 'inspect-circle',
+      placement: 'after-contour',
+      reason: 'operator-check',
+      note: 'Inspect the first contour.',
+      point: { x: 0, y: 0 }
+    }),
+    operationEvent(7, 'canonical.first', { kind: 'compensation-end' }),
+    passEnd(8, 'canonical.first'),
+    operationEvent(9, 'canonical.first', { kind: 'operation-end' }),
+    operationStart(10, 'canonical.second', 'Second counterclockwise circle', 1),
+    passStart(11, 'canonical.second'),
+    operationEvent(12, 'canonical.second', { kind: 'wire-continue' }),
+    operationEvent(13, 'canonical.second', {
+      kind: 'position',
+      from: { x: 0, y: 0 },
+      to: { x: 20, y: 0 }
+    }),
+    operationEvent(14, 'canonical.second', {
+      kind: 'compensation-start',
+      wireSide: 'right',
+      keptMaterial: 'outside',
+      source: 'manual'
+    }),
+    circleMotion(15, 'canonical.second', 'circle.second', { x: 20, y: 0 }, { x: 25, y: 0 }, false),
+    operationEvent(16, 'canonical.second', { kind: 'compensation-end' }),
+    passEnd(17, 'canonical.second'),
+    operationEvent(18, 'canonical.second', { kind: 'operation-end' }),
+    programEnd(19)
+  ],
+  requirements: {
+    circularInterpolation: ['clockwise', 'counterclockwise'],
+    controllerCompensation: true,
+    operationCount: 2,
+    programStops: true,
+    threading: [],
+    wireSeparation: false
+  }
+};
+
 export const CANONICAL_POST_PLAN_FIXTURES: Readonly<Record<string, WireEdmExecutionPlan>> =
   deepFreeze({
     'core.single-closed-contour.v1': singleClosedContour,
     'core.single-compensated-direct.v1': singleCompensatedDirectContour,
-    'core.multi-compensated-manual.v1': multiCompensatedManualContour
+    'core.multi-compensated-manual.v1': multiCompensatedManualContour,
+    'core.multi-compensated-continuous.v1': multiCompensatedContinuousContour
   });
 
 function programStart(ordinal: number, initialWirePosition: Readonly<{ x: number; y: number }>): WireEdmExecutionEvent {

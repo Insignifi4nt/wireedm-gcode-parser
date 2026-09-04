@@ -1,5 +1,10 @@
 # Portable UPID Projects Design
 
+> Historical design note: the 2026-09-04 complete machine-package design supersedes
+> its references to receiving-workbench machine profiles and host-owned output rules.
+> Portable UPID remains machine-neutral; controller realization comes from the exact
+> setup of an installed `.wireedm-package`.
+
 ## Goal
 
 Make UPID a cleanly importable and exportable path-work format so users can move path projects between browser caches, browsers, computers, and machines without carrying a machine profile or an entire workbench.

@@ -35,6 +35,7 @@
         "targets",
         "capabilities",
         "execution",
+        "output",
         "properties"
       ],
       "properties": {
@@ -73,7 +74,9 @@
             "type": "object",
             "required": [
               "manufacturer",
+              "controllerManufacturer",
               "controller",
+              "firmware",
               "machineModels"
             ],
             "properties": {
@@ -82,10 +85,57 @@
                 "maxLength": 160,
                 "type": "string"
               },
+              "controllerManufacturer": {
+                "minLength": 1,
+                "maxLength": 160,
+                "type": "string"
+              },
               "controller": {
                 "minLength": 1,
                 "maxLength": 160,
                 "type": "string"
+              },
+              "firmware": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "status"
+                    ],
+                    "properties": {
+                      "status": {
+                        "const": "unknown",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "status",
+                      "versions"
+                    ],
+                    "properties": {
+                      "status": {
+                        "const": "known",
+                        "type": "string"
+                      },
+                      "versions": {
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "uniqueItems": true,
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                ]
               },
               "machineModels": {
                 "maxItems": 64,
@@ -239,11 +289,147 @@
                 {
                   "const": "controller-native-operation",
                   "type": "string"
+                },
+                {
+                  "const": "controller-native-continuous",
+                  "type": "string"
                 }
               ]
             },
             "compensationRequiredForEveryOperation": {
               "type": "boolean"
+            }
+          }
+        },
+        "output": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "fileExtension",
+            "lineEnding",
+            "encoding",
+            "finalNewline",
+            "blockNumbering",
+            "programEnvelope"
+          ],
+          "properties": {
+            "fileExtension": {
+              "minLength": 1,
+              "maxLength": 16,
+              "pattern": "^[A-Za-z0-9]+$",
+              "type": "string"
+            },
+            "lineEnding": {
+              "anyOf": [
+                {
+                  "const": "lf",
+                  "type": "string"
+                },
+                {
+                  "const": "crlf",
+                  "type": "string"
+                }
+              ]
+            },
+            "encoding": {
+              "anyOf": [
+                {
+                  "const": "ascii",
+                  "type": "string"
+                },
+                {
+                  "const": "utf-8",
+                  "type": "string"
+                }
+              ]
+            },
+            "finalNewline": {
+              "type": "boolean"
+            },
+            "blockNumbering": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "mode"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "const": "none",
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "mode",
+                    "prefix",
+                    "start",
+                    "increment",
+                    "minimumWidth"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "const": "sequential",
+                      "type": "string"
+                    },
+                    "prefix": {
+                      "minLength": 1,
+                      "maxLength": 8,
+                      "pattern": "^[A-Za-z]+$",
+                      "type": "string"
+                    },
+                    "start": {
+                      "minimum": 0,
+                      "maximum": 99999999,
+                      "type": "integer"
+                    },
+                    "increment": {
+                      "minimum": 1,
+                      "maximum": 99999999,
+                      "type": "integer"
+                    },
+                    "minimumWidth": {
+                      "minimum": 1,
+                      "maximum": 8,
+                      "type": "integer"
+                    }
+                  }
+                }
+              ]
+            },
+            "programEnvelope": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "prefix",
+                "suffix"
+              ],
+              "properties": {
+                "prefix": {
+                  "maxItems": 4,
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[^\\r\\n\\u0000]+$",
+                    "type": "string"
+                  }
+                },
+                "suffix": {
+                  "maxItems": 4,
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[^\\r\\n\\u0000]+$",
+                    "type": "string"
+                  }
+                }
+              }
             }
           }
         },
@@ -469,6 +655,18 @@
                   "maxLength": 512,
                   "pattern": "^[^\\r\\n\\u0000]+$",
                   "type": "string"
+                },
+                "arcDirection": {
+                  "anyOf": [
+                    {
+                      "const": "clockwise",
+                      "type": "string"
+                    },
+                    {
+                      "const": "counterclockwise",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "parameters": {
                   "unevaluatedProperties": false,
@@ -1260,10 +1458,22 @@
             "additionalProperties": false,
             "type": "object",
             "required": [
+              "controllerManufacturers",
               "controllerModels",
               "machineModels"
             ],
             "properties": {
+              "controllerManufacturers": {
+                "minItems": 1,
+                "maxItems": 64,
+                "uniqueItems": true,
+                "type": "array",
+                "items": {
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "type": "string"
+                }
+              },
               "controllerModels": {
                 "minItems": 1,
                 "maxItems": 64,
@@ -1349,6 +1559,7 @@
           "planFixture",
           "properties",
           "expectedProgram",
+          "expectedArtifact",
           "evidenceRefs"
         ],
         "properties": {
@@ -1395,6 +1606,10 @@
           },
           "expectedProgram": {
             "maxLength": 262144,
+            "type": "string"
+          },
+          "expectedArtifact": {
+            "maxLength": 524288,
             "type": "string"
           },
           "evidenceRefs": {

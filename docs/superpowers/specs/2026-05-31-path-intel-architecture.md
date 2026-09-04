@@ -4,6 +4,11 @@ Date: 2026-05-31
 
 This slice changes DXF import from an entity-order converter into a path planning pipeline.
 
+> Historical design note: the 2026-09-04 complete machine-package design supersedes
+> the older machine-profile ownership language below. Path planning remains
+> controller-neutral; controller output and file rules come from an exact machine
+> setup supplied by a `.wireedm-package`.
+
 The reason is not only cleaner G-code. The editor needs a geometry-first model that can survive
 future workbench operations: reordering contours, reversing directions, moving start points,
 splitting arcs, attaching user choices, validating machine bounds, and exporting through different

@@ -117,11 +117,11 @@ export function WorkbenchSettingsDialog({
           <button aria-label="Close settings" className="mb-4 flex size-8 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent hover:text-foreground" onClick={onClose} ref={closeButtonRef} type="button"><X className="size-4" /></button>
           <nav aria-label="Settings sections" className="grid gap-1">
             <SectionButton active={activeSection === 'storage'} icon={<Database className="size-4" />} label="Storage" onClick={() => setActiveSection('storage')} />
-            <SectionButton active={activeSection === 'machine-output'} icon={<SlidersHorizontal className="size-4" />} label="Machines & posts" onClick={() => setActiveSection('machine-output')} />
+            <SectionButton active={activeSection === 'machine-output'} icon={<SlidersHorizontal className="size-4" />} label="Machines & setups" onClick={() => setActiveSection('machine-output')} />
           </nav>
         </aside>
         <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-          <header className="border-b border-border p-4"><h2 className="text-base font-semibold">{activeSection === 'storage' ? 'Storage' : 'Machines, posts & output'}</h2></header>
+          <header className="border-b border-border p-4"><h2 className="text-base font-semibold">{activeSection === 'storage' ? 'Storage' : 'Machines & setups'}</h2></header>
           <div className="work-region-scrollbar min-h-0 overflow-auto p-4">
             {activeSection === 'storage' ? (
               <div className="grid gap-5 text-[11px]">
@@ -148,7 +148,7 @@ export function WorkbenchSettingsDialog({
             ) : connectedWorkbench ? (
               <MachinePostSettingsPanel connectedWorkbench={connectedWorkbench} interactionLocked={interactionLocked} settingsErrorMessage={settingsErrorMessage} settingsStatus={settingsStatus} {...machinePostActions} />
             ) : (
-              <Message tone="error">Connect a valid V2 workbench before managing machines or posts.</Message>
+              <Message tone="error">Connect a valid workbench before managing machine packages.</Message>
             )}
           </div>
         </section>

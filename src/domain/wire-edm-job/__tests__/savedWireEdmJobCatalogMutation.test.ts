@@ -8,6 +8,7 @@ import {
 import { minimalPostPackage } from '@/domain/post-processor/__tests__/postPackageFixture';
 import { createEmptyPostLibrary, installPostPackage } from '@/domain/post-processor/postLibrary';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
+import { SAVED_REVISION_TRANSACTION_PATH } from '@/domain/storage/savedRevisionTransaction';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { initializeWorkbenchCatalog, WORKBENCH_CATALOG_PATH } from '@/domain/workbench-catalog/workbenchCatalog';
 import {
@@ -16,6 +17,7 @@ import {
   readStoredWorkbenchProject
 } from '@/domain/workbench-catalog/workbenchCatalogMutations';
 import { createWorkbenchProjectDocument } from '@/domain/workbench-catalog/workbenchProject';
+import { updateWorkbenchCatalogPreferences } from '@/domain/workbench-catalog/storage/updateWorkbenchCatalogPreferences';
 import { workbenchProjectRevisionPath } from '@/domain/workbench-catalog/workbenchProjectStorage';
 
 import {
@@ -27,6 +29,7 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
   readonly files = new Map<string, string>();
   readonly mutations: string[] = [];
+  readonly durableStates: Map<string, string>[] = [];
   private failurePath: string | null = null;
 
   constructor(readonly name = 'saved-revision-catalog') {}
@@ -39,10 +42,12 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
       throw new Error('injected write failure');
     }
     this.files.set(path, contents);
+    this.durableStates.push(new Map(this.files));
   }
   async deleteText(path: string) {
     this.mutations.push(`delete:${path}`);
     this.files.delete(path);
+    this.durableStates.push(new Map(this.files));
   }
   failNextWrite(path: string) { this.failurePath = path; }
 }
@@ -109,9 +114,74 @@ describe('catalog-owned saved revision persistence', () => {
       error: { code: 'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED', operation: 'write' }
     });
     expect(fixture.adapter.mutations).toEqual([
+      `write:${SAVED_REVISION_TRANSACTION_PATH}`,
       `write:${revisionPath}`,
-      `delete:${revisionPath}`
+      `delete:${revisionPath}`,
+      `delete:${SAVED_REVISION_TRANSACTION_PATH}`
     ]);
+  });
+
+  it('reopens consistently after termination at every saved-revision write boundary', async () => {
+    const fixture = await catalogRevisionFixture();
+    const before = new Map(fixture.adapter.files);
+    fixture.adapter.durableStates.length = 0;
+    const saved = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    if (!saved.ok) throw new Error(saved.error.message);
+    const after = new Map(fixture.adapter.files);
+    expect(fixture.adapter.durableStates).toHaveLength(5);
+
+    for (const [index, state] of fixture.adapter.durableStates.entries()) {
+      const restarted = new MemoryAdapter(`restart-${index}`);
+      for (const [path, text] of state) restarted.files.set(path, text);
+      // A fresh adapter represents a new process: no original catch/finally runs.
+      const reopened = await initializeWorkbenchCatalog(restarted);
+      if (!reopened.ok) throw new Error(`Boundary ${index}: ${reopened.error.message}`);
+      expect(restarted.files).toEqual(index < 3 ? before : after);
+      expect(await readStoredWorkbenchProject(reopened.workbench, 'fixture.part')).toMatchObject({
+        ok: true,
+        project: { savedRevisionIds: index < 3 ? [] : ['revision.0001'] }
+      });
+      // Recovery is idempotent.
+      expect(await initializeWorkbenchCatalog(restarted)).toMatchObject({ ok: true });
+    }
+  });
+
+  it('recovers before parsing a manifest interrupted mid-write and can retry recovery', async () => {
+    const fixture = await catalogRevisionFixture();
+    const before = new Map(fixture.adapter.files);
+    fixture.adapter.durableStates.length = 0;
+    expect(await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate)).toMatchObject({ ok: true });
+    const interrupted = fixture.adapter.durableStates[2];
+    const restarted = new MemoryAdapter('partial-manifest');
+    for (const [path, text] of interrupted) restarted.files.set(path, text);
+    restarted.files.set(WORKBENCH_CATALOG_PATH, '{"format":');
+    restarted.failNextWrite(WORKBENCH_CATALOG_PATH);
+    expect(await initializeWorkbenchCatalog(restarted)).toMatchObject({ ok: false });
+    expect(restarted.files.has(SAVED_REVISION_TRANSACTION_PATH)).toBe(true);
+    expect(await initializeWorkbenchCatalog(restarted)).toMatchObject({ ok: true });
+    expect(restarted.files).toEqual(before);
+  });
+
+  it('recovers a pending revision before a subsequent preference mutation', async () => {
+    const fixture = await catalogRevisionFixture();
+    fixture.adapter.durableStates.length = 0;
+    expect(await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate)).toMatchObject({ ok: true });
+    const interrupted = fixture.adapter.durableStates[2];
+    fixture.adapter.files.clear();
+    for (const [path, text] of interrupted) fixture.adapter.files.set(path, text);
+
+    const updated = await updateWorkbenchCatalogPreferences(fixture.workbench, {
+      preferences: { ...fixture.workbench.manifest.preferences, importUnits: { mode: 'fixed', unit: 'inches' } },
+      updatedAt: new Date('2026-08-28T14:00:00.000Z')
+    });
+    if (!updated.ok) throw new Error(updated.error.message);
+    expect(fixture.adapter.files.has(SAVED_REVISION_TRANSACTION_PATH)).toBe(false);
+    const reopened = await initializeWorkbenchCatalog(fixture.adapter);
+    if (!reopened.ok) throw new Error(reopened.error.message);
+    expect(reopened.workbench.manifest.preferences.importUnits).toEqual({ mode: 'fixed', unit: 'inches' });
+    expect(await readStoredWorkbenchProject(reopened.workbench, 'fixture.part')).toMatchObject({
+      ok: true, project: { savedRevisionIds: [] }
+    });
   });
 
   it('restores an indexed revision when project deletion cannot commit its manifest', async () => {
@@ -200,9 +270,13 @@ function machineValue(): MachineDefinitionValue {
     id: 'fixture.machine',
     name: 'Fixture machine',
     identity: {
-      manufacturer: 'Fixture',
-      model: 'Machine',
-      controller: { manufacturer: 'Fixture', model: 'Controller' }
+      manufacturer: 'Charmilles',
+      model: 'Robofil 100',
+      controller: {
+        manufacturer: 'Charmilles',
+        model: 'Robofil Classic',
+        firmware: 'Local verified configuration'
+      }
     },
     limits: {
       xTravel: { status: 'known', millimeters: 100 },
@@ -211,6 +285,7 @@ function machineValue(): MachineDefinitionValue {
     hardware: { manualThreading: true, automaticThreading: false },
     evidence: [],
     bindings: [],
+    activeBindingId: null,
     notes: 'Test fixture.'
   };
 }

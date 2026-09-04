@@ -1,5 +1,7 @@
 # Segment Geometry Presentation Implementation Plan
 
+> Historical implementation plan. The work is already represented in the current editor and tests; `design-qa.md` and the old localhost instructions were removed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace generic, duplicated segment details with a shared type-specific presentation for lines, arcs, and circles in both the Geometry tree and Inspector.
@@ -180,7 +182,7 @@ Run: `npm run build`
 - [ ] **Step 3: Verify with the requested Vercel browser agent**
 
 Use `npx agent-browser` against
-`http://localhost:3000/wireedm-gcode-parser/`. Inspect line, arc, and circle
+`http://localhost:3777/wireedm-gcode-parser/`. Inspect line, arc, and circle
 segment details plus the selected-segment Inspector; test segment/cut-start
 selection and disclosures; capture screenshots and check browser errors.
 

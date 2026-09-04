@@ -3,9 +3,34 @@
   "postPackageSchemaVersions": [
     1
   ],
+  "machinePackageSchemaVersions": [
+    1
+  ],
   "engineApiVersions": [
     "1"
   ],
+  "motionAudit": {
+    "coordinates": "formatted-quantized-values",
+    "arcDirection": "selected-command-declaration",
+    "legacyArcPackages": "readable-without-rewrite; explicit-direction-required-for-execution",
+    "storedLibraryReopen": "validate-structure-semantics-and-exact-canonical-hash; no-installation-conformance"
+  },
+  "installation": {
+    "artifactExtension": ".wireedm-package",
+    "archiveLimits": {
+      "compressedBytes": 33554432,
+      "expandedBytes": 67108864,
+      "entries": 2048
+    },
+    "canonicalScenarioFile": "sdk/canonical-installation-scenarios.json",
+    "declarationFiles": [
+      "sdk/wire-edm-machine-package.d.ts",
+      "sdk/wire-edm-machine-package-source.d.ts"
+    ],
+    "buildCommand": "npm run machine-package:build -- <source-directory> [output.wireedm-package]",
+    "validateCommand": "npm run machine-package:validate -- <package.wireedm-package>",
+    "inspectCommand": "npm run machine-package:inspect -- <package.wireedm-package>"
+  },
   "conformance": {
     "runnerVersion": "1",
     "command": "npm run post:conformance -- <package.wireedm-post.json>",
@@ -13,7 +38,8 @@
     "canonicalFixtureIds": [
       "core.single-closed-contour.v1",
       "core.single-compensated-direct.v1",
-      "core.multi-compensated-manual.v1"
+      "core.multi-compensated-manual.v1",
+      "core.multi-compensated-continuous.v1"
     ]
   }
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createEmptyPostLibrary, installPostPackage } from '@/domain/post-processor/postLibrary';
 
 import {
+  activateMachinePostBinding,
   createMachinePostBinding,
   parseMachineDefinition,
   removeMachinePostBinding,
@@ -67,6 +68,11 @@ describe('physical machine definitions and exact post bindings', () => {
       { version: '1.0.0', properties: { coordinatePrecision: 4 } },
       { version: '2.0.0', properties: { coordinatePrecision: 5 } }
     ]);
+
+    expect(activateMachinePostBinding(second.machine, 'candidate-v2')).toMatchObject({
+      ok: true,
+      machine: { activeBindingId: 'candidate-v2' }
+    });
   });
 
   it('returns property diagnostics instead of filling required values', async () => {
@@ -149,6 +155,28 @@ describe('physical machine definitions and exact post bindings', () => {
     expect(parseMachineDefinition(serialized)).toEqual({
       ok: true,
       machine: created.machine
+    });
+  });
+
+  it('rejects a setup whose exact post does not target the machine controller firmware', async () => {
+    const installation = await postInstallationFixture();
+    const created = createMachinePostBinding(machineDefinitionFixture(), installation, {
+      id: 'production',
+      name: 'Production',
+      properties: { coordinatePrecision: 3 },
+      compatibility: compatibilityFixture()
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const changedFirmware = structuredClone(created.machine) as MachineDefinitionValue;
+    changedFirmware.identity.controller.firmware = 'Different firmware';
+    const parsed = parseMachineDefinition(JSON.stringify(changedFirmware));
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+    const library = await installPostPackage(createEmptyPostLibrary(), installation.package);
+    if (!library.ok) throw new Error(library.error.message);
+
+    expect(await resolveMachinePostBinding(parsed.machine, library.library, 'production')).toMatchObject({
+      ok: false,
+      error: { code: 'MACHINE_POST_BINDING_TARGET_MISMATCH', bindingId: 'production' }
     });
   });
 

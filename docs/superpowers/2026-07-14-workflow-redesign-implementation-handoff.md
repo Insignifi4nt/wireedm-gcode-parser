@@ -1,5 +1,7 @@
 # Workflow Redesign Implementation Handoff
 
+> Historical handoff. Its implementation instructions have already been superseded. Do not execute the actions below against the current codebase.
+
 Date: 2026-07-14
 
 ## Mandatory First Actions

@@ -69,6 +69,12 @@ test('cancels DXF review without writes or editor navigation', async ({ page }) 
 
 async function openReadyWorkbench(page: Page) {
   await page.goto('/');
+  const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
+  await onboarding.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
+  if (await onboarding.isVisible()) {
+    await onboarding.getByRole('button', { name: 'Go Build!' }).click();
+    await expect(onboarding).toHaveCount(0);
+  }
   await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
 }
 

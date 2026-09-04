@@ -33,10 +33,9 @@ describe('V2 app workflows', () => {
 
     expect(manifest).toMatchObject({
       format: 'wire-edm-workbench',
-      schemaVersion: 2,
+      schemaVersion: 3,
       preferences: {
         importUnits: { mode: 'ask' },
-        export: { status: 'unconfigured' },
         recentPlanningMachineId: null
       },
       projects: []
@@ -51,7 +50,7 @@ describe('V2 app workflows', () => {
       schemaVersion: 1,
       installations: []
     });
-    expect(context.container.textContent).toContain('Export unconfigured');
+    expect(context.container.textContent).toContain('No active output');
     expect(context.container.textContent).toContain('No planning machine');
   });
 
@@ -92,7 +91,7 @@ describe('V2 app workflows', () => {
     expect(project).not.toHaveProperty('post');
   });
 
-  it('reports an unsupported catalog instead of opening replacement storage', async () => {
+  it('reports an invalid legacy catalog instead of opening replacement storage', async () => {
     window.localStorage.setItem(`${storagePrefix}workbench.json`, JSON.stringify({
       format: 'wire-edm-workbench',
       schemaVersion: 1
@@ -100,7 +99,7 @@ describe('V2 app workflows', () => {
 
     await renderApp(context);
 
-    expect(context.container.textContent).toContain('schema version 1 is unsupported');
+    expect(context.container.textContent).toContain('Legacy workbench manifest schema violation');
     expect(context.container.textContent).toContain('Storage not connected');
     expect(storedJson('workbench.json').schemaVersion).toBe(1);
   });
@@ -112,14 +111,14 @@ describe('V2 app workflows', () => {
     });
     await act(async () => {
       [...context.container.querySelectorAll('button')]
-        .find((button) => button.textContent?.trim() === 'Machines & posts')
+        .find((button) => button.textContent?.trim() === 'Machines & setups')
         ?.click();
     });
 
-    expect(context.container.textContent).toContain('Physical machine library');
-    expect(context.container.textContent).toContain('Versioned post library');
+    expect(context.container.textContent).toContain('Install a machine package');
+    expect(context.container.textContent).toContain('Installed machines');
     expect((context.container.querySelector('select') as HTMLSelectElement).value).toBe('ask');
-    expect(context.container.textContent).toContain('Select a machine');
+    expect(context.container.textContent).toContain('No machines installed');
   });
 });
 

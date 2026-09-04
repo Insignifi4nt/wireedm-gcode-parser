@@ -325,10 +325,7 @@ function compileOperation(input: {
     }
     const threadingIssue = threadingTransitionIssue(
       threading,
-      operation,
-      input.currentPosition,
-      operationEntryPoint(operation),
-      document.options.coincidenceEpsilon
+      operation
     );
     if (threadingIssue) {
       return blockedForOperation('EXECUTION_PLAN_THREADING_INVALID', threadingIssue, operation);
@@ -697,17 +694,12 @@ function explicitThreadingTransition(
 
 function threadingTransitionIssue(
   transition: OperationThreadingTransition,
-  operation: PathOperation,
-  previousEnd: Point2,
-  nextEntry: Point2,
-  tolerance: number
+  operation: PathOperation
 ) {
   if (transition.mode === 'continuous') {
-    return transition.wireSeparation === 'already-separated' &&
-      !operation.closed &&
-      pointsEqual(previousEnd, nextEntry, tolerance)
+    return transition.wireSeparation === 'already-separated'
       ? null
-      : `Continuous threading for ${operation.displayName} requires contiguous open geometry and already-separated wire.`;
+      : `Continuous threading for ${operation.displayName} cannot request wire separation.`;
   }
   if (transition.mode === 'manual') {
     return transition.wireSeparation === 'already-separated' ||

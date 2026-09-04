@@ -2,6 +2,11 @@
 
 Date: 2026-07-10
 
+> Historical design note: the 2026-09-04 complete machine-package design supersedes
+> this document's machine-profile and user-configurable output-format references.
+> Current settings install complete `.wireedm-package` files and display the active
+> setup's post-owned controller-file rules.
+
 ## Goal
 
 Rebuild the Wire EDM Workbench front end as a compact, professional desktop engineering tool while preserving every implemented workflow, file type, data model, calculation, persistence path, edit operation, warning, and export behavior.

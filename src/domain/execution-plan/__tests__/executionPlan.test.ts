@@ -75,6 +75,39 @@ describe('controller-neutral Wire EDM execution plans', () => {
     });
   });
 
+  it('represents an explicit continuous transition between disconnected closed contours', () => {
+    const document = createUpidFromDxfEntities([
+      ...rectangle(0, 0, 10, 10),
+      ...rectangle(20, 0, 30, 10)
+    ]);
+    document.setup = {
+      initialWirePosition: {
+        kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed'
+      }
+    };
+    document.plan.operations[1].threadingTransition = {
+      mode: 'continuous',
+      wireSeparation: 'already-separated',
+      source: 'operation-override'
+    };
+
+    const compiled = compileWireEdmExecutionPlan(document);
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+
+    expect(compiled.plan.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'wire-continue' }),
+      expect.objectContaining({
+        kind: 'position',
+        from: { x: 0, y: 0 },
+        to: { x: 20, y: 0 }
+      })
+    ]));
+    expect(compiled.plan.requirements).toMatchObject({
+      threading: [],
+      wireSeparation: false
+    });
+  });
+
   it('splits contour motion around an exact remaining-distance program stop', () => {
     const document = createUpidFromDxfEntities([
       { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }

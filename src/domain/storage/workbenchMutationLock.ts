@@ -16,7 +16,10 @@ export async function withWorkbenchMutationLock<Result>(
 
   await predecessor;
   try {
-    return await mutation();
+    const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+    return locks
+      ? await locks.request(`wire-edm-workbench:${adapter.kind}:${adapter.name}`, mutation)
+      : await mutation();
   } finally {
     release();
     if (mutationTails.get(adapter) === tail) mutationTails.delete(adapter);

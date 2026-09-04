@@ -1,0 +1,15 @@
+# Machine-package authoring instructions
+
+These instructions govern an agent building a human-installable `.wireedm-package`.
+
+1. Read `README.md`, `SPEC.md`, `AUTHORING_TASK.md`, `compatibility.json`, both machine-package schemas, the machine and post schemas, SDK declaration, diagnostic catalogue, canonical plan fixtures, and every supplied machine/controller source before editing.
+2. Build the whole package even when the requested change is only a new post version. The source must include the complete physical machine, every included post, complete exact setups, one active setup, all output rules, evidence, and fixtures.
+3. If the prior source material is unavailable, ask the human to attach or point to it. Never reconstruct a requirement, identity, digest, property, output rule, compatibility acknowledgement, or verification fact from memory.
+4. Treat machine, controller, and firmware identity as exact scope. Do not infer semantics from another controller or familiar G-code spelling.
+5. Verify source digests before interpreting evidence. Never invent a page, quotation, selector, digest, review, test, or verification record.
+6. Keep geometry and machining decisions out of post code. Declare and exercise every emitted command, state transition, capability, property boundary, lifecycle branch, and known failure.
+7. Put extension, line ending, encoding, and final-newline policy in each post manifest. Do not create workbench or user configuration for controller-file formatting.
+8. Compute each post's canonical content hash, then bind that exact ID, version, and hash in the machine setup. A content change under an existing post ID and version is invalid; increment the version.
+9. Leave new or changed setups `unverified` unless the human supplies an exact physical verification record. Conformance is not physical verification.
+10. Run every command in the completion gate. Inspect golden-output changes against evidence; never update expected text merely to make a test pass.
+11. Deliver only the built `.wireedm-package` to the installer. Loose JSON and evidence files remain authoring inputs.

@@ -1,12 +1,16 @@
 Robofil 100 V2 candidate policy record
 
-Source implementation: repository commit 8b6349b, src/domain/post/upidMachinePost.ts.
 Recorded candidate programs: prisma-recommended.iso and prisma-exterior-reversed.iso.
 
-The recorded candidate lifecycle emits G92, G60, G38, and G90 at program start. Each
-operation begins with G39 and G40 before any G0 positioning. Compensation is then
-activated with G41 D0 or G42 D0. Linear and absolute-center circular interpolation use
-G1, G2, or G3. Program completion emits G39, G40, and M02.
+The operator-corrected lifecycle emits only G92 at program start. The program selects the
+compensation side with G41 or G42, then activates the offset with G38 D0. Linear and
+absolute-center circular interpolation use G1, G2, or G3. Program completion emits G40,
+G39, and M02 in that order.
+
+When consecutive contours use the same side and the wire remains threaded, G0 moves between
+contours without cancelling compensation. The program emits one G41/G42 and G38 D0 pair and
+one final G40 and G39 pair. Mixed-side and wire-separation/rethread transitions remain blocked
+until an exact Robofil 100 sequence is verified.
 
 The old V2 implementation and the later platform prototype represented manual wire
 separation, manual threading, and explicit operator stops with M00. Those three uses

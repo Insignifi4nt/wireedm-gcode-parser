@@ -1,5 +1,7 @@
 # Guided Workflow and Production Path Design
 
+> Historical design record. Current product rules, package authoring documentation, and tested domain models take precedence over controller examples below.
+
 Date: 2026-07-14
 
 ## Goal

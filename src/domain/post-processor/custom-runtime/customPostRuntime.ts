@@ -212,7 +212,6 @@ async function executeOnce(
     for (const event of plan.events) {
       state.currentEvent = event;
       state.currentDisposition = 'none';
-      state.currentMotionEnd = null;
       const eventValue = evaluate(
         context,
         `(${JSON.stringify(event)})`,
@@ -440,6 +439,19 @@ function emitCommand(
     ));
     return;
   }
+  if (!motionAction && (
+    command.arcDirection !== undefined ||
+    Object.values(command.parameters).some(({ role }) => role !== 'none') ||
+    command.effects.includes('position.changed')
+  )) {
+    recordFatal(state, diagnostic(
+      'POST_CUSTOM_MOTION_ROLE_INVALID',
+      `Motion-producing command ${commandValue} must use emitMotion during a motion or position event.`,
+      event.id,
+      commandValue
+    ));
+    return;
+  }
   const parameters = validateParameters(commandValue, command, parametersValue);
   if (!parameters.ok) {
     recordFatal(state, diagnostic(
@@ -460,8 +472,18 @@ function emitCommand(
     ));
     return;
   }
+  const rendered = renderTemplate(command.template, command, parameters.values, properties);
+  if (!rendered.ok) {
+    recordFatal(state, diagnostic(
+      'POST_CUSTOM_PARAMETER_INVALID',
+      rendered.message,
+      event.id,
+      commandValue
+    ));
+    return;
+  }
   const motion = motionAction
-    ? deriveMotion(event, command, parameters.values, properties, state.currentMotionEnd)
+    ? deriveMotion(event, command, rendered.values, properties, state.currentMotionEnd)
     : { ok: true as const, motion: null };
   if (!motion.ok) {
     recordFatal(state, diagnostic(
@@ -476,16 +498,6 @@ function emitCommand(
     recordFatal(state, diagnostic(
       'POST_CUSTOM_MOTION_ROLE_INVALID',
       `Motion event ${event.id} must use emitMotion.`,
-      event.id,
-      commandValue
-    ));
-    return;
-  }
-  const rendered = renderTemplate(command.template, command, parameters.values, properties);
-  if (!rendered.ok) {
-    recordFatal(state, diagnostic(
-      'POST_CUSTOM_PARAMETER_INVALID',
-      rendered.message,
       event.id,
       commandValue
     ));
@@ -601,13 +613,19 @@ function deriveMotion(
   const start = previousEnd ?? (event.kind === 'position' ? event.from : event.start);
   const end = { x: endX, y: endY };
   if (event.kind === 'position') {
+    if (hasCenterRole(command) || command.arcDirection !== undefined) {
+      return { ok: false, message: 'A positioning command cannot declare circular motion.' };
+    }
     return { ok: true, motion: { motion: 'linear', role: 'position', start: copyPoint(start), end } };
   }
   if (event.motion === 'linear') {
-    if (hasCenterRole(command)) {
-      return { ok: false, message: 'A linear motion command cannot declare arc-center roles.' };
+    if (hasCenterRole(command) || command.arcDirection !== undefined) {
+      return { ok: false, message: 'A linear motion command cannot declare circular motion.' };
     }
     return { ok: true, motion: { motion: 'linear', role: event.role, start: copyPoint(start), end } };
+  }
+  if (command.arcDirection === undefined) {
+    return { ok: false, message: 'This saved circular command has no arcDirection. Publish and install a new post version declaring clockwise or counterclockwise; existing package and revision bytes are not rewritten.' };
   }
   const center = deriveCenter(command, values, properties, start);
   if (!center.ok) return center;
@@ -619,10 +637,8 @@ function deriveMotion(
       start: copyPoint(start),
       end,
       center: center.point,
-      ...(event.clockwise === undefined ? {} : { clockwise: event.clockwise }),
-      ...(event.fullCircle === undefined
-        ? {}
-        : { fullCircle: pointsCoincide(start, end) })
+      clockwise: command.arcDirection === 'clockwise',
+      fullCircle: pointsCoincide(start, end)
     }
   };
 }
@@ -698,21 +714,27 @@ function renderTemplate(
   command: RuntimeCommand,
   values: Readonly<Record<string, string | number>>,
   properties: Readonly<Record<string, PostPropertyValue>>
-): { readonly ok: true; readonly text: string } | { readonly ok: false; readonly message: string } {
+):
+  | { readonly ok: true; readonly text: string; readonly values: Readonly<Record<string, string | number>> }
+  | { readonly ok: false; readonly message: string } {
   const rendered: Record<string, string> = {};
+  const formattedValues: Record<string, string | number> = {};
   for (const [name, definition] of Object.entries(command.parameters)) {
     const value = values[name];
     if (typeof value === 'number' && definition.type === 'number') {
       const formatted = formatNumberParameter(name, value, definition.format, properties);
       if (!formatted.ok) return formatted;
       rendered[name] = formatted.text;
+      formattedValues[name] = Number(formatted.text.replace(',', '.'));
     } else {
       rendered[name] = String(value);
+      formattedValues[name] = value;
     }
   }
   return {
     ok: true,
-    text: template.replace(/\{([A-Za-z0-9._-]+)\}/g, (_placeholder, name: string) => rendered[name])
+    text: template.replace(/\{([A-Za-z0-9._-]+)\}/g, (_placeholder, name: string) => rendered[name]),
+    values: formattedValues
   };
 }
 

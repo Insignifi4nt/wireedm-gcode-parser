@@ -58,7 +58,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Use a workbench folder for disk-visible storage. If the remembered folder needs permission again, Settings shows Reconnect Workbench Folder; otherwise it asks you to choose the folder.'
           },
           {
-            text: 'Machine profile templates, work area limits, and output extension choices live in the active workbench. The extension changes the written file name, not the planned path.'
+            text: 'Machine identity, work-area limits, and active setups come from installed machine packages. Controller-file rules such as extension and line endings come from the exact post processor in that setup.'
           }
         ]
       },
@@ -66,7 +66,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '2. Import Flows',
         steps: [
           {
-            text: 'From the dashboard, import a DXF to create a clean internal path project. A controller artifact is generated later from a saved revision and an explicitly selected machine binding.'
+            text: 'From the dashboard, import a DXF to create a clean internal path project. A controller artifact is generated later from a saved revision and the active setup of the planned machine.'
           },
           {
             text: 'From the editor, click Import Program to choose a .gcode, .nc, .iso, or .txt file. External programs pass through the cleanup/display pipeline before canvas display and editing.',
@@ -193,7 +193,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Foloseste un folder workbench pentru stocare vizibila pe disk. Daca folderul retinut cere permisiune din nou, Settings arata Reconnect Workbench Folder; altfel cere sa alegi folderul.'
           },
           {
-            text: 'Template-urile din profilul de masina, limitele zonei de lucru si extensia de output tin de workbench-ul activ. Extensia schimba numele fisierului, nu path-ul planificat.'
+            text: 'Identitatea masinii, limitele zonei de lucru si setup-urile active vin din machine package-urile instalate. Regulile fisierului controller, precum extensia si line ending-ul, vin din post-processorul exact al setup-ului.'
           }
         ]
       },
@@ -201,7 +201,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '2. Flow-uri de import',
         steps: [
           {
-            text: 'Din dashboard, importa un DXF ca sa creezi un proiect intern de path. Artifactul pentru controller este generat ulterior dintr-o revizie salvata si o asociere de masina aleasa explicit.'
+            text: 'Din dashboard, importa un DXF ca sa creezi un proiect intern de path. Artifactul pentru controller este generat ulterior dintr-o revizie salvata si setup-ul activ al masinii planificate.'
           },
           {
             text: 'Din editor, apasa Import Program pentru a alege un fisier .gcode, .nc, .iso ori .txt. Programele externe trec prin pipeline-ul de cleanup/display inainte de afisare pe canvas si editare.',

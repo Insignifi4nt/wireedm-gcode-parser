@@ -4,6 +4,28 @@ import { parseWireEdmPostPackage } from '../postPackage';
 import { minimalPostPackage } from './postPackageFixture';
 
 describe('wire EDM post package boundary', () => {
+  it('accepts exact controller-file rules owned by the post', () => {
+    const input = minimalPostPackage();
+    Object.assign(input.manifest, {
+      output: {
+        fileExtension: 'iso',
+        lineEnding: 'crlf',
+        encoding: 'ascii',
+        finalNewline: true,
+        blockNumbering: {
+          mode: 'sequential',
+          prefix: 'N',
+          start: 10,
+          increment: 10,
+          minimumWidth: 1
+        },
+        programEnvelope: { prefix: ['%'], suffix: [] }
+      }
+    });
+
+    expect(parseWireEdmPostPackage(JSON.stringify(input))).toMatchObject({ ok: true });
+  });
+
   it('accepts package-owned dialect state tokens without teaching them to the application', () => {
     const input = minimalPostPackage();
     input.dialect.commands['distance.absolute'].effects = ['robofil.g60-issued'];
@@ -139,6 +161,29 @@ describe('wire EDM post package boundary', () => {
     ]));
   });
 
+  it('preserves legacy arc-package parsing and rejects direction on non-circular commands', () => {
+    const input = minimalPostPackage();
+    const command = input.dialect.commands['motion.linear'];
+    command.arcDirection = 'clockwise';
+    expect(parseWireEdmPostPackage(JSON.stringify(input))).toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({ code: 'POST_PACKAGE_COMMAND_PARAMETER_INVALID', path: '/dialect/commands/motion.linear/arcDirection' })]
+    });
+
+    command.template = 'G2 X{x} Y{y} I{i} J{j}';
+    for (const [name, role] of [['i', 'motion.center-x'], ['j', 'motion.center-y']] as const) {
+      command.parameters[name] = {
+        type: 'number', role, description: 'Arc center.', format: coordinateFormat(),
+        centerReference: { kind: 'fixed', mode: 'absolute' }
+      };
+    }
+    delete command.arcDirection;
+    expect(parseWireEdmPostPackage(JSON.stringify(input))).toMatchObject({ ok: true });
+
+    command.arcDirection = 'clockwise';
+    expect(parseWireEdmPostPackage(JSON.stringify(input))).toMatchObject({ ok: true });
+  });
+
   it('rejects dangling evidence targets and command citations to unrelated claims', () => {
     const input = minimalPostPackage();
     input.evidence[0].supports = [
@@ -166,7 +211,9 @@ describe('wire EDM post package boundary', () => {
     const input = minimalPostPackage();
     input.manifest.targets.push({
       manufacturer: 'Charmilles',
+      controllerManufacturer: 'Charmilles',
       controller: 'Robofil New',
+      firmware: { status: 'unknown' },
       machineModels: ['Robofil 200']
     });
     input.evidence[0].appliesTo.controllerModels = ['Unrelated Controller'];

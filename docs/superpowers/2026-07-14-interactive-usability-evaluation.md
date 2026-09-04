@@ -1,8 +1,10 @@
 # Interactive Usability Evaluation Notes
 
+> Historical evaluation record. It describes the pre-package UI and controller behavior observed on 2026-07-14. Do not use it as current product or post-authoring guidance.
+
 Date: 2026-07-14
 
-Status: Active evaluation log. These observations are evidence for a later workflow redesign; they are not yet an approved implementation specification.
+Status: Historical evaluation log retained as design evidence.
 
 ## Evaluation Context
 

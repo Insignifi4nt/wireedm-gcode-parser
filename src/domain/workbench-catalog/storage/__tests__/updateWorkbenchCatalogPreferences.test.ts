@@ -40,16 +40,11 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
 
 const configuredPreferences = {
   importUnits: { mode: 'fixed', unit: 'inches' },
-  export: {
-    status: 'configured',
-    fileExtension: { kind: 'custom', extension: 'tap' },
-    lineEnding: 'lf'
-  },
   recentPlanningMachineId: null
 } as const;
 
 describe('updateWorkbenchCatalogPreferences', () => {
-  it('atomically replaces every explicit V2 preference and returns a new catalog snapshot', async () => {
+  it('atomically replaces every explicit workbench preference and returns a new catalog snapshot', async () => {
     const { adapter, workbench } = await connectedCatalog();
 
     const result = await updateWorkbenchCatalogPreferences(workbench, {
@@ -68,7 +63,6 @@ describe('updateWorkbenchCatalogPreferences', () => {
     });
     expect(workbench.manifest.preferences).toEqual({
       importUnits: { mode: 'ask' },
-      export: { status: 'unconfigured' },
       recentPlanningMachineId: null
     });
     expect(JSON.parse(adapter.files.get(WORKBENCH_CATALOG_PATH) ?? '')).toMatchObject({
@@ -167,7 +161,6 @@ describe('updateWorkbenchCatalogPreferences', () => {
       updateWorkbenchCatalogPreferences(workbench, {
         preferences: {
           importUnits: { mode: 'ask' },
-          export: { status: 'unconfigured' },
           recentPlanningMachineId: null
         },
         updatedAt: new Date('2026-08-28T14:00:00.000Z')

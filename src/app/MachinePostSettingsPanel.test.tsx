@@ -2,10 +2,14 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createEmptyMachineLibrary } from '@/domain/machine-definition/machineLibrary';
-import { createEmptyPostLibrary } from '@/domain/post-processor/postLibrary';
+import { buildMachinePackageArchive } from '@/domain/machine-package';
+import { machinePackageFixture } from '@/domain/machine-package/__tests__/machinePackageFixture';
+import {
+  commitStoredMachinePackageInstallation,
+  prepareStoredMachinePackageInstallation
+} from '@/domain/machine-package/machinePackageInstallation';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
-import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
+import { initializeWorkbenchCatalog, type ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import {
   MachinePostSettingsPanel,
@@ -17,11 +21,17 @@ import {
 describe('MachinePostSettingsPanel', () => {
   let container: HTMLDivElement;
   let root: Root;
+  let workbench: ConnectedWorkbenchCatalog;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
+    const initialized = await initializeWorkbenchCatalog(new MemoryAdapter(), {
+      now: new Date('2026-09-04T08:00:00.000Z')
+    });
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    workbench = initialized.workbench;
   });
 
   afterEach(() => {
@@ -29,36 +39,85 @@ describe('MachinePostSettingsPanel', () => {
     container.remove();
   });
 
-  it('requires every newly configured preference instead of inventing hidden values', async () => {
+  it('keeps only dynamic preferences and never asks for controller output settings', async () => {
     const onSaveCatalogPreferences = vi.fn();
     await render({ onSaveCatalogPreferences });
 
     expect(select('Fixed import unit').value).toBe('');
-    expect(select('Extension type').value).toBe('');
-    expect(select('Line ending').value).toBe('');
+    expect(container.querySelector('[aria-label="Controller export"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Line ending"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Post properties JSON"]')).toBeNull();
 
     await choose('DXF import units', 'fixed');
-    await submitPreferences();
+    await click('Save preferences');
     expect(container.textContent).toContain('Select the fixed DXF import unit.');
     expect(onSaveCatalogPreferences).not.toHaveBeenCalled();
+  });
 
-    await choose('Fixed import unit', 'millimeters');
-    await choose('Controller export', 'configured');
-    await submitPreferences();
-    expect(container.textContent).toContain('Select an output extension type.');
-    expect(onSaveCatalogPreferences).not.toHaveBeenCalled();
+  it('previews one complete package and commits the explicit install choice', async () => {
+    const built = await buildMachinePackageArchive(await machinePackageFixture());
+    if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
+    const prepared = await prepareStoredMachinePackageInstallation(workbench, built.archive);
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    const onPrepareMachinePackage = vi.fn().mockResolvedValue(prepared);
+    const onCommitMachinePackage = vi.fn().mockResolvedValue(true);
+    await render({ onCommitMachinePackage, onPrepareMachinePackage });
+
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('Machine package input is missing.');
+    const file = new File(['archive'], 'robofil.wireedm-package', { type: 'application/zip' });
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+
+    expect(onPrepareMachinePackage).toHaveBeenCalledWith(file);
+    expect(container.textContent).toContain('Shop Robofil 100 package');
+    expect(container.textContent).toContain('Machine: Shop Robofil 100');
+    await click('Install machine package');
+    expect(onCommitMachinePackage).toHaveBeenCalledWith(prepared.prepared, { kind: 'install-new' });
+  });
+
+  it('shows complete leaf-level physical machine changes before replacement', async () => {
+    const beforeModel = 'Controller model with a deliberately shared long prefix A';
+    const afterModel = 'Controller model with a deliberately shared long prefix B';
+    const firstBuilt = await buildMachinePackageArchive(await machinePackageFixture({ controllerModel: beforeModel }));
+    if (!firstBuilt.ok) throw new Error(JSON.stringify(firstBuilt.diagnostics));
+    const firstPrepared = await prepareStoredMachinePackageInstallation(workbench, firstBuilt.archive);
+    if (!firstPrepared.ok) throw new Error(firstPrepared.error.message);
+    const firstCommitted = await commitStoredMachinePackageInstallation(firstPrepared.prepared, { kind: 'install-new' });
+    if (!firstCommitted.ok) throw new Error(firstCommitted.error.message);
+    workbench = firstCommitted.workbench;
+    const changedBuilt = await buildMachinePackageArchive(await machinePackageFixture({
+      packageVersion: '2.0.0',
+      postVersion: '2.0.0',
+      bindingId: 'production-v2',
+      controllerModel: afterModel
+    }));
+    if (!changedBuilt.ok) throw new Error(JSON.stringify(changedBuilt.diagnostics));
+    const changedPrepared = await prepareStoredMachinePackageInstallation(workbench, changedBuilt.archive);
+    if (!changedPrepared.ok) throw new Error(changedPrepared.error.message);
+    const onPrepareMachinePackage = vi.fn().mockResolvedValue(changedPrepared);
+    await render({ onPrepareMachinePackage });
+
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!input) throw new Error('Machine package input is missing.');
+    const file = new File(['archive'], 'robofil-update.wireedm-package', { type: 'application/zip' });
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+
+    expect(container.textContent).toContain('/identity/controller/model');
+    expect(container.textContent).toContain(beforeModel);
+    expect(container.textContent).toContain(afterModel);
   });
 
   async function render(overrides: Partial<MachinePostSettingsActions> = {}) {
     const actions: MachinePostSettingsActions = {
-      onCreateMachineBinding: vi.fn(),
-      onExportMachineDefinition: vi.fn(),
-      onImportMachineDefinition: vi.fn(),
-      onImportPostPackage: vi.fn(),
-      onRemoveMachineBinding: vi.fn(),
+      onActivateMachineSetup: vi.fn(),
+      onCommitMachinePackage: vi.fn().mockResolvedValue(false),
+      onPrepareMachinePackage: vi.fn().mockResolvedValue({
+        ok: false,
+        error: { code: 'TEST', message: 'No package supplied.' }
+      }),
       onRemoveMachineDefinition: vi.fn(),
-      onRemovePostInstallation: vi.fn(),
-      onReplaceMachineDefinition: vi.fn(),
       onSaveCatalogPreferences: vi.fn(),
       ...overrides
     };
@@ -90,39 +149,19 @@ describe('MachinePostSettingsPanel', () => {
     });
   }
 
-  async function submitPreferences() {
-    const button = [...container.querySelectorAll('button')].find(
-      (candidate) => candidate.textContent === 'Save preferences'
-    );
-    if (!button) throw new Error('Save preferences button is missing.');
+  async function click(label: string) {
+    const button = [...container.querySelectorAll('button')].find((candidate) => candidate.textContent === label);
+    if (!button) throw new Error(`Button is missing: ${label}.`);
     await act(async () => button.click());
   }
 });
 
-const adapter: WorkbenchStorageAdapter = {
-  kind: 'memory',
-  name: 'settings-test',
-  deleteText: async () => undefined,
-  ensureDirectory: async () => undefined,
-  readText: async () => null,
-  writeText: async () => undefined
-};
-
-const workbench: ConnectedWorkbenchCatalog = {
-  adapter,
-  machines: createEmptyMachineLibrary(),
-  posts: createEmptyPostLibrary(),
-  manifest: {
-    format: 'wire-edm-workbench',
-    schemaVersion: 2,
-    name: 'Settings test',
-    createdAt: '2026-08-28T12:00:00.000Z',
-    updatedAt: '2026-08-28T12:00:00.000Z',
-    preferences: {
-      importUnits: { mode: 'ask' },
-      export: { status: 'unconfigured' },
-      recentPlanningMachineId: null
-    },
-    projects: []
-  }
-};
+class MemoryAdapter implements WorkbenchStorageAdapter {
+  readonly kind = 'memory';
+  readonly name = 'settings-test';
+  readonly files = new Map<string, string>();
+  async deleteText(path: string) { this.files.delete(path); }
+  async ensureDirectory() { return undefined; }
+  async readText(path: string) { return this.files.get(path) ?? null; }
+  async writeText(path: string, contents: string) { this.files.set(path, contents); }
+}

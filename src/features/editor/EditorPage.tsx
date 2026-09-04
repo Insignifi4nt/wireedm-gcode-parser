@@ -26,7 +26,7 @@ import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import type { MachineDefinition } from '@/domain/machine-definition/machineDefinition';
 import { evaluatePhysicalMachineFit } from '@/domain/machine-definition/machineFit';
-import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
+import type { PostLibrary } from '@/domain/post-processor/postLibrary';
 import type { ControllerArtifactResult } from '@/domain/wire-edm-job/controllerArtifact';
 import {
   setManualCompensationIntent,
@@ -202,8 +202,8 @@ import {
 interface EditorPageProps {
   program: LoadedEditorProgram | null;
   machines: readonly MachineDefinition[];
+  posts: PostLibrary;
   planningMachine: MachineDefinition | null;
-  exportPreference: WorkbenchCatalogManifest['preferences']['export'];
   interactionLocked?: boolean;
   importStatus: 'idle' | 'importing' | 'error';
   importErrorMessage: string | null;
@@ -213,7 +213,6 @@ interface EditorPageProps {
   onDownloadEditorFile: (fileName: string, text: string) => void;
   onGenerateControllerArtifact: (selection: {
     readonly machineId: string;
-    readonly bindingId: string;
   }) => Promise<ControllerArtifactResult>;
   onImportProgramFile: (file: File) => void | Promise<void>;
   onReimportDxfUnits?: () => void | Promise<void>;
@@ -316,7 +315,7 @@ const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string
   'machining-participation': 'source-preserving active cuts, inactive reference spans, and explicit open-path compensation side',
   position: 'cursor position and grid snap state',
   statistics: 'bounds, move counts, and selected geometry details',
-  machine: 'project machine profile, source units, and machine fit checks',
+  machine: 'project machine, active setup, source units, and machine fit checks',
   measurement: 'manual points, perpendicular and tangent construction, and export actions'
 };
 
@@ -644,8 +643,8 @@ function floatingPanelGeometriesEqual(
 export function EditorPage({
   program,
   machines,
+  posts,
   planningMachine,
-  exportPreference,
   interactionLocked = false,
   importStatus,
   importErrorMessage,
@@ -3984,9 +3983,10 @@ export function EditorPage({
       />
       {exportPreviewOpen && pathDocumentDraft && (
         <EditorControllerArtifactDialog
-          exportPreference={exportPreference}
+          defaultMachineId={planningMachine?.id ?? null}
           hasUnsavedChanges={hasUnsavedChanges}
           machines={machines}
+          posts={posts}
           onClose={() => {
             if (activeWorkflowSession?.commandId === 'export.preview') {
               requestCloseEditorWorkflow();

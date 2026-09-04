@@ -820,6 +820,7 @@ async function openCompactWorkflowCommand(
 
 async function dismissOnboarding(page: import('@playwright/test').Page) {
   const dialog = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
+  await dialog.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
   if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Go Build!' }).click();
 }
 

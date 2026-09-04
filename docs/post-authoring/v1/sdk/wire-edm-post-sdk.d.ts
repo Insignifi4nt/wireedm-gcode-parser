@@ -34,6 +34,7 @@ export type WireEdmPostEvent =
 
 export interface WireEdmPostApi {
   getProperty(name: string): PostPropertyValue;
+  /** Non-moving commands only, during a non-motion event. */
   emitCommand(commandId: string, parameters: Readonly<Record<string, string | number>>): void;
   emitMotion(commandId: string, parameters: Readonly<Record<string, number>>): void;
   consume(reason: string): void;

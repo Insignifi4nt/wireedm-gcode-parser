@@ -21,17 +21,14 @@ import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { openWorkbenchProject } from '@/domain/editor/openWorkbenchProject';
 import { saveEditorProgram } from '@/domain/editor/saveEditorProgram';
 import {
-  createStoredMachinePostBinding,
-  installStoredMachineDefinition,
+  activateStoredMachinePostBinding,
   removeStoredMachineDefinition,
-  removeStoredMachinePostBinding,
-  replaceStoredMachineDefinition
 } from '@/domain/machine-definition/machineLibraryMutations';
-import { downloadProgramFile } from '@/domain/post/downloadProgramFile';
 import {
-  installStoredPostPackage,
-  removeStoredPostInstallation
-} from '@/domain/post-processor/postLibraryMutations';
+  commitStoredMachinePackageInstallation,
+  prepareStoredMachinePackageInstallation
+} from '@/domain/machine-package';
+import { downloadProgramFile } from '@/domain/post/downloadProgramFile';
 import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
 import {
   connectRememberedWorkbenchDirectory,
@@ -76,13 +73,10 @@ export interface AppServices {
   readonly renameWorkbenchProject: typeof renameWorkbenchProject;
   readonly deleteWorkbenchProject: typeof deleteWorkbenchProject;
   readonly updateWorkbenchCatalogPreferences: typeof updateWorkbenchCatalogPreferences;
-  readonly installStoredMachineDefinition: typeof installStoredMachineDefinition;
-  readonly replaceStoredMachineDefinition: typeof replaceStoredMachineDefinition;
+  readonly activateStoredMachinePostBinding: typeof activateStoredMachinePostBinding;
+  readonly prepareStoredMachinePackageInstallation: typeof prepareStoredMachinePackageInstallation;
+  readonly commitStoredMachinePackageInstallation: typeof commitStoredMachinePackageInstallation;
   readonly removeStoredMachineDefinition: typeof removeStoredMachineDefinition;
-  readonly createStoredMachinePostBinding: typeof createStoredMachinePostBinding;
-  readonly removeStoredMachinePostBinding: typeof removeStoredMachinePostBinding;
-  readonly installStoredPostPackage: typeof installStoredPostPackage;
-  readonly removeStoredPostInstallation: typeof removeStoredPostInstallation;
   readonly createSavedWireEdmJobRevision: typeof createSavedWireEdmJobRevision;
   readonly saveStoredWireEdmJobRevision: typeof saveStoredWireEdmJobRevision;
   readonly generateControllerArtifact: typeof generateControllerArtifact;
@@ -107,13 +101,10 @@ export const defaultAppServices: AppServices = {
   renameWorkbenchProject,
   deleteWorkbenchProject,
   updateWorkbenchCatalogPreferences,
-  installStoredMachineDefinition,
-  replaceStoredMachineDefinition,
+  activateStoredMachinePostBinding,
+  prepareStoredMachinePackageInstallation,
+  commitStoredMachinePackageInstallation,
   removeStoredMachineDefinition,
-  createStoredMachinePostBinding,
-  removeStoredMachinePostBinding,
-  installStoredPostPackage,
-  removeStoredPostInstallation,
   createSavedWireEdmJobRevision,
   saveStoredWireEdmJobRevision,
   generateControllerArtifact,

@@ -155,6 +155,7 @@ export const DialectStateTokenSchema = PostIdentifierSchema;
 
 const DialectCommandSchema = Type.Object({
   template: Type.String({ minLength: 1, maxLength: 512, pattern: '^[^\\r\\n\\u0000]+$' }),
+  arcDirection: Type.Optional(Type.Union([Type.Literal('clockwise'), Type.Literal('counterclockwise')])),
   parameters: Type.Record(Type.String({ pattern: POST_IDENTIFIER_PATTERN }), CommandParameterSchema, {
     unevaluatedProperties: false,
     maxProperties: 32
@@ -166,7 +167,15 @@ const DialectCommandSchema = Type.Object({
 
 const PostTargetSchema = Type.Object({
   manufacturer: LabelSchema,
+  controllerManufacturer: LabelSchema,
   controller: LabelSchema,
+  firmware: Type.Union([
+    Type.Object({ status: Type.Literal('unknown') }, strictObject),
+    Type.Object({
+      status: Type.Literal('known'),
+      versions: Type.Array(LabelSchema, { minItems: 1, maxItems: 64, uniqueItems: true })
+    }, strictObject)
+  ]),
   machineModels: Type.Array(LabelSchema, { maxItems: 64, uniqueItems: true })
 }, strictObject);
 
@@ -199,9 +208,35 @@ const PostExecutionContractSchema = Type.Object({
     Type.Literal('none'),
     Type.Literal('authored-linear'),
     Type.Literal('controller-native-program'),
-    Type.Literal('controller-native-operation')
+    Type.Literal('controller-native-operation'),
+    Type.Literal('controller-native-continuous')
   ]),
   compensationRequiredForEveryOperation: Type.Boolean()
+}, strictObject);
+
+const PostOutputLineSchema = Type.String({ minLength: 1, maxLength: 64, pattern: '^[^\\r\\n\\u0000]+$' });
+
+const PostBlockNumberingSchema = Type.Union([
+  Type.Object({ mode: Type.Literal('none') }, strictObject),
+  Type.Object({
+    mode: Type.Literal('sequential'),
+    prefix: Type.String({ minLength: 1, maxLength: 8, pattern: '^[A-Za-z]+$' }),
+    start: Type.Integer({ minimum: 0, maximum: 99_999_999 }),
+    increment: Type.Integer({ minimum: 1, maximum: 99_999_999 }),
+    minimumWidth: Type.Integer({ minimum: 1, maximum: 8 })
+  }, strictObject)
+]);
+
+const PostOutputSchema = Type.Object({
+  fileExtension: Type.String({ minLength: 1, maxLength: 16, pattern: '^[A-Za-z0-9]+$' }),
+  lineEnding: Type.Union([Type.Literal('lf'), Type.Literal('crlf')]),
+  encoding: Type.Union([Type.Literal('ascii'), Type.Literal('utf-8')]),
+  finalNewline: Type.Boolean(),
+  blockNumbering: PostBlockNumberingSchema,
+  programEnvelope: Type.Object({
+    prefix: Type.Array(PostOutputLineSchema, { maxItems: 4 }),
+    suffix: Type.Array(PostOutputLineSchema, { maxItems: 4 })
+  }, strictObject)
 }, strictObject);
 
 const EvidenceSourceIdentity = {
@@ -245,6 +280,7 @@ const EvidenceSelectorSchema = Type.Object({
 }, strictObject);
 
 const EvidenceApplicabilitySchema = Type.Object({
+  controllerManufacturers: Type.Array(LabelSchema, { minItems: 1, maxItems: 64, uniqueItems: true }),
   controllerModels: Type.Array(LabelSchema, { minItems: 1, maxItems: 64, uniqueItems: true }),
   machineModels: Type.Array(LabelSchema, { maxItems: 64, uniqueItems: true }),
   firmware: Type.Optional(Type.String({ minLength: 1, maxLength: 160 }))
@@ -283,6 +319,7 @@ const FixtureSchema = Type.Object({
     maxProperties: 128
   }),
   expectedProgram: Type.String({ maxLength: 262_144 }),
+  expectedArtifact: Type.String({ maxLength: 524_288 }),
   evidenceRefs: Type.Array(PostIdentifierSchema, { minItems: 1, maxItems: 32, uniqueItems: true })
 }, strictObject);
 
@@ -298,6 +335,7 @@ export const WireEdmPostPackageSchema = Type.Object({
     targets: Type.Array(PostTargetSchema, { minItems: 1, maxItems: 64 }),
     capabilities: PostCapabilitiesSchema,
     execution: PostExecutionContractSchema,
+    output: PostOutputSchema,
     properties: Type.Record(Type.String({ pattern: POST_IDENTIFIER_PATTERN }), PostPropertyDefinitionSchema, {
       unevaluatedProperties: false,
       maxProperties: 128

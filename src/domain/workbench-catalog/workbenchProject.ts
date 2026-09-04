@@ -4,6 +4,7 @@ import { Value } from '@sinclair/typebox/value';
 import { PostIdentifierSchema } from '@/domain/post-processor/postFormatPrimitives';
 import type { DeepReadonly } from '@/domain/post-processor/postPackageSchema';
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 
 export const WORKBENCH_PROJECT_SCHEMA_VERSION = 2 as const;
@@ -189,7 +190,8 @@ export function parseWorkbenchProjectDocument(rawText: string): WorkbenchProject
   if (
     record &&
     typeof record.schemaVersion === 'number' &&
-    record.schemaVersion !== WORKBENCH_PROJECT_SCHEMA_VERSION
+    record.schemaVersion !== WORKBENCH_PROJECT_SCHEMA_VERSION &&
+    record.schemaVersion !== 1
   ) {
     return {
       ok: false,
@@ -201,7 +203,64 @@ export function parseWorkbenchProjectDocument(rawText: string): WorkbenchProject
       }
     };
   }
-  return validateWorkbenchProjectValue(value);
+  return validateWorkbenchProjectValue(migrateLegacyWorkbenchProjectValue(value));
+}
+
+function migrateLegacyWorkbenchProjectValue(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const project = value as Record<string, unknown>;
+  if (project.schemaVersion !== 1 || Object.hasOwn(project, 'format')) return value;
+  const source = project.source;
+  const editor = project.editor;
+  if (
+    source === null || typeof source !== 'object' || Array.isArray(source) ||
+    editor === null || typeof editor !== 'object' || Array.isArray(editor)
+  ) return value;
+  const sourceRecord = source as Record<string, unknown>;
+  const editorRecord = editor as Record<string, unknown>;
+  const upid = project.upid;
+  const upidRecord = upid !== null && typeof upid === 'object' && !Array.isArray(upid)
+    ? upid as Record<string, unknown>
+    : null;
+  const sourceKind = sourceRecord.kind;
+  const pathProject = sourceKind === 'dxf' || sourceKind === 'upid';
+  const legacyEmptyPath = `projects/${String(project.id)}/legacy-empty.txt`;
+  const content = pathProject
+    ? {
+        kind: 'upid-document',
+        document: upidRecord?.format === 'upid'
+          ? upidRecord.document
+          : createUpidFromDxfEntities([])
+      }
+    : {
+        kind: 'external-gcode',
+        activeFilePath: typeof editorRecord.activeFilePath === 'string'
+          ? editorRecord.activeFilePath
+          : legacyEmptyPath
+      };
+  const sourceFiles = pathProject || typeof editorRecord.activeFilePath === 'string'
+    ? sourceRecord.files
+    : [
+        ...(Array.isArray(sourceRecord.files) ? sourceRecord.files : []),
+        {
+          name: 'legacy-empty.txt',
+          path: legacyEmptyPath,
+          kind: 'external-gcode',
+          createdAt: project.createdAt
+        }
+      ];
+  return {
+    format: 'wire-edm-project',
+    schemaVersion: WORKBENCH_PROJECT_SCHEMA_VERSION,
+    id: project.id,
+    name: project.name,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    source: { ...sourceRecord, files: sourceFiles },
+    content,
+    editor: { pinnedLineNumbers: editorRecord.pinnedLineNumbers },
+    savedRevisionIds: []
+  };
 }
 
 function validateWorkbenchProjectValue(value: unknown): CreateWorkbenchProjectResult {

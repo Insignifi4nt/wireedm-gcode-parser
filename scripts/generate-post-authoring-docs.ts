@@ -2,6 +2,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
+import { compile } from 'json-schema-to-typescript';
+
 import { PostLibraryDocumentSchema } from '../src/domain/post-processor/postLibraryStorage.ts';
 import {
   parseWireEdmPostPackage,
@@ -12,6 +14,13 @@ import { MachineDefinitionSchema } from '../src/domain/machine-definition/machin
 import { MachineLibraryDocumentSchema } from '../src/domain/machine-definition/machineLibraryStorage.ts';
 import { WorkbenchCatalogManifestSchema } from '../src/domain/workbench-catalog/workbenchCatalog.ts';
 import { WorkbenchProjectDocumentSchema } from '../src/domain/workbench-catalog/workbenchProject.ts';
+import {
+  MachinePackageDocumentSchema,
+  MachinePackageSourceDocumentSchema,
+  MAX_MACHINE_PACKAGE_ARCHIVE_BYTES,
+  MAX_MACHINE_PACKAGE_ENTRIES,
+  MAX_MACHINE_PACKAGE_EXPANDED_BYTES
+} from '../src/domain/machine-package/machinePackage.ts';
 import {
   CUSTOM_POST_DIAGNOSTIC_CODES,
   DEFAULT_CUSTOM_POST_RUNTIME_LIMITS
@@ -48,7 +57,91 @@ const allPackageDiagnosticCodesPublished: Exclude<
   typeof packageDiagnosticCodes[number]
 > extends never ? true : false = true;
 void allPackageDiagnosticCodesPublished;
+const declarationOptions = {
+  bannerComment: '/* Generated from the authoritative Wire EDM JSON Schema. Do not edit by hand. */',
+  unknownAny: false
+} as const;
+const canonicalInstallationScenarioFixtures = {
+  registryVersion: '1',
+  pathBase: 'authoring-kit-root',
+  mutationDocument: 'resolved-machine-package-document',
+  baseSourceDirectory: '../../../examples/robofil-100-v2',
+  scenarios: [
+    {
+      id: 'valid-new-machine',
+      purpose: 'A complete valid package enters an empty machine and post catalog.',
+      installed: [],
+      incoming: { sourceDirectory: '../../../examples/robofil-100-v2', mutations: [] },
+      expected: { previewMachineKind: 'new', commit: 'accepted', machineCount: 1, postCount: 1 }
+    },
+    {
+      id: 'invalid-target',
+      purpose: 'A setup cannot bind a post whose declared controller target differs from the machine.',
+      installed: [],
+      incoming: {
+        sourceDirectory: '../../../examples/robofil-100-v2',
+        mutations: [{ jsonPointer: '/machine/identity/controller/model', value: 'Different Controller' }]
+      },
+      expected: { validation: 'rejected', diagnosticCode: 'MACHINE_PACKAGE_TARGET_MISMATCH' }
+    },
+    {
+      id: 'same-id-machine-update',
+      purpose: 'The same machine ID with changed physical data requires an explicit reviewed replacement.',
+      installed: [{ sourceDirectory: '../../../examples/robofil-100-v2' }],
+      incoming: {
+        sourceDirectory: '../../../examples/robofil-100-v2',
+        mutations: [{ jsonPointer: '/machine/limits/xTravel/millimeters', value: 401 }]
+      },
+      expected: { previewMachineKind: 'changed', automaticMerge: false, requiresResolution: 'replace-existing' }
+    },
+    {
+      id: 'post-version-content-conflict',
+      purpose: 'Different post content cannot claim an already installed post ID and version.',
+      installed: [{ sourceDirectory: '../../../examples/robofil-100-v2' }],
+      incoming: {
+        sourceDirectory: '../../../examples/robofil-100-v2',
+        mutations: [{ jsonPointer: '/posts/0/manifest/description', value: 'Different content under the same version.' }],
+        recomputePostHashAndBindingReference: true
+      },
+      expected: { prepare: 'rejected', diagnosticCode: 'POST_LIBRARY_VERSION_CONFLICT' }
+    },
+    {
+      id: 'same-machine-new-post',
+      purpose: 'An exact physical machine is reused while a separately versioned post and setup are added.',
+      installed: [{ sourceDirectory: '../../../examples/robofil-100-v2' }],
+      incoming: {
+        sourceDirectory: '../../../examples/robofil-100-v2',
+        mutations: [
+          { jsonPointer: '/posts/0/manifest/id', value: 'cristian.robofil-100.alternate' },
+          { jsonPointer: '/posts/0/manifest/version', value: '1.0.0' },
+          { jsonPointer: '/machine/bindings/0/id', value: 'alternate' },
+          { jsonPointer: '/activeBindingId', value: 'alternate' }
+        ],
+        recomputePostHashAndBindingReference: true
+      },
+      expected: { previewMachineKind: 'exact', requiresResolution: 'reuse-existing', machineCount: 1, postCount: 2, setupCount: 2 }
+    }
+  ]
+} as const;
+const machinePackageDeclarations = await compile(
+  withoutSchemaId(MachinePackageDocumentSchema),
+  'WireEdmMachinePackageDocument',
+  declarationOptions
+);
+const machinePackageSourceDeclarations = await compile(
+  withoutSchemaId(MachinePackageSourceDocumentSchema),
+  'WireEdmMachinePackageSourceDocument',
+  declarationOptions
+);
 const generatedFiles = [
+  {
+    path: path.join(root, 'docs/post-authoring/v1/schema/machine-package.schema.json'),
+    contents: `${JSON.stringify(MachinePackageDocumentSchema, null, 2)}\n`
+  },
+  {
+    path: path.join(root, 'docs/post-authoring/v1/schema/machine-package-source.schema.json'),
+    contents: `${JSON.stringify(MachinePackageSourceDocumentSchema, null, 2)}\n`
+  },
   {
     path: path.join(root, 'docs/post-authoring/v1/schema/post-package.schema.json'),
     contents: `${JSON.stringify(WireEdmPostPackageSchema, null, 2)}\n`
@@ -76,6 +169,14 @@ const generatedFiles = [
   {
     path: path.join(root, 'docs/post-authoring/v1/sdk/wire-edm-post-sdk.d.ts'),
     contents: CUSTOM_POST_SDK_DECLARATION
+  },
+  {
+    path: path.join(root, 'docs/post-authoring/v1/sdk/wire-edm-machine-package.d.ts'),
+    contents: machinePackageDeclarations
+  },
+  {
+    path: path.join(root, 'docs/post-authoring/v1/sdk/wire-edm-machine-package-source.d.ts'),
+    contents: machinePackageSourceDeclarations
   },
   {
     path: path.join(root, 'docs/post-authoring/v1/sdk/event-diagnostic-catalog.json'),
@@ -133,11 +234,38 @@ const generatedFiles = [
     }, null, 2)}\n`
   },
   {
+    path: path.join(root, 'docs/post-authoring/v1/sdk/canonical-installation-scenarios.json'),
+    contents: `${JSON.stringify(canonicalInstallationScenarioFixtures, null, 2)}\n`
+  },
+  {
     path: path.join(root, 'docs/post-authoring/v1/compatibility.json'),
     contents: `${JSON.stringify({
       authoringKitVersion: '1',
       postPackageSchemaVersions: [1],
+      machinePackageSchemaVersions: [1],
       engineApiVersions: ['1'],
+      motionAudit: {
+        coordinates: 'formatted-quantized-values',
+        arcDirection: 'selected-command-declaration',
+        legacyArcPackages: 'readable-without-rewrite; explicit-direction-required-for-execution',
+        storedLibraryReopen: 'validate-structure-semantics-and-exact-canonical-hash; no-installation-conformance'
+      },
+      installation: {
+        artifactExtension: '.wireedm-package',
+        archiveLimits: {
+          compressedBytes: MAX_MACHINE_PACKAGE_ARCHIVE_BYTES,
+          expandedBytes: MAX_MACHINE_PACKAGE_EXPANDED_BYTES,
+          entries: MAX_MACHINE_PACKAGE_ENTRIES
+        },
+        canonicalScenarioFile: 'sdk/canonical-installation-scenarios.json',
+        declarationFiles: [
+          'sdk/wire-edm-machine-package.d.ts',
+          'sdk/wire-edm-machine-package-source.d.ts'
+        ],
+        buildCommand: 'npm run machine-package:build -- <source-directory> [output.wireedm-package]',
+        validateCommand: 'npm run machine-package:validate -- <package.wireedm-package>',
+        inspectCommand: 'npm run machine-package:inspect -- <package.wireedm-package>'
+      },
       conformance: {
         runnerVersion: '1',
         command: 'npm run post:conformance -- <package.wireedm-post.json>',
@@ -183,6 +311,12 @@ async function readExisting(filePath: string) {
     if (isMissingFile(error)) return null;
     throw error;
   }
+}
+
+function withoutSchemaId<Schema extends object>(schema: Schema) {
+  const clone = structuredClone(schema) as Schema & { $id?: string };
+  delete clone.$id;
+  return clone;
 }
 
 function isMissingFile(error: unknown): error is NodeJS.ErrnoException {

@@ -82,7 +82,7 @@ export async function installPostPackage(
   library: PostLibrary,
   packageValue: WireEdmPostPackage
 ): Promise<InstallPostPackageResult> {
-  const contentHash = await sha256(canonicalJson(packageValue));
+  const contentHash = await hashPostPackage(packageValue);
   if (!contentHash) {
     return {
       ok: false,
@@ -199,9 +199,9 @@ function installationNotFound(ref: PostInstallationRef) {
   };
 }
 
-async function sha256(value: string) {
+export async function hashPostPackage(packageValue: WireEdmPostPackage) {
   if (!globalThis.crypto?.subtle) return null;
-  const bytes = new TextEncoder().encode(value);
+  const bytes = new TextEncoder().encode(canonicalJson(packageValue));
   const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, '0'))

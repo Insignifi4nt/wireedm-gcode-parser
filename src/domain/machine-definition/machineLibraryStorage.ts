@@ -158,6 +158,7 @@ async function parseStoredMachineLibrary(
       }
     };
   }
+  parsed = addLegacyActiveMachineSetups(parsed);
   const schemaError = Value.Errors(MachineLibraryDocumentSchema, parsed).First();
   if (schemaError) {
     return {
@@ -228,6 +229,25 @@ async function parseStoredMachineLibrary(
     library = installed.library;
   }
   return { ok: true, library };
+}
+
+function addLegacyActiveMachineSetups(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const document = value as Record<string, unknown>;
+  if (!Array.isArray(document.machines)) return value;
+  let changed = false;
+  const machines = document.machines.map((machine) => {
+    if (machine === null || typeof machine !== 'object' || Array.isArray(machine)) return machine;
+    const record = machine as Record<string, unknown>;
+    if (Object.hasOwn(record, 'activeBindingId') || !Array.isArray(record.bindings)) return machine;
+    const first = record.bindings[0];
+    const firstId = first !== null && typeof first === 'object' && !Array.isArray(first)
+      ? (first as Record<string, unknown>).id
+      : null;
+    changed = true;
+    return { ...record, activeBindingId: typeof firstId === 'string' ? firstId : null };
+  });
+  return changed ? { ...document, machines } : value;
 }
 
 async function readStorageText(adapter: WorkbenchStorageAdapter) {

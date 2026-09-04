@@ -32,7 +32,6 @@ export {
 export {
   CONTROLLER_PROGRAM_ARTIFACT_SCHEMA_VERSION,
   generateControllerArtifact,
-  type ConfiguredControllerArtifactPreference,
   type ControllerArtifactError,
   type ControllerArtifactResult,
   type ControllerProgramArtifact

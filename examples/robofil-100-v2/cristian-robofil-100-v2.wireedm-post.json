@@ -4,13 +4,17 @@
   "manifest": {
     "id": "cristian.robofil-100.v2-candidate",
     "name": "Cristian Robofil 100 V2 candidate",
-    "version": "2.0.0",
+    "version": "2.2.0",
     "engineApiVersion": "1",
-    "description": "Editable operation-scoped test package reconstructed from the prior V2 implementation and local Robofil 100 candidate programs. No machine-readiness claim.",
+    "description": "Editable same-side multi-contour test package based on operator corrections and local Robofil 100 programs. No machine-readiness claim.",
     "targets": [
       {
         "manufacturer": "Charmilles",
+        "controllerManufacturer": "Charmilles",
         "controller": "Robofil Classic",
+        "firmware": {
+          "status": "unknown"
+        },
         "machineModels": [
           "Robofil 100"
         ]
@@ -21,8 +25,8 @@
       "controllerCompensation": "left-right",
       "operations": "multiple",
       "passes": "single",
-      "threading": "manual",
-      "wireSeparation": true,
+      "threading": "none",
+      "wireSeparation": false,
       "programStops": true,
       "taperAxes": false,
       "technologySelection": false,
@@ -30,8 +34,27 @@
     },
     "execution": {
       "initialWirePosition": "required",
-      "compensationLifecycle": "controller-native-operation",
+      "compensationLifecycle": "controller-native-continuous",
       "compensationRequiredForEveryOperation": true
+    },
+    "output": {
+      "fileExtension": "iso",
+      "lineEnding": "crlf",
+      "encoding": "ascii",
+      "finalNewline": true,
+      "blockNumbering": {
+        "mode": "sequential",
+        "prefix": "N",
+        "start": 10,
+        "increment": 10,
+        "minimumWidth": 1
+      },
+      "programEnvelope": {
+        "prefix": [
+          "%"
+        ],
+        "suffix": []
+      }
     },
     "properties": {
       "coordinatePrecision": {
@@ -97,42 +120,22 @@
           "robofil-v2-recommended"
         ]
       },
-      "setup.g60": {
-        "template": "G60",
-        "parameters": {},
-        "effects": [
-          "robofil.g60-issued"
-        ],
-        "requires": [
-          "origin.wire-position-set"
-        ],
-        "evidenceRefs": [
-          "robofil-v2-candidate-policy",
-          "robofil-v2-recommended"
-        ]
-      },
       "setup.g38": {
-        "template": "G38",
-        "parameters": {},
+        "template": "G38 D{offset}",
+        "parameters": {
+          "offset": {
+            "type": "integer",
+            "role": "none",
+            "description": "Compensation table index.",
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
         "effects": [
           "robofil.g38-issued"
         ],
         "requires": [
-          "robofil.g60-issued"
-        ],
-        "evidenceRefs": [
-          "robofil-v2-candidate-policy",
-          "robofil-v2-recommended"
-        ]
-      },
-      "distance.absolute": {
-        "template": "G90",
-        "parameters": {},
-        "effects": [
-          "distance.absolute"
-        ],
-        "requires": [
-          "robofil.g38-issued"
+          "robofil.compensation-side-selected"
         ],
         "evidenceRefs": [
           "robofil-v2-candidate-policy",
@@ -147,7 +150,7 @@
           "robofil.g39-issued"
         ],
         "requires": [
-          "distance.absolute"
+          "robofil.g40-issued"
         ],
         "evidenceRefs": [
           "robofil-v2-candidate-policy",
@@ -162,7 +165,7 @@
           "robofil.g40-issued"
         ],
         "requires": [
-          "robofil.g39-issued"
+          "robofil.g38-issued"
         ],
         "evidenceRefs": [
           "robofil-v2-candidate-policy",
@@ -170,21 +173,14 @@
         ]
       },
       "compensation.left": {
-        "template": "G41 D{offset}",
-        "parameters": {
-          "offset": {
-            "type": "integer",
-            "role": "none",
-            "description": "Compensation table index.",
-            "minimum": 0,
-            "maximum": 0
-          }
-        },
+        "template": "G41",
+        "parameters": {},
         "effects": [
-          "compensation.left"
+          "compensation.left",
+          "robofil.compensation-side-selected"
         ],
         "requires": [
-          "compensation.off"
+          "origin.wire-position-set"
         ],
         "evidenceRefs": [
           "robofil-v2-candidate-policy",
@@ -192,21 +188,14 @@
         ]
       },
       "compensation.right": {
-        "template": "G42 D{offset}",
-        "parameters": {
-          "offset": {
-            "type": "integer",
-            "role": "none",
-            "description": "Compensation table index.",
-            "minimum": 0,
-            "maximum": 0
-          }
-        },
+        "template": "G42",
+        "parameters": {},
         "effects": [
-          "compensation.right"
+          "compensation.right",
+          "robofil.compensation-side-selected"
         ],
         "requires": [
-          "compensation.off"
+          "origin.wire-position-set"
         ],
         "evidenceRefs": [
           "robofil-v2-candidate-policy",
@@ -251,7 +240,7 @@
           "position.changed"
         ],
         "requires": [
-          "compensation.off"
+          "origin.wire-position-set"
         ],
         "evidenceRefs": [
           "robofil-v2-candidate-policy",
@@ -296,7 +285,7 @@
           "position.changed"
         ],
         "requires": [
-          "distance.absolute"
+          "robofil.g38-issued"
         ],
         "evidenceRefs": [
           "robofil-v2-candidate-policy",
@@ -304,6 +293,7 @@
         ]
       },
       "motion.arc-clockwise": {
+        "arcDirection": "clockwise",
         "template": "G2 X{x} Y{y} I{i} J{j}",
         "parameters": {
           "x": {
@@ -379,13 +369,14 @@
           "position.changed"
         ],
         "requires": [
-          "distance.absolute"
+          "robofil.g38-issued"
         ],
         "evidenceRefs": [
           "robofil-v2-candidate-policy"
         ]
       },
       "motion.arc-counterclockwise": {
+        "arcDirection": "counterclockwise",
         "template": "G3 X{x} Y{y} I{i} J{j}",
         "parameters": {
           "x": {
@@ -461,39 +452,11 @@
           "position.changed"
         ],
         "requires": [
-          "distance.absolute"
+          "robofil.g38-issued"
         ],
         "evidenceRefs": [
           "robofil-v2-candidate-policy",
           "robofil-v2-recommended"
-        ]
-      },
-      "operator.manual-wire-separate": {
-        "template": "M00",
-        "parameters": {},
-        "effects": [
-          "program.paused",
-          "wire.separated"
-        ],
-        "requires": [
-          "compensation.off"
-        ],
-        "evidenceRefs": [
-          "robofil-v2-candidate-policy"
-        ]
-      },
-      "operator.manual-wire-thread": {
-        "template": "M00",
-        "parameters": {},
-        "effects": [
-          "program.paused",
-          "wire.threaded"
-        ],
-        "requires": [
-          "compensation.off"
-        ],
-        "evidenceRefs": [
-          "robofil-v2-candidate-policy"
         ]
       },
       "operator.program-stop": {
@@ -503,7 +466,7 @@
           "program.paused"
         ],
         "requires": [
-          "distance.absolute"
+          "robofil.g38-issued"
         ],
         "evidenceRefs": [
           "robofil-v2-candidate-policy"
@@ -516,7 +479,7 @@
           "program.ended"
         ],
         "requires": [
-          "compensation.off"
+          "robofil.g39-issued"
         ],
         "evidenceRefs": [
           "robofil-v2-candidate-policy",
@@ -528,7 +491,7 @@
   "source": {
     "language": "javascript",
     "entrypoint": "createPost",
-    "code": "export function createPost(api) {\n  api.getProperty('coordinatePrecision');\n  const offsetIndex = api.getProperty('offsetIndex');\n  let programStarted = false;\n  let operationOpen = false;\n  let passOpen = false;\n  let compensation = 'off';\n  let compensationEnded = false;\n  let operationCompensated = false;\n\n  function requireState(condition, message) {\n    if (!condition) throw new Error(message);\n  }\n\n  function emitArc(event) {\n    const command = event.clockwise ? 'motion.arc-clockwise' : 'motion.arc-counterclockwise';\n    if (event.fullCircle) {\n      api.emitMotion(command, {\n        x: 2 * event.center.x - event.start.x,\n        y: 2 * event.center.y - event.start.y,\n        i: event.center.x,\n        j: event.center.y\n      });\n    }\n    api.emitMotion(command, {\n      x: event.end.x,\n      y: event.end.y,\n      i: event.center.x,\n      j: event.center.y\n    });\n  }\n\n  return {\n    onEvent(event) {\n      if (event.kind === 'program-start') {\n        requireState(!programStarted, 'Program start was received more than once.');\n        api.emitCommand('origin.wire-position', {\n          x: event.initialWirePosition.x,\n          y: event.initialWirePosition.y\n        });\n        api.emitCommand('setup.g60', {});\n        api.emitCommand('setup.g38', {});\n        api.emitCommand('distance.absolute', {});\n        programStarted = true;\n        return;\n      }\n      if (event.kind === 'operation-start') {\n        requireState(programStarted && !operationOpen, 'Operation start is out of order.');\n        api.emitCommand('compensation.finish', {});\n        api.emitCommand('compensation.cancel', {});\n        compensation = 'off';\n        compensationEnded = false;\n        operationCompensated = false;\n        operationOpen = true;\n        return;\n      }\n      if (event.kind === 'pass-start') {\n        requireState(operationOpen && !passOpen, 'Pass start is out of order.');\n        passOpen = true;\n        return api.consume('Single-cut pass started.');\n      }\n      if (event.kind === 'wire-continue') {\n        requireState(operationOpen && compensation === 'off', 'Wire continuation requires compensation off.');\n        return api.consume('Wire remains threaded.');\n      }\n      if (event.kind === 'wire-separate') {\n        requireState(operationOpen && compensation === 'off', 'Wire separation requires compensation off.');\n        requireState(event.method === 'manual', 'Automatic wire separation has no evidenced command.');\n        return api.emitCommand('operator.manual-wire-separate', {});\n      }\n      if (event.kind === 'position') {\n        requireState(operationOpen && compensation === 'off', 'Positioning requires compensation off.');\n        return api.emitMotion('motion.rapid', { x: event.to.x, y: event.to.y });\n      }\n      if (event.kind === 'wire-thread') {\n        requireState(operationOpen && compensation === 'off', 'Wire threading requires compensation off.');\n        requireState(event.method === 'manual', 'Automatic wire threading has no evidenced command.');\n        return api.emitCommand('operator.manual-wire-thread', {});\n      }\n      if (event.kind === 'compensation-start') {\n        requireState(passOpen && compensation === 'off' && !operationCompensated, 'Compensation start is out of order.');\n        api.emitCommand(\n          event.wireSide === 'left' ? 'compensation.left' : 'compensation.right',\n          { offset: offsetIndex }\n        );\n        compensation = event.wireSide;\n        operationCompensated = true;\n        return;\n      }\n      if (event.kind === 'motion') {\n        requireState(passOpen && compensation !== 'off' && !compensationEnded, 'Cutting motion requires active compensation.');\n        if (event.motion === 'linear') {\n          return api.emitMotion('motion.linear', { x: event.end.x, y: event.end.y });\n        }\n        return emitArc(event);\n      }\n      if (event.kind === 'program-stop') {\n        requireState(operationOpen, 'Program stop requires an open operation.');\n        return api.emitCommand('operator.program-stop', {});\n      }\n      if (event.kind === 'compensation-end') {\n        requireState(operationCompensated && compensation !== 'off' && !compensationEnded, 'Compensation end is out of order.');\n        compensationEnded = true;\n        return api.consume('Cancellation is deferred to the next operation boundary or program end.');\n      }\n      if (event.kind === 'pass-end') {\n        requireState(passOpen && operationCompensated && compensationEnded, 'Pass end requires completed compensated cutting.');\n        passOpen = false;\n        return api.consume('Single-cut pass ended.');\n      }\n      if (event.kind === 'operation-end') {\n        requireState(operationOpen && !passOpen && operationCompensated && compensationEnded, 'Operation end is out of order.');\n        operationOpen = false;\n        return api.consume('Operation completed; compensation cancellation remains pending.');\n      }\n      if (event.kind === 'program-end') {\n        requireState(programStarted && !operationOpen, 'Program end requires all operations to be complete.');\n        api.emitCommand('compensation.finish', {});\n        api.emitCommand('compensation.cancel', {});\n        api.emitCommand('program.end', {});\n        compensation = 'off';\n        programStarted = false;\n        return;\n      }\n      throw new Error('Unsupported execution event: ' + event.kind);\n    }\n  };\n}"
+    "code": "export function createPost(api) {\n  api.getProperty('coordinatePrecision');\n  const offsetIndex = api.getProperty('offsetIndex');\n  let programStarted = false;\n  let operationOpen = false;\n  let passOpen = false;\n  let compensation = 'off';\n  let compensationEnded = false;\n  let operationCompensated = false;\n  let continuationPending = false;\n\n  function requireState(condition, message) {\n    if (!condition) throw new Error(message);\n  }\n\n  function cancelCompensation() {\n    api.emitCommand('compensation.cancel', {});\n    api.emitCommand('compensation.finish', {});\n    compensation = 'off';\n  }\n\n  function emitArc(event) {\n    const command = event.clockwise ? 'motion.arc-clockwise' : 'motion.arc-counterclockwise';\n    if (event.fullCircle) {\n      api.emitMotion(command, {\n        x: 2 * event.center.x - event.start.x,\n        y: 2 * event.center.y - event.start.y,\n        i: event.center.x,\n        j: event.center.y\n      });\n    }\n    api.emitMotion(command, {\n      x: event.end.x,\n      y: event.end.y,\n      i: event.center.x,\n      j: event.center.y\n    });\n  }\n\n  return {\n    onEvent(event) {\n      if (event.kind === 'program-start') {\n        requireState(!programStarted, 'Program start was received more than once.');\n        api.emitCommand('origin.wire-position', {\n          x: event.initialWirePosition.x,\n          y: event.initialWirePosition.y\n        });\n        programStarted = true;\n        return;\n      }\n      if (event.kind === 'operation-start') {\n        requireState(programStarted && !operationOpen, 'Operation start is out of order.');\n        compensationEnded = false;\n        operationCompensated = false;\n        continuationPending = false;\n        operationOpen = true;\n        return api.consume('Operation started.');\n      }\n      if (event.kind === 'pass-start') {\n        requireState(operationOpen && !passOpen, 'Pass start is out of order.');\n        passOpen = true;\n        return api.consume('Single-cut pass started.');\n      }\n      if (event.kind === 'wire-continue') {\n        requireState(operationOpen && compensation !== 'off', 'Wire continuation requires active compensation from the preceding contour.');\n        continuationPending = true;\n        return api.consume('Wire and compensation remain active for same-side rapid positioning.');\n      }\n      if (event.kind === 'wire-separate') {\n        throw new Error('Wire separation is not verified for this Robofil 100 package.');\n      }\n      if (event.kind === 'position') {\n        requireState(operationOpen && (compensation === 'off' || continuationPending), 'Positioning with active compensation requires an explicit continuous transition.');\n        return api.emitMotion('motion.rapid', { x: event.to.x, y: event.to.y });\n      }\n      if (event.kind === 'wire-thread') {\n        throw new Error('Wire threading is not verified for this Robofil 100 package.');\n      }\n      if (event.kind === 'compensation-start') {\n        requireState(passOpen && !operationCompensated, 'Compensation start is out of order.');\n        if (compensation !== 'off') {\n          requireState(continuationPending && compensation === event.wireSide, 'Continuous Robofil contours must keep the same compensation side.');\n          continuationPending = false;\n          operationCompensated = true;\n          return api.consume('Same-side compensation remains active from the preceding contour.');\n        }\n        api.emitCommand(event.wireSide === 'left' ? 'compensation.left' : 'compensation.right', {});\n        api.emitCommand('setup.g38', { offset: offsetIndex });\n        compensation = event.wireSide;\n        operationCompensated = true;\n        return;\n      }\n      if (event.kind === 'motion') {\n        requireState(passOpen && compensation !== 'off' && !compensationEnded, 'Cutting motion requires active compensation.');\n        if (event.motion === 'linear') {\n          return api.emitMotion('motion.linear', { x: event.end.x, y: event.end.y });\n        }\n        return emitArc(event);\n      }\n      if (event.kind === 'program-stop') {\n        requireState(operationOpen, 'Program stop requires an open operation.');\n        return api.emitCommand('operator.program-stop', {});\n      }\n      if (event.kind === 'compensation-end') {\n        requireState(operationCompensated && compensation !== 'off' && !compensationEnded, 'Compensation end is out of order.');\n        compensationEnded = true;\n        return api.consume('Compensation cancellation is deferred until wire separation or program end.');\n      }\n      if (event.kind === 'pass-end') {\n        requireState(passOpen && operationCompensated && compensationEnded, 'Pass end requires completed compensated cutting.');\n        passOpen = false;\n        return api.consume('Single-cut pass ended.');\n      }\n      if (event.kind === 'operation-end') {\n        requireState(operationOpen && !passOpen && operationCompensated && compensationEnded, 'Operation end is out of order.');\n        operationOpen = false;\n        return api.consume('Operation completed with compensation state retained pending the next transition.');\n      }\n      if (event.kind === 'program-end') {\n        requireState(programStarted && !operationOpen && compensation !== 'off', 'Program end requires completed compensated operations.');\n        cancelCompensation();\n        api.emitCommand('program.end', {});\n        programStarted = false;\n        return;\n      }\n      throw new Error('Unsupported execution event: ' + event.kind);\n    }\n  };\n}"
   },
   "sources": [
     {
@@ -537,9 +500,9 @@
       "name": "Robofil V2 candidate policy reconstruction",
       "uri": "evidence/candidate-policy-record.txt",
       "mediaType": "text/plain",
-      "contentSha256": "f489bfacc1964073076138dc7e0345208f1b0e38db98a40915b17a319a5a76a4",
-      "recordedAt": "2026-08-29T00:00:00.000Z",
-      "description": "Reviewed reconstruction of the prior V2 application policy with unverified M00 and clockwise-arc paths called out explicitly."
+      "contentSha256": "07d625926d8f1ac777160a4fed22eb449e86a8b4fde0b7c5e5ce7b66b140c3d8",
+      "recordedAt": "2026-09-03T00:00:00.000Z",
+      "description": "Operator-corrected Robofil 100 lifecycle with unverified M00 and clockwise-arc paths called out explicitly."
     },
     {
       "id": "source.prisma-recommended",
@@ -547,9 +510,9 @@
       "name": "Prisma recommended Robofil V2 candidate program",
       "uri": "evidence/prisma-recommended.iso",
       "mediaType": "text/plain",
-      "contentSha256": "4af5dcf0eb1b21e63993fbc8a96edb5db2d07b5f48873c9f3c2514c312080d4d",
-      "recordedAt": "2026-07-14T00:00:00.000Z",
-      "description": "Deterministic candidate output reconstructed from the real Prisma DXF and prior V2 implementation."
+      "contentSha256": "c7d27197ff0b97e3d234f245fa47c527f0b8c158a4d9bed78daddd0df13f6bb4",
+      "recordedAt": "2026-09-03T00:00:00.000Z",
+      "description": "Deterministic candidate output updated to the operator-corrected Robofil 100 compensation lifecycle."
     },
     {
       "id": "source.prisma-exterior-reversed",
@@ -557,9 +520,9 @@
       "name": "Prisma reversed-exterior Robofil V2 candidate program",
       "uri": "evidence/prisma-exterior-reversed.iso",
       "mediaType": "text/plain",
-      "contentSha256": "2293a56b995b0019c3defba60413204c583ad2b89a3ab41a3cbb41cc9de17f75",
-      "recordedAt": "2026-07-14T00:00:00.000Z",
-      "description": "Candidate output exercising the opposite compensation side on the exterior contour."
+      "contentSha256": "e463d92059d12308d6469d51f2e17af5d960c1a7d8a1e052dd533bba2f75d912",
+      "recordedAt": "2026-09-03T00:00:00.000Z",
+      "description": "Operator-corrected candidate output exercising the opposite compensation side on the exterior contour."
     }
   ],
   "evidence": [
@@ -569,7 +532,7 @@
       "selector": {
         "location": "Complete candidate policy record"
       },
-      "claim": "The package reconstructs the prior operation-scoped V2 ordering; M00 and clockwise-arc paths remain explicit unverified test candidates.",
+      "claim": "The package uses the operator-corrected same-side sequence G41/G42, G38 D0, contour motion with optional G0 transitions, G40, G39; clockwise-arc paths remain explicit unverified test candidates.",
       "supports": [
         {
           "kind": "command",
@@ -577,15 +540,7 @@
         },
         {
           "kind": "command",
-          "id": "setup.g60"
-        },
-        {
-          "kind": "command",
           "id": "setup.g38"
-        },
-        {
-          "kind": "command",
-          "id": "distance.absolute"
         },
         {
           "kind": "command",
@@ -621,14 +576,6 @@
         },
         {
           "kind": "command",
-          "id": "operator.manual-wire-separate"
-        },
-        {
-          "kind": "command",
-          "id": "operator.manual-wire-thread"
-        },
-        {
-          "kind": "command",
           "id": "operator.program-stop"
         },
         {
@@ -637,6 +584,7 @@
         }
       ],
       "appliesTo": {
+        "controllerManufacturers": ["Charmilles"],
         "controllerModels": [
           "Robofil Classic"
         ],
@@ -646,8 +594,8 @@
       },
       "review": {
         "status": "reviewed",
-        "reviewer": "wire-edm-workbench-maintainers",
-        "reviewedAt": "2026-08-29T00:00:00.000Z"
+        "reviewer": "Cristian",
+        "reviewedAt": "2026-09-03T00:00:00.000Z"
       }
     },
     {
@@ -656,9 +604,9 @@
       "selector": {
         "location": "Complete candidate program",
         "prefix": "G92 X0 Y0",
-        "suffix": "G39\\nG40\\nM02"
+        "suffix": "G40\\nG39\\nM02"
       },
-      "claim": "The candidate program records G92/G60/G38/G90 setup, G39/G40 boundaries, G0/G41/G1/G3 motion, and M02 ending.",
+      "claim": "The candidate program records G92 setup, one G41 then G38 D0 activation across same-side contours, G0/G1/G3 motion, G40 then G39 cancellation, and M02 ending.",
       "supports": [
         {
           "kind": "command",
@@ -666,15 +614,7 @@
         },
         {
           "kind": "command",
-          "id": "setup.g60"
-        },
-        {
-          "kind": "command",
           "id": "setup.g38"
-        },
-        {
-          "kind": "command",
-          "id": "distance.absolute"
         },
         {
           "kind": "command",
@@ -706,6 +646,7 @@
         }
       ],
       "appliesTo": {
+        "controllerManufacturers": ["Charmilles"],
         "controllerModels": [
           "Robofil Classic"
         ],
@@ -715,8 +656,8 @@
       },
       "review": {
         "status": "reviewed",
-        "reviewer": "wire-edm-workbench-maintainers",
-        "reviewedAt": "2026-08-29T00:00:00.000Z"
+        "reviewer": "Cristian",
+        "reviewedAt": "2026-09-03T00:00:00.000Z"
       }
     },
     {
@@ -724,9 +665,9 @@
       "sourceRef": "source.prisma-exterior-reversed",
       "selector": {
         "location": "Exterior compensation activation",
-        "exact": "G42 D0"
+        "exact": "G42\\nG38 D0"
       },
-      "claim": "The reversed-exterior candidate program records G42 D0 for the opposite resolved wire side.",
+      "claim": "The reversed-exterior candidate program records G42 followed by G38 D0 for the opposite resolved wire side.",
       "supports": [
         {
           "kind": "command",
@@ -734,6 +675,7 @@
         }
       ],
       "appliesTo": {
+        "controllerManufacturers": ["Charmilles"],
         "controllerModels": [
           "Robofil Classic"
         ],
@@ -743,8 +685,8 @@
       },
       "review": {
         "status": "reviewed",
-        "reviewer": "wire-edm-workbench-maintainers",
-        "reviewedAt": "2026-08-29T00:00:00.000Z"
+        "reviewer": "Cristian",
+        "reviewedAt": "2026-09-03T00:00:00.000Z"
       }
     }
   ],
@@ -757,24 +699,25 @@
         "coordinatePrecision": 3,
         "offsetIndex": 0
       },
-      "expectedProgram": "G92 X0.000 Y0.000\nG60\nG38\nG90\nG39\nG40\nG41 D0\nG1 X10.000 Y0.000\nG1 X10.000 Y10.000\nG1 X0.000 Y10.000\nG1 X0.000 Y0.000\nG39\nG40\nM02",
+      "expectedProgram": "G92 X0.000 Y0.000\nG41\nG38 D0\nG1 X10.000 Y0.000\nG1 X10.000 Y10.000\nG1 X0.000 Y10.000\nG1 X0.000 Y0.000\nG40\nG39\nM02",
+      "expectedArtifact": "%\r\nN10 G92 X0.000 Y0.000\r\nN20 G41\r\nN30 G38 D0\r\nN40 G1 X10.000 Y0.000\r\nN50 G1 X10.000 Y10.000\r\nN60 G1 X0.000 Y10.000\r\nN70 G1 X0.000 Y0.000\r\nN80 G40\r\nN90 G39\r\nN100 M02\r\n",
       "evidenceRefs": [
         "robofil-v2-candidate-policy"
       ]
     },
     {
-      "id": "multi-operation-manual",
-      "description": "Two full circles with both directions and sides, manual separation/threading, positioning, and an operator stop.",
-      "planFixture": "core.multi-compensated-manual.v1",
+      "id": "multi-operation-continuous",
+      "description": "Two same-side full circles with both arc directions, an operator stop, and compensation retained across one rapid positioning move.",
+      "planFixture": "core.multi-compensated-continuous.v1",
       "properties": {
         "coordinatePrecision": 3,
         "offsetIndex": 0
       },
-      "expectedProgram": "G92 X0.000 Y0.000\nG60\nG38\nG90\nG39\nG40\nG42 D0\nG2 X10.000 Y0.000 I5.000 J0.000\nG2 X0.000 Y0.000 I5.000 J0.000\nM00\nG39\nG40\nM00\nG0 X20.000 Y0.000\nM00\nG41 D0\nG3 X30.000 Y0.000 I25.000 J0.000\nG3 X20.000 Y0.000 I25.000 J0.000\nG39\nG40\nM02",
+      "expectedProgram": "G92 X0.000 Y0.000\nG42\nG38 D0\nG2 X10.000 Y0.000 I5.000 J0.000\nG2 X0.000 Y0.000 I5.000 J0.000\nM00\nG0 X20.000 Y0.000\nG3 X30.000 Y0.000 I25.000 J0.000\nG3 X20.000 Y0.000 I25.000 J0.000\nG40\nG39\nM02",
+      "expectedArtifact": "%\r\nN10 G92 X0.000 Y0.000\r\nN20 G42\r\nN30 G38 D0\r\nN40 G2 X10.000 Y0.000 I5.000 J0.000\r\nN50 G2 X0.000 Y0.000 I5.000 J0.000\r\nN60 M00\r\nN70 G0 X20.000 Y0.000\r\nN80 G3 X30.000 Y0.000 I25.000 J0.000\r\nN90 G3 X20.000 Y0.000 I25.000 J0.000\r\nN100 G40\r\nN110 G39\r\nN120 M02\r\n",
       "evidenceRefs": [
         "robofil-v2-candidate-policy"
       ]
     }
   ]
 }
-

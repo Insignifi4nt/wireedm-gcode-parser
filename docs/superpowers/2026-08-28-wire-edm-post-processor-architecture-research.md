@@ -2,7 +2,7 @@
 
 Date: 2026-08-28
 
-Status: Research and architecture recommendation. No application code changed.
+Status: Historical research and architecture recommendation. The 2026-09-04 complete machine-package design supersedes its standalone post-installation and host-output-preference recommendations; the controller-neutral plan, runtime isolation, evidence, conformance, and reproducibility analysis remains background. No application code changed.
 
 ## Executive decision
 

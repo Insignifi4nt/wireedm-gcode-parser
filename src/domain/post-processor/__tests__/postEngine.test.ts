@@ -13,6 +13,7 @@ describe('post engine package execution seam', () => {
     packageValue.dialect.commands['distance.absolute'].template = 'PACKAGE-OWNS-SETUP';
     packageValue.fixtures.forEach((fixture) => {
       fixture.expectedProgram = fixture.expectedProgram.replace('G90', 'PACKAGE-OWNS-SETUP');
+      fixture.expectedArtifact = fixture.expectedArtifact.replace('G90', 'PACKAGE-OWNS-SETUP');
     });
     const installed = await installPostPackage(createEmptyPostLibrary(), packageValue);
     if (!installed.ok) throw new Error(installed.error.message);

@@ -1,4 +1,5 @@
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { recoverSavedRevisionTransaction, type SavedRevisionTransactionError } from '@/domain/storage/savedRevisionTransaction';
 
 import {
   parseWorkbenchCatalogManifest,
@@ -41,6 +42,7 @@ type PreferenceReadbackError = {
 };
 
 export type UpdateWorkbenchCatalogPreferencesError =
+  | SavedRevisionTransactionError
   | WorkbenchCatalogManifestError
   | PreferenceManifestStateError
   | PreferenceTimestampError
@@ -70,6 +72,8 @@ export function updateWorkbenchCatalogPreferences(
   input: UpdateWorkbenchCatalogPreferencesInput
 ): Promise<UpdateWorkbenchCatalogPreferencesResult> {
   return withWorkbenchMutationLock(workbench.adapter, async () => {
+    const recovered = await recoverSavedRevisionTransaction(workbench.adapter);
+    if (!recovered.ok) return recovered;
     const currentRead = await readManifest(workbench);
     if (!currentRead.ok) return currentRead;
     if (currentRead.rawText === null) {

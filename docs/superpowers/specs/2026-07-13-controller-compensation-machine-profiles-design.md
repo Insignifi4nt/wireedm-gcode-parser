@@ -1,6 +1,9 @@
 # Controller Compensation and Machine Profiles Design
 
-> Historical design, superseded by the standalone post-package platform. Machine definitions now contain physical facts and explicit bindings; controller realization belongs solely to an installed post package.
+> Historical design, superseded by the complete machine-package design dated
+> 2026-09-04. Machine definitions still contain physical facts and setups remain an
+> internal association, but the only human installation artifact is `.wireedm-package`
+> and controller-file rules belong to the exact post inside that package.
 
 Date: 2026-07-13
 
