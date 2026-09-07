@@ -31,7 +31,7 @@ test('round-trips an exported UPID through a clean browser cache with execution 
     buffer: portableProject
   });
   await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible();
-  await expect(page.locator('[data-editor-status-units]')).toContainText('millimeters');
+  await expect(page.locator('[data-editor-status-cursor]')).toContainText('mm');
   await expect(programOperationLabels(page)).resolves.toEqual(beforeOrder);
   await page.getByRole('button', { name: 'Back to Dashboard' }).click();
   await expect(page.locator('[data-project-row][data-project-source="upid"]')).toHaveCount(1);

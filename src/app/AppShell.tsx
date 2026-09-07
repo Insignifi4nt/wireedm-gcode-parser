@@ -100,7 +100,6 @@ export function AppShell({
     : workbenchStatus === 'error' || (!connectedWorkbench && !isConnectingStorage)
       ? 'error'
       : 'neutral';
-  const projectCount = connectedWorkbench?.manifest.projects.length ?? 0;
   const hasRailContent = railContent !== null;
   const replaceRailChrome = Boolean(railContent?.replaceRailChrome);
   const requestedSidebarCollapsed = railContent?.isCollapsed ?? shellRailCollapsed;
@@ -108,22 +107,6 @@ export function AppShell({
     requestedSidebarCollapsed || (isMiddleViewport && railContent?.isPathProject)
   );
   const railWidth = railContent?.sizing?.width ?? sidebarWidth;
-  const planningMachineId = connectedWorkbench?.manifest.preferences.recentPlanningMachineId;
-  const planningMachine = connectedWorkbench?.machines.machines.find(
-    ({ id }) => id === planningMachineId
-  );
-  const planningSetup = planningMachine?.bindings.find(({ id }) => id === planningMachine.activeBindingId);
-  const planningPost = planningSetup && connectedWorkbench?.posts.installations.find(({ ref }) => (
-    ref.packageId === planningSetup.post.packageId &&
-    ref.version === planningSetup.post.version &&
-    ref.contentHash === planningSetup.post.contentHash
-  ));
-  const outputExtension = planningPost
-    ? `.${planningPost.package.manifest.output.fileExtension}`
-    : 'No active output';
-  const lineEnding = planningPost
-    ? planningPost.package.manifest.output.lineEnding.toUpperCase()
-    : 'No active setup';
   const compactModalOpen = compactDrawer !== null;
   const closeCompactDrawerWithRailFocus = useCallback(() => {
     restoreRailFocusAfterDrawerCloseRef.current = true;
@@ -369,32 +352,6 @@ export function AppShell({
           />
         </AppRailProvider>
       </div>
-      <footer
-        aria-hidden={compactModalOpen ? true : undefined}
-        aria-label="Application status"
-        className="technical-value flex h-6 shrink-0 items-center gap-3 overflow-hidden border-t border-border bg-[#11171b] px-3 text-[10px] text-muted-foreground"
-        data-app-status-bar
-        inert={compactModalOpen ? true : undefined}
-      >
-        <span className="truncate text-foreground" title={activeStorageLabel}>
-          {activeStorageLabel}
-        </span>
-        <span aria-hidden="true">•</span>
-        <span
-          className="truncate"
-          title={planningMachine?.name ?? 'No planning machine'}
-        >
-          {planningMachine?.name ?? 'No planning machine'}
-        </span>
-        <span aria-hidden="true">•</span>
-        <span>{outputExtension}</span>
-        <span aria-hidden="true">•</span>
-        <span>{lineEnding}</span>
-        <span aria-hidden="true">•</span>
-        <span>
-          {projectCount} {projectCount === 1 ? 'project' : 'projects'}
-        </span>
-      </footer>
       <WorkbenchSettingsDialog
         connectedWorkbench={connectedWorkbench}
         errorMessage={errorMessage}

@@ -1023,7 +1023,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     expect(visibleWorkflowPanelIds()).toEqual([]);
-    expect(container.querySelector('[data-editor-command-hint]')?.textContent).not.toContain(
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent ?? '').not.toContain(
       'Pick entry'
     );
 
@@ -1236,7 +1236,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
       `Selection Operation ${firstOperation.id}`
     );
-    expect(container.querySelector('[data-editor-command-hint]')?.textContent)
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent ?? '')
       .not.toContain('Contour Start: hover');
   });
 
@@ -1268,7 +1268,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
       'automatic start remains active'
     );
-    expect(container.querySelector('[data-editor-command-hint]')?.textContent)
+    expect(container.querySelector('[data-editor-command-hint]')?.textContent ?? '')
       .not.toContain('Contour Start: hover');
   });
 
@@ -1518,7 +1518,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(selectedRapidPath()?.getAttribute('d')).toMatch(/ L -4 1$/);
   });
 
-  it('keeps technical path status visible without opening an inspector panel', async () => {
+  it('keeps save state and coordinates visible and opens diagnostics from status', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 
     await act(async () => {
@@ -1539,17 +1539,14 @@ describe('EditorPage UPID draft boundary', () => {
     expect(documentState?.getAttribute('aria-live')).toBe('polite');
     expect(documentState?.getAttribute('aria-atomic')).toBe('true');
     expect(status?.textContent).toContain('Selection None');
-    expect(status?.textContent).toContain('Cursor X — Y —');
-    expect(status?.textContent).toContain('Moves 5');
-    expect(status?.textContent).toContain('Operations 1');
-    expect(status?.textContent).toContain('Contours 1');
-    expect(status?.textContent).toContain('Segments 4');
+    expect(status?.textContent).toContain('Cursor X — Y — mm');
     expect(status?.textContent).toContain('Diagnostics 2');
     expect(
       container.querySelector('[data-upid-diagnostic-code="units-assumed-millimeters"]')
     ).toBeNull();
-    expect(status?.textContent).toContain('Planning machine —');
-    expect(status?.textContent).toContain('Fit Unchecked');
+    await clickElement('[data-editor-status-diagnostics]');
+    expect(container.querySelector('[aria-label="Execution issues"]')?.textContent)
+      .toContain('initial wire position');
   });
 
   it('keeps persistent header undo and redo snapshots aligned with later path selection', async () => {

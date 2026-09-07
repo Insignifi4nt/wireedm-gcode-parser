@@ -20,7 +20,7 @@ test('persists declared DXF units and reopens the neutral UPID project', async (
 
   await confirmPendingDxfImport(page, 'inches');
   await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible();
-  await expect(page.locator('[data-editor-status-units]')).toContainText('inches ×25.4');
+  await expect(page.locator('[data-editor-status-cursor]')).toContainText('mm');
 
   const projectId = await page.evaluate(() => {
     const manifest = JSON.parse(
@@ -45,7 +45,7 @@ test('persists declared DXF units and reopens the neutral UPID project', async (
 
   await page.getByRole('button', { name: 'Back to Dashboard' }).click();
   await page.getByRole('button', { name: `Open project ${projectId} in editor` }).click();
-  await expect(page.locator('[data-editor-status-units]')).toContainText('inches ×25.4');
+  await expect(page.locator('[data-editor-status-cursor]')).toContainText('mm');
 });
 
 test('cancels DXF review without writes or editor navigation', async ({ page }) => {

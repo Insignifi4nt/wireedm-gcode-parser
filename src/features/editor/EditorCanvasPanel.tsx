@@ -68,7 +68,7 @@ export function EditorCanvasPanel({
 }: EditorCanvasPanelProps) {
   return (
     <section
-      className="flex min-h-0 min-w-0 flex-col overflow-hidden border border-border bg-[#090d10] shadow-[0_8px_24px_rgba(0,0,0,0.18)]"
+      className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#090d10]"
       data-editor-canvas-panel
       data-editor-canvas-model={pathDocument ? 'upid' : 'gcode'}
     >

@@ -997,7 +997,12 @@ export function EditorInspectorPanel({
         {!pathDocument && draftParseResult &&
           (draftParseResult.errors.length > 0 ||
             draftParseResult.warnings.length > 0) && (
-            <section className="mt-3 border-t border-border pt-3">
+            <section
+              aria-label="Parse issues"
+              className="mt-3 border-t border-border pt-3 focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring"
+              data-editor-parse-issues
+              tabIndex={-1}
+            >
               <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Parse Issues</h3>
               <div className="max-h-32 overflow-auto border border-border bg-background/50">
                 {[...draftParseResult.errors, ...draftParseResult.warnings].map(

@@ -832,11 +832,6 @@ export function EditorPage({
     : draftParseResult && pathCount > 0
       ? formatBounds(draftParseResult.bounds)
       : '-';
-  const dxfUnitSummary = pathDocumentDraft?.source.appliedUnits
-    ? `${pathDocumentDraft.source.appliedUnits.label} ×${String(
-        pathDocumentDraft.source.appliedUnits.scaleToMillimeters
-      )}`
-    : null;
   const machineFit = useMemo(
     () => pathDocumentDraft
       ? evaluatePhysicalMachineFit({ document: pathDocumentDraft, machine: planningMachine })
@@ -2744,9 +2739,7 @@ export function EditorPage({
 
   function readEditorInteractionHint() {
     if (!pathDocumentDraft) {
-      return program
-        ? 'Select program rows to inspect, edit, move, or pin geometry in the preview.'
-        : 'Import a program or DXF file to begin.';
+      return null;
     }
 
     if (entryExitCanvasPick) {
@@ -2771,17 +2764,15 @@ export function EditorPage({
       return `${relation} mode / Step 2: select the target contour or segment to add the construction point from the latest measurement point.`;
     }
 
-    if (selectedPathElement) {
-      return activeWorkflowOwns('geometry.transform')
-        ? 'Transform active / Drag selected geometry on the canvas or use the workflow fields for exact placement.'
-        : 'Selection active / Open Geometry > Transform Geometry to move or drag the selected geometry.';
+    if (selectedPathElement && activeWorkflowOwns('geometry.transform')) {
+      return 'Drag selected geometry, or enter exact values in Transform.';
     }
 
     if (canvasMouseMode === 'point') {
       return 'Measurement & Construction / Click empty canvas space to place a point, or switch to Select.';
     }
 
-    return 'Select mode / Click geometry to inspect it. Open Construction > Measurement & Construction to place points.';
+    return null;
   }
 
   function activeWorkflowOwns(commandId: string) {
@@ -2872,6 +2863,21 @@ export function EditorPage({
     }
 
     requestEditorWorkflowOpen(command);
+  }
+
+  function openStatusDiagnostics() {
+    if (pathDocumentDraft) {
+      openEditorWorkflow('view.diagnostics');
+      return;
+    }
+    setInspectorRailCollapsed(false);
+    window.requestAnimationFrame(() => {
+      const issues = document.querySelector<HTMLElement>('[data-editor-parse-issues]');
+      const stats = issues?.closest('details');
+      if (stats) stats.open = true;
+      issues?.scrollIntoView({ block: 'nearest' });
+      issues?.focus({ preventScroll: true });
+    });
   }
 
   function openEditorWorkflowForTarget(
@@ -3972,20 +3978,14 @@ export function EditorPage({
         )}
       </section>
       <EditorStatusBar
-        contourCount={pathDocumentDraft?.contours.length ?? null}
-        documentContext={documentContext}
+        coordinateUnits={pathDocumentDraft ? 'mm' : null}
         diagnosticCount={diagnosticCount}
         hasUnsavedChanges={hasUnsavedChanges}
         isSaving={isSaving}
         machineFit={machineFit}
-        planningMachineName={planningMachine?.name ?? null}
-        moveCount={pathCount}
-        operationCount={pathDocumentDraft?.plan.operations.length ?? null}
-        programLineCount={draftParseResult?.stats.totalLines ?? null}
+        onOpenDiagnostics={openStatusDiagnostics}
         previewCursorPoint={previewCursorPoint}
-        segmentCount={pathDocumentDraft?.segments.length ?? null}
         selectionSummary={editorSelectionSummary}
-        unitSummary={dxfUnitSummary}
       />
       {exportPreviewOpen && pathDocumentDraft && (
         <EditorControllerArtifactDialog

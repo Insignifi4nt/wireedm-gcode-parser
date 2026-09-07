@@ -62,16 +62,13 @@ describe('App front-end redesign', () => {
     expect(dialog?.querySelector('textarea[aria-label="Header template"]')).toBeNull();
   });
 
-  it('shows storage, machine, output, and project state in the application status bar', async () => {
+  it('shows active browser storage in the application header', async () => {
     window.showDirectoryPicker = undefined;
     await renderApp(context);
 
-    const status = container.querySelector('[data-app-status-bar]');
-    expect(status?.textContent).toContain('Browser cache');
-    expect(status?.textContent).toContain('No planning machine');
-    expect(status?.textContent).toContain('No active output');
-    expect(status?.textContent).toContain('No active setup');
-    expect(status?.textContent).toContain('0 projects');
+    const status = container.querySelector('[data-app-header] [data-storage-status]');
+    expect(status?.textContent).toBe('Browser cache active');
+    expect(status?.getAttribute('role')).toBe('status');
   });
 
   it('does not report temporary storage before a workbench adapter is active', async () => {
@@ -79,8 +76,8 @@ describe('App front-end redesign', () => {
       connectRememberedWorkbenchDirectory: () => new Promise<never>(() => undefined)
     });
 
-    const status = container.querySelector('[data-app-status-bar]');
-    expect(status?.textContent).toContain('Preparing storage');
+    const status = container.querySelector('[data-app-header] [data-storage-status]');
+    expect(status?.textContent).toContain('Connecting Workbench Folder');
     expect(status?.textContent).not.toContain('Temporary storage');
   });
 
@@ -130,9 +127,6 @@ describe('App front-end redesign', () => {
 
     expect(container.querySelector('[data-editor-context="machine-program"]')).not.toBeNull();
     expect(container.textContent).toContain('Machine Program');
-    expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
-      'Program Lines'
-    );
     const normalizedIsoExport = container.querySelector(
       'button[aria-label="Export normalized ISO"]'
     );

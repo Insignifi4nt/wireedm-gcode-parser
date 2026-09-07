@@ -1,54 +1,34 @@
 import type { PhysicalMachineFitResult } from '@/domain/machine-definition/machineFit';
 
-import type { EditorDocumentContext } from './EditorHeaderBar';
-
 interface EditorStatusBarProps {
-  contourCount: number | null;
-  documentContext: EditorDocumentContext;
+  coordinateUnits: 'mm' | 'in' | null;
   diagnosticCount: number;
   hasUnsavedChanges: boolean;
   isSaving: boolean;
   machineFit: PhysicalMachineFitResult | null;
-  planningMachineName: string | null;
-  moveCount: number;
-  operationCount: number | null;
-  programLineCount: number | null;
+  onOpenDiagnostics: () => void;
   previewCursorPoint: { x: number; y: number } | null;
-  segmentCount: number | null;
   selectionSummary: string;
-  unitSummary: string | null;
 }
 
-const DOCUMENT_CONTEXT_LABELS: Record<EditorDocumentContext, string> = {
-  'empty-program': 'Empty Program',
-  'machine-program': 'Machine Program',
-  'path-project': 'Path Project'
-};
-
 export function EditorStatusBar({
-  contourCount,
-  documentContext,
+  coordinateUnits,
   diagnosticCount,
   hasUnsavedChanges,
   isSaving,
   machineFit,
-  planningMachineName,
-  moveCount,
-  operationCount,
-  programLineCount,
+  onOpenDiagnostics,
   previewCursorPoint,
-  segmentCount,
-  selectionSummary,
-  unitSummary
+  selectionSummary
 }: EditorStatusBarProps) {
   const saveState = isSaving ? 'Saving' : hasUnsavedChanges ? 'Modified · Unsaved' : 'Saved';
+  const fitWarning = getMachineFitWarning(machineFit);
 
   return (
     <footer
-      className="technical-value work-region-scrollbar flex h-6 shrink-0 items-center gap-3 overflow-x-auto whitespace-nowrap border-t border-border bg-card/95 px-2 text-[10px] text-muted-foreground"
+      className="technical-value flex min-h-6 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-card/95 px-2 py-1 text-[10px] text-muted-foreground"
       data-editor-status-bar
     >
-      <span>{DOCUMENT_CONTEXT_LABELS[documentContext]}</span>
       <span
         aria-atomic="true"
         aria-live="polite"
@@ -57,27 +37,27 @@ export function EditorStatusBar({
       >
         {saveState}
       </span>
-      <span data-editor-status-selection>Selection {selectionSummary}</span>
+      <span className="min-w-0 break-words" data-editor-status-selection>Selection {selectionSummary}</span>
       <span data-editor-status-cursor>
         Cursor X {formatCoordinate(previewCursorPoint?.x)} Y {formatCoordinate(previewCursorPoint?.y)}
+        {coordinateUnits && <> <span data-editor-status-units>{coordinateUnits}</span></>}
       </span>
-      <span data-editor-status-moves>Moves {moveCount}</span>
-      {operationCount !== null && (
-        <span data-editor-status-operations>Operations {operationCount}</span>
+      {diagnosticCount > 0 && (
+        <button
+          className="text-amber-200 underline decoration-amber-200/40 underline-offset-2 hover:decoration-amber-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring"
+          data-editor-status-diagnostics
+          onClick={onOpenDiagnostics}
+          title="Open diagnostics"
+          type="button"
+        >
+          Diagnostics {diagnosticCount}
+        </button>
       )}
-      {contourCount !== null && (
-        <span data-editor-status-contours>Contours {contourCount}</span>
+      {fitWarning && (
+        <span className="min-w-0 break-words text-amber-200" data-editor-status-machine-fit role="status">
+          {fitWarning}
+        </span>
       )}
-      {segmentCount !== null && (
-        <span data-editor-status-segments>Segments {segmentCount}</span>
-      )}
-      {documentContext === 'machine-program' && programLineCount !== null && (
-        <span data-editor-program-lines>Program Lines {programLineCount}</span>
-      )}
-      <span data-editor-status-diagnostics>Diagnostics {diagnosticCount}</span>
-      <span data-editor-status-machine>Planning machine {planningMachineName ?? '—'}</span>
-      <span data-editor-status-machine-fit>Fit {formatMachineFit(machineFit)}</span>
-      {unitSummary && <span data-editor-status-units>Units {unitSummary}</span>}
     </footer>
   );
 }
@@ -87,10 +67,19 @@ function formatCoordinate(value: number | undefined) {
   return Number.isInteger(value) ? String(value) : value.toFixed(3);
 }
 
-function formatMachineFit(result: PhysicalMachineFitResult | null) {
-  if (!result || !result.ok) return 'Unchecked';
-  if (result.fit.status === 'fits') return 'Fits';
-  if (result.fit.status === 'too-large') return 'Too large';
-  if (result.fit.status === 'indeterminate') return 'Indeterminate';
-  return 'Unchecked';
+function getMachineFitWarning(result: PhysicalMachineFitResult | null): string | null {
+  if (!result) return null;
+  if (!result.ok) {
+    return result.error.code === 'MACHINE_FIT_GEOMETRY_EMPTY' ? null : result.error.message;
+  }
+  switch (result.fit.status) {
+    case 'too-large': return 'Fit Too large';
+    case 'indeterminate': return 'Fit Indeterminate';
+    case 'fits':
+    case 'not-evaluated': return null;
+    default: {
+      const exhaustive: never = result.fit;
+      return exhaustive;
+    }
+  }
 }

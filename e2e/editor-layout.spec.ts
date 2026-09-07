@@ -745,7 +745,7 @@ test('compact modal host contains shell chrome and clears its owner when the edi
   await page.getByRole('button', { name: 'Open UPID rail' }).click();
   const upidDrawer = page.getByRole('dialog', { name: 'UPID rail' });
   await expect(upidDrawer).toBeVisible();
-  for (const selector of ['[data-app-header]', '[data-app-workspace-grid]', '[data-app-status-bar]']) {
+  for (const selector of ['[data-app-header]', '[data-app-workspace-grid]']) {
     await expect(page.locator(selector)).toHaveAttribute('inert', '');
   }
   await page.keyboard.press('Tab');

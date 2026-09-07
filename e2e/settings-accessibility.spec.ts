@@ -29,7 +29,6 @@ for (const viewport of [
     await expect(closeButton).toBeFocused();
     await expect(page.locator('[data-app-header]')).toHaveAttribute('aria-hidden', 'true');
     await expect(page.locator('[data-app-workspace-grid]')).toHaveAttribute('aria-hidden', 'true');
-    await expect(page.locator('[data-app-status-bar]')).toHaveAttribute('aria-hidden', 'true');
     expect(
       await page
         .locator('[data-app-header]')

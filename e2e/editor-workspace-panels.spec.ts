@@ -488,7 +488,7 @@ test('editor moves a selected contour center to a precise coordinate', async ({ 
   await showPanels(page, ['path-transform']);
 
   await expect(page.locator('[data-upid-transform-selection-center-current]')).toHaveText('5.000, 5.000');
-  await expect(page.locator('[data-editor-command-hint]')).toContainText('Transform active');
+  await expect(page.locator('[data-editor-command-hint]')).toContainText('Drag selected geometry');
 
   await page.locator('[data-upid-transform-selection-center-use-origin]').click();
   await expect(page.locator('[data-upid-transform-selection-center-x]')).toHaveValue('0.000');
@@ -684,8 +684,6 @@ test('editor command hint guides measurement construction step by step', async (
   await showPanels(page, ['measurement']);
 
   const hint = page.locator('[data-editor-command-hint]');
-  await expect(hint).toContainText('Select mode');
-
   await page.getByRole('button', { name: 'Magnetize latest point perpendicular' }).click();
   await expect(hint).toContainText('Perpendicular mode');
   await expect(hint).toContainText('Step 1');
