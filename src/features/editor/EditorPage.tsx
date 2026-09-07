@@ -3164,7 +3164,7 @@ export function EditorPage({
     const panelId = id as EditorWorkspacePanelId;
     const renderedPlacement = readWorkspacePanelRenderedPlacement(panelId);
     const renderedGeometry =
-      renderedPlacement === 'floating' && (isCompactViewport || isMiddleViewport)
+      renderedPlacement === 'floating'
         ? clampEditorFloatingPanelGeometry(
             workspacePanelGeometries[panelId],
             readFloatingPanelViewport()
