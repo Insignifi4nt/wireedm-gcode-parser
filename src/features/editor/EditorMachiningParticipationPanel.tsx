@@ -113,7 +113,7 @@ export function EditorMachiningParticipationPanel({
       </div>
 
       <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
-        <legend className="px-1 uppercase text-muted-foreground">Retained machining span</legend>
+        <legend className="px-1 uppercase text-muted-foreground">Exclude a range from cutting</legend>
         <label className="grid gap-0.5 text-muted-foreground">
           Source segment
           <select
@@ -131,7 +131,7 @@ export function EditorMachiningParticipationPanel({
             value={sourceSegmentId}
           >
             {segmentIds.map((segmentId, index) => (
-              <option key={segmentId} value={segmentId}>Segment {index + 1} · {segmentId}</option>
+              <option key={segmentId} value={segmentId}>Segment {index + 1}</option>
             ))}
           </select>
         </label>
@@ -230,7 +230,14 @@ export function EditorMachiningParticipationPanel({
       </div>}
 
       <div className="grid gap-1" data-machining-span-list ref={spanListRef}>
-        {derivedSpanIds.map((spanId) => (
+        {derivedSpanIds.length > 0 && <details
+          open={selectedSpanId && derivedSpanIds.includes(selectedSpanId) ? true : undefined}
+          className="border border-border"
+        >
+          <summary className="cursor-pointer px-2 py-1 text-muted-foreground">
+            Active cut ranges · {derivedSpanIds.length}
+          </summary>
+        {derivedSpanIds.map((spanId, index) => (
           <div
             className={`border p-2 ${
               selectedSpanId === spanId
@@ -243,10 +250,10 @@ export function EditorMachiningParticipationPanel({
             data-upid-selected={selectedSpanId === spanId ? 'true' : undefined}
             key={spanId}
           >
-            <div className="font-mono text-foreground">{spanId}</div>
-            <div className="text-muted-foreground">Derived active cut</div>
+            <div className="text-foreground">Active range {index + 1}</div>
           </div>
         ))}
+        </details>}
         {spans.length === 0 && derivedSpanIds.length === 0 ? (
           <p className="text-muted-foreground">All source segments are active cuts.</p>
         ) : spans.map((span) => (
@@ -263,7 +270,7 @@ export function EditorMachiningParticipationPanel({
             key={span.id}
           >
             <div>
-              <div className="font-mono text-foreground">{span.sourceSegmentId}</div>
+              <div className="text-foreground">Segment {segmentIds.indexOf(span.sourceSegmentId) + 1}</div>
               <div className="text-muted-foreground">
                 {span.range.start}..{span.range.end} · {span.participation}
               </div>
