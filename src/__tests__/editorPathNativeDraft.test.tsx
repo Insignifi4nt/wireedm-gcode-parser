@@ -774,6 +774,32 @@ describe('EditorPage UPID draft boundary', () => {
       .not.toBe('2');
   });
 
+  it('requires explicit coordinates for translation and absolute placement', async () => {
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={projectWithUpid(pathDocumentFromRectangle())} />);
+    });
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    const original = previewGeometrySignature();
+    await changeInput('input[aria-label="Translate Y"]', '3');
+    await changeInput('input[aria-label="Translate X"]', '');
+    const translation = container.querySelector<HTMLButtonElement>('button[aria-label="Apply translation to document geometry"]');
+    expect(translation?.disabled).toBe(true);
+    expect(container.textContent).toContain('Enter both move coordinates');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    expect(previewGeometrySignature()).toBe(original);
+    await changeInput('input[aria-label="Translate X"]', '0');
+    expect(translation?.disabled).toBe(false);
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    expect(previewGeometrySignature()).not.toBe(original);
+    await changeInput('input[aria-label="Document reference target X"]', '');
+    await changeInput('input[aria-label="Document reference target Y"]', '9');
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Move document reference to target"]')?.disabled).toBe(true);
+    expect(container.textContent).toContain('Enter both target coordinates');
+    await changeInput('input[aria-label="Document reference target X"]', '0');
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Move document reference to target"]')?.disabled).toBe(false);
+  });
+
   it('allows saving after moving the document reference to the origin', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 
@@ -1817,6 +1843,64 @@ describe('EditorPage UPID draft boundary', () => {
         })
       })
     });
+  });
+
+  it.each(['segment', 'operation'] as const)('keeps %s transforms isolated and cancels or commits them as one history entry', async (scope) => {
+    const document = pathDocumentFromIndependentRectangles();
+    const operation = document.plan.operations[0];
+    const selectedIds = new Set(scope === 'segment' ? [operation.segmentRefs[0].segmentId] : operation.segmentRefs.map((ref) => ref.segmentId));
+    const selected = document.segments.filter((segment) => selectedIds.has(segment.id));
+    const points = selected.flatMap((segment) => segment.kind === 'line' ? [segment.start, segment.end] : []);
+    const center = {
+      x: (Math.min(...points.map((point) => point.x)) + Math.max(...points.map((point) => point.x))) / 2,
+      y: (Math.min(...points.map((point) => point.y)) + Math.max(...points.map((point) => point.y))) / 2
+    };
+    const onSaveEditorDraft = vi.fn<(draft: EditorSaveDraft) => void>();
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={onSaveEditorDraft} project={projectWithUpid(document)} />);
+    });
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="view.contours"]');
+    await clickElement(`button[aria-label="Select ${operation.displayName}"]`);
+    if (scope === 'segment') {
+      await clickElement(`path[data-preview-source="path-document"][data-preview-segment="${operation.segmentRefs[0].segmentId}"][data-type="cut"]`);
+    }
+    const original = previewGeometrySignature();
+    const transform = async () => {
+      await clickElement('[data-editor-workflow-command="geometry.transform"]');
+      await clickElement('button[aria-label="Target selection for transform"]');
+      await clickElement('button[aria-label="Rotate selection 90 degrees counterclockwise"]');
+      await clickElement('button[aria-label="Mirror selection across X axis"]');
+    };
+    await transform();
+    expect(previewGeometrySignature()).not.toBe(original);
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Cancel "]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    expect(previewGeometrySignature()).toBe(original);
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Undo active document change"]')?.disabled).toBe(true);
+    await transform();
+    const transformed = previewGeometrySignature();
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(previewGeometrySignature()).toBe(original);
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Undo active document change"]')?.disabled).toBe(true);
+    await clickElement('button[aria-label="Redo active document change"]');
+    expect(previewGeometrySignature()).toBe(transformed);
+    await clickElement('button[aria-label="Save active document"]');
+    const saved = onSaveEditorDraft.mock.calls[0]?.[0];
+    if (saved?.model !== 'upid-document') throw new Error('Expected a saved document');
+    for (const source of document.segments) {
+      const result = saved.pathDocument.segments.find((segment) => segment.id === source.id);
+      if (!selectedIds.has(source.id)) {
+        expect(result).toEqual(source);
+      } else {
+        if (source.kind !== 'line' || result?.kind !== 'line') throw new Error('Expected lines');
+        for (const endpoint of ['start', 'end'] as const) {
+          expect(result[endpoint].x).toBeCloseTo(center.x - (source[endpoint].y - center.y));
+          expect(result[endpoint].y).toBeCloseTo(center.y - (source[endpoint].x - center.x));
+        }
+      }
+    }
   });
 
   it.each(['clockwise', 'counterclockwise'] as const)('rotates document %s about its center and preserves the result through undo, redo and save', async (direction) => {

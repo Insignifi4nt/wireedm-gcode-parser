@@ -256,10 +256,10 @@ export function EditorPathNavigatorPanel({
     selectedPathElement,
     selectedPathOperationId
   );
-  const translateX = Number(pathTranslateXDraft);
-  const translateY = Number(pathTranslateYDraft);
-  const targetX = Number(pathTargetXDraft);
-  const targetY = Number(pathTargetYDraft);
+  const translateX = pathTranslateXDraft.trim() ? Number(pathTranslateXDraft) : NaN;
+  const translateY = pathTranslateYDraft.trim() ? Number(pathTranslateYDraft) : NaN;
+  const targetX = pathTargetXDraft.trim() ? Number(pathTargetXDraft) : NaN;
+  const targetY = pathTargetYDraft.trim() ? Number(pathTargetYDraft) : NaN;
   const translateTargetLabel = selectedPathElement?.segmentId
     ? `Segment ${selectedSegmentIndex >= 0 ? selectedSegmentIndex + 1 : ''}`.trim()
     : selectedOperation
@@ -876,6 +876,9 @@ export function EditorPathNavigatorPanel({
             <Move className="size-3" />
             Apply Translation
           </button>
+          {(!Number.isFinite(translateX) || !Number.isFinite(translateY)) && (
+            <p className="mt-1 text-[10px] text-destructive" role="status">Enter both move coordinates. Use 0 for an unchanged axis.</p>
+          )}
           <div className="mt-3 border-t border-border pt-2" data-upid-transform-orientation>
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="text-[10px] uppercase text-muted-foreground">Orientation</span>
@@ -1058,6 +1061,9 @@ export function EditorPathNavigatorPanel({
                 {activePathTransformTarget === 'document' ? 'Move Ref' : 'Move Center'}
               </button>
             </div>
+            {(!Number.isFinite(targetX) || !Number.isFinite(targetY)) && (
+              <p className="mt-1 text-[10px] text-destructive" role="status">Enter both target coordinates.</p>
+            )}
             {measurementPoints.length > 0 && (
               <div
                 className="mt-2 border-t border-border pt-2"
