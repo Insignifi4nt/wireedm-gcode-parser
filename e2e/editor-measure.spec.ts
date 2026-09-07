@@ -3,6 +3,36 @@ import { confirmPendingDxfImport } from './dxf-import';
 
 test.use({ hasTouch: true });
 
+test('inspects either picked feature without replacing the measured pair', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await page.getByLabel('DXF file').setInputFiles({
+    name: 'two-circles.dxf', mimeType: 'application/dxf',
+    buffer: Buffer.from('0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\nCUT\n10\n0\n20\n0\n40\n5\n0\nCIRCLE\n8\nCUT\n10\n20\n20\n0\n40\n3\n0\nENDSEC\n0\nEOF\n')
+  });
+  await confirmPendingDxfImport(page);
+  await page.getByRole('button', { name: 'Construction menu' }).click();
+  await page.locator('[data-editor-workflow-command="inspect.measure"]').click();
+  await page.getByRole('button', { name: 'Dock Measure right', exact: true }).click();
+  const a = await canvasPoint(page, 0, 0);
+  const b = await canvasPoint(page, 20, 0);
+  await page.mouse.click(a.x, a.y);
+  await page.mouse.click(b.x, b.y);
+  const dimensions = page.getByLabel('Selected geometry measurements', { exact: true });
+  await expect(dimensions).toContainText('Diameter6.000 mm');
+  const bReference = await dimensions.locator('[data-measurement-reference]').textContent();
+  await page.getByRole('button', { name: 'Inspect A', exact: true }).click();
+  await expect(dimensions).toContainText('Diameter10.000 mm');
+  expect(await dimensions.locator('[data-measurement-reference]').textContent()).not.toBe(bReference);
+  await expect(page.getByLabel('Point measurements', { exact: true })).toContainText('Distance20.000 mm');
+  await page.getByRole('button', { name: 'Inspect B', exact: true }).click();
+  await expect(dimensions).toContainText('Diameter6.000 mm');
+  await expect(dimensions.locator('[data-measurement-reference]')).toHaveText(bReference!);
+  await expect(page.locator('[data-preview-measurement-distance]')).toHaveText('20.000 mm');
+  await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
+  await page.screenshot({ path: 'tmp/cam-audit/12-measure-feature-references.png' });
+});
+
 async function openRectangle(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: 'Go Build!', exact: true }).click();

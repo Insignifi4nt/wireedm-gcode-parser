@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { measurePointPair, measureSegment, measureProfile, type MeasurementPick } from '@/domain/editor/geometryMeasurement';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import type { EditorMeasurementState } from './useEditorMeasurement';
@@ -8,10 +8,13 @@ export function EditorMeasurePanel({ measurement, document }: {
   document: PathPlanningDocument;
 }) {
   const { picks, hover, precision } = measurement;
+  const [inspectedPoint, setInspectedPoint] = useState<'A' | 'B'>('B');
   const first = picks[0];
   const second = picks[1] ?? hover;
   const pair = first && second ? measurePointPair(first.point, second.point) : null;
-  const target = picks.at(-1) ?? hover;
+  const inspected = inspectedPoint === 'A' ? first : picks[1] ?? first;
+  const target = inspected?.kind === 'geometry' ? inspected : picks.find((pick) => pick.kind === 'geometry') ?? inspected ?? hover;
+  const canSwitchGeometry = first?.kind === 'geometry' && picks[1]?.kind === 'geometry' && first.segmentId !== picks[1].segmentId;
   const segment = target?.kind === 'geometry' ? document.segments.find(({ id }) => id === target.segmentId) : null;
   const dimensions = segment ? measureSegment(segment) : null;
   const boundary = useMemo(() => {
@@ -28,7 +31,7 @@ export function EditorMeasurePanel({ measurement, document }: {
           diagnostic.relatedContourIds?.some((id) => id === operation.contourId) ||
           diagnostic.relatedSegmentIds?.some((id) => operation.segmentRefs.some((ref) => ref.segmentId === id)))
       );
-    return { ...profile, label: operation.label, area: areaAllowed && profile.signedArea !== null ? Math.abs(profile.signedArea) : null };
+    return { ...profile, label: operation.displayName, area: areaAllowed && profile.signedArea !== null ? Math.abs(profile.signedArea) : null };
   }, [document, segment]);
   const format = (value: number) => value.toFixed(precision);
   return (
@@ -56,8 +59,8 @@ export function EditorMeasurePanel({ measurement, document }: {
         </label>
       </div>
       <dl className="technical-value space-y-1">
-        {first && <PickRow label="A" pick={first} format={format} />}
-        {second && <PickRow label={picks[1] ? 'B' : 'Preview'} pick={second} format={format} />}
+        {first && <PickRow label="A" pick={first} format={format} document={document} />}
+        {second && <PickRow label={picks[1] ? 'B' : 'Preview'} pick={second} format={format} document={document} />}
       </dl>
       {pair && <dl className="technical-value space-y-1 border-t border-border pt-2" aria-label="Point measurements">
         <Result label="Distance" value={`${format(pair.distance)} mm`} />
@@ -65,7 +68,14 @@ export function EditorMeasurePanel({ measurement, document }: {
         <Result label="ΔY" value={`${format(pair.dy)} mm`} />
         {pair.angleDegrees !== null && <Result label="Angle from X" value={`${format(pair.angleDegrees)}°`} />}
       </dl>}
+      {canSwitchGeometry && <div className="flex gap-1" aria-label="Inspect measured geometry">
+        {(['A', 'B'] as const).map((label, index) => <button key={label} type="button"
+          className="h-7 flex-1 border border-border px-2 aria-pressed:bg-accent disabled:opacity-40"
+          aria-pressed={inspectedPoint === label} disabled={picks[index]?.kind !== 'geometry'}
+          onClick={() => setInspectedPoint(label)}>Inspect {label}</button>)}
+      </div>}
       {dimensions && <dl className="technical-value space-y-1 border-t border-border pt-2" aria-label="Selected geometry measurements">
+        <div><dt className="sr-only">Geometry</dt><dd className="text-muted-foreground" data-measurement-reference>{target && measurementReference(document, target)}</dd></div>
         <Result label={dimensions.kind === 'circle' ? 'Circumference' : 'Length'} value={`${format(dimensions.length)} mm`} />
         {dimensions.kind !== 'line' && <>
           <Result label="Radius" value={`${format(dimensions.radius)} mm`} />
@@ -89,11 +99,20 @@ export function EditorMeasurePanel({ measurement, document }: {
   );
 }
 
-function PickRow({ label, pick, format }: { label: string; pick: MeasurementPick; format: (value: number) => string }) {
+function PickRow({ label, pick, format, document }: { label: string; pick: MeasurementPick; format: (value: number) => string; document: PathPlanningDocument }) {
   return <div>
     <dt className="text-muted-foreground">{label} · {pick.kind === 'free' ? 'Free point' : pick.snap}</dt>
     <dd>{format(pick.point.x)}, {format(pick.point.y)} mm</dd>
+    {pick.kind === 'geometry' && <dd className="text-muted-foreground">{measurementReference(document, pick)}</dd>}
   </div>;
+}
+
+function measurementReference(document: PathPlanningDocument, pick: MeasurementPick) {
+  if (pick.kind === 'free') return 'Free point';
+  const operation = document.plan.operations.find((candidate) => candidate.segmentRefs.some((ref) => ref.segmentId === pick.segmentId));
+  if (!operation) return 'Source geometry';
+  const index = operation.segmentRefs.findIndex((ref) => ref.segmentId === pick.segmentId);
+  return `${operation.displayName} · Segment ${index + 1}`;
 }
 
 function Result({ label, value }: { label: string; value: string }) {
