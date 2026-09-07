@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
@@ -9,6 +9,12 @@ import { createLineSegment } from '../segments';
 import { SpatialHash } from '../spatialIndex';
 
 describe('path-intel endpoint clustering performance', () => {
+  it('bounds spatial candidate checks for mixed-size disjoint segments', () => {
+    const oneThousandChecks = countMixedSizeQueryChecks(1_000);
+    const fourThousandChecks = countMixedSizeQueryChecks(4_000);
+    expect(fourThousandChecks).toBeLessThan(oneThousandChecks * 8);
+    expect(fourThousandChecks).toBeLessThan(4_000 * 8);
+  });
   it(
     'keeps 4,000 sequential lines comfortably sub-quadratic after warm-up',
     { timeout: 30_000 },
@@ -129,6 +135,30 @@ describe('path-intel endpoint clustering performance', () => {
     }
   );
 });
+
+function countMixedSizeQueryChecks(count: number) {
+  let checks = 0;
+  const queryBounds = SpatialHash.prototype.queryBounds;
+  // maxX is read for validation, cell lookup, and every candidate intersection.
+  // Count those real operations without changing the index's query behavior.
+  const querySpy = vi.spyOn(SpatialHash.prototype, 'queryBounds').mockImplementation(function (this: SpatialHash<unknown>, bounds) {
+    return queryBounds.call(this, {
+      minX: bounds.minX,
+      minY: bounds.minY,
+      get maxX() {
+        checks += 1;
+        return bounds.maxX;
+      },
+      maxY: bounds.maxY
+    });
+  });
+  try {
+    sanitizeMixedSizeLines(mixedSizeLines(count));
+    return checks;
+  } finally {
+    querySpy.mockRestore();
+  }
+}
 
 function sequentialLines(count: number) {
   return Array.from({ length: count }, (_, index) =>

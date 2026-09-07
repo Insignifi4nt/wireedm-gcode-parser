@@ -15,6 +15,7 @@ interface SpatialLevel {
   cellSize: number;
   cells: Map<string, number[]>;
   entryIds: number[];
+  bounds: Bounds2;
 }
 
 export class SpatialHash<T> {
@@ -58,7 +59,7 @@ export class SpatialHash<T> {
     while (levelNumber < 4_096) {
       const range = this.cellRange(bounds, cellSize);
       if (range && !cellCountExceeds(range, this.maxCellsPerBounds)) {
-        const level = this.level(levelNumber, cellSize);
+        const level = this.level(levelNumber, cellSize, bounds);
         level.entryIds.push(entry.id);
         forEachCell(range, (x, y) => {
           const key = cellKey(x, y);
@@ -88,8 +89,13 @@ export class SpatialHash<T> {
     if (this.entries.size === 0) return [];
 
     for (const level of this.levels.values()) {
+      if (!boundsIntersect(level.bounds, bounds)) continue;
       const range = this.cellRange(bounds, level.cellSize);
-      if (!range || cellCountExceeds(range, this.maxCellsPerBounds)) {
+      // Insertion limits bound index storage, not query work. A tolerance-expanded
+      // query can cover more cells than its stored geometry. Scan entries only
+      // when that is cheaper than walking the query's cells.
+      const queryCellLimit = Math.max(this.maxCellsPerBounds, level.entryIds.length);
+      if (!range || cellCountExceeds(range, queryCellLimit)) {
         for (const entryId of level.entryIds) candidateIds.add(entryId);
         continue;
       }
@@ -110,10 +116,16 @@ export class SpatialHash<T> {
       .map((entry) => entry.value);
   }
 
-  private level(levelNumber: number, cellSize: number) {
+  private level(levelNumber: number, cellSize: number, bounds: Bounds2) {
     const existing = this.levels.get(levelNumber);
-    if (existing) return existing;
-    const level: SpatialLevel = { cellSize, cells: new Map(), entryIds: [] };
+    if (existing) {
+      existing.bounds.minX = Math.min(existing.bounds.minX, bounds.minX);
+      existing.bounds.minY = Math.min(existing.bounds.minY, bounds.minY);
+      existing.bounds.maxX = Math.max(existing.bounds.maxX, bounds.maxX);
+      existing.bounds.maxY = Math.max(existing.bounds.maxY, bounds.maxY);
+      return existing;
+    }
+    const level: SpatialLevel = { cellSize, cells: new Map(), entryIds: [], bounds: { ...bounds } };
     this.levels.set(levelNumber, level);
     return level;
   }
