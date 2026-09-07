@@ -12,6 +12,8 @@ import { Magnet, Maximize2, MousePointer2, ZoomIn, ZoomOut } from 'lucide-react'
 import { Button } from '@/components/ui/button';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
+import { measurePointPair } from '@/domain/editor/geometryMeasurement';
+import type { EditorMeasurementState } from './useEditorMeasurement';
 import type {
   MagnetizeMode,
   PathPointRelation
@@ -64,6 +66,7 @@ interface EditorPreviewProps {
   hoveredPathElement?: EditorPathElementRef | null;
   keyboardShortcutsEnabled?: boolean;
   measurementPoints: MeasurementPoint[];
+  measurement?: EditorMeasurementState;
   onCursorPointChange?: (point: { x: number; y: number } | null) => void;
   onMeasurementPointMove?: (pointId: string, point: { x: number; y: number }) => void;
   onPathEndpointClick?: (element: EditorPathElementRef) => void;
@@ -128,6 +131,7 @@ export function EditorPreview({
   hoveredPathElement,
   keyboardShortcutsEnabled = true,
   measurementPoints,
+  measurement,
   onCursorPointChange,
   onMeasurementPointMove,
   onPathEndpointClick,
@@ -369,6 +373,29 @@ export function EditorPreview({
   const zoomPercent = Math.round(zoom * 100);
   const pathEndpointHandles = readPathEndpointHandles(activePreview.paths);
   const selectedArcCenterHandles = readSelectedArcCenterHandles(activePreview.paths, selectedPathElement);
+  const measurementFirst = measurement?.picks[0];
+  const measurementSecond = measurement?.picks[1] ?? measurement?.hover;
+  const measurementResult = measurementFirst && measurementSecond
+    ? measurePointPair(measurementFirst.point, measurementSecond.point) : null;
+  const measurementDisplayScale = Math.max(
+    activeViewBox.width / Math.max(surfaceSize.width, 1),
+    activeViewBox.height / Math.max(surfaceSize.height, 1)
+  );
+  const measurementPickRadius = measurementDisplayScale * 4;
+  const measurementTextSize = measurementDisplayScale * 11;
+
+  function measurementScale(svg: SVGSVGElement) {
+    const rect = svg.getBoundingClientRect();
+    return Math.max(activeViewBox.width / rect.width, activeViewBox.height / rect.height);
+  }
+
+  function handleMeasurementClick(event: MouseEvent<SVGSVGElement>) {
+    if (!measurement || event.shiftKey || event.button !== 0) return;
+    event.stopPropagation();
+    if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+    const point = previewEventToWorldPoint(event, activeViewBox, flipY, { gridSize: snapGridSize, snapToGrid: false });
+    if (point) measurement.onPick(point, measurementScale(event.currentTarget));
+  }
 
   function handlePreviewClick(event: MouseEvent<SVGSVGElement>) {
     if (suppressClickRef.current) {
@@ -570,6 +597,7 @@ export function EditorPreview({
   }
 
   function handlePreviewMouseLeave() {
+    measurement?.onHover(null, 1);
     onCursorPointChange?.(null);
     suppressClickRef.current = false;
     handlePreviewMouseUp();
@@ -666,6 +694,12 @@ export function EditorPreview({
     event.preventDefault();
     const distance = Math.hypot(touch.clientX - state.clientX, touch.clientY - state.clientY);
     if (distance > TOUCH_TAP_THRESHOLD) return;
+
+    if (measurement) {
+      const point = previewTouchToWorldPoint(touch, event.currentTarget, activeViewBox, flipY, { gridSize: snapGridSize, snapToGrid: false });
+      if (point) measurement.onPick(point, measurementScale(event.currentTarget));
+      return;
+    }
 
     const now = Date.now();
     const previousTap = lastTapRef.current;
@@ -867,6 +901,15 @@ export function EditorPreview({
         className="h-full min-h-0 w-full"
         onContextMenu={(event) => event.preventDefault()}
         onClick={handlePreviewClick}
+        onClickCapture={handleMeasurementClick}
+        onMouseDownCapture={(event) => {
+          if (measurement && !event.shiftKey && event.button === 0) event.stopPropagation();
+        }}
+        onMouseMoveCapture={(event) => {
+          if (!measurement) return;
+          const point = previewEventToWorldPoint(event, activeViewBox, flipY, { gridSize: snapGridSize, snapToGrid: false });
+          measurement.onHover(point, measurementScale(event.currentTarget));
+        }}
         onMouseDown={handlePreviewMouseDown}
         onMouseLeave={handlePreviewMouseLeave}
         onMouseMove={handlePreviewMouseMove}
@@ -1280,7 +1323,7 @@ export function EditorPreview({
             const radius = marker.type === 'start' ? markerRadius * 1.25 : markerRadius;
 
             return (
-              <g data-path-marker={marker.type} key={marker.type}>
+              <g data-path-marker={marker.type} key={marker.type} pointerEvents="none">
                 <circle
                   cx={marker.x}
                   cy={svgY}
@@ -1467,6 +1510,50 @@ export function EditorPreview({
               </g>
             );
           })}
+          <g data-preview-point-emphasis-layer pointerEvents="none">
+            {pathEndpointHandles.map((handle) => {
+              const highlight = pathEndpointMatches(handle, handle.role, hoveredPathElement)
+                ? 'hover'
+                : pathEndpointMatches(handle, handle.role, selectedPathElement) ? 'selected' : null;
+              if (!highlight) return null;
+              return <circle
+                key={`emphasis-${handle.operationId}-${handle.segmentId}-${handle.role}`}
+                data-preview-point-emphasis={highlight}
+                data-preview-segment={handle.segmentId}
+                data-preview-point-role={handle.role}
+                cx={handle.point.x}
+                cy={flipY - handle.point.y}
+                r={Math.max(highlightedPointRadius * 1.6, markerRadius * 1.9)}
+                fill="none"
+                stroke={highlightColor(highlight)}
+                strokeWidth="2.5"
+                vectorEffect="non-scaling-stroke"
+              />;
+            })}
+          </g>
+          {measurement && <g data-preview-measurement pointerEvents="none">
+            {measurementFirst && measurementSecond && <line
+              x1={measurementFirst.point.x} y1={flipY - measurementFirst.point.y}
+              x2={measurementSecond.point.x} y2={flipY - measurementSecond.point.y}
+              stroke="#fbbf24" strokeWidth="1.5" strokeDasharray="5 3" vectorEffect="non-scaling-stroke"
+            />}
+            {measurement.picks.map((pick, index) => <g key={index}>
+              <circle cx={pick.point.x} cy={flipY - pick.point.y} r={measurementPickRadius} fill="#fbbf24" />
+              <text x={pick.point.x + measurementPickRadius * 1.4} y={flipY - pick.point.y - measurementPickRadius} fill="#fde68a" fontSize={measurementTextSize}>{index === 0 ? 'A' : 'B'}</text>
+            </g>)}
+            {measurement.hover && <g data-preview-measurement-snap={measurement.hover.kind === 'geometry' ? measurement.hover.snap : 'free'}>
+              <circle cx={measurement.hover.point.x} cy={flipY - measurement.hover.point.y} r={measurementPickRadius * 1.8} fill="none" stroke="#fbbf24" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+              <text x={measurement.hover.point.x + measurementPickRadius * 2} y={flipY - measurement.hover.point.y - measurementPickRadius * 2} fill="#fde68a" fontSize={measurementTextSize} paintOrder="stroke" stroke="#020617" strokeWidth={measurementTextSize * 0.2}>
+                {measurement.hover.kind === 'geometry' ? measurement.hover.snap : 'Free point'}
+              </text>
+            </g>}
+            {measurementFirst && measurementSecond && measurementResult && <text
+              data-preview-measurement-distance
+              x={(measurementFirst.point.x + measurementSecond.point.x) / 2}
+              y={flipY - (measurementFirst.point.y + measurementSecond.point.y) / 2 - measurementPickRadius * 2}
+              textAnchor="middle" fill="#fde68a" fontSize={measurementTextSize} paintOrder="stroke" stroke="#020617" strokeWidth={measurementTextSize * 0.25}
+            >{measurementResult.distance.toFixed(measurement.precision)} mm</text>}
+          </g>}
         </g>
       </svg>
     </div>

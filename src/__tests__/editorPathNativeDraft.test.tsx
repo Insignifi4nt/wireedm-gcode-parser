@@ -484,7 +484,7 @@ describe('EditorPage UPID draft boundary', () => {
     }
   });
 
-  it('keeps Position read-only and owns preview grid snap in Measurement & Construction', async () => {
+  it('keeps Position read-only and owns preview grid snap in Construction points', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 
     await act(async () => {

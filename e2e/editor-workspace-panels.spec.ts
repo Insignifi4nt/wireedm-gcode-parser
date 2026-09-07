@@ -548,7 +548,7 @@ test('editor moves a selected arc center to a chosen measurement point', async (
   await page.getByLabel('Measurement point X').fill('-4');
   await page.getByLabel('Measurement point Y').fill('6');
   await page.getByRole('button', { name: 'Add Point' }).click();
-  await page.getByRole('button', { name: 'Save Measurement & Construction workflow' }).click();
+  await page.getByRole('button', { name: 'Save Construction points workflow' }).click();
   await expect(page.locator('[data-editor-workspace-panel="measurement"]')).toHaveCount(0);
 
   await showPanels(page, ['path-transform']);

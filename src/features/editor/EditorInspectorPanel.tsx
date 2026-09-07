@@ -1104,7 +1104,7 @@ export function EditorInspectorPanel({
         ))
       )}
 
-      {renderWorkspacePanel('measurement', 'Measurement & Construction', (
+      {renderWorkspacePanel('measurement', 'Construction points', (
       <section
         className={`${guideHighlightClass(
           'measurement-points',
@@ -1113,7 +1113,7 @@ export function EditorInspectorPanel({
         {...guideTargetProps('measurement-points', guideHighlightTarget)}
       >
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h3 className="text-[11px] font-semibold">Measurement & Construction</h3>
+          {!pathDocument && <h3 className="text-[11px] font-semibold">Construction points</h3>}
           <div className="flex items-center gap-1">
             <span className="text-[10px] text-muted-foreground">{measurementPoints.length}</span>
             <button
@@ -1305,9 +1305,9 @@ export function EditorInspectorPanel({
           </div>
         )}
         <div className="mt-2 grid grid-cols-1 gap-1.5">
-          <Button
+          {canInsertMeasurementPoints && <Button
             className="h-6 px-2 text-[10px]"
-            disabled={!canInsertMeasurementPoints || !program || measurementPoints.length === 0 || isSaving}
+            disabled={!program || measurementPoints.length === 0 || isSaving}
             onClick={onInsertMeasurementPoints}
             size="sm"
             type="button"
@@ -1315,7 +1315,7 @@ export function EditorInspectorPanel({
           >
             <ArrowRightFromLine />
             Insert Points
-          </Button>
+          </Button>}
           <Button
             className="h-6 px-2 text-[10px]"
             disabled={measurementPoints.length === 0}

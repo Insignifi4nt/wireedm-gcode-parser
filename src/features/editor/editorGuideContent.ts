@@ -92,17 +92,20 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Press G to toggle grid visibility. Current Position shows live mouse coordinates over the canvas.'
           },
           {
-            text: 'Open Measurement & Construction and enable Grid Snap when cursor coordinates and clicked points should land on the 5 mm canvas grid.',
+            text: 'Open Construction points and enable Grid Snap when cursor coordinates and clicked points should land on the 5 mm canvas grid.',
             mock: { label: 'Grid Snap ON' },
             highlightTarget: 'grid-snap'
           }
         ]
       },
       {
-        title: '4. Measurement Points',
+        title: '4. Measure and construction points',
         steps: [
           {
-            text: 'Open Construction > Measurement & Construction, then use Point mode to place P1, P2, and later points. You can also type exact X/Y values and click Add Point.',
+            text: 'For path projects, open Construction > Measure and pick two points. Geometry snapping identifies endpoints, midpoints, centers and edges. Distance, X/Y differences and geometry dimensions appear without changing the project. Choose Chain or Keep first point for repeated measurements.'
+          },
+          {
+            text: 'Open Construction > Construction points, then use Point mode to place P1, P2, and later points. You can also type exact X/Y values and click Add Point.',
             highlightTarget: 'measurement-points'
           },
           {
@@ -112,7 +115,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Insert Points is for external posted programs. DXF path projects keep measurement and magnetized points on the canvas; Export CSV writes controller-neutral point data for outside use.'
           },
           {
-            text: 'While Measurement & Construction is open, Alt/Option+Shift+C clears all points when focus is not inside an input.'
+            text: 'While Construction points is open, Alt/Option+Shift+C clears all points when focus is not inside an input.'
           }
         ]
       },
@@ -227,7 +230,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Apasa G ca sa ascunzi sau afisezi gridul. Current Position arata coordonatele live ale mouse-ului pe canvas.'
           },
           {
-            text: 'Deschide Measurement & Construction si activeaza Grid Snap cand coordonatele cursorului si punctele adaugate trebuie sa cada pe gridul de 5 mm.',
+            text: 'Deschide Construction points si activeaza Grid Snap cand coordonatele cursorului si punctele adaugate trebuie sa cada pe gridul de 5 mm.',
             mock: { label: 'Grid Snap ON' },
             highlightTarget: 'grid-snap'
           }
@@ -237,7 +240,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
         title: '4. Puncte de masurare',
         steps: [
           {
-            text: 'Deschide Construction > Measurement & Construction, apoi foloseste modul Point pentru P1, P2 si punctele urmatoare. Poti introduce si valori exacte X/Y, apoi Add Point.',
+            text: 'Deschide Construction > Construction points, apoi foloseste modul Point pentru P1, P2 si punctele urmatoare. Poti introduce si valori exacte X/Y, apoi Add Point.',
             highlightTarget: 'measurement-points'
           },
           {
@@ -247,7 +250,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Insert Points este pentru programe externe postate. Proiectele DXF pastreaza punctele de masurare si punctele magnetizate pe canvas; Export CSV scrie date neutre despre puncte pentru utilizare externa.'
           },
           {
-            text: 'Cat timp Measurement & Construction este deschis, Alt/Option+Shift+C curata toate punctele cand focusul nu este intr-un input.'
+            text: 'Cat timp Construction points este deschis, Alt/Option+Shift+C curata toate punctele cand focusul nu este intr-un input.'
           }
         ]
       },

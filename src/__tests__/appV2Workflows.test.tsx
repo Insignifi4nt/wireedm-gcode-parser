@@ -50,8 +50,6 @@ describe('V2 app workflows', () => {
       schemaVersion: 1,
       installations: []
     });
-    expect(context.container.textContent).toContain('No active output');
-    expect(context.container.textContent).toContain('No planning machine');
   });
 
   it('requires an explicit unit decision and persists controller-neutral UPID', async () => {

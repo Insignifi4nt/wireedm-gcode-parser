@@ -130,6 +130,8 @@ import { EditorProgramLinesPanel } from './EditorProgramLinesPanel';
 import { EditorProgramTree, type EditorProgramTreeNode } from './EditorProgramTree';
 import { EditorProgramTextPanel } from './EditorProgramTextPanel';
 import { EditorStatusBar } from './EditorStatusBar';
+import { EditorMeasurePanel } from './EditorMeasurePanel';
+import { useEditorMeasurement } from './useEditorMeasurement';
 import { EditorControllerArtifactDialog } from './EditorControllerArtifactDialog';
 import { EditorExecutionDiagnostics } from './EditorExecutionDiagnostics';
 import {
@@ -276,9 +278,11 @@ type EditorWorkspacePanelId =
   | 'position'
   | 'statistics'
   | 'machine'
-  | 'measurement';
+  | 'measurement'
+  | 'measure';
 
 const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
+  measure: 'Measure',
   'path-summary': 'Path Summary',
   'geometry-setup': 'Geometry Setup',
   'contour-setup': 'Contour Setup',
@@ -296,10 +300,11 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   position: 'Position',
   statistics: 'Statistics',
   machine: 'Project Machine & Source Setup',
-  measurement: 'Measurement & Construction'
+  measurement: 'Construction points'
 };
 
 const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string> = {
+  measure: 'distance, coordinates and geometry dimensions with magnetic point picking',
   'path-summary': 'project counts, topology, source, and planning state',
   'geometry-setup': 'document machining geometry basis',
   'contour-setup': 'contour direction, role, and compensation intent',
@@ -338,6 +343,7 @@ const PATH_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
 ];
 
 const INSPECTOR_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
+  'measure',
   'position',
   'statistics',
   'machine',
@@ -345,6 +351,7 @@ const INSPECTOR_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
 ];
 
 const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFloatingPanelGeometry> = {
+  measure: { x: 820, y: 90, width: 320, height: 420 },
   'path-summary': { x: 250, y: 74, width: 300, height: 220 },
   'geometry-setup': { x: 274, y: 104, width: 320, height: 260 },
   'contour-setup': { x: 286, y: 118, width: 340, height: 430 },
@@ -370,6 +377,11 @@ const EDITOR_WORKFLOW_MENU_TITLES: EditorWorkflowMenuGroup['title'][] = [
 ];
 
 const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
+  {
+    id: 'inspect.measure', label: 'Measure', menuPath: ['Construction', 'Measure'],
+    scope: 'view', toolWindowId: 'measure', prerequisites: [{ kind: 'document' }],
+    workflow: { kind: 'view' }
+  },
   {
     id: 'geometry.setup', label: 'Geometry Setup', menuPath: ['Geometry', 'Geometry Setup'],
     scope: 'document', toolWindowId: 'geometry-setup', historyLabel: 'Edit geometry setup',
@@ -399,8 +411,8 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
     workflow: { kind: 'mutating' as const }
   })),
   {
-    id: 'construction.measurement', label: 'Measurement & Construction',
-    menuPath: ['Construction', 'Measurement & Construction'], scope: 'document',
+    id: 'construction.measurement', label: 'Construction points',
+    menuPath: ['Construction', 'Construction points'], scope: 'document',
     toolWindowId: 'measurement', historyLabel: 'Edit measurement and construction points',
     prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
   },
@@ -784,6 +796,8 @@ export function EditorPage({
   const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
   const draftText = editorDraftText(draftState);
   const pathDocumentDraft = editorDraftPathDocument(draftState);
+  const measurementSegments = useMemo(() => pathDocumentDraft?.segments ?? [], [pathDocumentDraft]);
+  const measurement = useEditorMeasurement(measurementSegments);
   const programTree = useMemo(
     () => pathDocumentDraft ? buildUpidEditorTree(pathDocumentDraft) : null,
     [pathDocumentDraft]
@@ -2738,6 +2752,7 @@ export function EditorPage({
   }
 
   function readEditorInteractionHint() {
+    if (activeWorkflowOwns('inspect.measure')) return null;
     if (!pathDocumentDraft) {
       return null;
     }
@@ -2769,7 +2784,7 @@ export function EditorPage({
     }
 
     if (canvasMouseMode === 'point') {
-      return 'Measurement & Construction / Click empty canvas space to place a point, or switch to Select.';
+      return 'Construction points / Click empty canvas space to place a point, or switch to Select.';
     }
 
     return null;
@@ -3007,6 +3022,7 @@ export function EditorPage({
         });
 
     setActiveWorkflowSession(session);
+    if (command.id === 'inspect.measure') measurement.clear();
     openActiveWorkflowInCompactDrawer();
     setEntryExitCanvasPick(null);
     setActiveWorkflowPendingReasons({});
@@ -3388,6 +3404,9 @@ export function EditorPage({
           isPathProject ? '' : 'grid lg:grid-rows-[minmax(0,1fr)_minmax(0,42vh)]'
         }`}
       >
+        {pathDocumentDraft && renderWorkspacePanel('measure', 'Measure', (
+          <EditorMeasurePanel measurement={measurement} segments={measurementSegments} />
+        ))}
         {!pathDocumentDraft && (
           <div
             className="grid min-h-0 gap-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)_auto]"
@@ -3870,6 +3889,7 @@ export function EditorPage({
           hoveredPathElement={activeHoveredPathElement}
           measurementPoints={measurementPoints}
           onCursorPointChange={setPreviewCursorPoint}
+          measurement={activeWorkflowOwns('inspect.measure') ? measurement : undefined}
           onMeasurementPointMove={
             activeWorkflowOwns('construction.measurement') ? handleMeasurementPointMove : undefined
           }

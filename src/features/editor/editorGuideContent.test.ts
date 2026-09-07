@@ -12,10 +12,10 @@ describe('editor guide content', () => {
     );
 
     expect(englishSteps).toContain(
-      'While Measurement & Construction is open, Alt/Option+Shift+C clears all points when focus is not inside an input.'
+      'While Construction points is open, Alt/Option+Shift+C clears all points when focus is not inside an input.'
     );
     expect(romanianSteps).toContain(
-      'Cat timp Measurement & Construction este deschis, Alt/Option+Shift+C curata toate punctele cand focusul nu este intr-un input.'
+      'Cat timp Construction points este deschis, Alt/Option+Shift+C curata toate punctele cand focusul nu este intr-un input.'
     );
     expect(englishSteps.join(' ')).not.toContain('Ctrl/Cmd+C clears');
     expect(romanianSteps.join(' ')).not.toContain('Ctrl/Cmd+C curata');

@@ -6,6 +6,7 @@ import { EditorPreview, type EditorConstructionPreview, type EditorStartPreview 
 import type { EditorGuideTarget } from './editorGuideContent';
 import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
+import type { EditorMeasurementState } from './useEditorMeasurement';
 
 interface EditorCanvasPanelProps {
   canvasMouseMode: CanvasMouseMode;
@@ -19,6 +20,7 @@ interface EditorCanvasPanelProps {
   interactionHint?: string | null;
   hoveredPathElement?: EditorPathElementRef | null;
   measurementPoints: MeasurementPoint[];
+  measurement?: EditorMeasurementState;
   pathEndpointActionOperationId?: string | null;
   pathDocument?: PathPlanningDocument | null;
   pathCount: number;
@@ -50,6 +52,7 @@ export function EditorCanvasPanel({
   interactionHint,
   hoveredPathElement,
   measurementPoints,
+  measurement,
   pathEndpointActionOperationId,
   pathDocument,
   pathCount,
@@ -84,6 +87,7 @@ export function EditorCanvasPanel({
           startPreview={startPreview}
           keyboardShortcutsEnabled={!guideOpen}
           measurementPoints={measurementPoints}
+          measurement={measurement}
           onCursorPointChange={onCursorPointChange}
           onMeasurementPointMove={onMeasurementPointMove}
           onPathEndpointClick={onPathEndpointClick}
