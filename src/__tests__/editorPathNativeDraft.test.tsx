@@ -67,6 +67,20 @@ describe('EditorPage UPID draft boundary', () => {
     vi.restoreAllMocks();
   });
 
+  it('clears pending entry coordinates when circle-center entry replaces them', async () => {
+    const project = projectWithUpid(pathDocumentFromCircleWithLeadIn());
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />));
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    await changeInput('input[aria-label="Entry X"]', '123');
+    const save = () => container.querySelector<HTMLButtonElement>('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]')!;
+    expect(save().disabled).toBe(true);
+    await clickElement('button[aria-label="Add center pierce lead-in"]');
+    expect(save().disabled).toBe(false);
+    await clickElement('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]');
+    expect(visibleWorkflowPanelIds()).not.toContain('entry-exit');
+  });
+
   it('holds dirty workflow switches and restores the opening draft when discarded', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 
@@ -772,6 +786,43 @@ describe('EditorPage UPID draft boundary', () => {
     await clickElement('[data-editor-workflow-command="geometry.transform"]');
     expect((container.querySelector('input[aria-label="Translate X"]') as HTMLInputElement).value)
       .not.toBe('2');
+  });
+
+  it.each(['inactive', 'blocked'] as const)('labels %s sequence metrics without source lengths or actionable travel', async (mode) => {
+    const document = pathDocumentFromArc();
+    const partial = setMachiningSpanParticipation(document, {
+      sourceSegmentId: document.plan.operations[0].segmentRefs[0].segmentId,
+      range: mode === 'inactive' ? { start: 0, end: 1 } : { start: 0.2, end: 0.8 },
+      participation: 'inactive-reference'
+    });
+    if (!partial) throw new Error('Expected participation document');
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={projectWithUpid(partial)} />);
+    });
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="machining.sequence"]');
+    const row = container.querySelector('[data-upid-cut-sequence-row]');
+    expect(row?.textContent).toContain(mode === 'inactive' ? 'Inactive' : 'Unavailable');
+    expect(row?.querySelector('[data-upid-cut-sequence-cut-value]')).toBeNull();
+    expect(row?.querySelector<HTMLButtonElement>('button[aria-label="Select rapid travel for cut sequence operation"]')?.disabled).toBe(true);
+    if (mode === 'blocked') expect(container.textContent).toContain('Resolve separated active cutting ranges in Machining Participation.');
+  });
+
+  it('shows active partial cut lengths in the sequence', async () => {
+    const document = pathDocumentFromRectangle();
+    const operation = document.plan.operations[0];
+    const partial = setMachiningSpanParticipation(document, {
+      sourceSegmentId: operation.segmentRefs[0].segmentId, range: { start: 0.2, end: 0.8 }, participation: 'inactive-reference'
+    });
+    if (!partial) throw new Error('Expected a partial contour');
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={projectWithUpid(partial)} />);
+    });
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="machining.sequence"]');
+    const sourceLength = document.segments.find((segment) => segment.id === operation.segmentRefs[0].segmentId)?.length ?? 0;
+    const expectedCut = operation.metrics.cutLength - sourceLength * 0.6;
+    expect(container.querySelector('[data-upid-cut-sequence-cut-value]')?.getAttribute('data-upid-cut-sequence-cut-value')).toBe(expectedCut.toFixed(3));
   });
 
   it('reapplies inside-out sequence with cancel, undo and saved manual-order restoration', async () => {

@@ -15,6 +15,7 @@ import {
 import {
   Fragment,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
@@ -24,6 +25,7 @@ import {
 } from 'react';
 
 import { type PathMirrorAxis } from '@/domain/path-editor/pathDocumentOperations';
+import { deriveCutSequenceMetrics, type CutSequenceMetrics } from '@/domain/path-intel/cutSequenceMetrics';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import { orientedSegmentEnd, orientedSegmentStart, requiredSegment, segmentMap } from '@/domain/path-intel/segments';
 import type {
@@ -219,6 +221,8 @@ export function EditorPathNavigatorPanel({
   const segmentsById = segmentMap(pathDocument.segments);
   const projectRail = createUpidProjectRail(pathDocument);
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
+  const sequenceMetrics = useMemo(() => deriveCutSequenceMetrics(pathDocument), [pathDocument]);
+  const unavailableSequenceMetrics = [...sequenceMetrics.values()].find((metrics) => metrics.status === 'unavailable');
   const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
   const endpointTopologyPanel = summarizeEndpointTopologyPanel(pathDocument);
   const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
@@ -1393,6 +1397,9 @@ export function EditorPathNavigatorPanel({
             </button>
           </div>
           <div data-upid-cut-sequence data-upid-cut-sequence-list>
+            {unavailableSequenceMetrics?.status === 'unavailable' && (
+              <p className="p-2 text-[10px] text-destructive" role="status">{unavailableSequenceMetrics.reason}</p>
+            )}
             {cutSequenceElements.map((pathElement) =>
               renderCutSequenceRow({
                 hoveredPathElement,
@@ -1404,6 +1411,7 @@ export function EditorPathNavigatorPanel({
                   (operation) => operation.id === pathElement.operationId
                 ),
                 operationCount: cutSequenceElements.length,
+                metrics: sequenceMetrics.get(pathElement.operationId) ?? { status: 'unavailable', reason: 'Operation is unavailable.' },
                 pathElement,
                 selectedPathElement
               })
@@ -1848,6 +1856,7 @@ function renderCutSequenceRow({
   onSelectPathElement,
   operation,
   operationCount,
+  metrics,
   pathElement,
   selectedPathElement
 }: {
@@ -1858,6 +1867,7 @@ function renderCutSequenceRow({
   onSelectPathElement: (element: EditorPathElementRef) => void;
   operation: PathOperation | undefined;
   operationCount: number;
+  metrics: CutSequenceMetrics;
   pathElement: UpidOperationPathElement;
   selectedPathElement: EditorPathElementRef | null;
 }) {
@@ -1868,8 +1878,8 @@ function renderCutSequenceRow({
   const rapidHovered =
     hoveredPathElement?.operationId === pathElement.operationId && hoveredPathElement.travelRole === 'rapid-in';
   const manualDecisions = upidManualDecisionKinds(operation ?? pathElement);
-  const cutLength = pathElement.metrics.cutLength.toFixed(3);
-  const rapidInLength = pathElement.metrics.rapidInLength.toFixed(3);
+  const cutLength = metrics.status === 'active' ? metrics.cutLength.toFixed(3) : null;
+  const rapidInLength = metrics.status === 'active' && metrics.rapidInLength !== null ? metrics.rapidInLength.toFixed(3) : null;
   const label = pathElement.displayName;
   const sourceEntityCount = upidPathElementSourceEntityCount(pathElement);
   const editedSegmentCount = pathElement.provenance.edit?.derivedSegmentIds.length ?? 0;
@@ -1945,6 +1955,7 @@ function renderCutSequenceRow({
       </button>
       <button
         aria-label="Select rapid travel for cut sequence operation"
+        disabled={metrics.status !== 'active' || metrics.rapidInLength === null}
         aria-pressed={rapidSelected}
         className={`grid h-full content-center px-1 text-right text-[10px] leading-tight outline-none hover:bg-accent ${
           rapidSelected
@@ -1960,11 +1971,13 @@ function renderCutSequenceRow({
         onClick={selectRapid}
         onMouseEnter={() => onHoverPathElement(rapidElement)}
         onMouseLeave={() => onHoverPathElement(null)}
-        title="Rapid travel into this operation"
+        title={metrics.status === 'unavailable' ? metrics.reason : metrics.status === 'inactive' ? 'Excluded from cutting' : metrics.rapidInLength === null ? 'Set and review Initial Wire Position to measure this travel.' : 'Rapid travel into this operation'}
         type="button"
       >
-        <span data-upid-cut-sequence-cut-value={cutLength}>Cut {cutLength}</span>
-        <span data-upid-cut-sequence-rapid-value={rapidInLength}>Rapid {rapidInLength}</span>
+        {metrics.status === 'active' ? <>
+          <span data-upid-cut-sequence-cut-value={cutLength}>Cut {cutLength}</span>
+          <span data-upid-cut-sequence-rapid-value={rapidInLength}>Rapid {rapidInLength ?? 'unavailable'}</span>
+        </> : <span>{metrics.status === 'inactive' ? 'Inactive' : 'Unavailable'}</span>}
       </button>
       <span className="grid grid-rows-2 self-stretch border-l border-border">
         <button
