@@ -12,6 +12,25 @@ const DXF_UNIT_DECLARATION_STATUSES: DxfUnitDeclarationStatus[] = [
 ];
 
 describe('parseDxf', () => {
+  it('skips paper-space shapes and inserts while retaining model-space instances of the same block', () => {
+    const parsed = parseDxf([
+      '0', 'SECTION', '2', 'BLOCKS',
+      '0', 'BLOCK', '2', 'PART', '10', '0', '20', '0',
+      '0', 'LINE', '8', 'CUT', '10', '0', '20', '0', '11', '10', '21', '0',
+      '0', 'ENDBLK', '0', 'ENDSEC',
+      '0', 'SECTION', '2', 'ENTITIES',
+      '0', 'INSERT', '67', '0', '2', 'PART', '10', '2', '20', '3',
+      '0', 'INSERT', '67', '1', '2', 'PART', '10', '1000', '20', '1000',
+      '0', 'LINE', '67', '1', '8', 'BORDER', '10', '0', '20', '0', '11', '500', '21', '500',
+      '0', 'CIRCLE', '67', '1', '8', 'LOGO', '10', '1000', '20', '1000', '40', '200',
+      '0', 'ENDSEC', '0', 'EOF'
+    ].join('\n'));
+    expect(parsed.entities).toHaveLength(1);
+    expect(parsed.entities[0]).toMatchObject({ type: 'line', start: { x: 2, y: 3 }, end: { x: 12, y: 3 }, layer: 'CUT' });
+    expect(parsed.warnings).toHaveLength(3);
+    expect(parsed.unsupportedEntities).toEqual([]);
+  });
+
   it('exports the complete DXF unit declaration status vocabulary', () => {
     expect(DXF_UNIT_DECLARATION_STATUSES).toEqual([
       'missing',

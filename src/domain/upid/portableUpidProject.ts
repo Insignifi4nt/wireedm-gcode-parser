@@ -109,7 +109,6 @@ export async function importPortableUpidProject(
     existingIds: [...workbench.manifest.projects, ...(workbench.manifest.deletedProjects ?? []).map(({ project }) => project)].map(({ id }) => id)
   });
   const sourcePath = `imports/${identity.id}.upid.json`;
-  const portableText = JSON.stringify({ format: 'upid', schemaVersion: 1, document }, null, 2);
   const created = createWorkbenchProjectDocument({
     id: identity.id,
     name: identity.name,
@@ -128,7 +127,7 @@ export async function importPortableUpidProject(
   if (!created.ok) return created;
   const stored = await addStoredWorkbenchProject(workbench, {
     project: created.project,
-    ownedFiles: [{ path: sourcePath, contents: portableText }]
+    ownedFiles: [{ path: sourcePath, contents: input.text }]
   });
   if (!stored.ok) return stored;
   return {

@@ -400,6 +400,14 @@ function parseEntitiesFromPairs(entityPairs: DxfPair[], context: EntityParseCont
       continue;
     }
 
+    // Group 67 marks top-level paper-space entities. Block definitions remain
+    // reusable; the layout of the INSERT determines whether they are imported.
+    if (context.blockName === null && numberValue(pairsForEntity, 67) === 1) {
+      warnings.push(`Skipped paper-space DXF ${entityType}; drawing layouts are not cut geometry.`);
+      index = nextIndex - 1;
+      continue;
+    }
+
     if (entityType === 'INSERT') {
       const ocs = planarOcsOrientation(pairsForEntity, entityType);
       if (!ocs.ok) {

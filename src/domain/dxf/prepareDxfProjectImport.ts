@@ -1,5 +1,6 @@
 import { pathSegmentsFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import { mergeBounds } from '@/domain/path-intel/segments';
+import { sanitizePathSegments } from '@/domain/path-intel/sanitizeSegments';
 import type { Bounds2 } from '@/domain/path-intel/types';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
@@ -33,6 +34,8 @@ export interface DxfImportPreview {
   readonly boundsMm: Bounds2;
   readonly sizeMm: { readonly widthMm: number; readonly lengthMm: number };
   readonly unitCandidate: DxfImportUnitCandidate;
+  readonly segmentCount: number;
+  readonly geometryWarnings: readonly string[];
 }
 
 export type DxfImportPreparationError =
@@ -122,7 +125,8 @@ export function previewDxfProjectImport(
       sourceMetadata: { units: unitCandidate.units }
     });
     const built = pathSegmentsFromDxfEntities(normalized.entities, normalized.options);
-    const boundsMm = boundsForSegments(built.segments.map(({ bounds }) => bounds));
+    const sanitized = sanitizePathSegments(built.segments, normalized.options);
+    const boundsMm = boundsForSegments(sanitized.segments.map(({ bounds }) => bounds));
     if (!boundsMm) return previewInvalid('DXF unit preview did not contain supported cut geometry.');
     const widthMm = boundsMm.maxX - boundsMm.minX;
     const lengthMm = boundsMm.maxY - boundsMm.minY;
@@ -131,7 +135,13 @@ export function previewDxfProjectImport(
     }
     return {
       ok: true,
-      preview: { boundsMm, sizeMm: { widthMm, lengthMm }, unitCandidate }
+      preview: {
+        boundsMm, sizeMm: { widthMm, lengthMm }, unitCandidate,
+        segmentCount: sanitized.segments.length,
+        geometryWarnings: [...built.diagnostics, ...sanitized.diagnostics]
+          .filter(({ severity }) => severity !== 'info')
+          .map(({ message }) => message)
+      }
     };
   } catch (error) {
     return previewInvalid(error instanceof Error ? error.message : String(error));

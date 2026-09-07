@@ -5,9 +5,40 @@ import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbench
 import { readStoredWorkbenchProject } from '@/domain/workbench-catalog/workbenchCatalogMutations';
 
 import { commitDxfProjectImport, importDxfProject } from '../importDxfProject';
-import { prepareDxfProjectImport } from '../prepareDxfProjectImport';
+import { prepareDxfProjectImport, previewDxfProjectImport } from '../prepareDxfProjectImport';
 
 describe('DXF project import', () => {
+  it('reviews duplicate cleanup and retains layer provenance and original source bytes', async () => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const entity = ['0', 'LINE', '8', 'Matriță 日本', '10', '0', '20', '0', '11', '10', '21', '0'];
+    const text = ['0', 'SECTION', '2', 'ENTITIES', ...entity, ...entity,
+      '0', 'LINE', '67', '1', '8', 'BORDER', '10', '0', '20', '0', '11', '500', '21', '500',
+      '0', 'TEXT', '8', 'NOTES', '1', 'Operator note', '0', 'ENDSEC', '0', 'EOF'].join('\r\n');
+    const prepared = prepareDxfProjectImport(initialized.workbench, { fileName: 'layers.dxf', text });
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    const preview = previewDxfProjectImport(prepared.preparation, { unitCandidateId: 'millimeters' });
+    if (!preview.ok) throw new Error(preview.error.message);
+    expect(preview.preview.segmentCount).toBe(1);
+    expect(preview.preview.geometryWarnings).toHaveLength(1);
+    expect(prepared.preparation.parseResult.unsupportedEntities).toEqual(['TEXT']);
+    expect(prepared.preparation.parseResult.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining('Skipped paper-space DXF LINE')
+    ]));
+    const imported = await commitDxfProjectImport(initialized.workbench, prepared.preparation, {
+      unitCandidateId: 'millimeters', confirmed: true, declaredUnitOverrideAcknowledged: false
+    });
+    if (!imported.ok) throw new Error(imported.error.message);
+    expect(imported.pathDocument.segments).toHaveLength(preview.preview.segmentCount);
+    expect(imported.pathDocument.segments[0]).toMatchObject({
+      layer: 'Matriță 日本', source: { layer: 'Matriță 日本' }, length: 10
+    });
+    expect(imported.pathDocument.segments[0].bounds).toEqual(preview.preview.boundsMm);
+    expect(imported.pathDocument.diagnostics.map(({ message }) => message)).toEqual(expect.arrayContaining([...preview.preview.geometryWarnings]));
+    expect(adapter.files.get(imported.project.source.files[0].path)).toBe(text);
+  });
+
   it('commits the reviewed DXF and a strict machine-neutral V2 project atomically', async () => {
     const adapter = new MemoryAdapter();
     const initialized = await initializeWorkbenchCatalog(adapter, {

@@ -192,7 +192,9 @@ export function DxfImportConfirmationDialog({
 
         <div className="work-region-scrollbar min-h-0 overflow-auto p-4 font-mono text-[11px]">
           <div className="grid gap-4">
-            {preparation && <PreparationCounts preparation={preparation} />}
+            {preparation && <PreparationCounts preparation={preparation} preview={preview} />}
+
+            {preparation && <SourceReview preparation={preparation} preview={preview} />}
 
             {preparation && (
               <section className="grid gap-3 border border-border bg-background/45 p-3">
@@ -269,8 +271,9 @@ export function DxfImportConfirmationDialog({
                   type="checkbox"
                 />
                 <span>
-                  Rebuild the path from the persisted raw DXF. Existing saved geometry-derived
-                  edits, starts, directions, leads, and compensation decisions will be replaced.
+                  Rebuild the path from the persisted raw DXF. This replaces current geometry edits,
+                  starts, directions, leads, compensation, inactive ranges, threading, initial wire
+                  position, and stops. The original DXF and saved output revisions remain stored.
                 </span>
               </label>
             )}
@@ -301,21 +304,46 @@ export function DxfImportConfirmationDialog({
   );
 }
 
-function PreparationCounts({ preparation }: { preparation: DxfImportPreparation }) {
+function PreparationCounts({ preparation, preview }: { preparation: DxfImportPreparation; preview: DxfImportPreview | null }) {
   return (
     <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
-      <span>{preparation.entityCount} supported</span>
+      <span>{preparation.entityCount} supported source {preparation.entityCount === 1 ? 'entity' : 'entities'}</span>
       <span aria-hidden="true">/</span>
-      <span>{preparation.unsupportedEntityCount} unsupported</span>
+      <span>{preparation.unsupportedEntityCount} unsupported entity {preparation.unsupportedEntityCount === 1 ? 'type' : 'types'}</span>
       <span aria-hidden="true">/</span>
-      <span>{preparation.warningCount} warnings</span>
+      <span>{preparation.warningCount + (preview?.geometryWarnings.length ?? 0)} warnings</span>
     </div>
+  );
+}
+
+function SourceReview({ preparation, preview }: { preparation: DxfImportPreparation; preview: DxfImportPreview | null }) {
+  const layers = new Map<string | null, number>();
+  for (const entity of preparation.parseResult.entities) layers.set(entity.layer, (layers.get(entity.layer) ?? 0) + 1);
+  const warnings = [...preparation.parseResult.warnings, ...(preview?.geometryWarnings ?? [])];
+  return (
+    <section className="grid gap-2 border border-border bg-background/45 p-3" aria-label="DXF source review">
+      <h3 className="text-xs font-semibold">Source layers</h3>
+      <p className="text-muted-foreground">All supported layers are included. Layer names remain attached to imported geometry.</p>
+      <ul className="max-h-28 overflow-auto text-muted-foreground">
+        {[...layers].map(([layer, count]) => <li key={layer === null ? 'missing-layer' : `layer:${layer}`}>
+          {layer === null ? '(No layer)' : layer} · {count} source {count === 1 ? 'entity' : 'entities'}
+        </li>)}
+      </ul>
+      {warnings.length > 0 && <div className="border-t border-amber-500/40 pt-2 text-amber-200" role="status">
+        <h4 className="font-semibold">Import warnings</h4>
+        <ul className="mt-1 max-h-32 list-disc overflow-auto pl-4">
+          {warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+        </ul>
+      </div>}
+    </section>
   );
 }
 
 function PreviewGeometry({ preview }: { preview: DxfImportPreview }) {
   return (
     <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1">
+      <dt className="text-muted-foreground">Path segments</dt>
+      <dd>{preview.segmentCount}</dd>
       <dt className="text-muted-foreground">Resulting size</dt>
       <dd data-testid="dxf-import-size">
         {formatMm(preview.sizeMm.widthMm)} × {formatMm(preview.sizeMm.lengthMm)} mm

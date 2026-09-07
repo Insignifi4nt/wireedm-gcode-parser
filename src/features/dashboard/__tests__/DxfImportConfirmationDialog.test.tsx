@@ -31,6 +31,23 @@ describe('DxfImportConfirmationDialog', () => {
     container.remove();
   });
 
+  it('shows skipped entities, retained source layers, and cleanup warnings before confirmation', async () => {
+    const entity = ['0', 'LINE', '8', 'CUT 日本', '10', '0', '20', '0', '11', '10', '21', '0'];
+    const preparationResult = prepare(['0', 'SECTION', '2', 'ENTITIES', ...entity, ...entity,
+      '0', 'TEXT', '8', 'NOTES', '1', 'note', '0', 'ENDSEC', '0', 'EOF'].join('\n'));
+    const previewResult = previewDxfProjectImport(preparationResult.preparation, { unitCandidateId: 'millimeters' });
+    if (!previewResult.ok) throw new Error(previewResult.error.message);
+    const onConfirm = vi.fn();
+    await renderDialog({ preparationResult, previewResult, selectedUnitCandidateId: 'millimeters', onConfirm });
+    const review = container.querySelector('[aria-label="DXF source review"]');
+    expect(review?.textContent).toContain('CUT 日本 · 2 source entities');
+    expect(review?.textContent).toContain(preparationResult.preparation.parseResult.warnings[0]);
+    expect(review?.textContent).toContain(previewResult.preview.geometryWarnings[0]);
+    expect(onConfirm).not.toHaveBeenCalled();
+    await act(async () => button('Import and open')?.click());
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
   it('requires an explicit unit candidate and exposes no machine selector or default', async () => {
     const preparationResult = prepare(lineDxf({ endX: 10, endY: 5 }));
     const onUnitCandidateChange = vi.fn();
