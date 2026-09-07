@@ -21,7 +21,7 @@ export function EditorStatusBar({
   previewCursorPoint,
   selectionSummary
 }: EditorStatusBarProps) {
-  const saveState = isSaving ? 'Saving' : hasUnsavedChanges ? 'Modified · Unsaved' : 'Saved';
+  const saveState = isSaving ? 'Saving' : hasUnsavedChanges ? 'Unsaved' : 'Saved';
   const fitWarning = getMachineFitWarning(machineFit);
 
   return (

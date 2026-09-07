@@ -37,7 +37,7 @@ describe('Editor status machine-fit warnings', () => {
       expect(container.querySelector('[data-editor-status-machine-fit]')?.textContent).toBe(message);
       expect(container.querySelector('[data-editor-status-machine-fit]')?.getAttribute('role')).toBe('status');
       expect(container.querySelector('[data-editor-status-cursor]')?.textContent).toBe('Cursor X 12.346 Y 20 mm');
-      expect(container.querySelector('[data-editor-document-state]')?.textContent).toBe('Modified · Unsaved');
+      expect(container.querySelector('[data-editor-document-state]')?.textContent).toBe('Unsaved');
     }
   );
 });
