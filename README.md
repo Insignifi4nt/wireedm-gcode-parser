@@ -22,6 +22,8 @@ When a version-1 workbench is opened, usable projects migrate to the current neu
 
 - DXF imports become controller-neutral UPID path projects. Import supports lines, arcs, circles, lightweight polylines, and flattened splines, with explicit unit review.
 - The editor provides contour starts, geometry transforms, cut order, initial wire position, entry/exit, threading, machining participation, program stops, and measurement tools.
+- Measure reports picked-point distance and minimum source-feature gap without editing the project. Canvas filters and Alt-click resolve overlapping geometry; the Geometry lens provides exact source selection.
+- Geometry → Source & Machine Setup shows source units and planning-machine fit. Changing DXF units requires reviewing the rebuild from the preserved source.
 - Each editing workflow commits one undo step. Header Save persists those committed changes. Controller Export uses the saved project and the selected machine's active setup.
 - Existing `.gcode`, `.nc`, `.iso`, and `.txt` files use a separate text editor with G0/G1/G2/G3 preview and cleanup tools.
 - Machine packages own controller syntax and file rules, including extension, encoding, line endings, wrappers, and numbering. The app does not generate feeds by default.
@@ -34,5 +36,6 @@ When a version-1 workbench is opened, usable projects migrate to the current neu
 - [Machine package decision](docs/adr/0002-install-complete-machine-packages.md)
 - [Post and machine package authoring](docs/post-authoring/v1/README.md)
 - [Browser testing](docs/playwright.md)
+- [CAM feature audit and supported limits](docs/cam-product-audit.md)
 
 `docs/superpowers/` contains dated research, designs, and implementation history. Older plans describe the app at that time; current schemas, contributor rules, and the machine-package decision take precedence.
