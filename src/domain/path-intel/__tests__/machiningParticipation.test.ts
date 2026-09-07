@@ -5,6 +5,7 @@ import { translatePathDocument } from '@/domain/path-editor/pathDocumentOperatio
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
 import { assertPortableUpidV1Shape } from '@/domain/upid/portableUpidV1Shape';
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
+import { createLineSegment } from '../segments';
 
 import {
   deriveActiveMachiningOperations,
@@ -16,6 +17,43 @@ import {
 } from '../machiningParticipation';
 
 describe('machining participation', () => {
+  it('invalidates both partial lead reviews after an interior corner moves without moving lead endpoints', () => {
+    let document = rectangleDocument();
+    const operation = document.plan.operations[0];
+    operation.transitions = {
+      entry: { strategy: 'manual-straight', move: 'cut', from: { x: -2, y: -2 }, to: operation.startPoint, review: 'reviewed' },
+      exit: { strategy: 'manual-straight', move: 'cut', from: operation.endPoint, to: { x: -3, y: -3 }, review: 'reviewed' }
+    };
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: operation.segmentRefs.at(-1)!.segmentId,
+      range: { start: 0, end: 1 }, participation: 'inactive-reference'
+    })!;
+    document = setPartialContourEntryReview(document, operation.id, true)!;
+    document = setPartialContourExitReview(document, operation.id, true)!;
+    const before = deriveActiveMachiningOperations(document).operations[0];
+    expect(before.transitions).toMatchObject({ entry: { review: 'reviewed' }, exit: { review: 'reviewed' } });
+    const renamed = structuredClone(document);
+    renamed.segments.forEach((segment) => { segment.source.note = 'Updated import description'; });
+    expect(deriveActiveMachiningOperations(renamed).operations[0].transitions).toEqual(before.transitions);
+    const changed = structuredClone(document);
+    const first = changed.segments.find((segment) => segment.id === operation.segmentRefs[0].segmentId)!;
+    const second = changed.segments.find((segment) => segment.id === operation.segmentRefs[1].segmentId)!;
+    const corner = { x: 12, y: 2 };
+    const firstRef = operation.segmentRefs[0];
+    const secondRef = operation.segmentRefs[1];
+    changed.segments = changed.segments.map((segment) => segment.id === first.id
+      ? createLineSegment({ ...first, ...(firstRef.reversed ? { start: corner } : { end: corner }) })
+      : segment.id === second.id
+        ? createLineSegment({ ...second, ...(secondRef.reversed ? { end: corner } : { start: corner }) })
+        : segment);
+    const result = deriveActiveMachiningOperations(changed);
+    expect(result.status).toBe('ready');
+    expect(result.operations[0].startPoint).toEqual(before.startPoint);
+    expect(result.operations[0].endPoint).toEqual(before.endPoint);
+    expect(result.operations[0].transitions).toMatchObject({ entry: { review: 'required' }, exit: { review: 'required' } });
+    expect(deriveActiveMachiningOperations(document).operations[0].transitions).toEqual(before.transitions);
+  });
+
   it('includes retargeted leads in partial cutting totals and positions between actual transition endpoints', () => {
     const document = createUpidFromDxfEntities([
       { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },

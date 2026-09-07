@@ -68,7 +68,7 @@ export function setPartialContourEntryReview(
       )
     : [];
   const entryFingerprint = derivedOperations.length === 1
-    ? partialContourEntryFingerprint(derivedOperations[0])
+    ? partialContourEntryFingerprint(derivedOperations[0], segmentMap(derivation!.segments))
     : null;
   if (reviewed && !entryFingerprint) return null;
   const next = structuredClone(document);
@@ -102,7 +102,7 @@ export function setPartialContourExitReview(
       )
     : [];
   const exitFingerprint = derivedOperations.length === 1
-    ? partialContourExitFingerprint(derivedOperations[0])
+    ? partialContourExitFingerprint(derivedOperations[0], segmentMap(derivation!.segments))
     : null;
   if (reviewed && !exitFingerprint) return null;
   const next = structuredClone(document);
@@ -413,18 +413,18 @@ function buildPartialOperation(
   if (
     (operation.transitions?.entry?.strategy === 'manual-straight' || operation.transitions?.entry?.strategy === 'none') &&
     sourceEntryWasReviewed &&
-    reviewedEntryFingerprint === partialContourEntryFingerprint(operation)
+    reviewedEntryFingerprint === partialContourEntryFingerprint(operation, segmentsById)
   ) {
     operation.transitions.entry.review = 'reviewed';
   }
   if (operation.transitions?.exit && sourceExitWasReviewed &&
-    reviewedExitFingerprint === partialContourExitFingerprint(operation)) {
+    reviewedExitFingerprint === partialContourExitFingerprint(operation, segmentsById)) {
     operation.transitions.exit.review = 'reviewed';
   }
   return operation;
 }
 
-function partialContourEntryFingerprint(operation: PathOperation): string | null {
+function partialContourEntryFingerprint(operation: PathOperation, segmentsById: Map<string, PathSegment>): string | null {
   const entry = operation.transitions?.entry;
   if (operation.machiningIntent?.kind !== 'partial-contour' ||
     !entry || entry.strategy === 'circle-center') {
@@ -434,13 +434,14 @@ function partialContourEntryFingerprint(operation: PathOperation): string | null
     direction: operation.direction,
     entry: entry.strategy === 'none' ? { strategy: 'none' } : { from: entry.from, to: entry.to },
     segmentRefs: operation.segmentRefs,
+    geometry: operation.segmentRefs.map((ref) => reviewSegmentGeometry(segmentsById.get(ref.segmentId)!)),
     sourceOperationId: operation.machiningIntent.sourceOperationId,
     spanIds: operation.machiningIntent.spanIds,
     startPoint: operation.startPoint
   });
 }
 
-function partialContourExitFingerprint(operation: PathOperation): string | null {
+function partialContourExitFingerprint(operation: PathOperation, segmentsById: Map<string, PathSegment>): string | null {
   const exit = operation.transitions?.exit;
   if (operation.machiningIntent?.kind !== 'partial-contour' ||
     !exit) {
@@ -450,10 +451,24 @@ function partialContourExitFingerprint(operation: PathOperation): string | null 
     direction: operation.direction,
     exit: exit.strategy === 'none' ? { strategy: 'none' } : { from: exit.from, to: exit.to },
     segmentRefs: operation.segmentRefs,
+    geometry: operation.segmentRefs.map((ref) => reviewSegmentGeometry(segmentsById.get(ref.segmentId)!)),
     sourceOperationId: operation.machiningIntent.sourceOperationId,
     spanIds: operation.machiningIntent.spanIds,
     endPoint: operation.endPoint
   });
+}
+
+// Review depends on cutting geometry, not import metadata or cached metrics.
+function reviewSegmentGeometry(segment: PathSegment) {
+  const endpoints = { kind: segment.kind, start: segment.start, end: segment.end };
+  switch (segment.kind) {
+    case 'line': return endpoints;
+    case 'arc': return { ...endpoints, center: segment.center, radius: segment.radius,
+      startAngleRadians: segment.startAngleRadians, endAngleRadians: segment.endAngleRadians,
+      sweepRadians: segment.sweepRadians, clockwise: segment.clockwise };
+    case 'circle': return { ...endpoints, center: segment.center, radius: segment.radius,
+      preferredStart: segment.preferredStart };
+  }
 }
 
 function deriveSpanSegment(source: PathSegment, span: MachiningSpan): PathSegment {
