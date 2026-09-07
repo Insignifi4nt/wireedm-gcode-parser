@@ -41,8 +41,8 @@ test('repairs an execution issue through its owning tool and updates readiness',
   await page.getByRole('button', { name: 'Review and set manual initial wire position', exact: true }).click();
   await page.getByRole('button', { name: 'Save Initial wire position workflow', exact: true }).click();
   const rows = page.locator('[data-tree-key="section:program"] > ul > li');
-  await expect(rows.first()).toContainText('program-start');
-  await expect(rows.last()).toContainText('program-end');
+  await expect(rows.first()).toContainText('Program start');
+  await expect(rows.last()).toContainText('Program end');
   await page.getByRole('button', { name: 'Save active document', exact: true }).click();
   await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
 });

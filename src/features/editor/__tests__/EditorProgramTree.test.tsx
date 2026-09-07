@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -23,6 +23,38 @@ describe('EditorProgramTree', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+  });
+
+  it('reveals selected events once and lets the operator collapse their details while retaining focus', async () => {
+    const source = createUpidFromDxfEntities([{
+      type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
+    }]);
+    source.setup = { initialWirePosition: { kind: 'manual', point: { x: -1, y: 0 }, review: 'reviewed' } };
+    const tree = buildUpidEditorTree(source);
+    const operation = tree.operations[0];
+    function Harness() {
+      const [expanded, setExpanded] = useState(defaultEditorProgramTreeExpansion(tree));
+      const [selected, setSelected] = useState<string | null>(null);
+      return <EditorProgramTree tree={tree} expandedTreeKeys={expanded} onExpandedTreeKeysChange={setExpanded}
+        selectedTreeKey={selected} onSelect={setSelected} onEdit={vi.fn()} />;
+    }
+    await act(async () => root.render(<Harness />));
+    const row = container.querySelector<HTMLElement>(`[data-tree-key="${operation.treeKey}"]`);
+    if (!row) throw new Error('Missing operation row');
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => row.querySelector('div')?.click());
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => row.querySelector('button')?.click());
+    const eventRow = row.querySelector<HTMLElement>('[role="group"] [role="treeitem"]');
+    if (!eventRow) throw new Error('Missing execution event');
+    await act(async () => eventRow.querySelector('div')?.click());
+    expect(eventRow.getAttribute('aria-selected')).toBe('true');
+    await act(async () => row.querySelector('button')?.click());
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(row);
+    await act(async () => row.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+    expect(row.getAttribute('aria-expanded')).toBe('true');
+    expect(row.querySelector('[aria-selected="true"]')?.getAttribute('data-tree-key')).toBe(eventRow.dataset.treeKey);
   });
 
   it('renders the neutral execution tree and routes the authored operation identity', async () => {

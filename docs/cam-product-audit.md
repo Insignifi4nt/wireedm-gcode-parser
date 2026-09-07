@@ -37,7 +37,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Editor menus | Group by operator intent; remove overlapping entry points | pending |
 | Workflow panels | Dock/float, duplicate headings, action visibility and switching | pending |
 | Save, cancel, undo and redo | Correct transaction boundaries for every mutating tool | pending |
-| Program tree | Replace default internal-event dump with readable machining sequence | pending |
+| Program tree | Ready operations start collapsed; unresolved operation issues remain expanded. Readable event labels replace raw kind names. Fixed selected-child collapse reopening and kept keyboard focus on collapsed parent; broader operation summary/detail grouping remains | in progress |
 | Geometry tree and contour tree | Determine whether duplicate tree panel should merge into rail | pending |
 | Path summary and statistics | Combine overlapping counts; show useful selected geometry properties | pending |
 | Position panel | Replace redundant cursor-only panel with contextual status/controls | pending |
@@ -69,6 +69,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 1. Editor idle, local `tmp/cam-audit/01-editor-before.png`: three bottom strips, horizontal status scrolling, repeated metadata, inset canvas, expanded low-level program events.
 2. Measurement panel, local `tmp/cam-audit/02-measurement-before.png`: duplicate heading, point creation and CSV export but no distance result; inspection requires a mutating workflow. Disabled insertion is visible even in a path project where insertion is unavailable.
 3. Working Measure tool, local `tmp/cam-audit/03-measurement-after.png`: magnetic endpoint pair measures exactly 10 mm with matching canvas annotation and panel results. Document remains saved. Construction is a separate editing command; its unavailable insertion action is hidden for path projects.
+4. Compact program tree, local `tmp/cam-audit/04-program-tree-after.png`: ready operation details are collapsed, leaving source/setup and program order visible. Event details remain reachable by expansion; unresolved operation diagnostics expand automatically.
 
 Screenshots were captured and inspected during this audit. They establish layout findings; correctness requires domain and interaction checks as well.
 
@@ -86,6 +87,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 - Measurement/guide/editor integration: 107 focused tests passed. Four browser scenarios cover exact magnetic picks, repeat modes, precision, zoom, touch/free picks, non-mutation, endpoint layering, and the initial-wire save/reopen regression.
 - The full unit run found an obsolete footer-text assertion, removed while retaining actual catalog-data assertions, and a genuine spatial-index scaling failure. Disjoint level rejection and cheaper cell lookup fixed the quadratic scan. Exact-hit comparisons and deterministic read-count tests cover the fix; the timing limit was not relaxed.
 - Current checkpoint: 104 test files and 994 unit tests passed; 57 browser tests passed, one optional external-workbench fixture skipped. Production build passed with the existing bundle-size warning. No branch merge was performed.
+- Subsequent program-tree change: 86 focused component/editor tests, four browser workflow tests and the production build passed. A controlled-selection regression exercises select, expand, select child, collapse and keyboard re-expand with focus and selection retained.
 
 ## Next audit work
 

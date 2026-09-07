@@ -40,10 +40,13 @@ export function EditorProgramTree(props: EditorProgramTreeProps) {
   const visibleItems = useMemo(() => flattenVisible(items, expandedTreeKeys), [expandedTreeKeys, items]);
   const refs = useRef(new Map<string, HTMLLIElement>());
   const [focusedKey, setFocusedKey] = useState(SOURCE_SECTION);
+  const revealedSelection = useRef<string | null>(null);
 
   useEffect(() => {
     const pruned = pruneEditorProgramTreeExpansion(expandedTreeKeys, tree);
-    const revealed = selectedTreeKey ? revealEditorProgramTreeNode(tree, pruned, selectedTreeKey) : pruned;
+    const revealed = selectedTreeKey && selectedTreeKey !== revealedSelection.current
+      ? revealEditorProgramTreeNode(tree, pruned, selectedTreeKey) : pruned;
+    revealedSelection.current = selectedTreeKey;
     if (!sameSet(revealed, expandedTreeKeys)) onExpandedTreeKeysChange(revealed);
   }, [expandedTreeKeys, onExpandedTreeKeysChange, selectedTreeKey, tree]);
 
@@ -52,6 +55,7 @@ export function EditorProgramTree(props: EditorProgramTreeProps) {
   }, [focusedKey, visibleItems]);
 
   function setExpanded(item: TreeItem, expanded: boolean) {
+    focus(item);
     const next = new Set(expandedTreeKeys);
     if (expanded) next.add(item.key);
     else next.delete(item.key);
@@ -162,9 +166,36 @@ function nodeItem(node: EditorProgramTreeNode, level: number, parentKey: string)
   return {
     children: children.map((child) => nodeItem(child, level + 1, node.treeKey)),
     key: node.treeKey,
-    label: node.kind === 'source' ? `${node.label} · ${node.detail}` : node.label,
+    label: node.kind === 'source' ? `${node.label} · ${node.detail}`
+      : node.kind === 'event' ? eventLabel(node) : node.label,
     level, node, parentKey, status
   };
+}
+
+const EVENT_LABELS: Record<UpidEditorEventNode['eventKind'], string> = {
+  'program-start': 'Program start',
+  'operation-start': 'Begin operation',
+  'pass-start': 'Begin pass',
+  'wire-continue': 'Keep wire threaded',
+  'wire-separate': 'Separate wire',
+  'wire-thread': 'Thread wire',
+  position: 'Position wire',
+  'compensation-start': 'Enable compensation',
+  motion: 'Cut contour',
+  'program-stop': 'Stop program',
+  'compensation-end': 'Cancel compensation',
+  'pass-end': 'End pass',
+  'operation-end': 'End operation',
+  'program-end': 'Program end'
+};
+
+function eventLabel(node: UpidEditorEventNode) {
+  const transition = node.sourceTrace.find((trace) => trace.kind === 'transition');
+  if (node.eventKind === 'motion' && transition?.kind === 'transition') {
+    if (transition.role === 'entry') return 'Cut entry';
+    if (transition.role === 'exit') return 'Cut exit';
+  }
+  return EVENT_LABELS[node.eventKind];
 }
 
 function StatusDot({ status }: { status: TreeItem['status'] }) {

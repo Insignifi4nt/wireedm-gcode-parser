@@ -6,7 +6,9 @@ const PROGRAM_SECTION = 'section:program';
 export function defaultEditorProgramTreeExpansion(tree: UpidEditorTree): ReadonlySet<string> {
   return tree.operations.length === 0
     ? new Set([SOURCE_SECTION])
-    : new Set([PROGRAM_SECTION, tree.operations[0].treeKey]);
+    : new Set([PROGRAM_SECTION, ...tree.operations.filter((operation) =>
+        operation.execution === 'unresolved' && operation.children.length > 0
+      ).map((operation) => operation.treeKey)]);
 }
 
 export function revealEditorProgramTreeNode(
@@ -21,7 +23,7 @@ export function revealEditorProgramTreeNode(
   );
   if (operation) {
     next.add(PROGRAM_SECTION);
-    next.add(operation.treeKey);
+    if (operation.treeKey !== treeKey) next.add(operation.treeKey);
   }
   const isProgramNode = tree.status === 'ready'
     ? tree.programEvents.some((node) => node.treeKey === treeKey)
