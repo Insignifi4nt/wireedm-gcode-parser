@@ -50,6 +50,56 @@ describe('workbench controller asynchronous operations', () => {
     return imported;
   }
 
+  it.each(['service result', 'service rejection', 'download'] as const)('reports an export %s failure and permits retry', async (failure) => {
+    const seeded = await seedProgram();
+    const exported = { ok: true as const, file: { fileName: 'part.upid.json', text: '{"fixture":true}' } };
+    const exportProject = vi.fn<AppServices['exportPortableUpidProject']>().mockResolvedValue(exported);
+    const download = vi.fn<AppServices['downloadTextFile']>();
+    if (failure === 'service result') exportProject.mockResolvedValueOnce({ ok: false,
+      error: { code: 'PORTABLE_UPID_DOCUMENT_INVALID', message: 'Cannot read geometry' } });
+    if (failure === 'service rejection') exportProject.mockRejectedValueOnce(new Error('Cannot read geometry'));
+    if (failure === 'download') download.mockImplementationOnce(() => { throw new Error('Download unavailable'); });
+    const read = await mount({ exportPortableUpidProject: exportProject, downloadTextFile: download });
+    const before = read().connectedWorkbench;
+    await act(async () => { await read().handleExportUpidProject(seeded.project.id); });
+    expect(read().statusToasts.at(-1)).toMatchObject({ type: 'error', message: expect.stringContaining('Could not export UPID:') });
+    expect(read().workbenchInteractionLocked).toBe(false);
+    expect(read().connectedWorkbench).toBe(before);
+    await act(async () => { await read().handleExportUpidProject(seeded.project.id); });
+    expect(download).toHaveBeenLastCalledWith({ ...exported.file, mimeType: 'application/json;charset=utf-8' });
+    expect(read().statusToasts.at(-1)).toMatchObject({ type: 'success' });
+  });
+
+  it('locks project actions during export and releases them after download', async () => {
+    const seeded = await seedProgram();
+    const gate = deferred<Awaited<ReturnType<AppServices['exportPortableUpidProject']>>>();
+    const exportProject = vi.fn(() => gate.promise);
+    const rename = vi.fn(defaultAppServices.renameWorkbenchProject);
+    const remove = vi.fn(defaultAppServices.deleteWorkbenchProject);
+    const download = vi.fn();
+    const read = await mount({ exportPortableUpidProject: exportProject, renameWorkbenchProject: rename,
+      deleteWorkbenchProject: remove, downloadTextFile: download });
+    let exporting: Promise<void> | undefined;
+    await act(async () => { exporting = read().handleExportUpidProject(seeded.project.id); });
+    expect(read().workbenchInteractionLocked).toBe(true);
+    await act(async () => {
+      await expect(read().handleRenameWorkbenchProject(seeded.project.id, 'Changed')).rejects.toThrow('in progress');
+      await expect(read().handleDeleteWorkbenchProject(seeded.project.id)).rejects.toThrow('in progress');
+      await read().handleExportUpidProject(seeded.project.id);
+      await read().handleOpenWorkbenchProject(seeded.project.id);
+    });
+    expect(exportProject).toHaveBeenCalledTimes(1);
+    expect(rename).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+    await act(async () => { gate.resolve({ ok: true, file: { fileName: 'part.upid.json', text: '{}' } }); await exporting; });
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(read().workbenchInteractionLocked).toBe(false);
+    await act(async () => { await read().handleRenameWorkbenchProject(seeded.project.id, 'Changed'); });
+    expect(read().connectedWorkbench?.manifest.projects[0].name).toBe('Changed');
+    expect(read().workbenchInteractionLocked).toBe(false);
+  });
+
   it('locks competing project opens and imports until a slow project read completes', async () => {
     const seeded = await seedProgram();
     const gate = deferred<void>();

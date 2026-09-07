@@ -72,10 +72,11 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
   const [settingsErrorMessage, setSettingsErrorMessage] = useState<string | null>(null);
   const [controllerArtifactGenerating, setControllerArtifactGenerating] = useState(false);
   const [projectOpening, setProjectOpening] = useState(false);
+  const [projectActionPending, setProjectActionPending] = useState(false);
   const [statusToasts, setStatusToasts] = useState<StatusToast[]>([]);
   const [statusNotifications, setStatusNotifications] = useState<StatusToast[]>([]);
   const initializationStarted = useRef(false);
-  const activeMutation = useRef<'controller-artifact' | 'editor-save' | 'program-import' | 'project-open' | 'storage-connect' | null>(null);
+  const activeMutation = useRef<'controller-artifact' | 'editor-save' | 'program-import' | 'project-open' | 'storage-connect' | 'project-action' | null>(null);
   const toastSequence = useRef(0);
 
   useEffect(() => {
@@ -506,36 +507,59 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     }
   }
 
+  async function runProjectAction(action: () => Promise<void>) {
+    if (activeMutation.current || interactionLocked) throw new Error('Another workbench action is in progress. Try again when it finishes.');
+    activeMutation.current = 'project-action';
+    setProjectActionPending(true);
+    try {
+      await action();
+    } finally {
+      activeMutation.current = null;
+      setProjectActionPending(false);
+    }
+  }
+
   async function handleRenameWorkbenchProject(projectId: string, name: string) {
     const workbench = requireWorkbench();
     if (!workbench) return;
-    const renamed = await services.renameWorkbenchProject(workbench, { projectId, name });
-    if (!renamed.ok) throw new Error(renamed.error.message);
-    setConnectedWorkbench(renamed.workbench);
-    if (latestImport?.project.id === projectId) setLatestImport(null);
-    showStatusToast('Project renamed.', 'success');
+    await runProjectAction(async () => {
+      const renamed = await services.renameWorkbenchProject(workbench, { projectId, name });
+      if (!renamed.ok) throw new Error(renamed.error.message);
+      setConnectedWorkbench(renamed.workbench);
+      if (latestImport?.project.id === projectId) setLatestImport(null);
+      showStatusToast('Project renamed.', 'success');
+    });
   }
 
   async function handleDeleteWorkbenchProject(projectId: string) {
     const workbench = requireWorkbench();
     if (!workbench) return;
-    const deleted = await services.deleteWorkbenchProject(workbench, { projectId });
-    if (!deleted.ok) throw new Error(deleted.error.message);
-    setConnectedWorkbench(deleted.workbench);
-    if (latestImport?.project.id === projectId) setLatestImport(null);
-    showStatusToast('Project and its catalog-owned files removed.', 'success');
+    await runProjectAction(async () => {
+      const deleted = await services.deleteWorkbenchProject(workbench, { projectId });
+      if (!deleted.ok) throw new Error(deleted.error.message);
+      setConnectedWorkbench(deleted.workbench);
+      if (latestImport?.project.id === projectId) setLatestImport(null);
+      showStatusToast('Project and its catalog-owned files removed.', 'success');
+    });
   }
 
   async function handleExportUpidProject(projectId: string) {
     const workbench = requireWorkbench();
     if (!workbench) return;
-    const exported = await services.exportPortableUpidProject(workbench, projectId);
-    if (!exported.ok) throw new Error(exported.error.message);
-    services.downloadTextFile({
-      fileName: exported.file.fileName,
-      text: exported.file.text,
-      mimeType: 'application/json;charset=utf-8'
-    });
+    try {
+      await runProjectAction(async () => {
+        const exported = await services.exportPortableUpidProject(workbench, projectId);
+        if (!exported.ok) throw new Error(exported.error.message);
+        await services.downloadTextFile({
+          fileName: exported.file.fileName,
+          text: exported.file.text,
+          mimeType: 'application/json;charset=utf-8'
+        });
+        showStatusToast('UPID export prepared.', 'success');
+      });
+    } catch (error) {
+      showStatusToast('Could not export UPID: ' + errorText(error) + ' Retry using Export UPID.', 'error');
+    }
   }
 
   function handleDownloadEditorFile(input: DownloadProgramFileInput) {
@@ -726,7 +750,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
   }
 
   const interactionLocked = workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage' ||
-    projectOpening || [importStatus, editorImportStatus, dxfReimportStatus].includes('importing') ||
+    projectOpening || projectActionPending || [importStatus, editorImportStatus, dxfReimportStatus].includes('importing') ||
     controllerArtifactGenerating || editorSaveStatus === 'saving' || settingsStatus === 'saving';
 
   return {
