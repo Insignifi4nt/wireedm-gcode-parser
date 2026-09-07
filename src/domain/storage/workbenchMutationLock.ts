@@ -1,27 +1,28 @@
 import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
-const mutationTails = new WeakMap<WorkbenchStorageAdapter, Promise<void>>();
+const mutationTails = new Map<WorkbenchStorageAdapter | string, Promise<void>>();
 
 export async function withWorkbenchMutationLock<Result>(
   adapter: WorkbenchStorageAdapter,
   mutation: () => Promise<Result>
 ): Promise<Result> {
-  const predecessor = mutationTails.get(adapter) ?? Promise.resolve();
+  const scope = adapter.mutationScope ?? adapter;
+  const predecessor = mutationTails.get(scope) ?? Promise.resolve();
   let release!: () => void;
   const turn = new Promise<void>((resolve) => {
     release = resolve;
   });
   const tail = predecessor.then(() => turn);
-  mutationTails.set(adapter, tail);
+  mutationTails.set(scope, tail);
 
   await predecessor;
   try {
     const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
     return locks
-      ? await locks.request(`wire-edm-workbench:${adapter.kind}:${adapter.name}`, mutation)
+      ? await locks.request(`wire-edm-workbench:${adapter.mutationScope ?? `${adapter.kind}:${adapter.name}`}`, mutation)
       : await mutation();
   } finally {
     release();
-    if (mutationTails.get(adapter) === tail) mutationTails.delete(adapter);
+    if (mutationTails.get(scope) === tail) mutationTails.delete(scope);
   }
 }

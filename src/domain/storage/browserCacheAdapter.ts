@@ -21,6 +21,7 @@ export function createBrowserCacheAdapter(
   return {
     name: options.name ?? 'Local storage',
     kind: options.kind ?? 'browser-cache',
+    mutationScope: `browser-storage:${namespace}`,
     ensureDirectory: async (path: string) => {
       const directories = readDirectories(storage, namespace);
       if (!directories.includes(path)) {
