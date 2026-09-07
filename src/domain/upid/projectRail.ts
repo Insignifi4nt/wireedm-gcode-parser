@@ -15,6 +15,7 @@ import type {
 } from '@/domain/path-intel/types';
 import { operationEntryPoint, operationExitPoint, readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
+import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import type { DxfInsertSource } from '@/domain/dxf/types';
 import {
   distance,
@@ -1207,8 +1208,15 @@ export function readUpidSelectedPathTravel(
 ): UpidSelectedPathTravel | null {
   if (!document || !element?.travelRole || operationIndex < 0) return null;
 
-  const operation = document.plan.operations[operationIndex];
-  if (!operation || element.operationId !== operation.id) return null;
+  const sourceOperation = document.plan.operations[operationIndex];
+  if (!sourceOperation || element.operationId !== sourceOperation.id) return null;
+  const active = deriveActiveMachiningOperations(document);
+  if (active.status !== 'ready') return null;
+  const activeIndex = active.operations.findIndex((candidate) =>
+    (candidate.machiningIntent?.sourceOperationId ?? candidate.id) === sourceOperation.id
+  );
+  const operation = active.operations[activeIndex];
+  if (!operation) return null;
 
   if (element.travelRole === 'lead-in' || element.travelRole === 'lead-out') {
     const transitions = readOperationTransitions(operation);
@@ -1223,7 +1231,7 @@ export function readUpidSelectedPathTravel(
       : null;
   }
 
-  const previousOperation = operationIndex > 0 ? document.plan.operations[operationIndex - 1] : null;
+  const previousOperation = activeIndex > 0 ? active.operations[activeIndex - 1] : null;
   const initial = resolveInitialWirePosition(document);
   const start = previousOperation
     ? operationExitPoint(previousOperation)

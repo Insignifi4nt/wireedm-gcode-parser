@@ -10,6 +10,7 @@ import {
   setPathOperationClassification
 } from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
+import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 
 import {
   createUpidProjectRail,
@@ -927,6 +928,43 @@ describe('UPID project rail projection', () => {
     });
     document.setup.initialWirePosition!.review = 'required';
     expect(readUpidSelectedPathTravel(document, 0, selection)).toBeNull();
+  });
+
+  it('inspects positioning from the active portion of a preceding contour and skips excluded contours', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 20, y: 0 }, end: { x: 30, y: 0 } }
+    ]);
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: -5, y: 0 }, review: 'reviewed' } };
+    const [first, second] = document.plan.operations;
+    const selection = { operationId: second.id, segmentId: null, travelRole: 'rapid-in' as const };
+    const partial = setMachiningSpanParticipation(document, {
+      sourceSegmentId: first.segmentRefs[0].segmentId, range: { start: 0.6, end: 1 }, participation: 'inactive-reference'
+    })!;
+    expect(readUpidSelectedPathTravel(partial, 1, selection)).toEqual({
+      kind: 'rapid-in', start: { x: 6, y: 0 }, end: { x: 20, y: 0 }, length: 14
+    });
+    const withExit = setPathOperationTransitions(partial, first.id, {
+      exit: { strategy: 'manual-straight', move: 'cut', from: first.endPoint,
+        to: { x: 12, y: 0 }, review: 'reviewed' }
+    })!;
+    expect(readUpidSelectedPathTravel(withExit, 0, {
+      operationId: first.id, segmentId: null, travelRole: 'lead-out'
+    })).toEqual({ kind: 'lead-out', start: { x: 6, y: 0 }, end: { x: 12, y: 0 }, length: 6 });
+    expect(readUpidSelectedPathTravel(withExit, 1, selection)?.start).toEqual({ x: 12, y: 0 });
+    const excluded = setMachiningSpanParticipation(document, {
+      sourceSegmentId: first.segmentRefs[0].segmentId, range: { start: 0, end: 1 }, participation: 'inactive-reference'
+    })!;
+    expect(readUpidSelectedPathTravel(excluded, 1, selection)).toEqual({
+      kind: 'rapid-in', start: { x: -5, y: 0 }, end: { x: 20, y: 0 }, length: 25
+    });
+    expect(readUpidSelectedPathTravel(excluded, 0, {
+      operationId: first.id, segmentId: null, travelRole: 'rapid-in'
+    })).toBeNull();
+    const disconnected = setMachiningSpanParticipation(document, {
+      sourceSegmentId: first.segmentRefs[0].segmentId, range: { start: 0.4, end: 0.6 }, participation: 'inactive-reference'
+    })!;
+    expect(readUpidSelectedPathTravel(disconnected, 1, selection)).toBeNull();
   });
 
   it('reads center pierce lead-in travel from operation overrides', () => {
