@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { confirmPendingDxfImport as confirmDxfImport } from './dxf-import';
+import { confirmPendingDxfImport } from './dxf-import';
 
 const WORKSPACE_PANEL_TITLES = [
   ['geometry-setup', 'Geometry Setup'],
@@ -10,8 +10,8 @@ const WORKSPACE_PANEL_TITLES = [
   ['cut-sequence', 'Cut Sequence'],
   ['contour-tree', 'Contour Tree'],
   ['statistics', 'Statistics'],
-  ['machine', 'Machine'],
-  ['measurement', 'Measurement']
+  ['machine', 'Source & Machine Setup'],
+  ['measurement', 'Construction points']
 ] as const;
 
 const WORKSPACE_PANEL_COMMANDS: Record<(typeof WORKSPACE_PANEL_TITLES)[number][0], string> = {
@@ -22,7 +22,7 @@ const WORKSPACE_PANEL_COMMANDS: Record<(typeof WORKSPACE_PANEL_TITLES)[number][0
   'cut-sequence': 'machining.sequence',
   'contour-tree': 'view.contours',
   statistics: 'view.statistics',
-  machine: 'machine.profile',
+  machine: 'geometry.source-setup',
   measurement: 'construction.measurement'
 };
 
@@ -30,15 +30,9 @@ async function openReadyWorkbench(page: import('@playwright/test').Page) {
   await page.goto('/');
   await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
   await expect(page.locator('input[aria-label="Machine program file"]')).toBeEnabled();
-}
-
-async function confirmPendingDxfImport(page: import('@playwright/test').Page) {
-  await confirmDxfImport(page);
   const onboarding = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench' });
-  await onboarding.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
-  if (await onboarding.isVisible()) {
-    await onboarding.getByRole('button', { name: 'Go Build!' }).click();
-  }
+  await expect(onboarding).toBeVisible();
+  await onboarding.getByRole('button', { name: 'Go Build!' }).click();
 }
 
 test('editor anchors a path project in the UPID rail and mounts only an active right workflow dock', async ({ page }) => {

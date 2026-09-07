@@ -29,6 +29,7 @@ test('keeps existing cache untouched without Web Locks while temporary imports r
   await expect(temporary.getByLabel('Program editor')).toHaveValue('G21 G90\nG0 X0 Y0\nG1 X24 Y5');
   expect(await cache(temporary)).toEqual(before);
   await temporary.reload();
+  await dismissOnboarding(temporary);
   await expect(temporary.locator('[data-storage-status]')).toHaveAttribute('aria-label', 'Temporary storage only');
   await expect(temporary.getByRole('button', { name: /^Open project / })).toHaveCount(0);
   expect(await cache(temporary)).toEqual(before);
@@ -56,14 +57,23 @@ test('waits for a lock held by another tab before importing into the shared brow
   const after = await cache(second);
   expect(after.filter(([key]) => key.includes(':file:imports/'))).toHaveLength(1);
   await page.reload();
+  await dismissOnboarding(page);
   await expect(page.getByRole('button', { name: /^Open project / })).toHaveCount(1);
 });
 
 async function ready(page: Page) {
   await page.goto('/');
-  const welcome = page.getByRole('button', { name: 'Go Build!', exact: true });
-  if (await welcome.isVisible()) await welcome.click();
+  await dismissOnboarding(page);
   await expect(page.getByLabel('Machine program file', { exact: true })).toBeEnabled();
+}
+async function dismissOnboarding(page: Page) {
+  const dismissed = await page.evaluate(() => localStorage.getItem('wireedm.onboarding.dismissed') === 'true');
+  const dialog = page.getByRole('dialog', { name: 'Thanks for trying Wire EDM Workbench', exact: true });
+  if (!dismissed) {
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  }
+  await expect(dialog).toHaveCount(0);
 }
 function program(name: string, x: number) {
   return { name, mimeType: 'text/plain', buffer: Buffer.from(`G21 G90\nG0 X0 Y0\nG1 X${x} Y5`) };
