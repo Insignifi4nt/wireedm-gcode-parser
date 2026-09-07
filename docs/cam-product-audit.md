@@ -39,7 +39,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Save, cancel, undo and redo | Correct transaction boundaries for every mutating tool | pending |
 | Program tree | Ready operations start collapsed; unresolved operation issues remain expanded. Readable event labels replace raw kind names. Fixed selected-child collapse reopening and kept keyboard focus on collapsed parent; broader operation summary/detail grouping remains | in progress |
 | Geometry tree and contour tree | Determine whether duplicate tree panel should merge into rail | pending |
-| Path summary and statistics | Combine overlapping counts; show useful selected geometry properties | pending |
+| Path summary and statistics | Merged into Statistics with one set of project counts, actual filename, dimensional units and explicit source geometry bounds. Source/topology disclosure retains provenance and exposes layer names. Selected-geometry detail simplification remains | in progress |
 | Position panel | Removed duplicate cursor/snap display. Live coordinates remain in status; snap belongs to Construction points. Updated coordinate interaction and snap-toggle checks | removed |
 | Geometry setup | Finished contour versus wire center, prerequisites and effects | pending |
 | Move/rotate/mirror | Precise numeric fields, pivot, scope, preview and undo | pending |
@@ -71,13 +71,14 @@ Status: `pending` means the feature still needs the current audit, implementatio
 3. Working Measure tool, local `tmp/cam-audit/03-measurement-after.png`: magnetic endpoint pair measures exactly 10 mm with matching canvas annotation and panel results. Document remains saved. Construction is a separate editing command; its unavailable insertion action is hidden for path projects.
 4. Compact program tree, local `tmp/cam-audit/04-program-tree-after.png`: ready operation details are collapsed, leaving source/setup and program order visible. Event details remain reachable by expansion; unresolved operation diagnostics expand automatically.
 5. Contour measurement, local `tmp/cam-audit/05-profile-measurement.png`: disclosed boundary length, width, height and enclosed area in the docked Measure panel. Moving into the panel preserves the last preview so controls do not shift under the pointer.
+6. Consolidated Statistics, local `tmp/cam-audit/06-consolidated-statistics.png`: project counts and dimensional scope appear once, with source/topology details disclosed below. The manual-decision breakdown includes compensation and hides unused categories.
 
 Screenshots were captured and inspected during this audit. They establish layout findings; correctness requires domain and interaction checks as well.
 
 ## Additional findings to verify
 
 - Raw G-code parsing currently has no unit field. Do not label its raw coordinate preview as millimeters until modal units and conversions are handled correctly.
-- Statistics repeats its panel title and reports the path-project filename as "UPID Project". Lengths need units, bounds need an explicit geometry-versus-motion scope, and project counts overlap Path Summary. Consolidate while retaining source and selection inspection.
+- The legacy path-preview count helper mixes source bounds with entry endpoints and omits some transition moves. Statistics now uses explicit source geometry bounds; audit preview move counts against the execution trace before presenting them as complete machining statistics.
 - Magnetic construction inference and measurement snapping have different selection rules. Measurement should prefer nearby semantic points and must not snap to distant geometry merely because it is the nearest available candidate.
 - User regression: setting initial relative wire position on a new project did not update the preview start position and connection. Reproduce from new import, including the coordinate-setting behavior described as G902, and verify draft preview, save and reopen.
 - User regression: hovering a geometry-tree start/end point can be obscured by the existing start/end marker. Hover and selected point indicators must render visibly above all semantic markers; retain the marker identity without hiding the interaction state.
@@ -92,6 +93,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 - Subsequent program-tree change: 86 focused component/editor tests, four browser workflow tests and the production build passed. A controlled-selection regression exercises select, expand, select child, collapse and keyboard re-expand with focus and selection retained.
 - Contour measurement: 10 domain tests, three browser scenarios and the production build passed. Checks cover analytic curved area, reversed orientation, open/missing boundaries, rectangle dimensions and a stable disclosure target after the first pick. Leads and positioning moves are excluded; ambiguous or intersecting contours do not display an enclosed area.
 - Position-panel removal: 98 focused tests and production build passed. The workspace browser run passed 17 scenarios; one encountered a page reset during concurrent documentation editing and passed on isolated rerun. Rendered View menu and Statistics inspected; cursor coordinates remain available in the status bar.
+- Summary consolidation: 95 focused tests, three browser scenarios and production build passed. Browser assertions verify the imported filename, 10 × 10 mm geometry bounds, 40 mm cutting travel, topology disclosure and the actual DXF layer. Selection cross-highlighting and source-placement inspection remain covered.
 
 ## Next audit work
 

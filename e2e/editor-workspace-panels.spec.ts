@@ -4,7 +4,6 @@ import { confirmPendingDxfImport as confirmDxfImport } from './dxf-import';
 
 const WORKSPACE_PANEL_TITLES = [
   ['geometry-setup', 'Geometry Setup'],
-  ['path-summary', 'Path Summary'],
   ['path-transform', 'Transform'],
   ['endpoint-topology', 'Endpoint Topology'],
   ['path-diagnostics', 'Path Diagnostics'],
@@ -17,7 +16,6 @@ const WORKSPACE_PANEL_TITLES = [
 
 const WORKSPACE_PANEL_COMMANDS: Record<(typeof WORKSPACE_PANEL_TITLES)[number][0], string> = {
   'geometry-setup': 'geometry.setup',
-  'path-summary': 'view.summary',
   'path-transform': 'geometry.transform',
   'endpoint-topology': 'view.endpoints',
   'path-diagnostics': 'view.diagnostics',
@@ -344,11 +342,19 @@ test('editor keeps common floating workspace panels readable through workflow sw
     });
   await confirmPendingDxfImport(page);
 
-  const panelIds = ['path-transform', 'path-summary', 'statistics'];
+  const panelIds = ['path-transform', 'statistics'];
   for (const panelId of panelIds) {
     await showPanels(page, [panelId]);
     await expect(page.locator(`[data-editor-floating-panel="${panelId}"]`)).toBeVisible();
   }
+
+  const stats = page.locator('[data-editor-stats-section]');
+  await expect(stats.locator('[data-editor-stat="file"]')).toHaveText(/common-panel-placement.*\.json/);
+  await expect(stats.locator('[data-editor-stat="bounds"]')).toHaveText('X0.000..10.000 Y0.000..10.000 mm');
+  await expect(stats.locator('[data-upid-stat="cut-length"]')).toHaveText('40.000 mm');
+  await stats.getByText('Source and topology', { exact: true }).click();
+  await expect(stats.locator('[data-upid-topology-summary]')).toContainText('max gap 0.000 mm');
+  await expect(stats.getByText('Layers: CUT', { exact: true })).toBeVisible();
 
   await showPanels(page, ['path-transform']);
 

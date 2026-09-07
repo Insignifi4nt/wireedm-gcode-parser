@@ -86,11 +86,11 @@ describe('editor command availability', () => {
 
   it('accepts view workflows without assigning document history', () => {
     const command: EditorCommandDefinition = {
-      id: 'view.summary',
-      label: 'Path Summary',
-      menuPath: ['View', 'Path Summary'],
+      id: 'view.statistics',
+      label: 'Statistics',
+      menuPath: ['View', 'Statistics'],
       scope: 'view',
-      toolWindowId: 'path-summary',
+      toolWindowId: 'statistics',
       workflow: { kind: 'view' }
     };
 

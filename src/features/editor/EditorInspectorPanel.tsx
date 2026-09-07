@@ -31,6 +31,7 @@ import {
   type UpidSelectedPathDiagnostic,
 } from '@/domain/upid/projectRail';
 
+import { EditorProjectProvenance } from './EditorProjectProvenance';
 import type { EditorGuideTarget } from './editorGuideContent';
 import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
@@ -232,32 +233,32 @@ export function EditorInspectorPanel({
       data-editor-inspector-summary
     >
       {renderWorkspacePanel('statistics', 'Statistics', (
-      <details data-editor-stats-section open>
-        <summary className="cursor-pointer select-none font-mono text-[11px] font-semibold outline-none hover:text-foreground">
-          Statistics
-        </summary>
+      <section data-editor-stats-section>
+        {!pathDocument && <h3 className="font-semibold">Statistics</h3>}
         <section className="mt-2">
           {pathDocument ? (
             <>
-              <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">UPID</h3>
-              <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
+              <h3 className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Project</h3>
+              <dl className="grid grid-cols-[100px_minmax(0,1fr)] gap-y-1.5">
                 <dt className="text-muted-foreground">Operations</dt>
                 <dd data-upid-stat="operations">{pathDocument.plan.operations.length}</dd>
                 <dt className="text-muted-foreground">Contours</dt>
                 <dd data-upid-stat="contours">{pathDocument.contours.length}</dd>
                 <dt className="text-muted-foreground">Segments</dt>
                 <dd data-upid-stat="segments">{pathDocument.segments.length}</dd>
-                <dt className="text-muted-foreground">Cut Length</dt>
-                <dd data-upid-stat="cut-length">{pathDocument.plan.metrics.totalCutLength.toFixed(3)}</dd>
-                <dt className="text-muted-foreground">Rapid</dt>
-                <dd data-upid-stat="rapid-length">{pathDocument.plan.metrics.totalRapidLength.toFixed(3)}</dd>
-                <dt className="text-muted-foreground">Bounds</dt>
-                <dd data-editor-stat="bounds">{boundsText}</dd>
+                <dt className="text-muted-foreground">Cutting travel</dt>
+                <dd data-upid-stat="cut-length">{pathDocument.plan.metrics.totalCutLength.toFixed(3)} mm</dd>
+                <dt className="text-muted-foreground">Rapid travel</dt>
+                <dd data-upid-stat="rapid-length">{pathDocument.plan.metrics.totalRapidLength.toFixed(3)} mm</dd>
+                <dt className="text-muted-foreground">Geometry bounds</dt>
+                <dd data-editor-stat="bounds">{boundsText} mm</dd>
                 <dt className="text-muted-foreground">File</dt>
                 <dd className="truncate" data-editor-stat="file" title={program?.filePath}>
                   {editorFileName}
                 </dd>
               </dl>
+              <p className="mt-2 text-muted-foreground">Cutting travel includes entry and exit moves. Bounds describe the source geometry.</p>
+              <EditorProjectProvenance document={pathDocument} />
             </>
           ) : draftParseResult ? (
             <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
@@ -1013,7 +1014,7 @@ export function EditorInspectorPanel({
               </div>
             </section>
           )}
-      </details>
+      </section>
       ), { fill: true })}
 
       {pathDocument && (

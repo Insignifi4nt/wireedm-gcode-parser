@@ -7,7 +7,7 @@ export type EditorProgramTreeExactTarget =
 
 export interface EditorProgramTreeAction {
   readonly commandId:
-    | 'view.summary'
+    | 'view.statistics'
     | 'geometry.setup'
     | 'machining.initial-wire'
     | 'machining.between-contours'
@@ -24,7 +24,7 @@ export interface EditorProgramTreeAction {
 export function resolveEditorProgramTreeAction(node: EditorProgramTreeNode): EditorProgramTreeAction {
   if (node.kind === 'source') {
     switch (node.sourceKind) {
-      case 'path-summary': return action('view.summary');
+      case 'path-summary': return action('view.statistics');
       case 'geometry': return action('geometry.setup');
       case 'initial-wire': return action('machining.initial-wire');
       case 'threading-default': return action('machining.between-contours');

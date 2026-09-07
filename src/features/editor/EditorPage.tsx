@@ -171,6 +171,7 @@ import {
   writeStoredLineMode
 } from './editorLineState';
 import {
+  readPathDocumentBounds,
   readPathDocumentBoundsCenter,
   readPathSelectionBoundsCenter,
   resolvePathDragTarget
@@ -261,7 +262,6 @@ const SET_START_COMMAND: EditorCommandDefinition = {
 };
 
 type EditorWorkspacePanelId =
-  | 'path-summary'
   | 'geometry-setup'
   | 'contour-setup'
   | 'set-start'
@@ -282,7 +282,6 @@ type EditorWorkspacePanelId =
 
 const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   measure: 'Measure',
-  'path-summary': 'Path Summary',
   'geometry-setup': 'Geometry Setup',
   'contour-setup': 'Contour Setup',
   'set-start': 'Contour Start',
@@ -303,7 +302,6 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
 
 const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string> = {
   measure: 'distance, coordinates and geometry dimensions with magnetic point picking',
-  'path-summary': 'project counts, topology, source, and planning state',
   'geometry-setup': 'document machining geometry basis',
   'contour-setup': 'contour direction, role, and compensation intent',
   'set-start': 'guided contour start-point selection',
@@ -317,13 +315,12 @@ const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string
   'between-contours': 'derived rapid travel and manual or automatic rethread policy',
   'program-stops': 'typed unconditional stop events at operation boundaries or remaining cut distance',
   'machining-participation': 'source-preserving active cuts, inactive reference spans, and explicit open-path compensation side',
-  statistics: 'bounds, move counts, and selected geometry details',
+  statistics: 'project dimensions, source, topology and selected geometry',
   machine: 'project machine, active setup, source units, and machine fit checks',
   measurement: 'manual points, perpendicular and tangent construction, and export actions'
 };
 
 const PATH_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
-  'path-summary',
   'geometry-setup',
   'contour-setup',
   'set-start',
@@ -348,7 +345,6 @@ const INSPECTOR_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
 
 const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFloatingPanelGeometry> = {
   measure: { x: 820, y: 90, width: 320, height: 420 },
-  'path-summary': { x: 250, y: 74, width: 300, height: 220 },
   'geometry-setup': { x: 274, y: 104, width: 320, height: 260 },
   'contour-setup': { x: 286, y: 118, width: 340, height: 430 },
   'set-start': { x: 300, y: 132, width: 340, height: 340 },
@@ -413,7 +409,6 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
   },
   ...([
     ['view.contours', 'Contour Tree', 'contour-tree'],
-    ['view.summary', 'Path Summary', 'path-summary'],
     ['view.endpoints', 'Endpoint Topology', 'endpoint-topology'],
     ['view.diagnostics', 'Path Diagnostics', 'path-diagnostics'],
     ['view.statistics', 'Statistics', 'statistics']
@@ -835,8 +830,9 @@ export function EditorPage({
     pathDocumentStats?.arcMoveCount ??
     draftParseResult?.path.filter((point) => point.type === 'arc').length ??
     0;
-  const boundsText = pathDocumentStats
-    ? formatBounds(pathDocumentStats.bounds)
+  const geometryBounds = useMemo(() => pathDocumentDraft ? readPathDocumentBounds(pathDocumentDraft) : null, [pathDocumentDraft]);
+  const boundsText = pathDocumentDraft
+    ? geometryBounds ? formatBounds(geometryBounds) : '-'
     : draftParseResult && pathCount > 0
       ? formatBounds(draftParseResult.bounds)
       : '-';
@@ -948,10 +944,7 @@ export function EditorPage({
       : program?.model === 'gcode-text'
         ? 'machine-program'
         : 'empty-program';
-  const editorFileName =
-    program?.model === 'upid-document'
-      ? 'UPID Project'
-      : program?.filePath.split('/').pop() ?? '-';
+  const editorFileName = program?.filePath.split('/').pop() ?? '-';
   const hasUnsavedChanges = Boolean(program && draftSignature !== savedDraftSignature);
   const activeMutatingWorkflow = activeWorkflowSession?.kind === 'mutating'
     ? activeWorkflowSession

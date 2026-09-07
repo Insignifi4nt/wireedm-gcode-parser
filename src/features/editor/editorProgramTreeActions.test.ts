@@ -20,6 +20,8 @@ describe('resolveEditorProgramTreeAction', () => {
     });
     expect(resolveEditorProgramTreeAction(tree.sourceSetup[2]).commandId)
       .toBe('machining.initial-wire');
+    expect(resolveEditorProgramTreeAction(tree.sourceSetup[0]).commandId)
+      .toBe('view.statistics');
   });
 
   it('opens initial wire setup from a real missing-position diagnostic', () => {

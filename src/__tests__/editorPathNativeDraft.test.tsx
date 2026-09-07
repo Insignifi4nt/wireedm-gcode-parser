@@ -178,9 +178,9 @@ describe('EditorPage UPID draft boundary', () => {
     const savedGeometry = previewGeometrySignature();
     expect(savedGeometry).not.toBe(openingGeometry);
 
-    await clickElement('[data-editor-workflow-command="view.summary"]');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
     await clickElement('[data-editor-workflow-transition-action="save"]');
-    expect(visibleWorkflowPanelIds()).toEqual(['path-summary']);
+    expect(visibleWorkflowPanelIds()).toEqual(['statistics']);
 
     await clickElement('button[aria-label="Undo active document change"]');
     expect(previewGeometrySignature()).toBe(openingGeometry);
@@ -215,7 +215,7 @@ describe('EditorPage UPID draft boundary', () => {
     await act(async () => projectSave?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(onSaveEditorDraft).not.toHaveBeenCalled();
 
-    await clickElement('[data-editor-workflow-command="view.summary"]');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
     await clickElement('[data-editor-workflow-transition-action="save"]');
     const resolvedProjectSave = container.querySelector(
       'button[aria-label="Save active document"]'
@@ -2584,14 +2584,14 @@ describe('EditorPage UPID draft boundary', () => {
     );
   });
 
-  it('shows endpoint topology summary in the path navigator header', async () => {
+  it('reports endpoint topology in project inspection', async () => {
     const pathDocument = pathDocumentFromGappedRectangle();
     const project = projectWithUpid(pathDocument);
 
     await act(async () => {
       root.render(
         <EditorPageHarness
-          initialWorkflowId="view.summary"
+          initialWorkflowId="view.statistics"
           onSaveEditorDraft={vi.fn()}
           project={project}
         />

@@ -54,7 +54,6 @@ import {
   type UpidEndpointTopologyRow,
   type UpidPathDiagnosticSummary,
   type UpidSelectedPathDiagnostic,
-  type UpidProjectRail,
   type UpidProjectRailTreeNode
 } from '@/domain/upid/projectRail';
 import {
@@ -219,8 +218,6 @@ export function EditorPathNavigatorPanel({
   const segmentsById = segmentMap(pathDocument.segments);
   const projectRail = createUpidProjectRail(pathDocument);
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
-  const endpointTopology = projectRail.summary.topology;
-  const sourceSummary = projectRail.summary.source;
   const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
   const endpointTopologyPanel = summarizeEndpointTopologyPanel(pathDocument);
   const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
@@ -657,71 +654,6 @@ export function EditorPathNavigatorPanel({
         className="work-region-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto"
         data-upid-path-navigator
       >
-        {renderWorkspacePanel(
-          'path-summary',
-          'Path Summary',
-        <div>
-          <p className="text-[10px] uppercase text-muted-foreground">Project Rail</p>
-          <h2 className="mt-1 text-sm font-semibold">UPID Path Navigator</h2>
-          <p className="mt-1 text-[10px] text-muted-foreground">
-            {projectRail.summary.operationCount} operations / {projectRail.summary.contourCount} contours
-          </p>
-          <p
-            className="mt-1 truncate text-[10px] text-muted-foreground"
-            data-upid-topology-ambiguous={endpointTopology.ambiguousEndpointClusterCount}
-            data-upid-topology-clusters={endpointTopology.endpointClusterCount}
-            data-upid-topology-max-gap={endpointTopology.maxEndpointSnapGap.toFixed(3)}
-            data-upid-topology-snapped={endpointTopology.snappedEndpointClusterCount}
-            data-upid-topology-snapped-endpoints={endpointTopology.snappedEndpointCount}
-            data-upid-topology-summary
-          >
-            Topology: {endpointTopology.endpointClusterCount} clusters / snapped{' '}
-              {endpointTopology.snappedEndpointClusterCount} / max gap {endpointTopology.maxEndpointSnapGap.toFixed(3)}
-            {endpointTopology.ambiguousEndpointClusterCount > 0 && (
-              <> / ambiguous {endpointTopology.ambiguousEndpointClusterCount}</>
-            )}
-          </p>
-          <p
-            className="mt-1 text-[10px] text-muted-foreground"
-            data-upid-path-manual-decision-count={projectRail.summary.manualDecisionCount}
-            data-upid-path-manual-decision-direction={projectRail.summary.manualDecisionCounts.direction}
-            data-upid-path-manual-decision-lead-in={projectRail.summary.manualDecisionCounts['lead-in']}
-            data-upid-path-manual-decision-order={projectRail.summary.manualDecisionCounts.order}
-            data-upid-path-manual-decision-role={projectRail.summary.manualDecisionCounts.role}
-            data-upid-path-manual-decision-start={projectRail.summary.manualDecisionCounts.start}
-            data-upid-path-manual-decisions
-          >
-            {formatPathManualDecisionCount(projectRail.summary.manualDecisionCount)}
-            {projectRail.summary.manualDecisionCount > 0 && (
-              <span className="block truncate">
-                {formatPathManualDecisionBreakdown(projectRail.summary.manualDecisionCounts)}
-              </span>
-            )}
-          </p>
-          <p
-            className="mt-1 truncate text-[10px] text-muted-foreground"
-            data-upid-source-approximated-segments={sourceSummary.approximatedSegmentCount}
-            data-upid-source-block-count={sourceSummary.blockCount}
-            data-upid-source-blocks={
-              sourceSummary.blockNames.length > 0 ? sourceSummary.blockNames.join(', ') : undefined
-            }
-            data-upid-source-edited-segments={sourceSummary.editedSegmentCount}
-            data-upid-source-entities={sourceSummary.entityCount}
-            data-upid-source-exact-segments={sourceSummary.exactSegmentCount}
-            data-upid-source-insert-block-count={sourceSummary.insertBlockCount}
-            data-upid-source-inserted-segments={sourceSummary.insertedSegmentCount}
-            data-upid-source-inserts={
-              sourceSummary.insertBlockNames.length > 0 ? sourceSummary.insertBlockNames.join(', ') : undefined
-            }
-            data-upid-source-layer-count={sourceSummary.layerCount}
-            data-upid-source-layers={formatSourceLayers(sourceSummary.layers)}
-            data-upid-source-segments={sourceSummary.segmentCount}
-            data-upid-source-summary
-          >
-            {formatProjectSourceSummary(sourceSummary)}
-          </p>
-        </div>
-        )}
 
         {renderWorkspacePanel(
           'path-transform',
@@ -2474,45 +2406,6 @@ function formatTreeMetrics(metrics: UpidProjectRailTreeNode['treeMetrics']) {
 
   const descendantLabel = metrics.descendantCount === 1 ? 'nested contour' : 'nested contours';
   return `${metrics.directSegmentCount} ${segmentLabel} / ${metrics.descendantCount} ${descendantLabel} / ${metrics.totalSegmentCount} total`;
-}
-
-function formatPathManualDecisionCount(count: number) {
-  if (count <= 0) return 'Automatic path plan';
-  return `${count} manual ${count === 1 ? 'decision' : 'decisions'}`;
-}
-
-function formatPathManualDecisionBreakdown(counts: Record<UpidManualDecisionKind, number>) {
-  return `order ${counts.order} / role ${counts.role} / direction ${counts.direction} / start ${counts.start} / lead-in ${counts['lead-in']}`;
-}
-
-function formatProjectSourceSummary(source: UpidProjectRail['summary']['source']) {
-  const parts = [
-    `Source: ${formatCount(source.entityCount, 'entity')} / ${formatCount(source.segmentCount, 'segment')} / ${formatCount(source.layerCount, 'layer')}`
-  ];
-
-  if (source.blockNames.length > 0) {
-    parts.push(`blocks ${source.blockNames.join(', ')}`);
-  }
-
-  if (source.insertBlockNames.length > 0) {
-    parts.push(`inserts ${source.insertBlockNames.join(', ')}`);
-  }
-
-  if (source.approximatedSegmentCount > 0 || source.editedSegmentCount > 0) {
-    parts.push(
-      `exact ${source.exactSegmentCount} / approx ${source.approximatedSegmentCount} / edits ${source.editedSegmentCount}`
-    );
-  }
-
-  return parts.join(' / ');
-}
-
-function formatCount(count: number, singular: string) {
-  return `${count} ${count === 1 ? singular : `${singular}s`}`;
-}
-
-function formatSourceLayers(layers: Array<string | null>) {
-  return layers.map((layer) => layer ?? '-').join(', ');
 }
 
 function formatSegmentRowHelp({
