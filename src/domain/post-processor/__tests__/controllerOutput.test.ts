@@ -47,6 +47,20 @@ describe('controller output serialization', () => {
     });
   });
 
+  it('encodes UTF-8 wrappers without adding a final newline when the post disables it', () => {
+    const output = minimalPostPackage().manifest.output;
+    output.encoding = 'utf-8';
+    output.lineEnding = 'lf';
+    output.finalNewline = false;
+    output.programEnvelope.prefix = ['(µ)'];
+
+    const serialized = serializeControllerOutput({ ...program, text: 'M02', lines: ['M02'] }, output);
+    expect(serialized.ok).toBe(true);
+    if (!serialized.ok) throw new Error(serialized.error.message);
+    expect(serialized.text).toBe('(µ)\nM02');
+    expect([...serialized.bytes]).toEqual([40, 194, 181, 41, 10, 77, 48, 50]);
+  });
+
   it('rejects sequence numbers beyond the supported controller range', () => {
     const output = minimalPostPackage().manifest.output;
     output.blockNumbering = {

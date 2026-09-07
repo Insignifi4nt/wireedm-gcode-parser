@@ -149,6 +149,43 @@ describe('EditorControllerArtifactDialog', () => {
     expect(container.textContent).toContain('This machine has no active setup');
   });
 
+  it('explains package installation when no machine or exact post is available', async () => {
+    await render({ machines: [] });
+    expect(button('Generate controller artifact').disabled).toBe(true);
+    expect(container.textContent).toContain('Install a complete .wireedm-package');
+
+    await render({ posts: createEmptyPostLibrary() });
+    await act(async () => {
+      const select = selectElement('Controller export machine');
+      select.value = 'alpha';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(button('Generate controller artifact').disabled).toBe(true);
+    expect(container.textContent).toContain('The active setup requires');
+    expect(container.textContent).toContain('Reinstall its complete machine package');
+  });
+
+  it('keeps the generated artifact available when download fails and retries without reposting', async () => {
+    const generate = vi.fn().mockResolvedValue({
+      ok: true, artifact: { fileName: 'retry.iso', text: 'G90\r\nM02' }
+    } as ControllerArtifactResult);
+    const download = vi.fn()
+      .mockImplementationOnce(() => { throw new Error('Browser download unavailable'); })
+      .mockImplementationOnce(() => undefined);
+    await render({ onDownload: download, onGenerateControllerArtifact: generate });
+
+    await click('Generate controller artifact');
+    await click('Download retry.iso');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Browser download unavailable');
+    expect(container.querySelector('pre')?.textContent).toBe('G90\r\nM02');
+
+    await click('Download retry.iso');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(download).toHaveBeenCalledTimes(2);
+    expect(download).toHaveBeenLastCalledWith('retry.iso', 'G90\r\nM02');
+    expect(generate).toHaveBeenCalledOnce();
+  });
+
   it('contains keyboard focus and shortcuts, then restores focus when closed', async () => {
     const launcher = document.createElement('button');
     document.body.appendChild(launcher);

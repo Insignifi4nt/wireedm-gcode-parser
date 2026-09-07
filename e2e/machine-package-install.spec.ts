@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 import { confirmPendingDxfImport } from './dxf-import';
 
@@ -111,6 +112,21 @@ test('explains missing compensation and exports after the decision is saved', as
   await page.getByLabel('Controller export machine').selectOption('cristian.robofil-100');
   await page.getByRole('button', { name: 'Generate controller artifact' }).click();
 
-  await expect(page.getByRole('dialog', { name: 'Controller artifact export' }).locator('pre'))
+  const artifactDialog = page.getByRole('dialog', { name: 'Controller artifact export' });
+  await expect(artifactDialog.locator('pre'))
     .toContainText('N10 G92 X-5.000 Y0.000');
+  const preview = await artifactDialog.locator('pre').textContent();
+  if (preview === null) throw new Error('Missing generated controller preview.');
+  const downloaded = page.waitForEvent('download');
+  await artifactDialog.getByRole('button', { name: /^Download / }).click();
+  const download = await downloaded;
+  const path = await download.path();
+  if (path === null) throw new Error('Controller download has no local file.');
+  const bytes = await readFile(path);
+  expect(download.suggestedFilename()).toMatch(/\.iso$/);
+  // The installed Robofil post owns ASCII, CRLF, the percent wrapper, and final newline.
+  expect([...bytes].every((byte) => byte <= 0x7f)).toBe(true);
+  expect(bytes.toString('ascii')).toMatch(/^%\r\nN10 G92 X-5\.000 Y0\.000\r\n/);
+  expect(bytes.toString('ascii')).toMatch(/M02\r\n$/);
+  expect(bytes.equals(Buffer.from(preview.replace(/\r?\n/g, '\r\n'), 'ascii'))).toBe(true);
 });

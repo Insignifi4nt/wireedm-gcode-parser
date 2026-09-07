@@ -32,6 +32,7 @@ import {
 } from '@/domain/upid/projectRail';
 
 import { EditorProjectProvenance } from './EditorProjectProvenance';
+import { EditorPlanningMachineSummary } from './EditorPlanningMachineSummary';
 import type { EditorGuideTarget } from './editorGuideContent';
 import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
@@ -1021,13 +1022,7 @@ export function EditorInspectorPanel({
       {pathDocument && (
         renderWorkspacePanel('machine', 'Planning Machine & Source Setup', (
         <section data-editor-machine-section>
-          <h3 className="mb-2 text-[11px] font-semibold">Planning Machine & Source Setup</h3>
-          <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
-            <dt className="text-muted-foreground">Machine</dt>
-            <dd className="truncate" data-editor-machine="definition" title={planningMachine?.name}>
-              {planningMachine?.name ?? 'Not selected'}
-            </dd>
-          </dl>
+          <EditorPlanningMachineSummary machine={planningMachine} result={machineFit} />
           {pathDocument?.source.appliedUnits && (
             <div
               className="mt-3 border-t border-border pt-3"
@@ -1074,16 +1069,6 @@ export function EditorInspectorPanel({
                   Re-import with Different Units
                 </Button>
               )}
-            </div>
-          )}
-          {machineFit?.ok && machineFit.fit.status === 'too-large' && (
-            <div
-              className="mt-2 border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200"
-              data-editor-machine-fit="too-large"
-            >
-              {machineFit.fit.issues
-                .map((issue) => `${issue.axis} ${issue.actualMm.toFixed(3)} > ${issue.limitMm.toFixed(3)} mm`)
-                .join('\n')}
             </div>
           )}
         </section>

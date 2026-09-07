@@ -48,6 +48,7 @@ export function EditorControllerArtifactDialog({
   const [artifact, setArtifact] = useState<ControllerProgramArtifact | null>(null);
   const [failure, setFailure] = useState<Extract<ControllerArtifactResult, { ok: false }>['error'] | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [downloadFailure, setDownloadFailure] = useState<string | null>(null);
   const selectedMachine = machines.find((machine) => machine.id === machineId) ?? null;
   const activeSetup = selectedMachine?.bindings.find(({ id }) => id === selectedMachine.activeBindingId) ?? null;
   const activePost = activeSetup
@@ -87,6 +88,7 @@ export function EditorControllerArtifactDialog({
     setGenerating(true);
     setArtifact(null);
     setFailure(null);
+    setDownloadFailure(null);
     try {
       const result = await onGenerateControllerArtifact({ machineId });
       if (result.ok) setArtifact(result.artifact);
@@ -99,6 +101,16 @@ export function EditorControllerArtifactDialog({
       });
     } finally {
       setGenerating(false);
+    }
+  }
+
+  function download() {
+    if (!artifact) return;
+    setDownloadFailure(null);
+    try {
+      onDownload(artifact.fileName, artifact.text);
+    } catch (error) {
+      setDownloadFailure(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -129,6 +141,7 @@ export function EditorControllerArtifactDialog({
               setMachineId(event.currentTarget.value);
               setArtifact(null);
               setFailure(null);
+              setDownloadFailure(null);
             }}
             value={machineId}
           >
@@ -137,9 +150,19 @@ export function EditorControllerArtifactDialog({
           </select>
         </label>
 
+        {machines.length === 0 && (
+          <p className="text-muted-foreground">Install a complete .wireedm-package in Workbench Settings, under Machines &amp; setups, before generating controller output.</p>
+        )}
+
         {selectedMachine && !activeSetup && (
           <p className="border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200">
             This machine has no active setup. Choose one in Workbench Settings.
+          </p>
+        )}
+        {activeSetup && !activePost && (
+          <p className="border border-amber-500/50 bg-amber-500/10 p-2 text-amber-200">
+            The active setup requires {activeSetup.post.packageId}@{activeSetup.post.version}, which is unavailable.
+            Reinstall its complete machine package in Workbench Settings.
           </p>
         )}
         {activeSetup && activePost && (
@@ -193,8 +216,13 @@ export function EditorControllerArtifactDialog({
           <section className="grid gap-2">
             <div className="flex items-center justify-between gap-2">
               <span className="font-mono">{artifact.fileName}</span>
-              <button className="h-7 border border-border px-2" onClick={() => onDownload(artifact.fileName, artifact.text)} type="button">Download {artifact.fileName}</button>
+              <button className="h-7 border border-border px-2" onClick={download} type="button">Download {artifact.fileName}</button>
             </div>
+            {downloadFailure !== null && (
+              <p className="border border-destructive/60 bg-destructive/10 p-2 text-destructive" role="alert">
+                Download failed: {downloadFailure}. Try Download again; the generated artifact is still available.
+              </p>
+            )}
             <pre className="max-h-[50vh] overflow-auto whitespace-pre border border-border bg-background p-2 font-mono text-[10px]">{artifact.text}</pre>
           </section>
         )}
@@ -217,5 +245,5 @@ function outputSummary(output: PostLibrary['installations'][number]['package']['
   const markers = output.programEnvelope.prefix.length + output.programEnvelope.suffix.length > 0
     ? 'program markers'
     : 'no program markers';
-  return `.${output.fileExtension} · ${output.lineEnding.toUpperCase()} · ${output.encoding.toUpperCase()} · ${numbering} · ${markers}`;
+  return `.${output.fileExtension} · ${output.lineEnding.toUpperCase()} · ${output.encoding.toUpperCase()} · ${output.finalNewline ? 'final newline' : 'no final newline'} · ${numbering} · ${markers}`;
 }
