@@ -38,12 +38,31 @@ test('clicking a clipped cut selects its source and exact active range', async (
   await page.getByRole('button', { name: 'Construction menu' }).click();
   await page.locator('[data-editor-workflow-command="inspect.measure"]').click();
   await page.getByRole('button', { name: 'Dock Measure right', exact: true }).click();
-  const measurementPoint = await clipped.evaluate((element) => {
+  // Docking changes both the SVG size and its fitted viewBox via ResizeObserver.
+  // Wait for the screen transform to settle before saving a mouse coordinate.
+  const measurementPoint = await clipped.evaluate((element) => new Promise<{ x: number; y: number }>((resolve, reject) => {
     const path = element as SVGPathElement;
-    const local = path.getPointAtLength(path.getTotalLength() / 2);
-    const screen = new DOMPoint(local.x, local.y).matrixTransform(path.getScreenCTM()!);
-    return { x: screen.x, y: screen.y };
-  });
+    let previous = '';
+    let stableFrames = 0;
+    function sample() {
+      const matrix = path.getScreenCTM();
+      if (!matrix) {
+        reject(new Error('Clipped path transform unavailable'));
+        return;
+      }
+      const signature = [matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f].join(',');
+      stableFrames = signature === previous ? stableFrames + 1 : 0;
+      previous = signature;
+      if (stableFrames < 2) {
+        requestAnimationFrame(sample);
+        return;
+      }
+      const local = path.getPointAtLength(path.getTotalLength() / 2);
+      const screen = new DOMPoint(local.x, local.y).matrixTransform(matrix);
+      resolve({ x: screen.x, y: screen.y });
+    }
+    requestAnimationFrame(sample);
+  }));
   await page.mouse.click(measurementPoint.x, measurementPoint.y);
   await expect(page.getByLabel('Selected geometry measurements', { exact: true })).toContainText('Length10.000 mm');
   await expect(page.locator('[data-editor-measure-panel]')).toContainText('complete source geometry, including inactive ranges');
