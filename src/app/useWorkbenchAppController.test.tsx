@@ -145,7 +145,9 @@ describe('workbench controller asynchronous operations', () => {
   it('switches to the selected folder and closes the old folder-owned editor project', async () => {
     const seeded = await seedProgram();
     const selected = new FakeDirectoryHandle('selected-jobs');
+    const forgetFolder = vi.fn().mockResolvedValue(undefined);
     const read = await mount({
+      forgetWorkbenchDirectory: forgetFolder,
       connectWorkbenchDirectory: () => connectWorkbenchDirectory({
         requestDirectory: async () => selected as unknown as FileSystemDirectoryHandle,
         handleStore: { read: async () => null, write: async () => {} }
@@ -160,6 +162,40 @@ describe('workbench controller asynchronous operations', () => {
     expect(read().activeView).toBe('dashboard');
     expect(read().storageActionLabel).toBe('Choose another Workbench Folder');
     expect(await seeded.workbench.adapter.readText(seeded.editorProgram.filePath)).toBe(seeded.editorProgram.text);
+    await act(async () => { await read().handleUseBrowserCache(); });
+    expect(read().connectedWorkbench?.adapter.kind).toBe('browser-cache');
+    expect(read().connectedWorkbench?.manifest.projects.map((project) => project.id)).toContain(seeded.project.id);
+    expect(forgetFolder).toHaveBeenCalledTimes(1);
+    expect(selected.files.has('workbench.json')).toBe(true);
+    await act(async () => { await read().handleOpenWorkbenchProject(seeded.project.id); });
+    expect(read().loadedEditorProgram?.project.id).toBe(seeded.project.id);
+  });
+
+  it.each(['cache', 'remembered preference'] as const)('retains the folder after a %s switch failure and permits retry', async (failure) => {
+    const cached = vi.fn(connectCachedWorkbench);
+    const forgetFolder = vi.fn<AppServices['forgetWorkbenchDirectory']>().mockResolvedValue(undefined);
+    const selected = new FakeDirectoryHandle('selected-jobs');
+    const read = await mount({
+      connectCachedWorkbench: cached,
+      forgetWorkbenchDirectory: forgetFolder,
+      connectWorkbenchDirectory: () => connectWorkbenchDirectory({
+        requestDirectory: async () => selected as unknown as FileSystemDirectoryHandle,
+        handleStore: { read: async () => null, write: async () => {} }
+      })
+    });
+    await act(async () => { await read().handleConnectWorkbench(); });
+    const folder = read().connectedWorkbench;
+    if (failure === 'cache') cached.mockRejectedValueOnce(new Error('Cache unavailable'));
+    else forgetFolder.mockRejectedValueOnce(new Error('Preference unavailable'));
+    await act(async () => { await read().handleUseBrowserCache(); });
+    expect(read().connectedWorkbench).toBe(folder);
+    expect(read().workbenchStatus).toBe('ready');
+    expect(read().workbenchInteractionLocked).toBe(false);
+    expect(read().errorMessage).toContain('unavailable');
+    if (failure === 'cache') expect(forgetFolder).not.toHaveBeenCalled();
+    await act(async () => { await read().handleUseBrowserCache(); });
+    expect(read().connectedWorkbench?.adapter.kind).toBe('browser-cache');
+    expect(read().errorMessage).toBeNull();
   });
 
   it('keeps the current project usable after a selected folder fails validation', async () => {

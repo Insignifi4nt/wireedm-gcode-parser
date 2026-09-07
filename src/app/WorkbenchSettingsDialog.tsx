@@ -17,6 +17,7 @@ interface WorkbenchSettingsDialogProps extends MachinePostSettingsActions {
   readonly errorMessage: string | null;
   readonly interactionLocked: boolean;
   readonly onClose: () => void;
+  readonly onUseBrowserCache: () => void | Promise<void>;
   readonly onConnectWorkbench: () => void | Promise<void>;
   readonly open: boolean;
   readonly settingsErrorMessage: string | null;
@@ -33,6 +34,7 @@ export function WorkbenchSettingsDialog({
   interactionLocked,
   onClose,
   onConnectWorkbench,
+  onUseBrowserCache,
   open,
   settingsErrorMessage,
   settingsStatus,
@@ -80,6 +82,8 @@ export function WorkbenchSettingsDialog({
                   </div>
                   {errorMessage && <Message tone="error">{errorMessage}</Message>}
                   {storageWarningMessage && <Message tone="warning">{storageWarningMessage}</Message>}
+                  <p className="mt-3 text-muted-foreground">Each storage location has its own project library. Switching locations does not copy projects; browser-cache projects stay in this browser.</p>
+                  {(connectedWorkbench?.adapter.kind === 'directory' || !connectedWorkbench) && <Button className="mt-3 mr-2" disabled={storageSwitchDisabled || connecting} onClick={onUseBrowserCache} type="button" variant="outline">Use browser cache</Button>}
                   {canConnect && <Button className="mt-3" disabled={storageSwitchDisabled} onClick={onConnectWorkbench} type="button" variant="outline"><RefreshCw />{storageActionLabel}</Button>}
                 </section>
                 <section>

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   connectRememberedWorkbenchDirectory,
   connectWorkbenchDirectory,
+  forgetWorkbenchDirectory,
   type WorkbenchDirectoryHandleStore
 } from '../connectWorkbenchDirectory';
 import type { WorkbenchStorageAdapter } from '../workbenchStorageAdapter';
@@ -39,7 +40,7 @@ class MemoryHandleStore implements WorkbenchDirectoryHandleStore {
     return this.handle;
   }
 
-  async write(handle: FileSystemDirectoryHandle) {
+  async write(handle: FileSystemDirectoryHandle | null) {
     this.handle = handle;
   }
 }
@@ -189,6 +190,14 @@ describe('connectWorkbenchDirectory', () => {
     expect(await connectRememberedWorkbenchDirectory({ handleStore })).toEqual({
       status: 'missing'
     });
+  });
+
+  it('stops reconnecting a folder after returning to browser cache', async () => {
+    const handleStore = new MemoryHandleStore();
+    handleStore.handle = directoryHandle('remembered-jobs');
+    window.showDirectoryPicker = async () => directoryHandle('unused');
+    await forgetWorkbenchDirectory(handleStore);
+    expect(await connectRememberedWorkbenchDirectory({ handleStore })).toEqual({ status: 'missing' });
   });
 
   it('keeps permission-needed explicit for a remembered folder requiring a gesture', async () => {

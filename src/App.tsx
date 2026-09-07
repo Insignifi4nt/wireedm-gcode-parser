@@ -36,6 +36,7 @@ export default function App({ services }: AppProps = {}) {
       errorMessage={app.errorMessage}
       interactionLocked={app.workbenchInteractionLocked}
       onConnectWorkbench={app.handleConnectWorkbench}
+      onUseBrowserCache={app.handleUseBrowserCache}
       onActivateMachineSetup={app.handleActivateMachineSetup}
       onCommitMachinePackage={app.handleCommitMachinePackage}
       onPrepareMachinePackage={app.handlePrepareMachinePackage}

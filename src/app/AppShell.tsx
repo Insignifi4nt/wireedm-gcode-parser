@@ -29,6 +29,7 @@ interface AppShellProps extends MachinePostSettingsActions {
   connectedWorkbench: ConnectedWorkbenchCatalog | null;
   errorMessage: string | null;
   interactionLocked: boolean;
+  onUseBrowserCache: () => void | Promise<void>;
   onConnectWorkbench: () => void | Promise<void>;
   settingsErrorMessage: string | null;
   settingsStatus: 'idle' | 'saving' | 'saved' | 'error';
@@ -45,6 +46,7 @@ export function AppShell({
   errorMessage,
   interactionLocked,
   onConnectWorkbench,
+  onUseBrowserCache,
   onActivateMachineSetup,
   onCommitMachinePackage,
   onPrepareMachinePackage,
@@ -358,6 +360,7 @@ export function AppShell({
         interactionLocked={interactionLocked}
         onClose={() => setSettingsOpen(false)}
         onConnectWorkbench={onConnectWorkbench}
+        onUseBrowserCache={onUseBrowserCache}
         onActivateMachineSetup={onActivateMachineSetup}
         onCommitMachinePackage={onCommitMachinePackage}
         onPrepareMachinePackage={onPrepareMachinePackage}

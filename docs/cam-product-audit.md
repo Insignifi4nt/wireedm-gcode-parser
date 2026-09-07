@@ -31,7 +31,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | UPID import/export | Validate complete document and preserve intent | pending |
 | External machine-program import | G20/G21 now normalize preview geometry and contour metrics to mm; XY/IJ/R/G92 and mixed modes covered. Normal import/reopen browser test verifies physical scale. Unknown initial units remain unlabelled with a warning for late declarations. Cleanup and remaining display fidelity still need review | in progress |
 | Browser-cache storage | Damaged/missing directory metadata rebuilds from namespaced file paths without modifying project contents or manifest. Valid empty-folder entries are salvaged; 14 adapter/reconnection tests pass. Broader failure and concurrent-access review remains | in progress |
-| Optional folder storage | Explicit selection, reconnect, cancellation and switch behavior | pending |
+| Optional folder storage | Settings explains separate libraries and provides return to browser cache. Successful switching clears remembered folder selection; failed cache/preference writes retain the current folder and permit retry. 23 controller/storage tests, seven editor/settings browser scenarios and build pass. Broader persistence-failure review remains | in progress |
 | Machine package installation | Validation, activation, removal and useful summaries | pending |
 | Source/machine setup | Make machine and unit decisions accessible without technical clutter | pending |
 | Editor menus | Group by operator intent; remove overlapping entry points | pending |
@@ -110,7 +110,7 @@ Local screenshots in `tmp/cam-audit/` were inspected during the audit; they supp
 ## Outstanding work
 
 - Complete every pending inventory row and assign a final keep/remove/merge/expand disposition with current evidence.
-- Follow up library audit: imported-name validation and recoverable deletion. Investigate cross-adapter locking without Web Locks; explain storage scope when choosing a folder. Corrupt cache-directory metadata now recovers from intact files.
+- Follow up library audit: imported-name validation and recoverable deletion. Investigate cross-adapter locking without Web Locks and folder preference transaction failures. Storage switching now explains separate libraries and supports returning to cache; corrupt cache-directory metadata recovers from intact files.
 - Assess lead clearance/intersection diagnostics and source-contour review invalidation when local geometry changes without moving its endpoints; partial-contour fingerprints now cover this case.
 - Resolve derived contour-segment selection/editing semantics, range-input units and remaining partial-compensation usability gaps.
 - Finish multi-entity measurement, overlap selection and selection filters; retain screen-space snapping thresholds.

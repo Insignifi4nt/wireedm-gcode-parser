@@ -170,6 +170,29 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     }
   }
 
+  async function handleUseBrowserCache() {
+    if (activeMutation.current || interactionLocked || activeView === 'editor') return;
+    activeMutation.current = 'storage-connect';
+    setWorkbenchStatus('connecting-storage');
+    setErrorMessage(null);
+    try {
+      const cached = await services.connectCachedWorkbench();
+      if (!cached.ok) throw new Error(cached.error.message);
+      await services.forgetWorkbenchDirectory();
+      readyWorkbench(cached.workbench, null);
+      setLatestImport(null);
+      handleBackToDashboard();
+      handleCancelDxfImport();
+      handleCancelDxfReimport();
+      showStatusToast('Browser cache active. Folder projects remain in their folder.', 'success');
+    } catch (error) {
+      setWorkbenchStatus(connectedWorkbench ? 'ready' : 'error');
+      setErrorMessage(errorText(error));
+    } finally {
+      activeMutation.current = null;
+    }
+  }
+
   async function handleImportDxfFile(file: File) {
     const workbench = requireWorkbench();
     if (!workbench) return setImportFailure('Connect a valid workbench before importing DXF.');
@@ -771,6 +794,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     handleConfirmDxfImport,
     handleConfirmDxfReimport,
     handleConnectWorkbench,
+    handleUseBrowserCache,
     handleActivateMachineSetup,
     handleCommitMachinePackage,
     handleDeleteWorkbenchProject,

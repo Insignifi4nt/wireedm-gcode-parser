@@ -31,6 +31,7 @@ import {
 import { downloadProgramFile } from '@/domain/post/downloadProgramFile';
 import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
 import {
+  forgetWorkbenchDirectory,
   connectRememberedWorkbenchDirectory,
   connectWorkbenchDirectory
 } from '@/domain/storage/connectWorkbenchDirectory';
@@ -49,6 +50,7 @@ import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workb
 import { updateWorkbenchCatalogPreferences } from '@/domain/workbench-catalog/storage/updateWorkbenchCatalogPreferences';
 
 export interface AppServices {
+  readonly forgetWorkbenchDirectory: typeof forgetWorkbenchDirectory;
   readonly connectCachedWorkbench: typeof connectCachedWorkbench;
   readonly connectRememberedWorkbenchDirectory: typeof connectRememberedWorkbenchDirectory;
   readonly connectWorkbenchDirectory: typeof connectWorkbenchDirectory;
@@ -84,6 +86,7 @@ export interface AppServices {
 }
 
 export const defaultAppServices: AppServices = {
+  forgetWorkbenchDirectory,
   connectCachedWorkbench,
   connectRememberedWorkbenchDirectory,
   connectWorkbenchDirectory,

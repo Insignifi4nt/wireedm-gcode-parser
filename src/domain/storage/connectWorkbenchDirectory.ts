@@ -22,7 +22,7 @@ interface PermissionedDirectoryHandle extends FileSystemDirectoryHandle {
 
 export interface WorkbenchDirectoryHandleStore {
   read(): Promise<FileSystemDirectoryHandle | null>;
-  write(handle: FileSystemDirectoryHandle): Promise<void>;
+  write(handle: FileSystemDirectoryHandle | null): Promise<void>;
 }
 
 interface ConnectWorkbenchDirectoryOptions {
@@ -88,6 +88,10 @@ export async function connectRememberedWorkbenchDirectory(
           : 'Could not reconnect the remembered workbench folder.'
     };
   }
+}
+
+export async function forgetWorkbenchDirectory(store: WorkbenchDirectoryHandleStore = createIndexedDbDirectoryHandleStore()) {
+  await store.write(null);
 }
 
 async function hasReadWritePermission(handle: FileSystemDirectoryHandle) {
