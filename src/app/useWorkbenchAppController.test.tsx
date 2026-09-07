@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { importExternalProgram } from '@/domain/editor/importExternalProgram';
 import { connectCachedWorkbench } from '@/domain/storage/connectCachedWorkbench';
+import { connectWorkbenchDirectory } from '@/domain/storage/connectWorkbenchDirectory';
+import { FakeDirectoryHandle } from '@/domain/storage/__tests__/fakeDirectoryHandle';
 import { defaultAppServices, type AppServices } from './appServices';
 import { useWorkbenchAppController } from './useWorkbenchAppController';
 
@@ -74,14 +76,63 @@ describe('workbench controller asynchronous operations', () => {
     const seeded = await seedProgram();
     const gate = deferred<Awaited<ReturnType<AppServices['connectWorkbenchDirectory']>>>();
     const read = await mount({ connectWorkbenchDirectory: () => gate.promise });
+    await act(async () => { await read().handleOpenWorkbenchProject(seeded.project.id); });
+    const currentWorkbench = read().connectedWorkbench;
+    const currentProgram = read().loadedEditorProgram;
     let connecting: Promise<void> | undefined;
     await act(async () => { connecting = read().handleConnectWorkbench(); });
     expect(read().workbenchInteractionLocked).toBe(true);
     await act(async () => { gate.reject(new DOMException('Cancelled', 'AbortError')); await connecting; });
     expect(read().workbenchStatus).toBe('ready');
     expect(read().workbenchInteractionLocked).toBe(false);
+    expect(read().connectedWorkbench).toBe(currentWorkbench);
+    expect(read().loadedEditorProgram).toBe(currentProgram);
+    expect(read().activeView).toBe('editor');
     await act(async () => { await read().handleOpenWorkbenchProject(seeded.project.id); });
     expect(read().loadedEditorProgram?.project.id).toBe(seeded.project.id);
+  });
+
+  it('switches to the selected folder and closes the old folder-owned editor project', async () => {
+    const seeded = await seedProgram();
+    const selected = new FakeDirectoryHandle('selected-jobs');
+    const read = await mount({
+      connectWorkbenchDirectory: () => connectWorkbenchDirectory({
+        requestDirectory: async () => selected as unknown as FileSystemDirectoryHandle,
+        handleStore: { read: async () => null, write: async () => {} }
+      })
+    });
+    await act(async () => { await read().handleOpenWorkbenchProject(seeded.project.id); });
+    expect(read().loadedEditorProgram?.project.id).toBe(seeded.project.id);
+    await act(async () => { await read().handleConnectWorkbench(); });
+    expect(read().connectedWorkbench?.adapter).toMatchObject({ kind: 'directory', name: 'selected-jobs' });
+    expect(read().connectedWorkbench?.manifest.projects).toHaveLength(0);
+    expect(read().loadedEditorProgram).toBeNull();
+    expect(read().activeView).toBe('dashboard');
+    expect(read().storageActionLabel).toBe('Choose another Workbench Folder');
+    expect(await seeded.workbench.adapter.readText(seeded.editorProgram.filePath)).toBe(seeded.editorProgram.text);
+  });
+
+  it('keeps the current project usable after a selected folder fails validation', async () => {
+    const seeded = await seedProgram();
+    const selected = new FakeDirectoryHandle('invalid-jobs');
+    selected.files.set('workbench.json', '{"schemaVersion":1}');
+    const read = await mount({
+      connectWorkbenchDirectory: () => connectWorkbenchDirectory({
+        requestDirectory: async () => selected as unknown as FileSystemDirectoryHandle,
+        handleStore: { read: async () => null, write: async () => {} }
+      })
+    });
+    await act(async () => { await read().handleOpenWorkbenchProject(seeded.project.id); });
+    const currentWorkbench = read().connectedWorkbench;
+    await act(async () => { await read().handleConnectWorkbench(); });
+    expect(read().workbenchStatus).toBe('ready');
+    expect(read().connectedWorkbench).toBe(currentWorkbench);
+    expect(read().loadedEditorProgram?.project.id).toBe(seeded.project.id);
+    expect(read().errorMessage).toBeTruthy();
+    await act(async () => {
+      expect(await read().handleSaveEditorDraft({ model: 'gcode-text', text: 'G0 X2 Y3' })).not.toBeNull();
+    });
+    expect(await seeded.workbench.adapter.readText(seeded.editorProgram.filePath)).toBe('G0 X2 Y3');
   });
 
   it('recovers from a rejected project read and permits a successful retry', async () => {

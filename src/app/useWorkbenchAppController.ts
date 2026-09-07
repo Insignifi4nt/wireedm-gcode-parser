@@ -95,7 +95,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       const cached = await services.connectCachedWorkbench();
       if (!cached.ok) return failWorkbench(cached.error.message);
       const warning = remembered.status === 'permission-needed'
-        ? 'The remembered folder needs permission. Browser storage is active until you explicitly reconnect it.'
+        ? 'The remembered folder needs permission. Browser storage is active. Choose Workbench Folder to reconnect it or select another folder.'
         : remembered.status === 'unsupported'
           ? 'Folder access is unavailable in this browser. Browser storage is active.'
           : null;
@@ -153,6 +153,9 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       }
       readyWorkbench(connected.workbench, null);
       setLatestImport(null);
+      handleBackToDashboard();
+      handleCancelDxfImport();
+      handleCancelDxfReimport();
       showStatusToast('Workbench folder connected.', 'success');
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {

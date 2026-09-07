@@ -18,7 +18,6 @@ type DirectoryPermission = 'granted' | 'denied' | 'prompt';
 
 interface PermissionedDirectoryHandle extends FileSystemDirectoryHandle {
   queryPermission?: (descriptor?: { mode?: 'read' | 'readwrite' }) => Promise<DirectoryPermission>;
-  requestPermission?: (descriptor?: { mode?: 'read' | 'readwrite' }) => Promise<DirectoryPermission>;
 }
 
 export interface WorkbenchDirectoryHandleStore {
@@ -44,18 +43,15 @@ export async function connectWorkbenchDirectory(
   const requestDirectory = options.requestDirectory ?? requestWorkbenchDirectory;
   const createAdapter = options.createAdapter ?? createBrowserDirectoryAdapter;
   const handleStore = options.handleStore ?? createIndexedDbDirectoryHandleStore();
-  const rememberedHandle = await handleStore.read();
-  const rememberedHandleAllowed =
-    rememberedHandle && (await requestReadWritePermission(rememberedHandle));
-  const directoryHandle = rememberedHandleAllowed ? rememberedHandle : await requestDirectory();
-  if (!rememberedHandleAllowed) {
-    await handleStore.write(directoryHandle);
-  }
+  // Start the picker in the user gesture, without waiting for remembered storage.
+  const directoryHandle = await requestDirectory();
   const adapter = createAdapter(directoryHandle);
 
-  return initializeWorkbenchCatalog(adapter, {
+  const connected = await initializeWorkbenchCatalog(adapter, {
     now: options.now
   });
+  if (connected.ok) await handleStore.write(directoryHandle);
+  return connected;
 }
 
 export async function connectRememberedWorkbenchDirectory(
@@ -95,21 +91,10 @@ export async function connectRememberedWorkbenchDirectory(
 }
 
 async function hasReadWritePermission(handle: FileSystemDirectoryHandle) {
-  const permissionedHandle = handle as PermissionedDirectoryHandle;
+  const permissionedHandle: PermissionedDirectoryHandle = handle;
   if (!permissionedHandle.queryPermission) return true;
   return (
     (await permissionedHandle.queryPermission({
-      mode: 'readwrite'
-    })) === 'granted'
-  );
-}
-
-async function requestReadWritePermission(handle: FileSystemDirectoryHandle) {
-  const permissionedHandle = handle as PermissionedDirectoryHandle;
-  if (await hasReadWritePermission(handle)) return true;
-  if (!permissionedHandle.requestPermission) return true;
-  return (
-    (await permissionedHandle.requestPermission({
       mode: 'readwrite'
     })) === 'granted'
   );

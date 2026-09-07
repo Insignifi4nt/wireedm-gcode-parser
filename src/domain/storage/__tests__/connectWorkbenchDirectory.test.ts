@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   connectRememberedWorkbenchDirectory,
@@ -6,6 +6,7 @@ import {
   type WorkbenchDirectoryHandleStore
 } from '../connectWorkbenchDirectory';
 import type { WorkbenchStorageAdapter } from '../workbenchStorageAdapter';
+import { FakeDirectoryHandle } from './fakeDirectoryHandle';
 
 class MemoryWorkbenchAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
@@ -83,26 +84,51 @@ describe('connectWorkbenchDirectory', () => {
     expect(handleStore.handle).toBe(pickedHandle);
   });
 
-  it('reuses a permitted remembered directory before showing the picker', async () => {
-    const adapter = new MemoryWorkbenchAdapter('remembered-jobs');
+  it('opens the picker immediately and replaces a remembered folder only after initialization', async () => {
+    const root = new FakeDirectoryHandle('new-jobs');
+    const pickedHandle = root as unknown as FileSystemDirectoryHandle;
     const handleStore = new MemoryHandleStore();
     handleStore.handle = directoryHandle('remembered-jobs');
+    const remembered = handleStore.handle;
+    const requestDirectory = vi.fn(async () => pickedHandle);
+    const read = vi.spyOn(handleStore, 'read');
+    vi.spyOn(handleStore, 'write').mockImplementation(async (handle) => {
+      expect(handleStore.handle).toBe(remembered);
+      expect(JSON.parse(root.files.get('workbench.json') ?? '')).toMatchObject({ name: 'new-jobs' });
+      handleStore.handle = handle;
+    });
 
-    const result = await connectWorkbenchDirectory({
-      requestDirectory: async () => {
-        throw new Error('folder picker should not open');
-      },
-      createAdapter: () => adapter,
+    const connecting = connectWorkbenchDirectory({
+      requestDirectory,
       handleStore,
       now: new Date('2026-08-28T12:00:00.000Z')
     });
+    expect(requestDirectory).toHaveBeenCalledTimes(1);
+    expect(read).not.toHaveBeenCalled();
 
-    expect(result).toMatchObject({ ok: true, kind: 'created' });
+    expect(await connecting).toMatchObject({
+      ok: true, kind: 'created', workbench: { adapter: { kind: 'directory', name: 'new-jobs' } }
+    });
+    expect(handleStore.handle).toBe(pickedHandle);
+  });
+
+  it('preserves the remembered folder when the picker is cancelled', async () => {
+    const handleStore = new MemoryHandleStore();
+    const remembered = directoryHandle('remembered-jobs');
+    handleStore.handle = remembered;
+    const cancelled = new DOMException('Cancelled', 'AbortError');
+    await expect(connectWorkbenchDirectory({
+      requestDirectory: async () => { throw cancelled; },
+      handleStore
+    })).rejects.toBe(cancelled);
+    expect(handleStore.handle).toBe(remembered);
   });
 
   it('propagates an invalid V1 directory error without rewriting it', async () => {
     const adapter = new MemoryWorkbenchAdapter('legacy-jobs');
     const handleStore = new MemoryHandleStore();
+    const remembered = directoryHandle('remembered-jobs');
+    handleStore.handle = remembered;
     const handle = directoryHandle('legacy-jobs');
     const original = JSON.stringify({ schemaVersion: 1, machineProfiles: [] });
     adapter.files.set('workbench.json', original);
@@ -118,6 +144,7 @@ describe('connectWorkbenchDirectory', () => {
       error: { code: 'WORKBENCH_CATALOG_SCHEMA_INVALID', path: '/name' }
     });
     expect(adapter.files.get('workbench.json')).toBe(original);
+    expect(handleStore.handle).toBe(remembered);
   });
 
   it('returns the V2 initialization result directly for a permitted remembered folder', async () => {
