@@ -1379,6 +1379,9 @@ export function EditorPathNavigatorPanel({
             <span className="text-muted-foreground" data-upid-order-strategy-status>
               {manualOrderActive ? 'Manual order overrides active' : 'Automatic order active'}
             </span>
+            <p className="text-[10px] text-muted-foreground">
+              Automatic modes cut nested contours first. Manual moves override that order.
+            </p>
             <button
               aria-label="Reapply planning order strategy"
               className={textButtonClass}

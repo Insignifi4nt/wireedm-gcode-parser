@@ -120,11 +120,11 @@ export function movePathOperation(
   operationId: string,
   direction: -1 | 1
 ) {
-  const index = document.plan.operations.findIndex((operation) => operation.id === operationId);
+  const next = cloneDocument(document);
+  const index = next.plan.operations.findIndex((operation) => operation.id === operationId);
   const targetIndex = index + direction;
   if (index < 0 || targetIndex < 0 || targetIndex >= document.plan.operations.length) return null;
 
-  const next = cloneDocument(document);
   const [operation] = next.plan.operations.splice(index, 1);
   next.plan.operations.splice(targetIndex, 0, operation);
   refreshPlan(next);
@@ -1584,7 +1584,9 @@ function nextEditSegmentIds(document: PathPlanningDocument, count: number) {
 }
 
 function cloneDocument(document: PathPlanningDocument): PathPlanningDocument {
-  return structuredClone(document);
+  const next = structuredClone(document);
+  next.plan.operations.sort((first, second) => first.orderIndex - second.orderIndex);
+  return next;
 }
 
 function clamp(value: number) {

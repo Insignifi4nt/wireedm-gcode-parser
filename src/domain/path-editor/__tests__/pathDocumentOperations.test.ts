@@ -260,6 +260,36 @@ describe('pathDocumentOperations', () => {
     ]);
   });
 
+  it('moves the displayed neighbor in an unsorted imported operation plan', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 3 },
+      { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 3 },
+      { type: 'circle', layer: 'CUT', center: { x: 40, y: 0 }, radius: 3 }
+    ]);
+    const [first, second, third] = document.plan.operations;
+    document.plan.operations = [third, first, second];
+    const moved = movePathOperation(document, second.id, -1);
+    expect(moved?.plan.operations.map((operation) => operation.id)).toEqual([second.id, first.id, third.id]);
+    expect(moved?.plan.operations.map((operation) => operation.orderIndex)).toEqual([0, 1, 2]);
+    expect(moved?.plan.operations.map((operation) => operation.overrides?.order?.orderIndex)).toEqual([0, 1, 2]);
+    expect(movePathOperation(document, first.id, -1)).toBeNull();
+    expect(movePathOperation(document, third.id, 1)).toBeNull();
+    expect(document.plan.operations.map((operation) => operation.id)).toEqual([third.id, first.id, second.id]);
+  });
+
+  it('preserves explicit imported cut order when editing geometry', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 3 },
+      { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 3 }
+    ]);
+    const [first, second] = document.plan.operations;
+    document.plan.operations = [second, first];
+    const moved = translatePathDocument(document, { x: 5, y: 0 });
+    expect(moved?.plan.operations.map((operation) => operation.id)).toEqual([first.id, second.id]);
+    expect(moved?.plan.operations.map((operation) => operation.orderIndex)).toEqual([0, 1]);
+    expect(moved?.plan.operations.every((operation) => !operation.overrides?.order)).toBe(true);
+  });
+
   it('derives connections from partial cutting endpoints and skips fully excluded operations', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },

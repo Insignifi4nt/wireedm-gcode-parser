@@ -774,6 +774,40 @@ describe('EditorPage UPID draft boundary', () => {
       .not.toBe('2');
   });
 
+  it('reapplies inside-out sequence with cancel, undo and saved manual-order restoration', async () => {
+    const document = pathDocumentFromNestedRectangles();
+    const originalOrder = document.plan.operations.map((operation) => operation.id);
+    const onSaveEditorDraft = vi.fn<(draft: EditorSaveDraft) => void>();
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={onSaveEditorDraft} project={projectWithUpid(document)} />);
+    });
+    await flushAsync();
+    const order = () => [...container.querySelectorAll('[data-upid-cut-sequence-row]')].map((row) => row.getAttribute('data-upid-operation-id'));
+    await clickElement('[data-editor-workflow-command="machining.sequence"]');
+    expect(order()).toEqual(originalOrder);
+    await clickElement(`[data-upid-cut-sequence-row][data-upid-operation-id="${originalOrder[0]}"] button[aria-label="Move cut sequence operation down"]`);
+    const manualOrder = order();
+    expect(manualOrder).toEqual([originalOrder[1], originalOrder[0], ...originalOrder.slice(2)]);
+    expect(container.textContent).toContain('Manual order overrides active');
+    await clickElement('[data-editor-workflow-actions="machining.sequence"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-command="machining.sequence"]');
+    await clickElement('button[aria-label="Reapply planning order strategy"]');
+    expect(order()).toEqual(originalOrder);
+    await clickElement('[data-editor-workflow-actions="machining.sequence"] button[aria-label^="Cancel "]');
+    await clickElement('[data-editor-workflow-transition-action="discard"]');
+    await clickElement('[data-editor-workflow-command="machining.sequence"]');
+    expect(order()).toEqual(manualOrder);
+    await clickElement('button[aria-label="Reapply planning order strategy"]');
+    await clickElement('[data-editor-workflow-actions="machining.sequence"] button[aria-label^="Save "]');
+    await clickElement('button[aria-label="Undo active document change"]');
+    await clickElement('button[aria-label="Save active document"]');
+    const saved = onSaveEditorDraft.mock.calls[0]?.[0];
+    if (saved?.model !== 'upid-document') throw new Error('Expected a saved plan');
+    expect(saved.pathDocument.plan.operations.map((operation) => operation.id)).toEqual(manualOrder);
+    expect(saved.pathDocument.plan.operations.map((operation) => operation.overrides?.order?.orderIndex)).toEqual(manualOrder.map((_, index) => index));
+    expect(saved.pathDocument.segments).toEqual(document.segments);
+  });
+
   it('requires explicit coordinates for translation and absolute placement', async () => {
     await act(async () => {
       root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={projectWithUpid(pathDocumentFromRectangle())} />);
