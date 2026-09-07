@@ -18,6 +18,7 @@ import {
   deleteBodyGroup,
   moveBodyGroup,
   moveSelectedLines,
+  remapLineNumbersAfterDeletion,
   setStartAtLine
 } from '@/domain/editor/gcodeLineOperations';
 import { organizeGCodeStructure } from '@/domain/editor/gcodeStructure';
@@ -1427,7 +1428,8 @@ export function EditorPage({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || exportPreviewOpen) return;
+      if (event.defaultPrevented || exportPreviewOpen || guideOpen) return;
+      if (event.target instanceof HTMLElement && event.target.closest('[role="dialog"][aria-modal="true"]')) return;
 
       if (event.key === 'Escape') {
         if (activeWorkflowOwns('machining.entry-exit') && entryExitCanvasPick) {
@@ -1510,7 +1512,7 @@ export function EditorPage({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeToolSession, activeWorkflowSession, canvasMouseMode, draftText, entryExitCanvasPick, exportPreviewOpen, isCompactViewport, isEditorMutationLocked, measurementPoints.length, pathClickMode, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
+  }, [activeToolSession, activeWorkflowSession, canvasMouseMode, draftText, entryExitCanvasPick, exportPreviewOpen, guideOpen, isCompactViewport, isEditorMutationLocked, measurementPoints.length, pathClickMode, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
 
   function handleBackToDashboard() {
     if (isEditorMutationLocked) return;
@@ -1704,7 +1706,7 @@ export function EditorPage({
     replaceGCodeDraftText(nextText);
     setHoveredLine(null);
     setLastClickedLine(null);
-    setPinnedLines((current) => current.filter((line) => !linesToDelete.has(line)));
+    setPinnedLines((current) => remapLineNumbersAfterDeletion(current, linesToDelete));
     setSelectedLines([]);
   }
 
@@ -1772,7 +1774,7 @@ export function EditorPage({
     replaceGCodeDraftText(result.text);
     setHoveredLine(null);
     setLastClickedLine(null);
-    setPinnedLines((current) => current.filter((line) => !deletedLines.has(line)));
+    setPinnedLines((current) => remapLineNumbersAfterDeletion(current, deletedLines));
     setSelectedLines([]);
   }
 
@@ -2623,6 +2625,8 @@ export function EditorPage({
     setSelectedProgramExactTarget(null);
     setSelectedProgramTreeKey(null);
     setPathClickMode(null);
+    // Arbitrary text edits have no reliable row correspondence.
+    clearTransientLineState();
   }
 
   function currentDraftSnapshot(historyLabel?: string): EditorDraftSnapshot {

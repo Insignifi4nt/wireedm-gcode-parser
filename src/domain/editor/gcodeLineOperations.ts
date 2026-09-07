@@ -22,6 +22,13 @@ export interface SetStartAtLineResult {
   newStartLine: number;
 }
 
+/** Keep references attached to their original text rows after deletion. */
+export function remapLineNumbersAfterDeletion(lineNumbers: readonly number[], deletedLines: ReadonlySet<number>): number[] {
+  const deleted = [...deletedLines].sort((a, b) => a - b);
+  return lineNumbers.filter((line) => !deletedLines.has(line))
+    .map((line) => line - deleted.filter((removed) => removed < line).length);
+}
+
 export function moveBodyGroup(
   text: string,
   structure: GCodeStructure,

@@ -31,6 +31,44 @@ describe('Editor line drawer operations', () => {
     cleanupAppTestContext(context);
   });
 
+  it.each(['line', 'group'])('keeps pins on their source commands after %s deletion and clears stale references after text edits', async (mode) => {
+    window.showDirectoryPicker = undefined;
+    const text = ['G90 G21', 'G0 X0 Y0', 'G1 X10 Y0', 'G0 X20 Y0', 'G1 X30 Y0', 'M30'].join('\n');
+    await renderApp(context);
+    const click = async (selector: string) => {
+      const button = container.querySelector<HTMLButtonElement>(selector);
+      if (!button) throw new Error(`Missing button ${selector}`);
+      await act(async () => button.click());
+    };
+    const open = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Open Editor'));
+    if (!open) throw new Error('Missing Open Editor');
+    await act(async () => open.click());
+    await flushAsync();
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="G-code program file"]');
+    if (!input) throw new Error('Missing program import');
+    Object.defineProperty(input, 'files', { value: [new File([text], 'pins.nc')], configurable: true });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+    await flushAsync();
+    await click('[data-editor-pin-line="6"]');
+    await click('[data-editor-pin-line="3"]');
+    if (mode === 'line') {
+      await click('[data-editor-line="3"]');
+      await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Delete' })));
+    } else {
+      await click('[aria-label="Delete group contour-1"]');
+    }
+    const editor = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Program editor"]');
+    if (!editor) throw new Error('Missing program text');
+    const endLine = editor.value.split('\n').findIndex((line) => line === 'M30') + 1;
+    expect(endLine).toBeLessThan(6);
+    expect(container.querySelector(`[data-editor-pin-line="${endLine}"]`)?.getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelectorAll('[data-editor-pin-line][aria-pressed="true"]')).toHaveLength(1);
+    await click(`[data-editor-line="${endLine}"]`);
+    await act(async () => setTextAreaValue(editor, `; inserted row\n${editor.value}`));
+    expect(container.querySelectorAll('[data-editor-pin-line][aria-pressed="true"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-editor-line][aria-pressed="true"]')).toHaveLength(0);
+  });
+
   it('moves and deletes body groups from the editor draft', async () => {
     window.showDirectoryPicker = undefined;
     const groupedProgramText = [

@@ -554,13 +554,20 @@ export function readUpidPathElementDiagnostics(
 ): UpidSelectedPathDiagnostic[] {
   return document.diagnostics
     .filter((diagnostic) => upidDiagnosticAffectsPathElement(document, elementRef, diagnostic))
+    .sort(compareDiagnosticSeverity)
     .map((diagnostic) => projectUpidPathDiagnostic(document, diagnostic));
 }
 
 export function readUpidPathDiagnostics(
   document: PathPlanningDocument
 ): UpidSelectedPathDiagnostic[] {
-  return document.diagnostics.map((diagnostic) => projectUpidPathDiagnostic(document, diagnostic));
+  return [...document.diagnostics].sort(compareDiagnosticSeverity)
+    .map((diagnostic) => projectUpidPathDiagnostic(document, diagnostic));
+}
+
+function compareDiagnosticSeverity(first: PathDiagnostic, second: PathDiagnostic) {
+  const priority = { error: 0, warning: 1, info: 2 };
+  return priority[first.severity] - priority[second.severity];
 }
 
 export function summarizeUpidDiagnosticsForPathElementRef(

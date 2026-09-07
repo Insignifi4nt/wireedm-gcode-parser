@@ -20,6 +20,7 @@ import {
   readUpidEndpointTopologyRows,
   readUpidOperationPathElement,
   readUpidPathElementDiagnostics,
+  readUpidPathDiagnostics,
   readUpidPathElementPoint,
   readUpidPathElementPointByRole,
   readUpidPathElementLineage,
@@ -595,6 +596,22 @@ describe('UPID project rail projection', () => {
       });
     }
   );
+
+  it('prioritizes errors while preserving discovery order within each severity and the source document', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 5));
+    const segmentId = document.segments[0].id;
+    document.diagnostics = [
+      { id: 'info', severity: 'info', code: 'units-assumed-millimeters', message: 'Units assumed', relatedSegmentIds: [segmentId] },
+      { id: 'warning', severity: 'warning', code: 'endpoint-cluster-snap', message: 'Snapped', relatedSegmentIds: [segmentId] },
+      { id: 'error-a', severity: 'error', code: 'self-intersection', message: 'Crossing', relatedSegmentIds: [segmentId] },
+      { id: 'error-b', severity: 'error', code: 'invalid-arc', message: 'Arc', relatedSegmentIds: [segmentId] }
+    ];
+    const original = document.diagnostics.map(({ id }) => id);
+    expect(readUpidPathDiagnostics(document).map(({ id }) => id)).toEqual(['error-a', 'error-b', 'warning', 'info']);
+    expect(readUpidPathElementDiagnostics(document, { operationId: document.plan.operations[0].id, segmentId })
+      .map(({ id }) => id)).toEqual(['error-a', 'error-b', 'warning', 'info']);
+    expect(document.diagnostics.map(({ id }) => id)).toEqual(original);
+  });
 
   it('projects diagnostics that affect the selected path geometry', () => {
     const document = createPathPlanningDocumentFromDxfEntities(gappedRectangle(0.004), {

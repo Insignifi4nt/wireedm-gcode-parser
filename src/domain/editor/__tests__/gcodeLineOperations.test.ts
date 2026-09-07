@@ -5,10 +5,16 @@ import {
   deleteBodyGroup,
   moveBodyGroup,
   moveSelectedLines,
+  remapLineNumbersAfterDeletion,
   setStartAtLine
 } from '../gcodeLineOperations';
 
 describe('gcodeLineOperations', () => {
+  it('keeps surviving line references attached across noncontiguous deletions', () => {
+    expect(remapLineNumbersAfterDeletion([1, 3, 5, 8], new Set([2, 3, 6]))).toEqual([1, 3, 5]);
+    expect(remapLineNumbersAfterDeletion([2, 5], new Set())).toEqual([2, 5]);
+    expect(remapLineNumbersAfterDeletion([2, 5], new Set([2, 5]))).toEqual([]);
+  });
   it('keeps generated positioning coordinates in inches when rotating an inch program', () => {
     const body = ['G90', 'G0 X1 Y1', 'G1 X2 Y1', 'G1 X1 Y1',
       'G0 X3 Y1', 'G1 X4 Y1', 'G1 X3 Y1', 'M30'].join('\n');
