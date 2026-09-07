@@ -8,6 +8,80 @@ import { runCustomPostConformance } from '../customPostConformance';
 import { runCustomPost } from '../customPostRuntime';
 
 describe('isolated custom JavaScript post runtime', () => {
+  it.each(['consume', 'unrelated-command'] as const)(
+    'rejects a later retention stop handled with %s even after an earlier stop',
+    async (handling) => {
+      const fixture = runtimeFixture();
+      const document = createUpidFromDxfEntities([
+        { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+      ]);
+      document.setup = {
+        initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' }
+      };
+      document.plan.operations[0].programStops = [
+        { id: 'first', enabled: true, reason: 'part-retention', placement: { kind: 'before-entry' } },
+        { id: 'retain', enabled: true, reason: 'part-retention', placement: { kind: 'before-operation-end', remainingCutLengthMm: 2 } }
+      ];
+      const compiled = compileWireEdmExecutionPlan(document);
+      if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+      fixture.plan = compiled.plan;
+      fixture.package.manifest.capabilities.programStops = true;
+      fixture.package.dialect.commands['operator.stop'] = {
+        template: 'M00', parameters: {}, effects: ['program.paused'], requires: [], evidenceRefs: ['robofil-program']
+      };
+      fixture.package.source.code = fixture.package.source.code.replace(
+        "if (event.kind === 'program-start')",
+        `if (event.kind === 'program-stop') {
+          if (event.stopId === 'first') return api.emitCommand('operator.stop', {});
+          return ${handling === 'consume' ? "api.consume('Skip stop.')" : "api.emitCommand('distance.absolute', {})"};
+        }
+        if (event.kind === 'program-start')`
+      );
+      const stop = fixture.plan.events.find((event) => event.kind === 'program-stop' && event.stopId === 'retain');
+
+      await expect(runCustomPost(fixture)).resolves.toMatchObject({
+        ok: false,
+        diagnostics: [{ code: 'POST_CUSTOM_LIFECYCLE_INVALID', eventId: stop?.id }]
+      });
+    }
+  );
+
+  it.each(['wire-separate', 'wire-thread'] as const)('requires the %s action at each operation transition', async (skipped) => {
+    const fixture = runtimeFixture();
+    const document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 20, y: 0 }, end: { x: 30, y: 0 } }
+    ]);
+    document.setup = {
+      initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' },
+      threadingDefault: { mode: 'manual', wireSeparation: 'manual-before-positioning' }
+    };
+    const compiled = compileWireEdmExecutionPlan(document);
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    fixture.plan = compiled.plan;
+    fixture.package.manifest.capabilities.operations = 'multiple';
+    fixture.package.manifest.capabilities.threading = 'manual';
+    fixture.package.manifest.capabilities.wireSeparation = true;
+    for (const [id, effect] of [['wire-separate', 'wire.separated'], ['wire-thread', 'wire.threaded']]) {
+      fixture.package.dialect.commands[id] = {
+        template: 'M00', parameters: {}, effects: [effect], requires: [], evidenceRefs: ['robofil-program']
+      };
+    }
+    fixture.package.source.code = fixture.package.source.code.replace(
+      "if (event.kind === 'program-start')",
+      `if (event.kind === 'wire-separate' || event.kind === 'wire-thread') {
+        if (event.kind === '${skipped}') return api.consume('Skip wire action.');
+        return api.emitCommand(event.kind, {});
+      }
+      if (event.kind === 'program-start')`
+    );
+
+    await expect(runCustomPost(fixture)).resolves.toMatchObject({
+      ok: false,
+      diagnostics: [{ code: 'POST_CUSTOM_LIFECYCLE_INVALID', eventId: fixture.plan.events.find(({ kind }) => kind === skipped)?.id }]
+    });
+  });
+
   it('processes every neutral event once and derives motion trace from rendered parameters', async () => {
     const fixture = runtimeFixture();
     const result = await runCustomPost(fixture);
@@ -110,7 +184,7 @@ describe('isolated custom JavaScript post runtime', () => {
       fixture.properties.coordinatePrecision = 6;
       fixture.package.manifest.capabilities.programStops = true;
       fixture.package.dialect.commands['operator.stop'] = {
-        template: 'M00', parameters: {}, effects: ['operator.stopped'],
+        template: 'M00', parameters: {}, effects: ['program.paused'],
         requires: [], evidenceRefs: ['robofil-program']
       };
     }

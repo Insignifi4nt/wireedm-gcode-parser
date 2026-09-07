@@ -212,6 +212,7 @@ async function executeOnce(
     for (const event of plan.events) {
       state.currentEvent = event;
       state.currentDisposition = 'none';
+      const firstEventBlock = state.blocks.length;
       const eventValue = evaluate(
         context,
         `(${JSON.stringify(event)})`,
@@ -228,6 +229,19 @@ async function executeOnce(
         return failure(
           'POST_CUSTOM_EVENT_DISPOSITION_INVALID',
           `Event ${event.id} returned without emitCommand, emitMotion, or consume.`,
+          event.id
+        );
+      }
+      const requiredEffect = requiredEventEffect(event);
+      if (requiredEffect && (
+        !state.dialectState.has(requiredEffect) ||
+        !state.blocks.slice(firstEventBlock).some((block) => block.commandIds.some((commandId) => (
+          packageValue.dialect.commands[commandId].effects.includes(requiredEffect)
+        )))
+      )) {
+        return failure(
+          'POST_CUSTOM_LIFECYCLE_INVALID',
+          `Event ${event.id} must emit a command with effect ${requiredEffect} and leave that state active.`,
           event.id
         );
       }
@@ -268,6 +282,15 @@ async function executeOnce(
   }
 }
 
+function requiredEventEffect(event: WireEdmExecutionEvent): string | null {
+  switch (event.kind) {
+    case 'program-stop': return 'program.paused';
+    case 'wire-separate': return 'wire.separated';
+    case 'wire-thread': return 'wire.threaded';
+    default: return null;
+  }
+}
+
 function finalLifecycleProblem(
   packageValue: WireEdmPostPackage,
   plan: WireEdmExecutionPlan,
@@ -297,11 +320,9 @@ function finalLifecycleProblem(
   const finalWireEvent = [...plan.events].reverse().find((event) => (
     event.kind === 'wire-separate' || event.kind === 'wire-thread'
   ));
-  if (finalWireEvent?.kind === 'wire-separate' && !state.has('wire.separated')) {
-    return `Wire-separation event ${finalWireEvent.id} did not leave wire.separated in the final dialect state.`;
-  }
-  if (finalWireEvent?.kind === 'wire-thread' && !state.has('wire.threaded')) {
-    return `Wire-thread event ${finalWireEvent.id} did not leave wire.threaded in the final dialect state.`;
+  const finalWireEffect = finalWireEvent && requiredEventEffect(finalWireEvent);
+  if (finalWireEffect && !state.has(finalWireEffect)) {
+    return `The final dialect state does not preserve ${finalWireEffect}.`;
   }
   return null;
 }
