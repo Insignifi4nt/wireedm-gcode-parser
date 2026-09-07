@@ -26,13 +26,13 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Application footer | Removed duplicated metadata; storage header/settings and library retain owning information. Shell/modal browser checks passed | verified |
 | Editor status and canvas frame | Removed decorative frame and idle hints; wrapping status shows state, named contour/segment/entry/exit selection, actual units, actionable issues and fit warnings. Selection restoration guards pass in 83 editor integration tests. Further contextual refinements remain | in progress |
 | Project library | Keep. Distinct loading/unavailable/empty/no-match states; Clear filters restores results. All five sort modes, combined case-insensitive search/source filters, DXF+UPID type grouping and busy action guards verified. Seven focused component/app tests and browser filter recovery pass | verified |
-| Project rename/delete/export | Export failures produce retry guidance; shared busy guard prevents overlapping project actions. Rename/delete now trap/restore focus, isolate background controls and prevent pending dismissal/duplicate submit; failures permit retry. Controller/component tests, three modal browser scenarios and build pass. Rename shares single-line/length validation across UI and storage; Unicode and corrected drafts are supported (11 focused tests). Deletion recovery and imported-name validation remain | in progress |
+| Project rename/delete/export | Export failures produce retry guidance; shared busy guard prevents overlapping project actions. Rename/delete now trap/restore focus, isolate background controls and prevent pending dismissal/duplicate submit; failures permit retry. Controller/component tests, three modal browser scenarios and build pass. Rename shares single-line/length validation across UI and storage; Unicode and corrected drafts are supported (11 focused tests). All import paths share name validation and reject invalid names without writes. Deleted projects now retain source/revisions and can be restored after reload; 100 focused tests and the import/delete/reload/restore/open browser flow pass; independent recovery review found no defect (27 fault/catalog tests) | in progress |
 | DXF import and confirmation | Units, layers, unsupported entities, reimport consequences | pending |
 | UPID import/export | Validate complete document and preserve intent | pending |
 | External machine-program import | G20/G21 now normalize preview geometry and contour metrics to mm; XY/IJ/R/G92 and mixed modes covered. Normal import/reopen browser test verifies physical scale. Unknown initial units remain unlabelled with a warning for late declarations. Cleanup and remaining display fidelity still need review | in progress |
 | Browser-cache storage | Damaged/missing directory metadata rebuilds from namespaced file paths without modifying project contents or manifest. Valid empty-folder entries are salvaged; 14 adapter/reconnection tests pass. Broader failure and concurrent-access review remains | in progress |
 | Optional folder storage | Settings explains separate libraries and provides return to browser cache. Successful switching clears remembered folder selection; failed cache/preference writes retain the current folder and permit retry. IndexedDB preference reads/writes wait for transaction completion and close connections; aborted transactions propagate failure. 25 controller/storage tests, seven editor/settings browser scenarios and build pass. Broader persistence-failure review remains | in progress |
-| Machine package installation | Validation, activation, removal and useful summaries | pending |
+| Machine package installation | Stale previews clear when storage/libraries change; late validation results are ignored and former-workbench commits are rejected. 38 settings/controller/domain tests and build pass. Existing binding, stale-state, removal and rollback safeguards reviewed; summary usability remains | in progress |
 | Source/machine setup | Make machine and unit decisions accessible without technical clutter | pending |
 | Editor menus | Group by operator intent; remove overlapping entry points | pending |
 | Workflow panels | Fixed off-screen desktop floating actions; duplicate headings, action placement and switching still need review | in progress |
@@ -42,21 +42,21 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Path summary and statistics | Merged into Statistics with one set of project counts, actual filename, dimensional units and explicit source geometry bounds. Source/topology disclosure retains provenance and exposes layer names. Selected-geometry detail simplification remains | in progress |
 | Position panel | Removed duplicate cursor/snap display. Live coordinates remain in status; snap belongs to Construction points. Updated coordinate interaction and snap-toggle checks | removed |
 | Geometry setup | Finished contour versus wire center, prerequisites and effects | pending |
-| Move/rotate/mirror | Precise numeric fields, pivot, scope, preview and undo | pending |
+| Move/rotate/mirror | Fixed reversed clockwise/counterclockwise actions and blank coordinates coercing to zero. Selected-scope isolation, center pivot, cancel, one-step undo/redo and saved coordinates verified in 88 integration tests; browser save/reload/reopen passes. Broader pivot usability remains | in progress |
 | Contour setup | Direction, kept material, compensation and open contour behavior | pending |
 | Contour start | Magnetic picking, exact split, closed/open behavior and review | pending |
 | Initial wire position | New-project applied position updates marker/travel and survives save/reopen. Pending coordinates are explicit; geometry-linked choices still need the full usability pass | in progress |
-| Entry/exit | Independent drafts, truthful review state, compact entry/exit navigator rows and correct travel inspection. Coincident leads blocked during editing and execution compilation; moving starts/reversing direction invalidates manual lead review. Clearance and derived contour-segment interactions remain | in progress |
-| Cut sequence | Manual/automatic order, nesting dependencies and travel | pending |
+| Entry/exit | Independent drafts, truthful review state, compact entry/exit navigator rows and correct travel inspection. Coincident leads blocked during editing and execution compilation; moving starts/reversing direction invalidates manual lead review. Source-intersection feedback now updates while editing coordinates; attachment contacts are excluded, overlaps/circular crossings covered by 10 domain/panel tests. Physical clearance and partial-lead feedback remain | in progress |
+| Cut sequence | Imported array order no longer overrides execution order during reorder or geometry edits. 73 domain tests and sequence lifecycle integration pass; build passes. Manual moves intentionally override automatic nesting. Active partial-cut metrics remain under review | in progress |
 | Between contours | Explicit defaults, project manual separation, active routes and readable sequence summaries. Browser save/reopen/override undo verified. Continuous-wire constraints and full lifecycle/export behavior remain | in progress |
-| Machining participation | Geometry-bound entry/exit review, local validation, active-range lengths and contextual controls implemented. Range units, derived segment interactions and compensation usability remain | in progress |
+| Machining participation | Geometry-bound entry/exit review, local validation, active-range lengths and contextual controls implemented. Percentage inputs show excluded millimeters and source origin (85 integration/component tests, partial-exit browser pass). Active preview spans select source geometry and exact range; clipped endpoints cannot edit original endpoints. Domain/component/browser regressions pass. Compensation usability remains | in progress |
 | Program stops | Added direct Edit actions with pending-field protection and save/undo coverage. Execution tests verify linear/circular and partial-cut placement. Added enabled-stop canvas markers with stable screen size, edit updates and undo coverage; placement labels distinguish positioning from cutting entry. Add/edit modes now share fields and show one form at a time; guarded New stop focuses Placement. Broader lifecycle review remains | in progress |
 | Endpoint topology | Expose repair-relevant facts; move raw topology detail behind disclosure | pending |
 | Diagnostics | Fixed nested keyboard activation in navigator and selected-geometry diagnostic rows; Enter on an affected-geometry button no longer triggers the parent, and Space activates the focused row. Deduplication, prioritization and repair context remain | in progress |
 | Measurement | Added read-only Measure with magnetic points, segment and contour dimensions, precision, pair/chain/fixed-reference modes, mouse/touch and zoom checks. Named A/B references and independent feature inspection added; shortest-distance/entity comparisons remain | in progress |
 | Construction points | Retain explicit editing, separate from inspection. G-code insertion respects units/XY mode, preserves following modal cuts/arcs and avoids accumulated incremental rounding drift; 10 domain and 13 line-drawer tests/build pass. Constraint and panel usability review remains | in progress |
 | Canvas selection and hover | Fixed endpoint highlight layering above start/end markers; browser regression passes. Overlap and selection filters remain | in progress |
-| Canvas navigation | Fit, zoom anchor, pan, grid, scale and touch | pending |
+| Canvas navigation | Fixed cursor-anchored wheel zoom, pinch centroid and continuation with one finger. 13 component and two browser tests cover anchors, clamping, fit and no document mutation. Grid/scale accessibility remains | in progress |
 | Canvas preview | Direction, leads, transitions, markers and execution consistency | pending |
 | Text editor and line list | Editing, reorder/start, pin, selection and command preservation | pending |
 | Controller export | Saved revision, setup selection, validation, generation and download | pending |
@@ -87,9 +87,9 @@ The checks below cover specific behavior, not completion of entire inventory row
 
 ### Verification checkpoints
 
-- Latest broad unit run during unit normalization: **1,037 passed, one stale Start Here guidance assertion failed**, across 105 files. Updating that case to check unchanged program/state and the current guidance made all 13 line-drawer tests pass. Later overflow/precision checks passed in the 64-test domain set.
-- Latest broad browser run: 57 passed, one optional external-workbench fixture skipped, one stale Statistics-summary click failed. Removing that obsolete setup step made both diagnostic scenarios pass. Later partial-exit and all 23 layout scenarios passed.
-- Latest change (`a74b825`): 59 participation, execution, preview, inspection and stop tests passed. Production build passed with the existing bundle-size warning.
+- Latest combined unit run: **1,120 passed across 111 files**. Later sequence changes also pass their focused domain/lifecycle tests.
+- Latest combined browser run: **68 passed, one optional external-workbench fixture skipped** across the full suite. Covers editor navigation/layout, tool workflows, transforms, partial selection, measurement, import/export, settings and project restoration.
+- Focused changes additionally verified partial-span selection, navigation, transform lifecycle, import validation, machine-package scope and recovery. Robofil example post conformance passes. Production builds retain the existing bundle-size warning.
 - Removed obsolete footer/Statistics DOM assertions while retaining catalog data, parsed statistics, import/edit/save/export, focus and geometry checks. No branch merge has occurred.
 
 ### Rendered inspection
@@ -104,15 +104,17 @@ Local screenshots in `tmp/cam-audit/` were inspected during the audit; they supp
 | `07-program-stop-marker.png` | Visible stop marker; its captured duplicate-message issue was subsequently fixed. Temporary project edits were discarded. |
 | `08-compact-exit-row.png` | Compact exit row and matching selected canvas lead at 1355 × 900. |
 | `12-measure-feature-references.png` | Named picks and independent feature inspection; docked panel keeps Clear visible at 1280 × 720. |
+| `13-partial-range.png` | Percentage inputs, source length and highlighted active span visible at 1600 × 1000. |
+| `12-project-trash-reload.png`, `13-project-restored-editor.png` | Deleted-project recovery after reload and restored editor. |
 | `11-program-stop-edit.png` | One active stop form, readable reasons and visible workflow actions. |
 | `09-partial-exit-review.png` | Confirmable partial exit at 1280 × 720; collapsed active ranges leave Restore, Cancel and Save visible. Later range-length details are covered by component tests. |
 
 ## Outstanding work
 
 - Complete every pending inventory row and assign a final keep/remove/merge/expand disposition with current evidence.
-- Follow up library audit: imported-name validation and recoverable deletion. Investigate cross-adapter locking without Web Locks. Storage switching now explains separate libraries and supports returning to cache; folder preferences wait for transaction commit, and corrupt cache-directory metadata recovers from intact files.
-- Assess lead clearance/intersection diagnostics and source-contour review invalidation when local geometry changes without moving its endpoints; partial-contour fingerprints now cover this case.
-- Resolve derived contour-segment selection/editing semantics, range-input units and remaining partial-compensation usability gaps.
+- Investigate cross-adapter locking without Web Locks; independent recovery review passed. Imported-name validation and recoverable deletion are implemented. Storage switching now explains separate libraries and supports returning to cache; folder preferences wait for transaction commit, and corrupt cache-directory metadata recovers from intact files.
+- Extend source-intersection feedback to derived partial leads, assess physical clearance and source-contour review invalidation when local geometry changes without moving its endpoints; partial-contour fingerprints now cover this case.
+- Finish partial-compensation usability; source/span selection and percentage range inputs are implemented and verified.
 - Finish multi-entity measurement, overlap selection and selection filters; retain screen-space snapping thresholds.
 - Review remaining raw G-code coordinate-system and modal editing constraints; unit-aware preview and insertion are implemented.
 - Simplify remaining duplicate inspection panels and tool headings.

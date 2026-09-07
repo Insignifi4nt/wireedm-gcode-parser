@@ -153,6 +153,74 @@
           }
         }
       }
+    },
+    "deletedProjects": {
+      "maxItems": 10000,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project",
+          "deletedAt"
+        ],
+        "properties": {
+          "project": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "path",
+              "sourceKind",
+              "updatedAt"
+            ],
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$",
+                "type": "string"
+              },
+              "name": {
+                "minLength": 1,
+                "maxLength": 160,
+                "type": "string"
+              },
+              "path": {
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^projects/[^\\u0000]+\\.json$",
+                "type": "string"
+              },
+              "sourceKind": {
+                "anyOf": [
+                  {
+                    "const": "dxf",
+                    "type": "string"
+                  },
+                  {
+                    "const": "upid",
+                    "type": "string"
+                  },
+                  {
+                    "const": "external-gcode",
+                    "type": "string"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+                "type": "string"
+              }
+            }
+          },
+          "deletedAt": {
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }
