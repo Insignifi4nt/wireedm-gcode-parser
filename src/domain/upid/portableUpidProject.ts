@@ -106,7 +106,7 @@ export async function importPortableUpidProject(
     fallbackName: 'UPID Import',
     stripExtension: /\.upid\.json$/i,
     timestamp,
-    existingIds: workbench.manifest.projects.map(({ id }) => id)
+    existingIds: [...workbench.manifest.projects, ...(workbench.manifest.deletedProjects ?? []).map(({ project }) => project)].map(({ id }) => id)
   });
   const sourcePath = `imports/${identity.id}.upid.json`;
   const portableText = JSON.stringify({ format: 'upid', schemaVersion: 1, document }, null, 2);

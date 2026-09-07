@@ -1,4 +1,5 @@
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { recoverProjectTrashTransaction, type ProjectTrashTransactionError } from '@/domain/storage/projectTrashTransaction';
 import { recoverSavedRevisionTransaction, type SavedRevisionTransactionError } from '@/domain/storage/savedRevisionTransaction';
 
 import {
@@ -6,8 +7,7 @@ import {
   WORKBENCH_CATALOG_PATH,
   type ConnectedWorkbenchCatalog,
   type WorkbenchCatalogManifest,
-  type WorkbenchCatalogManifestError,
-  type WorkbenchCatalogManifestValue
+  type WorkbenchCatalogManifestError
 } from '../workbenchCatalog';
 
 export interface UpdateWorkbenchCatalogPreferencesInput {
@@ -42,6 +42,7 @@ type PreferenceReadbackError = {
 };
 
 export type UpdateWorkbenchCatalogPreferencesError =
+  | ProjectTrashTransactionError
   | SavedRevisionTransactionError
   | WorkbenchCatalogManifestError
   | PreferenceManifestStateError
@@ -72,6 +73,8 @@ export function updateWorkbenchCatalogPreferences(
   input: UpdateWorkbenchCatalogPreferencesInput
 ): Promise<UpdateWorkbenchCatalogPreferencesResult> {
   return withWorkbenchMutationLock(workbench.adapter, async () => {
+    const recoveredTrash = await recoverProjectTrashTransaction(workbench.adapter);
+    if (!recoveredTrash.ok) return recoveredTrash;
     const recovered = await recoverSavedRevisionTransaction(workbench.adapter);
     if (!recovered.ok) return recovered;
     const currentRead = await readManifest(workbench);
@@ -104,7 +107,7 @@ export function updateWorkbenchCatalogPreferences(
       updatedAt: input.updatedAt.toISOString(),
       preferences: input.preferences,
       projects: [...workbench.manifest.projects]
-    } satisfies WorkbenchCatalogManifestValue;
+    } satisfies WorkbenchCatalogManifest;
     const candidateText = `${JSON.stringify(candidate, null, 2)}\n`;
     const validated = parseWorkbenchCatalogManifest(candidateText, workbench.machines);
     if (!validated.ok) return validated;

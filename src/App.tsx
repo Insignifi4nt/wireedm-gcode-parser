@@ -92,6 +92,7 @@ export default function App({ services }: AppProps = {}) {
           onCancelDxfImport={app.handleCancelDxfImport}
           onConfirmDxfImport={app.handleConfirmDxfImport}
           onDeleteProject={app.handleDeleteWorkbenchProject}
+          onRestoreProject={app.handleRestoreWorkbenchProject}
           onDxfImportOverrideAcknowledgedChange={app.handleDxfImportOverrideAcknowledgedChange}
           onDxfImportUnitCandidateChange={app.handleDxfImportUnitCandidateChange}
           onExportUpidProject={app.handleExportUpidProject}

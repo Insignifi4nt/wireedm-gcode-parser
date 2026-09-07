@@ -14,6 +14,7 @@ import { initializeWorkbenchCatalog, WORKBENCH_CATALOG_PATH } from '@/domain/wor
 import {
   addStoredWorkbenchProject,
   deleteStoredWorkbenchProject,
+  restoreStoredWorkbenchProject,
   readStoredWorkbenchProject
 } from '@/domain/workbench-catalog/workbenchCatalogMutations';
 import { createWorkbenchProjectDocument } from '@/domain/workbench-catalog/workbenchProject';
@@ -76,8 +77,17 @@ describe('catalog-owned saved revision persistence', () => {
       deletedAt: new Date('2026-08-28T13:00:00.000Z')
     });
     if (!deleted.ok) throw new Error(deleted.error.message);
-    expect(fixture.adapter.files.has(saved.path)).toBe(false);
-    expect(fixture.adapter.files.has('projects/fixture.part.json')).toBe(false);
+    expect(fixture.adapter.files.has(saved.path)).toBe(true);
+    expect(fixture.adapter.files.has('projects/fixture.part.json')).toBe(true);
+    expect(deleted.workbench.manifest.projects).toEqual([]);
+    expect(deleted.workbench.manifest.deletedProjects?.[0].project.id).toBe('fixture.part');
+    const revisionBytes = fixture.adapter.files.get(saved.path);
+    const reopened = await initializeWorkbenchCatalog(fixture.adapter);
+    if (!reopened.ok) throw new Error(reopened.error.message);
+    const restored = await restoreStoredWorkbenchProject(reopened.workbench, { projectId: 'fixture.part' });
+    if (!restored.ok) throw new Error(restored.error.message);
+    expect(restored.project).toEqual(saved.project);
+    expect(fixture.adapter.files.get(saved.path)).toBe(revisionBytes);
   });
 
   it('restores revision, project, and manifest bytes when the final manifest write fails', async () => {
@@ -198,11 +208,25 @@ describe('catalog-owned saved revision persistence', () => {
       deletedAt: new Date('2026-08-28T13:00:00.000Z')
     })).toMatchObject({
       ok: false,
-      error: { code: 'WORKBENCH_CATALOG_MUTATION_MANIFEST_WRITE_FAILED' }
+      error: { code: 'PROJECT_TRASH_TRANSACTION_FAILED' }
     });
     expect(fixture.adapter.files.get(saved.path)).toBe(revisionBefore);
     expect(fixture.adapter.files.get('projects/fixture.part.json')).toBe(projectBefore);
     expect(fixture.adapter.files.get(WORKBENCH_CATALOG_PATH)).toBe(manifestBefore);
+  });
+
+  it('refuses to restore a deleted project with a corrupted saved revision without losing its recovery entry', async () => {
+    const fixture = await catalogRevisionFixture();
+    const saved = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    if (!saved.ok) throw new Error(saved.error.message);
+    const deleted = await deleteStoredWorkbenchProject(saved.workbench, { projectId: 'fixture.part', deletedAt: new Date() });
+    if (!deleted.ok) throw new Error(deleted.error.message);
+    fixture.adapter.files.set(saved.path, '{corrupted');
+    const before = new Map(fixture.adapter.files);
+    expect(await restoreStoredWorkbenchProject(deleted.workbench, { projectId: 'fixture.part' })).toMatchObject({
+      ok: false, error: { code: 'WORKBENCH_PROJECT_SCHEMA_INVALID', path: saved.path }
+    });
+    expect(fixture.adapter.files).toEqual(before);
   });
 });
 

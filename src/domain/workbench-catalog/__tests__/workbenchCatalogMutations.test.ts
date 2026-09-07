@@ -255,7 +255,7 @@ describe('strict V2 workbench project persistence', () => {
     expect(adapter.files.get(WORKBENCH_CATALOG_PATH)).toBe(manifestBefore);
   });
 
-  it('deletes all project-owned source files and the document', async () => {
+  it('moves a project to deleted projects while retaining all owned files', async () => {
     const { adapter, workbench } = await initializedWorkbench();
     const project = externalProjectFixture();
     const added = await addStoredWorkbenchProject(workbench, {
@@ -273,13 +273,14 @@ describe('strict V2 workbench project persistence', () => {
     });
 
     if (!deleted.ok) throw new Error(deleted.error.message);
-    expect(adapter.files.has('imports/raw.nc')).toBe(false);
-    expect(adapter.files.has('projects/cleaned.nc')).toBe(false);
-    expect(adapter.files.has('projects/external.json')).toBe(false);
+    expect(adapter.files.get('imports/raw.nc')).toBe('RAW');
+    expect(adapter.files.get('projects/cleaned.nc')).toBe('CLEANED');
+    expect(adapter.files.has('projects/external.json')).toBe(true);
+    expect(deleted.workbench.manifest.deletedProjects?.[0].project.id).toBe(project.id);
     expect(deleted.workbench.manifest.projects).toEqual([]);
   });
 
-  it('restores every deleted file when a later delete fails', async () => {
+  it('retains the active project when the deletion manifest write fails', async () => {
     const { adapter, workbench } = await initializedWorkbench();
     const project = externalProjectFixture();
     const added = await addStoredWorkbenchProject(workbench, {
@@ -292,14 +293,14 @@ describe('strict V2 workbench project persistence', () => {
     if (!added.ok) throw new Error(added.error.message);
     const projectBefore = adapter.files.get('projects/external.json');
     const manifestBefore = adapter.files.get(WORKBENCH_CATALOG_PATH);
-    adapter.failNext('delete', 'projects/cleaned.nc');
+    adapter.failNext('write', WORKBENCH_CATALOG_PATH);
 
     expect(await deleteStoredWorkbenchProject(added.workbench, {
       projectId: project.id,
       deletedAt: new Date('2026-08-28T14:00:00.000Z')
     })).toMatchObject({
       ok: false,
-      error: { code: 'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED', operation: 'delete' }
+      error: { code: 'PROJECT_TRASH_TRANSACTION_FAILED' }
     });
     expect(adapter.files.get('imports/raw.nc')).toBe('RAW');
     expect(adapter.files.get('projects/cleaned.nc')).toBe('CLEANED');

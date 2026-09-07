@@ -36,6 +36,7 @@ import {
   connectWorkbenchDirectory
 } from '@/domain/storage/connectWorkbenchDirectory';
 import { deleteWorkbenchProject } from '@/domain/storage/deleteWorkbenchProject';
+import { restoreStoredWorkbenchProject } from '@/domain/workbench-catalog/workbenchCatalogMutations';
 import { renameWorkbenchProject } from '@/domain/storage/renameWorkbenchProject';
 import {
   exportPortableUpidProject,
@@ -74,6 +75,7 @@ export interface AppServices {
   readonly saveEditorProgram: typeof saveEditorProgram;
   readonly renameWorkbenchProject: typeof renameWorkbenchProject;
   readonly deleteWorkbenchProject: typeof deleteWorkbenchProject;
+  readonly restoreStoredWorkbenchProject: typeof restoreStoredWorkbenchProject;
   readonly updateWorkbenchCatalogPreferences: typeof updateWorkbenchCatalogPreferences;
   readonly activateStoredMachinePostBinding: typeof activateStoredMachinePostBinding;
   readonly prepareStoredMachinePackageInstallation: typeof prepareStoredMachinePackageInstallation;
@@ -103,6 +105,7 @@ export const defaultAppServices: AppServices = {
   saveEditorProgram,
   renameWorkbenchProject,
   deleteWorkbenchProject,
+  restoreStoredWorkbenchProject,
   updateWorkbenchCatalogPreferences,
   activateStoredMachinePostBinding,
   prepareStoredMachinePackageInstallation,

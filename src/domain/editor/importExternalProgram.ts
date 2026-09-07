@@ -98,7 +98,7 @@ export async function importExternalProgram(
     fallbackName: 'External Program',
     stripExtension: /\.[a-z0-9]+$/i,
     timestamp,
-    existingIds: workbench.manifest.projects.map(({ id }) => id)
+    existingIds: [...workbench.manifest.projects, ...(workbench.manifest.deletedProjects ?? []).map(({ project }) => project)].map(({ id }) => id)
   });
   const originalPath = `imports/${identity.id}.${extension}`;
   const editablePath = `projects/${identity.id}/editable.${extension}`;

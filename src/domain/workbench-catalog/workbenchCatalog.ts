@@ -3,6 +3,7 @@ import { Value } from '@sinclair/typebox/value';
 
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { recoverProjectTrashTransaction, type ProjectTrashTransactionError } from '@/domain/storage/projectTrashTransaction';
 import { recoverSavedRevisionTransaction, type SavedRevisionTransactionError } from '@/domain/storage/savedRevisionTransaction';
 import {
   recoverCatalogPairTransaction,
@@ -92,7 +93,11 @@ export const WorkbenchCatalogManifestSchema = Type.Object({
     importUnits: ImportUnitPreferenceSchema,
     recentPlanningMachineId: Type.Union([PostIdentifierSchema, Type.Null()])
   }, strictObject),
-  projects: Type.Array(ProjectIndexEntrySchema, { maxItems: 10_000 })
+  projects: Type.Array(ProjectIndexEntrySchema, { maxItems: 10_000 }),
+  deletedProjects: Type.Optional(Type.Array(Type.Object({
+    project: ProjectIndexEntrySchema,
+    deletedAt: TimestampSchema
+  }, strictObject), { maxItems: 10_000 }))
 }, {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   $id: 'https://wire-edm.local/schemas/wire-edm-workbench-v3.json',
@@ -143,6 +148,7 @@ type WorkbenchCatalogAccessError = {
 };
 
 export type WorkbenchCatalogError =
+  | ProjectTrashTransactionError
   | SavedRevisionTransactionError
   | PostLibraryStorageError
   | MachineLibraryStorageError
@@ -215,6 +221,8 @@ export async function initializeWorkbenchCatalogUnderMutationLock(
   adapter: WorkbenchStorageAdapter,
   options: InitializeWorkbenchCatalogOptions = {}
 ): Promise<InitializeWorkbenchCatalogResult> {
+  const recoveredTrash = await recoverProjectTrashTransaction(adapter);
+  if (!recoveredTrash.ok) return recoveredTrash;
   const recoveredRevision = await recoverSavedRevisionTransaction(adapter);
   if (!recoveredRevision.ok) return recoveredRevision;
   const catalogRead = await readStorageText(adapter, WORKBENCH_CATALOG_PATH);
@@ -654,7 +662,11 @@ function validateWorkbenchCatalogValue(value: unknown, machines: MachineLibrary)
   for (const [path, timestamp] of [
     ['/createdAt', manifest.createdAt],
     ['/updatedAt', manifest.updatedAt],
-    ...manifest.projects.map((project, index) => [`/projects/${index}/updatedAt`, project.updatedAt])
+    ...manifest.projects.map((project, index) => [`/projects/${index}/updatedAt`, project.updatedAt]),
+    ...(manifest.deletedProjects ?? []).flatMap((entry, index) => [
+      [`/deletedProjects/${index}/deletedAt`, entry.deletedAt],
+      [`/deletedProjects/${index}/project/updatedAt`, entry.project.updatedAt]
+    ])
   ] as const) {
     if (isCanonicalTimestamp(timestamp)) continue;
     return {
@@ -666,22 +678,26 @@ function validateWorkbenchCatalogValue(value: unknown, machines: MachineLibrary)
       }
     };
   }
-  const firstProjectIdIndex = new Map<string, number>();
-  const firstProjectPathIndex = new Map<string, number>();
-  for (const [index, project] of manifest.projects.entries()) {
+  const firstProjectIdIndex = new Map<string, string>();
+  const firstProjectPathIndex = new Map<string, string>();
+  const indexed = [
+    ...manifest.projects.map((project, index) => ({ project, path: `/projects/${index}` })),
+    ...(manifest.deletedProjects ?? []).map(({ project }, index) => ({ project, path: `/deletedProjects/${index}/project` }))
+  ];
+  for (const { project, path } of indexed) {
     const firstIndex = firstProjectIdIndex.get(project.id) ?? firstProjectPathIndex.get(project.path);
     if (firstIndex !== undefined) {
       return {
         ok: false as const,
         error: {
           code: 'WORKBENCH_CATALOG_DUPLICATE_PROJECT' as const,
-          message: `Project ${project.id} at ${project.path} is duplicated; it first appears at /projects/${firstIndex}.`,
-          path: `/projects/${index}`
+          message: `Project ${project.id} at ${project.path} is duplicated; it first appears at ${firstIndex}.`,
+          path
         }
       };
     }
-    firstProjectIdIndex.set(project.id, index);
-    firstProjectPathIndex.set(project.path, index);
+    firstProjectIdIndex.set(project.id, path);
+    firstProjectPathIndex.set(project.path, path);
   }
   const machineId = manifest.preferences.recentPlanningMachineId;
   if (machineId !== null && !machines.machines.some(({ id }) => id === machineId)) {

@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { ImportedDxfProject } from '@/domain/dxf/importDxfProject';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import { DashboardHeader } from './DashboardHeader';
+import { DeletedProjectsPanel } from './DeletedProjectsPanel';
 import { DxfImportConfirmationDialog } from './DxfImportConfirmationDialog';
 import { LatestDxfImportPanel } from './LatestDxfImportPanel';
 import { ProjectActionDialog, type ProjectAction } from './ProjectActionDialog';
@@ -25,6 +26,7 @@ interface DashboardPageProps {
   onOpenLatestImportInEditor: () => void;
   onOpenProject: (projectId: string) => void | Promise<void>;
   onDeleteProject: (projectId: string) => Promise<void>;
+  onRestoreProject: (projectId: string) => Promise<void>;
   onExportUpidProject: (projectId: string) => Promise<void>;
   onRenameProject: (projectId: string, name: string) => Promise<void>;
   onImportDxfFile: (file: File) => void | Promise<void>;
@@ -50,6 +52,7 @@ export function DashboardPage({
   onOpenLatestImportInEditor,
   onOpenProject,
   onDeleteProject,
+  onRestoreProject,
   onExportUpidProject,
   onRenameProject,
   onImportDxfFile,
@@ -62,6 +65,21 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const projects = connectedWorkbench?.manifest.projects ?? [];
   const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const [restoredProjectId, setRestoredProjectId] = useState<string | null>(null);
+  useEffect(() => {
+    if (restoredProjectId === null) return;
+    const openButton = [...(pageRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+      .find((button) => button.getAttribute('aria-label') === `Open project ${restoredProjectId} in editor`);
+    if (!openButton || openButton.disabled) return;
+    openButton.focus();
+    setRestoredProjectId(null);
+  }, [restoredProjectId, connectedWorkbench, interactionLocked]);
+
+  async function restoreProject(projectId: string) {
+    await onRestoreProject(projectId);
+    setRestoredProjectId(projectId);
+  }
 
   function closeProjectAction() {
     setProjectAction(null);
@@ -69,6 +87,7 @@ export function DashboardPage({
 
   return (
     <div
+      ref={pageRef}
       className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]"
       data-workbench-page
     >
@@ -92,6 +111,11 @@ export function DashboardPage({
         />
 
         <div className="grid content-start gap-3">
+          <DeletedProjectsPanel
+            entries={connectedWorkbench?.manifest.deletedProjects ?? []}
+            interactionLocked={interactionLocked}
+            onRestoreProject={restoreProject}
+          />
           <StartWorkPanel
             connected={Boolean(connectedWorkbench)}
             dxfErrorMessage={importErrorMessage}

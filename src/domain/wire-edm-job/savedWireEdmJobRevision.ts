@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { recoverProjectTrashTransaction, type ProjectTrashTransactionError } from '@/domain/storage/projectTrashTransaction';
 import { Value } from '@sinclair/typebox/value';
 
 import {
@@ -49,7 +50,7 @@ import {
 import {
   WORKBENCH_CATALOG_PATH,
   type ConnectedWorkbenchCatalog,
-  type WorkbenchCatalogManifestValue
+  type WorkbenchCatalogManifest
 } from '@/domain/workbench-catalog/workbenchCatalog';
 import {
   validateWorkbenchProjectPathOwnership,
@@ -271,6 +272,7 @@ export type LoadSavedWireEdmJobRevisionResult =
     };
 
 type SavedRevisionCatalogMutationError =
+  | ProjectTrashTransactionError
   | SavedRevisionTransactionError
   | SavedWireEdmJobRevisionStorageError
   | WorkbenchProjectStorageError
@@ -624,6 +626,8 @@ export function saveStoredWireEdmJobRevision(
         'Only a revision candidate returned by the creator or parser can be persisted.'
       ));
     }
+    const recoveredTrash = await recoverProjectTrashTransaction(workbench.adapter);
+    if (!recoveredTrash.ok) return recoveredTrash;
     const recovered = await recoverSavedRevisionTransaction(workbench.adapter);
     if (!recovered.ok) return recovered;
     const manifestCurrent = await verifyCatalogManifestCurrent(workbench);
@@ -685,7 +689,7 @@ export function saveStoredWireEdmJobRevision(
       projects: workbench.manifest.projects.map((entry) => entry.id === project.id
         ? { ...entry, updatedAt: candidate.savedAt }
         : entry)
-    } satisfies WorkbenchCatalogManifestValue);
+    } satisfies WorkbenchCatalogManifest);
     const documentPath = workbenchProjectDocumentPath(project.id);
     const snapshots = await captureCatalogSnapshots(
       workbench,
@@ -1128,7 +1132,7 @@ async function deleteCatalogTransactionText(
 
 async function writeCatalogManifest(
   workbench: ConnectedWorkbenchCatalog,
-  manifest: WorkbenchCatalogManifestValue
+  manifest: WorkbenchCatalogManifest
 ) {
   try {
     await workbench.adapter.writeText(

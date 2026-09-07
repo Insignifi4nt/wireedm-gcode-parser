@@ -7,7 +7,7 @@ import type { WorkbenchStorageAdapter } from '../workbenchStorageAdapter';
 import { deleteWorkbenchProject } from '../deleteWorkbenchProject';
 
 describe('deleteWorkbenchProject', () => {
-  it('atomically deletes the V2 project document and every catalog-owned source file', async () => {
+  it('moves the project into recoverable deletion while retaining its owned files', async () => {
     const adapter = new MemoryAdapter();
     const initialized = await initializeWorkbenchCatalog(adapter);
     if (!initialized.ok) throw new Error(initialized.error.message);
@@ -27,8 +27,8 @@ describe('deleteWorkbenchProject', () => {
       deleted: { id: imported.project.id },
       workbench: { manifest: { projects: [] } }
     });
-    expect(adapter.files.has(`projects/${imported.project.id}.json`)).toBe(false);
-    ownedPaths.forEach((path) => expect(adapter.files.has(path)).toBe(false));
+    expect(adapter.files.has(`projects/${imported.project.id}.json`)).toBe(true);
+    ownedPaths.forEach((path) => expect(adapter.files.has(path)).toBe(true));
   });
 
   it('returns a typed catalog error for an unknown project ID', async () => {

@@ -110,7 +110,7 @@ export async function commitDxfProjectImport(
     fallbackName: 'DXF Import',
     stripExtension: /\.dxf$/i,
     timestamp: preparation.preparedAt,
-    existingIds: workbench.manifest.projects.map(({ id }) => id)
+    existingIds: [...workbench.manifest.projects, ...(workbench.manifest.deletedProjects ?? []).map(({ project }) => project)].map(({ id }) => id)
   });
   let pathDocument: PathPlanningDocument;
   try {

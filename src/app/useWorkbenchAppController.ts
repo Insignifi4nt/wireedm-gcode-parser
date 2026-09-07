@@ -562,7 +562,18 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       if (!deleted.ok) throw new Error(deleted.error.message);
       setConnectedWorkbench(deleted.workbench);
       if (latestImport?.project.id === projectId) setLatestImport(null);
-      showStatusToast('Project and its catalog-owned files removed.', 'success');
+      showStatusToast('Project moved to Deleted projects. Files and revisions retained for restoration.', 'success');
+    });
+  }
+
+  async function handleRestoreWorkbenchProject(projectId: string) {
+    const workbench = requireWorkbench();
+    if (!workbench) return;
+    await runProjectAction(async () => {
+      const restored = await services.restoreStoredWorkbenchProject(workbench, { projectId });
+      if (!restored.ok) throw new Error(restored.error.message);
+      setConnectedWorkbench(restored.workbench);
+      showStatusToast('Project restored.', 'success');
     });
   }
 
@@ -803,6 +814,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     handleActivateMachineSetup,
     handleCommitMachinePackage,
     handleDeleteWorkbenchProject,
+    handleRestoreWorkbenchProject,
     handleDxfImportOverrideAcknowledgedChange,
     handleDxfImportUnitCandidateChange,
     handleDxfReimportOverrideAcknowledgedChange,
