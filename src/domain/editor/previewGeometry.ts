@@ -31,7 +31,7 @@ import type {
   Point2,
   SegmentId
 } from '@/domain/path-intel/types';
-import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
+import { deriveActiveMachiningOperations, deriveSpanSegment } from '@/domain/path-intel/machiningParticipation';
 
 export interface EditorPreviewPath {
   type: 'rapid' | 'cut' | 'arc';
@@ -59,6 +59,9 @@ export interface EditorPreviewPath {
   machiningSpanId?: string;
   clippedSourceSegment?: boolean;
   participation?: 'active-cut' | 'inactive-reference';
+  /** Exact displayed locus, including clipping; never inferred from the SVG path. */
+  selectionGeometry?: PathSegment;
+  sourceGeometryKind?: PathSegment['kind'];
 }
 
 export interface EditorPreviewViewBox {
@@ -187,17 +190,16 @@ export function buildEditorPathDocumentPreviewGeometry(
   let pathIndex = 0;
 
   if (hasParticipation) {
-    const inactiveSegmentIds = new Set(
-      document.machiningParticipation?.spans
-        .filter((span) => span.participation === 'inactive-reference')
-        .map((span) => span.sourceSegmentId)
-    );
-    for (const segmentId of inactiveSegmentIds) {
-      const segment = sourceSegmentsById.get(segmentId);
+    const inactiveSpans = document.machiningParticipation?.spans
+      .filter((span) => span.participation === 'inactive-reference') ?? [];
+    for (const span of inactiveSpans) {
+      const segmentId = span.sourceSegmentId;
+      const sourceSegment = sourceSegmentsById.get(segmentId);
       const sourceOperation = document.plan.operations.find((operation) =>
         operation.segmentRefs.some((ref) => ref.segmentId === segmentId)
       );
-      if (!segment || !sourceOperation) continue;
+      if (!sourceSegment || !sourceOperation) continue;
+      const segment = deriveSpanSegment(sourceSegment, span);
       const ref = sourceOperation.segmentRefs.find((candidate) => candidate.segmentId === segmentId)!;
       bounds = mergeBounds(bounds, segment.bounds);
       for (const segmentPath of pathDocumentSegmentPaths(segment, ref)) {
@@ -212,6 +214,10 @@ export function buildEditorPathDocumentPreviewGeometry(
           operationId: sourceOperation.id,
           pathElementId: pathElementsByOperationId.get(sourceOperation.id)?.id,
           segmentId,
+          machiningSpanId: span.id,
+          selectionGeometry: segment,
+          sourceGeometryKind: sourceSegment.kind,
+          clippedSourceSegment: span.range.start !== 0 || span.range.end !== 1,
           source: 'path-document',
           participation: 'inactive-reference'
         });
@@ -295,6 +301,8 @@ export function buildEditorPathDocumentPreviewGeometry(
           operationId: sourceOperationId,
           pathElementId,
           segmentId: span?.sourceSegmentId ?? ref.segmentId,
+          selectionGeometry: segment,
+          sourceGeometryKind: sourceSegmentsById.get(span?.sourceSegmentId ?? ref.segmentId)?.kind ?? segment.kind,
           machiningSpanId: spanId,
           clippedSourceSegment: span ? span.range.start !== 0 || span.range.end !== 1 : false,
           source: 'path-document',

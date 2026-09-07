@@ -1141,7 +1141,7 @@ export function EditorInspectorPanel({
         {pathDocument && onActivatePathConstructionMode && (
           <div className="mb-2 border border-border bg-background/35 p-1.5" data-path-construction-tools>
             <div className="mb-1 text-[10px] text-muted-foreground">
-              Constrain the latest measurement/construction point to selected path geometry.
+              Construct from the latest point onto selected geometry. Points keep their coordinates when source geometry changes; they are not live constraints.
             </div>
             <div className="grid grid-cols-2 gap-1">
               {(['perpendicular', 'tangent'] as const).map((mode) => (

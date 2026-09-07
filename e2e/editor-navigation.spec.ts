@@ -10,23 +10,32 @@ async function openRectangle(page: Page) {
   await confirmPendingDxfImport(page);
 }
 
-async function screenPoint(page: Page) {
-  return page.locator('[data-preview-grid-layer]').evaluate((grid) => {
+async function screenPoint(page: Page, world = { x: 0, y: 0 }) {
+  return page.locator('[data-preview-grid-layer]').evaluate((grid, world) => {
     if (!(grid instanceof SVGGraphicsElement)) throw new Error('Missing grid');
     const matrix = grid.getScreenCTM();
     if (!matrix) throw new Error('Missing transform');
-    const point = new DOMPoint(0, 0).matrixTransform(matrix);
+    const point = new DOMPoint(world.x, world.y).matrixTransform(matrix);
     return { x: point.x, y: point.y };
-  });
+  }, world);
 }
 
 test('wheel zoom retains the cursor anchor, clamps, and fits without editing', async ({ page }) => {
   await openRectangle(page);
   const initial = await screenPoint(page);
-  await page.mouse.move(initial.x, initial.y);
+  // Native wheel events quantize client coordinates. Anchor on an integer pixel
+  // and verify the world point actually beneath it, rather than a nearby origin.
+  const cursor = { x: Math.round(initial.x), y: Math.round(initial.y) };
+  const anchor = await page.locator('[data-preview-grid-layer]').evaluate((grid, cursor) => {
+    const matrix = (grid as SVGGraphicsElement).getScreenCTM();
+    if (!matrix) throw new Error('Missing transform');
+    const point = new DOMPoint(cursor.x, cursor.y).matrixTransform(matrix.inverse());
+    return { x: point.x, y: point.y };
+  }, cursor);
+  await page.mouse.move(cursor.x, cursor.y);
   await page.mouse.wheel(0, -100);
-  await expect.poll(async () => Math.abs((await screenPoint(page)).x - initial.x)).toBeLessThan(0.1);
-  await expect.poll(async () => Math.abs((await screenPoint(page)).y - initial.y)).toBeLessThan(0.1);
+  await expect.poll(async () => Math.abs((await screenPoint(page, anchor)).x - cursor.x)).toBeLessThan(0.1);
+  await expect.poll(async () => Math.abs((await screenPoint(page, anchor)).y - cursor.y)).toBeLessThan(0.1);
   for (let i = 0; i < 14; i++) {
     await page.mouse.wheel(0, -100);
     await page.waitForTimeout(30);

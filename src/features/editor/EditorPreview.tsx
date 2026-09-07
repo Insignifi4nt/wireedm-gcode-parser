@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import { measurePointPair } from '@/domain/editor/geometryMeasurement';
+import { matchesPreviewSelectionFilter, PREVIEW_SELECTION_FILTERS, previewSelectionCandidates, segmentIntersectsSelectionRect, type PreviewSelectionFilter } from '@/domain/editor/previewSelection';
 import { programStopPreview } from '@/domain/editor/programStopPreview';
 import type { EditorMeasurementState } from './useEditorMeasurement';
 import type {
@@ -26,6 +27,7 @@ import {
 } from '@/domain/editor/previewGeometry';
 import type { EditorPreviewPath, EditorPreviewViewBox } from '@/domain/editor/previewGeometry';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import { orientedSegmentStart, orientedSegmentEnd } from '@/domain/path-intel/segments';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 import {
   MAX_PREVIEW_ZOOM,
@@ -189,6 +191,8 @@ export function EditorPreview({
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const suppressClickRef = useRef(false);
+  const [selectionFilter, setSelectionFilter] = useState<PreviewSelectionFilter>('all');
+  const [overlapCandidates, setOverlapCandidates] = useState<EditorPreviewPath[]>([]);
   const touchTapRef = useRef<PreviewTouchTapState | null>(null);
   const pendingTouchPointClickTimeoutRef = useRef<number | null>(null);
 
@@ -383,7 +387,7 @@ export function EditorPreview({
   );
   const gridLabelInset = gridLabelFontSize * 1.8;
   const zoomPercent = Math.round(zoom * 100);
-  const pathEndpointHandles = readPathEndpointHandles(activePreview.paths);
+  const pathEndpointHandles = readPathEndpointHandles(activePreview.paths, pathDocument);
   const selectedArcCenterHandles = readSelectedArcCenterHandles(activePreview.paths, selectedPathElement);
   const measurementFirst = measurement?.picks[0];
   const measurementSecond = measurement?.picks[1] ?? measurement?.hover;
@@ -395,6 +399,11 @@ export function EditorPreview({
   );
   const measurementPickRadius = measurementDisplayScale * 4;
   const measurementTextSize = measurementDisplayScale * 11;
+  const selectionEnabled = Boolean(pathDocument && onPathElementClick && canvasMouseMode === 'select' && !measurement);
+  const currentOverlapIndex = overlapCandidates.findIndex((path) => pathElementMatches(path, selectedPathElement));
+  const overlapSelection = currentOverlapIndex >= 0 ? overlapCandidates[currentOverlapIndex] : null;
+  const overlapOperation = pathDocument?.plan.operations.find((operation) => operation.id === overlapSelection?.operationId);
+  const overlapSegmentIndex = overlapOperation?.segmentRefs.findIndex((ref) => ref.segmentId === overlapSelection?.segmentId) ?? -1;
 
   function measurementScale(svg: SVGSVGElement) {
     const rect = svg.getBoundingClientRect();
@@ -402,6 +411,22 @@ export function EditorPreview({
   }
 
   function handleMeasurementClick(event: MouseEvent<SVGSVGElement>) {
+    if (selectionEnabled && !event.shiftKey && event.button === 0 && (event.altKey || selectionFilter !== 'all')) {
+      event.stopPropagation();
+      if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+      const point = previewEventToWorldPoint(event, activeViewBox, flipY, { gridSize: snapGridSize, snapToGrid: false });
+      if (!point) return;
+      const candidates = previewSelectionCandidates(activePreview.paths, point, measurementScale(event.currentTarget) * 6, selectionFilter);
+      setOverlapCandidates(candidates);
+      const selectedIndex = candidates.findIndex((path) => pathElementMatches(path, selectedPathElement));
+      const picked = candidates.length > 0 ? candidates[event.altKey ? (selectedIndex + 1) % candidates.length : 0] : undefined;
+      if (picked?.operationId) onPathElementClick?.({
+        operationId: picked.operationId, pathElementId: picked.pathElementId ?? null,
+        segmentId: picked.segmentId ?? null, machiningSpanId: picked.machiningSpanId
+      });
+      return;
+    }
+    if (selectionEnabled) setOverlapCandidates([]);
     if (!measurement || event.shiftKey || event.button !== 0) return;
     event.stopPropagation();
     if (suppressClickRef.current) { suppressClickRef.current = false; return; }
@@ -581,7 +606,7 @@ export function EditorPreview({
       selectionMarqueeRef.current = null;
       setSelectionMarquee(null);
       if (activeSelectionMarquee.moved) {
-        const element = selectPathElementInMarquee(activePreview.paths, readSelectionMarqueeRect(activeSelectionMarquee));
+        const element = selectPathElementInMarquee(activePreview.paths, readSelectionMarqueeRect(activeSelectionMarquee), selectionEnabled ? selectionFilter : 'all');
         if (element) onPathElementClick?.(element);
         suppressClickRef.current = true;
       }
@@ -762,6 +787,21 @@ export function EditorPreview({
       clientY: touch.clientY,
       time: now
     };
+    if (selectionEnabled) {
+      const exactPoint = previewTouchToWorldPoint(touch, event.currentTarget, activeViewBox, flipY, { gridSize: snapGridSize, snapToGrid: false });
+      const candidates = exactPoint ? previewSelectionCandidates(activePreview.paths, exactPoint, measurementScale(event.currentTarget) * 6, selectionFilter) : [];
+      const picked = candidates[0];
+      if (picked?.operationId) {
+        const element = { operationId: picked.operationId, pathElementId: picked.pathElementId ?? null,
+          segmentId: picked.segmentId ?? null, machiningSpanId: picked.machiningSpanId };
+        pendingTouchPointClickTimeoutRef.current = window.setTimeout(() => {
+          pendingTouchPointClickTimeoutRef.current = null;
+          setOverlapCandidates(candidates);
+          onPathElementClick?.(element);
+        }, TOUCH_DOUBLE_TAP_TIMEOUT_MS);
+      }
+      return;
+    }
     if (!point || !onPreviewPointClick) return;
 
     pendingTouchPointClickTimeoutRef.current = window.setTimeout(() => {
@@ -836,7 +876,7 @@ export function EditorPreview({
   }
 
   return (
-    <div className="grid h-full min-h-[220px] grid-rows-[auto_minmax(0,1fr)] bg-background/70">
+    <div className={`relative grid h-full min-h-[220px] bg-background/70 ${pathDocument ? 'grid-rows-[auto_auto_minmax(0,1fr)]' : 'grid-rows-[auto_minmax(0,1fr)]'}`}>
       <div
         className="flex h-7 items-center justify-between gap-2 border-b border-border bg-card/70 px-2 font-mono text-[10px] text-muted-foreground"
         data-editor-preview-header
@@ -930,6 +970,23 @@ export function EditorPreview({
           </Button>
         </div>
       </div>
+      {pathDocument && <div className="flex h-7 min-w-0 items-center gap-3 overflow-hidden border-b border-border px-2 text-[10px] text-muted-foreground" data-preview-selection-tools>
+        {selectionEnabled ? <>
+        <label className="flex items-center gap-1">Pick
+          <select aria-label="Canvas selection filter" className="h-5 border border-border bg-background px-1 text-foreground" value={selectionFilter}
+            onChange={(event) => {
+              const filter = PREVIEW_SELECTION_FILTERS.find((candidate) => candidate.value === event.target.value);
+              if (filter) { setSelectionFilter(filter.value); setOverlapCandidates([]); }
+            }}>
+            {PREVIEW_SELECTION_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
+          </select>
+        </label>
+        <span className="truncate" title="Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection.">Alt-click cycles overlaps. Drag selects one contour or segment. Use Geometry for exact selection.</span>
+        </> : <span className="truncate">{measurement ? 'Measure source points and the gap between picked edges.' : 'Follow the active tool instructions. Shift-drag pans the canvas.'}</span>}
+      </div>}
+      {selectionEnabled && overlapCandidates.length > 1 && <div className="pointer-events-none absolute bottom-2 left-2 z-10 border border-border bg-background/90 px-2 py-1 text-[10px] text-cyan-200" role="status" data-preview-overlap-selection>
+          {currentOverlapIndex >= 0 ? `${currentOverlapIndex + 1}/${overlapCandidates.length} · ${overlapOperation?.displayName ?? 'Source geometry'} · Segment ${overlapSegmentIndex + 1}` : `${overlapCandidates.length} overlapping edges`}
+      </div>}
       <svg
         ref={setPreviewSvg}
         aria-label={previewLabel}
@@ -940,6 +997,19 @@ export function EditorPreview({
         onClickCapture={handleMeasurementClick}
         onMouseDownCapture={(event) => {
           if (measurement && !event.shiftKey && event.button === 0) event.stopPropagation();
+          if (!selectionEnabled || event.shiftKey || event.button !== 0) return;
+          if (event.altKey) { event.preventDefault(); event.stopPropagation(); return; }
+          if (selectionFilter !== 'all' && event.target instanceof Element) {
+            const targetPath = event.target.closest('path[data-line]');
+            const path = targetPath ? activePreview.paths.find((candidate) => candidate.line === Number(targetPath.getAttribute('data-line'))) : null;
+            if (path && !matchesPreviewSelectionFilter(path, selectionFilter)) event.stopPropagation();
+            if (!path) {
+              const targetSegment = event.target.closest('[data-preview-segment]')?.getAttribute('data-preview-segment');
+              const point = previewEventToWorldPoint(event, activeViewBox, flipY, { gridSize: snapGridSize, snapToGrid: false });
+              if (targetSegment && point && !previewSelectionCandidates(activePreview.paths, point, measurementScale(event.currentTarget) * 6, selectionFilter)
+                .some((candidate) => candidate.segmentId === targetSegment)) event.stopPropagation();
+            }
+          }
         }}
         onMouseMoveCapture={(event) => {
           if (!measurement) return;
@@ -1641,7 +1711,7 @@ interface PreviewPathEndpointHandle {
   segmentId: string;
 }
 
-function readPathEndpointHandles(paths: EditorPreviewPath[]): PreviewPathEndpointHandle[] {
+function readPathEndpointHandles(paths: EditorPreviewPath[], document?: PathPlanningDocument | null): PreviewPathEndpointHandle[] {
   const segmentPaths = new Map<
     string,
     {
@@ -1650,8 +1720,15 @@ function readPathEndpointHandles(paths: EditorPreviewPath[]): PreviewPathEndpoin
     }
   >();
 
-  for (const path of paths) {
-    if (path.source !== 'path-document' || !path.operationId || !path.segmentId || path.clippedSourceSegment) continue;
+  for (const previewPath of paths) {
+    if (previewPath.source !== 'path-document' || !previewPath.operationId || !previewPath.segmentId) continue;
+    let path = previewPath;
+    if (path.clippedSourceSegment) {
+      const source = document?.segments.find((segment) => segment.id === path.segmentId);
+      const ref = document?.plan.operations.find((operation) => operation.id === path.operationId)?.segmentRefs.find((candidate) => candidate.segmentId === path.segmentId);
+      if (!source || !ref) continue;
+      path = { ...path, start: orientedSegmentStart(source, ref), end: orientedSegmentEnd(source, ref) };
+    }
 
     const key = `${path.operationId}:${path.pathElementId ?? ''}:${path.segmentId}`;
     const grouped = segmentPaths.get(key);
@@ -1787,12 +1864,11 @@ function selectionMarqueeSvgRect(selection: SelectionMarqueeState, flipY: number
 
 function selectPathElementInMarquee(
   paths: EditorPreviewPath[],
-  marquee: SelectionMarqueeRect
+  marquee: SelectionMarqueeRect,
+  filter: PreviewSelectionFilter
 ): EditorPathElementRef | null {
-  const selectablePaths = paths.filter(
-    (path) => path.source === 'path-document' && path.operationId && path.type !== 'rapid' && !path.travelRole
-  );
-  const hitPaths = selectablePaths.filter((path) => boundsIntersect(path.bounds, marquee));
+  const selectablePaths = paths.filter((path) => matchesPreviewSelectionFilter(path, filter));
+  const hitPaths = selectablePaths.filter((path) => path.selectionGeometry && segmentIntersectsSelectionRect(path.selectionGeometry, marquee));
   if (hitPaths.length === 0) return null;
 
   const hitGroups = new Map<string, EditorPreviewPath[]>();
@@ -1822,24 +1898,13 @@ function selectPathElementInMarquee(
   return {
     operationId: first.operationId!,
     pathElementId: first.pathElementId ?? null,
-    segmentId: first.segmentId ?? null
+    segmentId: first.segmentId ?? null,
+    machiningSpanId: first.machiningSpanId
   };
 }
 
 function pathSelectionGroupKey(path: EditorPreviewPath) {
   return `${path.operationId ?? ''}:${path.pathElementId ?? ''}`;
-}
-
-function boundsIntersect(
-  first: { maxX: number; maxY: number; minX: number; minY: number },
-  second: { maxX: number; maxY: number; minX: number; minY: number }
-) {
-  return (
-    first.minX <= second.maxX &&
-    first.maxX >= second.minX &&
-    first.minY <= second.maxY &&
-    first.maxY >= second.minY
-  );
 }
 
 function formatPreviewPoint(point: { x: number; y: number }) {

@@ -27,7 +27,7 @@ describe('editor preview geometry', () => {
     });
     expect([cut!.start.x, cut!.end.x].sort((a, b) => a - b)).toEqual([4, 10]);
     expect(paths.find((path) => path.participation === 'inactive-reference')).toMatchObject({
-      segmentId, start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
+      segmentId, start: { x: 0, y: 0 }, end: { x: 4, y: 0 }, machiningSpanId: expect.any(String)
     });
   });
   it('turns parsed machine-program motion into paths and endpoint markers', () => {

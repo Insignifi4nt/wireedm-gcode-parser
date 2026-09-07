@@ -474,7 +474,7 @@ function reviewSegmentGeometry(segment: PathSegment) {
   }
 }
 
-function deriveSpanSegment(source: PathSegment, span: MachiningSpan): PathSegment {
+export function deriveSpanSegment(source: PathSegment, span: MachiningSpan): PathSegment {
   if (span.range.start === 0 && span.range.end === 1) return source;
   const id = `mach_${span.id}`;
   const sourceRef = {
