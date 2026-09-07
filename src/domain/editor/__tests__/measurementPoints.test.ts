@@ -8,6 +8,39 @@ import {
 } from '../measurementPoints';
 
 describe('measurementPoints', () => {
+  it('preserves implicit cutting after inserted rapid moves, including numbered blocks', () => {
+    const result = insertMeasurementPointsIntoText('G21 G90\nG1 X1 Y0\n(comment)\nN30 X4 Y0\nX5\nM30',
+      [{ id: 'a', x: 2, y: 0 }], { insertAfterLine: 2 });
+    expect(result.text).toContain('N30 G1 X4 Y0');
+    expect(parseGCodeProgram(result.text).path).toMatchObject([
+      { type: 'cut', x: 1 }, { type: 'rapid', x: 2 }, { type: 'cut', x: 4 }, { type: 'cut', x: 5 }
+    ]);
+    expect(result.insertedLineNumbers.map((line) => result.text.split('\n')[line - 1]))
+      .toEqual(['; inserted G0 P1', 'G0 X2.000 Y0.000']);
+  });
+
+  it('does not accumulate rounding drift across incremental construction points', () => {
+    const points = Array.from({ length: 100 }, (_, index) => ({ id: String(index), x: (index + 1) * 0.0006, y: 0 }));
+    const result = insertMeasurementPointsIntoText('G21 G91\nM30', points, { insertAfterLine: 1 });
+    const parsed = parseGCodeProgram(result.text);
+    expect(parsed.errors).toEqual([]);
+    parsed.path.forEach((point, index) => {
+      if (point.type === 'arc') throw new Error('Expected linear point');
+      expect(Math.abs(point.x - points[index].x)).toBeLessThanOrEqual(0.000501);
+    });
+  });
+
+  it('restores an implicit arc but leaves an explicit following motion untouched', () => {
+    const point = [{ id: 'a', x: 1, y: 0 }];
+    const arc = insertMeasurementPointsIntoText('G21 G0 X1 Y0\nG3 X0 Y1 I-1 J0\nX-1 Y0 I0 J-1',
+      [{ id: 'a', x: 0, y: 1 }], { insertAfterLine: 2 });
+    expect(parseGCodeProgram(arc.text).path.at(-1)).toMatchObject({
+      type: 'arc', endX: -1, endY: 0, centerX: 0, centerY: 0, clockwise: false
+    });
+    const explicit = insertMeasurementPointsIntoText('G21 G1 X0 Y0\nN40 G1 X2 Y0', point, { insertAfterLine: 1 });
+    expect(explicit.text.split('\n').at(-1)).toBe('N40 G1 X2 Y0');
+  });
+
   it('retains sub-micron rounding precision when writing millimetre points as inches', () => {
     const result = insertMeasurementPointsIntoText('G20\nM30', [{ id: 'a', x: 1.234, y: -5.678 }], { insertAfterLine: 1 });
     const end = parseGCodeProgram(result.text).path.at(-1)!;

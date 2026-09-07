@@ -73,14 +73,27 @@ export function insertMeasurementPointsIntoText(
   const insertIndex = insertAfterLine;
   const state = createGCodeInterpreterState();
   lines.slice(0, insertIndex).forEach((line, index) => interpretGCodeBlock(state, line, index + 1));
+  const continuationState = structuredClone(state);
   const scale = state.units === 'in' ? 25.4 : 1;
   const precision = state.units === 'in' ? 5 : 3;
   const insertedLines = points.flatMap((point, index) => {
     const x = (point.x - (state.xyMode === 'incremental' ? state.position.x : 0)) / scale;
     const y = (point.y - (state.xyMode === 'incremental' ? state.position.y : 0)) / scale;
-    state.position = { x: point.x, y: point.y };
-    return [`; inserted G0 P${index + 1}`, `G0 X${formatCoordinate(x, precision)} Y${formatCoordinate(y, precision)}`];
+    const motion = `G0 X${formatCoordinate(x, precision)} Y${formatCoordinate(y, precision)}`;
+    // Subsequent incremental points start at the rounded coordinate actually written.
+    interpretGCodeBlock(state, motion, insertAfterLine + index + 1);
+    return [`; inserted G0 P${index + 1}`, motion];
   });
+
+  // Inserting G0 must not turn the next implicit cutting block into a rapid.
+  for (let index = insertIndex; index < lines.length; index++) {
+    const block = interpretGCodeBlock(continuationState, lines[index], index + 1);
+    if (block.explicitMotion) break;
+    if (!block.motion) continue;
+    const numbering = /^(\s*(?:N\d+\s*)?)/i.exec(lines[index])![0];
+    lines[index] = `${numbering}${block.motion.command} ${lines[index].slice(numbering.length)}`;
+    break;
+  }
 
   lines.splice(insertIndex, 0, ...insertedLines);
 

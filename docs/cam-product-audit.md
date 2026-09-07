@@ -54,7 +54,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Endpoint topology | Expose repair-relevant facts; move raw topology detail behind disclosure | pending |
 | Diagnostics | Fixed nested keyboard activation in navigator and selected-geometry diagnostic rows; Enter on an affected-geometry button no longer triggers the parent, and Space activates the focused row. Deduplication, prioritization and repair context remain | in progress |
 | Measurement | Added read-only Measure with magnetic points, segment and contour dimensions, precision, pair/chain/fixed-reference modes, mouse/touch and zoom checks. Multi-entity inspection remains | in progress |
-| Construction points | Retain explicit editing; separate from inspection; clarify constraints | pending |
+| Construction points | Retain explicit editing, separate from inspection. G-code insertion respects units/XY mode, preserves following modal cuts/arcs and avoids accumulated incremental rounding drift; 10 domain and 13 line-drawer tests/build pass. Constraint and panel usability review remains | in progress |
 | Canvas selection and hover | Fixed endpoint highlight layering above start/end markers; browser regression passes. Overlap and selection filters remain | in progress |
 | Canvas navigation | Fit, zoom anchor, pan, grid, scale and touch | pending |
 | Canvas preview | Direction, leads, transitions, markers and execution consistency | pending |
