@@ -283,23 +283,27 @@ export function setPathOperationTransitions(
   const next = cloneDocument(document);
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
   if (!operation || !transitionsAreFinite(transitions)) return null;
+  const previousTransitions = readOperationTransitions(operation);
   operation.transitions = structuredClone(transitions);
   refreshOperationTransitions(operation);
-  if ([operation.transitions.entry, operation.transitions.exit].some(
+  const changedRoles = (['entry', 'exit'] as const).filter((role) =>
+    JSON.stringify(previousTransitions[role]) !== JSON.stringify(operation.transitions?.[role])
+  );
+  if (changedRoles.map((role) => operation.transitions?.[role]).some(
     (lead) => lead && lead.strategy !== 'none' &&
       pointsEqual(lead.from, lead.to, document.options.coincidenceEpsilon)
   )) return null;
   refreshPlan(next);
-  if (hasDegenerateActiveTransition(next, operationId)) return null;
+  if (hasDegenerateActiveTransition(next, operationId, changedRoles)) return null;
   return next;
 }
 
-function hasDegenerateActiveTransition(document: PathPlanningDocument, operationId: string) {
+function hasDegenerateActiveTransition(document: PathPlanningDocument, operationId: string, roles: readonly ('entry' | 'exit')[]) {
   const active = deriveSourceMachiningOperations(document, operationId);
   return active?.status === 'ready' && active.operations.some((operation) => {
     if ((operation.machiningIntent?.sourceOperationId ?? operation.id) !== operationId) return false;
     const transitions = readOperationTransitions(operation);
-    return [transitions.entry, transitions.exit].some((lead) =>
+    return roles.map((role) => transitions[role]).some((lead) =>
       lead && lead.strategy !== 'none' && pointsEqual(lead.from, lead.to, document.options.coincidenceEpsilon)
     );
   });
@@ -659,7 +663,7 @@ export function setPathOperationManualLeadIn(
     }
   };
   refreshPlan(next);
-  if (hasDegenerateActiveTransition(next, operationId)) return null;
+  if (hasDegenerateActiveTransition(next, operationId, ['entry'])) return null;
   return next;
 }
 
