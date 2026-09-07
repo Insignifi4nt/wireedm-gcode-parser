@@ -418,7 +418,7 @@ describe('Editor preview controls and guide', () => {
     ).toBe('true');
   });
 
-  it('snaps preview cursor coordinates and clicked points to the grid when grid snap is enabled', async () => {
+  it.each(['', 'G21\n'])('snaps preview coordinates with truthful units for declaration %j', async (declaration) => {
     window.showDirectoryPicker = undefined;
 
     await renderApp(context);
@@ -436,7 +436,7 @@ describe('Editor preview controls and guide', () => {
       'input[aria-label="G-code program file"]'
     ) as HTMLInputElement | null;
     Object.defineProperty(fileInput, 'files', {
-      value: [new File(['G0 X0 Y0\nG1 X10 Y10\nM30'], 'snap.nc')],
+      value: [new File([`${declaration}G0 X0 Y0\nG1 X10 Y10\nM30`], 'snap.nc')],
       configurable: true
     });
 
@@ -467,6 +467,9 @@ describe('Editor preview controls and guide', () => {
       'button[aria-label="Toggle preview grid snap"]'
     ) as HTMLButtonElement | null;
     expect(snapToggle).not.toBeNull();
+    expect(snapToggle?.title).toBe(declaration
+      ? 'Snap cursor and measurement clicks to the 5 mm preview grid'
+      : 'Snap cursor and measurement clicks to the 5 coordinate-unit preview grid. Units are undeclared.');
     expect(container.querySelector('[data-editor-grid-snap]')?.textContent).toBe('OFF');
 
     await act(async () => {
@@ -486,7 +489,7 @@ describe('Editor preview controls and guide', () => {
       );
     });
 
-    expect(container.querySelector('[data-editor-status-cursor]')?.textContent).toBe('Cursor X 5 Y 5');
+    expect(container.querySelector('[data-editor-status-cursor]')?.textContent).toBe(`Cursor X 5 Y 5${declaration ? ' mm' : ''}`);
 
     const pointModeButton = [...container.querySelectorAll('button')].find((button) =>
       button.getAttribute('aria-label') === 'Place measurement points on canvas'

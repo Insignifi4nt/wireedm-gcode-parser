@@ -226,6 +226,7 @@ export function EditorInspectorPanel({
     ? readUpidPathElementPointByRole(selectedPathElementModel, 'end')
     : null;
   const draftParseResult = draftProgram?.parseResult ?? null;
+  const previewCoordinateUnits = pathDocument ? 'mm' : draftParseResult?.coordinateUnits;
 
   return (
     <div
@@ -1110,7 +1111,9 @@ export function EditorInspectorPanel({
               data-editor-grid-snap
               {...guideTargetProps('grid-snap', guideHighlightTarget)}
               onClick={onToggleGridSnap}
-              title="Snap cursor and measurement clicks to the 5 mm preview grid"
+              title={previewCoordinateUnits
+                ? `Snap cursor and measurement clicks to the 5 ${previewCoordinateUnits} preview grid`
+                : 'Snap cursor and measurement clicks to the 5 coordinate-unit preview grid. Units are undeclared.'}
               type="button"
             >
               <Magnet className="size-3" />
