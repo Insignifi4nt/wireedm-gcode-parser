@@ -2582,6 +2582,17 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected-point-coordinate]')?.textContent).toBe(
       '10.004, 0.000'
     );
+    const rowSelector = '[data-upid-selected-diagnostic-row][data-upid-selected-diagnostic-code="endpoint-cluster-snap"]';
+    const relatedButton = container.querySelector(`${rowSelector} [data-upid-selected-diagnostic-ref-index="1"]`)!;
+    await act(async () => {
+      relatedButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(container.querySelector('[data-upid-selected-point-coordinate]')?.textContent).toBe('10.004, 0.000');
+    const diagnosticRow = container.querySelector(rowSelector)!;
+    await act(async () => {
+      diagnosticRow.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[data-upid-selected-segment]')?.getAttribute('data-upid-selected-segment-id')).toBe(pathDocument.segments[0].id);
   });
 
   it('reports endpoint topology in project inspection', async () => {

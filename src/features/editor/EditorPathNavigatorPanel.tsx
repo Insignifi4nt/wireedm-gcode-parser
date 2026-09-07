@@ -1655,7 +1655,11 @@ function renderDiagnosticRow({
       key={diagnostic.id}
       onClick={selectDiagnostic}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') selectDiagnostic();
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          selectDiagnostic();
+        }
       }}
       onMouseEnter={() => {
         if (hoverElement) onHoverPathElement(hoverElement);

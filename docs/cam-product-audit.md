@@ -52,7 +52,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Machining participation | Excluded spans, partial contour semantics and compensation | pending |
 | Program stops | Added direct Edit actions with pending-field protection and save/undo coverage. Execution tests verify linear/circular and partial-cut placement. Added enabled-stop canvas markers with stable screen size, edit updates and undo coverage; placement labels distinguish positioning from cutting entry. Form consolidation remains | in progress |
 | Endpoint topology | Expose repair-relevant facts; move raw topology detail behind disclosure | pending |
-| Diagnostics | Deduplicate, prioritize and navigate to exact repair context | pending |
+| Diagnostics | Fixed nested keyboard activation in navigator and selected-geometry diagnostic rows; Enter on an affected-geometry button no longer triggers the parent, and Space activates the focused row. Deduplication, prioritization and repair context remain | in progress |
 | Measurement | Added read-only Measure with magnetic points, segment and contour dimensions, precision, pair/chain/fixed-reference modes, mouse/touch and zoom checks. Multi-entity inspection remains | in progress |
 | Construction points | Retain explicit editing; separate from inspection; clarify constraints | pending |
 | Canvas selection and hover | Fixed endpoint highlight layering above start/end markers; browser regression passes. Overlap and selection filters remain | in progress |
@@ -100,6 +100,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 - Stop execution audit: eight execution-plan tests and production build passed. Added circular multi-stop tests in both directions with exact quarter/half-turn positions, ordered events, contiguous source ranges and unchanged arc direction. Partial-cut validation and compilation agree on 6 mm of active travel within a 10 mm source line; a 2 mm remaining stop lands at X=4 and a 7 mm remaining stop is rejected.
 - Stop markers: three domain checks match preview and execution coordinates, omit disabled/invalid distance markers, and avoid inventing an unresolved initial-wire location. Browser coverage checks marker movement after applying a distance edit, constant size under zoom and removal on workflow undo.
 - Stop interaction follow-up: seven panel tests, four browser scenarios and production build passed. Successful addition is acknowledged instead of immediately displaying a duplicate error. Markers render beneath hover/measurement overlays; endpoint emphasis has a minimum screen-space radius surrounding a stop marker.
+- Diagnostic keyboard correction: 82 editor integration tests and production build passed. A snapped-endpoint regression verifies that nested Enter retains the selected 10.004 mm endpoint and Space on the row selects its primary segment.
 
 ## Next audit work
 

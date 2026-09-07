@@ -1379,7 +1379,11 @@ function renderSelectedPathDiagnosticRow({
       }}
       onMouseLeave={() => onHoverPathElement?.(null)}
       onKeyDown={(event) => {
-        if (event.key === 'Enter' && diagnostic.selectRef) onSelectPathElement?.(diagnostic.selectRef);
+        if (event.target !== event.currentTarget || !diagnostic.selectRef) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelectPathElement?.(diagnostic.selectRef);
+        }
       }}
       role={diagnostic.selectRef ? 'button' : undefined}
       tabIndex={diagnostic.selectRef ? 0 : undefined}
