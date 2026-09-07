@@ -1,5 +1,7 @@
 # Playwright Workflow
 
+The browser tests start their own Vite server on port 3107. Development uses 3777; production preview uses 3778. Keep these ports separate.
+
 The repo has two Playwright paths:
 
 - `npm run test:e2e` runs browser smoke tests against the Vite dev server.
@@ -23,11 +25,19 @@ npm run pw:seed:reload
 For a shared, foreground session in the user's existing Windows Comet profile,
 see [Playwright Comet Session](./playwright-comet.md).
 
-Useful variants:
+Run a focused browser test:
 
 ```bash
-WIREDM_PLAYWRIGHT_WORKBENCH=/mnt/c/Users/crist/Documents/WireEDM_WEB_FOLDER npm run test:e2e:workbench
-npm run pw:seed -- --project cog302000697-2026-05-31
+npm run test:e2e -- e2e/machine-package-install.spec.ts --workers=1
 ```
 
-`playwright-cli` is wrapped globally in `~/.local/bin/playwright-cli` so WSL browser-control sockets use `/tmp` instead of the Windows temp directory.
+The `pw:*` interactive scripts require `playwright-cli` on PATH. They are optional; `test:e2e` uses the repository's Playwright dependency.
+
+For an external workbench in PowerShell:
+
+```powershell
+$env:WIREDM_PLAYWRIGHT_WORKBENCH = 'C:\path\to\workbench'
+npm run test:e2e:workbench
+```
+
+The external-workbench test skips when no fixture folder is available. Other browser tests create their own projects. Run final checks against stable source files; live edits can trigger Vite reloads during a test.

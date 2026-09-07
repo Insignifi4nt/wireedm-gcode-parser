@@ -32,7 +32,7 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 - `src/app/` - shell and app-level composition
 - `src/components/ui/` - shadcn-compatible UI primitives
 - `src/domain/` - workbench, storage, and G-code output models
-- `src/features/` - feature UI; only Dashboard is active until backing functionality exists
+- `src/features/` - dashboard, editor tools, and their UI tests
 - `docs/superpowers/` - design and implementation planning notes
 
 ## Product Rules
