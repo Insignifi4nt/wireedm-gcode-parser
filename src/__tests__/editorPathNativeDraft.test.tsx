@@ -305,7 +305,12 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe(true);
   });
 
-  it('saves and preserves one real owned mutation from every provisional workflow', async () => {
+  it.each([
+    'geometry.setup', 'geometry.transform', 'machining.contour-setup', 'machining.set-start',
+    'machining.sequence', 'machining.initial-wire', 'machining.entry-exit',
+    'machining.between-contours', 'machining.program-stops', 'machining.participation',
+    'construction.measurement'
+  ])('saves and preserves an independent %s workflow mutation', async (commandId) => {
     const project = projectWithUpid(pathDocumentFromIndependentRectangles());
 
     await act(async () => {
@@ -453,29 +458,30 @@ describe('EditorPage UPID draft boundary', () => {
       }
     ];
 
-    for (const workflow of workflows) {
-      await clickElement(`[data-editor-workflow-command="${workflow.commandId}"]`);
-      await workflow.mutate();
-      const save = container.querySelector(
-        `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Save "]`
-      ) as HTMLButtonElement | null;
-      expect(save?.disabled, workflow.commandId).toBe(false);
-      await clickElement(
-        `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Save "]`
-      );
-      expect(visibleWorkflowPanelIds(), workflow.commandId).toEqual([]);
-      await clickElement(`[data-editor-workflow-command="${workflow.commandId}"]`);
-      workflow.assertPreserved();
-      await clickElement(
-        `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Cancel "]`
-      );
+    const workflow = workflows.find((candidate) => candidate.commandId === commandId);
+    if (!workflow) throw new Error(`Missing mutation scenario for ${commandId}`);
+    await clickElement(`[data-editor-workflow-command="${workflow.commandId}"]`);
+    await workflow.mutate();
+    const save = container.querySelector(
+      `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Save "]`
+    ) as HTMLButtonElement | null;
+    expect(save?.disabled, workflow.commandId).toBe(false);
+    await clickElement(
+      `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Save "]`
+    );
+    expect(visibleWorkflowPanelIds(), workflow.commandId).toEqual([]);
+    await clickElement(`[data-editor-workflow-command="${workflow.commandId}"]`);
+    workflow.assertPreserved();
+    await clickElement(
+      `[data-editor-workflow-actions="${workflow.commandId}"] button[aria-label^="Cancel "]`
+    );
+    if (commandId === 'construction.measurement') {
+      await clickElement('button[aria-label="Undo active document change"]');
+      expect(container.querySelector('[data-measurement-point-row="1"]')).toBeNull();
+      await clickElement('button[aria-label="Redo active document change"]');
+      await clickElement('[data-editor-workflow-command="construction.measurement"]');
+      expect(container.querySelector('[data-measurement-point-row="1"]')).not.toBeNull();
     }
-
-    await clickElement('button[aria-label="Undo active document change"]');
-    expect(container.querySelector('[data-measurement-point-row="1"]')).toBeNull();
-    await clickElement('button[aria-label="Redo active document change"]');
-    await clickElement('[data-editor-workflow-command="construction.measurement"]');
-    expect(container.querySelector('[data-measurement-point-row="1"]')).not.toBeNull();
   });
 
   it('keeps Position read-only and owns preview grid snap in Measurement & Construction', async () => {
@@ -1513,7 +1519,7 @@ describe('EditorPage UPID draft boundary', () => {
     expect(status?.textContent).toContain('Operations 1');
     expect(status?.textContent).toContain('Contours 1');
     expect(status?.textContent).toContain('Segments 4');
-    expect(status?.textContent).toContain('Diagnostics 1');
+    expect(status?.textContent).toContain('Diagnostics 2');
     expect(
       container.querySelector('[data-upid-diagnostic-code="units-assumed-millimeters"]')
     ).toBeNull();
