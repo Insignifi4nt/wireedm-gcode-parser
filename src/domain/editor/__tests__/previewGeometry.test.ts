@@ -61,33 +61,32 @@ describe('editor preview geometry', () => {
     expect(preview.viewBox).toEqual({ minX: -1, minY: -1, width: 12, height: 7 });
   });
 
-  it('renders supplied artifact transition traces without inventing controller behavior', () => {
+  it('previews reviewed initial positioning, authored exits and the following connection', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
-      line(5, 0, 15, 0),
-      line(15, 0, 15, 5),
-      line(15, 5, 5, 5),
-      line(5, 5, 5, 0)
+      line(0, 0, 10, 0), line(20, 0, 30, 0)
     ]);
-    const operationId = document.plan.operations[0].id;
+    document.setup = {
+      initialWirePosition: { kind: 'manual', point: { x: -5, y: 0 }, review: 'reviewed' }
+    };
+    document.plan.operations[0].transitions = {
+      exit: { strategy: 'manual-straight', from: { x: 10, y: 0 }, to: { x: 15, y: 5 }, move: 'cut', review: 'reviewed' }
+    };
+    document.plan.operations[1].transitions = {
+      exit: { strategy: 'manual-straight', from: { x: 30, y: 0 }, to: { x: 35, y: 5 }, move: 'cut', review: 'reviewed' }
+    };
 
-    const preview = buildEditorPathDocumentPreviewGeometry(document, {
-      postedTransitions: [{
-        kind: 'lead-in',
-        operationId,
-        startPoint: { x: 0, y: 0 },
-        endPoint: { x: 5, y: 0 },
-        programLineNumber: 6
-      }]
-    });
+    const preview = buildEditorPathDocumentPreviewGeometry(document);
 
-    expect(preview.paths.filter(({ travelSource }) => travelSource === 'posted')).toEqual([
-      expect.objectContaining({
-        line: 6,
-        start: { x: 0, y: 0 },
-        end: { x: 5, y: 0 },
-        travelRole: 'lead-in',
-        type: 'cut'
-      })
+    expect(preview.paths.filter(({ travelRole }) => travelRole).map(({ travelRole, start, end }) => ({ travelRole, start, end }))).toEqual([
+      { travelRole: 'rapid-in', start: { x: -5, y: 0 }, end: { x: 0, y: 0 } },
+      { travelRole: 'lead-out', start: { x: 10, y: 0 }, end: { x: 15, y: 5 } },
+      { travelRole: 'rapid-in', start: { x: 15, y: 5 }, end: { x: 20, y: 0 } },
+      { travelRole: 'lead-out', start: { x: 30, y: 0 }, end: { x: 35, y: 5 } }
+    ]);
+    expect(preview.viewBox).toEqual({ minX: -6, minY: -1, width: 42, height: 7 });
+    expect(preview.markers).toEqual([
+      { type: 'start', x: -5, y: 0, label: 'START' },
+      { type: 'end', x: 35, y: 5, label: 'END' }
     ]);
   });
 

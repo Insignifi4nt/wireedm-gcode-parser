@@ -1,7 +1,6 @@
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
-import type { PostedPreviewTransition } from '@/domain/editor/previewGeometry';
 
 import { EditorPreview, type EditorConstructionPreview, type EditorStartPreview } from './EditorPreview';
 import type { EditorGuideTarget } from './editorGuideContent';
@@ -9,7 +8,6 @@ import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 
 interface EditorCanvasPanelProps {
-  authoritativeGeneratedOperationIds?: readonly string[];
   canvasMouseMode: CanvasMouseMode;
   draftProgram: LoadedEditorProgram | null;
   constructionPreview?: EditorConstructionPreview | null;
@@ -23,7 +21,6 @@ interface EditorCanvasPanelProps {
   measurementPoints: MeasurementPoint[];
   pathEndpointActionOperationId?: string | null;
   pathDocument?: PathPlanningDocument | null;
-  postedTransitions?: PostedPreviewTransition[];
   pathCount: number;
   pinnedLines: number[];
   selectedPathElement?: EditorPathElementRef | null;
@@ -42,7 +39,6 @@ interface EditorCanvasPanelProps {
 type CanvasMouseMode = 'select' | 'point';
 
 export function EditorCanvasPanel({
-  authoritativeGeneratedOperationIds,
   canvasMouseMode,
   draftProgram,
   constructionPreview,
@@ -56,7 +52,6 @@ export function EditorCanvasPanel({
   measurementPoints,
   pathEndpointActionOperationId,
   pathDocument,
-  postedTransitions,
   pathCount,
   pinnedLines,
   selectedPathElement,
@@ -82,7 +77,6 @@ export function EditorCanvasPanel({
         {...guideTargetProps('preview', guideHighlightTarget)}
       >
         <EditorPreview
-          authoritativeGeneratedOperationIds={authoritativeGeneratedOperationIds}
           canvasMouseMode={canvasMouseMode}
           hoveredLine={hoveredLine}
           hoveredPathElement={hoveredPathElement}
@@ -101,7 +95,6 @@ export function EditorCanvasPanel({
           onSetCanvasMouseMode={onSetCanvasMouseMode}
           pathDocument={pathDocument}
           pathEndpointActionOperationId={pathEndpointActionOperationId}
-          postedTransitions={postedTransitions}
           pathCount={pathCount}
           pinnedLines={pinnedLines}
           previewLabel={pathDocument ? 'UPID path preview' : 'G-code path preview'}

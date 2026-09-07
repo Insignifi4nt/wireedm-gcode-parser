@@ -18,6 +18,7 @@ import {
   segmentMap
 } from '@/domain/path-intel/segments';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
+import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
 import type {
   ArcPathSegment,
   Bounds2,
@@ -54,7 +55,7 @@ export interface EditorPreviewPath {
   segmentId?: SegmentId;
   source?: 'gcode' | 'path-document';
   travelRole?: 'rapid-in' | 'lead-in' | 'lead-out';
-  travelSource?: 'planned' | 'posted';
+  travelSource?: 'planned';
   participation?: 'active-cut' | 'inactive-reference';
 }
 
@@ -83,19 +84,8 @@ interface BuildEditorPreviewGeometryOptions {
 }
 
 interface BuildEditorPathDocumentPreviewGeometryOptions {
-  authoritativeGeneratedOperationIds?: readonly string[];
   lineHints?: number[];
   padding?: number;
-  postedTransitions?: PostedPreviewTransition[];
-}
-
-export interface PostedPreviewTransition {
-  endPoint: Point2;
-  kind: 'rapid' | 'lead-in' | 'lead-out';
-  operationId: string;
-  programLineNumber: number;
-  replacesPlanned?: boolean;
-  startPoint: Point2;
 }
 
 export function buildEditorPreviewGeometry(
@@ -170,9 +160,6 @@ export function buildEditorPathDocumentPreviewGeometry(
   options: BuildEditorPathDocumentPreviewGeometryOptions = {}
 ): EditorPreviewGeometry {
   const padding = options.padding ?? 1;
-  const authoritativeGeneratedOperationIds = new Set(
-    options.authoritativeGeneratedOperationIds
-  );
   const hasParticipation = (document.machiningParticipation?.spans ?? []).some(
     (span) => span.participation === 'inactive-reference'
   );
@@ -193,7 +180,8 @@ export function buildEditorPathDocumentPreviewGeometry(
   );
   const paths: EditorPreviewPath[] = [];
   let bounds = emptyBounds();
-  let currentPoint: Point2 | null = null;
+  const initialWire = resolveInitialWirePosition(document);
+  let currentPoint: Point2 | null = initialWire.status === 'ready' ? initialWire.point : null;
   let pathIndex = 0;
 
   if (hasParticipation) {
@@ -233,25 +221,16 @@ export function buildEditorPathDocumentPreviewGeometry(
     bounds = mergeBounds(bounds, pathBounds(operation.segmentRefs, segmentsById));
     const sourceOperationId = operation.machiningIntent?.sourceOperationId ?? operation.id;
     const pathElementId = pathElementsByOperationId.get(sourceOperationId)?.id;
-    const postedTransitions = options.postedTransitions?.filter(
-      (transition) => transition.operationId === operation.id
-    );
-    const generatedOwnership =
-      authoritativeGeneratedOperationIds.has(operation.id) ||
-      (postedTransitions?.some((transition) => transition.replacesPlanned) ?? false);
     const entry = readOperationTransitions(operation).entry;
     const leadIn = entry && entry.strategy !== 'none' ? entry : null;
     const entryPoint = leadIn?.from ?? operation.startPoint;
     const rapidStart = currentPoint ?? planningDocument.options.startPoint;
     if (
-      !generatedOwnership &&
-      (
-        !currentPoint ||
-        !pathPointsEqual(
-          currentPoint,
-          entryPoint,
-          planningDocument.options.coincidenceEpsilon
-        )
+      !currentPoint ||
+      !pathPointsEqual(
+        currentPoint,
+        entryPoint,
+        planningDocument.options.coincidenceEpsilon
       )
     ) {
       const rapidBounds = boundsFromPoints([rapidStart, entryPoint]);
@@ -272,7 +251,6 @@ export function buildEditorPathDocumentPreviewGeometry(
     }
 
     if (
-      !generatedOwnership &&
       leadIn &&
       !pathPointsEqual(
         leadIn.from,
@@ -297,24 +275,6 @@ export function buildEditorPathDocumentPreviewGeometry(
       });
     }
 
-    for (const transition of postedTransitions?.filter((candidate) => candidate.kind !== 'lead-out') ?? []) {
-      const transitionBounds = boundsFromPoints([transition.startPoint, transition.endPoint]);
-      bounds = mergeBounds(bounds, transitionBounds);
-      paths.push({
-        type: transition.kind === 'rapid' ? 'rapid' : 'cut',
-        bounds: transitionBounds,
-        d: linePath(transition.startPoint, transition.endPoint),
-        start: transition.startPoint,
-        end: transition.endPoint,
-        line: transition.programLineNumber,
-        operationId: operation.id,
-        pathElementId,
-        source: 'path-document',
-        travelRole: transition.kind === 'rapid' ? 'rapid-in' : transition.kind,
-        travelSource: 'posted'
-      });
-    }
-
     for (const ref of operation.segmentRefs) {
       const segment = requiredSegment(segmentsById, ref.segmentId);
       for (const segmentPath of pathDocumentSegmentPaths(segment, ref)) {
@@ -335,25 +295,19 @@ export function buildEditorPathDocumentPreviewGeometry(
       }
     }
 
-    for (const transition of postedTransitions?.filter((candidate) => candidate.kind === 'lead-out') ?? []) {
-      const transitionBounds = boundsFromPoints([transition.startPoint, transition.endPoint]);
-      bounds = mergeBounds(bounds, transitionBounds);
+    const exit = readOperationTransitions(operation).exit;
+    if (exit && exit.strategy !== 'none' && !pathPointsEqual(exit.from, exit.to, planningDocument.options.coincidenceEpsilon)) {
+      const exitBounds = boundsFromPoints([exit.from, exit.to]);
+      bounds = mergeBounds(bounds, exitBounds);
       paths.push({
-        type: 'cut',
-        bounds: transitionBounds,
-        d: linePath(transition.startPoint, transition.endPoint),
-        start: transition.startPoint,
-        end: transition.endPoint,
-        line: transition.programLineNumber,
-        operationId: operation.id,
-        pathElementId,
-        source: 'path-document',
-        travelRole: 'lead-out',
-        travelSource: 'posted'
+        type: 'cut', bounds: exitBounds, d: linePath(exit.from, exit.to),
+        start: exit.from, end: exit.to,
+        line: pathLineNumber(options.lineHints, pathIndex++),
+        operationId: operation.id, pathElementId, source: 'path-document',
+        travelRole: 'lead-out', travelSource: 'planned'
       });
     }
-
-    currentPoint = operation.endPoint;
+    currentPoint = exit && exit.strategy !== 'none' ? exit.to : operation.endPoint;
   }
 
   return {
@@ -535,21 +489,25 @@ function paddedBoundsViewBox(bounds: Bounds2, padding: number): EditorPreviewVie
 function pathDocumentPreviewMarkers(document: PathPlanningDocument): EditorPreviewMarker[] {
   const firstOperation = document.plan.operations[0];
   if (!firstOperation) return [];
+  const initialWire = resolveInitialWirePosition(document);
+  const start = initialWire.status === 'ready' ? initialWire.point : firstOperation.startPoint;
 
   const markers: EditorPreviewMarker[] = [
     {
       type: 'start',
-      x: firstOperation.startPoint.x,
-      y: firstOperation.startPoint.y,
+      x: start.x,
+      y: start.y,
       label: 'START'
     }
   ];
   const lastOperation = document.plan.operations.at(-1);
   if (lastOperation) {
+    const exit = readOperationTransitions(lastOperation).exit;
+    const end = exit && exit.strategy !== 'none' ? exit.to : lastOperation.endPoint;
     markers.push({
       type: 'end',
-      x: lastOperation.endPoint.x,
-      y: lastOperation.endPoint.y,
+      x: end.x,
+      y: end.y,
       label: 'END'
     });
   }

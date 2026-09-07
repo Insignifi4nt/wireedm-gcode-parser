@@ -23,7 +23,6 @@ import {
 } from '@/domain/editor/previewGeometry';
 import type { EditorPreviewPath, EditorPreviewViewBox } from '@/domain/editor/previewGeometry';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
-import type { PostedPreviewTransition } from '@/domain/editor/previewGeometry';
 import type { EditorPathElementRef } from './EditorPathNavigatorPanel';
 import {
   MAX_PREVIEW_ZOOM,
@@ -55,7 +54,6 @@ import {
 } from './editorPreviewHelpers';
 
 interface EditorPreviewProps {
-  authoritativeGeneratedOperationIds?: readonly string[];
   canvasMouseMode?: CanvasMouseMode;
   constructionPreview?: EditorConstructionPreview | null;
   startPreview?: EditorStartPreview | null;
@@ -76,7 +74,6 @@ interface EditorPreviewProps {
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
   onSetCanvasMouseMode?: (mode: CanvasMouseMode) => void;
   pathDocument?: PathPlanningDocument | null;
-  postedTransitions?: PostedPreviewTransition[];
   pathEndpointActionOperationId?: string | null;
   pathCount?: number;
   pinnedLines: number[];
@@ -123,7 +120,6 @@ export interface EditorStartPreview {
 }
 
 export function EditorPreview({
-  authoritativeGeneratedOperationIds,
   canvasMouseMode,
   constructionPreview,
   startPreview,
@@ -143,7 +139,6 @@ export function EditorPreview({
   onSetCanvasMouseMode,
   pathDocument,
   pathEndpointActionOperationId,
-  postedTransitions,
   pathCount,
   previewLabel = 'G-code path preview',
   previewTitle = 'Preview',
@@ -157,14 +152,12 @@ export function EditorPreview({
     () =>
       pathDocument
         ? buildEditorPathDocumentPreviewGeometry(pathDocument, {
-            authoritativeGeneratedOperationIds,
             padding: 1,
-            postedTransitions
           })
         : program?.parseResult
           ? buildEditorPreviewGeometry(program.parseResult, { padding: 1 })
           : null,
-    [authoritativeGeneratedOperationIds, pathDocument, postedTransitions, program]
+    [pathDocument, program]
   );
   const selected = useMemo(() => new Set(selectedLines), [selectedLines]);
   const pinned = useMemo(() => new Set(pinnedLines), [pinnedLines]);
@@ -1044,14 +1037,13 @@ export function EditorPreview({
                     event
                   );
                 }}
-                pointerEvents={path.travelSource === 'posted' ? 'none' : undefined}
                 stroke={path.participation === 'inactive-reference' && !highlight
                   ? '#64748b'
                   : strokeForPath(path.type, highlight, isPinned)}
                 strokeDasharray={path.participation === 'inactive-reference'
                   ? '0.8 0.5'
                   : path.type === 'rapid'
-                  ? path.travelSource === 'posted' ? '1.2 0.4' : '0.4 0.4'
+                  ? '0.4 0.4'
                   : undefined}
                 strokeOpacity={path.participation === 'inactive-reference' ? 0.72 : undefined}
                 strokeLinecap="round"
