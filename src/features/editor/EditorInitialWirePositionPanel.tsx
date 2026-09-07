@@ -22,13 +22,11 @@ export function EditorInitialWirePositionPanel({
   const currentPoint = resolution.status === 'ready' ? resolution.point : null;
   const [xDraft, setXDraft] = useState(currentPoint ? String(currentPoint.x) : '');
   const [yDraft, setYDraft] = useState(currentPoint ? String(currentPoint.y) : '');
-  const [previewPoint, setPreviewPoint] = useState<Point2 | null>(currentPoint);
 
   useEffect(() => {
     if (!currentPoint) return;
     setXDraft(String(currentPoint.x));
     setYDraft(String(currentPoint.y));
-    setPreviewPoint(currentPoint);
   }, [currentPoint?.x, currentPoint?.y]);
 
   const circles = document.segments.filter((segment) => segment.kind === 'circle');
@@ -36,15 +34,13 @@ export function EditorInitialWirePositionPanel({
 
   function setManual() {
     if (!manualPoint || disabled) return;
-    setPreviewPoint(manualPoint);
     onSetManual(manualPoint);
   }
 
   return (
     <section className="grid gap-2 text-[10px]" data-initial-wire-position>
       <p className="leading-4 text-muted-foreground">
-        Initial wire position declares the wire coordinates once at program start. It supplies only the
-        first connection; use Contour Start for each contour and Entry / Exit for cutting transitions.
+        Set the wire's starting coordinates in the part coordinate system. This does not move the wire.
       </p>
       <div className="border border-border bg-background/35 p-2">
         <div className="mb-1 uppercase text-muted-foreground">Current setup</div>
@@ -54,7 +50,7 @@ export function EditorInitialWirePositionPanel({
             : initialWireBlockedLabel(resolution.reason)}
         </div>
         <div className="mt-1 font-mono text-foreground" data-initial-wire-position-preview>
-          {previewPoint ? formatPoint(previewPoint) : 'A reviewed point is required'}
+          {currentPoint ? formatPoint(currentPoint) : 'A reviewed point is required'}
         </div>
       </div>
 
@@ -97,24 +93,18 @@ export function EditorInitialWirePositionPanel({
         >
           Review and set manual point
         </button>
-        <p className="leading-4 text-muted-foreground">
-          Declares the wire's current part-relative coordinates. It does not move the wire or transform geometry.
-        </p>
       </fieldset>
 
-      <div className="grid gap-1 border border-border p-2">
-        <div className="uppercase text-muted-foreground">Transform-linked circle centers</div>
-        {circles.length === 0 ? (
-          <p className="text-muted-foreground">No native circle centers are available.</p>
-        ) : (
-          circles.map((circle) => (
+      {circles.length > 0 && <div className="grid gap-1 border border-border p-2">
+        <div className="uppercase text-muted-foreground">Or link to a circle center</div>
+        <p className="text-muted-foreground">The starting point follows this circle when geometry moves.</p>
+        {circles.map((circle) => (
             <button
               className="flex h-7 items-center justify-between border border-border bg-background px-2 text-left disabled:opacity-40"
               data-initial-wire-circle-center={circle.id}
               disabled={disabled}
               key={circle.id}
               onClick={() => {
-                setPreviewPoint(circle.center);
                 onSetGeometryLinked(circle.id);
               }}
               type="button"
@@ -124,9 +114,8 @@ export function EditorInitialWirePositionPanel({
                 X{circle.center.x.toFixed(3)} Y{circle.center.y.toFixed(3)}
               </span>
             </button>
-          ))
-        )}
-      </div>
+          ))}
+      </div>}
     </section>
   );
 }

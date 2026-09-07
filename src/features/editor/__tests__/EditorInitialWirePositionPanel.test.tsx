@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { setManualInitialWirePosition, translatePathDocument } from '@/domain/path-editor/pathDocumentOperations';
 import { EditorInitialWirePositionPanel } from '../EditorInitialWirePositionPanel';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -47,7 +48,19 @@ describe('EditorInitialWirePositionPanel', () => {
     });
 
     expect(onSetManual).toHaveBeenCalledWith({ x: -17.5, y: 24.9 });
-    expect(container.textContent).toContain('X-17.500 Y24.900');
+    const reviewed = setManualInitialWirePosition(document, onSetManual.mock.calls[0][0]);
+    if (!reviewed) throw new Error('Expected valid reviewed position');
+    await act(async () => root.render(
+      <EditorInitialWirePositionPanel disabled={false} document={reviewed} onSetGeometryLinked={vi.fn()} onSetManual={onSetManual} />
+    ));
+    expect(container.querySelector('[data-initial-wire-position-preview]')?.textContent).toBe('X-17.500 Y24.900');
+
+    const translated = translatePathDocument(reviewed, { x: 10, y: 0 });
+    if (!translated) throw new Error('Expected translated document');
+    await act(async () => root.render(
+      <EditorInitialWirePositionPanel disabled={false} document={translated} onSetGeometryLinked={vi.fn()} onSetManual={onSetManual} />
+    ));
+    expect(container.querySelector('[data-initial-wire-position-preview]')?.textContent).toBe('A reviewed point is required');
   });
 
   it('offers circle centers as semantic transform-linked points', async () => {
