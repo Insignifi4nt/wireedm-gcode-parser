@@ -149,6 +149,33 @@ describe('EditorControllerArtifactDialog', () => {
     expect(container.textContent).toContain('This machine has no active setup');
   });
 
+  it('contains keyboard focus and shortcuts, then restores focus when closed', async () => {
+    const launcher = document.createElement('button');
+    document.body.appendChild(launcher);
+    launcher.focus();
+    const onClose = vi.fn();
+    const editorShortcut = vi.fn();
+    window.addEventListener('keydown', editorShortcut);
+    try {
+      await render({ onClose });
+      const dialog = container.querySelector<HTMLElement>('[role="dialog"]');
+      expect(document.activeElement).toBe(dialog);
+      await act(async () => dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })));
+      expect(document.activeElement).toBe(button('Close'));
+      await act(async () => button('Close').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })));
+      expect(document.activeElement).toBe(button('Generate controller artifact'));
+      await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })));
+      expect(editorShortcut).not.toHaveBeenCalled();
+      await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+      expect(onClose).toHaveBeenCalledOnce();
+      await act(async () => root.render(null));
+      expect(document.activeElement).toBe(launcher);
+    } finally {
+      window.removeEventListener('keydown', editorShortcut);
+      launcher.remove();
+    }
+  });
+
   async function render(overrides: Partial<React.ComponentProps<typeof EditorControllerArtifactDialog>> = {}) {
     await act(async () => {
       root.render(

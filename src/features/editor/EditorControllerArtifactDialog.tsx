@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 import type { MachineDefinition } from '@/domain/machine-definition/machineDefinition';
 import type { PostLibrary } from '@/domain/post-processor/postLibrary';
@@ -32,6 +32,14 @@ export function EditorControllerArtifactDialog({
   onDownload,
   onGenerateControllerArtifact
 }: EditorControllerArtifactDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    dialogRef.current?.focus();
+    return () => {
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+    };
+  }, []);
   const [machineId, setMachineId] = useState(() => (
     defaultMachineId && machines.some(({ id }) => id === defaultMachineId)
       ? defaultMachineId
@@ -50,6 +58,29 @@ export function EditorControllerArtifactDialog({
       )) ?? null
     : null;
   const canGenerate = !hasUnsavedChanges && activePost !== null && !generating;
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    // Editor shortcuts must not change the revision behind this modal.
+    event.stopPropagation();
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (!generating) onClose();
+    }
+    if (event.key !== 'Tab') return;
+    const controls = [...event.currentTarget.querySelectorAll<HTMLElement>(':is(button, select):not(:disabled)')];
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (!first || !last) {
+      event.preventDefault();
+      event.currentTarget.focus();
+    } else if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === event.currentTarget)) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   async function generate() {
     if (!canGenerate) return;
@@ -72,7 +103,7 @@ export function EditorControllerArtifactDialog({
   }
 
   return (
-    <div aria-label="Controller artifact export" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/65 p-4" role="dialog">
+    <div aria-label="Controller artifact export" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-black/65 p-4 outline-none" onKeyDown={handleKeyDown} ref={dialogRef} role="dialog" tabIndex={-1}>
       <section className="grid max-h-[90vh] w-full max-w-3xl gap-3 overflow-auto border border-border bg-card p-3 text-[11px] shadow-2xl">
         <header className="flex items-center justify-between gap-3 border-b border-border pb-2">
           <div>

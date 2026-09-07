@@ -1441,7 +1441,7 @@ export function EditorPage({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || exportPreviewOpen) return;
 
       if (event.key === 'Escape') {
         if (activeWorkflowOwns('machining.entry-exit') && entryExitCanvasPick) {
@@ -1524,7 +1524,7 @@ export function EditorPage({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeToolSession, activeWorkflowSession, canvasMouseMode, draftText, entryExitCanvasPick, isCompactViewport, isEditorMutationLocked, measurementPoints.length, pathClickMode, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
+  }, [activeToolSession, activeWorkflowSession, canvasMouseMode, draftText, entryExitCanvasPick, exportPreviewOpen, isCompactViewport, isEditorMutationLocked, measurementPoints.length, pathClickMode, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
 
   function handleBackToDashboard() {
     if (isEditorMutationLocked) return;
