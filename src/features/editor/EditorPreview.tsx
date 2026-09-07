@@ -336,10 +336,20 @@ export function EditorPreview({
     if (!svg || !preview || !previewViewBox || preview.paths.length === 0) return;
     const handleWheel = (event: globalThis.WheelEvent) => {
       event.preventDefault();
+      if (event.deltaY === 0) return;
       const nextZoom = event.deltaY > 0
         ? zoom / PREVIEW_ZOOM_STEP
         : zoom * PREVIEW_ZOOM_STEP;
-      setZoom(clampZoom(nextZoom));
+      const clampedZoom = clampZoom(nextZoom);
+      const point = previewClientToWorldPoint(svg, event.clientX, event.clientY, previewViewBox, 0, { gridSize: 1, snapToGrid: false });
+      if (point) {
+        const ratio = 1 - zoom / clampedZoom;
+        setPan((current) => ({
+          x: current.x + (point.x - previewViewBox.minX - previewViewBox.width / 2) * ratio,
+          y: current.y + (-point.y - previewViewBox.minY - previewViewBox.height / 2) * ratio
+        }));
+      }
+      setZoom(clampedZoom);
     };
     svg.addEventListener('wheel', handleWheel, { passive: false });
     return () => svg.removeEventListener('wheel', handleWheel);
@@ -610,8 +620,8 @@ export function EditorPreview({
       event.preventDefault();
       const distance = touchDistance(event.touches[0], event.touches[1]);
       touchTapRef.current = {
-        clientX: 0,
-        clientY: 0,
+        clientX: (event.touches[0].clientX + event.touches[1].clientX) / 2,
+        clientY: (event.touches[0].clientY + event.touches[1].clientY) / 2,
         distance,
         mode: 'pan',
         pan,
@@ -650,7 +660,21 @@ export function EditorPreview({
       event.preventDefault();
       const nextDistance = touchDistance(event.touches[0], event.touches[1]);
       if (Number.isFinite(nextDistance) && nextDistance > 0) {
-        setZoom(clampZoom(state.zoom * (nextDistance / state.distance)));
+        const nextZoom = clampZoom(state.zoom * (nextDistance / state.distance));
+        const rect = event.currentTarget.getBoundingClientRect();
+        const scale = Math.min(rect.width / state.viewBox.width, rect.height / state.viewBox.height);
+        if (scale > 0) {
+          const ratio = state.zoom / nextZoom;
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const clientX = (event.touches[0].clientX + event.touches[1].clientX) / 2;
+          const clientY = (event.touches[0].clientY + event.touches[1].clientY) / 2;
+          setPan({
+            x: state.pan.x + ((state.clientX - centerX) - (clientX - centerX) * ratio) / scale,
+            y: state.pan.y + ((state.clientY - centerY) - (clientY - centerY) * ratio) / scale
+          });
+        }
+        setZoom(nextZoom);
       }
       onCursorPointChange?.(null);
       return;
@@ -690,6 +714,16 @@ export function EditorPreview({
     const touch = event.changedTouches[0];
     touchTapRef.current = null;
     onCursorPointChange?.(null);
+
+    if (state?.mode === 'pan' && event.touches.length === 1) {
+      touchTapRef.current = {
+        clientX: event.touches[0].clientX,
+        clientY: event.touches[0].clientY,
+        mode: 'pan',
+        pan,
+        viewBox: activeViewBox
+      };
+    }
 
     if (!state || !touch || state.mode === 'pan') return;
 
