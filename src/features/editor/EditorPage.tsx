@@ -1924,6 +1924,8 @@ export function EditorPage({
     const magnetized = constructionPreview?.candidate as MagnetizedPathPoint | undefined;
     if (!magnetized) {
       setPathClickMode(null);
+      clearActiveWorkflowPending('construction-mode');
+      onStatusMessage?.('No construction point was found. Add a reference point and try again.', 'warning');
       return;
     }
 

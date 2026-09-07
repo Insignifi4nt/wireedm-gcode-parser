@@ -676,6 +676,31 @@ describe('EditorPage UPID draft boundary', () => {
     ).toBe('false');
   });
 
+  it('ends a failed construction pick without leaving an invisible pending mode', async () => {
+    const project = projectWithUpid(pathDocumentFromRectangle());
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />));
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    await clickElement('button[aria-label="Toggle preview grid snap"]');
+    await clickElement('button[aria-label="Magnetize latest point tangent"]');
+    const save = () => container.querySelector<HTMLButtonElement>(
+      '[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Save "]'
+    );
+    expect(save()?.disabled).toBe(true);
+    const preview = container.querySelector<SVGSVGElement>('svg[aria-label="UPID path preview"]');
+    if (!preview) throw new Error('Missing preview');
+    Object.defineProperty(preview, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ left: 0, top: 0, width: 100, height: 100 })
+    });
+    await act(async () => preview.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 50, clientY: 50 })));
+    expect(container.querySelector('button[aria-label="Magnetize latest point tangent"]')?.getAttribute('aria-pressed')).toBe('false');
+    expect(container.querySelectorAll('[data-measurement-point-row]')).toHaveLength(0);
+    expect(save()?.disabled).toBe(false);
+    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Save "]');
+    expect(visibleWorkflowPanelIds()).toEqual([]);
+  });
+
   it('keeps incomplete measurement input blocking Save across unrelated workflow actions', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 
