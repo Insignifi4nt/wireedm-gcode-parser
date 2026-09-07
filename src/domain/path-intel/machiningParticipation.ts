@@ -1,5 +1,5 @@
 import { resolveInitialWirePosition } from './initialWirePosition';
-import { readOperationTransitions } from './operationTransitions';
+import { operationEntryPoint, operationExitPoint, operationTransitionCutLength, readOperationTransitions } from './operationTransitions';
 import {
   createArcSegment,
   createLineSegment,
@@ -298,8 +298,8 @@ export function deriveActiveMachiningOperations(
   let current = initial.status === 'ready' ? initial.point : document.options.startPoint;
   operations.forEach((operation, index) => {
     operation.orderIndex = index;
-    operation.metrics.rapidInLength = distance(current, operation.startPoint);
-    current = operation.endPoint;
+    operation.metrics.rapidInLength = distance(current, operationEntryPoint(operation));
+    current = operationExitPoint(operation);
   });
   return { status: 'ready', operations, segments: allSegments };
 }
@@ -397,7 +397,7 @@ function buildPartialOperation(
     startPoint,
     endPoint,
     metrics: {
-      cutLength: pathCutLength(refs, segmentsById),
+      cutLength: pathCutLength(refs, segmentsById) + operationTransitionCutLength({ ...source, transitions }),
       rapidInLength: 0,
       segmentCount: refs.length
     },

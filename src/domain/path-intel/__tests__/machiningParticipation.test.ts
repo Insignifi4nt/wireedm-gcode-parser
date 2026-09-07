@@ -16,6 +16,29 @@ import {
 } from '../machiningParticipation';
 
 describe('machining participation', () => {
+  it('includes retargeted leads in partial cutting totals and positions between actual transition endpoints', () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 20, y: 0 }, end: { x: 30, y: 0 } }
+    ]);
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: -5, y: 0 }, review: 'reviewed' } };
+    const [first, second] = document.plan.operations;
+    first.transitions = {
+      entry: { strategy: 'manual-straight', move: 'cut', from: { x: -2, y: 0 }, to: first.startPoint, review: 'reviewed' },
+      exit: { strategy: 'manual-straight', move: 'cut', from: first.endPoint, to: { x: 12, y: 0 }, review: 'reviewed' }
+    };
+    second.transitions = {
+      entry: { strategy: 'manual-straight', move: 'cut', from: { x: 18, y: 0 }, to: second.startPoint, review: 'reviewed' }
+    };
+    const partial = setMachiningSpanParticipation(document, {
+      sourceSegmentId: first.segmentRefs[0].segmentId, range: { start: 0.6, end: 1 }, participation: 'inactive-reference'
+    })!;
+    const derived = deriveActiveMachiningOperations(partial);
+    expect(derived.operations[0].metrics).toMatchObject({ cutLength: 14, rapidInLength: 3 });
+    expect(derived.operations[1].metrics.rapidInLength).toBe(6);
+    expect(document.plan.operations[0].endPoint).toEqual({ x: 10, y: 0 });
+  });
+
   it('reviews one partial contour while another has unresolved disconnected cuts', () => {
     let document = createUpidFromDxfEntities([
       { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
