@@ -250,7 +250,6 @@ export function deriveActiveMachiningOperations(
   }
 
   const allSegments = [...document.segments, ...derivedSegments.values()];
-  const allSegmentsById = segmentMap(allSegments);
   const initial = resolveInitialWirePosition(document);
   let current = initial.status === 'ready' ? initial.point : document.options.startPoint;
   operations.forEach((operation, index) => {

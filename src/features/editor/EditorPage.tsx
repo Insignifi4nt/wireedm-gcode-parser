@@ -833,7 +833,7 @@ export function EditorPage({
       ? formatBounds(draftParseResult.bounds)
       : '-';
   const dxfUnitSummary = pathDocumentDraft?.source.appliedUnits
-    ? `${pathDocumentDraft.source.appliedUnits.label} ×${formatUnitScale(
+    ? `${pathDocumentDraft.source.appliedUnits.label} ×${String(
         pathDocumentDraft.source.appliedUnits.scaleToMillimeters
       )}`
     : null;
@@ -4106,8 +4106,4 @@ function nextMeasurementPointId(currentLength: number) {
 
 function formatCoordinateDraft(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(3);
-}
-
-function formatUnitScale(value: number) {
-  return Number.isInteger(value) ? String(value) : String(value);
 }

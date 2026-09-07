@@ -1052,7 +1052,7 @@ export function EditorInspectorPanel({
                 </dd>
                 <dt className="text-muted-foreground">Applied</dt>
                 <dd data-editor-dxf-unit-applied>
-                  {pathDocument.source.appliedUnits.label} ×{formatUnitScale(
+                  {pathDocument.source.appliedUnits.label} ×{String(
                     pathDocument.source.appliedUnits.scaleToMillimeters
                   )}
                 </dd>
@@ -1354,9 +1354,6 @@ function formatAppliedUnitBasis(basis: NonNullable<PathPlanningDocument['source'
   return 'Legacy assumed';
 }
 
-function formatUnitScale(scale: number) {
-  return Number.isInteger(scale) ? String(scale) : String(scale);
-}
 
 function isDeclaredUnitOverride(document: PathPlanningDocument) {
   const declaration = document.source.unitDeclaration;
