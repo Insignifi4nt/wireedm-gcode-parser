@@ -39,6 +39,9 @@ export function EditorMeasurePanel({ measurement, document }: {
       <p className="text-muted-foreground" role="status">
         {!first ? 'Pick the first point on the canvas.' : picks.length < 2 ? 'Pick the second point.' : 'Pick again to continue measuring.'}
       </p>
+      {document.machiningParticipation?.spans.some((span) => span.participation === 'inactive-reference') && (
+        <p className="text-muted-foreground">Geometry dimensions and snap points refer to the complete source geometry, including inactive ranges.</p>
+      )}
       <label className="flex items-center gap-2">
         <input checked={measurement.snapEnabled} onChange={(event) => measurement.setSnapEnabled(event.target.checked)} type="checkbox" />
         Snap to geometry
