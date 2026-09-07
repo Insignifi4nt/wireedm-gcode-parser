@@ -66,9 +66,12 @@ export function EditorEntryExitPanel({
   useEffect(() => {
     setEntryX(entryFrom ? String(entryFrom.x) : '');
     setEntryY(entryFrom ? String(entryFrom.y) : '');
+  }, [selected?.id, entryFrom?.x, entryFrom?.y]);
+
+  useEffect(() => {
     setExitX(exitTo ? String(exitTo.x) : '');
     setExitY(exitTo ? String(exitTo.y) : '');
-  }, [selected?.id, entryFrom?.x, entryFrom?.y, exitTo?.x, exitTo?.y]);
+  }, [selected?.id, exitTo?.x, exitTo?.y]);
 
   const entryPoint = readFinitePoint(entryX, entryY);
   const exitPoint = readFinitePoint(exitX, exitY);
@@ -153,6 +156,8 @@ export function EditorEntryExitPanel({
         <div className="text-foreground" data-entry-strategy>
           {entryStrategyLabel(transitions.entry)}
         </div>
+        {transitions.entry && 'review' in transitions.entry && transitions.entry.review === 'required' &&
+          <p role="status" className="text-amber-300">Geometry changed. Confirm the entry coordinates with Set straight entry, or choose no entry.</p>}
         <CoordinateInputs
           label="Entry"
           onXChange={(value) => { setEntryX(value); onDraftChange?.('entry'); }}
@@ -196,11 +201,13 @@ export function EditorEntryExitPanel({
         <legend className="px-1 uppercase text-muted-foreground">Exit</legend>
         <div className="text-foreground" data-exit-strategy>
           {transitions.exit?.strategy === 'none'
-            ? `Reviewed no exit`
+            ? `${reviewLabel(transitions.exit.review)} no exit`
             : transitions.exit
-            ? `Reviewed straight exit · ${formatPoint(transitions.exit.from)} → ${formatPoint(transitions.exit.to)}`
+            ? `${reviewLabel(transitions.exit.review)} straight exit · ${formatPoint(transitions.exit.from)} → ${formatPoint(transitions.exit.to)}`
             : 'Direct contour exit · no lead geometry'}
         </div>
+        {transitions.exit?.review === 'required' &&
+          <p role="status" className="text-amber-300">Geometry changed. Confirm the exit coordinates with Set straight exit, or choose no exit.</p>}
         <CoordinateInputs
           label="Exit"
           onXChange={(value) => { setExitX(value); onDraftChange?.('exit'); }}
@@ -209,6 +216,7 @@ export function EditorEntryExitPanel({
           y={exitY}
         />
         <button
+          aria-label="Set straight exit"
           className="h-7 border border-border bg-background disabled:opacity-40"
           disabled={!exitPoint}
           onClick={() => exitPoint && onSetManualExit(selected.id, exitPoint)}
@@ -274,9 +282,13 @@ function entryStrategyLabel(
   entry: ReturnType<typeof readOperationTransitions>['entry']
 ) {
   if (!entry) return 'Direct contour entry · no lead geometry';
-  if (entry.strategy === 'none') return 'Reviewed no entry';
-  const strategy = entry.strategy === 'circle-center' ? 'Circle-center entry' : 'Reviewed straight entry';
+  if (entry.strategy === 'none') return `${reviewLabel(entry.review)} no entry`;
+  const strategy = entry.strategy === 'circle-center' ? 'Circle-center entry' : `${reviewLabel(entry.review)} straight entry`;
   return `${strategy} · ${formatPoint(entry.from)} → ${formatPoint(entry.to)}`;
+}
+
+function reviewLabel(review: 'reviewed' | 'required') {
+  return review === 'required' ? 'Review required ·' : 'Reviewed';
 }
 
 function readFinitePoint(x: string, y: string): Point2 | null {

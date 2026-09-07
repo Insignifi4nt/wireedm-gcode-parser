@@ -46,7 +46,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Contour setup | Direction, kept material, compensation and open contour behavior | pending |
 | Contour start | Magnetic picking, exact split, closed/open behavior and review | pending |
 | Initial wire position | New-project applied position updates marker/travel and survives save/reopen. Pending coordinates are explicit; geometry-linked choices still need the full usability pass | in progress |
-| Entry/exit | Geometry options, tangency, zero/invalid leads, clearance and preview | pending |
+| Entry/exit | Fixed one side's applied coordinates erasing the opposite pending draft. Required-review transitions now display their actual state with confirmation guidance. Zero-length leads, changed-start associations, clearance and selected-travel accuracy need follow-up | in progress |
 | Cut sequence | Manual/automatic order, nesting dependencies and travel | pending |
 | Between contours | Thread/separate defaults and overrides, continuous-wire constraints | pending |
 | Machining participation | Excluded spans, partial contour semantics and compensation | pending |
@@ -78,6 +78,8 @@ Screenshots were captured and inspected during this audit. They establish layout
 
 ## Additional findings to verify
 
+- Entry/Exit research follow-up: zero-length leads may be accepted and emitted despite being omitted from preview; start/direction edits may preserve review on geometrically changed approaches. Verify appropriate review invalidation and clearance/intersection diagnostics. Selected lead-out travel may fall through to rapid-in inspection, and rapid-in inspection may ignore the previous exit destination. Confirm and fix with domain regressions before marking the tool audited.
+
 - Raw G-code parsing currently has no unit field. Do not label its raw coordinate preview as millimeters until modal units and conversions are handled correctly.
 - Removed the legacy path-preview count helper and the ambiguous canvas "path items" counter. It mixed geometric segments with inferred controller moves, omitted exit moves and split circles into two counts. Explicit operation/contour/segment counts remain in Statistics; any future execution-motion statistics must come from the execution trace.
 - Magnetic construction inference and measurement snapping have different selection rules. Measurement should prefer nearby semantic points and must not snap to distant geometry merely because it is the nearest available candidate.
@@ -101,6 +103,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 - Stop markers: three domain checks match preview and execution coordinates, omit disabled/invalid distance markers, and avoid inventing an unresolved initial-wire location. Browser coverage checks marker movement after applying a distance edit, constant size under zoom and removal on workflow undo.
 - Stop interaction follow-up: seven panel tests, four browser scenarios and production build passed. Successful addition is acknowledged instead of immediately displaying a duplicate error. Markers render beneath hover/measurement overlays; endpoint emphasis has a minimum screen-space radius surrounding a stop marker.
 - Diagnostic keyboard correction: 82 editor integration tests and production build passed. A snapped-endpoint regression verifies that nested Enter retains the selected 10.004 mm endpoint and Space on the row selects its primary segment.
+- Entry/Exit form corrections: 86 focused panel/editor tests and production build passed. Both entry and exit drafts survive application of the opposite transition, and required-review coordinates remain available for explicit confirmation.
 
 ## Next audit work
 
