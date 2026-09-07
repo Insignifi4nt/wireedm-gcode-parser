@@ -1791,7 +1791,7 @@ export function EditorPage({
     const result = setStartAtLine(draftText, selectedLines[0]);
     if (!result) {
       onStatusMessage?.(
-        'Invalid selection: choose a motion line (G0/G1/G2/G3) within the body.',
+        'Choose a body motion line. Set start requires absolute XY, incremental arc centres and one coordinate unit system.',
         'warning'
       );
       return;
@@ -4007,7 +4007,7 @@ export function EditorPage({
         )}
       </section>
       <EditorStatusBar
-        coordinateUnits={pathDocumentDraft ? 'mm' : null}
+        coordinateUnits={pathDocumentDraft ? 'mm' : draftParseResult?.coordinateUnits ?? null}
         diagnosticCount={diagnosticCount}
         hasUnsavedChanges={hasUnsavedChanges}
         isSaving={isSaving}

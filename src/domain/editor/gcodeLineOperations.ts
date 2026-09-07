@@ -1,5 +1,6 @@
 import { isMotionCommand, organizeGCodeStructure, type GCodeContourGroup, type GCodeStructure } from './gcodeStructure';
 import { canonicalizeMotionCodes } from './isoNormalizer';
+import { createGCodeInterpreterState, interpretGCodeBlock } from './gcodeBlockInterpreter';
 
 export interface MoveBodyGroupResult {
   text: string;
@@ -116,7 +117,24 @@ export function setStartAtLine(
 ): SetStartAtLineResult | null {
   const ensureClosure = options.ensureClosure ?? true;
   const lines = splitProgramLines(text);
+  const interpreter = createGCodeInterpreterState();
+  const motionUnits = new Set<typeof interpreter.units>();
+  for (const [index, line] of lines.entries()) {
+    const block = interpretGCodeBlock(interpreter, line, index + 1);
+    if (!block.motion) continue;
+    // Rotation rewrites absolute XY and incremental IJ in a single source unit system.
+    if (interpreter.xyMode !== 'absolute' ||
+      (block.motion.center && interpreter.ijMode !== 'incremental')) return null;
+    motionUnits.add(interpreter.units);
+  }
+  if (motionUnits.size > 1) return null;
   const structure = organizeGCodeStructure(lines);
+  if (motionUnits.has('in')) {
+    for (const group of structure.body.contours ?? []) {
+      if (group.startCoord) group.startCoord = { x: group.startCoord.x / 25.4, y: group.startCoord.y / 25.4 };
+      if (group.endCoord) group.endCoord = { x: group.endCoord.x / 25.4, y: group.endCoord.y / 25.4 };
+    }
+  }
   const selectedLine = lines[selectedLineNumber - 1];
 
   if (!selectedLine || !isMotionCommand(selectedLine)) return null;

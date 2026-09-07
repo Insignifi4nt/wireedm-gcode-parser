@@ -1,4 +1,5 @@
 import type { MagnetizedPathPoint } from '@/domain/path-editor/pathPointInference';
+import { createGCodeInterpreterState, interpretGCodeBlock } from './gcodeBlockInterpreter';
 
 export interface MeasurementPoint {
   id: string;
@@ -70,10 +71,16 @@ export function insertMeasurementPointsIntoText(
   const lines = text.split(/\r?\n/);
   const insertAfterLine = clampLine(options.insertAfterLine ?? 1, lines.length);
   const insertIndex = insertAfterLine;
-  const insertedLines = points.flatMap((point, index) => [
-    `; inserted G0 P${index + 1}`,
-    `G0 X${formatCoordinate(point.x)} Y${formatCoordinate(point.y)}`
-  ]);
+  const state = createGCodeInterpreterState();
+  lines.slice(0, insertIndex).forEach((line, index) => interpretGCodeBlock(state, line, index + 1));
+  const scale = state.units === 'in' ? 25.4 : 1;
+  const precision = state.units === 'in' ? 5 : 3;
+  const insertedLines = points.flatMap((point, index) => {
+    const x = (point.x - (state.xyMode === 'incremental' ? state.position.x : 0)) / scale;
+    const y = (point.y - (state.xyMode === 'incremental' ? state.position.y : 0)) / scale;
+    state.position = { x: point.x, y: point.y };
+    return [`; inserted G0 P${index + 1}`, `G0 X${formatCoordinate(x, precision)} Y${formatCoordinate(y, precision)}`];
+  });
 
   lines.splice(insertIndex, 0, ...insertedLines);
 
@@ -92,8 +99,8 @@ export function exportMeasurementPointsAsCsv(points: MeasurementPoint[]) {
   ].join('\n');
 }
 
-function formatCoordinate(value: number) {
-  return value.toFixed(3);
+function formatCoordinate(value: number, precision = 3) {
+  return value.toFixed(precision);
 }
 
 function clampLine(line: number, totalLines: number) {

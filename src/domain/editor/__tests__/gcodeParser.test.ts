@@ -3,6 +3,43 @@ import { describe, expect, it } from 'vitest';
 import { parseGCodeProgram } from '../gcodeParser';
 
 describe('parseGCodeProgram', () => {
+  it('normalizes inch coordinates, G92, incremental moves and a later metric block', () => {
+    const result = parseGCodeProgram('G20 G92 X1 Y2\nG91 G1 X1 Y-1\nG21 G1 X10 Y5\nG90 G1 X0');
+    expect(result.coordinateUnits).toBe('mm');
+    expect(result.path).toMatchObject([
+      { x: 25.4, y: 50.8 }, { x: 50.8, y: 25.4 }, { x: 60.8, y: 30.4 }, { x: 0, y: 30.4 }
+    ]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it.each(['G3 X0 Y1 I-1 J0', 'G3 X0 Y1 R1', 'G90.1 G3 X0 Y1 I0 J0'])(
+    'normalizes inch arc geometry for %s', (arc) => {
+      const result = parseGCodeProgram(`G20 G0 X1 Y0\n${arc}`);
+      expect(result.errors).toEqual([]);
+      expect(result.path.at(-1)).toMatchObject({ startX: 25.4, startY: 0, endX: 0, endY: 25.4 });
+      const point = result.path.at(-1)!;
+      if (point.type !== 'arc') throw new Error('Expected arc');
+      expect(point.centerX).toBeCloseTo(0, 9);
+      expect(point.centerY).toBeCloseTo(0, 9);
+      expect(result.bounds.maxX).toBeCloseTo(25.4);
+      expect(result.bounds.maxY).toBeCloseTo(25.4);
+    }
+  );
+
+  it('does not label undeclared coordinates as millimetres or parse commented unit commands', () => {
+    const lateDeclaration = parseGCodeProgram('G0 X1 (G20)\nG21\nG1 X2');
+    expect(lateDeclaration.coordinateUnits).toBeNull();
+    expect(lateDeclaration.warnings).toEqual([expect.objectContaining({ line: 2, message: expect.stringContaining('unknown units') })]);
+    expect(parseGCodeProgram('(G20)\nG0 X1').path.at(-1)).toMatchObject({ x: 1 });
+    expect(parseGCodeProgram('G0 X1').coordinateUnits).toBeNull();
+  });
+
+  it('rejects a unit conversion overflow without corrupting the next position', () => {
+    const result = parseGCodeProgram('G20 G92 X1 Y1\nG92 X1e308\nG91 G1 X1');
+    expect(result.errors).toHaveLength(1);
+    expect(result.path.at(-1)).toMatchObject({ x: 50.8, y: 25.4 });
+  });
+
   it('preserves words after parenthesized inline comments', () => {
     expect(parseGCodeProgram('G1 X1 (note) Y2').path.at(-1)).toMatchObject({ x: 1, y: 2 });
   });

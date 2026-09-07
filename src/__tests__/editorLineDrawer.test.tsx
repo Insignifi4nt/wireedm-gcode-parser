@@ -771,7 +771,7 @@ describe('Editor line drawer operations', () => {
     );
   });
 
-  it('shows the old Start Here warning when the selected line is not a body motion line', async () => {
+  it('preserves the program and explains why a header cannot become its contour start', async () => {
     window.showDirectoryPicker = undefined;
     const programText = ['G90 G21', 'G0 X0 Y0', 'G1 X10 Y0', 'M30'].join('\n');
 
@@ -814,8 +814,10 @@ describe('Editor line drawer operations', () => {
     });
 
     expect(container.textContent).toContain(
-      'Invalid selection: choose a motion line (G0/G1/G2/G3) within the body.'
+      'Choose a body motion line.'
     );
+    expect(container.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe(programText);
+    expect(container.querySelector('[data-editor-document-state]')?.textContent).toBe('Saved');
   });
 
   it('clears temporary drawer line selection from the selected counter', async () => {

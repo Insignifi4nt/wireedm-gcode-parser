@@ -1,7 +1,9 @@
 export type GCodeMotionCommand = 'G0' | 'G1' | 'G2' | 'G3';
 
 export interface GCodeInterpreterState {
+  /** Coordinates are millimetres once units are declared; undeclared values retain their legacy scale. */
   position: { x: number; y: number };
+  units: 'mm' | 'in' | null;
   xyMode: 'absolute' | 'incremental';
   ijMode: 'absolute' | 'incremental';
   motion: GCodeMotionCommand | null;
@@ -45,6 +47,7 @@ const SWEEP_RESOLUTION = Number.EPSILON * Math.PI * 4;
 export function createGCodeInterpreterState(): GCodeInterpreterState {
   return {
     position: { x: 0, y: 0 },
+    units: null,
     xyMode: 'absolute',
     ijMode: 'incremental',
     motion: null
@@ -64,6 +67,8 @@ export function interpretGCodeBlock(
   const gWords = words.filter((word) => word.letter === 'G');
 
   for (const word of gWords) {
+    if (word.value === 20) state.units = 'in';
+    if (word.value === 21) state.units = 'mm';
     if (word.value === 90) state.xyMode = 'absolute';
     if (word.value === 91) state.xyMode = 'incremental';
     if (word.value === 60 || word.value === 90.1) state.ijMode = 'absolute';
@@ -72,6 +77,19 @@ export function interpretGCodeBlock(
 
   const explicitMotion = findExplicitMotion(gWords);
   const values = collectLastWordValues(words);
+  if (state.units === 'in') {
+    for (const letter of ['X', 'Y', 'I', 'J', 'R']) {
+      const value = values.get(letter);
+      if (value === undefined) continue;
+      const scaled = value * 25.4;
+      values.set(letter, scaled);
+      if (!Number.isFinite(scaled)) {
+        issues.push(errorIssue(lineNumber, `Word ${letter} overflows after inch-to-millimetre conversion.`));
+        wordScan.hasInvalidMotionWord = true;
+        if (letter === 'X' || letter === 'Y') wordScan.hasInvalidPositionWord = true;
+      }
+    }
+  }
   const hasG92 = gWords.some((word) => word.value === 92);
   let positionSet: { x: number; y: number } | null = null;
 

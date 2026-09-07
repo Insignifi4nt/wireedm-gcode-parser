@@ -29,7 +29,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Project rename/delete/export | Validation, selection, persistence and recovery | pending |
 | DXF import and confirmation | Units, layers, unsupported entities, reimport consequences | pending |
 | UPID import/export | Validate complete document and preserve intent | pending |
-| External machine-program import | Cleanup, comments/commands, units and display fidelity | pending |
+| External machine-program import | G20/G21 now normalize preview geometry and contour metrics to mm; XY/IJ/R/G92 and mixed modes covered. Normal import/reopen browser test verifies physical scale. Unknown initial units remain unlabelled with a warning for late declarations. Cleanup and remaining display fidelity still need review | in progress |
 | Browser-cache storage | Startup, failures, persistence and data isolation | pending |
 | Optional folder storage | Explicit selection, reconnect, cancellation and switch behavior | pending |
 | Machine package installation | Validation, activation, removal and useful summaries | pending |
@@ -82,11 +82,12 @@ The checks below cover specific behavior, not completion of entire inventory row
 | Floating panels | Desktop panels now use the same viewport bounds clamp as smaller layouts. The partial-exit browser test reproduced an unreachable Save button before the fix; it and all 23 layout scenarios pass afterward. |
 | Between contours | Missing project threading intent displays an unset choice rather than Manual. Project manual separation can be edited without changing operation overrides; continuous defaults have a matching option. Routes skip excluded contours and use partial-cut endpoints; the first active contour uses Initial wire position. Unresolved routes leave destination selection available. 157 focused operation/panel/editor tests and build passed after routing changes. |
 | Between Contours browser workflow | `e2e/editor-between-contours.spec.ts` verifies choosing an unset default, changing separation, retaining an automatic operation override while changing defaults, save/reopen, reverting to inheritance and undo. Plain-language sequence summaries replace raw mode codes. Rendered panel inspected in `tmp/cam-audit/10-between-contours.png`; panel tests and build passed. |
+| External program units | Interpreter normalizes declared XY/IJ/R/G92 to mm and guards conversion overflow. Insertion converts back to active inches/metric and absolute/incremental coordinates, with 5 decimal places for inch output. Start rotation preserves uniform inch coordinates and declines mixed-unit, incremental-XY or absolute-IJ programs it cannot rewrite faithfully. 64 focused domain tests, 13 line-drawer tests, import/reopen browser test and build passed. |
 | Threading execution | Strengthened execution tests from unordered event-presence checks to exact separation → positioning → rethreading order and endpoints. Automatic operation overrides supersede manual defaults and produce matching requirements. Continuous transitions emit continue/position without separation or rethreading. All 10 execution tests and build passed. Physical clearance and machine-specific lifecycle behavior remain separate review requirements. |
 
 ### Verification checkpoints
 
-- Latest complete unit run: **1,021 tests in 105 files passed**, at partial-exit implementation. Later changes received focused checks; this is not a full-suite result for every subsequent commit.
+- Latest broad unit run during unit normalization: **1,037 passed, one stale Start Here guidance assertion failed**, across 105 files. Updating that case to check unchanged program/state and the current guidance made all 13 line-drawer tests pass. Later overflow/precision checks passed in the 64-test domain set.
 - Latest broad browser run: 57 passed, one optional external-workbench fixture skipped, one stale Statistics-summary click failed. Removing that obsolete setup step made both diagnostic scenarios pass. Later partial-exit and all 23 layout scenarios passed.
 - Latest change (`a74b825`): 59 participation, execution, preview, inspection and stop tests passed. Production build passed with the existing bundle-size warning.
 - Removed obsolete footer/Statistics DOM assertions while retaining catalog data, parsed statistics, import/edit/save/export, focus and geometry checks. No branch merge has occurred.
@@ -111,7 +112,7 @@ Local screenshots in `tmp/cam-audit/` were inspected during the audit; they supp
 - Assess lead clearance/intersection diagnostics and source-contour review invalidation when local geometry changes without moving its endpoints; partial-contour fingerprints now cover this case.
 - Resolve derived contour-segment selection/editing semantics, range-input units and remaining partial-compensation usability gaps.
 - Finish multi-entity measurement, overlap selection and selection filters; retain screen-space snapping thresholds.
-- Audit raw G-code modal units before labeling coordinates as millimeters.
+- Review remaining raw G-code coordinate-system and modal editing constraints; unit-aware preview and insertion are implemented.
 - Simplify remaining duplicate inspection panels and tool headings.
 - Broaden save/cancel/undo, keyboard/touch and rendered-layout verification as each tool is audited; then run final integration checks.
 

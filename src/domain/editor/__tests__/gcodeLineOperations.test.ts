@@ -9,6 +9,23 @@ import {
 } from '../gcodeLineOperations';
 
 describe('gcodeLineOperations', () => {
+  it('keeps generated positioning coordinates in inches when rotating an inch program', () => {
+    const body = ['G90', 'G0 X1 Y1', 'G1 X2 Y1', 'G1 X1 Y1',
+      'G0 X3 Y1', 'G1 X4 Y1', 'G1 X3 Y1', 'M30'].join('\n');
+    const native = setStartAtLine(body, 6);
+    const inches = setStartAtLine(`G20\n${body}`, 7);
+    expect(native).not.toBeNull();
+    expect(inches?.text).toBe(`G20\n${native!.text}`);
+  });
+
+  it.each([
+    'G20\nG0 X0\nG1 X1\nG21\nG1 X0',
+    'G91\nG0 X0\nG1 X1\nG1 X-1',
+    'G90.1\nG0 X0\nG2 X2 Y0 I1 J0\nG2 X0 Y0 I1 J0'
+  ])('declines contour rotation when modal coordinates cannot be rewritten faithfully', (text) => {
+    expect(setStartAtLine(text, 3)).toBeNull();
+  });
+
   it('moves a body group down by swapping it with the next body group', () => {
     const source = sampleGroupedProgram();
     const structure = organizeGCodeStructure(source.split('\n'));

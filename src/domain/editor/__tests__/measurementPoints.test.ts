@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseGCodeProgram } from '../gcodeParser';
 
 import {
   createMeasurementPointPathSnapFromMagnetized,
@@ -7,6 +8,25 @@ import {
 } from '../measurementPoints';
 
 describe('measurementPoints', () => {
+  it('retains sub-micron rounding precision when writing millimetre points as inches', () => {
+    const result = insertMeasurementPointsIntoText('G20\nM30', [{ id: 'a', x: 1.234, y: -5.678 }], { insertAfterLine: 1 });
+    const end = parseGCodeProgram(result.text).path.at(-1)!;
+    if (end.type === 'arc') throw new Error('Expected linear point');
+    expect(Math.abs(end.x - 1.234)).toBeLessThan(0.0005);
+    expect(Math.abs(end.y + 5.678)).toBeLessThan(0.0005);
+  });
+  it.each(['G90', 'G91'])('inserts millimetre preview points using active inch mode and %s', (mode) => {
+    const result = insertMeasurementPointsIntoText(`G20\nG0 X1 Y1\n${mode}\nM30`, [
+      { id: 'a', x: 50.8, y: 25.4 }, { id: 'b', x: 76.2, y: 50.8 }
+    ], { insertAfterLine: 3 });
+    const path = parseGCodeProgram(result.text).path;
+    expect(path.at(-2)).toMatchObject({ x: 50.8, y: 25.4 });
+    const end = path.at(-1)!;
+    if (end.type === 'arc') throw new Error('Expected linear point');
+    expect(end.x).toBeCloseTo(76.2);
+    expect(end.y).toBeCloseTo(50.8);
+  });
+
   const points = [
     { id: 'a', x: 1, y: 2 },
     { id: 'b', x: -3.4567, y: 4.2 }

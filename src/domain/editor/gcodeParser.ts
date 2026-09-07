@@ -16,6 +16,7 @@ import type {
 const POSITION_EPSILON = 1e-9;
 
 interface ParserState {
+  hasUndeclaredCoordinates: boolean;
   interpreter: GCodeInterpreterState;
   path: GCodePathPoint[];
   bounds: GCodeBounds;
@@ -59,6 +60,7 @@ export function parseGCodeProgram(gcodeText: string): GCodeParseResult {
   }
 
   return {
+    coordinateUnits: state.interpreter.units && !state.hasUndeclaredCoordinates ? 'mm' : null,
     path: state.path,
     bounds: state.bounds,
     stats: state.stats,
@@ -69,6 +71,7 @@ export function parseGCodeProgram(gcodeText: string): GCodeParseResult {
 
 function createParserState(): ParserState {
   return {
+    hasUndeclaredCoordinates: false,
     interpreter: createGCodeInterpreterState(),
     path: [],
     bounds: createEmptyBounds(),
@@ -86,7 +89,15 @@ function createParserState(): ParserState {
 }
 
 function parseLine(state: ParserState, rawLine: string, lineNumber: number) {
+  const previousUnits = state.interpreter.units;
   const block = interpretGCodeBlock(state.interpreter, rawLine, lineNumber);
+  if (previousUnits === null && state.interpreter.units !== null && state.hasUndeclaredCoordinates) {
+    state.warnings.push({ line: lineNumber, type: 'warning',
+      message: 'Coordinates before the first G20/G21 declaration have unknown units; their preview scale cannot be verified.' });
+  }
+  if ((block.motion || block.positionSet) && state.interpreter.units === null) {
+    state.hasUndeclaredCoordinates = true;
+  }
   recordIssues(state, block);
 
   if (block.commentOnly) {

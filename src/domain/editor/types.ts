@@ -43,6 +43,8 @@ export interface GCodeParseStats {
 }
 
 export interface GCodeParseResult {
+  /** Null when motion occurred without a unit declaration. */
+  coordinateUnits?: 'mm' | null;
   path: GCodePathPoint[];
   bounds: GCodeBounds;
   stats: GCodeParseStats;

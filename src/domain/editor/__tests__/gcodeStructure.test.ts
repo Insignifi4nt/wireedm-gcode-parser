@@ -8,6 +8,13 @@ import {
 } from '../gcodeStructure';
 
 describe('gcodeStructure', () => {
+  it('measures mixed-unit contour geometry in millimetres', () => {
+    const structure = organizeGCodeStructure(['G20 G0 X0 Y0', 'G1 X1 Y0', 'G21 G1 X0 Y0']);
+    const contour = structure.body.contours?.find((group) => group.type === 'toolpath-closed');
+    expect(contour?.length).toBeCloseTo(50.8);
+    expect(contour?.endCoord).toEqual({ x: 0, y: 0 });
+  });
+
   describe('command classification', () => {
     it('identifies header commands', () => {
       expect(isHeaderCommand('%')).toBe(true);
