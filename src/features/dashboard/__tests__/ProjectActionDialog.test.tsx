@@ -60,3 +60,25 @@ it('focuses the rename field, traps focus, and restores the opener and backgroun
   expect(opener.hasAttribute('inert')).toBe(false);
   expect(opener.hasAttribute('aria-hidden')).toBe(false);
 });
+
+it('validates rename drafts before calling storage and recovers after correction', async () => {
+  const mutate = vi.fn().mockResolvedValue(undefined);
+  await act(async () => root.render(<ProjectActionDialog action={{ kind: 'rename', project }} interactionLocked={false}
+    onClose={vi.fn()} onDeleteProject={vi.fn()} onRenameProject={mutate} />));
+  const input = container.querySelector('input')!;
+  const form = container.querySelector('form')!;
+  const setName = (value: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  for (const invalid of ['   ', 'x'.repeat(161), 'Part\u00002']) {
+    await act(async () => setName(invalid));
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  }
+  expect(mutate).not.toHaveBeenCalled();
+  await act(async () => setName('  Placă Ø20  '));
+  expect(input.getAttribute('aria-invalid')).toBe('false');
+  await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(mutate).toHaveBeenCalledWith(project.id, 'Placă Ø20');
+});

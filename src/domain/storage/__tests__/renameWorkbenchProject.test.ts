@@ -20,7 +20,7 @@ describe('renameWorkbenchProject', () => {
 
     const renamed = await renameWorkbenchProject(imported.workbench, {
       projectId: imported.project.id,
-      name: 'Production fixture',
+      name: '  Production fixture  ',
       now: new Date('2026-08-28T10:00:00.000Z')
     });
     expect(renamed).toMatchObject({
@@ -37,18 +37,21 @@ describe('renameWorkbenchProject', () => {
     });
   });
 
-  it('returns typed input errors without a compatibility fallback', async () => {
+  it.each(['  ', 'x'.repeat(161), 'Part\n2', 'Part\t2', 'Part\u00002', 'Part\u20282'])(
+    'rejects invalid name %j without writing storage', async (name) => {
     const adapter = new MemoryAdapter();
     const initialized = await initializeWorkbenchCatalog(adapter);
     if (!initialized.ok) throw new Error(initialized.error.message);
 
+    const before = [...adapter.files];
     expect(await renameWorkbenchProject(initialized.workbench, {
       projectId: 'missing',
-      name: '  '
+      name
     })).toMatchObject({
       ok: false,
       error: { code: 'WORKBENCH_PROJECT_NAME_INVALID' }
     });
+    expect([...adapter.files]).toEqual(before);
   });
 });
 

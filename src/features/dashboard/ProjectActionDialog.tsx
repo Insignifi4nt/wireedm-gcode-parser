@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useModalFocus } from '@/components/ui/useModalFocus';
+import { MAX_PROJECT_NAME_LENGTH, projectNameError } from '@/domain/workbench-catalog/projectName';
 import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
 
 type WorkbenchProjectIndexEntry = WorkbenchCatalogManifest['projects'][number];
@@ -53,6 +54,7 @@ export function ProjectActionDialog({
 
   const { kind, project } = action;
   const isRename = kind === 'rename';
+  const nameError = isRename ? projectNameError(name) : null;
   const projectTypeLabel = isPathProjectSourceKind(project.sourceKind)
     ? 'Path Project'
     : 'Machine Program';
@@ -68,7 +70,7 @@ export function ProjectActionDialog({
     if (savingRef.current || interactionLocked) return;
 
     const nextName = name.trim();
-    if (isRename && !nextName) return;
+    if (nameError) return;
 
     savingRef.current = true;
     setIsSaving(true);
@@ -113,7 +115,7 @@ export function ProjectActionDialog({
             <h2 className="font-mono text-base font-semibold">{title}</h2>
             <p className="mt-1 font-mono text-[11px] text-muted-foreground">
               {isRename
-                ? 'Update the display name only. IDs, file paths, and provenance stay the same.'
+                ? `Choose a clear project name, up to ${MAX_PROJECT_NAME_LENGTH} characters.`
                 : 'This permanently removes the manifest entry and owned project files.'}
             </p>
           </div>
@@ -135,11 +137,14 @@ export function ProjectActionDialog({
               <input
                 ref={nameRef}
                 aria-label="Project name"
+                aria-invalid={Boolean(nameError)}
+                aria-describedby={nameError ? 'project-name-error' : undefined}
                 className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
                 disabled={isSaving || interactionLocked}
                 onChange={(event) => setName(event.currentTarget.value)}
                 value={name}
               />
+              {nameError && <span id="project-name-error" role="alert" className="text-destructive">{nameError}</span>}
             </label>
           ) : (
             <p className="font-mono text-[11px] text-foreground">{project.name}</p>
@@ -162,7 +167,7 @@ export function ProjectActionDialog({
             Cancel
           </Button>
           <Button
-            disabled={interactionLocked || isSaving || (isRename && name.trim() === '')}
+            disabled={interactionLocked || isSaving || Boolean(nameError)}
             type="submit"
             variant={isRename ? 'default' : 'danger'}
           >

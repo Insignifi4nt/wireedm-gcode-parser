@@ -1,4 +1,5 @@
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
+import { projectNameError } from '@/domain/workbench-catalog/projectName';
 import {
   readStoredWorkbenchProject,
   replaceStoredWorkbenchProject,
@@ -37,12 +38,13 @@ export async function renameWorkbenchProject(
   input: RenameWorkbenchProjectInput
 ): Promise<RenameWorkbenchProjectResult> {
   const name = input.name.trim();
-  if (name.length === 0 || name.length > 160) {
+  const nameError = projectNameError(input.name);
+  if (nameError) {
     return {
       ok: false,
       error: {
         code: 'WORKBENCH_PROJECT_NAME_INVALID',
-        message: 'Project name must contain 1 to 160 characters after trimming.'
+        message: nameError
       }
     };
   }
