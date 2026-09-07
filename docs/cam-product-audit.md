@@ -50,7 +50,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Cut sequence | Manual/automatic order, nesting dependencies and travel | pending |
 | Between contours | Thread/separate defaults and overrides, continuous-wire constraints | pending |
 | Machining participation | Excluded spans, partial contour semantics and compensation | pending |
-| Program stops | Added direct Edit actions to stop rows; previously editing required program-tree navigation. Pending fields block target switching. Browser test covers two stops, editing, applying, workflow save and undo. Execution-event/preview coverage and form consolidation remain | in progress |
+| Program stops | Added direct Edit actions with pending-field protection and save/undo coverage. Execution tests verify linear and circular stop positions, both traversal directions, multiple/disabled stops, source ranges, and exclusion-aware remaining length. Rendered marker checks and form consolidation remain | in progress |
 | Endpoint topology | Expose repair-relevant facts; move raw topology detail behind disclosure | pending |
 | Diagnostics | Deduplicate, prioritize and navigate to exact repair context | pending |
 | Measurement | Added read-only Measure with magnetic points, segment and contour dimensions, precision, pair/chain/fixed-reference modes, mouse/touch and zoom checks. Multi-entity inspection remains | in progress |
@@ -96,6 +96,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 - Summary consolidation: 95 focused tests, three browser scenarios and production build passed. Browser assertions verify the imported filename, 10 × 10 mm geometry bounds, 40 mm cutting travel, topology disclosure and the actual DXF layer. Selection cross-highlighting and source-placement inspection remain covered.
 - Removed partial preview counting: 39 focused project-rail/preview-control tests and production build passed. Deleted the unused counter, bounds reconstruction and its obsolete count assertions; retained selected-travel and geometry behavior tests.
 - Program-stop editing: nine focused tests, one browser workflow scenario and production build passed. Existing checks reject invalid remaining distances and duplicate enabled placements, permit disabling duplicates, and resolve exact oriented stop points. The new browser scenario covers direct editing, pending-field protection and transaction undo.
+- Stop execution audit: eight execution-plan tests and production build passed. Added circular multi-stop tests in both directions with exact quarter/half-turn positions, ordered events, contiguous source ranges and unchanged arc direction. Partial-cut validation and compilation agree on 6 mm of active travel within a 10 mm source line; a 2 mm remaining stop lands at X=4 and a 7 mm remaining stop is rejected.
 
 ## Next audit work
 
