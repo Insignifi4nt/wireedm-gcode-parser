@@ -171,18 +171,8 @@ export function createWorkbenchProjectDocument(
 }
 
 export function parseWorkbenchProjectDocument(rawText: string): WorkbenchProjectResult {
-  const actualBytes = new TextEncoder().encode(rawText).byteLength;
-  if (actualBytes > MAX_PROJECT_BYTES) {
-    return {
-      ok: false,
-      error: {
-        code: 'WORKBENCH_PROJECT_FILE_TOO_LARGE',
-        message: `Workbench project is ${actualBytes} UTF-8 bytes; the maximum is ${MAX_PROJECT_BYTES}.`,
-        actualBytes,
-        maximumBytes: MAX_PROJECT_BYTES
-      }
-    };
-  }
+  const sizeError = projectSizeError(rawText);
+  if (sizeError) return { ok: false, error: sizeError };
   let value: unknown;
   try {
     value = JSON.parse(rawText);
@@ -215,6 +205,24 @@ export function parseWorkbenchProjectDocument(rawText: string): WorkbenchProject
     };
   }
   return validateWorkbenchProjectValue(migrateLegacyWorkbenchProjectValue(value));
+}
+
+/** Check the exact persisted encoding, including indentation, before changing owned files. */
+export function serializeWorkbenchProjectDocument(project: WorkbenchProjectDocument):
+  | { readonly ok: true; readonly text: string }
+  | { readonly ok: false; readonly error: Extract<WorkbenchProjectError, { code: 'WORKBENCH_PROJECT_FILE_TOO_LARGE' }> } {
+  const text = `${JSON.stringify(project, null, 2)}\n`;
+  const sizeError = projectSizeError(text);
+  return sizeError ? { ok: false, error: sizeError } : { ok: true, text };
+}
+
+function projectSizeError(text: string): Extract<WorkbenchProjectError, { code: 'WORKBENCH_PROJECT_FILE_TOO_LARGE' }> | null {
+  const actualBytes = new TextEncoder().encode(text).byteLength;
+  return actualBytes > MAX_PROJECT_BYTES ? {
+    code: 'WORKBENCH_PROJECT_FILE_TOO_LARGE',
+    message: `Workbench project is ${actualBytes} UTF-8 bytes; the maximum is ${MAX_PROJECT_BYTES}.`,
+    actualBytes, maximumBytes: MAX_PROJECT_BYTES
+  } : null;
 }
 
 function migrateLegacyWorkbenchProjectValue(value: unknown): unknown {

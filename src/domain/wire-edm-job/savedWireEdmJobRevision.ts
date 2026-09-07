@@ -43,6 +43,7 @@ import {
 } from '@/domain/storage/savedRevisionTransaction';
 import {
   parseWorkbenchProjectDocument,
+  serializeWorkbenchProjectDocument,
   WorkbenchProjectDocumentSchema,
   type WorkbenchProjectDocument,
   type WorkbenchProjectError
@@ -702,13 +703,15 @@ export function saveStoredWireEdmJobRevision(
       return catalogMutationFailure(revisionCatalogConflict(project.id, candidate.revisionId, path));
     }
 
+    const serializedProjectResult = serializeWorkbenchProjectDocument(nextProject.project);
+    if (!serializedProjectResult.ok) return serializedProjectResult;
     try {
       await workbench.adapter.ensureDirectory(`projects/${project.id}/revisions`);
     } catch (error) {
       return catalogMutationFailure(catalogStorageAccessFailure('write', path, error));
     }
     const serializedRevision = serializeSavedWireEdmJobRevision(candidate);
-    const serializedProject = `${JSON.stringify(nextProject.project, null, 2)}\n`;
+    const serializedProject = serializedProjectResult.text;
     const serializedManifest = `${JSON.stringify(nextManifest, null, 2)}\n`;
     const previousProject = snapshots.snapshots.find((snapshot) => snapshot.path === documentPath)?.contents;
     const previousManifest = snapshots.snapshots.find((snapshot) => snapshot.path === WORKBENCH_CATALOG_PATH)?.contents;

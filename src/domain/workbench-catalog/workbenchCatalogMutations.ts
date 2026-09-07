@@ -10,7 +10,7 @@ import {
   type ConnectedWorkbenchCatalog,
   type WorkbenchCatalogManifest
 } from './workbenchCatalog';
-import type { WorkbenchProjectDocument } from './workbenchProject';
+import { serializeWorkbenchProjectDocument, type WorkbenchProjectDocument } from './workbenchProject';
 import {
   readIndexedWorkbenchProjectStorage,
   validateWorkbenchProjectPathOwnership,
@@ -201,6 +201,8 @@ export async function addStoredWorkbenchProject(
       (entry) => entry.id === input.project.id || entry.path === path
     );
     if (conflict) return projectConflict(input.project.id, path, `indexed project ${conflict.id}`);
+    const serialized = serializeWorkbenchProjectDocument(input.project);
+    if (!serialized.ok) return serialized;
 
     const paths = [...input.ownedFiles.map(({ path: ownedPath }) => ownedPath), path, WORKBENCH_CATALOG_PATH];
     const snapshots = await captureSnapshots(workbench, paths);
@@ -217,7 +219,7 @@ export async function addStoredWorkbenchProject(
       if (!written.ok) return rollbackOrError(workbench, applied, written.error);
     }
     journalAppliedSnapshot(applied, snapshots.snapshots, path);
-    const documentWrite = await writeProjectDocument(workbench, path, input.project);
+    const documentWrite = await writeStorageText(workbench, path, serialized.text);
     if (!documentWrite.ok) return rollbackOrError(workbench, applied, documentWrite.error);
     const nextManifest = withProjectEntry(workbench.manifest, input.project, path);
     journalAppliedSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
@@ -265,6 +267,8 @@ export async function replaceStoredWorkbenchProject(
     if (collision) return { ok: false, error: collision };
     const planError = validateReplaceOwnedFilePlan(previous.project, input.project, input.ownedFileChanges, entry.path);
     if (planError) return { ok: false, error: planError };
+    const serialized = serializeWorkbenchProjectDocument(input.project);
+    if (!serialized.ok) return serialized;
 
     const paths = [...input.ownedFileChanges.map(({ path }) => path), entry.path, WORKBENCH_CATALOG_PATH];
     const snapshots = await captureSnapshots(workbench, paths);
@@ -294,7 +298,7 @@ export async function replaceStoredWorkbenchProject(
       if (!deleted.ok) return rollbackOrError(workbench, applied, deleted.error);
     }
     journalAppliedSnapshot(applied, snapshots.snapshots, entry.path);
-    const documentWrite = await writeProjectDocument(workbench, entry.path, input.project);
+    const documentWrite = await writeStorageText(workbench, entry.path, serialized.text);
     if (!documentWrite.ok) return rollbackOrError(workbench, applied, documentWrite.error);
     const nextManifest = replaceProjectEntry(workbench.manifest, input.project, entry.path);
     journalAppliedSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
@@ -556,14 +560,6 @@ async function rollbackOrError<Error extends MutationError>(
       rollbackErrors
     }
   };
-}
-
-async function writeProjectDocument(
-  workbench: ConnectedWorkbenchCatalog,
-  path: string,
-  project: WorkbenchProjectDocument
-) {
-  return writeStorageText(workbench, path, `${JSON.stringify(project, null, 2)}\n`);
 }
 
 async function writeStorageText(workbench: ConnectedWorkbenchCatalog, path: string, contents: string) {

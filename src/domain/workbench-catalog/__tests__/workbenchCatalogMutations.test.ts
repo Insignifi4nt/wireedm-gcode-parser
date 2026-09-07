@@ -54,6 +54,38 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
 }
 
 describe('strict V2 workbench project persistence', () => {
+  it('refuses an oversized imported or replacement document before changing any owned files', async () => {
+    const { adapter, workbench } = await initializedWorkbench();
+    const project = projectFixture('imports/fixture.dxf');
+    const document = createUpidFromDxfEntities([]);
+    document.source.importWarnings = ['x'.repeat(64 * 1024 * 1024)];
+    const created = createWorkbenchProjectDocument({
+      id: project.id, name: project.name, source: { kind: 'upid', files: [] },
+      content: { kind: 'upid-document', document }
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    if (created.project.content.kind !== 'upid-document' || project.source.kind !== 'dxf') throw new Error('Expected path project fixtures.');
+    const beforeAdd = new Map(adapter.files);
+    adapter.mutations.length = 0;
+    expect(await addStoredWorkbenchProject(workbench, { project: created.project, ownedFiles: [] })).toMatchObject({
+      ok: false, error: { code: 'WORKBENCH_PROJECT_FILE_TOO_LARGE', maximumBytes: 64 * 1024 * 1024 }
+    });
+    expect(adapter.files).toEqual(beforeAdd);
+    expect(adapter.mutations).toEqual([]);
+    const added = await addStoredWorkbenchProject(workbench, {
+      project, ownedFiles: [{ path: 'imports/fixture.dxf', contents: 'ORIGINAL' }]
+    });
+    if (!added.ok) throw new Error(added.error.message);
+    const beforeReplace = new Map(adapter.files);
+    adapter.mutations.length = 0;
+    expect(await replaceStoredWorkbenchProject(added.workbench, {
+      project: { ...project, source: project.source, content: created.project.content },
+      ownedFileChanges: [{ kind: 'write', path: 'imports/fixture.dxf', contents: 'CHANGED' }]
+    })).toMatchObject({ ok: false, error: { code: 'WORKBENCH_PROJECT_FILE_TOO_LARGE' } });
+    expect(adapter.files).toEqual(beforeReplace);
+    expect(adapter.mutations).toEqual([]);
+  });
+
   it('adds explicit owned files and reads the document only by indexed project id', async () => {
     const { adapter, workbench } = await initializedWorkbench();
     const project = projectFixture('imports/fixture.dxf');
