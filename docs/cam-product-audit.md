@@ -40,7 +40,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Program tree | Ready operations start collapsed; unresolved operation issues remain expanded. Readable event labels replace raw kind names. Fixed selected-child collapse reopening and kept keyboard focus on collapsed parent; broader operation summary/detail grouping remains | in progress |
 | Geometry tree and contour tree | Determine whether duplicate tree panel should merge into rail | pending |
 | Path summary and statistics | Combine overlapping counts; show useful selected geometry properties | pending |
-| Position panel | Replace redundant cursor-only panel with contextual status/controls | pending |
+| Position panel | Removed duplicate cursor/snap display. Live coordinates remain in status; snap belongs to Construction points. Updated coordinate interaction and snap-toggle checks | removed |
 | Geometry setup | Finished contour versus wire center, prerequisites and effects | pending |
 | Move/rotate/mirror | Precise numeric fields, pivot, scope, preview and undo | pending |
 | Contour setup | Direction, kept material, compensation and open contour behavior | pending |
@@ -77,6 +77,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 ## Additional findings to verify
 
 - Raw G-code parsing currently has no unit field. Do not label its raw coordinate preview as millimeters until modal units and conversions are handled correctly.
+- Statistics repeats its panel title and reports the path-project filename as "UPID Project". Lengths need units, bounds need an explicit geometry-versus-motion scope, and project counts overlap Path Summary. Consolidate while retaining source and selection inspection.
 - Magnetic construction inference and measurement snapping have different selection rules. Measurement should prefer nearby semantic points and must not snap to distant geometry merely because it is the nearest available candidate.
 - User regression: setting initial relative wire position on a new project did not update the preview start position and connection. Reproduce from new import, including the coordinate-setting behavior described as G902, and verify draft preview, save and reopen.
 - User regression: hovering a geometry-tree start/end point can be obscured by the existing start/end marker. Hover and selected point indicators must render visibly above all semantic markers; retain the marker identity without hiding the interaction state.
@@ -90,6 +91,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 - Current checkpoint: 104 test files and 994 unit tests passed; 57 browser tests passed, one optional external-workbench fixture skipped. Production build passed with the existing bundle-size warning. No branch merge was performed.
 - Subsequent program-tree change: 86 focused component/editor tests, four browser workflow tests and the production build passed. A controlled-selection regression exercises select, expand, select child, collapse and keyboard re-expand with focus and selection retained.
 - Contour measurement: 10 domain tests, three browser scenarios and the production build passed. Checks cover analytic curved area, reversed orientation, open/missing boundaries, rectangle dimensions and a stable disclosure target after the first pick. Leads and positioning moves are excluded; ambiguous or intersecting contours do not display an enclosed area.
+- Position-panel removal: 98 focused tests and production build passed. The workspace browser run passed 17 scenarios; one encountered a page reset during concurrent documentation editing and passed on isolated rerun. Rendered View menu and Statistics inspected; cursor coordinates remain available in the status bar.
 
 ## Next audit work
 

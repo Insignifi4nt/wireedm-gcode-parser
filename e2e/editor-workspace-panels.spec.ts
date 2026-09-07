@@ -10,7 +10,6 @@ const WORKSPACE_PANEL_TITLES = [
   ['path-diagnostics', 'Path Diagnostics'],
   ['cut-sequence', 'Cut Sequence'],
   ['contour-tree', 'Contour Tree'],
-  ['position', 'Position'],
   ['statistics', 'Statistics'],
   ['machine', 'Machine'],
   ['measurement', 'Measurement']
@@ -24,7 +23,6 @@ const WORKSPACE_PANEL_COMMANDS: Record<(typeof WORKSPACE_PANEL_TITLES)[number][0
   'path-diagnostics': 'view.diagnostics',
   'cut-sequence': 'machining.sequence',
   'contour-tree': 'view.contours',
-  position: 'view.position',
   statistics: 'view.statistics',
   machine: 'machine.profile',
   measurement: 'construction.measurement'

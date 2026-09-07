@@ -89,7 +89,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Use the canvas toolbar, Ctrl/Cmd +/- shortcuts, mouse wheel, or Fit to Screen to zoom. Shift-drag or middle-drag pans the view.'
           },
           {
-            text: 'Press G to toggle grid visibility. Current Position shows live mouse coordinates over the canvas.'
+            text: 'Press G to toggle grid visibility. The status bar shows live cursor coordinates over the canvas.'
           },
           {
             text: 'Open Construction points and enable Grid Snap when cursor coordinates and clicked points should land on the 5 mm canvas grid.',
@@ -227,7 +227,7 @@ export const EDITOR_GUIDE_COPY: Record<EditorGuideLanguage, EditorGuideCopy> = {
             text: 'Foloseste toolbar-ul canvasului, shortcut-uri Ctrl/Cmd +/-, rotita mouse-ului sau Fit to Screen pentru zoom. Shift-drag sau middle-drag face pan.'
           },
           {
-            text: 'Apasa G ca sa ascunzi sau afisezi gridul. Current Position arata coordonatele live ale mouse-ului pe canvas.'
+            text: 'Apasa G ca sa ascunzi sau afisezi gridul. Bara de stare arata coordonatele live ale cursorului pe canvas.'
           },
           {
             text: 'Deschide Construction points si activeaza Grid Snap cand coordonatele cursorului si punctele adaugate trebuie sa cada pe gridul de 5 mm.',

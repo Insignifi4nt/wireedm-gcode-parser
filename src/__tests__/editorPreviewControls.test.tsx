@@ -281,8 +281,7 @@ describe('Editor preview controls and guide', () => {
       configurable: true
     });
 
-    expect(container.querySelector('[data-editor-cursor="x"]')?.textContent).toBe('-');
-    expect(container.querySelector('[data-editor-cursor="y"]')?.textContent).toBe('-');
+    expect(container.querySelector('[data-editor-status-cursor]')?.textContent).toBe('Cursor X — Y —');
 
     await act(async () => {
       preview?.dispatchEvent(
@@ -294,15 +293,13 @@ describe('Editor preview controls and guide', () => {
       );
     });
 
-    expect(container.querySelector('[data-editor-cursor="x"]')?.textContent).toBe('5.000');
-    expect(container.querySelector('[data-editor-cursor="y"]')?.textContent).toBe('5.000');
+    expect(container.querySelector('[data-editor-status-cursor]')?.textContent).toBe('Cursor X 5 Y 5');
 
     await act(async () => {
       preview?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
     });
 
-    expect(container.querySelector('[data-editor-cursor="x"]')?.textContent).toBe('-');
-    expect(container.querySelector('[data-editor-cursor="y"]')?.textContent).toBe('-');
+    expect(container.querySelector('[data-editor-status-cursor]')?.textContent).toBe('Cursor X — Y —');
   });
 
   it('shows path stats, bounds, and the catalog-owned editable file name', async () => {
@@ -489,8 +486,7 @@ describe('Editor preview controls and guide', () => {
       );
     });
 
-    expect(container.querySelector('[data-editor-cursor="x"]')?.textContent).toBe('5.000');
-    expect(container.querySelector('[data-editor-cursor="y"]')?.textContent).toBe('5.000');
+    expect(container.querySelector('[data-editor-status-cursor]')?.textContent).toBe('Cursor X 5 Y 5');
 
     const pointModeButton = [...container.querySelectorAll('button')].find((button) =>
       button.getAttribute('aria-label') === 'Place measurement points on canvas'

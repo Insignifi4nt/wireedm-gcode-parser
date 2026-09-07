@@ -484,24 +484,19 @@ describe('EditorPage UPID draft boundary', () => {
     }
   });
 
-  it('keeps Position read-only and owns preview grid snap in Construction points', async () => {
+  it('toggles preview grid snapping in Construction points', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
-
     await act(async () => {
       root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={project} />);
     });
     await flushAsync();
-
-    await clickElement('[data-editor-workflow-command="view.position"]');
-    expect(container.querySelector('button[aria-label="Toggle preview grid snap"]')).toBeNull();
-    expect(container.querySelector('[data-editor-position-grid-snap]')?.textContent).toBe('Off');
     await clickElement('[data-editor-workflow-command="construction.measurement"]');
-    expect(container.querySelector('button[aria-label="Toggle preview grid snap"]')).not.toBeNull();
+    const snap = () => container.querySelector('button[aria-label="Toggle preview grid snap"]');
+    expect(snap()?.getAttribute('aria-pressed')).toBe('false');
     await clickElement('button[aria-label="Toggle preview grid snap"]');
-    await clickElement('[data-editor-workflow-command="view.position"]');
-    await clickElement('[data-editor-workflow-transition-action="save"]');
-    expect(container.querySelector('button[aria-label="Toggle preview grid snap"]')).toBeNull();
-    expect(container.querySelector('[data-editor-position-grid-snap]')?.textContent).toBe('On');
+    expect(snap()?.getAttribute('aria-pressed')).toBe('true');
+    await clickElement('button[aria-label="Toggle preview grid snap"]');
+    expect(snap()?.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('rerenders Measurement and Construction controls without missing-key warnings', async () => {

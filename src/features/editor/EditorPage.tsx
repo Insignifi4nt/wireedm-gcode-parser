@@ -275,7 +275,6 @@ type EditorWorkspacePanelId =
   | 'between-contours'
   | 'program-stops'
   | 'machining-participation'
-  | 'position'
   | 'statistics'
   | 'machine'
   | 'measurement'
@@ -297,7 +296,6 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   'between-contours': 'Between Contours',
   'program-stops': 'Program Stops',
   'machining-participation': 'Machining Participation',
-  position: 'Position',
   statistics: 'Statistics',
   machine: 'Project Machine & Source Setup',
   measurement: 'Construction points'
@@ -319,7 +317,6 @@ const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string
   'between-contours': 'derived rapid travel and manual or automatic rethread policy',
   'program-stops': 'typed unconditional stop events at operation boundaries or remaining cut distance',
   'machining-participation': 'source-preserving active cuts, inactive reference spans, and explicit open-path compensation side',
-  position: 'cursor position and grid snap state',
   statistics: 'bounds, move counts, and selected geometry details',
   machine: 'project machine, active setup, source units, and machine fit checks',
   measurement: 'manual points, perpendicular and tangent construction, and export actions'
@@ -344,7 +341,6 @@ const PATH_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
 
 const INSPECTOR_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
   'measure',
-  'position',
   'statistics',
   'machine',
   'measurement'
@@ -366,7 +362,6 @@ const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFlo
   'between-contours': { x: 670, y: 145, width: 390, height: 520 },
   'program-stops': { x: 680, y: 150, width: 370, height: 560 },
   'machining-participation': { x: 710, y: 170, width: 390, height: 600 },
-  position: { x: 1020, y: 74, width: 300, height: 180 },
   statistics: { x: 990, y: 104, width: 360, height: 560 },
   machine: { x: 1040, y: 134, width: 320, height: 520 },
   measurement: { x: 250, y: 194, width: 340, height: 420 }
@@ -421,8 +416,7 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
     ['view.summary', 'Path Summary', 'path-summary'],
     ['view.endpoints', 'Endpoint Topology', 'endpoint-topology'],
     ['view.diagnostics', 'Path Diagnostics', 'path-diagnostics'],
-    ['view.statistics', 'Statistics', 'statistics'],
-    ['view.position', 'Position', 'position']
+    ['view.statistics', 'Statistics', 'statistics']
   ] as const).map(([id, label, toolWindowId]) => ({
     id, label, menuPath: ['View', label] as const, scope: 'view' as const,
     toolWindowId, prerequisites: [{ kind: 'document' } as const], workflow: { kind: 'view' as const }
@@ -3501,7 +3495,6 @@ export function EditorPage({
           pathDocument={pathDocumentDraft}
           pointXDraft={pointXDraft}
           pointYDraft={pointYDraft}
-          previewCursorPoint={previewCursorPoint}
           program={program}
           rapidMoveCount={rapidMoveCount}
           renderWorkspacePanel={isPathProject ? renderWorkspacePanel : undefined}

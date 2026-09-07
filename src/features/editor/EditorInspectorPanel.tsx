@@ -62,7 +62,6 @@ interface EditorInspectorPanelProps {
   pathDocument: PathPlanningDocument | null;
   pointXDraft: string;
   pointYDraft: string;
-  previewCursorPoint: { x: number; y: number } | null;
   program: LoadedEditorProgram | null;
   rapidMoveCount: number;
   renderWorkspacePanel?: (
@@ -111,7 +110,6 @@ export function EditorInspectorPanel({
   pathDocument,
   pointXDraft,
   pointYDraft,
-  previewCursorPoint,
   program,
   rapidMoveCount,
   renderWorkspacePanel = (_id, _title, children) => children,
@@ -233,20 +231,6 @@ export function EditorInspectorPanel({
       className={`work-region-scrollbar ${fullHeight ? 'h-full min-h-0' : 'max-h-[42vh] border-t border-border'} overflow-y-auto p-2 text-[10px]`}
       data-editor-inspector-summary
     >
-      {renderWorkspacePanel('position', 'Position', (
-      <section>
-        <h3 className="mb-2 text-[11px] font-semibold">Position</h3>
-        <dl className="grid grid-cols-[78px_minmax(0,1fr)] gap-y-1.5">
-          <dt className="text-muted-foreground">Mouse X</dt>
-          <dd data-editor-cursor="x">{formatCursorCoordinate(previewCursorPoint?.x)}</dd>
-          <dt className="text-muted-foreground">Mouse Y</dt>
-          <dd data-editor-cursor="y">{formatCursorCoordinate(previewCursorPoint?.y)}</dd>
-          <dt className="text-muted-foreground">Grid Snap</dt>
-          <dd data-editor-position-grid-snap>{gridSnapEnabled ? 'On' : 'Off'}</dd>
-        </dl>
-      </section>
-      ))}
-
       {renderWorkspacePanel('statistics', 'Statistics', (
       <details data-editor-stats-section open>
         <summary className="cursor-pointer select-none font-mono text-[11px] font-semibold outline-none hover:text-foreground">
@@ -1332,10 +1316,6 @@ export function EditorInspectorPanel({
       ))}
     </div>
   );
-}
-
-function formatCursorCoordinate(value: number | undefined) {
-  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : '-';
 }
 
 function formatLimit(value: number | null) {
