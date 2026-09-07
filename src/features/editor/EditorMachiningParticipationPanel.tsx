@@ -62,15 +62,11 @@ export function EditorMachiningParticipationPanel({
     [document.machiningParticipation?.spans, segmentIds.join('|')]
   );
   const derived = deriveSourceMachiningOperations(document, operation?.id ?? '');
-  const derivedSpanIds = derived?.status === 'ready'
-    ? [...new Set(
-        derived.operations
-          .filter((candidate) =>
-            candidate.machiningIntent?.sourceOperationId === operation?.id
-          )
-          .flatMap((candidate) => candidate.machiningIntent?.spanIds ?? [])
-      )]
-    : [];
+  const partialOperation = derived?.status === 'ready'
+    ? derived.operations.find((candidate) => candidate.machiningIntent?.sourceOperationId === operation?.id)
+    : undefined;
+  const derivedSpanIds = partialOperation?.machiningIntent?.spanIds ?? [];
+  const segmentLengths = new Map(derived?.segments.map((segment) => [segment.id, segment.length]) ?? []);
   useEffect(() => {
     if (!selectedSpanId) return;
     const selectedRow = [...(
@@ -85,13 +81,9 @@ export function EditorMachiningParticipationPanel({
   const wireSide = document.machiningParticipation?.partialContourCompensation?.find(
     (setting) => setting.sourceOperationId === operation?.id
   )?.wireSide ?? '';
-  const partialEntry = derived?.status === 'ready'
-    ? derived.operations.find((candidate) => candidate.machiningIntent?.sourceOperationId === operation?.id)?.transitions?.entry
-    : undefined;
+  const partialEntry = partialOperation?.transitions?.entry;
   const entryReviewed = partialEntry && 'review' in partialEntry && partialEntry.review === 'reviewed';
-  const partialExit = derived?.status === 'ready'
-    ? derived.operations.find((candidate) => candidate.machiningIntent?.sourceOperationId === operation?.id)?.transitions?.exit
-    : undefined;
+  const partialExit = partialOperation?.transitions?.exit;
   const start = Number(rangeStart);
   const end = Number(rangeEnd);
   const validRange = rangeStart.trim() !== '' && rangeEnd.trim() !== '' && Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= 1 && start < end;
@@ -175,7 +167,7 @@ export function EditorMachiningParticipationPanel({
         </button>
       </fieldset>
 
-      <label className="grid gap-1 border border-border p-2 uppercase text-muted-foreground">
+      {partialOperation && <label className="grid gap-1 border border-border p-2 uppercase text-muted-foreground">
         Partial-path controller side
         <select
           aria-label="Partial contour wire side"
@@ -189,11 +181,12 @@ export function EditorMachiningParticipationPanel({
           )}
           value={wireSide}
         >
-          <option value="">Required for controller compensation</option>
+          <option value="">{operation.compensationIntent?.mode === 'centerline' && operation.compensationIntent.source === 'manual'
+            ? 'Wire centerline · source setting' : 'Choose a controller side'}</option>
           <option value="left">Wire left of travel</option>
           <option value="right">Wire right of travel</option>
         </select>
-      </label>
+      </label>}
 
       {partialEntry && partialEntry.strategy !== 'circle-center' && <div className="grid gap-1 border border-border p-2">
         <div className="uppercase text-muted-foreground">Derived partial entry</div>
@@ -250,7 +243,10 @@ export function EditorMachiningParticipationPanel({
             data-upid-selected={selectedSpanId === spanId ? 'true' : undefined}
             key={spanId}
           >
-            <div className="text-foreground">Active range {index + 1}</div>
+            <div className="flex justify-between gap-2 text-foreground">
+              <span>Active range {index + 1}</span>
+              <span className="tabular-nums">{segmentLengths.get(partialOperation?.segmentRefs[index]?.segmentId ?? '')?.toFixed(3)} mm</span>
+            </div>
           </div>
         ))}
         </details>}

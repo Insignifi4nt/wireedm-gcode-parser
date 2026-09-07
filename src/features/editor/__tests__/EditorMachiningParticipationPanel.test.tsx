@@ -57,6 +57,10 @@ describe('EditorMachiningParticipationPanel', () => {
       />
     ));
 
+    const activeLengths = [...container.querySelectorAll('[data-machining-span-participation="active-cut"] .tabular-nums')]
+      .map((element) => Number.parseFloat(element.textContent!));
+    expect(activeLengths).toEqual([2, 5, 10, 5, 2]);
+
     await act(async () => {
       setInput(container.querySelector('[aria-label="Machining span start"]')!, '0.1');
       setInput(container.querySelector('[aria-label="Machining span end"]')!, '0.3');
