@@ -1024,7 +1024,7 @@ export function EditorPage({
         ? `${selectedLines.length} ${selectedLines.length === 1 ? 'line' : 'lines'}`
         : 'None';
   const diagnosticCount = pathDocumentDraft
-    ? pathDocumentDraft.diagnostics.length + pathDocumentDraft.plan.diagnostics.length + (programTree?.diagnostics.length ?? 0)
+    ? pathDocumentDraft.diagnostics.length + (programTree?.diagnostics.length ?? 0)
     : (draftParseResult?.errors.length ?? 0) + (draftParseResult?.warnings.length ?? 0);
   const exportAvailable = isPathProject
     ? Boolean(program?.project)
