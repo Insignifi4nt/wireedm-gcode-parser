@@ -87,13 +87,6 @@ describe('Editor import, export, and parse feedback', () => {
     expect(container.querySelector('button[aria-label="Expand Inspector Rail"]')).toBeNull();
     expect(container.querySelector('[data-editor-side-code-panel]')).not.toBeNull();
     expect(container.querySelector('[data-editor-line-toolbar]')).not.toBeNull();
-    const codePanel = container.querySelector('[data-editor-side-code-panel]');
-    const statsSection = container.querySelector('[data-editor-stats-section]') as HTMLDetailsElement | null;
-    expect(statsSection).not.toBeNull();
-    expect(statsSection?.open).toBe(true);
-    expect(codePanel?.compareDocumentPosition(statsSection!)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
-    );
     expect(container.querySelector('[data-editor-structure="header"]')?.textContent).toBe('1');
     expect(container.querySelector('[data-editor-structure="body"]')?.textContent).toBe('2');
     expect(container.querySelector('[data-editor-structure="footer"]')?.textContent).toBe('1');

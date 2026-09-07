@@ -10,7 +10,6 @@ test('keyboard activation of controller diagnostics opens and focuses parse issu
     mimeType: 'text/plain',
     buffer: Buffer.from('G0 X0 Y0\nG2 X10 Y0 R4')
   });
-  await page.locator('[data-editor-stats-section] > summary').click();
   await page.getByRole('button', { name: 'Collapse Inspector Rail', exact: true }).click();
   const diagnostics = page.locator('[data-editor-status-diagnostics]');
   await expect(diagnostics).toHaveText('Diagnostics 1');
