@@ -6,6 +6,7 @@ import type { DeepReadonly } from '@/domain/post-processor/postPackageSchema';
 import type { PathDiagnostic, PathPlanningDocument } from '@/domain/path-intel/types';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
+import { projectNameError } from './projectName';
 
 export const WORKBENCH_PROJECT_SCHEMA_VERSION = 2 as const;
 const MAX_PROJECT_BYTES = 64 * 1024 * 1024;
@@ -144,12 +145,22 @@ type CreateWorkbenchProjectInput = CreateWorkbenchProjectInputCommon & (
 export function createWorkbenchProjectDocument(
   input: CreateWorkbenchProjectInput
 ): CreateWorkbenchProjectResult {
-  const timestamp = (input.now ?? new Date()).toISOString();
+  const nameError = projectNameError(input.name);
+  if (nameError) return invalidProjectName(nameError);
+  const now = input.now ?? new Date();
+  if (!Number.isFinite(now.getTime())) {
+    return { ok: false, error: {
+      code: 'WORKBENCH_PROJECT_TIMESTAMP_INVALID',
+      message: 'Project creation requires a valid timestamp.',
+      path: '/createdAt'
+    } };
+  }
+  const timestamp = now.toISOString();
   return validateWorkbenchProjectValue({
     format: 'wire-edm-project',
     schemaVersion: WORKBENCH_PROJECT_SCHEMA_VERSION,
     id: input.id,
-    name: input.name,
+    name: input.name.trim(),
     createdAt: timestamp,
     updatedAt: timestamp,
     source: input.source,
@@ -276,6 +287,8 @@ function validateWorkbenchProjectValue(value: unknown): CreateWorkbenchProjectRe
     };
   }
   const project = value as WorkbenchProjectDocumentValue;
+  const nameError = projectNameError(project.name);
+  if (nameError) return invalidProjectName(nameError);
   for (const [path, timestamp] of [
     ['/createdAt', project.createdAt],
     ['/updatedAt', project.updatedAt],
@@ -341,6 +354,12 @@ function validateWorkbenchProjectValue(value: unknown): CreateWorkbenchProjectRe
 function isCanonicalTimestamp(value: string) {
   const milliseconds = Date.parse(value);
   return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
+}
+
+function invalidProjectName(message: string): CreateWorkbenchProjectResult {
+  return { ok: false, error: {
+    code: 'WORKBENCH_PROJECT_SCHEMA_INVALID', message, path: '/name'
+  } };
 }
 
 function deepFreeze<T>(value: T): DeepReadonly<T> {
