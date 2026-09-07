@@ -6,6 +6,18 @@ import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbench
 import { importExternalProgram } from '../importExternalProgram';
 
 describe('importExternalProgram', () => {
+  it('preserves offset-control command arguments in both original and editable files', async () => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const text = 'N10G92.1\nN20G92.2\nN30G92.3';
+    const imported = await importExternalProgram(initialized.workbench, { fileName: 'offsets.nc', text });
+    if (!imported.ok) throw new Error(imported.error.message);
+    const [original, editable] = imported.project.source.files;
+    expect(adapter.files.get(original.path)).toBe(text);
+    expect(adapter.files.get(editable.path)).toBe('G92.1\nG92.2\nG92.3');
+  });
+
   it('stores original and cleaned text as explicit V2 project-owned files', async () => {
     const adapter = new MemoryAdapter();
     const initialized = await initializeWorkbenchCatalog(adapter, {

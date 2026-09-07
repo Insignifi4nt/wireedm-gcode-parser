@@ -182,7 +182,9 @@ describe('parseGCodeProgram', () => {
       linearMoves: 2,
       processedLines: 9
     });
-    expect(result.warnings).toEqual([]);
+    expect(result.warnings).toEqual([expect.objectContaining({
+      line: 3, type: 'warning', message: expect.stringContaining('G54 coordinate-frame offsets are not modeled')
+    })]);
   });
 
   it('keeps exported ISO headers out of the motion path', () => {

@@ -67,6 +67,14 @@ export function interpretGCodeBlock(
   const gWords = words.filter((word) => word.letter === 'G');
 
   for (const word of gWords) {
+    if (word.value === 18 || word.value === 19) {
+      issues.push({ line: lineNumber, type: 'warning',
+        message: `G${word.value} selects a plane unsupported by the XY preview. The physical toolpath preview cannot be relied on for this program.` });
+    }
+    if ((word.value >= 52 && word.value < 60) || (word.value > 92 && word.value < 93)) {
+      issues.push({ line: lineNumber, type: 'warning',
+        message: `G${word.value} coordinate-frame offsets are not modeled. The physical toolpath preview cannot be relied on for this program.` });
+    }
     if (word.value === 20) state.units = 'in';
     if (word.value === 21) state.units = 'mm';
     if (word.value === 90) state.xyMode = 'absolute';

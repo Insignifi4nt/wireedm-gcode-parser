@@ -107,6 +107,10 @@ function parseLine(state: ParserState, rawLine: string, lineNumber: number) {
   if (block.cleanedLine === '') return;
 
   if (block.positionSet) {
+    if (state.path.length > 0) {
+      state.warnings.push({ line: lineNumber, type: 'warning',
+        message: 'G92 changes coordinates after motion. Connections across this reset are not modeled; the physical toolpath preview cannot be relied on for this program.' });
+    }
     if (state.path.length === 0) {
       state.path.push({
         type: 'position',

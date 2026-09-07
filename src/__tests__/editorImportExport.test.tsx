@@ -33,6 +33,27 @@ describe('Editor import, export, and parse feedback', () => {
     vi.restoreAllMocks();
   });
 
+  it('shows unsupported physical-preview warnings through the external program diagnostics panel', async () => {
+    await renderApp(context);
+    const openEditor = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Open Editor'));
+    if (!openEditor) throw new Error('Editor action missing');
+    await act(async () => openEditor.click());
+    await flushAsync();
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="G-code program file"]');
+    if (!input) throw new Error('Program import input missing');
+    Object.defineProperty(input, 'files', { configurable: true,
+      value: [new File(['G21 G90\nG0 X10 Y0\nG53 G0 X0 Y0\nG18 G2 X10 Z10 I10 K0'], 'unsupported-modes.nc')] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+    await flushAsync();
+    const diagnostics = container.querySelector<HTMLButtonElement>('[data-editor-status-diagnostics]');
+    if (!diagnostics) throw new Error('Preview limitation diagnostics missing');
+    await act(async () => diagnostics.click());
+    const issues = container.querySelector('[data-editor-parse-issues]');
+    expect(issues?.textContent).toContain('G53 coordinate-frame offsets are not modeled');
+    expect(issues?.textContent).toContain('G18 selects a plane unsupported by the XY preview');
+    expect(issues?.textContent).toContain('physical toolpath preview cannot be relied on');
+  });
+
   it('opens the editor and imports external G-code files through the active cache workbench', async () => {
     window.showDirectoryPicker = undefined;
     const programText = ['%', 'G90 G21', 'G0 X0 Y0', 'G1 X12 Y4', 'M30', '%'].join('\n');

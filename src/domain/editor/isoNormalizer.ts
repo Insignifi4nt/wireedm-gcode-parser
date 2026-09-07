@@ -89,7 +89,7 @@ export function stripForEditing(inputText: string) {
     if (text === '%') continue;
 
     text = canonicalizeMotionCodes(stripLeadingBlockNumber(text));
-    if (/^G92(?=\D|$)/i.test(text) && !hasAxis(text, 'X') && !hasAxis(text, 'Y')) {
+    if (/^G92(?=[^\d.]|$)/i.test(text) && !hasAxis(text, 'X') && !hasAxis(text, 'Y')) {
       const zero = (0).toFixed(DEFAULT_PRECISION);
       text = `${text} X${zero} Y${zero}`.trim();
     }

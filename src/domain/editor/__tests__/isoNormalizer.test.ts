@@ -26,6 +26,10 @@ describe('isoNormalizer', () => {
     expect(result).toBe('G92X0Y0');
   });
 
+  it('preserves decimal G92 offset-control commands without inserting axis words', () => {
+    expect(stripForEditing('N10G92.1\nN20G92.2\nN30G92.3')).toBe('G92.1\nG92.2\nG92.3');
+  });
+
   it('canonicalizes motion codes without touching unrelated G-codes', () => {
     expect(canonicalizeMotionCodes('G00 X10')).toBe('G0 X10');
     expect(canonicalizeMotionCodes('G01 Y20')).toBe('G1 Y20');
