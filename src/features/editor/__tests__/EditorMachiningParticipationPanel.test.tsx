@@ -99,12 +99,13 @@ describe('EditorMachiningParticipationPanel', () => {
     const operation = document.plan.operations[0];
     const [firstSegment, secondSegment] = operation.segmentRefs;
     const onDraftChange = vi.fn();
+    const onSetSpan = vi.fn();
     const renderPanel = (targetChangeBlocked: boolean) => (
       <EditorMachiningParticipationPanel
         disabled={false}
         document={document}
         onDraftChange={onDraftChange}
-        onSetSpan={vi.fn()}
+        onSetSpan={onSetSpan}
         onSetEntryReview={vi.fn()}
         onSetExitReview={vi.fn()}
         onSetWireSide={vi.fn()}
@@ -114,6 +115,15 @@ describe('EditorMachiningParticipationPanel', () => {
     );
 
     await act(async () => root.render(renderPanel(false)));
+    const apply = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Mark inactive reference')!;
+    await act(async () => {
+      setInput(container.querySelector('[aria-label="Machining span start"]')!, '');
+    });
+    expect(apply.disabled).toBe(true);
+    await act(async () => apply.click());
+    expect(onSetSpan).not.toHaveBeenCalled();
+    onDraftChange.mockClear();
     await act(async () => {
       setInput(container.querySelector('[aria-label="Machining span start"]')!, '0.2');
     });

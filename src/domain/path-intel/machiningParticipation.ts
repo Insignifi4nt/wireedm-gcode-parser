@@ -61,8 +61,8 @@ export function setPartialContourEntryReview(
   if (!document.plan.operations.some((operation) => operation.id === sourceOperationId)) {
     return null;
   }
-  const derivation = deriveActiveMachiningOperations(document);
-  const derivedOperations = derivation.status === 'ready'
+  const derivation = deriveSourceMachiningOperations(document, sourceOperationId);
+  const derivedOperations = derivation?.status === 'ready'
     ? derivation.operations.filter(
         (operation) => operation.machiningIntent?.sourceOperationId === sourceOperationId
       )
@@ -95,8 +95,8 @@ export function setPartialContourExitReview(
   if (!document.plan.operations.some((operation) => operation.id === sourceOperationId)) {
     return null;
   }
-  const derivation = deriveActiveMachiningOperations(document);
-  const derivedOperations = derivation.status === 'ready'
+  const derivation = deriveSourceMachiningOperations(document, sourceOperationId);
+  const derivedOperations = derivation?.status === 'ready'
     ? derivation.operations.filter(
         (operation) => operation.machiningIntent?.sourceOperationId === sourceOperationId
       )

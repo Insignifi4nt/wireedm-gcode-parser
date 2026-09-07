@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
+import { deriveSourceMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 
 interface EditorMachiningParticipationPanelProps {
@@ -61,8 +61,8 @@ export function EditorMachiningParticipationPanel({
     ),
     [document.machiningParticipation?.spans, segmentIds.join('|')]
   );
-  const derived = deriveActiveMachiningOperations(document);
-  const derivedSpanIds = derived.status === 'ready'
+  const derived = deriveSourceMachiningOperations(document, operation?.id ?? '');
+  const derivedSpanIds = derived?.status === 'ready'
     ? [...new Set(
         derived.operations
           .filter((candidate) =>
@@ -85,25 +85,25 @@ export function EditorMachiningParticipationPanel({
   const wireSide = document.machiningParticipation?.partialContourCompensation?.find(
     (setting) => setting.sourceOperationId === operation?.id
   )?.wireSide ?? '';
-  const partialEntry = derived.status === 'ready'
+  const partialEntry = derived?.status === 'ready'
     ? derived.operations.find((candidate) => candidate.machiningIntent?.sourceOperationId === operation?.id)?.transitions?.entry
     : undefined;
   const entryReviewed = partialEntry && 'review' in partialEntry && partialEntry.review === 'reviewed';
-  const partialExit = derived.status === 'ready'
+  const partialExit = derived?.status === 'ready'
     ? derived.operations.find((candidate) => candidate.machiningIntent?.sourceOperationId === operation?.id)?.transitions?.exit
     : undefined;
   const start = Number(rangeStart);
   const end = Number(rangeEnd);
-  const validRange = Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= 1 && start < end;
+  const validRange = rangeStart.trim() !== '' && rangeEnd.trim() !== '' && Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= 1 && start < end;
 
-  if (!operation) return <p className="text-[10px] text-muted-foreground">No operation selected.</p>;
+  if (!operation || !derived) return <p className="text-[10px] text-muted-foreground">No operation selected.</p>;
 
   return (
     <section className="grid gap-2 text-[10px]" data-machining-participation-panel>
       <div className="border border-border bg-background/35 p-2">
         <div className="uppercase text-muted-foreground">{operation.displayName}</div>
-        <p className={derived.status === 'ready' ? 'text-emerald-300' : 'text-amber-300'}>
-          {derived.status === 'ready'
+        <p className={derived?.status === 'ready' ? 'text-emerald-300' : 'text-amber-300'}>
+          {derived?.status === 'ready'
             ? `${derived.operations.length} active machining operation${derived.operations.length === 1 ? '' : 's'}`
             : `Blocked: ${derived.reason}`}
         </p>

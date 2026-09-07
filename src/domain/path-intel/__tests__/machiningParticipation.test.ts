@@ -8,6 +8,7 @@ import { setManualCompensationIntent } from '@/domain/compensation/intent';
 
 import {
   deriveActiveMachiningOperations,
+  deriveSourceMachiningOperations,
   setPartialContourEntryReview,
   setPartialContourExitReview,
   setPartialContourCompensationSide,
@@ -15,6 +16,31 @@ import {
 } from '../machiningParticipation';
 
 describe('machining participation', () => {
+  it('reviews one partial contour while another has unresolved disconnected cuts', () => {
+    let document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 20, y: 0 }, end: { x: 30, y: 0 } }
+    ]);
+    const [first, second] = document.plan.operations;
+    first.transitions = {
+      entry: { strategy: 'none', review: 'reviewed' },
+      exit: { strategy: 'manual-straight', move: 'cut', from: first.endPoint, to: { x: 12, y: 0 }, review: 'reviewed' }
+    };
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: first.segmentRefs[0].segmentId, range: { start: 0.6, end: 1 }, participation: 'inactive-reference'
+    })!;
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: second.segmentRefs[0].segmentId, range: { start: 0.4, end: 0.6 }, participation: 'inactive-reference'
+    })!;
+    expect(deriveActiveMachiningOperations(document).status).toBe('blocked');
+    document = setPartialContourEntryReview(document, first.id, true)!;
+    document = setPartialContourExitReview(document, first.id, true)!;
+    expect(deriveSourceMachiningOperations(document, first.id)?.operations[0].transitions).toMatchObject({
+      entry: { review: 'reviewed' }, exit: { review: 'reviewed' }
+    });
+    expect(deriveActiveMachiningOperations(document).status).toBe('blocked');
+  });
+
   it('confirms and persists a partial exit, revokes it, and invalidates changed geometry', () => {
     let source = createUpidFromDxfEntities([
       { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
