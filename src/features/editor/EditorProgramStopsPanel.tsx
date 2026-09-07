@@ -11,6 +11,8 @@ interface EditorProgramStopsPanelProps {
   disabled: boolean;
   document: PathPlanningDocument;
   onDraftChange?: () => void;
+  onSelectStop?: (operationId: string, stopId: string) => void;
+  targetChangeBlocked?: boolean;
   onSetStops: (operationId: string, stops: OperationProgramStop[], completeForm?: boolean) => void;
   selectedOperationId: string | null;
   selectedStopId?: string | null;
@@ -20,6 +22,8 @@ export function EditorProgramStopsPanel({
   disabled,
   document,
   onDraftChange,
+  onSelectStop,
+  targetChangeBlocked = false,
   onSetStops,
   selectedOperationId,
   selectedStopId = null
@@ -122,8 +126,7 @@ export function EditorProgramStopsPanel({
       <div className="border border-border bg-background/35 p-2">
         <div className="uppercase text-muted-foreground">{operation.displayName}</div>
         <p className="mt-1 text-muted-foreground">
-          These are unconditional, user-authored stop intents. Controller encoding is decided only
-          when the saved revision is generated with the exact active machine setup.
+          Pause cutting for part retention or an operator check. Remaining cut excludes entry and exit moves.
         </p>
       </div>
 
@@ -310,7 +313,7 @@ export function EditorProgramStopsPanel({
                   </div>
                 </fieldset>
               ) : (
-                <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
+                <div className="grid grid-cols-[auto_1fr] items-center gap-2">
                   <input
                     aria-label={`Enable ${stop.id}`}
                     checked={stop.enabled}
@@ -326,6 +329,15 @@ export function EditorProgramStopsPanel({
                     <div className="text-foreground">{placementLabel(stop.placement)}</div>
                     <div className="text-muted-foreground">{stop.reason}{stop.note ? ` · ${stop.note}` : ''}</div>
                   </div>
+                  <div className="col-start-2 flex gap-1">
+                  {onSelectStop && <button
+                    aria-label={`Edit ${stop.id}`}
+                    className="h-7 border border-border px-2 disabled:opacity-40"
+                    disabled={disabled || targetChangeBlocked}
+                    onClick={() => onSelectStop(operation.id, stop.id)}
+                    title={targetChangeBlocked ? 'Apply the pending form before editing another stop.' : undefined}
+                    type="button"
+                  >Edit</button>}
                   <button
                     aria-label={`Remove ${stop.id}`}
                     className="h-7 border border-border px-2"
@@ -335,6 +347,7 @@ export function EditorProgramStopsPanel({
                   >
                     Remove
                   </button>
+                  </div>
                 </div>
               )}
             </div>

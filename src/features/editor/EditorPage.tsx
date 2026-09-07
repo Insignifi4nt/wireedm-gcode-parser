@@ -3827,6 +3827,14 @@ export function EditorPage({
                 'Add a valid program stop or discard its pending fields before saving or changing the target contour.'
               )}
               onSetStops={handleSetOperationProgramStops}
+              targetChangeBlocked={workflowTargetChangeBlocked}
+              onSelectStop={(operationId, stopId) => {
+                if (workflowTargetChangeBlocked) return;
+                setSelectedPathOperationId(operationId);
+                setSelectedPathElement({ operationId, segmentId: null });
+                setSelectedProgramExactTarget({ kind: 'program-stop', operationId, stopId });
+                setSelectedProgramTreeKey(null);
+              }}
               selectedOperationId={selectedPathOperationId}
               selectedStopId={selectedProgramStopId}
             />
