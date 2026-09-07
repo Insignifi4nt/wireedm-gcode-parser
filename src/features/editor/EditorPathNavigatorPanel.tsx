@@ -91,7 +91,7 @@ const ORDER_STRATEGY_OPTIONS: Array<{
   { label: 'Nearest travel', value: 'nearest' },
   { label: 'Source order', value: 'source-order' }
 ];
-type DiagnosticPanelActionId = 'endpoint-topology' | 'contour-tree' | 'cut-sequence';
+type DiagnosticPanelActionId = 'endpoint-topology' | 'geometry-rail' | 'cut-sequence';
 type PathTransformTarget = 'document' | 'selection';
 type DocumentReferenceMode = PathBoundsAnchor | 'picked';
 const DOCUMENT_REFERENCE_OPTIONS: Array<{
@@ -479,12 +479,10 @@ export function EditorPathNavigatorPanel({
     );
   }, [selectedEndpointSegmentKey, selectedPathElement?.pointRole]);
 
-  const contourTreeContent = (
+  const contourTreeContent = presentation === 'contour-tree' ? (
     <section className="min-h-0" data-upid-contour-tree>
       <div
-        className={`flex items-center gap-1 ${
-          presentation === 'contour-tree' ? 'h-7 border-b border-border/60 px-1' : 'mb-2'
-        }`}
+        className="flex h-7 items-center gap-1 border-b border-border/60 px-1"
         data-upid-path-tree-controls
       >
         <div className="mr-auto flex items-center gap-1">
@@ -495,9 +493,7 @@ export function EditorPathNavigatorPanel({
             <button
               aria-describedby="contour-tree-help-tooltip"
               aria-label="Contour Tree help"
-              className={`flex items-center justify-center text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring ${
-                presentation === 'contour-tree' ? 'size-6' : 'size-7 border border-border'
-              }`}
+              className="flex size-6 items-center justify-center text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
               title="Contour Tree help"
               type="button"
             >
@@ -515,7 +511,6 @@ export function EditorPathNavigatorPanel({
             </div>
           </div>
         </div>
-        {presentation === 'contour-tree' ? (
           <div className="relative">
             <button
               aria-expanded={geometryTreeOptionsOpen}
@@ -577,44 +572,9 @@ export function EditorPathNavigatorPanel({
               </div>
             )}
           </div>
-        ) : (
-          <>
-            <button
-              aria-label="Expand entire contour tree"
-              className={textButtonClass}
-              disabled={pathTreeElementIds.length === 0 || isSaving}
-              onClick={() => setPathTreeExpanded(true)}
-              type="button"
-            >
-              Expand All
-            </button>
-            <button
-              aria-label="Collapse entire contour tree"
-              className={textButtonClass}
-              disabled={pathTreeElementIds.length === 0 || isSaving}
-              onClick={() => setPathTreeExpanded(false)}
-              type="button"
-            >
-              Collapse All
-            </button>
-          </>
-        )}
       </div>
-      {presentation !== 'contour-tree' && (
-        <label className="mb-2 flex items-center justify-between gap-2 border border-border p-1.5">
-          <span className="text-muted-foreground">Canvas hover cross-highlighting</span>
-          <input
-            aria-label="Toggle canvas hover assist"
-            checked={hoverAssistEnabled}
-            data-upid-hover-assist-toggle
-            onChange={onToggleHoverAssist}
-            type="checkbox"
-          />
-        </label>
-      )}
       {contourTree.map((node) =>
         renderContourTreeNode({
-          compact: presentation === 'contour-tree',
           hoveredPathElement,
           node,
           onHoverPathElement,
@@ -638,7 +598,7 @@ export function EditorPathNavigatorPanel({
         })
       )}
     </section>
-  );
+  ) : null;
 
   if (presentation === 'contour-tree') {
     return (
@@ -1420,7 +1380,6 @@ export function EditorPathNavigatorPanel({
         </section>
         )}
 
-        {renderWorkspacePanel('contour-tree', 'Contour Tree', contourTreeContent, { fill: true })}
       </section>
     </div>
   );
@@ -1790,7 +1749,7 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic): Diagnos
       return {
         actions: [
           { label: 'Open Endpoint Topology', panelId: 'endpoint-topology' },
-          { label: 'Open Contour Tree', panelId: 'contour-tree' }
+          { label: 'Show Geometry', panelId: 'geometry-rail' }
         ],
         title: 'Open chains have unmatched start/end endpoints.',
         text: 'Open Endpoint Topology, select the affected start/end refs below, and inspect the gap in the Contour Tree. If this should be a closed loop, repair or re-import the source endpoints before exporting.'
@@ -1811,7 +1770,7 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic): Diagnos
     case 'post-unexpected-gap':
       return {
         actions: [
-          { label: 'Open Contour Tree', panelId: 'contour-tree' },
+          { label: 'Show Geometry', panelId: 'geometry-rail' },
           { label: 'Open Cut Sequence', panelId: 'cut-sequence' }
         ],
         title: 'The posted path contains a bridge or unexpected travel gap.',
@@ -1821,14 +1780,14 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic): Diagnos
     case 'invalid-polyline':
     case 'zero-length-segment':
       return {
-        actions: [{ label: 'Open Contour Tree', panelId: 'contour-tree' }],
+        actions: [{ label: 'Show Geometry', panelId: 'geometry-rail' }],
         title: 'The source entity could not become clean cut geometry.',
         text: 'Select the affected refs, then repair the source entity or remove duplicate/invalid geometry before importing again.'
       };
     case 'self-intersection':
     case 'degenerate-contour':
       return {
-        actions: [{ label: 'Open Contour Tree', panelId: 'contour-tree' }],
+        actions: [{ label: 'Show Geometry', panelId: 'geometry-rail' }],
         title: 'The contour shape is not a clean closed machining loop.',
         text: 'Inspect the highlighted contour and segment rows. Repair overlapping, crossing, or collapsed geometry before relying on automatic ordering.'
       };
@@ -1837,7 +1796,7 @@ function readDiagnosticGuidance(diagnostic: UpidSelectedPathDiagnostic): Diagnos
     case 'route-dependency-cycle':
       return {
         actions: [
-          { label: 'Open Contour Tree', panelId: 'contour-tree' },
+          { label: 'Show Geometry', panelId: 'geometry-rail' },
           { label: 'Open Cut Sequence', panelId: 'cut-sequence' }
         ],
         title: 'The path graph needs manual inspection.',
@@ -2029,7 +1988,6 @@ function readSelectedEndpointSegmentKey(
 }
 
 function renderContourTreeNode({
-  compact,
   expandedSegmentDetailIds,
   hoveredPathElement,
   isSaving,
@@ -2047,7 +2005,6 @@ function renderContourTreeNode({
   toggleCutPathExpanded,
   treeDepth
 }: {
-  compact: boolean;
   expandedSegmentDetailIds: Record<string, boolean>;
   hoveredPathElement: EditorPathElementRef | null;
   isSaving: boolean;
@@ -2069,7 +2026,6 @@ function renderContourTreeNode({
   const transitions = pathDocument.plan.operations.find(
     (operation) => operation.id === element.operationId
   )?.transitions;
-  const nested = treeDepth > 0;
   const manualDecisions = upidManualDecisionKinds(element);
   const label = element.displayName;
   const sourceEntityCount = upidPathElementSourceEntityCount(element);
@@ -2100,7 +2056,7 @@ function renderContourTreeNode({
 
   return (
     <details
-      className={compact ? 'overflow-hidden' : `mb-2 overflow-hidden border bg-background/45 ${nested ? 'border-sky-400/25' : 'border-border'}`}
+      className="overflow-hidden"
       data-upid-expanded={expanded ? 'true' : 'false'}
       data-upid-hovered={hoveredPathElement?.operationId === element.operationId ? 'true' : undefined}
       data-upid-contour-group={element.id}
@@ -2116,18 +2072,14 @@ function renderContourTreeNode({
     >
       <summary className="list-none" onClick={(event) => event.preventDefault()}>
         <div
-          className={`grid w-full items-stretch ${
-            compact
-              ? 'grid-cols-[18px_26px_minmax(0,1fr)] border-b border-border/50'
-              : 'grid-cols-[28px_34px_minmax(0,1fr)]'
-          } ${
+          className={`grid w-full grid-cols-[18px_26px_minmax(0,1fr)] items-stretch border-b border-border/50 ${
             element.operationId === selectedPathOperationId
               ? 'bg-sky-500/15 text-sky-100'
               : hoveredPathElement?.operationId === element.operationId
                 ? 'bg-cyan-500/10 text-cyan-100'
                 : ''
           }`}
-          style={compact ? { paddingLeft: `${treeDepth * 10}px` } : undefined}
+          style={{ paddingLeft: `${treeDepth * 10}px` }}
         >
           <button
             aria-expanded={expanded}
@@ -2144,9 +2096,7 @@ function renderContourTreeNode({
             {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
           </button>
           <span
-            className={`flex items-center justify-center font-mono text-[10px] font-semibold text-sky-200 ${
-              compact ? '' : 'border-x border-border bg-sky-400/5'
-            }`}
+            className="flex items-center justify-center font-mono text-[10px] font-semibold text-sky-200"
             data-upid-contour-field="order"
           >
             {workbookNumber}
@@ -2243,12 +2193,10 @@ function renderContourTreeNode({
           <button
             aria-expanded={cutPathExpanded}
             aria-label={`${cutPathExpanded ? 'Collapse' : 'Expand'} cut path in ${label}`}
-            className={`flex h-6 w-full min-w-0 items-center gap-1 border-b border-border/40 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring ${
-              compact ? 'pr-2' : 'px-2'
-            }`}
+            className={`flex h-6 w-full min-w-0 items-center gap-1 border-b border-border/40 text-left text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring pr-2`}
             data-upid-cut-path-disclosure
             onClick={() => toggleCutPathExpanded(element.id)}
-            style={compact ? { paddingLeft: `${22 + (treeDepth + 1) * 10}px` } : undefined}
+            style={{ paddingLeft: `${22 + (treeDepth + 1) * 10}px` }}
             type="button"
           >
             {cutPathExpanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
@@ -2258,7 +2206,7 @@ function renderContourTreeNode({
             </span>
           </button>
           {cutPathExpanded && (
-            <div className={compact ? '' : 'border-t border-border bg-card/35'} data-upid-segment-stack>
+            <div data-upid-segment-stack>
               {renderLeadRow(element, transitions?.entry, 'lead-in', hoveredPathElement,
                 selectedPathElement, onHoverPathElement, onSelectPathElement)}
               {element.segmentRefs.map((ref, index) =>
@@ -2275,7 +2223,6 @@ function renderContourTreeNode({
                   isSaving,
                   expandedSegmentDetailIds[segmentDetailsKey(element.id, ref.segmentId, index)] ?? false,
                   () => onToggleSegmentDetails(segmentDetailsKey(element.id, ref.segmentId, index)),
-                  compact,
                   treeDepth
                 )
               )}
@@ -2287,26 +2234,14 @@ function renderContourTreeNode({
       )}
       {expanded && node.children.length > 0 && (
         <div
-          className={compact ? '' : 'border-t border-sky-400/20 bg-sky-400/[0.03] p-2'}
           data-upid-contour-children-list
           data-upid-nested-contours-section
         >
-          {!compact && (
-            <div className="mb-2 flex items-center justify-between text-[9px] uppercase tracking-[0.14em] text-sky-200/80">
-              <span>Nested contours</span>
-              <span>
-                {node.children.length} inside {label}
-              </span>
-            </div>
-          )}
-          {compact && (
             <span className="sr-only">
               Nested contours · {node.children.length} inside {label}
             </span>
-          )}
           {node.children.map((child) =>
             renderContourTreeNode({
-              compact,
               expandedSegmentDetailIds,
               hoveredPathElement,
               isSaving,
@@ -2525,7 +2460,6 @@ function renderSegmentRow(
   isSaving: boolean,
   detailsExpanded: boolean,
   onToggleDetails: () => void,
-  compact: boolean,
   treeDepth: number
 ) {
   const start = orientedSegmentStart(segment, ref);
@@ -2593,16 +2527,13 @@ function renderSegmentRow(
       key={`${pathElement.id}-${segment.id}-${index}`}
     >
       <div
-        className={compact ? 'grid grid-cols-[18px_minmax(0,1fr)]' : 'grid grid-cols-[minmax(0,1fr)_28px]'}
-        style={compact ? { paddingLeft: `${30 + (treeDepth + 1) * 10}px` } : undefined}
+        className="grid grid-cols-[18px_minmax(0,1fr)]"
+        style={{ paddingLeft: `${30 + (treeDepth + 1) * 10}px` }}
       >
       <button
         aria-label={`Select segment ${index + 1} in ${pathElement.displayName}`}
         aria-pressed={selected}
-          className={`${compact
-            ? 'order-last flex h-6 min-w-0 items-center gap-1 px-1 pr-2 text-left text-[10px] text-muted-foreground outline-none'
-            : 'grid min-w-0 grid-cols-[30px_minmax(0,1fr)] items-center gap-1.5 px-2 py-1.5 text-left text-[10px] text-muted-foreground outline-none'
-          } ${
+          className={`order-last flex h-6 min-w-0 items-center gap-1 px-1 pr-2 text-left text-[10px] text-muted-foreground outline-none ${
           selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
         }`}
         data-upid-hovered={hovered ? 'true' : undefined}
@@ -2635,7 +2566,6 @@ function renderSegmentRow(
         title={segmentHelp}
         type="button"
       >
-        {compact ? (
           <>
             <span
               className="shrink-0 font-mono text-[10px] text-cyan-100"
@@ -2647,7 +2577,7 @@ function renderSegmentRow(
             <span className="shrink-0 font-medium uppercase text-foreground" data-upid-tree-kind-label>
               {segment.kind}
             </span>
-            {renderSegmentSummary(geometryPresentation, true)}
+            {renderSegmentSummary(geometryPresentation)}
             {diagnosticSummary.count > 0 && (
               <span className="shrink-0 text-[9px] text-amber-200">{diagnosticSummary.count}</span>
             )}
@@ -2655,39 +2585,6 @@ function renderSegmentRow(
               {formatPoint(start)} → {formatPoint(end)}
             </span>
           </>
-        ) : (
-          <>
-            <span
-              className="flex size-7 items-center justify-center border border-border bg-background/50 font-mono text-[10px] text-cyan-100"
-              data-upid-tree-depth-rail="segment"
-            >
-              S{index + 1}
-            </span>
-            <span className="min-w-0">
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span className="shrink-0 text-[10px] font-medium uppercase text-foreground" data-upid-tree-kind-label>
-                  {segment.kind}
-                </span>
-                {renderSegmentSummary(geometryPresentation, false)}
-              </span>
-              {diagnosticSummary.count > 0 && (
-                <span className="mt-0.5 flex items-center gap-2 text-[9px] text-muted-foreground">
-                  <span className="text-amber-200">{diagnosticSummary.count} issues</span>
-                </span>
-              )}
-              <span className="sr-only" data-upid-segment-span>
-                {formatPoint(start)} → {formatPoint(end)}
-              </span>
-              <span className="sr-only" data-upid-tree-action-hint>
-                Selects one segment on canvas
-              </span>
-              <span className="sr-only" data-upid-segment-kind-label>
-                {segmentKindLabel}
-              </span>
-            </span>
-          </>
-        )}
-        {compact && (
           <>
             <span className="sr-only" data-upid-tree-action-hint>
               Selects one segment on canvas
@@ -2696,15 +2593,12 @@ function renderSegmentRow(
               {segmentKindLabel}
             </span>
           </>
-        )}
         </button>
         <button
           aria-controls={detailsId}
           aria-expanded={detailsExpanded}
           aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} segment ${index + 1} details in ${pathElement.displayName}`}
-          className={`flex items-center justify-center text-muted-foreground outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring ${
-            compact ? 'order-first' : 'border-l border-border'
-          }`}
+          className="order-first flex items-center justify-center text-muted-foreground outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -2718,9 +2612,7 @@ function renderSegmentRow(
       </div>
       {detailsExpanded && (
         <div
-          className={`border-t border-border bg-background/35 px-2 py-1.5 ${
-            compact ? 'ml-14' : ''
-          }`}
+          className="ml-14 border-t border-border bg-background/35 px-2 py-1.5"
           data-upid-segment-details
           id={detailsId}
         >
@@ -2964,10 +2856,8 @@ function renderGeometryPointRow(
   );
 }
 
-function renderSegmentSummary(presentation: SegmentGeometryPresentation, compact: boolean) {
-  const summaryClass = compact
-    ? 'min-w-0 truncate text-[9px] text-muted-foreground'
-    : 'min-w-0 truncate text-[10px] text-muted-foreground';
+function renderSegmentSummary(presentation: SegmentGeometryPresentation) {
+  const summaryClass = 'min-w-0 truncate text-[9px] text-muted-foreground';
 
   if (presentation.kind === 'line') {
     return (

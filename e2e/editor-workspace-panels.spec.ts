@@ -425,7 +425,7 @@ test('editor diagnostics explain what to inspect for an open chain', async ({ pa
 
   await showPanels(page, ['path-diagnostics']);
   await expect(page.locator('[data-editor-workspace-panel="path-diagnostics"]')).toBeVisible();
-  await diagnosticRow.getByRole('button', { name: 'Open Contour Tree' }).click();
+  await diagnosticRow.getByRole('button', { name: 'Show Geometry' }).click();
   await expect(page.locator('[data-upid-contour-tree]')).toBeVisible();
   await expect(page.locator('[data-editor-workspace-panel="endpoint-topology"]')).toHaveCount(0);
 });

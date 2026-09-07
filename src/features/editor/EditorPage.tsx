@@ -269,7 +269,6 @@ type EditorWorkspacePanelId =
   | 'endpoint-topology'
   | 'path-diagnostics'
   | 'cut-sequence'
-  | 'contour-tree'
   | 'initial-wire-position'
   | 'entry-exit'
   | 'between-contours'
@@ -289,7 +288,6 @@ const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, string> = {
   'endpoint-topology': 'Endpoint Topology',
   'path-diagnostics': 'Path Diagnostics',
   'cut-sequence': 'Cut Sequence',
-  'contour-tree': 'Contour Tree',
   'initial-wire-position': 'Initial wire position',
   'entry-exit': 'Entry / Exit',
   'between-contours': 'Between Contours',
@@ -309,7 +307,6 @@ const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId, string
   'endpoint-topology': 'join map for endpoint joins, healed gaps, open ends, and ambiguous clusters',
   'path-diagnostics': 'warnings and linked rows for broken or risky path geometry',
   'cut-sequence': 'operation order, rapid moves, and cut direction',
-  'contour-tree': 'nested contours, segments, endpoints, and canvas cross-highlighting',
   'initial-wire-position': 'reviewed initial wire coordinates and first connection origin',
   'entry-exit': 'per-operation cutting entry and exit geometry',
   'between-contours': 'derived rapid travel and manual or automatic rethread policy',
@@ -328,7 +325,6 @@ const PATH_WORKSPACE_PANEL_IDS: EditorWorkspacePanelId[] = [
   'endpoint-topology',
   'path-diagnostics',
   'cut-sequence',
-  'contour-tree',
   'initial-wire-position',
   'entry-exit',
   'between-contours',
@@ -352,7 +348,6 @@ const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFlo
   'endpoint-topology': { x: 812, y: 84, width: 360, height: 300 },
   'path-diagnostics': { x: 370, y: 224, width: 360, height: 260 },
   'cut-sequence': { x: 394, y: 254, width: 340, height: 340 },
-  'contour-tree': { x: 418, y: 84, width: 380, height: 560 },
   'initial-wire-position': { x: 620, y: 110, width: 360, height: 430 },
   'entry-exit': { x: 650, y: 130, width: 390, height: 620 },
   'between-contours': { x: 670, y: 145, width: 390, height: 520 },
@@ -408,7 +403,6 @@ const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
     prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
   },
   ...([
-    ['view.contours', 'Contour Tree', 'contour-tree'],
     ['view.endpoints', 'Endpoint Topology', 'endpoint-topology'],
     ['view.diagnostics', 'Path Diagnostics', 'path-diagnostics'],
     ['view.statistics', 'Statistics', 'statistics']
@@ -1039,7 +1033,6 @@ export function EditorPage({
     return EDITOR_WORKFLOW_MENU_TITLES.map((title) => ({
       title,
       commands: EDITOR_COMMAND_REGISTRY.commandsForMenu(title)
-        .filter((command) => command.id !== 'view.contours')
         .map((command) => {
           const availability = evaluateEditorCommand(command, context);
           return {
@@ -3681,8 +3674,8 @@ export function EditorPage({
     }));
   }
 
-  function showWorkspacePanel(panelId: EditorWorkspacePanelId) {
-    if (panelId === 'contour-tree') {
+  function showWorkspacePanel(panelId: EditorWorkspacePanelId | 'geometry-rail') {
+    if (panelId === 'geometry-rail') {
       setUpidRailMode('geometry');
       if (isCompactViewport || isMiddleViewport) {
         setCompactDrawer('upid');
