@@ -2139,6 +2139,30 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected-travel="length"]')?.textContent).toBe('5.000');
   });
 
+  it('selects a partial-cut exit on the canvas and inspects its active geometry', async () => {
+    const source = pathDocumentFromRectangle();
+    const operation = source.plan.operations[0];
+    const configured = setPathOperationTransitions(source, operation.id, {
+      exit: { strategy: 'manual-straight', move: 'cut', from: operation.endPoint,
+        to: { x: -3, y: 0 }, review: 'reviewed' }
+    })!;
+    const partial = setMachiningSpanParticipation(configured, {
+      sourceSegmentId: operation.segmentRefs[0].segmentId,
+      range: { start: 0.6, end: 1 }, participation: 'inactive-reference'
+    })!;
+    await act(async () => root.render(
+      <EditorPageHarness initialWorkflowId="view.statistics" onSaveEditorDraft={vi.fn()}
+        project={projectWithUpid(partial)} />
+    ));
+    await flushAsync();
+    await clickElement('path[data-preview-travel="lead-out"]');
+    expect(container.querySelector('path[data-preview-travel="lead-out"]')?.getAttribute('data-preview-selected')).toBe('true');
+    expect(container.querySelector('[data-upid-selected-travel="kind"]')?.textContent).toBe('lead-out');
+    expect(container.querySelector('[data-upid-selected-travel="length"]')?.textContent).toBe('9.000');
+    await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Entry and exit operation"]')?.value).toBe(operation.id);
+  });
+
   it('associates rich endpoint help with the Contour Tree selection action only', async () => {
     const project = projectWithUpid(pathDocumentFromRectangle());
 

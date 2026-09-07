@@ -242,7 +242,7 @@ export function buildEditorPathDocumentPreviewGeometry(
         start: rapidStart,
         end: entryPoint,
         line: pathLineNumber(options.lineHints, pathIndex++),
-        operationId: operation.id,
+        operationId: sourceOperationId,
         pathElementId,
         source: 'path-document',
         travelRole: 'rapid-in',
@@ -267,7 +267,7 @@ export function buildEditorPathDocumentPreviewGeometry(
         start: leadIn.from,
         end: leadIn.to,
         line: pathLineNumber(options.lineHints, pathIndex++),
-        operationId: operation.id,
+        operationId: sourceOperationId,
         pathElementId,
         source: 'path-document',
         travelRole: 'lead-in',
@@ -303,7 +303,7 @@ export function buildEditorPathDocumentPreviewGeometry(
         type: 'cut', bounds: exitBounds, d: linePath(exit.from, exit.to),
         start: exit.from, end: exit.to,
         line: pathLineNumber(options.lineHints, pathIndex++),
-        operationId: operation.id, pathElementId, source: 'path-document',
+        operationId: sourceOperationId, pathElementId, source: 'path-document',
         travelRole: 'lead-out', travelSource: 'planned'
       });
     }
