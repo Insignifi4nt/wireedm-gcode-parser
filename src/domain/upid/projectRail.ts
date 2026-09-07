@@ -13,7 +13,8 @@ import type {
   Point2,
   SegmentId
 } from '@/domain/path-intel/types';
-import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
+import { operationEntryPoint, operationExitPoint, readOperationTransitions } from '@/domain/path-intel/operationTransitions';
+import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
 import type { DxfInsertSource } from '@/domain/dxf/types';
 import {
   distance,
@@ -1209,29 +1210,32 @@ export function readUpidSelectedPathTravel(
   const operation = document.plan.operations[operationIndex];
   if (!operation || element.operationId !== operation.id) return null;
 
-  if (element.travelRole === 'lead-in') {
-    const entry = readOperationTransitions(operation).entry;
-    const leadIn = entry && entry.strategy !== 'none' ? entry : null;
-    return leadIn
+  if (element.travelRole === 'lead-in' || element.travelRole === 'lead-out') {
+    const transitions = readOperationTransitions(operation);
+    const lead = element.travelRole === 'lead-in' ? transitions.entry : transitions.exit;
+    return lead && lead.strategy !== 'none'
       ? {
-          end: { ...leadIn.to },
-          kind: 'lead-in',
-          length: distance(leadIn.from, leadIn.to),
-          start: { ...leadIn.from }
+          end: { ...lead.to },
+          kind: element.travelRole,
+          length: distance(lead.from, lead.to),
+          start: { ...lead.from }
         }
       : null;
   }
 
   const previousOperation = operationIndex > 0 ? document.plan.operations[operationIndex - 1] : null;
-  const start = previousOperation?.endPoint ?? document.options.startPoint;
-  const entry = readOperationTransitions(operation).entry;
-  const end = entry && entry.strategy !== 'none' ? entry.from : operation.startPoint;
+  const initial = resolveInitialWirePosition(document);
+  const start = previousOperation
+    ? operationExitPoint(previousOperation)
+    : initial.status === 'ready' ? initial.point : null;
+  if (!start) return null;
+  const end = operationEntryPoint(operation);
 
   return {
-    end,
+    end: { ...end },
     kind: 'rapid-in',
     length: distance(start, end),
-    start
+    start: { ...start }
   };
 }
 

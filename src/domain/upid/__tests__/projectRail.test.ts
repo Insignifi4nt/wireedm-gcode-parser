@@ -6,6 +6,7 @@ import {
   reversePathOperation,
   setCircleOperationCenterPierceLeadIn,
   setClosedOperationStartNearPoint,
+  setPathOperationTransitions,
   setPathOperationClassification
 } from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
@@ -888,6 +889,44 @@ describe('UPID project rail projection', () => {
       length: 20,
       start: { x: 0, y: 0 }
     });
+  });
+
+  it('inspects exit leads and positions the next operation from their destination', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(
+      [...rectangleLines(0, 0, 5, 5), ...rectangleLines(20, 0, 25, 5)]
+    );
+    const [first, second] = document.plan.operations;
+    const exitPoint = { x: -3, y: -4 };
+    const edited = setPathOperationTransitions(document, first.id, {
+      exit: { strategy: 'manual-straight', move: 'cut', from: first.endPoint, to: exitPoint, review: 'reviewed' }
+    })!;
+    expect(readUpidSelectedPathTravel(edited, 0, {
+      operationId: first.id, segmentId: null, travelRole: 'lead-out'
+    })).toEqual({ kind: 'lead-out', start: first.endPoint, end: exitPoint, length: 5 });
+    expect(readUpidSelectedPathTravel(edited, 1, {
+      operationId: second.id, segmentId: null, travelRole: 'rapid-in'
+    })).toEqual({
+      kind: 'rapid-in', start: exitPoint, end: second.startPoint, length: Math.hypot(23, 4)
+    });
+    expect(readUpidSelectedPathTravel(document, 0, {
+      operationId: first.id, segmentId: null, travelRole: 'lead-out'
+    })).toBeNull();
+  });
+
+  it('uses the reviewed initial wire position for first positioning travel', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 5, 5));
+    const selection = {
+      operationId: document.plan.operations[0].id, segmentId: null, travelRole: 'rapid-in' as const
+    };
+    expect(readUpidSelectedPathTravel(document, 0, selection)).toBeNull();
+    document.setup = {
+      initialWirePosition: { kind: 'manual', point: { x: -3, y: -4 }, review: 'reviewed' }
+    };
+    expect(readUpidSelectedPathTravel(document, 0, selection)).toEqual({
+      kind: 'rapid-in', start: { x: -3, y: -4 }, end: { x: 0, y: 0 }, length: 5
+    });
+    document.setup.initialWirePosition!.review = 'required';
+    expect(readUpidSelectedPathTravel(document, 0, selection)).toBeNull();
   });
 
   it('reads center pierce lead-in travel from operation overrides', () => {
