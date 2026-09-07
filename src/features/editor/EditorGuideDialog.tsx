@@ -1,6 +1,8 @@
+import { useRef } from 'react';
 import { Crosshair, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { useModalFocus } from '@/components/ui/useModalFocus';
 
 import {
   EDITOR_GUIDE_LANGUAGES,
@@ -10,6 +12,7 @@ import {
 } from './editorGuideContent';
 
 interface EditorGuideDialogProps {
+  context: 'path' | 'program';
   language: EditorGuideLanguage;
   onClose: () => void;
   onHighlight: (target: EditorGuideTarget) => void;
@@ -18,20 +21,26 @@ interface EditorGuideDialogProps {
 }
 
 export function EditorGuideDialog({
+  context,
   language,
   onClose,
   onHighlight,
   onLanguageChange,
   open
 }: EditorGuideDialogProps) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useModalFocus({ open, overlayRef, dialogRef, initialFocusRef: closeRef, onClose });
   if (!open) return null;
 
-  const copy = getEditorGuideCopy(language);
+  const copy = getEditorGuideCopy(language, context);
 
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4"
       data-editor-guide-overlay
+      ref={overlayRef}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -42,6 +51,8 @@ export function EditorGuideDialog({
         className="grid max-h-[86vh] w-full max-w-4xl grid-rows-[auto_auto_minmax(0,1fr)] border border-border bg-card shadow-2xl"
         onMouseDown={(event) => event.stopPropagation()}
         role="dialog"
+        ref={dialogRef}
+        tabIndex={-1}
       >
         <div className="flex items-start justify-between gap-4 border-b border-border p-4">
           <div>
@@ -54,6 +65,7 @@ export function EditorGuideDialog({
             aria-label={copy.closeLabel}
             className="flex size-7 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
             onClick={onClose}
+            ref={closeRef}
             type="button"
           >
             <X className="size-4" />

@@ -6,6 +6,7 @@ async function openReadyWorkbench(page: import('@playwright/test').Page) {
   await page.goto('/');
   await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
   await expect(page.locator('input[aria-label="Machine program file"]')).toBeEnabled();
+  await dismissOnboarding(page);
 }
 
 test('loads the workbench dashboard in a real browser', async ({ page }) => {

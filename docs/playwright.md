@@ -1,10 +1,10 @@
 # Playwright Workflow
 
-The browser tests start their own Vite server on port 3107. Development uses 3777; production preview uses 3778. Keep these ports separate.
+The browser tests build a snapshot into `tmp/playwright-dist` and serve it on port 3107. Development uses 3777; the regular production preview uses 3778. Keep these ports separate.
 
 The repo has two Playwright paths:
 
-- `npm run test:e2e` runs browser smoke tests against the Vite dev server.
+- `npm run test:e2e` runs browser workflows against a production build.
 - `npm run test:e2e:workbench` seeds the browser cache from a real workbench folder, then opens the newest existing project in the editor.
 
 The seeder uses the same browser-cache namespace as the app: `wire-edm-workbench`.
@@ -40,4 +40,4 @@ $env:WIREDM_PLAYWRIGHT_WORKBENCH = 'C:\path\to\workbench'
 npm run test:e2e:workbench
 ```
 
-The external-workbench test skips when no fixture folder is available. Other browser tests create their own projects. Run final checks against stable source files; live edits can trigger Vite reloads during a test.
+The external-workbench test skips when no fixture folder is available. Other browser tests create their own projects. Each run uses one build, so later development edits cannot reload a test page. Run the final suite after all intended changes are included in that build.

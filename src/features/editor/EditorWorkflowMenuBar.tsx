@@ -46,8 +46,8 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
 
     if (focusFirstCommandFor.current === openMenu) {
       const group = visibleGroups.find((candidate) => candidate.title === openMenu);
-      const firstEnabled = group?.commands.find((command) => command.enabled);
-      if (firstEnabled) commandRefs.current.get(firstEnabled.id)?.focus();
+      const first = group?.commands[0];
+      if (first) commandRefs.current.get(first.id)?.focus();
       focusFirstCommandFor.current = null;
     }
   }, [compactOpen, openMenu, visibleGroups]);
@@ -77,12 +77,12 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
 
   function openMenuFor(title: string, focusFirstCommand = false) {
     const group = visibleGroups.find((candidate) => candidate.title === title);
-    const firstEnabled = group?.commands.find((command) => command.enabled);
+    const first = group?.commands[0];
     focusFirstCommandFor.current = focusFirstCommand ? title : null;
     setOpenMenu(title);
-    setActiveCommandId(firstEnabled?.id ?? null);
-    if (focusFirstCommand && firstEnabled) {
-      queueMicrotask(() => commandRefs.current.get(firstEnabled.id)?.focus());
+    setActiveCommandId(first?.id ?? null);
+    if (focusFirstCommand && first) {
+      queueMicrotask(() => commandRefs.current.get(first.id)?.focus());
     }
   }
 
@@ -107,13 +107,13 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
   }
 
   function moveFocus(group: EditorWorkflowMenuGroup, commandId: string, direction: 1 | -1) {
-    const enabledCommands = group.commands.filter((command) => command.enabled);
-    if (enabledCommands.length === 0) return;
-    const currentIndex = enabledCommands.findIndex((command) => command.id === commandId);
+    const commands = group.commands;
+    if (commands.length === 0) return;
+    const currentIndex = commands.findIndex((command) => command.id === commandId);
     const nextIndex = currentIndex === -1
-      ? (direction === 1 ? 0 : enabledCommands.length - 1)
-      : (currentIndex + direction + enabledCommands.length) % enabledCommands.length;
-    const next = enabledCommands[nextIndex];
+      ? (direction === 1 ? 0 : commands.length - 1)
+      : (currentIndex + direction + commands.length) % commands.length;
+    const next = commands[nextIndex];
     setActiveCommandId(next.id);
     commandRefs.current.get(next.id)?.focus();
   }
@@ -146,7 +146,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
   function renderCommandMenu(group: EditorWorkflowMenuGroup, compact: boolean) {
     const menuId = `editor-workflow-menu-${compact ? 'compact-' : ''}${group.title.toLowerCase()}`;
     const activeCommand = group.commands.find((command) => command.id === activeCommandId)
-      ?? group.commands.find((command) => command.enabled)
+      ?? group.commands[0]
       ?? null;
     const description = activeCommand?.enabled
       ? activeCommand.description
@@ -176,13 +176,21 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
             event.preventDefault();
             moveFocus(group, commandId, -1);
           }
+          if (event.key === 'Home' || event.key === 'End') {
+            event.preventDefault();
+            const target = event.key === 'Home' ? group.commands[0] : group.commands.at(-1);
+            if (target) {
+              setActiveCommandId(target.id);
+              commandRefs.current.get(target.id)?.focus();
+            }
+          }
         }}
       >
         {compact && (
           <div className="flex h-7 items-center gap-1 border-b border-border px-1">
             <button
               aria-label="Back to workflow categories"
-              className="h-6 px-1.5 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+              className="h-6 px-1.5 text-[10px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
               data-editor-workflow-compact-back
               onClick={() => {
                 focusCategoryAfterRender.current = group.title;
@@ -210,18 +218,18 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
                 aria-describedby={!command.enabled && command.disabledReason ? disabledReasonId : undefined}
                 aria-disabled={!command.enabled || undefined}
                 aria-label={command.ariaLabel ?? command.label}
-                className="flex min-h-[32px] w-full items-center px-2 text-left text-[11px] leading-4 text-foreground enabled:hover:bg-accent disabled:cursor-not-allowed disabled:text-muted-foreground disabled:opacity-55"
+                className="flex min-h-[32px] w-full items-center px-2 text-left text-[11px] leading-4 text-foreground outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring aria-disabled:cursor-not-allowed aria-disabled:text-muted-foreground aria-disabled:opacity-55"
                 data-editor-workflow-command={command.id}
-                disabled={!command.enabled}
                 key={command.id}
                 onFocus={() => setActiveCommandId(command.id)}
-                onMouseEnter={() => command.enabled && setActiveCommandId(command.id)}
+                onMouseEnter={() => setActiveCommandId(command.id)}
                 onClick={() => {
                   if (!command.enabled) return;
                   command.onExecute();
                   closeMenu();
                 }}
                 role="menuitem"
+                tabIndex={activeCommandId === command.id ? 0 : -1}
                 title={command.enabled ? command.description : command.disabledReason}
                 type="button"
               >
@@ -277,7 +285,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
                 aria-expanded={isOpen}
                 aria-haspopup="menu"
                 aria-label={`${group.title} menu`}
-                className="px-1.5 py-1 text-[11px] leading-4 text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+                className="px-1.5 py-1 text-[11px] leading-4 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
                 onClick={() => {
                   setCompactOpen(false);
                   if (isOpen) closeMenu();
@@ -290,12 +298,12 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
                   }
                   if (event.key === 'ArrowUp') {
                     event.preventDefault();
-                    const lastEnabled = [...group.commands].reverse().find((command) => command.enabled);
-                    if (!lastEnabled) return;
+                    const last = group.commands.at(-1);
+                    if (!last) return;
                     focusFirstCommandFor.current = null;
                     setOpenMenu(group.title);
-                    setActiveCommandId(lastEnabled.id);
-                    queueMicrotask(() => commandRefs.current.get(lastEnabled.id)?.focus());
+                    setActiveCommandId(last.id);
+                    queueMicrotask(() => commandRefs.current.get(last.id)?.focus());
                   }
                 }}
                 type="button"
@@ -369,7 +377,7 @@ export function EditorWorkflowMenuBar({ groups }: { groups: EditorWorkflowMenuGr
                   else categoryRefs.current.delete(group.title);
                 }}
                 aria-label={`Open ${group.title} workflows`}
-                className="flex min-h-8 w-full items-center border-b border-border px-2 text-left text-[11px] text-foreground outline-none last:border-b-0 hover:bg-accent"
+                className="flex min-h-8 w-full items-center border-b border-border px-2 text-left text-[11px] text-foreground outline-none last:border-b-0 hover:bg-accent focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
                 data-editor-workflow-category={group.title}
                 key={group.title}
                 onClick={() => {

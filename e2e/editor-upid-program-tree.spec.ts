@@ -101,6 +101,7 @@ async function openReadyWorkbench(page: Page) {
   await page.goto('/');
   await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
   await expect(page.locator('input[aria-label="Machine program file"]')).toBeEnabled();
+  await dismissOnboarding(page);
 }
 
 async function importTwoContourDxf(page: Page, name: string) {

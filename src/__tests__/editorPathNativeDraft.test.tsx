@@ -1843,10 +1843,11 @@ describe('EditorPage UPID draft boundary', () => {
       ).toBe(true);
     }
     await openWorkflowMenu('export.preview');
-    expect(
-      (container.querySelector('[data-editor-workflow-command="export.preview"]') as HTMLButtonElement)
-        .disabled
-    ).toBe(true);
+    const exportCommand = container.querySelector<HTMLButtonElement>('[data-editor-workflow-command="export.preview"]')!;
+    expect(exportCommand.getAttribute('aria-disabled')).toBe('true');
+    await act(async () => exportCommand.click());
+    expect(container.querySelector('[data-editor-export-preview]')).toBeNull();
+    expect(exportCommand.title).toContain('Wait for the current file action');
   });
 
   it('guards Back only after the active path draft is modified', async () => {

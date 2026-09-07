@@ -3,6 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { getEditorGuideCopy } from './editorGuideContent';
 
 describe('editor guide content', () => {
+  it.each(['en', 'ro'] as const)('offers only path-project actions in the %s path guide', language => {
+    const pathSteps = getEditorGuideCopy(language, 'path').sections.flatMap(section => section.steps);
+    expect(pathSteps.some(step => step.text.includes('Minimum feature gap'))).toBe(true);
+    expect(pathSteps.some(step => step.highlightTarget === 'grid-snap')).toBe(true);
+    expect(pathSteps.map(step => step.highlightTarget).filter(Boolean)).toEqual(['preview', 'grid-snap', 'measurement-points']);
+    const programSteps = getEditorGuideCopy(language, 'program').sections.flatMap(section => section.steps);
+    expect(programSteps.some(step => step.highlightTarget === 'normalize-draft')).toBe(true);
+    expect(programSteps.some(step => step.text.includes('Minimum feature gap'))).toBe(false);
+  });
+
   it('documents the non-conflicting measurement clear shortcut in both languages', () => {
     const englishSteps = getEditorGuideCopy('en').sections.flatMap((section) =>
       section.steps.map((step) => step.text)

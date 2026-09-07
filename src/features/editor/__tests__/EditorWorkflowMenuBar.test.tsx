@@ -71,7 +71,7 @@ describe('EditorWorkflowMenuBar', () => {
     expect(container.textContent).toContain('Configure machining settings.');
   });
 
-  it('moves focus to the first enabled command when ArrowDown opens a menu', async () => {
+  it('allows keyboard inspection of unavailable commands without executing them', async () => {
     await renderMenu();
     const geometryMenu = getMenuButton('Geometry');
     geometryMenu.focus();
@@ -80,9 +80,21 @@ describe('EditorWorkflowMenuBar', () => {
       geometryMenu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     });
 
-    expect(document.activeElement).toBe(
-      container.querySelector('[data-editor-workflow-command="geometry.command"]')
-    );
+    const blocked = container.querySelector<HTMLButtonElement>('[data-editor-workflow-command="geometry.blocked"]')!;
+    const enabled = container.querySelector<HTMLButtonElement>('[data-editor-workflow-command="geometry.command"]')!;
+    expect(document.activeElement).toBe(blocked);
+    expect(container.querySelector('[data-editor-workflow-description]')?.textContent).toBe('Select a contour first.');
+    await act(async () => blocked.click());
+    expect(groups[0].commands[0].onExecute).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-editor-workflow-menu="Geometry"]')).not.toBeNull();
+    await pressKey(blocked, 'End');
+    expect(document.activeElement).toBe(enabled);
+    await pressKey(enabled, 'Home');
+    expect(document.activeElement).toBe(blocked);
+    await pressKey(blocked, 'ArrowDown');
+    expect(document.activeElement).toBe(enabled);
+    await pressKey(enabled, 'ArrowDown');
+    expect(document.activeElement).toBe(blocked);
   });
 
   it('closes a mouse-opened desktop menu with Escape at its trigger', async () => {
@@ -151,7 +163,7 @@ describe('EditorWorkflowMenuBar', () => {
       '[data-editor-workflow-command="geometry.blocked"]'
     );
     const describedBy = blocked?.getAttribute('aria-describedby');
-    expect(blocked?.disabled).toBe(true);
+    expect(blocked?.getAttribute('aria-disabled')).toBe('true');
     expect(blocked?.title).toBe('Select a contour first.');
     expect(describedBy).toBeTruthy();
     expect(document.getElementById(describedBy ?? '')?.textContent).toBe('Select a contour first.');

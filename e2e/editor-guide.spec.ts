@@ -1,0 +1,40 @@
+import { expect, test } from '@playwright/test';
+
+import { confirmPendingDxfImport } from './dxf-import';
+
+test('guide owns focus and Escape without discarding an active geometry edit', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
+  await page.getByLabel('DXF file').setInputFiles('examples/robofil-100-v2/no-lead-rectangle.dxf');
+  await confirmPendingDxfImport(page);
+  await page.getByRole('button', { name: 'Geometry menu', exact: true }).click();
+  await page.locator('[data-editor-workflow-command="geometry.transform"]').click();
+  await page.getByRole('button', { name: 'Rotate document 90 degrees counterclockwise', exact: true }).click();
+  const cuts = page.locator('path[data-preview-source="path-document"][data-type="cut"]');
+  const rotated = await cuts.evaluateAll(paths => paths.map(path => path.getAttribute('d')));
+  const launcher = page.getByRole('button', { name: 'Open usage guide', exact: true });
+  await launcher.click();
+  const guide = page.getByRole('dialog', { name: 'Wire EDM Workbench Manual', exact: true });
+  const close = guide.getByRole('button', { name: 'Close guide', exact: true });
+  await expect(close).toBeFocused();
+  await expect(page.locator('[data-app-header]')).toHaveAttribute('inert', '');
+  await page.keyboard.press('Shift+Tab');
+  await expect(guide.getByRole('button', { name: 'Show me', exact: true }).last()).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Escape');
+  await expect(guide).toHaveCount(0);
+  await expect(launcher).toBeFocused();
+  await expect(page.getByRole('dialog', { name: 'Unsaved workflow changes' })).toHaveCount(0);
+  expect(await cuts.evaluateAll(paths => paths.map(path => path.getAttribute('d')))).toEqual(rotated);
+  await expect(page.locator('[data-editor-workflow-actions="geometry.transform"]')).toBeVisible();
+  await page.locator('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]').click();
+  await expect(page.getByRole('button', { name: 'Undo active document change', exact: true })).toBeEnabled();
+  await launcher.click();
+  await guide.locator('[data-editor-guide-highlight="grid-snap"]').click();
+  await expect(page.getByRole('button', { name: 'Toggle preview grid snap' })).toBeVisible();
+  await expect(page.locator('[data-editor-workspace-panel="measurement"]')).toBeVisible();
+  expect(await cuts.evaluateAll(paths => paths.map(path => path.getAttribute('d')))).toEqual(rotated);
+});

@@ -6,6 +6,7 @@ async function openReadyWorkbench(page: import('@playwright/test').Page) {
   await page.goto('/');
   await expect(page.locator('input[aria-label="DXF file"]')).toBeEnabled();
   await expect(page.locator('input[aria-label="Machine program file"]')).toBeEnabled();
+  await dismissOnboarding(page);
 }
 
 test('machine program editor uses one header and an open resizable inspector', async ({ page }) => {

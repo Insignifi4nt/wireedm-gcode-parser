@@ -1,8 +1,9 @@
-import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from 'react';
+import { useRef, type MouseEvent } from 'react';
 import { X } from 'lucide-react';
 
 import onboardingPoster from '@/assets/wire-edm-onboarding-poster.png';
 import { Button } from '@/components/ui/button';
+import { useModalFocus } from '@/components/ui/useModalFocus';
 
 interface OnboardingDialogProps {
   open: boolean;
@@ -11,44 +12,11 @@ interface OnboardingDialogProps {
 
 export function OnboardingDialog({ open, onDismiss }: OnboardingDialogProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const previouslyFocused = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
-    closeButtonRef.current?.focus();
-
-    return () => previouslyFocused?.focus();
-  }, [open]);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  useModalFocus({ open, overlayRef, dialogRef, initialFocusRef: closeButtonRef, onClose: onDismiss });
 
   if (!open) return null;
-
-  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onDismiss();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-
-    const dialog = event.currentTarget;
-    const focusable = Array.from(
-      dialog.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select, textarea')
-    );
-    const first = focusable[0];
-    const last = focusable.at(-1);
-    if (!first || !last) return;
-
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
 
   function handleBackdropClick(event: MouseEvent<HTMLDivElement>) {
     if (event.target === event.currentTarget) onDismiss();
@@ -59,14 +27,16 @@ export function OnboardingDialog({ open, onDismiss }: OnboardingDialogProps) {
       className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-3 backdrop-blur-[2px] sm:p-6"
       data-onboarding-backdrop
       onClick={handleBackdropClick}
+      ref={overlayRef}
     >
       <section
         aria-describedby="onboarding-description"
         aria-labelledby="onboarding-title"
         aria-modal="true"
         className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[3px] border border-cyan-300/30 bg-[#0d1418] shadow-[0_24px_90px_rgba(0,0,0,0.75),0_0_45px_rgba(34,211,238,0.08)] outline-none sm:max-h-[calc(100dvh-3rem)]"
-        onKeyDown={handleKeyDown}
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <Button
           aria-label="Close onboarding"
@@ -97,7 +67,7 @@ export function OnboardingDialog({ open, onDismiss }: OnboardingDialogProps) {
               Thanks for trying Wire EDM Workbench
             </h2>
             <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground" id="onboarding-description">
-              Import clean geometry, prepare your project, and turn precision contours into machine-ready output locally.
+              Import geometry, review the cut plan, and export locally with your installed machine package.
             </p>
           </div>
           <Button className="w-full" onClick={onDismiss} type="button">
