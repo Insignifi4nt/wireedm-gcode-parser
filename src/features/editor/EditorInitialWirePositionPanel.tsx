@@ -31,6 +31,9 @@ export function EditorInitialWirePositionPanel({
 
   const circles = document.segments.filter((segment) => segment.kind === 'circle');
   const manualPoint = readFinitePoint(xDraft, yDraft);
+  const hasUnappliedCoordinates = currentPoint
+    ? !manualPoint || manualPoint.x !== currentPoint.x || manualPoint.y !== currentPoint.y
+    : xDraft.trim() !== '' || yDraft.trim() !== '';
 
   function setManual() {
     if (!manualPoint || disabled) return;
@@ -84,6 +87,13 @@ export function EditorInitialWirePositionPanel({
             />
           </label>
         </div>
+        {hasUnappliedCoordinates && (
+          <p aria-live="polite" className="leading-4 text-amber-300" data-initial-wire-position-pending>
+            {manualPoint
+              ? 'Coordinates are pending. Review and set the point to update START and the first connecting travel in the preview.'
+              : 'Enter valid X and Y coordinates, then review and set the point to update the preview.'}
+          </p>
+        )}
         <button
           aria-label="Review and set manual initial wire position"
           className="h-7 border border-border bg-background px-2 text-foreground disabled:opacity-40"
