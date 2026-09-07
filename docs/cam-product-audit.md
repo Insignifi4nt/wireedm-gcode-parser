@@ -48,7 +48,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Initial wire position | New-project applied position updates marker/travel and survives save/reopen. Pending coordinates are explicit; geometry-linked choices still need the full usability pass | in progress |
 | Entry/exit | Independent drafts, truthful review state, compact entry/exit navigator rows and correct travel inspection. Coincident leads blocked during editing and execution compilation; moving starts/reversing direction invalidates manual lead review. Clearance and derived contour-segment interactions remain | in progress |
 | Cut sequence | Manual/automatic order, nesting dependencies and travel | pending |
-| Between contours | Thread/separate defaults and overrides, continuous-wire constraints | pending |
+| Between contours | Removed fictitious Manual default; unset state is explicit. Added project manual separation and continuous-default display. Active-operation routing, readable summaries and continuous-wire constraints remain | in progress |
 | Machining participation | Geometry-bound entry/exit review, local validation, active-range lengths and contextual controls implemented. Range units, derived segment interactions and compensation usability remain | in progress |
 | Program stops | Added direct Edit actions with pending-field protection and save/undo coverage. Execution tests verify linear/circular and partial-cut placement. Added enabled-stop canvas markers with stable screen size, edit updates and undo coverage; placement labels distinguish positioning from cutting entry. Form consolidation remains | in progress |
 | Endpoint topology | Expose repair-relevant facts; move raw topology detail behind disclosure | pending |
@@ -80,6 +80,7 @@ The checks below cover specific behavior, not completion of entire inventory row
 | Participation | Entry/no-entry and exit confirmations use persisted geometry fingerprints, support revocation and invalidate on geometry/span changes. Local review works despite unrelated unresolved contours; global compilation remains blocked. Blank range fields are rejected. Active ranges show derived lengths, internal IDs are hidden, and compensation controls are contextual. |
 | Partial travel and review | Source operation identity survives clicking derived travel. `e2e/editor-partial-exit.spec.ts` covers active exit coordinates, confirmation, save/reload and undo of revocation. Domain tests cover portable storage validation and compile-after-confirm. Derived totals include leads: 6 mm contour + 8 mm leads = 14 mm cutting; stop distances remain contour-only. |
 | Floating panels | Desktop panels now use the same viewport bounds clamp as smaller layouts. The partial-exit browser test reproduced an unreachable Save button before the fix; it and all 23 layout scenarios pass afterward. |
+| Between contours | Missing project threading intent displays an unset choice rather than Manual. Project manual separation can be edited without changing operation overrides; continuous defaults have a matching option. Panel/editor tests verify choosing Manual from unset and changing project separation. |
 
 ### Verification checkpoints
 

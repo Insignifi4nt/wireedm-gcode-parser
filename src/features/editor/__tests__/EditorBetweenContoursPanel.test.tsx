@@ -53,6 +53,7 @@ describe('EditorBetweenContoursPanel', () => {
       }
     })!;
     const onSetOperationThreading = vi.fn();
+    const onSetProjectThreading = vi.fn();
 
     await act(async () => {
       root.render(
@@ -61,7 +62,7 @@ describe('EditorBetweenContoursPanel', () => {
           document={document}
           onSelectOperation={vi.fn()}
           onSetOperationThreading={onSetOperationThreading}
-          onSetProjectThreading={vi.fn()}
+          onSetProjectThreading={onSetProjectThreading}
           selectedOperationId={second.id}
         />
       );
@@ -72,6 +73,10 @@ describe('EditorBetweenContoursPanel', () => {
     expect(container.textContent).toContain('X13.000 Y0.000');
     expect(container.querySelector('input')).toBeNull();
     expect(container.textContent).toContain('Rethreading');
+    const defaultSelect = container.querySelector<HTMLSelectElement>('[aria-label="Project threading default"]')!;
+    expect(defaultSelect.value).toBe('');
+    await act(async () => setSelect(defaultSelect, 'manual'));
+    expect(onSetProjectThreading).toHaveBeenCalledWith({ mode: 'manual', wireSeparation: 'already-separated' });
 
     await act(async () => {
       setSelect(
@@ -83,6 +88,20 @@ describe('EditorBetweenContoursPanel', () => {
       second.id,
       { mode: 'manual', wireSeparation: 'already-separated' }
     );
+    document.setup = { ...document.setup,
+      threadingDefault: { mode: 'manual', wireSeparation: 'already-separated' }
+    };
+    await act(async () => root.render(
+      <EditorBetweenContoursPanel disabled={false} document={document}
+        onSelectOperation={vi.fn()} onSetOperationThreading={onSetOperationThreading}
+        onSetProjectThreading={onSetProjectThreading} selectedOperationId={second.id} />
+    ));
+    await act(async () => setSelect(
+      container.querySelector<HTMLSelectElement>('[aria-label="Project manual wire separation"]')!,
+      'manual-before-positioning'
+    ));
+    expect(onSetProjectThreading).toHaveBeenLastCalledWith({ mode: 'manual', wireSeparation: 'manual-before-positioning' });
+    expect(onSetOperationThreading).toHaveBeenCalledTimes(1);
   });
 
   it('directs the first connection to Initial wire position', async () => {

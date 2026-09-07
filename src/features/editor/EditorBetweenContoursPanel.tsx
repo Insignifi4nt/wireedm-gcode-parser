@@ -48,10 +48,7 @@ export function EditorBetweenContoursPanel({
       ) ?? null
     : null;
   const threading = selected?.threadingTransition ?? document.setup?.threadingDefault ?? null;
-  const projectThreading = document.setup?.threadingDefault ?? {
-    mode: 'manual' as const,
-    wireSeparation: 'already-separated' as const
-  };
+  const projectThreading = document.setup?.threadingDefault;
 
   if (!selected || !route) {
     return <p className="text-[10px] text-muted-foreground">No operations are available.</p>;
@@ -118,12 +115,32 @@ export function EditorBetweenContoursPanel({
                 onChange={(event) =>
                   onSetProjectThreading(threadingForMode(event.currentTarget.value))
                 }
-                value={projectThreading.mode}
+                value={projectThreading?.mode ?? ''}
               >
+                <option value="" disabled>Choose default</option>
                 <option value="manual">Manual</option>
                 <option value="automatic">Automatic</option>
+                <option value="continuous">Continuous</option>
               </select>
             </label>
+            {projectThreading?.mode === 'manual' && (
+              <label className="grid grid-cols-[1fr_180px] items-center gap-2 text-muted-foreground">
+                Default separation
+                <select
+                  aria-label="Project manual wire separation"
+                  className="h-7 border border-border bg-background px-1 text-foreground"
+                  value={projectThreading.wireSeparation}
+                  onChange={(event) => onSetProjectThreading({
+                    mode: 'manual',
+                    wireSeparation: event.currentTarget.value === 'manual-before-positioning'
+                      ? 'manual-before-positioning' : 'already-separated'
+                  })}
+                >
+                  <option value="already-separated">Wire already separated</option>
+                  <option value="manual-before-positioning">Stop to separate wire</option>
+                </select>
+              </label>
+            )}
             <label className="grid grid-cols-[1fr_120px] items-center gap-2 text-muted-foreground">
               This transition
               <select
