@@ -481,8 +481,6 @@ export function reversePathOperation(document: PathPlanningDocument, operationId
   const next = cloneDocument(document);
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
   if (!operation) return null;
-  const previousStart = operation.startPoint;
-  const previousEnd = operation.endPoint;
 
   operation.segmentRefs = reversePathRefs(operation.segmentRefs);
   operation.direction = operation.direction === 'forward' ? 'reverse' : 'forward';
@@ -497,12 +495,10 @@ export function reversePathOperation(document: PathPlanningDocument, operationId
   refreshPlan(next);
   const entry = operation.transitions?.entry;
   const exit = operation.transitions?.exit;
-  if (entry?.strategy === 'manual-straight' &&
-    !pointsEqual(previousStart, operation.startPoint, next.options.coincidenceEpsilon)) {
+  if (entry?.strategy === 'manual-straight') {
     entry.review = 'required';
   }
-  if (exit?.strategy === 'manual-straight' &&
-    !pointsEqual(previousEnd, operation.endPoint, next.options.coincidenceEpsilon)) {
+  if (exit?.strategy === 'manual-straight') {
     exit.review = 'required';
   }
   return next;
@@ -519,6 +515,7 @@ export function setClosedOperationStartNearPoint(
 
   const nearest = nearestPointOnOperation(next, operation.id, point);
   if (!nearest) return null;
+  const previousStart = operation.startPoint;
 
   const startSelection = manualStartSelection(next, operation, nearest);
   const split = splitOperationSegmentAtPoint(next, operation, nearest);
@@ -539,6 +536,7 @@ export function setClosedOperationStartNearPoint(
   };
   syncChainRefs(next, operation);
   refreshPlan(next);
+  requireLeadReviewAfterStartChange(operation, previousStart, next.options.coincidenceEpsilon);
   return next;
 }
 
@@ -563,6 +561,7 @@ export function setClosedOperationStartAtInferredPoint(
   }
 
   const startSelection = manualStartSelection(next, operation, inferred);
+  const previousStart = operation.startPoint;
   const split = splitOperationSegmentAtPoint(next, operation, inferred);
   const refs = split?.refs ?? operation.segmentRefs;
   const startIndex = split?.startIndex ?? inferred.segmentIndex;
@@ -583,7 +582,15 @@ export function setClosedOperationStartAtInferredPoint(
   };
   syncChainRefs(next, operation);
   refreshPlan(next);
+  requireLeadReviewAfterStartChange(operation, previousStart, next.options.coincidenceEpsilon);
   return next;
+}
+
+function requireLeadReviewAfterStartChange(operation: PathOperation, previousStart: Point2, epsilon: number) {
+  if (pointsEqual(previousStart, operation.startPoint, epsilon)) return;
+  for (const lead of [operation.transitions?.entry, operation.transitions?.exit]) {
+    if (lead?.strategy === 'manual-straight') lead.review = 'required';
+  }
 }
 
 export function setCircleOperationCenterPierceLeadIn(

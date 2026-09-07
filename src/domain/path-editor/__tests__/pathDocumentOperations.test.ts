@@ -84,7 +84,7 @@ describe('pathDocumentOperations', () => {
     expect(configured.plan.operations[0].transitions?.entry).toMatchObject({ review: 'reviewed' });
   });
 
-  it('keeps reviewed leads when closed-path reversal preserves their endpoints', () => {
+  it('requires review when closed-path reversal changes the approach direction at unchanged endpoints', () => {
     const original = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 10));
     const operation = original.plan.operations[0];
     const configured = setPathOperationTransitions(original, operation.id, {
@@ -92,7 +92,32 @@ describe('pathDocumentOperations', () => {
       exit: { strategy: 'manual-straight', move: 'cut', from: operation.endPoint, to: { x: -3, y: 0 }, review: 'reviewed' }
     })!;
     expect(reversePathOperation(configured, operation.id)?.plan.operations[0].transitions)
+      .toMatchObject({
+        entry: { from: { x: -2, y: 0 }, to: operation.startPoint, review: 'required' },
+        exit: { from: operation.endPoint, to: { x: -3, y: 0 }, review: 'required' }
+      });
+    expect(configured.plan.operations[0].transitions?.entry).toMatchObject({ review: 'reviewed' });
+  });
+
+  it.each(['nearest', 'inferred'] as const)('invalidates manual lead review for a %s closed start, while retaining no-op review', (mode) => {
+    const original = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 10));
+    const operation = original.plan.operations[0];
+    const configured = setPathOperationTransitions(original, operation.id, {
+      entry: { strategy: 'manual-straight', move: 'cut', from: { x: -2, y: 0 }, to: operation.startPoint, review: 'reviewed' },
+      exit: { strategy: 'manual-straight', move: 'cut', from: operation.endPoint, to: { x: -3, y: 0 }, review: 'reviewed' }
+    })!;
+    expect(setClosedOperationStartNearPoint(configured, operation.id, operation.startPoint)?.plan.operations[0].transitions)
       .toEqual(configured.plan.operations[0].transitions);
+    const inferred = inferPathPoint(configured, {
+      mode: 'midpoint', operationId: operation.id, hintPoint: { x: 5, y: 0 }
+    });
+    const changed = mode === 'nearest'
+      ? setClosedOperationStartNearPoint(configured, operation.id, { x: 5, y: 0 })!
+      : setClosedOperationStartAtInferredPoint(configured, inferred!)!;
+    expect(changed.plan.operations[0].transitions).toMatchObject({
+      entry: { from: { x: -2, y: 0 }, to: { x: 5, y: 0 }, review: 'required' },
+      exit: { from: { x: 5, y: 0 }, to: { x: -3, y: 0 }, review: 'required' }
+    });
   });
 
   it('rejects remaining-cut stops at or beyond the active cut length, excluding leads', () => {
