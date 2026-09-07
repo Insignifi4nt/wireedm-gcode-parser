@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
-import { setManualInitialWirePosition, translatePathDocument } from '@/domain/path-editor/pathDocumentOperations';
+import { setGeometryLinkedInitialWirePosition, setManualInitialWirePosition, translatePathDocument } from '@/domain/path-editor/pathDocumentOperations';
 import { EditorInitialWirePositionPanel } from '../EditorInitialWirePositionPanel';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -84,6 +84,36 @@ describe('EditorInitialWirePositionPanel', () => {
     });
 
     expect(onSetGeometryLinked).toHaveBeenCalledWith(document.segments[0].id);
+    const linked = setGeometryLinkedInitialWirePosition(document, document.segments[0].id)!;
+    await act(async () => root.render(
+      <EditorInitialWirePositionPanel disabled={false} document={linked} onSetGeometryLinked={onSetGeometryLinked} onSetManual={vi.fn()} />
+    ));
+    const choice = container.querySelector('[data-initial-wire-circle-center]');
+    expect(choice?.getAttribute('aria-pressed')).toBe('true');
+    expect(choice?.getAttribute('aria-label')).toContain(linked.plan.operations[0].displayName);
+    expect(choice?.textContent).toContain('R5.000');
+    await act(async () => {
+      setInput(container.querySelector<HTMLInputElement>('[aria-label="Initial wire X"]')!, '99');
+    });
+    expect(container.querySelector('[data-initial-wire-position-pending]')).not.toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-initial-wire-circle-center]')?.click());
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Initial wire X"]')?.value).toBe('10');
+    expect(container.querySelector('[data-initial-wire-position-pending]')).toBeNull();
+  });
+
+  it('opens stale manual coordinates for review without treating them as an active position', async () => {
+    const source = createUpidFromDxfEntities([{ type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }]);
+    const manual = setManualInitialWirePosition(source, { x: -12.5, y: 7 })!;
+    const moved = translatePathDocument(manual, { x: 5, y: 0 })!;
+    const onSetManual = vi.fn();
+    await act(async () => root.render(
+      <EditorInitialWirePositionPanel disabled={false} document={moved} onSetGeometryLinked={vi.fn()} onSetManual={onSetManual} />
+    ));
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Initial wire X"]')?.value).toBe('-12.5');
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Initial wire Y"]')?.value).toBe('7');
+    expect(container.querySelector('[data-initial-wire-position-preview]')?.textContent).toBe('A reviewed point is required');
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Review and set manual initial wire position"]')?.click());
+    expect(onSetManual).toHaveBeenCalledWith({ x: -12.5, y: 7 });
   });
 });
 

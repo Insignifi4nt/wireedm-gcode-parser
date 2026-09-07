@@ -6,6 +6,7 @@ import {
   orientedSegmentStart
 } from '@/domain/path-intel/segments';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
+import { circularOperationSource } from '@/domain/path-intel/circularOperation';
 import { findPathSegmentIntersectionDiagnostics } from '@/domain/path-intel/intersections';
 import type {
   Bounds2,
@@ -270,10 +271,10 @@ function validateProjectSetup(
   const reference = record(initial.reference);
   const segmentId = reference?.segmentId;
   const segment = typeof segmentId === 'string' ? segmentMap.get(segmentId) : undefined;
-  if (reference?.kind !== 'circle-center' || !segment || segment.kind !== 'circle') {
+  if (reference?.kind !== 'circle-center' || !segment || segment.kind === 'line') {
     context.add(
       'upid-missing-reference',
-      'Geometry-linked initial wire position must reference an existing circle segment.',
+      'Geometry-linked initial wire position must reference an existing arc or circle segment.',
       typeof segmentId === 'string' ? { relatedSegmentIds: [segmentId] } : {}
     );
   }
@@ -2064,11 +2065,16 @@ function validateOperationTransitions(
       const source = typeof entry.sourceSegmentId === 'string'
         ? segmentMap.get(entry.sourceSegmentId)
         : undefined;
-      if (!source || source.kind !== 'circle') {
+      if (!source || source.kind === 'line' || !operation.segmentRefs.some((ref) => ref.segmentId === entry.sourceSegmentId)) {
         context.add(
           'upid-missing-reference',
-          `Operation ${operation.id} circle-center entry transition must reference a circle segment.`
+          `Operation ${operation.id} circle-center entry transition must reference its own arc or circle segment.`
         );
+      } else {
+        const circular = circularOperationSource({ operation, segments: segmentMap, epsilon: tolerance });
+        if (!circular || !finitePointOnly(entry.from) || distance(entry.from, circular.center) > tolerance) {
+          context.add('upid-invalid-value', `Operation ${operation.id} circle-center entry requires a complete circular contour and an entry at its center.`);
+        }
       }
     } else if (entry.strategy === 'manual-straight') {
       if (entry.review !== 'reviewed' && entry.review !== 'required') {

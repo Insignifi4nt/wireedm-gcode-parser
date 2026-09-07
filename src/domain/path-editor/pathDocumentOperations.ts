@@ -16,6 +16,7 @@ import {
   createLineSegment,
   distance,
   endpointKey,
+  normalizeAngle,
   orientedArcClockwise,
   orientedArcSweep,
   orientedSegmentEnd,
@@ -32,6 +33,7 @@ import {
   segmentMap
 } from '@/domain/path-intel/segments';
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
+import { circularOperationSource } from '@/domain/path-intel/circularOperation';
 import {
   operationEntryPoint as resolvedOperationEntryPoint,
   operationExitPoint as resolvedOperationExitPoint,
@@ -259,9 +261,9 @@ export function setGeometryLinkedInitialWirePosition(
   segmentId: SegmentId
 ) {
   const segment = document.segments.find(
-    (candidate) => candidate.id === segmentId && candidate.kind === 'circle'
+    (candidate) => candidate.id === segmentId && candidate.kind !== 'line'
   );
-  if (!segment || segment.kind !== 'circle') return null;
+  if (!segment || segment.kind === 'line') return null;
   const next = cloneDocument(document);
   next.setup = {
     ...next.setup,
@@ -854,6 +856,20 @@ function splitOperationSegmentAtPoint(
   if (!splitSegments) return null;
 
   replaceDocumentSegment(document, segment.id, splitSegments);
+  remapMachiningSpansAfterSplit(document, segment, ref, nearest, splitSegments);
+  const circularReplacement = splitSegments.find((candidate) => candidate.kind !== 'line');
+  if (segment.kind !== 'line' && circularReplacement) {
+    const initial = document.setup?.initialWirePosition;
+    if (initial?.kind === 'geometry-linked' && initial.reference.segmentId === segment.id) {
+      initial.reference.segmentId = circularReplacement.id;
+    }
+    for (const candidate of document.plan.operations) {
+      const entry = candidate.transitions?.entry;
+      if (entry?.strategy === 'circle-center' && entry.sourceSegmentId === segment.id) {
+        entry.sourceSegmentId = circularReplacement.id;
+      }
+    }
+  }
   const replacementRefs = splitSegments.map((splitSegment) => ({
     segmentId: splitSegment.id,
     reversed: false
@@ -869,6 +885,47 @@ function splitOperationSegmentAtPoint(
     startIndex: segment.kind === 'circle' ? nearest.segmentIndex : nearest.segmentIndex + 1,
     createdSegmentIds: splitSegments.map((splitSegment) => splitSegment.id)
   };
+}
+
+function remapMachiningSpansAfterSplit(
+  document: PathPlanningDocument,
+  original: PathSegment,
+  ref: OrientedSegmentRef,
+  split: NearestPathPoint,
+  replacements: PathSegment[]
+) {
+  if (!document.machiningParticipation) return;
+  const direction = ref.reversed ? -1 : 1;
+  const firstParameter = original.kind === 'circle'
+    ? normalizeAngle(Math.atan2(split.point.y - original.center.y, split.point.x - original.center.x) -
+      Math.atan2(original.preferredStart.y - original.center.y, original.preferredStart.x - original.center.x)) / (Math.PI * 2)
+    : ref.reversed ? 1 : 0;
+  const intervals = original.kind === 'circle'
+    ? [[firstParameter, firstParameter + direction * 0.5], [firstParameter + direction * 0.5, firstParameter + direction]]
+    : [[firstParameter, firstParameter + direction * split.t], [firstParameter + direction * split.t, firstParameter + direction]];
+  document.machiningParticipation.spans = document.machiningParticipation.spans.flatMap((span) => {
+    if (span.sourceSegmentId !== original.id) return [span];
+    return replacements.flatMap((replacement, index) => {
+      const [start, end] = intervals[index];
+      const ranges = (original.kind === 'circle' ? [-1, 0, 1] : [0]).flatMap((turn) => {
+        const low = Math.max(Math.min(start, end), span.range.start + turn);
+        const high = Math.min(Math.max(start, end), span.range.end + turn);
+        if (low >= high) return [];
+        const a = clamp((low - start) / (end - start));
+        const b = clamp((high - start) / (end - start));
+        return [{ start: Math.min(a, b), end: Math.max(a, b) }];
+      }).sort((left, right) => left.start - right.start);
+      const merged: typeof ranges = [];
+      for (const range of ranges) {
+        const previous = merged.at(-1);
+        if (previous && range.start <= previous.end + Number.EPSILON * 8) previous.end = Math.max(previous.end, range.end);
+        else merged.push(range);
+      }
+      return merged.map((range, rangeIndex) => ({
+        ...span, id: `${span.id}__${replacement.id}_${rangeIndex + 1}`, sourceSegmentId: replacement.id, range
+      }));
+    });
+  }).sort((left, right) => left.sourceSegmentId.localeCompare(right.sourceSegmentId) || left.range.start - right.range.start);
 }
 
 function splitSegment(
@@ -1108,6 +1165,12 @@ function refreshDocumentAfterSegmentGeometryEdit(
   }
 
   refreshPlan(document);
+  // A different source contour can move across an otherwise unchanged lead.
+  for (const operation of document.plan.operations) {
+    for (const transition of [operation.transitions?.entry, operation.transitions?.exit]) {
+      if (transition?.strategy === 'manual-straight') transition.review = 'required';
+    }
+  }
 }
 
 function refreshInitialWirePositionAfterGeometryEdit(
@@ -1468,42 +1531,7 @@ function threadingIntentIsCompatible(
 }
 
 function circularOperationLeadInSource(document: PathPlanningDocument, operation: PathOperation) {
-  if (!operation.closed || operation.segmentRefs.length === 0) return null;
-
-  const segmentsById = segmentMap(document.segments);
-  const epsilon = document.options.coincidenceEpsilon;
-  let source:
-    | {
-        center: Point2;
-        radius: number;
-        segmentId: SegmentId;
-        segmentIndex: number;
-      }
-    | null = null;
-
-  for (const [segmentIndex, ref] of operation.segmentRefs.entries()) {
-    const segment = requiredSegment(segmentsById, ref.segmentId);
-    if (segment.kind === 'line') return null;
-
-    if (!source) {
-      source = {
-        center: { ...segment.center },
-        radius: segment.radius,
-        segmentId: ref.segmentId,
-        segmentIndex
-      };
-      continue;
-    }
-
-    if (
-      !pointsEqual(source.center, segment.center, epsilon) ||
-      Math.abs(source.radius - segment.radius) > epsilon
-    ) {
-      return null;
-    }
-  }
-
-  return source;
+  return circularOperationSource({ operation, segments: segmentMap(document.segments), epsilon: document.options.coincidenceEpsilon });
 }
 
 function manualClassifications(document: PathPlanningDocument) {

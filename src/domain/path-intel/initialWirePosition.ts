@@ -15,9 +15,9 @@ export function resolveInitialWirePosition(
   }
 
   const segment = document.segments.find(
-    (candidate) => candidate.id === initial.reference.segmentId && candidate.kind === 'circle'
+    (candidate) => candidate.id === initial.reference.segmentId && candidate.kind !== 'line'
   );
-  if (!segment || segment.kind !== 'circle') {
+  if (!segment || segment.kind === 'line') {
     return { status: 'blocked', reason: 'missing-reference' };
   }
   return finiteResolution(segment.center, 'geometry-linked');

@@ -20,16 +20,19 @@ export function EditorInitialWirePositionPanel({
 }: EditorInitialWirePositionPanelProps) {
   const resolution = useMemo(() => resolveInitialWirePosition(document), [document]);
   const currentPoint = resolution.status === 'ready' ? resolution.point : null;
-  const [xDraft, setXDraft] = useState(currentPoint ? String(currentPoint.x) : '');
-  const [yDraft, setYDraft] = useState(currentPoint ? String(currentPoint.y) : '');
+  const initial = document.setup?.initialWirePosition;
+  const editablePoint = currentPoint ?? initial?.point ?? null;
+  const linkedSegmentId = initial?.kind === 'geometry-linked' ? initial.reference.segmentId : null;
+  const [xDraft, setXDraft] = useState(editablePoint ? String(editablePoint.x) : '');
+  const [yDraft, setYDraft] = useState(editablePoint ? String(editablePoint.y) : '');
 
   useEffect(() => {
-    if (!currentPoint) return;
-    setXDraft(String(currentPoint.x));
-    setYDraft(String(currentPoint.y));
-  }, [currentPoint?.x, currentPoint?.y]);
+    if (!editablePoint) return;
+    setXDraft(String(editablePoint.x));
+    setYDraft(String(editablePoint.y));
+  }, [editablePoint?.x, editablePoint?.y, initial?.kind, linkedSegmentId]);
 
-  const circles = document.segments.filter((segment) => segment.kind === 'circle');
+  const circles = document.segments.filter((segment) => segment.kind !== 'line');
   const manualPoint = readFinitePoint(xDraft, yDraft);
   const hasUnappliedCoordinates = currentPoint
     ? !manualPoint || manualPoint.x !== currentPoint.x || manualPoint.y !== currentPoint.y
@@ -106,25 +109,34 @@ export function EditorInitialWirePositionPanel({
       </fieldset>
 
       {circles.length > 0 && <div className="grid gap-1 border border-border p-2">
-        <div className="uppercase text-muted-foreground">Or link to a circle center</div>
-        <p className="text-muted-foreground">The starting point follows this circle when geometry moves.</p>
-        {circles.map((circle) => (
+        <div className="uppercase text-muted-foreground">Or link to a circular source center</div>
+        <p className="text-muted-foreground">The starting point follows the selected circle or arc when geometry moves.</p>
+        {circles.map((circle, index) => {
+          const owner = document.plan.operations.find((operation) => operation.segmentRefs.some((ref) => ref.segmentId === circle.id));
+          const segmentIndex = owner?.segmentRefs.findIndex((ref) => ref.segmentId === circle.id) ?? index;
+          const label = `${owner?.displayName ?? `Source ${index + 1}`} · ${circle.kind === 'circle' ? 'Circle center' : `Arc ${segmentIndex + 1} center`} · R${circle.radius.toFixed(3)}`;
+          return (
             <button
+              aria-label={`Link initial wire to ${label}`}
+              aria-pressed={linkedSegmentId === circle.id}
               className="flex h-7 items-center justify-between border border-border bg-background px-2 text-left disabled:opacity-40"
               data-initial-wire-circle-center={circle.id}
               disabled={disabled}
               key={circle.id}
               onClick={() => {
+                setXDraft(String(circle.center.x));
+                setYDraft(String(circle.center.y));
                 onSetGeometryLinked(circle.id);
               }}
               type="button"
             >
-              <span>Circle center</span>
-              <span className="font-mono text-muted-foreground">
+              <span className="min-w-0 truncate" title={label}>{label}</span>
+              <span className="shrink-0 font-mono text-muted-foreground">
                 X{circle.center.x.toFixed(3)} Y{circle.center.y.toFixed(3)}
               </span>
             </button>
-          ))}
+          );
+        })}
       </div>}
     </section>
   );

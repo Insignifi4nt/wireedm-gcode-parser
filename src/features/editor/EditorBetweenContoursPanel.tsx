@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import { derivePlannedRapidRoutes } from '@/domain/path-editor/pathDocumentOperations';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
+import { findPositioningIntersections } from '@/domain/path-intel/leadIntersections';
 import type {
   OperationThreadingTransition,
   PathPlanningDocument,
@@ -47,6 +48,9 @@ export function EditorBetweenContoursPanel({
     : null;
   const threading = selected?.threadingTransition ?? document.setup?.threadingDefault ?? null;
   const projectThreading = document.setup?.threadingDefault;
+  const continuousContacts = route && threading?.mode === 'continuous'
+    ? findPositioningIntersections(route.startPoint, route.endPoint, document.segments, document.options.coincidenceEpsilon)
+    : [];
 
   if (!selected) {
     return <p className="text-[10px] text-muted-foreground">No operations are available.</p>;
@@ -177,11 +181,20 @@ export function EditorBetweenContoursPanel({
                 </select>
               </label>
             )}
-            <p className={threading ? 'text-emerald-300' : 'text-amber-300'}>
+            <p className={threading ? 'text-foreground' : 'text-amber-300'}>
               {threading
                 ? threadingSummary(threading)
                 : 'Choose an explicit project or operation threading transition.'}
             </p>
+            {threading?.mode === 'continuous' && <>
+              <p className={continuousContacts.length > 0 ? 'text-amber-300' : 'text-muted-foreground'} data-continuous-source-check>
+                {continuousContacts.length > 0
+                  ? `Threaded travel touches or overlaps ${continuousContacts.length} source segment(s) away from its endpoints. Review the route or choose separation and rethreading.`
+                  : 'No source-boundary contacts away from the route endpoints.'}
+              </p>
+              <p className="text-muted-foreground">Continuous mode requires an already clear route. Source-boundary checks do not establish stock, fixture or wire-offset clearance.</p>
+            </>}
+            <p className="text-muted-foreground">Controller export checks threading support against the selected machine and post.</p>
           </fieldset>
         </>
       )}

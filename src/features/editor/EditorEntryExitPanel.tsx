@@ -173,6 +173,7 @@ export function EditorEntryExitPanel({
         <div className="text-foreground" data-entry-strategy>
           {entryStrategyLabel(transitions.entry)}
         </div>
+        {transitions.entry?.strategy === 'circle-center' && <p className="text-muted-foreground">This lead cuts from the circle center to its boundary. Confirm that the center is in removable material.</p>}
         {transitions.entry && 'review' in transitions.entry && transitions.entry.review === 'required' &&
           <p role="status" className="text-amber-300">Geometry changed. Confirm the entry coordinates with Set straight entry, or choose no entry.</p>}
         <CoordinateInputs
@@ -256,6 +257,7 @@ export function EditorEntryExitPanel({
         </button>
       </fieldset>
 
+      <p className="text-muted-foreground">Source-boundary checks only. Stock, fixtures and wire-offset clearance are not modeled.</p>
     </section>
   );
 }

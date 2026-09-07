@@ -239,19 +239,16 @@ export function EditorSetStartPanel({
 
   return (
     <section className="grid gap-2 text-[10px]" data-upid-set-start-workflow>
-      <div>
-        <h3 className="text-[11px] font-semibold">Contour Start</h3>
-        <p className="mt-1 text-muted-foreground">
-          Every operation already has an automatic contour start. Choose a closed contour here only
-          when you want to override it with an explicit point.
-        </p>
-      </div>
+      <p className="text-muted-foreground">
+        Every operation has an automatic contour start. Pick a closed contour to set an exact override.
+        Picking inside a segment splits it at that point; manual leads then need review.
+      </p>
       <label className="grid gap-1 uppercase text-muted-foreground">
         Target contour
         <select
           aria-label="Set start operation"
           className="h-7 border border-border bg-background px-1.5 text-foreground"
-          disabled={disabled}
+          disabled={!selected || disabled}
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected?.id ?? ''}
         >
@@ -267,7 +264,7 @@ export function EditorSetStartPanel({
         <select
           aria-label="Set start point inference"
           className="h-7 border border-border bg-background px-1.5 text-foreground"
-          disabled={disabled}
+          disabled={!selected || disabled}
           onChange={(event) => onInferenceModeChange(
             event.currentTarget.value as 'endpoint' | 'nearest' | 'midpoint' | 'perpendicular'
           )}

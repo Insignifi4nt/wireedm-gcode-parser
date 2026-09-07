@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
-import { findLeadIntersections } from '../leadIntersections';
+import { findLeadIntersections, findPositioningIntersections } from '../leadIntersections';
 
 describe('lead intersections', () => {
   const document = createUpidFromDxfEntities([
@@ -26,5 +26,15 @@ describe('lead intersections', () => {
   it('detects contact at the free endpoint but does not report zero-length leads', () => {
     expect(inspect({ x: 0, y: 5 }, { x: -5, y: 5 })).toEqual([{ segmentId: document.segments[1].id, kind: 'crossing' }]);
     expect(inspect({ x: 0, y: 0 })).toEqual([]);
+  });
+
+  it('excludes both positioning attachments while retaining a crossed circular source', () => {
+    const source = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 0, y: 5 } },
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 10, y: 5 } },
+      { type: 'circle', layer: 'CUT', center: { x: 5, y: 0 }, radius: 1 }
+    ]);
+    expect(findPositioningIntersections({ x: 0, y: 0 }, { x: 10, y: 0 }, source.segments, 1e-5))
+      .toEqual([{ segmentId: source.segments[2].id, kind: 'crossing' }]);
   });
 });

@@ -126,6 +126,22 @@ describe('EditorBetweenContoursPanel', () => {
     expect(container.textContent).not.toContain('Operation threading mode');
   });
 
+  it('shows source contact review for continuous travel without claiming physical clearance', async () => {
+    let document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 20, y: 0 }, radius: 5 }
+    ], { allowReverseClosedContours: false });
+    document = setManualInitialWirePosition(document, { x: -10, y: 0 })!;
+    document.setup = { ...document.setup, threadingDefault: { mode: 'continuous', wireSeparation: 'already-separated' } };
+    await act(async () => root.render(
+      <EditorBetweenContoursPanel disabled={false} document={document} onSelectOperation={vi.fn()}
+        onSetOperationThreading={vi.fn()} onSetProjectThreading={vi.fn()} selectedOperationId={document.plan.operations[1].id} />
+    ));
+    expect(container.querySelector('[data-continuous-source-check]')?.textContent).toContain('touches or overlaps 1 source segment');
+    expect(container.textContent).toContain('Continuous mode requires an already clear route');
+    expect(container.textContent).toContain('do not establish stock, fixture or wire-offset clearance');
+  });
+
   it('renders gapped imported indices by deterministic execution position', async () => {
     const document = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
