@@ -12,7 +12,8 @@ export default defineConfig({
     video: 'retain-on-failure'
   },
   webServer: {
-    command: 'npm run dev -- --host 127.0.0.1 --port 3107 --strictPort',
+    // Keep each run on one built version while development continues in parallel.
+    command: 'npx vite build --outDir tmp/playwright-dist && npx vite preview --outDir tmp/playwright-dist --host 127.0.0.1 --port 3107 --strictPort',
     reuseExistingServer: false,
     url: 'http://127.0.0.1:3107'
   },

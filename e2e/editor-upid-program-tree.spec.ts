@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 import { clearWorkbenchCache } from './fixtures/workbench-cache';
 import { confirmPendingDxfImport } from './dxf-import';
@@ -78,18 +79,22 @@ test('keeps imported NC programs in the machine-program editor through edit, sav
   const programEditor = page.getByLabel('Program editor');
   await programEditor.fill('%\nG90\nG0 X0 Y0\nG1 X24 Y0\nM02\n%');
   await page.getByRole('button', { name: 'Save active document' }).click();
+  await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
   await page.reload();
   await openOnlyProject(page);
   await expect(page.locator('[data-editor-context="machine-program"]')).toBeVisible();
   await expect(page.getByRole('complementary', { name: /UPID rail/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Machining menu' })).toHaveCount(0);
   await page.locator('details[data-editor-code-section="text"] summary').click();
-  await expect(page.getByLabel('Program editor')).toContainText('G1 X24 Y0');
+  await expect(page.getByLabel('Program editor')).toHaveValue(/G1 X24 Y0/);
 
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export normalized ISO' }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^normalized-\d{4}-\d{2}-\d{2}\.iso$/);
+  const savedPath = await download.path();
+  if (!savedPath) throw new Error('Expected a downloaded controller file');
+  expect(await readFile(savedPath, 'utf8')).toMatch(/X24(?:\.0+)?(?:\s|$)/);
 });
 
 async function openReadyWorkbench(page: Page) {
