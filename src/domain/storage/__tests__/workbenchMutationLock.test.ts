@@ -5,10 +5,18 @@ import { withWorkbenchMutationLock } from '../workbenchMutationLock';
 describe('workbench mutation scope', () => {
   afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); });
 
-  it('serializes two adapters for the same stored library without Web Locks', async () => {
+  it.each(['browser-cache', 'directory'] as const)('does not write to %s when cross-tab coordination is unavailable', async (kind) => {
     vi.stubGlobal('navigator', {});
-    const first = createBrowserCacheAdapter(localStorage, { name: 'First label' });
-    const second = createBrowserCacheAdapter(localStorage, { name: 'Another label' });
+    const mutation = vi.fn(async () => {});
+    const adapter = { ...createBrowserCacheAdapter(localStorage), kind };
+    await expect(withWorkbenchMutationLock(adapter, mutation)).rejects.toThrow('Persistent storage requires Web Locks');
+    expect(mutation).not.toHaveBeenCalled();
+  });
+
+  it('serializes temporary adapters sharing an in-realm storage scope without Web Locks', async () => {
+    vi.stubGlobal('navigator', {});
+    const first = createBrowserCacheAdapter(localStorage, { name: 'First label', kind: 'memory' });
+    const second = createBrowserCacheAdapter(localStorage, { name: 'Another label', kind: 'memory' });
     await first.writeText('counter', '0');
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });

@@ -25,7 +25,8 @@ When a version-1 workbench is opened, usable projects migrate to the current neu
 - Each editing workflow commits one undo step. Header Save persists those committed changes. Controller Export uses the saved project and the selected machine's active setup.
 - Existing `.gcode`, `.nc`, `.iso`, and `.txt` files use a separate text editor with G0/G1/G2/G3 preview and cleanup tools.
 - Machine packages own controller syntax and file rules, including extension, encoding, line endings, wrappers, and numbering. The app does not generate feeds by default.
-- If persistent browser storage is blocked, the app identifies the workbench as temporary. Folder selection and remembered-folder reconnect remain optional.
+- Persistent browser cache requires Web Locks to serialize edits across tabs. If Web Locks or persistent storage is unavailable, the app uses explicitly marked temporary storage until the page closes or reloads. Existing browser-cache files remain untouched and can be opened in a browser with Web Locks support. Folder selection and remembered-folder reconnect remain optional.
+- Folder writes also require Web Locks. This coordinates workbench tabs, not other applications editing the same folder. Package installation, saved revisions and project deletion/restoration have recovery journals; ordinary project add/rename/edit operations use in-session rollback and report inconsistent files if interrupted before completion.
 
 ## Documentation
 

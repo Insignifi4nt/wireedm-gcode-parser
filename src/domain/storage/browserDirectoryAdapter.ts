@@ -35,8 +35,13 @@ export function createBrowserDirectoryAdapter(
     writeText: async (path: string, contents: string) => {
       const handle = await getFile(root, splitPath(path), true);
       const writable = await handle.createWritable();
-      await writable.write(contents);
-      await writable.close();
+      try {
+        await writable.write(contents);
+        await writable.close();
+      } catch (error) {
+        try { await writable.abort(); } catch { /* Preserve the original storage failure. */ }
+        throw error;
+      }
     }
   };
 }

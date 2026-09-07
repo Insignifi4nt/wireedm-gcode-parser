@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { buildMachinePackageArchive } from '@/domain/machine-package';
 import { machinePackageFixture } from '@/domain/machine-package/__tests__/machinePackageFixture';
@@ -13,6 +13,31 @@ import { createBrowserDirectoryAdapter } from '../browserDirectoryAdapter';
 import { FakeDirectoryHandle } from './fakeDirectoryHandle';
 
 describe('createBrowserDirectoryAdapter', () => {
+  it.each(['write', 'close'])('aborts a stream after %s fails so a rollback or retry can reopen the file', async (failure) => {
+    let open = false;
+    let stored = 'ORIGINAL';
+    let shouldFail = true;
+    const abort = vi.fn(async () => { open = false; });
+    const file = {
+      createWritable: async () => {
+        if (open) throw new Error('File still locked');
+        open = true;
+        let pending = stored;
+        return {
+          write: async (text: string) => { if (shouldFail && failure === 'write') { shouldFail = false; throw new Error('Disk write failed'); } pending = text; },
+          close: async () => { if (shouldFail && failure === 'close') { shouldFail = false; throw new Error('Disk write failed'); } stored = pending; open = false; }, abort
+        };
+      }
+    };
+    const root = { name: 'jobs', getFileHandle: async () => file } as unknown as FileSystemDirectoryHandle;
+    const adapter = createBrowserDirectoryAdapter(root);
+    await expect(adapter.writeText('program.nc', 'FAILED')).rejects.toThrow('Disk write failed');
+    expect(abort).toHaveBeenCalledOnce();
+    expect(stored).toBe('ORIGINAL');
+    await adapter.writeText('program.nc', 'RETRY');
+    expect(stored).toBe('RETRY');
+  });
+
   it('reads and writes nested text files through a directory handle', async () => {
     const root = new FakeDirectoryHandle('jobs');
     const adapter = createBrowserDirectoryAdapter(root as unknown as FileSystemDirectoryHandle);

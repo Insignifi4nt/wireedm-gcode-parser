@@ -4,6 +4,7 @@ interface BrowserCacheAdapterOptions {
   kind?: 'browser-cache' | 'memory';
   name?: string;
   namespace?: string;
+  persistenceWarning?: string;
 }
 
 export interface BrowserCacheWorkbenchAdapter extends WorkbenchStorageAdapter {
@@ -22,6 +23,7 @@ export function createBrowserCacheAdapter(
     name: options.name ?? 'Local storage',
     kind: options.kind ?? 'browser-cache',
     mutationScope: `browser-storage:${namespace}`,
+    ...(options.persistenceWarning ? { persistenceWarning: options.persistenceWarning } : {}),
     ensureDirectory: async (path: string) => {
       const directories = readDirectories(storage, namespace);
       if (!directories.includes(path)) {

@@ -10,13 +10,14 @@ interface ConnectCachedWorkbenchOptions {
 }
 
 export async function connectCachedWorkbench(options: ConnectCachedWorkbenchOptions = {}) {
-  const storageSource = options.storage
+  const storageSource = options.storage && typeof navigator !== 'undefined' && navigator.locks
     ? { storage: options.storage, persistent: true }
     : getBrowserStorage();
   const adapter = createBrowserCacheAdapter(storageSource.storage, {
     kind: storageSource.persistent ? 'browser-cache' : 'memory',
     name: storageSource.persistent ? 'Local storage' : 'Temporary storage',
-    namespace: BROWSER_WORKBENCH_NAMESPACE
+    namespace: BROWSER_WORKBENCH_NAMESPACE,
+    ...('warning' in storageSource ? { persistenceWarning: storageSource.warning } : {})
   });
 
   return initializeWorkbenchCatalog(adapter, {
@@ -26,6 +27,10 @@ export async function connectCachedWorkbench(options: ConnectCachedWorkbenchOpti
 
 function getBrowserStorage() {
   try {
+    if (!navigator.locks) {
+      return { persistent: false, storage: createVolatileStorage(),
+        warning: 'This browser cannot coordinate persistent edits across tabs. Temporary storage is active; changes last only until this page closes or reloads. Existing browser-cache projects are untouched. Open this site in a browser with Web Locks support to use them.' };
+    }
     const storage = window.localStorage;
     const probeKey = `${BROWSER_WORKBENCH_NAMESPACE}:storage-probe`;
     storage.setItem(probeKey, '1');
@@ -37,6 +42,7 @@ function getBrowserStorage() {
   } catch {
     return {
       persistent: false,
+      warning: 'Persistent browser storage is unavailable. Temporary changes last only until this page closes or reloads.',
       storage: createVolatileStorage()
     };
   }

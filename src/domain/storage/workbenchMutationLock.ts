@@ -18,6 +18,9 @@ export async function withWorkbenchMutationLock<Result>(
   await predecessor;
   try {
     const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+    if (!locks && adapter.kind !== 'memory') {
+      throw new Error('Persistent storage requires Web Locks to coordinate edits across tabs. Use temporary storage in this browser or open a browser with Web Locks support.');
+    }
     return locks
       ? await locks.request(`wire-edm-workbench:${adapter.mutationScope ?? `${adapter.kind}:${adapter.name}`}`, mutation)
       : await mutation();

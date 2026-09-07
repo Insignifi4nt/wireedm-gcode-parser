@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { connectCachedWorkbench } from '../connectCachedWorkbench';
 import { importExternalProgram } from '@/domain/editor/importExternalProgram';
@@ -32,6 +32,19 @@ class MemoryStorage implements Storage {
 }
 
 describe('connectCachedWorkbench', () => {
+  it.each(['missing', 'blocked'])('uses explicit temporary storage when cross-tab coordination is %s without touching the existing cache', async (mode) => {
+    const original = '{existing cache bytes}';
+    localStorage.setItem('wire-edm-workbench:file:workbench.json', original);
+    vi.stubGlobal('navigator', {});
+    vi.stubGlobal('indexedDB', mode === 'missing' ? undefined : { open: () => { throw new DOMException('Blocked', 'SecurityError'); } });
+    try {
+      const connected = await connectCachedWorkbench();
+      expect(connected).toMatchObject({ ok: true, workbench: { adapter: { kind: 'memory', name: 'Temporary storage' } } });
+      expect(localStorage.getItem('wire-edm-workbench:file:workbench.json')).toBe(original);
+      expect(localStorage.getItem('wire-edm-workbench:file:posts/library.json')).toBeNull();
+    } finally { localStorage.clear(); vi.unstubAllGlobals(); }
+  });
+
   it('reconnects a saved project after its directory index is damaged', async () => {
     const storage = new MemoryStorage();
     const first = await connectCachedWorkbench({ storage });

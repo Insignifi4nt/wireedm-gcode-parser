@@ -108,7 +108,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
 
   function readyWorkbench(workbench: ConnectedWorkbenchCatalog, warning: string | null) {
     setConnectedWorkbench(workbench);
-    setStorageWarningMessage(warning);
+    setStorageWarningMessage(workbench.adapter.persistenceWarning ?? warning);
     setErrorMessage(null);
     setWorkbenchStatus('ready');
   }

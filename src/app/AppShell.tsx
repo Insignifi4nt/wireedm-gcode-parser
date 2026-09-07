@@ -242,7 +242,7 @@ export function AppShell({
             }`}
             data-storage-status
             role="status"
-            title={storageStatusLabel}
+            title={connectedWorkbench?.adapter.persistenceWarning ?? storageStatusLabel}
           >
             <Database className="size-3.5" />
             <span data-storage-status-label>{storageStatusLabel}</span>
