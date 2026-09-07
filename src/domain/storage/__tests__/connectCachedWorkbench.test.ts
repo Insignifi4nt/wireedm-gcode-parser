@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { connectCachedWorkbench } from '../connectCachedWorkbench';
+import { importExternalProgram } from '@/domain/editor/importExternalProgram';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -31,6 +32,23 @@ class MemoryStorage implements Storage {
 }
 
 describe('connectCachedWorkbench', () => {
+  it('reconnects a saved project after its directory index is damaged', async () => {
+    const storage = new MemoryStorage();
+    const first = await connectCachedWorkbench({ storage });
+    if (!first.ok) throw new Error(first.error.message);
+    const imported = await importExternalProgram(first.workbench, { fileName: 'plate.nc', text: 'G21\nG1 X10 Y5' });
+    if (!imported.ok) throw new Error(imported.error.message);
+    const manifest = storage.getItem('wire-edm-workbench:file:workbench.json');
+    storage.setItem('wire-edm-workbench:directories', '{damaged');
+    const reopened = await connectCachedWorkbench({ storage });
+    if (!reopened.ok) throw new Error(reopened.error.message);
+    expect(reopened.workbench.manifest.projects).toEqual(imported.workbench.manifest.projects);
+    expect(await reopened.workbench.adapter.readText(imported.editorProgram.filePath)).toBe(imported.editorProgram.text);
+    await reopened.workbench.adapter.ensureDirectory('projects');
+    expect(storage.getItem('wire-edm-workbench:file:workbench.json')).toBe(manifest);
+    expect(JSON.parse(storage.getItem('wire-edm-workbench:directories')!)).toContain('projects');
+  });
+
   it('creates a strict V2 browser-cache catalog without directory access', async () => {
     const storage = new MemoryStorage();
 

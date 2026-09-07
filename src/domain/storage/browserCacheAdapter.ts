@@ -22,7 +22,7 @@ export function createBrowserCacheAdapter(
     name: options.name ?? 'Local storage',
     kind: options.kind ?? 'browser-cache',
     ensureDirectory: async (path: string) => {
-      const directories = readDirectories(storage, directoriesKey);
+      const directories = readDirectories(storage, namespace);
       if (!directories.includes(path)) {
         directories.push(path);
         directories.sort();
@@ -46,7 +46,7 @@ export function createBrowserCacheAdapter(
       }
       keysToRemove.forEach((key) => storage.removeItem(key));
     },
-    listDirectories: async () => readDirectories(storage, directoriesKey)
+    listDirectories: async () => readDirectories(storage, namespace)
   };
 }
 
@@ -54,8 +54,30 @@ function fileKey(namespace: string, path: string) {
   return `${namespace}:file:${path}`;
 }
 
-function readDirectories(storage: Storage, key: string) {
+function readDirectories(storage: Storage, namespace: string): string[] {
+  const key = `${namespace}:directories`;
   const raw = storage.getItem(key);
-  if (!raw) return [];
-  return JSON.parse(raw) as string[];
+  let parsed: unknown;
+  try {
+    parsed = raw === null ? null : JSON.parse(raw);
+  } catch {
+    parsed = null;
+  }
+  const isDirectory = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+  if (Array.isArray(parsed) && parsed.every(isDirectory)) return parsed;
+
+  // Directory metadata is rebuildable; stored file contents remain authoritative.
+  const directories = new Set<string>(Array.isArray(parsed) ? parsed.filter(isDirectory) : []);
+  const prefix = `${namespace}:file:`;
+  for (let index = 0; index < storage.length; index++) {
+    const file = storage.key(index);
+    if (!file?.startsWith(prefix)) continue;
+    const path = file.slice(prefix.length);
+    for (let separator = path.indexOf('/'); separator >= 0; separator = path.indexOf('/', separator + 1)) {
+      if (separator > 0) directories.add(path.slice(0, separator));
+    }
+  }
+  const recovered = [...directories].sort();
+  if (raw !== null || recovered.length > 0) storage.setItem(key, JSON.stringify(recovered));
+  return recovered;
 }

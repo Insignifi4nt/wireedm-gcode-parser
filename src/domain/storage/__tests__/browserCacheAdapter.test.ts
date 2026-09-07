@@ -31,6 +31,27 @@ class MemoryStorage implements Storage {
 }
 
 describe('createBrowserCacheAdapter', () => {
+  it.each(['{broken', 'null', '{}', '42', '["empty-folder",42]', null])(
+    'rebuilds damaged or missing directory metadata %j from owned file paths', async (metadata) => {
+      const storage = new MemoryStorage();
+      const namespace = 'wire-edm-test';
+      const adapter = createBrowserCacheAdapter(storage, { namespace });
+      await adapter.writeText('projects/plate/source/part.dxf', 'DXF CONTENT');
+      await adapter.writeText('projects/plate/revision.json', 'REVISION CONTENT');
+      storage.setItem('other:file:unrelated/file.txt', 'UNRELATED');
+      if (metadata !== null) storage.setItem(`${namespace}:directories`, metadata);
+      const expected = ['projects', 'projects/plate', 'projects/plate/source'];
+      if (metadata === '["empty-folder",42]') expected.unshift('empty-folder');
+      expect(await adapter.listDirectories()).toEqual(expected);
+      await adapter.ensureDirectory('machines');
+      const reopened = createBrowserCacheAdapter(storage, { namespace });
+      expect(await reopened.listDirectories()).toEqual([...expected, 'machines'].sort());
+      expect(await reopened.readText('projects/plate/source/part.dxf')).toBe('DXF CONTENT');
+      expect(await reopened.readText('projects/plate/revision.json')).toBe('REVISION CONTENT');
+      expect(storage.getItem('other:file:unrelated/file.txt')).toBe('UNRELATED');
+    }
+  );
+
   it('persists workbench text files in a Storage-backed cache', async () => {
     const storage = new MemoryStorage();
     const adapter = createBrowserCacheAdapter(storage, {
