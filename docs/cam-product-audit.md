@@ -50,7 +50,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Cut sequence | Manual/automatic order, nesting dependencies and travel | pending |
 | Between contours | Thread/separate defaults and overrides, continuous-wire constraints | pending |
 | Machining participation | Excluded spans, partial contour semantics and compensation | pending |
-| Program stops | Added direct Edit actions with pending-field protection and save/undo coverage. Execution tests verify linear and circular stop positions, both traversal directions, multiple/disabled stops, source ranges, and exclusion-aware remaining length. Rendered marker checks and form consolidation remain | in progress |
+| Program stops | Added direct Edit actions with pending-field protection and save/undo coverage. Execution tests verify linear/circular and partial-cut placement. Added enabled-stop canvas markers with stable screen size, edit updates and undo coverage; placement labels distinguish positioning from cutting entry. Form consolidation remains | in progress |
 | Endpoint topology | Expose repair-relevant facts; move raw topology detail behind disclosure | pending |
 | Diagnostics | Deduplicate, prioritize and navigate to exact repair context | pending |
 | Measurement | Added read-only Measure with magnetic points, segment and contour dimensions, precision, pair/chain/fixed-reference modes, mouse/touch and zoom checks. Multi-entity inspection remains | in progress |
@@ -72,6 +72,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 4. Compact program tree, local `tmp/cam-audit/04-program-tree-after.png`: ready operation details are collapsed, leaving source/setup and program order visible. Event details remain reachable by expansion; unresolved operation diagnostics expand automatically.
 5. Contour measurement, local `tmp/cam-audit/05-profile-measurement.png`: disclosed boundary length, width, height and enclosed area in the docked Measure panel. Moving into the panel preserves the last preview so controls do not shift under the pointer.
 6. Consolidated Statistics, local `tmp/cam-audit/06-consolidated-statistics.png`: project counts and dimensional scope appear once, with source/topology details disclosed below. The manual-decision breakdown includes compensation and hides unused categories.
+7. Program stop, local `tmp/cam-audit/07-program-stop-marker.png`: a stop with 1 mm remaining appears on the contour with a pause symbol and STOP label. The temporary visual-check edit was discarded and the project returned to Saved. The add form immediately showing a duplicate-placement error after successful addition remains a form-usability issue to address.
 
 Screenshots were captured and inspected during this audit. They establish layout findings; correctness requires domain and interaction checks as well.
 
@@ -97,6 +98,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 - Removed partial preview counting: 39 focused project-rail/preview-control tests and production build passed. Deleted the unused counter, bounds reconstruction and its obsolete count assertions; retained selected-travel and geometry behavior tests.
 - Program-stop editing: nine focused tests, one browser workflow scenario and production build passed. Existing checks reject invalid remaining distances and duplicate enabled placements, permit disabling duplicates, and resolve exact oriented stop points. The new browser scenario covers direct editing, pending-field protection and transaction undo.
 - Stop execution audit: eight execution-plan tests and production build passed. Added circular multi-stop tests in both directions with exact quarter/half-turn positions, ordered events, contiguous source ranges and unchanged arc direction. Partial-cut validation and compilation agree on 6 mm of active travel within a 10 mm source line; a 2 mm remaining stop lands at X=4 and a 7 mm remaining stop is rejected.
+- Stop markers: three domain checks match preview and execution coordinates, omit disabled/invalid distance markers, and avoid inventing an unresolved initial-wire location. Browser coverage checks marker movement after applying a distance edit, constant size under zoom and removal on workflow undo.
 
 ## Next audit work
 

@@ -10,6 +10,9 @@ test('edits stops from their panel without losing pending fields and undoes the 
   await page.locator('[data-editor-workflow-command="machining.program-stops"]').click();
   await page.getByLabel('Program stop remaining cut millimeters', { exact: true }).fill('2');
   await page.getByRole('button', { name: 'Add program stop', exact: true }).click();
+  const marker = page.locator('[data-preview-program-stop="stop-1"]');
+  await expect(marker).toBeVisible();
+  const before = await marker.evaluate((node) => [node.getAttribute('cx'), node.getAttribute('cy')]);
   await page.getByLabel('Program stop placement', { exact: true }).selectOption('after-exit');
   await page.getByRole('button', { name: 'Add program stop', exact: true }).click();
 
@@ -19,6 +22,10 @@ test('edits stops from their panel without losing pending fields and undoes the 
   await remaining.fill('3');
   await expect(page.getByRole('button', { name: 'Edit stop-2', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Apply stop-1', exact: true }).click();
+  expect(await marker.evaluate((node) => [node.getAttribute('cx'), node.getAttribute('cy')])).not.toEqual(before);
+  const markerWidth = (await marker.boundingBox())!.width;
+  await page.getByRole('button', { name: 'Zoom preview out', exact: true }).click();
+  expect((await marker.boundingBox())!.width).toBeCloseTo(markerWidth, 1);
   await page.getByRole('button', { name: 'Edit stop-2', exact: true }).click();
   await expect(page.getByLabel('Selected stop placement', { exact: true })).toHaveValue('after-exit');
   await expect(page.locator('[data-program-stop="stop-1"]')).toContainText('3.000 mm remaining');
@@ -27,4 +34,5 @@ test('edits stops from their panel without losing pending fields and undoes the 
   await page.getByRole('button', { name: 'Machining menu' }).click();
   await page.locator('[data-editor-workflow-command="machining.program-stops"]').click();
   await expect(page.locator('[data-program-stop]')).toHaveCount(0);
+  await expect(page.locator('[data-preview-program-stop]')).toHaveCount(0);
 });

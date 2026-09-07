@@ -143,7 +143,7 @@ export function EditorProgramStopsPanel({
             }}
             value={placement}
           >
-            <option value="before-entry">Before entry</option>
+            <option value="before-entry">Before positioning</option>
             <option value="before-operation-end">Before contour end</option>
             <option value="after-contour">After contour</option>
             <option value="after-exit">After exit</option>
@@ -230,7 +230,7 @@ export function EditorProgramStopsPanel({
                       ref={selectedPlacementRef}
                       value={selectedPlacement}
                     >
-                      <option value="before-entry">Before entry</option>
+                      <option value="before-entry">Before positioning</option>
                       <option value="before-operation-end">Before contour end</option>
                       <option value="after-contour">After contour</option>
                       <option value="after-exit">After exit</option>
@@ -367,6 +367,7 @@ function replaceStop(
 }
 
 function placementLabel(placement: OperationProgramStopPlacement) {
+  if (placement.kind === 'before-entry') return 'Stop before positioning';
   if (placement.kind === 'before-operation-end') {
     return `Stop with ${placement.remainingCutLengthMm.toFixed(3)} mm remaining`;
   }

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
 import { measurePointPair } from '@/domain/editor/geometryMeasurement';
+import { programStopPreview } from '@/domain/editor/programStopPreview';
 import type { EditorMeasurementState } from './useEditorMeasurement';
 import type {
   MagnetizeMode,
@@ -164,6 +165,7 @@ export function EditorPreview({
     [pathDocument, program]
   );
   const selected = useMemo(() => new Set(selectedLines), [selectedLines]);
+  const stopMarkers = useMemo(() => pathDocument ? programStopPreview(pathDocument) : [], [pathDocument]);
   const pinned = useMemo(() => new Set(pinnedLines), [pinnedLines]);
   const [showGrid, setShowGrid] = useState(true);
   const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 });
@@ -1555,6 +1557,18 @@ export function EditorPreview({
             >{measurementResult.distance.toFixed(measurement.precision)} mm</text>}
           </g>}
         </g>
+          <g pointerEvents="none" data-preview-program-stops>
+            {stopMarkers.map((stop) => <g key={`${stop.operationId}:${stop.stopId}`}>
+              <circle cx={stop.point.x} cy={flipY - stop.point.y} r={measurementDisplayScale * 6}
+                fill="#020617" stroke="#fbbf24" strokeWidth="2" vectorEffect="non-scaling-stroke"
+                data-preview-program-stop={stop.stopId} data-stop-operation={stop.operationId} />
+              <text x={stop.point.x} y={flipY - stop.point.y} dy="0.35em" textAnchor="middle"
+                fill="#fbbf24" fontSize={measurementDisplayScale * 9} fontWeight="bold">Ⅱ</text>
+              <text x={stop.point.x + measurementDisplayScale * 9} y={flipY - stop.point.y + measurementDisplayScale * 14}
+                fill="#fde68a" fontSize={measurementTextSize} paintOrder="stroke" stroke="#020617"
+                strokeWidth={measurementTextSize * 0.25}>STOP</text>
+            </g>)}
+          </g>
       </svg>
     </div>
   );
