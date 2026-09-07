@@ -1057,6 +1057,7 @@ export function EditorPreview({
                     operationId: path.operationId,
                     pathElementId: path.pathElementId ?? null,
                     segmentId: path.segmentId ?? null,
+                    machiningSpanId: path.machiningSpanId,
                     travelRole: path.travelRole ?? null
                   });
                 }}
@@ -1066,6 +1067,7 @@ export function EditorPreview({
                     operationId: path.operationId,
                     pathElementId: path.pathElementId ?? null,
                     segmentId: path.segmentId ?? null,
+                    machiningSpanId: path.machiningSpanId,
                     travelRole: path.travelRole ?? null
                   });
                 }}
@@ -1077,6 +1079,7 @@ export function EditorPreview({
                       operationId: path.operationId,
                       pathElementId: path.pathElementId ?? null,
                       segmentId: path.segmentId ?? null,
+                      machiningSpanId: path.machiningSpanId,
                       travelRole: path.travelRole ?? null
                     },
                     event
@@ -1575,11 +1578,12 @@ export function EditorPreview({
 }
 
 function pathElementMatches(
-  path: { operationId?: string; pathElementId?: string; segmentId?: string; travelRole?: 'rapid-in' | 'lead-in' | 'lead-out' },
+  path: { operationId?: string; pathElementId?: string; segmentId?: string; machiningSpanId?: string; travelRole?: 'rapid-in' | 'lead-in' | 'lead-out' },
   element: EditorPathElementRef | null | undefined
 ) {
   if (!element?.operationId || path.operationId !== element.operationId) return false;
   if (element.pathElementId && path.pathElementId !== element.pathElementId) return false;
+  if (element.machiningSpanId && path.machiningSpanId !== element.machiningSpanId) return false;
   if (element.pointRole) return false;
   if (element.travelRole) return path.travelRole === element.travelRole;
   if (path.travelRole) return false;
@@ -1605,7 +1609,7 @@ function readPathEndpointHandles(paths: EditorPreviewPath[]): PreviewPathEndpoin
   >();
 
   for (const path of paths) {
-    if (path.source !== 'path-document' || !path.operationId || !path.segmentId) continue;
+    if (path.source !== 'path-document' || !path.operationId || !path.segmentId || path.clippedSourceSegment) continue;
 
     const key = `${path.operationId}:${path.pathElementId ?? ''}:${path.segmentId}`;
     const grouped = segmentPaths.get(key);

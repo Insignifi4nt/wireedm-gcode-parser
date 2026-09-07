@@ -39,6 +39,7 @@ export { upidManualDecisionKinds } from './manualDecisions';
 export type { UpidManualDecisionKind } from './manualDecisions';
 
 export interface UpidPathElementRef {
+  machiningSpanId?: string;
   operationId: string | null;
   pathElementId?: string | null;
   pointRole?: UpidPathPointRole | null;

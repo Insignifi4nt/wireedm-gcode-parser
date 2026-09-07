@@ -1,3 +1,4 @@
+import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { describe, expect, it } from 'vitest';
 
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
@@ -10,6 +11,25 @@ import {
 } from '../previewGeometry';
 
 describe('editor preview geometry', () => {
+  it('maps a clipped cut to its source selection and exact machining span', () => {
+    const source = createPathPlanningDocumentFromDxfEntities([line(0, 0, 10, 0)]);
+    const segmentId = source.segments[0].id;
+    const document = setMachiningSpanParticipation(source, {
+      sourceSegmentId: segmentId, range: { start: 0, end: 0.4 }, participation: 'inactive-reference'
+    })!;
+    const paths = buildEditorPathDocumentPreviewGeometry(document).paths;
+    const cut = paths.find((path) => path.participation === 'active-cut');
+    expect(cut).toMatchObject({
+      operationId: source.plan.operations[0].id,
+      pathElementId: source.pathElements[0].id,
+      segmentId, clippedSourceSegment: true,
+      machiningSpanId: expect.any(String)
+    });
+    expect([cut!.start.x, cut!.end.x].sort((a, b) => a - b)).toEqual([4, 10]);
+    expect(paths.find((path) => path.participation === 'inactive-reference')).toMatchObject({
+      segmentId, start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
+    });
+  });
   it('turns parsed machine-program motion into paths and endpoint markers', () => {
     const preview = buildEditorPreviewGeometry(
       parseGCodeProgram(['G0 X0 Y0', 'G1 X10 Y0', 'G3 X20 Y10 I0 J10'].join('\n')),

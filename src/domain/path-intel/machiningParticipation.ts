@@ -122,7 +122,7 @@ export function setPartialContourExitReview(
 }
 
 export type ActiveMachiningDerivation =
-  | { status: 'ready'; operations: PathOperation[]; segments: PathSegment[] }
+  | { status: 'ready'; operations: PathOperation[]; segments: PathSegment[]; activeSpans: MachiningSpan[] }
   | {
       status: 'blocked';
       reason:
@@ -201,7 +201,8 @@ export function deriveActiveMachiningOperations(
     return {
       status: 'ready',
       operations: structuredClone(sourceOperations),
-      segments: structuredClone(document.segments)
+      segments: structuredClone(document.segments),
+      activeSpans: []
     };
   }
   const sourceSegments = segmentMap(document.segments);
@@ -237,6 +238,7 @@ export function deriveActiveMachiningOperations(
   decisionsBySegment.forEach((spans) => spans.sort(compareSpans));
 
   const derivedSegments = new Map<string, PathSegment>();
+  const activeSpans: MachiningSpan[] = [];
   const operations: PathOperation[] = [];
   for (const sourceOperation of sourceOperations) {
     const slots = sourceOperation.segmentRefs.flatMap((ref) => {
@@ -246,6 +248,7 @@ export function deriveActiveMachiningOperations(
       const ordered = ref.reversed ? [...partitions].reverse() : partitions;
       return ordered.map((span) => {
         if (span.participation === 'inactive-reference') return { active: false as const };
+        activeSpans.push(span);
         const segment = deriveSpanSegment(source, span);
         if (segment.id !== source.id) derivedSegments.set(segment.id, segment);
         return {
@@ -301,7 +304,7 @@ export function deriveActiveMachiningOperations(
     operation.metrics.rapidInLength = distance(current, operationEntryPoint(operation));
     current = operationExitPoint(operation);
   });
-  return { status: 'ready', operations, segments: allSegments };
+  return { status: 'ready', operations, segments: allSegments, activeSpans };
 }
 
 export function deriveSourceMachiningOperations(

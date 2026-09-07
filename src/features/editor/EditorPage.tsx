@@ -1621,7 +1621,9 @@ export function EditorPage({
     }
     setSelectedPathOperationId(element.operationId);
     setSelectedPathElement(element);
-    setSelectedProgramExactTarget(null);
+    setSelectedProgramExactTarget(element.machiningSpanId && element.operationId
+      ? { kind: 'machining-span', operationId: element.operationId, spanId: element.machiningSpanId }
+      : null);
     setSelectedProgramTreeKey(programTreeKeyForOperation(element.operationId));
     return true;
   }

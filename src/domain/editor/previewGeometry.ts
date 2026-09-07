@@ -56,6 +56,8 @@ export interface EditorPreviewPath {
   source?: 'gcode' | 'path-document';
   travelRole?: 'rapid-in' | 'lead-in' | 'lead-out';
   travelSource?: 'planned';
+  machiningSpanId?: string;
+  clippedSourceSegment?: boolean;
   participation?: 'active-cut' | 'inactive-reference';
 }
 
@@ -275,7 +277,11 @@ export function buildEditorPathDocumentPreviewGeometry(
       });
     }
 
-    for (const ref of operation.segmentRefs) {
+    for (const [refIndex, ref] of operation.segmentRefs.entries()) {
+      const spanId = operation.machiningIntent?.spanIds[refIndex];
+      const span = machining?.status === 'ready'
+        ? machining.activeSpans.find((candidate) => candidate.id === spanId)
+        : undefined;
       const segment = requiredSegment(segmentsById, ref.segmentId);
       for (const segmentPath of pathDocumentSegmentPaths(segment, ref)) {
         paths.push({
@@ -286,9 +292,11 @@ export function buildEditorPathDocumentPreviewGeometry(
           start: segmentPath.start,
           end: segmentPath.end,
           line: pathLineNumber(options.lineHints, pathIndex++),
-          operationId: operation.id,
+          operationId: sourceOperationId,
           pathElementId,
-          segmentId: ref.segmentId,
+          segmentId: span?.sourceSegmentId ?? ref.segmentId,
+          machiningSpanId: spanId,
+          clippedSourceSegment: span ? span.range.start !== 0 || span.range.end !== 1 : false,
           source: 'path-document',
           participation: hasParticipation ? 'active-cut' : undefined
         });
