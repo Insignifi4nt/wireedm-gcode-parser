@@ -22,7 +22,7 @@ export function assertPortableUpidV1Shape(document: PathPlanningDocument): void 
 }
 
 function machiningParticipation(value: unknown, path: string) {
-  assertKeys(value, ['spans', 'partialContourCompensation', 'partialContourEntryReviews'], path);
+  assertKeys(value, ['spans', 'partialContourCompensation', 'partialContourEntryReviews', 'partialContourExitReviews'], path);
   const object = record(value);
   each(object?.spans, (span, spanPath) => {
     assertKeys(span, ['id', 'sourceSegmentId', 'range', 'participation'], spanPath);
@@ -34,6 +34,9 @@ function machiningParticipation(value: unknown, path: string) {
   each(object?.partialContourEntryReviews, (setting, settingPath) => {
     assertKeys(setting, ['sourceOperationId', 'review', 'entryFingerprint'], settingPath);
   }, `${path}.partialContourEntryReviews`);
+  each(object?.partialContourExitReviews, (setting, settingPath) => {
+    assertKeys(setting, ['sourceOperationId', 'review', 'exitFingerprint'], settingPath);
+  }, `${path}.partialContourExitReviews`);
 }
 
 function setup(value: unknown, path: string) {

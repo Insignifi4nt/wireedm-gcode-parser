@@ -2,15 +2,51 @@ import { describe, expect, it } from 'vitest';
 
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { translatePathDocument } from '@/domain/path-editor/pathDocumentOperations';
+import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
+import { assertPortableUpidV1Shape } from '@/domain/upid/portableUpidV1Shape';
+import { setManualCompensationIntent } from '@/domain/compensation/intent';
 
 import {
   deriveActiveMachiningOperations,
   setPartialContourEntryReview,
+  setPartialContourExitReview,
   setPartialContourCompensationSide,
   setMachiningSpanParticipation
 } from '../machiningParticipation';
 
 describe('machining participation', () => {
+  it('confirms and persists a partial exit, revokes it, and invalidates changed geometry', () => {
+    let source = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    source.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    source = setManualCompensationIntent(source, source.plan.operations[0].id, 'centerline')!;
+    const operation = source.plan.operations[0];
+    operation.transitions = { exit: { strategy: 'manual-straight', move: 'cut',
+      from: operation.endPoint, to: { x: 12, y: 0 }, review: 'reviewed' } };
+    const partial = setMachiningSpanParticipation(source, {
+      sourceSegmentId: operation.segmentRefs[0].segmentId, range: { start: 0.6, end: 1 }, participation: 'inactive-reference'
+    })!;
+    expect(compileWireEdmExecutionPlan(partial)).toMatchObject({ ok: false });
+    const reviewed = setPartialContourExitReview(partial, operation.id, true)!;
+    assertPortableUpidV1Shape(reviewed);
+    const reopened = JSON.parse(JSON.stringify(reviewed)) as typeof reviewed;
+    const result = compileWireEdmExecutionPlan(reopened);
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    expect(result.plan.events.filter((event) => event.kind === 'motion').at(-1)).toMatchObject({
+      role: 'exit', start: { x: 6, y: 0 }, end: { x: 12, y: 0 }
+    });
+    const revoked = setPartialContourExitReview(reviewed, operation.id, false)!;
+    expect(deriveActiveMachiningOperations(revoked).operations[0].transitions?.exit).toMatchObject({ review: 'required' });
+    const translated = translatePathDocument(reviewed, { x: 2, y: 3 })!;
+    expect(deriveActiveMachiningOperations(translated).operations[0].transitions?.exit).toMatchObject({ review: 'required' });
+    const changed = setMachiningSpanParticipation(reviewed, {
+      sourceSegmentId: operation.segmentRefs[0].segmentId, range: { start: 0, end: 0.2 }, participation: 'inactive-reference'
+    })!;
+    expect(changed.machiningParticipation?.partialContourExitReviews).toEqual([]);
+    expect(partial.machiningParticipation?.partialContourExitReviews ?? []).toEqual([]);
+  });
+
   it('derives imported operations and rapid metrics in authoritative execution order', () => {
     const source = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 3 },

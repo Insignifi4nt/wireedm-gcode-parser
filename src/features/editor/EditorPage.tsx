@@ -84,6 +84,7 @@ import {
   deriveActiveMachiningOperations,
   setMachiningSpanParticipation,
   setPartialContourEntryReview,
+  setPartialContourExitReview,
   setPartialContourCompensationSide
 } from '@/domain/path-intel/machiningParticipation';
 import {
@@ -2237,6 +2238,24 @@ export function EditorPage({
     }
   }
 
+  function handleSetPartialContourExitReview(
+    sourceOperationId: string,
+    reviewed: boolean
+  ) {
+    if (!activeWorkflowOwns('machining.participation') || !pathDocumentDraft || isEditorMutationLocked) return;
+    const edited = setPartialContourExitReview(
+      pathDocumentDraft,
+      sourceOperationId,
+      reviewed
+    );
+    if (edited) {
+      applyPathDocumentEdit(edited, {
+        selectedPathElement,
+        selectedPathOperationId: sourceOperationId
+      });
+    }
+  }
+
   function handleSetPathOperationOrderStrategy(strategy: OperationOrderStrategy) {
     if (!activeWorkflowOwns('machining.sequence') || !pathDocumentDraft || isEditorMutationLocked) return;
     const edited = setPathOperationOrderStrategy(pathDocumentDraft, strategy);
@@ -3807,6 +3826,7 @@ export function EditorPage({
                 'Apply a valid machining span or discard its pending range before saving or changing the target contour.'
               )}
               onSetEntryReview={handleSetPartialContourEntryReview}
+              onSetExitReview={handleSetPartialContourExitReview}
               onSetSpan={handleSetMachiningSpan}
               onSetWireSide={handleSetPartialContourCompensationSide}
               selectedOperationId={selectedPathOperationId}

@@ -2140,6 +2140,7 @@ describe('EditorPage UPID draft boundary', () => {
   });
 
   it('selects a partial-cut exit on the canvas and inspects its active geometry', async () => {
+    const onSave = vi.fn();
     const source = pathDocumentFromRectangle();
     const operation = source.plan.operations[0];
     const configured = setPathOperationTransitions(source, operation.id, {
@@ -2151,7 +2152,7 @@ describe('EditorPage UPID draft boundary', () => {
       range: { start: 0.6, end: 1 }, participation: 'inactive-reference'
     })!;
     await act(async () => root.render(
-      <EditorPageHarness initialWorkflowId="view.statistics" onSaveEditorDraft={vi.fn()}
+      <EditorPageHarness initialWorkflowId="view.statistics" onSaveEditorDraft={onSave}
         project={projectWithUpid(partial)} />
     ));
     await flushAsync();
@@ -2161,6 +2162,20 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected-travel="length"]')?.textContent).toBe('9.000');
     await clickElement('[data-editor-workflow-command="machining.entry-exit"]');
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Entry and exit operation"]')?.value).toBe(operation.id);
+    await clickElement('[data-editor-workflow-command="machining.participation"]');
+    await clickElement('[aria-label="Review derived partial exit"]');
+    await clickElement('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]');
+    await clickElement('button[aria-label="Save active document"]');
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'upid-document', pathDocument: expect.objectContaining({
+        machiningParticipation: expect.objectContaining({ partialContourExitReviews: [expect.objectContaining({
+          sourceOperationId: operation.id, review: 'reviewed', exitFingerprint: expect.any(String)
+        })] })
+      })
+    }));
+    await clickElement('button[aria-label="Undo active document change"]');
+    await clickElement('[data-editor-workflow-command="machining.participation"]');
+    expect(container.querySelector('[aria-label="Review derived partial exit"]')?.textContent).toBe('Review partial exit');
   });
 
   it('associates rich endpoint help with the Contour Tree selection action only', async () => {

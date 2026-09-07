@@ -18,6 +18,20 @@ import {
 import { validateUpidDocument } from '../validateUpidDocument';
 
 describe('validateUpidDocument', () => {
+  it('validates partial exit review identity and geometry fingerprints', () => {
+    const document = closedDocument();
+    const review = { sourceOperationId: document.plan.operations[0].id,
+      review: 'reviewed' as const, exitFingerprint: 'geometry-fingerprint' };
+    document.machiningParticipation = { spans: [], partialContourExitReviews: [review] };
+    expect(validateUpidDocument(document).structurallyValid).toBe(true);
+    document.machiningParticipation.partialContourExitReviews!.push({ ...review });
+    expect(validateUpidDocument(document).structurallyValid).toBe(false);
+    document.machiningParticipation.partialContourExitReviews = [{ ...review, exitFingerprint: '' }];
+    expect(validateUpidDocument(document).structurallyValid).toBe(false);
+    document.machiningParticipation.partialContourExitReviews = [{ ...review, sourceOperationId: 'missing' }];
+    expect(validateUpidDocument(document).structurallyValid).toBe(false);
+  });
+
   it('accepts valid source-oriented machining participation and partial compensation settings', () => {
     const document = closedDocument();
     document.machiningParticipation = {

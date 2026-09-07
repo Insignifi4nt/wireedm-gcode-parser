@@ -374,41 +374,45 @@ function validateMachiningParticipation(
     }
   });
 
-  const reviews = array(participation.partialContourEntryReviews);
-  if (
-    participation.partialContourEntryReviews !== undefined &&
-    !Array.isArray(participation.partialContourEntryReviews)
-  ) {
-    context.add('upid-invalid-value', 'Partial-contour entry reviews must be an array.');
-  }
-  const reviewedOperationIds = new Set<string>();
-  reviews.forEach((value, index) => {
-    const setting = record(value);
-    if (!setting) {
-      context.add('upid-invalid-value', `Partial-contour entry review ${index} must be an object.`);
-      return;
-    }
+  for (const role of ['entry', 'exit'] as const) {
+    const reviewKey = role === 'entry' ? 'partialContourEntryReviews' : 'partialContourExitReviews';
+    const fingerprintKey = role === 'entry' ? 'entryFingerprint' : 'exitFingerprint';
+    const reviews = array(participation[reviewKey]);
     if (
-      typeof setting.sourceOperationId !== 'string' ||
-      !operationMap.has(setting.sourceOperationId)
+      participation[reviewKey] !== undefined &&
+      !Array.isArray(participation[reviewKey])
     ) {
-      context.add(
-        'upid-missing-reference',
-        `Partial-contour entry review ${index} references a missing source operation.`
-      );
-    } else if (reviewedOperationIds.has(setting.sourceOperationId)) {
-      context.add(
-        'upid-duplicate-id',
-        `Partial-contour entry review for ${setting.sourceOperationId} is duplicated.`
-      );
-    } else reviewedOperationIds.add(setting.sourceOperationId);
-    if (setting.review !== 'reviewed') {
-      context.add('upid-invalid-value', `Partial-contour entry review ${index} has an invalid state.`);
+      context.add('upid-invalid-value', `Partial-contour ${role} reviews must be an array.`);
     }
-    if (typeof setting.entryFingerprint !== 'string' || setting.entryFingerprint.length === 0) {
-      context.add('upid-invalid-value', `Partial-contour entry review ${index} has no entry fingerprint.`);
-    }
-  });
+    const reviewedOperationIds = new Set<string>();
+    reviews.forEach((value, index) => {
+      const setting = record(value);
+      if (!setting) {
+        context.add('upid-invalid-value', `Partial-contour ${role} review ${index} must be an object.`);
+        return;
+      }
+      if (
+        typeof setting.sourceOperationId !== 'string' ||
+        !operationMap.has(setting.sourceOperationId)
+      ) {
+        context.add(
+          'upid-missing-reference',
+          `Partial-contour ${role} review ${index} references a missing source operation.`
+        );
+      } else if (reviewedOperationIds.has(setting.sourceOperationId)) {
+        context.add(
+          'upid-duplicate-id',
+          `Partial-contour ${role} review for ${setting.sourceOperationId} is duplicated.`
+        );
+      } else reviewedOperationIds.add(setting.sourceOperationId);
+      if (setting.review !== 'reviewed') {
+        context.add('upid-invalid-value', `Partial-contour ${role} review ${index} has an invalid state.`);
+      }
+      if (typeof setting[fingerprintKey] !== 'string' || setting[fingerprintKey].length === 0) {
+        context.add('upid-invalid-value', `Partial-contour ${role} review ${index} has no ${role} fingerprint.`);
+      }
+    });
+  }
 }
 
 function report(

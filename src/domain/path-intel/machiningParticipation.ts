@@ -87,6 +87,40 @@ export function setPartialContourEntryReview(
   return next;
 }
 
+export function setPartialContourExitReview(
+  document: PathPlanningDocument,
+  sourceOperationId: string,
+  reviewed: boolean
+): PathPlanningDocument | null {
+  if (!document.plan.operations.some((operation) => operation.id === sourceOperationId)) {
+    return null;
+  }
+  const derivation = deriveActiveMachiningOperations(document);
+  const derivedOperations = derivation.status === 'ready'
+    ? derivation.operations.filter(
+        (operation) => operation.machiningIntent?.sourceOperationId === sourceOperationId
+      )
+    : [];
+  const exitFingerprint = derivedOperations.length === 1
+    ? partialContourExitFingerprint(derivedOperations[0])
+    : null;
+  if (reviewed && !exitFingerprint) return null;
+  const next = structuredClone(document);
+  next.machiningParticipation ??= { spans: [] };
+  const reviews = next.machiningParticipation.partialContourExitReviews ?? [];
+  const index = reviews.findIndex((review) => review.sourceOperationId === sourceOperationId);
+  if (!reviewed) {
+    if (index >= 0) reviews.splice(index, 1);
+  } else if (index >= 0) {
+    reviews[index] = { sourceOperationId, review: 'reviewed', exitFingerprint: exitFingerprint! };
+  } else {
+    reviews.push({ sourceOperationId, review: 'reviewed', exitFingerprint: exitFingerprint! });
+  }
+  reviews.sort((left, right) => left.sourceOperationId.localeCompare(right.sourceOperationId));
+  next.machiningParticipation.partialContourExitReviews = reviews;
+  return next;
+}
+
 export type ActiveMachiningDerivation =
   | { status: 'ready'; operations: PathOperation[]; segments: PathSegment[] }
   | {
@@ -149,6 +183,10 @@ export function setMachiningSpanParticipation(
     (next.machiningParticipation.partialContourEntryReviews ?? []).filter(
       (review) => !affectedOperationIds.has(review.sourceOperationId)
     );
+  next.machiningParticipation.partialContourExitReviews =
+    (next.machiningParticipation.partialContourExitReviews ?? []).filter(
+      (review) => !affectedOperationIds.has(review.sourceOperationId)
+    );
   return next;
 }
 
@@ -177,6 +215,11 @@ export function deriveActiveMachiningOperations(
     (document.machiningParticipation?.partialContourEntryReviews ?? [])
       .filter((setting) => setting.review === 'reviewed')
       .map((setting) => [setting.sourceOperationId, setting.entryFingerprint])
+  );
+  const reviewedPartialExitFingerprints = new Map(
+    (document.machiningParticipation?.partialContourExitReviews ?? [])
+      .filter((setting) => setting.review === 'reviewed')
+      .map((setting) => [setting.sourceOperationId, setting.exitFingerprint])
   );
   const decisionsBySegment = new Map<string, MachiningSpan[]>();
   for (const decision of decisions) {
@@ -243,7 +286,8 @@ export function deriveActiveMachiningOperations(
         endPoint,
         effectiveSegments,
         partialCompensationByOperationId.get(sourceOperation.id),
-        reviewedPartialEntryFingerprints.get(sourceOperation.id)
+        reviewedPartialEntryFingerprints.get(sourceOperation.id),
+        reviewedPartialExitFingerprints.get(sourceOperation.id)
       );
       operations.push(operation);
     });
@@ -290,6 +334,10 @@ export function deriveSourceMachiningOperations(
               participation.partialContourCompensation?.filter(
                 (setting) => setting.sourceOperationId === sourceOperation.id
               ),
+            partialContourExitReviews:
+              participation.partialContourExitReviews?.filter(
+                (review) => review.sourceOperationId === sourceOperation.id
+              ),
             partialContourEntryReviews:
               participation.partialContourEntryReviews?.filter(
                 (review) => review.sourceOperationId === sourceOperation.id
@@ -309,11 +357,13 @@ function buildPartialOperation(
   endPoint: Point2,
   segmentsById: Map<string, PathSegment>,
   wireSide: 'left' | 'right' | undefined,
-  reviewedEntryFingerprint: string | undefined
+  reviewedEntryFingerprint: string | undefined,
+  reviewedExitFingerprint: string | undefined
 ): PathOperation {
   const key = spanIds.join('__').replace(/[^a-zA-Z0-9_-]/g, '_');
   const transitions = readOperationTransitions(source);
   let sourceEntryWasReviewed = false;
+  const sourceExitWasReviewed = transitions.exit?.review === 'reviewed';
   if (transitions?.entry) {
     if (transitions.entry.strategy === 'none') {
       sourceEntryWasReviewed = transitions.entry.review === 'reviewed';
@@ -367,6 +417,10 @@ function buildPartialOperation(
   ) {
     operation.transitions.entry.review = 'reviewed';
   }
+  if (operation.transitions?.exit && sourceExitWasReviewed &&
+    reviewedExitFingerprint === partialContourExitFingerprint(operation)) {
+    operation.transitions.exit.review = 'reviewed';
+  }
   return operation;
 }
 
@@ -383,6 +437,22 @@ function partialContourEntryFingerprint(operation: PathOperation): string | null
     sourceOperationId: operation.machiningIntent.sourceOperationId,
     spanIds: operation.machiningIntent.spanIds,
     startPoint: operation.startPoint
+  });
+}
+
+function partialContourExitFingerprint(operation: PathOperation): string | null {
+  const exit = operation.transitions?.exit;
+  if (operation.machiningIntent?.kind !== 'partial-contour' ||
+    !exit) {
+    return null;
+  }
+  return JSON.stringify({
+    direction: operation.direction,
+    exit: exit.strategy === 'none' ? { strategy: 'none' } : { from: exit.from, to: exit.to },
+    segmentRefs: operation.segmentRefs,
+    sourceOperationId: operation.machiningIntent.sourceOperationId,
+    spanIds: operation.machiningIntent.spanIds,
+    endPoint: operation.endPoint
   });
 }
 

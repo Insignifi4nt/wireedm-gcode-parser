@@ -28,6 +28,11 @@ describe('EditorMachiningParticipationPanel', () => {
       line(0, 0, 10, 0), line(10, 0, 10, 5), line(10, 5, 0, 5), line(0, 5, 0, 0)
     ]);
     const operation = document.plan.operations[0];
+    operation.transitions = {
+      entry: { strategy: 'none', review: 'reviewed' },
+      exit: { strategy: 'manual-straight', move: 'cut', from: operation.endPoint,
+        to: { x: -2, y: 0 }, review: 'reviewed' }
+    };
     document.machiningParticipation = {
       spans: [{
         id: 'span_existing',
@@ -39,12 +44,14 @@ describe('EditorMachiningParticipationPanel', () => {
     const onSetSpan = vi.fn();
     const onSetWireSide = vi.fn();
     const onSetEntryReview = vi.fn();
+    const onSetExitReview = vi.fn();
     await act(async () => root.render(
       <EditorMachiningParticipationPanel
         disabled={false}
         document={document}
         onSetSpan={onSetSpan}
         onSetEntryReview={onSetEntryReview}
+        onSetExitReview={onSetExitReview}
         onSetWireSide={onSetWireSide}
         selectedOperationId={operation.id}
       />
@@ -71,6 +78,10 @@ describe('EditorMachiningParticipationPanel', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Review derived partial entry"]')?.click();
     });
     expect(onSetEntryReview).toHaveBeenCalledWith(operation.id, true);
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Review derived partial exit"]')!.click();
+    });
+    expect(onSetExitReview).toHaveBeenCalledWith(operation.id, true);
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Restore span_existing to active cut"]')?.click();
@@ -95,6 +106,7 @@ describe('EditorMachiningParticipationPanel', () => {
         onDraftChange={onDraftChange}
         onSetSpan={vi.fn()}
         onSetEntryReview={vi.fn()}
+        onSetExitReview={vi.fn()}
         onSetWireSide={vi.fn()}
         selectedOperationId={operation.id}
         targetChangeBlocked={targetChangeBlocked}

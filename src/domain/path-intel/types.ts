@@ -423,6 +423,11 @@ export interface MachiningParticipation {
     review: 'reviewed';
     entryFingerprint: string;
   }>;
+  partialContourExitReviews?: Array<{
+    sourceOperationId: OperationId;
+    review: 'reviewed';
+    exitFingerprint: string;
+  }>;
 }
 
 export interface PathOperationMachiningIntent {

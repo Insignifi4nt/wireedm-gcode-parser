@@ -38,6 +38,8 @@ export function resolveEditorProgramTreeAction(node: EditorProgramTreeNode): Edi
       case 'EXECUTION_PLAN_THREADING_INVALID': return action('machining.between-contours', node.operationId);
       case 'EXECUTION_PLAN_COMPENSATION_UNRESOLVED': return action('machining.contour-setup', node.operationId);
       case 'EXECUTION_PLAN_TRANSITION_REVIEW_REQUIRED':
+        return action(node.diagnostic.operationId !== node.operationId
+          ? 'machining.participation' : 'machining.entry-exit', node.operationId);
       case 'EXECUTION_PLAN_DEGENERATE_TRANSITION': return action('machining.entry-exit', node.operationId);
       case 'EXECUTION_PLAN_PROGRAM_STOP_INVALID': return action('machining.program-stops', node.operationId);
       case 'EXECUTION_PLAN_EMPTY':

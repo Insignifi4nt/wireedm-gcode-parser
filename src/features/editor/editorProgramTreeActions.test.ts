@@ -2,10 +2,29 @@ import { describe, expect, it } from 'vitest';
 
 import { buildUpidEditorTree } from '@/domain/upid/upidEditorTree';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 
 import { resolveEditorProgramTreeAction } from './editorProgramTreeActions';
 
 describe('resolveEditorProgramTreeAction', () => {
+  it('opens participation to confirm the effective partial exit', () => {
+    const document = createUpidFromDxfEntities([{
+      type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
+    }]);
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    const operation = document.plan.operations[0];
+    operation.transitions = { exit: { strategy: 'manual-straight', move: 'cut',
+      from: operation.endPoint, to: { x: 12, y: 0 }, review: 'reviewed' } };
+    const partial = setMachiningSpanParticipation(document, {
+      sourceSegmentId: operation.segmentRefs[0].segmentId, range: { start: 0.6, end: 1 }, participation: 'inactive-reference'
+    })!;
+    const tree = buildUpidEditorTree(partial);
+    if (tree.status === 'ready') throw new Error('Expected partial exit review');
+    expect(resolveEditorProgramTreeAction(tree.diagnostics[0])).toEqual({
+      commandId: 'machining.participation', exactTarget: null, operationId: operation.id
+    });
+  });
+
   it('opens the affected operation entry/exit tool for a stored degenerate lead', () => {
     const document = createUpidFromDxfEntities([{
       type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }

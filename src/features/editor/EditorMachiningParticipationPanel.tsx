@@ -13,6 +13,7 @@ interface EditorMachiningParticipationPanelProps {
     participation: 'active-cut' | 'inactive-reference';
   }, completeForm?: boolean) => void;
   onSetEntryReview: (sourceOperationId: string, reviewed: boolean) => void;
+  onSetExitReview: (sourceOperationId: string, reviewed: boolean) => void;
   onSetWireSide: (sourceOperationId: string, wireSide: 'left' | 'right' | null) => void;
   selectedOperationId: string | null;
   selectedSegmentId?: string | null;
@@ -26,6 +27,7 @@ export function EditorMachiningParticipationPanel({
   onDraftChange,
   onSetSpan,
   onSetEntryReview,
+  onSetExitReview,
   onSetWireSide,
   selectedOperationId,
   selectedSegmentId,
@@ -87,6 +89,9 @@ export function EditorMachiningParticipationPanel({
     ? derived.operations.find((candidate) => candidate.machiningIntent?.sourceOperationId === operation?.id)?.transitions?.entry
     : undefined;
   const entryReviewed = partialEntry && 'review' in partialEntry && partialEntry.review === 'reviewed';
+  const partialExit = derived.status === 'ready'
+    ? derived.operations.find((candidate) => candidate.machiningIntent?.sourceOperationId === operation?.id)?.transitions?.exit
+    : undefined;
   const start = Number(rangeStart);
   const end = Number(rangeEnd);
   const validRange = Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= 1 && start < end;
@@ -205,6 +210,22 @@ export function EditorMachiningParticipationPanel({
           type="button"
         >
           {entryReviewed ? 'Entry reviewed · revoke' : 'Review derived entry'}
+        </button>
+      </div>}
+
+      {partialExit?.strategy === 'manual-straight' && <div className="grid gap-1 border border-border p-2">
+        <div className="uppercase text-muted-foreground">Partial exit</div>
+        <p className="text-muted-foreground">
+          Confirm the exit from ({partialExit.from.x.toFixed(3)}, {partialExit.from.y.toFixed(3)}) to ({partialExit.to.x.toFixed(3)}, {partialExit.to.y.toFixed(3)}) mm.
+        </p>
+        <button
+          aria-label="Review derived partial exit"
+          className="h-7 border border-border bg-background disabled:opacity-40"
+          disabled={disabled}
+          onClick={() => onSetExitReview(operation.id, partialExit.review !== 'reviewed')}
+          type="button"
+        >
+          {partialExit.review === 'reviewed' ? 'Exit reviewed · revoke' : 'Review partial exit'}
         </button>
       </div>}
 
