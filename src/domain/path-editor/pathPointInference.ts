@@ -423,7 +423,7 @@ function perpendicularFoot(
   return { point, tangent: circleTangent(unitRadial, ref.reversed), t: 0 };
 }
 
-function nearestPointOnSegment(
+export function nearestPointOnSegment(
   segment: PathSegment,
   ref: OrientedSegmentRef,
   point: Point2
