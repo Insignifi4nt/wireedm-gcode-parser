@@ -597,7 +597,7 @@ export function EditorPreview({
   }
 
   function handlePreviewMouseLeave() {
-    measurement?.onHover(null, 1);
+    // Keep the last measurement preview stable while using its panel controls.
     onCursorPointChange?.(null);
     suppressClickRef.current = false;
     handlePreviewMouseUp();

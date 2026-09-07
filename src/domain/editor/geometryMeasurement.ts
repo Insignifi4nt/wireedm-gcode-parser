@@ -1,6 +1,6 @@
 import { nearestPointOnSegment } from '@/domain/path-editor/pathPointInference';
-import { distance, pointOnArcAtParameter } from '@/domain/path-intel/segments';
-import type { PathSegment, Point2 } from '@/domain/path-intel/types';
+import { distance, pointOnArcAtParameter, orientedSegmentStart, orientedSegmentEnd, pathBounds, pathCutLength, signedAreaOfPath } from '@/domain/path-intel/segments';
+import type { OrientedSegmentRef, PathSegment, Point2 } from '@/domain/path-intel/types';
 
 export type MeasurementSnapKind = 'endpoint' | 'midpoint' | 'center' | 'quadrant' | 'nearest';
 
@@ -103,4 +103,26 @@ export function measureSegment(segment: PathSegment) {
 
 function finitePoint(point: Point2) {
   return Number.isFinite(point.x) && Number.isFinite(point.y);
+}
+
+/** Measures the supplied boundary, excluding authored leads and positioning moves. */
+export function measureProfile(refs: OrientedSegmentRef[], segments: readonly PathSegment[]) {
+  if (refs.length === 0) return null;
+  const byId = new Map(segments.map((segment) => [segment.id, segment]));
+  const parts: Array<{ start: Point2; end: Point2 }> = [];
+  for (const ref of refs) {
+    const segment = byId.get(ref.segmentId);
+    if (!segment || !Number.isFinite(segment.length)) return null;
+    parts.push({ start: orientedSegmentStart(segment, ref), end: orientedSegmentEnd(segment, ref) });
+  }
+  const connected = parts.every((part, index) =>
+    finitePoint(part.start) && finitePoint(part.end) && distance(part.end, parts[(index + 1) % parts.length].start) <= 1e-9
+  );
+  const bounds = pathBounds(refs, byId);
+  const length = pathCutLength(refs, byId);
+  const width = bounds.maxX - bounds.minX;
+  const height = bounds.maxY - bounds.minY;
+  const signedArea = connected ? signedAreaOfPath(refs, byId) : null;
+  if (![length, width, height].every(Number.isFinite) || (signedArea !== null && !Number.isFinite(signedArea))) return null;
+  return { length, width, height, signedArea };
 }

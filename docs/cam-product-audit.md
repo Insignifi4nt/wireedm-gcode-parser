@@ -53,7 +53,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Program stops | Boundaries, remaining-distance placement and preview | pending |
 | Endpoint topology | Expose repair-relevant facts; move raw topology detail behind disclosure | pending |
 | Diagnostics | Deduplicate, prioritize and navigate to exact repair context | pending |
-| Measurement | Added read-only Measure with magnetic points, dimensions, precision, pair/chain/fixed-reference modes, mouse/touch and zoom checks. Profile and multi-entity inspection remain | in progress |
+| Measurement | Added read-only Measure with magnetic points, segment and contour dimensions, precision, pair/chain/fixed-reference modes, mouse/touch and zoom checks. Multi-entity inspection remains | in progress |
 | Construction points | Retain explicit editing; separate from inspection; clarify constraints | pending |
 | Canvas selection and hover | Fixed endpoint highlight layering above start/end markers; browser regression passes. Overlap and selection filters remain | in progress |
 | Canvas navigation | Fit, zoom anchor, pan, grid, scale and touch | pending |
@@ -70,6 +70,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 2. Measurement panel, local `tmp/cam-audit/02-measurement-before.png`: duplicate heading, point creation and CSV export but no distance result; inspection requires a mutating workflow. Disabled insertion is visible even in a path project where insertion is unavailable.
 3. Working Measure tool, local `tmp/cam-audit/03-measurement-after.png`: magnetic endpoint pair measures exactly 10 mm with matching canvas annotation and panel results. Document remains saved. Construction is a separate editing command; its unavailable insertion action is hidden for path projects.
 4. Compact program tree, local `tmp/cam-audit/04-program-tree-after.png`: ready operation details are collapsed, leaving source/setup and program order visible. Event details remain reachable by expansion; unresolved operation diagnostics expand automatically.
+5. Contour measurement, local `tmp/cam-audit/05-profile-measurement.png`: disclosed boundary length, width, height and enclosed area in the docked Measure panel. Moving into the panel preserves the last preview so controls do not shift under the pointer.
 
 Screenshots were captured and inspected during this audit. They establish layout findings; correctness requires domain and interaction checks as well.
 
@@ -88,7 +89,8 @@ Screenshots were captured and inspected during this audit. They establish layout
 - The full unit run found an obsolete footer-text assertion, removed while retaining actual catalog-data assertions, and a genuine spatial-index scaling failure. Disjoint level rejection and cheaper cell lookup fixed the quadratic scan. Exact-hit comparisons and deterministic read-count tests cover the fix; the timing limit was not relaxed.
 - Current checkpoint: 104 test files and 994 unit tests passed; 57 browser tests passed, one optional external-workbench fixture skipped. Production build passed with the existing bundle-size warning. No branch merge was performed.
 - Subsequent program-tree change: 86 focused component/editor tests, four browser workflow tests and the production build passed. A controlled-selection regression exercises select, expand, select child, collapse and keyboard re-expand with focus and selection retained.
+- Contour measurement: 10 domain tests, three browser scenarios and the production build passed. Checks cover analytic curved area, reversed orientation, open/missing boundaries, rectangle dimensions and a stable disclosure target after the first pick. Leads and positioning moves are excluded; ambiguous or intersecting contours do not display an enclosed area.
 
 ## Next audit work
 
-Review the program tree and overlapping inspection panels next, including internal event names, default expansion, summary/statistics/position duplication and context-sensitive selection details. Complete measurement profile and multi-entity inspection, then inspect each machining tool against the transaction, preview and validation standards. Continue through every remaining inventory row; these first fixes do not constitute completion of the whole-app goal.
+Review overlapping inspection panels next, including summary/statistics/position duplication and context-sensitive selection details. Complete multi-entity measurement inspection, then inspect each machining tool against the transaction, preview and validation standards. Continue through every remaining inventory row; these first fixes do not constitute completion of the whole-app goal.

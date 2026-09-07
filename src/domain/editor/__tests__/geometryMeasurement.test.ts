@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createArcSegment, createCircleSegment, createLineSegment } from '@/domain/path-intel/segments';
-import { measurePointPair, measureSegment, pickMeasurementPoint } from '../geometryMeasurement';
+import { measurePointPair, measureProfile, measureSegment, pickMeasurementPoint } from '../geometryMeasurement';
 
 const source = { sourceEntityIndex: 0, sourceEntityType: 'line', layer: null, exact: true };
 const line = createLineSegment({ id: 'line', source, start: { x: 0, y: 0 }, end: { x: 10, y: 0 } });
@@ -45,6 +45,24 @@ describe('magnetic measurement picks', () => {
 });
 
 describe('measurement results', () => {
+  it('integrates curved boundary area and preserves it when the boundary is reversed', () => {
+    const halfCircle = createArcSegment({ id: 'half', source, start: { x: 10, y: 0 }, end: { x: -10, y: 0 }, center: { x: 0, y: 0 }, clockwise: false });
+    const diameter = createLineSegment({ id: 'diameter', source, start: { x: -10, y: 0 }, end: { x: 10, y: 0 } });
+    const refs = [{ segmentId: 'half', reversed: false }, { segmentId: 'diameter', reversed: false }];
+    const measured = measureProfile(refs, [halfCircle, diameter]);
+    expect(measured?.width).toBeCloseTo(20, 10);
+    expect(measured?.height).toBeCloseTo(10, 10);
+    expect(measured?.length).toBeCloseTo(10 * Math.PI + 20, 10);
+    expect(measured?.signedArea).toBeCloseTo(50 * Math.PI, 10);
+    expect(measureProfile([...refs].reverse().map((ref) => ({ ...ref, reversed: true })), [halfCircle, diameter])?.signedArea).toBeCloseTo(-50 * Math.PI, 10);
+  });
+
+  it('measures open boundaries without inventing an enclosed area and rejects missing geometry', () => {
+    expect(measureProfile([{ segmentId: line.id, reversed: false }], [line])).toEqual({ length: 10, width: 10, height: 0, signedArea: null });
+    expect(measureProfile([{ segmentId: 'missing', reversed: false }], [line])).toBeNull();
+    expect(measureProfile([], [])).toBeNull();
+    expect(measureProfile([{ segmentId: circle.id, reversed: false }], [circle])?.signedArea).toBeCloseTo(25 * Math.PI, 10);
+  });
   it('reports signed deltas, Euclidean distance and direction without rounding geometry', () => {
     expect(measurePointPair({ x: 10, y: 10 }, { x: 7, y: 14 })).toEqual({ distance: 5, dx: -3, dy: 4, angleDegrees: Math.atan2(4, -3) * 180 / Math.PI });
     expect(measurePointPair({ x: 0, y: 0 }, { x: 0, y: 0 })).toEqual({ distance: 0, dx: 0, dy: 0, angleDegrees: null });

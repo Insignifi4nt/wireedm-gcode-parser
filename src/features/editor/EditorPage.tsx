@@ -3405,7 +3405,7 @@ export function EditorPage({
         }`}
       >
         {pathDocumentDraft && renderWorkspacePanel('measure', 'Measure', (
-          <EditorMeasurePanel measurement={measurement} segments={measurementSegments} />
+          <EditorMeasurePanel measurement={measurement} document={pathDocumentDraft} />
         ))}
         {!pathDocumentDraft && (
           <div

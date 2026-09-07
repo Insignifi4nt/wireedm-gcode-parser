@@ -29,10 +29,23 @@ test('measures exact snapped points repeatedly without modifying the document', 
   await page.mouse.move(a.x + 3, a.y - 2);
   await expect(page.locator('[data-preview-measurement-snap]')).toHaveAttribute('data-preview-measurement-snap', 'endpoint');
   await page.mouse.click(a.x + 3, a.y - 2);
+  const disclosure = page.getByText('Contour dimensions', { exact: true });
+  const disclosureBox = await disclosure.boundingBox();
+  if (!disclosureBox) throw new Error('Contour disclosure unavailable');
+  // Use the position seen on the canvas; entering the panel must not move the target.
+  await page.mouse.click(disclosureBox.x + 20, disclosureBox.y + disclosureBox.height / 2);
+  await expect(page.locator('dl[aria-label="Contour measurements"]')).toBeVisible();
+  await disclosure.click();
   await page.mouse.click(b.x - 3, b.y - 2);
   // The result list and canvas must agree, including sign and display precision.
   await expect(page.locator('dl[aria-label="Point measurements"]')).toContainText('Distance10.000 mm');
   await expect(page.locator('[data-preview-measurement-distance]')).toHaveText('10.000 mm');
+  await page.getByText('Contour dimensions', { exact: true }).click();
+  const contour = page.locator('dl[aria-label="Contour measurements"]');
+  await expect(contour).toContainText('Boundary length40.000 mm');
+  await expect(contour).toContainText('Width10.000 mm');
+  await expect(contour).toContainText('Height10.000 mm');
+  await expect(contour).toContainText('Enclosed area100.000 mm²');
   await page.getByLabel('Measurement precision').selectOption('5');
   await expect(page.locator('[data-preview-measurement-distance]')).toHaveText('10.00000 mm');
   await page.getByRole('button', { name: 'Zoom preview out', exact: true }).click();
