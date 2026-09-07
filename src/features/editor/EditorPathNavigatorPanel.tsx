@@ -899,7 +899,7 @@ export function EditorPathNavigatorPanel({
                   className={iconButtonClass}
                   disabled={!canOrientActiveTarget}
                   onClick={() =>
-                      activePathTransformTarget === 'document' ? onRotatePathDocument(-90) : onRotatePathSelection(-90)
+                      activePathTransformTarget === 'document' ? onRotatePathDocument(90) : onRotatePathSelection(90)
                   }
                   title={`Rotate ${activePathTransformTarget} 90 degrees counterclockwise`}
                   type="button"
@@ -911,7 +911,7 @@ export function EditorPathNavigatorPanel({
                   className={iconButtonClass}
                   disabled={!canOrientActiveTarget}
                   onClick={() =>
-                    activePathTransformTarget === 'document' ? onRotatePathDocument(90) : onRotatePathSelection(90)
+                    activePathTransformTarget === 'document' ? onRotatePathDocument(-90) : onRotatePathSelection(-90)
                   }
                   title={`Rotate ${activePathTransformTarget} 90 degrees clockwise`}
                   type="button"

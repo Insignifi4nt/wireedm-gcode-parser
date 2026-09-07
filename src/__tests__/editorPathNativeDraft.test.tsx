@@ -1819,6 +1819,41 @@ describe('EditorPage UPID draft boundary', () => {
     });
   });
 
+  it.each(['clockwise', 'counterclockwise'] as const)('rotates document %s about its center and preserves the result through undo, redo and save', async (direction) => {
+    const pathDocument = pathDocumentFromRectangle();
+    const onSaveEditorDraft = vi.fn<(draft: EditorSaveDraft) => void>();
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={onSaveEditorDraft} project={projectWithUpid(pathDocument)} />);
+    });
+    await flushAsync();
+    const original = previewGeometrySignature();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await clickElement(`button[aria-label="Rotate document 90 degrees ${direction}"]`);
+    const rotated = previewGeometrySignature();
+    expect(rotated).not.toBe(original);
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(previewGeometrySignature()).toBe(original);
+    await clickElement('button[aria-label="Redo active document change"]');
+    expect(previewGeometrySignature()).toBe(rotated);
+    await clickElement('button[aria-label="Save active document"]');
+    const saved = onSaveEditorDraft.mock.calls[0]?.[0];
+    expect(saved?.model).toBe('upid-document');
+    if (saved?.model !== 'upid-document') throw new Error('Expected a saved path document');
+    const bounds = pathDocument.contours[0].bounds;
+    const center = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+    const sign = direction === 'counterclockwise' ? 1 : -1;
+    pathDocument.segments.forEach((source, index) => {
+      if (source.kind !== 'line') throw new Error('Expected rectangle lines');
+      const result = saved.pathDocument.segments[index];
+      if (result.kind !== 'line') throw new Error('Expected rotated line');
+      for (const endpoint of ['start', 'end'] as const) {
+        expect(result[endpoint].x).toBeCloseTo(center.x - sign * (source[endpoint].y - center.y));
+        expect(result[endpoint].y).toBeCloseTo(center.y + sign * (source[endpoint].x - center.x));
+      }
+    });
+  });
+
   it('undoes and redoes UPID path edits as modeled path documents', async () => {
     const pathDocument = pathDocumentFromRectangle();
     const project = projectWithUpid(pathDocument);
