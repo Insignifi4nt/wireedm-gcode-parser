@@ -1,7 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { useModalFocus } from '@/components/ui/useModalFocus';
 import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
 
 type WorkbenchProjectIndexEntry = WorkbenchCatalogManifest['projects'][number];
@@ -28,6 +29,18 @@ export function ProjectActionDialog({
   const [name, setName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLFormElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const savingRef = useRef(false);
+  const busy = isSaving || interactionLocked;
+  function dismiss() {
+    if (!savingRef.current && !interactionLocked) onClose();
+  }
+  useModalFocus({ open: Boolean(action), overlayRef, dialogRef,
+    initialFocusRef: action?.kind === 'rename' ? nameRef : cancelRef,
+    onClose: dismiss, dismissible: !busy });
 
   useEffect(() => {
     if (!action) return;
@@ -35,17 +48,6 @@ export function ProjectActionDialog({
     setIsSaving(false);
     setErrorMessage(null);
   }, [action]);
-
-  useEffect(() => {
-    if (!action) return;
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [action, onClose]);
 
   if (!action) return null;
 
@@ -63,10 +65,12 @@ export function ProjectActionDialog({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (savingRef.current || interactionLocked) return;
 
     const nextName = name.trim();
     if (isRename && !nextName) return;
 
+    savingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
     try {
@@ -79,18 +83,23 @@ export function ProjectActionDialog({
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : fallbackError);
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   }
 
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) dismiss();
       }}
     >
       <form
+        ref={dialogRef}
+        tabIndex={-1}
+        aria-busy={busy}
         aria-label={title}
         aria-modal="true"
         className="grid w-full max-w-lg gap-4 border border-border bg-card p-4 shadow-2xl"
@@ -111,7 +120,8 @@ export function ProjectActionDialog({
           <button
             aria-label={`Close ${kind} dialog`}
             className="flex size-7 shrink-0 items-center justify-center border border-border text-muted-foreground outline-none transition hover:bg-accent hover:text-foreground"
-            onClick={onClose}
+            onClick={dismiss}
+            disabled={busy}
             type="button"
           >
             <X className="size-4" />
@@ -123,6 +133,7 @@ export function ProjectActionDialog({
             <label className="grid gap-1 font-mono text-[11px] text-muted-foreground">
               Project name
               <input
+                ref={nameRef}
                 aria-label="Project name"
                 className="h-8 border border-border bg-background px-2 font-mono text-[11px] text-foreground outline-none focus:border-ring"
                 disabled={isSaving || interactionLocked}
@@ -141,13 +152,13 @@ export function ProjectActionDialog({
         </div>
 
         {errorMessage && (
-          <p className="border border-destructive bg-destructive/10 p-2 font-mono text-[10px] text-destructive">
+          <p role="alert" className="border border-destructive bg-destructive/10 p-2 font-mono text-[10px] text-destructive">
             {errorMessage}
           </p>
         )}
 
         <div className="flex items-center justify-end gap-2">
-          <Button disabled={isSaving} onClick={onClose} type="button" variant="outline">
+          <Button ref={cancelRef} disabled={busy} onClick={dismiss} type="button" variant="outline">
             Cancel
           </Button>
           <Button

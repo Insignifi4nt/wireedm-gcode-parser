@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Database, RefreshCw, SlidersHorizontal, X } from 'lucide-react';
 
+import { useModalFocus } from '@/components/ui/useModalFocus';
 import { Button } from '@/components/ui/button';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
@@ -44,63 +45,8 @@ export function WorkbenchSettingsDialog({
   const [activeSection, setActiveSection] = useState<'storage' | 'machine-output'>('storage');
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const latestCloseRef = useRef(onClose);
-  const openerRef = useRef<HTMLElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
-  latestCloseRef.current = onClose;
-
-  useEffect(() => {
-    if (!open || !overlayRef.current || !dialogRef.current) return;
-    const overlay = overlayRef.current;
-    const dialog = dialogRef.current;
-    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const siblings = [...(overlay.parentElement?.children ?? [])]
-      .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== overlay)
-      .map((element) => ({
-        ariaHidden: element.getAttribute('aria-hidden'),
-        element,
-        inertAttribute: element.getAttribute('inert'),
-        inertProperty: element.inert
-      }));
-    for (const sibling of siblings) {
-      sibling.element.inert = true;
-      sibling.element.setAttribute('inert', '');
-      sibling.element.setAttribute('aria-hidden', 'true');
-    }
-    (closeButtonRef.current ?? dialog).focus();
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        latestCloseRef.current();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const focusable = readDialogFocusableElements(dialog);
-      const first = focusable[0] ?? dialog;
-      const last = focusable.at(-1) ?? dialog;
-      const active = document.activeElement;
-      if (!(active instanceof Node) || !dialog.contains(active) || (!event.shiftKey && active === last)) {
-        event.preventDefault();
-        first.focus();
-      } else if (event.shiftKey && active === first) {
-        event.preventDefault();
-        last.focus();
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      for (const sibling of siblings) {
-        sibling.element.inert = sibling.inertProperty;
-        restoreAttribute(sibling.element, 'inert', sibling.inertAttribute);
-        restoreAttribute(sibling.element, 'aria-hidden', sibling.ariaHidden);
-      }
-      openerRef.current?.focus();
-      openerRef.current = null;
-    };
-  }, [open]);
+  useModalFocus({ open, overlayRef, dialogRef, initialFocusRef: closeButtonRef, onClose });
 
   useEffect(() => {
     if (open) setActiveSection('storage');
@@ -167,15 +113,6 @@ function SettingsRow({ label, value }: { label: string; value: string }) {
 
 function Message({ children, tone }: { children: ReactNode; tone: 'error' | 'warning' }) {
   return <p className={`mt-3 border p-2 font-mono text-[10px] ${tone === 'error' ? 'border-destructive bg-destructive/10 text-destructive' : 'border-amber-500/50 bg-amber-500/10 text-amber-100'}`}>{children}</p>;
-}
-
-function readDialogFocusableElements(dialog: HTMLElement) {
-  return [...dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')].filter((element) => !element.closest('[hidden], [aria-hidden="true"], [inert]'));
-}
-
-function restoreAttribute(element: HTMLElement, name: string, value: string | null) {
-  if (value === null) element.removeAttribute(name);
-  else element.setAttribute(name, value);
 }
 
 function storageStatus(workbench: ConnectedWorkbenchCatalog | null, status: WorkbenchStatus) {
