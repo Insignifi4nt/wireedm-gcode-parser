@@ -106,6 +106,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 - Entry/Exit form corrections: 86 focused panel/editor tests and production build passed. Both entry and exit drafts survive application of the opposite transition, and required-review coordinates remain available for explicit confirmation.
 - Travel inspection: 110 focused domain/editor tests and production build passed. Regressions verify exit-lead endpoints and length, subsequent positioning from the exit destination, and reviewed initial-wire coordinates without inventing an unresolved start.
 - Navigator leads: 82 editor integration tests and production build passed. Pointer/keyboard hover covers both leads; selecting an exit highlights the matching preview path and inspects its 5 mm length. Rendered compact exit row and canvas selection inspected at 1355 × 900 (`tmp/cam-audit/08-compact-exit-row.png`). Removed duplicate coordinate/length blocks from the entry row.
+- Coincident lead editing: 156 focused domain/panel/editor tests and production build passed. Manual entry and transition editing reject leads within the preview coincidence tolerance, including after contour anchoring. Panel checks block submission and permit correction; explicit no-entry/no-exit remain valid and rejected edits preserve the source document. Existing/imported degenerate leads and leads collapsed by later geometry edits still need validation at the output boundary.
 
 ## Next audit work
 

@@ -280,6 +280,10 @@ export function setPathOperationTransitions(
   if (!operation || !transitionsAreFinite(transitions)) return null;
   operation.transitions = structuredClone(transitions);
   refreshOperationTransitions(operation);
+  if ([operation.transitions.entry, operation.transitions.exit].some(
+    (lead) => lead && lead.strategy !== 'none' &&
+      pointsEqual(lead.from, lead.to, document.options.coincidenceEpsilon)
+  )) return null;
   refreshPlan(next);
   return next;
 }
@@ -617,6 +621,8 @@ export function setPathOperationManualLeadIn(
   const next = cloneDocument(document);
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
   if (!operation || operation.segmentRefs.length === 0) return null;
+
+  if (pointsEqual(from, operation.startPoint, document.options.coincidenceEpsilon)) return null;
 
   operation.transitions = {
     ...operation.transitions,

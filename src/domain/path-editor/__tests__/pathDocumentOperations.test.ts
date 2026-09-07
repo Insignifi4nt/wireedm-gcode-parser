@@ -41,6 +41,32 @@ import {
 import * as pathDocumentOperations from '../pathDocumentOperations';
 
 describe('pathDocumentOperations', () => {
+  it('rejects coincident leads after anchoring them to the contour endpoints', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    const before = structuredClone(document);
+    const operation = document.plan.operations[0];
+    const epsilon = document.options.coincidenceEpsilon;
+    expect(setPathOperationManualLeadIn(document, operation.id, operation.startPoint)).toBeNull();
+    expect(setPathOperationManualLeadIn(document, operation.id, { x: epsilon / 2, y: 0 })).toBeNull();
+    expect(setPathOperationTransitions(document, operation.id, {
+      entry: { strategy: 'manual-straight', move: 'cut', from: operation.startPoint,
+        to: { x: 50, y: 0 }, review: 'reviewed' }
+    })).toBeNull();
+    expect(setPathOperationTransitions(document, operation.id, {
+      exit: { strategy: 'manual-straight', move: 'cut', from: { x: 50, y: 0 },
+        to: operation.endPoint, review: 'reviewed' }
+    })).toBeNull();
+    expect(setPathOperationTransitions(document, operation.id, {
+      entry: { strategy: 'none', review: 'reviewed' },
+      exit: { strategy: 'none', review: 'reviewed' }
+    })?.plan.operations[0].transitions).toEqual({
+      entry: { strategy: 'none', review: 'reviewed' }, exit: { strategy: 'none', review: 'reviewed' }
+    });
+    expect(document).toEqual(before);
+  });
+
   it('requires review of changed open-path lead connections after reversal', () => {
     const original = createPathPlanningDocumentFromDxfEntities([
       { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }

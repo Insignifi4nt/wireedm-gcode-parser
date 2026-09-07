@@ -75,6 +75,37 @@ describe('EditorEntryExitPanel', () => {
     expect(onSetNoExit).toHaveBeenCalledWith(operationId);
   });
 
+  it.each(['Entry', 'Exit'] as const)('blocks a coincident %s and permits correcting its coordinates', async (side) => {
+    const document = createUpidFromDxfEntities([{
+      type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
+    }]);
+    const operation = document.plan.operations[0];
+    const onApply = vi.fn();
+    await act(async () => root.render(
+      <EditorEntryExitPanel canvasPickMode={null} disabled={false} document={document}
+        onCanvasPickModeChange={vi.fn()} onSelectOperation={vi.fn()} onSetCircleCenterEntry={vi.fn()}
+        onSetManualEntry={onApply} onSetManualExit={onApply} onSetNoEntry={vi.fn()}
+        onSetNoExit={vi.fn()} selectedOperationId={operation.id} />
+    ));
+    const setCoordinate = async (axis: string, value: string) => {
+      const input = container.querySelector<HTMLInputElement>(`[aria-label="${side} ${axis}"]`)!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    };
+    await setCoordinate('X', side === 'Entry' ? '0' : '10');
+    await setCoordinate('Y', '0');
+    const button = container.querySelector<HTMLButtonElement>(`[aria-label="Set straight ${side.toLowerCase()}"]`)!;
+    expect(button.disabled).toBe(true);
+    await act(async () => button.click());
+    expect(onApply).not.toHaveBeenCalled();
+    await setCoordinate('Y', '2');
+    expect(button.disabled).toBe(false);
+    await act(async () => button.click());
+    expect(onApply).toHaveBeenCalledWith(operation.id, { x: side === 'Entry' ? 0 : 10, y: 2 });
+  });
+
   it('shows required transition review and submits the displayed coordinates for confirmation', async () => {
     const document = createUpidFromDxfEntities([{
       type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }

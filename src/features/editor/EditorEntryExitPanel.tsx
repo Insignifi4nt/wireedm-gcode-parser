@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
+import { pointsEqual } from '@/domain/path-intel/segments';
 import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 
 interface EditorEntryExitPanelProps {
@@ -75,6 +76,10 @@ export function EditorEntryExitPanel({
 
   const entryPoint = readFinitePoint(entryX, entryY);
   const exitPoint = readFinitePoint(exitX, exitY);
+  const entryCoincident = Boolean(selected && entryPoint &&
+    pointsEqual(entryPoint, selected.startPoint, document.options.coincidenceEpsilon));
+  const exitCoincident = Boolean(selected && exitPoint &&
+    pointsEqual(exitPoint, selected.endPoint, document.options.coincidenceEpsilon));
   const canSetCircleCenterEntry = Boolean(
     selected &&
     canSetCircleOperationCenterPierceLeadIn(document, selected.id)
@@ -165,11 +170,12 @@ export function EditorEntryExitPanel({
           x={entryX}
           y={entryY}
         />
+        {entryCoincident && <p role="status" className="text-amber-300">Entry is at the contour start. Choose a different point or use no entry.</p>}
         <div className="grid grid-cols-2 gap-1">
           <button
             aria-label="Set straight entry"
             className="h-7 border border-border bg-background disabled:opacity-40"
-            disabled={!entryPoint}
+            disabled={!entryPoint || entryCoincident}
             onClick={() => entryPoint && onSetManualEntry(selected.id, entryPoint)}
             type="button"
           >
@@ -215,10 +221,11 @@ export function EditorEntryExitPanel({
           x={exitX}
           y={exitY}
         />
+        {exitCoincident && <p role="status" className="text-amber-300">Exit is at the contour end. Choose a different point or use no exit.</p>}
         <button
           aria-label="Set straight exit"
           className="h-7 border border-border bg-background disabled:opacity-40"
-          disabled={!exitPoint}
+          disabled={!exitPoint || exitCoincident}
           onClick={() => exitPoint && onSetManualExit(selected.id, exitPoint)}
           type="button"
         >
