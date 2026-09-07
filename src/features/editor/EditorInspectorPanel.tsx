@@ -1020,7 +1020,7 @@ export function EditorInspectorPanel({
       ), { fill: true })}
 
       {pathDocument && (
-        renderWorkspacePanel('machine', 'Planning Machine & Source Setup', (
+        renderWorkspacePanel('machine', 'Source & Machine Setup', (
         <section data-editor-machine-section>
           <EditorPlanningMachineSummary machine={planningMachine} result={machineFit} />
           {pathDocument?.source.appliedUnits && (

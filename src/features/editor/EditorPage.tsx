@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 import { useAppRail } from '@/app/AppRailContext';
+import { RailResizeHandle } from '@/components/ui/RailResizeHandle';
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 import {
   deleteBodyGroup,
@@ -1152,25 +1153,6 @@ export function EditorPage({
       if (unsavedAfterWorkflow && !window.confirm('Discard unsaved changes?')) return;
       void onImportProgramFile(file);
     });
-  }
-
-  function handleInspectorRailResizeStart(event: PointerEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = inspectorRailWidth;
-
-    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      const nextWidth = Math.min(560, Math.max(280, startWidth - (moveEvent.clientX - startX)));
-      setInspectorRailWidth(nextWidth);
-    }
-
-    function handlePointerUp() {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    }
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp, { once: true });
   }
 
   async function handleSaveClick() {
@@ -3581,12 +3563,12 @@ export function EditorPage({
 
         {isPathProject ? (hasActiveRightDock ? (
           <>
-            <div
-              aria-label="Resize Workflow Dock"
-              className="hidden cursor-col-resize bg-border/30 transition hover:bg-primary/40 lg:block"
+            <RailResizeHandle
+              label="Resize Workflow Dock"
+              className="hidden lg:block"
               data-editor-inspector-resizer
-              onPointerDown={handleInspectorRailResizeStart}
-              role="separator"
+              side="right" width={inspectorRailWidth} minWidth={280} maxWidth={560}
+              onWidthChange={setInspectorRailWidth}
             />
             {renderEditorDockZone('right')}
           </>
@@ -3610,12 +3592,12 @@ export function EditorPage({
           </div>
         ) : (
           <>
-            <div
-              aria-label="Resize Inspector Rail"
-              className="hidden cursor-col-resize bg-border/30 transition hover:bg-primary/40 lg:block"
+            <RailResizeHandle
+              label="Resize Inspector Rail"
+              className="hidden lg:block"
               data-editor-inspector-resizer
-              onPointerDown={handleInspectorRailResizeStart}
-              role="separator"
+              side="right" width={inspectorRailWidth} minWidth={280} maxWidth={560}
+              onWidthChange={setInspectorRailWidth}
             />
             <aside
               className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-border bg-card/95 text-[10px]"

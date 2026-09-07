@@ -48,7 +48,7 @@ export const EDITOR_WORKSPACE_PANEL_TITLES: Record<EditorWorkspacePanelId, strin
   'program-stops': 'Program Stops',
   'machining-participation': 'Machining Participation',
   statistics: 'Statistics',
-  machine: 'Project Machine & Source Setup',
+  machine: 'Source & Machine Setup',
   measurement: 'Construction points'
 };
 
@@ -67,7 +67,7 @@ export const EDITOR_WORKSPACE_PANEL_DESCRIPTIONS: Record<EditorWorkspacePanelId,
   'program-stops': 'typed unconditional stop events at operation boundaries or remaining cut distance',
   'machining-participation': 'source-preserving active cuts, inactive reference spans, and explicit open-path compensation side',
   statistics: 'project dimensions, source, topology and selected geometry',
-  machine: 'project machine, active setup, source units, and machine fit checks',
+  machine: 'source unit review and planning-machine span checks',
   measurement: 'manual points, perpendicular and tangent construction, and export actions'
 };
 
@@ -108,7 +108,7 @@ const DEFAULT_WORKSPACE_PANEL_GEOMETRY: Record<EditorWorkspacePanelId, EditorFlo
   'program-stops': { x: 680, y: 150, width: 370, height: 560 },
   'machining-participation': { x: 710, y: 170, width: 390, height: 600 },
   statistics: { x: 990, y: 104, width: 360, height: 560 },
-  machine: { x: 1040, y: 134, width: 320, height: 520 },
+  machine: { x: 1040, y: 134, width: 340, height: 390 },
   measurement: { x: 250, y: 194, width: 340, height: 420 }
 };
 
@@ -126,6 +126,11 @@ export const EDITOR_COMMAND_REGISTRY = createEditorCommandRegistry([
     id: 'geometry.setup', label: 'Geometry Setup', menuPath: ['Geometry', 'Geometry Setup'],
     scope: 'document', toolWindowId: 'geometry-setup', historyLabel: 'Edit geometry setup',
     prerequisites: [{ kind: 'document' }], workflow: { kind: 'mutating' }
+  },
+  {
+    id: 'geometry.source-setup', label: 'Source & Machine Setup', menuPath: ['Geometry', 'Source & Machine Setup'],
+    scope: 'view', toolWindowId: 'machine', prerequisites: [{ kind: 'document' }],
+    workflow: { kind: 'view' }
   },
   {
     id: 'geometry.transform', label: 'Transform Geometry', menuPath: ['Geometry', 'Transform Geometry'],

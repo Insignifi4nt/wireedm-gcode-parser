@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type PointerEvent,
   type ReactNode
 } from 'react';
 import {
@@ -17,6 +16,7 @@ import {
 
 import { StatusNotificationMenu, type StatusToast } from '@/components/StatusToasts';
 import { Button } from '@/components/ui/button';
+import { RailResizeHandle } from '@/components/ui/RailResizeHandle';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import { AppRailProvider, type AppRailContent, type EditorCompactDrawer } from './AppRailContext';
@@ -187,30 +187,6 @@ export function AppShell({
     }
   }, [railContent]);
 
-  function handleSidebarResizeStart(event: PointerEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const startX = event.clientX;
-    const sizing = railContent?.sizing;
-    const startWidth = sizing?.width ?? sidebarWidth;
-
-    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      const nextWidth = Math.min(
-        sizing?.maxWidth ?? 380,
-        Math.max(sizing?.minWidth ?? 160, startWidth + moveEvent.clientX - startX)
-      );
-      if (sizing) sizing.onWidthChange(nextWidth);
-      else setSidebarWidth(nextWidth);
-    }
-
-    function handlePointerUp() {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    }
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp, { once: true });
-  }
-
   return (
     <div
       className="technical-workbench flex h-dvh flex-col overflow-hidden bg-background text-foreground"
@@ -328,12 +304,15 @@ export function AppShell({
           </aside>
         )}
         {railContent && !sidebarCollapsed && (
-          <div
-            aria-label="Resize project rail"
-            className="cursor-col-resize border-r border-border bg-border/30 transition hover:bg-primary/40"
+          <RailResizeHandle
+            label="Resize project rail"
+            className="border-r border-border"
             data-app-rail-resizer
-            onPointerDown={handleSidebarResizeStart}
-            role="separator"
+            side="left"
+            width={railWidth}
+            minWidth={railContent.sizing?.minWidth ?? 160}
+            maxWidth={railContent.sizing?.maxWidth ?? 380}
+            onWidthChange={railContent.sizing?.onWidthChange ?? setSidebarWidth}
           />
         )}
 
