@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Check, Trash2, Upload } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -51,12 +51,18 @@ export function MachinePostSettingsPanel({
 }: MachinePostSettingsPanelProps) {
   const [preferences, setPreferences] = useState(() => preferenceDraft(connectedWorkbench));
   const [prepared, setPrepared] = useState<PreparedMachinePackageInstallation | null>(null);
+  const previewRequest = useRef(0);
   const [localError, setLocalError] = useState<string | null>(null);
   const disabled = interactionLocked || settingsStatus === 'saving';
 
   useEffect(() => {
     setPreferences(preferenceDraft(connectedWorkbench));
   }, [connectedWorkbench]);
+
+  useEffect(() => {
+    setPrepared(null);
+    return () => { previewRequest.current += 1; };
+  }, [connectedWorkbench.adapter, connectedWorkbench.machines, connectedWorkbench.posts]);
 
   async function handlePreferenceSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -72,13 +78,15 @@ export function MachinePostSettingsPanel({
   async function handlePackageFile(file: File) {
     setLocalError(null);
     setPrepared(null);
+    const request = ++previewRequest.current;
     const result = await onPrepareMachinePackage(file);
+    if (request !== previewRequest.current) return;
     if (result.ok) setPrepared(result.prepared);
     else setLocalError(result.error.message);
   }
 
   async function commit(resolution: MachinePackageInstallationResolution) {
-    if (!prepared) return;
+    if (!prepared || prepared.workbench.adapter !== connectedWorkbench.adapter) return;
     const installed = await onCommitMachinePackage(prepared, resolution);
     if (installed) setPrepared(null);
   }

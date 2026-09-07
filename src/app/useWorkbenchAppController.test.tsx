@@ -1,3 +1,5 @@
+import { buildMachinePackageArchive, prepareStoredMachinePackageInstallation } from '@/domain/machine-package';
+import { machinePackageFixture } from '@/domain/machine-package/__tests__/machinePackageFixture';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -49,6 +51,24 @@ describe('workbench controller asynchronous operations', () => {
     if (!imported.ok) throw new Error(imported.error.message);
     return imported;
   }
+
+  it('rejects a machine package prepared for another workbench before committing', async () => {
+    const other = await connectWorkbenchDirectory({ requestDirectory: async () => new FakeDirectoryHandle('other-workbench') as unknown as FileSystemDirectoryHandle,
+      handleStore: { read: async () => null, write: async () => {} } });
+    if (!other.ok) throw new Error(other.error.message);
+    const built = await buildMachinePackageArchive(await machinePackageFixture());
+    if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
+    const prepared = await prepareStoredMachinePackageInstallation(other.workbench, built.archive);
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    const commit = vi.fn(defaultAppServices.commitStoredMachinePackageInstallation);
+    const read = await mount({ commitStoredMachinePackageInstallation: commit });
+    await act(async () => {
+      expect(await read().handleCommitMachinePackage(prepared.prepared, { kind: 'install-new' })).toBe(false);
+    });
+    expect(commit).not.toHaveBeenCalled();
+    expect(read().settingsErrorMessage).toContain('workbench changed');
+    expect(read().connectedWorkbench?.machines.machines).toHaveLength(0);
+  });
 
   it.each(['service result', 'service rejection', 'download'] as const)('reports an export %s failure and permits retry', async (failure) => {
     const seeded = await seedProgram();

@@ -76,6 +76,32 @@ describe('MachinePostSettingsPanel', () => {
     expect(onCommitMachinePackage).toHaveBeenCalledWith(prepared.prepared, { kind: 'install-new' });
   });
 
+  it('discards previews and late preparation results when the connected workbench changes', async () => {
+    const built = await buildMachinePackageArchive(await machinePackageFixture());
+    if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
+    const prepared = await prepareStoredMachinePackageInstallation(workbench, built.archive);
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    type Prepared = Extract<Awaited<ReturnType<typeof prepareStoredMachinePackageInstallation>>, { ok: true }>;
+    let resolve!: (value: Prepared) => void;
+    const pending = new Promise<Prepared>((done) => { resolve = done; });
+    const onPrepareMachinePackage = vi.fn().mockResolvedValueOnce(prepared).mockReturnValueOnce(pending);
+    await render({ onPrepareMachinePackage });
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['archive'], 'machine.wireedm-package')] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+    expect(container.querySelector('[data-machine-package-preview]')).not.toBeNull();
+    workbench = { ...workbench, machines: { ...workbench.machines } };
+    await render({ onPrepareMachinePackage });
+    expect(container.querySelector('[data-machine-package-preview]')).toBeNull();
+    act(() => input.dispatchEvent(new Event('change', { bubbles: true })));
+    const other = await initializeWorkbenchCatalog(new MemoryAdapter());
+    if (!other.ok) throw new Error(other.error.message);
+    workbench = other.workbench;
+    await render({ onPrepareMachinePackage });
+    await act(async () => { resolve(prepared); await pending; });
+    expect(container.querySelector('[data-machine-package-preview]')).toBeNull();
+  });
+
   it('shows complete leaf-level physical machine changes before replacement', async () => {
     const beforeModel = 'Controller model with a deliberately shared long prefix A';
     const afterModel = 'Controller model with a deliberately shared long prefix B';

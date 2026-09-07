@@ -700,6 +700,11 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     prepared: PreparedMachinePackageInstallation,
     resolution: MachinePackageInstallationResolution
   ) {
+    const workbench = requireWorkbench();
+    if (!workbench || prepared.workbench.adapter !== workbench.adapter) {
+      settingsFailure('The workbench changed after the package preview. Review the package again.');
+      return false;
+    }
     return runSettingsMutation(async () => {
       const result = await services.commitStoredMachinePackageInstallation(prepared, resolution);
       return result.ok ? { ok: true as const, workbench: result.workbench } : result;
