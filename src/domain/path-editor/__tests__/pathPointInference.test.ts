@@ -1,3 +1,5 @@
+import { deriveSourceMachiningOperations, setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
+import { setPathOperationManualLeadIn } from '../pathDocumentOperations';
 import { describe, expect, it } from 'vitest';
 
 import type { DxfEntity } from '@/domain/dxf/types';
@@ -13,6 +15,46 @@ function documentFrom(entities: DxfEntity[]) {
 }
 
 describe('inferPathPoint', () => {
+  it.each([false, true])('uses clipped arc endpoint normals with source identity (reversed %s)', (reversed) => {
+    const source = documentFrom([{ type: 'arc', layer: 'CUT', center: { x: 0, y: 0 }, radius: 10,
+      startAngle: 0, endAngle: 90, clockwise: false, start: { x: 10, y: 0 }, end: { x: 0, y: 10 } }]);
+    const operationId = source.plan.operations[0].id;
+    const segmentId = source.segments[0].id;
+    source.plan.operations[0].segmentRefs[0].reversed = reversed;
+    const first = setMachiningSpanParticipation(source, { sourceSegmentId: segmentId, range: { start: 0, end: 0.2 }, participation: 'inactive-reference' })!;
+    const document = setMachiningSpanParticipation(first, { sourceSegmentId: segmentId, range: { start: 0.7, end: 1 }, participation: 'inactive-reference' })!;
+    for (const endpoint of ['entry', 'exit'] as const) {
+      const parameter = endpoint === 'entry' ? reversed ? 0.7 : 0.2 : reversed ? 0.2 : 0.7;
+      const angle = parameter * Math.PI / 2;
+      const radial = { x: Math.cos(angle), y: Math.sin(angle) };
+      const inferred = inferPerpendicularOperationOffset(document, { endpoint, operationId,
+        hintPoint: { x: radial.x * 15 - radial.y * 3, y: radial.y * 15 + radial.x * 3 } });
+      expect(inferred).toMatchObject({ operationId, segmentId, segmentIndex: 0, endpointRole: null });
+      expect(inferred!.sourcePoint.x).toBeCloseTo(radial.x * 10);
+      expect(inferred!.sourcePoint.y).toBeCloseTo(radial.y * 10);
+      expect(inferred!.point.x).toBeCloseTo(radial.x * 15);
+      expect(inferred!.point.y).toBeCloseTo(radial.y * 15);
+      expect(inferred!.t).toBeCloseTo(reversed ? 1 - parameter : parameter);
+      if (endpoint === 'entry') {
+        const edited = setPathOperationManualLeadIn(document, operationId, inferred!.point)!;
+        const active = deriveSourceMachiningOperations(edited, operationId);
+        expect(active?.status).toBe('ready');
+        if (active?.status === 'ready') expect(active.operations[0].transitions?.entry).toMatchObject({ from: inferred!.point, to: inferred!.sourcePoint });
+      }
+    }
+  });
+
+  it('uses clipped line endpoints and declines blocked or wholly inactive paths', () => {
+    const source = documentFrom([{ type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }]);
+    const operationId = source.plan.operations[0].id;
+    const partial = setMachiningSpanParticipation(source, { sourceSegmentId: source.segments[0].id, range: { start: 0, end: 0.4 }, participation: 'inactive-reference' })!;
+    expect(inferPerpendicularOperationOffset(partial, { endpoint: 'entry', operationId, hintPoint: { x: 1, y: -3 } })).toMatchObject({ sourcePoint: { x: 4, y: 0 }, point: { x: 4, y: -3 }, t: 0.4 });
+    for (const range of [{ start: 0.4, end: 0.6 }, { start: 0, end: 1 }]) {
+      const blocked = setMachiningSpanParticipation(source, { sourceSegmentId: source.segments[0].id, range, participation: 'inactive-reference' })!;
+      expect(inferPerpendicularOperationOffset(blocked, { endpoint: 'entry', operationId, hintPoint: { x: 1, y: -3 } })).toBeNull();
+    }
+  });
+
   it('infers endpoint, nearest, and midpoint candidates on a line', () => {
     const document = documentFrom([
       { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }

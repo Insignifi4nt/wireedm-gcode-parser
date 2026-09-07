@@ -1,3 +1,4 @@
+import { deriveSourceMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import {
   arcParameterAtPoint,
   arcParameterAtRadial,
@@ -253,20 +254,34 @@ export function inferPerpendicularOperationOffset(
   }
 ): MagnetizedPathPoint | null {
   if (!finitePoint(request.hintPoint)) return null;
-  const operation = document.plan.operations.find(
+  const sourceOperation = document.plan.operations.find(
     (candidate) => candidate.id === request.operationId
   );
-  if (!operation || operation.segmentRefs.length === 0) return null;
+  if (!sourceOperation) return null;
+  const active = deriveSourceMachiningOperations(document, sourceOperation.id);
+  if (active?.status !== 'ready' || active.operations.length !== 1) return null;
+  const operation = active.operations[0];
+  if (operation.segmentRefs.length === 0) return null;
   const segmentIndex =
     request.endpoint === 'entry' ? 0 : operation.segmentRefs.length - 1;
   const ref = operation.segmentRefs[segmentIndex];
-  const segment = requiredSegment(segmentMap(document.segments), ref.segmentId);
-  const t = request.endpoint === 'entry' ? 0 : 1;
+  const segment = requiredSegment(segmentMap(active.segments), ref.segmentId);
+  const endpointParameter = request.endpoint === 'entry' ? 0 : 1;
+  const spanId = operation.machiningIntent?.spanIds[segmentIndex];
+  const span = active.activeSpans.find((candidate) => candidate.id === spanId);
+  const sourceSegmentId = span?.sourceSegmentId ?? ref.segmentId;
+  const sourceSegmentIndex = sourceOperation.segmentRefs.findIndex((candidate) => candidate.segmentId === sourceSegmentId);
+  if (sourceSegmentIndex < 0) return null;
+  const t = span
+    ? request.endpoint === 'entry'
+      ? ref.reversed ? 1 - span.range.end : span.range.start
+      : ref.reversed ? 1 - span.range.start : span.range.end
+    : endpointParameter;
   const sourcePoint =
     request.endpoint === 'entry'
       ? orientedSegmentStart(segment, ref)
       : orientedSegmentEnd(segment, ref);
-  const tangent = tangentAt(segment, ref, t);
+  const tangent = tangentAt(segment, ref, endpointParameter);
   const normal = { x: -tangent.y, y: tangent.x };
   const offset =
     (request.hintPoint.x - sourcePoint.x) * normal.x +
@@ -276,7 +291,7 @@ export function inferPerpendicularOperationOffset(
     y: sourcePoint.y + normal.y * offset
   };
   const pathElementId =
-    document.pathElements.find((element) => element.operationId === operation.id)?.id ??
+    document.pathElements.find((element) => element.operationId === sourceOperation.id)?.id ??
     null;
 
   return {
@@ -284,12 +299,12 @@ export function inferPerpendicularOperationOffset(
     endpointRole: null,
     guide: { from: { ...sourcePoint }, to: { ...point } },
     mode: 'perpendicular',
-    operationId: operation.id,
+    operationId: sourceOperation.id,
     pathElementId,
     point,
     relation: 'perpendicular',
-    segmentId: ref.segmentId,
-    segmentIndex,
+    segmentId: sourceSegmentId,
+    segmentIndex: sourceSegmentIndex,
     sourcePoint,
     tangent,
     t
