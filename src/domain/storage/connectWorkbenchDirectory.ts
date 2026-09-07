@@ -139,10 +139,15 @@ async function runStoreRequest<T>(
   mode: IDBTransactionMode,
   createRequest: (store: IDBObjectStore) => IDBRequest<T>
 ) {
-  return new Promise<T>((resolve, reject) => {
-    const transaction = db.transaction(DIRECTORY_HANDLE_STORE, mode);
-    const request = createRequest(transaction.objectStore(DIRECTORY_HANDLE_STORE));
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-  });
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const transaction = db.transaction(DIRECTORY_HANDLE_STORE, mode);
+      const request = createRequest(transaction.objectStore(DIRECTORY_HANDLE_STORE));
+      // A successful request can still be rolled back before the transaction commits.
+      transaction.oncomplete = () => resolve(request.result);
+      transaction.onabort = () => reject(transaction.error ?? new Error('Could not save the workbench folder preference.'));
+    });
+  } finally {
+    db.close();
+  }
 }

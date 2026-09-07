@@ -58,6 +58,7 @@ describe('connectWorkbenchDirectory', () => {
 
   afterEach(() => {
     window.showDirectoryPicker = originalPicker;
+    vi.unstubAllGlobals();
   });
 
   it('requests a directory and creates a strict V2 catalog', async () => {
@@ -198,6 +199,37 @@ describe('connectWorkbenchDirectory', () => {
     window.showDirectoryPicker = async () => directoryHandle('unused');
     await forgetWorkbenchDirectory(handleStore);
     expect(await connectRememberedWorkbenchDirectory({ handleStore })).toEqual({ status: 'missing' });
+  });
+
+  it.each(['complete', 'abort'] as const)('waits for the preference transaction to %s before reporting a switch', async (outcome) => {
+    const request = { result: undefined };
+    const transaction = {
+      objectStore: () => ({ put: () => request }),
+      oncomplete: () => {}, onabort: () => {},
+      error: new DOMException('Storage transaction failed', 'AbortError')
+    };
+    const db = { transaction: () => transaction, close: vi.fn() };
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        const opening = { result: db, onsuccess: () => {} };
+        queueMicrotask(() => opening.onsuccess());
+        return opening;
+      }
+    });
+    let settled = false;
+    const switching = forgetWorkbenchDirectory();
+    void switching.then(() => { settled = true; }, () => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(db.close).not.toHaveBeenCalled();
+    if (outcome === 'complete') {
+      transaction.oncomplete();
+      await expect(switching).resolves.toBeUndefined();
+    } else {
+      transaction.onabort();
+      await expect(switching).rejects.toThrow('Storage transaction failed');
+    }
+    expect(db.close).toHaveBeenCalledOnce();
   });
 
   it('keeps permission-needed explicit for a remembered folder requiring a gesture', async () => {
