@@ -14,8 +14,8 @@ test('confirms the active partial exit, persists review, and undoes revocation',
   await page.locator('[data-editor-workflow-actions="machining.entry-exit"] button[aria-label^="Save "]').click();
   await page.getByRole('button', { name: 'Machining menu' }).click();
   await page.locator('[data-editor-workflow-command="machining.participation"]').click();
-  await page.getByLabel('Machining span start', { exact: true }).fill('0.6');
-  await page.getByLabel('Machining span end', { exact: true }).fill('1');
+  await page.getByLabel('Machining span start', { exact: true }).fill('60');
+  await page.getByLabel('Machining span end', { exact: true }).fill('100');
   await page.getByRole('button', { name: 'Mark inactive reference', exact: true }).click();
   const review = page.getByRole('button', { name: 'Review derived partial exit', exact: true });
   await expect(review).toHaveText('Review partial exit');

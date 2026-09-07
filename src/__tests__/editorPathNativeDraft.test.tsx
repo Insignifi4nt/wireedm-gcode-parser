@@ -439,8 +439,8 @@ describe('EditorPage UPID draft boundary', () => {
           await flushAsync();
         },
         assertPreserved: () => expect(
-          container.querySelector('[data-machining-participation-panel]')?.textContent
-        ).toContain('0..1 · inactive-reference')
+          container.querySelectorAll('[data-machining-span-participation="inactive-reference"]')
+        ).toHaveLength(1)
       },
       {
         commandId: 'construction.measurement',
@@ -826,7 +826,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
     await clickElement('[data-editor-workflow-actions="machining.participation"] button[aria-label^="Save "]');
     await clickElement('[data-editor-workflow-command="machining.participation"]');
-    await changeInput('input[aria-label="Machining span start"]', '0.2');
+    await changeInput('input[aria-label="Machining span start"]', '20');
     const secondOperation = project.content.document.plan.operations[1];
     await clickElement(
       `path[data-preview-source="path-document"][data-preview-operation="${secondOperation.id}"][data-type="cut"]`

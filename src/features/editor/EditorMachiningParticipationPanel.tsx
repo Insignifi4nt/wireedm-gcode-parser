@@ -43,7 +43,7 @@ export function EditorMachiningParticipationPanel({
     : segmentIds[0] ?? '';
   const [sourceSegmentId, setSourceSegmentId] = useState(initialSegmentId);
   const [rangeStart, setRangeStart] = useState('0');
-  const [rangeEnd, setRangeEnd] = useState('1');
+  const [rangeEnd, setRangeEnd] = useState('100');
   const spanListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -84,8 +84,9 @@ export function EditorMachiningParticipationPanel({
   const partialEntry = partialOperation?.transitions?.entry;
   const entryReviewed = partialEntry && 'review' in partialEntry && partialEntry.review === 'reviewed';
   const partialExit = partialOperation?.transitions?.exit;
-  const start = Number(rangeStart);
-  const end = Number(rangeEnd);
+  const sourceSegment = document.segments.find((segment) => segment.id === sourceSegmentId);
+  const start = Number(rangeStart) / 100;
+  const end = Number(rangeEnd) / 100;
   const validRange = rangeStart.trim() !== '' && rangeEnd.trim() !== '' && Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= 1 && start < end;
 
   if (!operation || !derived) return <p className="text-[10px] text-muted-foreground">No operation selected.</p>;
@@ -129,9 +130,11 @@ export function EditorMachiningParticipationPanel({
         </label>
         <div className="grid grid-cols-2 gap-1">
           <label className="grid gap-0.5 text-muted-foreground">
-            Start (0..1)
+            Start (%)
             <input
               aria-label="Machining span start"
+              inputMode="decimal"
+              aria-describedby="machining-range-help"
               className="h-7 border border-border bg-background px-1 font-mono text-foreground"
               onChange={(event) => {
                 setRangeStart(event.currentTarget.value);
@@ -141,9 +144,11 @@ export function EditorMachiningParticipationPanel({
             />
           </label>
           <label className="grid gap-0.5 text-muted-foreground">
-            End (0..1)
+            End (%)
             <input
               aria-label="Machining span end"
+              inputMode="decimal"
+              aria-describedby="machining-range-help"
               className="h-7 border border-border bg-background px-1 font-mono text-foreground"
               onChange={(event) => {
                 setRangeEnd(event.currentTarget.value);
@@ -153,6 +158,12 @@ export function EditorMachiningParticipationPanel({
             />
           </label>
         </div>
+        <p id="machining-range-help" className="text-muted-foreground">
+          {sourceSegment && <>From source start X{sourceSegment.start.x.toFixed(3)} Y{sourceSegment.start.y.toFixed(3)}; segment length {sourceSegment.length.toFixed(3)} mm. </>}
+          {validRange && sourceSegment
+            ? `${((end - start) * sourceSegment.length).toFixed(3)} mm will be excluded from cutting.`
+            : 'Enter a start and end between 0% and 100%, with start before end.'}
+        </p>
         <button
           className="h-7 border border-border bg-background disabled:opacity-40"
           disabled={!sourceSegmentId || !validRange}
@@ -268,7 +279,7 @@ export function EditorMachiningParticipationPanel({
             <div>
               <div className="text-foreground">Segment {segmentIds.indexOf(span.sourceSegmentId) + 1}</div>
               <div className="text-muted-foreground">
-                {span.range.start}..{span.range.end} · {span.participation}
+                {Number((span.range.start * 100).toFixed(3))}%–{Number((span.range.end * 100).toFixed(3))}% · {span.participation === 'active-cut' ? 'Active cut' : 'Inactive reference'}
               </div>
             </div>
             <button

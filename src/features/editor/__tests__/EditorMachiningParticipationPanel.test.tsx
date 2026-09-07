@@ -62,8 +62,8 @@ describe('EditorMachiningParticipationPanel', () => {
     expect(activeLengths).toEqual([2, 5, 10, 5, 2]);
 
     await act(async () => {
-      setInput(container.querySelector('[aria-label="Machining span start"]')!, '0.1');
-      setInput(container.querySelector('[aria-label="Machining span end"]')!, '0.3');
+      setInput(container.querySelector('[aria-label="Machining span start"]')!, '10');
+      setInput(container.querySelector('[aria-label="Machining span end"]')!, '30');
       [...container.querySelectorAll('button')]
         .find((button) => button.textContent?.includes('Mark inactive reference'))
         ?.click();
@@ -121,15 +121,17 @@ describe('EditorMachiningParticipationPanel', () => {
     await act(async () => root.render(renderPanel(false)));
     const apply = [...container.querySelectorAll<HTMLButtonElement>('button')]
       .find((button) => button.textContent === 'Mark inactive reference')!;
-    await act(async () => {
-      setInput(container.querySelector('[aria-label="Machining span start"]')!, '');
-    });
-    expect(apply.disabled).toBe(true);
-    await act(async () => apply.click());
-    expect(onSetSpan).not.toHaveBeenCalled();
+    for (const invalidStart of ['', '-1', '100', '101', 'not a number']) {
+      await act(async () => {
+        setInput(container.querySelector('[aria-label="Machining span start"]')!, invalidStart);
+      });
+      expect(apply.disabled).toBe(true);
+      await act(async () => apply.click());
+      expect(onSetSpan).not.toHaveBeenCalled();
+    }
     onDraftChange.mockClear();
     await act(async () => {
-      setInput(container.querySelector('[aria-label="Machining span start"]')!, '0.2');
+      setInput(container.querySelector('[aria-label="Machining span start"]')!, '20');
     });
     expect(onDraftChange).toHaveBeenCalledTimes(1);
 
