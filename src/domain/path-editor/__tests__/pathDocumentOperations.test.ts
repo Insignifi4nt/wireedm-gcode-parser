@@ -4,6 +4,8 @@ import type { DxfEntity } from '@/domain/dxf/types';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import { arcParameterAtAngle } from '@/domain/path-intel/segments';
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
+import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
+import type { OperationProgramStop } from '@/domain/path-intel/types';
 
 import {
   derivePlannedRapidRoutes,
@@ -39,6 +41,70 @@ import {
 import * as pathDocumentOperations from '../pathDocumentOperations';
 
 describe('pathDocumentOperations', () => {
+  it('requires review of changed open-path lead connections after reversal', () => {
+    const original = createPathPlanningDocumentFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    const operation = original.plan.operations[0];
+    const configured = setPathOperationTransitions(original, operation.id, {
+      entry: { strategy: 'manual-straight', move: 'cut', from: { x: -2, y: 0 }, to: operation.startPoint, review: 'reviewed' },
+      exit: { strategy: 'manual-straight', move: 'cut', from: operation.endPoint, to: { x: 12, y: 0 }, review: 'reviewed' }
+    })!;
+    const reversed = reversePathOperation(configured, operation.id)!;
+    expect(reversed.plan.operations[0].transitions).toMatchObject({
+      entry: { from: { x: -2, y: 0 }, to: operation.endPoint, review: 'required' },
+      exit: { from: operation.startPoint, to: { x: 12, y: 0 }, review: 'required' }
+    });
+    expect(configured.plan.operations[0].transitions?.entry).toMatchObject({ review: 'reviewed' });
+  });
+
+  it('keeps reviewed leads when closed-path reversal preserves their endpoints', () => {
+    const original = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 10));
+    const operation = original.plan.operations[0];
+    const configured = setPathOperationTransitions(original, operation.id, {
+      entry: { strategy: 'manual-straight', move: 'cut', from: { x: -2, y: 0 }, to: operation.startPoint, review: 'reviewed' },
+      exit: { strategy: 'manual-straight', move: 'cut', from: operation.endPoint, to: { x: -3, y: 0 }, review: 'reviewed' }
+    })!;
+    expect(reversePathOperation(configured, operation.id)?.plan.operations[0].transitions)
+      .toEqual(configured.plan.operations[0].transitions);
+  });
+
+  it('rejects remaining-cut stops at or beyond the active cut length, excluding leads', () => {
+    let document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    const operation = document.plan.operations[0];
+    document = setPathOperationManualLeadIn(document, operation.id, { x: -20, y: 0 })!;
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: operation.segmentRefs[0].segmentId,
+      range: { start: 0.5, end: 1 }, participation: 'inactive-reference'
+    })!;
+    for (const remainingCutLengthMm of [0, 5, 8, Number.NaN]) {
+      expect(setPathOperationProgramStops(document, operation.id, [{
+        id: 'stop-1', enabled: true, reason: 'manual',
+        placement: { kind: 'before-operation-end', remainingCutLengthMm }
+      }])).toBeNull();
+    }
+    expect(setPathOperationProgramStops(document, operation.id, [{
+      id: 'stop-1', enabled: true, reason: 'manual',
+      placement: { kind: 'before-operation-end', remainingCutLengthMm: 4 }
+    }])).not.toBeNull();
+  });
+
+  it('rejects enabled duplicate placements while allowing incremental repair of stored invalid stops', () => {
+    const document = createPathPlanningDocumentFromDxfEntities(rectangleLines(0, 0, 10, 10));
+    const operation = document.plan.operations[0];
+    const first: OperationProgramStop = { id: 'stop-1', enabled: true, reason: 'manual', placement: { kind: 'after-contour' } };
+    const second = { ...first, id: 'stop-2' };
+    expect(setPathOperationProgramStops(document, operation.id, [first, second])).toBeNull();
+    expect(setPathOperationProgramStops(document, operation.id, [first, { ...second, enabled: false }])).not.toBeNull();
+    const invalid: OperationProgramStop = { id: 'stop-3', enabled: true, reason: 'manual', placement: { kind: 'before-operation-end', remainingCutLengthMm: 100 } };
+    operation.programStops = [first, second, invalid];
+    const repaired = setPathOperationProgramStops(document, operation.id, [first, { ...second, enabled: false }, invalid]);
+    expect(repaired?.plan.operations[0].programStops).toEqual([first, { ...second, enabled: false }, invalid]);
+    expect(setPathOperationProgramStops(repaired!, operation.id, [first, { ...second, enabled: false }])).not.toBeNull();
+  });
+
   it('stores reviewed manual initial wire coordinates and marks them stale after placement', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }

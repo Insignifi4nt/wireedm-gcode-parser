@@ -1,4 +1,5 @@
 import { analyzeContours } from '@/domain/path-intel/contours';
+import { programStopValidationError } from '@/domain/path-intel/programStops';
 import { suggestCompensationIntent } from '@/domain/compensation/intent';
 import { buildChains } from '@/domain/path-intel/chains';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
@@ -320,15 +321,16 @@ export function setPathOperationProgramStops(
   operationId: string,
   stops: OperationProgramStop[]
 ) {
+  const originalOperation = document.plan.operations.find((candidate) => candidate.id === operationId);
+  if (!originalOperation) return null;
   const ids = new Set<string>();
   for (const stop of stops) {
     if (!stop.id || ids.has(stop.id)) return null;
     ids.add(stop.id);
-    if (
-      stop.placement.kind === 'before-operation-end' &&
-      (!Number.isFinite(stop.placement.remainingCutLengthMm) ||
-        stop.placement.remainingCutLengthMm <= 0)
-    ) return null;
+    const previous = originalOperation.programStops?.find((candidate) => candidate.id === stop.id);
+    // Unchanged invalid stored stops must not prevent repairing another row.
+    if (JSON.stringify(previous) !== JSON.stringify(stop) &&
+      programStopValidationError(document, originalOperation, stop, stops)) return null;
   }
   const next = cloneDocument(document);
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
@@ -475,6 +477,8 @@ export function reversePathOperation(document: PathPlanningDocument, operationId
   const next = cloneDocument(document);
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
   if (!operation) return null;
+  const previousStart = operation.startPoint;
+  const previousEnd = operation.endPoint;
 
   operation.segmentRefs = reversePathRefs(operation.segmentRefs);
   operation.direction = operation.direction === 'forward' ? 'reverse' : 'forward';
@@ -487,6 +491,16 @@ export function reversePathOperation(document: PathPlanningDocument, operationId
   };
   syncChainRefs(next, operation);
   refreshPlan(next);
+  const entry = operation.transitions?.entry;
+  const exit = operation.transitions?.exit;
+  if (entry?.strategy === 'manual-straight' &&
+    !pointsEqual(previousStart, operation.startPoint, next.options.coincidenceEpsilon)) {
+    entry.review = 'required';
+  }
+  if (exit?.strategy === 'manual-straight' &&
+    !pointsEqual(previousEnd, operation.endPoint, next.options.coincidenceEpsilon)) {
+    exit.review = 'required';
+  }
   return next;
 }
 
@@ -602,8 +616,7 @@ export function setPathOperationManualLeadIn(
 
   const next = cloneDocument(document);
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
-  const sourceRef = operation?.segmentRefs[0];
-  if (!operation || !sourceRef) return null;
+  if (!operation || operation.segmentRefs.length === 0) return null;
 
   operation.transitions = {
     ...operation.transitions,

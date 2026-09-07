@@ -23,6 +23,71 @@ describe('EditorProgramStopsPanel', () => {
     container.remove();
   });
 
+  it('keeps an invalid stop draft pending until its distance fits the contour', async () => {
+    const source = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    const onSetStops = vi.fn();
+    const onDraftChange = vi.fn();
+    await act(async () => root.render(<EditorProgramStopsPanel disabled={false} document={source}
+      selectedOperationId={source.plan.operations[0].id} onSetStops={onSetStops} onDraftChange={onDraftChange} />));
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Program stop remaining cut millimeters"]')!;
+    const add = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Add program stop'))!;
+    for (const value of ['10', '11', '0', 'invalid']) {
+      await act(async () => setInput(input, value));
+      expect(add.disabled).toBe(true);
+      expect(container.textContent).toContain(value === '10' || value === '11'
+        ? 'less than the contour length (10.000 mm)'
+        : 'Remaining cut must be a finite number greater than 0.');
+      await act(async () => add.click());
+    }
+    expect(onDraftChange).toHaveBeenCalledTimes(4);
+    expect(onSetStops).not.toHaveBeenCalled();
+    await act(async () => setInput(input, '9'));
+    expect(add.disabled).toBe(false);
+    await act(async () => add.click());
+    expect(onSetStops).toHaveBeenCalledWith(source.plan.operations[0].id,
+      [expect.objectContaining({ placement: { kind: 'before-operation-end', remainingCutLengthMm: 9 } })], true);
+  });
+
+  it('blocks duplicate add and apply, but permits disabling a stored duplicate', async () => {
+    const source = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+    ]);
+    const operation = source.plan.operations[0];
+    operation.programStops = ['stop-1', 'stop-2'].map((id) => ({
+      id, enabled: true, reason: 'manual', placement: { kind: 'before-operation-end', remainingCutLengthMm: 1 }
+    }));
+    const onSetStops = vi.fn();
+    await act(async () => root.render(<EditorProgramStopsPanel disabled={false} document={source}
+      selectedOperationId={operation.id} selectedStopId="stop-2" onSetStops={onSetStops} />));
+    const add = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Add program stop'))!;
+    const apply = container.querySelector<HTMLButtonElement>('[aria-label="Apply stop-2"]')!;
+    expect(add.disabled).toBe(true);
+    expect(apply.disabled).toBe(true);
+    expect(container.textContent).toContain('Enabled program stops cannot share an exact placement.');
+    await act(async () => container.querySelector<HTMLInputElement>('[aria-label="Selected stop enabled"]')!.click());
+    expect(apply.disabled).toBe(false);
+    await act(async () => apply.click());
+    expect(onSetStops).toHaveBeenCalledWith(operation.id,
+      [operation.programStops[0], { ...operation.programStops[1], enabled: false }], true);
+  });
+
+  it('explains an invalid enable action without committing it', async () => {
+    const source = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }
+    ]);
+    const operation = source.plan.operations[0];
+    operation.programStops = [{ id: 'stop-1', enabled: false, reason: 'manual',
+      placement: { kind: 'before-operation-end', remainingCutLengthMm: 100 } }];
+    const onSetStops = vi.fn();
+    await act(async () => root.render(<EditorProgramStopsPanel disabled={false} document={source}
+      selectedOperationId={operation.id} onSetStops={onSetStops} />));
+    await act(async () => container.querySelector<HTMLInputElement>('[aria-label="Enable stop-1"]')!.click());
+    expect(onSetStops).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('less than the contour length');
+  });
+
   it('keeps hook order stable when operations appear and disappear', async () => {
     const emptyDocument = createUpidFromDxfEntities([]);
     const document = createUpidFromDxfEntities([

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { programStopValidationError } from '@/domain/path-intel/programStops';
 
 import type {
   OperationProgramStop,
@@ -35,6 +36,7 @@ export function EditorProgramStopsPanel({
   const [selectedReason, setSelectedReason] = useState<OperationProgramStop['reason']>('part-retention');
   const [selectedNote, setSelectedNote] = useState('');
   const [selectedEnabled, setSelectedEnabled] = useState(true);
+  const [commitError, setCommitError] = useState<string | null>(null);
   const selectedPlacementRef = useRef<HTMLSelectElement>(null);
   const stops = operation?.programStops ?? [];
   const selectedStop = stops.find((stop) => stop.id === selectedStopId) ?? null;
@@ -55,44 +57,57 @@ export function EditorProgramStopsPanel({
 
   if (!operation) return <p className="text-[10px] text-muted-foreground">No operation selected.</p>;
   const remainingValue = Number(remaining);
-  const canAdd = placement !== 'before-operation-end' ||
-    (Number.isFinite(remainingValue) && remainingValue > 0);
   const selectedRemainingValue = Number(selectedRemaining);
-  const canApplySelected = selectedPlacement !== 'before-operation-end' ||
-    (Number.isFinite(selectedRemainingValue) && selectedRemainingValue > 0);
+  const nextNumber = stops.reduce((maximum, stop) => {
+    const match = /^stop-(\d+)$/.exec(stop.id);
+    return Math.max(maximum, match ? Number(match[1]) : 0);
+  }, 0) + 1;
+  const addedStop: OperationProgramStop = {
+    id: `stop-${nextNumber}`,
+    enabled: true,
+    placement: placement === 'before-operation-end'
+      ? { kind: placement, remainingCutLengthMm: remainingValue }
+      : { kind: placement },
+    reason,
+    ...(note.trim() ? { note: note.trim() } : {})
+  };
+  const replacement: OperationProgramStop | null = selectedStop ? {
+    id: selectedStop.id,
+    enabled: selectedEnabled,
+    placement: selectedPlacement === 'before-operation-end'
+      ? { kind: selectedPlacement, remainingCutLengthMm: selectedRemainingValue }
+      : { kind: selectedPlacement },
+    reason: selectedReason,
+    ...(selectedNote.trim() ? { note: selectedNote.trim() } : {})
+  } : null;
+  const addError = programStopValidationError(document, operation, addedStop, stops);
+  const selectedError = replacement
+    ? programStopValidationError(document, operation, replacement, stops)
+    : null;
+  const canAdd = addError === null;
+  const canApplySelected = selectedError === null;
 
   function commit(nextStops: OperationProgramStop[], completeForm = false) {
-    if (!disabled) onSetStops(operation!.id, nextStops, completeForm);
+    if (disabled || !operation) return;
+    for (const stop of nextStops) {
+      if (stop === stops.find((previous) => previous.id === stop.id)) continue;
+      const error = programStopValidationError(document, operation, stop, nextStops);
+      if (error) {
+        setCommitError(error);
+        return;
+      }
+    }
+    setCommitError(null);
+    onSetStops(operation.id, nextStops, completeForm);
   }
 
   function addStop() {
     if (!canAdd || disabled) return;
-    const nextNumber = stops.reduce((maximum, stop) => {
-      const match = /^stop-(\d+)$/.exec(stop.id);
-      return Math.max(maximum, match ? Number(match[1]) : 0);
-    }, 0) + 1;
-    commit([...stops, {
-      id: `stop-${nextNumber}`,
-      enabled: true,
-      placement: placement === 'before-operation-end'
-        ? { kind: placement, remainingCutLengthMm: remainingValue }
-        : { kind: placement },
-      reason,
-      ...(note.trim() ? { note: note.trim() } : {})
-    }], true);
+    commit([...stops, addedStop], true);
   }
 
   function applySelectedStop() {
-    if (!selectedStop || !canApplySelected || disabled) return;
-    const replacement: OperationProgramStop = {
-      id: selectedStop.id,
-      enabled: selectedEnabled,
-      placement: selectedPlacement === 'before-operation-end'
-        ? { kind: selectedPlacement, remainingCutLengthMm: selectedRemainingValue }
-        : { kind: selectedPlacement },
-      reason: selectedReason,
-      ...(selectedNote.trim() ? { note: selectedNote.trim() } : {})
-    };
+    if (!selectedStop || !replacement || !canApplySelected || disabled) return;
     commit(replaceStop(stops, selectedStop.id, replacement), true);
   }
 
@@ -103,6 +118,7 @@ export function EditorProgramStopsPanel({
 
   return (
     <section className="grid gap-2 text-[10px]" data-program-stops-panel>
+      {commitError && <p role="alert" className="text-red-300">{commitError}</p>}
       <div className="border border-border bg-background/35 p-2">
         <div className="uppercase text-muted-foreground">{operation.displayName}</div>
         <p className="mt-1 text-muted-foreground">
@@ -173,6 +189,7 @@ export function EditorProgramStopsPanel({
             value={note}
           />
         </label>
+        {addError && <p role="alert" className="text-red-300">{addError}</p>}
         <button
           className="h-7 border border-border bg-background disabled:opacity-40"
           disabled={!canAdd}
@@ -271,6 +288,7 @@ export function EditorProgramStopsPanel({
                     />
                     Enabled
                   </label>
+                  {selectedError && <p role="alert" className="text-red-300">{selectedError}</p>}
                   <div className="grid grid-cols-2 gap-1">
                     <button
                       aria-label={`Apply ${stop.id}`}
