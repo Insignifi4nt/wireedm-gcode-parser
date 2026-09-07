@@ -8,6 +8,19 @@ const arc = createArcSegment({ id: 'arc', source, start: { x: 10, y: 0 }, end: {
 const circle = createCircleSegment({ id: 'circle', source, center: { x: 20, y: 20 }, radius: 5 });
 
 describe('magnetic measurement picks', () => {
+  it.each([false, true])('snaps arc quadrants only on its actual sweep (clockwise=%s)', (clockwise) => {
+    const start = { x: 10 * Math.cos(Math.PI / 6), y: 5 };
+    const end = { x: 10 * Math.cos(7 * Math.PI / 6), y: -5 };
+    const segment = createArcSegment({ id: 'sweep', source, start: clockwise ? end : start,
+      end: clockwise ? start : end, center: { x: 0, y: 0 }, radius: 10, clockwise });
+    expect(pickMeasurementPoint({ segments: [segment], cursor: { x: 0.02, y: 10.01 }, worldUnitsPerPixel: 0.01 }))
+      .toMatchObject({ snap: 'quadrant', point: { x: 0, y: 10 } });
+    expect(pickMeasurementPoint({ segments: [segment], cursor: { x: -10.01, y: 0.02 }, worldUnitsPerPixel: 0.01 }))
+      .toMatchObject({ snap: 'quadrant', point: { x: -10, y: 0 } });
+    expect(pickMeasurementPoint({ segments: [segment], cursor: { x: 10, y: 0 }, worldUnitsPerPixel: 0.01 }))
+      .toEqual({ kind: 'free', point: { x: 10, y: 0 } });
+  });
+
   it('prefers a nearby endpoint over a closer projection onto the edge', () => {
     expect(pickMeasurementPoint({ segments: [line], cursor: { x: 0.05, y: 0.01 }, worldUnitsPerPixel: 0.01 })).toEqual({
       kind: 'geometry', segmentId: 'line', snap: 'endpoint', point: { x: 0, y: 0 }

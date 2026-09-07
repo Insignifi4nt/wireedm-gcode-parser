@@ -1,5 +1,5 @@
 import { nearestPointOnSegment } from '@/domain/path-editor/pathPointInference';
-import { distance, pointOnArcAtParameter, orientedSegmentStart, orientedSegmentEnd, pathBounds, pathCutLength, signedAreaOfPath } from '@/domain/path-intel/segments';
+import { angleIsOnSweep, distance, pointOnArcAtParameter, orientedSegmentStart, orientedSegmentEnd, pathBounds, pathCutLength, signedAreaOfPath } from '@/domain/path-intel/segments';
 import type { OrientedSegmentRef, PathSegment, Point2 } from '@/domain/path-intel/types';
 
 export type MeasurementSnapKind = 'endpoint' | 'midpoint' | 'center' | 'quadrant' | 'nearest';
@@ -62,14 +62,17 @@ function segmentSnapPoints(segment: PathSegment, cursor: Point2): Array<{
   }
   if (segment.kind !== 'line') {
     points.push({ snap: 'center', point: segment.center });
-    if (segment.kind === 'circle') {
-      const { center, radius } = segment;
-      points.push(
-        { snap: 'quadrant', point: { x: center.x + radius, y: center.y } },
-        { snap: 'quadrant', point: { x: center.x - radius, y: center.y } },
-        { snap: 'quadrant', point: { x: center.x, y: center.y + radius } },
-        { snap: 'quadrant', point: { x: center.x, y: center.y - radius } }
-      );
+    const { center, radius } = segment;
+    const quadrants = [
+      { x: center.x + radius, y: center.y },
+      { x: center.x, y: center.y + radius },
+      { x: center.x - radius, y: center.y },
+      { x: center.x, y: center.y - radius }
+    ];
+    for (const [index, point] of quadrants.entries()) {
+      if (segment.kind === 'circle' || angleIsOnSweep(index * Math.PI / 2, segment.startAngleRadians, segment.sweepRadians)) {
+        points.push({ snap: 'quadrant', point });
+      }
     }
   }
   points.push({ snap: 'nearest', point: nearestPointOnSegment(segment, ref, cursor).point });
