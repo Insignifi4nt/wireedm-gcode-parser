@@ -178,11 +178,11 @@ describe('machining participation', () => {
     });
   });
 
-  it('persists explicit review of a derived partial entry and invalidates it when spans change', () => {
+  it.each(['manual-straight', 'none'] as const)('persists explicit review of a %s partial entry and invalidates it when spans change', (strategy) => {
     const source = rectangleDocument();
     const operation = source.plan.operations[0];
     operation.transitions = {
-      entry: {
+      entry: strategy === 'none' ? { strategy: 'none', review: 'reviewed' } : {
         strategy: 'manual-straight',
         move: 'cut',
         from: { x: -2, y: -2 },

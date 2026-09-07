@@ -316,6 +316,7 @@ function buildPartialOperation(
   let sourceEntryWasReviewed = false;
   if (transitions?.entry) {
     if (transitions.entry.strategy === 'none') {
+      sourceEntryWasReviewed = transitions.entry.review === 'reviewed';
       transitions.entry.review = 'required';
     } else {
       transitions.entry.to = { ...startPoint };
@@ -360,7 +361,7 @@ function buildPartialOperation(
     ...(overrides ? { overrides } : {})
   };
   if (
-    operation.transitions?.entry?.strategy === 'manual-straight' &&
+    (operation.transitions?.entry?.strategy === 'manual-straight' || operation.transitions?.entry?.strategy === 'none') &&
     sourceEntryWasReviewed &&
     reviewedEntryFingerprint === partialContourEntryFingerprint(operation)
   ) {
@@ -371,12 +372,13 @@ function buildPartialOperation(
 
 function partialContourEntryFingerprint(operation: PathOperation): string | null {
   const entry = operation.transitions?.entry;
-  if (operation.machiningIntent?.kind !== 'partial-contour' || entry?.strategy !== 'manual-straight') {
+  if (operation.machiningIntent?.kind !== 'partial-contour' ||
+    !entry || entry.strategy === 'circle-center') {
     return null;
   }
   return JSON.stringify({
     direction: operation.direction,
-    entry: { from: entry.from, to: entry.to },
+    entry: entry.strategy === 'none' ? { strategy: 'none' } : { from: entry.from, to: entry.to },
     segmentRefs: operation.segmentRefs,
     sourceOperationId: operation.machiningIntent.sourceOperationId,
     spanIds: operation.machiningIntent.spanIds,

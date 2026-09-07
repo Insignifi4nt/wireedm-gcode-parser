@@ -83,9 +83,10 @@ export function EditorMachiningParticipationPanel({
   const wireSide = document.machiningParticipation?.partialContourCompensation?.find(
     (setting) => setting.sourceOperationId === operation?.id
   )?.wireSide ?? '';
-  const entryReviewed = document.machiningParticipation?.partialContourEntryReviews?.some(
-    (setting) => setting.sourceOperationId === operation?.id && setting.review === 'reviewed'
-  ) ?? false;
+  const partialEntry = derived.status === 'ready'
+    ? derived.operations.find((candidate) => candidate.machiningIntent?.sourceOperationId === operation?.id)?.transitions?.entry
+    : undefined;
+  const entryReviewed = partialEntry && 'review' in partialEntry && partialEntry.review === 'reviewed';
   const start = Number(rangeStart);
   const end = Number(rangeEnd);
   const validRange = Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= 1 && start < end;
@@ -189,10 +190,12 @@ export function EditorMachiningParticipationPanel({
         </select>
       </label>
 
-      <div className="grid gap-1 border border-border p-2">
+      {partialEntry && partialEntry.strategy !== 'circle-center' && <div className="grid gap-1 border border-border p-2">
         <div className="uppercase text-muted-foreground">Derived partial entry</div>
         <p className="text-muted-foreground">
-          Partial machining changes the contour endpoint. Review its retargeted manual entry before export.
+          {partialEntry.strategy === 'none'
+            ? 'Confirm starting directly at the active contour endpoint without an entry lead.'
+            : 'Partial machining changes the contour endpoint. Review its retargeted manual entry before export.'}
         </p>
         <button
           aria-label="Review derived partial entry"
@@ -203,7 +206,7 @@ export function EditorMachiningParticipationPanel({
         >
           {entryReviewed ? 'Entry reviewed · revoke' : 'Review derived entry'}
         </button>
-      </div>
+      </div>}
 
       <div className="grid gap-1" data-machining-span-list ref={spanListRef}>
         {derivedSpanIds.map((spanId) => (
