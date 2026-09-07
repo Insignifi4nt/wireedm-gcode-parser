@@ -999,13 +999,22 @@ export function EditorPage({
       activeWorkflowSession.panelId
     ) === 'docked-right'
   );
-  const editorSelectionSummary = selectedPathElement?.segmentId
-    ? `Segment ${selectedPathElement.segmentId}`
-    : selectedPathOperationId
-      ? `Operation ${selectedPathOperationId}`
-      : selectedLines.length > 0
-        ? `${selectedLines.length} ${selectedLines.length === 1 ? 'line' : 'lines'}`
-        : 'None';
+  const statusOperation = pathDocumentDraft?.plan.operations.find(
+    (operation) => operation.id === (selectedPathElement?.operationId ?? selectedPathOperationId)
+  );
+  const statusSegmentIndex = statusOperation?.segmentRefs.findIndex(
+    (ref) => ref.segmentId === selectedPathElement?.segmentId
+  ) ?? -1;
+  const statusFeature = selectedPathElement?.travelRole
+    ? { 'rapid-in': 'Positioning', 'lead-in': 'Entry', 'lead-out': 'Exit' }[selectedPathElement.travelRole]
+    : statusSegmentIndex >= 0
+      ? `Segment ${statusSegmentIndex + 1}`
+      : null;
+  const editorSelectionSummary = statusOperation
+    ? [statusOperation.displayName, statusFeature, selectedPathElement?.pointRole].filter(Boolean).join(' · ')
+    : selectedLines.length > 0
+      ? `${selectedLines.length} ${selectedLines.length === 1 ? 'line' : 'lines'}`
+      : 'None';
   const diagnosticCount = pathDocumentDraft
     ? pathDocumentDraft.diagnostics.length + (programTree?.diagnostics.length ?? 0)
     : (draftParseResult?.errors.length ?? 0) + (draftParseResult?.warnings.length ?? 0);

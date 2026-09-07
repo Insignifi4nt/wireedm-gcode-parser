@@ -24,7 +24,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | --- | --- | --- |
 | Shell header and storage indicator | Keep storage health and settings access; reduce redundant labels | pending |
 | Application footer | Removed duplicated metadata; storage header/settings and library retain owning information. Shell/modal browser checks passed | verified |
-| Editor status and canvas frame | Removed decorative frame and idle hints; wrapping status shows state, selection, actual units, actionable issues and fit warnings. Further contextual refinements remain | in progress |
+| Editor status and canvas frame | Removed decorative frame and idle hints; wrapping status shows state, named contour/segment/entry/exit selection, actual units, actionable issues and fit warnings. Selection restoration guards pass in 83 editor integration tests. Further contextual refinements remain | in progress |
 | Project library | Search, filters, sorting, empty/loading/failure states | pending |
 | Project rename/delete/export | Validation, selection, persistence and recovery | pending |
 | DXF import and confirmation | Units, layers, unsupported entities, reimport consequences | pending |
@@ -111,7 +111,7 @@ Local screenshots in `tmp/cam-audit/` were inspected during the audit; they supp
 - Resolve derived contour-segment selection/editing semantics, range-input units and remaining partial-compensation usability gaps.
 - Finish multi-entity measurement, overlap selection and selection filters; retain screen-space snapping thresholds.
 - Audit raw G-code modal units before labeling coordinates as millimeters.
-- Simplify remaining duplicate inspection panels, program-stop forms, tool headings and status selection labels.
+- Simplify remaining duplicate inspection panels, program-stop forms and tool headings.
 - Broaden save/cancel/undo, keyboard/touch and rendered-layout verification as each tool is audited; then run final integration checks.
 
 These remaining items preserve the original whole-app scope. Passing regressions above do not close the audit.

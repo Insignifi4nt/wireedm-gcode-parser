@@ -832,7 +832,7 @@ describe('EditorPage UPID draft boundary', () => {
       `path[data-preview-source="path-document"][data-preview-operation="${secondOperation.id}"][data-type="cut"]`
     );
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).not.toContain(
-      `Selection Operation ${secondOperation.id}`
+      `Selection ${secondOperation.displayName}`
     );
     const restore = [...container.querySelectorAll<HTMLButtonElement>(
       '[data-machining-participation-panel] button'
@@ -876,7 +876,7 @@ describe('EditorPage UPID draft boundary', () => {
     );
 
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).not.toContain(
-      `Selection Operation ${secondOperation.id}`
+      `Selection ${secondOperation.displayName}`
     );
     expect(container.querySelector('[data-program-stops-panel]')?.textContent).toContain(
       firstOperation.displayName
@@ -1230,7 +1230,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     expect(visibleWorkflowPanelIds()).toEqual(['set-start']);
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
-      `Selection Operation ${firstOperation.id}`
+      `Selection ${firstOperation.displayName}`
     );
     expect(container.querySelector('[data-editor-command-hint]')?.textContent ?? '')
       .not.toContain('Contour Start: hover');
@@ -1259,7 +1259,7 @@ describe('EditorPage UPID draft boundary', () => {
         ?.value
     ).toBe(operation.id);
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
-      `Selection Operation ${operation.id}`
+      `Selection ${operation.displayName}`
     );
     expect(container.querySelector('[data-editor-workflow-save-reason]')?.textContent).toContain(
       'automatic start remains active'
@@ -1572,7 +1572,7 @@ describe('EditorPage UPID draft boundary', () => {
     );
     await clickElement('[data-editor-workflow-actions="machining.contour-setup"] button[aria-label^="Save "]');
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
-      `Selection Operation ${secondOperation.id}`
+      `Selection ${secondOperation.displayName}`
     );
 
     await clickElement('button[aria-label="Undo active document change"]');
@@ -1582,7 +1582,7 @@ describe('EditorPage UPID draft boundary', () => {
 
     await clickElement('button[aria-label="Redo active document change"]');
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
-      `Selection Operation ${secondOperation.id}`
+      `Selection ${secondOperation.displayName}`
     );
   });
 
@@ -1636,7 +1636,7 @@ describe('EditorPage UPID draft boundary', () => {
     await flushAsync();
 
     expect(container.querySelector('[data-editor-status-bar]')?.textContent).toContain(
-      `Selection Operation ${secondOperation.id}`
+      `Selection ${secondOperation.displayName}`
     );
     const undoButton = container.querySelector(
       'button[aria-label="Undo active document change"]'
