@@ -81,10 +81,12 @@ export function EditorEntryExitPanel({
     pointsEqual(entryPoint, selected.startPoint, document.options.coincidenceEpsilon));
   const exitCoincident = Boolean(selected && exitPoint &&
     pointsEqual(exitPoint, selected.endPoint, document.options.coincidenceEpsilon));
-  const entryIntersections = selected && entryPoint
-    ? findLeadIntersections(entryPoint, selected.startPoint, selected.startPoint, document.segments, document.options.coincidenceEpsilon) : [];
-  const exitIntersections = selected && exitPoint
-    ? findLeadIntersections(selected.endPoint, exitPoint, selected.endPoint, document.segments, document.options.coincidenceEpsilon) : [];
+  const entryIntersections = useMemo(() => selected && entryPoint
+    ? findLeadIntersections(entryPoint, selected.startPoint, selected.startPoint, document.segments, document.options.coincidenceEpsilon) : [],
+  [entryPoint?.x, entryPoint?.y, selected?.startPoint.x, selected?.startPoint.y, document.segments, document.options.coincidenceEpsilon]);
+  const exitIntersections = useMemo(() => selected && exitPoint
+    ? findLeadIntersections(selected.endPoint, exitPoint, selected.endPoint, document.segments, document.options.coincidenceEpsilon) : [],
+  [exitPoint?.x, exitPoint?.y, selected?.endPoint.x, selected?.endPoint.y, document.segments, document.options.coincidenceEpsilon]);
   const canSetCircleCenterEntry = Boolean(
     selected &&
     canSetCircleOperationCenterPierceLeadIn(document, selected.id)
