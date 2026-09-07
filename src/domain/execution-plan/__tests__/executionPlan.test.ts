@@ -8,6 +8,29 @@ import { programStopValidationError } from '@/domain/path-intel/programStops';
 import { compileWireEdmExecutionPlan } from '../executionPlan';
 
 describe('controller-neutral Wire EDM execution plans', () => {
+  it.each(['entry', 'exit'] as const)('blocks stored coincident %s leads and accepts an explicit no-lead correction', (role) => {
+    const document = rectangleDocument();
+    const operation = document.plan.operations[0];
+    const anchor = role === 'entry' ? operation.startPoint : operation.endPoint;
+    const offset = document.options.coincidenceEpsilon * 0.9;
+    operation.transitions = {
+      [role]: { strategy: 'manual-straight', move: 'cut', from: anchor,
+        to: { x: anchor.x + offset, y: anchor.y + offset }, review: 'reviewed' }
+    };
+    const before = structuredClone(document);
+    expect(compileWireEdmExecutionPlan(document)).toMatchObject({
+      ok: false, diagnostics: [expect.objectContaining({
+        code: 'EXECUTION_PLAN_DEGENERATE_TRANSITION', operationId: operation.id
+      })]
+    });
+    expect(document).toEqual(before);
+    operation.transitions = { [role]: { strategy: 'none', review: 'reviewed' } };
+    const result = compileWireEdmExecutionPlan(document);
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    expect(result.plan.events.filter((event) => event.kind === 'motion').map((event) => event.role))
+      .toEqual(['contour', 'contour', 'contour', 'contour']);
+  });
+
   it('uses only active cutting length when validating and executing a remaining-distance stop', () => {
     const source = createUpidFromDxfEntities([
       { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }

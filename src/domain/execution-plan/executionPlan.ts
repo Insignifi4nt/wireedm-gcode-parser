@@ -9,6 +9,7 @@ import {
   orientedCircleClockwise,
   orientedSegmentEnd,
   orientedSegmentStart,
+  pointsEqual as coincidentPoints,
   segmentMap
 } from '@/domain/path-intel/segments';
 import type {
@@ -154,6 +155,7 @@ export type ExecutionPlanDiagnosticCode =
   | 'EXECUTION_PLAN_THREADING_INVALID'
   | 'EXECUTION_PLAN_COMPENSATION_UNRESOLVED'
   | 'EXECUTION_PLAN_TRANSITION_REVIEW_REQUIRED'
+  | 'EXECUTION_PLAN_DEGENERATE_TRANSITION'
   | 'EXECUTION_PLAN_DISCONTINUOUS_GEOMETRY'
   | 'EXECUTION_PLAN_PROGRAM_STOP_INVALID';
 
@@ -291,6 +293,17 @@ function compileOperation(input: {
   segmentsById: Map<string, PathSegment>;
 }): ExecutionPlanFailure | { ok: true; endPoint: Point2 } {
   const { context, document, operation, operationIndex, segmentsById } = input;
+  for (const role of ['entry', 'exit'] as const) {
+    const lead = operation.transitions?.[role];
+    if (lead && lead.strategy !== 'none' &&
+      coincidentPoints(lead.from, lead.to, document.options.coincidenceEpsilon)) {
+      return blockedForOperation(
+        'EXECUTION_PLAN_DEGENERATE_TRANSITION',
+        `Operation ${operation.displayName} ${role} lead has no distinct travel. Choose a different endpoint or explicitly use no ${role}.`,
+        operation
+      );
+    }
+  }
   appendEvent(context, {
     kind: 'operation-start',
     operationId: operation.id,

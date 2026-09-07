@@ -6,6 +6,21 @@ import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { resolveEditorProgramTreeAction } from './editorProgramTreeActions';
 
 describe('resolveEditorProgramTreeAction', () => {
+  it('opens the affected operation entry/exit tool for a stored degenerate lead', () => {
+    const document = createUpidFromDxfEntities([{
+      type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
+    }]);
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    const operation = document.plan.operations[0];
+    operation.transitions = { exit: { strategy: 'manual-straight', move: 'cut',
+      from: operation.endPoint, to: operation.endPoint, review: 'reviewed' } };
+    const tree = buildUpidEditorTree(document);
+    if (tree.status === 'ready') throw new Error('Expected degenerate lead diagnostic');
+    expect(resolveEditorProgramTreeAction(tree.diagnostics[0])).toEqual({
+      commandId: 'machining.entry-exit', exactTarget: null, operationId: operation.id
+    });
+  });
+
   it('keeps authored operation navigation stable across the neutral tree', () => {
     const document = createUpidFromDxfEntities([{
       type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
