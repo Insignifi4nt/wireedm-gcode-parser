@@ -82,6 +82,7 @@ export function DashboardPage({
         data-workbench-scroll-region
       >
         <ProjectListPanel
+          availability={connectedWorkbench ? 'ready' : workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage' ? 'loading' : 'unavailable'}
           interactionLocked={interactionLocked}
           onDeleteProject={(project) => setProjectAction({ kind: 'delete', project })}
           onExportUpidProject={onExportUpidProject}

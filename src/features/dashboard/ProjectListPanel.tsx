@@ -10,6 +10,7 @@ type ProjectSourceFilter = 'all' | 'dxf' | 'external-gcode';
 type ProjectSortMode = 'updated-desc' | 'updated-asc' | 'name-asc' | 'name-desc' | 'type';
 
 interface ProjectListPanelProps {
+  availability: 'loading' | 'unavailable' | 'ready';
   interactionLocked: boolean;
   projects: readonly WorkbenchProjectIndexEntry[];
   onOpenProject: (projectId: string) => void | Promise<void>;
@@ -19,6 +20,7 @@ interface ProjectListPanelProps {
 }
 
 export function ProjectListPanel({
+  availability,
   interactionLocked,
   projects,
   onDeleteProject,
@@ -38,6 +40,7 @@ export function ProjectListPanel({
   return (
     <section
       aria-labelledby="project-library-title"
+      aria-busy={availability === 'loading'}
       className="technical-panel min-w-0 min-h-[260px] min-[1180px]:min-h-[420px]"
       data-project-library
     >
@@ -45,10 +48,12 @@ export function ProjectListPanel({
         <h2 className="text-xs font-semibold" id="project-library-title">
           Project Library
         </h2>
-        <span className="technical-value text-[10px] text-muted-foreground">{projectCountLabel}</span>
+        {availability === 'ready' && <span className="technical-value text-[10px] text-muted-foreground">{projectCountLabel}</span>}
       </div>
       <div className="p-3 text-[11px]">
-        {projects.length > 0 ? (
+        {availability !== 'ready' ? <p role="status" className="text-muted-foreground">
+          {availability === 'loading' ? 'Loading projects…' : 'Project library unavailable. Open storage settings to reconnect.'}
+        </p> : projects.length > 0 ? (
           <div className="grid gap-2">
             <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(120px,150px)_minmax(120px,150px)]" data-project-list-controls>
               <input
@@ -168,6 +173,8 @@ export function ProjectListPanel({
                 role="status"
               >
                 No projects match the active filters.
+                <Button className="ml-2 h-7 text-[11px]" variant="outline" type="button"
+                  onClick={() => { setSearchText(''); setSourceFilter('all'); }}>Clear filters</Button>
               </div>
             )}
           </div>
@@ -233,7 +240,7 @@ function compareProjects(
   if (sortMode === 'updated-asc') return left.updatedAt.localeCompare(right.updatedAt);
   if (sortMode === 'name-desc') return right.name.localeCompare(left.name);
   if (sortMode === 'type') {
-    return left.sourceKind.localeCompare(right.sourceKind) || left.name.localeCompare(right.name);
+    return getProjectSourceLabel(left.sourceKind).localeCompare(getProjectSourceLabel(right.sourceKind)) || left.name.localeCompare(right.name);
   }
   return left.name.localeCompare(right.name);
 }

@@ -25,7 +25,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Shell header and storage indicator | Keep storage health and settings access; reduce redundant labels | pending |
 | Application footer | Removed duplicated metadata; storage header/settings and library retain owning information. Shell/modal browser checks passed | verified |
 | Editor status and canvas frame | Removed decorative frame and idle hints; wrapping status shows state, named contour/segment/entry/exit selection, actual units, actionable issues and fit warnings. Selection restoration guards pass in 83 editor integration tests. Further contextual refinements remain | in progress |
-| Project library | Read-only audit identified loading displayed as empty and missing filter/sort behavior coverage; improve state disclosure and verify selection | in progress |
+| Project library | Keep. Distinct loading/unavailable/empty/no-match states; Clear filters restores results. All five sort modes, combined case-insensitive search/source filters, DXF+UPID type grouping and busy action guards verified. Seven focused component/app tests and browser filter recovery pass | verified |
 | Project rename/delete/export | Export failures produce retry guidance; shared busy guard prevents overlapping project actions. Rename/delete now trap/restore focus, isolate background controls and prevent pending dismissal/duplicate submit; failures permit retry. Controller/component tests, three modal browser scenarios and build pass. Name validation and deletion recovery remain | in progress |
 | DXF import and confirmation | Units, layers, unsupported entities, reimport consequences | pending |
 | UPID import/export | Validate complete document and preserve intent | pending |
@@ -110,7 +110,7 @@ Local screenshots in `tmp/cam-audit/` were inspected during the audit; they supp
 ## Outstanding work
 
 - Complete every pending inventory row and assign a final keep/remove/merge/expand disposition with current evidence.
-- Follow up library audit: shared name validation; recoverable deletion; loading/unavailable states and filter/sort tests. Investigate cross-adapter locking without Web Locks and corrupt cache-directory metadata recovery; explain storage scope when choosing a folder.
+- Follow up library audit: shared name validation and recoverable deletion. Investigate cross-adapter locking without Web Locks and corrupt cache-directory metadata recovery; explain storage scope when choosing a folder.
 - Assess lead clearance/intersection diagnostics and source-contour review invalidation when local geometry changes without moving its endpoints; partial-contour fingerprints now cover this case.
 - Resolve derived contour-segment selection/editing semantics, range-input units and remaining partial-compensation usability gaps.
 - Finish multi-entity measurement, overlap selection and selection filters; retain screen-space snapping thresholds.
