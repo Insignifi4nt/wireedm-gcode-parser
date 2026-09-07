@@ -157,17 +157,33 @@ describe('controller-neutral Wire EDM execution plans', () => {
     };
     const compiled = compileWireEdmExecutionPlan(document);
     if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
-    expect(compiled.plan.events).toEqual(expect.arrayContaining([
+    const destinationId = document.plan.operations[1].id;
+    const lifecycle = compiled.plan.events.filter((event) => event.operationId === destinationId &&
+      (event.kind === 'wire-separate' || event.kind === 'position' || event.kind === 'wire-thread'));
+    expect(lifecycle).toEqual([
       expect.objectContaining({
         kind: 'wire-separate',
         method: 'manual'
       }),
+      expect.objectContaining({ kind: 'position', from: { x: 0, y: 0 }, to: { x: 20, y: 0 } }),
       expect.objectContaining({ kind: 'wire-thread', method: 'manual' })
-    ]));
+    ]);
     expect(compiled.plan.requirements).toMatchObject({
       threading: ['manual'],
       wireSeparation: true
     });
+    document.plan.operations[1].threadingTransition = {
+      mode: 'automatic', wireSeparation: 'automatic-before-positioning', source: 'operation-override'
+    };
+    const overridden = compileWireEdmExecutionPlan(document);
+    if (!overridden.ok) throw new Error(JSON.stringify(overridden.diagnostics));
+    expect(overridden.plan.events.filter((event) => event.operationId === destinationId &&
+      (event.kind === 'wire-separate' || event.kind === 'position' || event.kind === 'wire-thread'))).toEqual([
+      expect.objectContaining({ kind: 'wire-separate', method: 'automatic' }),
+      expect.objectContaining({ kind: 'position', from: { x: 0, y: 0 }, to: { x: 20, y: 0 } }),
+      expect.objectContaining({ kind: 'wire-thread', method: 'automatic' })
+    ]);
+    expect(overridden.plan.requirements.threading).toEqual(['automatic']);
   });
 
   it('represents an explicit continuous transition between disconnected closed contours', () => {
@@ -189,14 +205,17 @@ describe('controller-neutral Wire EDM execution plans', () => {
     const compiled = compileWireEdmExecutionPlan(document);
     if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
 
-    expect(compiled.plan.events).toEqual(expect.arrayContaining([
+    expect(compiled.plan.events.filter((event) =>
+      event.operationId === document.plan.operations[1].id &&
+      (event.kind === 'wire-continue' || event.kind === 'wire-thread' || event.kind === 'wire-separate' || event.kind === 'position')
+    )).toEqual([
       expect.objectContaining({ kind: 'wire-continue' }),
       expect.objectContaining({
         kind: 'position',
         from: { x: 0, y: 0 },
         to: { x: 20, y: 0 }
       })
-    ]));
+    ]);
     expect(compiled.plan.requirements).toMatchObject({
       threading: [],
       wireSeparation: false
