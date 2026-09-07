@@ -35,17 +35,19 @@ export function EditorMeasurePanel({ measurement, document }: {
   }, [document, segment]);
   const format = (value: number) => value.toFixed(precision);
   return (
-    <div className="space-y-3 text-xs" data-editor-measure-panel>
+    <div className="space-y-2 text-xs" data-editor-measure-panel>
       <p className="text-muted-foreground" role="status">
         {!first ? 'Pick the first point on the canvas.' : picks.length < 2 ? 'Pick the second point.' : 'Pick again to continue measuring.'}
       </p>
       {document.machiningParticipation?.spans.some((span) => span.participation === 'inactive-reference') && (
         <p className="text-muted-foreground">Geometry dimensions and snap points refer to the complete source geometry, including inactive ranges.</p>
       )}
-      <label className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2"><label className="flex items-center gap-2">
         <input checked={measurement.snapEnabled} onChange={(event) => measurement.setSnapEnabled(event.target.checked)} type="checkbox" />
         Snap to geometry
       </label>
+      <button className="h-7 border border-border px-2 hover:bg-accent disabled:opacity-40" disabled={!first} onClick={measurement.clear} type="button">Clear measurement</button>
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <label className="space-y-1">Repeat
           <select aria-label="Measurement repeat mode" className="h-7 w-full border border-border bg-background px-1" value={measurement.repeatMode} onChange={(event) => {
@@ -66,10 +68,15 @@ export function EditorMeasurePanel({ measurement, document }: {
         {second && <PickRow label={picks[1] ? 'B' : 'Preview'} pick={second} format={format} document={document} />}
       </dl>
       {pair && <dl className="technical-value space-y-1 border-t border-border pt-2" aria-label="Point measurements">
-        <Result label="Distance" value={`${format(pair.distance)} mm`} />
+        <Result label="Point distance" value={`${format(pair.distance)} mm`} />
         <Result label="ΔX" value={`${format(pair.dx)} mm`} />
         <Result label="ΔY" value={`${format(pair.dy)} mm`} />
         {pair.angleDegrees !== null && <Result label="Angle from X" value={`${format(pair.angleDegrees)}°`} />}
+      </dl>}
+      {measurement.featurePair && <dl className="technical-value space-y-1 border-t border-border pt-2" aria-label="Feature measurements">
+        <Result label="Minimum feature gap" value={`${format(measurement.featurePair.distance)} mm`} />
+        {measurement.featurePair.centerDistance !== null && <Result label="Center distance" value={`${format(measurement.featurePair.centerDistance)} mm`} />}
+        <div><dd className="text-muted-foreground">Between complete source edges. Cyan marks the closest pair.</dd></div>
       </dl>}
       {canSwitchGeometry && <div className="flex gap-1" aria-label="Inspect measured geometry">
         {(['A', 'B'] as const).map((label, index) => <button key={label} type="button"
@@ -97,7 +104,6 @@ export function EditorMeasurePanel({ measurement, document }: {
           {boundary.area !== null && <Result label="Enclosed area" value={`${format(boundary.area)} mm²`} />}
         </dl>
       </details>}
-      <button className="h-7 w-full border border-border px-2 hover:bg-accent disabled:opacity-40" disabled={!first} onClick={measurement.clear} type="button">Clear measurement</button>
     </div>
   );
 }

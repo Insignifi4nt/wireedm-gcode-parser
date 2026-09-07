@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { pickMeasurementPoint, type MeasurementPick } from '@/domain/editor/geometryMeasurement';
+import { measureFeaturePair } from '@/domain/editor/geometryFeatureMeasurement';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
 
 export type MeasurementRepeatMode = 'pair' | 'chain' | 'fixed';
@@ -30,8 +31,16 @@ export function useEditorMeasurement(segments: readonly PathSegment[]) {
     setHover(picked);
   }, [resolve, repeatMode]);
   const clear = useCallback(() => { setPicks([]); setHover(null); }, []);
+  const featurePair = useMemo(() => {
+    const first = picks[0];
+    const second = picks[1] ?? hover;
+    if (first?.kind !== 'geometry' || second?.kind !== 'geometry' || first.segmentId === second.segmentId) return null;
+    const a = segments.find((segment) => segment.id === first.segmentId);
+    const b = segments.find((segment) => segment.id === second.segmentId);
+    return a && b ? measureFeaturePair(a, b) : null;
+  }, [picks, hover, segments]);
   useEffect(clear, [segments, clear]);
-  return { picks, hover, snapEnabled, setSnapEnabled, repeatMode, setRepeatMode, precision, setPrecision, onHover, onPick, clear };
+  return { picks, hover, featurePair, snapEnabled, setSnapEnabled, repeatMode, setRepeatMode, precision, setPrecision, onHover, onPick, clear };
 }
 
 export type EditorMeasurementState = ReturnType<typeof useEditorMeasurement>;

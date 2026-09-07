@@ -1583,6 +1583,14 @@ export function EditorPreview({
             })}
           </g>
           {measurement && <g data-preview-measurement pointerEvents="none">
+            {measurement.featurePair && <g data-preview-feature-gap>
+              <line x1={measurement.featurePair.first.x} y1={flipY - measurement.featurePair.first.y}
+                x2={measurement.featurePair.second.x} y2={flipY - measurement.featurePair.second.y}
+                stroke="#67e8f9" strokeWidth="2" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+              {[measurement.featurePair.first, measurement.featurePair.second].map((point, index) => <circle key={index}
+                cx={point.x} cy={flipY - point.y} r={measurementPickRadius * 0.8}
+                fill="#67e8f9" stroke="#020617" strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
+            </g>}
             {measurementFirst && measurementSecond && <line
               x1={measurementFirst.point.x} y1={flipY - measurementFirst.point.y}
               x2={measurementSecond.point.x} y2={flipY - measurementSecond.point.y}

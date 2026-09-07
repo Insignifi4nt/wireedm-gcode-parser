@@ -24,7 +24,12 @@ test('inspects either picked feature without replacing the measured pair', async
   await page.getByRole('button', { name: 'Inspect A', exact: true }).click();
   await expect(dimensions).toContainText('Diameter10.000 mm');
   expect(await dimensions.locator('[data-measurement-reference]').textContent()).not.toBe(bReference);
-  await expect(page.getByLabel('Point measurements', { exact: true })).toContainText('Distance20.000 mm');
+  await expect(page.getByLabel('Point measurements', { exact: true })).toContainText('Point distance20.000 mm');
+  await expect(page.getByLabel('Feature measurements', { exact: true })).toContainText('Minimum feature gap12.000 mm');
+  await expect(page.getByLabel('Feature measurements', { exact: true })).toContainText('Center distance20.000 mm');
+  const connector = page.locator('[data-preview-feature-gap] line');
+  await expect(connector).toHaveAttribute('x1', '5');
+  await expect(connector).toHaveAttribute('x2', '17');
   await page.getByRole('button', { name: 'Inspect B', exact: true }).click();
   await expect(dimensions).toContainText('Diameter6.000 mm');
   await expect(dimensions.locator('[data-measurement-reference]')).toHaveText(bReference!);
@@ -68,7 +73,7 @@ test('measures exact snapped points repeatedly without modifying the document', 
   await disclosure.click();
   await page.mouse.click(b.x - 3, b.y - 2);
   // The result list and canvas must agree, including sign and display precision.
-  await expect(page.locator('dl[aria-label="Point measurements"]')).toContainText('Distance10.000 mm');
+  await expect(page.locator('dl[aria-label="Point measurements"]')).toContainText('Point distance10.000 mm');
   await expect(page.locator('[data-preview-measurement-distance]')).toHaveText('10.000 mm');
   await page.getByText('Contour dimensions', { exact: true }).click();
   const contour = page.locator('dl[aria-label="Contour measurements"]');
