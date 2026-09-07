@@ -749,8 +749,9 @@ describe('Editor line drawer operations', () => {
 
     const rotatedLines = programEditor?.value.split('\n') ?? [];
     expect(rotatedLines.slice(0, 3)).toEqual(['G92X0Y0', 'G60', 'G41D0']);
-    expect(rotatedLines[3]).toBe('G1X10Y10');
-    expect(container.querySelector('[data-editor-line="4"]')?.getAttribute('aria-pressed')).toBe(
+    expect(rotatedLines[3]).toBe('G0X0Y0');
+    expect(rotatedLines[4]).toBe('G1X10Y10');
+    expect(container.querySelector('[data-editor-line="5"]')?.getAttribute('aria-pressed')).toBe(
       'true'
     );
     expect(container.textContent).toContain('Unsaved');

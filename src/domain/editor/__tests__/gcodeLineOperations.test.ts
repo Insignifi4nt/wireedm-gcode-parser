@@ -73,7 +73,15 @@ describe('gcodeLineOperations', () => {
     expect(deleteBodyGroup(source, structure, 'missing')).toBeNull();
   });
 
-  it('rotates compact closed contours so the selected motion line becomes the first body line', () => {
+  it.each([-1, 1] as const)('tracks the actual lines after gathering a discontiguous selection in direction %s', (direction) => {
+    const result = moveSelectedLines('A\nB\nC\nD\nE', [2, 4], direction);
+    if (!result) throw new Error('Expected lines to move');
+    const output = result.text.split('\n');
+    expect(result.movedLineNumbers.map((number) => output[number - 1])).toEqual(['B', 'D']);
+    expect([...output].sort()).toEqual(['A', 'B', 'C', 'D', 'E']);
+  });
+
+  it('rotates compact closed contours while retaining their initial positioning block', () => {
     const input = [
       'G92X0Y0',
       'G60',
@@ -89,9 +97,10 @@ describe('gcodeLineOperations', () => {
     const result = setStartAtLine(input, 6);
     const lines = result?.text.split('\n') ?? [];
 
-    expect(result?.newStartLine).toBe(4);
+    expect(result?.newStartLine).toBe(5);
     expect(lines.slice(0, 3)).toEqual(['G92X0Y0', 'G60', 'G41D0']);
-    expect(lines[3]).toBe('G1X10Y10');
+    expect(lines[3]).toBe('G0X0Y0');
+    expect(lines[4]).toBe('G1X10Y10');
     expect(lines).not.toContain('G1');
     expect(lines.at(-1)).toBe('M02');
   });
@@ -115,6 +124,24 @@ describe('gcodeLineOperations', () => {
 
     expect(setStartAtLine(input, 1)).toBeNull();
     expect(setStartAtLine(input, 4)).toBeNull();
+  });
+
+  it('keeps stops, comments and separators with their contour when moving the start', () => {
+    const lines = [
+      'G90', 'G0 X0 Y0',
+      'G1 X10 Y0', 'G1 X0 Y0', 'M00', '(first contour complete)', '',
+      'G0 X20 Y0', 'G1 X30 Y0', 'G1 X20 Y0', 'M01', '(second contour complete)', 'M30'
+    ];
+    const result = setStartAtLine(lines.join('\n'), 9);
+    expect(result).not.toBeNull();
+    const output = result!.text.split('\n');
+    for (const line of ['M00', 'M01', '(first contour complete)', '(second contour complete)', '']) {
+      expect(output.filter((candidate) => candidate === line)).toHaveLength(1);
+    }
+    expect(output.indexOf('M01')).toBeGreaterThan(output.indexOf('G1 X20 Y0'));
+    expect(output.indexOf('M01')).toBeLessThan(output.indexOf('G1 X10 Y0'));
+    expect(output.indexOf('M00')).toBeGreaterThan(output.indexOf('G1 X0 Y0'));
+    expect(output[result!.newStartLine - 1]).toBe('G1 X30 Y0');
   });
 });
 

@@ -105,7 +105,7 @@ export function moveSelectedLines(
 
   return {
     text: remainingLines.join('\n'),
-    movedLineNumbers: selected.map((lineNumber) => lineNumber + direction)
+    movedLineNumbers: range(insertIndex + 1, insertIndex + movedLines.length)
   };
 }
 
@@ -143,8 +143,26 @@ export function setStartAtLine(
     ...contourGroups.slice(targetIndex + 1),
     ...contourGroups.slice(0, targetIndex)
   ];
-  const newBody = [...rotatedTarget];
+  const prefix = structure.body.lines.filter((line) => line.num < contourGroups[0].startLineNum);
+  const followingLines = new Map(contourGroups.map((group, index) => [
+    group.id,
+    structure.body.lines.filter((line) => (
+      line.num > group.lines.at(-1)!.num &&
+      line.num < (contourGroups[index + 1]?.startLineNum ?? Infinity)
+    ))
+  ]));
+  const newBody = [...prefix.map((line) => line.text), ...rotatedTarget];
   let lastPosition: { x: number | null; y: number | null } = extractXY(rotatedTarget.at(-1) ?? '');
+
+  function appendFollowingLines(group: GCodeContourGroup) {
+    for (const line of followingLines.get(group.id) ?? []) {
+      newBody.push(line.text);
+      const position = extractXY(line.text);
+      if (position.x !== null) lastPosition.x = position.x;
+      if (position.y !== null) lastPosition.y = position.y;
+    }
+  }
+  appendFollowingLines(targetGroup);
 
   for (const group of reorderedGroups) {
     const startCoord = group.startCoord;
@@ -153,7 +171,8 @@ export function setStartAtLine(
     }
 
     newBody.push(...group.lines.map((line) => line.text));
-    lastPosition = group.endCoord ?? lastPosition;
+    lastPosition = group.endCoord ? { ...group.endCoord } : lastPosition;
+    appendFollowingLines(group);
   }
 
   return {
@@ -162,7 +181,7 @@ export function setStartAtLine(
       ...newBody,
       ...structure.footer.lines.map((line) => line.text)
     ].join('\n'),
-    newStartLine: structure.header.lines.length + 1
+    newStartLine: structure.header.lines.length + prefix.length + 1
   };
 }
 
