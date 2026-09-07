@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
-import { translatePathDocument } from '@/domain/path-editor/pathDocumentOperations';
+import { reversePathOperation, translatePathDocument } from '@/domain/path-editor/pathDocumentOperations';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
 import { assertPortableUpidV1Shape } from '@/domain/upid/portableUpidV1Shape';
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
@@ -279,6 +279,13 @@ describe('machining participation', () => {
     });
     expect(setPartialContourCompensationSide(configured, sourceOperation.id, null)
       ?.machiningParticipation?.partialContourCompensation).toEqual([]);
+
+    const reversed = reversePathOperation(edited, sourceOperation.id)!;
+    const reversedCut = deriveActiveMachiningOperations(reversed).operations[0];
+    expect(reversedCut.compensationIntent).toEqual(derived.operations[0].compensationIntent);
+    expect(reversedCut.startPoint).toEqual(derived.operations[0].endPoint);
+    expect(reversedCut.endPoint).toEqual(derived.operations[0].startPoint);
+    expect(edited.plan.operations[0].direction).not.toBe(reversed.plan.operations[0].direction);
   });
 
   it('blocks multiple active groups until each derived operation can own explicit transitions', () => {

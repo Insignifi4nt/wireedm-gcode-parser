@@ -28,6 +28,7 @@ describe('canonical workflow target fallbacks', () => {
 
   it('passes the displayed fallback operation to every Contour Setup mutation', async () => {
     const document = twoCircleDocument();
+    document.geometryBasis = 'finished-contour';
     const fallbackOperation = document.plan.operations[0];
     const onReverse = vi.fn();
     const onSetClassification = vi.fn();
@@ -59,6 +60,50 @@ describe('canonical workflow target fallbacks', () => {
     expect(onReverse).toHaveBeenCalledWith(fallbackOperation.id);
     expect(onSetClassification).toHaveBeenCalledWith(fallbackOperation.id, 'hole');
     expect(onSetCompensation).toHaveBeenCalledWith(fallbackOperation.id, 'inside');
+  });
+
+  it.each(['wire-centre', 'centerline'] as const)(
+    'explains %s as uncompensated output without an error', async (mode) => {
+      const document = twoCircleDocument();
+      document.geometryBasis = mode === 'wire-centre' ? 'wire-centre' : 'finished-contour';
+      document.plan.operations[0].compensationIntent = { mode: 'centerline', source: 'manual' };
+      await act(async () => {
+        root.render(<EditorContourSetupPanel
+          disabled={false} document={document} onReverse={vi.fn()} onSelectOperation={vi.fn()}
+          onSetClassification={vi.fn()} onSetCompensation={vi.fn()} selectedOperationId={null}
+        />);
+      });
+
+      expect(container.querySelector('[data-testid="compensation-blocker"]')).toBeNull();
+      expect(container.querySelector<HTMLSelectElement>('[aria-label="Compensation kept material"]')?.disabled)
+        .toBe(mode === 'wire-centre');
+      expect(container.textContent).toContain(mode === 'wire-centre'
+        ? 'Controller compensation is off for wire-centre geometry'
+        : 'The wire follows the drawn contour without controller compensation');
+      expect(container.querySelector('[data-testid="compensation-kept-material"]')?.textContent)
+        .toBe('centreline · manual');
+    }
+  );
+
+  it('shows open-path role and explains partial compensation prerequisites', async () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    document.geometryBasis = 'finished-contour';
+    document.plan.operations[0].compensationIntent = {
+      mode: 'controller', keptMaterial: 'inside', source: 'manual'
+    };
+    await act(async () => {
+      root.render(<EditorContourSetupPanel
+        disabled={false} document={document} onReverse={vi.fn()} onSelectOperation={vi.fn()}
+        onSetClassification={vi.fn()} onSetCompensation={vi.fn()} selectedOperationId={null}
+      />);
+    });
+    const role = container.querySelector<HTMLSelectElement>('[aria-label="Contour role"]');
+    expect(role?.disabled).toBe(true);
+    expect(role?.selectedOptions[0].textContent).toBe('Open path');
+    expect(container.querySelector('[data-testid="compensation-blocker"]')?.textContent)
+      .toContain('Intentional partial cuts need an explicit wire side in Machining participation');
   });
 
   it('passes the displayed fallback contour when Set Start begins picking', async () => {

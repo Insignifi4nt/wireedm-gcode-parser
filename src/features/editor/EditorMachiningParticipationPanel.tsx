@@ -183,7 +183,7 @@ export function EditorMachiningParticipationPanel({
         <select
           aria-label="Partial contour wire side"
           className="h-7 border border-border bg-background px-1 text-foreground"
-          disabled={disabled}
+          disabled={disabled || document.geometryBasis === 'wire-centre'}
           onChange={(event) => onSetWireSide(
             operation.id,
             event.currentTarget.value === ''
@@ -197,6 +197,11 @@ export function EditorMachiningParticipationPanel({
           <option value="left">Wire left of travel</option>
           <option value="right">Wire right of travel</option>
         </select>
+        <span className="normal-case text-muted-foreground">
+          {document.geometryBasis === 'wire-centre'
+            ? 'Controller compensation is off for wire-centre geometry. Choose Finished contour in Geometry setup to use this side.'
+            : 'The saved side is relative to travel. Reversing direction keeps left or right and moves the wire to the opposite side of the material.'}
+        </span>
       </label>}
 
       {partialEntry && partialEntry.strategy !== 'circle-center' && <div className="grid gap-1 border border-border p-2">

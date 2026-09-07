@@ -188,6 +188,25 @@ describe('resolveControllerCompensation', () => {
     expect(resolve(document)).toEqual({ status: 'blocked', reason: 'open-path' });
   });
 
+  it.each(['non-finite endpoint', 'zero length', 'non-finite length'])(
+    'blocks a single-segment partial cut with %s', (scenario) => {
+      const document = rectangleDocument();
+      const operation = document.plan.operations[0];
+      operation.closed = false;
+      operation.segmentRefs = operation.segmentRefs.slice(0, 1);
+      operation.machiningIntent = {
+        kind: 'partial-contour', sourceOperationId: operation.id, spanIds: ['span_1']
+      };
+      operation.compensationIntent = { mode: 'controller', wireSide: 'left', source: 'manual' };
+      const segment = document.segments.find((candidate) => candidate.id === operation.segmentRefs[0].segmentId)!;
+      if (scenario === 'non-finite endpoint') segment.start.x = Number.NaN;
+      if (scenario === 'zero length') segment.length = 0;
+      if (scenario === 'non-finite length') segment.length = Number.POSITIVE_INFINITY;
+
+      expect(resolve(document)).toEqual({ status: 'blocked', reason: 'open-path' });
+    }
+  );
+
   it.each([
     ['permuted line refs', () => {
       const document = rectangleDocument();

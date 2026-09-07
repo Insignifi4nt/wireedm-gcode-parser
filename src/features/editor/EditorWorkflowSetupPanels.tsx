@@ -29,27 +29,30 @@ export function EditorGeometrySetupPanel({
 }) {
   return (
     <section className="grid gap-2 text-[10px]" data-upid-geometry-setup>
-      <div>
-        <h3 className="text-[11px] font-semibold">Geometry Setup</h3>
-        <p className="mt-1 text-muted-foreground">
-          Choose whether imported geometry represents the wire centre path or the finished contour.
-        </p>
-      </div>
+      <p className="text-muted-foreground">
+        Wire centre follows the drawn path without controller compensation. Finished contour uses
+        the kept material and travel direction to resolve the controller side.
+      </p>
       <label className="grid gap-1 uppercase text-muted-foreground">
         Geometry Basis
         <select
           aria-label="Geometry basis"
           className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
           disabled={disabled}
-          onChange={(event) =>
-            onSetGeometryBasis(event.currentTarget.value as PathPlanningDocument['geometryBasis'])
-          }
+          onChange={(event) => {
+            const basis = event.currentTarget.value;
+            if (basis === 'wire-centre' || basis === 'finished-contour') onSetGeometryBasis(basis);
+          }}
           value={document.geometryBasis}
         >
           <option value="wire-centre">Wire centre</option>
           <option value="finished-contour">Finished contour</option>
         </select>
       </label>
+      <p className="text-muted-foreground">
+        Changing the basis keeps the geometry and saved compensation choices. Controller choices
+        apply only to finished contours; review them before output.
+      </p>
     </section>
   );
 }
@@ -90,18 +93,15 @@ export function EditorContourSetupPanel({
 
   return (
     <section className="grid gap-2 text-[10px]" data-upid-contour-setup>
-      <div>
-        <h3 className="text-[11px] font-semibold">Contour Setup</h3>
-        <p className="mt-1 text-muted-foreground">
-          Set direction, machining role, and compensation intent for one contour.
-        </p>
-      </div>
+      <p className="text-muted-foreground">
+        Set travel direction, contour role, and the material to keep.
+      </p>
       <label className="grid gap-1 uppercase text-muted-foreground">
         Target contour
         <select
           aria-label="Contour setup operation"
           className="h-7 border border-border bg-background px-1.5 text-foreground"
-          disabled={disabled}
+          disabled={!selected || disabled}
           onChange={(event) => onSelectOperation(event.currentTarget.value)}
           value={selected?.id ?? ''}
         >
@@ -128,14 +128,13 @@ export function EditorContourSetupPanel({
           aria-label="Contour role"
           className="h-7 border border-border bg-background px-1.5 text-foreground"
           disabled={!selected?.closed || disabled}
-          onChange={(event) =>
-            selected && onSetClassification(
-              selected.id,
-              event.currentTarget.value as ContourClassification
-            )
-          }
+          onChange={(event) => {
+            const classification = CONTOUR_ROLE_OPTIONS.find((option) => option === event.currentTarget.value);
+            if (selected && classification) onSetClassification(selected.id, classification);
+          }}
           value={selected?.classification ?? ''}
         >
+          {selected && !selected.closed && <option value={selected.classification}>Open path</option>}
           {CONTOUR_ROLE_OPTIONS.map((classification) => (
             <option key={classification} value={classification}>
               {classification}
@@ -149,14 +148,12 @@ export function EditorContourSetupPanel({
           <select
             aria-label="Compensation kept material"
             className="h-7 border border-border bg-background px-1.5 text-foreground"
-            disabled={!selected || disabled}
+            disabled={!selected || disabled || document.geometryBasis === 'wire-centre'}
             onChange={(event) => {
-              if (event.currentTarget.value === '' || event.currentTarget.value === 'automatic') return;
               if (!selected) return;
-              onSetCompensation(
-                selected.id,
-                event.currentTarget.value as ManualCompensationSelection
-              );
+              const selection = event.currentTarget.value;
+              if (selection === 'inside' || selection === 'outside' || selection === 'left' ||
+                selection === 'right' || selection === 'centerline') onSetCompensation(selected.id, selection);
             }}
             value={compensationSelection}
           >
@@ -173,11 +170,11 @@ export function EditorContourSetupPanel({
                 <option value="right">Wire right of travel</option>
               </>
             ) : null}
-            <option value="centerline">Centreline</option>
+            <option value="centerline">Centreline · no compensation</option>
           </select>
         </label>
         <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-          <dt className="text-muted-foreground">Intent</dt>
+          <dt className="text-muted-foreground">Saved intent</dt>
           <dd data-testid="compensation-kept-material">
             {formatCompensationIntent(selected?.compensationIntent)}
           </dd>
@@ -185,17 +182,29 @@ export function EditorContourSetupPanel({
           <dd data-testid="compensation-wire-side">
             {compensationResolution?.status === 'ready' ? compensationResolution.wireSide : '—'}
           </dd>
-          <dt className="text-muted-foreground">Final refs</dt>
+          <dt className="text-muted-foreground">Travel winding</dt>
           <dd data-testid="compensation-winding">
             {compensationResolution?.status === 'ready' && compensationResolution.winding
               ? compensationResolution.winding.toUpperCase()
               : '—'}
           </dd>
         </dl>
-        {compensationResolution?.status === 'blocked' && (
+        {document.geometryBasis === 'wire-centre' ? (
+          <p className="text-muted-foreground">Controller compensation is off for wire-centre geometry. Change Geometry basis to Finished contour to use the saved intent.</p>
+        ) : selected?.compensationIntent?.mode === 'centerline' ? (
+          <p className="text-muted-foreground">The wire follows the drawn contour without controller compensation.</p>
+        ) : compensationResolution?.status === 'blocked' && (
           <p className="text-amber-300" data-testid="compensation-blocker">
-            Blocked: {compensationResolution.reason}
+            {compensationBlockerMessage(compensationResolution.reason)}
           </p>
+        )}
+        {selected?.closed && document.geometryBasis === 'finished-contour' && (
+          <p className="text-muted-foreground">Reversing travel preserves the kept material and swaps the resolved wire side. Automatic intent follows the contour role; manual intent stays as chosen.</p>
+        )}
+        {document.machiningParticipation?.partialContourCompensation?.some(
+          (setting) => setting.sourceOperationId === selected?.id
+        ) && (
+          <p className="text-muted-foreground">This contour also has a partial-cut side override. Reversing keeps that left or right choice, which moves the wire to the opposite side of the material. Review it in Machining participation.</p>
         )}
       </section>
     </section>
@@ -298,4 +307,18 @@ function formatCompensationIntent(
   if (!intent) return 'not selected';
   if (intent.mode === 'centerline') return `centreline · ${intent.source}`;
   return `${'wireSide' in intent ? `wire ${intent.wireSide}` : intent.keptMaterial} · ${intent.source}`;
+}
+
+function compensationBlockerMessage(
+  reason: Extract<ReturnType<typeof resolveControllerCompensation>, { status: 'blocked' }>['reason']
+) {
+  const messages = {
+    'wire-centre': 'Controller compensation is off for wire-centre geometry.',
+    'missing-intent': 'Choose the material to keep, or choose Centreline to cut without compensation.',
+    'open-path': 'Inside and outside require a closed contour. Intentional partial cuts need an explicit wire side in Machining participation and continuous, nonzero geometry.',
+    'missing-segment': 'The contour references missing geometry. Repair it before using controller compensation.',
+    degenerate: 'The contour has no valid enclosed area. Repair it before using controller compensation.',
+    'ineligible-topology': 'Resolve contour gaps, overlaps, or intersections before using controller compensation.'
+  };
+  return messages[reason];
 }

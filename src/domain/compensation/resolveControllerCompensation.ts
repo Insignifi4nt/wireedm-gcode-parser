@@ -102,6 +102,14 @@ function openRefsFormContinuousPath(
   const tolerance = Number.isFinite(document.options.coincidenceEpsilon)
     ? Math.max(0, document.options.coincidenceEpsilon)
     : 0;
+  for (const ref of operation.segmentRefs) {
+    const segment = segmentsById.get(ref.segmentId);
+    if (!segment) return false;
+    const start = orientedSegmentStart(segment, ref);
+    const end = orientedSegmentEnd(segment, ref);
+    if (![start.x, start.y, end.x, end.y, segment.length].every(Number.isFinite) ||
+      segment.length <= 0) return false;
+  }
   for (let index = 0; index < operation.segmentRefs.length - 1; index++) {
     const currentRef = operation.segmentRefs[index];
     const nextRef = operation.segmentRefs[index + 1];

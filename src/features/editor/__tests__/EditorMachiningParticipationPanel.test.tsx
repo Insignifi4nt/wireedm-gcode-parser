@@ -27,6 +27,7 @@ describe('EditorMachiningParticipationPanel', () => {
     const document = createUpidFromDxfEntities([
       line(0, 0, 10, 0), line(10, 0, 10, 5), line(10, 5, 0, 5), line(0, 5, 0, 0)
     ]);
+    document.geometryBasis = 'finished-contour';
     const operation = document.plan.operations[0];
     operation.transitions = {
       entry: { strategy: 'none', review: 'reviewed' },
@@ -94,6 +95,18 @@ describe('EditorMachiningParticipationPanel', () => {
       range: { start: 0.2, end: 0.8 },
       participation: 'active-cut'
     }), false);
+
+    document.geometryBasis = 'wire-centre';
+    await act(async () => root.render(
+      <EditorMachiningParticipationPanel
+        disabled={false} document={document} onSetSpan={onSetSpan}
+        onSetEntryReview={onSetEntryReview} onSetExitReview={onSetExitReview}
+        onSetWireSide={onSetWireSide} selectedOperationId={operation.id}
+      />
+    ));
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Partial contour wire side"]')?.disabled)
+      .toBe(true);
+    expect(container.textContent).toContain('Controller compensation is off for wire-centre geometry');
   });
 
   it('keeps a pending range bound to its source segment until it is applied or discarded', async () => {
