@@ -1,8 +1,8 @@
 import type { WireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
-import type { PathPlanningDocument } from '@/domain/path-intel/types';
+import { executionPlanBounds } from '@/domain/execution-plan/executionPlanBounds';
 
 import type { MachineDefinition } from './machineDefinition';
-import { evaluatePhysicalMachineFit, type MachineFitIssue } from './machineFit';
+import { evaluatePhysicalMachineEnvelopeFit, type MachineFitIssue } from './machineFit';
 
 export type MachinePhysicalPreflightError =
   | {
@@ -30,11 +30,14 @@ export type MachinePhysicalPreflightResult =
   | { readonly ok: false; readonly error: MachinePhysicalPreflightError };
 
 export function preflightMachinePhysicalRequirements(input: {
-  readonly document: PathPlanningDocument;
   readonly machine: MachineDefinition;
   readonly plan: WireEdmExecutionPlan;
 }): MachinePhysicalPreflightResult {
-  const fit = evaluatePhysicalMachineFit({ document: input.document, machine: input.machine });
+  const bounds = executionPlanBounds(input.plan);
+  const fit = evaluatePhysicalMachineEnvelopeFit({
+    bounds: { xSpanMm: bounds.maxX - bounds.minX, ySpanMm: bounds.maxY - bounds.minY },
+    machine: input.machine
+  });
   if (!fit.ok) {
     return {
       ok: false,
@@ -59,7 +62,7 @@ export function preflightMachinePhysicalRequirements(input: {
       ok: false,
       error: {
         code: 'MACHINE_PHYSICAL_PREFLIGHT_TRAVEL_EXCEEDED',
-        message: 'Project geometry exceeds the selected machine travel.',
+        message: 'Planned cutting and positioning exceed the selected machine travel.',
         issues: fit.fit.issues
       }
     };

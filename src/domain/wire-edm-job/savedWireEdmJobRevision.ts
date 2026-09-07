@@ -401,7 +401,6 @@ export async function createSavedWireEdmJobRevision(
     });
   }
   const physical = preflightMachinePhysicalRequirements({
-    document: project.project.content.document,
     machine: resolved.machine,
     plan: compiled.plan
   });
@@ -552,7 +551,6 @@ export async function parseSavedWireEdmJobRevision(
     });
   }
   const physical = preflightMachinePhysicalRequirements({
-    document: project.project.content.document,
     machine: parsedMachine.machine,
     plan: compiled.plan
   });
