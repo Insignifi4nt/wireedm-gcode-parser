@@ -21,4 +21,14 @@ describe('resolveEditorProgramTreeAction', () => {
     expect(resolveEditorProgramTreeAction(tree.sourceSetup[2]).commandId)
       .toBe('machining.initial-wire');
   });
+
+  it('opens initial wire setup from a real missing-position diagnostic', () => {
+    const tree = buildUpidEditorTree(createUpidFromDxfEntities([{
+      type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
+    }]));
+    if (tree.status === 'ready') throw new Error('Expected missing initial position');
+    expect(resolveEditorProgramTreeAction(tree.diagnostics[0])).toEqual({
+      commandId: 'machining.initial-wire', exactTarget: null, operationId: null
+    });
+  });
 });

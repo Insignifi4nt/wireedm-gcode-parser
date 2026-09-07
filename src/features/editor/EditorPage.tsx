@@ -131,6 +131,7 @@ import { EditorProgramTree, type EditorProgramTreeNode } from './EditorProgramTr
 import { EditorProgramTextPanel } from './EditorProgramTextPanel';
 import { EditorStatusBar } from './EditorStatusBar';
 import { EditorControllerArtifactDialog } from './EditorControllerArtifactDialog';
+import { EditorExecutionDiagnostics } from './EditorExecutionDiagnostics';
 import {
   clampEditorFloatingPanelGeometry,
   EDITOR_FLOATING_PANEL_GAP,
@@ -1023,7 +1024,7 @@ export function EditorPage({
         ? `${selectedLines.length} ${selectedLines.length === 1 ? 'line' : 'lines'}`
         : 'None';
   const diagnosticCount = pathDocumentDraft
-    ? pathDocumentDraft.diagnostics.length
+    ? pathDocumentDraft.diagnostics.length + pathDocumentDraft.plan.diagnostics.length + (programTree?.diagnostics.length ?? 0)
     : (draftParseResult?.errors.length ?? 0) + (draftParseResult?.warnings.length ?? 0);
   const exportAvailable = isPathProject
     ? Boolean(program?.project)
@@ -3159,6 +3160,9 @@ export function EditorPage({
         : null;
     const panelChildren = (
       <>
+        {panelId === 'path-diagnostics' && programTree && (
+          <EditorExecutionDiagnostics diagnostics={programTree.diagnostics} onResolve={openEditorWorkflowForTarget} />
+        )}
         {children}
         {ownedMutatingWorkflow && (
           <div className="mt-3 border-t border-border pt-2" data-editor-workflow-actions={ownedMutatingWorkflow.commandId}>

@@ -15,6 +15,7 @@ export interface EditorProgramTreeAction {
     | 'machining.set-start'
     | 'machining.entry-exit'
     | 'machining.program-stops'
+    | 'machining.participation'
     | 'view.diagnostics';
   readonly exactTarget: EditorProgramTreeExactTarget | null;
   readonly operationId: string | null;
@@ -31,6 +32,16 @@ export function resolveEditorProgramTreeAction(node: EditorProgramTreeNode): Edi
   }
   if (node.kind === 'operation') return action('machining.contour-setup', node.operationId);
   if (node.kind === 'diagnostic') {
+    switch (node.diagnostic.code) {
+      case 'EXECUTION_PLAN_INITIAL_WIRE_REQUIRED': return action('machining.initial-wire');
+      case 'EXECUTION_PLAN_THREADING_REQUIRED':
+      case 'EXECUTION_PLAN_THREADING_INVALID': return action('machining.between-contours', node.operationId);
+      case 'EXECUTION_PLAN_COMPENSATION_UNRESOLVED': return action('machining.contour-setup', node.operationId);
+      case 'EXECUTION_PLAN_TRANSITION_REVIEW_REQUIRED': return action('machining.entry-exit', node.operationId);
+      case 'EXECUTION_PLAN_PROGRAM_STOP_INVALID': return action('machining.program-stops', node.operationId);
+      case 'EXECUTION_PLAN_EMPTY':
+      case 'EXECUTION_PLAN_MACHINING_UNRESOLVED': return action('machining.participation', node.operationId);
+    }
     return action('view.diagnostics', node.operationId, {
       kind: 'diagnostic',
       diagnosticId: node.treeKey
