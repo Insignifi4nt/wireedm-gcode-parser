@@ -13,6 +13,8 @@ export async function confirmPendingDxfImport(
   const importButton = dialog.getByRole('button', { name: 'Import and open' });
   await expect(importButton).toBeEnabled();
   await importButton.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible();
 }
 
 export async function dismissOnboarding(page: Page) {
