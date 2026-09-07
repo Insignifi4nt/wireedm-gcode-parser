@@ -71,10 +71,11 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
   const [settingsStatus, setSettingsStatus] = useState<SettingsStatus>('idle');
   const [settingsErrorMessage, setSettingsErrorMessage] = useState<string | null>(null);
   const [controllerArtifactGenerating, setControllerArtifactGenerating] = useState(false);
+  const [projectOpening, setProjectOpening] = useState(false);
   const [statusToasts, setStatusToasts] = useState<StatusToast[]>([]);
   const [statusNotifications, setStatusNotifications] = useState<StatusToast[]>([]);
   const initializationStarted = useRef(false);
-  const activeMutation = useRef<'controller-artifact' | 'editor-save' | 'program-import' | null>(null);
+  const activeMutation = useRef<'controller-artifact' | 'editor-save' | 'program-import' | 'project-open' | 'storage-connect' | null>(null);
   const toastSequence = useRef(0);
 
   useEffect(() => {
@@ -139,6 +140,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
   }
 
   async function handleConnectWorkbench() {
+    if (activeMutation.current) return;
+    activeMutation.current = 'storage-connect';
     setWorkbenchStatus('connecting-storage');
     setErrorMessage(null);
     try {
@@ -158,6 +161,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       }
       setWorkbenchStatus(connectedWorkbench ? 'ready' : 'error');
       setErrorMessage(errorText(error));
+    } finally {
+      activeMutation.current = null;
     }
   }
 
@@ -230,30 +235,34 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       return setImportFailure('Select an explicit DXF unit interpretation.');
     }
     setImportStatus('importing');
-    const imported = await services.commitDxfProjectImport(
-      workbench,
-      pending.preparationResult.preparation,
-      {
-        unitCandidateId: pending.selectedUnitCandidateId,
-        confirmed: true,
-        declaredUnitOverrideAcknowledged: pending.declaredUnitOverrideAcknowledged
-      }
-    );
-    if (!imported.ok) return setImportFailure(imported.error.message);
-    setConnectedWorkbench(imported.workbench);
-    setLatestImport(imported);
-    setPendingDxfImport(null);
-    setImportStatus('idle');
-    const loaded = await services.loadEditorProgram(imported.workbench, imported.project.id);
-    if (!loaded.ok) {
-      showStatusToast(
-        `DXF was committed, but its editor document could not be opened: ${loaded.error.message}`,
-        'error'
+    try {
+      const imported = await services.commitDxfProjectImport(
+        workbench,
+        pending.preparationResult.preparation,
+        {
+          unitCandidateId: pending.selectedUnitCandidateId,
+          confirmed: true,
+          declaredUnitOverrideAcknowledged: pending.declaredUnitOverrideAcknowledged
+        }
       );
-      return;
+      if (!imported.ok) return setImportFailure(imported.error.message);
+      setConnectedWorkbench(imported.workbench);
+      setLatestImport(imported);
+      setPendingDxfImport(null);
+      const loaded = await services.loadEditorProgram(imported.workbench, imported.project.id);
+      setImportStatus('idle');
+      if (!loaded.ok) {
+        showStatusToast(
+          `DXF was committed, but its editor document could not be opened: ${loaded.error.message}`,
+          'error'
+        );
+        return;
+      }
+      openEditorProgram(loaded.editorProgram);
+      showStatusToast(`Imported ${imported.project.name}.`, 'success');
+    } catch (error) {
+      setImportFailure(errorText(error));
     }
-    openEditorProgram(loaded.editorProgram);
-    showStatusToast(`Imported ${imported.project.name}.`, 'success');
   }
 
   async function handleImportUpidFile(file: File) {
@@ -268,8 +277,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       });
       if (!imported.ok) return setImportFailure(imported.error.message);
       setConnectedWorkbench(imported.workbench);
-      setImportStatus('idle');
       const loaded = await services.loadEditorProgram(imported.workbench, imported.project.id);
+      setImportStatus('idle');
       if (!loaded.ok) return setImportFailure(
         `UPID was committed, but its editor document could not be opened: ${loaded.error.message}`
       );
@@ -322,9 +331,19 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
   async function handleOpenWorkbenchProject(projectId: string) {
     const workbench = requireWorkbench();
     if (!workbench) return showStatusToast('Connect a valid workbench before opening a project.', 'error');
-    const opened = await services.openWorkbenchProject(workbench, projectId);
-    if (!opened.ok) return showStatusToast(opened.error.message, 'error');
-    openEditorProgram(opened.editorProgram);
+    if (activeMutation.current) return;
+    activeMutation.current = 'project-open';
+    setProjectOpening(true);
+    try {
+      const opened = await services.openWorkbenchProject(workbench, projectId);
+      if (!opened.ok) return showStatusToast(opened.error.message, 'error');
+      openEditorProgram(opened.editorProgram);
+    } catch (error) {
+      showStatusToast(errorText(error), 'error');
+    } finally {
+      activeMutation.current = null;
+      setProjectOpening(false);
+    }
   }
 
   async function handleOpenLatestImportInEditor() {
@@ -379,6 +398,10 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       setEditorSaveStatus('idle');
       showStatusToast('Project saved.', 'success');
       return saved.editorProgram;
+    } catch (error) {
+      setEditorSaveStatus('error');
+      setEditorSaveErrorMessage(errorText(error));
+      return null;
     } finally {
       activeMutation.current = null;
     }
@@ -390,25 +413,29 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     if (!workbench || !program) return;
     setDxfReimportStatus('importing');
     setDxfReimportErrorMessage(null);
-    const prepared = await services.prepareDxfProjectReimport(workbench, program.project.id);
-    if (!prepared.ok) return setDxfReimportFailure(prepared.error.message);
-    const selectedUnitCandidateId = prepared.preparation.defaultUnitCandidateId;
-    const previewResult = selectedUnitCandidateId
-      ? services.previewDxfProjectImport(prepared.preparation, { unitCandidateId: selectedUnitCandidateId })
-      : null;
-    const selected = prepared.preparation.unitCandidates.find(({ id }) => id === selectedUnitCandidateId);
-    setPendingDxfReimport({
-      preparation: prepared.preparation,
-      selectedUnitCandidateId,
-      previewResult,
-      declaredUnitOverrideAcknowledged: false,
-      rebuildAcknowledged: false,
-      rebuildRequired: selected
-        ? dxfProjectReimportRequiresRebuild(prepared.preparation.project, selected)
-        : false,
-      planningMachineFit: resolvePlanningMachineFit(workbench, previewResult)
-    });
-    setDxfReimportStatus('idle');
+    try {
+      const prepared = await services.prepareDxfProjectReimport(workbench, program.project.id);
+      if (!prepared.ok) return setDxfReimportFailure(prepared.error.message);
+      const selectedUnitCandidateId = prepared.preparation.defaultUnitCandidateId;
+      const previewResult = selectedUnitCandidateId
+        ? services.previewDxfProjectImport(prepared.preparation, { unitCandidateId: selectedUnitCandidateId })
+        : null;
+      const selected = prepared.preparation.unitCandidates.find(({ id }) => id === selectedUnitCandidateId);
+      setPendingDxfReimport({
+        preparation: prepared.preparation,
+        selectedUnitCandidateId,
+        previewResult,
+        declaredUnitOverrideAcknowledged: false,
+        rebuildAcknowledged: false,
+        rebuildRequired: selected
+          ? dxfProjectReimportRequiresRebuild(prepared.preparation.project, selected)
+          : false,
+        planningMachineFit: resolvePlanningMachineFit(workbench, previewResult)
+      });
+      setDxfReimportStatus('idle');
+    } catch (error) {
+      setDxfReimportFailure(errorText(error));
+    }
   }
 
   function handleDxfReimportUnitCandidateChange(candidateId: string) {
@@ -451,25 +478,29 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     if (!workbench || !pending) return setDxfReimportFailure('The reviewed DXF re-import is unavailable.');
     if (!pending.selectedUnitCandidateId) return setDxfReimportFailure('Select an explicit DXF unit interpretation.');
     setDxfReimportStatus('importing');
-    const result = await services.commitDxfProjectReimport(workbench, pending.preparation, {
-      unitCandidateId: pending.selectedUnitCandidateId,
-      confirmed: true,
-      declaredUnitOverrideAcknowledged: pending.declaredUnitOverrideAcknowledged,
-      rebuildAcknowledged: pending.rebuildAcknowledged
-    });
-    if (!result.ok) return setDxfReimportFailure(result.error.message);
-    setConnectedWorkbench(result.workbench);
-    if (loadedEditorProgram?.model === 'upid-document') {
-      setLoadedEditorProgram({
-        ...loadedEditorProgram,
-        project: result.project,
-        pathDocument: result.pathDocument
+    try {
+      const result = await services.commitDxfProjectReimport(workbench, pending.preparation, {
+        unitCandidateId: pending.selectedUnitCandidateId,
+        confirmed: true,
+        declaredUnitOverrideAcknowledged: pending.declaredUnitOverrideAcknowledged,
+        rebuildAcknowledged: pending.rebuildAcknowledged
       });
-      setEditorProgramRevision((revision) => revision + 1);
+      if (!result.ok) return setDxfReimportFailure(result.error.message);
+      setConnectedWorkbench(result.workbench);
+      if (loadedEditorProgram?.model === 'upid-document') {
+        setLoadedEditorProgram({
+          ...loadedEditorProgram,
+          project: result.project,
+          pathDocument: result.pathDocument
+        });
+        setEditorProgramRevision((revision) => revision + 1);
+      }
+      setPendingDxfReimport(null);
+      setDxfReimportStatus('idle');
+      showStatusToast(result.mode === 'rebuilt' ? 'DXF project rebuilt with explicit units.' : 'DXF units unchanged.', 'success');
+    } catch (error) {
+      setDxfReimportFailure(errorText(error));
     }
-    setPendingDxfReimport(null);
-    setDxfReimportStatus('idle');
-    showStatusToast(result.mode === 'rebuilt' ? 'DXF project rebuilt with explicit units.' : 'DXF units unchanged.', 'success');
   }
 
   async function handleRenameWorkbenchProject(projectId: string, name: string) {
@@ -560,6 +591,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       const artifact = await services.generateControllerArtifact(saved.revision);
       if (artifact.ok) showStatusToast(`Generated exact revision ${saved.revision.revisionId}.`, 'success');
       return artifact;
+    } catch (error) {
+      return artifactAppFailure(errorText(error));
     } finally {
       activeMutation.current = null;
       setControllerArtifactGenerating(false);
@@ -689,7 +722,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     setDxfReimportErrorMessage(message);
   }
 
-  const interactionLocked = [importStatus, editorImportStatus, dxfReimportStatus].includes('importing') ||
+  const interactionLocked = workbenchStatus === 'initializing' || workbenchStatus === 'connecting-storage' ||
+    projectOpening || [importStatus, editorImportStatus, dxfReimportStatus].includes('importing') ||
     controllerArtifactGenerating || editorSaveStatus === 'saving' || settingsStatus === 'saving';
 
   return {
