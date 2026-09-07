@@ -1,6 +1,6 @@
 import { nearestPointOnSegment } from '@/domain/path-editor/pathPointInference';
 import { classifyPathSegmentIntersection } from '@/domain/path-intel/intersections';
-import { angleIsOnSweep, distance, pointOnCircle } from '@/domain/path-intel/segments';
+import { arcParameterAtAngle, distance, pointOnArcAtParameter, pointOnCircle } from '@/domain/path-intel/segments';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
 
 type CircularSegment = Exclude<PathSegment, { kind: 'line' }>;
@@ -55,9 +55,12 @@ function boundaryPoints(segment: PathSegment): Point2[] {
 }
 
 function radialPoints(segment: CircularSegment, angle: number): Point2[] {
-  return [angle, angle + Math.PI]
-    .filter((candidate) => segment.kind === 'circle' || angleIsOnSweep(candidate, segment.startAngleRadians, segment.sweepRadians))
-    .map((candidate) => pointOnCircle(segment.center, segment.radius, candidate));
+  return [angle, angle + Math.PI].flatMap((candidate) => {
+    if (segment.kind === 'circle') return [pointOnCircle(segment.center, segment.radius, candidate)];
+    const ref = { segmentId: segment.id, reversed: false };
+    const parameter = arcParameterAtAngle(segment, ref, candidate);
+    return parameter === null ? [] : [pointOnArcAtParameter(segment, ref, parameter)];
+  });
 }
 
 function nearest(segment: PathSegment, point: Point2): Point2 {

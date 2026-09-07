@@ -89,4 +89,13 @@ describe('minimum source feature distance', () => {
     expect(measureFeaturePair(circle(0, 0, -1), line(0, 0, 1, 1))).toBeNull();
     expect(measureFeaturePair(circle(Infinity, 0, 1), line(0, 0, 1, 1))).toBeNull();
   });
+
+  it('keeps radial candidates inside short arc endpoint gaps without machining tolerance', () => {
+    const gapAngle = 5e-6;
+    const first = arc(0, 0, 5, -Math.PI / 2, Math.PI / 2 - gapAngle);
+    const result = check(first, circle(5, 0, 0), 10 * Math.sin(gapAngle / 2));
+    expect(result?.first.x).toBeCloseTo(first.end.x, 12);
+    expect(result?.first.y).toBeCloseTo(first.end.y, 12);
+    expect(result?.distance).toBeGreaterThan(0);
+  });
 });
