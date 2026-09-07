@@ -60,10 +60,12 @@ describe('EditorProgramStopsPanel', () => {
     }));
     const onSetStops = vi.fn();
     await act(async () => root.render(<EditorProgramStopsPanel disabled={false} document={source}
-      selectedOperationId={operation.id} selectedStopId="stop-2" onSetStops={onSetStops} />));
+      selectedOperationId={operation.id} onSetStops={onSetStops} />));
     const add = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Add program stop'))!;
-    const apply = container.querySelector<HTMLButtonElement>('[aria-label="Apply stop-2"]')!;
     expect(add.disabled).toBe(true);
+    await act(async () => root.render(<EditorProgramStopsPanel disabled={false} document={source}
+      selectedOperationId={operation.id} selectedStopId="stop-2" onSetStops={onSetStops} />));
+    const apply = container.querySelector<HTMLButtonElement>('[aria-label="Apply stop-2"]')!;
     expect(apply.disabled).toBe(true);
     expect(container.textContent).toContain('Enabled program stops cannot share an exact placement.');
     await act(async () => container.querySelector<HTMLInputElement>('[aria-label="Selected stop enabled"]')!.click());
@@ -71,6 +73,34 @@ describe('EditorProgramStopsPanel', () => {
     await act(async () => apply.click());
     expect(onSetStops).toHaveBeenCalledWith(operation.id,
       [operation.programStops[0], { ...operation.programStops[1], enabled: false }], true);
+  });
+
+  it('protects an edit draft when switching to a new stop and leaves the saved stop intact', async () => {
+    const source = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    const operation = source.plan.operations[0];
+    operation.programStops = [{ id: 'stop-1', enabled: true, reason: 'manual', placement: { kind: 'after-exit' } }];
+    const onSelectStop = vi.fn();
+    const onSetStops = vi.fn();
+    const render = (blocked: boolean, selectedStopId: string | null) => root.render(
+      <EditorProgramStopsPanel disabled={false} document={source} selectedOperationId={operation.id}
+        selectedStopId={selectedStopId} targetChangeBlocked={blocked}
+        onSelectStop={onSelectStop} onSetStops={onSetStops} />
+    );
+    await act(async () => render(true, 'stop-1'));
+    const newStop = [...container.querySelectorAll('button')].find((button) => button.textContent === 'New stop')!;
+    await act(async () => newStop.click());
+    expect(onSelectStop).not.toHaveBeenCalled();
+    await act(async () => render(false, 'stop-1'));
+    await act(async () => newStop.click());
+    expect(onSelectStop).toHaveBeenCalledWith(operation.id, null);
+    await act(async () => render(false, null));
+    await act(async () => setInput(container.querySelector<HTMLInputElement>('[aria-label="Program stop remaining cut millimeters"]')!, '3'));
+    await act(async () => [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Add program stop')!.click());
+    expect(onSetStops).toHaveBeenCalledWith(operation.id, [operation.programStops[0], expect.objectContaining({
+      id: 'stop-2', placement: { kind: 'before-operation-end', remainingCutLengthMm: 3 }
+    })], true);
   });
 
   it('explains an invalid enable action without committing it', async () => {

@@ -50,7 +50,7 @@ Status: `pending` means the feature still needs the current audit, implementatio
 | Cut sequence | Manual/automatic order, nesting dependencies and travel | pending |
 | Between contours | Explicit defaults, project manual separation, active routes and readable sequence summaries. Browser save/reopen/override undo verified. Continuous-wire constraints and full lifecycle/export behavior remain | in progress |
 | Machining participation | Geometry-bound entry/exit review, local validation, active-range lengths and contextual controls implemented. Range units, derived segment interactions and compensation usability remain | in progress |
-| Program stops | Added direct Edit actions with pending-field protection and save/undo coverage. Execution tests verify linear/circular and partial-cut placement. Added enabled-stop canvas markers with stable screen size, edit updates and undo coverage; placement labels distinguish positioning from cutting entry. Form consolidation remains | in progress |
+| Program stops | Added direct Edit actions with pending-field protection and save/undo coverage. Execution tests verify linear/circular and partial-cut placement. Added enabled-stop canvas markers with stable screen size, edit updates and undo coverage; placement labels distinguish positioning from cutting entry. Add/edit modes now share fields and show one form at a time; guarded New stop focuses Placement. Broader lifecycle review remains | in progress |
 | Endpoint topology | Expose repair-relevant facts; move raw topology detail behind disclosure | pending |
 | Diagnostics | Fixed nested keyboard activation in navigator and selected-geometry diagnostic rows; Enter on an affected-geometry button no longer triggers the parent, and Space activates the focused row. Deduplication, prioritization and repair context remain | in progress |
 | Measurement | Added read-only Measure with magnetic points, segment and contour dimensions, precision, pair/chain/fixed-reference modes, mouse/touch and zoom checks. Multi-entity inspection remains | in progress |
@@ -76,7 +76,7 @@ The checks below cover specific behavior, not completion of entire inventory row
 | Program tree and diagnostics | Ready operations collapse by default; unresolved issues remain visible. Child selection/collapse retains focus. Nested diagnostic Enter no longer activates the parent; Space activates the row. A 10.004 mm snapped-endpoint regression verifies selection identity. |
 | Initial wire and hover | The reported new-project initial-wire bug is covered through apply, preview, save and reopen in `e2e/editor-initial-wire-position.spec.ts`. `e2e/editor-measure.spec.ts` verifies geometry endpoint hover above coincident start/end markers. |
 | Entry/exit | Independent drafts survive opposite-side application. Review labels reflect actual state. Coincident leads are rejected during editing and execution compilation. Moving a closed start or reversing direction invalidates manual lead review. Compact navigator rows select the correct lead; inspection uses active geometry and resolved positioning endpoints. |
-| Program stops | Direct editing protects pending fields. Exact stop placement covers linear/circular travel, both directions and partial contours. Markers follow edits, retain screen size under zoom and disappear on undo. A 2 mm remaining stop on a 6 mm active cut lands at X=4; a 7 mm remaining stop is rejected. Successful addition no longer immediately reports a duplicate error. |
+| Program stops | Direct editing protects pending fields. Exact stop placement covers linear/circular travel, both directions and partial contours. Markers follow edits, retain screen size under zoom and disappear on undo. A 2 mm remaining stop on a 6 mm active cut lands at X=4; a 7 mm remaining stop is rejected. Successful addition no longer immediately reports a duplicate error. Add/edit share fields; the selected edit replaces the add form. New stop protects pending edits and transfers keyboard focus. The browser workflow covers edit, add-after-edit and undo; the rendered 1280 × 720 panel keeps Save/Cancel visible. |
 | Participation | Entry/no-entry and exit confirmations use persisted geometry fingerprints, support revocation and invalidate on geometry/span changes, including interior corner edits with fixed lead endpoints. Import-description changes retain review. Older fingerprints require confirmation again. Local review works despite unrelated unresolved contours; global compilation remains blocked. Blank range fields are rejected. Active ranges show derived lengths, internal IDs are hidden, and compensation controls are contextual. |
 | Partial travel and review | Source operation identity survives clicking derived travel. `e2e/editor-partial-exit.spec.ts` covers active exit coordinates, confirmation, save/reload and undo of revocation. Domain tests cover portable storage validation and compile-after-confirm. Derived totals include leads: 6 mm contour + 8 mm leads = 14 mm cutting; stop distances remain contour-only. |
 | Floating panels | Desktop panels now use the same viewport bounds clamp as smaller layouts. The partial-exit browser test reproduced an unreachable Save button before the fix; it and all 23 layout scenarios pass afterward. |
@@ -102,6 +102,7 @@ Local screenshots in `tmp/cam-audit/` were inspected during the audit; they supp
 | `04-program-tree-after.png`, `06-consolidated-statistics.png` | Collapsed ready operations and consolidated source/statistics disclosure. |
 | `07-program-stop-marker.png` | Visible stop marker; its captured duplicate-message issue was subsequently fixed. Temporary project edits were discarded. |
 | `08-compact-exit-row.png` | Compact exit row and matching selected canvas lead at 1355 × 900. |
+| `11-program-stop-edit.png` | One active stop form, readable reasons and visible workflow actions. |
 | `09-partial-exit-review.png` | Confirmable partial exit at 1280 × 720; collapsed active ranges leave Restore, Cancel and Save visible. Later range-length details are covered by component tests. |
 
 ## Outstanding work
@@ -111,7 +112,7 @@ Local screenshots in `tmp/cam-audit/` were inspected during the audit; they supp
 - Resolve derived contour-segment selection/editing semantics, range-input units and remaining partial-compensation usability gaps.
 - Finish multi-entity measurement, overlap selection and selection filters; retain screen-space snapping thresholds.
 - Audit raw G-code modal units before labeling coordinates as millimeters.
-- Simplify remaining duplicate inspection panels, program-stop forms and tool headings.
+- Simplify remaining duplicate inspection panels and tool headings.
 - Broaden save/cancel/undo, keyboard/touch and rendered-layout verification as each tool is audited; then run final integration checks.
 
 These remaining items preserve the original whole-app scope. Passing regressions above do not close the audit.

@@ -3853,7 +3853,7 @@ export function EditorPage({
               document={pathDocumentDraft}
               onDraftChange={() => markActiveWorkflowPending(
                 'machining.program-stops', 'stop-form',
-                'Add a valid program stop or discard its pending fields before saving or changing the target contour.'
+                'Apply or add the program stop, or discard its pending fields before saving or changing the target contour or stop.'
               )}
               onSetStops={handleSetOperationProgramStops}
               targetChangeBlocked={workflowTargetChangeBlocked}
@@ -3861,7 +3861,7 @@ export function EditorPage({
                 if (workflowTargetChangeBlocked) return;
                 setSelectedPathOperationId(operationId);
                 setSelectedPathElement({ operationId, segmentId: null });
-                setSelectedProgramExactTarget({ kind: 'program-stop', operationId, stopId });
+                setSelectedProgramExactTarget(stopId ? { kind: 'program-stop', operationId, stopId } : null);
                 setSelectedProgramTreeKey(null);
               }}
               selectedOperationId={selectedPathOperationId}

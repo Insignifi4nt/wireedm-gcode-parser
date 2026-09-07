@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type Ref } from 'react';
 import { programStopValidationError } from '@/domain/path-intel/programStops';
 
 import type {
@@ -7,11 +7,17 @@ import type {
   PathPlanningDocument
 } from '@/domain/path-intel/types';
 
+const stopReasonLabels = {
+  'part-retention': 'Part retention',
+  'operator-check': 'Operator check',
+  manual: 'Manual'
+} satisfies Record<OperationProgramStop['reason'], string>;
+
 interface EditorProgramStopsPanelProps {
   disabled: boolean;
   document: PathPlanningDocument;
   onDraftChange?: () => void;
-  onSelectStop?: (operationId: string, stopId: string) => void;
+  onSelectStop?: (operationId: string, stopId: string | null) => void;
   targetChangeBlocked?: boolean;
   onSetStops: (operationId: string, stops: OperationProgramStop[], completeForm?: boolean) => void;
   selectedOperationId: string | null;
@@ -43,13 +49,20 @@ export function EditorProgramStopsPanel({
   const [selectedEnabled, setSelectedEnabled] = useState(true);
   const [commitError, setCommitError] = useState<string | null>(null);
   const selectedPlacementRef = useRef<HTMLSelectElement>(null);
+  const addPlacementRef = useRef<HTMLSelectElement>(null);
+  const hadSelectedStop = useRef(false);
   const stops = operation?.programStops ?? [];
   const selectedStop = stops.find((stop) => stop.id === selectedStopId) ?? null;
 
   useEffect(() => setAddCompleted(false), [operation?.id]);
 
   useEffect(() => {
-    if (!selectedStop) return;
+    if (!selectedStop) {
+      if (hadSelectedStop.current) addPlacementRef.current?.focus();
+      hadSelectedStop.current = false;
+      return;
+    }
+    hadSelectedStop.current = true;
     setSelectedPlacement(selectedStop.placement.kind);
     setSelectedRemaining(
       selectedStop.placement.kind === 'before-operation-end'
@@ -128,76 +141,25 @@ export function EditorProgramStopsPanel({
   return (
     <section className="grid gap-2 text-[10px]" data-program-stops-panel>
       {commitError && <p role="alert" className="text-red-300">{commitError}</p>}
-      <div className="border border-border bg-background/35 p-2">
+      <div>
         <div className="uppercase text-muted-foreground">{operation.displayName}</div>
         <p className="mt-1 text-muted-foreground">
           Pause cutting for part retention or an operator check. Remaining cut excludes entry and exit moves.
         </p>
       </div>
 
-      <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}
+      {selectedStop ? onSelectStop && <button
+        className="h-7 border border-border bg-background disabled:opacity-40"
+        disabled={disabled || targetChangeBlocked}
+        onClick={() => onSelectStop(operation.id, null)}
+        title={targetChangeBlocked ? 'Apply the pending form before creating another stop.' : undefined}
+        type="button"
+      >New stop</button> : <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}
         onChange={() => setAddCompleted(false)}>
         <legend className="px-1 uppercase text-muted-foreground">Add stop</legend>
-        <label className="grid gap-0.5 text-muted-foreground">
-          Placement
-          <select
-            aria-label="Program stop placement"
-            className="h-7 border border-border bg-background px-1 text-foreground"
-            onChange={(event) => {
-              setPlacement(event.currentTarget.value as OperationProgramStopPlacement['kind']);
-              onDraftChange?.();
-            }}
-            value={placement}
-          >
-            <option value="before-entry">Before positioning</option>
-            <option value="before-operation-end">Before contour end</option>
-            <option value="after-contour">After contour</option>
-            <option value="after-exit">After exit</option>
-          </select>
-        </label>
-        {placement === 'before-operation-end' && (
-          <label className="grid gap-0.5 text-muted-foreground">
-            Remaining cut (mm)
-            <input
-              aria-label="Program stop remaining cut millimeters"
-              className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
-              inputMode="decimal"
-              onChange={(event) => {
-                setRemaining(event.currentTarget.value);
-                onDraftChange?.();
-              }}
-              value={remaining}
-            />
-          </label>
-        )}
-        <label className="grid gap-0.5 text-muted-foreground">
-          Reason
-          <select
-            aria-label="Program stop reason"
-            className="h-7 border border-border bg-background px-1 text-foreground"
-            onChange={(event) => {
-              setReason(event.currentTarget.value as OperationProgramStop['reason']);
-              onDraftChange?.();
-            }}
-            value={reason}
-          >
-            <option value="part-retention">Part retention</option>
-            <option value="operator-check">Operator check</option>
-            <option value="manual">Manual</option>
-          </select>
-        </label>
-        <label className="grid gap-0.5 text-muted-foreground">
-          Note
-          <input
-            aria-label="Program stop note"
-            className="h-7 border border-border bg-background px-1.5 text-foreground"
-            onChange={(event) => {
-              setNote(event.currentTarget.value);
-              onDraftChange?.();
-            }}
-            value={note}
-          />
-        </label>
+        <ProgramStopFields labelPrefix="Program stop" placement={placement} remaining={remaining}
+          reason={reason} note={note} onPlacementChange={setPlacement} onRemainingChange={setRemaining}
+          onReasonChange={setReason} onNoteChange={setNote} onDraftChange={onDraftChange} placementRef={addPlacementRef} />
         {addCompleted
           ? <p role="status" className="text-muted-foreground">Stop added. Change the placement to add another.</p>
           : addError && <p role="alert" className="text-red-300">{addError}</p>}
@@ -209,7 +171,7 @@ export function EditorProgramStopsPanel({
         >
           Add program stop
         </button>
-      </fieldset>
+      </fieldset>}
 
       <div className="grid gap-1">
         {stops.length === 0 ? (
@@ -226,67 +188,10 @@ export function EditorProgramStopsPanel({
               {isSelected ? (
                 <fieldset className="grid gap-1" disabled={disabled}>
                   <legend className="px-1 uppercase text-muted-foreground">Edit {stop.id}</legend>
-                  <label className="grid gap-0.5 text-muted-foreground">
-                    Placement
-                    <select
-                      aria-label="Selected stop placement"
-                      className="h-7 border border-border bg-background px-1 text-foreground"
-                      onChange={(event) => {
-                        setSelectedPlacement(event.currentTarget.value as OperationProgramStopPlacement['kind']);
-                        onDraftChange?.();
-                      }}
-                      ref={selectedPlacementRef}
-                      value={selectedPlacement}
-                    >
-                      <option value="before-entry">Before positioning</option>
-                      <option value="before-operation-end">Before contour end</option>
-                      <option value="after-contour">After contour</option>
-                      <option value="after-exit">After exit</option>
-                    </select>
-                  </label>
-                  {selectedPlacement === 'before-operation-end' && (
-                    <label className="grid gap-0.5 text-muted-foreground">
-                      Remaining cut (mm)
-                      <input
-                        aria-label="Selected stop remaining cut millimeters"
-                        className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
-                        inputMode="decimal"
-                        onChange={(event) => {
-                          setSelectedRemaining(event.currentTarget.value);
-                          onDraftChange?.();
-                        }}
-                        value={selectedRemaining}
-                      />
-                    </label>
-                  )}
-                  <label className="grid gap-0.5 text-muted-foreground">
-                    Reason
-                    <select
-                      aria-label="Selected stop reason"
-                      className="h-7 border border-border bg-background px-1 text-foreground"
-                      onChange={(event) => {
-                        setSelectedReason(event.currentTarget.value as OperationProgramStop['reason']);
-                        onDraftChange?.();
-                      }}
-                      value={selectedReason}
-                    >
-                      <option value="part-retention">Part retention</option>
-                      <option value="operator-check">Operator check</option>
-                      <option value="manual">Manual</option>
-                    </select>
-                  </label>
-                  <label className="grid gap-0.5 text-muted-foreground">
-                    Note
-                    <input
-                      aria-label="Selected stop note"
-                      className="h-7 border border-border bg-background px-1.5 text-foreground"
-                      onChange={(event) => {
-                        setSelectedNote(event.currentTarget.value);
-                        onDraftChange?.();
-                      }}
-                      value={selectedNote}
-                    />
-                  </label>
+                  <ProgramStopFields labelPrefix="Selected stop" placement={selectedPlacement} remaining={selectedRemaining}
+                    reason={selectedReason} note={selectedNote} onPlacementChange={setSelectedPlacement}
+                    onRemainingChange={setSelectedRemaining} onReasonChange={setSelectedReason}
+                    onNoteChange={setSelectedNote} onDraftChange={onDraftChange} placementRef={selectedPlacementRef} />
                   <label className="flex items-center gap-2 text-muted-foreground">
                     <input
                       aria-label="Selected stop enabled"
@@ -335,7 +240,7 @@ export function EditorProgramStopsPanel({
                   />
                   <div>
                     <div className="text-foreground">{placementLabel(stop.placement)}</div>
-                    <div className="text-muted-foreground">{stop.reason}{stop.note ? ` · ${stop.note}` : ''}</div>
+                    <div className="text-muted-foreground">{stopReasonLabels[stop.reason]}{stop.note ? ` · ${stop.note}` : ''}</div>
                   </div>
                   <div className="col-start-2 flex gap-1">
                   {onSelectStop && <button
@@ -380,4 +285,85 @@ function placementLabel(placement: OperationProgramStopPlacement) {
     return `Stop with ${placement.remainingCutLengthMm.toFixed(3)} mm remaining`;
   }
   return `Stop ${placement.kind.replaceAll('-', ' ')}`;
+}
+
+interface ProgramStopFieldsProps {
+  labelPrefix: string;
+  placement: OperationProgramStopPlacement['kind'];
+  remaining: string;
+  reason: OperationProgramStop['reason'];
+  note: string;
+  onPlacementChange: (value: OperationProgramStopPlacement['kind']) => void;
+  onRemainingChange: (value: string) => void;
+  onReasonChange: (value: OperationProgramStop['reason']) => void;
+  onNoteChange: (value: string) => void;
+  onDraftChange?: () => void;
+  placementRef?: Ref<HTMLSelectElement>;
+}
+
+function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
+  onPlacementChange, onRemainingChange, onReasonChange, onNoteChange,
+  onDraftChange, placementRef }: ProgramStopFieldsProps) {
+  return <>
+        <label className="grid gap-0.5 text-muted-foreground">
+          Placement
+          <select
+            aria-label={`${labelPrefix} placement`}
+            className="h-7 border border-border bg-background px-1 text-foreground"
+            onChange={(event) => {
+              onPlacementChange(event.currentTarget.value as OperationProgramStopPlacement['kind']);
+              onDraftChange?.();
+            }}
+            ref={placementRef}
+            value={placement}
+          >
+            <option value="before-entry">Before positioning</option>
+            <option value="before-operation-end">Before contour end</option>
+            <option value="after-contour">After contour</option>
+            <option value="after-exit">After exit</option>
+          </select>
+        </label>
+        {placement === 'before-operation-end' && (
+          <label className="grid gap-0.5 text-muted-foreground">
+            Remaining cut (mm)
+            <input
+              aria-label={`${labelPrefix} remaining cut millimeters`}
+              className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+              inputMode="decimal"
+              onChange={(event) => {
+                onRemainingChange(event.currentTarget.value);
+                onDraftChange?.();
+              }}
+              value={remaining}
+            />
+          </label>
+        )}
+        <label className="grid gap-0.5 text-muted-foreground">
+          Reason
+          <select
+            aria-label={`${labelPrefix} reason`}
+            className="h-7 border border-border bg-background px-1 text-foreground"
+            onChange={(event) => {
+              onReasonChange(event.currentTarget.value as OperationProgramStop['reason']);
+              onDraftChange?.();
+            }}
+            value={reason}
+          >
+            {Object.entries(stopReasonLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-0.5 text-muted-foreground">
+          Note
+          <input
+            aria-label={`${labelPrefix} note`}
+            className="h-7 border border-border bg-background px-1.5 text-foreground"
+            onChange={(event) => {
+              onNoteChange(event.currentTarget.value);
+              onDraftChange?.();
+            }}
+            value={note}
+          />
+        </label>
+
+  </>;
 }

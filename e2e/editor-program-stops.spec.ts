@@ -27,6 +27,7 @@ test('edits stops from their panel without losing pending fields and undoes the 
   await expect(remaining).toHaveValue('2');
   await remaining.fill('3');
   await expect(page.getByRole('button', { name: 'Edit stop-2', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'New stop', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Apply stop-1', exact: true }).click();
   expect(await marker.evaluate((node) => [node.getAttribute('cx'), node.getAttribute('cy')])).not.toEqual(before);
   const markerWidth = (await marker.boundingBox())!.width;
@@ -35,6 +36,12 @@ test('edits stops from their panel without losing pending fields and undoes the 
   await page.getByRole('button', { name: 'Edit stop-2', exact: true }).click();
   await expect(page.getByLabel('Selected stop placement', { exact: true })).toHaveValue('after-exit');
   await expect(page.locator('[data-program-stop="stop-1"]')).toContainText('3.000 mm remaining');
+  await page.screenshot({ path: 'tmp/cam-audit/11-program-stop-edit.png' });
+  await page.getByRole('button', { name: 'New stop', exact: true }).click();
+  await expect(page.getByLabel('Program stop placement', { exact: true })).toBeFocused();
+  await page.getByLabel('Program stop placement', { exact: true }).selectOption('before-entry');
+  await page.getByRole('button', { name: 'Add program stop', exact: true }).click();
+  await expect(page.locator('[data-program-stop="stop-3"]')).toContainText('Stop before positioning');
   await page.getByRole('button', { name: 'Save Program Stops workflow', exact: true }).click();
   await page.getByRole('button', { name: 'Undo active document change', exact: true }).click();
   await page.getByRole('button', { name: 'Machining menu' }).click();
