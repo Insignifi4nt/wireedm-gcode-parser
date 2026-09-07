@@ -88,7 +88,6 @@ import {
 } from '@/domain/path-intel/machiningParticipation';
 import {
   normalizeUpidPathElementSelection,
-  summarizeUpidPathDocumentForEditor,
   upidPathElementIdForOperation
 } from '@/domain/upid/projectRail';
 import { buildUpidEditorTree, type UpidEditorTree } from '@/domain/upid/upidEditorTree';
@@ -813,23 +812,10 @@ export function EditorPage({
     [draftText, pathDocumentDraft, program]
   );
   const draftParseResult = draftProgram?.parseResult ?? null;
-  const pathDocumentStats = useMemo(
-    () => (pathDocumentDraft ? summarizeUpidPathDocumentForEditor(pathDocumentDraft) : null),
-    [pathDocumentDraft]
-  );
-  const pathCount = pathDocumentStats?.pathCount ?? draftParseResult?.path.length ?? 0;
-  const rapidMoveCount =
-    pathDocumentStats?.rapidMoveCount ??
-    draftParseResult?.path.filter((point) => point.type === 'rapid').length ??
-    0;
-  const cuttingMoveCount =
-    pathDocumentStats?.cuttingMoveCount ??
-    draftParseResult?.path.filter((point) => point.type === 'cut').length ??
-    0;
-  const arcMoveCount =
-    pathDocumentStats?.arcMoveCount ??
-    draftParseResult?.path.filter((point) => point.type === 'arc').length ??
-    0;
+  const pathCount = draftParseResult?.path.length ?? 0;
+  const rapidMoveCount = draftParseResult?.path.filter((point) => point.type === 'rapid').length ?? 0;
+  const cuttingMoveCount = draftParseResult?.path.filter((point) => point.type === 'cut').length ?? 0;
+  const arcMoveCount = draftParseResult?.path.filter((point) => point.type === 'arc').length ?? 0;
   const geometryBounds = useMemo(() => pathDocumentDraft ? readPathDocumentBounds(pathDocumentDraft) : null, [pathDocumentDraft]);
   const boundsText = pathDocumentDraft
     ? geometryBounds ? formatBounds(geometryBounds) : '-'
@@ -3917,7 +3903,7 @@ export function EditorPage({
               : undefined
           }
           pathDocument={pathDocumentDraft}
-          pathCount={pathCount}
+          pathCount={isPathProject ? undefined : pathCount}
           pinnedLines={pinnedLines}
           selectedPathElement={selectedPathElement}
           selectedLines={selectedLines}

@@ -9,7 +9,6 @@ import {
   setPathOperationClassification
 } from '@/domain/path-editor/pathDocumentOperations';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
-import { nextUp } from '@/domain/path-intel/segments';
 
 import {
   createUpidProjectRail,
@@ -31,7 +30,6 @@ import {
   readUpidSelectedPathPoint,
   readUpidSelectedPathSegment,
   readUpidSelectedPathTravel,
-  summarizeUpidPathDocumentForEditor,
   upidManualDecisionKinds,
   upidPathElementAncestorIds,
   upidPathElementRefForDiagnostic,
@@ -923,11 +921,6 @@ describe('UPID project rail projection', () => {
       length: 5,
       start: { x: 10, y: 20 }
     });
-    expect(summarizeUpidPathDocumentForEditor(edited)).toMatchObject({
-      cuttingMoveCount: 1,
-      pathCount: 4,
-      rapidMoveCount: 1
-    });
   });
 
   it('resolves a selected circle center without endpoint topology metadata', () => {
@@ -959,45 +952,6 @@ describe('UPID project rail projection', () => {
       role: 'center',
       segmentKind: 'circle'
     });
-  });
-
-  it('summarizes path-document preview stats without posting G-code', () => {
-    const document = createPathPlanningDocumentFromDxfEntities([
-      line(0, 0, 10, 0),
-      {
-        type: 'arc',
-        layer: 'CUT',
-        center: { x: 10, y: 10 },
-        radius: 10,
-        startAngle: 270,
-        endAngle: 180,
-        clockwise: false,
-        start: { x: 10, y: 0 },
-        end: { x: 0, y: 10 }
-      },
-      {
-        type: 'circle',
-        layer: 'CUT',
-        center: { x: 30, y: 10 },
-        radius: 5
-      }
-    ]);
-
-    const summary = summarizeUpidPathDocumentForEditor(document);
-
-    expect(summary).toMatchObject({
-      arcMoveCount: 3,
-      bounds: {
-        maxX: 35,
-        minX: 0,
-        minY: 0
-      },
-      cuttingMoveCount: 1,
-      pathCount: 6,
-      rapidMoveCount: 2
-    });
-    expect(summary.bounds.maxY).toBeGreaterThanOrEqual(20);
-    expect(summary.bounds.maxY).toBeLessThanOrEqual(nextUp(nextUp(20)));
   });
 
   it('reads selected segment and point details with DXF provenance', () => {

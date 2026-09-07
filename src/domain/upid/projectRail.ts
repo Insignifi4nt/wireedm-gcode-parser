@@ -1,5 +1,4 @@
 import type {
-  Bounds2,
   EndpointSide,
   ManualStartOverride,
   OrientedSegmentRef,
@@ -17,16 +16,12 @@ import type {
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import type { DxfInsertSource } from '@/domain/dxf/types';
 import {
-  boundsAreFinite,
   distance,
-  emptyBounds,
   endpointKey,
-  mergeBounds,
   orientedArcClockwise,
   orientedCircleClockwise,
   orientedSegmentEnd,
   orientedSegmentStart,
-  pathBounds,
   pointsEqual,
   requiredSegment,
   segmentEndTangent,
@@ -328,14 +323,6 @@ export interface UpidPathElementSourceSummary {
   handles: string | null;
   inserts: string | null;
   layers: string;
-}
-
-export interface UpidEditorPathStats {
-  arcMoveCount: number;
-  bounds: Bounds2;
-  cuttingMoveCount: number;
-  pathCount: number;
-  rapidMoveCount: number;
 }
 
 export function createUpidProjectRail(document: PathPlanningDocument): UpidProjectRail {
@@ -842,65 +829,6 @@ export function readUpidOperationPathElement(
     : document?.pathElements.find((candidate) => candidate.operationId === operationId);
 
   return element && isUpidOperationPathElement(element) ? element : null;
-}
-
-export function summarizeUpidPathDocumentForEditor(document: PathPlanningDocument): UpidEditorPathStats {
-  const segmentsById = segmentMap(document.segments);
-  let bounds = emptyBounds();
-  let currentPoint: Point2 | null = null;
-  let rapidMoveCount = 0;
-  let cuttingMoveCount = 0;
-  let arcMoveCount = 0;
-
-  for (const operation of document.plan.operations) {
-    if (operation.segmentRefs.length === 0) continue;
-
-    const operationBounds = pathBounds(operation.segmentRefs, segmentsById);
-    if (boundsAreFinite(operationBounds)) {
-      bounds = mergeBounds(bounds, operationBounds);
-    }
-
-    const entry = readOperationTransitions(operation).entry;
-    const leadIn = entry && entry.strategy !== 'none' ? entry : null;
-    const entryPoint = leadIn?.from ?? operation.startPoint;
-    if (!currentPoint || !pointsEqual(currentPoint, entryPoint, document.options.coincidenceEpsilon)) {
-      rapidMoveCount += 1;
-    }
-    if (leadIn && !pointsEqual(leadIn.from, leadIn.to, document.options.coincidenceEpsilon)) {
-      cuttingMoveCount += 1;
-      bounds = mergeBounds(bounds, {
-        maxX: Math.max(leadIn.from.x, leadIn.to.x),
-        maxY: Math.max(leadIn.from.y, leadIn.to.y),
-        minX: Math.min(leadIn.from.x, leadIn.to.x),
-        minY: Math.min(leadIn.from.y, leadIn.to.y)
-      });
-    }
-
-    for (const ref of operation.segmentRefs) {
-      const segment = requiredSegment(segmentsById, ref.segmentId);
-      if (segment.kind === 'line') {
-        cuttingMoveCount += 1;
-      } else if (segment.kind === 'circle') {
-        arcMoveCount += 2;
-      } else {
-        arcMoveCount += 1;
-      }
-    }
-
-    currentPoint = operation.endPoint;
-  }
-
-  if (!boundsAreFinite(bounds)) {
-    bounds = emptyDisplayBounds();
-  }
-
-  return {
-    arcMoveCount,
-    bounds,
-    cuttingMoveCount,
-    pathCount: rapidMoveCount + cuttingMoveCount + arcMoveCount,
-    rapidMoveCount
-  };
 }
 
 export function normalizeUpidPathElementSelection(
@@ -1618,15 +1546,6 @@ function operationRef(
     operationId: operation.id,
     pathElementId: upidPathElementIdForOperation(document, operation.id),
     segmentId
-  };
-}
-
-function emptyDisplayBounds(): Bounds2 {
-  return {
-    minX: Number.NaN,
-    minY: Number.NaN,
-    maxX: Number.NaN,
-    maxY: Number.NaN
   };
 }
 

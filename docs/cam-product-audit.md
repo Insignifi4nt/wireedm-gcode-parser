@@ -78,7 +78,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 ## Additional findings to verify
 
 - Raw G-code parsing currently has no unit field. Do not label its raw coordinate preview as millimeters until modal units and conversions are handled correctly.
-- The legacy path-preview count helper mixes source bounds with entry endpoints and omits some transition moves. Statistics now uses explicit source geometry bounds; audit preview move counts against the execution trace before presenting them as complete machining statistics.
+- Removed the legacy path-preview count helper and the ambiguous canvas "path items" counter. It mixed geometric segments with inferred controller moves, omitted exit moves and split circles into two counts. Explicit operation/contour/segment counts remain in Statistics; any future execution-motion statistics must come from the execution trace.
 - Magnetic construction inference and measurement snapping have different selection rules. Measurement should prefer nearby semantic points and must not snap to distant geometry merely because it is the nearest available candidate.
 - User regression: setting initial relative wire position on a new project did not update the preview start position and connection. Reproduce from new import, including the coordinate-setting behavior described as G902, and verify draft preview, save and reopen.
 - User regression: hovering a geometry-tree start/end point can be obscured by the existing start/end marker. Hover and selected point indicators must render visibly above all semantic markers; retain the marker identity without hiding the interaction state.
@@ -94,6 +94,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 - Contour measurement: 10 domain tests, three browser scenarios and the production build passed. Checks cover analytic curved area, reversed orientation, open/missing boundaries, rectangle dimensions and a stable disclosure target after the first pick. Leads and positioning moves are excluded; ambiguous or intersecting contours do not display an enclosed area.
 - Position-panel removal: 98 focused tests and production build passed. The workspace browser run passed 17 scenarios; one encountered a page reset during concurrent documentation editing and passed on isolated rerun. Rendered View menu and Statistics inspected; cursor coordinates remain available in the status bar.
 - Summary consolidation: 95 focused tests, three browser scenarios and production build passed. Browser assertions verify the imported filename, 10 × 10 mm geometry bounds, 40 mm cutting travel, topology disclosure and the actual DXF layer. Selection cross-highlighting and source-placement inspection remain covered.
+- Removed partial preview counting: 39 focused project-rail/preview-control tests and production build passed. Deleted the unused counter, bounds reconstruction and its obsolete count assertions; retained selected-travel and geometry behavior tests.
 
 ## Next audit work
 

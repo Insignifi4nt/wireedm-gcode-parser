@@ -23,7 +23,7 @@ interface EditorCanvasPanelProps {
   measurement?: EditorMeasurementState;
   pathEndpointActionOperationId?: string | null;
   pathDocument?: PathPlanningDocument | null;
-  pathCount: number;
+  pathCount?: number;
   pinnedLines: number[];
   selectedPathElement?: EditorPathElementRef | null;
   selectedLines: number[];
