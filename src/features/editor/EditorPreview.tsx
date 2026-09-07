@@ -265,7 +265,7 @@ export function EditorPreview({
     const shortcutViewBox: EditorPreviewViewBox = activeViewBox;
 
     function handlePreviewKeyDown(event: KeyboardEvent) {
-      if (isInteractiveTarget(event.target)) return;
+      if (event.defaultPrevented || isInteractiveTarget(event.target)) return;
 
       const key = event.key.toLowerCase();
       const commandKey = event.ctrlKey || event.metaKey;

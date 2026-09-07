@@ -198,7 +198,7 @@ export function isInteractiveTarget(target: EventTarget | null) {
   if (isEditableTarget(target)) return true;
   if (!(target instanceof HTMLElement)) return false;
 
-  return Boolean(target.closest('button, a, summary, [role="button"], [role="dialog"]'));
+  return Boolean(target.closest('button, a, summary, [role="button"], [role="dialog"], [role="tree"], [role="treeitem"]'));
 }
 
 export function strokeForPath(

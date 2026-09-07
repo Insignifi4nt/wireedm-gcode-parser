@@ -825,6 +825,28 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-cut-sequence-cut-value]')?.getAttribute('data-upid-cut-sequence-cut-value')).toBe(expectedCut.toFixed(3));
   });
 
+  it('keeps canvas navigation unchanged while arrow keys navigate the program tree', async () => {
+    await act(async () => {
+      root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={projectWithUpid(pathDocumentFromRectangle())} />);
+    });
+    await flushAsync();
+    const preview = container.querySelector('svg[aria-label="UPID path preview"]');
+    const initialView = preview?.getAttribute('viewBox');
+    const first = container.querySelector<HTMLElement>('[role="treeitem"]');
+    if (!first) throw new Error('Expected program tree');
+    first.focus();
+    await act(async () => {
+      first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    });
+    expect(document.activeElement).not.toBe(first);
+    expect(document.activeElement?.getAttribute('role')).toBe('treeitem');
+    expect(preview?.getAttribute('viewBox')).toBe(initialView);
+    await act(async () => {
+      document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true, cancelable: true }));
+    });
+    expect(preview?.querySelector('[data-preview-grid="minor"]')).not.toBeNull();
+  });
+
   it('reapplies inside-out sequence with cancel, undo and saved manual-order restoration', async () => {
     const document = pathDocumentFromNestedRectangles();
     const originalOrder = document.plan.operations.map((operation) => operation.id);
