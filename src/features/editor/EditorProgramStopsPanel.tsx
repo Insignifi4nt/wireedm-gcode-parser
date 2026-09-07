@@ -35,6 +35,7 @@ export function EditorProgramStopsPanel({
   const [remaining, setRemaining] = useState('1');
   const [reason, setReason] = useState<OperationProgramStop['reason']>('part-retention');
   const [note, setNote] = useState('');
+  const [addCompleted, setAddCompleted] = useState(false);
   const [selectedPlacement, setSelectedPlacement] = useState<OperationProgramStopPlacement['kind']>('before-operation-end');
   const [selectedRemaining, setSelectedRemaining] = useState('1');
   const [selectedReason, setSelectedReason] = useState<OperationProgramStop['reason']>('part-retention');
@@ -44,6 +45,8 @@ export function EditorProgramStopsPanel({
   const selectedPlacementRef = useRef<HTMLSelectElement>(null);
   const stops = operation?.programStops ?? [];
   const selectedStop = stops.find((stop) => stop.id === selectedStopId) ?? null;
+
+  useEffect(() => setAddCompleted(false), [operation?.id]);
 
   useEffect(() => {
     if (!selectedStop) return;
@@ -102,12 +105,14 @@ export function EditorProgramStopsPanel({
       }
     }
     setCommitError(null);
+    setAddCompleted(false);
     onSetStops(operation.id, nextStops, completeForm);
   }
 
   function addStop() {
     if (!canAdd || disabled) return;
     commit([...stops, addedStop], true);
+    setAddCompleted(true);
   }
 
   function applySelectedStop() {
@@ -130,7 +135,8 @@ export function EditorProgramStopsPanel({
         </p>
       </div>
 
-      <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}>
+      <fieldset className="grid gap-1 border border-border p-2" disabled={disabled}
+        onChange={() => setAddCompleted(false)}>
         <legend className="px-1 uppercase text-muted-foreground">Add stop</legend>
         <label className="grid gap-0.5 text-muted-foreground">
           Placement
@@ -192,7 +198,9 @@ export function EditorProgramStopsPanel({
             value={note}
           />
         </label>
-        {addError && <p role="alert" className="text-red-300">{addError}</p>}
+        {addCompleted
+          ? <p role="status" className="text-muted-foreground">Stop added. Change the placement to add another.</p>
+          : addError && <p role="alert" className="text-red-300">{addError}</p>}
         <button
           className="h-7 border border-border bg-background disabled:opacity-40"
           disabled={!canAdd}

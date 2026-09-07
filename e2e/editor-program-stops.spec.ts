@@ -10,8 +10,14 @@ test('edits stops from their panel without losing pending fields and undoes the 
   await page.locator('[data-editor-workflow-command="machining.program-stops"]').click();
   await page.getByLabel('Program stop remaining cut millimeters', { exact: true }).fill('2');
   await page.getByRole('button', { name: 'Add program stop', exact: true }).click();
+  await expect(page.getByText('Stop added. Change the placement to add another.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add program stop', exact: true })).toBeDisabled();
   const marker = page.locator('[data-preview-program-stop="stop-1"]');
   await expect(marker).toBeVisible();
+  expect(await marker.evaluate((node) => {
+    const emphasis = document.querySelector('[data-preview-point-emphasis-layer]');
+    return Boolean(emphasis && (node.compareDocumentPosition(emphasis) & Node.DOCUMENT_POSITION_FOLLOWING));
+  })).toBe(true);
   const before = await marker.evaluate((node) => [node.getAttribute('cx'), node.getAttribute('cy')]);
   await page.getByLabel('Program stop placement', { exact: true }).selectOption('after-exit');
   await page.getByRole('button', { name: 'Add program stop', exact: true }).click();

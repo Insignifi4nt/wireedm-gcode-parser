@@ -1512,6 +1512,18 @@ export function EditorPreview({
               </g>
             );
           })}
+          <g pointerEvents="none" data-preview-program-stops>
+            {stopMarkers.map((stop) => <g key={`${stop.operationId}:${stop.stopId}`}>
+              <circle cx={stop.point.x} cy={flipY - stop.point.y} r={measurementDisplayScale * 6}
+                fill="#020617" stroke="#fbbf24" strokeWidth="2" vectorEffect="non-scaling-stroke"
+                data-preview-program-stop={stop.stopId} data-stop-operation={stop.operationId} />
+              <text x={stop.point.x} y={flipY - stop.point.y} dy="0.35em" textAnchor="middle"
+                fill="#fbbf24" fontSize={measurementDisplayScale * 9} fontWeight="bold">Ⅱ</text>
+              <text x={stop.point.x + measurementDisplayScale * 9} y={flipY - stop.point.y + measurementDisplayScale * 14}
+                fill="#fde68a" fontSize={measurementTextSize} paintOrder="stroke" stroke="#020617"
+                strokeWidth={measurementTextSize * 0.25}>STOP</text>
+            </g>)}
+          </g>
           <g data-preview-point-emphasis-layer pointerEvents="none">
             {pathEndpointHandles.map((handle) => {
               const highlight = pathEndpointMatches(handle, handle.role, hoveredPathElement)
@@ -1525,7 +1537,7 @@ export function EditorPreview({
                 data-preview-point-role={handle.role}
                 cx={handle.point.x}
                 cy={flipY - handle.point.y}
-                r={Math.max(highlightedPointRadius * 1.6, markerRadius * 1.9)}
+                r={Math.max(highlightedPointRadius * 1.6, markerRadius * 1.9, measurementDisplayScale * 8)}
                 fill="none"
                 stroke={highlightColor(highlight)}
                 strokeWidth="2.5"
@@ -1557,18 +1569,6 @@ export function EditorPreview({
             >{measurementResult.distance.toFixed(measurement.precision)} mm</text>}
           </g>}
         </g>
-          <g pointerEvents="none" data-preview-program-stops>
-            {stopMarkers.map((stop) => <g key={`${stop.operationId}:${stop.stopId}`}>
-              <circle cx={stop.point.x} cy={flipY - stop.point.y} r={measurementDisplayScale * 6}
-                fill="#020617" stroke="#fbbf24" strokeWidth="2" vectorEffect="non-scaling-stroke"
-                data-preview-program-stop={stop.stopId} data-stop-operation={stop.operationId} />
-              <text x={stop.point.x} y={flipY - stop.point.y} dy="0.35em" textAnchor="middle"
-                fill="#fbbf24" fontSize={measurementDisplayScale * 9} fontWeight="bold">Ⅱ</text>
-              <text x={stop.point.x + measurementDisplayScale * 9} y={flipY - stop.point.y + measurementDisplayScale * 14}
-                fill="#fde68a" fontSize={measurementTextSize} paintOrder="stroke" stroke="#020617"
-                strokeWidth={measurementTextSize * 0.25}>STOP</text>
-            </g>)}
-          </g>
       </svg>
     </div>
   );
