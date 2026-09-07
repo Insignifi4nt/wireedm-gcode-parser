@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
+import { findLeadIntersections } from '@/domain/path-intel/leadIntersections';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { pointsEqual } from '@/domain/path-intel/segments';
 import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
@@ -80,6 +81,10 @@ export function EditorEntryExitPanel({
     pointsEqual(entryPoint, selected.startPoint, document.options.coincidenceEpsilon));
   const exitCoincident = Boolean(selected && exitPoint &&
     pointsEqual(exitPoint, selected.endPoint, document.options.coincidenceEpsilon));
+  const entryIntersections = selected && entryPoint
+    ? findLeadIntersections(entryPoint, selected.startPoint, selected.startPoint, document.segments, document.options.coincidenceEpsilon) : [];
+  const exitIntersections = selected && exitPoint
+    ? findLeadIntersections(selected.endPoint, exitPoint, selected.endPoint, document.segments, document.options.coincidenceEpsilon) : [];
   const canSetCircleCenterEntry = Boolean(
     selected &&
     canSetCircleOperationCenterPierceLeadIn(document, selected.id)
@@ -171,6 +176,7 @@ export function EditorEntryExitPanel({
           y={entryY}
         />
         {entryCoincident && <p role="status" className="text-amber-300">Entry is at the contour start. Choose a different point or use no entry.</p>}
+        {entryIntersections.length > 0 && <p role="status" className="text-amber-300">Entry touches or overlaps {entryIntersections.length} source segment(s) away from its contour attachment. Check the lead before applying.</p>}
         <div className="grid grid-cols-2 gap-1">
           <button
             aria-label="Set straight entry"
@@ -222,6 +228,7 @@ export function EditorEntryExitPanel({
           y={exitY}
         />
         {exitCoincident && <p role="status" className="text-amber-300">Exit is at the contour end. Choose a different point or use no exit.</p>}
+        {exitIntersections.length > 0 && <p role="status" className="text-amber-300">Exit touches or overlaps {exitIntersections.length} source segment(s) away from its contour attachment. Check the lead before applying.</p>}
         <button
           aria-label="Set straight exit"
           className="h-7 border border-border bg-background disabled:opacity-40"

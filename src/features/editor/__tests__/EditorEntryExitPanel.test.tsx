@@ -104,6 +104,12 @@ describe('EditorEntryExitPanel', () => {
     expect(button.disabled).toBe(false);
     await act(async () => button.click());
     expect(onApply).toHaveBeenCalledWith(operation.id, { x: side === 'Entry' ? 0 : 10, y: 2 });
+    await setCoordinate('Y', '0');
+    await setCoordinate('X', '5');
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('touches or overlaps 1 source segment');
+    expect(button.disabled).toBe(false);
+    await setCoordinate('Y', '2');
+    expect(container.querySelector('[role="status"]')).toBeNull();
   });
 
   it('shows required transition review and submits the displayed coordinates for confirmation', async () => {
