@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { findLeadIntersections } from '@/domain/path-intel/leadIntersections';
+import { deriveSourceMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { pointsEqual } from '@/domain/path-intel/segments';
 import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
@@ -75,18 +76,22 @@ export function EditorEntryExitPanel({
     setExitY(exitTo ? String(exitTo.y) : '');
   }, [selected?.id, exitTo?.x, exitTo?.y]);
 
+  const active = useMemo(() => selected ? deriveSourceMachiningOperations(document, selected.id) : null, [document, selected?.id]);
+  const effective = active?.status === 'ready' ? active.operations[0] : undefined;
+  const entryAttachment = effective?.startPoint ?? selected?.startPoint;
+  const exitAttachment = effective?.endPoint ?? selected?.endPoint;
   const entryPoint = readFinitePoint(entryX, entryY);
   const exitPoint = readFinitePoint(exitX, exitY);
   const entryCoincident = Boolean(selected && entryPoint &&
-    pointsEqual(entryPoint, selected.startPoint, document.options.coincidenceEpsilon));
+    (pointsEqual(entryPoint, selected.startPoint, document.options.coincidenceEpsilon) || (entryAttachment && pointsEqual(entryPoint, entryAttachment, document.options.coincidenceEpsilon))));
   const exitCoincident = Boolean(selected && exitPoint &&
-    pointsEqual(exitPoint, selected.endPoint, document.options.coincidenceEpsilon));
-  const entryIntersections = useMemo(() => selected && entryPoint
-    ? findLeadIntersections(entryPoint, selected.startPoint, selected.startPoint, document.segments, document.options.coincidenceEpsilon) : [],
-  [entryPoint?.x, entryPoint?.y, selected?.startPoint.x, selected?.startPoint.y, document.segments, document.options.coincidenceEpsilon]);
-  const exitIntersections = useMemo(() => selected && exitPoint
-    ? findLeadIntersections(selected.endPoint, exitPoint, selected.endPoint, document.segments, document.options.coincidenceEpsilon) : [],
-  [exitPoint?.x, exitPoint?.y, selected?.endPoint.x, selected?.endPoint.y, document.segments, document.options.coincidenceEpsilon]);
+    (pointsEqual(exitPoint, selected.endPoint, document.options.coincidenceEpsilon) || (exitAttachment && pointsEqual(exitPoint, exitAttachment, document.options.coincidenceEpsilon))));
+  const entryIntersections = useMemo(() => entryAttachment && entryPoint
+    ? findLeadIntersections(entryPoint, entryAttachment, entryAttachment, document.segments, document.options.coincidenceEpsilon) : [],
+  [entryPoint?.x, entryPoint?.y, entryAttachment?.x, entryAttachment?.y, document.segments, document.options.coincidenceEpsilon]);
+  const exitIntersections = useMemo(() => exitAttachment && exitPoint
+    ? findLeadIntersections(exitAttachment, exitPoint, exitAttachment, document.segments, document.options.coincidenceEpsilon) : [],
+  [exitPoint?.x, exitPoint?.y, exitAttachment?.x, exitAttachment?.y, document.segments, document.options.coincidenceEpsilon]);
   const canSetCircleCenterEntry = Boolean(
     selected &&
     canSetCircleOperationCenterPierceLeadIn(document, selected.id)
@@ -177,7 +182,7 @@ export function EditorEntryExitPanel({
           x={entryX}
           y={entryY}
         />
-        {entryCoincident && <p role="status" className="text-amber-300">Entry is at the contour start. Choose a different point or use no entry.</p>}
+        {entryCoincident && <p role="status" className="text-amber-300">Entry is at the source or active contour start. Choose a different point or use no entry.</p>}
         {entryIntersections.length > 0 && <p role="status" className="text-amber-300">Entry touches or overlaps {entryIntersections.length} source segment(s) away from its contour attachment. Check the lead before applying.</p>}
         <div className="grid grid-cols-2 gap-1">
           <button
@@ -229,7 +234,7 @@ export function EditorEntryExitPanel({
           x={exitX}
           y={exitY}
         />
-        {exitCoincident && <p role="status" className="text-amber-300">Exit is at the contour end. Choose a different point or use no exit.</p>}
+        {exitCoincident && <p role="status" className="text-amber-300">Exit is at the source or active contour end. Choose a different point or use no exit.</p>}
         {exitIntersections.length > 0 && <p role="status" className="text-amber-300">Exit touches or overlaps {exitIntersections.length} source segment(s) away from its contour attachment. Check the lead before applying.</p>}
         <button
           aria-label="Set straight exit"

@@ -1,5 +1,6 @@
+import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { analyzeContours } from '@/domain/path-intel/contours';
-import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
+import { deriveActiveMachiningOperations, deriveSourceMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { programStopValidationError } from '@/domain/path-intel/programStops';
 import { suggestCompensationIntent } from '@/domain/compensation/intent';
 import { buildChains } from '@/domain/path-intel/chains';
@@ -289,7 +290,19 @@ export function setPathOperationTransitions(
       pointsEqual(lead.from, lead.to, document.options.coincidenceEpsilon)
   )) return null;
   refreshPlan(next);
+  if (hasDegenerateActiveTransition(next, operationId)) return null;
   return next;
+}
+
+function hasDegenerateActiveTransition(document: PathPlanningDocument, operationId: string) {
+  const active = deriveSourceMachiningOperations(document, operationId);
+  return active?.status === 'ready' && active.operations.some((operation) => {
+    if ((operation.machiningIntent?.sourceOperationId ?? operation.id) !== operationId) return false;
+    const transitions = readOperationTransitions(operation);
+    return [transitions.entry, transitions.exit].some((lead) =>
+      lead && lead.strategy !== 'none' && pointsEqual(lead.from, lead.to, document.options.coincidenceEpsilon)
+    );
+  });
 }
 
 export function setProjectThreadingDefault(
@@ -646,6 +659,7 @@ export function setPathOperationManualLeadIn(
     }
   };
   refreshPlan(next);
+  if (hasDegenerateActiveTransition(next, operationId)) return null;
   return next;
 }
 

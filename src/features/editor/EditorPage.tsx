@@ -2078,7 +2078,7 @@ export function EditorPage({
       onStatusMessage?.('Circle-center entry requires one closed circular operation.', 'warning');
       return;
     }
-    applyPathDocumentEdit(edited, { selectedPathElement, selectedPathOperationId: operationId });
+    applyPathDocumentEdit(edited, { completedPendingSources: ['entry'], selectedPathElement, selectedPathOperationId: operationId });
   }
 
   function handleSetOperationManualEntry(

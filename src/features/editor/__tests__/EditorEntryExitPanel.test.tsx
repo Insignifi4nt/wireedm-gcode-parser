@@ -1,3 +1,4 @@
+import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -75,10 +76,12 @@ describe('EditorEntryExitPanel', () => {
     expect(onSetNoExit).toHaveBeenCalledWith(operationId);
   });
 
-  it.each(['Entry', 'Exit'] as const)('blocks a coincident %s and permits correcting its coordinates', async (side) => {
-    const document = createUpidFromDxfEntities([{
+  it.each([{ side: 'Entry', partial: false }, { side: 'Exit', partial: false }, { side: 'Entry', partial: true }, { side: 'Exit', partial: true }] as const)('blocks a coincident $side (partial $partial) and permits correcting it', async ({ side, partial }) => {
+    let document = createUpidFromDxfEntities([{
       type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
     }]);
+    if (partial) document = setMachiningSpanParticipation(document, { sourceSegmentId: document.segments[0].id, range: side === 'Entry' ? { start: 0, end: 0.4 } : { start: 0.6, end: 1 }, participation: 'inactive-reference' })!;
+    const endpointX = partial ? (side === 'Entry' ? 4 : 6) : (side === 'Entry' ? 0 : 10);
     const operation = document.plan.operations[0];
     const onApply = vi.fn();
     await act(async () => root.render(
@@ -94,7 +97,7 @@ describe('EditorEntryExitPanel', () => {
         input.dispatchEvent(new Event('input', { bubbles: true }));
       });
     };
-    await setCoordinate('X', side === 'Entry' ? '0' : '10');
+    await setCoordinate('X', String(endpointX));
     await setCoordinate('Y', '0');
     const button = container.querySelector<HTMLButtonElement>(`[aria-label="Set straight ${side.toLowerCase()}"]`)!;
     expect(button.disabled).toBe(true);
@@ -103,7 +106,7 @@ describe('EditorEntryExitPanel', () => {
     await setCoordinate('Y', '2');
     expect(button.disabled).toBe(false);
     await act(async () => button.click());
-    expect(onApply).toHaveBeenCalledWith(operation.id, { x: side === 'Entry' ? 0 : 10, y: 2 });
+    expect(onApply).toHaveBeenCalledWith(operation.id, { x: endpointX, y: 2 });
     await setCoordinate('Y', '0');
     await setCoordinate('X', '5');
     expect(container.querySelector('[role="status"]')?.textContent).toContain('touches or overlaps 1 source segment');
