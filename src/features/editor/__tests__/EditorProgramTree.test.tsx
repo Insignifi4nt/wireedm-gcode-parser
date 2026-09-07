@@ -55,6 +55,43 @@ describe('EditorProgramTree', () => {
     expect(onEdit.mock.calls[0]?.[0]).toMatchObject({
       kind: 'operation', operationId: document.plan.operations[0].id
     });
+    if (tree.status !== 'ready') throw new Error('Expected a ready execution plan');
+    const programRows = [...container.querySelectorAll('[data-tree-key="section:program"] > ul > li')];
+    expect(programRows.map((row) => row.getAttribute('data-tree-key'))).toEqual([
+      ...tree.programEvents.filter((node) => node.eventKind !== 'program-end').map((node) => node.treeKey),
+      ...tree.operations.map((node) => node.treeKey),
+      ...tree.programEvents.filter((node) => node.eventKind === 'program-end').map((node) => node.treeKey)
+    ]);
+  });
+
+  it('renders an operation diagnostic once and reaches it with keyboard navigation', async () => {
+    const source = createUpidFromDxfEntities([{
+      type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
+    }]);
+    const tree = buildUpidEditorTree(source);
+    if (tree.status === 'ready') throw new Error('Expected unresolved initial wire position');
+    const operation = tree.operations[0];
+    const diagnostic = { ...tree.diagnostics[0], operationId: operation.operationId };
+    const onEdit = vi.fn();
+    await act(async () => root.render(
+      <EditorProgramTree
+        tree={{ ...tree, diagnostics: [diagnostic], operations: [{ ...operation, children: [diagnostic] }] }}
+        expandedTreeKeys={new Set(['section:program', operation.treeKey])}
+        onEdit={onEdit} onSelect={vi.fn()} onExpandedTreeKeysChange={vi.fn()} selectedTreeKey={null}
+      />
+    ));
+    const rows = [...container.querySelectorAll<HTMLElement>('[data-tree-key]')];
+    expect(rows.filter((row) => row.dataset.treeKey === diagnostic.treeKey)).toHaveLength(1);
+    const operationRow = rows.find((row) => row.dataset.treeKey === operation.treeKey);
+    if (!operationRow) throw new Error('Missing operation row');
+    expect(operationRow.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('unresolved');
+    await act(async () => {
+      operationRow.focus();
+      operationRow.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    });
+    expect(document.activeElement?.getAttribute('data-tree-key')).toBe(diagnostic.treeKey);
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(onEdit).toHaveBeenCalledWith(diagnostic, diagnostic.treeKey);
   });
 
   it('surfaces unresolved execution diagnostics without creating post-specific nodes', async () => {

@@ -134,10 +134,17 @@ export function EditorProgramTree(props: EditorProgramTreeProps) {
 }
 
 function buildItems(tree: UpidEditorTree): readonly TreeItem[] {
-  const programChildren: EditorProgramTreeNode[] = [
-    ...(tree.status === 'ready' ? tree.programEvents : tree.diagnostics),
-    ...tree.operations
-  ];
+  const operationChildKeys = new Set(tree.operations.flatMap((node) => node.children.map((child) => child.treeKey)));
+  const programChildren: EditorProgramTreeNode[] = tree.status === 'ready'
+    ? [
+        ...tree.programEvents.filter((node) => node.eventKind !== 'program-end'),
+        ...tree.operations,
+        ...tree.programEvents.filter((node) => node.eventKind === 'program-end')
+      ]
+    : [
+        ...tree.diagnostics.filter((node) => !operationChildKeys.has(node.treeKey)),
+        ...tree.operations
+      ];
   return [
     section(SOURCE_SECTION, 'Source & Setup', tree.sourceSetup, tree.status),
     section(PROGRAM_SECTION, 'Execution Plan', programChildren, tree.status)
@@ -150,8 +157,8 @@ function section(key: string, label: string, nodes: readonly EditorProgramTreeNo
 
 function nodeItem(node: EditorProgramTreeNode, level: number, parentKey: string): TreeItem {
   const children = node.kind === 'operation' ? node.children : [];
-  const status = node.kind === 'operation' && node.execution === 'inactive'
-    ? 'inactive' : node.kind === 'diagnostic' ? 'unresolved' : 'ready';
+  const status = node.kind === 'operation' && node.execution !== 'included'
+    ? node.execution : node.kind === 'diagnostic' ? 'unresolved' : 'ready';
   return {
     children: children.map((child) => nodeItem(child, level + 1, node.treeKey)),
     key: node.treeKey,
