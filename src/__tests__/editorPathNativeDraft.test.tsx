@@ -11,6 +11,7 @@ import {
   setManualInitialWirePosition,
   setClosedOperationStartNearPoint,
   setPathOperationClassification,
+  setPathOperationTransitions,
   translatePathDocument
 } from '@/domain/path-editor/pathDocumentOperations';
 import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
@@ -2048,8 +2049,17 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-selected-point-role]')?.textContent).toBe('start');
   });
 
-  it('projects pointer and keyboard hover for contour, segment, endpoint, and lead-in rows', async () => {
-    const project = projectWithUpid(pathDocumentFromCircleWithLeadIn());
+  it('projects pointer and keyboard hover for geometry and both lead rows, and inspects the exit', async () => {
+    const document = pathDocumentFromCircleWithLeadIn();
+    const operation = document.plan.operations[0];
+    const edited = setPathOperationTransitions(document, operation.id, {
+      ...operation.transitions,
+      exit: {
+        strategy: 'manual-straight', move: 'cut', from: operation.endPoint,
+        to: { x: operation.endPoint.x + 3, y: operation.endPoint.y + 4 }, review: 'reviewed'
+      }
+    })!;
+    const project = projectWithUpid(edited);
 
     await act(async () => {
       root.render(
@@ -2070,6 +2080,7 @@ describe('EditorPage UPID draft boundary', () => {
     ) as HTMLElement | null;
     const endpointSelect = endpointRow?.querySelector('[data-upid-point-select]') as HTMLButtonElement | null;
     const leadInRow = container.querySelector('[data-upid-tree-row-kind="lead-in"]') as HTMLButtonElement | null;
+    const leadOutRow = container.querySelector('[data-upid-tree-row-kind="lead-out"]') as HTMLButtonElement | null;
 
     expect(contourRow?.getAttribute('aria-label')).toBe('Select Exterior 1');
     expect(segmentRow?.getAttribute('aria-label')).toBe('Select segment 1 in Exterior 1');
@@ -2080,7 +2091,8 @@ describe('EditorPage UPID draft boundary', () => {
       [contourRow, contourRow],
       [segmentRow, segmentRow],
       [endpointRow, endpointSelect],
-      [leadInRow, leadInRow]
+      [leadInRow, leadInRow],
+      [leadOutRow, leadOutRow]
     ] as const) {
       expect(row).not.toBeNull();
       expect(focusTarget).not.toBeNull();
@@ -2120,6 +2132,11 @@ describe('EditorPage UPID draft boundary', () => {
       expect(row?.getAttribute('data-upid-hovered')).not.toBe('true');
     }
 
+    await clickElement('[data-upid-tree-row-kind="lead-out"]');
+    expect(container.querySelector('path[data-preview-travel="lead-out"]')?.getAttribute('data-preview-selected')).toBe('true');
+    await clickElement('[data-editor-workflow-command="view.statistics"]');
+    expect(container.querySelector('[data-upid-selected-travel="kind"]')?.textContent).toBe('lead-out');
+    expect(container.querySelector('[data-upid-selected-travel="length"]')?.textContent).toBe('5.000');
   });
 
   it('associates rich endpoint help with the Contour Tree selection action only', async () => {

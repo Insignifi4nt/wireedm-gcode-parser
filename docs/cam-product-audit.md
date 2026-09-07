@@ -78,7 +78,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 
 ## Additional findings to verify
 
-- Entry/Exit research follow-up: zero-length leads may be accepted and emitted despite being omitted from preview; start/direction edits may preserve review on geometrically changed approaches. Verify appropriate review invalidation and clearance/intersection diagnostics. Fixed lead-out inspection falling through to rapid-in and positioning inspection ignoring the previous exit destination. First positioning inspection now requires a resolved initial wire position. The navigator still needs a matching exit row; partial/inactive operation travel inspection needs a separate consistency pass.
+- Entry/Exit research follow-up: zero-length leads may be accepted and emitted despite being omitted from preview; start/direction edits may preserve review on geometrically changed approaches. Verify appropriate review invalidation and clearance/intersection diagnostics. Fixed lead-out inspection falling through to rapid-in and positioning inspection ignoring the previous exit destination. First positioning inspection now requires a resolved initial wire position. Navigator entry/exit rows now share a compact implementation with strategy, review state and length; selection reveals detailed geometry. Partial/inactive operation travel inspection needs a separate consistency pass.
 
 - Raw G-code parsing currently has no unit field. Do not label its raw coordinate preview as millimeters until modal units and conversions are handled correctly.
 - Removed the legacy path-preview count helper and the ambiguous canvas "path items" counter. It mixed geometric segments with inferred controller moves, omitted exit moves and split circles into two counts. Explicit operation/contour/segment counts remain in Statistics; any future execution-motion statistics must come from the execution trace.
@@ -105,6 +105,7 @@ Screenshots were captured and inspected during this audit. They establish layout
 - Diagnostic keyboard correction: 82 editor integration tests and production build passed. A snapped-endpoint regression verifies that nested Enter retains the selected 10.004 mm endpoint and Space on the row selects its primary segment.
 - Entry/Exit form corrections: 86 focused panel/editor tests and production build passed. Both entry and exit drafts survive application of the opposite transition, and required-review coordinates remain available for explicit confirmation.
 - Travel inspection: 110 focused domain/editor tests and production build passed. Regressions verify exit-lead endpoints and length, subsequent positioning from the exit destination, and reviewed initial-wire coordinates without inventing an unresolved start.
+- Navigator leads: 82 editor integration tests and production build passed. Pointer/keyboard hover covers both leads; selecting an exit highlights the matching preview path and inspects its 5 mm length. Rendered compact exit row and canvas selection inspected at 1355 × 900 (`tmp/cam-audit/08-compact-exit-row.png`). Removed duplicate coordinate/length blocks from the entry row.
 
 ## Next audit work
 

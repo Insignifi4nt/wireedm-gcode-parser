@@ -33,6 +33,7 @@ import type {
   PathOperation,
   PathPlanningDocument,
   OperationEntry,
+  OperationExit,
   PathSegment,
   Point2
 } from '@/domain/path-intel/types';
@@ -2043,6 +2044,9 @@ function renderContourTreeNode({
   treeDepth: number;
 }) {
   const { element } = node;
+  const transitions = pathDocument.plan.operations.find(
+    (operation) => operation.id === element.operationId
+  )?.transitions;
   const nested = treeDepth > 0;
   const manualDecisions = upidManualDecisionKinds(element);
   const label = element.displayName;
@@ -2233,22 +2237,8 @@ function renderContourTreeNode({
           </button>
           {cutPathExpanded && (
             <div className={compact ? '' : 'border-t border-border bg-card/35'} data-upid-segment-stack>
-              {(() => {
-                const operation = pathDocument.plan.operations.find(
-                  (operation) => operation.id === element.operationId
-                );
-                const entry = operation?.transitions?.entry;
-                return entry && entry.strategy !== 'none'
-                  ? renderLeadInRow(
-                      element,
-                      entry,
-                      hoveredPathElement,
-                      selectedPathElement,
-                      onHoverPathElement,
-                      onSelectPathElement
-                    )
-                  : null;
-              })()}
+              {renderLeadRow(element, transitions?.entry, 'lead-in', hoveredPathElement,
+                selectedPathElement, onHoverPathElement, onSelectPathElement)}
               {element.segmentRefs.map((ref, index) =>
                 renderSegmentRow(
                   element,
@@ -2267,6 +2257,8 @@ function renderContourTreeNode({
                   treeDepth
                 )
               )}
+              {renderLeadRow(element, transitions?.exit, 'lead-out', hoveredPathElement,
+                selectedPathElement, onHoverPathElement, onSelectPathElement)}
             </div>
           )}
         </>
@@ -2439,104 +2431,62 @@ function formatSegmentRowHelp({
   return `${segment.kind} segment ${index + 1} in ${pathElement.displayName}; ${ref.reversed ? 'reversed' : 'forward'} reference; source ${segment.source.sourceEntityType} entity ${segment.source.sourceEntityIndex + 1}${sourceHandle}${sourceSubIndex}; ${segment.source.exact ? 'exact' : 'approximated'} provenance; layer ${segment.layer ?? '-'}${edit}; ${diagnostics}. Selects and highlights one segment.`;
 }
 
-function renderLeadInRow(
+function renderLeadRow(
   pathElement: UpidOperationPathElement,
-  leadIn: Exclude<OperationEntry, { strategy: 'none' }>,
+  lead: OperationEntry | OperationExit | undefined,
+  travelRole: 'lead-in' | 'lead-out',
   hoveredPathElement: EditorPathElementRef | null,
   selectedPathElement: EditorPathElementRef | null,
   onHoverPathElement: (element: EditorPathElementRef | null) => void,
   onSelectPathElement: (element: EditorPathElementRef) => void
 ) {
+  if (!lead || lead.strategy === 'none') return null;
   const element: EditorPathElementRef = {
     operationId: pathElement.operationId,
     pathElementId: pathElement.id,
     segmentId: null,
-    travelRole: 'lead-in'
+    travelRole
   };
-  const hovered =
-    hoveredPathElement?.operationId === pathElement.operationId && hoveredPathElement.travelRole === 'lead-in';
-  const selected =
-    selectedPathElement?.operationId === pathElement.operationId && selectedPathElement.travelRole === 'lead-in';
-  const length = Math.hypot(leadIn.to.x - leadIn.from.x, leadIn.to.y - leadIn.from.y);
-  const strategyLabel = leadIn.strategy === 'circle-center'
-    ? 'Circle-center entry'
-    : 'Manual straight entry';
+  const hovered = hoveredPathElement?.operationId === pathElement.operationId &&
+    hoveredPathElement.travelRole === travelRole;
+  const selected = selectedPathElement?.operationId === pathElement.operationId &&
+    selectedPathElement.travelRole === travelRole;
+  const length = Math.hypot(lead.to.x - lead.from.x, lead.to.y - lead.from.y);
+  const label = travelRole === 'lead-in' ? 'Entry' : 'Exit';
+  const strategy = lead.strategy === 'circle-center' ? 'Circle center' : 'Straight';
+  const reviewRequired = 'review' in lead && lead.review === 'required';
 
   return (
-    <div
-      className="border-l border-border/70 pl-2"
-      data-upid-lead-in-row
+    <button
+      aria-label={`Select ${travelRole} for ${pathElement.displayName}`}
+      aria-pressed={selected}
+      className={`flex w-full items-center gap-2 border-l border-border/70 px-2 py-1 text-left text-[10px] text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+        selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : 'hover:bg-accent'
+      }`}
       data-upid-operation-id={pathElement.operationId}
       data-upid-path-element-id={pathElement.id}
+      data-upid-hovered={hovered ? 'true' : undefined}
       data-upid-selected={selected ? 'true' : undefined}
-      data-upid-travel-role="lead-in"
-      key={`${pathElement.id}-lead-in`}
+      data-upid-travel-role={travelRole}
+      data-upid-tree-row-action={`select-${travelRole}`}
+      data-upid-tree-row-kind={travelRole}
+      data-upid-tree-row-level="1"
+      onBlur={() => onHoverPathElement(null)}
+      onClick={() => onSelectPathElement(element)}
+      onFocus={() => onHoverPathElement(element)}
+      onMouseEnter={() => onHoverPathElement(element)}
+      onMouseLeave={() => onHoverPathElement(null)}
+      onPointerEnter={() => onHoverPathElement(element)}
+      onPointerLeave={() => onHoverPathElement(null)}
+      title={`${label}: ${formatPoint(lead.from)} → ${formatPoint(lead.to)}`}
+      type="button"
     >
-      <button
-        aria-label={`Select lead-in for ${pathElement.displayName}`}
-        aria-pressed={selected}
-        className={`grid w-full grid-cols-[28px_minmax(0,1fr)] gap-1 px-1.5 py-1 text-left text-[10px] text-muted-foreground outline-none ${
-          selected ? 'bg-sky-500/15 text-sky-100' : hovered ? 'bg-cyan-500/15 text-cyan-100' : ''
-        }`}
-        data-upid-hovered={hovered ? 'true' : undefined}
-        data-upid-selected={selected ? 'true' : undefined}
-        data-upid-tree-row-action="select-lead-in"
-        data-upid-tree-row-kind="lead-in"
-        data-upid-tree-row-level="1"
-        onBlur={() => onHoverPathElement(null)}
-        onClick={() => onSelectPathElement(element)}
-        onFocus={() => onHoverPathElement(element)}
-        onMouseEnter={() => onHoverPathElement(element)}
-        onMouseLeave={() => onHoverPathElement(null)}
-        onPointerEnter={() => onHoverPathElement(element)}
-        onPointerLeave={() => onHoverPathElement(null)}
-        title={`${strategyLabel} for ${pathElement.displayName}: ${formatPoint(leadIn.from)} → ${formatPoint(leadIn.to)}; length ${length.toFixed(3)}. Selects and highlights the entry.`}
-        type="button"
-      >
-        <span className="flex flex-col items-center gap-0.5 pt-0.5" data-upid-tree-depth-rail="lead-in">
-          <span className="text-[10px] uppercase" data-upid-tree-depth-label="lead-in">
-            Entry
-          </span>
-          <Flag className="size-3" />
-          <span className="h-full min-h-5 border-l border-border/70" aria-hidden="true" />
-        </span>
-        <span className="min-w-0">
-          <span className="flex min-w-0 flex-wrap items-center gap-1">
-            <span
-              className="shrink-0 border border-amber-400/40 bg-amber-400/10 px-1 text-[10px] uppercase text-amber-100"
-              data-upid-tree-kind-label
-              title={`${strategyLabel}: selects the configured cut entry.`}
-            >
-              Lead-in
-            </span>
-            <span className="truncate text-[10px] text-muted-foreground">{strategyLabel}</span>
-          </span>
-          <span
-            className="mt-0.5 block text-[10px] uppercase tracking-normal text-muted-foreground"
-            data-upid-tree-action-hint
-          >
-            selects cut entry on canvas
-          </span>
-          <span className="block truncate" data-upid-lead-in-span>
-            {formatPoint(leadIn.from)} → {formatPoint(leadIn.to)}
-          </span>
-          <span className="mt-1 grid gap-0.5 text-[10px]">
-            <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-lead-in-field="from">
-              <span className="uppercase text-muted-foreground">From</span>
-              <span className="truncate text-foreground">{formatPoint(leadIn.from)}</span>
-            </span>
-            <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-lead-in-field="to">
-              <span className="uppercase text-muted-foreground">To</span>
-              <span className="truncate text-foreground">{formatPoint(leadIn.to)}</span>
-            </span>
-            <span className="grid grid-cols-[42px_minmax(0,1fr)] gap-1" data-upid-lead-in-field="length">
-              <span className="uppercase text-muted-foreground">Length</span>
-              <span className="truncate text-foreground">{length.toFixed(3)} mm</span>
-            </span>
-          </span>
-        </span>
-      </button>
-    </div>
+      <Flag className="size-3 shrink-0" aria-hidden="true" />
+      <span className="font-medium text-foreground">{label}</span>
+      <span className="truncate">{strategy}</span>
+      {reviewRequired && <span className="text-amber-200">Review required</span>}
+      <span className="ml-auto shrink-0 tabular-nums">{length.toFixed(3)} mm</span>
+    </button>
   );
 }
 
