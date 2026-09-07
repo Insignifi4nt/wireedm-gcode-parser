@@ -57,13 +57,9 @@ export function EditorBetweenContoursPanel({
 
   return (
     <section className="grid gap-2 text-[10px]" data-between-contours-panel>
-      <div>
-        <h3 className="text-[11px] font-semibold">Between Contours</h3>
-        <p className="mt-1 text-muted-foreground">
-          Positioning travel is derived from cut exits and entries. Edit those points in Entry / Exit;
-          this panel owns only the between-contour threading lifecycle.
-        </p>
-      </div>
+      <p className="text-muted-foreground">
+        Choose how to separate and rethread the wire between cuts. Change connection points in Entry / Exit.
+      </p>
 
       <label className="grid gap-1 uppercase text-muted-foreground">
         Destination operation
@@ -101,7 +97,7 @@ export function EditorBetweenContoursPanel({
               point={route.endPoint}
             />
             <div className="flex justify-between text-muted-foreground">
-              <span>Derived rapid distance</span>
+              <span>Positioning distance</span>
               <span className="font-mono text-foreground">{route.length.toFixed(3)} mm</span>
             </div>
           </fieldset>
@@ -183,7 +179,7 @@ export function EditorBetweenContoursPanel({
             )}
             <p className={threading ? 'text-emerald-300' : 'text-amber-300'}>
               {threading
-                ? `${threading.mode} threading · ${threading.wireSeparation}`
+                ? threadingSummary(threading)
                 : 'Choose an explicit project or operation threading transition.'}
             </p>
           </fieldset>
@@ -200,6 +196,14 @@ function ReadOnlyPoint({ label, point }: { label: string; point: Point2 }) {
       <span className="font-mono text-foreground">{formatPoint(point)}</span>
     </div>
   );
+}
+
+function threadingSummary(transition: Omit<OperationThreadingTransition, 'source'>) {
+  if (transition.mode === 'continuous') return 'Keep the wire threaded while positioning to the next cut.';
+  if (transition.mode === 'automatic') return 'Separate the wire automatically, position, then rethread automatically.';
+  return transition.wireSeparation === 'manual-before-positioning'
+    ? 'Stop for manual wire separation, position, then rethread manually.'
+    : 'Wire is already separated. Position, then rethread manually.';
 }
 
 function threadingForMode(mode: string): Omit<OperationThreadingTransition, 'source'> {
