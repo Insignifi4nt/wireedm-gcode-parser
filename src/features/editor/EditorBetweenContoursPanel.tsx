@@ -39,22 +39,21 @@ export function EditorBetweenContoursPanel({
   const selected = operations.find(
     (operation) => operation.id === selectedOperationId
   ) ?? operations[0] ?? null;
-  const selectedExecutionIndex = selected
-    ? operations.findIndex((operation) => operation.id === selected.id)
-    : -1;
+  const routes = derivePlannedRapidRoutes(document);
   const route = selected
-    ? derivePlannedRapidRoutes(document).find(
+    ? routes.find(
         (candidate) => candidate.operationId === selected.id
       ) ?? null
     : null;
   const threading = selected?.threadingTransition ?? document.setup?.threadingDefault ?? null;
   const projectThreading = document.setup?.threadingDefault;
 
-  if (!selected || !route) {
+  if (!selected) {
     return <p className="text-[10px] text-muted-foreground">No operations are available.</p>;
   }
 
-  const previous = operations[selectedExecutionIndex - 1] ?? null;
+  const previousId = route ? routes[route.orderIndex - 1]?.operationId : null;
+  const previous = operations.find((operation) => operation.id === previousId);
 
   return (
     <section className="grid gap-2 text-[10px]" data-between-contours-panel>
@@ -83,7 +82,9 @@ export function EditorBetweenContoursPanel({
         </select>
       </label>
 
-      {selectedExecutionIndex === 0 ? (
+      {!route ? (
+        <p className="text-amber-300">No active connection is available. Check excluded ranges and unresolved machining participation.</p>
+      ) : route.orderIndex === 0 ? (
         <div className="border border-sky-500/40 bg-sky-500/5 p-2 text-sky-100">
           The first connection belongs to Initial wire position. Configure its origin there; the
           destination remains the first contour entry or contour start.

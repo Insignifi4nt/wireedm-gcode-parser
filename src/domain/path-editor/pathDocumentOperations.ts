@@ -1,4 +1,5 @@
 import { analyzeContours } from '@/domain/path-intel/contours';
+import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { programStopValidationError } from '@/domain/path-intel/programStops';
 import { suggestCompensationIntent } from '@/domain/compensation/intent';
 import { buildChains } from '@/domain/path-intel/chains';
@@ -88,15 +89,18 @@ export type PathMirrorAxis = 'x' | 'y';
 export function derivePlannedRapidRoutes(
   document: PathPlanningDocument
 ): PlannedRapidRoute[] {
+  const active = deriveActiveMachiningOperations(document);
+  if (active.status !== 'ready') return [];
   const initialWire = resolveInitialWirePosition(document);
   let currentPoint =
     initialWire.status === 'ready' ? initialWire.point : document.options.startPoint;
-  return orderedPathOperations(document.plan.operations).map((operation, orderIndex) => {
+  return active.operations.map((operation, orderIndex) => {
+    const sourceOperationId = operation.machiningIntent?.sourceOperationId ?? operation.id;
     const entry = operation.transitions?.entry;
     const endPoint = resolvedOperationEntryPoint(operation);
     const route = {
-      id: `rapid_${operation.id}`,
-      operationId: operation.id,
+      id: `rapid_${sourceOperationId}`,
+      operationId: sourceOperationId,
       orderIndex,
       startPoint: { ...currentPoint },
       endPoint: { ...endPoint },

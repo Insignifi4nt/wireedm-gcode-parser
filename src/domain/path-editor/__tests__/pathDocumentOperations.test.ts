@@ -260,6 +260,26 @@ describe('pathDocumentOperations', () => {
     ]);
   });
 
+  it('derives connections from partial cutting endpoints and skips fully excluded operations', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 20, y: 0 }, end: { x: 30, y: 0 } }
+    ]);
+    const [first, second] = document.plan.operations;
+    const partial = setMachiningSpanParticipation(document, {
+      sourceSegmentId: first.segmentRefs[0].segmentId, range: { start: 0.6, end: 1 }, participation: 'inactive-reference'
+    })!;
+    expect(derivePlannedRapidRoutes(partial)[1]).toMatchObject({
+      operationId: second.id, startPoint: { x: 6, y: 0 }, endPoint: { x: 20, y: 0 }, length: 14
+    });
+    const excluded = setMachiningSpanParticipation(document, {
+      sourceSegmentId: first.segmentRefs[0].segmentId, range: { start: 0, end: 1 }, participation: 'inactive-reference'
+    })!;
+    expect(derivePlannedRapidRoutes(excluded)).toEqual([
+      expect.objectContaining({ operationId: second.id, orderIndex: 0 })
+    ]);
+  });
+
   it('preserves per-operation threading intent through geometry transforms and replanning', () => {
     let document = createPathPlanningDocumentFromDxfEntities([
       ...rectangleLines(0, 0, 5, 5),
