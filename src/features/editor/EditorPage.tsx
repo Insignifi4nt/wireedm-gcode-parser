@@ -1892,6 +1892,7 @@ export function EditorPage({
     completedSource: 'transform-target' | 'transform-translate' = 'transform-translate'
   ) {
     if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
+    if (delta.x === 0 && delta.y === 0) return;
 
     const edited = selectedPathElement?.segmentId
       ? translatePathSegment(pathDocumentDraft, selectedPathElement.segmentId, delta)
@@ -1901,13 +1902,7 @@ export function EditorPage({
           ? translatePathOperation(pathDocumentDraft, selectedPathOperationId, delta)
           : null;
 
-    if (edited) {
-      clearActiveWorkflowPending(completedSource);
-      applyPathDocumentEdit(edited, {
-        selectedPathElement,
-        selectedPathOperationId
-      });
-    }
+    applyPathTransform(edited, { completedPendingSources: [completedSource] });
   }
 
   function handleTranslatePathDocument(
@@ -1915,15 +1910,10 @@ export function EditorPage({
     completedSource: 'transform-target' | 'transform-translate' = 'transform-translate'
   ) {
     if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || isEditorMutationLocked) return;
+    if (delta.x === 0 && delta.y === 0) return;
 
     const edited = translatePathDocument(pathDocumentDraft, delta);
-    if (edited) {
-      clearActiveWorkflowPending(completedSource);
-      applyPathDocumentEdit(edited, {
-        selectedPathElement,
-        selectedPathOperationId
-      });
-    }
+    applyPathTransform(edited, { completedPendingSources: [completedSource] });
   }
 
   function handleRotatePathSelection(angleDegrees: number) {
@@ -1944,12 +1934,7 @@ export function EditorPage({
           ? rotatePathOperation(pathDocumentDraft, selectedPathOperationId, angleDegrees, origin)
           : null;
 
-    if (edited) {
-      applyPathDocumentEdit(edited, {
-        selectedPathElement,
-        selectedPathOperationId
-      });
-    }
+    applyPathTransform(edited);
   }
 
   function handleMirrorPathSelection(axis: PathMirrorAxis) {
@@ -1970,12 +1955,7 @@ export function EditorPage({
           ? mirrorPathOperation(pathDocumentDraft, selectedPathOperationId, axis, origin)
           : null;
 
-    if (edited) {
-      applyPathDocumentEdit(edited, {
-        selectedPathElement,
-        selectedPathOperationId
-      });
-    }
+    applyPathTransform(edited);
   }
 
   function handleRotatePathDocument(angleDegrees: number) {
@@ -1985,12 +1965,7 @@ export function EditorPage({
     if (!origin) return;
 
     const edited = rotatePathDocument(pathDocumentDraft, angleDegrees, origin);
-    if (edited) {
-      applyPathDocumentEdit(edited, {
-        selectedPathElement,
-        selectedPathOperationId
-      });
-    }
+    applyPathTransform(edited);
   }
 
   function handleMirrorPathDocument(axis: PathMirrorAxis) {
@@ -2000,12 +1975,7 @@ export function EditorPage({
     if (!origin) return;
 
     const edited = mirrorPathDocument(pathDocumentDraft, axis, origin);
-    if (edited) {
-      applyPathDocumentEdit(edited, {
-        selectedPathElement,
-        selectedPathOperationId
-      });
-    }
+    applyPathTransform(edited);
   }
 
   function handleMovePathSelectionCenter(targetCenter: { x: number; y: number }) {
@@ -2040,25 +2010,17 @@ export function EditorPage({
             ? translatePathOperation(pathDocumentDraft, dragTarget.operationId, delta)
             : null;
 
-    if (edited) {
-      applyPathDocumentEdit(edited, {
-        selectedPathElement: dragTarget,
-        selectedPathOperationId: dragTarget.operationId
-      });
-    }
+    applyPathTransform(edited, {
+      selectedPathElement: dragTarget,
+      selectedPathOperationId: dragTarget.operationId
+    });
   }
 
   function handleMoveSelectedSegmentCenter(targetCenter: { x: number; y: number }) {
     if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || !selectedPathElement?.segmentId || isEditorMutationLocked) return;
 
     const edited = movePathSegmentCenterTo(pathDocumentDraft, selectedPathElement.segmentId, targetCenter);
-    if (edited) {
-      clearActiveWorkflowPending('transform-target');
-      applyPathDocumentEdit(edited, {
-        selectedPathElement,
-        selectedPathOperationId
-      });
-    }
+    applyPathTransform(edited, { completedPendingSources: ['transform-target'] });
   }
 
   function handleMovePathSegmentCenter(
@@ -2068,16 +2030,28 @@ export function EditorPage({
     if (!activeWorkflowOwns('geometry.transform') || !pathDocumentDraft || !element.segmentId || isEditorMutationLocked) return;
 
     const edited = movePathSegmentCenterTo(pathDocumentDraft, element.segmentId, targetCenter);
-    if (edited) {
-      applyPathDocumentEdit(edited, {
-        selectedPathElement: {
-          operationId: element.operationId,
-          pathElementId: element.pathElementId ?? null,
-          segmentId: element.segmentId
-        },
-        selectedPathOperationId: element.operationId
-      });
+    applyPathTransform(edited, {
+      selectedPathElement: {
+        operationId: element.operationId,
+        pathElementId: element.pathElementId ?? null,
+        segmentId: element.segmentId
+      },
+      selectedPathOperationId: element.operationId
+    });
+  }
+
+  function applyPathTransform(
+    nextDocument: PathPlanningDocument | null,
+    options: Parameters<typeof applyPathDocumentEdit>[1] = {}
+  ) {
+    if (!nextDocument) {
+      onStatusMessage?.(
+        'Cannot apply transform. Check the coordinates, or move the whole contour to preserve its machining decisions.',
+        'warning'
+      );
+      return;
     }
+    applyPathDocumentEdit(nextDocument, options);
   }
 
   function applyPathDocumentEdit(
@@ -2157,7 +2131,7 @@ export function EditorPage({
 
     const clonedDraft = cloneEditorDraftState(nextDraft);
     const nextPathDocument = editorDraftPathDocument(clonedDraft);
-    const nextSelectedPathOperationId = nextPathDocument
+    const candidateSelectedPathOperationId = nextPathDocument
       ? options.selectedPathOperationId ?? selectedPathOperationId
       : null;
     const candidateSelectedPathElement = Object.hasOwn(options, 'selectedPathElement')
@@ -2166,10 +2140,15 @@ export function EditorPage({
     const nextSelectedPathElement = nextPathDocument
       ? normalizeUpidPathElementSelection(
           nextPathDocument,
-          nextSelectedPathOperationId,
+          candidateSelectedPathOperationId,
           candidateSelectedPathElement
         )
       : null;
+    const nextSelectedPathOperationId = candidateSelectedPathOperationId === null && candidateSelectedPathElement === null
+      ? null
+      : nextSelectedPathElement?.operationId ??
+        (nextPathDocument?.plan.operations.some((operation) => operation.id === candidateSelectedPathOperationId)
+          ? candidateSelectedPathOperationId : null);
     const nextProgramExactTarget = reconcileProgramExactTarget(
       selectedProgramExactTarget,
       nextPathDocument

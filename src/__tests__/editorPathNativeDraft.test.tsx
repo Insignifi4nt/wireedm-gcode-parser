@@ -12,6 +12,7 @@ import {
   setClosedOperationStartNearPoint,
   setPathOperationClassification,
   setPathOperationTransitions,
+  reversePathOperation,
   translatePathDocument
 } from '@/domain/path-editor/pathDocumentOperations';
 import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
@@ -65,6 +66,28 @@ describe('EditorPage UPID draft boundary', () => {
       Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
     }
     vi.restoreAllMocks();
+  });
+
+  it('explains a refused topology edit and preserves its coordinates and source geometry', async () => {
+    const source = pathDocumentFromRectangle();
+    const document = reversePathOperation(source, source.plan.operations[0].id);
+    if (!document) throw new Error('Expected reversed contour');
+    const operation = document.plan.operations[0];
+    const onStatusMessage = vi.fn();
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()}
+      onStatusMessage={onStatusMessage} project={projectWithUpid(document)} />));
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="view.contours"]');
+    await clickElement(`path[data-preview-source="path-document"][data-preview-segment="${operation.segmentRefs[0].segmentId}"][data-type="cut"]`);
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await clickElement('button[aria-label="Target selection for transform"]');
+    const original = previewGeometrySignature();
+    await changeInput('input[aria-label="Translate X"]', '50');
+    await clickElement('button[aria-label="Apply translation to selected path geometry"]');
+    expect(onStatusMessage).toHaveBeenCalledWith(expect.stringContaining('move the whole contour'), 'warning');
+    expect(previewGeometrySignature()).toBe(original);
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Translate X"]')?.value).toBe('50');
+    expect(container.querySelector<HTMLButtonElement>('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]')?.disabled).toBe(true);
   });
 
   it('clears pending entry coordinates when circle-center entry replaces them', async () => {
@@ -3568,6 +3591,7 @@ function EditorPageHarness({
   interactionLocked = false,
   onBackToDashboard = noop,
   onImportProgramFile = noop,
+  onStatusMessage,
   onSaveEditorDraft,
   project,
   saveStatus = 'idle'
@@ -3577,6 +3601,7 @@ function EditorPageHarness({
   interactionLocked?: boolean;
   onBackToDashboard?: () => void;
   onImportProgramFile?: (file: File) => void;
+  onStatusMessage?: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void;
   onSaveEditorDraft: (draft: EditorSaveDraft) => void;
   project: TestUpidProject;
   saveStatus?: 'error' | 'idle' | 'saving';
@@ -3656,6 +3681,7 @@ function EditorPageHarness({
           }
         })}
         onImportProgramFile={onImportProgramFile}
+        onStatusMessage={onStatusMessage}
         onSaveEditorDraft={onSaveEditorDraft}
         planningMachine={null}
         program={{

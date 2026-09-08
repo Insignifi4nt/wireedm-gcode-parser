@@ -10,6 +10,7 @@ import { connectWorkbenchDirectory } from '@/domain/storage/connectWorkbenchDire
 import { FakeDirectoryHandle } from '@/domain/storage/__tests__/fakeDirectoryHandle';
 import { defaultAppServices, type AppServices } from './appServices';
 import { useWorkbenchAppController } from './useWorkbenchAppController';
+import { MAX_PORTABLE_UPID_BYTES } from '@/domain/upid/portableUpidProject';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -51,6 +52,28 @@ describe('workbench controller asynchronous operations', () => {
     if (!imported.ok) throw new Error(imported.error.message);
     return imported;
   }
+
+  it('rejects oversized UPID before reading bytes and permits a later small import', async () => {
+    const imported = vi.fn(defaultAppServices.importPortableUpidProject);
+    const read = await mount({ importPortableUpidProject: imported });
+    const before = read().connectedWorkbench;
+    const oversized = new File([], 'large.upid.json');
+    const readText = vi.fn(async () => '{}');
+    Object.defineProperty(oversized, 'size', { value: MAX_PORTABLE_UPID_BYTES + 1 });
+    Object.defineProperty(oversized, 'text', { value: readText });
+    await act(async () => { await read().handleImportUpidFile(oversized); });
+    expect(readText).not.toHaveBeenCalled();
+    expect(imported).not.toHaveBeenCalled();
+    expect(read().importErrorMessage).toContain('64 MiB');
+    expect(read().workbenchInteractionLocked).toBe(false);
+    expect(read().connectedWorkbench).toBe(before);
+    const small = new File(['{}'], 'small.upid.json');
+    Object.defineProperty(small, 'text', { value: readText });
+    await act(async () => { await read().handleImportUpidFile(small); });
+    expect(readText).toHaveBeenCalledOnce();
+    expect(imported).toHaveBeenCalledOnce();
+    expect(read().workbenchInteractionLocked).toBe(false);
+  });
 
   it('rejects a machine package prepared for another workbench before committing', async () => {
     const other = await connectWorkbenchDirectory({ requestDirectory: async () => new FakeDirectoryHandle('other-workbench') as unknown as FileSystemDirectoryHandle,

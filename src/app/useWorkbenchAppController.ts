@@ -17,6 +17,7 @@ import type {
 } from '@/domain/machine-package';
 import { MAX_MACHINE_PACKAGE_ARCHIVE_BYTES } from '@/domain/machine-package';
 import type { DownloadProgramFileInput } from '@/domain/post/downloadProgramFile';
+import { MAX_PORTABLE_UPID_BYTES } from '@/domain/upid/portableUpidProject';
 import {
   createSavedWireEdmJobRevisionId,
   type ControllerArtifactResult
@@ -295,6 +296,9 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
   async function handleImportUpidFile(file: File) {
     const workbench = requireWorkbench();
     if (!workbench) return setImportFailure('Connect a valid workbench before importing UPID.');
+    if (file.size > MAX_PORTABLE_UPID_BYTES) {
+      return setImportFailure('Portable UPID files must be 64 MiB or smaller.');
+    }
     setImportStatus('importing');
     setImportErrorMessage(null);
     try {
