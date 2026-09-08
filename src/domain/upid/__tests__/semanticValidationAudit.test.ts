@@ -10,6 +10,23 @@ function circleDocument() {
 }
 
 describe('UPID semantic boundary audit', () => {
+  it.each(['deep', 'cyclic'] as const)('reports %s diagnostic details without throwing', (kind) => {
+    const document = circleDocument();
+    const details: Record<string, unknown> = {};
+    if (kind === 'cyclic') details.next = details;
+    else {
+      let current = details;
+      for (let index = 0; index < 10_000; index++) {
+        const next: Record<string, unknown> = {};
+        current.next = next;
+        current = next;
+      }
+    }
+    document.diagnostics.push({ id: 'nested-warning', code: 'dxf-import-warning', severity: 'warning', message: 'Notice', details });
+    document.plan.diagnostics.push({ id: 'nested-warning', code: 'dxf-import-warning', severity: 'warning', message: 'Notice', details: { ...details } });
+    expect(validateUpidDocument(document).structurallyValid).toBe(false);
+  });
+
   it.each([
     ['null machining intent', (document: PathPlanningDocument) => Reflect.set(document.plan.operations[0], 'machiningIntent', null)],
     ['null oriented reference', (document: PathPlanningDocument) => Reflect.set(document.plan.operations[0], 'segmentRefs', [null])],

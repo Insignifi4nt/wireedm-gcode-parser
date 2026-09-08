@@ -2275,11 +2275,14 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: string[]) {
   return Object.keys(value).every((key) => allowed.has(key));
 }
 
-function sameJsonValue(left: unknown, right: unknown): boolean {
+const MAX_DIAGNOSTIC_DETAIL_DEPTH = 64;
+
+function sameJsonValue(left: unknown, right: unknown, depth = 0): boolean {
+  if (depth > MAX_DIAGNOSTIC_DETAIL_DEPTH) return false;
   if (Object.is(left, right)) return true;
   if (Array.isArray(left) || Array.isArray(right)) {
     return Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
-      left.every((value, index) => sameJsonValue(value, right[index]));
+      left.every((value, index) => sameJsonValue(value, right[index], depth + 1));
   }
   const leftObject = record(left);
   const rightObject = record(right);
@@ -2287,7 +2290,7 @@ function sameJsonValue(left: unknown, right: unknown): boolean {
   const leftKeys = Object.keys(leftObject).filter((key) => leftObject[key] !== undefined);
   const rightKeys = Object.keys(rightObject).filter((key) => rightObject[key] !== undefined);
   return leftKeys.length === rightKeys.length && leftKeys.every((key) =>
-    Object.hasOwn(rightObject, key) && sameJsonValue(leftObject[key], rightObject[key]));
+    Object.hasOwn(rightObject, key) && sameJsonValue(leftObject[key], rightObject[key], depth + 1));
 }
 
 function compensationIntentsSemanticallyEqual(left: unknown, right: unknown) {
@@ -2515,20 +2518,38 @@ function validateDiagnostics(rawDiagnostics: unknown[], context: ValidationConte
   return accepted;
 }
 
-function validateFiniteNestedNumbers(value: unknown, path: string, context: ValidationContext) {
+function validateFiniteNestedNumbers(
+  value: unknown,
+  path: string,
+  context: ValidationContext,
+  depth = 0,
+  ancestors = new Set<object>()
+) {
+  if (depth > MAX_DIAGNOSTIC_DETAIL_DEPTH) {
+    context.add('upid-invalid-value', `${path} exceeds the diagnostic detail nesting limit.`);
+    return;
+  }
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) context.add('upid-invalid-value', `${path} contains a non-finite number.`);
     return;
   }
+  if (typeof value !== 'object' || value === null) return;
+  if (ancestors.has(value)) {
+    context.add('upid-invalid-value', `${path} contains a cyclic diagnostic detail.`);
+    return;
+  }
+  ancestors.add(value);
   if (Array.isArray(value)) {
-    value.forEach((item, index) => validateFiniteNestedNumbers(item, `${path}[${index}]`, context));
+    value.forEach((item, index) => validateFiniteNestedNumbers(item, `${path}[${index}]`, context, depth + 1, ancestors));
+    ancestors.delete(value);
     return;
   }
   const object = record(value);
   if (!object) return;
   for (const [key, item] of Object.entries(object)) {
-    validateFiniteNestedNumbers(item, `${path}.${key}`, context);
+    validateFiniteNestedNumbers(item, `${path}.${key}`, context, depth + 1, ancestors);
   }
+  ancestors.delete(value);
 }
 
 function idMap<T extends { id: string }>(
