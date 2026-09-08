@@ -95,10 +95,13 @@ export async function exportPortableUpidProject(
       error instanceof Error ? error.message : String(error)
     );
   }
-  const file = {
-    fileName: `${portableFileBaseName(read.project.name)}.upid.json`,
-    text: JSON.stringify({ format: 'upid', schemaVersion: 1, document }, null, 2)
-  };
+  const envelope = { format: 'upid', schemaVersion: 1, document };
+  let text = JSON.stringify(envelope, null, 2);
+  // Formatting must not turn a loadable saved project into an oversized portable file.
+  if (portableSizeError(text)) text = JSON.stringify(envelope);
+  const sizeError = portableSizeError(text);
+  if (sizeError) return { ok: false, error: sizeError };
+  const file = { fileName: `${portableFileBaseName(read.project.name)}.upid.json`, text };
   return { ok: true, file };
 }
 
@@ -156,15 +159,8 @@ export async function importPortableUpidProject(
 
 /** Validates portable bytes without storage access or local project identity changes. */
 export function parsePortableUpid(text: string): ParsePortableUpidResult {
-  const actualBytes = new TextEncoder().encode(text).byteLength;
-  if (actualBytes > MAX_PORTABLE_UPID_BYTES) {
-    return { ok: false, error: {
-      code: 'PORTABLE_UPID_TOO_LARGE',
-      message: `Portable UPID is ${actualBytes} UTF-8 bytes; the maximum is ${MAX_PORTABLE_UPID_BYTES}.`,
-      actualBytes,
-      maximumBytes: MAX_PORTABLE_UPID_BYTES
-    } };
-  }
+  const sizeError = portableSizeError(text);
+  if (sizeError) return { ok: false, error: sizeError };
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -215,6 +211,16 @@ function detachedPortableDocument(document: PathPlanningDocument) {
   const clone = jsonSnapshot(document);
   delete clone.source.projectId;
   return clone;
+}
+
+function portableSizeError(text: string): Extract<ParsePortableUpidError, { readonly code: 'PORTABLE_UPID_TOO_LARGE' }> | null {
+  const actualBytes = new TextEncoder().encode(text).byteLength;
+  return actualBytes > MAX_PORTABLE_UPID_BYTES ? {
+    code: 'PORTABLE_UPID_TOO_LARGE',
+    message: `Portable UPID is ${actualBytes} UTF-8 bytes; the maximum is ${MAX_PORTABLE_UPID_BYTES}.`,
+    actualBytes,
+    maximumBytes: MAX_PORTABLE_UPID_BYTES
+  } : null;
 }
 
 function portableFileBaseName(name: string) {
