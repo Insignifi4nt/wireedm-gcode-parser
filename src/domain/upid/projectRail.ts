@@ -847,19 +847,24 @@ export function normalizeUpidPathElementSelection(
   element: UpidPathElementRef | null
 ): UpidPathElementRef | null {
   const fallbackOperation = document.plan.operations[0] ?? null;
+  const requestedOperation = document.plan.operations.find((candidate) => candidate.id === operationId);
+  const newOwners = !requestedOperation && element?.operationId === operationId && element?.segmentId
+    ? document.plan.operations.filter((candidate) => candidate.segmentRefs.some((ref) => ref.segmentId === element.segmentId)) : [];
+  const remappedOperation = newOwners.length === 1 ? newOwners[0] : null;
   const operation =
-    document.plan.operations.find((candidate) => candidate.id === operationId) ?? fallbackOperation;
+    requestedOperation ?? remappedOperation ?? fallbackOperation;
   if (!operation) return null;
 
   const pathElementId = upidPathElementIdForOperation(document, operation.id);
   if (
-    element?.operationId === operation.id &&
+    element && (element.operationId === operation.id || remappedOperation === operation) &&
     (element.travelRole ||
       !element.segmentId ||
       operation.segmentRefs.some((candidate) => candidate.segmentId === element.segmentId))
   ) {
     return {
       ...element,
+      operationId: operation.id,
       pathElementId
     };
   }

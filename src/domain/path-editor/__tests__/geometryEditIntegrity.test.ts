@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
+import { normalizeUpidPathElementSelection } from '@/domain/upid/projectRail';
 import { deriveSpanSegment, setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { inferPathPoint } from '../pathPointInference';
 import { mirrorPathDocument, reversePathOperation, rotatePathDocument, setClosedOperationStartAtInferredPoint, translatePathDocument, translatePathSegment } from '../pathDocumentOperations';
@@ -49,6 +50,12 @@ describe('geometry edit identity integrity', () => {
     expect(refs).toHaveLength(document.segments.length);
     expect(new Set(result.plan.operations.map((operation) => operation.id)).size).toBe(result.plan.operations.length);
     expect(validateUpidDocument(result).structuralDiagnostics).toEqual([]);
+    const retired = document.plan.operations.find((operation) => operation.id !== secondOperation.id);
+    const owner = result.plan.operations.find((operation) => operation.segmentRefs.some((ref) => ref.segmentId === document.segments[0].id));
+    if (!retired || !owner) throw new Error('Missing edited ownership');
+    expect(normalizeUpidPathElementSelection(result, retired.id, {
+      operationId: retired.id, segmentId: document.segments[0].id
+    })).toMatchObject({ operationId: owner.id, segmentId: document.segments[0].id });
     expect(reviewed).toEqual(before);
   });
 
