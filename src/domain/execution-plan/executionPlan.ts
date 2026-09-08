@@ -576,7 +576,7 @@ function interleaveDistanceStops(
           operation
         );
       }
-      if (!pointsEqual(currentStart, pendingStop.point, Number.EPSILON)) {
+      if (!pointsEqual(currentStart, pendingStop.point, 0)) {
         const fraction = (pendingStop.distanceFromStart - distanceFromStart) / length;
         const stopSourceParameter = motion.sourceRange
           ? motion.sourceRange.start +
@@ -601,7 +601,7 @@ function interleaveDistanceStops(
       splitCurrentMotion = true;
       stopIndex += 1;
     }
-    if (!pointsEqual(currentStart, motion.end, Number.EPSILON) || motion.fullCircle) {
+    if (!pointsEqual(currentStart, motion.end, 0) || motion.fullCircle) {
       items.push({
         kind: 'motion',
         event: {
@@ -808,7 +808,8 @@ function distance(first: Point2, second: Point2) {
 
 function positiveAngle(value: number) {
   const fullTurn = Math.PI * 2;
-  return ((value % fullTurn) + fullTurn) % fullTurn;
+  const remainder = value % fullTurn;
+  return remainder < 0 ? remainder + fullTurn : remainder;
 }
 
 function copyPoint(point: Point2): Point2 {

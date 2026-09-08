@@ -10,6 +10,21 @@ function circleDocument() {
 }
 
 describe('UPID semantic boundary audit', () => {
+  it.each(['line', 'circle', 'arc'] as const)('rejects stale %s bounds that can hide geometry from picking and fit', (kind) => {
+    const document = kind === 'line' ? createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]) : kind === 'arc' ? createUpidFromDxfEntities([{
+      type: 'arc', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5,
+      start: { x: 5, y: 0 }, end: { x: 0, y: 5 }, startAngle: 0, endAngle: 90,
+      sweepRadians: Math.PI / 2, clockwise: false
+    }]) : circleDocument();
+    expect(validateUpidDocument(document).structurallyValid).toBe(true);
+    document.segments[0].bounds = { minX: 100, minY: 100, maxX: 200, maxY: 200 };
+    expect(validateUpidDocument(document).structuralDiagnostics).toContainEqual(expect.objectContaining({
+      code: 'upid-invalid-value', message: expect.stringContaining('bounds disagree')
+    }));
+  });
+
   it.each(['line', 'circle', 'arc'] as const)('rejects a forged %s length cache', (kind) => {
     const document = createUpidFromDxfEntities(kind === 'line'
       ? [{ type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }]

@@ -589,6 +589,12 @@ describe('validateUpidDocument', () => {
       label: 'positive-length overlap',
       entities: [line(0, 0, 2, 0), line(1, 0, 3, 0)],
       code: 'overlapping-segment' as const,
+      staleBounds: false
+    },
+    {
+      label: 'positive-length overlap with forged bounds',
+      entities: [line(0, 0, 2, 0), line(1, 0, 3, 0)],
+      code: 'overlapping-segment' as const,
       staleBounds: true
     },
     {
@@ -627,10 +633,12 @@ describe('validateUpidDocument', () => {
     const beforeValidation = structuredClone(legacy);
     const report = validateUpidDocument(legacy);
 
-    expect(report.structurallyValid).toBe(true);
+    expect(report.structurallyValid).toBe(!staleBounds);
     expect(report.valid).toBe(false);
     expect(report.blockingDiagnostics).toContainEqual(
-      expect.objectContaining({ code, severity: 'error' })
+      staleBounds
+        ? expect.objectContaining({ code: 'upid-invalid-value', severity: 'error', message: expect.stringContaining('bounds disagree') })
+        : expect.objectContaining({ code, severity: 'error' })
     );
     expect(legacy).toEqual(beforeValidation);
   });

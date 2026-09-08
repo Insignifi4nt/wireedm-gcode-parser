@@ -23,7 +23,8 @@ export function executionPlanBounds(plan: WireEdmExecutionPlan) {
           const endAngle = Math.atan2(event.end.y - event.center.y, event.end.x - event.center.x);
           const fullTurn = 2 * Math.PI;
           const delta = event.clockwise ? startAngle - endAngle : endAngle - startAngle;
-          const sweep = ((delta % fullTurn) + fullTurn) % fullTurn;
+          const remainder = delta % fullTurn;
+          const sweep = remainder < 0 ? remainder + fullTurn : remainder;
           motionBounds = arcBounds(
             event.center, radius, startAngle, event.clockwise ? -sweep : sweep, event.start, event.end
           );
