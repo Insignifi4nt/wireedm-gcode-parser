@@ -21,6 +21,30 @@ export interface PortableUpidProjectExport {
   readonly text: string;
 }
 
+/** Limits work before parsing or geometry validation; measured in UTF-8 bytes. */
+export const MAX_PORTABLE_UPID_BYTES = 64 * 1024 * 1024;
+
+export type ParsePortableUpidError =
+  | { readonly code: 'PORTABLE_UPID_JSON_INVALID'; readonly message: string }
+  | { readonly code: 'PORTABLE_UPID_SCHEMA_INVALID'; readonly message: string }
+  | { readonly code: 'PORTABLE_UPID_DOCUMENT_INVALID'; readonly message: string }
+  | {
+      readonly code: 'PORTABLE_UPID_TOO_LARGE';
+      readonly message: string;
+      readonly actualBytes: number;
+      readonly maximumBytes: number;
+    }
+  | {
+      readonly code: 'PORTABLE_UPID_VERSION_UNSUPPORTED';
+      readonly message: string;
+      readonly foundVersion: number;
+      readonly supportedVersion: 1;
+    };
+
+export type ParsePortableUpidResult =
+  | { readonly ok: true; readonly document: PathPlanningDocument }
+  | { readonly ok: false; readonly error: ParsePortableUpidError };
+
 export interface ImportPortableUpidProjectInput {
   readonly fileName: string;
   readonly text: string;
@@ -31,15 +55,7 @@ export type PortableUpidProjectError =
   | WorkbenchProjectError
   | ReadStoredWorkbenchProjectError
   | Extract<AddStoredWorkbenchProjectResult, { readonly ok: false }>['error']
-  | { readonly code: 'PORTABLE_UPID_JSON_INVALID'; readonly message: string }
-  | { readonly code: 'PORTABLE_UPID_SCHEMA_INVALID'; readonly message: string }
-  | {
-      readonly code: 'PORTABLE_UPID_VERSION_UNSUPPORTED';
-      readonly message: string;
-      readonly foundVersion: number;
-      readonly supportedVersion: 1;
-    }
-  | { readonly code: 'PORTABLE_UPID_DOCUMENT_INVALID'; readonly message: string }
+  | ParsePortableUpidError
   | { readonly code: 'PORTABLE_UPID_PROJECT_REQUIRED'; readonly message: string }
   | { readonly code: 'PORTABLE_UPID_TIMESTAMP_INVALID'; readonly message: string };
 
@@ -138,10 +154,17 @@ export async function importPortableUpidProject(
   };
 }
 
-function parsePortableUpid(
-  text: string
-): { readonly ok: true; readonly document: PathPlanningDocument } |
-  { readonly ok: false; readonly error: PortableUpidProjectError } {
+/** Validates portable bytes without storage access or local project identity changes. */
+export function parsePortableUpid(text: string): ParsePortableUpidResult {
+  const actualBytes = new TextEncoder().encode(text).byteLength;
+  if (actualBytes > MAX_PORTABLE_UPID_BYTES) {
+    return { ok: false, error: {
+      code: 'PORTABLE_UPID_TOO_LARGE',
+      message: `Portable UPID is ${actualBytes} UTF-8 bytes; the maximum is ${MAX_PORTABLE_UPID_BYTES}.`,
+      actualBytes,
+      maximumBytes: MAX_PORTABLE_UPID_BYTES
+    } };
+  }
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -151,7 +174,7 @@ function parsePortableUpid(
   if (!isRecord(value)) {
     return ownFailure('PORTABLE_UPID_SCHEMA_INVALID', 'Portable UPID must be an object.');
   }
-  if (typeof value.schemaVersion === 'number' && value.schemaVersion !== 1) {
+  if (typeof value.schemaVersion === 'number' && Number.isSafeInteger(value.schemaVersion) && value.schemaVersion > 0 && value.schemaVersion !== 1) {
     return {
       ok: false,
       error: {
@@ -206,15 +229,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function ownFailure(
-  code:
+function ownFailure<Code extends
     | 'PORTABLE_UPID_JSON_INVALID'
     | 'PORTABLE_UPID_SCHEMA_INVALID'
     | 'PORTABLE_UPID_DOCUMENT_INVALID'
     | 'PORTABLE_UPID_PROJECT_REQUIRED'
-    | 'PORTABLE_UPID_TIMESTAMP_INVALID',
+    | 'PORTABLE_UPID_TIMESTAMP_INVALID'>(
+  code: Code,
   message: string
-): { readonly ok: false; readonly error: PortableUpidProjectError } {
+): { readonly ok: false; readonly error: { readonly code: Code; readonly message: string } } {
   return { ok: false, error: { code, message } };
 }
 

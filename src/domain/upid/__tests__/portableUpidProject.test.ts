@@ -9,10 +9,83 @@ import { portableUpidIntentFixture } from './portableUpidIntentFixture';
 
 import {
   exportPortableUpidProject,
-  importPortableUpidProject
+  importPortableUpidProject,
+  MAX_PORTABLE_UPID_BYTES,
+  parsePortableUpid
 } from '../portableUpidProject';
 
 describe('portable UPID project', () => {
+  it('parses portable UPID without storage and returns independent document snapshots', () => {
+    const document = portableUpidIntentFixture();
+    const text = JSON.stringify({ format: 'upid', schemaVersion: 1, document });
+    const first = parsePortableUpid(text);
+    const second = parsePortableUpid(text);
+    if (!first.ok || !second.ok) throw new Error('Valid portable document was rejected.');
+    expect(first.document).toEqual(document);
+    first.document.segments[0].source.note = 'edited by caller';
+    expect(second.document).toEqual(document);
+    expect(first.document.source.projectId).toBe('original-workbench-project');
+  });
+
+  it('returns a typed document error for a path element with missing required fields', () => {
+    const document = portableUpidIntentFixture();
+    Reflect.set(document.pathElements, '0', {});
+    expect(parsePortableUpid(JSON.stringify({ format: 'upid', schemaVersion: 1, document })))
+      .toMatchObject({ ok: false, error: { code: 'PORTABLE_UPID_DOCUMENT_INVALID' } });
+  });
+
+  it.each([
+    ['not JSON', 'PORTABLE_UPID_JSON_INVALID'],
+    ['null', 'PORTABLE_UPID_SCHEMA_INVALID'],
+    [JSON.stringify({ format: 'upid', schemaVersion: 2, document: {} }), 'PORTABLE_UPID_VERSION_UNSUPPORTED'],
+    [JSON.stringify({ format: 'upid', schemaVersion: 1.5, document: {} }), 'PORTABLE_UPID_SCHEMA_INVALID'],
+    [JSON.stringify({ format: 'upid', schemaVersion: 0, document: {} }), 'PORTABLE_UPID_SCHEMA_INVALID'],
+    [JSON.stringify({ format: 'upid', schemaVersion: '1', document: {} }), 'PORTABLE_UPID_SCHEMA_INVALID'],
+    [JSON.stringify({ format: 'upid', schemaVersion: 1, document: {} }), 'PORTABLE_UPID_DOCUMENT_INVALID']
+  ])('returns a typed error for invalid portable input %#', (text, code) => {
+    expect(parsePortableUpid(text)).toMatchObject({ ok: false, error: { code } });
+  });
+
+  it('rejects oversized UTF-8 input before parsing or writing any files', async () => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const before = new Map(adapter.files);
+    const text = 'é'.repeat(MAX_PORTABLE_UPID_BYTES / 2 + 1);
+    expect(text.length).toBeLessThan(MAX_PORTABLE_UPID_BYTES);
+    expect(await importPortableUpidProject(initialized.workbench, {
+      fileName: 'oversized.upid.json', text
+    })).toEqual({ ok: false, error: {
+      code: 'PORTABLE_UPID_TOO_LARGE',
+      message: `Portable UPID is ${MAX_PORTABLE_UPID_BYTES + 2} UTF-8 bytes; the maximum is ${MAX_PORTABLE_UPID_BYTES}.`,
+      actualBytes: MAX_PORTABLE_UPID_BYTES + 2,
+      maximumBytes: MAX_PORTABLE_UPID_BYTES
+    } });
+    expect(adapter.files).toEqual(before);
+  });
+
+  it.each([
+    ['operation display name', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.plan.operations[0], 'displayName', { machine: 'hidden payload' })],
+    ['contour label', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.contours[0], 'label', { machine: 'hidden payload' })],
+    ['segment note', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.segments[0].source, 'note', { machine: 'hidden payload' })],
+    ['source handle', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.segments[0].source, 'sourceEntityHandle', ['invalid handle'])],
+    ['provenance types', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.contours[0].provenance, 'sourceEntityTypes', [{ machine: 'hidden payload' }])],
+    ['provenance layers', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.plan.operations[0].provenance, 'layers', [{ machine: 'hidden payload' }])],
+    ['provenance handles', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.pathElements[0].provenance, 'sourceEntityHandles', [123])],
+    ['provenance exact flag', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.contours[0].provenance, 'exact', 'yes')]
+  ])('rejects malformed %s metadata before writing files', async (_name, mutate) => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const document = portableUpidIntentFixture();
+    mutate(document);
+    const before = new Map(adapter.files);
+    expect(await importPortableUpidProject(initialized.workbench, {
+      fileName: 'metadata.upid.json', text: JSON.stringify({ format: 'upid', schemaVersion: 1, document })
+    })).toMatchObject({ ok: false, error: { code: 'PORTABLE_UPID_SCHEMA_INVALID' } });
+    expect(adapter.files).toEqual(before);
+  });
+
   it('preserves original source bytes and round-trips complete reviewed machining intent', async () => {
     const adapter = new MemoryAdapter();
     const initialized = await initializeWorkbenchCatalog(adapter);

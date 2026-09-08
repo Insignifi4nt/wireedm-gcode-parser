@@ -1,8 +1,7 @@
-import type { PathPlanningDocument } from '@/domain/path-intel/types';
-
 type JsonRecord = Record<string, unknown>;
 
-export function assertPortableUpidV1Shape(document: PathPlanningDocument): void {
+export function assertPortableUpidV1Shape(value: unknown): void {
+  const document = requireRecord(value, 'document');
   assertKeys(document, [
     'schemaVersion', 'geometryBasis', 'setup', 'machiningParticipation', 'source', 'options', 'segments', 'endpointClusters',
     'chains', 'contours', 'pathElements', 'rootPathElementIds', 'plan', 'diagnostics'
@@ -121,6 +120,10 @@ function segmentSource(value: unknown, path: string) {
     'exact', 'approximation', 'dxf', 'edit', 'note'
   ], path);
   const object = record(value);
+  if (object) {
+    optionalPrimitive(object.sourceEntityHandle, 'string', `${path}.sourceEntityHandle`);
+    optionalPrimitive(object.note, 'string', `${path}.note`);
+  }
   assertKeys(object?.approximation, ['sourceEntityType', 'maxChordError'], `${path}.approximation`);
   dxfSource(object?.dxf, `${path}.dxf`);
   segmentEdit(object?.edit, `${path}.edit`);
@@ -128,11 +131,18 @@ function segmentSource(value: unknown, path: string) {
 
 function dxfSource(value: unknown, path: string) {
   assertKeys(value, ['blockName', 'insertChain'], path);
+  const object = record(value);
+  if (object) nullableString(object.blockName, `${path}.blockName`);
   each(record(value)?.insertChain, insertSource, `${path}.insertChain`);
 }
 
 function insertSource(value: unknown, path: string) {
   assertKeys(value, ['blockName', 'column', 'row', 'layer', 'transform'], path);
+  const object = record(value);
+  if (object) {
+    requirePrimitive(object.blockName, 'string', `${path}.blockName`);
+    nullableString(object.layer, `${path}.layer`);
+  }
   const transformValue = record(value)?.transform;
   assertKeys(transformValue, [
     'insertion', 'localOffset', 'blockBasePoint', 'rotationDegrees', 'scaleX', 'scaleY'
@@ -145,6 +155,7 @@ function insertSource(value: unknown, path: string) {
 
 function segmentEdit(value: unknown, path: string) {
   assertKeys(value, ['kind', 'operationId', 'parentSegmentId', 'point'], path);
+  if (value !== undefined) requireEditKind(record(value)?.kind, `${path}.kind`);
   point(record(value)?.point, `${path}.point`);
 }
 
@@ -179,6 +190,7 @@ function contour(value: unknown, path: string) {
     'approximatePolygon', 'confidence', 'diagnosticIds'
   ], path);
   const object = record(value);
+  optionalPrimitive(object?.label, 'string', `${path}.label`);
   provenance(object?.provenance, `${path}.provenance`);
   bounds(object?.bounds, `${path}.bounds`);
   point(object?.representativePoint, `${path}.representativePoint`);
@@ -190,12 +202,25 @@ function provenance(value: unknown, path: string) {
     'sourceEntityIndices', 'sourceEntityHandles', 'sourceEntityTypes', 'layers', 'exact', 'dxf', 'edit'
   ], path);
   const object = record(value);
+  if (object) {
+    stringArray(object.sourceEntityTypes, `${path}.sourceEntityTypes`);
+    if (object.sourceEntityHandles !== undefined) stringArray(object.sourceEntityHandles, `${path}.sourceEntityHandles`);
+    requireArray(object.layers, `${path}.layers`).forEach((item, index) => nullableString(item, `${path}.layers[${index}]`));
+    requirePrimitive(object.exact, 'boolean', `${path}.exact`);
+  }
   assertKeys(object?.dxf, ['blockNames', 'insertBlockNames', 'insertedSegmentCount'], `${path}.dxf`);
+  const dxf = record(object?.dxf);
+  if (dxf) {
+    stringArray(dxf.blockNames, `${path}.dxf.blockNames`);
+    stringArray(dxf.insertBlockNames, `${path}.dxf.insertBlockNames`);
+  }
   editProvenance(object?.edit, `${path}.edit`);
 }
 
 function editProvenance(value: unknown, path: string) {
   assertKeys(value, ['derivedSegmentIds', 'events', 'parentSegmentIds'], path);
+  const object = record(value);
+  if (object) stringArray(object.parentSegmentIds, `${path}.parentSegmentIds`);
   each(record(value)?.events, editEvent, `${path}.events`);
 }
 
@@ -203,6 +228,11 @@ function editEvent(value: unknown, path: string) {
   assertKeys(value, [
     'derivedSegmentIds', 'kind', 'operationId', 'parentSegmentId', 'point'
   ], path);
+  const object = record(value);
+  if (object) {
+    requireEditKind(object.kind, `${path}.kind`);
+    requirePrimitive(object.parentSegmentId, 'string', `${path}.parentSegmentId`);
+  }
   point(record(value)?.point, `${path}.point`);
 }
 
@@ -214,6 +244,8 @@ function pathElement(value: unknown, path: string) {
     'compensationIntent', 'overrides', 'bounds', 'confidence'
   ], path);
   const object = record(value);
+  optionalPrimitive(object?.label, 'string', `${path}.label`);
+  optionalPrimitive(object?.displayName, 'string', `${path}.displayName`);
   each(object?.segmentRefs, segmentRef, `${path}.segmentRefs`);
   each(object?.points, elementPoint, `${path}.points`);
   provenance(object?.provenance, `${path}.provenance`);
@@ -245,6 +277,8 @@ function operation(value: unknown, path: string) {
     'compensationIntent', 'transitions', 'threadingTransition', 'programStops', 'machiningIntent', 'overrides'
   ], path);
   const object = record(value);
+  optionalPrimitive(object?.label, 'string', `${path}.label`);
+  optionalPrimitive(object?.displayName, 'string', `${path}.displayName`);
   provenance(object?.provenance, `${path}.provenance`);
   each(object?.segmentRefs, segmentRef, `${path}.segmentRefs`);
   point(object?.startPoint, `${path}.startPoint`);
@@ -488,12 +522,29 @@ function requirePoint(value: unknown, path: string) {
 }
 
 function requireScalar(value: unknown, path: string) {
-  if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) return;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))) return;
   throw new Error(`Unsupported UPID value: ${path} must be scalar metadata.`);
 }
 
-function requirePrimitive(value: unknown, expected: 'number' | 'string', path: string) {
-  if (typeof value !== expected) {
+function requirePrimitive(value: unknown, expected: 'number' | 'string' | 'boolean', path: string) {
+  if (typeof value !== expected || (typeof value === 'number' && !Number.isFinite(value))) {
     throw new Error(`Unsupported UPID value: ${path} must be a ${expected}.`);
   }
+}
+
+function optionalPrimitive(value: unknown, expected: 'string' | 'boolean', path: string) {
+  if (value !== undefined) requirePrimitive(value, expected, path);
+}
+
+function nullableString(value: unknown, path: string) {
+  if (value !== null) requirePrimitive(value, 'string', path);
+}
+
+function stringArray(value: unknown, path: string) {
+  requireArray(value, path).forEach((item, index) => requirePrimitive(item, 'string', `${path}[${index}]`));
+}
+
+function requireEditKind(value: unknown, path: string) {
+  if (value !== 'manual-start-split') throw new Error(`Unsupported UPID value: ${path} must be manual-start-split.`);
 }
