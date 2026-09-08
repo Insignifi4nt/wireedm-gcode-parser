@@ -68,6 +68,8 @@ describe('portable UPID project', () => {
     ['operation display name', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.plan.operations[0], 'displayName', { machine: 'hidden payload' })],
     ['contour label', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.contours[0], 'label', { machine: 'hidden payload' })],
     ['segment note', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.segments[0].source, 'note', { machine: 'hidden payload' })],
+    ['null optional setup', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document, 'setup', null)],
+    ['null optional program stops', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.plan.operations[0], 'programStops', null)],
     ['source handle', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.segments[0].source, 'sourceEntityHandle', ['invalid handle'])],
     ['provenance types', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.contours[0].provenance, 'sourceEntityTypes', [{ machine: 'hidden payload' }])],
     ['provenance layers', (document: ReturnType<typeof portableUpidIntentFixture>) => Reflect.set(document.plan.operations[0].provenance, 'layers', [{ machine: 'hidden payload' }])],
@@ -109,6 +111,14 @@ describe('portable UPID project', () => {
     if (!reimported.ok) throw new Error(reimported.error.message);
     expect(reimported.pathDocument).toEqual(detached);
     expect(reimported.project.id).not.toBe(imported.project.id);
+  });
+
+  it('accepts explicitly nullable layer provenance and contour fields', () => {
+    const document = portableUpidIntentFixture();
+    document.segments[0].layer = null;
+    document.segments[0].source.layer = null;
+    for (const item of [...document.contours, ...document.plan.operations, ...document.pathElements]) item.provenance.layers = [null];
+    expect(parsePortableUpid(JSON.stringify({ format: 'upid', schemaVersion: 1, document }))).toMatchObject({ ok: true });
   });
 
   it('rejects broken machining references before writing any source or project files', async () => {

@@ -193,7 +193,7 @@ function contour(value: unknown, path: string) {
   optionalPrimitive(object?.label, 'string', `${path}.label`);
   provenance(object?.provenance, `${path}.provenance`);
   bounds(object?.bounds, `${path}.bounds`);
-  point(object?.representativePoint, `${path}.representativePoint`);
+  point(object?.representativePoint, `${path}.representativePoint`, true);
   each(object?.approximatePolygon, point, `${path}.approximatePolygon`);
 }
 
@@ -249,7 +249,7 @@ function pathElement(value: unknown, path: string) {
   each(object?.segmentRefs, segmentRef, `${path}.segmentRefs`);
   each(object?.points, elementPoint, `${path}.points`);
   provenance(object?.provenance, `${path}.provenance`);
-  operationMetrics(object?.metrics, `${path}.metrics`);
+  operationMetrics(object?.metrics, `${path}.metrics`, true);
   compensation(object?.compensationIntent, `${path}.compensationIntent`);
   overrides(object?.overrides, `${path}.overrides`);
   bounds(object?.bounds, `${path}.bounds`);
@@ -332,7 +332,8 @@ function transitions(value: unknown, path: string) {
   }
 }
 
-function operationMetrics(value: unknown, path: string) {
+function operationMetrics(value: unknown, path: string, nullable = false) {
+  if (nullable && value === null) return;
   assertKeys(value, ['cutLength', 'rapidInLength', 'segmentCount'], path);
 }
 
@@ -469,7 +470,8 @@ function segmentRef(value: unknown, path: string) {
   assertKeys(value, ['segmentId', 'reversed'], path);
 }
 
-function point(value: unknown, path: string) {
+function point(value: unknown, path: string, nullable = false) {
+  if (nullable && value === null) return;
   assertKeys(value, ['x', 'y'], path);
 }
 
@@ -482,13 +484,13 @@ function each(
   visit: (item: unknown, path: string) => void,
   path: string
 ) {
-  if (!Array.isArray(value)) return;
-  value.forEach((item, index) => visit(item, `${path}[${index}]`));
+  if (value === undefined) return;
+  requireArray(value, path).forEach((item, index) => visit(item, `${path}[${index}]`));
 }
 
 function assertKeys(value: unknown, allowed: readonly string[], path: string) {
-  const object = record(value);
-  if (!object) return;
+  if (value === undefined) return;
+  const object = requireRecord(value, path);
   const allowedKeys = new Set(allowed);
   for (const key of Object.keys(object)) {
     if (!allowedKeys.has(key)) {
