@@ -4,10 +4,88 @@ import { setManualCompensationIntent } from '@/domain/compensation/intent';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { programStopValidationError } from '@/domain/path-intel/programStops';
+import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperations';
 
 import { compileWireEdmExecutionPlan } from '../executionPlan';
 
 describe('controller-neutral Wire EDM execution plans', () => {
+  it('keeps saved controller-side choices dormant when geometry is wire-centre', () => {
+    const source = rectangleDocument();
+    source.geometryBasis = 'finished-contour';
+    const configured = setManualCompensationIntent(source, source.plan.operations[0].id, 'outside');
+    if (!configured) throw new Error('Expected closed contour');
+    configured.geometryBasis = 'wire-centre';
+    const compiled = compileWireEdmExecutionPlan(configured);
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    expect(compiled.plan.requirements.controllerCompensation).toBe(false);
+    expect(compiled.plan.events.some((event) => event.kind === 'compensation-start')).toBe(false);
+    expect(configured.plan.operations[0].compensationIntent).toMatchObject({ mode: 'controller', keptMaterial: 'outside' });
+  });
+
+  it.each([false, true])('preserves an explicit full-turn arc and its remaining-distance stop, clockwise=%s', (clockwise) => {
+    const document = createUpidFromDxfEntities([{
+      type: 'arc', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5,
+      start: { x: 5, y: 0 }, end: { x: 5, y: 0 }, startAngle: 0,
+      endAngle: clockwise ? -360 : 360, sweepRadians: (clockwise ? -1 : 1) * 2 * Math.PI, clockwise
+    }]);
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 5, y: 0 }, review: 'reviewed' } };
+    const full = compileWireEdmExecutionPlan(document);
+    if (!full.ok) throw new Error(JSON.stringify(full.diagnostics));
+    expect(full.plan.events.filter((event) => event.kind === 'motion')).toEqual([
+      expect.objectContaining({ motion: 'circular', clockwise, fullCircle: true,
+        start: { x: 5, y: 0 }, end: { x: 5, y: 0 } })
+    ]);
+    document.plan.operations[0].programStops = [{ id: 'halfway', enabled: true, reason: 'operator-check',
+      placement: { kind: 'before-operation-end', remainingCutLengthMm: 5 * Math.PI } }];
+    const split = compileWireEdmExecutionPlan(document);
+    if (!split.ok) throw new Error(JSON.stringify(split.diagnostics));
+    const motions = split.plan.events.filter((event) => event.kind === 'motion');
+    expect(motions).toHaveLength(2);
+    expect(motions.every((motion) => motion.fullCircle === false && motion.clockwise === clockwise)).toBe(true);
+    expect(motions[0].end.x).toBeCloseTo(-5, 12);
+    expect(motions[0].end.y).toBeCloseTo(0, 12);
+    expect(motions[1].end).toEqual({ x: 5, y: 0 });
+  });
+
+  it.each([false, true])('traces clipped cuts and stops to saved UPID identities and ranges, reversed=%s', (reversed) => {
+    let source = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    source.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    if (reversed) {
+      source = reversePathOperation(source, source.plan.operations[0].id) ?? source;
+    }
+    const original = source.plan.operations[0];
+    const document = setMachiningSpanParticipation(source, {
+      sourceSegmentId: source.segments[0].id,
+      range: { start: 0.6, end: 1 }, participation: 'inactive-reference'
+    });
+    if (!document) throw new Error('Expected partial contour');
+    document.plan.operations[0].programStops = [{ id: 'retain', enabled: true, reason: 'part-retention',
+      placement: { kind: 'before-operation-end', remainingCutLengthMm: 2 } }];
+    const before = structuredClone(document);
+    const compiled = compileWireEdmExecutionPlan(document);
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    expect(compiled.plan.source.operationIds).toEqual([original.id]);
+    const motions = compiled.plan.events.filter((event) => event.kind === 'motion')
+      .filter((event) => event.role === 'contour');
+    const parameters = reversed ? [0.6, 0.2, 0] : [0, 0.4, 0.6];
+    expect(motions).toHaveLength(2);
+    motions.forEach((motion, index) => {
+      expect(motion.sourceSegmentId).toBe(source.segments[0].id);
+      expect(motion.sourceRange?.start).toBeCloseTo(parameters[index], 12);
+      expect(motion.sourceRange?.end).toBeCloseTo(parameters[index + 1], 12);
+      expect(motion.trace).toEqual([{ kind: 'segment', operationId: original.id,
+        segmentId: source.segments[0].id, sourceRange: motion.sourceRange }]);
+    });
+    for (const event of compiled.plan.events) {
+      for (const trace of event.trace) {
+        if (trace.kind !== 'program') expect(trace.operationId).toBe(original.id);
+      }
+    }
+    expect(document).toEqual(before);
+  });
+
   it.each(['entry', 'exit'] as const)('blocks stored coincident %s leads and accepts an explicit no-lead correction', (role) => {
     const document = rectangleDocument();
     const operation = document.plan.operations[0];

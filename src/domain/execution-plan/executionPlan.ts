@@ -3,7 +3,7 @@ import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningPa
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { operationEntryPoint } from '@/domain/path-intel/operationTransitions';
-import { resolveProgramStopPoints } from '@/domain/path-intel/programStops';
+import { resolveOperationProgramStopPoints } from '@/domain/path-intel/programStops';
 import {
   orientedArcClockwise,
   orientedCircleClockwise,
@@ -13,6 +13,7 @@ import {
   segmentMap
 } from '@/domain/path-intel/segments';
 import type {
+  MachiningSpan,
   OperationProgramStop,
   OperationThreadingTransition,
   PathOperation,
@@ -180,6 +181,7 @@ type ExecutionEventInput = WireEdmExecutionEvent extends infer Event
 interface MutableEventContext {
   events: WireEdmExecutionEvent[];
   nextEventNumber: number;
+  sourceOperationIds: Map<string, string>;
 }
 
 export function compileWireEdmExecutionPlan(
@@ -213,15 +215,18 @@ export function compileWireEdmExecutionPlan(
   }
 
   const document: PathPlanningDocument = {
-    ...structuredClone(sourceDocument),
-    segments: structuredClone(machining.segments),
+    ...sourceDocument,
+    segments: machining.segments,
     plan: {
-      ...structuredClone(sourceDocument.plan),
-      operations: structuredClone(operations)
+      ...sourceDocument.plan,
+      operations
     }
   };
   const segmentsById = segmentMap(document.segments);
-  const context: MutableEventContext = { events: [], nextEventNumber: 1 };
+  const sourceSpansById = new Map(machining.activeSpans.map((span) => [span.id, span]));
+  const sourceOperationIds = new Map(operations.map((operation) => [operation.id,
+    operation.machiningIntent?.sourceOperationId ?? operation.id]));
+  const context: MutableEventContext = { events: [], nextEventNumber: 1, sourceOperationIds };
   appendEvent(context, {
     kind: 'program-start',
     operationId: null,
@@ -236,7 +241,8 @@ export function compileWireEdmExecutionPlan(
       document,
       operation,
       operationIndex,
-      segmentsById
+      segmentsById,
+      sourceSpansById
     });
     if (!compiled.ok) return compiled;
     currentPosition = compiled.endPoint;
@@ -269,7 +275,7 @@ export function compileWireEdmExecutionPlan(
       },
       source: {
         upidSchemaVersion: document.schemaVersion,
-        operationIds: operations.map(({ id }) => id)
+        operationIds: [...new Set(sourceOperationIds.values())]
       },
       events,
       requirements: {
@@ -291,6 +297,7 @@ function compileOperation(input: {
   operation: PathOperation;
   operationIndex: number;
   segmentsById: Map<string, PathSegment>;
+  sourceSpansById: Map<string, MachiningSpan>;
 }): ExecutionPlanFailure | { ok: true; endPoint: Point2 } {
   const { context, document, operation, operationIndex, segmentsById } = input;
   for (const role of ['entry', 'exit'] as const) {
@@ -371,7 +378,7 @@ function compileOperation(input: {
     });
   }
 
-  const compensation = operation.compensationIntent?.mode === 'controller'
+  const compensation = document.geometryBasis === 'finished-contour' && operation.compensationIntent?.mode === 'controller'
     ? resolveControllerCompensation({ document, operation })
     : null;
   if (compensation?.status === 'blocked') {
@@ -418,9 +425,11 @@ function compileOperation(input: {
     appendMotion(context, operation.id, 'entry', entry.from, entry.to, null);
   }
 
-  const contourMotions = compileContourMotions(operation, segmentsById, document.options.coincidenceEpsilon);
+  const contourMotions = compileContourMotions(
+    operation, segmentsById, document.options.coincidenceEpsilon, input.sourceSpansById
+  );
   if (!contourMotions.ok) return contourMotions;
-  const distanceStops = resolveProgramStopPoints(document, operation.id);
+  const distanceStops = resolveOperationProgramStopPoints(operation, segmentsById);
   if (distanceStops.status === 'blocked') {
     return blockedForOperation(
       'EXECUTION_PLAN_PROGRAM_STOP_INVALID',
@@ -479,11 +488,12 @@ type ContourMotionEvent = Extract<ExecutionEventInput, { kind: 'motion' }>;
 function compileContourMotions(
   operation: PathOperation,
   segmentsById: Map<string, PathSegment>,
-  tolerance: number
+  tolerance: number,
+  sourceSpansById: Map<string, MachiningSpan>
 ): { ok: true; motions: ContourMotionEvent[] } | ExecutionPlanFailure {
   const motions: ContourMotionEvent[] = [];
   let previousEnd: Point2 | null = null;
-  for (const ref of operation.segmentRefs) {
+  for (const [index, ref] of operation.segmentRefs.entries()) {
     const segment = segmentsById.get(ref.segmentId);
     if (!segment) {
       return blockedForOperation(
@@ -501,6 +511,9 @@ function compileContourMotions(
         operation
       );
     }
+    const spanId = operation.machiningIntent?.spanIds[index];
+    const span = spanId === undefined ? undefined : sourceSpansById.get(spanId);
+    const range = span?.range ?? { start: 0, end: 1 };
     motions.push({
       kind: 'motion',
       operationId: operation.id,
@@ -513,10 +526,10 @@ function compileContourMotions(
         clockwise: segment.kind === 'arc'
           ? orientedArcClockwise(segment, ref)
           : orientedCircleClockwise(segment, ref),
-        fullCircle: segment.kind === 'circle'
+        fullCircle: segment.kind === 'circle' || Math.abs(segment.sweepRadians) === Math.PI * 2
       }),
-      sourceSegmentId: segment.id,
-      sourceRange: ref.reversed ? { start: 1, end: 0 } : { start: 0, end: 1 }
+      sourceSegmentId: span?.sourceSegmentId ?? segment.id,
+      sourceRange: ref.reversed ? { start: range.end, end: range.start } : { ...range }
     });
     previousEnd = end;
   }
@@ -734,15 +747,18 @@ function appendEvent(
     ...event,
     id: `event-${String(ordinal).padStart(6, '0')}`,
     ordinal,
-    trace: eventTrace(event)
+    trace: eventTrace(event, context.sourceOperationIds)
   } as WireEdmExecutionEvent);
 }
 
-function eventTrace(event: ExecutionEventInput): [ExecutionSourceRef, ...ExecutionSourceRef[]] {
+function eventTrace(
+  event: ExecutionEventInput,
+  sourceOperationIds: Map<string, string>
+): [ExecutionSourceRef, ...ExecutionSourceRef[]] {
   if (event.kind === 'program-start' || event.kind === 'program-end') {
     return [{ kind: 'program' }];
   }
-  const operationId = event.operationId;
+  const operationId = event.operationId === null ? null : sourceOperationIds.get(event.operationId);
   if (!operationId) throw new Error(`Execution event ${event.kind} requires operation ownership.`);
   if (event.kind === 'motion' && event.sourceSegmentId && event.sourceRange) {
     return [{

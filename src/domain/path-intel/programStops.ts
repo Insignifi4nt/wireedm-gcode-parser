@@ -68,10 +68,17 @@ export function resolveProgramStopPoints(
   | { status: 'blocked'; reason: 'operation-not-found' | 'invalid-program-stop' } {
   const operation = document.plan.operations.find((candidate) => candidate.id === operationId);
   if (!operation) return { status: 'blocked', reason: 'operation-not-found' };
+  return resolveOperationProgramStopPoints(operation, segmentMap(document.segments));
+}
+
+export function resolveOperationProgramStopPoints(
+  operation: PathOperation,
+  segmentsById: Map<string, PathPlanningDocument['segments'][number]>
+): ReturnType<typeof resolveProgramStopPoints> {
   const requested = (operation.programStops ?? []).filter(
     (stop) => stop.enabled && stop.placement.kind === 'before-operation-end'
   );
-  const segmentsById = segmentMap(document.segments);
+  if (requested.length === 0) return { status: 'ready', stops: [] };
   const total = pathCutLength(operation.segmentRefs, segmentsById);
   const stops = [];
   for (const stop of requested) {
