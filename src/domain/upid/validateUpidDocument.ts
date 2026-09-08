@@ -967,6 +967,17 @@ function validateSegment(
   if (segment.kind === 'circle') {
     if (!finitePoint(segment.preferredStart, `segment ${segment.id}.preferredStart`, context, relatedSegment(segment))) valid = false;
   }
+  if (valid) {
+    const expectedLength = segment.kind === 'line'
+      ? distance(segment.start, segment.end)
+      : segment.kind === 'arc'
+        ? Math.abs(segment.radius * segment.sweepRadians)
+        : 2 * Math.PI * segment.radius;
+    const lengthTolerance = Math.max(1e-9, 64 * Number.EPSILON * Math.max(1, expectedLength));
+    if (Number.isFinite(expectedLength) && Math.abs(segment.length - expectedLength) > lengthTolerance) {
+      invalidate(`Segment ${segment.id}.length disagrees with its geometry.`);
+    }
+  }
   validateSegmentSource(value.source, segment.id, operationMap, context);
   if (value.layer !== record(value.source)?.layer) {
     context.add(

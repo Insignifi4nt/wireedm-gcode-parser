@@ -10,6 +10,20 @@ function circleDocument() {
 }
 
 describe('UPID semantic boundary audit', () => {
+  it.each(['line', 'circle', 'arc'] as const)('rejects a forged %s length cache', (kind) => {
+    const document = createUpidFromDxfEntities(kind === 'line'
+      ? [{ type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }]
+      : kind === 'circle'
+        ? [{ type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }]
+        : [{ type: 'arc', layer: 'CUT', center: { x: 0, y: 0 }, radius: 1,
+          startAngle: 0, endAngle: 90, clockwise: false, start: { x: 1, y: 0 }, end: { x: 0, y: 1 } }]);
+    expect(validateUpidDocument(document).structurallyValid).toBe(true);
+    document.segments[0].length += 1e-12;
+    expect(validateUpidDocument(document).structurallyValid).toBe(true);
+    document.segments[0].length *= 10;
+    expect(validateUpidDocument(document).structurallyValid).toBe(false);
+  });
+
   it.each(['deep', 'cyclic'] as const)('reports %s diagnostic details without throwing', (kind) => {
     const document = circleDocument();
     const details: Record<string, unknown> = {};
