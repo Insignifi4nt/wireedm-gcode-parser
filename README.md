@@ -14,6 +14,7 @@ When a version-1 workbench is opened, usable projects migrate to the current neu
 - `npm run post:docs:check` - verify generated post schemas and SDK declarations
 - `npm run upid:validate -- <file.upid.json> [--require-executable]` - validate portable geometry and report neutral execution readiness
 - `npm run upid:conformance` - validate the complete UPID v1 reference examples
+- `npm run upid:benchmark` - measure compilation of 1,000 and 4,000 operations
 - `npm run post:conformance -- <post.wireedm-post.json>` - run a post's conformance fixtures
 - `npm run machine-package:build -- <source-directory> [output.wireedm-package]` - build a complete machine package
 - `npm run machine-package:validate-source -- <source-directory>` - validate package sources without writing an archive

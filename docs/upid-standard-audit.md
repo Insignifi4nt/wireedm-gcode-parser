@@ -37,6 +37,8 @@ On this workstation, a deterministic fixture of disjoint, valid wire-center line
 
 These are local warm-run medians, not a general hardware guarantee. The same source produced complete, immutable execution plans; source input remained editable and unchanged.
 
+Run `npm run upid:benchmark` on an otherwise idle machine to reproduce the fixture and measurements. It builds source geometry before timing, validates every compiled result, and reports the median of three runs after warm-up.
+
 ## Added support and format guidance
 
 - Public `parsePortableUpid(text)` validates without opening storage or binding a machine.
