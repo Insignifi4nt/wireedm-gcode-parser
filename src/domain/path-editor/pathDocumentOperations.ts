@@ -42,6 +42,7 @@ import {
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import {
   inferPathPoint,
+  nearestPointOnSegment,
   type InferredPathPoint
 } from '@/domain/path-editor/pathPointInference';
 import type {
@@ -56,6 +57,7 @@ import type {
   OperationProgramStop,
   OperationThreadingTransition,
   PathChain,
+  PathContour,
   PathDiagnostic,
   PathElementId,
   PathOperation,
@@ -583,6 +585,12 @@ export function setClosedOperationStartAtInferredPoint(
     return null;
   }
 
+  const segment = next.segments.find((candidate) => candidate.id === inferred.segmentId);
+  if (!segment || !Number.isFinite(inferred.t) || inferred.t < 0 || inferred.t > 1) return null;
+  const currentPoint = nearestPointOnSegment(segment, ref, inferred.point);
+  if (distance(currentPoint.point, inferred.point) > next.options.coincidenceEpsilon ||
+    (segment.kind !== 'circle' && Math.abs(currentPoint.t - inferred.t) * segment.length > next.options.coincidenceEpsilon)) return null;
+
   const startSelection = manualStartSelection(next, operation, inferred);
   const previousStart = operation.startPoint;
   const split = splitOperationSegmentAtPoint(next, operation, inferred);
@@ -1045,9 +1053,19 @@ function transformPathSegments(
     return transformSegmentGeometry(segment, transformPoint, determinant);
   });
 
-  if (!changed) return null;
+  if (!changed || next.segments.some((segment) => transformedSegmentIds.has(segment.id) &&
+    (![segment.start.x, segment.start.y, segment.end.x, segment.end.y, segment.length].every(Number.isFinite) ||
+      (segment.kind !== 'line' && ![segment.center.x, segment.center.y, segment.radius].every(Number.isFinite))))) return null;
 
-  refreshDocumentAfterSegmentGeometryEdit(next, transformedSegmentIds, transformPoint);
+  if (determinant < 0 && next.machiningParticipation) {
+    const mirroredCircles = new Set(next.segments.filter((segment) => segment.kind === 'circle' && transformedSegmentIds.has(segment.id)).map((segment) => segment.id));
+    // Circle parameters remain CCW after reflection; their physical ranges reverse.
+    next.machiningParticipation.spans = next.machiningParticipation.spans.map((span) => mirroredCircles.has(span.sourceSegmentId)
+      ? { ...span, range: { start: 1 - span.range.end, end: 1 - span.range.start } } : span)
+      .sort((first, second) => first.sourceSegmentId.localeCompare(second.sourceSegmentId) || first.range.start - second.range.start);
+  }
+
+  if (!refreshDocumentAfterSegmentGeometryEdit(next, transformedSegmentIds, transformPoint)) return null;
   return next;
 }
 
@@ -1098,7 +1116,7 @@ function refreshDocumentAfterSegmentGeometryEdit(
     transformPoint
   );
   const previousOperations = document.plan.operations.map((operation) => structuredClone(operation));
-  const previousOperationsByContourId = new Map(previousOperations.map((operation) => [operation.contourId, operation]));
+  const previousOperationsByTopology = new Map(previousOperations.map((operation) => [pathTopologyKey(operation), operation]));
   const manualClassificationsByContourId = manualClassifications(document);
   const persistentDiagnostics = persistentImportDiagnostics(document.diagnostics);
   const sanitationDiagnostics = sanitizePathSegments(
@@ -1111,7 +1129,12 @@ function refreshDocumentAfterSegmentGeometryEdit(
 
   const clusterResult = clusterSegmentEndpoints(document.segments, document.options);
   const chainResult = buildChains(document.segments, clusterResult, document.options);
+  const chainIds = retainDerivedIds(chainResult.chains, document.chains, pathTopologyKey, 'chain');
+  for (const diagnostic of chainResult.diagnostics) {
+    if (diagnostic.relatedChainIds) diagnostic.relatedChainIds = diagnostic.relatedChainIds.map((id) => chainIds.get(id) ?? id);
+  }
   const contourResult = analyzeContours(chainResult.chains, document.segments, document.options);
+  retainContourIds(contourResult, document.contours);
   const contours = contourResult.contours.map((contour) => {
     const classification = manualClassificationsByContourId.get(contour.id);
     return classification ? { ...contour, classification } : contour;
@@ -1122,12 +1145,18 @@ function refreshDocumentAfterSegmentGeometryEdit(
     segments: document.segments,
     options: document.options
   });
-  const restoredOperationsByContourId = new Map(
+  const nextTopologyKeys = new Set(replanned.operations.map(pathTopologyKey));
+  // A split/join has no unique successor for authored machining decisions.
+  // Refuse the transaction instead of silently reassigning or deleting intent.
+  if (previousOperations.some((operation) => !nextTopologyKeys.has(pathTopologyKey(operation)) &&
+    operationHasAuthoredGeometryState(document, operation))) return false;
+  retainDerivedIds(replanned.operations, previousOperations, pathTopologyKey, 'op');
+  const restoredOperationsById = new Map(
     replanned.operations.map((operation) => [
-      operation.contourId,
+      operation.id,
       restoreGeometryEditOperationState(
         operation,
-        previousOperationsByContourId.get(operation.contourId),
+        previousOperationsByTopology.get(pathTopologyKey(operation)),
         transformedSegmentIds,
         transformPoint
       )
@@ -1136,13 +1165,13 @@ function refreshDocumentAfterSegmentGeometryEdit(
   const orderedOperations: PathOperation[] = [];
 
   for (const previousOperation of previousOperations) {
-    const restored = restoredOperationsByContourId.get(previousOperation.contourId);
+    const restored = restoredOperationsById.get(previousOperation.id);
     if (!restored) continue;
     orderedOperations.push(restored);
-    restoredOperationsByContourId.delete(previousOperation.contourId);
+    restoredOperationsById.delete(previousOperation.id);
   }
 
-  orderedOperations.push(...restoredOperationsByContourId.values());
+  orderedOperations.push(...restoredOperationsById.values());
 
   document.endpointClusters = clusterResult.clusters;
   document.chains = chainResult.chains;
@@ -1171,6 +1200,52 @@ function refreshDocumentAfterSegmentGeometryEdit(
       if (transition?.strategy === 'manual-straight') transition.review = 'required';
     }
   }
+  return true;
+}
+
+/** Canonical oriented topology, invariant to whole-path reversal and closed-path rotation. */
+function pathTopologyKey(path: Pick<PathChain, 'closed' | 'segmentRefs'>): string {
+  const serialize = (refs: OrientedSegmentRef[]) => {
+    const first = path.closed ? refs.reduce((best, ref, index) => ref.segmentId < refs[best].segmentId ? index : best, 0) : 0;
+    return JSON.stringify(rotatePathRefs(refs, first).map((ref) => [ref.segmentId, ref.reversed]));
+  };
+  const forward = serialize(path.segmentRefs), backward = serialize(reversePathRefs(path.segmentRefs));
+  return `${path.closed}:${forward < backward ? forward : backward}`;
+}
+
+function retainDerivedIds<T extends { id: string }>(current: T[], previous: T[], key: (value: T) => string, prefix: string) {
+  const previousByKey = new Map(previous.map((item) => [key(item), item.id]));
+  const reserved = new Set(previous.map((item) => item.id));
+  const remapped = new Map<string, string>();
+  let counter = 1;
+  for (const item of current) {
+    let id = previousByKey.get(key(item));
+    if (!id) {
+      do { id = `${prefix}_edit_${String(counter++).padStart(4, '0')}`; } while (reserved.has(id));
+    }
+    reserved.add(id);
+    remapped.set(item.id, id);
+    item.id = id;
+  }
+  return remapped;
+}
+
+function retainContourIds(result: ReturnType<typeof analyzeContours>, previous: PathContour[]) {
+  const ids = retainDerivedIds(result.contours, previous, (contour) => contour.chainId, 'contour');
+  for (const contour of result.contours) {
+    if (contour.parentId) contour.parentId = ids.get(contour.parentId) ?? contour.parentId;
+    contour.childIds = contour.childIds.map((id) => ids.get(id) ?? id);
+  }
+  for (const diagnostic of result.diagnostics) {
+    if (diagnostic.relatedContourIds) diagnostic.relatedContourIds = diagnostic.relatedContourIds.map((id) => ids.get(id) ?? id);
+  }
+}
+
+function operationHasAuthoredGeometryState(document: PathPlanningDocument, operation: PathOperation) {
+  return Boolean(operation.overrides || operation.transitions || operation.threadingTransition || operation.programStops?.length ||
+    operation.compensationIntent?.source === 'manual' ||
+    [document.machiningParticipation?.partialContourCompensation, document.machiningParticipation?.partialContourEntryReviews,
+      document.machiningParticipation?.partialContourExitReviews].some((records) => records?.some((record) => record.sourceOperationId === operation.id)));
 }
 
 function refreshInitialWirePositionAfterGeometryEdit(
@@ -1377,6 +1452,7 @@ function refreshPlan(document: PathPlanningDocument) {
 
   document.plan.metrics = planMetrics(document.plan);
   const contourResult = analyzeContours(document.chains, document.segments, document.options);
+  retainContourIds(contourResult, document.contours);
   const manualClassificationsByContourId = manualClassifications(document);
   document.contours = document.contours.map((contour) => {
     const refreshed = contourResult.contours.find((candidate) => candidate.id === contour.id);
