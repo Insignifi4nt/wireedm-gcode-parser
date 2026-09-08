@@ -60,6 +60,7 @@ Verification completed:
 - Production browser suite: 77 passed, one optional external-fixture case skipped. Five UPID round-trip, transform and machine-export browser scenarios also passed against the final geometry-cache validation.
 - Production build and post-authoring documentation checks passed.
 - All three complete UPID reference documents passed `upid:conformance` through the real parser and execution compiler.
+- The exact Robofil 100 v2 post passed both of its controller conformance fixtures.
 - One wall-clock spatial-performance assertion failed while other work was running. The subsequent complete suite with four workers passed without changing its thresholds or candidate-count assertions.
 
 All source changes are committed on the working branch; no merge or deployment was performed. Larger versioned capabilities listed above remain future work and are not included in this checkpoint.
