@@ -7,6 +7,7 @@ import {
 } from '@/domain/path-intel/segments';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
 import { circularOperationSource } from '@/domain/path-intel/circularOperation';
+import { dxfUnitsFromInsunitsCode } from '@/domain/dxf/parseDxf';
 import { findPathSegmentIntersectionDiagnostics } from '@/domain/path-intel/intersections';
 import type {
   Bounds2,
@@ -722,6 +723,12 @@ function validateDxfUnits(
     finiteNumber(units.scaleToMillimeters, `${path}.scaleToMillimeters`, context, {
       positive: true
     });
+  }
+  if (Number.isSafeInteger(units.code) && units.code >= 0) {
+    const expected = dxfUnitsFromInsunitsCode(units.code);
+    if (units.label !== expected.label || units.scaleToMillimeters !== expected.scaleToMillimeters) {
+      context.add('upid-invalid-value', `${path} label and scale must match DXF INSUNITS code ${units.code}.`);
+    }
   }
 }
 
@@ -1441,10 +1448,10 @@ function validateOperations(
       `operation ${operation.id}.compensationIntent`,
       context
     );
-    validateOperationMachiningIntent(operation, operationMap, context);
+    validateOperationMachiningIntent(operation, context);
     validateProvenance(operation.provenance, `operation ${operation.id}.provenance`, segmentMap, context, operationMap);
     validateOverrides(operation.overrides, operation, segmentMap, tolerance, context);
-    validateOperationTransitions(operation.transitions, operation, segmentMap, tolerance, context);
+    validateOperationTransitions(operation.transitions, operation, segmentMap, validSegmentIds, tolerance, context);
     validateThreadingIntent(
       operation.threadingTransition,
       `operation ${operation.id} threading transition`,
@@ -1477,33 +1484,18 @@ function validateOperations(
 
 function validateOperationMachiningIntent(
   operation: PathOperation,
-  operationMap: Map<string, PathOperation>,
   context: ValidationContext
 ) {
-  const intent = operation.machiningIntent;
-  if (intent !== undefined) {
-    if (
-      intent.kind !== 'partial-contour' ||
-      typeof intent.sourceOperationId !== 'string' ||
-      !operationMap.has(intent.sourceOperationId) ||
-      !Array.isArray(intent.spanIds) ||
-      intent.spanIds.length === 0 ||
-      intent.spanIds.some((id) => typeof id !== 'string' || id.length === 0)
-    ) {
-      context.add(
-        'upid-invalid-value',
-        `Operation ${operation.id} has an invalid partial-contour machining intent.`
-      );
-    }
+  if (operation.machiningIntent !== undefined) {
+    context.add('upid-invalid-value', `Operation ${operation.id} contains derived machiningIntent. Persist source geometry and machiningParticipation instead.`);
   }
   if (
     operation.compensationIntent?.mode === 'controller' &&
-    'wireSide' in operation.compensationIntent &&
-    intent?.kind !== 'partial-contour'
+    'wireSide' in operation.compensationIntent
   ) {
     context.add(
       'upid-invalid-value',
-      `Operation ${operation.id} may use an explicit wire side only as a derived partial contour.`
+      `Operation ${operation.id} must store partial-contour wire side in machiningParticipation, not on a source operation.`
     );
   }
 }
@@ -1634,9 +1626,14 @@ function validatePathElements(
       }
     }
     if (element.metrics !== null) {
-      finiteNumber(element.metrics.cutLength, `path element ${element.id}.metrics.cutLength`, context, { nonNegative: true });
-      finiteNumber(element.metrics.rapidInLength, `path element ${element.id}.metrics.rapidInLength`, context, { nonNegative: true });
-      finiteInteger(element.metrics.segmentCount, `path element ${element.id}.metrics.segmentCount`, context, 0);
+      const metrics = record(element.metrics);
+      if (!metrics) {
+        context.add('upid-invalid-value', `Path element ${element.id}.metrics must be an object or null.`);
+      } else {
+        finiteNumber(metrics.cutLength, `path element ${element.id}.metrics.cutLength`, context, { nonNegative: true });
+        finiteNumber(metrics.rapidInLength, `path element ${element.id}.metrics.rapidInLength`, context, { nonNegative: true });
+        finiteInteger(metrics.segmentCount, `path element ${element.id}.metrics.segmentCount`, context, 0);
+      }
     }
     validateCompensationIntent(
       element.compensationIntent,
@@ -1973,14 +1970,17 @@ function validatePlan(
       context.add('upid-identity-mismatch', 'Plan operation-count metric is stale.');
     }
   }
-  const diagnosticIds = new Set(documentDiagnostics.map((diagnostic) => diagnostic.id));
+  const diagnosticsById = new Map(documentDiagnostics.map((diagnostic) => [diagnostic.id, diagnostic]));
   if (!Array.isArray(plan.diagnostics)) {
     context.add('upid-invalid-value', 'plan.diagnostics must be an array.');
   } else {
+    validateDiagnostics(plan.diagnostics, context);
     for (const diagnostic of plan.diagnostics) {
       const id = record(diagnostic)?.id;
-      if (typeof id !== 'string' || !diagnosticIds.has(id)) {
+      if (typeof id !== 'string' || !diagnosticsById.has(id)) {
         context.add('upid-missing-reference', `Plan diagnostic ${String(id)} is missing from document diagnostics.`);
+      } else if (!sameJsonValue(diagnostic, diagnosticsById.get(id))) {
+        context.add('upid-identity-mismatch', `Plan diagnostic ${id} disagrees with its document diagnostic.`);
       }
     }
   }
@@ -1993,7 +1993,19 @@ function validateOverrides(
   tolerance: number,
   context: ValidationContext
 ) {
-  if (!overrides) return;
+  if (overrides === undefined) return;
+  const values = record(overrides);
+  if (!values) {
+    context.add('upid-invalid-value', `Operation ${operation.id} overrides must be an object.`);
+    return;
+  }
+  for (const key of ['start', 'order', 'direction', 'classification'] as const) {
+    if (values[key] === undefined) continue;
+    const decision = record(values[key]);
+    if (!decision || decision.kind !== 'manual') {
+      context.add('upid-invalid-value', `Operation ${operation.id} ${key} override must be a manual decision.`);
+    }
+  }
   const start = overrides.start;
   if (start) {
     finitePoint(start.point, `operation ${operation.id} start override point`, context);
@@ -2023,7 +2035,12 @@ function validateOverrides(
       context.add('upid-identity-mismatch', `Operation ${operation.id} start override point disagrees with operation start.`);
     }
   }
-  if (overrides.order) finiteInteger(overrides.order.orderIndex, `operation ${operation.id} order override`, context, 0);
+  if (overrides.order) {
+    finiteInteger(overrides.order.orderIndex, `operation ${operation.id} order override`, context, 0);
+    if (overrides.order.orderIndex !== operation.orderIndex) {
+      context.add('upid-identity-mismatch', `Operation ${operation.id} order override disagrees with operation order.`);
+    }
+  }
   if (overrides.direction && overrides.direction.direction !== operation.direction) {
     context.add('upid-identity-mismatch', `Operation ${operation.id} direction override disagrees with operation direction.`);
   }
@@ -2036,6 +2053,7 @@ function validateOperationTransitions(
   value: unknown,
   operation: PathOperation,
   segmentMap: Map<string, PathSegment>,
+  validSegmentIds: Set<string>,
   tolerance: number,
   context: ValidationContext
 ) {
@@ -2065,12 +2083,15 @@ function validateOperationTransitions(
       const source = typeof entry.sourceSegmentId === 'string'
         ? segmentMap.get(entry.sourceSegmentId)
         : undefined;
-      if (!source || source.kind === 'line' || !operation.segmentRefs.some((ref) => ref.segmentId === entry.sourceSegmentId)) {
+      if (!source || source.kind === 'line' || !operation.segmentRefs.some((ref) => validOrientedRef(ref)?.segmentId === entry.sourceSegmentId)) {
         context.add(
           'upid-missing-reference',
           `Operation ${operation.id} circle-center entry transition must reference its own arc or circle segment.`
         );
-      } else {
+      } else if (operation.segmentRefs.every((ref) => {
+        const validated = validOrientedRef(ref);
+        return validated !== null && validSegmentIds.has(validated.segmentId);
+      })) {
         const circular = circularOperationSource({ operation, segments: segmentMap, epsilon: tolerance });
         if (!circular || !finitePointOnly(entry.from) || distance(entry.from, circular.center) > tolerance) {
           context.add('upid-invalid-value', `Operation ${operation.id} circle-center entry requires a complete circular contour and an entry at its center.`);
@@ -2252,6 +2273,21 @@ function validateCompensationIntent(
 function hasOnlyKeys(value: Record<string, unknown>, keys: string[]) {
   const allowed = new Set(keys);
   return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
+      left.every((value, index) => sameJsonValue(value, right[index]));
+  }
+  const leftObject = record(left);
+  const rightObject = record(right);
+  if (!leftObject || !rightObject) return false;
+  const leftKeys = Object.keys(leftObject).filter((key) => leftObject[key] !== undefined);
+  const rightKeys = Object.keys(rightObject).filter((key) => rightObject[key] !== undefined);
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) =>
+    Object.hasOwn(rightObject, key) && sameJsonValue(leftObject[key], rightObject[key]));
 }
 
 function compensationIntentsSemanticallyEqual(left: unknown, right: unknown) {

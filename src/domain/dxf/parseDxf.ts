@@ -197,7 +197,7 @@ function parseDrawingUnitDeclaration(pairs: DxfPair[]): DxfUnitDeclaration {
   return { status: 'missing' };
 }
 
-function dxfUnitsFromInsunitsCode(code: number): DxfDrawingUnits {
+export function dxfUnitsFromInsunitsCode(code: number): DxfDrawingUnits {
   const known = DXF_INSUNITS[code] ?? {
     label: `unknown-${code}`,
     scaleToMillimeters: null
