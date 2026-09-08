@@ -12,6 +12,8 @@ When a version-1 workbench is opened, usable projects migrate to the current neu
 - `npm run preview` - preview the production build on port 3778
 - `npm run test:e2e` - run Playwright on its reserved port 3107
 - `npm run post:docs:check` - verify generated post schemas and SDK declarations
+- `npm run upid:validate -- <file.upid.json> [--require-executable]` - validate portable geometry and report neutral execution readiness
+- `npm run upid:conformance` - validate the complete UPID v1 reference examples
 - `npm run post:conformance -- <post.wireedm-post.json>` - run a post's conformance fixtures
 - `npm run machine-package:build -- <source-directory> [output.wireedm-package]` - build a complete machine package
 - `npm run machine-package:validate-source -- <source-directory>` - validate package sources without writing an archive
@@ -37,5 +39,6 @@ When a version-1 workbench is opened, usable projects migrate to the current neu
 - [Post and machine package authoring](docs/post-authoring/v1/README.md)
 - [Browser testing](docs/playwright.md)
 - [CAM feature audit and supported limits](docs/cam-product-audit.md)
+- [UPID v1 contract](docs/upid/v1/README.md) and [UPID audit findings](docs/upid-standard-audit.md)
 
 `docs/superpowers/` contains dated research, designs, and implementation history. Older plans describe the app at that time; current schemas, contributor rules, and the machine-package decision take precedence.

@@ -1,0 +1,449 @@
+{
+  "format": "upid",
+  "schemaVersion": 1,
+  "document": {
+    "schemaVersion": 1,
+    "geometryBasis": "wire-centre",
+    "source": {
+      "kind": "dxf-entities",
+      "entityCount": 1
+    },
+    "options": {
+      "endpointTolerance": 0.001,
+      "coincidenceEpsilon": 0.00001,
+      "startPoint": {
+        "x": 0,
+        "y": 0
+      },
+      "allowReverseOpenChains": false,
+      "allowReverseClosedContours": true,
+      "approximationMaxAngleRadians": 0.17453292519943295,
+      "operationOrderStrategy": "inside-out-nearest",
+      "includeLayers": [],
+      "excludeLayers": []
+    },
+    "segments": [
+      {
+        "id": "seg_0001",
+        "kind": "circle",
+        "source": {
+          "sourceEntityIndex": 0,
+          "sourceEntityType": "circle",
+          "layer": "CUT",
+          "exact": true
+        },
+        "layer": "CUT",
+        "center": {
+          "x": 0,
+          "y": 0
+        },
+        "radius": 5,
+        "preferredStart": {
+          "x": 5,
+          "y": 0
+        },
+        "start": {
+          "x": 5,
+          "y": 0
+        },
+        "end": {
+          "x": 5,
+          "y": 0
+        },
+        "length": 31.41592653589793,
+        "bounds": {
+          "minX": -5,
+          "minY": -5,
+          "maxX": 5,
+          "maxY": 5
+        }
+      }
+    ],
+    "endpointClusters": [],
+    "chains": [
+      {
+        "id": "chain_0001",
+        "kind": "closed-contour",
+        "segmentRefs": [
+          {
+            "segmentId": "seg_0001",
+            "reversed": false
+          }
+        ],
+        "closed": true,
+        "startClusterId": null,
+        "endClusterId": null,
+        "metrics": {
+          "segmentCount": 1,
+          "cutLength": 31.41592653589793,
+          "gapLength": 0
+        },
+        "diagnosticIds": []
+      }
+    ],
+    "contours": [
+      {
+        "id": "contour_0001",
+        "label": "Contour 1",
+        "provenance": {
+          "sourceEntityIndices": [
+            0
+          ],
+          "sourceEntityTypes": [
+            "circle"
+          ],
+          "layers": [
+            "CUT"
+          ],
+          "exact": true
+        },
+        "chainId": "chain_0001",
+        "closed": true,
+        "classification": "exterior",
+        "signedArea": 78.53981633974483,
+        "area": 78.53981633974483,
+        "orientation": "ccw",
+        "bounds": {
+          "minX": -5,
+          "minY": -5,
+          "maxX": 5,
+          "maxY": 5
+        },
+        "containmentDepth": 0,
+        "parentId": null,
+        "childIds": [],
+        "representativePoint": {
+          "x": -6.062003753640579e-17,
+          "y": -8.051098735303893e-17
+        },
+        "approximatePolygon": [
+          {
+            "x": 5,
+            "y": 0
+          },
+          {
+            "x": 4.92403876506104,
+            "y": 0.8682408883346516
+          },
+          {
+            "x": 4.698463103929543,
+            "y": 1.7101007166283435
+          },
+          {
+            "x": 4.330127018922194,
+            "y": 2.4999999999999996
+          },
+          {
+            "x": 3.83022221559489,
+            "y": 3.2139380484326963
+          },
+          {
+            "x": 3.2139380484326967,
+            "y": 3.83022221559489
+          },
+          {
+            "x": 2.5000000000000004,
+            "y": 4.330127018922193
+          },
+          {
+            "x": 1.7101007166283442,
+            "y": 4.698463103929542
+          },
+          {
+            "x": 0.8682408883346521,
+            "y": 4.92403876506104
+          },
+          {
+            "x": 3.061616997868383e-16,
+            "y": 5
+          },
+          {
+            "x": -0.8682408883346515,
+            "y": 4.92403876506104
+          },
+          {
+            "x": -1.7101007166283424,
+            "y": 4.698463103929543
+          },
+          {
+            "x": -2.499999999999999,
+            "y": 4.330127018922194
+          },
+          {
+            "x": -3.2139380484326967,
+            "y": 3.83022221559489
+          },
+          {
+            "x": -3.8302222155948895,
+            "y": 3.2139380484326976
+          },
+          {
+            "x": -4.330127018922193,
+            "y": 2.5000000000000018
+          },
+          {
+            "x": -4.698463103929542,
+            "y": 1.7101007166283444
+          },
+          {
+            "x": -4.92403876506104,
+            "y": 0.8682408883346514
+          },
+          {
+            "x": -5,
+            "y": 6.123233995736766e-16
+          },
+          {
+            "x": -4.924038765061041,
+            "y": -0.8682408883346502
+          },
+          {
+            "x": -4.698463103929543,
+            "y": -1.7101007166283433
+          },
+          {
+            "x": -4.330127018922193,
+            "y": -2.5000000000000004
+          },
+          {
+            "x": -3.8302222155948917,
+            "y": -3.2139380484326945
+          },
+          {
+            "x": -3.2139380484326976,
+            "y": -3.8302222155948895
+          },
+          {
+            "x": -2.500000000000002,
+            "y": -4.330127018922193
+          },
+          {
+            "x": -1.7101007166283426,
+            "y": -4.698463103929543
+          },
+          {
+            "x": -0.8682408883346516,
+            "y": -4.92403876506104
+          },
+          {
+            "x": -9.184850993605148e-16,
+            "y": -5
+          },
+          {
+            "x": 0.8682408883346499,
+            "y": -4.924038765061041
+          },
+          {
+            "x": 1.7101007166283448,
+            "y": -4.698463103929542
+          },
+          {
+            "x": 2.4999999999999964,
+            "y": -4.330127018922195
+          },
+          {
+            "x": 3.2139380484326963,
+            "y": -3.8302222155948904
+          },
+          {
+            "x": 3.830222215594889,
+            "y": -3.213938048432698
+          },
+          {
+            "x": 4.3301270189221945,
+            "y": -2.4999999999999982
+          },
+          {
+            "x": 4.698463103929543,
+            "y": -1.710100716628343
+          },
+          {
+            "x": 4.92403876506104,
+            "y": -0.868240888334652
+          },
+          {
+            "x": 5,
+            "y": -1.2246467991473533e-15
+          }
+        ],
+        "confidence": 0.95,
+        "diagnosticIds": []
+      }
+    ],
+    "pathElements": [
+      {
+        "id": "contour_0001",
+        "kind": "contour",
+        "contourId": "contour_0001",
+        "chainId": "chain_0001",
+        "operationId": "op_0001",
+        "label": "Contour 1",
+        "displayName": "Exterior 1",
+        "classification": "exterior",
+        "closed": true,
+        "parentId": null,
+        "childIds": [],
+        "containmentDepth": 0,
+        "segmentRefs": [
+          {
+            "segmentId": "seg_0001",
+            "reversed": false
+          }
+        ],
+        "points": [
+          {
+            "role": "start",
+            "point": {
+              "x": 5,
+              "y": 0
+            },
+            "source": "operation"
+          },
+          {
+            "role": "end",
+            "point": {
+              "x": 5,
+              "y": 0
+            },
+            "source": "operation"
+          },
+          {
+            "role": "representative",
+            "point": {
+              "x": -6.062003753640579e-17,
+              "y": -8.051098735303893e-17
+            },
+            "source": "contour"
+          }
+        ],
+        "provenance": {
+          "sourceEntityIndices": [
+            0
+          ],
+          "sourceEntityTypes": [
+            "circle"
+          ],
+          "layers": [
+            "CUT"
+          ],
+          "exact": true
+        },
+        "diagnosticIds": [],
+        "orderIndex": 0,
+        "direction": "forward",
+        "metrics": {
+          "cutLength": 31.41592653589793,
+          "rapidInLength": 5,
+          "segmentCount": 1
+        },
+        "compensationIntent": {
+          "mode": "centerline",
+          "source": "manual"
+        },
+        "bounds": {
+          "minX": -5,
+          "minY": -5,
+          "maxX": 5,
+          "maxY": 5
+        },
+        "confidence": 0.95
+      }
+    ],
+    "rootPathElementIds": [
+      "contour_0001"
+    ],
+    "plan": {
+      "operations": [
+        {
+          "id": "op_0001",
+          "label": "Contour 1",
+          "displayName": "Exterior 1",
+          "provenance": {
+            "sourceEntityIndices": [
+              0
+            ],
+            "sourceEntityTypes": [
+              "circle"
+            ],
+            "layers": [
+              "CUT"
+            ],
+            "exact": true
+          },
+          "orderIndex": 0,
+          "contourId": "contour_0001",
+          "chainId": "chain_0001",
+          "classification": "exterior",
+          "closed": true,
+          "segmentRefs": [
+            {
+              "segmentId": "seg_0001",
+              "reversed": false
+            }
+          ],
+          "startPoint": {
+            "x": 5,
+            "y": 0
+          },
+          "endPoint": {
+            "x": 5,
+            "y": 0
+          },
+          "direction": "forward",
+          "metrics": {
+            "cutLength": 31.41592653589793,
+            "rapidInLength": 5,
+            "segmentCount": 1
+          },
+          "compensationIntent": {
+            "mode": "centerline",
+            "source": "manual"
+          },
+          "programStops": [
+            {
+              "id": "retain-part",
+              "enabled": true,
+              "reason": "part-retention",
+              "placement": {
+                "kind": "before-operation-end",
+                "remainingCutLengthMm": 7.853981633974483
+              }
+            }
+          ]
+        }
+      ],
+      "metrics": {
+        "operationCount": 1,
+        "totalCutLength": 31.41592653589793,
+        "totalRapidLength": 5
+      },
+      "diagnostics": []
+    },
+    "diagnostics": [],
+    "setup": {
+      "initialWirePosition": {
+        "kind": "manual",
+        "point": {
+          "x": 0,
+          "y": 5
+        },
+        "review": "reviewed"
+      }
+    },
+    "machiningParticipation": {
+      "spans": [
+        {
+          "id": "span_seg_0001_0_0p25",
+          "sourceSegmentId": "seg_0001",
+          "range": {
+            "start": 0,
+            "end": 0.25
+          },
+          "participation": "inactive-reference"
+        }
+      ],
+      "partialContourEntryReviews": [],
+      "partialContourExitReviews": []
+    }
+  }
+}

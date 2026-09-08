@@ -1,0 +1,978 @@
+{
+  "format": "upid",
+  "schemaVersion": 1,
+  "document": {
+    "schemaVersion": 1,
+    "geometryBasis": "wire-centre",
+    "source": {
+      "kind": "dxf-entities",
+      "entityCount": 3
+    },
+    "options": {
+      "endpointTolerance": 0.001,
+      "coincidenceEpsilon": 0.00001,
+      "startPoint": {
+        "x": 0,
+        "y": 0
+      },
+      "allowReverseOpenChains": false,
+      "allowReverseClosedContours": true,
+      "approximationMaxAngleRadians": 0.17453292519943295,
+      "operationOrderStrategy": "source-order",
+      "includeLayers": [],
+      "excludeLayers": []
+    },
+    "segments": [
+      {
+        "id": "seg_0001",
+        "kind": "line",
+        "source": {
+          "sourceEntityIndex": 0,
+          "sourceEntityType": "line",
+          "layer": "CUT",
+          "exact": true
+        },
+        "layer": "CUT",
+        "start": {
+          "x": 0,
+          "y": 0
+        },
+        "end": {
+          "x": 10,
+          "y": 0
+        },
+        "length": 10,
+        "bounds": {
+          "minX": 0,
+          "minY": 0,
+          "maxX": 10,
+          "maxY": 0
+        }
+      },
+      {
+        "id": "seg_0002",
+        "kind": "arc",
+        "source": {
+          "sourceEntityIndex": 1,
+          "sourceEntityType": "arc",
+          "layer": "CUT",
+          "exact": true
+        },
+        "layer": "CUT",
+        "start": {
+          "x": 25,
+          "y": 0
+        },
+        "end": {
+          "x": 20,
+          "y": 5
+        },
+        "center": {
+          "x": 20,
+          "y": 0
+        },
+        "radius": 5,
+        "startAngleRadians": 0,
+        "endAngleRadians": 1.5707963267948966,
+        "sweepRadians": 1.5707963267948966,
+        "clockwise": false,
+        "length": 7.853981633974483,
+        "bounds": {
+          "minX": 20,
+          "minY": 0,
+          "maxX": 25,
+          "maxY": 5
+        }
+      },
+      {
+        "id": "seg_0003",
+        "kind": "circle",
+        "source": {
+          "sourceEntityIndex": 2,
+          "sourceEntityType": "circle",
+          "layer": "CUT",
+          "exact": true
+        },
+        "layer": "CUT",
+        "center": {
+          "x": 40,
+          "y": 0
+        },
+        "radius": 5,
+        "preferredStart": {
+          "x": 45,
+          "y": 0
+        },
+        "start": {
+          "x": 45,
+          "y": 0
+        },
+        "end": {
+          "x": 45,
+          "y": 0
+        },
+        "length": 31.41592653589793,
+        "bounds": {
+          "minX": 35,
+          "minY": -5,
+          "maxX": 45,
+          "maxY": 5
+        }
+      }
+    ],
+    "endpointClusters": [
+      {
+        "id": "ec_0001",
+        "point": {
+          "x": 0,
+          "y": 0
+        },
+        "members": [
+          {
+            "segmentId": "seg_0001",
+            "side": "start",
+            "point": {
+              "x": 0,
+              "y": 0
+            }
+          }
+        ],
+        "method": "exact",
+        "toleranceUsed": 0.00001,
+        "radius": 0,
+        "maxPairDistance": 0
+      },
+      {
+        "id": "ec_0002",
+        "point": {
+          "x": 10,
+          "y": 0
+        },
+        "members": [
+          {
+            "segmentId": "seg_0001",
+            "side": "end",
+            "point": {
+              "x": 10,
+              "y": 0
+            }
+          }
+        ],
+        "method": "exact",
+        "toleranceUsed": 0.00001,
+        "radius": 0,
+        "maxPairDistance": 0
+      },
+      {
+        "id": "ec_0003",
+        "point": {
+          "x": 20,
+          "y": 5
+        },
+        "members": [
+          {
+            "segmentId": "seg_0002",
+            "side": "end",
+            "point": {
+              "x": 20,
+              "y": 5
+            }
+          }
+        ],
+        "method": "exact",
+        "toleranceUsed": 0.00001,
+        "radius": 0,
+        "maxPairDistance": 0
+      },
+      {
+        "id": "ec_0004",
+        "point": {
+          "x": 25,
+          "y": 0
+        },
+        "members": [
+          {
+            "segmentId": "seg_0002",
+            "side": "start",
+            "point": {
+              "x": 25,
+              "y": 0
+            }
+          }
+        ],
+        "method": "exact",
+        "toleranceUsed": 0.00001,
+        "radius": 0,
+        "maxPairDistance": 0
+      }
+    ],
+    "chains": [
+      {
+        "id": "chain_0001",
+        "kind": "closed-contour",
+        "segmentRefs": [
+          {
+            "segmentId": "seg_0003",
+            "reversed": false
+          }
+        ],
+        "closed": true,
+        "startClusterId": null,
+        "endClusterId": null,
+        "metrics": {
+          "segmentCount": 1,
+          "cutLength": 31.41592653589793,
+          "gapLength": 0
+        },
+        "diagnosticIds": []
+      },
+      {
+        "id": "chain_0002",
+        "kind": "open-chain",
+        "segmentRefs": [
+          {
+            "segmentId": "seg_0001",
+            "reversed": false
+          }
+        ],
+        "closed": false,
+        "startClusterId": "ec_0001",
+        "endClusterId": "ec_0002",
+        "metrics": {
+          "segmentCount": 1,
+          "cutLength": 10,
+          "gapLength": 0
+        },
+        "diagnosticIds": [
+          "diag_chain_0001"
+        ]
+      },
+      {
+        "id": "chain_0003",
+        "kind": "open-chain",
+        "segmentRefs": [
+          {
+            "segmentId": "seg_0002",
+            "reversed": false
+          }
+        ],
+        "closed": false,
+        "startClusterId": "ec_0004",
+        "endClusterId": "ec_0003",
+        "metrics": {
+          "segmentCount": 1,
+          "cutLength": 7.853981633974483,
+          "gapLength": 0
+        },
+        "diagnosticIds": [
+          "diag_chain_0002"
+        ]
+      }
+    ],
+    "contours": [
+      {
+        "id": "contour_0001",
+        "label": "Contour 1",
+        "provenance": {
+          "sourceEntityIndices": [
+            2
+          ],
+          "sourceEntityTypes": [
+            "circle"
+          ],
+          "layers": [
+            "CUT"
+          ],
+          "exact": true
+        },
+        "chainId": "chain_0001",
+        "closed": true,
+        "classification": "exterior",
+        "signedArea": 78.53981633974483,
+        "area": 78.53981633974483,
+        "orientation": "ccw",
+        "bounds": {
+          "minX": 35,
+          "minY": -5,
+          "maxX": 45,
+          "maxY": 5
+        },
+        "containmentDepth": 0,
+        "parentId": null,
+        "childIds": [],
+        "representativePoint": {
+          "x": 40.00000000000002,
+          "y": -7.122854410527686e-16
+        },
+        "approximatePolygon": [
+          {
+            "x": 45,
+            "y": 0
+          },
+          {
+            "x": 44.92403876506104,
+            "y": 0.8682408883346516
+          },
+          {
+            "x": 44.69846310392954,
+            "y": 1.7101007166283435
+          },
+          {
+            "x": 44.33012701892219,
+            "y": 2.4999999999999996
+          },
+          {
+            "x": 43.83022221559489,
+            "y": 3.2139380484326963
+          },
+          {
+            "x": 43.213938048432695,
+            "y": 3.83022221559489
+          },
+          {
+            "x": 42.5,
+            "y": 4.330127018922193
+          },
+          {
+            "x": 41.71010071662835,
+            "y": 4.698463103929542
+          },
+          {
+            "x": 40.868240888334654,
+            "y": 4.92403876506104
+          },
+          {
+            "x": 40,
+            "y": 5
+          },
+          {
+            "x": 39.131759111665346,
+            "y": 4.92403876506104
+          },
+          {
+            "x": 38.28989928337166,
+            "y": 4.698463103929543
+          },
+          {
+            "x": 37.5,
+            "y": 4.330127018922194
+          },
+          {
+            "x": 36.786061951567305,
+            "y": 3.83022221559489
+          },
+          {
+            "x": 36.16977778440511,
+            "y": 3.2139380484326976
+          },
+          {
+            "x": 35.66987298107781,
+            "y": 2.5000000000000018
+          },
+          {
+            "x": 35.30153689607046,
+            "y": 1.7101007166283444
+          },
+          {
+            "x": 35.07596123493896,
+            "y": 0.8682408883346514
+          },
+          {
+            "x": 35,
+            "y": 6.123233995736766e-16
+          },
+          {
+            "x": 35.07596123493896,
+            "y": -0.8682408883346502
+          },
+          {
+            "x": 35.30153689607046,
+            "y": -1.7101007166283433
+          },
+          {
+            "x": 35.66987298107781,
+            "y": -2.5000000000000004
+          },
+          {
+            "x": 36.169777784405106,
+            "y": -3.2139380484326945
+          },
+          {
+            "x": 36.786061951567305,
+            "y": -3.8302222155948895
+          },
+          {
+            "x": 37.5,
+            "y": -4.330127018922193
+          },
+          {
+            "x": 38.28989928337166,
+            "y": -4.698463103929543
+          },
+          {
+            "x": 39.131759111665346,
+            "y": -4.92403876506104
+          },
+          {
+            "x": 40,
+            "y": -5
+          },
+          {
+            "x": 40.86824088833465,
+            "y": -4.924038765061041
+          },
+          {
+            "x": 41.71010071662835,
+            "y": -4.698463103929542
+          },
+          {
+            "x": 42.5,
+            "y": -4.330127018922195
+          },
+          {
+            "x": 43.213938048432695,
+            "y": -3.8302222155948904
+          },
+          {
+            "x": 43.83022221559489,
+            "y": -3.213938048432698
+          },
+          {
+            "x": 44.3301270189222,
+            "y": -2.4999999999999982
+          },
+          {
+            "x": 44.69846310392954,
+            "y": -1.710100716628343
+          },
+          {
+            "x": 44.92403876506104,
+            "y": -0.868240888334652
+          },
+          {
+            "x": 45,
+            "y": -1.2246467991473533e-15
+          }
+        ],
+        "confidence": 0.95,
+        "diagnosticIds": []
+      },
+      {
+        "id": "contour_0002",
+        "label": "Contour 2",
+        "provenance": {
+          "sourceEntityIndices": [
+            0
+          ],
+          "sourceEntityTypes": [
+            "line"
+          ],
+          "layers": [
+            "CUT"
+          ],
+          "exact": true
+        },
+        "chainId": "chain_0002",
+        "closed": false,
+        "classification": "open-chain",
+        "signedArea": null,
+        "area": null,
+        "orientation": null,
+        "bounds": {
+          "minX": 0,
+          "minY": 0,
+          "maxX": 10,
+          "maxY": 0
+        },
+        "containmentDepth": 0,
+        "parentId": null,
+        "childIds": [],
+        "representativePoint": null,
+        "approximatePolygon": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 10,
+            "y": 0
+          }
+        ],
+        "confidence": 0.35,
+        "diagnosticIds": [
+          "diag_chain_0001"
+        ]
+      },
+      {
+        "id": "contour_0003",
+        "label": "Contour 3",
+        "provenance": {
+          "sourceEntityIndices": [
+            1
+          ],
+          "sourceEntityTypes": [
+            "arc"
+          ],
+          "layers": [
+            "CUT"
+          ],
+          "exact": true
+        },
+        "chainId": "chain_0003",
+        "closed": false,
+        "classification": "open-chain",
+        "signedArea": null,
+        "area": null,
+        "orientation": null,
+        "bounds": {
+          "minX": 20,
+          "minY": 0,
+          "maxX": 25,
+          "maxY": 5
+        },
+        "containmentDepth": 0,
+        "parentId": null,
+        "childIds": [],
+        "representativePoint": null,
+        "approximatePolygon": [
+          {
+            "x": 25,
+            "y": 0
+          },
+          {
+            "x": 24.92403876506104,
+            "y": 0.8682408883346516
+          },
+          {
+            "x": 24.69846310392954,
+            "y": 1.7101007166283435
+          },
+          {
+            "x": 24.330127018922195,
+            "y": 2.4999999999999996
+          },
+          {
+            "x": 23.83022221559489,
+            "y": 3.2139380484326963
+          },
+          {
+            "x": 23.213938048432695,
+            "y": 3.83022221559489
+          },
+          {
+            "x": 22.5,
+            "y": 4.330127018922193
+          },
+          {
+            "x": 21.710100716628343,
+            "y": 4.698463103929542
+          },
+          {
+            "x": 20.868240888334654,
+            "y": 4.92403876506104
+          },
+          {
+            "x": 20,
+            "y": 5
+          }
+        ],
+        "confidence": 0.35,
+        "diagnosticIds": [
+          "diag_chain_0002"
+        ]
+      }
+    ],
+    "pathElements": [
+      {
+        "id": "contour_0001",
+        "kind": "contour",
+        "contourId": "contour_0001",
+        "chainId": "chain_0001",
+        "operationId": "op_0003",
+        "label": "Contour 1",
+        "displayName": "Exterior 1",
+        "classification": "exterior",
+        "closed": true,
+        "parentId": null,
+        "childIds": [],
+        "containmentDepth": 0,
+        "segmentRefs": [
+          {
+            "segmentId": "seg_0003",
+            "reversed": false
+          }
+        ],
+        "points": [
+          {
+            "role": "start",
+            "point": {
+              "x": 45,
+              "y": 0
+            },
+            "source": "operation"
+          },
+          {
+            "role": "end",
+            "point": {
+              "x": 45,
+              "y": 0
+            },
+            "source": "operation"
+          },
+          {
+            "role": "representative",
+            "point": {
+              "x": 40.00000000000002,
+              "y": -7.122854410527686e-16
+            },
+            "source": "contour"
+          }
+        ],
+        "provenance": {
+          "sourceEntityIndices": [
+            2
+          ],
+          "sourceEntityTypes": [
+            "circle"
+          ],
+          "layers": [
+            "CUT"
+          ],
+          "exact": true
+        },
+        "diagnosticIds": [],
+        "orderIndex": 2,
+        "direction": "forward",
+        "metrics": {
+          "cutLength": 31.41592653589793,
+          "rapidInLength": 25.495097567963924,
+          "segmentCount": 1
+        },
+        "bounds": {
+          "minX": 35,
+          "minY": -5,
+          "maxX": 45,
+          "maxY": 5
+        },
+        "confidence": 0.95
+      },
+      {
+        "id": "contour_0002",
+        "kind": "open-chain",
+        "contourId": "contour_0002",
+        "chainId": "chain_0002",
+        "operationId": "op_0001",
+        "label": "Contour 2",
+        "displayName": "Open Chain 1",
+        "classification": "open-chain",
+        "closed": false,
+        "parentId": null,
+        "childIds": [],
+        "containmentDepth": 0,
+        "segmentRefs": [
+          {
+            "segmentId": "seg_0001",
+            "reversed": false
+          }
+        ],
+        "points": [
+          {
+            "role": "start",
+            "point": {
+              "x": 0,
+              "y": 0
+            },
+            "source": "operation"
+          },
+          {
+            "role": "end",
+            "point": {
+              "x": 10,
+              "y": 0
+            },
+            "source": "operation"
+          }
+        ],
+        "provenance": {
+          "sourceEntityIndices": [
+            0
+          ],
+          "sourceEntityTypes": [
+            "line"
+          ],
+          "layers": [
+            "CUT"
+          ],
+          "exact": true
+        },
+        "diagnosticIds": [
+          "diag_chain_0001"
+        ],
+        "orderIndex": 0,
+        "direction": "forward",
+        "metrics": {
+          "cutLength": 10,
+          "rapidInLength": 0,
+          "segmentCount": 1
+        },
+        "bounds": {
+          "minX": 0,
+          "minY": 0,
+          "maxX": 10,
+          "maxY": 0
+        },
+        "confidence": 0.35
+      },
+      {
+        "id": "contour_0003",
+        "kind": "open-chain",
+        "contourId": "contour_0003",
+        "chainId": "chain_0003",
+        "operationId": "op_0002",
+        "label": "Contour 3",
+        "displayName": "Open Chain 2",
+        "classification": "open-chain",
+        "closed": false,
+        "parentId": null,
+        "childIds": [],
+        "containmentDepth": 0,
+        "segmentRefs": [
+          {
+            "segmentId": "seg_0002",
+            "reversed": false
+          }
+        ],
+        "points": [
+          {
+            "role": "start",
+            "point": {
+              "x": 25,
+              "y": 0
+            },
+            "source": "operation"
+          },
+          {
+            "role": "end",
+            "point": {
+              "x": 20,
+              "y": 5
+            },
+            "source": "operation"
+          }
+        ],
+        "provenance": {
+          "sourceEntityIndices": [
+            1
+          ],
+          "sourceEntityTypes": [
+            "arc"
+          ],
+          "layers": [
+            "CUT"
+          ],
+          "exact": true
+        },
+        "diagnosticIds": [
+          "diag_chain_0002"
+        ],
+        "orderIndex": 1,
+        "direction": "forward",
+        "metrics": {
+          "cutLength": 7.853981633974483,
+          "rapidInLength": 15,
+          "segmentCount": 1
+        },
+        "bounds": {
+          "minX": 20,
+          "minY": 0,
+          "maxX": 25,
+          "maxY": 5
+        },
+        "confidence": 0.35
+      }
+    ],
+    "rootPathElementIds": [
+      "contour_0001",
+      "contour_0002",
+      "contour_0003"
+    ],
+    "plan": {
+      "operations": [
+        {
+          "id": "op_0001",
+          "label": "Contour 2",
+          "displayName": "Open Chain 1",
+          "provenance": {
+            "sourceEntityIndices": [
+              0
+            ],
+            "sourceEntityTypes": [
+              "line"
+            ],
+            "layers": [
+              "CUT"
+            ],
+            "exact": true
+          },
+          "orderIndex": 0,
+          "contourId": "contour_0002",
+          "chainId": "chain_0002",
+          "classification": "open-chain",
+          "closed": false,
+          "segmentRefs": [
+            {
+              "segmentId": "seg_0001",
+              "reversed": false
+            }
+          ],
+          "startPoint": {
+            "x": 0,
+            "y": 0
+          },
+          "endPoint": {
+            "x": 10,
+            "y": 0
+          },
+          "direction": "forward",
+          "metrics": {
+            "cutLength": 10,
+            "rapidInLength": 0,
+            "segmentCount": 1
+          }
+        },
+        {
+          "id": "op_0002",
+          "label": "Contour 3",
+          "displayName": "Open Chain 2",
+          "provenance": {
+            "sourceEntityIndices": [
+              1
+            ],
+            "sourceEntityTypes": [
+              "arc"
+            ],
+            "layers": [
+              "CUT"
+            ],
+            "exact": true
+          },
+          "orderIndex": 1,
+          "contourId": "contour_0003",
+          "chainId": "chain_0003",
+          "classification": "open-chain",
+          "closed": false,
+          "segmentRefs": [
+            {
+              "segmentId": "seg_0002",
+              "reversed": false
+            }
+          ],
+          "startPoint": {
+            "x": 25,
+            "y": 0
+          },
+          "endPoint": {
+            "x": 20,
+            "y": 5
+          },
+          "direction": "forward",
+          "metrics": {
+            "cutLength": 7.853981633974483,
+            "rapidInLength": 15,
+            "segmentCount": 1
+          }
+        },
+        {
+          "id": "op_0003",
+          "label": "Contour 1",
+          "displayName": "Exterior 1",
+          "provenance": {
+            "sourceEntityIndices": [
+              2
+            ],
+            "sourceEntityTypes": [
+              "circle"
+            ],
+            "layers": [
+              "CUT"
+            ],
+            "exact": true
+          },
+          "orderIndex": 2,
+          "contourId": "contour_0001",
+          "chainId": "chain_0001",
+          "classification": "exterior",
+          "closed": true,
+          "segmentRefs": [
+            {
+              "segmentId": "seg_0003",
+              "reversed": false
+            }
+          ],
+          "startPoint": {
+            "x": 45,
+            "y": 0
+          },
+          "endPoint": {
+            "x": 45,
+            "y": 0
+          },
+          "direction": "forward",
+          "metrics": {
+            "cutLength": 31.41592653589793,
+            "rapidInLength": 25.495097567963924,
+            "segmentCount": 1
+          }
+        }
+      ],
+      "metrics": {
+        "operationCount": 3,
+        "totalCutLength": 49.269908169872416,
+        "totalRapidLength": 40.495097567963924
+      },
+      "diagnostics": []
+    },
+    "diagnostics": [
+      {
+        "id": "diag_chain_0001",
+        "severity": "warning",
+        "code": "open-chain",
+        "message": "Built an open chain with 1 segment(s); it can be cut, but it is not a closed contour.",
+        "relatedSegmentIds": [
+          "seg_0001"
+        ],
+        "relatedClusterIds": [
+          "ec_0001",
+          "ec_0002"
+        ]
+      },
+      {
+        "id": "diag_chain_0002",
+        "severity": "warning",
+        "code": "open-chain",
+        "message": "Built an open chain with 1 segment(s); it can be cut, but it is not a closed contour.",
+        "relatedSegmentIds": [
+          "seg_0002"
+        ],
+        "relatedClusterIds": [
+          "ec_0004",
+          "ec_0003"
+        ]
+      }
+    ],
+    "setup": {
+      "initialWirePosition": {
+        "kind": "manual",
+        "point": {
+          "x": 0,
+          "y": 0
+        },
+        "review": "reviewed"
+      },
+      "threadingDefault": {
+        "mode": "manual",
+        "wireSeparation": "manual-before-positioning"
+      }
+    }
+  }
+}
