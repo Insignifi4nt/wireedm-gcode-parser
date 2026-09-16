@@ -223,7 +223,7 @@ function portableSizeError(text: string): Extract<ParsePortableUpidError, { read
   } : null;
 }
 
-function portableFileBaseName(name: string) {
+export function portableFileBaseName(name: string) {
   const safe = name
     .trim()
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')

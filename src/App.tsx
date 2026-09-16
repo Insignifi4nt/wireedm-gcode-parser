@@ -96,6 +96,7 @@ export default function App({ services }: AppProps = {}) {
           onDxfImportOverrideAcknowledgedChange={app.handleDxfImportOverrideAcknowledgedChange}
           onDxfImportUnitCandidateChange={app.handleDxfImportUnitCandidateChange}
           onExportUpidProject={app.handleExportUpidProject}
+          onSaveUpidProjectAs={app.handleSaveUpidProjectAs}
           onImportDxfFile={app.handleImportDxfFile}
           onImportProgramFile={app.handleImportExternalProgram}
           onImportUpidFile={app.handleImportUpidFile}

@@ -22,6 +22,7 @@ describe('workbench controller asynchronous operations', () => {
     act(() => root?.unmount());
     container?.remove();
     window.localStorage.clear();
+    Reflect.deleteProperty(window, 'showSaveFilePicker');
   });
 
   async function mount(overrides: Partial<AppServices> = {}) {
@@ -141,6 +142,25 @@ describe('workbench controller asynchronous operations', () => {
     await act(async () => { await read().handleRenameWorkbenchProject(seeded.project.id, 'Changed'); });
     expect(read().connectedWorkbench?.manifest.projects[0].name).toBe('Changed');
     expect(read().workbenchInteractionLocked).toBe(false);
+  });
+
+  it('chooses a save destination before exporting and writes the UPID file there', async () => {
+    const seeded = await seedProgram();
+    const write = vi.fn(async () => undefined);
+    const close = vi.fn(async () => undefined);
+    const picker = vi.fn(async () => ({ createWritable: async () => ({ write, close }) }));
+    Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: picker });
+    const exportProject = vi.fn<AppServices['exportPortableUpidProject']>().mockResolvedValue({
+      ok: true, file: { fileName: 'part.upid.json', text: '{"fixture":true}' }
+    });
+    const read = await mount({ exportPortableUpidProject: exportProject });
+    await act(async () => { await read().handleSaveUpidProjectAs(seeded.project.id); });
+    expect(picker).toHaveBeenCalledWith(expect.objectContaining({ suggestedName: 'part.upid.json' }));
+    expect(exportProject).toHaveBeenCalledOnce();
+    expect(picker.mock.invocationCallOrder[0]).toBeLessThan(exportProject.mock.invocationCallOrder[0]);
+    expect(write).toHaveBeenCalledWith('{"fixture":true}');
+    expect(close).toHaveBeenCalledOnce();
+    expect(read().statusToasts.at(-1)).toMatchObject({ type: 'success' });
   });
 
   it('locks competing project opens and imports until a slow project read completes', async () => {

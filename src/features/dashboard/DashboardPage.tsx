@@ -29,6 +29,7 @@ interface DashboardPageProps {
   onDeleteProject: (projectId: string) => Promise<void>;
   onRestoreProject: (projectId: string) => Promise<void>;
   onExportUpidProject: (projectId: string) => Promise<void>;
+  onSaveUpidProjectAs: (projectId: string) => Promise<void>;
   onRenameProject: (projectId: string, name: string) => Promise<void>;
   onImportDxfFile: (file: File) => void | Promise<void>;
   onImportUpidFile: (file: File) => void | Promise<void>;
@@ -55,6 +56,7 @@ export function DashboardPage({
   onDeleteProject,
   onRestoreProject,
   onExportUpidProject,
+  onSaveUpidProjectAs,
   onRenameProject,
   onImportDxfFile,
   onImportUpidFile,
@@ -107,6 +109,7 @@ export function DashboardPage({
           interactionLocked={interactionLocked}
           onDeleteProject={(project) => setProjectAction({ kind: 'delete', project })}
           onExportUpidProject={onExportUpidProject}
+          onSaveUpidProjectAs={onSaveUpidProjectAs}
           onOpenProject={onOpenProject}
           onShowRevisions={setRevisionProject}
           onRenameProject={(project) => setProjectAction({ kind: 'rename', project })}

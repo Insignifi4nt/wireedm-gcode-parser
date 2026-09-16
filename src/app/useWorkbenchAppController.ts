@@ -17,7 +17,8 @@ import type {
 } from '@/domain/machine-package';
 import { MAX_MACHINE_PACKAGE_ARCHIVE_BYTES } from '@/domain/machine-package';
 import type { DownloadProgramFileInput } from '@/domain/post/downloadProgramFile';
-import { MAX_PORTABLE_UPID_BYTES } from '@/domain/upid/portableUpidProject';
+import { selectTextFileDestination, writeSelectedTextFile } from '@/domain/post/saveTextFileAs';
+import { MAX_PORTABLE_UPID_BYTES, portableFileBaseName } from '@/domain/upid/portableUpidProject';
 import {
   createSavedWireEdmJobRevisionId,
   type ControllerArtifactResult
@@ -593,10 +594,29 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
           text: exported.file.text,
           mimeType: 'application/json;charset=utf-8'
         });
-        showStatusToast('UPID export prepared.', 'success');
+        showStatusToast('UPID download requested. If no file appears, use Save UPID As.', 'success');
       });
     } catch (error) {
       showStatusToast('Could not export UPID: ' + errorText(error) + ' Retry using Export UPID.', 'error');
+    }
+  }
+
+  async function handleSaveUpidProjectAs(projectId: string) {
+    const workbench = requireWorkbench();
+    if (!workbench) return;
+    const project = workbench.manifest.projects.find(({ id }) => id === projectId);
+    if (!project) return;
+    try {
+      const destination = await selectTextFileDestination(`${portableFileBaseName(project.name)}.upid.json`);
+      await runProjectAction(async () => {
+        const exported = await services.exportPortableUpidProject(workbench, projectId);
+        if (!exported.ok) throw new Error(exported.error.message);
+        await writeSelectedTextFile(destination, exported.file.text);
+        showStatusToast(`Saved ${exported.file.fileName}.`, 'success');
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      showStatusToast('Could not save UPID: ' + errorText(error), 'error');
     }
   }
 
@@ -826,6 +846,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     handleDxfReimportUnitCandidateChange,
     handleDownloadEditorFile,
     handleExportUpidProject,
+    handleSaveUpidProjectAs,
     handleGenerateControllerArtifact,
     handleImportDxfFile,
     handleImportExternalProgram,

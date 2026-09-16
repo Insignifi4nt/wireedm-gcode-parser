@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Forward, History, Pencil, Trash2 } from 'lucide-react';
+import { Forward, History, Pencil, Save, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
+import { supportsSaveTextFileAs } from '@/domain/post/saveTextFileAs';
 
 type WorkbenchProjectIndexEntry = WorkbenchCatalogManifest['projects'][number];
 
@@ -16,6 +17,7 @@ interface ProjectListPanelProps {
   onOpenProject: (projectId: string) => void | Promise<void>;
   onDeleteProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
   onExportUpidProject: (projectId: string) => void | Promise<void>;
+  onSaveUpidProjectAs: (projectId: string) => void | Promise<void>;
   onShowRevisions: (project: WorkbenchProjectIndexEntry) => void;
   onRenameProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
 }
@@ -26,6 +28,7 @@ export function ProjectListPanel({
   projects,
   onDeleteProject,
   onExportUpidProject,
+  onSaveUpidProjectAs,
   onShowRevisions,
   onOpenProject,
   onRenameProject
@@ -177,6 +180,18 @@ export function ProjectListPanel({
                         >
                           <Forward />
                         </Button>
+                      )}
+                      {isPathProjectSourceKind(project.sourceKind) && supportsSaveTextFileAs() && (
+                        <Button
+                          aria-label={`Save UPID project ${project.id} as file`}
+                          className="size-7 text-muted-foreground hover:text-foreground"
+                          disabled={interactionLocked}
+                          onClick={() => onSaveUpidProjectAs(project.id)}
+                          size="icon"
+                          title="Save UPID As…"
+                          type="button"
+                          variant="ghost"
+                        ><Save /></Button>
                       )}
                     </div>
                   </div>

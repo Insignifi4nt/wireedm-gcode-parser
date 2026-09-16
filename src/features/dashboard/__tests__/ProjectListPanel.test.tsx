@@ -31,6 +31,7 @@ describe('ProjectListPanel', () => {
         interactionLocked={false}
         onDeleteProject={vi.fn()}
         onExportUpidProject={onExportUpidProject}
+        onSaveUpidProjectAs={vi.fn()}
         onOpenProject={onOpenProject}
         onShowRevisions={onShowRevisions}
         onRenameProject={vi.fn()}
@@ -70,7 +71,7 @@ describe('ProjectListPanel', () => {
 
   it('combines search and source filters, sorts results, and clears filters without changing the catalog', async () => {
     await act(async () => root.render(<ProjectListPanel availability="ready" interactionLocked={false} projects={projects}
-      onOpenProject={vi.fn()} onDeleteProject={vi.fn()} onRenameProject={vi.fn()} onExportUpidProject={vi.fn()} onShowRevisions={vi.fn()} />));
+      onOpenProject={vi.fn()} onDeleteProject={vi.fn()} onRenameProject={vi.fn()} onExportUpidProject={vi.fn()} onSaveUpidProjectAs={vi.fn()} onShowRevisions={vi.fn()} />));
     const visible = () => [...container.querySelectorAll('[data-project-row]')].map((row) =>
       row.querySelector('button[aria-label^="Open project"]')?.getAttribute('aria-label'));
     expect(visible()).toEqual(['Open project b in editor', 'Open project c in editor', 'Open project a in editor']);
@@ -107,7 +108,7 @@ describe('ProjectListPanel', () => {
     const action = vi.fn();
     const render = (availability: 'loading' | 'unavailable' | 'ready', rows = projects, locked = false) =>
       root.render(<ProjectListPanel availability={availability} interactionLocked={locked} projects={rows}
-        onOpenProject={action} onDeleteProject={action} onRenameProject={action} onExportUpidProject={action} onShowRevisions={action} />);
+        onOpenProject={action} onDeleteProject={action} onRenameProject={action} onExportUpidProject={action} onSaveUpidProjectAs={action} onShowRevisions={action} />);
     await act(async () => render('loading', []));
     expect(container.querySelector('[role="status"]')?.textContent).toContain('Loading projects');
     expect(container.querySelector('[data-project-library]')?.getAttribute('aria-busy')).toBe('true');
