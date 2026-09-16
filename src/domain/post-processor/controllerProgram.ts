@@ -61,7 +61,8 @@ export interface ControllerProgramAuditDiagnostic {
 export function auditControllerProgram(
   plan: WireEdmExecutionPlan,
   program: ControllerProgram,
-  registeredCommandIds: ReadonlySet<string>
+  registeredCommandIds: ReadonlySet<string>,
+  coordinateQuantumMm = 0
 ): readonly ControllerProgramAuditDiagnostic[] {
   const diagnostics: ControllerProgramAuditDiagnostic[] = [];
   const planEvents = new Map(plan.events.map((event) => [event.id, event]));
@@ -143,7 +144,7 @@ export function auditControllerProgram(
       });
       continue;
     }
-    if (!sameMotionSequence(event, motions, plan.tolerance.endpointMm)) {
+    if (!sameMotionSequence(event, motions, plan.tolerance.endpointMm, coordinateQuantumMm)) {
       diagnostics.push({
         code: 'POST_AUDIT_MOTION_MISMATCH',
         message: `Controller motion blocks do not preserve motion event ${event.id}.`,
@@ -157,22 +158,27 @@ export function auditControllerProgram(
 function sameMotionSequence(
   event: Extract<WireEdmExecutionEvent, { kind: 'motion' | 'position' }>,
   motions: readonly ControllerMotionTrace[],
-  toleranceMm: number
+  sourceToleranceMm: number,
+  coordinateQuantumMm: number
 ) {
+  const pointToleranceMm = Math.max(sourceToleranceMm, coordinateQuantumMm / Math.SQRT2 + Number.EPSILON);
+  const lengthToleranceMm = Math.max(sourceToleranceMm, coordinateQuantumMm * Math.SQRT2 + Number.EPSILON);
+  // Arc sweep compares rounded start, end, and center coordinates at both ends.
+  const arcSweepToleranceMm = Math.max(sourceToleranceMm, coordinateQuantumMm * 4 + Number.EPSILON);
   const expectedStart = event.kind === 'position' ? event.from : event.start;
   const expectedEnd = event.kind === 'position' ? event.to : event.end;
   if (
-    !samePoint(motions[0].start, expectedStart, toleranceMm) ||
-    !samePoint(motions.at(-1)!.end, expectedEnd, toleranceMm) ||
+    !samePoint(motions[0].start, expectedStart, pointToleranceMm) ||
+    !samePoint(motions.at(-1)!.end, expectedEnd, pointToleranceMm) ||
     motions.some((motion, index) => (
-      index > 0 && !samePoint(motions[index - 1].end, motion.start, toleranceMm)
+      index > 0 && !samePoint(motions[index - 1].end, motion.start, pointToleranceMm)
     ))
   ) return false;
   if (event.kind === 'position') {
-    return sameLinearPath(motions, 'position', expectedStart, expectedEnd, toleranceMm);
+    return sameLinearPath(motions, 'position', expectedStart, expectedEnd, pointToleranceMm, lengthToleranceMm);
   }
   if (event.motion === 'linear') {
-    return sameLinearPath(motions, event.role, expectedStart, expectedEnd, toleranceMm);
+    return sameLinearPath(motions, event.role, expectedStart, expectedEnd, pointToleranceMm, lengthToleranceMm);
   }
   if (!event.center || event.clockwise === undefined) return false;
   const radius = distance(event.center, event.start);
@@ -181,10 +187,10 @@ function sameMotionSequence(
     motion.motion !== 'circular' ||
     motion.role !== event.role ||
     !motion.center ||
-    !samePoint(motion.center, event.center!, toleranceMm) ||
+    !samePoint(motion.center, event.center!, pointToleranceMm) ||
     motion.clockwise !== event.clockwise ||
-    Math.abs(distance(event.center!, motion.start) - radius) > toleranceMm ||
-    Math.abs(distance(event.center!, motion.end) - radius) > toleranceMm ||
+    Math.abs(distance(event.center!, motion.start) - radius) > lengthToleranceMm ||
+    Math.abs(distance(event.center!, motion.end) - radius) > lengthToleranceMm ||
     motion.fullCircle !== (motion.start.x === motion.end.x && motion.start.y === motion.end.y)
   ))) return false;
   const expectedSweep = event.fullCircle
@@ -195,7 +201,7 @@ function sameMotionSequence(
       ? Math.PI * 2
       : circularSweep(motion.start, motion.end, motion.center!, motion.clockwise!)
   ), 0);
-  return radius * Math.abs(expectedSweep - emittedSweep) <= toleranceMm;
+  return radius * Math.abs(expectedSweep - emittedSweep) <= arcSweepToleranceMm;
 }
 
 function sameLinearPath(
@@ -203,15 +209,17 @@ function sameLinearPath(
   role: ControllerMotionTrace['role'],
   start: Point2,
   end: Point2,
-  toleranceMm: number
+  pointToleranceMm: number,
+  lengthToleranceMm: number
 ) {
   if (motions.some((motion) => motion.motion !== 'linear' || motion.role !== role)) return false;
   const expectedLength = distance(start, end);
   const emittedLength = motions.reduce((total, motion) => total + distance(motion.start, motion.end), 0);
-  if (Math.abs(expectedLength - emittedLength) > toleranceMm) return false;
+  if (expectedLength > 0 && emittedLength === 0) return false;
+  if (Math.abs(expectedLength - emittedLength) > lengthToleranceMm) return false;
   if (expectedLength === 0) {
     return motions.every((motion) => (
-      samePoint(motion.start, start, toleranceMm) && samePoint(motion.end, start, toleranceMm)
+      samePoint(motion.start, start, pointToleranceMm) && samePoint(motion.end, start, pointToleranceMm)
     ));
   }
   const directionX = (end.x - start.x) / expectedLength;
@@ -229,8 +237,8 @@ function sameLinearPath(
       const deviation = Math.abs(x * directionY - y * directionX);
       if (
         !Number.isFinite(progress) || !Number.isFinite(deviation) ||
-        deviation > toleranceMm ||
-        progress < -toleranceMm || progress > expectedLength + toleranceMm ||
+        deviation > pointToleranceMm ||
+        progress < -pointToleranceMm || progress > expectedLength + pointToleranceMm ||
         progress < previousProgress - roundoff
       ) return false;
       previousProgress = progress;

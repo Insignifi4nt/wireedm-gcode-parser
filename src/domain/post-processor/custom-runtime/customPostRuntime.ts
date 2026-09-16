@@ -251,7 +251,8 @@ async function executeOnce(
     const auditDiagnostics = auditControllerProgram(
       plan,
       program,
-      new Set(Object.keys(packageValue.dialect.commands))
+      new Set(Object.keys(packageValue.dialect.commands)),
+      emittedCoordinateQuantumMm(packageValue, properties, program)
     );
     if (auditDiagnostics.length > 0) {
       return {
@@ -280,6 +281,31 @@ async function executeOnce(
     context.dispose();
     runtime.dispose();
   }
+}
+
+function emittedCoordinateQuantumMm(
+  packageValue: WireEdmPostPackage,
+  properties: Readonly<Record<string, PostPropertyValue>>,
+  program: ControllerProgram
+) {
+  let quantumMm = 0;
+  for (const block of program.blocks) {
+    if (!block.motion) continue;
+    for (const commandId of block.commandIds) {
+      const command = packageValue.dialect.commands[commandId];
+      if (!command) continue;
+      for (const parameter of Object.values(command.parameters)) {
+        if (parameter.type !== 'number' || parameter.role === 'none') continue;
+        const digits = parameter.format.fractionDigits.kind === 'fixed'
+          ? parameter.format.fractionDigits.value
+          : properties[parameter.format.fractionDigits.property];
+        if (typeof digits === 'number' && Number.isInteger(digits)) {
+          quantumMm = Math.max(quantumMm, 10 ** -digits);
+        }
+      }
+    }
+  }
+  return quantumMm;
 }
 
 function requiredEventEffect(event: WireEdmExecutionEvent): string | null {

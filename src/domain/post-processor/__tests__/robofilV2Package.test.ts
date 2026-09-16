@@ -128,6 +128,22 @@ describe('standalone Robofil 100 V2 package', () => {
       ]);
   });
 
+  it('audits decimal DXF coordinates at the post’s three-decimal output resolution', async () => {
+    const installation = await installRobofilV2();
+    const source = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0.123456, y: -0.567891 }, radius: 11.186444 }
+    ]);
+    source.options.endpointTolerance = 0;
+    source.geometryBasis = 'finished-contour';
+    source.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    const configured = setManualCompensationIntent(source, source.plan.operations[0].id, 'outside');
+    if (!configured) throw new Error('Expected a closed contour.');
+    const program = await post(installation, configured);
+    expect(program.lines).toEqual(expect.arrayContaining([
+      'G92 X0.000 Y0.000', 'G0 X11.310 Y-0.568'
+    ]));
+  });
+
   it('keeps one compensation lifecycle across same-side continuous contours', async () => {
     const installation = await installRobofilV2();
     const program = await post(installation, compensatedTwoRectangles());

@@ -112,15 +112,15 @@ describe('isolated custom JavaScript post runtime', () => {
     }
     fixture.plan = {
       ...fixture.plan,
-      events: fixture.plan.events.map((event) => event.kind === 'motion'
-        ? { ...event, end: { ...event.end, x: -0.0004 } }
+      events: fixture.plan.events.map((event) => event.kind === 'position'
+        ? { ...event, to: { ...event.to, x: -0.0004 } }
         : event)
     };
     const result = await runCustomPost(fixture);
 
     if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
-    expect(result.program.text).toBe('G90\nG1 X0,000 Y0,000\nG1 X0,000 Y0,000\nM02');
-    expect(result.program.blocks[2].motion?.end.x).toBe(0);
+    expect(result.program.text).toBe('G90\nG1 X0,000 Y0,000\nG1 X10,000 Y0,000\nM02');
+    expect(result.program.blocks[1].motion?.end.x).toBe(0);
   });
 
   it('rejects controller precision that rounds away the requested cut', async () => {
