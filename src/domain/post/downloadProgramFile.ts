@@ -18,16 +18,19 @@ export function downloadProgramFile({
   link.href = url;
   link.download = fileName;
   link.rel = 'noopener';
+  link.hidden = true;
   try {
     document.body.append(link);
     link.click();
     // The browser starts the download after the click handler returns.
-    // Revoking here can invalidate the URL before it has been read.
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    // Keep the anchor and its URL alive while the browser handles it.
+    window.setTimeout(() => {
+      link.remove();
+      URL.revokeObjectURL(url);
+    }, 60_000);
   } catch (error) {
+    link.remove();
     URL.revokeObjectURL(url);
     throw error;
-  } finally {
-    link.remove();
   }
 }

@@ -36,11 +36,12 @@ describe('downloadProgramFile', () => {
     expect(downloadedLink?.download).toBe('part.iso');
     expect(downloadedLink?.href).toBe('blob:wire-edm-program');
     expect(downloadedLink?.rel).toBe('noopener');
-    expect(downloadedLink?.isConnected).toBe(false);
+    expect(downloadedLink?.isConnected).toBe(true);
     expect(downloadedBlob).toBeInstanceOf(Blob);
     expect(downloadedBlob!.type).toBe('text/plain;charset=utf-8');
     expect(await downloadedBlob!.text()).toBe('G90\nG1 X10.000 Y0.000\nM30\n');
     vi.advanceTimersByTime(60_000);
+    expect(downloadedLink?.isConnected).toBe(false);
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:wire-edm-program');
   });
 
