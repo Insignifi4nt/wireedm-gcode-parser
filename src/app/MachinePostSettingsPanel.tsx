@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Check, Trash2, Upload } from 'lucide-react';
+import { Check, ChevronRight, Trash2, Upload } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type {
@@ -118,15 +118,12 @@ export function MachinePostSettingsPanel({
         {connectedWorkbench.machines.machines.map((machine) => {
           const activeSetup = machine.bindings.find(({ id }) => id === machine.activeBindingId) ?? null;
           return (
-            <article className="grid gap-3 border border-border bg-background/40 p-3 text-[10px]" key={machine.id}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h4 className="text-xs font-semibold text-foreground">{machine.name}</h4>
-                  <p className="text-muted-foreground">{machine.identity.manufacturer} {machine.identity.model} · {machine.identity.controller.manufacturer} {machine.identity.controller.model}</p>
-                </div>
+            <article className="grid gap-2 text-[10px]" key={machine.id}>
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-xs font-semibold text-foreground">{machine.name}</h4>
                 <Button aria-label={`Remove ${machine.name}`} disabled={disabled} onClick={() => onRemoveMachineDefinition(machine.id)} size="icon" type="button" variant="ghost"><Trash2 /></Button>
               </div>
-              <div className="grid gap-2">
+              <div className="divide-y divide-border border-y border-border">
                 {machine.bindings.map((setup) => {
                   const post = connectedWorkbench.posts.installations.find(({ ref }) => (
                     ref.packageId === setup.post.packageId &&
@@ -136,19 +133,22 @@ export function MachinePostSettingsPanel({
                   const active = setup.id === machine.activeBindingId;
                   const output = post?.package.manifest.output;
                   return (
-                    <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border p-2 ${active ? 'border-primary/50 bg-primary/5' : 'border-border'}`} key={setup.id}>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-foreground">{active && <Check className="size-3" />}{setup.name}</div>
-                        <div className="truncate text-muted-foreground">
-                          {post?.package.manifest.name ?? setup.post.packageId} {setup.post.version}
-                          {post ? ` · ${setup.post.contentHash.slice(0, 12)}…` : ' · unavailable'}
+                    <div className={`grid grid-cols-[minmax(0,1fr)_72px] items-start gap-2 px-2 py-2 ${active ? 'bg-primary/5' : ''}`} key={setup.id}>
+                      <details className="group min-w-0">
+                        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-foreground [&::-webkit-details-marker]:hidden">
+                          <ChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+                          {active && <Check className="size-3 shrink-0" />}
+                          <span className="truncate" title={setup.name}>{setup.name}</span>
+                        </summary>
+                        <div className="grid gap-1 pl-[18px] pt-2 text-muted-foreground">
+                          <div>Post: {setup.post.packageId} {setup.post.version} · {post ? `SHA-256 ${setup.post.contentHash.slice(0, 12)}…` : 'unavailable'}</div>
+                          {output && <div>{outputSummary(output)}</div>}
+                          <div>{setup.verification.status === 'claimed' ? 'Verification claimed' : 'Unverified setup'} · {postEvidenceSummary(post?.package.evidence ?? [])} · {machine.evidence.length} machine evidence file{machine.evidence.length === 1 ? '' : 's'}</div>
                         </div>
-                        {output && <div className="text-muted-foreground">{outputSummary(output)}</div>}
-                        <div className="text-muted-foreground">
-                          Post package {post ? 'installed with exact content' : 'unavailable'} · {setup.verification.status === 'claimed' ? 'verification claimed' : 'unverified setup'} · {postEvidenceSummary(post?.package.evidence ?? [])} · {machine.evidence.length} machine evidence file{machine.evidence.length === 1 ? '' : 's'}
-                        </div>
-                      </div>
-                      {!active && <Button disabled={disabled} onClick={() => onActivateMachineSetup(machine.id, setup.id)} size="sm" type="button" variant="outline">Use setup</Button>}
+                      </details>
+                      {active
+                        ? <span className="flex h-7 items-center justify-center text-muted-foreground">In use</span>
+                        : <Button className="w-full" disabled={disabled} onClick={() => onActivateMachineSetup(machine.id, setup.id)} size="sm" type="button" variant="outline">Use setup</Button>}
                     </div>
                   );
                 })}

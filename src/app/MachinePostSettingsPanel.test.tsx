@@ -167,6 +167,28 @@ describe('MachinePostSettingsPanel', () => {
     expect(container.textContent).toContain(afterModel);
   });
 
+  it('keeps installed setup details collapsed until expanded', async () => {
+    const built = await buildMachinePackageArchive(await machinePackageFixture());
+    if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
+    const prepared = await prepareStoredMachinePackageInstallation(workbench, built.archive);
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    const installed = await commitStoredMachinePackageInstallation(prepared.prepared, { kind: 'install-new' });
+    if (!installed.ok) throw new Error(installed.error.message);
+    workbench = installed.workbench;
+    await render();
+
+    const machine = container.querySelector('article');
+    if (!machine) throw new Error('Installed machine is missing.');
+    expect(machine.querySelectorAll('h4')).toHaveLength(1);
+    expect(machine.querySelector('p')).toBeNull();
+    const setup = machine.querySelector('details');
+    if (!setup) throw new Error('Setup disclosure is missing.');
+    expect(setup.open).toBe(false);
+    await act(async () => setup.querySelector('summary')?.click());
+    expect(setup.open).toBe(true);
+    expect(setup.textContent).toContain('Post:');
+  });
+
   async function render(overrides: Partial<MachinePostSettingsActions> = {}) {
     const actions: MachinePostSettingsActions = {
       onActivateMachineSetup: vi.fn(),
