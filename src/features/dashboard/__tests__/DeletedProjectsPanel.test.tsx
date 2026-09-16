@@ -15,7 +15,7 @@ it('prevents duplicate restores, displays failures, and allows retry', async () 
   const entries = [{ project: { id: 'plate', name: 'Plate', path: 'projects/plate.json',
     sourceKind: 'upid' as const, updatedAt: '2026-09-07T00:00:00.000Z' }, deletedAt: '2026-09-07T01:00:00.000Z' }];
   try {
-    await act(async () => root.render(<DeletedProjectsPanel entries={entries} interactionLocked={false} onRestoreProject={restore} />));
+    await act(async () => root.render(<DeletedProjectsPanel entries={entries} interactionLocked={false} onRestoreProject={restore} onPurgeProject={vi.fn()} />));
     const button = container.querySelector('button');
     if (!button) throw new Error('Restore action missing');
     await act(async () => { button.click(); button.click(); });
@@ -27,5 +27,32 @@ it('prevents duplicate restores, displays failures, and allows retry', async () 
     await act(async () => button.click());
     expect(restore).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[role="alert"]')).toBeNull();
+  } finally { act(() => root.unmount()); container.remove(); }
+});
+
+it('requires confirmation before permanently deleting an archived project', async () => {
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  const purge = vi.fn().mockResolvedValue(undefined);
+  const entries = [{ project: { id: 'plate', name: 'Plate', path: 'projects/plate.json',
+    sourceKind: 'upid' as const, updatedAt: '2026-09-07T00:00:00.000Z' }, deletedAt: '2026-09-07T01:00:00.000Z' }];
+  const click = async (label: string) => {
+    const button = [...container.querySelectorAll('button')].find((item) => item.getAttribute('aria-label') === label || item.textContent === label);
+    if (!button) throw new Error(`Missing ${label}`);
+    await act(async () => button.click());
+  };
+  try {
+    await act(async () => root.render(<DeletedProjectsPanel entries={entries} interactionLocked={false}
+      onRestoreProject={vi.fn()} onPurgeProject={purge} />));
+    expect(container.querySelector('summary')?.textContent).toBe('Archive (1)');
+    await click('Permanently delete Plate');
+    expect(purge).not.toHaveBeenCalled();
+    await click('Cancel');
+    expect(container.textContent).not.toContain('This cannot be undone.');
+    await click('Permanently delete Plate');
+    await click('Delete permanently');
+    expect(purge).toHaveBeenCalledExactlyOnceWith('plate');
+    expect(container.textContent).not.toContain('This cannot be undone.');
   } finally { act(() => root.unmount()); container.remove(); }
 });

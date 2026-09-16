@@ -3,9 +3,53 @@ import { importExternalProgram } from '@/domain/editor/importExternalProgram';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { PROJECT_TRASH_TRANSACTION_PATH } from '@/domain/storage/projectTrashTransaction';
 import { initializeWorkbenchCatalog } from '../workbenchCatalog';
-import { deleteStoredWorkbenchProject, restoreStoredWorkbenchProject } from '../workbenchCatalogMutations';
+import { deleteStoredWorkbenchProject, purgeArchivedWorkbenchProject, restoreStoredWorkbenchProject } from '../workbenchCatalogMutations';
 
 describe('recoverable project deletion', () => {
+  it('purges only the selected archive entry and all its owned files', async () => {
+    const { adapter, workbench, id } = await deletedFixture();
+    const other = await importExternalProgram(workbench, { fileName: 'other.nc', text: 'G1 X2 Y3' });
+    if (!other.ok) throw new Error(other.error.message);
+    const owned = [...adapter.files.keys()].filter((path) => path.includes(id));
+    expect(owned.length).toBeGreaterThan(1);
+    const purged = await purgeArchivedWorkbenchProject(other.workbench, { projectId: id });
+    if (!purged.ok) throw new Error(purged.error.message);
+    expect(purged.workbench.manifest.deletedProjects).toEqual([]);
+    expect(purged.workbench.manifest.projects).toHaveLength(1);
+    for (const path of owned) expect(adapter.files.has(path)).toBe(false);
+    expect(adapter.files.has(`projects/${other.project.id}.json`)).toBe(true);
+    const reopened = await initializeWorkbenchCatalog(adapter);
+    if (!reopened.ok) throw new Error(reopened.error.message);
+    expect(reopened.workbench.manifest.projects).toHaveLength(1);
+    expect(reopened.workbench.manifest.deletedProjects).toEqual([]);
+    expect(await restoreStoredWorkbenchProject(reopened.workbench, { projectId: id })).toMatchObject({ ok: false });
+  });
+
+  it('recovers an interrupted purge after its archive index was committed', async () => {
+    const { adapter, workbench, id } = await deletedFixture();
+    const previous = adapter.files.get('workbench.json');
+    const next = JSON.stringify({ ...workbench.manifest, deletedProjects: [] }, null, 2) + '\n';
+    const ownedPaths = [...adapter.files.keys()].filter((path) => path.includes(id));
+    adapter.files.set(PROJECT_TRASH_TRANSACTION_PATH, JSON.stringify({
+      format: 'wire-edm-project-purge-transaction', schemaVersion: 1,
+      projectId: id, ownedPaths, previous, next
+    }));
+    adapter.files.set('workbench.json', next);
+    adapter.files.delete(ownedPaths[0]);
+    const reopened = await initializeWorkbenchCatalog(adapter);
+    if (!reopened.ok) throw new Error(reopened.error.message);
+    expect(reopened.workbench.manifest.deletedProjects).toEqual([]);
+    for (const path of ownedPaths) expect(adapter.files.has(path)).toBe(false);
+    expect(adapter.files.has(PROJECT_TRASH_TRANSACTION_PATH)).toBe(false);
+  });
+
+  it('preserves an archive entry when purge manifest writing fails before commit', async () => {
+    const { adapter, workbench, id } = await deletedFixture();
+    const before = new Map(adapter.files);
+    adapter.partialManifestFailure = true;
+    expect(await purgeArchivedWorkbenchProject(workbench, { projectId: id })).toMatchObject({ ok: false });
+    expect(adapter.files).toEqual(before);
+  });
   it('retains multiple deletions across reload and restores exact source and project bytes', async () => {
     const adapter = new MemoryAdapter();
     const initialized = await initializeWorkbenchCatalog(adapter);

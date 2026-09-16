@@ -27,7 +27,9 @@ interface DashboardPageProps {
   onOpenLatestImportInEditor: () => void;
   onOpenProject: (projectId: string) => void | Promise<void>;
   onDeleteProject: (projectId: string) => Promise<void>;
+  onDeleteSavedRevisions: (projectId: string, revisionIds: readonly string[]) => Promise<void>;
   onRestoreProject: (projectId: string) => Promise<void>;
+  onPurgeArchivedProject: (projectId: string) => Promise<void>;
   onExportUpidProject: (projectId: string) => Promise<void>;
   onSaveUpidProjectAs: (projectId: string) => Promise<void>;
   onRenameProject: (projectId: string, name: string) => Promise<void>;
@@ -54,7 +56,9 @@ export function DashboardPage({
   onOpenLatestImportInEditor,
   onOpenProject,
   onDeleteProject,
+  onDeleteSavedRevisions,
   onRestoreProject,
+  onPurgeArchivedProject,
   onExportUpidProject,
   onSaveUpidProjectAs,
   onRenameProject,
@@ -117,11 +121,6 @@ export function DashboardPage({
         />
 
         <div className="grid content-start gap-3">
-          <DeletedProjectsPanel
-            entries={connectedWorkbench?.manifest.deletedProjects ?? []}
-            interactionLocked={interactionLocked}
-            onRestoreProject={restoreProject}
-          />
           <StartWorkPanel
             connected={Boolean(connectedWorkbench)}
             dxfErrorMessage={importErrorMessage}
@@ -133,6 +132,12 @@ export function DashboardPage({
             onOpenEditor={onOpenEditor}
             programErrorMessage={programImportErrorMessage}
             programImporting={programImportStatus === 'importing'}
+          />
+          <DeletedProjectsPanel
+            entries={connectedWorkbench?.manifest.deletedProjects ?? []}
+            interactionLocked={interactionLocked}
+            onRestoreProject={restoreProject}
+            onPurgeProject={onPurgeArchivedProject}
           />
 
           {latestImport && (
@@ -159,6 +164,7 @@ export function DashboardPage({
           projectId={revisionProject.id}
           projectName={revisionProject.name}
           onClose={() => setRevisionProject(null)}
+          onDeleteRevisions={onDeleteSavedRevisions}
         />
       )}
 

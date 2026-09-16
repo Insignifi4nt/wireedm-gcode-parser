@@ -1,6 +1,6 @@
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import { parseSavedWireEdmJobRevision } from '@/domain/wire-edm-job/savedWireEdmJobRevision';
-import { commitProjectTrashTransaction, recoverProjectTrashTransaction, type ProjectTrashTransactionError } from '@/domain/storage/projectTrashTransaction';
+import { commitProjectPurgeTransaction, commitProjectTrashTransaction, recoverProjectTrashTransaction, type ProjectTrashTransactionError } from '@/domain/storage/projectTrashTransaction';
 import { recoverSavedRevisionTransaction, type SavedRevisionTransactionError } from '@/domain/storage/savedRevisionTransaction';
 
 import {
@@ -418,6 +418,55 @@ export async function restoreStoredWorkbenchProject(
     const committed = await writeTrashManifest(workbench, nextManifest);
     if (!committed.ok) return committed;
     return { ok: true, workbench: freezeWorkbench(workbench, nextManifest), project: read.project };
+  });
+}
+
+/** Remove an archived project and every file declared as belonging to it. */
+export async function purgeArchivedWorkbenchProject(
+  workbench: ConnectedWorkbenchCatalog,
+  input: { readonly projectId: string; readonly deletedAt?: Date }
+): Promise<
+  | { readonly ok: true; readonly workbench: ConnectedWorkbenchCatalog }
+  | { readonly ok: false; readonly error: DeleteStoredWorkbenchProjectError }
+> {
+  return withWorkbenchMutationLock(workbench.adapter, async () => {
+    const current = await verifyManifestCurrent(workbench);
+    if (!current.ok) return current;
+    const deletedAt = input.deletedAt ?? new Date();
+    if (!Number.isFinite(deletedAt.getTime())) return { ok: false, error: {
+      code: 'WORKBENCH_CATALOG_MUTATION_TIMESTAMP_INVALID', projectId: input.projectId,
+      message: 'Permanent deletion requires a valid timestamp.'
+    } };
+    const entry = workbench.manifest.deletedProjects?.find(({ project }) => project.id === input.projectId);
+    if (!entry) return projectNotFound(input.projectId);
+    const ownership = await validateWorkbenchProjectPathOwnership(workbench.adapter, [
+      ...workbench.manifest.projects,
+      ...(workbench.manifest.deletedProjects ?? []).map(({ project }) => project)
+    ]);
+    if (!ownership.ok) return ownership;
+    const project = ownership.projects.find(({ id }) => id === input.projectId);
+    if (!project) return projectNotFound(input.projectId);
+    const ownedPaths = workbenchProjectOwnedPaths(project);
+    for (const path of ownedPaths) {
+      try {
+        if (await workbench.adapter.readText(path) === null) {
+          return { ok: false, error: ownedFileDangling(input.projectId, path) };
+        }
+      } catch (error) { return projectAccessFailure('read', path, error); }
+    }
+    const nextManifest = deepFreeze({
+      ...workbench.manifest,
+      updatedAt: deletedAt.toISOString(),
+      deletedProjects: workbench.manifest.deletedProjects?.filter(({ project }) => project.id !== input.projectId) ?? []
+    } satisfies WorkbenchCatalogManifest);
+    const raw = `${JSON.stringify(nextManifest, null, 2)}\n`;
+    const parsed = parseWorkbenchCatalogManifest(raw, workbench.machines);
+    if (!parsed.ok) return parsed;
+    const committed = await commitProjectPurgeTransaction(workbench.adapter, {
+      projectId: input.projectId, ownedPaths, next: raw
+    });
+    if (!committed.ok) return committed;
+    return { ok: true, workbench: freezeWorkbench(workbench, nextManifest) };
   });
 }
 

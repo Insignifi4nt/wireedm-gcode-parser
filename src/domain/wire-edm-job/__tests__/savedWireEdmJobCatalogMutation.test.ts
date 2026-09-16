@@ -8,12 +8,13 @@ import {
 import { minimalPostPackage } from '@/domain/post-processor/__tests__/postPackageFixture';
 import { createEmptyPostLibrary, installPostPackage } from '@/domain/post-processor/postLibrary';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
-import { SAVED_REVISION_TRANSACTION_PATH } from '@/domain/storage/savedRevisionTransaction';
+import { beginRevisionDeletionTransaction, SAVED_REVISION_TRANSACTION_PATH } from '@/domain/storage/savedRevisionTransaction';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { initializeWorkbenchCatalog, WORKBENCH_CATALOG_PATH } from '@/domain/workbench-catalog/workbenchCatalog';
 import {
   addStoredWorkbenchProject,
   deleteStoredWorkbenchProject,
+  purgeArchivedWorkbenchProject,
   restoreStoredWorkbenchProject,
   readStoredWorkbenchProject
 } from '@/domain/workbench-catalog/workbenchCatalogMutations';
@@ -25,6 +26,7 @@ import {
   createSavedWireEdmJobRevision,
   saveStoredWireEdmJobRevision
 } from '../savedWireEdmJobRevision';
+import { deleteStoredWireEdmJobRevisions } from '../deleteSavedWireEdmJobRevisions';
 
 class MemoryAdapter implements WorkbenchStorageAdapter {
   readonly kind = 'memory';
@@ -54,6 +56,132 @@ class MemoryAdapter implements WorkbenchStorageAdapter {
 }
 
 describe('catalog-owned saved revision persistence', () => {
+  it('permanently removes an archived project and its saved revision', async () => {
+    const fixture = await catalogRevisionFixture();
+    const saved = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    if (!saved.ok) throw new Error(saved.error.message);
+    const archived = await deleteStoredWorkbenchProject(saved.workbench, {
+      projectId: saved.project.id, deletedAt: new Date('2026-08-28T13:00:00.000Z')
+    });
+    if (!archived.ok) throw new Error(archived.error.message);
+    const purged = await purgeArchivedWorkbenchProject(archived.workbench, {
+      projectId: saved.project.id, deletedAt: new Date('2026-08-28T13:01:00.000Z')
+    });
+    if (!purged.ok) throw new Error(purged.error.message);
+    expect(fixture.adapter.files.has(saved.path)).toBe(false);
+    expect(fixture.adapter.files.has(`projects/${saved.project.id}.json`)).toBe(false);
+    expect(purged.workbench.manifest.deletedProjects).toEqual([]);
+    const reopened = await initializeWorkbenchCatalog(fixture.adapter);
+    if (!reopened.ok) throw new Error(reopened.error.message);
+    expect(reopened.workbench.manifest.deletedProjects).toEqual([]);
+  });
+
+  it('deletes one selected revision while keeping the other indexed and reproducible', async () => {
+    const fixture = await catalogRevisionFixture();
+    const first = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    if (!first.ok) throw new Error(first.error.message);
+    const secondCandidate = await createSavedWireEdmJobRevision({
+      revisionId: 'revision.0002',
+      savedAt: '2026-08-28T12:45:00.000Z',
+      project: first.project,
+      machine: fixture.machine,
+      bindingId: 'production',
+      postLibrary: fixture.library
+    });
+    if (!secondCandidate.ok) throw new Error(secondCandidate.error.message);
+    const second = await saveStoredWireEdmJobRevision(first.workbench, secondCandidate.candidate);
+    if (!second.ok) throw new Error(second.error.message);
+
+    const deleted = await deleteStoredWireEdmJobRevisions(second.workbench, {
+      projectId: 'fixture.part', revisionIds: ['revision.0001'],
+      deletedAt: new Date('2026-08-28T13:00:00.000Z')
+    });
+    if (!deleted.ok) throw new Error(deleted.error.message);
+    expect(deleted.deletedCount).toBe(1);
+    expect(deleted.project.savedRevisionIds).toEqual(['revision.0002']);
+    expect(fixture.adapter.files.has(first.path)).toBe(false);
+    expect(fixture.adapter.files.has(second.path)).toBe(true);
+    const reopened = await initializeWorkbenchCatalog(fixture.adapter);
+    if (!reopened.ok) throw new Error(reopened.error.message);
+    expect(await readStoredWorkbenchProject(reopened.workbench, 'fixture.part')).toMatchObject({
+      ok: true, project: { savedRevisionIds: ['revision.0002'] }
+    });
+  });
+
+  it('deletes all selected revisions while retaining the project and rolls back a failed deletion', async () => {
+    const fixture = await catalogRevisionFixture();
+    const first = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    if (!first.ok) throw new Error(first.error.message);
+    const candidate = await createSavedWireEdmJobRevision({
+      revisionId: 'revision.0002', savedAt: '2026-08-28T12:45:00.000Z',
+      project: first.project, machine: fixture.machine, bindingId: 'production', postLibrary: fixture.library
+    });
+    if (!candidate.ok) throw new Error(candidate.error.message);
+    const saved = await saveStoredWireEdmJobRevision(first.workbench, candidate.candidate);
+    if (!saved.ok) throw new Error(saved.error.message);
+    const before = new Map(fixture.adapter.files);
+    fixture.adapter.failNextWrite(WORKBENCH_CATALOG_PATH);
+    expect(await deleteStoredWireEdmJobRevisions(saved.workbench, {
+      projectId: 'fixture.part', revisionIds: ['revision.0001', 'revision.0002'],
+      deletedAt: new Date('2026-08-28T13:00:00.000Z')
+    })).toMatchObject({ ok: false });
+    expect(fixture.adapter.files).toEqual(before);
+
+    const deleted = await deleteStoredWireEdmJobRevisions(saved.workbench, {
+      projectId: 'fixture.part', revisionIds: ['revision.0001', 'revision.0002'],
+      deletedAt: new Date('2026-08-28T13:00:00.000Z')
+    });
+    if (!deleted.ok) throw new Error(deleted.error.message);
+    expect(deleted.project.savedRevisionIds).toEqual([]);
+    expect(fixture.adapter.files.has(first.path)).toBe(false);
+    expect(fixture.adapter.files.has(saved.path)).toBe(false);
+    expect(await readStoredWorkbenchProject(deleted.workbench, 'fixture.part')).toMatchObject({
+      ok: true, project: { savedRevisionIds: [] }
+    });
+  });
+
+  it('recovers an interrupted deletion before reopening the workbench', async () => {
+    const fixture = await catalogRevisionFixture();
+    const saved = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    if (!saved.ok) throw new Error(saved.error.message);
+    const previousProject = fixture.adapter.files.get('projects/fixture.part.json')!;
+    const previousManifest = fixture.adapter.files.get(WORKBENCH_CATALOG_PATH)!;
+    const nextProject = JSON.stringify({ ...JSON.parse(previousProject),
+      updatedAt: '2026-08-28T13:00:00.000Z', savedRevisionIds: [] });
+    const nextManifest = JSON.stringify({ ...JSON.parse(previousManifest),
+      updatedAt: '2026-08-28T13:00:00.000Z',
+      projects: [{ ...saved.workbench.manifest.projects[0], updatedAt: '2026-08-28T13:00:00.000Z' }] });
+    const begun = await beginRevisionDeletionTransaction(fixture.adapter, {
+      projectId: 'fixture.part',
+      revisionIds: ['revision.0001'],
+      previousProject,
+      nextProject,
+      previousManifest,
+      nextManifest
+    });
+    expect(begun).toMatchObject({ ok: true });
+    await fixture.adapter.writeText('projects/fixture.part.json', nextProject);
+    const reopened = await initializeWorkbenchCatalog(fixture.adapter);
+    if (!reopened.ok) throw new Error(reopened.error.message);
+    expect(fixture.adapter.files.has(saved.path)).toBe(true);
+    expect(fixture.adapter.files.get('projects/fixture.part.json')).toBe(previousProject);
+    expect(fixture.adapter.files.get(WORKBENCH_CATALOG_PATH)).toBe(previousManifest);
+    expect(fixture.adapter.files.has(SAVED_REVISION_TRANSACTION_PATH)).toBe(false);
+
+    expect(await beginRevisionDeletionTransaction(fixture.adapter, {
+      projectId: 'fixture.part', revisionIds: ['revision.0001'], previousProject, nextProject,
+      previousManifest, nextManifest
+    })).toMatchObject({ ok: true });
+    await fixture.adapter.writeText('projects/fixture.part.json', nextProject);
+    await fixture.adapter.writeText(WORKBENCH_CATALOG_PATH, nextManifest);
+    const completed = await initializeWorkbenchCatalog(fixture.adapter);
+    if (!completed.ok) throw new Error(completed.error.message);
+    expect(fixture.adapter.files.has(saved.path)).toBe(false);
+    expect(await readStoredWorkbenchProject(completed.workbench, 'fixture.part')).toMatchObject({
+      ok: true, project: { savedRevisionIds: [] }
+    });
+  });
+
   it('atomically indexes a revision and project deletion removes its exact file', async () => {
     const fixture = await catalogRevisionFixture();
 
@@ -284,7 +412,8 @@ async function catalogRevisionFixture() {
     postLibrary: installed.library
   });
   if (!candidate.ok) throw new Error(candidate.error.message);
-  return { adapter, workbench: added.workbench, candidate: candidate.candidate };
+  return { adapter, workbench: added.workbench, candidate: candidate.candidate,
+    machine: bound.machine, library: installed.library };
 }
 
 function machineValue(): MachineDefinitionValue {

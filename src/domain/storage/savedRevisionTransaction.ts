@@ -19,6 +19,17 @@ const TransactionSchema = Type.Object({
   nextManifest: Type.String()
 }, { additionalProperties: false });
 type Transaction = Static<typeof TransactionSchema>;
+const DeletionTransactionSchema = Type.Object({
+  format: Type.Literal('wire-edm-revision-deletion-transaction'),
+  schemaVersion: Type.Literal(1),
+  projectId: PostIdentifierSchema,
+  revisionIds: Type.Array(PostIdentifierSchema, { minItems: 1, maxItems: 100_000, uniqueItems: true }),
+  previousProject: Type.String(),
+  nextProject: Type.String(),
+  previousManifest: Type.String(),
+  nextManifest: Type.String()
+}, { additionalProperties: false });
+type DeletionTransaction = Static<typeof DeletionTransactionSchema>;
 
 export interface SavedRevisionTransactionError {
   readonly code: 'SAVED_REVISION_TRANSACTION_INVALID' | 'SAVED_REVISION_TRANSACTION_STORAGE_FAILED';
@@ -50,6 +61,31 @@ export async function beginSavedRevisionTransaction(
   }
 }
 
+/** Journal the index change; revision files are removed only after both indexes commit. */
+export async function beginRevisionDeletionTransaction(
+  adapter: WorkbenchStorageAdapter,
+  values: Omit<DeletionTransaction, 'format' | 'schemaVersion'>
+): Promise<Result> {
+  const transaction: DeletionTransaction = {
+    format: 'wire-edm-revision-deletion-transaction', schemaVersion: 1, ...values
+  };
+  const raw = JSON.stringify(transaction);
+  if (new TextEncoder().encode(raw).byteLength > MAX_TRANSACTION_BYTES) {
+    return invalid('Revision deletion recovery data exceeds its size limit.');
+  }
+  try {
+    await adapter.ensureDirectory('transactions');
+    await adapter.writeText(SAVED_REVISION_TRANSACTION_PATH, raw);
+    if (await adapter.readText(SAVED_REVISION_TRANSACTION_PATH) !== raw) {
+      throw new Error('Recovery data did not read back exactly');
+    }
+    return { ok: true };
+  } catch (error) {
+    const cleanup = await finishSavedRevisionTransaction(adapter);
+    return storageFailure(`${message(error)}${cleanup.ok ? '' : `; ${cleanup.error.message}`}`);
+  }
+}
+
 export async function finishSavedRevisionTransaction(adapter: WorkbenchStorageAdapter): Promise<Result> {
   try {
     await adapter.deleteText(SAVED_REVISION_TRANSACTION_PATH);
@@ -72,7 +108,31 @@ export async function recoverSavedRevisionTransaction(adapter: WorkbenchStorageA
     }
     let transaction: unknown;
     try { transaction = JSON.parse(raw); } catch { return invalid('Saved revision recovery data is not valid JSON.'); }
-    if (!Value.Check(TransactionSchema, transaction)) return invalid('Saved revision recovery data has an invalid shape.');
+    if (!Value.Check(TransactionSchema, transaction) && !Value.Check(DeletionTransactionSchema, transaction)) {
+      return invalid('Saved revision recovery data has an invalid shape.');
+    }
+    if (transaction.format === 'wire-edm-revision-deletion-transaction') {
+      const projectPath = workbenchProjectDocumentPath(transaction.projectId);
+      const project = await adapter.readText(projectPath);
+      const manifest = await adapter.readText('workbench.json');
+      if (project === transaction.nextProject && manifest === transaction.nextManifest) {
+        // Both indexes committed. Finish any remaining file deletions after a crash.
+        for (const revisionId of transaction.revisionIds) {
+          const path = workbenchProjectRevisionPath(transaction.projectId, revisionId);
+          await adapter.deleteText(path);
+          if (await adapter.readText(path) !== null) throw new Error(`Could not remove ${path}`);
+        }
+      } else {
+        // Files have not been touched until both index writes have read back.
+        await adapter.writeText(projectPath, transaction.previousProject);
+        await adapter.writeText('workbench.json', transaction.previousManifest);
+        if (await adapter.readText(projectPath) !== transaction.previousProject ||
+            await adapter.readText('workbench.json') !== transaction.previousManifest) {
+          throw new Error('Rollback did not restore revision indexes exactly');
+        }
+      }
+      return finishSavedRevisionTransaction(adapter);
+    }
     // Paths are derived from validated identifiers, never taken from recovery-file paths.
     const files = [
       { path: workbenchProjectRevisionPath(transaction.projectId, transaction.revisionId), previous: null, next: transaction.nextRevision },

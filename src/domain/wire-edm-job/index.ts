@@ -36,3 +36,5 @@ export {
   type ControllerArtifactResult,
   type ControllerProgramArtifact
 } from './controllerArtifact';
+
+export { deleteStoredWireEdmJobRevisions } from './deleteSavedWireEdmJobRevisions';

@@ -567,7 +567,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       if (!deleted.ok) throw new Error(deleted.error.message);
       setConnectedWorkbench(deleted.workbench);
       if (latestImport?.project.id === projectId) setLatestImport(null);
-      showStatusToast('Project moved to Deleted projects. Files and revisions retained for restoration.', 'success');
+      showStatusToast('Project moved to Archive. Files and revisions retained for restoration.', 'success');
     });
   }
 
@@ -579,6 +579,17 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       if (!restored.ok) throw new Error(restored.error.message);
       setConnectedWorkbench(restored.workbench);
       showStatusToast('Project restored.', 'success');
+    });
+  }
+
+  async function handlePurgeArchivedWorkbenchProject(projectId: string) {
+    const workbench = requireWorkbench();
+    if (!workbench) throw new Error('Connect a workbench before deleting archived projects.');
+    await runProjectAction(async () => {
+      const purged = await services.purgeArchivedWorkbenchProject(workbench, { projectId });
+      if (!purged.ok) throw new Error(purged.error.message);
+      setConnectedWorkbench(purged.workbench);
+      showStatusToast('Archived project and its files permanently deleted.', 'success');
     });
   }
 
@@ -618,6 +629,24 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
       if (error instanceof DOMException && error.name === 'AbortError') return;
       showStatusToast('Could not save UPID: ' + errorText(error), 'error');
     }
+  }
+
+  async function handleDeleteSavedRevisions(projectId: string, revisionIds: readonly string[]) {
+    const workbench = requireWorkbench();
+    if (!workbench) throw new Error('Connect a workbench before deleting revisions.');
+    await runProjectAction(async () => {
+      const deleted = await services.deleteStoredWireEdmJobRevisions(workbench, {
+        projectId,
+        revisionIds,
+        deletedAt: new Date()
+      });
+      if (!deleted.ok) throw new Error(deleted.error.message);
+      setConnectedWorkbench(deleted.workbench);
+      setLoadedEditorProgram((current) => current?.project.id === projectId
+        ? { ...current, project: deleted.project }
+        : current);
+      showStatusToast(`Deleted ${deleted.deletedCount} saved ${deleted.deletedCount === 1 ? 'revision' : 'revisions'}.`, 'success');
+    });
   }
 
   function handleDownloadEditorFile(input: DownloadProgramFileInput) {
@@ -839,6 +868,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     handleCommitMachinePackage,
     handleDeleteWorkbenchProject,
     handleRestoreWorkbenchProject,
+    handlePurgeArchivedWorkbenchProject,
     handleDxfImportOverrideAcknowledgedChange,
     handleDxfImportUnitCandidateChange,
     handleDxfReimportOverrideAcknowledgedChange,
@@ -847,6 +877,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     handleDownloadEditorFile,
     handleExportUpidProject,
     handleSaveUpidProjectAs,
+    handleDeleteSavedRevisions,
     handleGenerateControllerArtifact,
     handleImportDxfFile,
     handleImportExternalProgram,

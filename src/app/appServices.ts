@@ -36,7 +36,7 @@ import {
   connectWorkbenchDirectory
 } from '@/domain/storage/connectWorkbenchDirectory';
 import { deleteWorkbenchProject } from '@/domain/storage/deleteWorkbenchProject';
-import { restoreStoredWorkbenchProject } from '@/domain/workbench-catalog/workbenchCatalogMutations';
+import { purgeArchivedWorkbenchProject, restoreStoredWorkbenchProject } from '@/domain/workbench-catalog/workbenchCatalogMutations';
 import { renameWorkbenchProject } from '@/domain/storage/renameWorkbenchProject';
 import {
   exportPortableUpidProject,
@@ -44,6 +44,7 @@ import {
 } from '@/domain/upid/portableUpidProject';
 import {
   createSavedWireEdmJobRevision,
+  deleteStoredWireEdmJobRevisions,
   generateControllerArtifact,
   saveStoredWireEdmJobRevision
 } from '@/domain/wire-edm-job';
@@ -76,12 +77,14 @@ export interface AppServices {
   readonly renameWorkbenchProject: typeof renameWorkbenchProject;
   readonly deleteWorkbenchProject: typeof deleteWorkbenchProject;
   readonly restoreStoredWorkbenchProject: typeof restoreStoredWorkbenchProject;
+  readonly purgeArchivedWorkbenchProject: typeof purgeArchivedWorkbenchProject;
   readonly updateWorkbenchCatalogPreferences: typeof updateWorkbenchCatalogPreferences;
   readonly activateStoredMachinePostBinding: typeof activateStoredMachinePostBinding;
   readonly prepareStoredMachinePackageInstallation: typeof prepareStoredMachinePackageInstallation;
   readonly commitStoredMachinePackageInstallation: typeof commitStoredMachinePackageInstallation;
   readonly removeStoredMachineDefinition: typeof removeStoredMachineDefinition;
   readonly createSavedWireEdmJobRevision: typeof createSavedWireEdmJobRevision;
+  readonly deleteStoredWireEdmJobRevisions: typeof deleteStoredWireEdmJobRevisions;
   readonly saveStoredWireEdmJobRevision: typeof saveStoredWireEdmJobRevision;
   readonly generateControllerArtifact: typeof generateControllerArtifact;
   readonly downloadTextFile: typeof downloadProgramFile;
@@ -106,12 +109,14 @@ export const defaultAppServices: AppServices = {
   renameWorkbenchProject,
   deleteWorkbenchProject,
   restoreStoredWorkbenchProject,
+  purgeArchivedWorkbenchProject,
   updateWorkbenchCatalogPreferences,
   activateStoredMachinePostBinding,
   prepareStoredMachinePackageInstallation,
   commitStoredMachinePackageInstallation,
   removeStoredMachineDefinition,
   createSavedWireEdmJobRevision,
+  deleteStoredWireEdmJobRevisions,
   saveStoredWireEdmJobRevision,
   generateControllerArtifact,
   downloadTextFile: downloadProgramFile
