@@ -53,6 +53,5 @@ record('fresh-finished-contour-no-intent',JSON.stringify({basis:circle.geometryB
 compensation.manifest.execution.compensationRequiredForEveryOperation=true;
 record('required-compensation-ignored',JSON.stringify({preflight:preflightPostCapabilities(compiled.plan,compensation),run:await runCustomPost({package:compensation,plan:compiled.plan,properties:{coordinatePrecision:3}})}));
 
-
 function record(probe: string, serialized: string) { console.log(JSON.stringify({ probe, result: JSON.parse(serialized) })); }
 
