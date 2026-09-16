@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Forward, History, Pencil, Save, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, History, Pencil, Save, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
@@ -36,6 +36,38 @@ export function ProjectListPanel({
   const [searchText, setSearchText] = useState('');
   const [sourceFilter, setSourceFilter] = useState<ProjectSourceFilter>('all');
   const [sortMode, setSortMode] = useState<ProjectSortMode>('updated-desc');
+  const [exportMenuProjectId, setExportMenuProjectId] = useState<string | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const exportTriggerRef = useRef<HTMLButtonElement>(null);
+  const firstExportItemRef = useRef<HTMLButtonElement>(null);
+  const saveAsAvailable = supportsSaveTextFileAs();
+
+  useEffect(() => {
+    if (exportMenuProjectId === null) return;
+    firstExportItemRef.current?.focus();
+    function handleOutsideClick(event: MouseEvent) {
+      if (event.target instanceof Node && !exportMenuRef.current?.contains(event.target)) {
+        setExportMenuProjectId(null);
+      }
+    }
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      setExportMenuProjectId(null);
+      exportTriggerRef.current?.focus();
+    }
+    document.addEventListener('mousedown', handleOutsideClick);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [exportMenuProjectId]);
+
+  function runExport(projectId: string, chooseLocation: boolean) {
+    setExportMenuProjectId(null);
+    if (chooseLocation) void onSaveUpidProjectAs(projectId);
+    else void onExportUpidProject(projectId);
+  }
   const visibleProjects = getVisibleProjects(projects, searchText, sourceFilter, sortMode);
   const projectCountLabel =
     visibleProjects.length === projects.length
@@ -109,7 +141,19 @@ export function ProjectListPanel({
                     role="listitem"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-foreground" title={project.name}>{project.name}</p>
+                      <div className="flex min-w-0 items-center gap-1">
+                        <p className="truncate text-foreground" title={project.name}>{project.name}</p>
+                        <Button
+                          aria-label={`Rename project ${project.id}`}
+                          className="size-5 shrink-0 text-muted-foreground hover:text-foreground"
+                          disabled={interactionLocked}
+                          onClick={() => onRenameProject(project)}
+                          size="icon"
+                          title="Rename project"
+                          type="button"
+                          variant="ghost"
+                        ><Pencil className="size-3" /></Button>
+                      </div>
                       <p className="technical-value mt-1 truncate text-[10px] text-muted-foreground" title={project.path}>
                         {project.path}
                       </p>
@@ -128,18 +172,6 @@ export function ProjectListPanel({
                         variant="outline"
                       >
                         Open
-                      </Button>
-                      <Button
-                        aria-label={`Rename project ${project.id}`}
-                        className="size-7 text-muted-foreground hover:text-foreground"
-                        disabled={interactionLocked}
-                        onClick={() => onRenameProject(project)}
-                        size="icon"
-                        title="Rename project"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <Pencil />
                       </Button>
                       <Button
                         aria-label={`Delete project ${project.id}`}
@@ -168,30 +200,35 @@ export function ProjectListPanel({
                         </Button>
                       )}
                       {isPathProjectSourceKind(project.sourceKind) && (
-                        <Button
-                          aria-label={`Export UPID project ${project.id}`}
-                          className="size-7 text-muted-foreground hover:text-foreground"
-                          disabled={interactionLocked}
-                          onClick={() => onExportUpidProject(project.id)}
-                          size="icon"
-                          title="Export UPID"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <Forward />
-                        </Button>
-                      )}
-                      {isPathProjectSourceKind(project.sourceKind) && supportsSaveTextFileAs() && (
-                        <Button
-                          aria-label={`Save UPID project ${project.id} as file`}
-                          className="size-7 text-muted-foreground hover:text-foreground"
-                          disabled={interactionLocked}
-                          onClick={() => onSaveUpidProjectAs(project.id)}
-                          size="icon"
-                          title="Save UPID As…"
-                          type="button"
-                          variant="ghost"
-                        ><Save /></Button>
+                        <div className="relative" ref={exportMenuProjectId === project.id ? exportMenuRef : undefined}>
+                          <Button
+                            aria-expanded={exportMenuProjectId === project.id}
+                            aria-haspopup="menu"
+                            aria-label={`Export UPID project ${project.id}`}
+                            className="relative size-7 text-muted-foreground hover:text-foreground"
+                            disabled={interactionLocked}
+                            onClick={() => setExportMenuProjectId((current) => current === project.id ? null : project.id)}
+                            ref={exportMenuProjectId === project.id ? exportTriggerRef : undefined}
+                            size="icon"
+                            title="Export UPID"
+                            type="button"
+                            variant="ghost"
+                          ><Save className="size-4" /><ChevronDown className="absolute bottom-0 right-0 size-2.5" /></Button>
+                          {exportMenuProjectId === project.id && (
+                            <div aria-label={`Export options for ${project.name}`}
+                              className="absolute right-0 top-full z-30 mt-1 min-w-32 border border-border bg-popover p-1 shadow-xl"
+                              role="menu">
+                              <button className="flex h-7 w-full items-center px-2 text-left text-[11px] text-popover-foreground outline-none hover:bg-accent focus:bg-accent"
+                                onClick={() => runExport(project.id, false)} ref={firstExportItemRef} role="menuitem" type="button">
+                                Export
+                              </button>
+                              {saveAsAvailable && <button className="flex h-7 w-full items-center px-2 text-left text-[11px] text-popover-foreground outline-none hover:bg-accent focus:bg-accent"
+                                onClick={() => runExport(project.id, true)} role="menuitem" type="button">
+                                Export as…
+                              </button>}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

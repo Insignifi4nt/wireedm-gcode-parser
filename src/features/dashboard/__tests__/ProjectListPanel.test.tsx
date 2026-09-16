@@ -19,19 +19,22 @@ describe('ProjectListPanel', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    Reflect.deleteProperty(window, 'showSaveFilePicker');
   });
 
-  it('opens and exports catalog projects by project ID rather than storage path', async () => {
+  it('opens the compact export menu, routes both options by project ID, and keeps rename by the title', async () => {
     const onOpenProject = vi.fn();
     const onExportUpidProject = vi.fn();
+    const onSaveUpidProjectAs = vi.fn();
     const onShowRevisions = vi.fn();
+    Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: vi.fn() });
     await act(async () => root.render(
       <ProjectListPanel
         availability="ready"
         interactionLocked={false}
         onDeleteProject={vi.fn()}
         onExportUpidProject={onExportUpidProject}
-        onSaveUpidProjectAs={vi.fn()}
+        onSaveUpidProjectAs={onSaveUpidProjectAs}
         onOpenProject={onOpenProject}
         onShowRevisions={onShowRevisions}
         onRenameProject={vi.fn()}
@@ -48,19 +51,34 @@ describe('ProjectListPanel', () => {
     await act(async () => {
       button('Open project project-1 in editor').click();
       button('Export UPID project project-1').click();
+    });
+    expect(container.querySelectorAll('[role="menuitem"]')).toHaveLength(2);
+    await act(async () => {
+      menuItem('Export').click();
       button('Show revisions for project project-1').click();
     });
+    await act(async () => button('Export UPID project project-1').click());
+    await act(async () => menuItem('Export as…').click());
 
     expect(onOpenProject).toHaveBeenCalledWith('project-1');
     expect(onExportUpidProject).toHaveBeenCalledWith('project-1');
+    expect(onSaveUpidProjectAs).toHaveBeenCalledWith('project-1');
     expect(onShowRevisions).toHaveBeenCalledWith(expect.objectContaining({ id: 'project-1' }));
     expect(onOpenProject).not.toHaveBeenCalledWith('projects/project-1.json');
+    expect(button('Rename project project-1').parentElement?.textContent).toContain('Catalog project');
   });
 
   function button(label: string) {
     const element = container.querySelector(`button[aria-label="${label}"]`);
     if (!(element instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
     return element;
+  }
+
+  function menuItem(label: string) {
+    const item = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((element) => element.textContent?.trim() === label);
+    if (!item) throw new Error(`Menu item not found: ${label}`);
+    return item;
   }
 
   const projects = [
