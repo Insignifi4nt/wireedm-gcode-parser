@@ -21,8 +21,13 @@ export function downloadProgramFile({
   try {
     document.body.append(link);
     link.click();
+    // The browser starts the download after the click handler returns.
+    // Revoking here can invalidate the URL before it has been read.
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
   } finally {
     link.remove();
-    URL.revokeObjectURL(url);
   }
 }

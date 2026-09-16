@@ -24,6 +24,7 @@ describe('ProjectListPanel', () => {
   it('opens and exports catalog projects by project ID rather than storage path', async () => {
     const onOpenProject = vi.fn();
     const onExportUpidProject = vi.fn();
+    const onShowRevisions = vi.fn();
     await act(async () => root.render(
       <ProjectListPanel
         availability="ready"
@@ -31,6 +32,7 @@ describe('ProjectListPanel', () => {
         onDeleteProject={vi.fn()}
         onExportUpidProject={onExportUpidProject}
         onOpenProject={onOpenProject}
+        onShowRevisions={onShowRevisions}
         onRenameProject={vi.fn()}
         projects={[{
           id: 'project-1',
@@ -45,10 +47,12 @@ describe('ProjectListPanel', () => {
     await act(async () => {
       button('Open project project-1 in editor').click();
       button('Export UPID project project-1').click();
+      button('Show revisions for project project-1').click();
     });
 
     expect(onOpenProject).toHaveBeenCalledWith('project-1');
     expect(onExportUpidProject).toHaveBeenCalledWith('project-1');
+    expect(onShowRevisions).toHaveBeenCalledWith(expect.objectContaining({ id: 'project-1' }));
     expect(onOpenProject).not.toHaveBeenCalledWith('projects/project-1.json');
   });
 
@@ -66,7 +70,7 @@ describe('ProjectListPanel', () => {
 
   it('combines search and source filters, sorts results, and clears filters without changing the catalog', async () => {
     await act(async () => root.render(<ProjectListPanel availability="ready" interactionLocked={false} projects={projects}
-      onOpenProject={vi.fn()} onDeleteProject={vi.fn()} onRenameProject={vi.fn()} onExportUpidProject={vi.fn()} />));
+      onOpenProject={vi.fn()} onDeleteProject={vi.fn()} onRenameProject={vi.fn()} onExportUpidProject={vi.fn()} onShowRevisions={vi.fn()} />));
     const visible = () => [...container.querySelectorAll('[data-project-row]')].map((row) =>
       row.querySelector('button[aria-label^="Open project"]')?.getAttribute('aria-label'));
     expect(visible()).toEqual(['Open project b in editor', 'Open project c in editor', 'Open project a in editor']);
@@ -103,7 +107,7 @@ describe('ProjectListPanel', () => {
     const action = vi.fn();
     const render = (availability: 'loading' | 'unavailable' | 'ready', rows = projects, locked = false) =>
       root.render(<ProjectListPanel availability={availability} interactionLocked={locked} projects={rows}
-        onOpenProject={action} onDeleteProject={action} onRenameProject={action} onExportUpidProject={action} />);
+        onOpenProject={action} onDeleteProject={action} onRenameProject={action} onExportUpidProject={action} onShowRevisions={action} />);
     await act(async () => render('loading', []));
     expect(container.querySelector('[role="status"]')?.textContent).toContain('Loading projects');
     expect(container.querySelector('[data-project-library]')?.getAttribute('aria-busy')).toBe('true');

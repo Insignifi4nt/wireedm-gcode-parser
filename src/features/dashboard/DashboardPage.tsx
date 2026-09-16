@@ -9,6 +9,7 @@ import { DxfImportConfirmationDialog } from './DxfImportConfirmationDialog';
 import { LatestDxfImportPanel } from './LatestDxfImportPanel';
 import { ProjectActionDialog, type ProjectAction } from './ProjectActionDialog';
 import { ProjectListPanel } from './ProjectListPanel';
+import { ProjectRevisionsDialog } from './ProjectRevisionsDialog';
 import { StartWorkPanel } from './StartWorkPanel';
 import type { PendingDashboardDxfImport } from './dashboardTypes';
 
@@ -65,6 +66,7 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const projects = connectedWorkbench?.manifest.projects ?? [];
   const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
+  const [revisionProject, setRevisionProject] = useState<(typeof projects)[number] | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const [restoredProjectId, setRestoredProjectId] = useState<string | null>(null);
   useEffect(() => {
@@ -106,6 +108,7 @@ export function DashboardPage({
           onDeleteProject={(project) => setProjectAction({ kind: 'delete', project })}
           onExportUpidProject={onExportUpidProject}
           onOpenProject={onOpenProject}
+          onShowRevisions={setRevisionProject}
           onRenameProject={(project) => setProjectAction({ kind: 'rename', project })}
           projects={projects}
         />
@@ -146,6 +149,15 @@ export function DashboardPage({
         onDeleteProject={onDeleteProject}
         onRenameProject={onRenameProject}
       />
+
+      {revisionProject && connectedWorkbench && (
+        <ProjectRevisionsDialog
+          workbench={connectedWorkbench}
+          projectId={revisionProject.id}
+          projectName={revisionProject.name}
+          onClose={() => setRevisionProject(null)}
+        />
+      )}
 
       {pendingDxfImport && (
         <DxfImportConfirmationDialog

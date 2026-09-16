@@ -4,10 +4,12 @@ import { downloadProgramFile } from '../downloadProgramFile';
 
 describe('downloadProgramFile', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
   it('downloads generated program text with the requested filename', async () => {
+    vi.useFakeTimers();
     let downloadedBlob: Blob | undefined;
     let downloadedLink: HTMLAnchorElement | undefined;
     const click = vi
@@ -30,7 +32,7 @@ describe('downloadProgramFile', () => {
 
     expect(createObjectUrl).toHaveBeenCalledOnce();
     expect(click).toHaveBeenCalledOnce();
-    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:wire-edm-program');
+    expect(revokeObjectUrl).not.toHaveBeenCalled();
     expect(downloadedLink?.download).toBe('part.iso');
     expect(downloadedLink?.href).toBe('blob:wire-edm-program');
     expect(downloadedLink?.rel).toBe('noopener');
@@ -38,6 +40,8 @@ describe('downloadProgramFile', () => {
     expect(downloadedBlob).toBeInstanceOf(Blob);
     expect(downloadedBlob!.type).toBe('text/plain;charset=utf-8');
     expect(await downloadedBlob!.text()).toBe('G90\nG1 X10.000 Y0.000\nM30\n');
+    vi.advanceTimersByTime(60_000);
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:wire-edm-program');
   });
 
   it('downloads portable JSON with an explicit MIME type', async () => {

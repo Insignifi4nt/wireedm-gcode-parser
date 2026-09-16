@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Forward, Pencil, Trash2 } from 'lucide-react';
+import { Forward, History, Pencil, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import type { WorkbenchCatalogManifest } from '@/domain/workbench-catalog/workbenchCatalog';
@@ -16,6 +16,7 @@ interface ProjectListPanelProps {
   onOpenProject: (projectId: string) => void | Promise<void>;
   onDeleteProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
   onExportUpidProject: (projectId: string) => void | Promise<void>;
+  onShowRevisions: (project: WorkbenchProjectIndexEntry) => void;
   onRenameProject: (project: WorkbenchProjectIndexEntry) => void | Promise<void>;
 }
 
@@ -25,6 +26,7 @@ export function ProjectListPanel({
   projects,
   onDeleteProject,
   onExportUpidProject,
+  onShowRevisions,
   onOpenProject,
   onRenameProject
 }: ProjectListPanelProps) {
@@ -148,6 +150,20 @@ export function ProjectListPanel({
                       >
                         <Trash2 />
                       </Button>
+                      {isPathProjectSourceKind(project.sourceKind) && (
+                        <Button
+                          aria-label={`Show revisions for project ${project.id}`}
+                          className="size-7 text-muted-foreground hover:text-foreground"
+                          disabled={interactionLocked}
+                          onClick={() => onShowRevisions(project)}
+                          size="icon"
+                          title="Saved revisions"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <History />
+                        </Button>
+                      )}
                       {isPathProjectSourceKind(project.sourceKind) && (
                         <Button
                           aria-label={`Export UPID project ${project.id}`}
