@@ -85,6 +85,12 @@ export function MachinePostSettingsPanel({
     else setLocalError(result.error.message);
   }
 
+  function rejectPackageFile(message: string) {
+    previewRequest.current += 1;
+    setPrepared(null);
+    setLocalError(message);
+  }
+
   async function commit(resolution: MachinePackageInstallationResolution) {
     if (!prepared || prepared.workbench.adapter !== connectedWorkbench.adapter) return;
     const installed = await onCommitMachinePackage(prepared, resolution);
@@ -98,7 +104,7 @@ export function MachinePostSettingsPanel({
         <p className="text-[10px] text-muted-foreground">
           A .wireedm-package contains one complete machine, its tested post processors, controller-file rules, setups, and evidence. Nothing else needs to be configured after installation.
         </p>
-        <FileButton disabled={disabled} onFile={handlePackageFile} />
+        <FileButton disabled={disabled} onFile={handlePackageFile} onReject={rejectPackageFile} />
         {prepared && (
           <PackagePreview disabled={disabled} onCommit={commit} prepared={prepared} />
         )}
@@ -290,8 +296,50 @@ function preferencesFromDraft(draft: PreferenceDraft):
   };
 }
 
-function FileButton({ disabled, onFile }: { disabled: boolean; onFile: (file: File) => void | Promise<void> }) {
-  return <label className={`inline-flex h-8 w-fit items-center gap-2 rounded-[2px] border border-border px-3 text-[10px] ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-accent'}`}><Upload className="size-3.5" />Install machine package<input accept=".wireedm-package,application/zip" aria-label="Machine package file" className="sr-only" disabled={disabled} onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onFile(file); event.currentTarget.value = ''; }} type="file" /></label>;
+function FileButton({ disabled, onFile, onReject }: {
+  disabled: boolean;
+  onFile: (file: File) => void | Promise<void>;
+  onReject: (message: string) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  return <div aria-label="Machine package drop zone"
+    className={`grid justify-items-start gap-2 border border-dashed p-3 text-[10px] ${dragging && !disabled ? 'border-primary bg-primary/10' : 'border-border'}`}
+    onDragEnter={(event) => {
+      if (disabled || !Array.from(event.dataTransfer.types).includes('Files')) return;
+      event.preventDefault();
+      dragDepth.current += 1;
+      setDragging(true);
+    }}
+    onDragOver={(event) => {
+      if (!Array.from(event.dataTransfer.types).includes('Files')) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = disabled ? 'none' : 'copy';
+      if (!disabled) setDragging(true);
+    }}
+    onDragLeave={() => {
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (dragDepth.current === 0) setDragging(false);
+    }}
+    onDrop={(event) => {
+      event.preventDefault();
+      dragDepth.current = 0;
+      setDragging(false);
+      if (disabled) return;
+      const files = Array.from(event.dataTransfer.files);
+      if (files.length !== 1) {
+        onReject('Drop one machine package file at a time.');
+        return;
+      }
+      if (!/\.(wireedm-package|zip)$/i.test(files[0].name)) {
+        onReject('Drop a .wireedm-package or .zip file.');
+        return;
+      }
+      void onFile(files[0]);
+    }}>
+    <span className="text-muted-foreground">Drop a .wireedm-package here, or choose a file.</span>
+    <label className={`inline-flex h-8 w-fit items-center gap-2 rounded-[2px] border border-border px-3 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-accent'}`}><Upload className="size-3.5" />Install machine package<input accept=".wireedm-package,application/zip" aria-label="Machine package file" className="sr-only" disabled={disabled} onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void onFile(file); event.currentTarget.value = ''; }} type="file" /></label>
+  </div>;
 }
 
 function PreviewActions({ children }: { children: ReactNode }) {

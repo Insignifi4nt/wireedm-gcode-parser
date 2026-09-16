@@ -76,6 +76,38 @@ describe('MachinePostSettingsPanel', () => {
     expect(onCommitMachinePackage).toHaveBeenCalledWith(prepared.prepared, { kind: 'install-new' });
   });
 
+  it('previews a dropped package through the same install flow and rejects invalid drops', async () => {
+    const built = await buildMachinePackageArchive(await machinePackageFixture());
+    if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
+    const prepared = await prepareStoredMachinePackageInstallation(workbench, built.archive);
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    const onPrepareMachinePackage = vi.fn().mockResolvedValue(prepared);
+    await render({ onPrepareMachinePackage });
+
+    const zone = container.querySelector('[aria-label="Machine package drop zone"]');
+    if (!zone) throw new Error('Drop zone is missing.');
+    const packageFile = new File(['archive'], 'robofil.wireedm-package');
+    await drop([packageFile]);
+    expect(onPrepareMachinePackage).toHaveBeenCalledExactlyOnceWith(packageFile);
+    expect(container.querySelector('[data-machine-package-preview]')).not.toBeNull();
+
+    await drop([new File(['bad'], 'drawing.dxf')]);
+    expect(onPrepareMachinePackage).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Drop a .wireedm-package or .zip file.');
+    expect(container.querySelector('[data-machine-package-preview]')).toBeNull();
+
+    await drop([packageFile, packageFile]);
+    expect(container.textContent).toContain('Drop one machine package file at a time.');
+    expect(onPrepareMachinePackage).toHaveBeenCalledTimes(1);
+
+    async function drop(files: File[]) {
+      const event = new Event('drop', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'dataTransfer', { value: { files } });
+      await act(async () => zone!.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(true);
+    }
+  });
+
   it('discards previews and late preparation results when the connected workbench changes', async () => {
     const built = await buildMachinePackageArchive(await machinePackageFixture());
     if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));

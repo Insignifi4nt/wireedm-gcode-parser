@@ -60,7 +60,7 @@ export function WorkbenchSettingsDialog({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" data-workbench-settings-overlay onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} ref={overlayRef}>
-      <div aria-label="Workbench settings" aria-modal="true" className="grid h-[86vh] w-full max-w-4xl grid-cols-[200px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role="dialog" tabIndex={-1}>
+      <div aria-label="Workbench settings" aria-modal="true" className="grid h-[86vh] w-full max-w-4xl grid-cols-[224px_minmax(0,1fr)] overflow-hidden rounded-[2px] border border-border bg-card shadow-2xl max-[720px]:grid-cols-1" onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role="dialog" tabIndex={-1}>
         <aside className="min-h-0 border-r border-border bg-background/45 p-3">
           <button aria-label="Close settings" className="mb-4 flex size-8 items-center justify-center border border-border text-muted-foreground outline-none hover:bg-accent hover:text-foreground" onClick={onClose} ref={closeButtonRef} type="button"><X className="size-4" /></button>
           <nav aria-label="Settings sections" className="grid gap-1">
@@ -108,7 +108,7 @@ export function WorkbenchSettingsDialog({
 }
 
 function SectionButton({ active, icon, label, onClick }: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
-  return <button aria-current={active ? 'page' : undefined} className={`flex h-8 items-center gap-2 rounded-[2px] border px-3 text-left text-[10px] outline-none ${active ? 'border-primary/40 bg-accent text-foreground' : 'border-transparent text-muted-foreground hover:border-border hover:bg-accent/50'}`} onClick={onClick} type="button">{icon}{label}</button>;
+  return <button aria-current={active ? 'page' : undefined} className={`flex h-8 items-center gap-2 whitespace-nowrap rounded-[2px] border px-3 text-left text-[10px] outline-none ${active ? 'border-primary/40 bg-accent text-foreground' : 'border-transparent text-muted-foreground hover:border-border hover:bg-accent/50'}`} onClick={onClick} type="button">{icon}{label}</button>;
 }
 
 function SettingsRow({ label, value }: { label: string; value: string }) {
