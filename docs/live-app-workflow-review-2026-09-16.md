@@ -47,3 +47,9 @@ We chose the midpoint of a top tooth for Exterior 1's contour start at X −2.46
 
 - Confirm the exact machine command sequence for wire separation during rapid positioning and the pause for manual rethreading.
 - Test the revised machine package and controller preview after those semantics are supported.
+
+## Local follow-up after the live review
+
+The operator clarified that a rapid crossing solid material separates the wire on this Robofil 100. The workbench now checks the planned move against closed finished-part contours, including holes and islands. It rejects a threaded move through known finished material and offers a separating rapid when Manual is chosen for such a route. Geometry outside the finished outline remains uncertain because no stock boundary is supplied.
+
+The controller-neutral plan now supports a program stop after positioning. Candidate package 2.3.0 adds a manual rethread route: `G0` to the exterior approach, `G40`, `G39`, `M00`, then the next compensation activation and entry cut. Manual rethreading supplies this pause automatically; a user-authored stop at the same point would add a second pause. Conformance, package validation, and synthetic hole-to-exterior export tests pass locally. The saved live browser project still uses installed package 2.2.0 and has no threading transition; it has not been modified by this code change. Physical controller behavior remains to be checked in graphics or a supervised dry run.

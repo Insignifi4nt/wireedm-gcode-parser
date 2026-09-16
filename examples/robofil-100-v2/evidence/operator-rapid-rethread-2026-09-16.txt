@@ -1,0 +1,5 @@
+Operator report from live Wire EDM Workbench review, 2026-09-16.
+
+For Cristian's Robofil 100, after a contour finishes cutting, a rapid move across solid stock separates the wire during travel. At the destination, the operator manually threads a new wire, then presses Start to resume. Cristian believes M00 is the controller pause command. This report is the basis for a candidate post test, not a verified controller program or supervised machine run.
+
+The particular job has a finished-part hole and an exterior gear contour. The rapid from the hole to an exterior approach crosses the solid annulus between those contours. DXF finished boundaries alone do not establish whether stock exists outside the exterior outline.

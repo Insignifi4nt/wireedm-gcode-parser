@@ -4,12 +4,12 @@
   "manifest": {
     "id": "cristian.robofil-100.v2-candidate-package",
     "name": "Cristian's Robofil 100 V2 candidate package",
-    "version": "2.2.0",
+    "version": "2.3.0",
     "description": "Complete Robofil 100 candidate installation containing the physical machine, exact post processor, setup properties, output rules, fixtures, and evidence. This is not a production-readiness claim."
   },
   "machineFile": "cristian-robofil-100.wireedm-machine.json",
   "postFiles": [
     "cristian-robofil-100-v2.wireedm-post.json"
   ],
-  "activeBindingId": "robofil-v2-candidate-2-2-0"
+  "activeBindingId": "robofil-v2-candidate-2-3-0"
 }

@@ -35,12 +35,12 @@
   ],
   "bindings": [
     {
-      "id": "robofil-v2-candidate-2-2-0",
-      "name": "Robofil V2 candidate 2.2.0",
+      "id": "robofil-v2-candidate-2-3-0",
+      "name": "Robofil V2 candidate 2.3.0",
       "post": {
         "packageId": "cristian.robofil-100.v2-candidate",
-        "version": "2.2.0",
-        "contentHash": "16df35dbd6bff421a3db3df72f6ee454d6b2d28effad055794e65d1a02d77dec"
+        "version": "2.3.0",
+        "contentHash": "2812ab91e388607f550ae45c7380a32ad47660b57d56d7818e0e769230885b08"
       },
       "properties": {
         "coordinatePrecision": 3,
@@ -48,15 +48,15 @@
       },
       "compatibility": {
         "status": "acknowledged",
-        "acknowledgedAt": "2026-09-03T00:00:00.000Z",
-        "acknowledgedBy": "Cristian",
-        "notes": "Machine and candidate post reviewed together from the included local records. This is not a production-readiness claim."
+        "acknowledgedAt": "2026-09-16T00:00:00.000Z",
+        "acknowledgedBy": "Workbench candidate author",
+        "notes": "Exact machine and post binding assembled from the operator report and conformance fixtures. Physical controller behavior remains unverified."
       },
       "verification": {
         "status": "unverified"
       }
     }
   ],
-  "activeBindingId": "robofil-v2-candidate-2-2-0",
+  "activeBindingId": "robofil-v2-candidate-2-3-0",
   "notes": "Complete physical definition used by the Robofil V2 candidate machine package. The 150 mm X and 200 mm Y travel values come from the included prior local project record; serial number and firmware remain intentionally unset."
 }

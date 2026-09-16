@@ -1600,7 +1600,8 @@ function threadingIntentIsCompatible(
     (transition.mode === 'continuous' && transition.wireSeparation === 'already-separated') ||
     (transition.mode === 'manual' &&
       (transition.wireSeparation === 'already-separated' ||
-        transition.wireSeparation === 'manual-before-positioning')) ||
+        transition.wireSeparation === 'manual-before-positioning' ||
+        transition.wireSeparation === 'automatic-during-positioning')) ||
     (transition.mode === 'automatic' &&
       transition.wireSeparation === 'automatic-before-positioning')
   );

@@ -50,6 +50,24 @@ describe('EditorProgramStopsPanel', () => {
       [expect.objectContaining({ placement: { kind: 'before-operation-end', remainingCutLengthMm: 9 } })], true);
   });
 
+  it('adds a stop after positioning without a cut-distance parameter', async () => {
+    const source = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    const onSetStops = vi.fn();
+    await act(async () => root.render(<EditorProgramStopsPanel disabled={false} document={source}
+      selectedOperationId={source.plan.operations[0].id} onSetStops={onSetStops} />));
+    await act(async () => setSelect(
+      container.querySelector<HTMLSelectElement>('[aria-label="Program stop placement"]')!,
+      'after-positioning'
+    ));
+    expect(container.querySelector('[aria-label="Program stop remaining cut millimeters"]')).toBeNull();
+    await act(async () => [...container.querySelectorAll('button')]
+      .find((button) => button.textContent?.trim() === 'Add program stop')!.click());
+    expect(onSetStops).toHaveBeenCalledWith(source.plan.operations[0].id,
+      [expect.objectContaining({ placement: { kind: 'after-positioning' } })], true);
+  });
+
   it('blocks duplicate add and apply, but permits disabling a stored duplicate', async () => {
     const source = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }

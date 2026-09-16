@@ -20,6 +20,14 @@ _Avoid_: current state, editor draft
 An immutable, ordered, controller-neutral sequence of machining events compiled from a saved job revision.
 _Avoid_: intermediate G-code, post input text
 
+**Program stop**:
+An explicit operator pause attached to a position in the execution sequence or at a remaining cut distance.
+_Avoid_: threading transition
+
+**Threading transition**:
+The reviewed manner in which the wire separates and is rethreaded between two operations. The exact controller pause used for manual rethreading belongs to the post processor.
+_Avoid_: arbitrary program stop
+
 ## Machines and posts
 
 **Machine definition**:

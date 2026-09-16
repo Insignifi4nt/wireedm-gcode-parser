@@ -53,6 +53,8 @@ export function EditorProgramStopsPanel({
   const hadSelectedStop = useRef(false);
   const stops = operation?.programStops ?? [];
   const selectedStop = stops.find((stop) => stop.id === selectedStopId) ?? null;
+  const manualThreading = operation && operation.orderIndex > 0 &&
+    (operation.threadingTransition ?? document.setup?.threadingDefault)?.mode === 'manual';
 
   useEffect(() => setAddCompleted(false), [operation?.id]);
 
@@ -146,6 +148,9 @@ export function EditorProgramStopsPanel({
         <p className="mt-1 text-muted-foreground">
           Pause cutting for part retention or an operator check. Remaining cut excludes entry and exit moves.
         </p>
+        {manualThreading && <p className="mt-1 text-amber-300">
+          Manual rethreading already adds a pause after positioning. Another stop at that point creates a second pause.
+        </p>}
       </div>
 
       {selectedStop ? onSelectStop && <button
@@ -281,6 +286,7 @@ function replaceStop(
 
 function placementLabel(placement: OperationProgramStopPlacement) {
   if (placement.kind === 'before-entry') return 'Stop before positioning';
+  if (placement.kind === 'after-positioning') return 'Stop after positioning';
   if (placement.kind === 'before-operation-end') {
     return `Stop with ${placement.remainingCutLengthMm.toFixed(3)} mm remaining`;
   }
@@ -318,6 +324,7 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
             value={placement}
           >
             <option value="before-entry">Before positioning</option>
+            <option value="after-positioning">After positioning, before threading or cutting</option>
             <option value="before-operation-end">Before contour end</option>
             <option value="after-contour">After contour</option>
             <option value="after-exit">After exit</option>

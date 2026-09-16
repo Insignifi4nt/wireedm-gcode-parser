@@ -1,6 +1,7 @@
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
+import { classifyPositioningMaterial } from '@/domain/path-intel/positioningMaterial';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { operationEntryPoint } from '@/domain/path-intel/operationTransitions';
 import { resolveOperationProgramStopPoints } from '@/domain/path-intel/programStops';
@@ -86,6 +87,7 @@ export type WireEdmExecutionEvent =
       readonly kind: 'position';
       readonly from: Point2;
       readonly to: Point2;
+      readonly separatesWire?: true;
     })
   | (ExecutionEventBase & {
       readonly kind: 'compensation-start';
@@ -284,7 +286,8 @@ export function compileWireEdmExecutionPlan(
         operationCount: operations.length,
         programStops: events.some(({ kind }) => kind === 'program-stop'),
         threading,
-        wireSeparation: events.some(({ kind }) => kind === 'wire-separate')
+        wireSeparation: events.some((event) => event.kind === 'wire-separate' ||
+          (event.kind === 'position' && event.separatesWire === true))
       }
     })
   };
@@ -352,7 +355,8 @@ function compileOperation(input: {
     }
     if (threading.mode === 'continuous') {
       appendEvent(context, { kind: 'wire-continue', operationId: operation.id });
-    } else if (threading.wireSeparation !== 'already-separated') {
+    } else if (threading.wireSeparation !== 'already-separated' &&
+      threading.wireSeparation !== 'automatic-during-positioning') {
       appendEvent(context, {
         kind: 'wire-separate',
         operationId: operation.id,
@@ -362,14 +366,33 @@ function compileOperation(input: {
   }
 
   const entryPoint = operationEntryPoint(operation);
+  const material = operationIndex > 0
+    ? classifyPositioningMaterial(document, input.currentPosition, entryPoint)
+    : null;
+  if (threading?.mode === 'continuous' && material?.status === 'crosses-finished-material') {
+    return blockedForOperation('EXECUTION_PLAN_THREADING_INVALID',
+      `Positioning to ${operation.displayName} crosses ${material.materialLengthMm.toFixed(3)} mm of finished-part material. Separate and rethread the wire.`, operation);
+  }
+  if (threading?.mode === 'manual' && threading.wireSeparation === 'already-separated' &&
+    material?.status === 'crosses-finished-material') {
+    return blockedForOperation('EXECUTION_PLAN_THREADING_INVALID',
+      `Positioning to ${operation.displayName} crosses finished-part material. Select rapid separation or separate the wire before positioning.`, operation);
+  }
+  if (threading?.wireSeparation === 'automatic-during-positioning' &&
+    pointsEqual(input.currentPosition, entryPoint, document.options.coincidenceEpsilon)) {
+    return blockedForOperation('EXECUTION_PLAN_THREADING_INVALID',
+      `Operation ${operation.displayName} needs a distinct positioning move to separate the wire.`, operation);
+  }
   if (!pointsEqual(input.currentPosition, entryPoint, document.options.coincidenceEpsilon)) {
     appendEvent(context, {
       kind: 'position',
       operationId: operation.id,
       from: copyPoint(input.currentPosition),
-      to: copyPoint(entryPoint)
+      to: copyPoint(entryPoint),
+      ...(threading?.wireSeparation === 'automatic-during-positioning' ? { separatesWire: true as const } : {})
     });
   }
+  appendPlacementStops(context, stops, 'after-positioning', operation, entryPoint);
   if (threading && threading.mode !== 'continuous') {
     appendEvent(context, {
       kind: 'wire-thread',
@@ -661,7 +684,7 @@ function validateStopIdentity(stops: readonly OperationProgramStop[]) {
 function appendPlacementStops(
   context: MutableEventContext,
   stops: readonly OperationProgramStop[],
-  placement: 'before-entry' | 'after-contour' | 'after-exit',
+  placement: 'before-entry' | 'after-positioning' | 'after-contour' | 'after-exit',
   operation: PathOperation,
   point: Point2
 ) {
@@ -729,7 +752,8 @@ function threadingTransitionIssue(
   }
   if (transition.mode === 'manual') {
     return transition.wireSeparation === 'already-separated' ||
-      transition.wireSeparation === 'manual-before-positioning'
+      transition.wireSeparation === 'manual-before-positioning' ||
+      transition.wireSeparation === 'automatic-during-positioning'
       ? null
       : `Manual threading for ${operation.displayName} has an incompatible wire-separation strategy.`;
   }

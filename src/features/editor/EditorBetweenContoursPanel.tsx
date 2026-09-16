@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { derivePlannedRapidRoutes } from '@/domain/path-editor/pathDocumentOperations';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { findPositioningIntersections } from '@/domain/path-intel/leadIntersections';
+import { classifyPositioningMaterial } from '@/domain/path-intel/positioningMaterial';
 import type {
   OperationThreadingTransition,
   PathPlanningDocument,
@@ -48,6 +49,9 @@ export function EditorBetweenContoursPanel({
     : null;
   const threading = selected?.threadingTransition ?? document.setup?.threadingDefault ?? null;
   const projectThreading = document.setup?.threadingDefault;
+  const material = route && route.orderIndex > 0
+    ? classifyPositioningMaterial(document, route.startPoint, route.endPoint)
+    : null;
   const continuousContacts = route && threading?.mode === 'continuous'
     ? findPositioningIntersections(route.startPoint, route.endPoint, document.segments, document.options.coincidenceEpsilon)
     : [];
@@ -133,12 +137,13 @@ export function EditorBetweenContoursPanel({
                   value={projectThreading.wireSeparation}
                   onChange={(event) => onSetProjectThreading({
                     mode: 'manual',
-                    wireSeparation: event.currentTarget.value === 'manual-before-positioning'
-                      ? 'manual-before-positioning' : 'already-separated'
+                    wireSeparation: event.currentTarget.value as
+                      | 'already-separated' | 'manual-before-positioning' | 'automatic-during-positioning'
                   })}
                 >
                   <option value="already-separated">Wire already separated</option>
                   <option value="manual-before-positioning">Stop to separate wire</option>
+                  <option value="automatic-during-positioning">Rapid separates wire</option>
                 </select>
               </label>
             )}
@@ -151,7 +156,7 @@ export function EditorBetweenContoursPanel({
                   const mode = event.currentTarget.value;
                   onSetOperationThreading(
                     selected.id,
-                    mode === 'project-default' ? null : threadingForMode(mode)
+                    mode === 'project-default' ? null : threadingForMode(mode, material?.status === 'crosses-finished-material')
                   );
                 }}
                 value={selected.threadingTransition?.mode ?? 'project-default'}
@@ -173,11 +178,13 @@ export function EditorBetweenContoursPanel({
                     wireSeparation: event.currentTarget.value as
                       | 'already-separated'
                       | 'manual-before-positioning'
+                      | 'automatic-during-positioning'
                   })}
                   value={selected.threadingTransition.wireSeparation}
                 >
                   <option value="already-separated">Wire already separated</option>
                   <option value="manual-before-positioning">Stop to separate wire</option>
+                  <option value="automatic-during-positioning">Rapid separates wire</option>
                 </select>
               </label>
             )}
@@ -186,6 +193,14 @@ export function EditorBetweenContoursPanel({
                 ? threadingSummary(threading)
                 : 'Choose an explicit project or operation threading transition.'}
             </p>
+            {material?.status === 'crosses-finished-material' &&
+              <p className="text-amber-300" data-positioning-material>
+                This move crosses {material.materialLengthMm.toFixed(3)} mm inside the finished solid. The wire must separate before the next cut.
+              </p>}
+            {material?.status === 'unknown' &&
+              <p className="text-muted-foreground" data-positioning-material>
+                The finished contours do not establish whether this whole move is clear of stock. Review the route and stock.
+              </p>}
             {threading?.mode === 'continuous' && <>
               <p className={continuousContacts.length > 0 ? 'text-amber-300' : 'text-muted-foreground'} data-continuous-source-check>
                 {continuousContacts.length > 0
@@ -216,17 +231,19 @@ function threadingSummary(transition: Omit<OperationThreadingTransition, 'source
   if (transition.mode === 'automatic') return 'Separate the wire automatically, position, then rethread automatically.';
   return transition.wireSeparation === 'manual-before-positioning'
     ? 'Stop for manual wire separation, position, then rethread manually.'
+    : transition.wireSeparation === 'automatic-during-positioning'
+      ? 'Rapid positioning separates the wire. Pause at the destination to rethread manually.'
     : 'Wire is already separated. Position, then rethread manually.';
 }
 
-function threadingForMode(mode: string): Omit<OperationThreadingTransition, 'source'> {
+function threadingForMode(mode: string, crossesMaterial = false): Omit<OperationThreadingTransition, 'source'> {
   if (mode === 'automatic') {
     return { mode: 'automatic', wireSeparation: 'automatic-before-positioning' };
   }
   if (mode === 'continuous') {
     return { mode: 'continuous', wireSeparation: 'already-separated' };
   }
-  return { mode: 'manual', wireSeparation: 'already-separated' };
+  return { mode: 'manual', wireSeparation: crossesMaterial ? 'automatic-during-positioning' : 'already-separated' };
 }
 
 function formatPoint(point: Point2) {

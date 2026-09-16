@@ -39,6 +39,7 @@
       "core.single-closed-contour.v1",
       "core.single-compensated-direct.v1",
       "core.multi-compensated-manual.v1",
+      "core.multi-compensated-rapid-separation.v1",
       "core.multi-compensated-continuous.v1"
     ]
   }

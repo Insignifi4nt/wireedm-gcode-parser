@@ -264,6 +264,30 @@ describe('controller-neutral Wire EDM execution plans', () => {
     expect(overridden.plan.requirements.threading).toEqual(['automatic']);
   });
 
+  it('stops after positioning and before manual threading on the next operation', () => {
+    const document = createUpidFromDxfEntities([
+      ...rectangle(0, 0, 10, 10),
+      ...rectangle(20, 0, 30, 10)
+    ]);
+    document.setup = {
+      initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' },
+      threadingDefault: { mode: 'manual', wireSeparation: 'already-separated' }
+    };
+    const next = document.plan.operations[1];
+    next.programStops = [{ id: 'thread-at-destination', enabled: true, reason: 'manual',
+      placement: { kind: 'after-positioning' } }];
+    const result = compileWireEdmExecutionPlan(document);
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    expect(result.plan.events.filter((event) => event.operationId === next.id &&
+      ['position', 'program-stop', 'wire-thread', 'compensation-start'].includes(event.kind)))
+      .toEqual([
+        expect.objectContaining({ kind: 'position', to: { x: 20, y: 0 } }),
+        expect.objectContaining({ kind: 'program-stop', stopId: 'thread-at-destination',
+          placement: 'after-positioning', point: { x: 20, y: 0 } }),
+        expect.objectContaining({ kind: 'wire-thread', method: 'manual' })
+      ]);
+  });
+
   it('represents an explicit continuous transition between disconnected closed contours', () => {
     const document = createUpidFromDxfEntities([
       ...rectangle(0, 0, 10, 10),
@@ -298,6 +322,39 @@ describe('controller-neutral Wire EDM execution plans', () => {
       threading: [],
       wireSeparation: false
     });
+  });
+
+  it('blocks a threaded rapid through the solid between a hole and its exterior', () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 70.5 }
+    ]);
+    document.geometryBasis = 'finished-contour';
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    document.plan.operations[1].threadingTransition = {
+      mode: 'continuous', wireSeparation: 'already-separated', source: 'operation-override'
+    };
+    expect(compileWireEdmExecutionPlan(document)).toMatchObject({
+      ok: false, diagnostics: [expect.objectContaining({
+        code: 'EXECUTION_PLAN_THREADING_INVALID', message: expect.stringContaining('finished-part material')
+      })]
+    });
+    document.plan.operations[1].threadingTransition = {
+      mode: 'manual', wireSeparation: 'already-separated', source: 'operation-override'
+    };
+    expect(compileWireEdmExecutionPlan(document)).toMatchObject({
+      ok: false, diagnostics: [expect.objectContaining({ code: 'EXECUTION_PLAN_THREADING_INVALID',
+        message: expect.stringContaining('Select rapid separation') })]
+    });
+    document.plan.operations[1].threadingTransition = {
+      mode: 'manual', wireSeparation: 'automatic-during-positioning', source: 'operation-override'
+    };
+    const compiled = compileWireEdmExecutionPlan(document);
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    expect(compiled.plan.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'position', separatesWire: true }),
+      expect.objectContaining({ kind: 'wire-thread', method: 'manual' })
+    ]));
   });
 
   it('splits contour motion around an exact remaining-distance program stop', () => {

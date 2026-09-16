@@ -242,11 +242,24 @@ const multiCompensatedContinuousContour: WireEdmExecutionPlan = {
   }
 };
 
+const multiCompensatedRapidSeparation: WireEdmExecutionPlan = {
+  ...multiCompensatedManualContour,
+  events: multiCompensatedManualContour.events
+    .filter((event) => event.kind !== 'wire-separate')
+    .map((event, index) => ({
+      ...event,
+      ...(event.kind === 'position' ? { separatesWire: true as const } : {}),
+      id: eventId(index + 1),
+      ordinal: index + 1
+    }))
+};
+
 export const CANONICAL_POST_PLAN_FIXTURES: Readonly<Record<string, WireEdmExecutionPlan>> =
   deepFreeze({
     'core.single-closed-contour.v1': singleClosedContour,
     'core.single-compensated-direct.v1': singleCompensatedDirectContour,
     'core.multi-compensated-manual.v1': multiCompensatedManualContour,
+    'core.multi-compensated-rapid-separation.v1': multiCompensatedRapidSeparation,
     'core.multi-compensated-continuous.v1': multiCompensatedContinuousContour
   });
 

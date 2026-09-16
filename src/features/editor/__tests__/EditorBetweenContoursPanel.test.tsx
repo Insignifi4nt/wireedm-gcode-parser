@@ -126,6 +126,29 @@ describe('EditorBetweenContoursPanel', () => {
     expect(container.textContent).not.toContain('Operation threading mode');
   });
 
+  it('recommends separating rapid for the hole-to-exterior move across finished material', async () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 70.5 }
+    ]);
+    document.geometryBasis = 'finished-contour';
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    const second = document.plan.operations[1];
+    const onSetOperationThreading = vi.fn();
+    await act(async () => root.render(
+      <EditorBetweenContoursPanel disabled={false} document={document} onSelectOperation={vi.fn()}
+        onSetOperationThreading={onSetOperationThreading} onSetProjectThreading={vi.fn()}
+        selectedOperationId={second.id} />
+    ));
+    expect(container.querySelector('[data-positioning-material]')?.textContent)
+      .toContain('inside the finished solid');
+    await act(async () => setSelect(
+      container.querySelector<HTMLSelectElement>('[aria-label="Operation threading mode"]')!, 'manual'
+    ));
+    expect(onSetOperationThreading).toHaveBeenCalledWith(second.id,
+      { mode: 'manual', wireSeparation: 'automatic-during-positioning' });
+  });
+
   it('shows source contact review for continuous travel without claiming physical clearance', async () => {
     let document = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },

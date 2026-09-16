@@ -2183,7 +2183,8 @@ function validateThreadingIntent(
     (threading.mode === 'continuous' && threading.wireSeparation === 'already-separated') ||
     (threading.mode === 'manual' &&
       (threading.wireSeparation === 'already-separated' ||
-        threading.wireSeparation === 'manual-before-positioning')) ||
+        threading.wireSeparation === 'manual-before-positioning' ||
+        threading.wireSeparation === 'automatic-during-positioning')) ||
     (threading.mode === 'automatic' &&
       threading.wireSeparation === 'automatic-before-positioning');
   if (!validPair) {
@@ -2243,7 +2244,7 @@ function validateProgramStops(
         context,
         { positive: true }
       );
-    } else if (!['before-entry', 'after-contour', 'after-exit'].includes(String(placement.kind))) {
+    } else if (!['before-entry', 'after-positioning', 'after-contour', 'after-exit'].includes(String(placement.kind))) {
       context.add('upid-invalid-value', `Operation ${operation.id} program stop placement is unsupported.`);
     }
   }

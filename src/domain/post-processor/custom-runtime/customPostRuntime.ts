@@ -286,6 +286,7 @@ function requiredEventEffect(event: WireEdmExecutionEvent): string | null {
   switch (event.kind) {
     case 'program-stop': return 'program.paused';
     case 'wire-separate': return 'wire.separated';
+    case 'position': return event.separatesWire ? 'wire.separated' : null;
     case 'wire-thread': return 'wire.threaded';
     default: return null;
   }

@@ -268,6 +268,7 @@ export type ThreadingMode = 'continuous' | 'manual' | 'automatic';
 export type WireSeparationStrategy =
   | 'already-separated'
   | 'manual-before-positioning'
+  | 'automatic-during-positioning'
   | 'automatic-before-positioning';
 
 export interface OperationThreadingTransition {
@@ -393,6 +394,7 @@ export interface PathOperationTransitions {
 
 export type OperationProgramStopPlacement =
   | { kind: 'before-entry' }
+  | { kind: 'after-positioning' }
   | { kind: 'before-operation-end'; remainingCutLengthMm: number }
   | { kind: 'after-contour' }
   | { kind: 'after-exit' };

@@ -37,12 +37,12 @@ describe('standalone Robofil 100 V2 package', () => {
       ok: true,
       package: {
         document: {
-          manifest: { id: 'cristian.robofil-100.v2-candidate-package', version: '2.2.0' },
-          machine: { id: 'cristian.robofil-100', activeBindingId: 'robofil-v2-candidate-2-2-0' },
+          manifest: { id: 'cristian.robofil-100.v2-candidate-package', version: '2.3.0' },
+          machine: { id: 'cristian.robofil-100', activeBindingId: 'robofil-v2-candidate-2-3-0' },
           posts: [{
             manifest: {
               id: 'cristian.robofil-100.v2-candidate',
-              version: '2.2.0',
+              version: '2.3.0',
               output: {
                 fileExtension: 'iso',
                 blockNumbering: { mode: 'sequential', prefix: 'N', start: 10 },
@@ -60,12 +60,12 @@ describe('standalone Robofil 100 V2 package', () => {
       ok: true,
       machine: {
         id: 'cristian.robofil-100',
-        activeBindingId: 'robofil-v2-candidate-2-2-0',
+        activeBindingId: 'robofil-v2-candidate-2-3-0',
         bindings: [{
-          id: 'robofil-v2-candidate-2-2-0',
+          id: 'robofil-v2-candidate-2-3-0',
           post: {
             packageId: 'cristian.robofil-100.v2-candidate',
-            version: '2.2.0'
+            version: '2.3.0'
           }
         }]
       }
@@ -192,9 +192,43 @@ describe('standalone Robofil 100 V2 package', () => {
     expect(result).toMatchObject({
       ok: false,
       diagnostics: expect.arrayContaining([
-        expect.objectContaining({ code: 'POST_CUSTOM_CAPABILITY_UNSUPPORTED' })
+        expect.objectContaining({ code: 'POST_CUSTOM_RUNTIME_FAILED',
+          message: expect.stringContaining('Wire separation is not verified') })
       ])
     });
+  });
+
+  it('separates on a solid-crossing rapid and pauses at the destination for manual rethreading', async () => {
+    const installation = await installRobofilV2();
+    const source = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 70.5 }
+    ]);
+    source.geometryBasis = 'finished-contour';
+    source.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    let document = source;
+    for (const operation of source.plan.operations) {
+      const configured = setManualCompensationIntent(document, operation.id,
+        operation.id === source.plan.operations[0].id ? 'outside' : 'inside');
+      if (!configured) throw new Error('Expected closed contours.');
+      document = configured;
+    }
+    document.plan.operations[1].threadingTransition = {
+      mode: 'manual', wireSeparation: 'automatic-during-positioning', source: 'operation-override'
+    };
+    document.plan.operations[1].transitions = { entry: {
+      strategy: 'manual-straight', move: 'cut',
+      from: { x: 72.5, y: 0 }, to: document.plan.operations[1].startPoint,
+      review: 'reviewed'
+    } };
+    const program = await post(installation, document);
+    const rapidIndex = program.lines.findIndex((line) => line === 'G0 X72.500 Y0.000');
+    expect(rapidIndex).toBeGreaterThan(0);
+    expect(program.lines.slice(rapidIndex, rapidIndex + 7)).toEqual([
+      'G0 X72.500 Y0.000', 'G40', 'G39', 'M00', 'G42', 'G38 D0', 'G1 X70.500 Y0.000'
+    ]);
+    expect(program.blocks.find((block) => block.text === 'G0 X72.500 Y0.000'))
+      .toMatchObject({ commandIds: ['motion.rapid-separating'] });
   });
 
   it('exports an exact persisted no-lead revision through an explicit machine binding', async () => {

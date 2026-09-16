@@ -10,6 +10,7 @@ function fixture() {
   document.setup = { initialWirePosition: { kind: 'manual', point: { x: -2, y: 0 }, review: 'reviewed' } };
   document.plan.operations[0].programStops = [
     { id: 'before', enabled: true, reason: 'manual', placement: { kind: 'before-entry' } },
+    { id: 'positioned', enabled: true, reason: 'manual', placement: { kind: 'after-positioning' } },
     { id: 'distance', enabled: true, reason: 'manual', placement: { kind: 'before-operation-end', remainingCutLengthMm: 2 } },
     { id: 'contour', enabled: true, reason: 'manual', placement: { kind: 'after-contour' } },
     { id: 'exit', enabled: true, reason: 'manual', placement: { kind: 'after-exit' } }
@@ -26,21 +27,21 @@ describe('program stop preview', () => {
       .filter((event) => event.kind === 'program-stop')
       .map(({ operationId, stopId, point }) => ({ operationId, stopId, point })));
     expect(programStopPreview(document).map(({ point }) => point)).toEqual([
-      { x: -2, y: 0 }, { x: 8, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 0 }
+      { x: -2, y: 0 }, { x: 0, y: 0 }, { x: 8, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 0 }
     ]);
   });
 
   it('previews known geometry without guessing an unreviewed initial wire point', () => {
     const document = fixture();
     document.setup = undefined;
-    expect(programStopPreview(document).map(({ stopId }) => stopId)).toEqual(['distance', 'contour', 'exit']);
+    expect(programStopPreview(document).map(({ stopId }) => stopId)).toEqual(['positioned', 'distance', 'contour', 'exit']);
   });
 
   it('omits disabled and invalid distance markers', () => {
     const document = fixture();
     const stops = document.plan.operations[0].programStops!;
     stops[0].enabled = false;
-    stops[1].placement = { kind: 'before-operation-end', remainingCutLengthMm: 20 };
-    expect(programStopPreview(document).map(({ stopId }) => stopId)).toEqual(['contour', 'exit']);
+    stops[2].placement = { kind: 'before-operation-end', remainingCutLengthMm: 20 };
+    expect(programStopPreview(document).map(({ stopId }) => stopId)).toEqual(['positioned', 'contour', 'exit']);
   });
 });

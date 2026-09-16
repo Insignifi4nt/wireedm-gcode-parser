@@ -1,5 +1,6 @@
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
+import { operationEntryPoint } from '@/domain/path-intel/operationTransitions';
 import { resolveProgramStopPoints } from '@/domain/path-intel/programStops';
 import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 
@@ -25,6 +26,7 @@ export function programStopPreview(document: PathPlanningDocument): ProgramStopM
     for (const stop of operation.programStops ?? []) {
       if (!stop.enabled) continue;
       const point = stop.placement.kind === 'before-entry' ? current
+        : stop.placement.kind === 'after-positioning' ? operationEntryPoint(operation)
         : stop.placement.kind === 'after-contour' ? operation.endPoint
           : stop.placement.kind === 'after-exit' ? end : distances.get(stop.id);
       if (point) markers.push({
