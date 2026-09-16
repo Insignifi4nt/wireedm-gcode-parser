@@ -30,6 +30,22 @@ class MemoryStorage implements Storage {
   }
 }
 
+class QuotaStorage extends MemoryStorage {
+  constructor(private readonly maxCharacters: number) { super(); }
+
+  override setItem(key: string, value: string) {
+    let used = 0;
+    for (let index = 0; index < this.length; index++) {
+      const existingKey = this.key(index)!;
+      if (existingKey !== key) used += existingKey.length + this.getItem(existingKey)!.length;
+    }
+    if (used + key.length + value.length > this.maxCharacters) {
+      throw new DOMException('Setting the value exceeded the quota.', 'QuotaExceededError');
+    }
+    super.setItem(key, value);
+  }
+}
+
 describe('createBrowserCacheAdapter', () => {
   it.each(['{broken', 'null', '{}', '42', '["empty-folder",42]', null])(
     'rebuilds damaged or missing directory metadata %j from owned file paths', async (metadata) => {
@@ -99,5 +115,32 @@ describe('createBrowserCacheAdapter', () => {
     await adapter.deleteText('projects/example/project.json');
 
     expect(await adapter.readText('projects/example/project.json')).toBeNull();
+  });
+
+  it('can save a revision beside existing large project revisions within a browser storage quota', async () => {
+    const storage = new QuotaStorage(5_000_000);
+    const adapter = createBrowserCacheAdapter(storage, { namespace: 'wire-edm-test' });
+    storage.setItem('existing-project-and-revisions', 'x'.repeat(3_000_000));
+    const project = JSON.stringify({ geometry: 'G'.repeat(600_000) });
+    const revision = JSON.stringify({ geometry: 'R'.repeat(440_000) });
+    const journal = JSON.stringify({ previousProject: project, nextProject: project, nextRevision: revision });
+
+    await adapter.writeText('transactions/saved-revision.json', journal);
+    await adapter.writeText('projects/gear/revisions/revision.1.wireedm-job.json', revision);
+    expect(await adapter.readText('transactions/saved-revision.json')).toBe(journal);
+    expect(await adapter.readText('projects/gear/revisions/revision.1.wireedm-job.json')).toBe(revision);
+    expect(storage.getItem('existing-project-and-revisions')).toHaveLength(3_000_000);
+  });
+
+  it('reads legacy text and round-trips compressed Unicode without changing its logical bytes', async () => {
+    const storage = new MemoryStorage();
+    const adapter = createBrowserCacheAdapter(storage, { namespace: 'wire-edm-test' });
+    const path = 'projects/gear.json';
+    const text = JSON.stringify({ name: 'Oțel ⚙', geometry: 'segment,'.repeat(2000) });
+    storage.setItem(`wire-edm-test:file:${path}`, text);
+    expect(await adapter.readText(path)).toBe(text);
+    await adapter.writeText(path, text);
+    expect(storage.getItem(`wire-edm-test:file:${path}`)?.length).toBeLessThan(text.length);
+    expect(await createBrowserCacheAdapter(storage, { namespace: 'wire-edm-test' }).readText(path)).toBe(text);
   });
 });

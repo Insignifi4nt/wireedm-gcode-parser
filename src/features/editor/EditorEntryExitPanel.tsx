@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pathDocumentOperations';
+import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { findLeadIntersections } from '@/domain/path-intel/leadIntersections';
 import { deriveSourceMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
-import { pointsEqual } from '@/domain/path-intel/segments';
+import { distance, pointsEqual } from '@/domain/path-intel/segments';
 import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 
 interface EditorEntryExitPanelProps {
@@ -55,8 +56,12 @@ export function EditorEntryExitPanel({
   const transitions = selected ? readOperationTransitions(selected) : {};
   const [entryX, setEntryX] = useState('');
   const [entryY, setEntryY] = useState('');
+  const [entryMode, setEntryMode] = useState<'coordinates' | 'lead-length' | 'rapid-length'>('coordinates');
+  const [entryDistance, setEntryDistance] = useState('');
   const [exitX, setExitX] = useState('');
   const [exitY, setExitY] = useState('');
+  const [exitMode, setExitMode] = useState<'coordinates' | 'lead-length'>('coordinates');
+  const [exitDistance, setExitDistance] = useState('');
   const entryFrom =
     transitions.entry && transitions.entry.strategy !== 'none'
       ? transitions.entry.from
@@ -80,8 +85,30 @@ export function EditorEntryExitPanel({
   const effective = active?.status === 'ready' ? active.operations[0] : undefined;
   const entryAttachment = effective?.startPoint ?? selected?.startPoint;
   const exitAttachment = effective?.endPoint ?? selected?.endPoint;
-  const entryPoint = readFinitePoint(entryX, entryY);
-  const exitPoint = readFinitePoint(exitX, exitY);
+  const initialWire = resolveInitialWirePosition(document);
+  const rapidStart = selected?.id === operations[0]?.id && initialWire.status === 'ready'
+    ? initialWire.point : null;
+  const initialToContour = rapidStart && entryAttachment ? distance(rapidStart, entryAttachment) : null;
+  const entryPoint = entryMode === 'coordinates'
+    ? readFinitePoint(entryX, entryY)
+    : entryMode === 'rapid-length'
+      ? pointFromRapidDistance(rapidStart, entryAttachment, entryDistance)
+      : pointAtLeadLength(entryAttachment, entryFrom ?? rapidStart, entryDistance);
+  const exitPoint = exitMode === 'coordinates'
+    ? readFinitePoint(exitX, exitY)
+    : pointAtLeadLength(exitAttachment, exitTo, exitDistance);
+  useEffect(() => {
+    setEntryMode('coordinates');
+    setExitMode('coordinates');
+  }, [selected?.id]);
+  useEffect(() => {
+    setEntryDistance(formatDistance(entryMode === 'rapid-length'
+      ? rapidStart && entryFrom ? distance(rapidStart, entryFrom) : null
+      : entryAttachment && entryFrom ? distance(entryAttachment, entryFrom) : null));
+  }, [selected?.id, entryMode, entryFrom?.x, entryFrom?.y, entryAttachment?.x, entryAttachment?.y, rapidStart?.x, rapidStart?.y]);
+  useEffect(() => {
+    setExitDistance(formatDistance(exitAttachment && exitTo ? distance(exitAttachment, exitTo) : null));
+  }, [selected?.id, exitMode, exitTo?.x, exitTo?.y, exitAttachment?.x, exitAttachment?.y]);
   const entryCoincident = Boolean(selected && entryPoint &&
     (pointsEqual(entryPoint, selected.startPoint, document.options.coincidenceEpsilon) || (entryAttachment && pointsEqual(entryPoint, entryAttachment, document.options.coincidenceEpsilon))));
   const exitCoincident = Boolean(selected && exitPoint &&
@@ -176,13 +203,29 @@ export function EditorEntryExitPanel({
         {transitions.entry?.strategy === 'circle-center' && <p className="text-muted-foreground">This lead cuts from the circle center to its boundary. Confirm that the center is in removable material.</p>}
         {transitions.entry && 'review' in transitions.entry && transitions.entry.review === 'required' &&
           <p role="status" className="text-amber-300">Geometry changed. Confirm the entry coordinates with Set straight entry, or choose no entry.</p>}
-        <CoordinateInputs
+        <select aria-label="Entry input mode" className="h-7 border border-border bg-background px-1.5 text-foreground"
+          onChange={(event) => setEntryMode(event.currentTarget.value as typeof entryMode)} value={entryMode}>
+          <option value="coordinates">Coordinates</option>
+          <option value="lead-length">Lead-in length (mm)</option>
+          {rapidStart && <option value="rapid-length">Rapid from initial wire (mm)</option>}
+        </select>
+        {entryMode === 'coordinates' ? <CoordinateInputs
           label="Entry"
           onXChange={(value) => { setEntryX(value); onDraftChange?.('entry'); }}
           onYChange={(value) => { setEntryY(value); onDraftChange?.('entry'); }}
           x={entryX}
           y={entryY}
-        />
+        /> : <label className="grid gap-0.5 text-muted-foreground">
+          {entryMode === 'rapid-length' ? 'Rapid travel from initial wire (mm)' : 'Lead-in length (mm)'}
+          <input aria-label={entryMode === 'rapid-length' ? 'Entry rapid distance (mm)' : 'Entry lead-in length (mm)'}
+            className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+            inputMode="decimal" min={entryMode === 'rapid-length' ? 0 : 0.001} step="any" type="number"
+            onChange={(event) => { setEntryDistance(event.currentTarget.value); onDraftChange?.('entry'); }}
+            value={entryDistance} />
+        </label>}
+        {entryMode === 'lead-length' && !entryFrom && !rapidStart && <p className="text-muted-foreground">Pick an entry point on the canvas first to establish its direction.</p>}
+        {entryMode === 'rapid-length' && initialToContour !== null && <p className="text-muted-foreground">Rapid must end before the contour, less than {formatDistance(initialToContour)} mm from the initial wire.</p>}
+        {entryPoint && entryAttachment && <p className="text-muted-foreground">Lead-in {formatDistance(distance(entryPoint, entryAttachment))} mm{rapidStart ? ` · rapid ${formatDistance(distance(rapidStart, entryPoint))} mm` : ''} · X{entryPoint.x.toFixed(3)} Y{entryPoint.y.toFixed(3)}</p>}
         {entryCoincident && <p role="status" className="text-amber-300">Entry is at the source or active contour start. Choose a different point or use no entry.</p>}
         {entryIntersections.length > 0 && <p role="status" className="text-amber-300">Entry touches or overlaps {entryIntersections.length} source segment(s) away from its contour attachment. Check the lead before applying.</p>}
         <div className="grid grid-cols-2 gap-1">
@@ -228,13 +271,26 @@ export function EditorEntryExitPanel({
         </div>
         {transitions.exit?.review === 'required' &&
           <p role="status" className="text-amber-300">Geometry changed. Confirm the exit coordinates with Set straight exit, or choose no exit.</p>}
-        <CoordinateInputs
+        <select aria-label="Exit input mode" className="h-7 border border-border bg-background px-1.5 text-foreground"
+          onChange={(event) => setExitMode(event.currentTarget.value as typeof exitMode)} value={exitMode}>
+          <option value="coordinates">Coordinates</option>
+          <option value="lead-length">Lead-out length (mm)</option>
+        </select>
+        {exitMode === 'coordinates' ? <CoordinateInputs
           label="Exit"
           onXChange={(value) => { setExitX(value); onDraftChange?.('exit'); }}
           onYChange={(value) => { setExitY(value); onDraftChange?.('exit'); }}
           x={exitX}
           y={exitY}
-        />
+        /> : <label className="grid gap-0.5 text-muted-foreground">
+          Lead-out length (mm)
+          <input aria-label="Exit lead-out length (mm)" className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
+            inputMode="decimal" min={0.001} step="any" type="number"
+            onChange={(event) => { setExitDistance(event.currentTarget.value); onDraftChange?.('exit'); }}
+            value={exitDistance} />
+        </label>}
+        {exitMode === 'lead-length' && !exitTo && <p className="text-muted-foreground">Pick an exit point on the canvas first to establish its direction.</p>}
+        {exitPoint && exitAttachment && <p className="text-muted-foreground">Lead-out {formatDistance(distance(exitAttachment, exitPoint))} mm · X{exitPoint.x.toFixed(3)} Y{exitPoint.y.toFixed(3)}</p>}
         {exitCoincident && <p role="status" className="text-amber-300">Exit is at the source or active contour end. Choose a different point or use no exit.</p>}
         {exitIntersections.length > 0 && <p role="status" className="text-amber-300">Exit touches or overlaps {exitIntersections.length} source segment(s) away from its contour attachment. Check the lead before applying.</p>}
         <button
@@ -322,4 +378,37 @@ function readFinitePoint(x: string, y: string): Point2 | null {
 
 function formatPoint(point: Point2) {
   return `X${point.x.toFixed(3)} Y${point.y.toFixed(3)}`;
+}
+
+function formatDistance(value: number | null): string {
+  return value === null ? '' : String(Number(value.toFixed(3)));
+}
+
+function readDistance(value: string, allowZero = false): number | null {
+  if (value.trim() === '') return null;
+  const millimeters = Number(value);
+  return Number.isFinite(millimeters) && (allowZero ? millimeters >= 0 : millimeters > 0)
+    ? millimeters : null;
+}
+
+function pointAtLeadLength(anchor: Point2 | null | undefined, directionPoint: Point2 | null, rawLength: string): Point2 | null {
+  const length = readDistance(rawLength);
+  if (!anchor || !directionPoint || length === null) return null;
+  const existingLength = distance(anchor, directionPoint);
+  if (existingLength === 0) return null;
+  return {
+    x: anchor.x + (directionPoint.x - anchor.x) * length / existingLength,
+    y: anchor.y + (directionPoint.y - anchor.y) * length / existingLength
+  };
+}
+
+function pointFromRapidDistance(initial: Point2 | null, contourStart: Point2 | null | undefined, rawDistance: string): Point2 | null {
+  const rapidDistance = readDistance(rawDistance, true);
+  if (!initial || !contourStart || rapidDistance === null) return null;
+  const fullDistance = distance(initial, contourStart);
+  if (fullDistance === 0 || rapidDistance >= fullDistance) return null;
+  return {
+    x: initial.x + (contourStart.x - initial.x) * rapidDistance / fullDistance,
+    y: initial.y + (contourStart.y - initial.y) * rapidDistance / fullDistance
+  };
 }

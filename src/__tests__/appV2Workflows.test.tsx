@@ -1,5 +1,6 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
 
 import {
   cleanupAppTestContext,
@@ -27,9 +28,9 @@ describe('V2 app workflows', () => {
   it('creates a strict browser-cache catalog with no machine or export defaults', async () => {
     await renderApp(context);
 
-    const manifest = storedJson('workbench.json');
-    const machines = storedJson('machines/library.json');
-    const posts = storedJson('posts/library.json');
+    const manifest = await storedJson('workbench.json');
+    const machines = await storedJson('machines/library.json');
+    const posts = await storedJson('posts/library.json');
 
     expect(manifest).toMatchObject({
       format: 'wire-edm-workbench',
@@ -76,8 +77,8 @@ describe('V2 app workflows', () => {
     await flushAsync();
 
     expect(context.container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
-    const manifest = storedJson('workbench.json');
-    const project = storedJson(manifest.projects[0].path);
+    const manifest = await storedJson('workbench.json');
+    const project = await storedJson(manifest.projects[0].path);
     expect(project).toMatchObject({
       format: 'wire-edm-project',
       schemaVersion: 2,
@@ -99,7 +100,7 @@ describe('V2 app workflows', () => {
 
     expect(context.container.textContent).toContain('Legacy workbench manifest schema violation');
     expect(context.container.textContent).toContain('Storage not connected');
-    expect(storedJson('workbench.json').schemaVersion).toBe(1);
+    expect((await storedJson('workbench.json')).schemaVersion).toBe(1);
   });
 
   it('exposes exact machine and post libraries in settings without creating a selection', async () => {
@@ -120,8 +121,8 @@ describe('V2 app workflows', () => {
   });
 });
 
-function storedJson(path: string) {
-  const text = window.localStorage.getItem(`${storagePrefix}${path}`);
+async function storedJson(path: string) {
+  const text = await createBrowserCacheAdapter(window.localStorage).readText(path);
   if (text === null) throw new Error(`Missing browser-cache file: ${path}.`);
   return JSON.parse(text);
 }

@@ -1,4 +1,9 @@
+import { gunzipSync, gzipSync, strFromU8, strToU8 } from 'fflate';
+
 import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
+
+const COMPRESSED_TEXT_PREFIX = '\u0000wire-edm-cache-gzip-v1:';
+const MIN_COMPRESS_LENGTH = 4096;
 
 interface BrowserCacheAdapterOptions {
   kind?: 'browser-cache' | 'memory';
@@ -32,12 +37,12 @@ export function createBrowserCacheAdapter(
         storage.setItem(directoriesKey, JSON.stringify(directories));
       }
     },
-    readText: async (path: string) => storage.getItem(fileKey(namespace, path)),
+    readText: async (path: string) => decodeStoredText(storage.getItem(fileKey(namespace, path))),
     deleteText: async (path: string) => {
       storage.removeItem(fileKey(namespace, path));
     },
     writeText: async (path: string, contents: string) => {
-      storage.setItem(fileKey(namespace, path), contents);
+      storage.setItem(fileKey(namespace, path), encodeStoredText(contents));
     },
     clear: async () => {
       const keysToRemove: string[] = [];
@@ -51,6 +56,17 @@ export function createBrowserCacheAdapter(
     },
     listDirectories: async () => readDirectories(storage, namespace)
   };
+}
+
+function encodeStoredText(contents: string): string {
+  if (contents.length < MIN_COMPRESS_LENGTH) return contents;
+  const compressed = COMPRESSED_TEXT_PREFIX + btoa(strFromU8(gzipSync(strToU8(contents)), true));
+  return compressed.length < contents.length ? compressed : contents;
+}
+
+function decodeStoredText(stored: string | null): string | null {
+  if (stored === null || !stored.startsWith(COMPRESSED_TEXT_PREFIX)) return stored;
+  return strFromU8(gunzipSync(strToU8(atob(stored.slice(COMPRESSED_TEXT_PREFIX.length)), true)));
 }
 
 function fileKey(namespace: string, path: string) {

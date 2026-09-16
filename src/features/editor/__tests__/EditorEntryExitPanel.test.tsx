@@ -140,6 +140,73 @@ describe('EditorEntryExitPanel', () => {
     expect(exit).toHaveBeenCalledWith(operation.id, { x: 12, y: 0 });
   });
 
+  it('sets the first entry by rapid distance from the initial wire', async () => {
+    const document = createUpidFromDxfEntities([{
+      type: 'line', layer: 'CUT', start: { x: 11.2, y: 0 }, end: { x: 20, y: 0 }
+    }]);
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    const onSetManualEntry = vi.fn();
+    await act(async () => root.render(
+      <EditorEntryExitPanel canvasPickMode={null} disabled={false} document={document}
+        onCanvasPickModeChange={vi.fn()} onSelectOperation={vi.fn()} onSetCircleCenterEntry={vi.fn()}
+        onSetManualEntry={onSetManualEntry} onSetManualExit={vi.fn()} onSetNoEntry={vi.fn()}
+        onSetNoExit={vi.fn()} selectedOperationId={document.plan.operations[0].id} />
+    ));
+
+    await selectMode('Entry input mode', 'rapid-length');
+    await setInput('Entry rapid distance (mm)', '4');
+    expect(container.textContent).toContain('Lead-in 7.2 mm · rapid 4 mm');
+    await click('Set straight entry');
+    expect(onSetManualEntry).toHaveBeenCalledWith(document.plan.operations[0].id, { x: 4, y: 0 });
+
+    await setInput('Entry rapid distance (mm)', '11.2');
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Set straight entry"]')?.disabled).toBe(true);
+  });
+
+  it('resizes reviewed entry and exit leads by millimeters along their existing directions', async () => {
+    const document = createUpidFromDxfEntities([{
+      type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
+    }]);
+    const operation = document.plan.operations[0];
+    operation.transitions = {
+      entry: { strategy: 'manual-straight', move: 'cut', from: { x: -2, y: 0 }, to: operation.startPoint, review: 'reviewed' },
+      exit: { strategy: 'manual-straight', move: 'cut', from: operation.endPoint, to: { x: 12, y: 0 }, review: 'reviewed' }
+    };
+    const onSetManualEntry = vi.fn();
+    const onSetManualExit = vi.fn();
+    await act(async () => root.render(
+      <EditorEntryExitPanel canvasPickMode={null} disabled={false} document={document}
+        onCanvasPickModeChange={vi.fn()} onSelectOperation={vi.fn()} onSetCircleCenterEntry={vi.fn()}
+        onSetManualEntry={onSetManualEntry} onSetManualExit={onSetManualExit} onSetNoEntry={vi.fn()}
+        onSetNoExit={vi.fn()} selectedOperationId={operation.id} />
+    ));
+
+    await selectMode('Entry input mode', 'lead-length');
+    await setInput('Entry lead-in length (mm)', '3');
+    await click('Set straight entry');
+    expect(onSetManualEntry).toHaveBeenCalledWith(operation.id, { x: -3, y: 0 });
+    await selectMode('Exit input mode', 'lead-length');
+    await setInput('Exit lead-out length (mm)', '4');
+    await click('Set straight exit');
+    expect(onSetManualExit).toHaveBeenCalledWith(operation.id, { x: 14, y: 0 });
+  });
+
+  async function selectMode(label: string, value: string) {
+    const select = container.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;
+    await act(async () => {
+      select.value = value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
+  async function setInput(label: string, value: string) {
+    const input = container.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
   async function click(label: string) {
     const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
     expect(button?.disabled).toBe(false);
