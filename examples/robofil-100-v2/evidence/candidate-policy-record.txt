@@ -7,14 +7,14 @@ compensation side with G41 or G42, then activates the offset with G38 D0. Linear
 absolute-center circular interpolation use G1, G2, or G3. Program completion emits G40,
 G39, and M02 in that order.
 
-When consecutive contours use the same side and the wire remains threaded, G0 moves between
-contours without cancelling compensation. The program emits one G41/G42 and G38 D0 pair and
-one final G40 and G39 pair. Mixed-side and wire-separation/rethread transitions remain blocked
-until an exact Robofil 100 sequence is verified.
+Compensation remains modal across clear G0 contour transitions and manual rethread pauses. If the
+next contour has the same wire side, no offset commands are repeated. If its side changes,
+the candidate emits the new G41 or G42 and G38 D0 for entry, without G40 or G39 between
+contours. G40 and G39 occur only at program end. This direct side switch is supported by
+manuals for adjacent Robofil generations, but not verified on this exact Robofil 100.
 
-The old V2 implementation and the later platform prototype represented manual wire
-separation, manual threading, and explicit operator stops with M00. Those three uses
-remain unverified on Cristian's Robofil 100 and require graphics simulation, a supervised
-dry run, and a new package version if testing changes their command or ordering.
+The rapid wire separation and M00 manual pause are operator-reported candidate behavior.
+Their physical effect and the direct side switch require graphics simulation and a
+supervised dry run on Cristian's Robofil 100.
 
 This is an editable test candidate. It is not a claim of machine readiness.

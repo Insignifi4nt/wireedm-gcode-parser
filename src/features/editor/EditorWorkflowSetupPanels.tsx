@@ -1,6 +1,6 @@
 import { MousePointer2, RefreshCw } from 'lucide-react';
 
-import type { ManualCompensationSelection } from '@/domain/compensation/intent';
+import { suggestCompensationIntent, type ManualCompensationSelection } from '@/domain/compensation/intent';
 import { resolveControllerCompensation } from '@/domain/compensation/resolveControllerCompensation';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import type {
@@ -92,9 +92,9 @@ export function EditorContourSetupPanel({
         : '';
 
   return (
-    <section className="grid gap-2 text-[10px]" data-upid-contour-setup>
+    <section className="grid gap-1 text-[10px]" data-upid-contour-setup>
       <p className="text-muted-foreground">
-        Set travel direction, contour role, and the material to keep.
+        Set direction, contour role, and compensation.
       </p>
       <label className="grid gap-1 uppercase text-muted-foreground">
         Target contour
@@ -142,8 +142,8 @@ export function EditorContourSetupPanel({
           ))}
         </select>
       </label>
-      <section className="grid gap-1 border border-border bg-background/50 p-1.5" data-upid-compensation-review>
-        <label className="grid gap-1 uppercase text-muted-foreground">
+      <section className="grid gap-1" data-upid-compensation-review>
+        <label className="grid gap-0.5 uppercase text-muted-foreground">
           Compensation
           <select
             aria-label="Compensation kept material"
@@ -152,13 +152,13 @@ export function EditorContourSetupPanel({
             onChange={(event) => {
               if (!selected) return;
               const selection = event.currentTarget.value;
-              if (selection === 'inside' || selection === 'outside' || selection === 'left' ||
+              if (selection === 'automatic' || selection === 'inside' || selection === 'outside' || selection === 'left' ||
                 selection === 'right' || selection === 'centerline') onSetCompensation(selected.id, selection);
             }}
             value={compensationSelection}
           >
-            <option value="">Choose kept material</option>
-            {compensationSelection === 'automatic' && <option value="automatic">Automatic</option>}
+            {!compensationSelection && <option value="">Select compensation</option>}
+            {selected?.closed && <option value="automatic" disabled={!suggestCompensationIntent({ document, operation: selected })}>Automatic · follow contour role</option>}
             {selected?.closed ? (
               <>
                 <option value="inside">Keep inside</option>
@@ -173,22 +173,27 @@ export function EditorContourSetupPanel({
             <option value="centerline">Centreline · no compensation</option>
           </select>
         </label>
-        <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-          <dt className="text-muted-foreground">Saved intent</dt>
-          <dd data-testid="compensation-kept-material">
-            {formatCompensationIntent(selected?.compensationIntent)}
-          </dd>
-          <dt className="text-muted-foreground">Wire side</dt>
-          <dd data-testid="compensation-wire-side">
-            {compensationResolution?.status === 'ready' ? compensationResolution.wireSide : '—'}
-          </dd>
-          <dt className="text-muted-foreground">Travel winding</dt>
-          <dd data-testid="compensation-winding">
-            {compensationResolution?.status === 'ready' && compensationResolution.winding
-              ? compensationResolution.winding.toUpperCase()
-              : '—'}
-          </dd>
-        </dl>
+        <details className="text-muted-foreground" data-upid-compensation-details>
+          <summary className="cursor-pointer select-none">
+            {compensationResolution?.status === 'ready'
+              ? `Wire ${compensationResolution.wireSide}${compensationResolution.winding ? ` · ${compensationResolution.winding.toUpperCase()}` : ''}`
+              : 'Compensation details'}
+          </summary>
+          <dl className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 border-l border-border pl-2">
+            <dt>Saved intent</dt>
+            <dd data-testid="compensation-kept-material">{formatCompensationIntent(selected?.compensationIntent)}</dd>
+            <dt>Wire side</dt>
+            <dd data-testid="compensation-wire-side">
+              {compensationResolution?.status === 'ready' ? compensationResolution.wireSide : '—'}
+            </dd>
+            <dt>Travel winding</dt>
+            <dd data-testid="compensation-winding">
+              {compensationResolution?.status === 'ready' && compensationResolution.winding
+                ? compensationResolution.winding.toUpperCase()
+                : '—'}
+            </dd>
+          </dl>
+        </details>
         {document.geometryBasis === 'wire-centre' ? (
           <p className="text-muted-foreground">Controller compensation is off for wire-centre geometry. Change Geometry basis to Finished contour to use the saved intent.</p>
         ) : selected?.compensationIntent?.mode === 'centerline' ? (
@@ -199,7 +204,7 @@ export function EditorContourSetupPanel({
           </p>
         )}
         {selected?.closed && document.geometryBasis === 'finished-contour' && (
-          <p className="text-muted-foreground">Reversing travel preserves the kept material and swaps the resolved wire side. Automatic intent follows the contour role; manual intent stays as chosen.</p>
+          <p className="text-muted-foreground">Reversing direction swaps the wire side.</p>
         )}
         {document.machiningParticipation?.partialContourCompensation?.some(
           (setting) => setting.sourceOperationId === selected?.id

@@ -194,7 +194,7 @@ export function setPathOperationClassification(
   const contour = next.contours.find((candidate) => candidate.id === operation.contourId);
   if (contour) contour.classification = classification;
 
-  if (operation.compensationIntent?.source === 'automatic') {
+  if (operation.compensationIntent?.source !== 'manual') {
     operation.compensationIntent = suggestCompensationIntent({ document: next, operation });
   }
 

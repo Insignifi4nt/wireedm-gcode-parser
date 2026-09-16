@@ -18,6 +18,7 @@ export interface CompensationIntentSuggestionInput {
 }
 
 export type ManualCompensationSelection =
+  | 'automatic'
   | 'inside'
   | 'outside'
   | 'left'
@@ -84,6 +85,7 @@ export function setManualCompensationIntent(
   if (!operation) return null;
   const selectingKeptMaterial = selection === 'inside' || selection === 'outside';
   const selectingWireSide = selection === 'left' || selection === 'right';
+  if (selection === 'automatic' && !operation.closed) return null;
   if (selectingKeptMaterial && !operation.closed) return null;
   if (
     selectingWireSide &&
@@ -92,11 +94,14 @@ export function setManualCompensationIntent(
 
   const next = structuredClone(document);
   const edited = next.plan.operations.find((candidate) => candidate.id === operationId)!;
-  edited.compensationIntent = selection === 'centerline'
+  edited.compensationIntent = selection === 'automatic'
+    ? suggestCompensationIntent({ document: next, operation: edited })
+    : selection === 'centerline'
     ? { mode: 'centerline', source: 'manual' }
     : selectingWireSide
       ? { mode: 'controller', wireSide: selection, source: 'manual' }
       : { mode: 'controller', keptMaterial: selection, source: 'manual' };
+  if (!edited.compensationIntent) return null;
   const pathElement = next.pathElements.find((candidate) => candidate.operationId === operationId);
   if (pathElement) pathElement.compensationIntent = structuredClone(edited.compensationIntent);
   return next;

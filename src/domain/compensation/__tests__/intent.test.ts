@@ -91,6 +91,19 @@ describe('compensation intent', () => {
     expect(document.plan.operations[0].compensationIntent).toBeUndefined();
   });
 
+  it('restores role-derived compensation after a manual override', () => {
+    const document = eligibleContour('hole');
+    const operationId = document.plan.operations[0].id;
+    const manual = setManualCompensationIntent(document, operationId, 'inside');
+    const automatic = setManualCompensationIntent(manual!, operationId, 'automatic');
+
+    expect(automatic?.plan.operations[0].compensationIntent).toEqual({
+      mode: 'controller', keptMaterial: 'outside', source: 'automatic'
+    });
+    expect(automatic?.pathElements.find((element) => element.operationId === operationId)?.compensationIntent)
+      .toEqual(automatic?.plan.operations[0].compensationIntent);
+  });
+
   it('does not allow controller-side intent on an open operation', () => {
     const document = createPathPlanningDocumentFromDxfEntities([line(0, 0, 10, 0)]);
     document.geometryBasis = 'finished-contour';

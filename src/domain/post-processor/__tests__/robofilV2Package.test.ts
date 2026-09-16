@@ -37,12 +37,12 @@ describe('standalone Robofil 100 V2 package', () => {
       ok: true,
       package: {
         document: {
-          manifest: { id: 'cristian.robofil-100.v2-candidate-package', version: '2.3.0' },
-          machine: { id: 'cristian.robofil-100', activeBindingId: 'robofil-v2-candidate-2-3-0' },
+          manifest: { id: 'cristian.robofil-100.v2-candidate-package', version: '2.4.0' },
+          machine: { id: 'cristian.robofil-100', activeBindingId: 'robofil-v2-candidate-2-4-0' },
           posts: [{
             manifest: {
               id: 'cristian.robofil-100.v2-candidate',
-              version: '2.3.0',
+              version: '2.4.0',
               output: {
                 fileExtension: 'iso',
                 blockNumbering: { mode: 'sequential', prefix: 'N', start: 10 },
@@ -60,12 +60,12 @@ describe('standalone Robofil 100 V2 package', () => {
       ok: true,
       machine: {
         id: 'cristian.robofil-100',
-        activeBindingId: 'robofil-v2-candidate-2-3-0',
+        activeBindingId: 'robofil-v2-candidate-2-4-0',
         bindings: [{
-          id: 'robofil-v2-candidate-2-3-0',
+          id: 'robofil-v2-candidate-2-4-0',
           post: {
             packageId: 'cristian.robofil-100.v2-candidate',
-            version: '2.3.0'
+            version: '2.4.0'
           }
         }]
       }
@@ -167,26 +167,18 @@ describe('standalone Robofil 100 V2 package', () => {
     ]);
   });
 
-  it('blocks a continuous multi-contour program when the compensation side changes', async () => {
+  it('switches the modal side directly across a clear continuous rapid', async () => {
     const installation = await installRobofilV2();
     const source = compensatedTwoRectangles();
     const reversed = reversePathOperation(source, source.plan.operations[1].id);
     if (!reversed) throw new Error('Expected the second contour to be reversible.');
-    const compiled = compileWireEdmExecutionPlan(reversed);
-    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
-
-    const result = await runPost(compiled.plan, {
-      installation,
-      properties: { coordinatePrecision: 3, offsetIndex: 0 }
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      diagnostics: [expect.objectContaining({
-        code: 'POST_CUSTOM_RUNTIME_FAILED',
-        message: expect.stringContaining('must keep the same compensation side')
-      })]
-    });
+    const program = await post(installation, reversed);
+    const rapidIndex = program.lines.findIndex((line) => line === 'G0 X20.000 Y0.000');
+    expect(rapidIndex).toBeGreaterThan(0);
+    expect(program.lines.slice(rapidIndex, rapidIndex + 3)).toEqual([
+      'G0 X20.000 Y0.000', 'G42', 'G38 D0'
+    ]);
+    expect(program.lines.filter((line) => line === 'G40' || line === 'G39')).toEqual(['G40', 'G39']);
   });
 
   it('blocks unverified wire separation and rethread transitions', async () => {
@@ -240,11 +232,40 @@ describe('standalone Robofil 100 V2 package', () => {
     const program = await post(installation, document);
     const rapidIndex = program.lines.findIndex((line) => line === 'G0 X72.500 Y0.000');
     expect(rapidIndex).toBeGreaterThan(0);
-    expect(program.lines.slice(rapidIndex, rapidIndex + 7)).toEqual([
-      'G0 X72.500 Y0.000', 'G40', 'G39', 'M00', 'G42', 'G38 D0', 'G1 X70.500 Y0.000'
+    expect(program.lines.slice(rapidIndex, rapidIndex + 5)).toEqual([
+      'G0 X72.500 Y0.000', 'M00', 'G42', 'G38 D0', 'G1 X70.500 Y0.000'
     ]);
     expect(program.blocks.find((block) => block.text === 'G0 X72.500 Y0.000'))
       .toMatchObject({ commandIds: ['motion.rapid-separating'] });
+  });
+
+  it('keeps the existing compensation side through a manual rethread', async () => {
+    const installation = await installRobofilV2();
+    const source = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 70.5 }
+    ]);
+    source.geometryBasis = 'finished-contour';
+    source.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    let document = source;
+    for (const operation of source.plan.operations) {
+      const configured = setManualCompensationIntent(document, operation.id, 'outside');
+      if (!configured) throw new Error('Expected closed contours.');
+      document = configured;
+    }
+    document.plan.operations[1].threadingTransition = {
+      mode: 'manual', wireSeparation: 'automatic-during-positioning', source: 'operation-override'
+    };
+
+    const program = await post(installation, document);
+    const rapidIndex = program.lines.findIndex((line) => line === 'G0 X70.500 Y0.000');
+    expect(rapidIndex).toBeGreaterThan(0);
+    expect(program.lines.slice(rapidIndex, rapidIndex + 3)).toEqual([
+      'G0 X70.500 Y0.000', 'M00', 'G3 X-70.500 Y0.000 I0.000 J0.000'
+    ]);
+    expect(program.lines.filter((line) => line === 'G41' || line === 'G42')).toHaveLength(1);
+    expect(program.lines.filter((line) => line === 'G38 D0')).toHaveLength(1);
+    expect(program.lines.filter((line) => line === 'G40' || line === 'G39')).toEqual(['G40', 'G39']);
   });
 
   it('exports an exact persisted no-lead revision through an explicit machine binding', async () => {

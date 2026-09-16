@@ -62,6 +62,26 @@ describe('canonical workflow target fallbacks', () => {
     expect(onSetCompensation).toHaveBeenCalledWith(fallbackOperation.id, 'inside');
   });
 
+  it('offers Automatic after a manual compensation choice', async () => {
+    const document = twoCircleDocument();
+    document.geometryBasis = 'finished-contour';
+    const operation = document.plan.operations[0];
+    operation.classification = 'hole';
+    operation.compensationIntent = { mode: 'controller', keptMaterial: 'inside', source: 'manual' };
+    const onSetCompensation = vi.fn();
+    await act(async () => root.render(<EditorContourSetupPanel
+      disabled={false} document={document} onReverse={vi.fn()} onSelectOperation={vi.fn()}
+      onSetClassification={vi.fn()} onSetCompensation={onSetCompensation}
+      selectedOperationId={operation.id}
+    />));
+
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="Compensation kept material"]')!;
+    expect(select.value).toBe('inside');
+    expect(select.querySelector<HTMLOptionElement>('option[value="automatic"]')?.disabled).toBe(false);
+    await act(async () => setSelect(select, 'automatic'));
+    expect(onSetCompensation).toHaveBeenCalledWith(operation.id, 'automatic');
+  });
+
   it.each(['wire-centre', 'centerline'] as const)(
     'explains %s as uncompensated output without an error', async (mode) => {
       const document = twoCircleDocument();
