@@ -6,6 +6,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { createUpidFromDxfEntities } from '../upidDocument';
+import { reviewCenterline } from '@/__tests__/reviewedUpid';
 
 const directory = mkdtempSync(path.join(tmpdir(), 'wireedm-upid-cli-'));
 afterAll(() => rmSync(directory, { recursive: true, force: true }));
@@ -32,6 +33,7 @@ describe('portable UPID command-line validation', () => {
       execution: { ready: false, diagnostics: [{ code: 'EXECUTION_PLAN_INITIAL_WIRE_REQUIRED' }] } }] });
     expect(readFileSync(file, 'utf8')).toBe(originalText);
     document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    reviewCenterline(document);
     writeFileSync(file, JSON.stringify({ format: 'upid', schemaVersion: 1, document }));
     expect(run(file, '--require-executable')).toMatchObject({ status: 0, reports: [{ ok: true, execution: { ready: true } }] });
   });

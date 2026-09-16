@@ -37,12 +37,12 @@ describe('standalone Robofil 100 V2 package', () => {
       ok: true,
       package: {
         document: {
-          manifest: { id: 'cristian.robofil-100.v2-candidate-package', version: '2.4.0' },
-          machine: { id: 'cristian.robofil-100', activeBindingId: 'robofil-v2-candidate-2-4-0' },
+          manifest: { id: 'cristian.robofil-100.v2-candidate-package', version: '2.5.0' },
+          machine: { id: 'cristian.robofil-100', activeBindingId: 'robofil-v2-candidate-2-5-0' },
           posts: [{
             manifest: {
               id: 'cristian.robofil-100.v2-candidate',
-              version: '2.4.0',
+              version: '2.5.0',
               output: {
                 fileExtension: 'iso',
                 blockNumbering: { mode: 'sequential', prefix: 'N', start: 10 },
@@ -60,12 +60,12 @@ describe('standalone Robofil 100 V2 package', () => {
       ok: true,
       machine: {
         id: 'cristian.robofil-100',
-        activeBindingId: 'robofil-v2-candidate-2-4-0',
+        activeBindingId: 'robofil-v2-candidate-2-5-0',
         bindings: [{
-          id: 'robofil-v2-candidate-2-4-0',
+          id: 'robofil-v2-candidate-2-5-0',
           post: {
             packageId: 'cristian.robofil-100.v2-candidate',
-            version: '2.4.0'
+            version: '2.5.0'
           }
         }]
       }
@@ -200,8 +200,8 @@ describe('standalone Robofil 100 V2 package', () => {
     expect(result).toMatchObject({
       ok: false,
       diagnostics: expect.arrayContaining([
-        expect.objectContaining({ code: 'POST_CUSTOM_RUNTIME_FAILED',
-          message: expect.stringContaining('Wire separation is not verified') })
+        expect.objectContaining({ code: 'POST_CUSTOM_CAPABILITY_UNSUPPORTED',
+          message: expect.stringContaining('manual-before-positioning') })
       ])
     });
   });
@@ -224,6 +224,7 @@ describe('standalone Robofil 100 V2 package', () => {
     document.plan.operations[1].threadingTransition = {
       mode: 'manual', wireSeparation: 'automatic-during-positioning', source: 'operation-override'
     };
+    document.schemaVersion = 2;
     document.plan.operations[1].transitions = { entry: {
       strategy: 'manual-straight', move: 'cut',
       from: { x: 72.5, y: 0 }, to: document.plan.operations[1].startPoint,
@@ -256,6 +257,7 @@ describe('standalone Robofil 100 V2 package', () => {
     document.plan.operations[1].threadingTransition = {
       mode: 'manual', wireSeparation: 'automatic-during-positioning', source: 'operation-override'
     };
+    document.schemaVersion = 2;
 
     const program = await post(installation, document);
     const rapidIndex = program.lines.findIndex((line) => line === 'G0 X70.500 Y0.000');

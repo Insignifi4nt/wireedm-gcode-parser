@@ -527,7 +527,7 @@ export interface SegmentBuildResult {
 }
 
 export interface PathPlanningDocument {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   geometryBasis: PathGeometryBasis;
   setup?: PathProjectSetup;
   machiningParticipation?: MachiningParticipation;

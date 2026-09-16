@@ -143,4 +143,24 @@ describe('createBrowserCacheAdapter', () => {
     expect(storage.getItem(`wire-edm-test:file:${path}`)?.length).toBeLessThan(text.length);
     expect(await createBrowserCacheAdapter(storage, { namespace: 'wire-edm-test' }).readText(path)).toBe(text);
   });
+
+  it('round-trips a varied geometry revision and transaction journal under quota', async () => {
+    const storage = new QuotaStorage(5_000_000);
+    const adapter = createBrowserCacheAdapter(storage, { namespace: 'wire-edm-test' });
+    const geometry = Array.from({ length: 4_000 }, (_, index) => ({
+      id: `seg_${index + 1}`,
+      start: { x: Math.sin(index * 0.71) * 100, y: Math.cos(index * 0.43) * 80 },
+      end: { x: Math.sin((index + 1) * 0.71) * 100, y: Math.cos((index + 1) * 0.43) * 80 }
+    }));
+    const revision = JSON.stringify({ format: 'wire-edm-job-revision', geometry });
+    const journal = JSON.stringify({ previousProject: { geometry }, nextProject: { geometry }, nextRevision: { geometry } });
+
+    await adapter.writeText('projects/gear/revisions/revision.1.json', revision);
+    await adapter.writeText('transactions/saved-revision.json', journal);
+    expect(await createBrowserCacheAdapter(storage, { namespace: 'wire-edm-test' })
+      .readText('projects/gear/revisions/revision.1.json')).toBe(revision);
+    expect(await adapter.readText('transactions/saved-revision.json')).toBe(journal);
+    expect(storage.getItem('wire-edm-test:file:transactions/saved-revision.json')?.length)
+      .toBeLessThan(journal.length);
+  });
 });

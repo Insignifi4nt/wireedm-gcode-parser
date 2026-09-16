@@ -2,6 +2,7 @@ import { resolveControllerCompensation } from '@/domain/compensation/resolveCont
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
 import { classifyPositioningMaterial } from '@/domain/path-intel/positioningMaterial';
+import { threadingIntentIsCompatible } from '@/domain/path-intel/threadingIntent';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { operationEntryPoint } from '@/domain/path-intel/operationTransitions';
 import { resolveOperationProgramStopPoints } from '@/domain/path-intel/programStops';
@@ -186,10 +187,17 @@ interface MutableEventContext {
   sourceOperationIds: Map<string, string>;
 }
 
+export interface ExecutionPlanCompileOptions {
+  /** Reproduces engine-1 snapshots for integrity reading; never use for new generation. */
+  readonly legacySavedRevision?: boolean;
+}
+
 export function compileWireEdmExecutionPlan(
-  sourceDocument: PathPlanningDocument
+  sourceDocument: PathPlanningDocument,
+  options: ExecutionPlanCompileOptions = {}
 ): ExecutionPlanResult {
-  const validation = validateUpidDocument(sourceDocument);
+  const validation = validateUpidDocument(sourceDocument,
+    { allowLegacyV1Extensions: options.legacySavedRevision });
   if (!validation.valid) {
     return blocked('EXECUTION_PLAN_INVALID_UPID', validation.blockingDiagnostics
       .map(({ message }) => message)
@@ -244,7 +252,8 @@ export function compileWireEdmExecutionPlan(
       operation,
       operationIndex,
       segmentsById,
-      sourceSpansById
+      sourceSpansById,
+      legacySavedRevision: options.legacySavedRevision === true
     });
     if (!compiled.ok) return compiled;
     currentPosition = compiled.endPoint;
@@ -301,6 +310,7 @@ function compileOperation(input: {
   operationIndex: number;
   segmentsById: Map<string, PathSegment>;
   sourceSpansById: Map<string, MachiningSpan>;
+  legacySavedRevision: boolean;
 }): ExecutionPlanFailure | { ok: true; endPoint: Point2 } {
   const { context, document, operation, operationIndex, segmentsById } = input;
   for (const role of ['entry', 'exit'] as const) {
@@ -369,14 +379,9 @@ function compileOperation(input: {
   const material = operationIndex > 0
     ? classifyPositioningMaterial(document, input.currentPosition, entryPoint)
     : null;
-  if (threading?.mode === 'continuous' && material?.status === 'crosses-finished-material') {
+  if (!input.legacySavedRevision && threading?.mode === 'continuous' && material?.status === 'crosses-finished-material') {
     return blockedForOperation('EXECUTION_PLAN_THREADING_INVALID',
       `Positioning to ${operation.displayName} crosses ${material.materialLengthMm.toFixed(3)} mm of finished-part material. Separate and rethread the wire.`, operation);
-  }
-  if (threading?.mode === 'manual' && threading.wireSeparation === 'already-separated' &&
-    material?.status === 'crosses-finished-material') {
-    return blockedForOperation('EXECUTION_PLAN_THREADING_INVALID',
-      `Positioning to ${operation.displayName} crosses finished-part material. Select rapid separation or separate the wire before positioning.`, operation);
   }
   if (threading?.wireSeparation === 'automatic-during-positioning' &&
     pointsEqual(input.currentPosition, entryPoint, document.options.coincidenceEpsilon)) {
@@ -401,6 +406,13 @@ function compileOperation(input: {
     });
   }
 
+  if (!input.legacySavedRevision && document.geometryBasis === 'finished-contour' && !operation.compensationIntent) {
+    return blockedForOperation(
+      'EXECUTION_PLAN_COMPENSATION_UNRESOLVED',
+      `Operation ${operation.displayName} needs an explicit controller compensation or wire-center choice.`,
+      operation
+    );
+  }
   const compensation = document.geometryBasis === 'finished-contour' && operation.compensationIntent?.mode === 'controller'
     ? resolveControllerCompensation({ document, operation })
     : null;
@@ -745,21 +757,14 @@ function threadingTransitionIssue(
   transition: OperationThreadingTransition,
   operation: PathOperation
 ) {
+  if (threadingIntentIsCompatible(transition)) return null;
   if (transition.mode === 'continuous') {
-    return transition.wireSeparation === 'already-separated'
-      ? null
-      : `Continuous threading for ${operation.displayName} cannot request wire separation.`;
+    return `Continuous threading for ${operation.displayName} cannot request wire separation.`;
   }
   if (transition.mode === 'manual') {
-    return transition.wireSeparation === 'already-separated' ||
-      transition.wireSeparation === 'manual-before-positioning' ||
-      transition.wireSeparation === 'automatic-during-positioning'
-      ? null
-      : `Manual threading for ${operation.displayName} has an incompatible wire-separation strategy.`;
+    return `Manual threading for ${operation.displayName} has an incompatible wire-separation strategy.`;
   }
-  return transition.wireSeparation === 'automatic-before-positioning'
-    ? null
-    : `Automatic threading for ${operation.displayName} requires automatic wire separation.`;
+  return `Automatic threading for ${operation.displayName} requires automatic wire separation.`;
 }
 
 function appendEvent(

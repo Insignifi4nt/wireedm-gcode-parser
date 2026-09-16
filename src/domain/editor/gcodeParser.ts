@@ -25,12 +25,15 @@ interface ParserState {
   stats: GCodeParseStats;
 }
 
-export function parseGCodeProgram(gcodeText: string): GCodeParseResult {
+export function parseGCodeProgram(
+  gcodeText: string,
+  profile: GCodeInterpreterState['profile'] = 'neutral'
+): GCodeParseResult {
   if (typeof gcodeText !== 'string') {
     throw new Error('G-code input must be a string.');
   }
 
-  const state = createParserState();
+  const state = createParserState(profile);
   const lines = gcodeText.split(/\r?\n/);
   state.stats.totalLines = lines.length;
 
@@ -69,10 +72,10 @@ export function parseGCodeProgram(gcodeText: string): GCodeParseResult {
   };
 }
 
-function createParserState(): ParserState {
+function createParserState(profile: GCodeInterpreterState['profile']): ParserState {
   return {
     hasUndeclaredCoordinates: false,
-    interpreter: createGCodeInterpreterState(),
+    interpreter: createGCodeInterpreterState(profile),
     path: [],
     bounds: createEmptyBounds(),
     errors: [],

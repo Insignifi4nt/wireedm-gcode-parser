@@ -1,13 +1,43 @@
 import { describe, expect, it } from 'vitest';
 
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
-import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { setManualCompensationIntent } from '@/domain/compensation/intent';
+import { createUpidFromDxfEntities as createUnresolvedUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { minimalPostPackage } from '@/domain/post-processor/__tests__/postPackageFixture';
+import { CANONICAL_POST_PLAN_FIXTURES } from '../canonicalPostConformanceFixtures';
 
 import { runCustomPostConformance } from '../customPostConformance';
 import { runCustomPost } from '../customPostRuntime';
 
 describe('isolated custom JavaScript post runtime', () => {
+  it('rejects consumed required compensation and compensation-required centerline plans', async () => {
+    const post = minimalPostPackage();
+    post.manifest.capabilities.controllerCompensation = 'left-right';
+    post.manifest.execution.compensationLifecycle = 'controller-native-continuous';
+    post.dialect.commands['distance.absolute'].template = 'G90 G40';
+    post.dialect.commands['distance.absolute'].effects.push('compensation.off');
+    const plan = CANONICAL_POST_PLAN_FIXTURES['core.single-compensated-direct.v1'];
+    expect(await runCustomPost({ package: post, plan, properties: { coordinatePrecision: 3 } }))
+      .toMatchObject({ ok: false, diagnostics: [expect.objectContaining({ code: 'POST_CUSTOM_LIFECYCLE_INVALID' })] });
+    post.manifest.execution.compensationRequiredForEveryOperation = true;
+    const centerline = runtimeFixture().plan;
+    expect(await runCustomPost({ package: post, plan: centerline, properties: { coordinatePrecision: 3 } }))
+      .toMatchObject({ ok: false, diagnostics: [expect.objectContaining({ code: 'POST_CUSTOM_CAPABILITY_UNSUPPORTED' })] });
+  });
+
+  it('does not let a coarse positioning format excuse an inaccurate fine cut', async () => {
+    const fixture = runtimeFixture();
+    fixture.package.dialect.commands['motion.rapid'] = structuredClone(fixture.package.dialect.commands['motion.linear']);
+    for (const parameter of Object.values(fixture.package.dialect.commands['motion.rapid'].parameters)) {
+      if (parameter.type === 'number') parameter.format.fractionDigits = { kind: 'fixed', value: 0 };
+    }
+    fixture.package.source.code = fixture.package.source.code
+      .replace("if (event.kind === 'position') return api.emitMotion('motion.linear'", "if (event.kind === 'position') return api.emitMotion('motion.rapid'")
+      .replace('y: event.end.y', 'y: event.end.y + 0.1');
+    expect(await runCustomPost(fixture)).toMatchObject({
+      ok: false, diagnostics: [expect.objectContaining({ code: 'POST_CUSTOM_AUDIT_FAILED' })]
+    });
+  });
   it.each(['consume', 'unrelated-command'] as const)(
     'rejects a later retention stop handled with %s even after an earlier stop',
     async (handling) => {
@@ -61,7 +91,7 @@ describe('isolated custom JavaScript post runtime', () => {
     fixture.plan = compiled.plan;
     fixture.package.manifest.capabilities.operations = 'multiple';
     fixture.package.manifest.capabilities.threading = 'manual';
-    fixture.package.manifest.capabilities.wireSeparation = true;
+    fixture.package.manifest.capabilities.wireSeparation = ['manual-before-positioning'];
     for (const [id, effect] of [['wire-separate', 'wire.separated'], ['wire-thread', 'wire.threaded']]) {
       fixture.package.dialect.commands[id] = {
         template: 'M00', parameters: {}, effects: [effect], requires: [], evidenceRefs: ['robofil-program']
@@ -503,6 +533,14 @@ describe('isolated custom JavaScript post runtime', () => {
     });
   });
 });
+
+function createUpidFromDxfEntities(...args: Parameters<typeof createUnresolvedUpidFromDxfEntities>) {
+  let document = createUnresolvedUpidFromDxfEntities(...args);
+  for (const operation of document.plan.operations) {
+    document = setManualCompensationIntent(document, operation.id, 'centerline') ?? document;
+  }
+  return document;
+}
 
 function runtimeFixture() {
   const document = createUpidFromDxfEntities([{

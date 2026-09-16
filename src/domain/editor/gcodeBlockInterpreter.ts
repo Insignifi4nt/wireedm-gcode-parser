@@ -1,6 +1,8 @@
 export type GCodeMotionCommand = 'G0' | 'G1' | 'G2' | 'G3';
 
 export interface GCodeInterpreterState {
+  /** Explicit source dialect; unknown leaves controller-specific words uninterpreted. */
+  profile: 'neutral' | 'legacy-robofil';
   /** Coordinates are millimetres once units are declared; undeclared values retain their legacy scale. */
   position: { x: number; y: number };
   units: 'mm' | 'in' | null;
@@ -44,8 +46,9 @@ const WORD_PATTERN = new RegExp(`([A-Z])\\s*(${NUMBER_SOURCE})`, 'gi');
 const POSITION_EPSILON = 1e-12;
 const SWEEP_RESOLUTION = Number.EPSILON * Math.PI * 4;
 
-export function createGCodeInterpreterState(): GCodeInterpreterState {
+export function createGCodeInterpreterState(profile: GCodeInterpreterState['profile'] = 'neutral'): GCodeInterpreterState {
   return {
+    profile,
     position: { x: 0, y: 0 },
     units: null,
     xyMode: 'absolute',
@@ -79,7 +82,11 @@ export function interpretGCodeBlock(
     if (word.value === 21) state.units = 'mm';
     if (word.value === 90) state.xyMode = 'absolute';
     if (word.value === 91) state.xyMode = 'incremental';
-    if (word.value === 60 || word.value === 90.1) state.ijMode = 'absolute';
+    if (word.value === 60 && state.profile === 'neutral') {
+      issues.push({ line: lineNumber, type: 'warning',
+        message: 'G60 is dialect-specific. Select a source interpreter profile before relying on the arc preview.' });
+    }
+    if ((word.value === 60 && state.profile === 'legacy-robofil') || word.value === 90.1) state.ijMode = 'absolute';
     if (word.value === 91.1) state.ijMode = 'incremental';
   }
 

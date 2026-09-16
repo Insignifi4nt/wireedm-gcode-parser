@@ -6,10 +6,10 @@ import {
 } from '@/domain/post-processor/postEngine';
 import type { PostInstallationRef } from '@/domain/post-processor/postLibrary';
 import type { WireEdmPostPackage } from '@/domain/post-processor/postPackageSchema';
-import type { ExecutionPlanDiagnostic } from '@/domain/execution-plan/executionPlan';
+import { compileWireEdmExecutionPlan, type ExecutionPlanDiagnostic } from '@/domain/execution-plan/executionPlan';
+import { canonicalJson } from '@/domain/post-processor/canonicalJson';
 
 import {
-  WIRE_EDM_ENGINE_VERSION,
   isValidatedSavedWireEdmJobRevision,
   type SavedRevisionHashes,
   type SavedWireEdmJobRevision
@@ -20,7 +20,7 @@ export const CONTROLLER_PROGRAM_ARTIFACT_SCHEMA_VERSION = 1 as const;
 export interface ControllerProgramArtifact {
   readonly format: 'wire-edm-controller-artifact';
   readonly schemaVersion: typeof CONTROLLER_PROGRAM_ARTIFACT_SCHEMA_VERSION;
-  readonly engineVersion: typeof WIRE_EDM_ENGINE_VERSION;
+  readonly engineVersion: SavedWireEdmJobRevision['engineVersion'];
   readonly revisionId: string;
   readonly revisionHashes: SavedRevisionHashes;
   readonly fileName: string;
@@ -71,6 +71,19 @@ export async function generateControllerArtifact(
       message: 'Controller artifacts require a saved revision returned by the revision creator or parser.'
     });
   }
+  if (revision.engineVersion === '1') {
+    const current = compileWireEdmExecutionPlan(revision.project.content.document);
+    if (!current.ok) return artifactFailure({
+      code: 'CONTROLLER_ARTIFACT_EXECUTION_PLAN_INVALID',
+      message: 'This legacy revision is readable, but its manufacturing intent needs current review before generation.',
+      diagnostics: current.diagnostics
+    });
+    if (canonicalJson(current.plan) !== canonicalJson(revision.executionPlan)) return artifactFailure({
+      code: 'CONTROLLER_ARTIFACT_EXECUTION_PLAN_INVALID',
+      message: 'This legacy execution plan differs from the current compiler and requires a new saved revision.',
+      diagnostics: []
+    });
+  }
   const posted = await runPost(revision.executionPlan, {
     installation: revision.post.installation,
     properties: revision.post.properties
@@ -104,7 +117,7 @@ export async function generateControllerArtifact(
     artifact: deepFreeze({
       format: 'wire-edm-controller-artifact',
       schemaVersion: CONTROLLER_PROGRAM_ARTIFACT_SCHEMA_VERSION,
-      engineVersion: WIRE_EDM_ENGINE_VERSION,
+      engineVersion: revision.engineVersion,
       revisionId: revision.revisionId,
       revisionHashes: structuredClone(revision.hashes),
       fileName: `${revision.project.id}.${extension}`,

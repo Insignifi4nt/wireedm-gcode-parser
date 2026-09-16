@@ -1,5 +1,5 @@
 import { act } from 'react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
 
 import {
@@ -76,7 +76,7 @@ describe('V2 app workflows', () => {
     await act(async () => confirm.click());
     await flushAsync();
 
-    expect(context.container.querySelector('[data-editor-context="path-project"]')).not.toBeNull();
+    await vi.waitFor(() => expect(context.container.querySelector('[data-editor-context="path-project"]')).not.toBeNull());
     const manifest = await storedJson('workbench.json');
     const project = await storedJson(manifest.projects[0].path);
     expect(project).toMatchObject({
@@ -98,13 +98,14 @@ describe('V2 app workflows', () => {
 
     await renderApp(context);
 
-    expect(context.container.textContent).toContain('Legacy workbench manifest schema violation');
+    await vi.waitFor(() => expect(context.container.textContent).toContain('Legacy workbench manifest schema violation'));
     expect(context.container.textContent).toContain('Storage not connected');
     expect((await storedJson('workbench.json')).schemaVersion).toBe(1);
   });
 
   it('exposes exact machine and post libraries in settings without creating a selection', async () => {
     await renderApp(context);
+    await vi.waitFor(() => expect(context.container.textContent).not.toContain('Loading projects…'));
     await act(async () => {
       (context.container.querySelector('button[aria-label="Open settings"]') as HTMLButtonElement).click();
     });

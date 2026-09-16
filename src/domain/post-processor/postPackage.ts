@@ -80,6 +80,12 @@ export function validateWireEdmPostPackageValue(value: unknown): PostPackagePars
 
 function validatePackageSemantics(packageValue: WireEdmPostPackageValue) {
   const diagnostics: PostPackageDiagnostic[] = [];
+  if ((packageValue.schemaVersion === 1 && typeof packageValue.manifest.capabilities.wireSeparation !== 'boolean') ||
+      (packageValue.schemaVersion === 2 && !Array.isArray(packageValue.manifest.capabilities.wireSeparation))) {
+    diagnostics.push({ code: 'POST_PACKAGE_EXECUTION_CONTRACT_INVALID',
+      path: '/manifest/capabilities/wireSeparation',
+      message: 'Post schema v1 requires the legacy boolean; v2 requires explicit separation mechanisms.' });
+  }
   appendRecordKeyDiagnostics(diagnostics, packageValue.manifest.properties, '/manifest/properties');
   appendRecordKeyDiagnostics(diagnostics, packageValue.dialect.commands, '/dialect/commands');
   for (const [commandName, command] of Object.entries(packageValue.dialect.commands)) {

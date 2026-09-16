@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { reviewCenterline } from '@/__tests__/reviewedUpid';
 
 import { parseMachineDefinition } from '../machineDefinition';
 import { preflightMachinePhysicalRequirements } from '../machinePhysicalPreflight';
@@ -17,6 +18,7 @@ describe('physical travel required by the compiled plan', () => {
         kind: 'manual', point: { x: kind === 'initial-position' ? -500 : 0, y: 0 }, review: 'reviewed'
       }
     };
+    reviewCenterline(document);
     if (kind === 'entry') {
       document.plan.operations[0].transitions = {
         entry: { strategy: 'manual-straight', from: { x: -500, y: 0 }, to: { x: 0, y: 0 }, move: 'cut', review: 'reviewed' }
@@ -50,6 +52,7 @@ describe('physical travel required by the compiled plan', () => {
     document.setup = {
       initialWirePosition: { kind: 'manual', point: document.plan.operations[0].startPoint, review: 'reviewed' }
     };
+    reviewCenterline(document);
     const compiled = compileWireEdmExecutionPlan(document);
     if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
 

@@ -281,6 +281,16 @@ export function EditorPage({
   onSaveEditorDraft,
   onStatusMessage
 }: EditorPageProps) {
+  const planningPackage = useMemo(() => {
+    const binding = planningMachine?.bindings.find(({ id }) => id === planningMachine.activeBindingId);
+    if (!binding) return null;
+    const installed = posts.installations.find(({ ref }) => ref.packageId === binding.post.packageId &&
+      ref.version === binding.post.version && ref.contentHash === binding.post.contentHash);
+    if (!installed) return null;
+    return { name: installed.package.manifest.name,
+      separationMechanisms: Array.isArray(installed.package.manifest.capabilities.wireSeparation)
+        ? installed.package.manifest.capabilities.wireSeparation : [] };
+  }, [planningMachine, posts]);
   const { closeCompactDrawerWithRailFocus, compactDrawer, compactModalHost, compactTransitionOverlay, isCompactViewport, isMiddleViewport, setCompactDrawer, setCompactTransitionOverlay, setHeaderContent, setRailContent } = useAppRail();
   const [initialWorkspaceLayout] = useState(() => readInitialWorkspaceLayout());
   const [draftState, setDraftState] = useState<EditorDraftState>(() => createEditorDraftState(program));
@@ -3413,6 +3423,7 @@ export function EditorPage({
               onSetOperationThreading={handleSetOperationThreading}
               onSetProjectThreading={handleSetProjectThreading}
               selectedOperationId={selectedPathOperationId}
+              selectedPackage={planningPackage}
               targetChangeBlocked={workflowTargetChangeBlocked}
             />
           )}

@@ -63,7 +63,7 @@ import {
 } from '@/domain/workbench-catalog/workbenchProjectStorage';
 
 export const SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION = 1 as const;
-export const WIRE_EDM_ENGINE_VERSION = '1' as const;
+export const WIRE_EDM_ENGINE_VERSION = '2' as const;
 
 const MAX_SAVED_REVISION_BYTES = 128 * 1024 * 1024;
 const strictObject = { additionalProperties: false } as const;
@@ -82,7 +82,7 @@ const PostPropertyValueSchema = Type.Union([
 export const SavedWireEdmJobRevisionSchema = Type.Object({
   format: Type.Literal('wire-edm-job-revision'),
   schemaVersion: Type.Literal(SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION),
-  engineVersion: Type.Literal(WIRE_EDM_ENGINE_VERSION),
+  engineVersion: Type.Union([Type.Literal('1'), Type.Literal(WIRE_EDM_ENGINE_VERSION)]),
   revisionId: PostIdentifierSchema,
   savedAt: Type.String({ pattern: canonicalTimestampPattern }),
   project: WorkbenchProjectDocumentSchema,
@@ -143,7 +143,7 @@ export interface SavedRevisionHashes {
 export interface SavedWireEdmJobRevisionData {
   readonly format: 'wire-edm-job-revision';
   readonly schemaVersion: typeof SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION;
-  readonly engineVersion: typeof WIRE_EDM_ENGINE_VERSION;
+  readonly engineVersion: '1' | typeof WIRE_EDM_ENGINE_VERSION;
   readonly revisionId: string;
   readonly savedAt: string;
   readonly project: UpidWorkbenchProjectDocument;
@@ -177,6 +177,8 @@ export type SavedWireEdmJobRevisionError =
       readonly foundVersion: number;
       readonly supportedVersion: typeof SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION;
     }
+  | { readonly code: 'SAVED_REVISION_ENGINE_UNSUPPORTED'; readonly message: string;
+      readonly foundVersion: string; readonly supportedVersions: readonly ['1', '2'] }
   | { readonly code: 'SAVED_REVISION_FILE_TOO_LARGE'; readonly message: string }
   | { readonly code: 'SAVED_REVISION_JSON_INVALID'; readonly message: string }
   | { readonly code: 'SAVED_REVISION_SCHEMA_INVALID'; readonly message: string; readonly path: string }
@@ -221,6 +223,7 @@ export type CreateSavedWireEdmJobRevisionError = Exclude<
   SavedWireEdmJobRevisionError,
   { readonly code:
       | 'SAVED_REVISION_VERSION_UNSUPPORTED'
+      | 'SAVED_REVISION_ENGINE_UNSUPPORTED'
       | 'SAVED_REVISION_FILE_TOO_LARGE'
       | 'SAVED_REVISION_JSON_INVALID'
       | 'SAVED_REVISION_EXECUTION_PLAN_MISMATCH' }
@@ -478,6 +481,12 @@ export async function parseSavedWireEdmJobRevision(
       supportedVersion: SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION
     });
   }
+  if (record && typeof record.engineVersion === 'string' &&
+    record.engineVersion !== '1' && record.engineVersion !== WIRE_EDM_ENGINE_VERSION) {
+    return failure({ code: 'SAVED_REVISION_ENGINE_UNSUPPORTED',
+      message: `Saved revision engine version ${record.engineVersion} is unsupported.`,
+      foundVersion: record.engineVersion, supportedVersions: ['1', '2'] });
+  }
   const schemaError = Value.Errors(SavedWireEdmJobRevisionSchema, value).First();
   if (schemaError) return schemaFailure(schemaError.path, schemaError.message);
   const candidate = value as SavedRevisionSchemaValue;
@@ -545,7 +554,8 @@ export async function parseSavedWireEdmJobRevision(
     });
   }
 
-  const compiled = compileWireEdmExecutionPlan(project.project.content.document);
+  const compiled = compileWireEdmExecutionPlan(project.project.content.document,
+    { legacySavedRevision: candidate.engineVersion === '1' });
   if (!compiled.ok) {
     return failure({
       code: 'SAVED_REVISION_EXECUTION_PLAN_INVALID',
@@ -589,7 +599,7 @@ export async function parseSavedWireEdmJobRevision(
   return candidateSuccess({
     format: 'wire-edm-job-revision',
     schemaVersion: SAVED_WIRE_EDM_JOB_REVISION_SCHEMA_VERSION,
-    engineVersion: WIRE_EDM_ENGINE_VERSION,
+    engineVersion: candidate.engineVersion,
     revisionId: candidate.revisionId,
     savedAt: candidate.savedAt,
     project: snapshot.project,

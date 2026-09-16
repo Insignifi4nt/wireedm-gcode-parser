@@ -342,7 +342,8 @@ function validateWorkbenchProjectValue(value: unknown): CreateWorkbenchProjectRe
       };
     }
   } else {
-    const report = validateUpidDocument(project.content.document);
+    // Local snapshots written before UPID v2 are retained byte-for-byte. Portable v1 remains strict.
+    const report = validateUpidDocument(project.content.document, { allowLegacyV1Extensions: true });
     if (!report.structurallyValid) {
       return {
         ok: false,

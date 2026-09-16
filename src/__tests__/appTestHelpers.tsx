@@ -102,6 +102,9 @@ export async function renderApp(
   context: AppTestContext,
   services?: Partial<AppServices>
 ) {
+  // Keep editor interaction tests synchronous after navigation while production
+  // still loads the editor chunk only when that workspace is opened.
+  await import('@/features/editor/EditorPage');
   await act(async () => {
     context.root.render(<App services={services} />);
   });

@@ -9,6 +9,7 @@ import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
 import { circularOperationSource } from '@/domain/path-intel/circularOperation';
 import { dxfUnitsFromInsunitsCode } from '@/domain/dxf/parseDxf';
 import { findPathSegmentIntersectionDiagnostics } from '@/domain/path-intel/intersections';
+import { threadingIntentIsCompatible } from '@/domain/path-intel/threadingIntent';
 import type {
   Bounds2,
   EndpointCluster,
@@ -23,6 +24,7 @@ import type {
   PathPlanningDocument,
   PathPlanningOptions,
   PathSegment,
+  OperationThreadingTransition,
   Point2
 } from '@/domain/path-intel/types';
 import {
@@ -40,6 +42,8 @@ export interface UpidValidationReport {
 }
 
 interface ValidationContext {
+  schemaVersion: unknown;
+  allowLegacyV1Extensions: boolean;
   add: (
     code: Extract<
       PathDiagnostic['code'],
@@ -73,7 +77,10 @@ const CONTOUR_CLASSIFICATIONS = new Set([
 ]);
 const CONTOUR_ORIENTATIONS = new Set(['ccw', 'cw', 'degenerate']);
 
-export function validateUpidDocument(document: unknown): UpidValidationReport {
+export function validateUpidDocument(
+  document: unknown,
+  options: { readonly allowLegacyV1Extensions?: boolean } = {}
+): UpidValidationReport {
   const root = record(document);
   const rawDiagnostics = root ? array(root.diagnostics) : [];
   const reservedDiagnosticIds = new Set(
@@ -84,6 +91,8 @@ export function validateUpidDocument(document: unknown): UpidValidationReport {
   const structuralDiagnostics: PathDiagnostic[] = [];
   let nextDiagnosticNumber = 1;
   const context: ValidationContext = {
+    schemaVersion: root?.schemaVersion,
+    allowLegacyV1Extensions: options.allowLegacyV1Extensions === true,
     structuralDiagnostics,
     add(code, message, refs = {}) {
       let id = `diag_upid_validation_${String(nextDiagnosticNumber++).padStart(4, '0')}`;
@@ -110,7 +119,7 @@ export function validateUpidDocument(document: unknown): UpidValidationReport {
     context.add('upid-invalid-value', 'UPID diagnostics must be an array.');
   }
 
-  if (root.schemaVersion !== 1) {
+  if (root.schemaVersion !== 1 && root.schemaVersion !== 2) {
     context.add(
       'upid-invalid-value',
       `UPID schema version ${String(root.schemaVersion)} is unsupported.`
@@ -2179,16 +2188,13 @@ function validateThreadingIntent(
     context.add('upid-invalid-value', `${path} must be an object.`);
     return;
   }
-  const validPair =
-    (threading.mode === 'continuous' && threading.wireSeparation === 'already-separated') ||
-    (threading.mode === 'manual' &&
-      (threading.wireSeparation === 'already-separated' ||
-        threading.wireSeparation === 'manual-before-positioning' ||
-        threading.wireSeparation === 'automatic-during-positioning')) ||
-    (threading.mode === 'automatic' &&
-      threading.wireSeparation === 'automatic-before-positioning');
+  const validPair = threadingIntentIsCompatible(threading as unknown as OperationThreadingTransition);
   if (!validPair) {
     context.add('upid-invalid-value', `${path} mode and wire-separation strategy are incompatible.`);
+  }
+  if (context.schemaVersion === 1 && !context.allowLegacyV1Extensions &&
+    threading.wireSeparation === 'automatic-during-positioning') {
+    context.add('upid-invalid-value', `${path} automatic-during-positioning requires UPID schema version 2.`);
   }
   if (
     requireSource &&
@@ -2246,6 +2252,9 @@ function validateProgramStops(
       );
     } else if (!['before-entry', 'after-positioning', 'after-contour', 'after-exit'].includes(String(placement.kind))) {
       context.add('upid-invalid-value', `Operation ${operation.id} program stop placement is unsupported.`);
+    }
+    if (context.schemaVersion === 1 && !context.allowLegacyV1Extensions && placement.kind === 'after-positioning') {
+      context.add('upid-invalid-value', `Operation ${operation.id} after-positioning stop requires UPID schema version 2.`);
     }
   }
 }

@@ -6,10 +6,13 @@ import {
   type MachineDefinitionValue
 } from '@/domain/machine-definition/machineDefinition';
 import { minimalPostPackage } from '@/domain/post-processor/__tests__/postPackageFixture';
+import { canonicalJson } from '@/domain/post-processor/canonicalJson';
+import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
 import { createEmptyPostLibrary, installPostPackage } from '@/domain/post-processor/postLibrary';
 import type { WireEdmPostPackageValue } from '@/domain/post-processor/postPackageSchema';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
-import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { setManualCompensationIntent } from '@/domain/compensation/intent';
+import { createUpidFromDxfEntities as createUnresolvedUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { createWorkbenchProjectDocument } from '@/domain/workbench-catalog/workbenchProject';
 
 import {
@@ -37,7 +40,7 @@ describe('saved Wire EDM job revision', () => {
     expect(fixture.revision).toMatchObject({
       format: 'wire-edm-job-revision',
       schemaVersion: 1,
-      engineVersion: '1',
+      engineVersion: '2',
       revisionId: 'revision.0001',
       project: {
         format: 'wire-edm-project',
@@ -78,7 +81,60 @@ describe('saved Wire EDM job revision', () => {
     });
   });
 
+  it('reads a hashed engine-1 snapshot with missing intent but blocks new output until review', async () => {
+    const fixture = await revisionFixture();
+    const old = JSON.parse(serializeSavedWireEdmJobRevision(fixture.revision));
+    old.engineVersion = '1';
+    delete old.project.content.document.plan.operations[0].compensationIntent;
+    for (const element of old.project.content.document.pathElements) delete element.compensationIntent;
+    const digest = await crypto.subtle.digest('SHA-256',
+      new TextEncoder().encode(canonicalJson(old.project.content.document)));
+    old.hashes.upid = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+    const parsed = await parseSavedWireEdmJobRevision(JSON.stringify(old));
+    expect(parsed).toMatchObject({ ok: true, candidate: { engineVersion: '1' } });
+    if (!parsed.ok) throw new Error(parsed.error.message);
+    const persisted = await persistSavedWireEdmJobRevision(createMemoryAdapter(), parsed.candidate);
+    if (!persisted.ok) throw new Error(persisted.error.message);
+    expect(await generateControllerArtifact(persisted.revision)).toMatchObject({
+      ok: false, error: { code: 'CONTROLLER_ARTIFACT_EXECUTION_PLAN_INVALID' }
+    });
+  });
+
+  it('preserves an engine-1 continuous material-crossing revision without authorizing new output', async () => {
+    const fixture = await revisionFixture();
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 70.5 }
+    ]);
+    document.geometryBasis = 'finished-contour';
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    document.plan.operations[1].threadingTransition = {
+      mode: 'continuous', wireSeparation: 'already-separated', source: 'operation-override'
+    };
+    expect(compileWireEdmExecutionPlan(document).ok).toBe(false);
+    const legacy = compileWireEdmExecutionPlan(document, { legacySavedRevision: true });
+    if (!legacy.ok) throw new Error(JSON.stringify(legacy.diagnostics));
+    const old = JSON.parse(serializeSavedWireEdmJobRevision(fixture.revision));
+    old.engineVersion = '1';
+    old.project.content.document = document;
+    old.executionPlan = legacy.plan;
+    old.hashes.upid = await hashJson(old.project.content.document);
+    old.hashes.executionPlan = await hashJson(old.executionPlan);
+
+    const parsed = await parseSavedWireEdmJobRevision(JSON.stringify(old));
+    expect(parsed).toMatchObject({ ok: true, candidate: { engineVersion: '1' } });
+    if (!parsed.ok) throw new Error(parsed.error.message);
+    const persisted = await persistSavedWireEdmJobRevision(createMemoryAdapter(), parsed.candidate);
+    if (!persisted.ok) throw new Error(persisted.error.message);
+    expect(await generateControllerArtifact(persisted.revision)).toMatchObject({
+      ok: false, error: { code: 'CONTROLLER_ARTIFACT_EXECUTION_PLAN_INVALID' }
+    });
+  });
+
   it('rejects obsolete or non-UPID project state instead of defaulting it', async () => {
+    expect(await parseSavedWireEdmJobRevision(JSON.stringify({
+      format: 'wire-edm-job-revision', schemaVersion: 1, engineVersion: '3'
+    }))).toMatchObject({ ok: false, error: { code: 'SAVED_REVISION_ENGINE_UNSUPPORTED' } });
     expect(await parseSavedWireEdmJobRevision(JSON.stringify({
       format: 'wire-edm-job-revision',
       schemaVersion: 0
@@ -383,6 +439,7 @@ describe('saved Wire EDM job revision', () => {
     expect(generated.artifact).toMatchObject({
       format: 'wire-edm-controller-artifact',
       schemaVersion: 1,
+      engineVersion: '2',
       revisionId: 'revision.0001',
       revisionHashes: fixture.revision.hashes,
       fileName: 'fixture.part.iso',
@@ -527,6 +584,20 @@ async function revisionFixture(packageValue?: WireEdmPostPackageValue) {
     path: persisted.path,
     revision: persisted.revision
   };
+}
+
+function createUpidFromDxfEntities(...args: Parameters<typeof createUnresolvedUpidFromDxfEntities>) {
+  let document = createUnresolvedUpidFromDxfEntities(...args);
+  for (const operation of document.plan.operations) {
+    document = setManualCompensationIntent(document, operation.id, 'centerline') ?? document;
+  }
+  return document;
+}
+
+async function hashJson(value: unknown) {
+  const digest = await crypto.subtle.digest('SHA-256',
+    new TextEncoder().encode(canonicalJson(JSON.parse(JSON.stringify(value)))));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 async function machineAndPostFixture(packageValue?: WireEdmPostPackageValue) {

@@ -1261,7 +1261,7 @@ describe('validateUpidDocument', () => {
 
   it('rejects unsupported schema/source/options values', () => {
     const unsupportedSchema = closedDocument();
-    (unsupportedSchema as unknown as { schemaVersion: number }).schemaVersion = 2;
+    (unsupportedSchema as unknown as { schemaVersion: number }).schemaVersion = 3;
     const invalidSource = closedDocument();
     invalidSource.source.entityCount = -1;
     const invalidOptions = closedDocument();

@@ -22,6 +22,7 @@ interface EditorBetweenContoursPanelProps {
     transition: Omit<OperationThreadingTransition, 'source'>
   ) => void;
   selectedOperationId: string | null;
+  selectedPackage?: { readonly name: string; readonly separationMechanisms: readonly string[] } | null;
   targetChangeBlocked?: boolean;
 }
 
@@ -32,6 +33,7 @@ export function EditorBetweenContoursPanel({
   onSetOperationThreading,
   onSetProjectThreading,
   selectedOperationId,
+  selectedPackage = null,
   targetChangeBlocked = false
 }: EditorBetweenContoursPanelProps) {
   const operations = useMemo(
@@ -41,7 +43,7 @@ export function EditorBetweenContoursPanel({
   const selected = operations.find(
     (operation) => operation.id === selectedOperationId
   ) ?? operations[0] ?? null;
-  const routes = derivePlannedRapidRoutes(document);
+  const routes = useMemo(() => derivePlannedRapidRoutes(document), [document]);
   const route = selected
     ? routes.find(
         (candidate) => candidate.operationId === selected.id
@@ -49,12 +51,12 @@ export function EditorBetweenContoursPanel({
     : null;
   const threading = selected?.threadingTransition ?? document.setup?.threadingDefault ?? null;
   const projectThreading = document.setup?.threadingDefault;
-  const material = route && route.orderIndex > 0
+  const material = useMemo(() => route && route.orderIndex > 0
     ? classifyPositioningMaterial(document, route.startPoint, route.endPoint)
-    : null;
-  const continuousContacts = route && threading?.mode === 'continuous'
+    : null, [document, route]);
+  const continuousContacts = useMemo(() => route && threading?.mode === 'continuous'
     ? findPositioningIntersections(route.startPoint, route.endPoint, document.segments, document.options.coincidenceEpsilon)
-    : [];
+    : [], [document, route, threading?.mode]);
 
   if (!selected) {
     return <p className="text-[10px] text-muted-foreground">No operations are available.</p>;
@@ -156,7 +158,7 @@ export function EditorBetweenContoursPanel({
                   const mode = event.currentTarget.value;
                   onSetOperationThreading(
                     selected.id,
-                    mode === 'project-default' ? null : threadingForMode(mode, material?.status === 'crosses-finished-material')
+                    mode === 'project-default' ? null : threadingForMode(mode)
                   );
                 }}
                 value={selected.threadingTransition?.mode ?? 'project-default'}
@@ -209,7 +211,16 @@ export function EditorBetweenContoursPanel({
               </p>
               <p className="text-muted-foreground">Continuous mode requires an already clear route. Source-boundary checks do not establish stock, fixture or wire-offset clearance.</p>
             </>}
-            <p className="text-muted-foreground">Controller export checks threading support against the selected machine and post.</p>
+            <p className={selectedPackage && threading && threading.wireSeparation !== 'already-separated' &&
+              !selectedPackage.separationMechanisms.includes(threading.wireSeparation)
+              ? 'text-amber-300' : 'text-muted-foreground'} data-package-separation-support>
+              {!selectedPackage
+                ? 'No planning package selected. Controller export checks threading and separation support.'
+                : threading && threading.wireSeparation !== 'already-separated'
+                  ? `${selectedPackage.name} ${selectedPackage.separationMechanisms.includes(threading.wireSeparation)
+                    ? 'declares' : 'does not declare'} ${threading.wireSeparation} separation.`
+                  : `${selectedPackage.name} selected. No separation command is requested by this transition.`}
+            </p>
           </fieldset>
         </>
       )}
@@ -236,14 +247,14 @@ function threadingSummary(transition: Omit<OperationThreadingTransition, 'source
     : 'Wire is already separated. Position, then rethread manually.';
 }
 
-function threadingForMode(mode: string, crossesMaterial = false): Omit<OperationThreadingTransition, 'source'> {
+function threadingForMode(mode: string): Omit<OperationThreadingTransition, 'source'> {
   if (mode === 'automatic') {
     return { mode: 'automatic', wireSeparation: 'automatic-before-positioning' };
   }
   if (mode === 'continuous') {
     return { mode: 'continuous', wireSeparation: 'already-separated' };
   }
-  return { mode: 'manual', wireSeparation: crossesMaterial ? 'automatic-during-positioning' : 'already-separated' };
+  return { mode: 'manual', wireSeparation: 'manual-before-positioning' };
 }
 
 function formatPoint(point: Point2) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { reviewCenterline } from '@/__tests__/reviewedUpid';
 
 import { minimalPostPackage } from './postPackageFixture';
 import { runPost } from '../postEngine';
@@ -64,6 +65,7 @@ function compilePlan() {
   document.setup = {
     initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' }
   };
+  reviewCenterline(document);
   const compiled = compileWireEdmExecutionPlan(document);
   if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
   return compiled.plan;

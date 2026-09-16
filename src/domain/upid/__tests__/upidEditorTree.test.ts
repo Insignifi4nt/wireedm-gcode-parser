@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createUpidFromDxfEntities } from '../upidDocument';
+import { reviewCenterline } from '@/__tests__/reviewedUpid';
 import {
   buildUpidEditorTree,
   upidEditorOperationTreeKey
@@ -28,6 +29,7 @@ describe('controller-neutral UPID editor tree', () => {
       placement: { kind: 'before-operation-end', remainingCutLengthMm: 2 },
       reason: 'part-retention'
     }];
+    reviewCenterline(document);
 
     const tree = buildUpidEditorTree(document);
 

@@ -293,7 +293,8 @@ describe('parseGCodeProgram', () => {
 
   it('parses compact machine output without spaces between commands and parameters', () => {
     const result = parseGCodeProgram(
-      ['N10 (program name)', 'G92X0Y0', 'G60', 'G41D0', 'G01X6500Y0', 'G03X6500Y5477I0J0'].join('\n')
+      ['N10 (program name)', 'G92X0Y0', 'G60', 'G41D0', 'G01X6500Y0', 'G03X6500Y5477I0J0'].join('\n'),
+      'legacy-robofil'
     );
 
     expect(result.path.map((point) => point.type)).toEqual(['position', 'cut', 'arc']);
@@ -353,7 +354,7 @@ describe('parseGCodeProgram', () => {
   });
 
   it('uses G60 absolute IJ center mode for subsequent arcs', () => {
-    const result = parseGCodeProgram(['G0 X10 Y0', 'G60', 'G3 X20 Y10 I10 J10'].join('\n'));
+    const result = parseGCodeProgram(['G0 X10 Y0', 'G60', 'G3 X20 Y10 I10 J10'].join('\n'), 'legacy-robofil');
 
     expect(result.path[1]).toMatchObject({
       type: 'arc',
@@ -368,7 +369,7 @@ describe('parseGCodeProgram', () => {
   });
 
   it('falls back to incremental IJ when absolute IJ mode has an incomplete arc center', () => {
-    const result = parseGCodeProgram(['G0 X10 Y0', 'G60', 'G3 X20 Y10 I5'].join('\n'));
+    const result = parseGCodeProgram(['G0 X10 Y0', 'G60', 'G3 X20 Y10 I5'].join('\n'), 'legacy-robofil');
 
     expect(result.path[1]).toMatchObject({
       type: 'arc',
@@ -388,5 +389,11 @@ describe('parseGCodeProgram', () => {
         type: 'warning'
       }
     ]);
+  });
+
+  it('leaves G60 uninterpreted without a source dialect', () => {
+    const result = parseGCodeProgram(['G0 X10 Y0', 'G60', 'G3 X20 Y10 I10 J10'].join('\n'));
+    expect(result.path[1]).toMatchObject({ type: 'arc', centerX: 20, centerY: 10 });
+    expect(result.warnings).toEqual([expect.objectContaining({ line: 2, message: expect.stringContaining('dialect-specific') })]);
   });
 });

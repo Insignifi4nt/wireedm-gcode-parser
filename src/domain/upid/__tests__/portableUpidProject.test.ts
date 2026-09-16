@@ -15,6 +15,16 @@ import {
 } from '../portableUpidProject';
 
 describe('portable UPID project', () => {
+  it('keeps v1 vocabulary frozen and accepts extended stop intent only as v2', () => {
+    const document = portableUpidIntentFixture();
+    document.plan.operations[0].programStops = [{ id: 'thread-stop', enabled: true,
+      reason: 'manual', placement: { kind: 'after-positioning' } }];
+    expect(parsePortableUpid(JSON.stringify({ format: 'upid', schemaVersion: 1, document })))
+      .toMatchObject({ ok: false, error: { code: 'PORTABLE_UPID_DOCUMENT_INVALID' } });
+    document.schemaVersion = 2;
+    expect(parsePortableUpid(JSON.stringify({ format: 'upid', schemaVersion: 2, document })))
+      .toMatchObject({ ok: true, document: { schemaVersion: 2 } });
+  });
   it('parses portable UPID without storage and returns independent document snapshots', () => {
     const document = portableUpidIntentFixture();
     const text = JSON.stringify({ format: 'upid', schemaVersion: 1, document });
@@ -37,7 +47,7 @@ describe('portable UPID project', () => {
   it.each([
     ['not JSON', 'PORTABLE_UPID_JSON_INVALID'],
     ['null', 'PORTABLE_UPID_SCHEMA_INVALID'],
-    [JSON.stringify({ format: 'upid', schemaVersion: 2, document: {} }), 'PORTABLE_UPID_VERSION_UNSUPPORTED'],
+    [JSON.stringify({ format: 'upid', schemaVersion: 3, document: {} }), 'PORTABLE_UPID_VERSION_UNSUPPORTED'],
     [JSON.stringify({ format: 'upid', schemaVersion: 1.5, document: {} }), 'PORTABLE_UPID_SCHEMA_INVALID'],
     [JSON.stringify({ format: 'upid', schemaVersion: 0, document: {} }), 'PORTABLE_UPID_SCHEMA_INVALID'],
     [JSON.stringify({ format: 'upid', schemaVersion: '1', document: {} }), 'PORTABLE_UPID_SCHEMA_INVALID'],

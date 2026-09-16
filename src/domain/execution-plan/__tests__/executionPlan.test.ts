@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
-import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { createUpidFromDxfEntities as createUnresolvedUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
 import { programStopValidationError } from '@/domain/path-intel/programStops';
 import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperations';
@@ -9,6 +9,22 @@ import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperation
 import { compileWireEdmExecutionPlan } from '../executionPlan';
 
 describe('controller-neutral Wire EDM execution plans', () => {
+  it('requires an explicit compensation decision for new finished contours, including open paths', () => {
+    for (const entities of [rectangle(), [
+      { type: 'line' as const, layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]]) {
+      const document = createUnresolvedUpidFromDxfEntities(entities);
+      document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+      expect(compileWireEdmExecutionPlan(document)).toMatchObject({
+        ok: false, diagnostics: [expect.objectContaining({ code: 'EXECUTION_PLAN_COMPENSATION_UNRESOLVED' })]
+      });
+      const reviewed = setManualCompensationIntent(document, document.plan.operations[0].id, 'centerline');
+      if (!reviewed) throw new Error('Expected centerline choice');
+      expect(compileWireEdmExecutionPlan(reviewed).ok).toBe(true);
+      document.geometryBasis = 'wire-centre';
+      expect(compileWireEdmExecutionPlan(document).ok).toBe(true);
+    }
+  });
   it('keeps saved controller-side choices dormant when geometry is wire-centre', () => {
     const source = rectangleDocument();
     source.geometryBasis = 'finished-contour';
@@ -276,6 +292,7 @@ describe('controller-neutral Wire EDM execution plans', () => {
     const next = document.plan.operations[1];
     next.programStops = [{ id: 'thread-at-destination', enabled: true, reason: 'manual',
       placement: { kind: 'after-positioning' } }];
+    document.schemaVersion = 2;
     const result = compileWireEdmExecutionPlan(document);
     if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
     expect(result.plan.events.filter((event) => event.operationId === next.id &&
@@ -342,13 +359,11 @@ describe('controller-neutral Wire EDM execution plans', () => {
     document.plan.operations[1].threadingTransition = {
       mode: 'manual', wireSeparation: 'already-separated', source: 'operation-override'
     };
-    expect(compileWireEdmExecutionPlan(document)).toMatchObject({
-      ok: false, diagnostics: [expect.objectContaining({ code: 'EXECUTION_PLAN_THREADING_INVALID',
-        message: expect.stringContaining('Select rapid separation') })]
-    });
+    expect(compileWireEdmExecutionPlan(document).ok).toBe(true);
     document.plan.operations[1].threadingTransition = {
       mode: 'manual', wireSeparation: 'automatic-during-positioning', source: 'operation-override'
     };
+    document.schemaVersion = 2;
     const compiled = compileWireEdmExecutionPlan(document);
     if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
     expect(compiled.plan.events).toEqual(expect.arrayContaining([
@@ -383,6 +398,14 @@ describe('controller-neutral Wire EDM execution plans', () => {
     ]);
   });
 });
+
+function createUpidFromDxfEntities(...args: Parameters<typeof createUnresolvedUpidFromDxfEntities>) {
+  let document = createUnresolvedUpidFromDxfEntities(...args);
+  for (const operation of document.plan.operations) {
+    document = setManualCompensationIntent(document, operation.id, 'centerline') ?? document;
+  }
+  return document;
+}
 
 function rectangleDocument() {
   const document = createUpidFromDxfEntities(rectangle());

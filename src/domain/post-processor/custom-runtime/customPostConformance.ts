@@ -265,8 +265,13 @@ function missingCapabilityCoverage(
   if (capabilities.threading === 'automatic' || capabilities.threading === 'manual-and-automatic') {
     if (!emittedEvents.some((event) => event.kind === 'wire-thread' && event.method === 'automatic')) missing.push('threading:automatic');
   }
-  if (capabilities.wireSeparation && !emittedEvents.some((event) =>
-    event.kind === 'wire-separate' || (event.kind === 'position' && event.separatesWire))) missing.push('wireSeparation');
+  for (const mechanism of Array.isArray(capabilities.wireSeparation) ? capabilities.wireSeparation : []) {
+    const covered = emittedEvents.some((event) =>
+      mechanism === 'manual-before-positioning' ? event.kind === 'wire-separate' && event.method === 'manual' :
+      mechanism === 'automatic-before-positioning' ? event.kind === 'wire-separate' && event.method === 'automatic' :
+      event.kind === 'position' && event.separatesWire);
+    if (!covered) missing.push(`wireSeparation:${mechanism}`);
+  }
   if (capabilities.programStops && !emittedEvents.some((event) => event.kind === 'program-stop')) missing.push('programStops');
   if (capabilities.taperAxes) missing.push('taperAxes (engine API v1 has no taper fixture event)');
   if (capabilities.technologySelection) missing.push('technologySelection (engine API v1 has no technology fixture event)');

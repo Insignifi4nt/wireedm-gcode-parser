@@ -4,6 +4,16 @@ import { parseWireEdmPostPackage } from '../postPackage';
 import { minimalPostPackage } from './postPackageFixture';
 
 describe('wire EDM post package boundary', () => {
+  it('versions precise separation capabilities while reading legacy boolean snapshots', () => {
+    const legacy = minimalPostPackage();
+    expect(parseWireEdmPostPackage(JSON.stringify(legacy))).toMatchObject({ ok: true });
+    const precise = structuredClone(legacy);
+    Object.assign(precise, { schemaVersion: 2 });
+    precise.manifest.capabilities.wireSeparation = ['automatic-during-positioning'];
+    expect(parseWireEdmPostPackage(JSON.stringify(precise))).toMatchObject({ ok: true });
+    Object.assign(precise, { schemaVersion: 1 });
+    expect(parseWireEdmPostPackage(JSON.stringify(precise))).toMatchObject({ ok: false });
+  });
   it('accepts exact controller-file rules owned by the post', () => {
     const input = minimalPostPackage();
     Object.assign(input.manifest, {

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildUpidEditorTree } from '@/domain/upid/upidEditorTree';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { reviewCenterline } from '@/__tests__/reviewedUpid';
 
 import { EditorProgramTree } from '../EditorProgramTree';
 import { defaultEditorProgramTreeExpansion } from '../editorProgramTreeState';
@@ -30,6 +31,7 @@ describe('EditorProgramTree', () => {
       type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
     }]);
     source.setup = { initialWirePosition: { kind: 'manual', point: { x: -1, y: 0 }, review: 'reviewed' } };
+    reviewCenterline(source);
     const tree = buildUpidEditorTree(source);
     const operation = tree.operations[0];
     function Harness() {
@@ -64,6 +66,7 @@ describe('EditorProgramTree', () => {
     document.setup = {
       initialWirePosition: { kind: 'manual', point: { x: -1, y: 0 }, review: 'reviewed' }
     };
+    reviewCenterline(document);
     const tree = buildUpidEditorTree(document);
     const onSelect = vi.fn();
     const onEdit = vi.fn();

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
+import { reviewCenterline } from '@/__tests__/reviewedUpid';
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
@@ -18,6 +19,7 @@ describe('circular start lifecycle', () => {
     const source = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 10, y: 20 }, radius: 5 }
     ]);
+    reviewCenterline(source);
     const operationId = source.plan.operations[0].id;
     const linked = setGeometryLinkedInitialWirePosition(source, source.segments[0].id)!;
     const entry = setCircleOperationCenterPierceLeadIn(linked, operationId)!;

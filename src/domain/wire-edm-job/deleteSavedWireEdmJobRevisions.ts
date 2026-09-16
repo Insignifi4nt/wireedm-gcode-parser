@@ -44,7 +44,9 @@ export function deleteStoredWireEdmJobRevisions(
       if (previousManifest === null || JSON.stringify(JSON.parse(previousManifest)) !== JSON.stringify(workbench.manifest)) {
         return failure('The workbench changed. Reopen the revision list before deleting.');
       }
-      const ownership = await validateWorkbenchProjectPathOwnership(adapter, workbench.manifest.projects);
+      const allowedMissing = new Set([...selection].map((revisionId) =>
+        workbenchProjectRevisionPath(input.projectId, revisionId)));
+      const ownership = await validateWorkbenchProjectPathOwnership(adapter, workbench.manifest.projects, allowedMissing);
       if (!ownership.ok) return failure(ownership.error.message);
       const project = ownership.projects.find(({ id }) => id === input.projectId);
       if (!project) return failure('The project is no longer in this workbench.');

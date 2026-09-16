@@ -14,7 +14,7 @@ export interface WireEdmMachinePackageDocument {
    * @minItems 1
    * @maxItems 64
    */
-  posts: [HttpsWireEdmLocalSchemasWireEdmPostPackageV1Json, ...HttpsWireEdmLocalSchemasWireEdmPostPackageV1Json[]];
+  posts: [HttpsWireEdmLocalSchemasWireEdmPostPackageV2Json, ...HttpsWireEdmLocalSchemasWireEdmPostPackageV2Json[]];
   activeBindingId: string;
 }
 export interface HttpsWireEdmLocalSchemasWireEdmMachineV1Json {
@@ -109,9 +109,9 @@ export interface HttpsWireEdmLocalSchemasWireEdmMachineV1Json {
   activeBindingId: string | null;
   notes: string;
 }
-export interface HttpsWireEdmLocalSchemasWireEdmPostPackageV1Json {
+export interface HttpsWireEdmLocalSchemasWireEdmPostPackageV2Json {
   format: "wire-edm-post";
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   manifest: {
     id: string;
     name: string;
@@ -172,7 +172,8 @@ export interface HttpsWireEdmLocalSchemasWireEdmPostPackageV1Json {
       operations: "single" | "multiple";
       passes: "single" | "multiple";
       threading: "none" | "manual" | "automatic" | "manual-and-automatic";
-      wireSeparation: boolean;
+      wireSeparation:
+        boolean | ("manual-before-positioning" | "automatic-before-positioning" | "automatic-during-positioning")[];
       programStops: boolean;
       taperAxes: boolean;
       technologySelection: boolean;

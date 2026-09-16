@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { setManualCompensationIntent } from '@/domain/compensation/intent';
 
 import {
   createMachinePostBinding,
@@ -76,6 +77,20 @@ describe('catalog-owned saved revision persistence', () => {
     expect(reopened.workbench.manifest.deletedProjects).toEqual([]);
   });
 
+  it('purges an archived project whose owned revision is already missing', async () => {
+    const fixture = await catalogRevisionFixture();
+    const saved = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    if (!saved.ok) throw new Error(saved.error.message);
+    const archived = await deleteStoredWorkbenchProject(saved.workbench, {
+      projectId: saved.project.id, deletedAt: new Date('2026-08-28T13:00:00.000Z')
+    });
+    if (!archived.ok) throw new Error(archived.error.message);
+    fixture.adapter.files.delete(saved.path);
+    const purged = await purgeArchivedWorkbenchProject(archived.workbench, { projectId: saved.project.id });
+    expect(purged).toMatchObject({ ok: true });
+    expect(fixture.adapter.files.has(`projects/${saved.project.id}.json`)).toBe(false);
+  });
+
   it('deletes one selected revision while keeping the other indexed and reproducible', async () => {
     const fixture = await catalogRevisionFixture();
     const first = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
@@ -106,6 +121,30 @@ describe('catalog-owned saved revision persistence', () => {
     expect(await readStoredWorkbenchProject(reopened.workbench, 'fixture.part')).toMatchObject({
       ok: true, project: { savedRevisionIds: ['revision.0002'] }
     });
+  });
+
+  it('repairs a selected missing revision but refuses an unrelated missing revision', async () => {
+    const fixture = await catalogRevisionFixture();
+    const first = await saveStoredWireEdmJobRevision(fixture.workbench, fixture.candidate);
+    if (!first.ok) throw new Error(first.error.message);
+    const candidate = await createSavedWireEdmJobRevision({
+      revisionId: 'revision.0002', savedAt: '2026-08-28T12:45:00.000Z',
+      project: first.project, machine: fixture.machine, bindingId: 'production', postLibrary: fixture.library
+    });
+    if (!candidate.ok) throw new Error(candidate.error.message);
+    const second = await saveStoredWireEdmJobRevision(first.workbench, candidate.candidate);
+    if (!second.ok) throw new Error(second.error.message);
+    fixture.adapter.files.delete(first.path);
+    expect(await deleteStoredWireEdmJobRevisions(second.workbench, {
+      projectId: 'fixture.part', revisionIds: ['revision.0002'],
+      deletedAt: new Date('2026-08-28T13:00:00.000Z')
+    })).toMatchObject({ ok: false });
+    const repaired = await deleteStoredWireEdmJobRevisions(second.workbench, {
+      projectId: 'fixture.part', revisionIds: ['revision.0001'],
+      deletedAt: new Date('2026-08-28T13:00:00.000Z')
+    });
+    expect(repaired).toMatchObject({ ok: true, project: { savedRevisionIds: ['revision.0002'] } });
+    expect(fixture.adapter.files.has(second.path)).toBe(true);
   });
 
   it('deletes all selected revisions while retaining the project and rolls back a failed deletion', async () => {
@@ -364,9 +403,11 @@ async function catalogRevisionFixture() {
     now: new Date('2026-08-28T12:00:00.000Z')
   });
   if (!initialized.ok) throw new Error(initialized.error.message);
-  const document = createUpidFromDxfEntities([
+  const imported = createUpidFromDxfEntities([
     { type: 'circle', layer: 'CUT', center: { x: 5, y: 5 }, radius: 2 }
   ]);
+  const document = setManualCompensationIntent(imported, imported.plan.operations[0].id, 'centerline');
+  if (!document) throw new Error('Expected explicit centerline fixture');
   document.setup = {
     initialWirePosition: { kind: 'manual', point: { x: 7, y: 5 }, review: 'reviewed' }
   };

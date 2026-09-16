@@ -111,7 +111,8 @@ export function workbenchProjectOwnedPaths(project: WorkbenchProjectDocument) {
 
 export async function validateWorkbenchProjectPathOwnership(
   adapter: WorkbenchStorageAdapter,
-  entries: readonly StoredWorkbenchProjectIndexEntry[]
+  entries: readonly StoredWorkbenchProjectIndexEntry[],
+  allowedMissingPaths: ReadonlySet<string> = new Set()
 ): Promise<
   | { ok: true; projects: readonly WorkbenchProjectDocument[] }
   | { ok: false; error: WorkbenchProjectStorageError | WorkbenchProjectIndexIntegrityError }
@@ -119,7 +120,7 @@ export async function validateWorkbenchProjectPathOwnership(
   const projects: WorkbenchProjectDocument[] = [];
   const ownerByPath = new Map<string, string>();
   for (const entry of entries) {
-    const read = await readIndexedWorkbenchProjectStorage(adapter, entry);
+    const read = await readIndexedWorkbenchProjectStorage(adapter, entry, allowedMissingPaths);
     if (!read.ok) return read;
     projects.push(read.project);
     const claimedPaths = workbenchProjectOwnedPaths(read.project);
@@ -147,7 +148,7 @@ export async function validateWorkbenchProjectPathOwnership(
       } catch (error) {
         return accessFailure('read', path, error);
       }
-      if (contents === null) {
+      if (contents === null && !allowedMissingPaths.has(path)) {
         return {
           ok: false,
           error: {
@@ -166,7 +167,8 @@ export async function validateWorkbenchProjectPathOwnership(
 
 export async function readIndexedWorkbenchProjectStorage(
   adapter: WorkbenchStorageAdapter,
-  entry: StoredWorkbenchProjectIndexEntry
+  entry: StoredWorkbenchProjectIndexEntry,
+  allowedMissingPaths: ReadonlySet<string> = new Set()
 ): Promise<
   | { ok: true; project: WorkbenchProjectDocument }
   | { ok: false; error: WorkbenchProjectStorageError | WorkbenchProjectIndexIntegrityError }
@@ -203,7 +205,7 @@ export async function readIndexedWorkbenchProjectStorage(
     } catch (error) {
       return accessFailure('read', sourceFile.path, error);
     }
-    if (contents === null) {
+    if (contents === null && !allowedMissingPaths.has(sourceFile.path)) {
       return {
         ok: false,
         error: {

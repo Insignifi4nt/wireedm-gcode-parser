@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
 import { programStopPreview } from '../programStopPreview';
+import { reviewCenterline } from '@/__tests__/reviewedUpid';
 
 function fixture() {
   const document = createUpidFromDxfEntities([
@@ -15,6 +16,8 @@ function fixture() {
     { id: 'contour', enabled: true, reason: 'manual', placement: { kind: 'after-contour' } },
     { id: 'exit', enabled: true, reason: 'manual', placement: { kind: 'after-exit' } }
   ];
+  document.schemaVersion = 2;
+  reviewCenterline(document);
   return document;
 }
 

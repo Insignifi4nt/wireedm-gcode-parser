@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 
 import { AppShell } from '@/app/AppShell';
 import { type AppServices } from '@/app/appServices';
@@ -6,7 +6,6 @@ import { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import { StatusToastList } from '@/components/StatusToasts';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { DxfImportConfirmationDialog } from '@/features/dashboard/DxfImportConfirmationDialog';
-import { EditorPage } from '@/features/editor/EditorPage';
 import { OnboardingDialog } from '@/features/onboarding/OnboardingDialog';
 import {
   hasDismissedOnboarding,
@@ -16,6 +15,8 @@ import {
 interface AppProps {
   services?: Partial<AppServices>;
 }
+
+const EditorPage = lazy(() => import('@/features/editor/EditorPage').then(({ EditorPage }) => ({ default: EditorPage })));
 
 export default function App({ services }: AppProps = {}) {
   const [onboardingOpen, setOnboardingOpen] = useState(() => !hasDismissedOnboarding());
@@ -59,7 +60,7 @@ export default function App({ services }: AppProps = {}) {
           </div>
         </section>
       ) : app.activeView === 'editor' && app.connectedWorkbench ? (
-        <EditorPage
+        <Suspense fallback={<p className="p-4 text-xs text-muted-foreground" role="status">Opening editor…</p>}><EditorPage
           importErrorMessage={app.editorImportErrorMessage}
           importStatus={app.editorImportStatus}
           interactionLocked={app.workbenchInteractionLocked}
@@ -81,7 +82,7 @@ export default function App({ services }: AppProps = {}) {
           program={app.loadedEditorProgram}
           saveErrorMessage={app.editorSaveErrorMessage}
           saveStatus={app.editorSaveStatus}
-        />
+        /></Suspense>
       ) : (
         <DashboardPage
           connectedWorkbench={app.connectedWorkbench}

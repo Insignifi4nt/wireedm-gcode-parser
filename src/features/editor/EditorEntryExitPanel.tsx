@@ -4,6 +4,7 @@ import { canSetCircleOperationCenterPierceLeadIn } from '@/domain/path-editor/pa
 import { resolveInitialWirePosition } from '@/domain/path-intel/initialWirePosition';
 import { readOperationTransitions } from '@/domain/path-intel/operationTransitions';
 import { findLeadIntersections } from '@/domain/path-intel/leadIntersections';
+import { pointAtLeadLength, pointFromRapidDistance } from '@/domain/path-intel/leadDistances';
 import { deriveSourceMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import { distance, pointsEqual } from '@/domain/path-intel/segments';
@@ -92,22 +93,22 @@ export function EditorEntryExitPanel({
   const entryPoint = entryMode === 'coordinates'
     ? readFinitePoint(entryX, entryY)
     : entryMode === 'rapid-length'
-      ? pointFromRapidDistance(rapidStart, entryAttachment, entryDistance)
-      : pointAtLeadLength(entryAttachment, entryFrom ?? rapidStart, entryDistance);
+      ? resolveRapidPoint(rapidStart, entryAttachment, entryDistance)
+      : resolveLeadPoint(entryAttachment, entryFrom ?? rapidStart, entryDistance);
   const exitPoint = exitMode === 'coordinates'
     ? readFinitePoint(exitX, exitY)
-    : pointAtLeadLength(exitAttachment, exitTo, exitDistance);
+    : resolveLeadPoint(exitAttachment, exitTo, exitDistance);
   useEffect(() => {
     setEntryMode('coordinates');
     setExitMode('coordinates');
   }, [selected?.id]);
   useEffect(() => {
-    setEntryDistance(formatDistance(entryMode === 'rapid-length'
+    setEntryDistance(exactDistanceText(entryMode === 'rapid-length'
       ? rapidStart && entryFrom ? distance(rapidStart, entryFrom) : null
       : entryAttachment && entryFrom ? distance(entryAttachment, entryFrom) : null));
   }, [selected?.id, entryMode, entryFrom?.x, entryFrom?.y, entryAttachment?.x, entryAttachment?.y, rapidStart?.x, rapidStart?.y]);
   useEffect(() => {
-    setExitDistance(formatDistance(exitAttachment && exitTo ? distance(exitAttachment, exitTo) : null));
+    setExitDistance(exactDistanceText(exitAttachment && exitTo ? distance(exitAttachment, exitTo) : null));
   }, [selected?.id, exitMode, exitTo?.x, exitTo?.y, exitAttachment?.x, exitAttachment?.y]);
   const entryCoincident = Boolean(selected && entryPoint &&
     (pointsEqual(entryPoint, selected.startPoint, document.options.coincidenceEpsilon) || (entryAttachment && pointsEqual(entryPoint, entryAttachment, document.options.coincidenceEpsilon))));
@@ -391,24 +392,18 @@ function readDistance(value: string, allowZero = false): number | null {
     ? millimeters : null;
 }
 
-function pointAtLeadLength(anchor: Point2 | null | undefined, directionPoint: Point2 | null, rawLength: string): Point2 | null {
+function resolveLeadPoint(anchor: Point2 | null | undefined, directionPoint: Point2 | null, rawLength: string): Point2 | null {
   const length = readDistance(rawLength);
   if (!anchor || !directionPoint || length === null) return null;
-  const existingLength = distance(anchor, directionPoint);
-  if (existingLength === 0) return null;
-  return {
-    x: anchor.x + (directionPoint.x - anchor.x) * length / existingLength,
-    y: anchor.y + (directionPoint.y - anchor.y) * length / existingLength
-  };
+  return pointAtLeadLength(anchor, directionPoint, length);
 }
 
-function pointFromRapidDistance(initial: Point2 | null, contourStart: Point2 | null | undefined, rawDistance: string): Point2 | null {
+function resolveRapidPoint(initial: Point2 | null, contourStart: Point2 | null | undefined, rawDistance: string): Point2 | null {
   const rapidDistance = readDistance(rawDistance, true);
   if (!initial || !contourStart || rapidDistance === null) return null;
-  const fullDistance = distance(initial, contourStart);
-  if (fullDistance === 0 || rapidDistance >= fullDistance) return null;
-  return {
-    x: initial.x + (contourStart.x - initial.x) * rapidDistance / fullDistance,
-    y: initial.y + (contourStart.y - initial.y) * rapidDistance / fullDistance
-  };
+  return pointFromRapidDistance(initial, contourStart, rapidDistance);
+}
+
+function exactDistanceText(value: number | null): string {
+  return value === null ? '' : String(value);
 }

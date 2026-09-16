@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildUpidEditorTree } from '@/domain/upid/upidEditorTree';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { setMachiningSpanParticipation } from '@/domain/path-intel/machiningParticipation';
+import { reviewCenterline } from '@/__tests__/reviewedUpid';
 
 import { resolveEditorProgramTreeAction } from './editorProgramTreeActions';
 
@@ -12,6 +13,7 @@ describe('resolveEditorProgramTreeAction', () => {
       type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
     }]);
     document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    reviewCenterline(document);
     const operation = document.plan.operations[0];
     operation.transitions = { exit: { strategy: 'manual-straight', move: 'cut',
       from: operation.endPoint, to: { x: 12, y: 0 }, review: 'reviewed' } };
@@ -30,6 +32,7 @@ describe('resolveEditorProgramTreeAction', () => {
       type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }
     }]);
     document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    reviewCenterline(document);
     const operation = document.plan.operations[0];
     operation.transitions = { exit: { strategy: 'manual-straight', move: 'cut',
       from: operation.endPoint, to: operation.endPoint, review: 'reviewed' } };

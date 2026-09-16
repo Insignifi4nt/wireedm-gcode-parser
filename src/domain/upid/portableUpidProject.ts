@@ -38,7 +38,7 @@ export type ParsePortableUpidError =
       readonly code: 'PORTABLE_UPID_VERSION_UNSUPPORTED';
       readonly message: string;
       readonly foundVersion: number;
-      readonly supportedVersion: 1;
+      readonly supportedVersion: 2;
     };
 
 export type ParsePortableUpidResult =
@@ -87,6 +87,7 @@ export async function exportPortableUpidProject(
   const document = detachedPortableDocument(
     read.project.content.document as PathPlanningDocument
   );
+  if (document.schemaVersion === 1 && requiresUpidV2(document)) document.schemaVersion = 2;
   try {
     assertPortableUpidV1Shape(document);
   } catch (error) {
@@ -95,7 +96,7 @@ export async function exportPortableUpidProject(
       error instanceof Error ? error.message : String(error)
     );
   }
-  const envelope = { format: 'upid', schemaVersion: 1, document };
+  const envelope = { format: 'upid', schemaVersion: document.schemaVersion, document };
   let text = JSON.stringify(envelope, null, 2);
   // Formatting must not turn a loadable saved project into an oversized portable file.
   if (portableSizeError(text)) text = JSON.stringify(envelope);
@@ -170,25 +171,29 @@ export function parsePortableUpid(text: string): ParsePortableUpidResult {
   if (!isRecord(value)) {
     return ownFailure('PORTABLE_UPID_SCHEMA_INVALID', 'Portable UPID must be an object.');
   }
-  if (typeof value.schemaVersion === 'number' && Number.isSafeInteger(value.schemaVersion) && value.schemaVersion > 0 && value.schemaVersion !== 1) {
+  if (typeof value.schemaVersion === 'number' && Number.isSafeInteger(value.schemaVersion) && value.schemaVersion > 0 &&
+    value.schemaVersion !== 1 && value.schemaVersion !== 2) {
     return {
       ok: false,
       error: {
         code: 'PORTABLE_UPID_VERSION_UNSUPPORTED',
         message: `Portable UPID schema version ${value.schemaVersion} is unsupported.`,
         foundVersion: value.schemaVersion,
-        supportedVersion: 1
+        supportedVersion: 2
       }
     };
   }
   if (
     value.format !== 'upid' ||
-    value.schemaVersion !== 1 ||
+    (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
     Object.keys(value).sort().join(',') !== 'document,format,schemaVersion'
   ) {
     return ownFailure('PORTABLE_UPID_SCHEMA_INVALID', 'Portable UPID must match the strict schema.');
   }
   const document = value.document as PathPlanningDocument;
+  if (document?.schemaVersion !== undefined && document.schemaVersion !== value.schemaVersion) {
+    return ownFailure('PORTABLE_UPID_SCHEMA_INVALID', 'Portable UPID envelope and document versions disagree.');
+  }
   try {
     assertPortableUpidV1Shape(document);
   } catch (error) {
@@ -211,6 +216,13 @@ function detachedPortableDocument(document: PathPlanningDocument) {
   const clone = jsonSnapshot(document);
   delete clone.source.projectId;
   return clone;
+}
+
+function requiresUpidV2(document: PathPlanningDocument) {
+  return document.setup?.threadingDefault?.wireSeparation === 'automatic-during-positioning' ||
+    document.plan.operations.some((operation) =>
+      operation.threadingTransition?.wireSeparation === 'automatic-during-positioning' ||
+      operation.programStops?.some((stop) => stop.placement.kind === 'after-positioning'));
 }
 
 function portableSizeError(text: string): Extract<ParsePortableUpidError, { readonly code: 'PORTABLE_UPID_TOO_LARGE' }> | null {

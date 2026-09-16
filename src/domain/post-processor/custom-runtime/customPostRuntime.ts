@@ -91,6 +91,7 @@ interface MutableRunState {
   currentEvent: WireEdmExecutionEvent | null;
   currentDisposition: 'none' | 'emitted' | 'consumed';
   currentMotionEnd: Point2 | null;
+  currentMotionQuantum: { x: number; y: number };
   actionCount: number;
   outputBytes: number;
   readonly outputLimit: number;
@@ -163,6 +164,7 @@ async function executeOnce(
     currentEvent: null,
     currentDisposition: 'none',
     currentMotionEnd: null,
+    currentMotionQuantum: { x: 0, y: 0 },
     actionCount: 0,
     outputBytes: 0,
     outputLimit: limits.outputBytes,
@@ -209,7 +211,10 @@ async function executeOnce(
     const onEvent = context.getProp(post, 'onEvent');
     ownedHandles.push(onEvent);
 
+    let requiredCompensationSide: 'left' | 'right' | null = null;
     for (const event of plan.events) {
+      if (event.kind === 'operation-start') requiredCompensationSide = null;
+      if (event.kind === 'compensation-start') requiredCompensationSide = event.wireSide;
       state.currentEvent = event;
       state.currentDisposition = 'none';
       const firstEventBlock = state.blocks.length;
@@ -245,6 +250,19 @@ async function executeOnce(
           event.id
         );
       }
+      if (event.kind === 'compensation-start' &&
+        !state.dialectState.has(`compensation.${event.wireSide}`)) {
+        return failure('POST_CUSTOM_LIFECYCLE_INVALID',
+          `Event ${event.id} must leave compensation.${event.wireSide} active.`, event.id);
+      }
+      if (event.kind === 'motion' && (
+        requiredCompensationSide
+          ? !state.dialectState.has(`compensation.${requiredCompensationSide}`)
+          : state.dialectState.has('compensation.left') || state.dialectState.has('compensation.right')
+      )) {
+        return failure('POST_CUSTOM_LIFECYCLE_INVALID',
+          `Cutting motion ${event.id} requires compensation.${requiredCompensationSide ?? 'off'}.`, event.id);
+      }
     }
     state.currentEvent = null;
     const program = freezeProgram(state);
@@ -252,7 +270,7 @@ async function executeOnce(
       plan,
       program,
       new Set(Object.keys(packageValue.dialect.commands)),
-      emittedCoordinateQuantumMm(packageValue, properties, program)
+      0
     );
     if (auditDiagnostics.length > 0) {
       return {
@@ -281,31 +299,6 @@ async function executeOnce(
     context.dispose();
     runtime.dispose();
   }
-}
-
-function emittedCoordinateQuantumMm(
-  packageValue: WireEdmPostPackage,
-  properties: Readonly<Record<string, PostPropertyValue>>,
-  program: ControllerProgram
-) {
-  let quantumMm = 0;
-  for (const block of program.blocks) {
-    if (!block.motion) continue;
-    for (const commandId of block.commandIds) {
-      const command = packageValue.dialect.commands[commandId];
-      if (!command) continue;
-      for (const parameter of Object.values(command.parameters)) {
-        if (parameter.type !== 'number' || parameter.role === 'none') continue;
-        const digits = parameter.format.fractionDigits.kind === 'fixed'
-          ? parameter.format.fractionDigits.value
-          : properties[parameter.format.fractionDigits.property];
-        if (typeof digits === 'number' && Number.isInteger(digits)) {
-          quantumMm = Math.max(quantumMm, 10 ** -digits);
-        }
-      }
-    }
-  }
-  return quantumMm;
 }
 
 function requiredEventEffect(event: WireEdmExecutionEvent): string | null {
@@ -561,10 +554,44 @@ function emitCommand(
     ));
     return;
   }
-  appendBlock(state, event, commandValue, text, motion.motion);
-  if (motion.motion) state.currentMotionEnd = copyPoint(motion.motion.end);
+  const rounding = motion.motion ? motionRounding(command, properties, state.currentMotionQuantum) : null;
+  appendBlock(state, event, commandValue, text, motion.motion && rounding
+    ? { ...motion.motion, rounding } : motion.motion);
+  if (motion.motion && rounding) {
+    state.currentMotionEnd = copyPoint(motion.motion.end);
+    state.currentMotionQuantum = { x: rounding.endX, y: rounding.endY };
+  }
   applyEffects(state.dialectState, command.effects);
   state.currentDisposition = 'emitted';
+}
+
+function motionRounding(
+  command: RuntimeCommand,
+  properties: Readonly<Record<string, PostPropertyValue>>,
+  previous: { x: number; y: number }
+): NonNullable<ControllerMotionTrace['rounding']> {
+  const quantum = (role: string) => {
+    const parameter = Object.values(command.parameters).find((value) => value.role === role);
+    if (!parameter || parameter.type !== 'number') return 0;
+    const digits = parameter.format.fractionDigits.kind === 'fixed'
+      ? parameter.format.fractionDigits.value
+      : properties[parameter.format.fractionDigits.property];
+    return typeof digits === 'number' ? 10 ** -digits : 0;
+  };
+  const centerQuantum = (role: 'motion.center-x' | 'motion.center-y', startQuantum: number) => {
+    const parameter = Object.values(command.parameters).find((value) => value.role === role);
+    if (!parameter || parameter.type !== 'number' || !('centerReference' in parameter)) return 0;
+    const reference = parameter.centerReference.kind === 'fixed'
+      ? parameter.centerReference.mode
+      : properties[parameter.centerReference.property];
+    return quantum(role) + (reference === 'incremental' ? startQuantum : 0);
+  };
+  return {
+    startX: previous.x, startY: previous.y,
+    endX: quantum('motion.end-x'), endY: quantum('motion.end-y'),
+    centerX: centerQuantum('motion.center-x', previous.x),
+    centerY: centerQuantum('motion.center-y', previous.y)
+  };
 }
 
 function consumeEvent(state: MutableRunState, reasonValue: unknown) {

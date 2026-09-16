@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
-import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { setManualCompensationIntent } from '@/domain/compensation/intent';
+import { createUpidFromDxfEntities as createUnresolvedUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
 import { minimalPostPackage } from './postPackageFixture';
 import { preflightPostCapabilities } from '../postCapabilityPreflight';
@@ -50,6 +51,14 @@ describe('post capability preflight', () => {
     expect(preflightPostCapabilities(compiled.plan, minimalPostPackage())).toEqual([]);
   });
 });
+
+function createUpidFromDxfEntities(...args: Parameters<typeof createUnresolvedUpidFromDxfEntities>) {
+  let document = createUnresolvedUpidFromDxfEntities(...args);
+  for (const operation of document.plan.operations) {
+    document = setManualCompensationIntent(document, operation.id, 'centerline') ?? document;
+  }
+  return document;
+}
 
 function rectangle(minX = 0, minY = 0, maxX = 10, maxY = 10) {
   return [

@@ -1,10 +1,10 @@
 {
   "format": "wire-edm-post",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "manifest": {
     "id": "cristian.robofil-100.v2-candidate",
     "name": "Cristian Robofil 100 V2 candidate",
-    "version": "2.4.0",
+    "version": "2.5.0",
     "engineApiVersion": "1",
     "description": "Candidate Robofil 100 post with modal compensation across contour transitions, operator-reported rapid wire separation, and M00 manual rethread pause.",
     "targets": [
@@ -26,7 +26,7 @@
       "operations": "multiple",
       "passes": "single",
       "threading": "manual",
-      "wireSeparation": true,
+      "wireSeparation": ["automatic-during-positioning"],
       "programStops": true,
       "taperAxes": false,
       "technologySelection": false,

@@ -4,13 +4,13 @@ import { Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useModalFocus } from '@/components/ui/useModalFocus';
 import { downloadProgramFile } from '@/domain/post/downloadProgramFile';
+import { readSavedRevisionSummaryPage, type SavedRevisionSummary } from '@/domain/wire-edm-job/revisionSummaries';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import { readStoredWorkbenchProject } from '@/domain/workbench-catalog/workbenchCatalogMutations';
 import {
   generateControllerArtifact,
   loadSavedWireEdmJobRevision,
   serializeSavedWireEdmJobRevision,
-  type SavedWireEdmJobRevision
 } from '@/domain/wire-edm-job';
 
 interface ProjectRevisionsDialogProps {
@@ -21,14 +21,10 @@ interface ProjectRevisionsDialogProps {
   onDeleteRevisions: (projectId: string, revisionIds: readonly string[]) => Promise<void>;
 }
 
-interface RevisionRow {
-  readonly revisionId: string;
-  readonly revision: SavedWireEdmJobRevision | null;
-  readonly loadError?: string;
-}
-
 export function ProjectRevisionsDialog({ workbench, projectId, projectName, onClose, onDeleteRevisions }: ProjectRevisionsDialogProps) {
-  const [revisions, setRevisions] = useState<readonly RevisionRow[]>([]);
+  const [revisions, setRevisions] = useState<readonly SavedRevisionSummary[]>([]);
+  const [revisionCount, setRevisionCount] = useState(0);
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,13 +47,13 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
       try {
         const project = await readStoredWorkbenchProject(workbench, projectId);
         if (!project.ok) throw new Error(project.error.message);
-        const loaded = await Promise.all([...project.project.savedRevisionIds].reverse().map(async (revisionId) => {
-          const result = await loadSavedWireEdmJobRevision(workbench.adapter, projectId, revisionId);
-          return result.ok
-            ? { revisionId, revision: result.revision }
-            : { revisionId, revision: null, loadError: result.error.message };
-        }));
-        if (!cancelled) setRevisions(loaded);
+        const loaded = await readSavedRevisionSummaryPage(
+          workbench.adapter, projectId, project.project.savedRevisionIds, page
+        );
+        if (!cancelled) {
+          setRevisionCount(project.project.savedRevisionIds.length);
+          setRevisions(loaded);
+        }
       } catch (cause) {
         if (!cancelled) setError(messageOf(cause));
       } finally {
@@ -66,13 +62,15 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
     }
     void load();
     return () => { cancelled = true; };
-  }, [workbench, projectId]);
+  }, [workbench, projectId, page]);
 
-  async function downloadController(revision: SavedWireEdmJobRevision) {
-    setBusyId(revision.revisionId);
+  async function downloadController(revisionId: string) {
+    setBusyId(revisionId);
     setError(null);
     try {
-      const result = await generateControllerArtifact(revision);
+      const loaded = await loadSavedWireEdmJobRevision(workbench.adapter, projectId, revisionId);
+      if (!loaded.ok) throw new Error(loaded.error.message);
+      const result = await generateControllerArtifact(loaded.revision);
       if (!result.ok) throw new Error(result.error.message);
       downloadProgramFile({ fileName: result.artifact.fileName, text: result.artifact.text });
     } catch (cause) {
@@ -82,16 +80,21 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
     }
   }
 
-  function downloadRevision(revision: SavedWireEdmJobRevision) {
+  async function downloadRevision(revisionId: string) {
+    setBusyId(revisionId);
     setError(null);
     try {
+      const loaded = await loadSavedWireEdmJobRevision(workbench.adapter, projectId, revisionId);
+      if (!loaded.ok) throw new Error(loaded.error.message);
       downloadProgramFile({
-        fileName: `${projectId}.${revision.revisionId}.wireedm-revision.json`,
+        fileName: `${projectId}.${revisionId}.wireedm-revision.json`,
         mimeType: 'application/json;charset=utf-8',
-        text: serializeSavedWireEdmJobRevision(revision)
+        text: serializeSavedWireEdmJobRevision(loaded.revision)
       });
     } catch (cause) {
       setError(messageOf(cause));
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -119,6 +122,7 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
     try {
       await onDeleteRevisions(projectId, revisionIds);
       setRevisions((current) => current.filter(({ revisionId }) => !selectedIds.has(revisionId)));
+      setRevisionCount((current) => current - revisionIds.length);
       cancelSelection();
     } catch (cause) {
       setError(messageOf(cause));
@@ -151,10 +155,17 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
                 <>
                   <label className="flex items-center gap-1.5">
                     <input aria-label="Select all revisions" type="checkbox" disabled={busy}
-                      checked={selectedIds.size === revisions.length}
+                      checked={revisions.length > 0 && revisions.every(({ revisionId }) => selectedIds.has(revisionId))}
                       onChange={(event) => {
-                        setSelectedIds(event.currentTarget.checked
-                          ? new Set(revisions.map(({ revisionId }) => revisionId)) : new Set());
+                        const checked = event.currentTarget.checked;
+                        setSelectedIds((current) => {
+                          const next = new Set(current);
+                          for (const { revisionId } of revisions) {
+                            if (checked) next.add(revisionId);
+                            else next.delete(revisionId);
+                          }
+                          return next;
+                        });
                         setConfirmDelete(false);
                       }} />
                     Select all
@@ -191,27 +202,34 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
                     disabled={busy} checked={selectedIds.has(revision.revisionId)}
                     onChange={() => toggleRevision(revision.revisionId)} />}
                   <div className="min-w-0">
-                    <p className="font-medium">{revision.revision
-                      ? new Date(revision.revision.savedAt).toLocaleString()
+                    <p className="font-medium">{revision.savedAt
+                      ? new Date(revision.savedAt).toLocaleString()
                       : 'Unavailable revision'}</p>
                     <p className="mt-1 truncate text-muted-foreground" title={revision.revisionId}>
-                      {revision.revision
-                        ? `${revision.revision.machine.name} · ${revision.revision.post.installation.ref.packageId} · ${revision.revisionId}`
+                      {revision.savedAt
+                        ? `${revision.machineName} · ${revision.packageId} · ${revision.revisionId}`
                         : `${revision.revisionId} · ${revision.loadError}`}
                     </p>
                   </div>
                 </div>
                 {!selecting && <div className="flex gap-1">
-                  <Button size="sm" variant="outline" type="button" disabled={busyId !== null || !revision.revision}
-                    onClick={() => { if (revision.revision) void downloadController(revision.revision); }}>
+                  <Button size="sm" variant="outline" type="button" disabled={busyId !== null || !revision.savedAt}
+                    onClick={() => void downloadController(revision.revisionId)}>
                     {busyId === revision.revisionId ? 'Generating…' : 'Controller file'}
                   </Button>
-                  <Button size="sm" variant="outline" type="button" disabled={busyId !== null || !revision.revision}
-                    onClick={() => { if (revision.revision) downloadRevision(revision.revision); }}>Snapshot JSON</Button>
+                  <Button size="sm" variant="outline" type="button" disabled={busyId !== null || !revision.savedAt}
+                    onClick={() => void downloadRevision(revision.revisionId)}>Snapshot JSON</Button>
                 </div>}
               </li>
             ))}
           </ol>
+          {revisionCount > 20 && <div className="mt-3 flex items-center gap-2">
+            <Button size="sm" variant="outline" type="button" disabled={busy || page === 0}
+              onClick={() => setPage((current) => current - 1)}>Newer</Button>
+            <span className="text-muted-foreground">Page {page + 1} of {Math.ceil(revisionCount / 20)}</span>
+            <Button size="sm" variant="outline" type="button" disabled={busy || (page + 1) * 20 >= revisionCount}
+              onClick={() => setPage((current) => current + 1)}>Older</Button>
+          </div>}
         </div>
       </div>
     </div>

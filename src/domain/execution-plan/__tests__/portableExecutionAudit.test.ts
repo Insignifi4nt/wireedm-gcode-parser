@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { reviewCenterline } from '@/__tests__/reviewedUpid';
 import { compileWireEdmExecutionPlan } from '../executionPlan';
 
 describe('execution numeric boundary audit', () => {
@@ -8,6 +9,7 @@ describe('execution numeric boundary audit', () => {
       { type: 'line', layer: null, start: { x: -1e150, y: 0 }, end: { x: 1e150, y: 0 } }
     ]);
     document.setup = { initialWirePosition: { kind: 'manual', point: { x: -1e150, y: 0 }, review: 'reviewed' } };
+    reviewCenterline(document);
     const first = compileWireEdmExecutionPlan(document);
     const second = compileWireEdmExecutionPlan(document);
     if (!first.ok || !second.ok) throw new Error('Expected finite geometry to compile.');
@@ -34,6 +36,7 @@ describe('execution numeric boundary audit', () => {
     ], { coincidenceEpsilon: 0, endpointTolerance: 0 });
     expect(document.segments).toHaveLength(1);
     document.setup = { initialWirePosition: { kind: 'manual', point: start, review: 'reviewed' } };
+    reviewCenterline(document);
     const compiled = compileWireEdmExecutionPlan(document);
     if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
     const motions = compiled.plan.events.filter((event) => event.kind === 'motion');

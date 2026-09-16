@@ -76,7 +76,7 @@ describe('EditorBetweenContoursPanel', () => {
     const defaultSelect = container.querySelector<HTMLSelectElement>('[aria-label="Project threading default"]')!;
     expect(defaultSelect.value).toBe('');
     await act(async () => setSelect(defaultSelect, 'manual'));
-    expect(onSetProjectThreading).toHaveBeenCalledWith({ mode: 'manual', wireSeparation: 'already-separated' });
+    expect(onSetProjectThreading).toHaveBeenCalledWith({ mode: 'manual', wireSeparation: 'manual-before-positioning' });
 
     await act(async () => {
       setSelect(
@@ -86,7 +86,7 @@ describe('EditorBetweenContoursPanel', () => {
     });
     expect(onSetOperationThreading).toHaveBeenCalledWith(
       second.id,
-      { mode: 'manual', wireSeparation: 'already-separated' }
+      { mode: 'manual', wireSeparation: 'manual-before-positioning' }
     );
     document.setup = { ...document.setup,
       threadingDefault: { mode: 'manual', wireSeparation: 'already-separated' }
@@ -126,7 +126,7 @@ describe('EditorBetweenContoursPanel', () => {
     expect(container.textContent).not.toContain('Operation threading mode');
   });
 
-  it('recommends separating rapid for the hole-to-exterior move across finished material', async () => {
+  it('keeps manual separation explicit for a hole-to-exterior move across finished material', async () => {
     const document = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 70.5 }
@@ -146,7 +146,29 @@ describe('EditorBetweenContoursPanel', () => {
       container.querySelector<HTMLSelectElement>('[aria-label="Operation threading mode"]')!, 'manual'
     ));
     expect(onSetOperationThreading).toHaveBeenCalledWith(second.id,
-      { mode: 'manual', wireSeparation: 'automatic-during-positioning' });
+      { mode: 'manual', wireSeparation: 'manual-before-positioning' });
+  });
+
+  it('reports the selected package separation mechanism without changing portable intent', async () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 25, y: 0 }, radius: 5 }
+    ]);
+    const second = document.plan.operations[1];
+    second.threadingTransition = { mode: 'manual', wireSeparation: 'automatic-during-positioning',
+      source: 'operation-override' };
+    const renderWith = async (name: string, separationMechanisms: string[]) => act(async () => root.render(
+      <EditorBetweenContoursPanel disabled={false} document={document} onSelectOperation={vi.fn()}
+        onSetOperationThreading={vi.fn()} onSetProjectThreading={vi.fn()}
+        selectedOperationId={second.id} selectedPackage={{ name, separationMechanisms }} />
+    ));
+    await renderWith('Before-only package', ['manual-before-positioning']);
+    expect(container.querySelector('[data-package-separation-support]')?.textContent)
+      .toContain('does not declare automatic-during-positioning');
+    await renderWith('Robofil candidate', ['automatic-during-positioning']);
+    expect(container.querySelector('[data-package-separation-support]')?.textContent)
+      .toContain('declares automatic-during-positioning');
+    expect(second.threadingTransition.wireSeparation).toBe('automatic-during-positioning');
   });
 
   it('shows source contact review for continuous travel without claiming physical clearance', async () => {

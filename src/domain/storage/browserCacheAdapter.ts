@@ -1,4 +1,4 @@
-import { gunzipSync, gzipSync, strFromU8, strToU8 } from 'fflate';
+import { gunzip, gunzipSync, gzip, gzipSync, strFromU8, strToU8 } from 'fflate';
 
 import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
@@ -42,7 +42,7 @@ export function createBrowserCacheAdapter(
       storage.removeItem(fileKey(namespace, path));
     },
     writeText: async (path: string, contents: string) => {
-      storage.setItem(fileKey(namespace, path), encodeStoredText(contents));
+      storage.setItem(fileKey(namespace, path), await encodeStoredText(contents));
     },
     clear: async () => {
       const keysToRemove: string[] = [];
@@ -58,15 +58,27 @@ export function createBrowserCacheAdapter(
   };
 }
 
-function encodeStoredText(contents: string): string {
+async function encodeStoredText(contents: string): Promise<string> {
   if (contents.length < MIN_COMPRESS_LENGTH) return contents;
-  const compressed = COMPRESSED_TEXT_PREFIX + btoa(strFromU8(gzipSync(strToU8(contents)), true));
+  const compressed = COMPRESSED_TEXT_PREFIX + btoa(strFromU8(await gzipAsync(strToU8(contents)), true));
   return compressed.length < contents.length ? compressed : contents;
 }
 
-function decodeStoredText(stored: string | null): string | null {
+async function decodeStoredText(stored: string | null): Promise<string | null> {
   if (stored === null || !stored.startsWith(COMPRESSED_TEXT_PREFIX)) return stored;
-  return strFromU8(gunzipSync(strToU8(atob(stored.slice(COMPRESSED_TEXT_PREFIX.length)), true)));
+  return strFromU8(await gunzipAsync(strToU8(atob(stored.slice(COMPRESSED_TEXT_PREFIX.length)), true)));
+}
+
+function gzipAsync(value: Uint8Array): Promise<Uint8Array> {
+  if (typeof Worker === 'undefined') return Promise.resolve(gzipSync(value));
+  return new Promise((resolve, reject) => gzip(value, (error, output) =>
+    error ? reject(error) : resolve(output)));
+}
+
+function gunzipAsync(value: Uint8Array): Promise<Uint8Array> {
+  if (typeof Worker === 'undefined') return Promise.resolve(gunzipSync(value));
+  return new Promise((resolve, reject) => gunzip(value, (error, output) =>
+    error ? reject(error) : resolve(output)));
 }
 
 function fileKey(namespace: string, path: string) {

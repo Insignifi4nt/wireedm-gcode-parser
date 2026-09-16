@@ -2,6 +2,7 @@ import { readOperationTransitions } from '@/domain/path-intel/operationTransitio
 import { analyzeContours } from '@/domain/path-intel/contours';
 import { deriveActiveMachiningOperations, deriveSourceMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { programStopValidationError } from '@/domain/path-intel/programStops';
+import { threadingIntentIsCompatible } from '@/domain/path-intel/threadingIntent';
 import { suggestCompensationIntent } from '@/domain/compensation/intent';
 import { buildChains } from '@/domain/path-intel/chains';
 import { clusterSegmentEndpoints } from '@/domain/path-intel/endpointClusters';
@@ -323,6 +324,7 @@ export function setProjectThreadingDefault(
     ...next.setup,
     threadingDefault: structuredClone(transition)
   };
+  if (transition.wireSeparation === 'automatic-during-positioning') next.schemaVersion = 2;
   return next;
 }
 
@@ -339,6 +341,7 @@ export function setPathOperationThreadingTransition(
       ...structuredClone(transition),
       source: 'operation-override'
     };
+    if (transition.wireSeparation === 'automatic-during-positioning') next.schemaVersion = 2;
   } else {
     delete operation.threadingTransition;
   }
@@ -365,6 +368,7 @@ export function setPathOperationProgramStops(
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
   if (!operation) return null;
   operation.programStops = structuredClone(stops);
+  if (stops.some((stop) => stop.placement.kind === 'after-positioning')) next.schemaVersion = 2;
   return next;
 }
 
@@ -1591,20 +1595,6 @@ function transitionsAreFinite(transitions: PathOperationTransitions) {
           Number.isFinite(transition.to.y)
         )
     );
-}
-
-function threadingIntentIsCompatible(
-  transition: Pick<OperationThreadingTransition, 'mode' | 'wireSeparation'>
-) {
-  return (
-    (transition.mode === 'continuous' && transition.wireSeparation === 'already-separated') ||
-    (transition.mode === 'manual' &&
-      (transition.wireSeparation === 'already-separated' ||
-        transition.wireSeparation === 'manual-before-positioning' ||
-        transition.wireSeparation === 'automatic-during-positioning')) ||
-    (transition.mode === 'automatic' &&
-      transition.wireSeparation === 'automatic-before-positioning')
-  );
 }
 
 function circularOperationLeadInSource(document: PathPlanningDocument, operation: PathOperation) {

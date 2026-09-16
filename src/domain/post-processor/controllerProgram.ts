@@ -13,6 +13,15 @@ export interface ControllerMotionTrace {
   readonly center?: Point2;
   readonly clockwise?: boolean;
   readonly fullCircle?: boolean;
+  /** Coordinate representability of this block, in millimeters. */
+  readonly rounding?: {
+    readonly startX: number;
+    readonly startY: number;
+    readonly endX: number;
+    readonly endY: number;
+    readonly centerX: number;
+    readonly centerY: number;
+  };
 }
 
 export interface ControllerProgramBlock {
@@ -105,7 +114,13 @@ export function auditControllerProgram(
       eventId: null
     });
   }
+  const motionsByEvent = new Map<string, ControllerMotionTrace[]>();
   for (const [index, block] of program.blocks.entries()) {
+    if (block.motion) {
+      const motions = motionsByEvent.get(block.eventId) ?? [];
+      motions.push(block.motion);
+      motionsByEvent.set(block.eventId, motions);
+    }
     if (
       block.lineIndex !== index ||
       block.id !== `block-${String(index + 1).padStart(6, '0')}` ||
@@ -132,10 +147,7 @@ export function auditControllerProgram(
 
   for (const event of plan.events) {
     if (event.kind !== 'motion' && event.kind !== 'position') continue;
-    const motions = program.blocks
-      .filter(({ eventId, motion }) => eventId === event.id && motion !== null)
-      .map(({ motion }) => motion)
-      .filter((motion) => motion !== null);
+    const motions = motionsByEvent.get(event.id) ?? [];
     if (motions.length === 0) {
       diagnostics.push({
         code: 'POST_AUDIT_MOTION_MISSING',
@@ -161,24 +173,29 @@ function sameMotionSequence(
   sourceToleranceMm: number,
   coordinateQuantumMm: number
 ) {
-  const pointToleranceMm = Math.max(sourceToleranceMm, coordinateQuantumMm / Math.SQRT2 + Number.EPSILON);
-  const lengthToleranceMm = Math.max(sourceToleranceMm, coordinateQuantumMm * Math.SQRT2 + Number.EPSILON);
+  const eventQuantum = motions.reduce((maximum, motion) => Math.max(
+    maximum, motion.rounding?.startX ?? 0, motion.rounding?.startY ?? 0,
+    motion.rounding?.endX ?? 0, motion.rounding?.endY ?? 0,
+    motion.rounding?.centerX ?? 0, motion.rounding?.centerY ?? 0
+  ), coordinateQuantumMm);
+  const pointToleranceMm = Math.max(sourceToleranceMm, eventQuantum / Math.SQRT2 + Number.EPSILON);
+  const lengthToleranceMm = Math.max(sourceToleranceMm, eventQuantum * Math.SQRT2 + Number.EPSILON);
   // Arc sweep compares rounded start, end, and center coordinates at both ends.
-  const arcSweepToleranceMm = Math.max(sourceToleranceMm, coordinateQuantumMm * 4 + Number.EPSILON);
+  const arcSweepToleranceMm = Math.max(sourceToleranceMm, eventQuantum * 4 + Number.EPSILON);
   const expectedStart = event.kind === 'position' ? event.from : event.start;
   const expectedEnd = event.kind === 'position' ? event.to : event.end;
   if (
-    !samePoint(motions[0].start, expectedStart, pointToleranceMm) ||
-    !samePoint(motions.at(-1)!.end, expectedEnd, pointToleranceMm) ||
+    !sameRoundedPoint(motions[0].start, expectedStart, sourceToleranceMm, motions[0].rounding?.startX, motions[0].rounding?.startY, pointToleranceMm) ||
+    !sameRoundedPoint(motions.at(-1)!.end, expectedEnd, sourceToleranceMm, motions.at(-1)!.rounding?.endX, motions.at(-1)!.rounding?.endY, pointToleranceMm) ||
     motions.some((motion, index) => (
-      index > 0 && !samePoint(motions[index - 1].end, motion.start, pointToleranceMm)
+      index > 0 && !samePoint(motions[index - 1].end, motion.start, sourceToleranceMm)
     ))
   ) return false;
   if (event.kind === 'position') {
-    return sameLinearPath(motions, 'position', expectedStart, expectedEnd, pointToleranceMm, lengthToleranceMm);
+    return sameLinearPath(motions, 'position', expectedStart, expectedEnd, pointToleranceMm, lengthToleranceMm, sourceToleranceMm);
   }
   if (event.motion === 'linear') {
-    return sameLinearPath(motions, event.role, expectedStart, expectedEnd, pointToleranceMm, lengthToleranceMm);
+    return sameLinearPath(motions, event.role, expectedStart, expectedEnd, pointToleranceMm, lengthToleranceMm, sourceToleranceMm);
   }
   if (!event.center || event.clockwise === undefined) return false;
   const radius = distance(event.center, event.start);
@@ -187,10 +204,14 @@ function sameMotionSequence(
     motion.motion !== 'circular' ||
     motion.role !== event.role ||
     !motion.center ||
-    !samePoint(motion.center, event.center!, pointToleranceMm) ||
+    !sameRoundedPoint(motion.center, event.center!, sourceToleranceMm, motion.rounding?.centerX, motion.rounding?.centerY, pointToleranceMm) ||
     motion.clockwise !== event.clockwise ||
-    Math.abs(distance(event.center!, motion.start) - radius) > lengthToleranceMm ||
-    Math.abs(distance(event.center!, motion.end) - radius) > lengthToleranceMm ||
+    Math.abs(distance(event.center!, motion.start) - radius) > roundedPointAllowance(
+      sourceToleranceMm, motion.rounding?.startX, motion.rounding?.startY, lengthToleranceMm
+    ) ||
+    Math.abs(distance(event.center!, motion.end) - radius) > roundedPointAllowance(
+      sourceToleranceMm, motion.rounding?.endX, motion.rounding?.endY, lengthToleranceMm
+    ) ||
     motion.fullCircle !== (motion.start.x === motion.end.x && motion.start.y === motion.end.y)
   ))) return false;
   const expectedSweep = event.fullCircle
@@ -201,7 +222,14 @@ function sameMotionSequence(
       ? Math.PI * 2
       : circularSweep(motion.start, motion.end, motion.center!, motion.clockwise!)
   ), 0);
-  return radius * Math.abs(expectedSweep - emittedSweep) <= arcSweepToleranceMm;
+  const sweepAllowanceMm = motions.every((motion) => motion.rounding)
+    ? sourceToleranceMm + motions.reduce((total, motion) => total + 2 * (
+      roundedPointAllowance(0, motion.rounding!.startX, motion.rounding!.startY, 0) +
+      roundedPointAllowance(0, motion.rounding!.endX, motion.rounding!.endY, 0) +
+      roundedPointAllowance(0, motion.rounding!.centerX, motion.rounding!.centerY, 0)
+    ), 0) + Number.EPSILON
+    : arcSweepToleranceMm;
+  return radius * Math.abs(expectedSweep - emittedSweep) <= sweepAllowanceMm;
 }
 
 function sameLinearPath(
@@ -210,35 +238,54 @@ function sameLinearPath(
   start: Point2,
   end: Point2,
   pointToleranceMm: number,
-  lengthToleranceMm: number
+  lengthToleranceMm: number,
+  sourceToleranceMm: number
 ) {
   if (motions.some((motion) => motion.motion !== 'linear' || motion.role !== role)) return false;
   const expectedLength = distance(start, end);
   const emittedLength = motions.reduce((total, motion) => total + distance(motion.start, motion.end), 0);
   if (expectedLength > 0 && emittedLength === 0) return false;
-  if (Math.abs(expectedLength - emittedLength) > lengthToleranceMm) return false;
+  const directionX = expectedLength === 0 ? 0 : (end.x - start.x) / expectedLength;
+  const directionY = expectedLength === 0 ? 0 : (end.y - start.y) / expectedLength;
+  const projectedAllowance = motions.every((motion) => motion.rounding)
+    ? sourceToleranceMm + motions.reduce((total, motion) => total + (
+      Math.abs(directionX) * (motion.rounding!.startX + motion.rounding!.endX) +
+      Math.abs(directionY) * (motion.rounding!.startY + motion.rounding!.endY)
+    ) / 2, 0) + Number.EPSILON
+    : lengthToleranceMm;
+  if (Math.abs(expectedLength - emittedLength) > projectedAllowance) return false;
   if (expectedLength === 0) {
     return motions.every((motion) => (
-      samePoint(motion.start, start, pointToleranceMm) && samePoint(motion.end, start, pointToleranceMm)
+      sameRoundedPoint(motion.start, start, sourceToleranceMm,
+        motion.rounding?.startX, motion.rounding?.startY, pointToleranceMm) &&
+      sameRoundedPoint(motion.end, start, sourceToleranceMm,
+        motion.rounding?.endX, motion.rounding?.endY, pointToleranceMm)
     ));
   }
-  const directionX = (end.x - start.x) / expectedLength;
-  const directionY = (end.y - start.y) / expectedLength;
   // Positional tolerance permits rounding, but must not authorize backwards travel.
   const roundoff = Number.EPSILON * Math.max(
     1, expectedLength, Math.abs(start.x), Math.abs(start.y), Math.abs(end.x), Math.abs(end.y)
   ) * 8;
   let previousProgress = -Infinity;
   for (const motion of motions) {
-    for (const point of [motion.start, motion.end]) {
+    for (const [point, quantumX, quantumY] of [
+      [motion.start, motion.rounding?.startX, motion.rounding?.startY],
+      [motion.end, motion.rounding?.endX, motion.rounding?.endY]
+    ] as const) {
       const x = point.x - start.x;
       const y = point.y - start.y;
       const progress = x * directionX + y * directionY;
       const deviation = Math.abs(x * directionY - y * directionX);
+      const deviationTolerance = quantumX === undefined || quantumY === undefined
+        ? pointToleranceMm
+        : sourceToleranceMm + (Math.abs(directionY) * quantumX + Math.abs(directionX) * quantumY) / 2 + Number.EPSILON;
+      const progressTolerance = quantumX === undefined || quantumY === undefined
+        ? pointToleranceMm
+        : sourceToleranceMm + (Math.abs(directionX) * quantumX + Math.abs(directionY) * quantumY) / 2 + Number.EPSILON;
       if (
         !Number.isFinite(progress) || !Number.isFinite(deviation) ||
-        deviation > pointToleranceMm ||
-        progress < -pointToleranceMm || progress > expectedLength + pointToleranceMm ||
+        deviation > deviationTolerance ||
+        progress < -progressTolerance || progress > expectedLength + progressTolerance ||
         progress < previousProgress - roundoff
       ) return false;
       previousProgress = progress;
@@ -264,6 +311,28 @@ function samePoint(first: Point2, second: Point2, toleranceMm: number) {
   return Number.isFinite(first.x) &&
     Number.isFinite(first.y) &&
     Math.hypot(first.x - second.x, first.y - second.y) <= toleranceMm;
+}
+
+function sameRoundedPoint(
+  first: Point2, second: Point2, sourceToleranceMm: number,
+  quantumX: number | undefined, quantumY: number | undefined, fallbackToleranceMm: number
+) {
+  if (quantumX === undefined || quantumY === undefined) return samePoint(first, second, fallbackToleranceMm);
+  if (![first.x, first.y, second.x, second.y, quantumX, quantumY].every(Number.isFinite)) return false;
+  const residualX = Math.max(0, Math.abs(first.x - second.x) - quantumX / 2);
+  const residualY = Math.max(0, Math.abs(first.y - second.y) - quantumY / 2);
+  return Math.hypot(residualX, residualY) <= sourceToleranceMm + Number.EPSILON;
+}
+
+function roundedPointAllowance(
+  sourceToleranceMm: number,
+  quantumX: number | undefined,
+  quantumY: number | undefined,
+  fallbackToleranceMm: number
+) {
+  return quantumX === undefined || quantumY === undefined
+    ? fallbackToleranceMm
+    : sourceToleranceMm + Math.hypot(quantumX, quantumY) / 2 + Number.EPSILON;
 }
 
 function distance(first: Point2, second: Point2) {

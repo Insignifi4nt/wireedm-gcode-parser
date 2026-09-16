@@ -38,6 +38,15 @@ export function preflightPostCapabilities(
       message: `${packageValue.manifest.name} cannot emit the execution plan's controller-compensation intent.`
     });
   }
+  if (packageValue.manifest.execution.compensationRequiredForEveryOperation &&
+    plan.events.some((event) => event.kind === 'operation-start' &&
+      !plan.events.some((candidate) => candidate.operationId === event.operationId &&
+        candidate.kind === 'compensation-start'))) {
+    diagnostics.push({
+      code: 'POST_CAPABILITY_COMPENSATION_UNSUPPORTED',
+      message: `${packageValue.manifest.name} requires controller compensation for every operation.`
+    });
+  }
   if (plan.requirements.operationCount > 1 && capabilities.operations !== 'multiple') {
     diagnostics.push({
       code: 'POST_CAPABILITY_OPERATION_COUNT_UNSUPPORTED',
@@ -57,10 +66,19 @@ export function preflightPostCapabilities(
       message: `${packageValue.manifest.name} does not support required ${method} threading.`
     });
   }
-  if (plan.requirements.wireSeparation && !capabilities.wireSeparation) {
+  const supportedSeparation = Array.isArray(capabilities.wireSeparation)
+    ? capabilities.wireSeparation : [];
+  const requiredSeparation = new Set(plan.events.flatMap((event) => {
+    if (event.kind === 'wire-separate') return [event.method === 'manual'
+      ? 'manual-before-positioning' : 'automatic-before-positioning'];
+    return event.kind === 'position' && event.separatesWire
+      ? ['automatic-during-positioning'] : [];
+  }));
+  for (const mechanism of requiredSeparation) {
+    if (supportedSeparation.includes(mechanism as typeof supportedSeparation[number])) continue;
     diagnostics.push({
       code: 'POST_CAPABILITY_WIRE_SEPARATION_UNSUPPORTED',
-      message: `${packageValue.manifest.name} cannot emit required wire separation.`
+      message: `${packageValue.manifest.name} does not declare ${mechanism} wire separation.`
     });
   }
   if (!capabilities.initialWirePosition) {

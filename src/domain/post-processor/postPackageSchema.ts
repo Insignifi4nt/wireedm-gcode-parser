@@ -195,7 +195,14 @@ const PostCapabilitiesSchema = Type.Object({
     Type.Literal('automatic'),
     Type.Literal('manual-and-automatic')
   ]),
-  wireSeparation: Type.Boolean(),
+  wireSeparation: Type.Union([
+    Type.Boolean(), // Parsed only for exact legacy package snapshots; it does not assert a mechanism.
+    Type.Array(Type.Union([
+      Type.Literal('manual-before-positioning'),
+      Type.Literal('automatic-before-positioning'),
+      Type.Literal('automatic-during-positioning')
+    ]), { uniqueItems: true })
+  ]),
   programStops: Type.Boolean(),
   taperAxes: Type.Boolean(),
   technologySelection: Type.Boolean(),
@@ -325,7 +332,7 @@ const FixtureSchema = Type.Object({
 
 export const WireEdmPostPackageSchema = Type.Object({
   format: Type.Literal('wire-edm-post'),
-  schemaVersion: Type.Literal(1),
+  schemaVersion: Type.Union([Type.Literal(1), Type.Literal(2)]),
   manifest: Type.Object({
     id: PostIdentifierSchema,
     name: LabelSchema,
@@ -360,7 +367,7 @@ export const WireEdmPostPackageSchema = Type.Object({
   fixtures: Type.Array(FixtureSchema, { minItems: 1, maxItems: 128 })
 }, {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  $id: 'https://wire-edm.local/schemas/wire-edm-post-package-v1.json',
+  $id: 'https://wire-edm.local/schemas/wire-edm-post-package-v2.json',
   $comment: 'Generated from src/domain/post-processor/postPackageSchema.ts by npm run post:docs:generate.',
   additionalProperties: false
 });

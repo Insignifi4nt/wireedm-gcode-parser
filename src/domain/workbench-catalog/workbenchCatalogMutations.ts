@@ -13,6 +13,7 @@ import {
 import { serializeWorkbenchProjectDocument, type WorkbenchProjectDocument } from './workbenchProject';
 import {
   readIndexedWorkbenchProjectStorage,
+  readWorkbenchProjectStorage,
   validateWorkbenchProjectPathOwnership,
   workbenchProjectDocumentPath,
   workbenchProjectRevisionPath,
@@ -439,21 +440,19 @@ export async function purgeArchivedWorkbenchProject(
     } };
     const entry = workbench.manifest.deletedProjects?.find(({ project }) => project.id === input.projectId);
     if (!entry) return projectNotFound(input.projectId);
+    const targetProjectRead = await readWorkbenchProjectStorage(workbench.adapter, entry.project.path);
+    if (!targetProjectRead.ok) return targetProjectRead;
+    const allowedMissing = targetProjectRead.project.id === input.projectId &&
+      entry.project.path === workbenchProjectDocumentPath(input.projectId)
+      ? new Set(workbenchProjectOwnedPaths(targetProjectRead.project)) : new Set<string>();
     const ownership = await validateWorkbenchProjectPathOwnership(workbench.adapter, [
       ...workbench.manifest.projects,
       ...(workbench.manifest.deletedProjects ?? []).map(({ project }) => project)
-    ]);
+    ], allowedMissing);
     if (!ownership.ok) return ownership;
     const project = ownership.projects.find(({ id }) => id === input.projectId);
     if (!project) return projectNotFound(input.projectId);
     const ownedPaths = workbenchProjectOwnedPaths(project);
-    for (const path of ownedPaths) {
-      try {
-        if (await workbench.adapter.readText(path) === null) {
-          return { ok: false, error: ownedFileDangling(input.projectId, path) };
-        }
-      } catch (error) { return projectAccessFailure('read', path, error); }
-    }
     const nextManifest = deepFreeze({
       ...workbench.manifest,
       updatedAt: deletedAt.toISOString(),

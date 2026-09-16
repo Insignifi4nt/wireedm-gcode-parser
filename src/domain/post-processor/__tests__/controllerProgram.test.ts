@@ -6,6 +6,26 @@ import { auditControllerProgram, type ControllerProgram } from '../controllerPro
 import { CANONICAL_POST_PLAN_FIXTURES } from '../custom-runtime/canonicalPostConformanceFixtures';
 
 describe('controller linear motion audit', () => {
+  it('audits ten thousand indexed motion events within a bounded host pass', () => {
+    const base = CANONICAL_POST_PLAN_FIXTURES['core.single-closed-contour.v1'];
+    const source = base.events.find((event) => event.kind === 'motion');
+    if (!source || source.kind !== 'motion') throw new Error('Expected motion fixture');
+    const events = Array.from({ length: 10_000 }, (_, index) => ({ ...source,
+      id: `motion-${index}`, ordinal: index + 1, motion: 'linear' as const,
+      start: { x: 0, y: 0 }, end: { x: 1, y: 0 } }));
+    const blocks = events.map((event, index) => ({
+      id: `block-${String(index + 1).padStart(6, '0')}`, lineIndex: index,
+      text: 'G1 X1 Y0', eventId: event.id, commandIds: ['motion.linear'],
+      motion: { motion: 'linear' as const, role: event.role, start: event.start, end: event.end }
+    }));
+    const program: ControllerProgram = { text: blocks.map(({ text }) => text).join('\n'),
+      lines: blocks.map(({ text }) => text), blocks,
+      eventDispositions: blocks.map((block) => ({ kind: 'emitted' as const,
+        eventId: block.eventId, blockIds: [block.id] })) };
+    const started = performance.now();
+    expect(auditControllerProgram({ ...base, events }, program, new Set(['motion.linear']))).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(3000);
+  });
   it.each([
     {
       name: 'a perpendicular deviation larger than the positional tolerance',
