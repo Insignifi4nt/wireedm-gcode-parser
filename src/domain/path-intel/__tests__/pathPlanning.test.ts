@@ -9,6 +9,11 @@ import {
 } from '../segments';
 
 describe('controller-neutral path planning', () => {
+  it('starts imported geometry as a finished contour', () => {
+    const document = createPathPlanningDocumentFromDxfEntities([line(0, 0, 10, 0)]);
+    expect(document.geometryBasis).toBe('finished-contour');
+  });
+
   it('turns shuffled rectangle lines into one closed operation', () => {
     const document = createPathPlanningDocumentFromDxfEntities([
       line(10, 5, 0, 5),

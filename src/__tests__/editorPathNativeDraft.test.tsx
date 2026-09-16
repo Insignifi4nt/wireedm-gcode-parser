@@ -368,11 +368,11 @@ describe('EditorPage UPID draft boundary', () => {
         commandId: 'geometry.setup',
         mutate: async () => changeSelect(
           container.querySelector('select[aria-label="Geometry basis"]'),
-          'finished-contour'
+          'wire-centre'
         ),
         assertPreserved: () => expect(
           (container.querySelector('select[aria-label="Geometry basis"]') as HTMLSelectElement).value
-        ).toBe('finished-contour')
+        ).toBe('wire-centre')
       },
       {
         commandId: 'geometry.transform',

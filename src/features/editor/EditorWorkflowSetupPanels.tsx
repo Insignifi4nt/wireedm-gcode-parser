@@ -45,8 +45,8 @@ export function EditorGeometrySetupPanel({
           }}
           value={document.geometryBasis}
         >
-          <option value="wire-centre">Wire centre</option>
           <option value="finished-contour">Finished contour</option>
+          <option value="wire-centre">Wire centre</option>
         </select>
       </label>
       <p className="text-muted-foreground">

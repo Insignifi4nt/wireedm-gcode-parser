@@ -52,7 +52,7 @@ export function createPathPlanningDocumentFromDxfEntities(
 
   return {
     schemaVersion: 1,
-    geometryBasis: 'wire-centre',
+    geometryBasis: 'finished-contour',
     source: {
       kind: 'dxf-entities',
       entityCount: entities.length,
