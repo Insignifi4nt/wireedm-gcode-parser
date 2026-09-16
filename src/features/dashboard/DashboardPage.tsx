@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { ImportedDxfProject } from '@/domain/dxf/importDxfProject';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
-import { DashboardHeader } from './DashboardHeader';
 import { DeletedProjectsPanel } from './DeletedProjectsPanel';
 import { DxfImportConfirmationDialog } from './DxfImportConfirmationDialog';
 import { LatestDxfImportPanel } from './LatestDxfImportPanel';
@@ -96,16 +95,11 @@ export function DashboardPage({
   return (
     <div
       ref={pageRef}
-      className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]"
+      className="h-full min-h-0"
       data-workbench-page
     >
-      <DashboardHeader
-        connectedWorkbench={connectedWorkbench}
-        workbenchStatus={workbenchStatus}
-      />
-
       <section
-        className="work-region-scrollbar grid min-h-0 content-start gap-3 overflow-auto p-3 min-[1180px]:grid-cols-[minmax(0,1fr)_332px] min-[1180px]:items-start"
+        className="work-region-scrollbar grid h-full min-h-0 content-start gap-3 overflow-auto p-3 min-[1180px]:grid-cols-[minmax(0,1fr)_332px] min-[1180px]:items-start"
         data-workbench-scroll-region
       >
         <ProjectListPanel
