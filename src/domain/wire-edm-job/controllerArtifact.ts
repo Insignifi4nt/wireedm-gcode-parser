@@ -10,6 +10,7 @@ import { compileWireEdmExecutionPlan, type ExecutionPlanDiagnostic } from '@/dom
 import { canonicalJson } from '@/domain/post-processor/canonicalJson';
 
 import {
+  WIRE_EDM_ENGINE_VERSION,
   isValidatedSavedWireEdmJobRevision,
   type SavedRevisionHashes,
   type SavedWireEdmJobRevision
@@ -20,7 +21,8 @@ export const CONTROLLER_PROGRAM_ARTIFACT_SCHEMA_VERSION = 1 as const;
 export interface ControllerProgramArtifact {
   readonly format: 'wire-edm-controller-artifact';
   readonly schemaVersion: typeof CONTROLLER_PROGRAM_ARTIFACT_SCHEMA_VERSION;
-  readonly engineVersion: SavedWireEdmJobRevision['engineVersion'];
+  readonly engineVersion: typeof WIRE_EDM_ENGINE_VERSION;
+  readonly sourceRevisionEngineVersion: SavedWireEdmJobRevision['engineVersion'];
   readonly revisionId: string;
   readonly revisionHashes: SavedRevisionHashes;
   readonly fileName: string;
@@ -78,7 +80,7 @@ export async function generateControllerArtifact(
       message: 'This legacy revision is readable, but its manufacturing intent needs current review before generation.',
       diagnostics: current.diagnostics
     });
-    if (canonicalJson(current.plan) !== canonicalJson(revision.executionPlan)) return artifactFailure({
+    if (canonicalJson(JSON.parse(JSON.stringify(current.plan))) !== canonicalJson(revision.executionPlan)) return artifactFailure({
       code: 'CONTROLLER_ARTIFACT_EXECUTION_PLAN_INVALID',
       message: 'This legacy execution plan differs from the current compiler and requires a new saved revision.',
       diagnostics: []
@@ -117,7 +119,8 @@ export async function generateControllerArtifact(
     artifact: deepFreeze({
       format: 'wire-edm-controller-artifact',
       schemaVersion: CONTROLLER_PROGRAM_ARTIFACT_SCHEMA_VERSION,
-      engineVersion: revision.engineVersion,
+      engineVersion: WIRE_EDM_ENGINE_VERSION,
+      sourceRevisionEngineVersion: revision.engineVersion,
       revisionId: revision.revisionId,
       revisionHashes: structuredClone(revision.hashes),
       fileName: `${revision.project.id}.${extension}`,

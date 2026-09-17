@@ -37,7 +37,10 @@ const UpidContentSchema = Type.Object({
 
 const ExternalGcodeContentSchema = Type.Object({
   kind: Type.Literal('external-gcode'),
-  activeFilePath: Type.String({ minLength: 1, maxLength: 1_024 })
+  activeFilePath: Type.String({ minLength: 1, maxLength: 1_024 }),
+  interpreterProfile: Type.Optional(Type.Union([
+    Type.Literal('neutral'), Type.Literal('legacy-robofil')
+  ]))
 }, strictObject);
 
 const ProjectCommon = {

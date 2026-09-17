@@ -14,7 +14,8 @@ export function createEditorDraftState(program: LoadedEditorProgram | null): Edi
 
   return {
     model: 'gcode-text',
-    text: program?.text ?? ''
+    text: program?.text ?? '',
+    interpreterProfile: program?.model === 'gcode-text' ? program.interpreterProfile : 'neutral'
   };
 }
 
@@ -28,7 +29,8 @@ export function cloneEditorDraftState(draft: EditorDraftState): EditorDraftState
 
   return {
     model: 'gcode-text',
-    text: draft.text
+    text: draft.text,
+    interpreterProfile: draft.interpreterProfile ?? 'neutral'
   };
 }
 

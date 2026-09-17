@@ -1,6 +1,6 @@
 import { isMotionCommand, organizeGCodeStructure, type GCodeContourGroup, type GCodeStructure } from './gcodeStructure';
 import { canonicalizeMotionCodes } from './isoNormalizer';
-import { createGCodeInterpreterState, interpretGCodeBlock } from './gcodeBlockInterpreter';
+import { createGCodeInterpreterState, interpretGCodeBlock, type GCodeInterpreterState } from './gcodeBlockInterpreter';
 
 export interface MoveBodyGroupResult {
   text: string;
@@ -120,11 +120,11 @@ export function moveSelectedLines(
 export function setStartAtLine(
   text: string,
   selectedLineNumber: number,
-  options: { ensureClosure?: boolean } = {}
+  options: { ensureClosure?: boolean; interpreterProfile?: GCodeInterpreterState['profile'] } = {}
 ): SetStartAtLineResult | null {
   const ensureClosure = options.ensureClosure ?? true;
   const lines = splitProgramLines(text);
-  const interpreter = createGCodeInterpreterState();
+  const interpreter = createGCodeInterpreterState(options.interpreterProfile ?? 'neutral');
   const motionUnits = new Set<typeof interpreter.units>();
   for (const [index, line] of lines.entries()) {
     const block = interpretGCodeBlock(interpreter, line, index + 1);
@@ -135,7 +135,7 @@ export function setStartAtLine(
     motionUnits.add(interpreter.units);
   }
   if (motionUnits.size > 1) return null;
-  const structure = organizeGCodeStructure(lines);
+  const structure = organizeGCodeStructure(lines, options.interpreterProfile ?? 'neutral');
   if (motionUnits.has('in')) {
     for (const group of structure.body.contours ?? []) {
       if (group.startCoord) group.startCoord = { x: group.startCoord.x / 25.4, y: group.startCoord.y / 25.4 };

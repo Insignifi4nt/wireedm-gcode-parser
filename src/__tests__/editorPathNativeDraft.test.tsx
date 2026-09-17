@@ -68,6 +68,24 @@ describe('EditorPage UPID draft boundary', () => {
     vi.restoreAllMocks();
   });
 
+  it('marks an upgraded legacy editable document unsaved until its v2 draft is saved', async () => {
+    const oldDocument = pathDocumentFromRectangle();
+    oldDocument.plan.operations[0].programStops = [{ id: 'legacy-stop', enabled: true,
+      reason: 'manual', placement: { kind: 'after-positioning' } }];
+    const project = projectWithUpid(oldDocument);
+    const editableDocument = { ...structuredClone(oldDocument), schemaVersion: 2 as const };
+    const onSaveEditorDraft = vi.fn();
+    await act(async () => root.render(<EditorPageHarness project={project}
+      editableDocument={editableDocument} onSaveEditorDraft={onSaveEditorDraft} />));
+    await flushAsync();
+    const save = container.querySelector<HTMLButtonElement>('button[aria-label="Save active document"]');
+    expect(save?.disabled).toBe(false);
+    await act(async () => save?.click());
+    expect(onSaveEditorDraft).toHaveBeenCalledWith({ model: 'upid-document',
+      pathDocument: expect.objectContaining({ schemaVersion: 2 }) });
+    expect(project.content.document.schemaVersion).toBe(1);
+  });
+
   it('explains a refused topology edit and preserves its coordinates and source geometry', async () => {
     const source = pathDocumentFromRectangle();
     const document = reversePathOperation(source, source.plan.operations[0].id);
@@ -3586,6 +3604,7 @@ describe('EditorPage UPID draft boundary', () => {
 });
 
 function EditorPageHarness({
+  editableDocument,
   filePath = 'imports/rectangle.dxf',
   initialWorkflowId,
   interactionLocked = false,
@@ -3596,6 +3615,7 @@ function EditorPageHarness({
   project,
   saveStatus = 'idle'
 }: {
+  editableDocument?: PathPlanningDocument;
   filePath?: string;
   initialWorkflowId?: string;
   interactionLocked?: boolean;
@@ -3688,7 +3708,7 @@ function EditorPageHarness({
           filePath,
           model: 'upid-document',
           parseResult: null,
-          pathDocument: project.content.document,
+          pathDocument: editableDocument ?? project.content.document,
           project,
           text: ''
         }}

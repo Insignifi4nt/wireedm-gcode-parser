@@ -8,6 +8,7 @@ import type { WorkbenchProjectDocument } from '@/domain/workbench-catalog/workbe
 import { workbenchProjectDocumentPath } from '@/domain/workbench-catalog/workbenchProjectStorage';
 
 import { parseGCodeProgram } from './gcodeParser';
+import type { GCodeInterpreterState } from './gcodeBlockInterpreter';
 import type { GCodeParseResult } from './types';
 
 export type LoadedEditorProgram = LoadedGCodeEditorProgram | LoadedUpidEditorProgram;
@@ -19,6 +20,7 @@ interface LoadedEditorProgramBase {
 
 export interface LoadedGCodeEditorProgram extends LoadedEditorProgramBase {
   readonly model: 'gcode-text';
+  readonly interpreterProfile: GCodeInterpreterState['profile'];
   readonly parseResult: GCodeParseResult;
   readonly text: string;
 }
@@ -60,7 +62,7 @@ export async function loadEditorProgram(
       editorProgram: {
         filePath: workbenchProjectDocumentPath(project.id),
         model: 'upid-document',
-        pathDocument: project.content.document as PathPlanningDocument,
+        pathDocument: editablePathDocument(project.content.document as PathPlanningDocument),
         parseResult: null,
         text: '',
         project
@@ -97,7 +99,8 @@ export async function loadEditorProgram(
     editorProgram: {
       filePath: path,
       model: 'gcode-text',
-      parseResult: parseGCodeProgram(text),
+      interpreterProfile: project.content.interpreterProfile ?? 'neutral',
+      parseResult: parseGCodeProgram(text, project.content.interpreterProfile ?? 'neutral'),
       text,
       project
     }
@@ -106,4 +109,13 @@ export async function loadEditorProgram(
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function editablePathDocument(document: PathPlanningDocument): PathPlanningDocument {
+  if (document.schemaVersion !== 1) return document;
+  const usesV2Intent = document.setup?.threadingDefault?.wireSeparation === 'automatic-during-positioning' ||
+    document.plan.operations.some((operation) =>
+      operation.threadingTransition?.wireSeparation === 'automatic-during-positioning' ||
+      operation.programStops?.some((stop) => stop.placement.kind === 'after-positioning'));
+  return usesV2Intent ? { ...structuredClone(document), schemaVersion: 2 } : document;
 }

@@ -25,7 +25,9 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
   const [revisions, setRevisions] = useState<readonly SavedRevisionSummary[]>([]);
   const [revisionCount, setRevisionCount] = useState(0);
   const [page, setPage] = useState(0);
+  const [reload, setReload] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadedPage, setLoadedPage] = useState<{ projectId: string; page: number; reload: number } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
@@ -33,11 +35,23 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const busy = busyId !== null || deleting;
+  const pageReady = !loading && loadedPage?.projectId === projectId &&
+    loadedPage.page === page && loadedPage.reload === reload;
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   useModalFocus({ open: true, overlayRef, dialogRef, initialFocusRef: closeRef,
     onClose, dismissible: !busy && !confirmDelete });
+
+  useEffect(() => {
+    setPage(0);
+    setRevisions([]);
+    setLoadedPage(null);
+    setRevisionCount(0);
+    setSelectedIds(new Set());
+    setSelecting(false);
+    setConfirmDelete(false);
+  }, [projectId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,22 +61,37 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
       try {
         const project = await readStoredWorkbenchProject(workbench, projectId);
         if (!project.ok) throw new Error(project.error.message);
+        const count = project.project.savedRevisionIds.length;
+        const lastPage = Math.max(0, Math.ceil(count / 20) - 1);
+        if (page > lastPage) {
+          if (!cancelled) {
+            setRevisionCount(count);
+            setRevisions([]);
+            setLoadedPage(null);
+            setPage(lastPage);
+          }
+          return;
+        }
         const loaded = await readSavedRevisionSummaryPage(
           workbench.adapter, projectId, project.project.savedRevisionIds, page
         );
         if (!cancelled) {
-          setRevisionCount(project.project.savedRevisionIds.length);
+          setRevisionCount(count);
           setRevisions(loaded);
+          setLoadedPage({ projectId, page, reload });
         }
       } catch (cause) {
-        if (!cancelled) setError(messageOf(cause));
+        if (!cancelled) {
+          setLoadedPage(null);
+          setError(messageOf(cause));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     void load();
     return () => { cancelled = true; };
-  }, [workbench, projectId, page]);
+  }, [workbench, projectId, page, reload]);
 
   async function downloadController(revisionId: string) {
     setBusyId(revisionId);
@@ -121,8 +150,9 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
     setError(null);
     try {
       await onDeleteRevisions(projectId, revisionIds);
-      setRevisions((current) => current.filter(({ revisionId }) => !selectedIds.has(revisionId)));
-      setRevisionCount((current) => current - revisionIds.length);
+      setLoading(true);
+      setRevisions([]);
+      setReload((current) => current + 1);
       cancelSelection();
     } catch (cause) {
       setError(messageOf(cause));
@@ -146,7 +176,7 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
             onClick={onClose} size="icon" type="button" variant="ghost"><X /></Button>
         </div>
         <div className="work-region-scrollbar overflow-auto p-3 text-[11px]">
-          {!loading && revisions.length > 0 && (
+          {pageReady && revisions.length > 0 && (
             <div className="mb-3 flex flex-wrap items-center gap-2">
               {!selecting ? (
                 <Button size="sm" variant="outline" type="button" disabled={busy}
@@ -154,7 +184,7 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
               ) : (
                 <>
                   <label className="flex items-center gap-1.5">
-                    <input aria-label="Select all revisions" type="checkbox" disabled={busy}
+                    <input aria-label="Select all revisions on this page" type="checkbox" disabled={busy || loading}
                       checked={revisions.length > 0 && revisions.every(({ revisionId }) => selectedIds.has(revisionId))}
                       onChange={(event) => {
                         const checked = event.currentTarget.checked;
@@ -168,7 +198,7 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
                         });
                         setConfirmDelete(false);
                       }} />
-                    Select all
+                    Select all on this page
                   </label>
                   <span className="text-muted-foreground">{selectedIds.size} selected</span>
                   <Button size="sm" variant="danger" type="button" disabled={busy || selectedIds.size === 0}
@@ -190,12 +220,12 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
               </div>
             </div>
           )}
-          {loading ? <p role="status">Loading revisions…</p> : revisions.length === 0 && !error
+          {!pageReady && !error ? <p role="status">Loading revisions…</p> : pageReady && revisions.length === 0 && revisionCount === 0 && !error
             ? <p>No saved revisions yet. Generate a controller file in the editor to create one.</p>
             : null}
           {error && <p role="alert" className="mb-3 text-destructive">{error}</p>}
           <ol className="grid gap-2">
-            {revisions.map((revision) => (
+            {pageReady && revisions.map((revision) => (
               <li key={revision.revisionId} className="grid gap-2 border border-border p-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                 <div className="flex min-w-0 items-center gap-2">
                   {selecting && <input aria-label={`Select revision ${revision.revisionId}`} type="checkbox"
@@ -223,12 +253,12 @@ export function ProjectRevisionsDialog({ workbench, projectId, projectName, onCl
               </li>
             ))}
           </ol>
-          {revisionCount > 20 && <div className="mt-3 flex items-center gap-2">
+          {pageReady && revisionCount > 20 && <div className="mt-3 flex items-center gap-2">
             <Button size="sm" variant="outline" type="button" disabled={busy || page === 0}
-              onClick={() => setPage((current) => current - 1)}>Newer</Button>
+              onClick={() => { setLoading(true); setPage((current) => current - 1); }}>Newer</Button>
             <span className="text-muted-foreground">Page {page + 1} of {Math.ceil(revisionCount / 20)}</span>
             <Button size="sm" variant="outline" type="button" disabled={busy || (page + 1) * 20 >= revisionCount}
-              onClick={() => setPage((current) => current + 1)}>Older</Button>
+              onClick={() => { setLoading(true); setPage((current) => current + 1); }}>Older</Button>
           </div>}
         </div>
       </div>

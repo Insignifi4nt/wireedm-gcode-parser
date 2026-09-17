@@ -14,12 +14,14 @@ import {
 import { workbenchProjectDocumentPath } from '@/domain/workbench-catalog/workbenchProjectStorage';
 
 import { parseGCodeProgram } from './gcodeParser';
+import type { GCodeInterpreterState } from './gcodeBlockInterpreter';
 import type { LoadedEditorProgram } from './loadEditorProgram';
 
 export type EditorSaveDraft =
   | {
       readonly model: 'gcode-text';
       readonly text: string;
+      readonly interpreterProfile?: GCodeInterpreterState['profile'];
     }
   | {
       readonly model: 'upid-document';
@@ -81,6 +83,10 @@ export async function saveEditorProgram(
     };
   }
   const updatedAt = now.toISOString();
+  const interpreterProfile = input.draft.model === 'gcode-text'
+    ? input.draft.interpreterProfile ??
+      (read.project.content.kind === 'external-gcode' ? read.project.content.interpreterProfile : undefined) ?? 'neutral'
+    : 'neutral';
   const nextValue = input.draft.model === 'upid-document'
     ? {
         ...read.project,
@@ -90,7 +96,13 @@ export async function saveEditorProgram(
           document: jsonSnapshot(input.draft.pathDocument)
         }
       }
-    : { ...read.project, updatedAt };
+    : {
+        ...read.project,
+        updatedAt,
+        content: read.project.content.kind === 'external-gcode'
+          ? { ...read.project.content, interpreterProfile }
+          : read.project.content
+      };
   const parsed = parseWorkbenchProjectDocument(JSON.stringify(nextValue));
   if (!parsed.ok) return parsed;
   const ownedFileChanges = input.draft.model === 'gcode-text' &&
@@ -122,7 +134,8 @@ export async function saveEditorProgram(
     : {
         filePath: ownedFileChanges[0].path,
         model: 'gcode-text',
-        parseResult: parseGCodeProgram(input.draft.text),
+        interpreterProfile,
+        parseResult: parseGCodeProgram(input.draft.text, interpreterProfile),
         text: input.draft.text,
         project: replaced.project
       };

@@ -142,6 +142,7 @@ export async function importExternalProgram(
     editorProgram: {
       filePath: editablePath,
       model: 'gcode-text',
+      interpreterProfile: 'neutral',
       text: editorText,
       parseResult: parseGCodeProgram(editorText),
       project: stored.project

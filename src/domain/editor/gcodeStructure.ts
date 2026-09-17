@@ -2,6 +2,7 @@ import {
   createGCodeInterpreterState,
   interpretGCodeBlock,
   type GCodeBlockResult,
+  type GCodeInterpreterState,
   type GCodeInterpretedMotion
 } from './gcodeBlockInterpreter';
 
@@ -83,13 +84,15 @@ export function isFooterCommand(raw: string) {
   return isFooterBlock(interpretStandalone(raw));
 }
 
-export function organizeGCodeStructure(lines: string[]): GCodeStructure {
+export function organizeGCodeStructure(
+  lines: string[], profile: GCodeInterpreterState['profile'] = 'neutral'
+): GCodeStructure {
   const sections: GCodeStructure = {
     header: { lines: [], startLineNum: 1 },
     body: { lines: [], startLineNum: 1 },
     footer: { lines: [], startLineNum: 1 }
   };
-  const interpreterState = createGCodeInterpreterState();
+  const interpreterState = createGCodeInterpreterState(profile);
   const blocksByLine = new Map<number, GCodeBlockResult>();
   let inBody = false;
   let foundFirstMotion = false;
@@ -143,8 +146,10 @@ export function organizeGCodeStructure(lines: string[]): GCodeStructure {
   return sections;
 }
 
-export function structureContours(bodyLines: GCodeStructuredLine[]): GCodeContourGroup[] {
-  const interpreterState = createGCodeInterpreterState();
+export function structureContours(
+  bodyLines: GCodeStructuredLine[], profile: GCodeInterpreterState['profile'] = 'neutral'
+): GCodeContourGroup[] {
+  const interpreterState = createGCodeInterpreterState(profile);
   const blocks = bodyLines.map((line) =>
     interpretGCodeBlock(interpreterState, line.text, line.num)
   );

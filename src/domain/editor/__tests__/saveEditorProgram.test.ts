@@ -5,6 +5,9 @@ import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageA
 import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import { importExternalProgram } from '../importExternalProgram';
+import { loadEditorProgram } from '../loadEditorProgram';
+import { organizeGCodeStructure } from '../gcodeStructure';
+import { buildEditorPreviewGeometry } from '../previewGeometry';
 import { saveEditorProgram } from '../saveEditorProgram';
 
 describe('saveEditorProgram', () => {
@@ -80,6 +83,45 @@ describe('saveEditorProgram', () => {
     })).toMatchObject({
       ok: false,
       error: { code: 'EDITOR_SAVE_MODEL_MISMATCH' }
+    });
+  });
+
+  it('persists an explicit legacy Robofil source interpreter through save and reopen', async () => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const text = 'G21 G90\nG0 X10 Y0\nG60\nG3 X20 Y10 I10 J10';
+    const imported = await importExternalProgram(initialized.workbench, {
+      fileName: 'old-robofil.iso', text
+    });
+    if (!imported.ok) throw new Error(imported.error.message);
+    expect(imported.editorProgram.interpreterProfile).toBe('neutral');
+    expect(imported.editorProgram.parseResult.path.at(-1)).toMatchObject({ centerX: 20, centerY: 10 });
+
+    const saved = await saveEditorProgram(imported.workbench, { projectId: imported.project.id,
+      draft: { model: 'gcode-text', text: imported.editorProgram.text, interpreterProfile: 'legacy-robofil' }
+    });
+    if (!saved.ok) throw new Error(saved.error.message);
+    expect(saved.project.content).toMatchObject({ interpreterProfile: 'legacy-robofil' });
+    const reopened = await loadEditorProgram(saved.workbench, saved.project.id);
+    if (!reopened.ok || reopened.editorProgram.model !== 'gcode-text') throw new Error('Expected machine program.');
+    expect(reopened.editorProgram.interpreterProfile).toBe('legacy-robofil');
+    expect(reopened.editorProgram.parseResult.path.at(-1)).toMatchObject({
+      type: 'arc', centerX: 10, centerY: 10
+    });
+    const preview = buildEditorPreviewGeometry(reopened.editorProgram.parseResult);
+    expect(preview.paths.at(-1)).toMatchObject({ type: 'arc', center: { x: 10, y: 10 } });
+    const structure = organizeGCodeStructure(reopened.editorProgram.text.split('\n'),
+      reopened.editorProgram.interpreterProfile);
+    expect(structure.body.contours?.some((contour) =>
+      contour.length !== undefined && contour.length > 15 && contour.length < 16)).toBe(true);
+    const edited = await saveEditorProgram(saved.workbench, { projectId: saved.project.id,
+      draft: { model: 'gcode-text', text: `${reopened.editorProgram.text}\nM02` }
+    });
+    expect(edited).toMatchObject({ ok: true,
+      editorProgram: { interpreterProfile: 'legacy-robofil', parseResult: { path: [
+        expect.anything(), expect.objectContaining({ centerX: 10, centerY: 10 })
+      ] } }
     });
   });
 });

@@ -415,6 +415,8 @@ export function EditorPage({
   const [redoStack, setRedoStack] = useState<EditorDraftSnapshot[]>([]);
   const [undoStack, setUndoStack] = useState<EditorDraftSnapshot[]>([]);
   const draftText = editorDraftText(draftState);
+  const interpreterProfile = draftState.model === 'gcode-text'
+    ? draftState.interpreterProfile ?? 'neutral' : 'neutral';
   const pathDocumentDraft = editorDraftPathDocument(draftState);
   const measurementSegments = useMemo(() => pathDocumentDraft?.segments ?? [], [pathDocumentDraft]);
   const measurement = useEditorMeasurement(measurementSegments);
@@ -422,7 +424,10 @@ export function EditorPage({
     () => pathDocumentDraft ? buildUpidEditorTree(pathDocumentDraft) : null,
     [pathDocumentDraft]
   );
-  const savedDraftSignature = useMemo(() => editorDraftSignature(createEditorDraftState(program)), [program]);
+  const savedDraftSignature = useMemo(() => editorDraftSignature(program?.model === 'upid-document' &&
+    program.project.content.kind === 'upid-document'
+      ? { model: 'upid-document', pathDocument: program.project.content.document as PathPlanningDocument }
+      : createEditorDraftState(program)), [program]);
   const programIdentity = program ? `${program.model}:${program.filePath}` : 'empty';
   const lastProgramIdentityRef = useRef(programIdentity);
   const draftSignature = useMemo(() => editorDraftSignature(draftState), [draftState]);
@@ -437,11 +442,12 @@ export function EditorPage({
         filePath: program.filePath,
         model: 'gcode-text',
         text: draftText,
-        parseResult: parseGCodeProgram(draftText),
+        interpreterProfile,
+        parseResult: parseGCodeProgram(draftText, interpreterProfile),
         project: program.project
       };
     },
-    [draftText, pathDocumentDraft, program]
+    [draftText, interpreterProfile, pathDocumentDraft, program]
   );
   const draftParseResult = draftProgram?.parseResult ?? null;
   const pathCount = draftParseResult?.path.length ?? 0;
@@ -613,8 +619,8 @@ export function EditorPage({
     constructionHoveredPathElement ?? startHoveredPathElement ?? hoveredPathElement;
   const editorInteractionHint = readEditorInteractionHint();
   const structure = useMemo(
-    () => (draftProgram ? organizeGCodeStructure(draftProgram.text.split(/\r?\n/)) : null),
-    [draftProgram]
+    () => (draftProgram ? organizeGCodeStructure(draftProgram.text.split(/\r?\n/), interpreterProfile) : null),
+    [draftProgram, interpreterProfile]
   );
   const lineRows = useMemo(() => (structure ? flattenStructureLines(structure) : []), [structure]);
   const bodyGroups = structure?.body.contours ?? [];
@@ -801,6 +807,7 @@ export function EditorPage({
         interactionLocked={isEditorMutationLocked}
         isImporting={isImporting}
         isSaving={isSaving}
+        interpreterProfile={documentContext === 'machine-program' ? interpreterProfile : undefined}
         onBackToDashboard={handleBackToDashboard}
         onExport={
           documentContext === 'machine-program'
@@ -808,6 +815,11 @@ export function EditorPage({
               : null
         }
         onImportProgramFile={handleImportProgramFile}
+        onInterpreterProfileChange={(profile) => {
+          if (draftState.model !== 'gcode-text') return;
+          applyEditorDraftState({ ...draftState, interpreterProfile: profile });
+          clearTransientLineState();
+        }}
         onOpenGuide={() => setGuideOpen(true)}
         onRedo={handleRedoDraft}
         onSave={handleSaveClick}
@@ -1180,7 +1192,8 @@ export function EditorPage({
           }
         : {
             model: 'gcode-text',
-            text: draftText
+            text: draftText,
+            interpreterProfile
           }
     );
   }
@@ -1401,7 +1414,7 @@ export function EditorPage({
       return;
     }
 
-    const result = setStartAtLine(draftText, selectedLines[0]);
+    const result = setStartAtLine(draftText, selectedLines[0], { interpreterProfile });
     if (!result) {
       onStatusMessage?.(
         'Choose a body motion line. Set start requires absolute XY, incremental arc centres and one coordinate unit system.',
@@ -2087,7 +2100,8 @@ export function EditorPage({
     if (!program || pathDocumentDraft || measurementPoints.length === 0 || isEditorMutationLocked) return;
 
     const result = insertMeasurementPointsIntoText(draftText, measurementPoints, {
-      insertAfterLine: selectedLines.length > 0 ? Math.min(...selectedLines) : undefined
+      insertAfterLine: selectedLines.length > 0 ? Math.min(...selectedLines) : undefined,
+      interpreterProfile
     });
     replaceGCodeDraftText(result.text);
     setHoveredLine(null);
@@ -2110,7 +2124,8 @@ export function EditorPage({
     if (draftState.model !== 'gcode-text' || nextText === draftState.text) return;
     applyEditorDraftState({
       model: 'gcode-text',
-      text: nextText
+      text: nextText,
+      interpreterProfile
     });
   }
 
@@ -2221,7 +2236,8 @@ export function EditorPage({
     setRedoStack([]);
     setDraftState({
       model: 'gcode-text',
-      text: nextText
+      text: nextText,
+      interpreterProfile
     });
     setSelectedPathOperationId(null);
     setSelectedPathElement(null);

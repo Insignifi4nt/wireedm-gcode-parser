@@ -3,9 +3,13 @@ import { describe, expect, it } from 'vitest';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import { importDxfProject } from '@/domain/dxf/importDxfProject';
+import { setManualCompensationIntent } from '@/domain/compensation/intent';
+import { buildUpidEditorTree } from '@/domain/upid/upidEditorTree';
+import { workbenchProjectRevisionPath } from '@/domain/workbench-catalog/workbenchProjectStorage';
 
 import { importExternalProgram } from '../importExternalProgram';
 import { loadEditorProgram } from '../loadEditorProgram';
+import { saveEditorProgram } from '../saveEditorProgram';
 
 describe('loadEditorProgram', () => {
   it('loads UPID or cleaned external content through a catalog project ID', async () => {
@@ -54,6 +58,52 @@ describe('loadEditorProgram', () => {
       ok: false,
       error: { code: 'WORKBENCH_CATALOG_PROJECT_NOT_FOUND', projectId: 'missing' }
     });
+  });
+
+  it('opens a legacy local v1 extension as an unsaved v2 draft and saves it without rewriting revision bytes', async () => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const imported = await importDxfProject(initialized.workbench, {
+      fileName: 'legacy.dxf', text: lineDxf(), unitCandidateId: 'millimeters',
+      declaredUnitOverrideAcknowledged: false
+    });
+    if (!imported.ok) throw new Error(imported.error.message);
+    const projectPath = `projects/${imported.project.id}.json`;
+    const stored = JSON.parse((await adapter.readText(projectPath))!);
+    const original = setManualCompensationIntent(stored.content.document,
+      stored.content.document.plan.operations[0].id, 'centerline');
+    if (!original) throw new Error('Expected an editable operation.');
+    original.setup = { initialWirePosition: { kind: 'manual', point: { x: -1, y: 0 }, review: 'reviewed' } };
+    original.plan.operations[0].programStops = [{ id: 'thread-check', enabled: true,
+      reason: 'manual', placement: { kind: 'after-positioning' } }];
+    stored.content.document = original;
+    stored.savedRevisionIds = ['revision.legacy'];
+    const historicalBytes = '{"immutable":"historical revision bytes"}';
+    const revisionPath = workbenchProjectRevisionPath(stored.id, 'revision.legacy');
+    await adapter.writeText(revisionPath, historicalBytes);
+    await adapter.writeText(projectPath, JSON.stringify(stored));
+
+    const loaded = await loadEditorProgram(imported.workbench, stored.id);
+    if (!loaded.ok || loaded.editorProgram.model !== 'upid-document') throw new Error('Expected a local UPID draft.');
+    if (loaded.editorProgram.project.content.kind !== 'upid-document') throw new Error('Expected stored UPID.');
+    expect((loaded.editorProgram.project.content.document as { schemaVersion: number }).schemaVersion).toBe(1);
+    expect(loaded.editorProgram.pathDocument.schemaVersion).toBe(2);
+    expect(buildUpidEditorTree(loaded.editorProgram.pathDocument).status).toBe('ready');
+    expect(loaded.editorProgram.pathDocument.plan.operations[0].programStops).toEqual(
+      original.plan.operations[0].programStops);
+    expect(await adapter.readText(projectPath)).toBe(JSON.stringify(stored));
+
+    const saved = await saveEditorProgram(imported.workbench, {
+      projectId: stored.id, draft: { model: 'upid-document', pathDocument: loaded.editorProgram.pathDocument }
+    });
+    if (!saved.ok) throw new Error(saved.error.message);
+    if (saved.project.content.kind !== 'upid-document') throw new Error('Expected saved UPID.');
+    expect((saved.project.content.document as { schemaVersion: number }).schemaVersion).toBe(2);
+    expect(saved.project.savedRevisionIds).toEqual(['revision.legacy']);
+    expect(await adapter.readText(revisionPath)).toBe(historicalBytes);
+    const reopened = await loadEditorProgram(saved.workbench, stored.id);
+    expect(reopened).toMatchObject({ ok: true, editorProgram: { pathDocument: { schemaVersion: 2 } } });
   });
 });
 

@@ -2,6 +2,7 @@ import { useRef, type ChangeEvent, type ReactNode } from 'react';
 import { ArrowLeft, CircleHelp, FileOutput, FileUp, Redo2, Save, Undo2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import type { GCodeInterpreterState } from '@/domain/editor/gcodeBlockInterpreter';
 
 import type { EditorGuideTarget } from './editorGuideContent';
 import { guideHighlightClass, guideTargetProps } from './editorGuideHighlight';
@@ -25,6 +26,7 @@ interface EditorHeaderBarProps {
   interactionLocked: boolean;
   isImporting: boolean;
   isSaving: boolean;
+  interpreterProfile?: GCodeInterpreterState['profile'];
   redoAvailable: boolean;
   saveErrorMessage: string | null;
   saveDisabledReason?: string | null;
@@ -35,6 +37,7 @@ interface EditorHeaderBarProps {
   onBackToDashboard: () => void;
   onExport: (() => void) | null;
   onImportProgramFile: (file: File) => void | Promise<void>;
+  onInterpreterProfileChange?: (profile: GCodeInterpreterState['profile']) => void;
   onOpenGuide: () => void;
   onRedo: () => void;
   onSave: () => void | Promise<void>;
@@ -52,6 +55,7 @@ export function EditorHeaderBar({
   interactionLocked,
   isImporting,
   isSaving,
+  interpreterProfile,
   redoAvailable,
   saveErrorMessage,
   saveDisabledReason,
@@ -62,6 +66,7 @@ export function EditorHeaderBar({
   onBackToDashboard,
   onExport,
   onImportProgramFile,
+  onInterpreterProfileChange,
   onOpenGuide,
   onRedo,
   onSave,
@@ -111,6 +116,14 @@ export function EditorHeaderBar({
         className="flex min-w-0 shrink-0 items-center justify-end gap-1.5"
         data-editor-header-actions
       >
+        {documentContext === 'machine-program' && interpreterProfile && onInterpreterProfileChange && (
+          <select aria-label="Source interpreter" className="h-7 max-w-36 border border-border bg-background px-1 text-[10px]"
+            disabled={interactionLocked} value={interpreterProfile}
+            onChange={(event) => onInterpreterProfileChange(event.currentTarget.value as GCodeInterpreterState['profile'])}>
+            <option value="neutral">Neutral source</option>
+            <option value="legacy-robofil">Legacy Robofil source</option>
+          </select>
+        )}
         {workspaceControls && (
           <div
             className="flex shrink-0 items-center border-r border-border pr-1.5"

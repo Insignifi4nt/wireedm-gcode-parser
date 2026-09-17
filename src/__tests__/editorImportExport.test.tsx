@@ -33,6 +33,43 @@ describe('Editor import, export, and parse feedback', () => {
     vi.restoreAllMocks();
   });
 
+  it('selects the legacy Robofil source interpreter for preview and retains it through text edits and save', async () => {
+    window.showDirectoryPicker = undefined;
+    await renderApp(context);
+    const openEditor = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Open Editor'));
+    if (!openEditor) throw new Error('Editor action missing');
+    await act(async () => openEditor.click());
+    await flushAsync();
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="G-code program file"]');
+    if (!input) throw new Error('Program import input missing');
+    Object.defineProperty(input, 'files', { configurable: true,
+      value: [new File(['G21 G90\nG0 X10 Y0\nG60\nG3 X20 Y10 I10 J10'], 'legacy-arc.iso')] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+    await flushAsync();
+    const selector = container.querySelector<HTMLSelectElement>('select[aria-label="Source interpreter"]');
+    expect(selector?.value).toBe('neutral');
+    const arcPath = () => container.querySelector<SVGPathElement>('svg[aria-label="G-code path preview"] path[data-type="arc"]');
+    const neutralPath = arcPath()?.getAttribute('d');
+    expect(neutralPath).toBeTruthy();
+    await act(async () => { if (selector) setSelectValue(selector, 'legacy-robofil'); });
+    expect(arcPath()?.getAttribute('d')).not.toBe(neutralPath);
+    expect(selector?.value).toBe('legacy-robofil');
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save active document"]')?.disabled).toBe(false);
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Program editor"]');
+    if (!textarea) throw new Error('Program editor missing');
+    await act(async () => setTextAreaValue(textarea, `${textarea.value}\nM02`));
+    expect(selector?.value).toBe('legacy-robofil');
+    const selectedPath = arcPath()?.getAttribute('d');
+    expect(selectedPath).toBeTruthy();
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Save active document"]')?.click());
+    await flushAsync();
+    const manifest = JSON.parse(window.localStorage.getItem('wire-edm-workbench:file:workbench.json') || '{}');
+    const project = JSON.parse(window.localStorage.getItem(`wire-edm-workbench:file:${manifest.projects[0].path}`) || '{}');
+    expect(project.content.interpreterProfile).toBe('legacy-robofil');
+    expect(arcPath()?.getAttribute('d')).toBe(selectedPath);
+  });
+
   it('shows unsupported physical-preview warnings through the external program diagnostics panel', async () => {
     await renderApp(context);
     const openEditor = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Open Editor'));

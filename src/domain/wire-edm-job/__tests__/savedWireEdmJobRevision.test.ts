@@ -100,6 +100,21 @@ describe('saved Wire EDM job revision', () => {
     });
   });
 
+  it('labels a compatible legacy revision artifact with the current generating engine', async () => {
+    const fixture = await revisionFixture();
+    const old = JSON.parse(serializeSavedWireEdmJobRevision(fixture.revision));
+    old.engineVersion = '1';
+    const parsed = await parseSavedWireEdmJobRevision(JSON.stringify(old));
+    if (!parsed.ok) throw new Error(parsed.error.message);
+    const persisted = await persistSavedWireEdmJobRevision(createMemoryAdapter(), parsed.candidate);
+    if (!persisted.ok) throw new Error(persisted.error.message);
+    const generated = await generateControllerArtifact(persisted.revision);
+    expect(generated).toMatchObject({ ok: true, artifact: {
+      engineVersion: '2', sourceRevisionEngineVersion: '1', revisionId: old.revisionId
+    } });
+    expect(persisted.revision.engineVersion).toBe('1');
+  });
+
   it('preserves an engine-1 continuous material-crossing revision without authorizing new output', async () => {
     const fixture = await revisionFixture();
     const document = createUpidFromDxfEntities([

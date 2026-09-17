@@ -1,5 +1,5 @@
 import type { MagnetizedPathPoint } from '@/domain/path-editor/pathPointInference';
-import { createGCodeInterpreterState, interpretGCodeBlock } from './gcodeBlockInterpreter';
+import { createGCodeInterpreterState, interpretGCodeBlock, type GCodeInterpreterState } from './gcodeBlockInterpreter';
 
 export interface MeasurementPoint {
   id: string;
@@ -29,6 +29,7 @@ export interface MeasurementPointPathSnap {
 
 export interface InsertMeasurementPointsOptions {
   insertAfterLine?: number;
+  interpreterProfile?: GCodeInterpreterState['profile'];
 }
 
 export interface InsertMeasurementPointsResult {
@@ -71,7 +72,7 @@ export function insertMeasurementPointsIntoText(
   const lines = text.split(/\r?\n/);
   const insertAfterLine = clampLine(options.insertAfterLine ?? 1, lines.length);
   const insertIndex = insertAfterLine;
-  const state = createGCodeInterpreterState();
+  const state = createGCodeInterpreterState(options.interpreterProfile ?? 'neutral');
   lines.slice(0, insertIndex).forEach((line, index) => interpretGCodeBlock(state, line, index + 1));
   const continuationState = structuredClone(state);
   const scale = state.units === 'in' ? 25.4 : 1;
