@@ -31,6 +31,7 @@ Browser storage belongs to its origin. Production GitHub Pages, local preview an
 | `transactions/machine-package-install.json` | Recovery for paired post/machine writes |
 | `transactions/saved-revision.json` | Recovery for saving a job and indexing it |
 | `transactions/project-trash.json` | Recovery for trash, restore and permanent removal |
+| `transactions/workbench-files.json` | Exact before/after images for project add/rename/save, backup restore and reviewed cleanup |
 
 Trash retains project-owned files. A missing index reference is not authorization to delete a file. Backups and journals must not be removed by generic cache cleanup.
 
@@ -39,14 +40,19 @@ Trash retains project-owned files. A missing index reference is not authorizatio
 - All persistent mutations use Web Locks; in-process serialization also protects adapter operations. External programs writing a folder are not coordinated.
 - Both legacy migrations validate the proposed catalog and project ownership before replacing data. V1 preserves catalog/project originals and supports interrupted migration checkpoints. V2 verifies its exact catalog backup before its single manifest replacement; a matching backup allows retry, a conflicting backup blocks it. Backup/quota failures leave the original manifest intact.
 - Opening a missing catalog checks known workbench directories before creating a new one. Existing data or an incomplete inventory blocks empty-workbench creation. Unknown future schemas are rejected with a preserve-data diagnostic.
-- Package installation, revisions and trash operations have durable recovery journals. Ordinary add, rename and editable-project save still use in-session rollback; an abrupt browser/process exit between their writes can require recovery. Do not claim full transactional durability for those operations.
+- Package installation, revisions and trash operations retain their existing durable journals. Ordinary project add/rename/save, backup restore and cleanup use a shared bounded file journal, verified before writing data. Each mutation acquires the workbench lock and first recovers a pending file transaction. Recovery retains all exact next images when every write completed; otherwise it restores prior images and removes newly created files. Unexpected external contents block recovery without overwriting them. Inventory and backup reads explicitly skip recovery and remain read-only.
 - Settings → Storage → Review storage is read-only and works for cache and folder storage. Its downloadable JSON contains paths/categories and diagnostics, not file contents. It includes trash ownership, labels legacy files for retention and flags pending transactions. Traversal is bounded to 10,000 entries and 16 directory levels; partial scans are explicit. This is an inventory, not a full content/hash audit or backup.
 
-## Next recovery work
+## Backup, restoration and cleanup
 
-1. Design a complete browser-workbench backup/import flow before offering cleanup. Portable UPID export alone does not preserve every installed package, revision or external-program project.
-2. Extend durable recovery to ordinary project add/rename/save using the existing transaction approach, with crash-at-each-write tests; do not add a second generic migration framework.
-3. Add explicit, reviewable orphan recovery/removal only after a complete inventory and verified backup. Protect both active and trashed ownership. Unknown files remain untouched by default.
-4. Consolidate legacy UI preference keys only with lazy reads of old keys and a tested forward migration. These small preferences do not justify deleting unrelated origin storage.
+- Settings downloads `.wireedm-backup.json`, a versioned inventory of exact logical text files, per-file SHA-256 and an inventory hash. Backup validates catalogs, active/trash ownership, installed package hashes and every indexed saved revision. The original strings are retained rather than reserialized. It does not execute post code. Hashes detect corruption, not the identity of a backup's author.
+- Backup requires a complete inventory with no pending transaction files. Limits: 128 MiB archive, 10,000 entries, portable relative paths, UTF-8 text. Folder reads preserve a BOM and reject non-UTF-8 binary data. Empty directories, localStorage UI preferences, remembered directory handles and unsaved drafts are outside the backup. Installed state is preserved; original installer archives/evidence not retained by the workbench must still be kept separately by their owner.
+- Restore previews counts and validates first, then accepts only an empty initialized destination containing the three catalogs. It never merges project IDs or replaces an existing library. File transactions retain the destination's originals for rollback, including quota failures. Successful UI restore reloads the app into the restored catalog. Current backup format accepts storage schema 3; migrate older workbenches normally before export.
+- Cleanup is opt-in after a verified backup download request and the user's saved-download acknowledgement. Every path must be selected individually. Re-read/hash the complete storage snapshot under the mutation lock before deleting; any change invalidates the backup for cleanup. Protect active/trash ownership, `legacy/`, `posts/`, `machines/`, `transactions/` and every `.wireedm-job.json` file. Recovery of removed data uses the downloaded complete backup in an empty destination. Browser download requests are not on-disk receipts.
+- Durable journals temporarily require space for recovery images. If the journal cannot fit, the operation fails before changing project files. Older app versions do not understand the new journal: complete recovery with the current release before downgrading.
+
+## Separate maintenance
+
+Consolidate legacy UI preference keys only with lazy reads of old keys and a tested forward migration. These small preferences do not justify deleting unrelated origin storage. Streaming larger/binary backup archives and merging into nonempty destinations are not part of the current backup contract.
 
 For every future schema migration: reject unsupported versions, preflight the complete proposed data, retain exact originals, verify backup readback, publish the replacement last, and test quota errors, interrupted writes, retries and conflicts on both adapters. Preserve installed packages and saved revisions byte-for-byte unless their own explicit migration is designed and reviewed.

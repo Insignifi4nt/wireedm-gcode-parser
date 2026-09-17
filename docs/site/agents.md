@@ -77,6 +77,14 @@ Use `{ "kind": "current-draft", "version": "<version from context>" }` to inspec
 
 List and geometry queries return at most 50 rows; use `nextOffset` with the same version for subsequent pages. Revision lists use `nextPage`. Inline UPID is limited to 512 KiB of UTF-8; use normal file import for larger projects. Replies are limited to 32 KiB; reduce the page size if a result is too large.
 
+## Back up or restore a workbench
+
+Return to the project library, then open **Settings → Storage → Backup & restore**. **Create and download backup** preserves saved projects, trash, installed machines/posts, revisions and retained files in one `.wireedm-backup.json`. Unsaved drafts and browser preferences are excluded. Verify that the download was saved outside the browser's site storage.
+
+Use **Choose backup to restore** and review its project, machine and revision counts. Restore requires an empty workbench, such as a newly selected empty folder or a fresh browser's workbench. Existing libraries are never overwritten or merged. The app reloads after successful restoration. Backups are limited to 128 MiB of portable UTF-8 files; pending recovery, incomplete inventories, corrupt files or unrelated binary data block export rather than producing an incomplete backup.
+
+Unreferenced-file cleanup appears after backup creation. Select only files the user wants removed and obtain their confirmation that the backup was saved. Any storage change requires a new backup. Referenced files, migration backups, machine/post storage and saved revisions are protected. These operations use ordinary browser controls; no repository checkout is needed.
+
 ## Interpret results
 
 An outer `ok: false` reports a tool failure such as invalid arguments, changed inputs, cancellation or unavailable state. For a completed validation call, check the **report's own `ok`**: the tool can run successfully and find an invalid package. Full diagnostics remain in the package workbench report.

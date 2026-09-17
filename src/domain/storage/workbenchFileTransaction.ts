@@ -35,6 +35,11 @@ function checkFiles(files: Transaction['files']) {
   }
 }
 
+const readExact = (adapter: WorkbenchStorageAdapter, path: string) => adapter.readExactText ? adapter.readExactText(path) : adapter.readText(path);
+// File System Access may create an empty handle before a failed first write.
+const isExpectedState = (file: Transaction['files'][number], current: string | null) =>
+  current === file.previous || current === file.next || (file.previous === null && current === '');
+
 async function put(adapter: WorkbenchStorageAdapter, path: string, text: string | null) {
   if (text === null) await adapter.deleteText(path);
   else {
@@ -42,7 +47,7 @@ async function put(adapter: WorkbenchStorageAdapter, path: string, text: string 
     if (separator > 0) await adapter.ensureDirectory(path.slice(0, separator));
     await adapter.writeText(path, text);
   }
-  if (await adapter.readText(path) !== text) throw new Error(`Storage readback mismatch: ${path}`);
+  if (await readExact(adapter, path) !== text) throw new Error(`Storage readback mismatch: ${path}`);
 }
 
 async function finish(adapter: WorkbenchStorageAdapter) {
@@ -58,8 +63,9 @@ export async function recoverWorkbenchFileTransaction(adapter: WorkbenchStorageA
   const value: unknown = JSON.parse(raw);
   if (!Value.Check(schema, value)) throw new Error('Invalid file recovery journal. Preserve storage for recovery.');
   checkFiles(value.files);
-  const current = await Promise.all(value.files.map(({ path }) => adapter.readText(path)));
-  if (value.files.some((file, index) => current[index] !== file.previous && current[index] !== file.next)) {
+  const current: (string | null)[] = [];
+  for (const file of value.files) current.push(await readExact(adapter, file.path));
+  if (value.files.some((file, index) => !isExpectedState(file, current[index]))) {
     throw new Error('Files changed outside the pending transaction. Preserve storage and its journal for recovery.');
   }
   if (!value.files.every((file, index) => current[index] === file.next)) {
@@ -77,7 +83,8 @@ export async function commitWorkbenchFileTransaction(
   await recoverWorkbenchFileTransaction(adapter);
   const ordered = [...changes].sort((a, b) => Number(a.path === 'workbench.json') - Number(b.path === 'workbench.json'));
   checkFiles(ordered.map(({ path, contents }) => ({ path, previous: null, next: contents })));
-  const files = await Promise.all(ordered.map(async ({ path, contents }) => ({ path, previous: await adapter.readText(path), next: contents })));
+  const files: Transaction['files'] = [];
+  for (const { path, contents } of ordered) files.push({ path, previous: await readExact(adapter, path), next: contents });
   checkFiles(files);
   const transaction: Transaction = { format: 'wire-edm-file-transaction', schemaVersion: 1, files };
   if (!Value.Check(schema, transaction)) throw new Error('File transaction exceeds its file limit.');
@@ -100,8 +107,8 @@ export async function commitWorkbenchFileTransaction(
   } catch (error) {
     try {
       for (const file of files) {
-        const current = await adapter.readText(file.path);
-        if (current !== file.previous && current !== file.next) throw new Error('Storage changed outside this transaction.');
+        const current = await readExact(adapter, file.path);
+        if (!isExpectedState(file, current)) throw new Error('Storage changed outside this transaction.');
       }
       for (const file of files) await put(adapter, file.path, file.previous);
       await finish(adapter);

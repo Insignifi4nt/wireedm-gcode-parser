@@ -40,6 +40,14 @@ describe.each(['cache', 'folder'] as const)('%s file transaction recovery', (kin
     await expect(commitWorkbenchFileTransaction(adapter, [{ path: 'workbench.json', contents: 'NEXT' }])).rejects.toThrow('Quota');
     expect(await adapter.readText('workbench.json')).toBe('ORIGINAL');
   });
+  it('removes an empty newly created file left before its first write completed', async () => {
+    const adapter = storage();
+    await adapter.writeText(WORKBENCH_FILE_TRANSACTION_PATH, JSON.stringify({ format: 'wire-edm-file-transaction', schemaVersion: 1, files: [files[0]] }));
+    await adapter.writeText(files[0].path, '');
+    await recoverWorkbenchFileTransaction(adapter);
+    expect(await adapter.readText(files[0].path)).toBeNull();
+    expect(await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH)).toBeNull();
+  });
   it('retains evidence and refuses unexpected external edits during recovery', async () => {
     const adapter = storage();
     await adapter.writeText(WORKBENCH_FILE_TRANSACTION_PATH, JSON.stringify({ format: 'wire-edm-file-transaction', schemaVersion: 1, files }));

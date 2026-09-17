@@ -5,6 +5,7 @@ import { useModalFocus } from '@/components/ui/useModalFocus';
 import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/domain/release/appRelease';
 import { StorageReviewPanel } from './StorageReviewPanel';
+import { WorkbenchBackupPanel } from './WorkbenchBackupPanel';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import {
@@ -99,6 +100,7 @@ export function WorkbenchSettingsDialog({
                   </div>
                 </section>
                 {connectedWorkbench && <StorageReviewPanel workbench={connectedWorkbench} disabled={interactionLocked || connecting} />}
+                {connectedWorkbench && <WorkbenchBackupPanel workbench={connectedWorkbench} disabled={storageSwitchDisabled || connecting} />}
               </div>
             ) : connectedWorkbench ? (
               <MachinePostSettingsPanel connectedWorkbench={connectedWorkbench} interactionLocked={interactionLocked} settingsErrorMessage={settingsErrorMessage} settingsStatus={settingsStatus} {...machinePostActions} />

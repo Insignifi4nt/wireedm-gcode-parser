@@ -6,6 +6,8 @@ When a version-1 workbench is opened, usable projects migrate to the current neu
 
 Version-2 catalogs retain their exact original at `legacy/v2/workbench.json` before upgrade. Settings → Storage → Review storage lists referenced files, retained backups and unreferenced files without deleting anything; download its metadata report for recovery assistance. A backup inside browser cache is lost along with that cache if site data is cleared.
 
+From the project library, Settings → Storage → Backup & restore downloads a complete saved-workbench backup and restores a reviewed backup into an empty destination. This includes trash, installed libraries and saved revisions; unsaved drafts and browser UI preferences are excluded. Cleanup requires a current verified backup, explicit file selection and confirmation that the download was saved. Backups support up to 128 MiB of portable UTF-8 files; unrelated binary files are rejected, never converted.
+
 ## Commands
 
 - `npm run dev` - start Vite on port 3777
@@ -33,7 +35,7 @@ Version-2 catalogs retain their exact original at `legacy/v2/workbench.json` bef
 - Existing `.gcode`, `.nc`, `.iso`, and `.txt` files use a separate text editor with G0/G1/G2/G3 preview and cleanup tools.
 - Machine packages own controller syntax and file rules, including extension, encoding, line endings, wrappers, and numbering. The app does not generate feeds by default.
 - Persistent browser cache requires Web Locks to serialize edits across tabs. If Web Locks or persistent storage is unavailable, the app uses explicitly marked temporary storage until the page closes or reloads. Existing browser-cache files remain untouched and can be opened in a browser with Web Locks support. Folder selection and remembered-folder reconnect remain optional.
-- Folder writes also require Web Locks. This coordinates workbench tabs, not other applications editing the same folder. Package installation, saved revisions and project deletion/restoration have recovery journals; ordinary project add/rename/edit operations use in-session rollback and report inconsistent files if interrupted before completion.
+- Folder writes also require Web Locks. This coordinates workbench tabs, not other applications editing the same folder. Package installation, saved revisions, project add/rename/edit, deletion/restoration, backup restoration and reviewed cleanup have recovery journals. Interrupted file transactions restore their prior files unless every new file was committed; conflicting external changes stop recovery and retain the journal.
 
 ## Documentation
 

@@ -7,6 +7,16 @@ export function createBrowserDirectoryAdapter(
     name: root.name,
     kind: 'directory',
     listFiles: () => listDirectoryFiles(root),
+    readExactText: async (path: string) => {
+      try {
+        const handle = await getFile(root, splitPath(path), false);
+        const file = await handle.getFile();
+        return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(await file.arrayBuffer());
+      } catch (error) {
+        if (isNotFoundError(error)) return null;
+        throw new Error(`Cannot back up ${path} as exact UTF-8 text: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
     ensureDirectory: async (path: string) => {
       await getDirectory(root, splitPath(path), true);
     },
