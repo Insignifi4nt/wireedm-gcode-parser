@@ -136,6 +136,7 @@ interface EditorPathNavigatorPanelProps {
   spatialActions?: readonly ExecutionSpatialAction[];
   selectedSpatialActionKey?: string | null;
   onSelectSpatialAction?: (key: string) => void;
+  onActivateSpatialAction?: (key: string) => void;
   onExpandedPathElementIdsChange: Dispatch<SetStateAction<Record<string, boolean>>>;
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
   onMovePathSelectionCenter: (targetCenter: Point2) => void;
@@ -177,6 +178,7 @@ export function EditorPathNavigatorPanel({
   spatialActions = [],
   selectedSpatialActionKey = null,
   onSelectSpatialAction,
+  onActivateSpatialAction,
   onExpandedPathElementIdsChange,
   onMovePathOperation,
   onMovePathSelectionCenter,
@@ -580,6 +582,18 @@ export function EditorPathNavigatorPanel({
             )}
           </div>
       </div>
+      {spatialActions.filter((action) => action.operationId === null).map((action) => (
+        <div className="flex items-center border-b border-border/40" key={action.key}>
+          <button type="button" data-upid-machining-action={action.key}
+            aria-pressed={selectedSpatialActionKey === action.key}
+            className={`min-w-0 flex-1 px-2 py-1.5 text-left hover:bg-accent ${selectedSpatialActionKey === action.key ? 'bg-sky-500/15' : ''}`}
+            onClick={() => onSelectSpatialAction?.(action.key)}>
+            {action.label} · X {action.point.x.toFixed(3)} Y {action.point.y.toFixed(3)}
+          </button>
+          <button type="button" className="px-2 text-cyan-300 hover:bg-accent"
+            aria-label={`Edit ${action.label.toLowerCase()}`} onClick={() => onActivateSpatialAction?.(action.key)}>Edit</button>
+        </div>
+      ))}
       {contourTree.map((node) =>
         renderContourTreeNode({
           hoveredPathElement,
@@ -595,6 +609,7 @@ export function EditorPathNavigatorPanel({
           spatialActions,
           selectedSpatialActionKey,
           onSelectSpatialAction,
+          onActivateSpatialAction,
           segmentsById,
           expandedSegmentDetailIds,
           onToggleSegmentDetails: (segmentKey) =>
@@ -2013,6 +2028,7 @@ function renderContourTreeNode({
   spatialActions,
   selectedSpatialActionKey,
   onSelectSpatialAction,
+  onActivateSpatialAction,
   segmentsById,
   togglePathElementExpanded,
   toggleCutPathExpanded,
@@ -2033,6 +2049,7 @@ function renderContourTreeNode({
   spatialActions: readonly ExecutionSpatialAction[];
   selectedSpatialActionKey: string | null;
   onSelectSpatialAction?: (key: string) => void;
+  onActivateSpatialAction?: (key: string) => void;
   segmentsById: ReturnType<typeof segmentMap>;
   togglePathElementExpanded: (pathElementId: string) => void;
   toggleCutPathExpanded: (pathElementId: string) => void;
@@ -2208,18 +2225,23 @@ function renderContourTreeNode({
         <>
           {spatialActions.filter((action) => action.operationId === element.operationId &&
             (action.eventKind !== 'motion' || action.label !== 'Cut endpoint')).map((action) => (
-            <button key={action.key} type="button" data-upid-machining-action={action.key}
+            <div key={action.key} className="flex items-center border-b border-border/40">
+            <button type="button" data-upid-machining-action={action.key}
               aria-pressed={selectedSpatialActionKey === action.key}
-              className={`flex w-full items-center gap-2 border-b border-border/40 py-1 text-left text-[10px] hover:bg-accent ${selectedSpatialActionKey === action.key ? 'bg-sky-500/15' : ''}`}
+              className={`flex min-w-0 flex-1 items-center gap-2 py-1 text-left text-[10px] hover:bg-accent ${selectedSpatialActionKey === action.key ? 'bg-sky-500/15' : ''}`}
               style={{ paddingLeft: `${32 + (treeDepth + 1) * 10}px` }}
               onClick={() => onSelectSpatialAction?.(action.key)} title={action.detail}>
               <span className={action.pause === 'generated-manual-thread' ? 'text-rose-300' :
-                action.pause === 'authored' ? 'text-amber-300' : 'text-cyan-300'}>●</span>
+                action.pause === 'authored' ? 'text-amber-300' :
+                action.pause === 'emitted-post' ? 'text-violet-300' : 'text-cyan-300'}>●</span>
               <span>{action.label}</span>
               <span className="ml-auto pr-2 font-mono text-muted-foreground">
                 X {action.point.x.toFixed(3)} Y {action.point.y.toFixed(3)}
               </span>
             </button>
+            <button type="button" className="px-2 text-cyan-300 hover:bg-accent"
+              aria-label={`Edit ${action.label}`} onClick={() => onActivateSpatialAction?.(action.key)}>Edit</button>
+            </div>
           ))}
           <button
             aria-expanded={cutPathExpanded}
@@ -2288,6 +2310,7 @@ function renderContourTreeNode({
               spatialActions,
               selectedSpatialActionKey,
               onSelectSpatialAction,
+              onActivateSpatialAction,
               segmentsById,
               togglePathElementExpanded,
               toggleCutPathExpanded,

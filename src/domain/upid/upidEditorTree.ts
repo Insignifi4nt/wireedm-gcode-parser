@@ -84,7 +84,10 @@ export type UpidEditorTree =
       readonly operations: readonly UnresolvedUpidEditorOperationNode[];
     });
 
-export function buildUpidEditorTree(document: PathPlanningDocument): UpidEditorTree {
+export function buildUpidEditorTree(
+  document: PathPlanningDocument,
+  emittedPauseCommands: ReadonlyMap<string, readonly string[]> | null = null
+): UpidEditorTree {
   const sourceSetup = buildSourceSetup(document);
   const sourceOperations = orderedPathOperations(document.plan.operations);
   const compiled = compileWireEdmExecutionPlan(document);
@@ -134,7 +137,7 @@ export function buildUpidEditorTree(document: PathPlanningDocument): UpidEditorT
   const eventsBySource = new Map<string, UpidEditorEventNode[]>();
   const programEvents: UpidEditorEventNode[] = [];
   const spatialActions = executionSpatialActions(compiled.plan.events,
-    (executionId) => executionToSource.get(executionId) ?? null);
+    (executionId) => executionToSource.get(executionId) ?? null, emittedPauseCommands);
   const actionByEvent = new Map(spatialActions.map((action) => [action.eventId, action]));
   for (const event of compiled.plan.events) {
     if (event.operationId === null) {

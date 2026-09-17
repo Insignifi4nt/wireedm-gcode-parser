@@ -125,7 +125,7 @@ export function EditorProgramTree(props: EditorProgramTreeProps) {
             </button>
           ) : <span className="w-4 shrink-0" />}
           <StatusDot status={item.status} />
-          <span className={`truncate ${item.node?.kind === 'event' && item.node.spatialAction?.pause === 'generated-manual-thread' ? 'text-rose-300' : item.node?.kind === 'event' && item.node.spatialAction?.pause === 'authored' ? 'text-amber-300' : ''}`} title={item.node?.kind === 'event' ? item.node.spatialAction?.detail ?? item.label : item.label}>{item.label}</span>
+          <span className={`truncate ${item.node?.kind === 'event' && item.node.spatialAction?.pause === 'generated-manual-thread' ? 'text-rose-300' : item.node?.kind === 'event' && item.node.spatialAction?.pause === 'authored' ? 'text-amber-300' : item.node?.kind === 'event' && item.node.spatialAction?.pause === 'emitted-post' ? 'text-violet-300' : ''}`} title={item.node?.kind === 'event' ? item.node.spatialAction?.detail ?? item.label : item.label}>{item.label}</span>
         </div>
         {selected && item.node?.kind === 'event' && item.node.spatialAction?.pause &&
           <div className="border-b border-border/40 bg-accent/40 py-1 pr-2 text-[10px] text-muted-foreground"

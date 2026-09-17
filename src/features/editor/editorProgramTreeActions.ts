@@ -56,7 +56,8 @@ export function resolveEditorProgramTreeAction(node: EditorProgramTreeNode): Edi
     actionKey: node.spatialAction.key,
     operationId: node.spatialAction.operationId
   } : null;
-  if (node.eventKind === 'program-start') return action('machining.initial-wire');
+  if (node.eventKind === 'program-start') return action('machining.initial-wire', null, exactAction);
+  if (node.eventKind === 'program-end') return action('view.statistics', null, exactAction);
   if (node.eventKind === 'wire-continue' || node.eventKind === 'wire-separate' ||
       node.eventKind === 'wire-thread' || node.eventKind === 'position') {
     return action('machining.between-contours', node.operationId, exactAction);

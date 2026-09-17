@@ -1,5 +1,4 @@
 import { expect, test, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
 
 import { clearWorkbenchCache } from './fixtures/workbench-cache';
 import { confirmPendingDxfImport } from './dxf-import';
@@ -13,6 +12,7 @@ test('round-trips an exported UPID through a clean browser cache with execution 
   const exportButton = page.locator('[data-project-row][data-project-source="dxf"]')
     .getByRole('button', { name: /Export UPID project/ });
   await exportButton.click();
+  await page.getByRole('menuitem', { name: 'Export', exact: true }).click();
   await page.waitForFunction(() => (
     typeof (window as Window & { __capturedTextDownload?: { text?: string } }).__capturedTextDownload?.text === 'string'
   ));
@@ -88,13 +88,16 @@ test('keeps imported NC programs in the machine-program editor through edit, sav
   await page.locator('details[data-editor-code-section="text"] summary').click();
   await expect(page.getByLabel('Program editor')).toHaveValue(/G1 X24 Y0/);
 
-  const downloadPromise = page.waitForEvent('download');
+  await captureNextTextDownload(page);
   await page.getByRole('button', { name: 'Export normalized ISO' }).click();
-  const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/^normalized-\d{4}-\d{2}-\d{2}\.iso$/);
-  const savedPath = await download.path();
-  if (!savedPath) throw new Error('Expected a downloaded controller file');
-  expect(await readFile(savedPath, 'utf8')).toMatch(/X24(?:\.0+)?(?:\s|$)/);
+  await page.waitForFunction(() => (
+    typeof (window as Window & { __capturedTextDownload?: { text?: string } }).__capturedTextDownload?.text === 'string'
+  ));
+  const captured = await page.evaluate(() => (
+    (window as Window & { __capturedTextDownload: { name: string; text: string } }).__capturedTextDownload
+  ));
+  expect(captured.name).toMatch(/^normalized-\d{4}-\d{2}-\d{2}\.iso$/);
+  expect(captured.text).toMatch(/X24(?:\.0+)?(?:\s|$)/);
 });
 
 async function openReadyWorkbench(page: Page) {

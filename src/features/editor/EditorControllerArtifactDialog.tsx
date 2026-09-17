@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 import type { MachineDefinition } from '@/domain/machine-definition/machineDefinition';
-import type { PostLibrary } from '@/domain/post-processor/postLibrary';
+import type { PostInstallation, PostLibrary } from '@/domain/post-processor/postLibrary';
 import type {
   ControllerArtifactResult,
   ControllerProgramArtifact
@@ -18,6 +18,12 @@ export interface EditorControllerArtifactDialogProps {
   readonly posts: PostLibrary;
   readonly onClose: () => void;
   readonly onDownload: (fileName: string, text: string) => void;
+  readonly onGenerationReset?: () => void;
+  readonly onArtifactGenerated?: (
+    artifact: ControllerProgramArtifact,
+    machine: MachineDefinition,
+    installation: PostInstallation
+  ) => void;
   readonly onGenerateControllerArtifact: (
     selection: ControllerArtifactSelection
   ) => Promise<ControllerArtifactResult>;
@@ -30,6 +36,8 @@ export function EditorControllerArtifactDialog({
   posts,
   onClose,
   onDownload,
+  onGenerationReset,
+  onArtifactGenerated,
   onGenerateControllerArtifact
 }: EditorControllerArtifactDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -85,13 +93,19 @@ export function EditorControllerArtifactDialog({
 
   async function generate() {
     if (!canGenerate) return;
+    const generationMachine = selectedMachine;
+    const generationPost = activePost;
+    onGenerationReset?.();
     setGenerating(true);
     setArtifact(null);
     setFailure(null);
     setDownloadFailure(null);
     try {
       const result = await onGenerateControllerArtifact({ machineId });
-      if (result.ok) setArtifact(result.artifact);
+      if (result.ok) {
+        setArtifact(result.artifact);
+        if (generationMachine && generationPost) onArtifactGenerated?.(result.artifact, generationMachine, generationPost);
+      }
       else setFailure(result.error);
     } catch (error) {
       setFailure({
@@ -138,6 +152,7 @@ export function EditorControllerArtifactDialog({
             className="h-8 border border-border bg-background px-2 text-foreground"
             disabled={generating}
             onChange={(event) => {
+              onGenerationReset?.();
               setMachineId(event.currentTarget.value);
               setArtifact(null);
               setFailure(null);

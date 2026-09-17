@@ -370,6 +370,17 @@ export function EditorPreview({
     return () => svg.removeEventListener('wheel', handleWheel);
   }, [preview, previewViewBox, zoom]);
 
+  const worldPerPixel = previewViewBox
+    ? previewWorldUnitsPerCssPixel(previewViewBox, surfaceSize) : 1;
+  const pathEndpointHandles = useMemo(() => preview
+    ? readPathEndpointHandles(preview.paths, pathDocument) : [], [preview, pathDocument]);
+  const visibleEndpoints = useMemo(() => visibleEndpointIndices(pathEndpointHandles, worldPerPixel,
+    (handle) => pathEndpointMatches(handle, handle.role, selectedPathElement) ||
+      pathEndpointMatches(handle, handle.role, hoveredPathElement)),
+    [pathEndpointHandles, worldPerPixel, selectedPathElement, hoveredPathElement]);
+  const endpointHitRadii = useMemo(() => endpointHitRadiiPixels(pathEndpointHandles, worldPerPixel),
+    [pathEndpointHandles, worldPerPixel]);
+
   if (!preview || !previewViewBox || preview.paths.length === 0) {
     return (
       <div
@@ -385,7 +396,6 @@ export function EditorPreview({
   const activeViewBox = previewViewBox;
   const viewBox = `${format(activeViewBox.minX)} ${format(activeViewBox.minY)} ${format(activeViewBox.width)} ${format(activeViewBox.height)}`;
   const flipY = activePreview.viewBox.minY * 2 + activePreview.viewBox.height;
-  const worldPerPixel = previewWorldUnitsPerCssPixel(activeViewBox, surfaceSize);
   const grid = buildPreviewGrid(activeViewBox, flipY, worldPerPixel);
   const gridLabels = buildVisibleGridLabels(grid.lines, grid.labelSpacing, grid.bounds, worldPerPixel);
   const markerRadius = worldPerPixel * 3.5;
@@ -396,11 +406,7 @@ export function EditorPreview({
   const gridLabelFontSize = worldPerPixel * 11;
   const gridLabelInset = worldPerPixel * 9;
   const zoomPercent = Math.round(zoom * 100);
-  const pathEndpointHandles = readPathEndpointHandles(activePreview.paths, pathDocument);
-  const visibleEndpoints = visibleEndpointIndices(pathEndpointHandles, worldPerPixel,
-    (handle) => pathEndpointMatches(handle, handle.role, selectedPathElement) ||
-      pathEndpointMatches(handle, handle.role, hoveredPathElement));
-  const endpointHitRadii = endpointHitRadiiPixels(pathEndpointHandles, worldPerPixel);
+  const selectedSpatialAction = spatialActions.find((action) => action.key === selectedSpatialActionKey);
   const selectedArcCenterHandles = readSelectedArcCenterHandles(activePreview.paths, selectedPathElement);
   const measurementFirst = measurement?.picks[0];
   const measurementSecond = measurement?.picks[1] ?? measurement?.hover;
@@ -418,6 +424,8 @@ export function EditorPreview({
   const measurementPickRadius = measurementDisplayScale * 4;
   const measurementTextSize = measurementDisplayScale * 11;
   const selectionEnabled = Boolean(pathDocument && onPathElementClick && canvasMouseMode === 'select' && !measurement);
+  const actionSelectionEnabled = Boolean(onSelectSpatialAction && !onPreviewPointClick &&
+    !measurement && canvasMouseMode !== 'point' && selectionFilter === 'all');
   const currentOverlapIndex = overlapCandidates.findIndex((path) => pathElementMatches(path, selectedPathElement));
   const overlapSelection = currentOverlapIndex >= 0 ? overlapCandidates[currentOverlapIndex] : null;
   const overlapOperation = pathDocument?.plan.operations.find((operation) => operation.id === overlapSelection?.operationId);
@@ -1655,16 +1663,20 @@ export function EditorPreview({
                 strokeWidth={measurementTextSize * 0.25}>STOP</text>
             </g>)}
           </g>
-          <g data-preview-spatial-actions>
+          <g data-preview-spatial-actions pointerEvents={actionSelectionEnabled ? undefined : 'none'}>
             {spatialActions.filter((action) => !action.pause &&
-              (action.eventKind === 'position' || action.eventKind === 'wire-thread')).map((action) => (
+              (action.eventKind === 'position' || action.eventKind === 'wire-thread' ||
+                action.eventKind === 'wire-separate' || action.eventKind === 'program-start' ||
+                (action.eventKind === 'motion' && action.label !== 'Cut endpoint'))).map((action) => (
               <g key={action.key} className="cursor-pointer" onClick={(event) => {
+                if (!actionSelectionEnabled) return;
                 event.stopPropagation(); onSelectSpatialAction?.(action.key);
               }}>
                 <circle cx={action.point.x} cy={flipY - action.point.y}
                   r={measurementDisplayScale * 8} fill="transparent" data-preview-action-hit={action.key} />
                 <circle cx={action.point.x} cy={flipY - action.point.y}
-                  r={measurementDisplayScale * 3.5} fill="#020617" stroke="#67e8f9"
+                  r={measurementDisplayScale * 3.5}
+                  fill="#020617" stroke="#67e8f9"
                   strokeWidth="1.5" vectorEffect="non-scaling-stroke" pointerEvents="none"
                   data-preview-spatial-action={action.key} />
               </g>
@@ -1673,10 +1685,12 @@ export function EditorPreview({
               const point = group[0].point;
               const selected = group.some((action) => action.key === selectedSpatialActionKey);
               const generated = group.some((action) => action.pause === 'generated-manual-thread');
-              const color = generated ? '#fb7185' : '#fbbf24';
+              const emitted = group.some((action) => action.pause === 'emitted-post');
+              const color = generated ? '#fb7185' : emitted ? '#a78bfa' : '#fbbf24';
               const expanded = expandedPauseGroup === groupKey;
               return <g key={groupKey} data-preview-pause-group={groupKey}>
                 <g className="cursor-pointer" onClick={(event) => {
+                  if (!actionSelectionEnabled) return;
                   event.stopPropagation();
                   if (group.length === 1) onSelectSpatialAction?.(group[0].key);
                   else setExpandedPauseGroup(expanded ? null : groupKey);
@@ -1696,16 +1710,18 @@ export function EditorPreview({
                     y={flipY - point.y + measurementDisplayScale * 14}
                     fill={color} fontSize={measurementDisplayScale * 10}
                     paintOrder="stroke" stroke="#020617" strokeWidth={measurementDisplayScale * 2}
-                    pointerEvents="none">{group.length > 1 ? `${group.length} pauses` : generated ? 'RETHREAD' : 'STOP'}</text>
+                    pointerEvents="none">{group.length > 1 ? `${group.length} pauses` : generated ? 'RETHREAD' : emitted ? 'PAUSE' : 'STOP'}</text>
                 </g>
                 {expanded && group.map((action, index) => <g key={action.key}
                   className="cursor-pointer" onClick={(event) => {
+                    if (!actionSelectionEnabled) return;
                     event.stopPropagation(); onSelectSpatialAction?.(action.key);
                   }}>
                   <rect x={point.x + measurementDisplayScale * 12}
                     y={flipY - point.y + measurementDisplayScale * (18 + index * 18)}
                     width={measurementDisplayScale * 156} height={measurementDisplayScale * 18}
-                    fill="#0f172a" stroke={action.pause === 'authored' ? '#fbbf24' : '#fb7185'}
+                    fill="#0f172a" stroke={action.pause === 'authored' ? '#fbbf24' :
+                      action.pause === 'emitted-post' ? '#a78bfa' : '#fb7185'}
                     strokeWidth="1" vectorEffect="non-scaling-stroke" />
                   <text x={point.x + measurementDisplayScale * 18}
                     y={flipY - point.y + measurementDisplayScale * (31 + index * 18)}
@@ -1714,6 +1730,16 @@ export function EditorPreview({
               </g>;
             })}
           </g>
+          {selectedSpatialAction && <g pointerEvents="none" data-preview-selected-spatial-action={selectedSpatialAction.key}>
+            <circle cx={selectedSpatialAction.point.x} cy={flipY - selectedSpatialAction.point.y}
+              r={worldPerPixel * 9} fill="none"
+              stroke={selectedSpatialAction.pause === 'authored' ? '#fbbf24' :
+                selectedSpatialAction.pause === 'emitted-post' ? '#a78bfa' :
+                selectedSpatialAction.pause ? '#fb7185' : '#38bdf8'}
+              strokeWidth="2" vectorEffect="non-scaling-stroke" />
+            <circle cx={selectedSpatialAction.point.x} cy={flipY - selectedSpatialAction.point.y}
+              r={worldPerPixel * 1.5} fill="#e0f2fe" />
+          </g>}
           <g data-preview-point-emphasis-layer pointerEvents="none">
             {pathEndpointHandles.map((handle) => {
               const highlight = pathEndpointMatches(handle, handle.role, hoveredPathElement)

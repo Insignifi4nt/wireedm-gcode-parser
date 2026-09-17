@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 import { setManualCompensationIntent } from '@/domain/compensation/intent';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
+import { applicableEmittedPauseEvidence, emittedPauseEvidence } from '@/domain/editor/emittedPauseEvidence';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { reversePathOperation } from '@/domain/path-editor/pathDocumentOperations';
 import {
@@ -22,6 +23,7 @@ import {
 import packageJson from '../../../../examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json';
 import machineJson from '../../../../examples/robofil-100-v2/cristian-robofil-100.wireedm-machine.json';
 import { runPost } from '../postEngine';
+import { serializeControllerOutput } from '../controllerOutput';
 import { createEmptyPostLibrary, installPostPackage } from '../postLibrary';
 import { parseWireEdmPostPackage } from '../postPackage';
 
@@ -225,6 +227,8 @@ describe('standalone Robofil 100 V2 package', () => {
       mode: 'manual', wireSeparation: 'automatic-during-positioning', source: 'operation-override'
     };
     document.schemaVersion = 2;
+    document.plan.operations[1].programStops = [{ id: 'inspect-before-thread', enabled: true,
+      reason: 'operator-check', placement: { kind: 'after-positioning' } }];
     document.plan.operations[1].transitions = { entry: {
       strategy: 'manual-straight', move: 'cut',
       from: { x: 72.5, y: 0 }, to: document.plan.operations[1].startPoint,
@@ -233,11 +237,36 @@ describe('standalone Robofil 100 V2 package', () => {
     const program = await post(installation, document);
     const rapidIndex = program.lines.findIndex((line) => line === 'G0 X72.500 Y0.000');
     expect(rapidIndex).toBeGreaterThan(0);
-    expect(program.lines.slice(rapidIndex, rapidIndex + 5)).toEqual([
-      'G0 X72.500 Y0.000', 'M00', 'G42', 'G38 D0', 'G1 X70.500 Y0.000'
+    expect(program.lines.slice(rapidIndex, rapidIndex + 6)).toEqual([
+      'G0 X72.500 Y0.000', 'M00', 'M00', 'G42', 'G38 D0', 'G1 X70.500 Y0.000'
     ]);
     expect(program.blocks.find((block) => block.text === 'G0 X72.500 Y0.000'))
       .toMatchObject({ commandIds: ['motion.rapid-separating'] });
+    expect(program.blocks.filter((block) => block.text === 'M00').map((block) => block.commandIds))
+      .toEqual([['operator.program-stop'], ['operator.manual-thread']]);
+    const output = serializeControllerOutput(program, installation.package.manifest.output);
+    if (!output.ok) throw new Error(output.error.message);
+    expect(output.text).toBe([
+      '%',
+      'N10 G92 X0.000 Y0.000',
+      'N20 G0 X5.000 Y0.000',
+      'N30 G41',
+      'N40 G38 D0',
+      'N50 G3 X-5.000 Y0.000 I0.000 J0.000',
+      'N60 G3 X5.000 Y0.000 I0.000 J0.000',
+      'N70 G0 X72.500 Y0.000',
+      'N80 M00',
+      'N90 M00',
+      'N100 G42',
+      'N110 G38 D0',
+      'N120 G1 X70.500 Y0.000',
+      'N130 G3 X-70.500 Y0.000 I0.000 J0.000',
+      'N140 G3 X70.500 Y0.000 I0.000 J0.000',
+      'N150 G40',
+      'N160 G39',
+      'N170 M02',
+      ''
+    ].join('\r\n'));
   });
 
   it('keeps the existing compensation side through a manual rethread', async () => {
@@ -287,11 +316,12 @@ describe('standalone Robofil 100 V2 package', () => {
     });
     if (!bound.ok) throw new Error(bound.error.message);
 
+    const sourceDocument = compensatedRectangle();
     const project = createWorkbenchProjectDocument({
       id: 'robofil.no-lead-test',
       name: 'Robofil no-lead test',
       source: { kind: 'dxf', files: [] },
-      content: { kind: 'upid-document', document: compensatedRectangle() },
+      content: { kind: 'upid-document', document: sourceDocument },
       now: new Date('2026-08-29T09:00:00.000Z')
     });
     if (!project.ok) throw new Error(project.error.message);
@@ -329,6 +359,31 @@ describe('standalone Robofil 100 V2 package', () => {
       ''
     ].join('\r\n'));
     expect(new TextEncoder().encode(generated.artifact.text).byteLength).toBeGreaterThan(0);
+    const activeMachine = { ...bound.machine, activeBindingId: bound.binding.id };
+    const evidence = await emittedPauseEvidence(generated.artifact, installed.installation,
+      sourceDocument, activeMachine, 'saved-source', 'project-1');
+    expect(evidence).not.toBeNull();
+    expect(applicableEmittedPauseEvidence(evidence, {
+      sourceSignature: 'saved-source', projectIdentity: 'project-1', hasUnsavedChanges: false,
+      machines: [activeMachine], posts: installed.library
+    })).toEqual(new Map());
+    expect(applicableEmittedPauseEvidence(evidence, {
+      sourceSignature: 'changed-source', projectIdentity: 'project-1', hasUnsavedChanges: false,
+      machines: [activeMachine], posts: installed.library
+    })).toBeNull();
+    expect(applicableEmittedPauseEvidence(evidence, {
+      sourceSignature: 'saved-source', projectIdentity: 'project-1', hasUnsavedChanges: false,
+      machines: [{ ...activeMachine, bindings: activeMachine.bindings.map((binding) =>
+        binding.id === bound.binding.id ? { ...binding, properties: { ...binding.properties, offsetIndex: 1 } } : binding) }],
+      posts: installed.library
+    })).toBeNull();
+    expect(applicableEmittedPauseEvidence(evidence, {
+      sourceSignature: 'saved-source', projectIdentity: 'project-1', hasUnsavedChanges: false,
+      machines: [activeMachine], posts: { ...installed.library, installations:
+        installed.library.installations.map((candidate) => ({ ...candidate,
+          package: { ...candidate.package, manifest: { ...candidate.package.manifest,
+            description: 'Changed package with stale reference' } } })) }
+    })).toBeNull();
   });
 });
 

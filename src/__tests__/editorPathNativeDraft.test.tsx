@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppRailProvider, type AppRailContent } from '@/app/AppRailContext';
 import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { parseDxf } from '@/domain/dxf/parseDxf';
 import type { EditorSaveDraft } from '@/domain/editor/saveEditorProgram';
 import {
@@ -1657,6 +1658,61 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.querySelector('[data-upid-planned-rapid-editor]')).toBeNull();
     expect(container.querySelector('input[aria-label^="Planned rapid"]')).toBeNull();
     expect(container.textContent).toContain('Initial wire position');
+  });
+
+  it('keeps an exact initial-wire action selected across Geometry and Program and opens its workflow', async () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    document.geometryBasis = 'wire-centre';
+    document.setup = { initialWirePosition: {
+      kind: 'manual', point: { x: -3, y: 2 }, review: 'reviewed'
+    } };
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()}
+      project={projectWithUpid(document)} />));
+    await flushAsync();
+    await clickElement('[role="tab"][aria-label="Geometry lens"]');
+    const initial = [...container.querySelectorAll<HTMLButtonElement>('[data-upid-machining-action]')]
+      .find((button) => button.textContent?.includes('Initial wire'));
+    expect(initial).not.toBeUndefined();
+    await act(async () => initial?.click());
+    await flushAsync();
+    expect(initial?.getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelector('[data-preview-selected-spatial-action]')).not.toBeNull();
+    expect(container.querySelector('[data-editor-status-selected-point]')?.textContent)
+      .toContain('X -3 Y 2');
+    await clickElement('[role="tab"][aria-label="Program lens"]');
+    expect(container.querySelector('[data-preview-selected-spatial-action]')).not.toBeNull();
+    await ensureProgramTreeItemExpanded('section:program');
+    const programStart = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')]
+      .find((item) => item.dataset.treeKey?.startsWith('program:action:') &&
+        item.querySelector(':scope > div')?.textContent?.includes('Program start'));
+    expect(programStart).not.toBeUndefined();
+    await act(async () => programStart?.querySelector<HTMLElement>(':scope > div')?.click());
+    await flushAsync();
+    expect(container.querySelector('[data-editor-status-selected-point]')?.textContent)
+      .toContain('X -3 Y 2');
+    const operationRow = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')]
+      .find((item) => item.dataset.treeKey?.startsWith('operation:'));
+    expect(operationRow).not.toBeUndefined();
+    if (operationRow?.getAttribute('aria-expanded') === 'false') {
+      await act(async () => operationRow.querySelector<HTMLButtonElement>(
+        ':scope > div > button[aria-label^="Expand "]')?.click());
+      await flushAsync();
+    }
+    const cut = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')]
+      .find((item) => item.dataset.treeKey?.includes(':action:') &&
+        item.querySelector(':scope > div')?.textContent?.includes('Cut contour'));
+    expect(cut).not.toBeUndefined();
+    await act(async () => cut?.querySelector<HTMLElement>(':scope > div')?.click());
+    await flushAsync();
+    expect(container.querySelector('[data-editor-status-selected-point]')?.textContent)
+      .toContain('X 10 Y 0');
+    expect(container.querySelector('[data-preview-selected-spatial-action]')).not.toBeNull();
+    await clickElement('[role="tab"][aria-label="Geometry lens"]');
+    expect(container.querySelector('[data-preview-selected-spatial-action]')).not.toBeNull();
+    await clickElement('button[aria-label="Edit initial wire"]');
+    expect(container.querySelector('[data-initial-wire-position]')).not.toBeNull();
   });
 
   it('creates and edits a manual cut entry with undo and redo', async () => {

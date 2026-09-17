@@ -96,7 +96,12 @@ import {
 import { buildUpidEditorTree, type UpidEditorTree } from '@/domain/upid/upidEditorTree';
 import { programStopPreview } from '@/domain/editor/programStopPreview';
 import type { ExecutionSpatialAction } from '@/domain/editor/executionSpatialActions';
-import { orientedSegmentEnd, orientedSegmentStart } from '@/domain/path-intel/segments';
+import { selectedEditorPoint } from '@/domain/editor/selectedEditorPoint';
+import {
+  applicableEmittedPauseEvidence,
+  emittedPauseEvidence,
+  type EmittedPauseEvidence
+} from '@/domain/editor/emittedPauseEvidence';
 import {
   createMeasurementPointPathSnapFromMagnetized,
   exportMeasurementPointsAsCsv,
@@ -418,11 +423,25 @@ export function EditorPage({
   const interpreterProfile = draftState.model === 'gcode-text'
     ? draftState.interpreterProfile ?? 'neutral' : 'neutral';
   const pathDocumentDraft = editorDraftPathDocument(draftState);
+  const savedDraftSignature = useMemo(() => editorDraftSignature(program?.model === 'upid-document' &&
+    program.project.content.kind === 'upid-document'
+      ? { model: 'upid-document', pathDocument: program.project.content.document as PathPlanningDocument }
+      : createEditorDraftState(program)), [program]);
+  const programIdentity = program ? `${program.model}:${program.filePath}` : 'empty';
+  const lastProgramIdentityRef = useRef(programIdentity);
+  const draftSignature = useMemo(() => editorDraftSignature(draftState), [draftState]);
+  const hasUnsavedChanges = Boolean(program && draftSignature !== savedDraftSignature);
+  const [generatedPauseEvidence, setGeneratedPauseEvidence] = useState<EmittedPauseEvidence | null>(null);
+  const pauseEvidenceGenerationRef = useRef(0);
+  const exactPauseCommands = useMemo(() => applicableEmittedPauseEvidence(generatedPauseEvidence, {
+    sourceSignature: draftSignature, projectIdentity: programIdentity,
+    hasUnsavedChanges, machines, posts
+  }), [generatedPauseEvidence, draftSignature, programIdentity, hasUnsavedChanges, machines, posts]);
   const measurementSegments = useMemo(() => pathDocumentDraft?.segments ?? [], [pathDocumentDraft]);
   const measurement = useEditorMeasurement(measurementSegments);
   const programTree = useMemo(
-    () => pathDocumentDraft ? buildUpidEditorTree(pathDocumentDraft) : null,
-    [pathDocumentDraft]
+    () => pathDocumentDraft ? buildUpidEditorTree(pathDocumentDraft, exactPauseCommands) : null,
+    [pathDocumentDraft, exactPauseCommands]
   );
   const spatialActions = useMemo(() => {
     if (!pathDocumentDraft) return [];
@@ -436,13 +455,6 @@ export function EditorPage({
           action.operationId === selectedProgramExactTarget.operationId) ?? null : null;
   const selectedProgramStopId = selectedSpatialAction?.stopId ??
     (selectedProgramExactTarget?.kind === 'program-stop' ? selectedProgramExactTarget.stopId : null);
-  const savedDraftSignature = useMemo(() => editorDraftSignature(program?.model === 'upid-document' &&
-    program.project.content.kind === 'upid-document'
-      ? { model: 'upid-document', pathDocument: program.project.content.document as PathPlanningDocument }
-      : createEditorDraftState(program)), [program]);
-  const programIdentity = program ? `${program.model}:${program.filePath}` : 'empty';
-  const lastProgramIdentityRef = useRef(programIdentity);
-  const draftSignature = useMemo(() => editorDraftSignature(draftState), [draftState]);
   const isImporting = importStatus === 'importing';
   const isSaving = saveStatus === 'saving';
   const isEditorMutationLocked = interactionLocked || isImporting || isSaving;
@@ -581,7 +593,6 @@ export function EditorPage({
         ? 'machine-program'
         : 'empty-program';
   const editorFileName = program?.filePath.split('/').pop() ?? '-';
-  const hasUnsavedChanges = Boolean(program && draftSignature !== savedDraftSignature);
   const activeMutatingWorkflow = activeWorkflowSession?.kind === 'mutating'
     ? activeWorkflowSession
     : null;
@@ -659,24 +670,7 @@ export function EditorPage({
     : statusSegmentIndex >= 0
       ? `Segment ${statusSegmentIndex + 1}`
       : null;
-  const selectedGeometryPoint = (() => {
-    if (!pathDocumentDraft || !selectedPathElement || !statusOperation) return null;
-    if (selectedPathElement.travelRole) {
-      const transition = statusOperation.transitions;
-      if (selectedPathElement.travelRole === 'rapid-in') return statusOperation.startPoint;
-      if (selectedPathElement.travelRole === 'lead-in') return transition?.entry?.strategy !== 'none'
-        ? transition?.entry?.to ?? null : null;
-      if (selectedPathElement.travelRole === 'lead-out') return transition?.exit?.strategy !== 'none'
-        ? transition?.exit?.to ?? null : null;
-    }
-    if (!selectedPathElement.pointRole || !selectedPathElement.segmentId) return null;
-    const ref = statusOperation.segmentRefs.find((item) => item.segmentId === selectedPathElement.segmentId);
-    const segment = pathDocumentDraft.segments.find((item) => item.id === selectedPathElement.segmentId);
-    if (!ref || !segment) return null;
-    if (selectedPathElement.pointRole === 'center') return segment.kind === 'line' ? null : segment.center;
-    return selectedPathElement.pointRole === 'start'
-      ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref);
-  })();
+  const selectedPoint = selectedEditorPoint(pathDocumentDraft, selectedPathElement, selectedSpatialAction);
   const editorSelectionSummary = selectedSpatialAction
     ? [statusOperation?.displayName, selectedSpatialAction.label].filter(Boolean).join(' · ')
     : statusOperation
@@ -930,6 +924,7 @@ export function EditorPage({
     setSelectedPathElement(null);
     setSelectedProgramExactTarget(null);
     setSelectedProgramTreeKey(null);
+    setGeneratedPauseEvidence(null);
     setHoveredPathElement(null);
     setPreviewCursorPoint(null);
     setMeasurementPoints([]);
@@ -1304,6 +1299,24 @@ export function EditorPage({
         .find((candidate) => candidate.kind === 'event' && candidate.spatialAction?.key === actionKey)
       : null;
     setSelectedProgramTreeKey(node?.treeKey ?? programTreeKeyForOperation(action.operationId));
+  }
+
+  function handleActivateSpatialAction(actionKey: string) {
+    const action = spatialActions.find((candidate) => candidate.key === actionKey);
+    if (!action) return;
+    const node = programTree?.status === 'ready'
+      ? [...programTree.programEvents, ...programTree.operations.flatMap((operation) => operation.children)]
+        .find((candidate) => candidate.kind === 'event' && candidate.spatialAction?.key === actionKey)
+      : null;
+    if (node) {
+      openEditorWorkflowForTarget(node, node.treeKey);
+      return;
+    }
+    if (action.eventKind === 'program-stop') {
+      requestProgramTreeWorkflowTransition({ commandId: 'machining.program-stops',
+        exactTarget: { kind: 'spatial-action', actionKey, operationId: action.operationId },
+        operationId: action.operationId }, programTreeKeyForOperation(action.operationId) ?? 'section:program');
+    }
   }
 
   function handleSelectWorkflowOperation(operationId: string) {
@@ -2992,6 +3005,7 @@ export function EditorPage({
         spatialActions={spatialActions}
         selectedSpatialActionKey={selectedSpatialAction?.key ?? null}
         onSelectSpatialAction={handleSelectSpatialAction}
+        onActivateSpatialAction={handleActivateSpatialAction}
         onPathTranslateXDraftChange={setPathTranslateXDraft}
         onPathTranslateYDraftChange={setPathTranslateYDraft}
         onTransformDraftChange={(source) => {
@@ -3697,7 +3711,7 @@ export function EditorPage({
         machineFit={machineFit}
         onOpenDiagnostics={openStatusDiagnostics}
         previewCursorPoint={previewCursorPoint}
-        selectedPoint={selectedSpatialAction?.point ?? selectedGeometryPoint}
+        selectedPoint={selectedPoint}
         selectionSummary={editorSelectionSummary}
       />
       {exportPreviewOpen && pathDocumentDraft && (
@@ -3714,6 +3728,20 @@ export function EditorPage({
             }
           }}
           onDownload={onDownloadEditorFile}
+          onGenerationReset={() => {
+            pauseEvidenceGenerationRef.current += 1;
+            setGeneratedPauseEvidence(null);
+          }}
+          onArtifactGenerated={(artifact, machine, installation) => {
+            if (!pathDocumentDraft) return;
+            const generation = pauseEvidenceGenerationRef.current;
+            void emittedPauseEvidence(artifact, installation, pathDocumentDraft,
+              machine, draftSignature, programIdentity).then((evidence) => {
+              if (generation === pauseEvidenceGenerationRef.current) setGeneratedPauseEvidence(evidence);
+            }).catch(() => {
+              if (generation === pauseEvidenceGenerationRef.current) setGeneratedPauseEvidence(null);
+            });
+          }}
           onGenerateControllerArtifact={onGenerateControllerArtifact}
         />
       )}
@@ -3804,7 +3832,7 @@ function spatialActionsForDocument(document: PathPlanningDocument): readonly Exe
     key: `stop:${stop.operationId}:${stop.stopId}`, eventId: `preview:${stop.stopId}`,
     eventKind: 'program-stop' as const, operationId: stop.operationId, point: stop.point,
     label: 'Authored stop', detail: 'Authored in Program Stops · preview',
-    pause: 'authored' as const, stopId: stop.stopId
+    pause: 'authored' as const, emittedPauseCommandIds: [], stopId: stop.stopId
   }));
 }
 
