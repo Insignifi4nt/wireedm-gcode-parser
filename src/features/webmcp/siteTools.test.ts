@@ -3,6 +3,12 @@ import { Type } from '@sinclair/typebox';
 import { object, registerSiteTools, siteTool, type SiteTool } from './siteTools';
 
 describe('site tool boundary', () => {
+  it('returns a mutation receipt when cancellation arrives after commit', async () => {
+    const controller = new AbortController();
+    const tool = siteTool('save', 'Save', object({}), () => { controller.abort(); return { saved: true }; }, false);
+    expect(await tool.execute({}, { signal: controller.signal })).toEqual({ ok: true, data: { saved: true } });
+    expect(await tool.execute({}, { signal: controller.signal })).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+  });
   it('rejects invalid or extra arguments before execution and bounds output', async () => {
     const run = vi.fn(() => 'done');
     const tool = siteTool('check', 'Test', object({ count: Type.Integer({ minimum: 1, maximum: 5 }) }), run);

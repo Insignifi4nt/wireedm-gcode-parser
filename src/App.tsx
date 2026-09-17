@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useSiteTools } from '@/features/webmcp/siteTools';
 import { workbenchSiteTools, type DraftReadSnapshot, type WorkbenchToolState } from '@/features/webmcp/workbenchSiteTools';
+import { useWorkbenchActions } from '@/features/webmcp/useWorkbenchActions';
 
 import { AppShell } from '@/app/AppShell';
 import { type AppServices } from '@/app/appServices';
@@ -22,12 +23,13 @@ const EditorPage = lazy(() => import('@/features/editor/EditorPage').then(({ Edi
 
 export default function App({ services }: AppProps = {}) {
   const [onboardingOpen, setOnboardingOpen] = useState(() => !hasDismissedOnboarding());
-  const app = useWorkbenchAppController(services);
   const draftRead = useRef<DraftReadSnapshot | null>(null);
+  const app = useWorkbenchAppController(services, () => draftRead.current);
+  const agentActions = useWorkbenchActions(app, draftRead);
   const updateDraftRead = useCallback((snapshot: DraftReadSnapshot | null) => { draftRead.current = snapshot; }, []);
   const toolState = useRef<WorkbenchToolState>({ workbench: null, draft: null, busy: false });
   useLayoutEffect(() => { toolState.current = { workbench: app.connectedWorkbench, draft: null, busy: app.workbenchInteractionLocked }; });
-  useSiteTools(workbenchSiteTools(() => ({ ...toolState.current, draft: draftRead.current })));
+  useSiteTools([...workbenchSiteTools(() => ({ ...toolState.current, draft: draftRead.current })), ...agentActions.tools]);
   const planningMachineId = app.connectedWorkbench?.manifest.preferences.recentPlanningMachineId;
   const planningMachine = app.connectedWorkbench?.machines.machines.find(
     ({ id }) => id === planningMachineId
@@ -40,6 +42,7 @@ export default function App({ services }: AppProps = {}) {
 
   return (
     <AppShell
+      agentFileControl={agentActions.fileControl}
       connectedWorkbench={app.connectedWorkbench}
       errorMessage={app.errorMessage}
       interactionLocked={app.workbenchInteractionLocked}

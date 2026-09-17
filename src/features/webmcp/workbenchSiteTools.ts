@@ -13,6 +13,9 @@ export interface DraftReadSnapshot {
   document: PathPlanningDocument | null;
   dirty: boolean;
   workflowOpen: boolean;
+  workflowCommand?: string;
+  edit?: (edits: readonly import('./projectEdits').ProjectEdit[]) => void;
+  history?: (direction: 'undo' | 'redo') => boolean;
 }
 export interface WorkbenchToolState {
   workbench: ConnectedWorkbenchCatalog | null;
@@ -43,7 +46,8 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
     if (input.kind === 'current-draft') {
       const draft = getState().draft;
       if (!draft || draft.version !== input.version) throw new ToolError('STALE_STATE', 'Draft changed or closed. Read edm_get_context again.');
-      return { ...draft, kind: input.kind };
+      const { edit: _edit, history: _history, ...snapshot } = draft;
+      return { ...snapshot, kind: input.kind };
     }
     const project = await saved(input.projectId);
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(project)));
@@ -69,6 +73,7 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
       const { document, ...snapshot } = await resolve(input.target);
       return { ...snapshot, model: document ? 'upid' : 'external-gcode', ...(document ? {
         units: 'mm', schemaVersion: document.schemaVersion, geometryBasis: document.geometryBasis,
+        setup: document.setup ?? {}, options: document.options,
         counts: { operations: document.plan.operations.length, contours: document.contours.length, segments: document.segments.length },
         diagnostics: document.diagnostics.slice(0, 20), omittedDiagnosticCount: Math.max(0, document.diagnostics.length - 20)
       } : {}) };
@@ -92,7 +97,8 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
     siteTool('edm_get_capabilities', 'Read installed machines, active setup IDs and precise declared post capabilities. Does not change a setup or claim that a project is executable.', object(pageFields), (input) => {
       const workbench = connected();
       return page(workbench.machines.machines.map((machine) => ({ id: machine.id, name: machine.name, activeBindingId: machine.activeBindingId,
-        setups: machine.bindings.map((binding) => ({ id: binding.id, post: binding.post,
+        hardware: machine.hardware, limits: machine.limits,
+        setups: machine.bindings.map((binding) => ({ id: binding.id, name: binding.name, post: binding.post, properties: binding.properties, verification: binding.verification,
           capabilities: workbench.posts.installations.find(({ ref }) => ref.packageId === binding.post.packageId && ref.version === binding.post.version && ref.contentHash === binding.post.contentHash)?.package.manifest.capabilities ?? null }))
       })), input);
     }),

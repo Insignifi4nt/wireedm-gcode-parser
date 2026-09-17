@@ -38,6 +38,7 @@ interface AddStoredWorkbenchProjectInput {
 
 interface ReplaceStoredWorkbenchProjectInput {
   readonly project: WorkbenchProjectDocument;
+  readonly expectedContent?: WorkbenchProjectDocument['content'];
   readonly ownedFileChanges: readonly OwnedWorkbenchFileChange[];
 }
 
@@ -99,7 +100,10 @@ type ManifestStateError = {
   path: typeof WORKBENCH_CATALOG_PATH;
 };
 
+type ProjectContentChangedError = { code: 'WORKBENCH_PROJECT_CONTENT_CHANGED'; message: string };
+
 type MutationError =
+  | ProjectContentChangedError
   | WorkbenchCatalogManifestError
   | ProjectTrashTransactionError
   | SavedRevisionTransactionError
@@ -135,6 +139,7 @@ export type ReadStoredWorkbenchProjectError =
   | ProjectNotFoundError;
 
 export type ReplaceStoredWorkbenchProjectError =
+  | ProjectContentChangedError
   | MutationStateError
   | ProjectNotFoundError
   | ProjectConflictError
@@ -255,6 +260,9 @@ export async function replaceStoredWorkbenchProject(
     if (!entry) return projectNotFound(input.project.id);
     const previous = await readIndexedWorkbenchProjectStorage(workbench.adapter, entry);
     if (!previous.ok) return previous;
+    if (input.expectedContent && JSON.stringify(input.expectedContent) !== JSON.stringify(previous.project.content)) {
+      return { ok: false, error: { code: 'WORKBENCH_PROJECT_CONTENT_CHANGED', message: 'The saved project changed before the edit could be committed. Reopen the project.' } };
+    }
     if (
       JSON.stringify(previous.project.savedRevisionIds) !==
       JSON.stringify(input.project.savedRevisionIds)

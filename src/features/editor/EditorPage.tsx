@@ -1,3 +1,6 @@
+import { applyProjectEdits } from '@/features/webmcp/projectEdits';
+import { ToolError } from '@/features/webmcp/siteTools';
+import { flushSync } from 'react-dom';
 import {
   useEffect,
   useLayoutEffect,
@@ -436,9 +439,23 @@ export function EditorPage({
   const readVersion = useMemo(() => crypto.randomUUID(), [draftState, program, hasUnsavedChanges, activeWorkflowSession]);
   useLayoutEffect(() => {
     onReadSnapshot?.({ projectId: program?.project.id ?? null, version: readVersion, document: pathDocumentDraft,
-      dirty: hasUnsavedChanges, workflowOpen: activeWorkflowSession !== null });
+      dirty: hasUnsavedChanges, workflowOpen: activeWorkflowSession !== null,
+      workflowCommand: activeWorkflowSession?.commandId,
+      edit: (edits) => {
+        if (isEditorMutationLocked || activeWorkflowSession) throw new ToolError('BUSY', 'Finish the current editor workflow first.');
+        if (!pathDocumentDraft) throw new ToolError('WRONG_MODEL', 'Open a path project first.');
+        const next = applyProjectEdits(pathDocumentDraft, edits);
+        flushSync(() => applyPathDocumentEdit(next));
+      },
+      history: (direction) => {
+        if (isEditorMutationLocked || activeWorkflowSession) throw new ToolError('BUSY', 'Finish the current editor workflow first.');
+        if (!(direction === 'undo' ? undoStack : redoStack).length) return false;
+        flushSync(() => direction === 'undo' ? handleUndoDraft() : handleRedoDraft());
+        return true;
+      }
+    });
     return () => onReadSnapshot?.(null);
-  }, [onReadSnapshot, program, readVersion, pathDocumentDraft, hasUnsavedChanges, activeWorkflowSession]);
+  });
   const [generatedPauseEvidence, setGeneratedPauseEvidence] = useState<EmittedPauseEvidence | null>(null);
   const pauseEvidenceGenerationRef = useRef(0);
   const exactPauseCommands = useMemo(() => applicableEmittedPauseEvidence(generatedPauseEvidence, {

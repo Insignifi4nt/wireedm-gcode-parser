@@ -37,7 +37,8 @@ export function siteTool<S extends TSchema>(
         signal.throwIfAborted();
         if (!Value.Check(inputSchema, input)) throw new ToolError('INVALID_ARGUMENT', 'Arguments must match the tool schema.');
         const data = await run(input, signal);
-        signal.throwIfAborted();
+        // Once a mutation commits, return its receipt even if cancellation arrived during the write.
+        if (readOnlyHint) signal.throwIfAborted();
         const result = { ok: true, data };
         if (new TextEncoder().encode(JSON.stringify(result)).byteLength > 32 * 1024) {
           throw new ToolError('OUTPUT_TOO_LARGE', 'Request fewer rows or use the visible page report for full details.');

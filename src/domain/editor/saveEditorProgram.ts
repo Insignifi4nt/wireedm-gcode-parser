@@ -31,6 +31,7 @@ export type EditorSaveDraft =
 export interface SaveEditorProgramInput {
   readonly projectId: string;
   readonly draft: EditorSaveDraft;
+  readonly expectedContent?: WorkbenchProjectDocument['content'];
   readonly now?: Date;
 }
 
@@ -44,7 +45,7 @@ export type SaveEditorProgramError =
       readonly projectModel: 'gcode-text' | 'upid-document';
       readonly draftModel: EditorSaveDraft['model'];
     }
-  | { readonly code: 'EDITOR_SAVE_TIMESTAMP_INVALID'; readonly message: string };
+  | { readonly code: 'EDITOR_SAVE_TIMESTAMP_INVALID' | 'EDITOR_SAVE_STALE'; readonly message: string };
 
 export type SaveEditorProgramResult =
   | {
@@ -61,6 +62,9 @@ export async function saveEditorProgram(
 ): Promise<SaveEditorProgramResult> {
   const read = await readStoredWorkbenchProject(workbench, input.projectId);
   if (!read.ok) return read;
+  if (input.expectedContent && JSON.stringify(input.expectedContent) !== JSON.stringify(read.project.content)) {
+    return { ok: false, error: { code: 'EDITOR_SAVE_STALE', message: 'The saved project changed since it was opened. Reopen it before saving.' } };
+  }
   const projectModel = read.project.content.kind === 'upid-document'
     ? 'upid-document'
     : 'gcode-text';
@@ -115,6 +119,7 @@ export async function saveEditorProgram(
     : [];
   const replaced = await replaceStoredWorkbenchProject(workbench, {
     project: parsed.project,
+    expectedContent: input.expectedContent ?? read.project.content,
     ownedFileChanges
   });
   if (!replaced.ok) return replaced;
