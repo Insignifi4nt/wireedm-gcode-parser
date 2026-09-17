@@ -39,6 +39,7 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 
 - Warn explicitly about breaking or potentially breaking changes to installed post processors in the PR, release compatibility record, and affected user-facing diagnostics. Cover schemas, capabilities, execution events, audit rules, output, and installation; never silently rewrite installed packages or saved revisions.
 - Ship changes through reviewed pull requests. Each merged PR advances the app version once and includes a compatibility checklist; keep the app release number separate from UPID, post schema, and engine API versions. Do not push directly to main.
+- Public documentation and repair prompts serve users and agents with only the hosted app and a cloud browser. Never require a repository checkout, terminal, npm command, or access to another browser's files. Expose needed authoring operations through the hosted UI and shared domain APIs. Keep deployment rationale, release-maintainer procedures and internal roadmap notes out of public authoring pages.
 
 - Preserve the old editor behavior before replacing it.
 - Do not add mock project names, fake library rows, or buttons that only change screens.

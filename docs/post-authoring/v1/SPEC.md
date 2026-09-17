@@ -138,9 +138,9 @@ Every post manifest MUST declare the complete controller-file rules: `fileExtens
 
 The only human-installable artifact is a ZIP archive with the `.wireedm-package` extension. It MUST contain exactly one root `wireedm-package.json`, one complete machine definition, one or more complete post processors, one complete setup for every included post, one selected `activeBindingId`, and every referenced evidence file. Loose `.wireedm-machine.json` and `.wireedm-post.json` files are authoring inputs only.
 
-The source-directory form uses `machine-package.source.json` to reference the machine and post inputs. The build command MUST resolve all paths within that directory, MUST reject traversal and escaping symlinks, and MUST produce a deterministic archive. The install archive MUST reject absolute, backslash, empty-segment, dot-segment, or parent-segment paths; more than 33,554,432 compressed bytes; more than 67,108,864 total expanded bytes; more than 2,048 entries; missing, changed, or unreferenced files; malformed or duplicate requirements; dangling setup references; target mismatch; and any post that fails conformance.
+The browser Package workbench accepts the complete package document and evidence files at explicit relative paths and produces a deterministic archive. The install archive MUST reject absolute, backslash, empty-segment, dot-segment, or parent-segment paths; more than 33,554,432 compressed bytes; more than 67,108,864 total expanded bytes; more than 2,048 entries; missing, changed, or unreferenced files; malformed or duplicate requirements; dangling setup references; target mismatch; and any post that fails conformance.
 
-The generated `sdk/canonical-installation-scenarios.json` registry defines the normative valid-new, invalid-target, same-ID machine-update, post-version conflict, and same-machine/new-post fixture recipes. Implementations and authoring agents SHOULD apply those recipes to the referenced complete example, recompute declared hashes where instructed, and verify the exact expected classification or diagnostic before publishing an installer workflow.
+Package checks use the same validation and conformance rules as installation. Reading a rejected archive for repair MUST NOT mark its contents validated or permit installation. Only a successful complete build can produce a downloadable installer package.
 
 The package machine definition MUST repeat the full physical machine even when the package exists only to add a post version. Every included setup MUST bind an exact `(post ID, version, canonical content SHA-256)` and provide all required properties and an explicit compatibility acknowledgement. Package completion MUST NOT rely on a human entering raw IDs, JSON properties, output settings, or compatibility fields after installation.
 
@@ -151,8 +151,6 @@ Installation is previewed, then committed atomically. Exact physical machine def
 Controller output is generated only from a persisted, validated saved job revision. That revision snapshots the UPID, neutral execution plan, physical machine, exact machine setup and verification state, exact package, resolved properties, engine version, and content hashes.
 
 Reopening stored post libraries MUST validate package structure and semantics and verify the exact canonical content hash and reference without rerunning installation conformance. Legacy snapshots remain readable for inspection even when stricter execution audits reject generation. Installation and execution remain strict. Updating an older arc package requires a new post version and exact setup reference; existing installations and saved revisions MUST NOT be silently rewritten.
-
-Version-1 workbench migration MUST preserve each original manifest and project byte-for-byte under `legacy/v1/` before replacing editable project records. Migrated projects MUST NOT reinterpret embedded legacy controller configuration as an evidenced complete package; the preserved originals remain the recovery source for prior templates, machine profiles, and output settings. Empty legacy path and machine-program projects MUST remain openable after migration.
 
 File extension, line ending, encoding, and final-newline policy come only from the exact snapshotted post. Draft editor state, a missing active setup, a dangling post reference, a modified package, a non-representable encoding, or a hash mismatch MUST stop generation with a specific error.
 
@@ -167,7 +165,7 @@ An authored package is complete only when the agent has:
 - added meaningful exact fixtures;
 - created the complete machine definition and exact setup properties;
 - declared all controller-file rules in the post manifest;
-- run schema generation, post conformance, package build, package validation, and package inspection successfully;
+- completed Check post, Build package and Inspect package successfully in the browser and downloaded the report;
 - reported unresolved evidence or physical-verification limits explicitly.
 
 If any required input is unavailable, the agent MUST ask the human to attach or identify it and MUST stop before building. The agent MUST NOT claim physical verification from conformance alone.

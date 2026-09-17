@@ -269,13 +269,13 @@ const generatedFiles = [
           'sdk/wire-edm-machine-package.d.ts',
           'sdk/wire-edm-machine-package-source.d.ts'
         ],
-        buildCommand: 'npm run machine-package:build -- <source-directory> [output.wireedm-package]',
-        validateCommand: 'npm run machine-package:validate -- <package.wireedm-package>',
-        inspectCommand: 'npm run machine-package:inspect -- <package.wireedm-package>'
+        browserWorkbench: 'https://insignifi4nt.github.io/wireedm-gcode-parser/package-tools/',
+        buildAction: 'Build package: Validate and build package',
+        inspectAction: 'Inspect package: Validate and inspect package'
       },
       conformance: {
         runnerVersion: '1',
-        command: 'npm run post:conformance -- <package.wireedm-post.json>',
+        browserAction: 'Check post: Validate post and run conformance',
         canonicalFixtureRegistryVersion: '1',
         canonicalFixtureIds: Object.keys(CANONICAL_POST_PLAN_FIXTURES)
       }

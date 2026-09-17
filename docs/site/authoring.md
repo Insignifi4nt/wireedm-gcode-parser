@@ -1,71 +1,55 @@
-# From machine evidence to an installable package
+# Create a package in your browser
 
-## 1. Establish the target
+Use the [Package workbench](tools.md) throughout this workflow. You need a browser, the user's machine information and their controller evidence. No repository checkout or terminal is required.
 
-Ask for the machine manufacturer/model, controller manufacturer/model, firmware if known, X/Y travel, threading hardware, and required operations. Obtain the exact controller manual and representative known-good programs. Record unknowns explicitly. A related machine's manual may inform research but does not verify this controller.
+## 1. Establish the machine and required behavior
 
-Agree on output extension, encoding, LF/CRLF, final newline, program wrappers, numbering, coordinate precision and other setup properties. Obtain permission and necessary files for any physical verification. Software conformance alone is not a machine test.
+Ask for the machine manufacturer/model, controller manufacturer/model, firmware if known, X/Y travel, threading hardware and required operations. Obtain the exact controller manual and representative known-good programs. Keep unknown facts explicit; a related machine's manual does not verify this controller.
 
-Use the [input checklist](../post-authoring/v1/AUTHORING_TASK.md). Stop and ask for missing evidence rather than inventing commands or returning a partial package.
+Agree on extension, encoding, LF/CRLF, final newline, program wrappers, numbering, coordinate precision and setup properties. Use the [input checklist](../post-authoring/v1/AUTHORING_TASK.md) to collect missing facts before implementing behavior.
 
-## 2. Get the matching contract
+## 2. Read the contract you need
 
-Clone the [open-source repository](https://github.com/Insignifi4nt/wireedm-gcode-parser), check out the app's release tag (`v` followed by the app version), and run `npm ci` with Node 22.13 or later. The release page supplies the exact version. During an unreleased PR, use its exact commit instead.
+Read the [package specification](../post-authoring/v1/SPEC.md), [guest SDK](../post-authoring/v1/sdk/wire-edm-post-sdk.d.ts), [agent instructions](../post-authoring/v1/AGENTS.md) and [schemas and fixtures](reference.md). These are downloadable directly from this site.
 
-Read the [normative contract](../post-authoring/v1/SPEC.md), [SDK](../post-authoring/v1/sdk/wire-edm-post-sdk.d.ts), [schemas and fixtures](reference.md), and [agent instructions](../post-authoring/v1/AGENTS.md). Use **post schema v2** for new posts. Authoring kit v1 and engine API `"1"` are separate format/API identifiers; they are not old app versions.
+New posts use **post schema v2** and engine API `"1"`. Record the app version shown in the Package workbench and the versioned documentation link from [App releases](releases.md). App release numbers and schema/API numbers have separate meanings.
 
-## 3. Describe supported behavior
+## 3. Write and check the post
 
-Build a table of each execution event, the controller commands it requires, preconditions/effects and supporting evidence. Declare only implemented capabilities. `wireSeparation` is an array of exact mechanisms; `[]` claims none. Manual threading and wire separation are distinct capabilities.
+Create a `.wireedm-post.json` document. Use the [minimal example](../post-authoring/v1/examples/minimal.wireedm-post.json) for structure only; supply your own target, commands, evidence, IDs and tests.
 
-The deterministic guest exports `createPost(api)` and handles events with `onEvent(event)`. Use `api.emitMotion` for motion and positioning, `api.emitCommand` for non-moving commands, and `api.consume` for an event that intentionally emits no command. Read properties with `api.getProperty`. The SDK defines exact signatures and payloads. There is no network, filesystem, clock, random-number source or unrestricted JavaScript environment inside a post.
+Set its `manifest.authoredFor` to the target `appVersion` and its HTTPS `documentationUrl` before checking the post. This records the authoring target, not compatibility with every app release or physical verification. Any later change to the post requires a new check and updated hash in its setup reference.
 
-Declare command parameters, spelling, numeric formatting, motion roles, arc direction and state requirements/effects in the dialect. Audit uses those declarations and formatted coordinates; emitting plausible text alone is insufficient. Keep controller output rules in `manifest.output`.
+Map each execution event to its controller commands, prerequisites, effects and evidence. Declare only implemented capabilities. `wireSeparation` is an array of exact mechanisms; `[]` claims none. Threading is a separate capability.
 
-Use the [minimal post](../post-authoring/v1/examples/minimal.wireedm-post.json) as a structural example only. It is not a universal G-code post or a verified machine package. Start your own IDs, evidence, capabilities and fixtures.
+The deterministic guest exports `createPost(api)` and handles `onEvent(event)`. Use `api.emitMotion` for motion/positioning, `api.emitCommand` for non-moving commands, `api.consume` for an intentionally silent event, and `api.getProperty` for setup values. The SDK defines their exact signatures. The post owns controller syntax and state; the app owns geometry and machining intent.
 
-## 4. Assemble the complete source directory
+In **Check post**, paste the JSON or choose its file, then select **Validate post and run conformance**. Inspect the report's diagnostics and exact fixture output. Correct the inputs and repeat until checks pass. Copy `post.contentHash` from the report for the machine setup. This is the canonical JSON hash, not a hash of the formatted file bytes.
 
-```text
-my-machine/
-  machine-package.source.json
-  machine.wireedm-machine.json
-  controller.wireedm-post.json
-  evidence/
-    controller-manual.pdf
-    known-good-program.iso
-```
+## 4. Assemble the machine package
 
-The [source manifest schema](../post-authoring/v1/schema/machine-package-source.schema.json) defines references to these files. The [machine schema](../post-authoring/v1/schema/machine-definition.schema.json) defines physical identity and setups; the [post schema](../post-authoring/v1/schema/post-package.schema.json) defines the post. Evidence paths stay inside this directory. Record SHA-256 over the exact evidence bytes, selectors, scope and review status. Never label a candidate program as known-good.
+In **Build package**, paste a complete document matching the [machine-package schema](../post-authoring/v1/schema/machine-package.schema.json). It contains:
 
-Each setup supplies every required property and an exact post ID, semantic version and canonical content hash. Compute that hash using `npm run post:hash -- my-machine/controller.wireedm-post.json`; hashing the pretty-printed file bytes is different and incorrect. Select an included setup with `activeBindingId`. A changed post needs a new version and a new exact setup reference.
+- `format: "wire-edm-machine-package"` and `schemaVersion: 1`;
+- `manifest`: the package ID, version, name and description;
+- `machine`: physical identity, hardware, limits, evidence and complete setups;
+- `posts`: the complete checked post documents;
+- `activeBindingId`: an included setup ID.
 
-Record provenance in the post manifest:
+Each setup references an exact post ID, version and canonical hash, supplies every required property and includes an explicit compatibility acknowledgement. Leave physical verification `unverified` without an exact machine test record.
 
-```json
-"authoredFor": {
-  "appVersion": "<exact app release>",
-  "documentationUrl": "https://github.com/Insignifi4nt/wireedm-gcode-parser/tree/v<exact app release>/docs/post-authoring/v1"
-}
-```
+Add the evidence files. Each row displays its byte SHA-256 and an editable archive path, such as `evidence/controller-manual.pdf`. Copy that exact path and digest into the document's evidence/source records. **Add text evidence** supports supplied operator notes without requiring a local text editor. Never turn a generated example into a claimed known-good program.
 
-Replace the placeholders. This is an authoring target, not proof of compatibility with other app versions. Leave a setup `unverified` unless the user provides the exact physical verification record.
+## 5. Build and inspect
 
-## 5. Verify behavior and build
+Select **Validate and build package**. The workbench verifies document shape, machine/post bindings, evidence bytes and declared fixture conformance before offering **Download .wireedm-package**. Review the report, then download the package, package document and report.
 
-```sh
-npm run post:docs:check
-npm run post:conformance -- my-machine/controller.wireedm-post.json
-npm run machine-package:validate-source -- my-machine
-npm run machine-package:build -- my-machine my-machine.wireedm-package
-npm run machine-package:validate -- my-machine.wireedm-package
-npm run machine-package:inspect -- my-machine.wireedm-package
-```
+Choose the downloaded archive in **Inspect package** and select **Validate and inspect package** to check the deliverable. For an update, you can start here with an existing package and choose **Use as build input** to retain its readable document and evidence in the builder. If inspection fails, those contents are unvalidated repair inputs and must pass a new complete build before installation.
 
-Every declared command and positive capability needs fixture coverage. Exercise property boundaries, both arc directions if supported, compensation changes, stops, threading, separation and unsupported paths. Golden fixtures cover both logical commands and final serialized artifact bytes. Review expected output against controller evidence before accepting it. If the canonical fixture registry cannot exercise a required behavior, report the missing app support; do not invent fixture IDs or weaken checks.
+If a check fails, fix the reported cause. Do not relax capabilities, invent fixture IDs, rewrite expected output merely to pass, or change the user's machining choices to bypass validation. Report a missing canonical fixture or unsupported API behavior as an app limitation.
 
 ## 6. Deliver and install
 
-Deliver the built `.wireedm-package`, its editable source directory, archive and post hashes, exact target scope, test results and remaining limitations. The user installs the archive through **Settings → Machines & setups → Install machine package**. For an existing machine, review the preview and choose **Add and use new setup**. Existing installations and saved revisions keep their exact contents.
+Return the `.wireedm-package`, editable package document, evidence files and validation report. State the exact target, supported behavior and remaining limitations. Files in your cloud browser are not automatically available in the user's browser; give them the download or attachment.
 
-Generate a fresh controller artifact from the reviewed saved project and active setup. Compare it against expected controller behavior before any machine operation.
+The user installs the archive through **Settings → Machines & setups → Install machine package**, reviews the preview and selects the new setup. Then generate output from the reviewed saved project. Software checks do not replace controller simulation or an evidenced physical test.

@@ -60,7 +60,8 @@ describe('EditorControllerArtifactDialog', () => {
     expect(fallback.closest('details')?.open).toBe(true);
     expect(fallback.value).toContain('event-5');
     expect(fallback.value).toContain(posts.installations[0].ref.contentHash);
-    expect(fallback.value).toContain('post:conformance');
+    expect(fallback.value).toContain('Check post');
+    expect(fallback.value).toContain('/package-tools/');
     expect(fallback.value).toContain('Geometry, complete source code and evidence files are not included');
     await click('Copy agent repair prompt');
     expect(writeText).toHaveBeenLastCalledWith(fallback.value);

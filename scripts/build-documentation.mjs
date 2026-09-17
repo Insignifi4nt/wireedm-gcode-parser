@@ -9,8 +9,8 @@ const origin = 'https://insignifi4nt.github.io';
 const base = '/wireedm-gcode-parser/';
 const docs = `${base}documentation/`;
 const repository = `https://github.com/Insignifi4nt/wireedm-gcode-parser/blob/v${pkg.version}/`;
-const guides = ['index', 'authoring', 'compatibility', 'reference', 'releases'];
-const titles = ['Start here', 'Author a package', 'Compatibility & repairs', 'Contract reference', 'App releases'];
+const guides = ['index', 'authoring', 'tools', 'compatibility', 'reference', 'releases'];
+const titles = ['Start here', 'Author a package', 'Package workbench', 'Compatibility & repairs', 'Contract reference', 'App releases'];
 const routes = new Map(guides.map((slug) => [`docs/site/${slug}.md`, `${docs}${slug === 'index' ? '' : slug + '/'}index.md`]));
 const htmlUrls = [];
 const escape = (text) => String(text).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -36,7 +36,7 @@ async function output(url, content) {
 }
 function links(markdown, source, html) {
   return markdown.replace(/\]\(([^\s)]+)\)/g, (_, target) => {
-    if (/^(?:https?:|mailto:|#)/.test(target)) return `](${target})`;
+    if (/^(?:https?:|mailto:|#)/.test(target)) return `](${html && target.startsWith(origin + base) ? target.slice(origin.length) : target})`;
     const [file, fragment] = target.split('#');
     const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(source), file));
     let url = routes.get(resolved) ?? `${repository}${resolved}`;
@@ -65,12 +65,13 @@ const releaseFiles = (await walk('docs/releases')).filter((file) => file.endsWit
 const releases = [];
 for (const file of releaseFiles) {
   const release = JSON.parse(await readFile(file, 'utf8'));
-  releases.push(release);
+  const published = { version: release.version, previousVersion: release.previousVersion, ...release.publicNotes };
+  releases.push(published);
   const directory = `${docs}releases/${release.version}/`;
-  const markdown = `# App ${release.version}\n\n${release.summary}\n\n## Compatibility warning\n\n${release.warning}\n\n## Checklist\n\n${Object.entries(release.checklist).map(([key, value]) => `- **${key}**: ${value}`).join('\n')}\n\n## Recorded verification scope\n\n${release.testedPosts.map((post) => `- ${post.id}@${post.version}: ${post.scope}`).join('\n')}\n\n[Exact source and authoring contract](https://github.com/Insignifi4nt/wireedm-gcode-parser/tree/v${release.version}/docs/post-authoring/v1)\n`;
+  const markdown = `# App ${release.version}\n\n${published.summary}\n\n## Changes\n\n${published.changes.map((change) => `- ${change}`).join('\n')}\n\n## Compatibility\n\n${published.compatibility}\n\n## Updating a package\n\n${published.action}\n\n[Versioned authoring contract](https://github.com/Insignifi4nt/wireedm-gcode-parser/tree/v${release.version}/docs/post-authoring/v1)\n`;
   await output(directory + 'index.md', markdown);
   await output(directory + 'index.html', page(`App ${release.version}`, marked.parse(markdown), directory + 'index.html', directory + 'index.md'));
-  await output(directory + 'release.json', JSON.stringify(release, null, 2) + '\n');
+  await output(directory + 'release.json', JSON.stringify(published, null, 2) + '\n');
   htmlUrls.push(origin + directory + 'index.html');
 }
 await output(docs + 'releases.json', JSON.stringify({ currentVersion: pkg.version, releases }, null, 2) + '\n');

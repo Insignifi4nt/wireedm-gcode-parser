@@ -1,6 +1,6 @@
 # Contract reference
 
-Use these files while implementing. JSON schemas and TypeScript declarations are generated from application code; edit the authoritative source and regenerate, never patch generated files by hand.
+Use these downloadable contracts when preparing JSON for the [Package workbench](tools.md). The files describe the exact structures and behavior accepted by the hosted app.
 
 ## Authoring
 
@@ -12,7 +12,6 @@ Use these files while implementing. JSON schemas and TypeScript declarations are
 
 ## Schemas
 
-- [Source-folder manifest](../post-authoring/v1/schema/machine-package-source.schema.json)
 - [Built machine-package document](../post-authoring/v1/schema/machine-package.schema.json)
 - [Physical machine and exact setups](../post-authoring/v1/schema/machine-definition.schema.json)
 - [Post manifest, dialect, evidence and fixtures](../post-authoring/v1/schema/post-package.schema.json)
@@ -22,7 +21,6 @@ Use these files while implementing. JSON schemas and TypeScript declarations are
 - [Guest SDK and all event payloads](../post-authoring/v1/sdk/wire-edm-post-sdk.d.ts)
 - [Diagnostic codes and resource limits](../post-authoring/v1/sdk/event-diagnostic-catalog.json)
 - [Canonical execution-plan fixtures](../post-authoring/v1/sdk/canonical-plan-fixtures.json)
-- [Installation scenarios](../post-authoring/v1/sdk/canonical-installation-scenarios.json)
 
 ## UPID
 

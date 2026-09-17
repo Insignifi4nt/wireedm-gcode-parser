@@ -39,16 +39,17 @@ export function postRepairPrompt(input: {
     `Current documentation: ${DOCUMENTATION_URL}`,
     `App source: ${APP_SOURCE_URL}`,
     `Compatibility and upgrade guide: ${DOCUMENTATION_URL}compatibility/`,
+    'Browser authoring tools: https://insignifi4nt.github.io/wireedm-gcode-parser/package-tools/ — no checkout or terminal required.',
     '## Diagnostic context',
     JSON.stringify(context, null, 2),
     '## Known contract changes (check relevance; they are not a diagnosis)',
     ...POST_CONTRACT_CHANGES.map((change) => `- ${change}`),
     '## Investigation and repair',
-    '1. Ask for the original complete .wireedm-package/source folder and exact machine/controller/firmware evidence. If reproduction needs it, request the saved UPID project/revision. Geometry, complete source code and evidence files are not included in this prompt.',
+    '1. Ask for the original complete .wireedm-package and exact machine/controller/firmware evidence. If reproduction needs it, request the saved UPID project/revision. Geometry, complete source code and evidence files are not included in this prompt. Your cloud browser cannot access the user’s browser storage automatically.',
     '2. Inspect the exact manifest capabilities, execution contract, dialect command state effects, createPost event handlers and fixtures. App entry points: src/domain/post-processor/postCapabilityPreflight.ts, src/domain/post-processor/custom-runtime/customPostRuntime.ts, src/domain/execution-plan/executionPlan.ts and src/domain/wire-edm-job/controllerArtifact.ts.',
     '3. Do not change machining choices or invent capabilities to bypass an error. A missing exact separation declaration requires controller evidence and supporting post behavior; an older package may need an update, but a newer version is not automatically compatible.',
-    '4. For a post change, increment its version, record manifest.authoredFor, recompute its canonical content hash, update the exact setup reference, and rebuild a complete .wireedm-package. Preserve installed snapshots and historical revisions. Keep machine verification unverified without an exact physical test record.',
-    '5. Run npm run post:docs:check; npm run post:conformance -- <post-file>; npm run machine-package:validate-source -- <source-directory>; npm run machine-package:build -- <source-directory> <output.wireedm-package>; npm run machine-package:validate -- <output.wireedm-package>. Review golden output against evidence, not merely test success.',
+    '4. Open Inspect package in the browser workbench, select the original archive, and use readable contents as build input. Treat failed validation contents as unvalidated repair inputs. For a post change, increment its version, record manifest.authoredFor, and use Check post to validate, run conformance and obtain the new canonical hash. Update the exact setup reference. Preserve installed snapshots and historical revisions; keep physical verification unverified without an exact record.',
+    '5. In Build package, paste the complete package document and supply evidence files with matching paths and displayed SHA-256 values. Validate and build, download the package and report, then validate the downloaded archive using Inspect package. Review golden output against evidence, not merely test success.',
     '6. Return the cause, changes, verification results, package path/hash, remaining limitations, and installation instructions: Settings → Machines & setups → Install machine package → Add and use new setup. Regenerate from the reviewed saved project.'
   ].join('\n\n');
 }

@@ -4,7 +4,7 @@
 
 | Version | Meaning |
 | --- | --- |
-| App release, such as 0.0.686 | One reviewed PR release; linked to a source tag and compatibility checklist |
+| App release, such as 0.0.686 | The app used to author/check a package; linked to versioned documentation and compatibility notes |
 | UPID schema | Serialized manufacturing intent; v2 adds after-positioning stops and separation during positioning |
 | Post schema | Serialized post manifest and dialect; new posts use v2 exact separation declarations |
 | Engine API / authoring kit | Guest callback contract and publication generation; currently `1` |
@@ -24,12 +24,12 @@ These are documented as baseline restrictions in app 0.0.685, not newly introduc
 
 Use **Copy agent repair prompt** in the error panel. Review the text before sharing it. It carries the app version, exact selected post reference, capabilities, output rules, machine/controller identity, setup properties, diagnostics and source pointers. It does not contain the full project geometry, source package or evidence files; supply those separately if reproduction requires them.
 
-A capability error can mean either an older declaration or genuinely unsupported controller behavior. Do not merely add a capability flag to silence it. Verify the controller evidence, event handler and fixtures first. For the reported Robofil cut-on-rapid case, 2.4.0 used a broad boolean; 2.5.0 declares automatic separation during positioning. The 2.6.0 metadata release adds app provenance without changing controller output.
+A capability error can mean either an older declaration or genuinely unsupported controller behavior. Do not merely add a capability flag to silence it. Verify the controller evidence, event handler and fixtures first. For example, a legacy `wireSeparation: true` declaration does not establish which separation method the post implements.
 
-For package parsing/installation failures, run the package validation CLI and give the agent its JSON report plus the source folder. For revision or project-intent errors, inspect the UPID/compiler diagnostics before changing a post.
+For package parsing/installation failures, use **Inspect package** in the [Package workbench](tools.md) and give the agent its JSON report plus the package. For revision or project-intent errors, inspect the UPID/compiler diagnostics before changing a post.
 
 ## Updating a package
 
 Publish changed content under a new post version. Recompute its canonical hash, update the setup's exact reference, build the whole machine package and run conformance and archive validation. Install and activate the new setup explicitly. Never overwrite old package versions or historic revisions.
 
-An app deployment does not replace locally installed machine packages. The app remains controller-neutral; there is no privileged Robofil upgrade path.
+An app update does not replace locally installed machine packages. Install and activate a new setup explicitly when required.

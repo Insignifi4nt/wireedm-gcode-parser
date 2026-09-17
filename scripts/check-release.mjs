@@ -15,6 +15,8 @@ for (const key of ['schema', 'events', 'capabilities', 'auditAndOutput', 'instal
   assert.ok(release.checklist[key]?.trim(), `Missing compatibility checklist: ${key}`);
 }
 assert.ok(release.summary && release.warning && release.postCompatibility);
+assert.ok(release.publicNotes?.summary && release.publicNotes?.compatibility && release.publicNotes?.action);
+assert.ok(release.publicNotes.changes.length > 0, 'Record user-facing release changes.');
 const base = process.argv[2];
 if (base) {
   // Pass a trusted git ref (CI uses origin/main), never shell-interpolate it.
