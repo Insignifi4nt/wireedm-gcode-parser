@@ -17,7 +17,6 @@ export const TOUCH_DOUBLE_TAP_TIMEOUT_MS = 500;
 export const TOUCH_TAP_THRESHOLD = 10;
 
 const PREVIEW_GRID_MAX_LINES_PER_AXIS = 120;
-const PREVIEW_GRID_MAX_LABELS_PER_AXIS = 8;
 const GRID_EPSILON = 1e-9;
 
 export interface PreviewPan {
@@ -143,11 +142,86 @@ export function touchDistance(first: PreviewTouchPoint, second: PreviewTouchPoin
   return Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
 }
 
-export function buildPreviewGrid(viewBox: EditorPreviewViewBox, flipY: number) {
+/** SVG user units per CSS pixel after preserveAspectRatio has fitted the viewBox. */
+export function previewWorldUnitsPerCssPixel(
+  viewBox: EditorPreviewViewBox,
+  surface: { width: number; height: number }
+) {
+  const width = surface.width > 0 ? surface.width : 700;
+  const height = surface.height > 0 ? surface.height : 500;
+  return Math.max(viewBox.width / width, viewBox.height / height);
+}
+
+/** Keep a small visible sample while retaining every endpoint in the source geometry. */
+export function visibleEndpointIndices<T extends { point: { x: number; y: number } }>(
+  handles: readonly T[],
+  worldPerPixel: number,
+  alwaysVisible: (handle: T) => boolean
+): ReadonlySet<number> {
+  const cellSize = Math.max(worldPerPixel * 6, 1e-9);
+  const buckets = new Map<string, Array<{ x: number; y: number }>>();
+  const visible = new Set<number>();
+  handles.forEach((handle, index) => {
+    const x = Math.floor(handle.point.x / cellSize);
+    const y = Math.floor(handle.point.y / cellSize);
+    let near = false;
+    for (let dx = -1; dx <= 1 && !near; dx += 1) {
+      for (let dy = -1; dy <= 1 && !near; dy += 1) {
+        for (const previous of buckets.get(`${x + dx}:${y + dy}`) ?? []) {
+          if (Math.hypot(previous.x - handle.point.x, previous.y - handle.point.y) < cellSize) {
+            near = true;
+            break;
+          }
+        }
+      }
+    }
+    if (near && !alwaysVisible(handle)) return;
+    visible.add(index);
+    const key = `${x}:${y}`;
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(handle.point);
+    buckets.set(key, bucket);
+  });
+  return visible;
+}
+
+/** Shrink invisible targets only where neighboring endpoints would cover the whole segment. */
+export function endpointHitRadiiPixels<T extends { point: { x: number; y: number } }>(
+  handles: readonly T[],
+  worldPerPixel: number
+): number[] {
+  const cellSize = Math.max(worldPerPixel * 15, 1e-9);
+  const buckets = new Map<string, number[]>();
+  const nearest = handles.map(() => Number.POSITIVE_INFINITY);
+  handles.forEach((handle, index) => {
+    const x = Math.floor(handle.point.x / cellSize);
+    const y = Math.floor(handle.point.y / cellSize);
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (const otherIndex of buckets.get(`${x + dx}:${y + dy}`) ?? []) {
+          const other = handles[otherIndex];
+          const distance = Math.hypot(other.point.x - handle.point.x,
+            other.point.y - handle.point.y) / worldPerPixel;
+          if (distance < 1e-4) continue;
+          nearest[index] = Math.min(nearest[index], distance);
+          nearest[otherIndex] = Math.min(nearest[otherIndex], distance);
+        }
+      }
+    }
+    const key = `${x}:${y}`;
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(index);
+    if (bucket.length > 16) bucket.shift();
+    buckets.set(key, bucket);
+  });
+  return nearest.map((distance) => Math.min(7.5, Math.max(2.5, distance * 0.45)));
+}
+
+export function buildPreviewGrid(viewBox: EditorPreviewViewBox, flipY: number, worldPerPixel: number) {
   const bounds = viewBoxToWorldBounds(viewBox, flipY);
   const span = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
-  const spacing = pickPreviewGridSpacing(span);
-  const labelSpacing = pickPreviewGridLabelSpacing(spacing, span);
+  const labelSpacing = pickPreviewGridLabelSpacing(worldPerPixel * 85);
+  const spacing = Math.max(labelSpacing / 5, span / PREVIEW_GRID_MAX_LINES_PER_AXIS);
   const verticalValues = gridValues(bounds.minX, bounds.maxX, spacing);
   const horizontalValues = gridValues(bounds.minY, bounds.maxY, spacing);
   const lines: PreviewGridLine[] = [];
@@ -160,7 +234,7 @@ export function buildPreviewGrid(viewBox: EditorPreviewViewBox, flipY: number) {
       lines.push({
         orientation: 'vertical',
         value,
-        variant: isMultipleOf(value, PREVIEW_GRID_MAJOR_INTERVAL) ? 'major' : 'minor'
+        variant: isMultipleOf(value, labelSpacing) ? 'major' : 'minor'
       });
     }
   }
@@ -172,7 +246,7 @@ export function buildPreviewGrid(viewBox: EditorPreviewViewBox, flipY: number) {
       lines.push({
         orientation: 'horizontal',
         value,
-        variant: isMultipleOf(value, PREVIEW_GRID_MAJOR_INTERVAL) ? 'major' : 'minor'
+        variant: isMultipleOf(value, labelSpacing) ? 'major' : 'minor'
       });
     }
   }
@@ -182,12 +256,17 @@ export function buildPreviewGrid(viewBox: EditorPreviewViewBox, flipY: number) {
 
 export function buildVisibleGridLabels(
   lines: PreviewGridLine[],
-  labelSpacing: number
+  labelSpacing: number,
+  bounds: PreviewGridBounds,
+  worldPerPixel: number
 ): PreviewGridLabels {
   const labels: PreviewGridLabels = { horizontal: [], vertical: [] };
 
   for (const line of lines) {
     if (!shouldRenderGridLabel(line.value, labelSpacing)) continue;
+    const min = line.orientation === 'vertical' ? bounds.minX : bounds.minY;
+    const max = line.orientation === 'vertical' ? bounds.maxX : bounds.maxY;
+    if (line.value - min < worldPerPixel * 22 || max - line.value < worldPerPixel * 22) continue;
     labels[line.orientation].push(line);
   }
 
@@ -306,24 +385,11 @@ function viewBoxToWorldBounds(viewBox: EditorPreviewViewBox, flipY: number): Pre
   };
 }
 
-function pickPreviewGridSpacing(span: number) {
-  let spacing = PREVIEW_GRID_SIZE;
-
-  while (span / spacing > PREVIEW_GRID_MAX_LINES_PER_AXIS) {
-    spacing *= 2;
-  }
-
-  return spacing;
-}
-
-function pickPreviewGridLabelSpacing(spacing: number, span: number) {
-  let labelSpacing = spacing;
-
-  while (span / labelSpacing > PREVIEW_GRID_MAX_LABELS_PER_AXIS) {
-    labelSpacing *= 2;
-  }
-
-  return labelSpacing;
+function pickPreviewGridLabelSpacing(target: number) {
+  const decade = 10 ** Math.floor(Math.log10(Math.max(target, 1e-9)));
+  return [1, 2, 5, 10].map((factor) => factor * decade)
+    .reduce((best, candidate) => Math.abs(candidate - target) < Math.abs(best - target)
+      ? candidate : best);
 }
 
 function shouldRenderGridLabel(value: number, labelSpacing: number) {

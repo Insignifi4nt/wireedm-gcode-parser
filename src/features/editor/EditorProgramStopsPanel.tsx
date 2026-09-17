@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, type Ref } from 'react';
+import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { programStopValidationError } from '@/domain/path-intel/programStops';
+import { buildUpidEditorTree } from '@/domain/upid/upidEditorTree';
+import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 
 import type {
   OperationProgramStop,
@@ -53,8 +55,8 @@ export function EditorProgramStopsPanel({
   const hadSelectedStop = useRef(false);
   const stops = operation?.programStops ?? [];
   const selectedStop = stops.find((stop) => stop.id === selectedStopId) ?? null;
-  const executionTree = buildUpidEditorTree(document);
-  const effectiveOperations = deriveActiveMachiningOperations(document);
+  const executionTree = useMemo(() => buildUpidEditorTree(document), [document]);
+  const effectiveOperations = useMemo(() => deriveActiveMachiningOperations(document), [document]);
   const manualThreading = operation && (executionTree.status === 'ready'
     ? executionTree.spatialActions.some((action) => action.operationId === operation.id &&
         action.pause === 'generated-manual-thread')
@@ -381,5 +383,3 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
 
   </>;
 }
-import { buildUpidEditorTree } from '@/domain/upid/upidEditorTree';
-import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';

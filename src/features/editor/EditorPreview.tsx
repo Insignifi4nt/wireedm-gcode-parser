@@ -48,6 +48,9 @@ import {
   previewEventToWorldPoint,
   previewClientToWorldPoint,
   previewTouchToWorldPoint,
+  previewWorldUnitsPerCssPixel,
+  visibleEndpointIndices,
+  endpointHitRadiiPixels,
   round,
   strokeForPath,
   strokeWidthForPath,
@@ -382,29 +385,28 @@ export function EditorPreview({
   const activeViewBox = previewViewBox;
   const viewBox = `${format(activeViewBox.minX)} ${format(activeViewBox.minY)} ${format(activeViewBox.width)} ${format(activeViewBox.height)}`;
   const flipY = activePreview.viewBox.minY * 2 + activePreview.viewBox.height;
-  const grid = buildPreviewGrid(activeViewBox, flipY);
-  const gridLabels = buildVisibleGridLabels(grid.lines, grid.labelSpacing);
-  const markerRadius = Math.max(Math.max(activePreview.viewBox.width, activePreview.viewBox.height) * 0.004, 0.06);
-  const markerLabelFontSize = Math.max(markerRadius * 1.55, 0.16);
-  const measurementLabelFontSize = Math.max(markerRadius * 1.75, 0.18);
-  const highlightedPointRadius = Math.max(markerRadius * 1.45, 0.11);
-  const highlightedPointLabelFontSize = Math.max(markerRadius * 1.7, 0.18);
-  const gridLabelFontSize = Math.min(
-    Math.max(Math.min(activeViewBox.width, activeViewBox.height) * 0.012, 0.18),
-    0.42
-  );
-  const gridLabelInset = gridLabelFontSize * 1.8;
+  const worldPerPixel = previewWorldUnitsPerCssPixel(activeViewBox, surfaceSize);
+  const grid = buildPreviewGrid(activeViewBox, flipY, worldPerPixel);
+  const gridLabels = buildVisibleGridLabels(grid.lines, grid.labelSpacing, grid.bounds, worldPerPixel);
+  const markerRadius = worldPerPixel * 3.5;
+  const markerLabelFontSize = worldPerPixel * 10;
+  const measurementLabelFontSize = worldPerPixel * 11;
+  const highlightedPointRadius = worldPerPixel * 4;
+  const highlightedPointLabelFontSize = worldPerPixel * 11;
+  const gridLabelFontSize = worldPerPixel * 11;
+  const gridLabelInset = worldPerPixel * 9;
   const zoomPercent = Math.round(zoom * 100);
   const pathEndpointHandles = readPathEndpointHandles(activePreview.paths, pathDocument);
+  const visibleEndpoints = visibleEndpointIndices(pathEndpointHandles, worldPerPixel,
+    (handle) => pathEndpointMatches(handle, handle.role, selectedPathElement) ||
+      pathEndpointMatches(handle, handle.role, hoveredPathElement));
+  const endpointHitRadii = endpointHitRadiiPixels(pathEndpointHandles, worldPerPixel);
   const selectedArcCenterHandles = readSelectedArcCenterHandles(activePreview.paths, selectedPathElement);
   const measurementFirst = measurement?.picks[0];
   const measurementSecond = measurement?.picks[1] ?? measurement?.hover;
   const measurementResult = measurementFirst && measurementSecond
     ? measurePointPair(measurementFirst.point, measurementSecond.point) : null;
-  const measurementDisplayScale = Math.max(
-    activeViewBox.width / Math.max(surfaceSize.width, 1),
-    activeViewBox.height / Math.max(surfaceSize.height, 1)
-  );
+  const measurementDisplayScale = worldPerPixel;
   const pauseGroups = new Map<string, ExecutionSpatialAction[]>();
   for (const action of spatialActions) {
     if (!action.pause) continue;
@@ -1222,7 +1224,7 @@ export function EditorPreview({
           })}
         </g>
         <g>
-          {pathEndpointHandles.map((handle) => {
+          {pathEndpointHandles.map((handle, handleIndex) => {
             const highlight = pathEndpointMatches(handle, handle.role, selectedPathElement)
               ? 'selected'
               : pathEndpointMatches(handle, handle.role, hoveredPathElement)
@@ -1244,7 +1246,9 @@ export function EditorPreview({
               segmentId: handle.segmentId
             };
 
+            const visible = visibleEndpoints.has(handleIndex);
             return (
+              <g key={`endpoint-${handle.operationId}-${handle.pathElementId ?? ''}-${handle.segmentId}-${handle.role}`}>
               <circle
                 aria-disabled={onPathEndpointClick && !endpointActionable ? true : undefined}
                 className={onPathElementClick || endpointActionable ? 'cursor-pointer' : undefined}
@@ -1257,9 +1261,7 @@ export function EditorPreview({
                 data-preview-point-role={handle.role}
                 data-preview-selected={highlight === 'selected' ? 'true' : undefined}
                 data-preview-segment={handle.segmentId}
-                fill={highlight ? color : '#0f172a'}
-                fillOpacity={highlight ? '0.95' : '0.78'}
-                key={`endpoint-${handle.operationId}-${handle.pathElementId ?? ''}-${handle.segmentId}-${handle.role}`}
+                fill="transparent"
                 onClick={(event) => {
                   if (onPathEndpointClick) {
                     event.stopPropagation();
@@ -1272,12 +1274,17 @@ export function EditorPreview({
                 }}
                 onMouseEnter={() => onPathElementHover?.(element)}
                 onMouseLeave={() => onPathElementHover?.(null)}
-                r={highlight ? highlightedPointRadius * 0.78 : highlightedPointRadius * 0.52}
-                stroke={color}
-                strokeOpacity={highlight ? '0.95' : '0.58'}
-                strokeWidth={highlightedPointRadius * 0.18}
-                vectorEffect="non-scaling-stroke"
+                r={worldPerPixel * (visible ? endpointHitRadii[handleIndex] : 2.5)}
               />
+              {visible && <circle
+                cx={handle.point.x} cy={svgY} pointerEvents="none"
+                data-preview-visible-endpoint={handle.role}
+                fill={highlight ? color : 'none'}
+                r={worldPerPixel * (highlight === 'selected' ? 4 : highlight === 'hover' ? 3.5 : 2)}
+                stroke={color} strokeOpacity={highlight ? 1 : 0.72}
+                strokeWidth={highlight ? worldPerPixel * 1.3 : worldPerPixel * 0.9}
+              />}
+              </g>
             );
           })}
           {selectedArcCenterHandles.map((handle) => {
@@ -1678,6 +1685,7 @@ export function EditorPreview({
                   <circle cx={point.x} cy={flipY - point.y} r={measurementDisplayScale * 6}
                     fill="#020617" stroke={color} strokeWidth={selected ? '2.5' : '1.5'}
                     vectorEffect="non-scaling-stroke" pointerEvents="none"
+                    data-preview-program-stop={group.length === 1 ? group[0].stopId : undefined}
                     data-preview-pause={group.length === 1 ? group[0].key : groupKey} />
                   <text x={point.x} y={flipY - point.y} dy="0.33em" textAnchor="middle"
                     fill={color} fontSize={measurementDisplayScale * 9} pointerEvents="none">
@@ -1718,10 +1726,10 @@ export function EditorPreview({
                 data-preview-point-role={handle.role}
                 cx={handle.point.x}
                 cy={flipY - handle.point.y}
-                r={Math.max(highlightedPointRadius * 1.6, markerRadius * 1.9, measurementDisplayScale * 8)}
+                  r={worldPerPixel * 5.5}
                 fill="none"
                 stroke={highlightColor(highlight)}
-                strokeWidth="2.5"
+                  strokeWidth="1.5"
                 vectorEffect="non-scaling-stroke"
               />;
             })}
