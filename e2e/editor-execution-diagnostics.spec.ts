@@ -25,7 +25,7 @@ test('keyboard activation of controller diagnostics opens and focuses parse issu
 test('repairs an execution issue through its owning tool and updates readiness', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
-  await page.getByLabel('DXF file').setInputFiles('examples/robofil-100-v2/no-lead-rectangle.dxf');
+  await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
 
   const issue = page.getByRole('treeitem').filter({ hasText: 'A reviewed initial wire position is required' }).last();

@@ -1,5 +1,7 @@
 # Cristian's Robofil 100 V2 candidate machine package
 
+This machine-specific regression fixture is retained for installation, controller-output and browser tests. It is not a default package or a template for other machines. Its identities, evidence, hashes and golden output must remain intact when reorganizing tests. For a new user's machine, start with the hosted [package authoring guide](https://insignifi4nt.github.io/wireedm-gcode-parser/documentation/authoring/).
+
 The human-installable artifact is `cristian-robofil-100-v2.wireedm-package`. In Workbench Settings, open **Machines & setups**, choose **Install machine package**, review the detected machine and post, then confirm the installation. Do not install the loose machine or post JSON files separately; they are reproducible authoring inputs.
 
 The package includes:
@@ -25,11 +27,11 @@ For direct contour entry and exit, leave transition geometry absent or use the r
 To reproduce the package:
 
 ```text
-npm run post:conformance -- examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json
-npm run machine-package:validate-source -- examples/robofil-100-v2
-npm run machine-package:build -- examples/robofil-100-v2 examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-package
-npm run machine-package:validate -- examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-package
-npm run machine-package:inspect -- examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-package
+npm run post:conformance -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json
+npm run machine-package:validate-source -- tests/fixtures/machine-packages/robofil-100-v2
+npm run machine-package:build -- tests/fixtures/machine-packages/robofil-100-v2 tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package
+npm run machine-package:validate -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package
+npm run machine-package:inspect -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package
 ```
 
 `no-lead-rectangle.dxf` is a 10 × 10 mm closed-contour browser fixture. Import it as millimeters, set finished-contour geometry and controller compensation, and leave entry and exit geometry absent to exercise the direct no-lead flow.

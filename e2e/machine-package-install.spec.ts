@@ -16,7 +16,7 @@ test('installs one complete Robofil machine package through the normal settings 
   await page.getByRole('button', { name: 'Machines & setups' }).click();
 
   await page.getByLabel('Machine package file').setInputFiles(
-    'examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-package'
+    'tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package'
   );
 
   const preview = page.locator('[data-machine-package-preview]');
@@ -64,7 +64,7 @@ test('explains missing compensation and exports after the decision is saved', as
   await page.getByRole('button', { name: 'Open settings' }).click();
   await page.getByRole('button', { name: 'Machines & setups' }).click();
   await page.getByLabel('Machine package file').setInputFiles(
-    'examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-package'
+    'tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package'
   );
   await page
     .locator('[data-machine-package-preview]')
@@ -73,7 +73,7 @@ test('explains missing compensation and exports after the decision is saved', as
   await page.getByRole('button', { name: 'Close settings' }).click();
 
   await page.getByLabel('DXF file').setInputFiles(
-    'examples/robofil-100-v2/no-lead-rectangle.dxf'
+    'tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf'
   );
   await confirmPendingDxfImport(page);
 

@@ -6,7 +6,7 @@ test('guide owns focus and Escape without discarding an active geometry edit', a
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
-  await page.getByLabel('DXF file').setInputFiles('examples/robofil-100-v2/no-lead-rectangle.dxf');
+  await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
   await page.getByRole('button', { name: 'Geometry menu', exact: true }).click();
   await page.locator('[data-editor-workflow-command="geometry.transform"]').click();

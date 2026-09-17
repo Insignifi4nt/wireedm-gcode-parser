@@ -1,6 +1,6 @@
 # Robofil Multi-Contour Route V2 Design
 
-> Historical design, superseded by the complete machine-package platform. Current Robofil V2 behavior lives in the exact post inside the package sources under `examples/robofil-100-v2/`.
+> Historical design, superseded by the complete machine-package platform. Current Robofil V2 behavior lives in the exact post inside the package sources under `tests/fixtures/machine-packages/robofil-100-v2/`.
 
 Date: 2026-07-14
 

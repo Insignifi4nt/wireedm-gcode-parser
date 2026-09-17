@@ -24,6 +24,6 @@ jobs:
       - run: npm run release:check -- origin/main
       - run: npm run post:docs:check
       - run: npm test -- --run
-      - run: npm run post:conformance -- examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json
-      - run: npm run machine-package:validate -- examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-package
+      - run: npm run post:conformance -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json
+      - run: npm run machine-package:validate -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package
       - run: npm run build

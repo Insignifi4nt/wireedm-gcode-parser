@@ -20,8 +20,8 @@ import {
   persistSavedWireEdmJobRevision
 } from '@/domain/wire-edm-job/savedWireEdmJobRevision';
 
-import packageJson from '../../../../examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json';
-import machineJson from '../../../../examples/robofil-100-v2/cristian-robofil-100.wireedm-machine.json';
+import packageJson from '../../../../tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json';
+import machineJson from '../../../../tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100.wireedm-machine.json';
 import { runPost } from '../postEngine';
 import { serializeControllerOutput } from '../controllerOutput';
 import { createEmptyPostLibrary, installPostPackage, hashPostPackage } from '../postLibrary';
@@ -48,7 +48,7 @@ describe('standalone Robofil 100 V2 package', () => {
   it('ships one complete human-installable machine package', async () => {
     const archive = new Uint8Array(await readFile(resolve(
       process.cwd(),
-      'examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-package'
+      'tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package'
     )));
     const parsed = await parseMachinePackageArchive(archive);
 
