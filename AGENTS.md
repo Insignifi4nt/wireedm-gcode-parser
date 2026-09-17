@@ -37,6 +37,9 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 
 ## Product Rules
 
+- Warn explicitly about breaking or potentially breaking changes to installed post processors in the PR, release compatibility record, and affected user-facing diagnostics. Cover schemas, capabilities, execution events, audit rules, output, and installation; never silently rewrite installed packages or saved revisions.
+- Ship changes through reviewed pull requests. Each merged PR advances the app version once and includes a compatibility checklist; keep the app release number separate from UPID, post schema, and engine API versions. Do not push directly to main.
+
 - Preserve the old editor behavior before replacing it.
 - Do not add mock project names, fake library rows, or buttons that only change screens.
 - DXF converted by this app is treated as clean internal geometry.
