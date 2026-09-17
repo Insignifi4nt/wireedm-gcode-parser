@@ -4,6 +4,8 @@ A client-only Wire EDM editor for DXF geometry and existing machine programs. Pr
 
 When a version-1 workbench is opened, usable projects migrate to the current neutral format. Exact pre-migration manifests and projects remain preserved under `legacy/v1/`; old machine/output settings are never guessed into a trusted machine package.
 
+Version-2 catalogs retain their exact original at `legacy/v2/workbench.json` before upgrade. Settings → Storage → Review storage lists referenced files, retained backups and unreferenced files without deleting anything; download its metadata report for recovery assistance. A backup inside browser cache is lost along with that cache if site data is cleared.
+
 ## Commands
 
 - `npm run dev` - start Vite on port 3777
@@ -39,6 +41,7 @@ When a version-1 workbench is opened, usable projects migrate to the current neu
 - [Machine package decision](docs/adr/0002-install-complete-machine-packages.md)
 - [Post and machine package authoring](docs/post-authoring/v1/README.md)
 - [Browser testing](docs/playwright.md)
+- [Storage layout and migration rules](docs/maintainers/storage-and-migrations.md)
 - [CAM feature audit and supported limits](docs/cam-product-audit.md)
 - [UPID v1 contract](docs/upid/v1/README.md) and [UPID audit findings](docs/upid-standard-audit.md)
 

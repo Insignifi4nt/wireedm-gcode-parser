@@ -4,6 +4,7 @@ import { Database, RefreshCw, SlidersHorizontal, X } from 'lucide-react';
 import { useModalFocus } from '@/components/ui/useModalFocus';
 import { Button } from '@/components/ui/button';
 import { APP_VERSION } from '@/domain/release/appRelease';
+import { StorageReviewPanel } from './StorageReviewPanel';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import {
@@ -97,6 +98,7 @@ export function WorkbenchSettingsDialog({
                     <SettingsRow label="Persistence" value={connectedWorkbench?.adapter.kind === 'memory' ? 'Session only' : connectedWorkbench ? 'Persistent' : 'Not connected'} />
                   </div>
                 </section>
+                {connectedWorkbench && <StorageReviewPanel workbench={connectedWorkbench} disabled={interactionLocked || connecting} />}
               </div>
             ) : connectedWorkbench ? (
               <MachinePostSettingsPanel connectedWorkbench={connectedWorkbench} interactionLocked={interactionLocked} settingsErrorMessage={settingsErrorMessage} settingsStatus={settingsStatus} {...machinePostActions} />

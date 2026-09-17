@@ -222,6 +222,79 @@ describe('clean-break workbench catalog', () => {
       }
     });
     expect(JSON.parse(adapter.files.get(WORKBENCH_CATALOG_PATH) ?? '')).not.toHaveProperty('preferences.export');
+    expect(JSON.parse(adapter.files.get('legacy/v2/workbench.json') ?? '')).toMatchObject({
+      schemaVersion: 2,
+      preferences: { export: { fileExtension: { extension: 'tap' } } }
+    });
+  });
+
+  it('leaves an invalid version-2 workbench byte-for-byte unchanged', async () => {
+    const { adapter } = await legacyV2Fixture();
+    const manifest = JSON.parse(adapter.files.get(WORKBENCH_CATALOG_PATH)!);
+    manifest.projects = [{ id: 'missing', name: 'Missing', path: 'projects/missing.json', sourceKind: 'upid', updatedAt: manifest.updatedAt }];
+    adapter.files.set(WORKBENCH_CATALOG_PATH, JSON.stringify(manifest));
+    const before = new Map(adapter.files);
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({
+      ok: false, error: { code: 'WORKBENCH_CATALOG_PROJECT_DANGLING' }
+    });
+    expect(adapter.files).toEqual(before);
+  });
+
+  it.each(['quota', 'corrupt-backup', 'conflicting-backup'] as const)(
+    'does not replace a version-2 manifest when backup protection fails: %s', async (failure) => {
+      const { adapter, original } = await legacyV2Fixture();
+      const path = 'legacy/v2/workbench.json';
+      if (failure === 'conflicting-backup') adapter.files.set(path, 'OTHER WORKBENCH');
+      else {
+        const write = adapter.writeText.bind(adapter);
+        vi.spyOn(adapter, 'writeText').mockImplementation(async (target, contents) => {
+          if (target === path && failure === 'quota') throw new Error('Quota exceeded');
+          return write(target, target === path ? 'TRUNCATED' : contents);
+        });
+      }
+      expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: false });
+      expect(adapter.files.get(WORKBENCH_CATALOG_PATH)).toBe(original);
+      if (failure === 'conflicting-backup') expect(adapter.files.get(path)).toBe('OTHER WORKBENCH');
+    }
+  );
+
+  it('resumes an interrupted version-2 upgrade from its exact backup and preserves it on later opens', async () => {
+    const { adapter, original } = await legacyV2Fixture();
+    const write = adapter.writeText.bind(adapter);
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, contents) => {
+      if (path === WORKBENCH_CATALOG_PATH) throw new Error('Interrupted before manifest replacement');
+      return write(path, contents);
+    });
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: false });
+    expect(adapter.files.get(WORKBENCH_CATALOG_PATH)).toBe(original);
+    expect(adapter.files.get('legacy/v2/workbench.json')).toBe(original);
+    vi.mocked(adapter.writeText).mockRestore();
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: true });
+    const upgraded = new Map(adapter.files);
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({ ok: true });
+    expect(adapter.files).toEqual(upgraded);
+    expect(adapter.files.get('legacy/v2/workbench.json')).toBe(original);
+  });
+
+  it('validates version-1 project ownership before rewriting any files', async () => {
+    const adapter = new MemoryAdapter();
+    const timestamp = '2026-08-28T12:00:00.000Z';
+    adapter.files.set('projects/legacy.json', JSON.stringify({
+      schemaVersion: 1, id: 'legacy', name: 'Actual name', createdAt: timestamp, updatedAt: timestamp,
+      source: { kind: 'upid', files: [] },
+      upid: { format: 'upid', schemaVersion: 1, document: createUpidFromDxfEntities([]) },
+      machine: { id: 'legacy-profile' }, editor: { activeFilePath: null, pinnedLineNumbers: [] }
+    }));
+    adapter.files.set(WORKBENCH_CATALOG_PATH, JSON.stringify({
+      schemaVersion: 1, name: 'Legacy', createdAt: timestamp, updatedAt: timestamp,
+      templates: {}, output: {}, activeMachineProfileId: 'legacy-profile', machineProfiles: [],
+      projects: [{ id: 'legacy', name: 'Wrong name', path: 'projects/legacy.json', sourceKind: 'upid', updatedAt: timestamp }]
+    }));
+    const before = new Map(adapter.files);
+    expect(await initializeWorkbenchCatalog(adapter)).toMatchObject({
+      ok: false, error: { code: 'WORKBENCH_CATALOG_PROJECT_INDEX_MISMATCH' }
+    });
+    expect(adapter.files).toEqual(before);
   });
 
   it('rejects a remembered planning machine that does not exist instead of selecting another', async () => {
@@ -422,6 +495,18 @@ function projectFixture() {
   });
   if (!created.ok) throw new Error(created.error.message);
   return created.project;
+}
+
+async function legacyV2Fixture() {
+  const adapter = new MemoryAdapter();
+  const created = await initializeWorkbenchCatalog(adapter);
+  if (!created.ok) throw new Error(created.error.message);
+  const original = JSON.stringify({
+    ...created.workbench.manifest, schemaVersion: 2,
+    preferences: { ...created.workbench.manifest.preferences, export: { status: 'unconfigured' } }
+  });
+  adapter.files.set(WORKBENCH_CATALOG_PATH, original);
+  return { adapter, original };
 }
 
 function projectWithSourceFixture(id = 'sourced', sourcePath = 'imports/fixture.upid') {
