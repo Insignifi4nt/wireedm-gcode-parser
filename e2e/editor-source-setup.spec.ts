@@ -47,5 +47,5 @@ test('opens source setup and reviews a unit rebuild from the saved DXF', async (
   await page.getByRole('button', { name: 'Back to Dashboard', exact: true }).click();
   await page.reload();
   await page.getByRole('button', { name: /Open project .* in editor/ }).click();
-  expect(await geometry()).toEqual(rebuilt);
+  await expect.poll(geometry).toEqual(rebuilt);
 });

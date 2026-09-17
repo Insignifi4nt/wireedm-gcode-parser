@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
 import { confirmPendingDxfImport } from './dxf-import';
+import { readWorkbenchCacheFile } from './fixtures/workbench-cache';
 
 test('installs one complete Robofil machine package through the normal settings flow', async ({ page }) => {
   await page.goto('/');
@@ -22,25 +23,25 @@ test('installs one complete Robofil machine package through the normal settings 
   const preview = page.locator('[data-machine-package-preview]');
   await expect(preview).toContainText("Cristian's Robofil 100 V2 candidate package");
   await expect(preview).toContainText("Machine: Cristian's Charmilles Robofil 100");
-  await expect(preview).toContainText('Posts: Cristian Robofil 100 V2 candidate 2.2.0');
+  await expect(preview).toContainText('Posts: Cristian Robofil 100 V2 candidate 2.6.0');
   await expect(preview).toContainText(
     '.iso · CRLF · ASCII · final newline · N10 +10 · 1 prefix / 0 suffix marker'
   );
   await preview.getByRole('button', { name: 'Install machine package' }).click();
 
   await expect(page.getByRole('heading', { name: "Cristian's Charmilles Robofil 100" })).toBeVisible();
-  await expect(page.getByText('Robofil V2 candidate 2.2.0', { exact: true })).toBeVisible();
+  await expect(page.getByText('Robofil V2 candidate 2.6.0', { exact: true })).toBeVisible();
   await expect(page.getByText('Saved and verified from storage.')).toBeVisible();
 
-  const stored = await page.evaluate(() => ({
-    machines: JSON.parse(localStorage.getItem('wire-edm-workbench:file:machines/library.json') ?? '{}'),
-    posts: JSON.parse(localStorage.getItem('wire-edm-workbench:file:posts/library.json') ?? '{}')
-  }));
+  const stored = {
+    machines: JSON.parse(await readWorkbenchCacheFile(page, 'machines/library.json')),
+    posts: JSON.parse(await readWorkbenchCacheFile(page, 'posts/library.json'))
+  };
   expect(stored.machines.machines).toHaveLength(1);
   expect(stored.machines.machines[0]).toMatchObject({
     id: 'cristian.robofil-100',
-    activeBindingId: 'robofil-v2-candidate-2-2-0',
-    bindings: [{ post: { packageId: 'cristian.robofil-100.v2-candidate', version: '2.2.0' } }]
+    activeBindingId: 'robofil-v2-candidate-2-6-0',
+    bindings: [{ post: { packageId: 'cristian.robofil-100.v2-candidate', version: '2.6.0' } }]
   });
   expect(stored.posts.installations).toHaveLength(1);
   expect(stored.posts.installations[0].package.manifest.output).toMatchObject({
@@ -79,8 +80,8 @@ test('explains missing compensation and exports after the decision is saved', as
 
   await page.getByRole('button', { name: 'Geometry menu' }).click();
   await page.locator('[data-editor-workflow-command="geometry.setup"]').click();
-  await page.getByLabel('Geometry basis').selectOption('finished-contour');
-  await page.getByRole('button', { name: 'Save Geometry Setup workflow' }).click();
+  await expect(page.getByLabel('Geometry basis')).toHaveValue('finished-contour');
+  await page.getByRole('button', { name: 'Cancel Geometry Setup workflow' }).click();
 
   await page.getByRole('button', { name: 'Machining menu' }).click();
   await page.locator('[data-editor-workflow-command="machining.initial-wire"]').click();
@@ -96,9 +97,9 @@ test('explains missing compensation and exports after the decision is saved', as
   await page.getByRole('button', { name: 'Generate controller artifact' }).click();
 
   const failure = page.getByRole('alert');
-  await expect(failure).toContainText('CONTROLLER_ARTIFACT_POST_FAILED');
-  await expect(failure).toContainText('POST_CUSTOM_RUNTIME_FAILED');
-  await expect(failure).toContainText('Cutting motion requires active compensation.');
+  await expect(failure).toContainText('CONTROLLER_ARTIFACT_EXECUTION_PLAN_INVALID');
+  await expect(failure).toContainText('EXECUTION_PLAN_COMPENSATION_UNRESOLVED');
+  await expect(failure).toContainText('needs an explicit controller compensation or wire-center choice');
 
   await page.getByRole('button', { name: 'Close controller artifact export' }).click();
   await page.getByRole('button', { name: 'Machining menu' }).click();

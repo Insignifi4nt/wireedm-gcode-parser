@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { confirmPendingDxfImport } from './dxf-import';
+import { readWorkbenchCacheFile } from './fixtures/workbench-cache';
 
 test('reviews skipped layout geometry and warnings before storing only the model-space path', async ({ page }) => {
   await openReadyWorkbench(page);
@@ -19,14 +20,12 @@ test('reviews skipped layout geometry and warnings before storing only the model
   await expect(dialog.getByTestId('dxf-import-size')).toHaveText('10.000 × 5.000 mm');
   await page.screenshot({ path: 'tmp/cam-audit/14-dxf-source-review.png', fullPage: true });
   await confirmPendingDxfImport(page, 'millimeters');
-  const stored = await page.evaluate(() => {
-    const manifest = JSON.parse(localStorage.getItem('wire-edm-workbench:file:workbench.json') ?? '{}');
-    const project = JSON.parse(localStorage.getItem(`wire-edm-workbench:file:${manifest.projects[0].path}`) ?? '{}');
-    return {
-      raw: localStorage.getItem(`wire-edm-workbench:file:${project.source.files[0].path}`),
-      segments: project.content.document.segments
-    };
-  });
+  const manifest = JSON.parse(await readWorkbenchCacheFile(page, 'workbench.json'));
+  const project = JSON.parse(await readWorkbenchCacheFile(page, manifest.projects[0].path));
+  const stored = {
+    raw: await readWorkbenchCacheFile(page, project.source.files[0].path),
+    segments: project.content.document.segments
+  };
   expect(stored.raw).toBe(text);
   expect(stored.segments).toHaveLength(1);
   expect(stored.segments[0]).toMatchObject({ layer: 'Matriță 日本', end: { x: 10, y: 5 } });
@@ -52,26 +51,14 @@ test('persists declared DXF units and reopens the neutral UPID project', async (
   await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible();
   await expect(page.locator('[data-editor-status-cursor]')).toContainText('mm');
 
-  const projectId = await page.evaluate(() => {
-    const manifest = JSON.parse(
-      localStorage.getItem('wire-edm-workbench:file:workbench.json') ?? '{}'
-    );
-    const entry = manifest.projects[0];
-    const project = JSON.parse(
-      localStorage.getItem(`wire-edm-workbench:file:${entry.path}`) ?? '{}'
-    );
-    const source = project.content?.document?.source;
-    if (source?.unitDeclaration?.status !== 'recognized') {
-      throw new Error('Declared unit provenance was not persisted.');
-    }
-    if (source?.appliedUnits?.basis !== 'dxf-declared') {
-      throw new Error('Applied declared-unit provenance was not persisted.');
-    }
-    if ('machine' in project || 'post' in project) {
-      throw new Error('Neutral UPID project persisted controller-specific state.');
-    }
-    return entry.id as string;
-  });
+  const manifest = JSON.parse(await readWorkbenchCacheFile(page, 'workbench.json'));
+  const entry = manifest.projects[0];
+  const project = JSON.parse(await readWorkbenchCacheFile(page, entry.path));
+  expect(project.content.document.source.unitDeclaration.status).toBe('recognized');
+  expect(project.content.document.source.appliedUnits.basis).toBe('dxf-declared');
+  expect(project).not.toHaveProperty('machine');
+  expect(project).not.toHaveProperty('post');
+  const projectId = entry.id;
 
   await page.getByRole('button', { name: 'Back to Dashboard' }).click();
   await page.getByRole('button', { name: `Open project ${projectId} in editor` }).click();

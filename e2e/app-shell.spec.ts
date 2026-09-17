@@ -16,7 +16,7 @@ test('loads the workbench dashboard in a real browser', async ({ page }) => {
   await expect(page).toHaveTitle(/Wire EDM Workbench/);
   await expect(page.locator('[data-app-shell]')).toBeVisible();
   await expect(page.locator('[data-workbench-page]')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Workbench', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Project Library', exact: true })).toBeVisible();
   await expect(page.locator('[data-project-library]')).toBeVisible();
   await expect(
     page.getByRole('button', { name: /Import DXF as Path Project/i })
@@ -38,7 +38,7 @@ test('loads the workbench dashboard in a real browser', async ({ page }) => {
   );
 
   const workbenchFont = await page
-    .getByRole('heading', { name: 'Workbench', exact: true })
+    .getByRole('heading', { name: 'Project Library', exact: true })
     .evaluate((element) => getComputedStyle(element).fontFamily.toLowerCase());
   expect(workbenchFont).not.toContain('mono');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);

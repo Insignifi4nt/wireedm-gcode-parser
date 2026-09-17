@@ -43,6 +43,6 @@ test('transforms preview, cancel, commit once and persist through reopening', as
   await page.getByRole('button', { name: 'Back to Dashboard', exact: true }).click();
   await page.reload();
   await page.getByRole('button', { name: /Open project .* in editor/ }).click();
-  expect(await geometry()).toEqual(transformed);
+  await expect.poll(geometry).toEqual(transformed);
   await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
 });

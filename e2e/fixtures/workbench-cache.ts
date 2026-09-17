@@ -1,4 +1,15 @@
 import type { Page } from '@playwright/test';
+import { gunzipSync } from 'node:zlib';
+
+/** Read the persisted format independently of the app's cache implementation. */
+export async function readWorkbenchCacheFile(page: Page, path: string) {
+  const stored = await page.evaluate((path) => localStorage.getItem(`wire-edm-workbench:file:${path}`), path);
+  if (stored === null) throw new Error(`Missing workbench file: ${path}`);
+  const prefix = '\u0000wire-edm-cache-gzip-v1:';
+  return stored.startsWith(prefix)
+    ? gunzipSync(Buffer.from(stored.slice(prefix.length), 'base64')).toString('utf8')
+    : stored;
+}
 
 interface SeedWorkbenchOptions {
   folder?: string;

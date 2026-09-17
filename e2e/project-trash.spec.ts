@@ -13,10 +13,10 @@ test('restores a deleted DXF project after reload and reopens its geometry', asy
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Open project / })).toHaveCount(0);
   await page.reload();
-  await page.getByText('Deleted projects (1)', { exact: true }).click();
+  await page.getByText('Archive (1)', { exact: true }).click();
   await page.screenshot({ path: 'tmp/cam-audit/12-project-trash-reload.png', fullPage: true });
   await page.getByRole('button', { name: 'Restore no-lead-rectangle', exact: true }).click();
-  await expect(page.getByText('Deleted projects (1)', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Archive (1)', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^Open project / })).toBeFocused();
   await page.getByRole('button', { name: /^Open project / }).click();
   await expect(page.getByRole('button', { name: 'Save active document', exact: true })).toBeVisible();
