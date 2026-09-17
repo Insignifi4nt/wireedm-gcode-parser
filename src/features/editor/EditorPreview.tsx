@@ -1279,10 +1279,11 @@ export function EditorPreview({
               {visible && <circle
                 cx={handle.point.x} cy={svgY} pointerEvents="none"
                 data-preview-visible-endpoint={handle.role}
-                fill={highlight ? color : 'none'}
+                fill={highlight ? color : '#0f172a'}
+                fillOpacity={highlight ? '0.95' : '0.78'}
                 r={worldPerPixel * (highlight === 'selected' ? 4 : highlight === 'hover' ? 3.5 : 2)}
-                stroke={color} strokeOpacity={highlight ? 1 : 0.72}
-                strokeWidth={highlight ? worldPerPixel * 1.3 : worldPerPixel * 0.9}
+                stroke={color} strokeOpacity={highlight ? '0.95' : '0.58'}
+                strokeWidth={highlight ? 1 : 0.72} vectorEffect="non-scaling-stroke"
               />}
               </g>
             );
