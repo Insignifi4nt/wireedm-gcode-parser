@@ -8,6 +8,7 @@ interface EditorStatusBarProps {
   machineFit: PhysicalMachineFitResult | null;
   onOpenDiagnostics: () => void;
   previewCursorPoint: { x: number; y: number } | null;
+  selectedPoint?: { x: number; y: number } | null;
   selectionSummary: string;
 }
 
@@ -19,6 +20,7 @@ export function EditorStatusBar({
   machineFit,
   onOpenDiagnostics,
   previewCursorPoint,
+  selectedPoint,
   selectionSummary
 }: EditorStatusBarProps) {
   const saveState = isSaving ? 'Saving' : hasUnsavedChanges ? 'Unsaved' : 'Saved';
@@ -38,6 +40,10 @@ export function EditorStatusBar({
         {saveState}
       </span>
       <span className="min-w-0 break-words" data-editor-status-selection>Selection {selectionSummary}</span>
+      {selectedPoint && <span data-editor-status-selected-point>
+        Selected X {formatCoordinate(selectedPoint.x)} Y {formatCoordinate(selectedPoint.y)}
+        {coordinateUnits && <> {coordinateUnits}</>}
+      </span>}
       <span data-editor-status-cursor>
         Cursor X {formatCoordinate(previewCursorPoint?.x)} Y {formatCoordinate(previewCursorPoint?.y)}
         {coordinateUnits && <> <span data-editor-status-units>{coordinateUnits}</span></>}

@@ -27,6 +27,7 @@ import {
 import { type PathMirrorAxis } from '@/domain/path-editor/pathDocumentOperations';
 import { deriveCutSequenceMetrics, type CutSequenceMetrics } from '@/domain/path-intel/cutSequenceMetrics';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
+import type { ExecutionSpatialAction } from '@/domain/editor/executionSpatialActions';
 import { orientedSegmentEnd, orientedSegmentStart, requiredSegment, segmentMap } from '@/domain/path-intel/segments';
 import type {
   Bounds2,
@@ -132,6 +133,9 @@ interface EditorPathNavigatorPanelProps {
   selectedDiagnosticId?: string | null;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
+  spatialActions?: readonly ExecutionSpatialAction[];
+  selectedSpatialActionKey?: string | null;
+  onSelectSpatialAction?: (key: string) => void;
   onExpandedPathElementIdsChange: Dispatch<SetStateAction<Record<string, boolean>>>;
   onMovePathOperation: (direction: -1 | 1, operationId?: string) => void;
   onMovePathSelectionCenter: (targetCenter: Point2) => void;
@@ -170,6 +174,9 @@ export function EditorPathNavigatorPanel({
   selectedDiagnosticId = null,
   selectedPathElement,
   selectedPathOperationId,
+  spatialActions = [],
+  selectedSpatialActionKey = null,
+  onSelectSpatialAction,
   onExpandedPathElementIdsChange,
   onMovePathOperation,
   onMovePathSelectionCenter,
@@ -585,6 +592,9 @@ export function EditorPathNavigatorPanel({
           pathDocument,
           selectedPathElement,
           selectedPathOperationId,
+          spatialActions,
+          selectedSpatialActionKey,
+          onSelectSpatialAction,
           segmentsById,
           expandedSegmentDetailIds,
           onToggleSegmentDetails: (segmentKey) =>
@@ -2000,6 +2010,9 @@ function renderContourTreeNode({
   isPathElementExpanded,
   selectedPathElement,
   selectedPathOperationId,
+  spatialActions,
+  selectedSpatialActionKey,
+  onSelectSpatialAction,
   segmentsById,
   togglePathElementExpanded,
   toggleCutPathExpanded,
@@ -2017,6 +2030,9 @@ function renderContourTreeNode({
   pathDocument: PathPlanningDocument;
   selectedPathElement: EditorPathElementRef | null;
   selectedPathOperationId: string | null;
+  spatialActions: readonly ExecutionSpatialAction[];
+  selectedSpatialActionKey: string | null;
+  onSelectSpatialAction?: (key: string) => void;
   segmentsById: ReturnType<typeof segmentMap>;
   togglePathElementExpanded: (pathElementId: string) => void;
   toggleCutPathExpanded: (pathElementId: string) => void;
@@ -2190,6 +2206,21 @@ function renderContourTreeNode({
       </summary>
       {expanded && (
         <>
+          {spatialActions.filter((action) => action.operationId === element.operationId &&
+            (action.eventKind !== 'motion' || action.label !== 'Cut endpoint')).map((action) => (
+            <button key={action.key} type="button" data-upid-machining-action={action.key}
+              aria-pressed={selectedSpatialActionKey === action.key}
+              className={`flex w-full items-center gap-2 border-b border-border/40 py-1 text-left text-[10px] hover:bg-accent ${selectedSpatialActionKey === action.key ? 'bg-sky-500/15' : ''}`}
+              style={{ paddingLeft: `${32 + (treeDepth + 1) * 10}px` }}
+              onClick={() => onSelectSpatialAction?.(action.key)} title={action.detail}>
+              <span className={action.pause === 'generated-manual-thread' ? 'text-rose-300' :
+                action.pause === 'authored' ? 'text-amber-300' : 'text-cyan-300'}>●</span>
+              <span>{action.label}</span>
+              <span className="ml-auto pr-2 font-mono text-muted-foreground">
+                X {action.point.x.toFixed(3)} Y {action.point.y.toFixed(3)}
+              </span>
+            </button>
+          ))}
           <button
             aria-expanded={cutPathExpanded}
             aria-label={`${cutPathExpanded ? 'Collapse' : 'Expand'} cut path in ${label}`}
@@ -2254,6 +2285,9 @@ function renderContourTreeNode({
               pathDocument,
               selectedPathElement,
               selectedPathOperationId,
+              spatialActions,
+              selectedSpatialActionKey,
+              onSelectSpatialAction,
               segmentsById,
               togglePathElementExpanded,
               toggleCutPathExpanded,

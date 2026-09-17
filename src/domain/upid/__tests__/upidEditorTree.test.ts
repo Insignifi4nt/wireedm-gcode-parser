@@ -33,7 +33,6 @@ describe('controller-neutral UPID editor tree', () => {
 
     const tree = buildUpidEditorTree(document);
 
-    expect(tree.status).toBe('ready');
     if (tree.status !== 'ready') throw new Error(JSON.stringify(tree.diagnostics));
     const operationNode = tree.operations[0];
     expect(operationNode).toMatchObject({
@@ -102,5 +101,39 @@ describe('controller-neutral UPID editor tree', () => {
     expect(invalid.operations.every(({ execution }) => execution === 'unresolved')).toBe(true);
     expect(new Set(invalid.operations.map(({ treeKey }) => treeKey)).size)
       .toBe(invalid.operations.length);
+  });
+
+  it('keeps authored and generated pauses separate at the same positioning point', () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 },
+      { type: 'circle', layer: 'CUT', center: { x: 30, y: 0 }, radius: 8 }
+    ]);
+    document.setup = { initialWirePosition: {
+      kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed'
+    } };
+    reviewCenterline(document);
+    const second = document.plan.operations[1];
+    document.schemaVersion = 2;
+    second.threadingTransition = {
+      mode: 'manual', wireSeparation: 'automatic-during-positioning', source: 'operation-override'
+    };
+    second.programStops = [{ id: 'check', enabled: true,
+      placement: { kind: 'after-positioning' }, reason: 'operator-check' }];
+
+    const tree = buildUpidEditorTree(document);
+    if (tree.status !== 'ready') throw new Error(JSON.stringify(tree.diagnostics));
+    const actions = tree.spatialActions.filter((action) => action.operationId === second.id);
+    const position = actions.find((action) => action.eventKind === 'position');
+    const authored = actions.find((action) => action.pause === 'authored');
+    const rethread = actions.find((action) => action.pause === 'generated-manual-thread');
+    expect(position).toBeDefined();
+    expect(authored).toMatchObject({ point: position?.point, stopId: 'check' });
+    expect(rethread).toMatchObject({ point: position?.point, label: 'Manual rethread pause' });
+    expect(new Set([authored?.key, rethread?.key]).size).toBe(2);
+    const events = tree.operations[1].children;
+    expect(events.findIndex((event) => event.spatialAction?.key === position?.key))
+      .toBeLessThan(events.findIndex((event) => event.spatialAction?.key === authored?.key));
+    expect(events.findIndex((event) => event.spatialAction?.key === authored?.key))
+      .toBeLessThan(events.findIndex((event) => event.spatialAction?.key === rethread?.key));
   });
 });

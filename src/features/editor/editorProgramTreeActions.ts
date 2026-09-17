@@ -3,7 +3,8 @@ import type { EditorProgramTreeNode } from './EditorProgramTree';
 export type EditorProgramTreeExactTarget =
   | { diagnosticId: string; kind: 'diagnostic' }
   | { kind: 'machining-span'; operationId: string; spanId: string }
-  | { kind: 'program-stop'; operationId: string; stopId: string };
+  | { kind: 'program-stop'; operationId: string; stopId: string }
+  | { kind: 'spatial-action'; actionKey: string; operationId: string | null };
 
 export interface EditorProgramTreeAction {
   readonly commandId:
@@ -50,15 +51,20 @@ export function resolveEditorProgramTreeAction(node: EditorProgramTreeNode): Edi
       diagnosticId: node.treeKey
     });
   }
+  const exactAction = node.spatialAction ? {
+    kind: 'spatial-action' as const,
+    actionKey: node.spatialAction.key,
+    operationId: node.spatialAction.operationId
+  } : null;
   if (node.eventKind === 'program-start') return action('machining.initial-wire');
   if (node.eventKind === 'wire-continue' || node.eventKind === 'wire-separate' ||
       node.eventKind === 'wire-thread' || node.eventKind === 'position') {
-    return action('machining.between-contours', node.operationId);
+    return action('machining.between-contours', node.operationId, exactAction);
   }
   if (node.eventKind === 'program-stop') {
     const source = node.sourceTrace.find((candidate) => candidate.kind === 'program-stop');
     return source?.kind === 'program-stop'
-      ? action('machining.program-stops', source.operationId, {
+      ? action('machining.program-stops', source.operationId, exactAction ?? {
           kind: 'program-stop', operationId: source.operationId, stopId: source.stopId
         })
       : action('machining.program-stops', node.operationId);
@@ -66,10 +72,10 @@ export function resolveEditorProgramTreeAction(node: EditorProgramTreeNode): Edi
   if (node.eventKind === 'motion') {
     const transition = node.sourceTrace.find((candidate) => candidate.kind === 'transition');
     if (transition?.kind === 'transition' && (transition.role === 'entry' || transition.role === 'exit')) {
-      return action('machining.entry-exit', node.operationId);
+      return action('machining.entry-exit', node.operationId, exactAction);
     }
   }
-  return action('machining.contour-setup', node.operationId);
+  return action('machining.contour-setup', node.operationId, exactAction);
 }
 
 function action(

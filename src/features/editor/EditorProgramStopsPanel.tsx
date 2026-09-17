@@ -53,8 +53,15 @@ export function EditorProgramStopsPanel({
   const hadSelectedStop = useRef(false);
   const stops = operation?.programStops ?? [];
   const selectedStop = stops.find((stop) => stop.id === selectedStopId) ?? null;
-  const manualThreading = operation && operation.orderIndex > 0 &&
-    (operation.threadingTransition ?? document.setup?.threadingDefault)?.mode === 'manual';
+  const executionTree = buildUpidEditorTree(document);
+  const effectiveOperations = deriveActiveMachiningOperations(document);
+  const manualThreading = operation && (executionTree.status === 'ready'
+    ? executionTree.spatialActions.some((action) => action.operationId === operation.id &&
+        action.pause === 'generated-manual-thread')
+    : effectiveOperations.status === 'ready' && effectiveOperations.operations.some((candidate) =>
+        (candidate.machiningIntent?.sourceOperationId ?? candidate.id) === operation.id &&
+        candidate.orderIndex > 0 &&
+        (candidate.threadingTransition ?? document.setup?.threadingDefault)?.mode === 'manual'));
 
   useEffect(() => setAddCompleted(false), [operation?.id]);
 
@@ -374,3 +381,5 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
 
   </>;
 }
+import { buildUpidEditorTree } from '@/domain/upid/upidEditorTree';
+import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';

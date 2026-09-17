@@ -1,5 +1,6 @@
 import type { LoadedEditorProgram } from '@/domain/editor/loadEditorProgram';
 import type { MeasurementPoint } from '@/domain/editor/measurementPoints';
+import type { ExecutionSpatialAction } from '@/domain/editor/executionSpatialActions';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 
 import { EditorPreview, type EditorConstructionPreview, type EditorStartPreview } from './EditorPreview';
@@ -26,6 +27,8 @@ interface EditorCanvasPanelProps {
   pathCount?: number;
   pinnedLines: number[];
   selectedPathElement?: EditorPathElementRef | null;
+  spatialActions?: readonly ExecutionSpatialAction[];
+  selectedSpatialActionKey?: string | null;
   selectedLines: number[];
   onCursorPointChange: (point: { x: number; y: number } | null) => void;
   onMeasurementPointMove?: (pointId: string, point: { x: number; y: number }) => void;
@@ -36,6 +39,7 @@ interface EditorCanvasPanelProps {
   onPathSegmentCenterMove?: (element: EditorPathElementRef, targetCenter: { x: number; y: number }) => void;
   onPreviewPointClick?: (point: { x: number; y: number }) => void;
   onSetCanvasMouseMode?: (mode: CanvasMouseMode) => void;
+  onSelectSpatialAction?: (key: string) => void;
 }
 
 type CanvasMouseMode = 'select' | 'point';
@@ -58,6 +62,8 @@ export function EditorCanvasPanel({
   pathCount,
   pinnedLines,
   selectedPathElement,
+  spatialActions,
+  selectedSpatialActionKey,
   selectedLines,
   onCursorPointChange,
   onMeasurementPointMove,
@@ -67,7 +73,8 @@ export function EditorCanvasPanel({
   onPathElementHover,
   onPathSegmentCenterMove,
   onPreviewPointClick,
-  onSetCanvasMouseMode
+  onSetCanvasMouseMode,
+  onSelectSpatialAction
 }: EditorCanvasPanelProps) {
   return (
     <section
@@ -105,6 +112,9 @@ export function EditorCanvasPanel({
           previewTitle={pathDocument ? 'Path Canvas' : 'Preview'}
           program={draftProgram}
           selectedPathElement={selectedPathElement}
+          spatialActions={spatialActions}
+          selectedSpatialActionKey={selectedSpatialActionKey}
+          onSelectSpatialAction={onSelectSpatialAction}
           snapToGrid={gridSnapEnabled}
           selectedLines={selectedLines}
         />

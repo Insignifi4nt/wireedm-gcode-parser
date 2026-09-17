@@ -7,6 +7,7 @@ import {
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 import { orderedPathOperations } from '@/domain/path-intel/operationExecutionOrder';
 import type { PathOperation, PathPlanningDocument } from '@/domain/path-intel/types';
+import { executionSpatialActions, type ExecutionSpatialAction } from '@/domain/editor/executionSpatialActions';
 
 export interface UpidEditorSourceNode {
   readonly kind: 'source';
@@ -26,6 +27,7 @@ export interface UpidEditorEventNode {
   readonly operationId: string | null;
   readonly executionOperationId: string | null;
   readonly sourceTrace: WireEdmExecutionEvent['trace'];
+  readonly spatialAction: ExecutionSpatialAction | null;
 }
 
 export interface UpidEditorDiagnosticNode {
@@ -73,6 +75,7 @@ export type UpidEditorTree =
       readonly status: 'ready';
       readonly diagnostics: readonly [];
       readonly programEvents: readonly UpidEditorEventNode[];
+      readonly spatialActions: readonly ExecutionSpatialAction[];
       readonly operations: readonly ReadyUpidEditorOperationNode[];
     })
   | (UpidEditorTreeBase & {
@@ -130,9 +133,12 @@ export function buildUpidEditorTree(document: PathPlanningDocument): UpidEditorT
   }
   const eventsBySource = new Map<string, UpidEditorEventNode[]>();
   const programEvents: UpidEditorEventNode[] = [];
+  const spatialActions = executionSpatialActions(compiled.plan.events,
+    (executionId) => executionToSource.get(executionId) ?? null);
+  const actionByEvent = new Map(spatialActions.map((action) => [action.eventId, action]));
   for (const event of compiled.plan.events) {
     if (event.operationId === null) {
-      programEvents.push(eventNode(event, null));
+      programEvents.push(eventNode(event, null, actionByEvent.get(event.id) ?? null));
       continue;
     }
     const sourceOperationId = executionToSource.get(event.operationId);
@@ -150,7 +156,7 @@ export function buildUpidEditorTree(document: PathPlanningDocument): UpidEditorT
       };
     }
     const events = eventsBySource.get(sourceOperationId) ?? [];
-    events.push(eventNode(event, sourceOperationId));
+    events.push(eventNode(event, sourceOperationId, actionByEvent.get(event.id) ?? null));
     eventsBySource.set(sourceOperationId, events);
   }
 
@@ -159,6 +165,7 @@ export function buildUpidEditorTree(document: PathPlanningDocument): UpidEditorT
     sourceSetup,
     diagnostics: [],
     programEvents,
+    spatialActions,
     operations: sourceOperations.map((operation) => {
       const executionIds = executionIdsBySource.get(operation.id) ?? [];
       const [firstExecutionId, ...remainingExecutionIds] = executionIds;
@@ -259,20 +266,23 @@ function operationNodeBase(
 
 function eventNode(
   event: WireEdmExecutionEvent,
-  sourceOperationId: string | null
+  sourceOperationId: string | null,
+  spatialAction: ExecutionSpatialAction | null
 ): UpidEditorEventNode {
   const prefix = sourceOperationId === null
     ? 'program'
     : upidEditorOperationTreeKey(sourceOperationId);
   return {
     kind: 'event',
-    treeKey: `${prefix}:event:${encodeURIComponent(event.id)}`,
+    treeKey: spatialAction ? `${prefix}:action:${encodeURIComponent(spatialAction.key)}`
+      : `${prefix}:event:${encodeURIComponent(event.id)}`,
     label: event.kind,
     eventId: event.id,
     eventKind: event.kind,
     operationId: sourceOperationId,
     executionOperationId: event.operationId,
-    sourceTrace: event.trace
+    sourceTrace: event.trace,
+    spatialAction
   };
 }
 

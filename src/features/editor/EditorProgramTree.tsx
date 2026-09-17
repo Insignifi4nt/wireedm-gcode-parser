@@ -125,8 +125,14 @@ export function EditorProgramTree(props: EditorProgramTreeProps) {
             </button>
           ) : <span className="w-4 shrink-0" />}
           <StatusDot status={item.status} />
-          <span className="truncate" title={item.label}>{item.label}</span>
+          <span className={`truncate ${item.node?.kind === 'event' && item.node.spatialAction?.pause === 'generated-manual-thread' ? 'text-rose-300' : item.node?.kind === 'event' && item.node.spatialAction?.pause === 'authored' ? 'text-amber-300' : ''}`} title={item.node?.kind === 'event' ? item.node.spatialAction?.detail ?? item.label : item.label}>{item.label}</span>
         </div>
+        {selected && item.node?.kind === 'event' && item.node.spatialAction?.pause &&
+          <div className="border-b border-border/40 bg-accent/40 py-1 pr-2 text-[10px] text-muted-foreground"
+            style={{ paddingLeft: `${(item.level - 1) * 12 + 28}px` }}
+            data-program-action-detail={item.node.spatialAction.key}>
+            {item.node.spatialAction.detail}
+          </div>}
         {expanded && item.children.length > 0 && <ul role="group">{item.children.map(renderItem)}</ul>}
       </li>
     );
@@ -190,6 +196,7 @@ const EVENT_LABELS: Record<UpidEditorEventNode['eventKind'], string> = {
 };
 
 function eventLabel(node: UpidEditorEventNode) {
+  if (node.spatialAction?.pause) return node.spatialAction.label;
   const transition = node.sourceTrace.find((trace) => trace.kind === 'transition');
   if (node.eventKind === 'motion' && transition?.kind === 'transition') {
     if (transition.role === 'entry') return 'Cut entry';

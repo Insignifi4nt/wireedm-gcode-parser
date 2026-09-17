@@ -94,6 +94,9 @@ import {
   upidPathElementIdForOperation
 } from '@/domain/upid/projectRail';
 import { buildUpidEditorTree, type UpidEditorTree } from '@/domain/upid/upidEditorTree';
+import { programStopPreview } from '@/domain/editor/programStopPreview';
+import type { ExecutionSpatialAction } from '@/domain/editor/executionSpatialActions';
+import { orientedSegmentEnd, orientedSegmentStart } from '@/domain/path-intel/segments';
 import {
   createMeasurementPointPathSnapFromMagnetized,
   exportMeasurementPointsAsCsv,
@@ -379,9 +382,6 @@ export function EditorPage({
   const selectedMachiningSpanId = selectedProgramExactTarget?.kind === 'machining-span'
     ? selectedProgramExactTarget.spanId
     : null;
-  const selectedProgramStopId = selectedProgramExactTarget?.kind === 'program-stop'
-    ? selectedProgramExactTarget.stopId
-    : null;
   const [selectedLines, setSelectedLines] = useState<number[]>([]);
   const [upidRailMode, setUpidRailMode] = useState<EditorUpidRailMode>('program');
   const [expandedProgramTreeKeys, setExpandedProgramTreeKeys] = useState<ReadonlySet<string>>(
@@ -424,6 +424,18 @@ export function EditorPage({
     () => pathDocumentDraft ? buildUpidEditorTree(pathDocumentDraft) : null,
     [pathDocumentDraft]
   );
+  const spatialActions = useMemo(() => {
+    if (!pathDocumentDraft) return [];
+    if (programTree?.status === 'ready') return programTree.spatialActions;
+    return spatialActionsForDocument(pathDocumentDraft);
+  }, [pathDocumentDraft, programTree]);
+  const selectedSpatialAction = selectedProgramExactTarget?.kind === 'spatial-action'
+    ? spatialActions.find((action) => action.key === selectedProgramExactTarget.actionKey) ?? null
+    : selectedProgramExactTarget?.kind === 'program-stop'
+      ? spatialActions.find((action) => action.stopId === selectedProgramExactTarget.stopId &&
+          action.operationId === selectedProgramExactTarget.operationId) ?? null : null;
+  const selectedProgramStopId = selectedSpatialAction?.stopId ??
+    (selectedProgramExactTarget?.kind === 'program-stop' ? selectedProgramExactTarget.stopId : null);
   const savedDraftSignature = useMemo(() => editorDraftSignature(program?.model === 'upid-document' &&
     program.project.content.kind === 'upid-document'
       ? { model: 'upid-document', pathDocument: program.project.content.document as PathPlanningDocument }
@@ -647,11 +659,31 @@ export function EditorPage({
     : statusSegmentIndex >= 0
       ? `Segment ${statusSegmentIndex + 1}`
       : null;
-  const editorSelectionSummary = statusOperation
-    ? [statusOperation.displayName, statusFeature, selectedPathElement?.pointRole].filter(Boolean).join(' · ')
-    : selectedLines.length > 0
-      ? `${selectedLines.length} ${selectedLines.length === 1 ? 'line' : 'lines'}`
-      : 'None';
+  const selectedGeometryPoint = (() => {
+    if (!pathDocumentDraft || !selectedPathElement || !statusOperation) return null;
+    if (selectedPathElement.travelRole) {
+      const transition = statusOperation.transitions;
+      if (selectedPathElement.travelRole === 'rapid-in') return statusOperation.startPoint;
+      if (selectedPathElement.travelRole === 'lead-in') return transition?.entry?.strategy !== 'none'
+        ? transition?.entry?.to ?? null : null;
+      if (selectedPathElement.travelRole === 'lead-out') return transition?.exit?.strategy !== 'none'
+        ? transition?.exit?.to ?? null : null;
+    }
+    if (!selectedPathElement.pointRole || !selectedPathElement.segmentId) return null;
+    const ref = statusOperation.segmentRefs.find((item) => item.segmentId === selectedPathElement.segmentId);
+    const segment = pathDocumentDraft.segments.find((item) => item.id === selectedPathElement.segmentId);
+    if (!ref || !segment) return null;
+    if (selectedPathElement.pointRole === 'center') return segment.kind === 'line' ? null : segment.center;
+    return selectedPathElement.pointRole === 'start'
+      ? orientedSegmentStart(segment, ref) : orientedSegmentEnd(segment, ref);
+  })();
+  const editorSelectionSummary = selectedSpatialAction
+    ? [statusOperation?.displayName, selectedSpatialAction.label].filter(Boolean).join(' · ')
+    : statusOperation
+      ? [statusOperation.displayName, statusFeature, selectedPathElement?.pointRole].filter(Boolean).join(' · ')
+      : selectedLines.length > 0
+        ? `${selectedLines.length} ${selectedLines.length === 1 ? 'line' : 'lines'}`
+        : 'None';
   const diagnosticCount = pathDocumentDraft
     ? pathDocumentDraft.diagnostics.length + (programTree?.diagnostics.length ?? 0)
     : (draftParseResult?.errors.length ?? 0) + (draftParseResult?.warnings.length ?? 0);
@@ -937,15 +969,24 @@ export function EditorPage({
   useEffect(() => {
     const reconciledExactTarget = reconcileProgramExactTarget(
       selectedProgramExactTarget,
-      pathDocumentDraft
+      pathDocumentDraft,
+      spatialActions
     );
     if (!sameProgramExactTarget(selectedProgramExactTarget, reconciledExactTarget)) {
       setSelectedProgramExactTarget(reconciledExactTarget);
     }
-  }, [pathDocumentDraft, selectedProgramExactTarget]);
+  }, [pathDocumentDraft, selectedProgramExactTarget, spatialActions]);
 
   useEffect(() => {
     if (!programTree || !selectedProgramTreeKey) return;
+    if (selectedProgramExactTarget?.kind === 'spatial-action' && programTree.status === 'ready') {
+      const actionNode = [...programTree.programEvents, ...programTree.operations.flatMap((op) => op.children)]
+        .find((node) => node.kind === 'event' && node.spatialAction?.key === selectedProgramExactTarget.actionKey);
+      if (actionNode && selectedProgramTreeKey !== actionNode.treeKey) {
+        setSelectedProgramTreeKey(actionNode.treeKey);
+        return;
+      }
+    }
 
     const selectedTreeOperationId = findProgramTreeOperationId(
       programTree,
@@ -968,7 +1009,7 @@ export function EditorPage({
     } else if (!selectedPathOperationId && selectedTreeOperationId) {
       setSelectedProgramTreeKey(null);
     }
-  }, [programTree, selectedPathOperationId, selectedProgramTreeKey]);
+  }, [programTree, selectedPathOperationId, selectedProgramTreeKey, selectedProgramExactTarget]);
 
   useEffect(() => {
     const pendingReason = Object.values(activeWorkflowPendingReasons)[0];
@@ -1250,6 +1291,19 @@ export function EditorPage({
       : null);
     setSelectedProgramTreeKey(programTreeKeyForOperation(element.operationId));
     return true;
+  }
+
+  function handleSelectSpatialAction(actionKey: string) {
+    const action = spatialActions.find((candidate) => candidate.key === actionKey);
+    if (!action || workflowTargetChangeBlocked) return;
+    setSelectedPathOperationId(action.operationId);
+    setSelectedPathElement(null);
+    setSelectedProgramExactTarget({ kind: 'spatial-action', actionKey, operationId: action.operationId });
+    const node = programTree?.status === 'ready'
+      ? [...programTree.programEvents, ...programTree.operations.flatMap((operation) => operation.children)]
+        .find((candidate) => candidate.kind === 'event' && candidate.spatialAction?.key === actionKey)
+      : null;
+    setSelectedProgramTreeKey(node?.treeKey ?? programTreeKeyForOperation(action.operationId));
   }
 
   function handleSelectWorkflowOperation(operationId: string) {
@@ -2176,7 +2230,8 @@ export function EditorPage({
           ? candidateSelectedPathOperationId : null);
     const nextProgramExactTarget = reconcileProgramExactTarget(
       selectedProgramExactTarget,
-      nextPathDocument
+      nextPathDocument,
+      nextPathDocument ? spatialActionsForDocument(nextPathDocument) : []
     );
     const exactTargetRemoved = Boolean(
       selectedProgramExactTarget && !nextProgramExactTarget
@@ -2251,7 +2306,8 @@ export function EditorPage({
   function currentDraftSnapshot(historyLabel?: string): EditorDraftSnapshot {
     const reconciledExactTarget = reconcileProgramExactTarget(
       selectedProgramExactTarget,
-      pathDocumentDraft
+      pathDocumentDraft,
+      spatialActions
     );
     return {
       canvasMouseMode,
@@ -2324,7 +2380,8 @@ export function EditorPage({
     const restoredOperationId = restoredPathDocument ? snapshot.selectedPathOperationId : null;
     const restoredExactTarget = reconcileProgramExactTarget(
       snapshot.selectedProgramExactTarget,
-      restoredPathDocument
+      restoredPathDocument,
+      restoredPathDocument ? spatialActionsForDocument(restoredPathDocument) : []
     );
     setSelectedPathOperationId(restoredOperationId);
     setSelectedProgramExactTarget(restoredExactTarget);
@@ -2932,6 +2989,9 @@ export function EditorPage({
         selectedDiagnosticId={selectedDiagnosticId}
         selectedPathElement={selectedPathElement}
         selectedPathOperationId={selectedPathOperationId}
+        spatialActions={spatialActions}
+        selectedSpatialActionKey={selectedSpatialAction?.key ?? null}
+        onSelectSpatialAction={handleSelectSpatialAction}
         onPathTranslateXDraftChange={setPathTranslateXDraft}
         onPathTranslateYDraftChange={setPathTranslateYDraft}
         onTransformDraftChange={(source) => {
@@ -3563,6 +3623,9 @@ export function EditorPage({
           pathCount={isPathProject ? undefined : pathCount}
           pinnedLines={pinnedLines}
           selectedPathElement={selectedPathElement}
+          spatialActions={spatialActions}
+          selectedSpatialActionKey={selectedSpatialAction?.key ?? null}
+          onSelectSpatialAction={handleSelectSpatialAction}
           selectedLines={selectedLines}
           startPreview={startPreview}
         />
@@ -3634,6 +3697,7 @@ export function EditorPage({
         machineFit={machineFit}
         onOpenDiagnostics={openStatusDiagnostics}
         previewCursorPoint={previewCursorPoint}
+        selectedPoint={selectedSpatialAction?.point ?? selectedGeometryPoint}
         selectionSummary={editorSelectionSummary}
       />
       {exportPreviewOpen && pathDocumentDraft && (
@@ -3681,6 +3745,10 @@ function exactTargetForProgramTreeNode(
   if (node?.kind === 'diagnostic') {
     return { diagnosticId: node.treeKey, kind: 'diagnostic' };
   }
+  if (node?.kind === 'event' && node.spatialAction) {
+    return { kind: 'spatial-action', actionKey: node.spatialAction.key,
+      operationId: node.spatialAction.operationId };
+  }
   if (node?.kind === 'event' && node.eventKind === 'program-stop') {
     const source = node.sourceTrace.find((candidate) => candidate.kind === 'program-stop');
     if (source?.kind !== 'program-stop') return null;
@@ -3695,10 +3763,13 @@ function exactTargetForProgramTreeNode(
 
 function reconcileProgramExactTarget(
   target: EditorProgramTreeExactTarget | null,
-  document: PathPlanningDocument | null
+  document: PathPlanningDocument | null,
+  actions: readonly ExecutionSpatialAction[] = []
 ): EditorProgramTreeExactTarget | null {
   if (!target || !document) return null;
   if (target.kind === 'diagnostic') return target;
+  if (target.kind === 'spatial-action') return actions.some((action) => action.key === target.actionKey)
+    ? target : null;
   if (target.kind === 'program-stop') {
     return document.plan.operations.find(
       (operation) => operation.id === target.operationId
@@ -3727,6 +3798,16 @@ function reconcileProgramExactTarget(
     : null;
 }
 
+function spatialActionsForDocument(document: PathPlanningDocument): readonly ExecutionSpatialAction[] {
+  const tree = buildUpidEditorTree(document);
+  return tree.status === 'ready' ? tree.spatialActions : programStopPreview(document).map((stop) => ({
+    key: `stop:${stop.operationId}:${stop.stopId}`, eventId: `preview:${stop.stopId}`,
+    eventKind: 'program-stop' as const, operationId: stop.operationId, point: stop.point,
+    label: 'Authored stop', detail: 'Authored in Program Stops · preview',
+    pause: 'authored' as const, stopId: stop.stopId
+  }));
+}
+
 function sameProgramExactTarget(
   left: EditorProgramTreeExactTarget | null,
   right: EditorProgramTreeExactTarget | null
@@ -3738,6 +3819,9 @@ function sameProgramExactTarget(
   }
   if (left.kind === 'machining-span' && right.kind === 'machining-span') {
     return left.operationId === right.operationId && left.spanId === right.spanId;
+  }
+  if (left.kind === 'spatial-action' && right.kind === 'spatial-action') {
+    return left.actionKey === right.actionKey;
   }
   return left.kind === 'program-stop' &&
     right.kind === 'program-stop' &&
