@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { APP_VERSION } from '@/domain/release/appRelease';
 import type { AuthoringFile, PackageAuthoringRequest, PackageAuthoringResult } from '@/domain/machine-package/packageAuthoringTools';
 import { startPackageTool } from './packageToolsClient';
+import { packageSiteTools } from './packageSiteTools';
+import { ToolError, useSiteTools } from '@/features/webmcp/siteTools';
 
 const MAX_EVIDENCE_BYTES = 64 * 1024 * 1024;
 type EvidenceFile = AuthoringFile & { hash: string };
@@ -21,24 +23,31 @@ export function PackageToolsPage() {
   const [canCancel, setCanCancel] = useState(false);
   const cancel = useRef<(() => void) | null>(null);
   const requestId = useRef(0);
+  const operationActive = useRef(false);
+  const inputVersion = useMemo(() => crypto.randomUUID(), [postText, documentText, evidence, archive]);
+  const currentInputVersion = useRef(inputVersion);
+  useLayoutEffect(() => { currentInputVersion.current = inputVersion; }, [inputVersion]);
   useEffect(() => () => { requestId.current++; cancel.current?.(); }, []);
   const base = import.meta.env.BASE_URL;
 
   function invalidate() { setResult(null); setError(null); }
   async function work(action: () => Promise<void>) {
+    if (operationActive.current) return false;
+    operationActive.current = true;
     const current = ++requestId.current;
     setBusy(true); invalidate();
-    try { await action(); }
-    catch (reason) { if (current === requestId.current) setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { if (current === requestId.current) { setBusy(false); setCanCancel(false); cancel.current = null; } }
+    try { await action(); return true; }
+    catch (reason) { if (current === requestId.current) setError(reason instanceof Error ? reason.message : String(reason)); return false; }
+    finally { operationActive.current = false; if (current === requestId.current) { setBusy(false); setCanCancel(false); cancel.current = null; } }
   }
-  async function execute(request: PackageAuthoringRequest) {
+  async function execute(request: PackageAuthoringRequest, signal?: AbortSignal) {
     const current = requestId.current;
-    const task = startPackageTool(request);
+    const task = startPackageTool(request, signal);
     cancel.current = task.cancel;
     setCanCancel(true);
     const next = await task.result;
     if (current === requestId.current) setResult(next);
+    return next;
   }
   async function readJson(file: File | undefined, kind: 'post' | 'build') {
     if (!file) return;
@@ -62,15 +71,43 @@ export function PackageToolsPage() {
       setEvidence((previous) => [...previous, ...additions]);
     });
   }
-  async function reusePackage() {
+  async function reusePackage(signal?: AbortSignal) {
     const output = result?.output;
     if (!output) return;
-    await work(async () => {
+    return work(async () => {
       const files = [];
       for (const file of output.files) files.push({ ...file, hash: await hash(file.bytes) });
+      signal?.throwIfAborted();
       setDocumentText(output.documentText); setEvidence(files); setMode('build');
     });
   }
+  async function addTextEvidence(path: string, text: string, signal?: AbortSignal) {
+    return work(async () => {
+      const bytes = new TextEncoder().encode(text);
+      if (evidence.length >= 2047 || bytes.byteLength + evidence.reduce((sum, file) => sum + file.bytes.byteLength, 0) > MAX_EVIDENCE_BYTES) throw new Error('Evidence exceeds the package limits.');
+      const digest = await hash(bytes);
+      signal?.throwIfAborted();
+      setEvidence([...evidence, { path, bytes, hash: digest }]); setEvidenceText(''); setMode('build');
+    });
+  }
+  useSiteTools(packageSiteTools({ version: inputVersion, postText, documentText, evidence, archive, result,
+    isCurrent: (version) => currentInputVersion.current === version,
+    async run(request, signal) {
+      if (operationActive.current) throw new ToolError('BUSY', 'A check is already running.');
+      let checked: PackageAuthoringResult | undefined;
+      const completed = await work(async () => {
+        if (request.operation === 'check-post') { setPostText(request.text); setMode('post'); }
+        if (request.operation === 'build-package') { setDocumentText(request.text); setMode('build'); }
+        if (request.operation === 'inspect-package') setMode('inspect');
+        checked = await execute(request, signal);
+      });
+      if (!completed || !checked) throw new ToolError('CHECK_FAILED', 'Check failed or was cancelled; see the page diagnostic.');
+      return checked;
+    },
+    async addText(path, text, signal) { if (!await addTextEvidence(path, text, signal)) throw new ToolError('BUSY_OR_FAILED', 'Evidence could not be staged. See the page diagnostic.'); },
+    async reuse(signal) { if (!await reusePackage(signal)) throw new ToolError('BUSY_OR_FAILED', 'Package could not be loaded.'); },
+    download() { if (result?.output?.archive && result.output.fileName && !download(result.output.fileName, result.output.archive)) throw new ToolError('DOWNLOAD_FAILED', 'The browser could not request the download.'); }
+  }));
   function download(name: string, data: string | Uint8Array) {
     try {
       const payload = typeof data === 'string' ? data : new Uint8Array(data).buffer;
@@ -78,7 +115,8 @@ export function PackageToolsPage() {
       const link = document.createElement('a'); link.href = url; link.download = name;
       document.body.append(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (reason) { setError(`Download failed: ${reason instanceof Error ? reason.message : String(reason)}`); }
+      return true;
+    } catch (reason) { setError(`Download failed: ${reason instanceof Error ? reason.message : String(reason)}`); return false; }
   }
 
   return <>
@@ -93,7 +131,7 @@ export function PackageToolsPage() {
           <p>Paste or choose a .wireedm-post.json file. The report includes its canonical content hash and fixture results. Use that hash in the machine setup’s exact post reference.</p>
           <label>Post JSON file<input type="file" accept=".json,application/json" onChange={(event) => { void readJson(event.target.files?.[0], 'post'); event.target.value = ''; }} /></label>
           <label>Post JSON<textarea value={postText} onChange={(event) => { setPostText(event.target.value); invalidate(); }} spellCheck={false} /></label>
-          <button disabled={!postText.trim()} onClick={() => void work(() => execute({ operation: 'check-post', text: postText }))} type="button">Validate post and run conformance</button>
+          <button disabled={!postText.trim()} onClick={() => void work(async () => { await execute({ operation: 'check-post', text: postText }); })} type="button">Validate post and run conformance</button>
         </section>}
         {mode === 'build' && <section aria-label="Build package">
           <h2>Build a complete package</h2>
@@ -101,17 +139,13 @@ export function PackageToolsPage() {
           <label>Package document file<input type="file" accept=".json,application/json" onChange={(event) => { void readJson(event.target.files?.[0], 'build'); event.target.value = ''; }} /></label>
           <label>Package document JSON<textarea value={documentText} onChange={(event) => { setDocumentText(event.target.value); invalidate(); }} spellCheck={false} /></label>
           <label>Add evidence files<input type="file" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; if (files.length) void addFiles(files); }} /></label>
-          <details><summary>Add text evidence</summary><label>Text evidence path<input value={textPath} onChange={(event) => setTextPath(event.target.value)} /></label><label>Evidence text<textarea value={evidenceText} onChange={(event) => setEvidenceText(event.target.value)} /></label><button type="button" disabled={!textPath.trim() || !evidenceText} onClick={() => void work(async () => {
-            const bytes = new TextEncoder().encode(evidenceText);
-            if (evidence.length >= 2047 || bytes.byteLength + evidence.reduce((sum, file) => sum + file.bytes.byteLength, 0) > MAX_EVIDENCE_BYTES) throw new Error('Evidence exceeds the package limits.');
-            setEvidence([...evidence, { path: textPath, bytes, hash: await hash(bytes) }]); setEvidenceText('');
-          })}>Add text file</button></details>
+          <details><summary>Add text evidence</summary><label>Text evidence path<input value={textPath} onChange={(event) => setTextPath(event.target.value)} /></label><label>Evidence text<textarea value={evidenceText} onChange={(event) => setEvidenceText(event.target.value)} /></label><button type="button" disabled={!textPath.trim() || !evidenceText} onClick={() => void addTextEvidence(textPath, evidenceText)}>Add text file</button></details>
           <ul className="evidence-list">{evidence.map((file, index) => <li key={index}>
             <label>Evidence path {index + 1}<input value={file.path} onChange={(event) => { const path = event.target.value; setEvidence(evidence.map((item, itemIndex) => itemIndex === index ? { ...item, path } : item)); invalidate(); }} /></label>
             <span>{file.bytes.byteLength} bytes · SHA-256</span><code>{file.hash}</code>
             <button type="button" onClick={() => { setEvidence(evidence.filter((_, itemIndex) => itemIndex !== index)); invalidate(); }}>Remove evidence {index + 1}</button>
           </li>)}</ul>
-          <button disabled={!documentText.trim()} type="button" onClick={() => void work(() => execute({ operation: 'build-package', text: documentText, files: evidence }))}>Validate and build package</button>
+          <button disabled={!documentText.trim()} type="button" onClick={() => void work(async () => { await execute({ operation: 'build-package', text: documentText, files: evidence }); })}>Validate and build package</button>
         </section>}
         {mode === 'inspect' && <section aria-label="Inspect package">
           <h2>Validate an existing package</h2>

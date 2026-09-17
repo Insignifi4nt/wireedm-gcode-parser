@@ -1,5 +1,7 @@
 import { Value } from '@sinclair/typebox/value';
 import { APP_VERSION } from '@/domain/release/appRelease';
+import { parsePortableUpid } from '@/domain/upid/portableUpidProject';
+import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 import { parseWireEdmPostPackage } from '@/domain/post-processor/postPackage';
 import { hashPostPackage } from '@/domain/post-processor/postLibrary';
 import { runCustomPostConformance } from '@/domain/post-processor/custom-runtime/customPostConformance';
@@ -13,6 +15,7 @@ import {
 export interface AuthoringFile { readonly path: string; readonly bytes: Uint8Array }
 /** Browser and future tool adapters call the same storage-free operations. */
 export type PackageAuthoringRequest =
+  | { readonly operation: 'validate-upid'; readonly text: string }
   | { readonly operation: 'check-post'; readonly text: string }
   | { readonly operation: 'build-package'; readonly text: string; readonly files: readonly AuthoringFile[] }
   | { readonly operation: 'inspect-package'; readonly bytes: Uint8Array };
@@ -38,6 +41,15 @@ export async function runPackageAuthoringTool(request: PackageAuthoringRequest):
   });
   const fail = (code: string, message: string) => result(false, { diagnostics: [{ code, message }] });
   try {
+    if (request.operation === 'validate-upid') {
+      if (new TextEncoder().encode(request.text).byteLength > 512 * 1024) return fail('INPUT_TOO_LARGE', 'Inline UPID is limited to 512 KiB. Use the normal file import for larger documents.');
+      const parsed = parsePortableUpid(request.text);
+      if (!parsed.ok) return result(false, { diagnostics: [parsed.error] });
+      const report = validateUpidDocument(parsed.document);
+      return result(report.valid, { structurallyValid: report.structurallyValid, planningValid: report.valid,
+        diagnostics: report.diagnostics.slice(0, 30), omittedDiagnosticCount: Math.max(0, report.diagnostics.length - 30),
+        verification: 'UPID structure and planning only; no machine fit, post execution or controller verification.' });
+    }
     if (request.operation === 'check-post') {
       const parsed = parseWireEdmPostPackage(request.text);
       if (!parsed.ok) return result(false, { diagnostics: parsed.diagnostics });

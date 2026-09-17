@@ -47,7 +47,7 @@ describe('PackageToolsPage', () => {
     await click('Build package');
     await fillDocument('{}');
     await click('Validate and build package');
-    expect(startPackageTool).toHaveBeenCalledWith({ operation: 'build-package', text: '{}', files: [] });
+    expect(startPackageTool).toHaveBeenCalledWith({ operation: 'build-package', text: '{}', files: [] }, undefined);
     vi.useFakeTimers();
     await click('Download .wireedm-package');
     vi.runAllTimers();

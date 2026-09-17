@@ -226,6 +226,7 @@ import {
 } from './workspace/editorFloatingPanelPlacement';
 
 interface EditorPageProps {
+  onReadSnapshot?: (snapshot: import('@/features/webmcp/workbenchSiteTools').DraftReadSnapshot | null) => void;
   program: LoadedEditorProgram | null;
   machines: readonly MachineDefinition[];
   posts: PostLibrary;
@@ -287,7 +288,8 @@ export function EditorPage({
   onImportProgramFile,
   onReimportDxfUnits,
   onSaveEditorDraft,
-  onStatusMessage
+  onStatusMessage,
+  onReadSnapshot
 }: EditorPageProps) {
   const planningPackage = useMemo(() => {
     const binding = planningMachine?.bindings.find(({ id }) => id === planningMachine.activeBindingId);
@@ -431,6 +433,12 @@ export function EditorPage({
   const lastProgramIdentityRef = useRef(programIdentity);
   const draftSignature = useMemo(() => editorDraftSignature(draftState), [draftState]);
   const hasUnsavedChanges = Boolean(program && draftSignature !== savedDraftSignature);
+  const readVersion = useMemo(() => crypto.randomUUID(), [draftState, program, hasUnsavedChanges, activeWorkflowSession]);
+  useLayoutEffect(() => {
+    onReadSnapshot?.({ projectId: program?.project.id ?? null, version: readVersion, document: pathDocumentDraft,
+      dirty: hasUnsavedChanges, workflowOpen: activeWorkflowSession !== null });
+    return () => onReadSnapshot?.(null);
+  }, [onReadSnapshot, program, readVersion, pathDocumentDraft, hasUnsavedChanges, activeWorkflowSession]);
   const [generatedPauseEvidence, setGeneratedPauseEvidence] = useState<EmittedPauseEvidence | null>(null);
   const pauseEvidenceGenerationRef = useRef(0);
   const exactPauseCommands = useMemo(() => applicableEmittedPauseEvidence(generatedPauseEvidence, {
