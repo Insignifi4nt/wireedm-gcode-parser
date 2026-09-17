@@ -14,7 +14,7 @@
     "capabilities": "No new capability restriction; v2 exact separation requirements are now documented.",
     "auditAndOutput": "No controller-output or audit change; Robofil 2.6.0 retains 2.5.0 source, dialect, output rules and golden fixtures.",
     "installationAndStorage": "No automatic installed-package replacement or persisted-data migration. A bounded archive reader exposes unvalidated repair inputs; installation and build still require full validation/conformance.",
-    "verification": "Run release:check, post:docs:check, focused legacy/provenance, package and WebMCP tests, Robofil conformance, package validation, full tests and build before merge. Verify native in-app browser tool discovery, draft freshness and package authoring. See PR for results."
+    "verification": "Run release:check, post:docs:check, focused legacy/provenance, package and WebMCP tests, Robofil conformance, package validation, full tests and build before merge. Verify native browser DXF import, machining edits, stale/dirty guards, save, package installation and exact controller output/download, plus package authoring. See PR for results."
   },
   "testedPosts": [
     {
@@ -32,7 +32,7 @@
     "summary": "Create, check and build complete machine packages in the browser, with downloadable contracts and actionable export diagnostics.",
     "changes": [
       "Package workbench checks posts, calculates canonical hashes, hashes evidence files, builds packages and inspects existing archives without a terminal.",
-      "Compatible browser agents can use WebMCP tools for package authoring and read-only project, draft, geometry, capability and revision queries.",
+      "Compatible browser agents can import DXF/UPID, inspect geometry, edit machining intent, review execution, save, install machine packages, activate setups and generate/download audited controller files through WebMCP.",
       "New posts can record the app release and versioned documentation they were written for. Older packages retain their exact contents.",
       "Export failures provide a reviewable agent repair prompt with exact versions, diagnostics and browser-based repair steps."
     ],

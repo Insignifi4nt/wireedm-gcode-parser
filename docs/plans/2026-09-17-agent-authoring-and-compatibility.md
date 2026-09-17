@@ -15,7 +15,7 @@ Requested by Cristian on 2026-09-17. Work on a PR branch; do not merge or deploy
 
 - Repository hygiene: separate personal machine/postprocessor artifacts from distributable examples and remove obsolete files after auditing test/evidence dependencies. Do not delete them as part of this work.
 - Persistence audit: map browser-cache and folder layouts, identify orphaned legacy files, design safe cleanup and a versioned migration mechanism with backups, recovery, interrupted-upgrade handling, and tests. Preserve browser-cache-only and optional-folder workflows.
-- WebMCP documentation: delivered below for the actual shipped read/validation and package-authoring tools. Update it as additional workflows become available.
+- WebMCP documentation: delivered below for the full DXF-to-controller workflow and package-authoring tools. Update it as additional workflows become available.
 - Dependency maintenance discovered during this work: npm audit reports existing Vite, PostCSS and nanoid advisories (plus development dependencies). Review/update separately; this PR adds only the build-time Markdown renderer. Remove the now-unused gh-pages dependency when cleaning the old deployment tooling.
 
 ## Completion record
@@ -44,3 +44,11 @@ Requested by Cristian on 2026-09-17. Work on a PR branch; do not merge or deploy
 - Native in-app browser discovery and calls passed on production preview. Package rebuild retained the exact archive hash; UI draft translation produced the correct unsaved geometry while saved queries remained unchanged; stale versions were rejected. The test edit was discarded. Details: `docs/maintainers/webmcp.md`.
 - Public `/documentation/agents/`, authoring instructions and release notes now document these actual tools. Latest verification: 145 test files / 1,374 tests; production build; 15 static pages and 53 published files/link checks; contract parity; release gate. All passed locally.
 - Delivery-plan review: original post repair, compatibility/version tracking, repair prompts, hosted authoring and WebMCP documentation are implemented in PR #1. Remaining requested work is repository hygiene and the storage-layout/migration audit. Review/merge/deploy still requires the user's next instruction; no additional release bump within this PR.
+
+## Full agent workflow correction
+
+- Expanded the initial read/preparation scope to 23 main-app tools plus seven authoring tools. Agents can import DXF or UPID, open projects, apply atomic undoable machining batches, review paginated execution events, save, prepare/install complete packages, activate exact setups, generate audited output and request controller/UPID downloads.
+- Added a single browser upload control and reused existing editor history, domain operations, catalog transactions, package validation and saved-revision generation. No additional runtime dependency or automation framework. Numeric geometry replaces measurement gestures; construction, G-code text editing, deletion and storage switching remain UI operations.
+- Mutations reject stale drafts/workbenches, invalid batches and conflicting editor workflows. Shared controller generation rejects dirty drafts while allowing the human export view. Save checks the expected persisted content, including inside the storage lock. Late cancellation cannot misreport a completed mutation as cancelled.
+- Native browser verification completed the entire two-contour DXF → Robofil 2.6.0 controller workflow, including generated rethread and user stop, undo/redo, dirty export rejection and stale-edit rejection. Exact output hash and sequence are recorded in `docs/maintainers/webmcp.md`; no production data was touched.
+- Full regression suite: 147 files / 1,380 tests passed. This is still PR #1 / app 0.0.686. Repository hygiene and persistence/migration planning remain deferred until the next delivery-plan discussion.
