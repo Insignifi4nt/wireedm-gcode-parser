@@ -1,4 +1,4 @@
-import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
+import { MAX_STORAGE_INVENTORY_ENTRIES, type WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 export function createBrowserDirectoryAdapter(
   root: FileSystemDirectoryHandle
@@ -6,6 +6,17 @@ export function createBrowserDirectoryAdapter(
   return {
     name: root.name,
     kind: 'directory',
+    listFiles: () => listDirectoryFiles(root),
+    readExactText: async (path: string) => {
+      try {
+        const handle = await getFile(root, splitPath(path), false);
+        const file = await handle.getFile();
+        return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(await file.arrayBuffer());
+      } catch (error) {
+        if (isNotFoundError(error)) return null;
+        throw new Error(`Cannot back up ${path} as exact UTF-8 text: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
     ensureDirectory: async (path: string) => {
       await getDirectory(root, splitPath(path), true);
     },
@@ -44,6 +55,24 @@ export function createBrowserDirectoryAdapter(
       }
     }
   };
+}
+
+async function listDirectoryFiles(root: FileSystemDirectoryHandle) {
+  const paths: string[] = [];
+  let visited = 0;
+  let truncated = false;
+  async function visit(directory: FileSystemDirectoryHandle, prefix: string, depth: number): Promise<void> {
+    for await (const [name, handle] of directory.entries()) {
+      if (++visited > MAX_STORAGE_INVENTORY_ENTRIES) { truncated = true; return; }
+      const path = `${prefix}${name}`;
+      if (handle.kind === 'file') paths.push(path);
+      else if (depth >= 16) truncated = true;
+      else await visit(handle as FileSystemDirectoryHandle, `${path}/`, depth + 1);
+      if (visited > MAX_STORAGE_INVENTORY_ENTRIES) return;
+    }
+  }
+  await visit(root, '', 0);
+  return { paths: paths.sort(), truncated };
 }
 
 function splitPath(path: string) {

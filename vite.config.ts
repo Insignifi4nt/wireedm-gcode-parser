@@ -5,6 +5,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  worker: { format: 'es' },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src')
@@ -15,7 +16,8 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: './index.html'
+        main: './index.html',
+        packageTools: './package-tools/index.html'
       }
     }
   },

@@ -97,8 +97,8 @@ The same archive commit contains `ArcTestFile1.txt` and `ArcTestFile2.txt`. They
 with `%`, `G92`, `G60`, `G38`, and `G41D0`. Near the end they use `G40` before
 `M02`, but not `G39`. The current candidate package instead emits `G39`, then
 `G40`, at operation boundaries and program end. See the [candidate policy
-record](../../examples/robofil-100-v2/evidence/candidate-policy-record.txt) and
-the [three-contour candidate output](../../examples/robofil-100-v2/evidence/prisma-recommended.iso).
+record](../../tests/fixtures/machine-packages/robofil-100-v2/evidence/candidate-policy-record.txt) and
+the [three-contour candidate output](../../tests/fixtures/machine-packages/robofil-100-v2/evidence/prisma-recommended.iso).
 
 These variants show why the existing V2 lifecycle is not evidence of controller
 requirements. Its own record calls it an editable candidate and says it is not a

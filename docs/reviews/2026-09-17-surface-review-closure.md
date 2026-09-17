@@ -25,7 +25,7 @@ Implementation commit: `836f25c` on `codex/post-processor-architecture`. The ori
 
 - `npm test -- --run`: 134 files, 1,339 tests passed.
 - `npm run build`: typecheck and production build passed.
-- `npm run post:docs:check`, `npm run post:conformance -- examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json`, `npm run machine-package:validate -- examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-package`, and `npm run upid:conformance`: passed.
+- `npm run post:docs:check`, `npm run post:conformance -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json`, `npm run machine-package:validate -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package`, and `npm run upid:conformance`: passed.
 - `git diff --check` passed for implementation changes. The review reproduction script's extra blank line was removed in the closure commit.
 
 Review-correction checkpoint: R1–R4 add pagination/deletion recovery, editable legacy-v1 promotion, a persisted source-interpreter selector, and honest artifact engine provenance. After these corrections, `npm test -- --run` passed 134 files and 1,345 tests; `npm run build` passed. These changes are isolated from later pause and canvas work.

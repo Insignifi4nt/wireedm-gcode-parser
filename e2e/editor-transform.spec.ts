@@ -4,7 +4,7 @@ import { confirmPendingDxfImport } from './dxf-import';
 test('transforms preview, cancel, commit once and persist through reopening', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
-  await page.getByLabel('DXF file').setInputFiles('examples/robofil-100-v2/no-lead-rectangle.dxf');
+  await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
   const geometry = () => page.locator('path[data-preview-source="path-document"][data-type="cut"]').evaluateAll(paths => paths.map(path => path.getAttribute('d')));
   const original = await geometry();
@@ -43,6 +43,6 @@ test('transforms preview, cancel, commit once and persist through reopening', as
   await page.getByRole('button', { name: 'Back to Dashboard', exact: true }).click();
   await page.reload();
   await page.getByRole('button', { name: /Open project .* in editor/ }).click();
-  expect(await geometry()).toEqual(transformed);
+  await expect.poll(geometry).toEqual(transformed);
   await expect(page.locator('[data-editor-document-state]')).toHaveText('Saved');
 });

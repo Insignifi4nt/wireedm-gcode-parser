@@ -5,7 +5,7 @@ import { minimalPostPackage } from '../../src/domain/post-processor/__tests__/po
 import { runCustomPost } from '../../src/domain/post-processor/custom-runtime/customPostRuntime';
 import { CANONICAL_POST_PLAN_FIXTURES } from '../../src/domain/post-processor/custom-runtime/canonicalPostConformanceFixtures';
 import { preflightPostCapabilities } from '../../src/domain/post-processor/postCapabilityPreflight';
-import robofil from '../../examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json';
+import robofil from '../../tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json';
 
 const circles = createUpidFromDxfEntities([
   {type:'circle', layer:'CUT', center:{x:0,y:0}, radius:5},

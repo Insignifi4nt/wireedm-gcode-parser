@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -43,7 +43,7 @@ export function ProjectActionDialog({
     initialFocusRef: action?.kind === 'rename' ? nameRef : cancelRef,
     onClose: dismiss, dismissible: !busy });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!action) return;
     setName(action.project.name);
     setIsSaving(false);
@@ -116,7 +116,7 @@ export function ProjectActionDialog({
             <p className="mt-1 font-mono text-[11px] text-muted-foreground">
               {isRename
                 ? `Choose a clear project name, up to ${MAX_PROJECT_NAME_LENGTH} characters.`
-                : 'Moves this project to Deleted projects. Its files and saved revisions remain in this workbench and can be restored.'}
+                : 'Moves this project to Archive. Its files and saved revisions remain in this workbench and can be restored.'}
             </p>
           </div>
           <button

@@ -20,20 +20,13 @@ if (result.ok) {
 }
 ```
 
-Validate files without opening the app or requesting folder permissions:
+For a user project, open the portable file in the app and review its execution-plan diagnostics. Postprocessor conformance uses the downloadable canonical execution fixtures in the [contract reference](../../site/reference.md).
 
-```sh
-npm run upid:validate -- drawing.upid.json
-npm run upid:validate -- drawing.upid.json --require-executable
-```
+Portable examples:
 
-The CLI emits one JSON report per file. Exit 0 means the requested validation passed; 1 means invalid, unreadable, or not executable when that flag was requested; 2 means incorrect command arguments. Several file paths are supported. A report includes source-geometry counts, diagnostics, execution readiness and machine capability requirements. Execution readiness is controller-neutral: the exact machine package must still pass its own checks.
-
-Complete portable examples are checked by `npm run upid:conformance`:
-
-- [Mixed line, arc and circle geometry](examples/mixed-primitives.upid.json) with explicit manual threading.
-- [A partial circle with a retention stop](examples/partial-circle-stop.upid.json), preserving the complete source circle and excluding one quadrant.
-- [A compensated circle](examples/compensated-circle.upid.json) with a linked initial wire position and center entry.
+- [Mixed line, arc and circle geometry](examples/mixed-primitives.upid.json)
+- [Partial circle with a retention stop](examples/partial-circle-stop.upid.json)
+- [Compensated circle](examples/compensated-circle.upid.json)
 
 These are reference documents for format authors, not machine-certified programs. Negative and mutation conformance cases live in the portable, semantic and execution-plan test suites.
 

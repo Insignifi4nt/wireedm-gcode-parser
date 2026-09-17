@@ -1,6 +1,6 @@
 # Robofil Multi-Contour Route V2 Implementation Plan
 
-> Historical plan, superseded by the complete machine-package platform. Robofil V2 now lives in the complete package sources under `examples/robofil-100-v2/`. No application renderer implements this controller.
+> Historical plan, superseded by the complete machine-package platform. Robofil V2 now lives in the complete package sources under `tests/fixtures/machine-packages/robofil-100-v2/`. No application renderer implements this controller.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

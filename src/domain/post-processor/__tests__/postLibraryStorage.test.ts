@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import robofilPost from '../../../../examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json';
+import robofilPost from '../../../../tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json';
 
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 

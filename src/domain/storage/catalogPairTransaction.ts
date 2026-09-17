@@ -103,6 +103,8 @@ export async function recoverCatalogPairTransaction(
     return failure('CATALOG_PAIR_TRANSACTION_STORAGE_FAILED', `Could not read machine-package recovery data: ${errorMessage(error)}.`);
   }
   if (raw === null) return { ok: true };
+  // Empty first-write handles precede every catalog change.
+  if (raw === '') return finishCatalogPairTransaction(adapter);
   const parsed = parseTransaction(raw);
   if (!parsed.ok) return parsed;
   const transaction = parsed.transaction;

@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { AgentRepairPrompt } from '@/components/AgentRepairPrompt';
+import { postFailureGuidance, postRepairPrompt } from '@/domain/post-processor/postRepairPrompt';
+import { APP_VERSION } from '@/domain/release/appRelease';
 
 import type { MachineDefinition } from '@/domain/machine-definition/machineDefinition';
 import type { PostInstallation, PostLibrary } from '@/domain/post-processor/postLibrary';
@@ -76,7 +79,8 @@ export function EditorControllerArtifactDialog({
       if (!generating) onClose();
     }
     if (event.key !== 'Tab') return;
-    const controls = [...event.currentTarget.querySelectorAll<HTMLElement>(':is(button, select):not(:disabled)')];
+    const controls = [...event.currentTarget.querySelectorAll<HTMLElement>(':is(button, select, textarea, summary, a[href]):not(:disabled)')]
+      .filter((element) => !element.closest('details:not([open])') || element.tagName === 'SUMMARY');
     const first = controls[0];
     const last = controls.at(-1);
     if (!first || !last) {
@@ -134,6 +138,7 @@ export function EditorControllerArtifactDialog({
         <header className="flex items-center justify-between gap-3 border-b border-border pb-2">
           <div>
             <h2 className="text-sm font-semibold">Controller artifact</h2>
+            <span className="text-muted-foreground">App {APP_VERSION}</span>
             <p className="text-muted-foreground">Generate from the exact saved project revision and the machine&apos;s active setup.</p>
           </div>
           <button aria-label="Close controller artifact export" className="h-7 border border-border px-2 disabled:opacity-40" disabled={generating} onClick={onClose} type="button">Close</button>
@@ -184,6 +189,9 @@ export function EditorControllerArtifactDialog({
           <div className="technical-value grid gap-1 border-y border-border py-2 text-muted-foreground">
             <span>Setup: <strong className="text-foreground">{activeSetup.name}</strong></span>
             <span>Post: {activePost.package.manifest.name} {activePost.ref.version}</span>
+            <span>{activePost.package.manifest.authoredFor
+              ? `Written for app ${activePost.package.manifest.authoredFor.appVersion} · compatibility is checked during generation`
+              : 'Authoring app version not recorded (legacy package)'}</span>
             <span>Output: {outputSummary(activePost.package.manifest.output)}</span>
           </div>
         )}
@@ -196,6 +204,7 @@ export function EditorControllerArtifactDialog({
           <div className="border border-destructive/60 bg-destructive/10 p-2 text-destructive" role="alert">
             <div className="font-mono font-semibold">{failure.code}</div>
             <p>{failure.message}</p>
+            <p className="mt-2">{postFailureGuidance(failure, activePost)}</p>
             {failure.code === 'CONTROLLER_ARTIFACT_POST_FAILED' && failure.diagnostics.length > 0 && (
               <ul className="mt-2 grid gap-1 border-t border-destructive/30 pt-2" data-controller-artifact-diagnostics>
                 {failure.diagnostics.map((diagnostic, index) => (
@@ -224,6 +233,7 @@ export function EditorControllerArtifactDialog({
                 ))}
               </ul>
             )}
+            <AgentRepairPrompt prompt={postRepairPrompt({ error: failure, installation: activePost, machine: selectedMachine, setupId: activeSetup?.id ?? null })} />
           </div>
         )}
 

@@ -1,4 +1,5 @@
 class FakeFileHandle {
+  readonly kind = 'file';
   constructor(
     readonly name: string,
     private getContents: () => string,
@@ -23,6 +24,11 @@ export class FakeDirectoryHandle {
   readonly files = new Map<string, string>();
 
   constructor(readonly name: string) {}
+
+  async *entries(): AsyncGenerator<[string, FakeDirectoryHandle | FakeFileHandle]> {
+    for (const [name, directory] of this.directories) yield [name, directory];
+    for (const name of this.files.keys()) yield [name, await this.getFileHandle(name)];
+  }
 
   async getDirectoryHandle(name: string, options: { create?: boolean } = {}) {
     const existing = this.directories.get(name);

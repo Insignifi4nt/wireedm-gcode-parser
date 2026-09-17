@@ -106,6 +106,12 @@ export async function recoverProjectTrashTransaction(adapter: WorkbenchStorageAd
   try {
     const raw = await adapter.readText(PROJECT_TRASH_TRANSACTION_PATH);
     if (raw === null) return { ok: true };
+    // Empty first-write handles precede every catalog or owned-file change.
+    if (raw === '') {
+      await adapter.deleteText(PROJECT_TRASH_TRANSACTION_PATH);
+      return await adapter.readText(PROJECT_TRASH_TRANSACTION_PATH) === null
+        ? { ok: true } : failure('Empty project recovery data could not be removed.');
+    }
     if (new TextEncoder().encode(raw).byteLength > maximumBytes) return failure('Project recovery data is too large.');
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return failure('Project recovery data is invalid JSON.'); }

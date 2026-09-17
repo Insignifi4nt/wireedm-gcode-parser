@@ -38,6 +38,7 @@ interface AppShellProps extends MachinePostSettingsActions {
   statusNotifications: StatusToast[];
   storageWarningMessage: string | null;
   children: ReactNode;
+  agentFileControl?: ReactNode;
 }
 
 export function AppShell({
@@ -58,7 +59,8 @@ export function AppShell({
   storageActionLabel,
   statusNotifications,
   storageWarningMessage,
-  children
+  children,
+  agentFileControl
 }: AppShellProps) {
   const [headerContent, setHeaderContent] = useState<ReactNode | null>(null);
   const [shellRailCollapsed, setShellRailCollapsed] = useState(false);
@@ -206,6 +208,7 @@ export function AppShell({
           </div>
         )}
         <div className="ml-auto flex items-center gap-2" data-app-header-system-controls>
+          {agentFileControl}
           <StatusNotificationMenu notifications={statusNotifications} />
           <span
             aria-label={storageStatusLabel}

@@ -225,9 +225,11 @@ export async function buildMachinePackageArchive(
   };
 }
 
-export async function parseMachinePackageArchive(
+/** Bounded archive decoding for repair tools. Contents remain unvalidated and cannot be installed. */
+export function readMachinePackageArchiveContents(
   archive: Uint8Array
-): Promise<ParseMachinePackageArchiveResult> {
+): { ok: true; document: unknown; files: Readonly<Record<string, Uint8Array>> }
+  | Extract<ParseMachinePackageArchiveResult, { ok: false }> {
   if (archive.byteLength > MAX_MACHINE_PACKAGE_ARCHIVE_BYTES) {
     return failure(
       'MACHINE_PACKAGE_ARCHIVE_TOO_LARGE',
@@ -309,6 +311,16 @@ export async function parseMachinePackageArchive(
       `${MACHINE_PACKAGE_ENTRY} is not valid UTF-8 JSON.`
     );
   }
+  return {
+    ok: true, document: unknownDocument,
+    files: Object.fromEntries(Object.entries(entries).filter(([path]) => path !== MACHINE_PACKAGE_ENTRY))
+  };
+}
+
+export async function parseMachinePackageArchive(archive: Uint8Array): Promise<ParseMachinePackageArchiveResult> {
+  const contents = readMachinePackageArchiveContents(archive);
+  if (!contents.ok) return contents;
+  const { document: unknownDocument, files } = contents;
   const schemaError = Value.Errors(MachinePackageDocumentSchema, unknownDocument).First();
   if (schemaError) {
     return failure(
@@ -320,9 +332,6 @@ export async function parseMachinePackageArchive(
   const document: MachinePackageDocumentValue = Value.Decode(
     MachinePackageDocumentSchema,
     unknownDocument
-  );
-  const files = Object.fromEntries(
-    Object.entries(entries).filter(([path]) => path !== MACHINE_PACKAGE_ENTRY)
   );
   const validated = await validateMachinePackage(document, files);
   if (!validated.ok) return validated;

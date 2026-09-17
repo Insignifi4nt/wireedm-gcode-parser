@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { ToolError } from '@/features/webmcp/siteTools';
 
 import type { StatusToast, StatusToastType } from '@/components/StatusToasts';
 import {
@@ -50,7 +52,7 @@ interface PendingDxfReimport {
   readonly planningMachineFit: ResolvedPlanningMachineFit | null;
 }
 
-export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) {
+export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, getEditorState?: () => { dirty: boolean; workflowOpen: boolean; workflowCommand?: string } | null) {
   const [services] = useState<AppServices>(() => ({ ...defaultAppServices, ...overrides }));
   const [workbenchStatus, setWorkbenchStatus] = useState<WorkbenchStatus>('initializing');
   const [connectedWorkbench, setConnectedWorkbench] = useState<ConnectedWorkbenchCatalog | null>(null);
@@ -408,6 +410,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     try {
       const saved = await services.saveEditorProgram(workbench, {
         projectId: program.project.id,
+        expectedContent: program.project.content,
         draft
       });
       if (!saved.ok) {
@@ -656,6 +659,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
   async function handleGenerateControllerArtifact(input: {
     readonly machineId: string;
   }): Promise<ControllerArtifactResult> {
+    const editor = getEditorState?.();
+    if (editor?.dirty || (editor?.workflowOpen && editor.workflowCommand !== 'export.preview')) return artifactAppFailure('Save the draft and finish the editor workflow before generating controller output.');
     const workbench = requireWorkbench();
     const program = loadedEditorProgram;
     if (!workbench || !program || program.model !== 'upid-document') {
@@ -802,6 +807,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     >,
     successMessage: string
   ) {
+    if (activeMutation.current) return false;
+    activeMutation.current = 'project-action';
     setSettingsStatus('saving');
     setSettingsErrorMessage(null);
     try {
@@ -817,6 +824,31 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     } catch (error) {
       settingsFailure(errorText(error));
       return false;
+    } finally {
+      activeMutation.current = null;
+    }
+  }
+
+  /** Agent imports/opening use the same storage operations and app state as the interface. */
+  async function runAgentWorkbenchOperation<T>(action: (workbench: ConnectedWorkbenchCatalog) => Promise<{
+    workbench: ConnectedWorkbenchCatalog; editorProgram?: LoadedEditorProgram; value: T;
+  }>): Promise<T> {
+    if (!connectedWorkbench) throw new ToolError('WORKBENCH_UNAVAILABLE', 'Wait for the workbench.');
+    if (activeMutation.current || interactionLocked) throw new ToolError('BUSY', 'A workbench operation is in progress.');
+    const editor = getEditorState?.();
+    if (editor?.dirty || editor?.workflowOpen) throw new ToolError('DRAFT_IN_USE', 'Save the draft and finish its workflow first.');
+    activeMutation.current = 'project-action';
+    flushSync(() => setProjectActionPending(true));
+    try {
+      const result = await action(connectedWorkbench);
+      flushSync(() => {
+        setConnectedWorkbench(result.workbench);
+        if (result.editorProgram) openEditorProgram(result.editorProgram);
+      });
+      return result.value;
+    } finally {
+      activeMutation.current = null;
+      flushSync(() => setProjectActionPending(false));
     }
   }
 
@@ -891,6 +923,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}) 
     handleRenameWorkbenchProject,
     handleSaveCatalogPreferences,
     handleSaveEditorDraft,
+    runAgentWorkbenchOperation,
     importErrorMessage,
     importStatus,
     latestImport,

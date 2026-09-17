@@ -6,7 +6,7 @@ test.use({ hasTouch: true });
 async function openRectangle(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
-  await page.getByLabel('DXF file').setInputFiles('examples/robofil-100-v2/no-lead-rectangle.dxf');
+  await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
 }
 

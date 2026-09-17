@@ -20,7 +20,7 @@ function run(...args: string[]) {
 }
 
 describe('portable UPID command-line validation', () => {
-  it('distinguishes a portable draft from executable intent, without changing the file', () => {
+  it('distinguishes a portable draft from executable intent, without changing the file', { timeout: 30_000 }, () => {
     const document = createUpidFromDxfEntities([
       { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
     ]);

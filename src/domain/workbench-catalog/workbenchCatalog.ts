@@ -24,7 +24,7 @@ import {
   readMachineLibraryStorage,
   type MachineLibraryStorageError
 } from '@/domain/machine-definition/machineLibraryStorage';
-import type { MachineLibrary } from '@/domain/machine-definition/machineLibrary';
+import { createEmptyMachineLibrary, type MachineLibrary } from '@/domain/machine-definition/machineLibrary';
 import { parseWorkbenchProjectDocument } from './workbenchProject';
 import {
   validateWorkbenchProjectPathOwnership,
@@ -265,7 +265,14 @@ export async function initializeWorkbenchCatalogUnderMutationLock(
   if (!migrated.ok) return migrated;
   const manifest = validateWorkbenchCatalogValue(migrated.value, machines.library);
   if (!manifest.ok) return manifest;
+  const ownership = await validateWorkbenchProjectPathOwnership(
+    adapter,
+    manifest.manifest.projects
+  );
+  if (!ownership.ok) return ownership;
   if (migrated.kind === 'migrated') {
+    const backup = await preserveLegacyV2Manifest(adapter, catalogRead.rawText);
+    if (!backup.ok) return backup;
     const written = await accessStorage(
       adapter,
       'write',
@@ -274,11 +281,6 @@ export async function initializeWorkbenchCatalogUnderMutationLock(
     );
     if (!written.ok) return written;
   }
-  const ownership = await validateWorkbenchProjectPathOwnership(
-    adapter,
-    manifest.manifest.projects
-  );
-  if (!ownership.ok) return ownership;
 
   return {
     ok: true,
@@ -290,6 +292,34 @@ export async function initializeWorkbenchCatalogUnderMutationLock(
       machines: machines.library
     })
   };
+}
+
+async function preserveLegacyV2Manifest(adapter: WorkbenchStorageAdapter, original: string) {
+  const path = 'legacy/v2/workbench.json';
+  const existing = await readStorageText(adapter, path);
+  if (!existing.ok) return existing;
+  if (existing.rawText !== null && existing.rawText !== original) {
+    return {
+      ok: false as const,
+      error: {
+        code: 'WORKBENCH_CATALOG_INCOMPLETE' as const,
+        message: 'Workbench migration found a conflicting version-2 backup. Preserve both files before recovery.',
+        existingPaths: [path]
+      }
+    };
+  }
+  if (existing.rawText === null) {
+    const ensured = await accessStorage(adapter, 'ensure-directory', 'legacy/v2', () => adapter.ensureDirectory('legacy/v2'));
+    if (!ensured.ok) return ensured;
+    const written = await accessStorage(adapter, 'write', path, () => adapter.writeText(path, original));
+    if (!written.ok) return written;
+  }
+  const verified = await readStorageText(adapter, path);
+  if (!verified.ok) return verified;
+  if (verified.rawText !== original) {
+    return storageAccessFailure('read', path, new Error('Migration backup did not read back exactly. The original manifest is unchanged.'));
+  }
+  return { ok: true as const };
 }
 
 async function createWorkbenchCatalog(
@@ -398,7 +428,7 @@ function parseCatalogJson(rawText: string, allowLegacyV2 = false) {
       ok: false as const,
       error: {
         code: 'WORKBENCH_CATALOG_VERSION_UNSUPPORTED' as const,
-        message: `Workbench schema version ${record.schemaVersion} is unsupported. Create a new version-${WORKBENCH_SCHEMA_VERSION} workbench.`,
+        message: `Workbench schema version ${record.schemaVersion} is unsupported; this app supports storage schema ${WORKBENCH_SCHEMA_VERSION}. Keep the existing files and open them with an app that supports their storage version.`,
         foundVersion: record.schemaVersion,
         supportedVersion: WORKBENCH_SCHEMA_VERSION
       }
@@ -519,6 +549,16 @@ async function migrateLegacyV1WorkbenchCatalog(
     },
     projects: legacy.projects
   };
+  const validatedManifest = validateWorkbenchCatalogValue(manifest, createEmptyMachineLibrary());
+  if (!validatedManifest.ok) return validatedManifest;
+  // Check the proposed project files before writing backups or replacing any live data.
+  const proposedStorage: WorkbenchStorageAdapter = {
+    ...adapter,
+    readText: async (path) => projectTexts.get(path)?.next
+      ?? (placeholderPaths.has(path) ? '' : adapter.readText(path))
+  };
+  const ownership = await validateWorkbenchProjectPathOwnership(proposedStorage, manifest.projects);
+  if (!ownership.ok) return ownership;
   const existingPosts = await readStorageText(adapter, POST_LIBRARY_PATH);
   if (!existingPosts.ok) return existingPosts;
   const existingMachines = await readStorageText(adapter, MACHINE_LIBRARY_PATH);
@@ -720,6 +760,27 @@ async function existingCompanionPaths(adapter: WorkbenchStorageAdapter) {
     const read = await readStorageText(adapter, path);
     if (!read.ok) return read;
     if (read.rawText !== null) paths.push(path);
+  }
+  if (paths.length === 0 && adapter.listFiles) {
+    try {
+      const inventory = await adapter.listFiles();
+      const managedDirectories = [...WORKBENCH_CATALOG_DIRECTORIES, 'posts', 'machines', 'transactions', 'legacy'];
+      const retained = inventory.paths.filter((path) => managedDirectories.some((directory) => path.startsWith(`${directory}/`)));
+      if (retained.length > 0 || inventory.truncated) {
+        return {
+          ok: false as const,
+          error: {
+            code: 'WORKBENCH_CATALOG_INCOMPLETE' as const,
+            message: retained.length > 0
+              ? 'Workbench manifest is missing but stored workbench files remain. Preserve this storage and recover its manifest before opening it.'
+              : 'Workbench manifest is missing and the storage inventory is incomplete. Choose an empty workbench folder or recover the existing manifest.',
+            existingPaths: retained.slice(0, 20)
+          }
+        };
+      }
+    } catch (error) {
+      return storageAccessFailure('read', WORKBENCH_CATALOG_PATH, error);
+    }
   }
   return { ok: true as const, paths };
 }

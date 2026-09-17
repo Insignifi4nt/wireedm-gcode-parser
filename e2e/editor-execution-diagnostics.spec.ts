@@ -25,7 +25,7 @@ test('keyboard activation of controller diagnostics opens and focuses parse issu
 test('repairs an execution issue through its owning tool and updates readiness', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Go Build!', exact: true }).click();
-  await page.getByLabel('DXF file').setInputFiles('examples/robofil-100-v2/no-lead-rectangle.dxf');
+  await page.getByLabel('DXF file').setInputFiles('tests/fixtures/machine-packages/robofil-100-v2/no-lead-rectangle.dxf');
   await confirmPendingDxfImport(page);
 
   const issue = page.getByRole('treeitem').filter({ hasText: 'A reviewed initial wire position is required' }).last();
@@ -39,6 +39,12 @@ test('repairs an execution issue through its owning tool and updates readiness',
   await page.getByLabel('Initial wire Y', { exact: true }).fill('0');
   await page.getByRole('button', { name: 'Review and set manual initial wire position', exact: true }).click();
   await page.getByRole('button', { name: 'Save Initial wire position workflow', exact: true }).click();
+  await expect(issue).toHaveCount(0);
+  // Resolving the first blocker must reveal, not bypass, the next intent decision.
+  await page.getByRole('button', { name: 'Expand Exterior 1', exact: true }).click();
+  await page.getByRole('treeitem').filter({ hasText: 'needs an explicit controller compensation or wire-center choice' }).last().dblclick();
+  await page.getByLabel('Compensation kept material').selectOption('outside');
+  await page.getByRole('button', { name: 'Save Contour Setup workflow', exact: true }).click();
   const rows = page.locator('[data-tree-key="section:program"] > ul > li');
   await expect(rows.first()).toContainText('Program start');
   await expect(rows.last()).toContainText('Program end');

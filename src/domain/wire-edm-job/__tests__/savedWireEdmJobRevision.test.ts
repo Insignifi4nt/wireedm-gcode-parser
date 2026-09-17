@@ -236,7 +236,8 @@ describe('saved Wire EDM job revision', () => {
       name: 'Corrupting adapter',
       kind: 'memory',
       ensureDirectory: async () => undefined,
-      readText: async () => {
+      readText: async (path) => {
+        if (!path.endsWith('.wireedm-job.json')) return null;
         readCount += 1;
         if (readCount === 1) return null;
         return stored === null ? null : `${stored}corrupt`;
@@ -260,7 +261,8 @@ describe('saved Wire EDM job revision', () => {
     let failedRollbackReads = 0;
     const failedRollbackAdapter: WorkbenchStorageAdapter = {
       ...corruptingAdapter,
-      readText: async () => {
+      readText: async (path) => {
+        if (!path.endsWith('.wireedm-job.json')) return null;
         failedRollbackReads += 1;
         return failedRollbackReads === 1 ? null : 'corrupt';
       },

@@ -1,0 +1,44 @@
+{
+  "version": "0.0.686",
+  "previousVersion": "0.0.685",
+  "baseline": {
+    "commit": "45f142c93dfd1cbc92ddb2afa183b6b1d5d0e4f5",
+    "mainCommitCount": 685
+  },
+  "postCompatibility": "additive-with-legacy-limitations",
+  "summary": "Publishes app provenance, actionable diagnostics and agent authoring documentation. Controller generation semantics are unchanged from 0.0.685.",
+  "warning": "Existing schema-v1 posts with broad wireSeparation booleans remain readable but cannot authorize an exact separation mechanism. This restriction was introduced before version tracking, in baseline 0.0.685. Publish a new schema-v2 package with evidenced capabilities; do not rewrite installed snapshots.",
+  "checklist": {
+    "schema": "Optional manifest.authoredFor added; legacy packages retain their bytes and hashes. Older apps reject packages using the new field.",
+    "events": "No execution-event or UPID semantic change from baseline.",
+    "capabilities": "No new capability restriction; v2 exact separation requirements are now documented.",
+    "auditAndOutput": "No controller-output or audit change; Robofil 2.6.0 retains 2.5.0 source, dialect, output rules and golden fixtures.",
+    "installationAndStorage": "Installed packages and saved revisions retain their exact contents. Existing v1/v2 migrations validate ownership and verified originals. Missing manifests with retained files or conflicting backups block opening. New versioned file-transaction journals recover project add/rename/save, complete backup restoration and reviewed cleanup; older apps cannot recover these journals, so finish recovery before downgrading. Settings supports a read-only inventory, verified complete UTF-8 backups up to 128 MiB, empty-destination restore, and explicit stale-checked unreferenced-file cleanup. Journals require temporary storage headroom; quota failure blocks writes. Workbench schema remains 3; no automatic installed-package replacement or cleanup.",
+    "verification": "Run release:check, post:docs:check, focused legacy/provenance, package and WebMCP tests, Robofil conformance, package validation, full tests and build before merge. Verify native browser DXF import, machining edits, stale/dirty guards, save, package installation and exact controller output/download, plus package authoring. See PR for results."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.5.0",
+      "scope": "baseline package fixtures with current runtime"
+    },
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "conformance, archive validation and unchanged controller golden outputs; not physical verification"
+    }
+  ],
+  "publicNotes": {
+    "summary": "Create, check and build complete machine packages in the browser, with downloadable contracts and actionable export diagnostics.",
+    "changes": [
+      "Package workbench checks posts, calculates canonical hashes, hashes evidence files, builds packages and inspects existing archives without a terminal.",
+      "Compatible browser agents can import DXF/UPID, inspect geometry, edit machining intent, review execution, save, install machine packages, activate setups and generate/download audited controller files through WebMCP.",
+      "New posts can record the app release and versioned documentation they were written for. Older packages retain their exact contents.",
+      "Export failures provide a reviewable agent repair prompt with exact versions, diagnostics and browser-based repair steps.",
+      "Storage settings can download a complete saved-workbench backup and restore it into an empty destination. Reviewed cleanup requires a saved backup and explicit file selection; installed posts, revisions and migration backups are protected.",
+      "Interrupted project saves recover through verified journals. Legacy upgrades preserve originals; missing manifests and conflicting backups produce recovery diagnostics instead of silently replacing data. Finish recovery with the current app before using an older release."
+    ],
+    "compatibility": "Controller output semantics are unchanged from 0.0.685. Existing exact separation and arc-direction requirements still apply. Older app builds can reject the new authoredFor metadata; check a package with the app version you intend to use.",
+    "action": "Use Package workbench to inspect an existing package. If an update is required, build a new post version, install the complete machine package and activate its setup. An app update does not change installed packages automatically."
+  }
+}

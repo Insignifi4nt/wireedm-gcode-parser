@@ -3,6 +3,9 @@ import { Database, RefreshCw, SlidersHorizontal, X } from 'lucide-react';
 
 import { useModalFocus } from '@/components/ui/useModalFocus';
 import { Button } from '@/components/ui/button';
+import { APP_VERSION } from '@/domain/release/appRelease';
+import { StorageReviewPanel } from './StorageReviewPanel';
+import { WorkbenchBackupPanel } from './WorkbenchBackupPanel';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 
 import {
@@ -67,6 +70,8 @@ export function WorkbenchSettingsDialog({
             <SectionButton active={activeSection === 'storage'} icon={<Database className="size-4" />} label="Storage" onClick={() => setActiveSection('storage')} />
             <SectionButton active={activeSection === 'machine-output'} icon={<SlidersHorizontal className="size-4" />} label="Machines & setups" onClick={() => setActiveSection('machine-output')} />
           </nav>
+          <p className="mt-4 text-[11px] text-muted-foreground">Wire EDM Workbench {APP_VERSION}</p>
+          <a className="mt-2 block text-[11px] underline" href={`${import.meta.env.BASE_URL}documentation/`} target="_blank" rel="noreferrer">Postprocessor documentation</a>
         </aside>
         <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
           <header className="border-b border-border p-4"><h2 className="text-base font-semibold">{activeSection === 'storage' ? 'Storage' : 'Machines & setups'}</h2></header>
@@ -94,6 +99,8 @@ export function WorkbenchSettingsDialog({
                     <SettingsRow label="Persistence" value={connectedWorkbench?.adapter.kind === 'memory' ? 'Session only' : connectedWorkbench ? 'Persistent' : 'Not connected'} />
                   </div>
                 </section>
+                {connectedWorkbench && <StorageReviewPanel workbench={connectedWorkbench} disabled={interactionLocked || connecting} />}
+                {connectedWorkbench && <WorkbenchBackupPanel workbench={connectedWorkbench} disabled={storageSwitchDisabled || connecting} />}
               </div>
             ) : connectedWorkbench ? (
               <MachinePostSettingsPanel connectedWorkbench={connectedWorkbench} interactionLocked={interactionLocked} settingsErrorMessage={settingsErrorMessage} settingsStatus={settingsStatus} {...machinePostActions} />

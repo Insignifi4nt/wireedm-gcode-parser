@@ -1,0 +1,62 @@
+{
+  "format": "wire-edm-machine",
+  "schemaVersion": 1,
+  "id": "cristian.robofil-100",
+  "name": "Cristian's Charmilles Robofil 100",
+  "identity": {
+    "manufacturer": "Charmilles",
+    "model": "Robofil 100",
+    "controller": {
+      "manufacturer": "Charmilles",
+      "model": "Robofil Classic"
+    }
+  },
+  "limits": {
+    "xTravel": {
+      "status": "known",
+      "millimeters": 150
+    },
+    "yTravel": {
+      "status": "known",
+      "millimeters": 200
+    }
+  },
+  "hardware": {
+    "manualThreading": true,
+    "automaticThreading": false
+  },
+  "evidence": [
+    {
+      "id": "local.physical-machine-record.2026-07-14",
+      "name": "Prior local Robofil 100 physical-machine record",
+      "uri": "evidence/physical-machine-record.txt",
+      "contentSha256": "9def47be761b668f0d7b20427e650305a5d6a180aad02b1c1e367a161e63f293"
+    }
+  ],
+  "bindings": [
+    {
+      "id": "robofil-v2-candidate-2-6-0",
+      "name": "Robofil V2 candidate 2.6.0",
+      "post": {
+        "packageId": "cristian.robofil-100.v2-candidate",
+        "version": "2.6.0",
+        "contentHash": "95b530e9a22abbf4ba1f8a80bbdaa1536abd6380ac9165348a82afb1d4c45a5f"
+      },
+      "properties": {
+        "coordinatePrecision": 3,
+        "offsetIndex": 0
+      },
+      "compatibility": {
+        "status": "acknowledged",
+        "acknowledgedAt": "2026-09-16T00:00:00.000Z",
+        "acknowledgedBy": "Workbench candidate author",
+        "notes": "Exact machine and post binding assembled from the operator report and conformance fixtures. Physical controller behavior remains unverified."
+      },
+      "verification": {
+        "status": "unverified"
+      }
+    }
+  ],
+  "activeBindingId": "robofil-v2-candidate-2-6-0",
+  "notes": "Complete physical definition used by the Robofil V2 candidate machine package. The 150 mm X and 200 mm Y travel values come from the included prior local project record; serial number and firmware remain intentionally unset."
+}

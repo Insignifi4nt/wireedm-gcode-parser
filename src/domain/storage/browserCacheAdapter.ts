@@ -1,6 +1,6 @@
 import { gunzip, gunzipSync, gzip, gzipSync, strFromU8, strToU8 } from 'fflate';
 
-import type { WorkbenchStorageAdapter } from './workbenchStorageAdapter';
+import { MAX_STORAGE_INVENTORY_ENTRIES, type WorkbenchStorageAdapter } from './workbenchStorageAdapter';
 
 const COMPRESSED_TEXT_PREFIX = '\u0000wire-edm-cache-gzip-v1:';
 const MIN_COMPRESS_LENGTH = 4096;
@@ -43,6 +43,16 @@ export function createBrowserCacheAdapter(
     },
     writeText: async (path: string, contents: string) => {
       storage.setItem(fileKey(namespace, path), await encodeStoredText(contents));
+    },
+    listFiles: async () => {
+      const paths: string[] = [];
+      const prefix = `${namespace}:file:`;
+      const count = Math.min(storage.length, MAX_STORAGE_INVENTORY_ENTRIES);
+      for (let index = 0; index < count; index++) {
+        const key = storage.key(index);
+        if (key?.startsWith(prefix)) paths.push(key.slice(prefix.length));
+      }
+      return { paths: paths.sort(), truncated: storage.length > count };
     },
     clear: async () => {
       const keysToRemove: string[] = [];

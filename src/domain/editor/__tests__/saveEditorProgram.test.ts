@@ -78,6 +78,10 @@ describe('saveEditorProgram', () => {
 
     if (!saved.ok) throw new Error(saved.error.message);
     expect(await saveEditorProgram(saved.workbench, {
+      projectId: imported.project.id, expectedContent: imported.project.content,
+      draft: { model: 'upid-document', pathDocument: imported.pathDocument }
+    })).toMatchObject({ ok: false, error: { code: 'EDITOR_SAVE_STALE' } });
+    expect(await saveEditorProgram(saved.workbench, {
       projectId: imported.project.id,
       draft: { model: 'gcode-text', text: 'G0 X0' }
     })).toMatchObject({

@@ -1,22 +1,24 @@
 {
   "format": "wire-edm-post",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "manifest": {
     "id": "example.linuxcnc-wire-edm",
     "name": "Example LinuxCNC Wire EDM",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "engineApiVersion": "1",
     "description": "Minimal deterministic fixture post.",
     "targets": [
       {
-          "manufacturer": "LinuxCNC",
-          "controllerManufacturer": "LinuxCNC",
-          "controller": "LinuxCNC 2.9",
-          "firmware": {
-            "status": "known",
-            "versions": ["2.9"]
-          },
-          "machineModels": []
+        "manufacturer": "LinuxCNC",
+        "controllerManufacturer": "LinuxCNC",
+        "controller": "LinuxCNC 2.9",
+        "firmware": {
+          "status": "known",
+          "versions": [
+            "2.9"
+          ]
+        },
+        "machineModels": []
       }
     ],
     "capabilities": {
@@ -25,7 +27,7 @@
       "operations": "single",
       "passes": "single",
       "threading": "none",
-      "wireSeparation": false,
+      "wireSeparation": [],
       "programStops": false,
       "taperAxes": false,
       "technologySelection": false,
@@ -58,6 +60,10 @@
         "maximum": 6,
         "suggestedValue": 3
       }
+    },
+    "authoredFor": {
+      "appVersion": "0.0.686",
+      "documentationUrl": "https://github.com/Insignifi4nt/wireedm-gcode-parser/tree/v0.0.686/docs/post-authoring/v1"
     }
   },
   "dialect": {
@@ -67,9 +73,13 @@
       "distance.absolute": {
         "template": "G90",
         "parameters": {},
-        "effects": ["distance.absolute"],
+        "effects": [
+          "distance.absolute"
+        ],
         "requires": [],
-        "evidenceRefs": ["linuxcnc-g90"]
+        "evidenceRefs": [
+          "linuxcnc-g90"
+        ]
       },
       "motion.linear": {
         "template": "G1 X{x} Y{y}",
@@ -80,7 +90,10 @@
             "description": "X endpoint coordinate.",
             "format": {
               "style": "fixed",
-              "fractionDigits": { "kind": "property", "property": "coordinatePrecision" },
+              "fractionDigits": {
+                "kind": "property",
+                "property": "coordinatePrecision"
+              },
               "decimalSeparator": ".",
               "trimTrailingZeros": true,
               "negativeZero": "zero"
@@ -92,23 +105,36 @@
             "description": "Y endpoint coordinate.",
             "format": {
               "style": "fixed",
-              "fractionDigits": { "kind": "property", "property": "coordinatePrecision" },
+              "fractionDigits": {
+                "kind": "property",
+                "property": "coordinatePrecision"
+              },
               "decimalSeparator": ".",
               "trimTrailingZeros": true,
               "negativeZero": "zero"
             }
           }
         },
-        "effects": ["position.changed"],
-        "requires": ["distance.absolute"],
-        "evidenceRefs": ["linuxcnc-g1"]
+        "effects": [
+          "position.changed"
+        ],
+        "requires": [
+          "distance.absolute"
+        ],
+        "evidenceRefs": [
+          "linuxcnc-g1"
+        ]
       },
       "program.end": {
         "template": "M02",
         "parameters": {},
-        "effects": ["program.ended"],
+        "effects": [
+          "program.ended"
+        ],
         "requires": [],
-        "evidenceRefs": ["linuxcnc-m2"]
+        "evidenceRefs": [
+          "linuxcnc-m2"
+        ]
       }
     }
   },
@@ -139,10 +165,19 @@
         "exact": "G90, G91 — Distance Mode"
       },
       "claim": "LinuxCNC 2.9 assigns G90 to absolute distance mode.",
-      "supports": [{ "kind": "command", "id": "distance.absolute" }],
+      "supports": [
+        {
+          "kind": "command",
+          "id": "distance.absolute"
+        }
+      ],
       "appliesTo": {
-        "controllerManufacturers": ["LinuxCNC"],
-        "controllerModels": ["LinuxCNC 2.9"],
+        "controllerManufacturers": [
+          "LinuxCNC"
+        ],
+        "controllerModels": [
+          "LinuxCNC 2.9"
+        ],
         "machineModels": [],
         "firmware": "2.9"
       },
@@ -161,10 +196,19 @@
         "exact": "M2, M30 — Program End"
       },
       "claim": "LinuxCNC 2.9 assigns M2 to program end.",
-      "supports": [{ "kind": "command", "id": "program.end" }],
+      "supports": [
+        {
+          "kind": "command",
+          "id": "program.end"
+        }
+      ],
       "appliesTo": {
-        "controllerManufacturers": ["LinuxCNC"],
-        "controllerModels": ["LinuxCNC 2.9"],
+        "controllerManufacturers": [
+          "LinuxCNC"
+        ],
+        "controllerModels": [
+          "LinuxCNC 2.9"
+        ],
         "machineModels": [],
         "firmware": "2.9"
       },
@@ -183,10 +227,19 @@
         "exact": "G0, G1 — Linear Move"
       },
       "claim": "LinuxCNC 2.9 assigns G1 to coordinated linear motion.",
-      "supports": [{ "kind": "command", "id": "motion.linear" }],
+      "supports": [
+        {
+          "kind": "command",
+          "id": "motion.linear"
+        }
+      ],
       "appliesTo": {
-        "controllerManufacturers": ["LinuxCNC"],
-        "controllerModels": ["LinuxCNC 2.9"],
+        "controllerManufacturers": [
+          "LinuxCNC"
+        ],
+        "controllerModels": [
+          "LinuxCNC 2.9"
+        ],
         "machineModels": [],
         "firmware": "2.9"
       },
@@ -202,19 +255,31 @@
       "id": "single-closed-contour-minimum-precision",
       "description": "One linear closed contour at the minimum coordinate precision.",
       "planFixture": "core.single-closed-contour.v1",
-      "properties": { "coordinatePrecision": 0 },
+      "properties": {
+        "coordinatePrecision": 0
+      },
       "expectedProgram": "G90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nM02",
       "expectedArtifact": "G90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nM02\n",
-      "evidenceRefs": ["linuxcnc-g90", "linuxcnc-g1", "linuxcnc-m2"]
+      "evidenceRefs": [
+        "linuxcnc-g90",
+        "linuxcnc-g1",
+        "linuxcnc-m2"
+      ]
     },
     {
       "id": "single-closed-contour-maximum-precision",
       "description": "One linear closed contour at the maximum coordinate precision.",
       "planFixture": "core.single-closed-contour.v1",
-      "properties": { "coordinatePrecision": 6 },
+      "properties": {
+        "coordinatePrecision": 6
+      },
       "expectedProgram": "G90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nM02",
       "expectedArtifact": "G90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nM02\n",
-      "evidenceRefs": ["linuxcnc-g90", "linuxcnc-g1", "linuxcnc-m2"]
+      "evidenceRefs": [
+        "linuxcnc-g90",
+        "linuxcnc-g1",
+        "linuxcnc-m2"
+      ]
     }
   ]
 }

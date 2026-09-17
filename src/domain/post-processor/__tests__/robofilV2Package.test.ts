@@ -20,18 +20,35 @@ import {
   persistSavedWireEdmJobRevision
 } from '@/domain/wire-edm-job/savedWireEdmJobRevision';
 
-import packageJson from '../../../../examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json';
-import machineJson from '../../../../examples/robofil-100-v2/cristian-robofil-100.wireedm-machine.json';
+import packageJson from '../../../../tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json';
+import machineJson from '../../../../tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100.wireedm-machine.json';
 import { runPost } from '../postEngine';
 import { serializeControllerOutput } from '../controllerOutput';
-import { createEmptyPostLibrary, installPostPackage } from '../postLibrary';
+import { createEmptyPostLibrary, installPostPackage, hashPostPackage } from '../postLibrary';
 import { parseWireEdmPostPackage } from '../postPackage';
 
 describe('standalone Robofil 100 V2 package', () => {
+  it('retains the exact 2.5 controller contract and installs legacy and provenance releases side by side', async () => {
+    const legacy = structuredClone(packageJson);
+    delete (legacy.manifest as Partial<typeof legacy.manifest>).authoredFor;
+    legacy.manifest.version = '2.5.0';
+    const parsed = parseWireEdmPostPackage(JSON.stringify(legacy));
+    if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+    // Published 2.5 hash: this detects any source, dialect, output, evidence or fixture change.
+    expect(await hashPostPackage(parsed.package)).toBe('525dda778a52a9f54a424fd4313d9c998613caaf8502573cfd519dd46a8a1d38');
+    const oldInstall = await installPostPackage(createEmptyPostLibrary(), parsed.package);
+    if (!oldInstall.ok) throw new Error(oldInstall.error.message);
+    const current = parseWireEdmPostPackage(JSON.stringify(packageJson));
+    if (!current.ok) throw new Error(JSON.stringify(current.diagnostics));
+    const upgraded = await installPostPackage(oldInstall.library, current.package);
+    expect(upgraded).toMatchObject({ ok: true, library: { installations: [
+      { ref: { version: '2.5.0' } }, { ref: { version: '2.6.0' } }
+    ] } });
+  });
   it('ships one complete human-installable machine package', async () => {
     const archive = new Uint8Array(await readFile(resolve(
       process.cwd(),
-      'examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-package'
+      'tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package'
     )));
     const parsed = await parseMachinePackageArchive(archive);
 
@@ -39,12 +56,12 @@ describe('standalone Robofil 100 V2 package', () => {
       ok: true,
       package: {
         document: {
-          manifest: { id: 'cristian.robofil-100.v2-candidate-package', version: '2.5.0' },
-          machine: { id: 'cristian.robofil-100', activeBindingId: 'robofil-v2-candidate-2-5-0' },
+          manifest: { id: 'cristian.robofil-100.v2-candidate-package', version: '2.6.0' },
+          machine: { id: 'cristian.robofil-100', activeBindingId: 'robofil-v2-candidate-2-6-0' },
           posts: [{
             manifest: {
               id: 'cristian.robofil-100.v2-candidate',
-              version: '2.5.0',
+              version: '2.6.0',
               output: {
                 fileExtension: 'iso',
                 blockNumbering: { mode: 'sequential', prefix: 'N', start: 10 },
@@ -62,12 +79,12 @@ describe('standalone Robofil 100 V2 package', () => {
       ok: true,
       machine: {
         id: 'cristian.robofil-100',
-        activeBindingId: 'robofil-v2-candidate-2-5-0',
+        activeBindingId: 'robofil-v2-candidate-2-6-0',
         bindings: [{
-          id: 'robofil-v2-candidate-2-5-0',
+          id: 'robofil-v2-candidate-2-6-0',
           post: {
             packageId: 'cristian.robofil-100.v2-candidate',
-            version: '2.5.0'
+            version: '2.6.0'
           }
         }]
       }

@@ -1,3 +1,6 @@
+import { applyProjectEdits } from '@/features/webmcp/projectEdits';
+import { ToolError } from '@/features/webmcp/siteTools';
+import { flushSync } from 'react-dom';
 import {
   useEffect,
   useLayoutEffect,
@@ -226,6 +229,7 @@ import {
 } from './workspace/editorFloatingPanelPlacement';
 
 interface EditorPageProps {
+  onReadSnapshot?: (snapshot: import('@/features/webmcp/workbenchSiteTools').DraftReadSnapshot | null) => void;
   program: LoadedEditorProgram | null;
   machines: readonly MachineDefinition[];
   posts: PostLibrary;
@@ -287,7 +291,8 @@ export function EditorPage({
   onImportProgramFile,
   onReimportDxfUnits,
   onSaveEditorDraft,
-  onStatusMessage
+  onStatusMessage,
+  onReadSnapshot
 }: EditorPageProps) {
   const planningPackage = useMemo(() => {
     const binding = planningMachine?.bindings.find(({ id }) => id === planningMachine.activeBindingId);
@@ -431,6 +436,26 @@ export function EditorPage({
   const lastProgramIdentityRef = useRef(programIdentity);
   const draftSignature = useMemo(() => editorDraftSignature(draftState), [draftState]);
   const hasUnsavedChanges = Boolean(program && draftSignature !== savedDraftSignature);
+  const readVersion = useMemo(() => crypto.randomUUID(), [draftState, program, hasUnsavedChanges, activeWorkflowSession]);
+  useLayoutEffect(() => {
+    onReadSnapshot?.({ projectId: program?.project.id ?? null, version: readVersion, document: pathDocumentDraft,
+      dirty: hasUnsavedChanges, workflowOpen: activeWorkflowSession !== null,
+      workflowCommand: activeWorkflowSession?.commandId,
+      edit: (edits) => {
+        if (isEditorMutationLocked || activeWorkflowSession) throw new ToolError('BUSY', 'Finish the current editor workflow first.');
+        if (!pathDocumentDraft) throw new ToolError('WRONG_MODEL', 'Open a path project first.');
+        const next = applyProjectEdits(pathDocumentDraft, edits);
+        flushSync(() => applyPathDocumentEdit(next));
+      },
+      history: (direction) => {
+        if (isEditorMutationLocked || activeWorkflowSession) throw new ToolError('BUSY', 'Finish the current editor workflow first.');
+        if (!(direction === 'undo' ? undoStack : redoStack).length) return false;
+        flushSync(() => direction === 'undo' ? handleUndoDraft() : handleRedoDraft());
+        return true;
+      }
+    });
+    return () => onReadSnapshot?.(null);
+  });
   const [generatedPauseEvidence, setGeneratedPauseEvidence] = useState<EmittedPauseEvidence | null>(null);
   const pauseEvidenceGenerationRef = useRef(0);
   const exactPauseCommands = useMemo(() => applicableEmittedPauseEvidence(generatedPauseEvidence, {

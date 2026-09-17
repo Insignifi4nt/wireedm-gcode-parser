@@ -65,13 +65,13 @@ const canonicalInstallationScenarioFixtures = {
   registryVersion: '1',
   pathBase: 'authoring-kit-root',
   mutationDocument: 'resolved-machine-package-document',
-  baseSourceDirectory: '../../../examples/robofil-100-v2',
+  baseSourceDirectory: '../../../tests/fixtures/machine-packages/robofil-100-v2',
   scenarios: [
     {
       id: 'valid-new-machine',
       purpose: 'A complete valid package enters an empty machine and post catalog.',
       installed: [],
-      incoming: { sourceDirectory: '../../../examples/robofil-100-v2', mutations: [] },
+      incoming: { sourceDirectory: '../../../tests/fixtures/machine-packages/robofil-100-v2', mutations: [] },
       expected: { previewMachineKind: 'new', commit: 'accepted', machineCount: 1, postCount: 1 }
     },
     {
@@ -79,7 +79,7 @@ const canonicalInstallationScenarioFixtures = {
       purpose: 'A setup cannot bind a post whose declared controller target differs from the machine.',
       installed: [],
       incoming: {
-        sourceDirectory: '../../../examples/robofil-100-v2',
+        sourceDirectory: '../../../tests/fixtures/machine-packages/robofil-100-v2',
         mutations: [{ jsonPointer: '/machine/identity/controller/model', value: 'Different Controller' }]
       },
       expected: { validation: 'rejected', diagnosticCode: 'MACHINE_PACKAGE_TARGET_MISMATCH' }
@@ -87,9 +87,9 @@ const canonicalInstallationScenarioFixtures = {
     {
       id: 'same-id-machine-update',
       purpose: 'The same machine ID with changed physical data requires an explicit reviewed replacement.',
-      installed: [{ sourceDirectory: '../../../examples/robofil-100-v2' }],
+      installed: [{ sourceDirectory: '../../../tests/fixtures/machine-packages/robofil-100-v2' }],
       incoming: {
-        sourceDirectory: '../../../examples/robofil-100-v2',
+        sourceDirectory: '../../../tests/fixtures/machine-packages/robofil-100-v2',
         mutations: [{ jsonPointer: '/machine/limits/xTravel/millimeters', value: 401 }]
       },
       expected: { previewMachineKind: 'changed', automaticMerge: false, requiresResolution: 'replace-existing' }
@@ -97,9 +97,9 @@ const canonicalInstallationScenarioFixtures = {
     {
       id: 'post-version-content-conflict',
       purpose: 'Different post content cannot claim an already installed post ID and version.',
-      installed: [{ sourceDirectory: '../../../examples/robofil-100-v2' }],
+      installed: [{ sourceDirectory: '../../../tests/fixtures/machine-packages/robofil-100-v2' }],
       incoming: {
-        sourceDirectory: '../../../examples/robofil-100-v2',
+        sourceDirectory: '../../../tests/fixtures/machine-packages/robofil-100-v2',
         mutations: [{ jsonPointer: '/posts/0/manifest/description', value: 'Different content under the same version.' }],
         recomputePostHashAndBindingReference: true
       },
@@ -108,9 +108,9 @@ const canonicalInstallationScenarioFixtures = {
     {
       id: 'same-machine-new-post',
       purpose: 'An exact physical machine is reused while a separately versioned post and setup are added.',
-      installed: [{ sourceDirectory: '../../../examples/robofil-100-v2' }],
+      installed: [{ sourceDirectory: '../../../tests/fixtures/machine-packages/robofil-100-v2' }],
       incoming: {
-        sourceDirectory: '../../../examples/robofil-100-v2',
+        sourceDirectory: '../../../tests/fixtures/machine-packages/robofil-100-v2',
         mutations: [
           { jsonPointer: '/posts/0/manifest/id', value: 'cristian.robofil-100.alternate' },
           { jsonPointer: '/posts/0/manifest/version', value: '1.0.0' },
@@ -241,7 +241,14 @@ const generatedFiles = [
     path: path.join(root, 'docs/post-authoring/v1/compatibility.json'),
     contents: `${JSON.stringify({
       authoringKitVersion: '1',
-      postPackageSchemaVersions: [1],
+      postPackageSchemaVersions: WireEdmPostPackageSchema.properties.schemaVersion.anyOf.map((schema) => schema.const),
+      upidSchemaVersions: [1, 2],
+      appProvenance: {
+        field: 'manifest.authoredFor',
+        requiredForNewAuthoring: true,
+        legacyPackages: 'readable-without-rewrite; absence-means-unknown',
+        meaning: 'authoring-target-only; not-controller-verification-or-a-compatible-version-range'
+      },
       machinePackageSchemaVersions: [1],
       engineApiVersions: ['1'],
       motionAudit: {
@@ -262,13 +269,13 @@ const generatedFiles = [
           'sdk/wire-edm-machine-package.d.ts',
           'sdk/wire-edm-machine-package-source.d.ts'
         ],
-        buildCommand: 'npm run machine-package:build -- <source-directory> [output.wireedm-package]',
-        validateCommand: 'npm run machine-package:validate -- <package.wireedm-package>',
-        inspectCommand: 'npm run machine-package:inspect -- <package.wireedm-package>'
+        browserWorkbench: 'https://insignifi4nt.github.io/wireedm-gcode-parser/package-tools/',
+        buildAction: 'Build package: Validate and build package',
+        inspectAction: 'Inspect package: Validate and inspect package'
       },
       conformance: {
         runnerVersion: '1',
-        command: 'npm run post:conformance -- <package.wireedm-post.json>',
+        browserAction: 'Check post: Validate post and run conformance',
         canonicalFixtureRegistryVersion: '1',
         canonicalFixtureIds: Object.keys(CANONICAL_POST_PLAN_FIXTURES)
       }

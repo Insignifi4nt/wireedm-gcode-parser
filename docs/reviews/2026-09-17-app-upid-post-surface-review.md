@@ -86,7 +86,7 @@ Use consistent exact containment for supported lines/arcs/circles, or an explici
 ### F07 — P2: Separation capabilities claim support for transitions the package rejects
 
 Owner: public post capability model, host preflight/conformance, and truthful example manifest. Introduced/exposed in `78cd591`.
-Locations: src/domain/post-processor/postCapabilityPreflight.ts:67; src/domain/post-processor/custom-runtime/customPostConformance.ts:268; examples/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json (`source.code`, wire-separate handler).
+Locations: src/domain/post-processor/postCapabilityPreflight.ts:67; src/domain/post-processor/custom-runtime/customPostConformance.ts:268; tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json (`source.code`, wire-separate handler).
 
 Robofil advertises `threading:'manual'` and `wireSeparation:true`, but always throws for `wire-separate`; it only realizes separation embedded in positioning. Conformance now accepts either kind of separation as coverage for the same boolean. `robofil-manual-preflight` returns no diagnostics for `core.multi-compensated-manual.v1`, then `robofil-manual-run` fails with “Wire separation is not verified.”
 
