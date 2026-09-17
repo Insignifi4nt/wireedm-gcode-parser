@@ -41,6 +41,36 @@ describe('EditorControllerArtifactDialog', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
+  });
+
+  it('copies actionable exact diagnostics and falls back to selectable text when clipboard is denied', async () => {
+    const writeText = vi.fn().mockRejectedValueOnce(new Error('Permission denied')).mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    await render({ onGenerateControllerArtifact: vi.fn().mockResolvedValue({
+      ok: false, error: {
+        code: 'CONTROLLER_ARTIFACT_POST_FAILED', message: 'Export rejected.',
+        diagnostics: [{ code: 'POST_CUSTOM_CAPABILITY_UNSUPPORTED', message: 'Post does not declare automatic-during-positioning wire separation.', eventId: 'event-5', commandId: null }]
+      }
+    } satisfies ControllerArtifactResult) });
+    await click('Generate controller artifact');
+    expect(container.textContent).toContain('legacy wire-separation declaration');
+    await click('Copy agent repair prompt');
+    const fallback = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Agent repair prompt"]')!;
+    expect(fallback.closest('details')?.open).toBe(true);
+    expect(fallback.value).toContain('event-5');
+    expect(fallback.value).toContain(posts.installations[0].ref.contentHash);
+    expect(fallback.value).toContain('post:conformance');
+    expect(fallback.value).toContain('Geometry, complete source code and evidence files are not included');
+    await click('Copy agent repair prompt');
+    expect(writeText).toHaveBeenLastCalledWith(fallback.value);
+    expect(container.textContent).toContain('Copied.');
+    await act(async () => {
+      const select = selectElement('Controller export machine');
+      select.value = '';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(container.querySelector('textarea')).toBeNull();
   });
 
   it('requires a saved draft and uses the machine active setup without another selector', async () => {
