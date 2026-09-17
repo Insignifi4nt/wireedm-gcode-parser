@@ -103,6 +103,8 @@ export async function recoverSavedRevisionTransaction(adapter: WorkbenchStorageA
   try {
     const raw = await adapter.readText(SAVED_REVISION_TRANSACTION_PATH);
     if (raw === null) return { ok: true };
+    // Empty first-write handles precede every owned-file change.
+    if (raw === '') return finishSavedRevisionTransaction(adapter);
     if (new TextEncoder().encode(raw).byteLength > MAX_TRANSACTION_BYTES) {
       return invalid('Saved revision recovery data exceeds its size limit.');
     }

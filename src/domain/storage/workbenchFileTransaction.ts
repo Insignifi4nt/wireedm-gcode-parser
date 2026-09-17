@@ -59,6 +59,9 @@ async function finish(adapter: WorkbenchStorageAdapter) {
 export async function recoverWorkbenchFileTransaction(adapter: WorkbenchStorageAdapter) {
   const raw = await adapter.readText(WORKBENCH_FILE_TRANSACTION_PATH);
   if (raw === null) return;
+  // A new folder handle can exist before its atomic first write commits.
+  // No owned files are changed until the nonempty journal has been verified.
+  if (raw === '') { await finish(adapter); return; }
   if (new TextEncoder().encode(raw).byteLength > maximumBytes) throw new Error('File recovery journal exceeds its size limit.');
   const value: unknown = JSON.parse(raw);
   if (!Value.Check(schema, value)) throw new Error('Invalid file recovery journal. Preserve storage for recovery.');
