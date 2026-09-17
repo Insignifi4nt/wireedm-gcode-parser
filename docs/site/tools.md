@@ -2,6 +2,8 @@
 
 [Open the Package workbench](https://insignifi4nt.github.io/wireedm-gcode-parser/package-tools/).
 
+[Agent tools](agents.md) expose these operations to compatible browsers through WebMCP.
+
 All operations run in your browser. They do not send files to a server, install a machine or modify the project library. Inputs stay on this page only; download your work before closing or reloading it.
 
 | Task | Input | Action | Result |

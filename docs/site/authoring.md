@@ -2,6 +2,8 @@
 
 Use the [Package workbench](tools.md) throughout this workflow. You need a browser, the user's machine information and their controller evidence. No repository checkout or terminal is required.
 
+Browsers with WebMCP support can use the [agent tools](agents.md) for the same checks and package-building operations.
+
 ## 1. Establish the machine and required behavior
 
 Ask for the machine manufacturer/model, controller manufacturer/model, firmware if known, X/Y travel, threading hardware and required operations. Obtain the exact controller manual and representative known-good programs. Keep unknown facts explicit; a related machine's manual does not verify this controller.
