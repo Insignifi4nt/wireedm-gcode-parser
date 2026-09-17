@@ -53,5 +53,5 @@ export async function inspectWorkbenchStorage(workbench: ConnectedWorkbenchCatal
           : 'unreferenced' as const
       }))
     };
-  });
+  }, { recoverFiles: false });
 }

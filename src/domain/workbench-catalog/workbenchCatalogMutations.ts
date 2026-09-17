@@ -1,3 +1,4 @@
+import { commitWorkbenchFileTransaction, WorkbenchFileWriteError } from '@/domain/storage/workbenchFileTransaction';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import { parseSavedWireEdmJobRevision } from '@/domain/wire-edm-job/savedWireEdmJobRevision';
 import { commitProjectPurgeTransaction, commitProjectTrashTransaction, recoverProjectTrashTransaction, type ProjectTrashTransactionError } from '@/domain/storage/projectTrashTransaction';
@@ -213,24 +214,18 @@ export async function addStoredWorkbenchProject(
     const paths = [...input.ownedFiles.map(({ path: ownedPath }) => ownedPath), path, WORKBENCH_CATALOG_PATH];
     const snapshots = await captureSnapshots(workbench, paths);
     if (!snapshots.ok) return snapshots;
-    const applied: StorageSnapshot[] = [];
     const occupied = snapshots.snapshots.find(
       (snapshot) => snapshot.path !== WORKBENCH_CATALOG_PATH && snapshot.contents !== null
     );
     if (occupied) return projectConflict(input.project.id, occupied.path, 'existing unindexed storage');
 
-    for (const file of input.ownedFiles) {
-      journalAppliedSnapshot(applied, snapshots.snapshots, file.path);
-      const written = await writeStorageText(workbench, file.path, file.contents);
-      if (!written.ok) return rollbackOrError(workbench, applied, written.error);
-    }
-    journalAppliedSnapshot(applied, snapshots.snapshots, path);
-    const documentWrite = await writeStorageText(workbench, path, serialized.text);
-    if (!documentWrite.ok) return rollbackOrError(workbench, applied, documentWrite.error);
     const nextManifest = withProjectEntry(workbench.manifest, input.project, path);
-    journalAppliedSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
-    const manifestWrite = await writeManifest(workbench, nextManifest);
-    if (!manifestWrite.ok) return rollbackOrError(workbench, applied, manifestWrite.error);
+    const written = await commitProjectFiles(workbench, [
+      ...input.ownedFiles,
+      { path, contents: serialized.text },
+      { path: WORKBENCH_CATALOG_PATH, contents: JSON.stringify(nextManifest, null, 2) + '\n' }
+    ]);
+    if (!written.ok) return written;
     return { ok: true, project: input.project, workbench: freezeWorkbench(workbench, nextManifest) };
   });
 }
@@ -282,7 +277,6 @@ export async function replaceStoredWorkbenchProject(
     const paths = [...input.ownedFileChanges.map(({ path }) => path), entry.path, WORKBENCH_CATALOG_PATH];
     const snapshots = await captureSnapshots(workbench, paths);
     if (!snapshots.ok) return snapshots;
-    const applied: StorageSnapshot[] = [];
     const previousPaths = new Set(previous.project.source.files.map(({ path }) => path));
     for (const change of input.ownedFileChanges) {
       const snapshot = snapshots.snapshots.find(({ path }) => path === change.path);
@@ -294,25 +288,13 @@ export async function replaceStoredWorkbenchProject(
       }
     }
 
-    for (const change of input.ownedFileChanges) {
-      if (change.kind === 'write') {
-        journalAppliedSnapshot(applied, snapshots.snapshots, change.path);
-        const written = await writeStorageText(workbench, change.path, change.contents);
-        if (!written.ok) return rollbackOrError(workbench, applied, written.error);
-      }
-    }
-    for (const change of input.ownedFileChanges.filter(({ kind }) => kind === 'delete')) {
-      journalAppliedSnapshot(applied, snapshots.snapshots, change.path);
-      const deleted = await deleteStorageText(workbench, change.path);
-      if (!deleted.ok) return rollbackOrError(workbench, applied, deleted.error);
-    }
-    journalAppliedSnapshot(applied, snapshots.snapshots, entry.path);
-    const documentWrite = await writeStorageText(workbench, entry.path, serialized.text);
-    if (!documentWrite.ok) return rollbackOrError(workbench, applied, documentWrite.error);
     const nextManifest = replaceProjectEntry(workbench.manifest, input.project, entry.path);
-    journalAppliedSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
-    const manifestWrite = await writeManifest(workbench, nextManifest);
-    if (!manifestWrite.ok) return rollbackOrError(workbench, applied, manifestWrite.error);
+    const written = await commitProjectFiles(workbench, [
+      ...input.ownedFileChanges.map((change) => ({ path: change.path, contents: change.kind === 'write' ? change.contents : null })),
+      { path: entry.path, contents: serialized.text },
+      { path: WORKBENCH_CATALOG_PATH, contents: JSON.stringify(nextManifest, null, 2) + '\n' }
+    ]);
+    if (!written.ok) return written;
     return { ok: true, project: input.project, workbench: freezeWorkbench(workbench, nextManifest) };
   });
 }
@@ -584,75 +566,18 @@ async function verifyManifestCurrent(workbench: ConnectedWorkbenchCatalog) {
   return { ok: true as const };
 }
 
-function journalAppliedSnapshot(
-  applied: StorageSnapshot[],
-  snapshots: readonly StorageSnapshot[],
-  path: string
-) {
-  const snapshot = snapshots.find((entry) => entry.path === path);
-  if (!snapshot) throw new Error(`Missing captured storage snapshot for ${path}.`);
-  applied.push(snapshot);
-}
-
-async function rollbackOrError<Error extends MutationError>(
-  workbench: ConnectedWorkbenchCatalog,
-  snapshots: readonly StorageSnapshot[],
-  originalError: Error
-): Promise<{ ok: false; error: Error | CatalogRollbackError<Error> }> {
-  const rollbackErrors: WorkbenchProjectStorageError[] = [];
-  for (const snapshot of [...snapshots].reverse()) {
-    const restored = snapshot.contents === null
-      ? await deleteStorageText(workbench, snapshot.path)
-      : await writeStorageText(workbench, snapshot.path, snapshot.contents);
-    if (!restored.ok) rollbackErrors.push(restored.error);
-  }
-  if (rollbackErrors.length === 0) return { ok: false, error: originalError };
-  return {
-    ok: false,
-    error: {
-      code: 'WORKBENCH_CATALOG_MUTATION_ROLLBACK_FAILED',
-      message: `Workbench project mutation failed and ${rollbackErrors.length} rollback operation(s) also failed.`,
-      originalError,
-      rollbackErrors
-    }
-  };
-}
-
-async function writeStorageText(workbench: ConnectedWorkbenchCatalog, path: string, contents: string) {
+async function commitProjectFiles(workbench: ConnectedWorkbenchCatalog, changes: readonly { path: string; contents: string | null }[]) {
   try {
-    await workbench.adapter.writeText(path, contents);
+    await commitWorkbenchFileTransaction(workbench.adapter, changes);
     return { ok: true as const };
   } catch (error) {
-    return projectAccessFailure('write', path, error);
-  }
-}
-
-async function deleteStorageText(workbench: ConnectedWorkbenchCatalog, path: string) {
-  try {
-    await workbench.adapter.deleteText(path);
-    return { ok: true as const };
-  } catch (error) {
-    return projectAccessFailure('delete', path, error);
-  }
-}
-
-async function writeManifest(
-  workbench: ConnectedWorkbenchCatalog,
-  manifest: WorkbenchCatalogManifest
-) {
-  try {
-    await workbench.adapter.writeText(WORKBENCH_CATALOG_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
-    return { ok: true as const };
-  } catch (error) {
-    const cause = error instanceof Error ? error.message : String(error);
-    return {
-      ok: false as const,
-      error: {
+    if (error instanceof WorkbenchFileWriteError && error.path === WORKBENCH_CATALOG_PATH) {
+      return { ok: false as const, error: {
         code: 'WORKBENCH_CATALOG_MUTATION_MANIFEST_WRITE_FAILED' as const,
-        message: `Workbench manifest write failed at ${WORKBENCH_CATALOG_PATH}: ${cause}`,
-        path: WORKBENCH_CATALOG_PATH as typeof WORKBENCH_CATALOG_PATH
-      }
-    };
+        message: error.message, path: WORKBENCH_CATALOG_PATH as typeof WORKBENCH_CATALOG_PATH
+      } };
+    }
+    return projectAccessFailure('write', error instanceof WorkbenchFileWriteError ? error.path : 'transactions/workbench-files.json', error);
   }
 }
 

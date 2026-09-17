@@ -184,11 +184,10 @@ describe('strict V2 workbench project persistence', () => {
       ok: false,
       error: { code: 'WORKBENCH_PROJECT_STORAGE_ACCESS_FAILED', operation: 'write' }
     });
-    expect(adapter.mutations).toEqual([
-      'write:imports/fixture.dxf',
-      'delete:imports/fixture.dxf'
-    ]);
     expect(adapter.files.has('imports/fixture.dxf')).toBe(false);
+    expect(adapter.files.has('projects/fixture.json')).toBe(false);
+    expect(adapter.files.has('transactions/workbench-files.json')).toBe(false);
+    expect(JSON.parse(adapter.files.get('workbench.json')!)).toEqual(workbench.manifest);
   });
 
   it('rejects a stale catalog snapshot instead of overwriting a completed mutation', async () => {
