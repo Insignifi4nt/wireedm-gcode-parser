@@ -5,14 +5,16 @@ The human-installable artifact is `cristian-robofil-100-v2.wireedm-package`. In 
 The package includes:
 
 - the complete physical definition for Cristian's Charmilles Robofil 100, including evidenced 150 mm X and 200 mm Y travel;
-- the exact `cristian.robofil-100.v2-candidate@2.5.0` post;
-- the `Robofil V2 candidate 2.5.0` setup with `coordinatePrecision: 3` and `offsetIndex: 0`;
+- the exact `cristian.robofil-100.v2-candidate@2.6.0` post;
+- the `Robofil V2 candidate 2.6.0` setup with `coordinatePrecision: 3` and `offsetIndex: 0`;
 - all machine and controller evidence plus the post's exact fixtures;
 - post-owned `.iso`, CRLF, ASCII, final-newline, leading `%`, and sequential `N10` block-numbering rules.
 
 Package version 2.3.0 adds the operator-reported cut-on-rapid/manual-rethread route. The workbench checks the straight route against finished-part solid regions, including holes and islands, before allowing a continuous transition. Finished DXF contours do not describe the stock outside the part or fixtures. Existing installations and saved revisions are not rewritten. The new sequence remains a candidate for controller graphics and a supervised dry run; M00 and physical wire separation have not been verified by a known-good program.
 
 Package version 2.4.0 retains modal compensation across clear rapid moves and manual rethreading. It emits no offset commands when the next contour uses the same side, or emits the new `G41`/`G42` and `G38 D0` for a side change. The adjacent [Charmilles CT-Millennium programming manual](https://www.scribd.com/document/459168666/FIX40-cc-SL-program-vH-en-pdf) documents `G40`/`G41`/`G42` as mutually replacing modal commands. Its behavior is evidence for the candidate, not proof of this exact Robofil 100 firmware. The [Robofil 190/290P/310P/510P manual](https://pdfcoffee.com/robofil-190-290p-310p-510p-part-2-3-pdf-free.html) and the local historical multi-contour program also support retaining offset state across contour travel; neither verifies this exact mixed-side sequence.
+
+Package version 2.6.0 adds app 0.0.686 authoring provenance and a versioned documentation link. Controller source, dialect, output rules and golden fixtures are unchanged from 2.5.0. The new metadata requires an app that understands `manifest.authoredFor`; keep using 2.5.0 until app 0.0.686 is deployed.
 
 Package version 2.5.0 declares only the separation mechanism its source handles: automatic separation during positioning, followed by manual rethreading. Manual separation before positioning remains unsupported; host preflight now reports that limitation before posting.
 

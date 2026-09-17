@@ -241,7 +241,14 @@ const generatedFiles = [
     path: path.join(root, 'docs/post-authoring/v1/compatibility.json'),
     contents: `${JSON.stringify({
       authoringKitVersion: '1',
-      postPackageSchemaVersions: [1],
+      postPackageSchemaVersions: WireEdmPostPackageSchema.properties.schemaVersion.anyOf.map((schema) => schema.const),
+      upidSchemaVersions: [1, 2],
+      appProvenance: {
+        field: 'manifest.authoredFor',
+        requiredForNewAuthoring: true,
+        legacyPackages: 'readable-without-rewrite; absence-means-unknown',
+        meaning: 'authoring-target-only; not-controller-verification-or-a-compatible-version-range'
+      },
       machinePackageSchemaVersions: [1],
       engineApiVersions: ['1'],
       motionAudit: {

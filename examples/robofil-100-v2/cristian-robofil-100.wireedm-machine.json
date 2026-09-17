@@ -35,12 +35,12 @@
   ],
   "bindings": [
     {
-      "id": "robofil-v2-candidate-2-5-0",
-      "name": "Robofil V2 candidate 2.5.0",
+      "id": "robofil-v2-candidate-2-6-0",
+      "name": "Robofil V2 candidate 2.6.0",
       "post": {
         "packageId": "cristian.robofil-100.v2-candidate",
-        "version": "2.5.0",
-        "contentHash": "525dda778a52a9f54a424fd4313d9c998613caaf8502573cfd519dd46a8a1d38"
+        "version": "2.6.0",
+        "contentHash": "95b530e9a22abbf4ba1f8a80bbdaa1536abd6380ac9165348a82afb1d4c45a5f"
       },
       "properties": {
         "coordinatePrecision": 3,
@@ -57,6 +57,6 @@
       }
     }
   ],
-  "activeBindingId": "robofil-v2-candidate-2-5-0",
+  "activeBindingId": "robofil-v2-candidate-2-6-0",
   "notes": "Complete physical definition used by the Robofil V2 candidate machine package. The 150 mm X and 200 mm Y travel values come from the included prior local project record; serial number and firmware remain intentionally unset."
 }

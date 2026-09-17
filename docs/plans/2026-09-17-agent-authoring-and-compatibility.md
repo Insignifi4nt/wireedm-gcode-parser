@@ -16,6 +16,7 @@ Requested by Cristian on 2026-09-17. Work on a PR branch; do not merge or deploy
 - Repository hygiene: separate personal machine/postprocessor artifacts from distributable examples and remove obsolete files after auditing test/evidence dependencies. Do not delete them as part of this work.
 - Persistence audit: map browser-cache and folder layouts, identify orphaned legacy files, design safe cleanup and a versioned migration mechanism with backups, recovery, interrupted-upgrade handling, and tests. Preserve browser-cache-only and optional-folder workflows.
 - After WebMCP implementation: document the actual shipped tools, permissions, discovery, inputs/outputs, and agent workflows, with examples verified against the implementation.
+- Dependency maintenance discovered during this work: npm audit reports existing Vite, PostCSS and nanoid advisories (plus development dependencies). Review/update separately; this PR adds only the build-time Markdown renderer. Remove the now-unused gh-pages dependency when cleaning the old deployment tooling.
 
 ## Completion record
 

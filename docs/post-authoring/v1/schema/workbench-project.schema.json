@@ -420,6 +420,18 @@
               "minLength": 1,
               "maxLength": 1024,
               "type": "string"
+            },
+            "interpreterProfile": {
+              "anyOf": [
+                {
+                  "const": "neutral",
+                  "type": "string"
+                },
+                {
+                  "const": "legacy-robofil",
+                  "type": "string"
+                }
+              ]
             }
           }
         }

@@ -1,15 +1,13 @@
 {
   "name": "wire-edm-workbench",
   "homepage": "https://insignifi4nt.github.io/wireedm-gcode-parser",
-  "version": "0.1.0",
+  "version": "0.0.686",
   "description": "A local-first Wire EDM workbench with controller-neutral CAM state and complete installable machine packages.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist -m \"deploy: $(git rev-parse --short HEAD)\"",
     "test": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
@@ -27,7 +25,12 @@
     "machine-package:inspect": "tsx scripts/machine-package.ts inspect",
     "pw:open": "playwright-cli open http://127.0.0.1:3777/wireedm-gcode-parser/ --headed && playwright-cli resize 1920 1200",
     "pw:seed": "node scripts/seed-playwright-workbench.mjs",
-    "pw:seed:reload": "node scripts/seed-playwright-workbench.mjs --reload"
+    "pw:seed:reload": "node scripts/seed-playwright-workbench.mjs --reload",
+    "postbuild": "npm run docs:build && npm run docs:check",
+    "docs:build": "node scripts/build-documentation.mjs",
+    "docs:check": "node scripts/check-documentation.mjs",
+    "release:check": "node scripts/check-release.mjs",
+    "post:hash": "tsx scripts/hash-post.ts"
   },
   "keywords": [
     "wire-edm",
@@ -64,6 +67,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "jsdom": "^29.1.1",
     "json-schema-to-typescript": "16.0.0",
+    "marked": "18.0.13",
     "tsx": "^4.23.12",
     "typescript": "^5.7.2",
     "vite": "^8.0.14",

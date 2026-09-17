@@ -117,6 +117,10 @@ export interface HttpsWireEdmLocalSchemasWireEdmPostPackageV2Json {
     name: string;
     version: string;
     engineApiVersion: "1";
+    authoredFor?: {
+      appVersion: string;
+      documentationUrl: string;
+    };
     description: string;
     /**
      * @minItems 1

@@ -338,6 +338,10 @@ export const WireEdmPostPackageSchema = Type.Object({
     name: LabelSchema,
     version: PostVersionSchema,
     engineApiVersion: Type.Literal('1'),
+    authoredFor: Type.Optional(Type.Object({
+      appVersion: PostVersionSchema,
+      documentationUrl: Type.String({ pattern: '^https://[^\\s]+$', maxLength: 2_048 })
+    }, strictObject)),
     description: DescriptionSchema,
     targets: Type.Array(PostTargetSchema, { minItems: 1, maxItems: 64 }),
     capabilities: PostCapabilitiesSchema,

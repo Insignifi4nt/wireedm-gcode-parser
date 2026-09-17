@@ -13,3 +13,4 @@ These instructions govern an agent building a human-installable `.wireedm-packag
 9. Leave new or changed setups `unverified` unless the human supplies an exact physical verification record. Conformance is not physical verification.
 10. Run every command in the completion gate. Inspect golden-output changes against evidence; never update expected text merely to make a test pass.
 11. Deliver only the built `.wireedm-package` to the installer. Loose JSON and evidence files remain authoring inputs.
+12. Start at the published `/documentation/` guide and current compatibility record. Record `manifest.authoredFor.appVersion` and an HTTPS link to that release's tagged authoring documentation. This records authoring provenance, not a compatibility range or physical verification. New posts use schema v2 and exact separation capability names; never copy the obsolete boolean declaration.

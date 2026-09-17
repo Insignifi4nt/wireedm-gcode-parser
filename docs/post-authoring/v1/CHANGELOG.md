@@ -1,5 +1,13 @@
 # Post authoring contract changelog
 
+## App 0.0.686
+
+- Publishes one current `/documentation/` entry point, static Markdown/HTML, generated contracts and scoped `llms.txt` discovery.
+- Adds optional serialized `manifest.authoredFor` (required by the authoring instructions for new packages). Legacy packages keep their exact hashes; old apps may reject the new field.
+- Replaces the stale schema-v1-only compatibility list with versions derived from the actual post schema. Updates the minimal example to post schema v2. Authoring kit/engine API v1 remain distinct from app and post-schema versions.
+- Robofil 2.6.0 records app provenance; controller source, dialect, output and fixture content are unchanged from 2.5.0.
+- Corrects the written modal-compensation contract to include explicitly supported separation/rethread sequences already accepted by the runtime.
+
 ## Post package schema v2 (engine API v1)
 
 - `manifest.capabilities.wireSeparation` is an explicit array of supported mechanisms: `manual-before-positioning`, `automatic-before-positioning`, and `automatic-during-positioning`. The host preflights each requested mechanism and conformance requires matching fixture coverage. A schema v1 boolean remains readable in exact legacy snapshots but does not authorize a particular transition.

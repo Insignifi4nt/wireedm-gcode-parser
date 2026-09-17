@@ -4,6 +4,15 @@ import { parseWireEdmPostPackage } from '../postPackage';
 import { minimalPostPackage } from './postPackageFixture';
 
 describe('wire EDM post package boundary', () => {
+  it('preserves optional app provenance and rejects malformed versions or unsafe links', () => {
+    const input = minimalPostPackage();
+    Object.assign(input.manifest, { authoredFor: {
+      appVersion: '0.0.686', documentationUrl: 'https://example.org/docs/releases/0.0.686/'
+    } });
+    expect(parseWireEdmPostPackage(JSON.stringify(input))).toEqual({ ok: true, package: input });
+    Object.assign(input.manifest, { authoredFor: { appVersion: 'latest', documentationUrl: 'javascript:alert(1)' } });
+    expect(parseWireEdmPostPackage(JSON.stringify(input))).toMatchObject({ ok: false });
+  });
   it('versions precise separation capabilities while reading legacy boolean snapshots', () => {
     const legacy = minimalPostPackage();
     expect(parseWireEdmPostPackage(JSON.stringify(legacy))).toMatchObject({ ok: true });

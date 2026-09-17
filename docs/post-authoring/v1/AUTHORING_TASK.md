@@ -4,6 +4,8 @@ Copy this file into an agent task and replace every bracketed value. The agent a
 
 ## Required inputs
 
+- Target app version and immutable documentation URL: `[app version]`, `[tagged documentation URL]`; record these in `manifest.authoredFor`.
+
 - Package ID and semantic version: `[stable ID]`, `[exact SemVer]`
 - Source directory and output package path: `[directory]`, `[file.wireedm-package]`
 - Physical machine stable ID and name: `[ID]`, `[name]`

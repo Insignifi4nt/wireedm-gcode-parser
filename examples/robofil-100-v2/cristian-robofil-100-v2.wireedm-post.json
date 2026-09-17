@@ -4,7 +4,7 @@
   "manifest": {
     "id": "cristian.robofil-100.v2-candidate",
     "name": "Cristian Robofil 100 V2 candidate",
-    "version": "2.5.0",
+    "version": "2.6.0",
     "engineApiVersion": "1",
     "description": "Candidate Robofil 100 post with modal compensation across contour transitions, operator-reported rapid wire separation, and M00 manual rethread pause.",
     "targets": [
@@ -26,7 +26,9 @@
       "operations": "multiple",
       "passes": "single",
       "threading": "manual",
-      "wireSeparation": ["automatic-during-positioning"],
+      "wireSeparation": [
+        "automatic-during-positioning"
+      ],
       "programStops": true,
       "taperAxes": false,
       "technologySelection": false,
@@ -71,6 +73,10 @@
         "minimum": 0,
         "maximum": 0
       }
+    },
+    "authoredFor": {
+      "appVersion": "0.0.686",
+      "documentationUrl": "https://github.com/Insignifi4nt/wireedm-gcode-parser/tree/v0.0.686/docs/post-authoring/v1"
     }
   },
   "dialect": {

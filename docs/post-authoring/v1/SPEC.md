@@ -35,7 +35,9 @@ A package identity is the tuple `(manifest.id, manifest.version, canonical conte
 
 The package `schemaVersion` and `manifest.engineApiVersion` MUST be supported exactly. Unsupported versions MUST produce a version error; they MUST NOT be normalized, migrated, or interpreted as a nearby version.
 
-Changing code, dialect declarations, evidence, fixtures, properties, capabilities, targets, or execution policy changes package content identity. Such a change SHOULD also receive a new semantic version.
+Changing code, dialect declarations, evidence, fixtures, properties, capabilities, targets, authoring provenance, or execution policy changes package content identity. Such a change MUST receive a new semantic version; installation rejects changed content under an existing ID and version.
+
+New authoring MUST use post schema v2 and include `manifest.authoredFor` with an exact `appVersion` and an HTTPS `documentationUrl` pointing to that app release's tagged authoring contract. This field records provenance only: it MUST NOT be treated as an executable compatibility range or physical verification. Legacy packages MAY omit it and remain readable without mutation. App release numbers are independent of post schema, UPID schema, and engine API versions.
 
 ## 4. Dialect vocabulary
 
@@ -72,7 +74,9 @@ Documentation evidence and physical verification are separate. Passing schema an
 
 `manifest.capabilities` declares what the post can acknowledge. `manifest.execution` declares lifecycle constraints. Both MUST describe the implementation completely and consistently.
 
-`controller-native-continuous` declares that a controller-native compensation state may span operation boundaries. The post MUST retain that state only for an explicit `wire-continue` transition, MUST validate that the next operation is compatible with the retained state, and MUST reject unsupported side changes or wire-separation/threading transitions atomically.
+`controller-native-continuous` declares that controller-native compensation state may span operation boundaries. Retaining it requires explicit transition intent (`wire-continue` or an explicitly supported separation/rethread sequence), controller evidence and matching fixtures. The post MUST validate the next operation and reject unsupported side changes or separation/threading transitions atomically.
+
+Schema v2 declares `wireSeparation` as an array of exact supported methods: `manual-before-positioning`, `automatic-before-positioning`, and `automatic-during-positioning`. Legacy schema-v1 booleans remain readable but do not authorize any specific method. `threading` is a separate capability. A declaration MUST match implemented behavior and conformance coverage.
 
 The engine delivers events in plan order. Every event MUST receive exactly one disposition:
 

@@ -1,0 +1,20 @@
+{
+  "version": "0.0.686",
+  "previousVersion": "0.0.685",
+  "baseline": { "commit": "45f142c93dfd1cbc92ddb2afa183b6b1d5d0e4f5", "mainCommitCount": 685 },
+  "postCompatibility": "additive-with-legacy-limitations",
+  "summary": "Publishes app provenance, actionable diagnostics and agent authoring documentation. Controller generation semantics are unchanged from 0.0.685.",
+  "warning": "Existing schema-v1 posts with broad wireSeparation booleans remain readable but cannot authorize an exact separation mechanism. This restriction was introduced before version tracking, in baseline 0.0.685. Publish a new schema-v2 package with evidenced capabilities; do not rewrite installed snapshots.",
+  "checklist": {
+    "schema": "Optional manifest.authoredFor added; legacy packages retain their bytes and hashes. Older apps reject packages using the new field.",
+    "events": "No execution-event or UPID semantic change from baseline.",
+    "capabilities": "No new capability restriction; v2 exact separation requirements are now documented.",
+    "auditAndOutput": "No controller-output or audit change; Robofil 2.6.0 retains 2.5.0 source, dialect, output rules and golden fixtures.",
+    "installationAndStorage": "No automatic installed-package replacement and no persisted-data migration.",
+    "verification": "Run release:check, post:docs:check, focused legacy/provenance and package tests, Robofil conformance, package validation, full tests and build before merge. See PR for results."
+  },
+  "testedPosts": [
+    { "id": "cristian.robofil-100.v2-candidate", "version": "2.5.0", "scope": "baseline package fixtures with current runtime" },
+    { "id": "cristian.robofil-100.v2-candidate", "version": "2.6.0", "scope": "conformance, archive validation and unchanged controller golden outputs; not physical verification" }
+  ]
+}

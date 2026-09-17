@@ -1,5 +1,9 @@
 # Wire EDM Machine-Package Authoring Contract v1
 
+**New authors:** start at [the current authoring guide](../../site/index.md). This directory's `v1` names the authoring kit and guest engine API generation, not the current post schema. New posts use **post schema v2**. `compatibility.json` derives readable post schema versions from the authoritative schema; v1 is retained only to read existing packages without rewriting them.
+
+Record `manifest.authoredFor: { appVersion, documentationUrl }` in new packages. Use an exact app release and its tagged HTTPS documentation URL. Older packages may omit it; that means unknown provenance, not incompatibility. Older app releases may reject this additive field, so install the declared app release or check its compatibility record first.
+
 This directory is the versioned, agent-readable contract for producing the only artifact a human installs: a complete `.wireedm-package`. A package contains one physical machine definition, one or more exact post processors, every complete machine setup that binds them, controller-file rules, evidence, and fixtures. The TypeBox sources under `src/domain/` are authoritative for serialized shapes; files under `schema/` are generated views and must not be edited directly.
 
 Generate or verify them with:
