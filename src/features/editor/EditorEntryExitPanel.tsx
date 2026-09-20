@@ -87,7 +87,15 @@ export function EditorEntryExitPanel({
   const entryAttachment = effective?.startPoint ?? selected?.startPoint;
   const exitAttachment = effective?.endPoint ?? selected?.endPoint;
   const initialWire = resolveInitialWirePosition(document);
-  const rapidStart = selected?.id === operations[0]?.id && initialWire.status === 'ready'
+  const firstActiveOperationId = useMemo(() => {
+    for (const operation of operations) {
+      const derived = deriveSourceMachiningOperations(document, operation.id);
+      if (derived?.status !== 'ready') return null;
+      if (derived.operations.length > 0) return operation.id;
+    }
+    return null;
+  }, [document, operations]);
+  const rapidStart = selected?.id === firstActiveOperationId && initialWire.status === 'ready'
     ? initialWire.point : null;
   const initialToContour = rapidStart && entryAttachment ? distance(rapidStart, entryAttachment) : null;
   const entryPoint = entryMode === 'coordinates'

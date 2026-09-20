@@ -55,6 +55,13 @@ export function EditorProgramStopsPanel({
   const hadSelectedStop = useRef(false);
   const stops = operation?.programStops ?? [];
   const selectedStop = stops.find((stop) => stop.id === selectedStopId) ?? null;
+  const savedStopId = selectedStop?.id ?? null;
+  const savedPlacement = selectedStop?.placement.kind ?? 'before-operation-end';
+  const savedRemaining = selectedStop?.placement.kind === 'before-operation-end'
+    ? String(selectedStop.placement.remainingCutLengthMm) : '1';
+  const savedReason = selectedStop?.reason ?? 'part-retention';
+  const savedNote = selectedStop?.note ?? '';
+  const savedEnabled = selectedStop?.enabled ?? true;
   const executionTree = useMemo(() => buildUpidEditorTree(document), [document]);
   const effectiveOperations = useMemo(() => deriveActiveMachiningOperations(document), [document]);
   const manualThreading = operation && (executionTree.status === 'ready'
@@ -68,31 +75,27 @@ export function EditorProgramStopsPanel({
   useEffect(() => setAddCompleted(false), [operation?.id]);
 
   useEffect(() => {
-    if (!selectedStop) {
+    if (!savedStopId) {
       if (hadSelectedStop.current) addPlacementRef.current?.focus();
       hadSelectedStop.current = false;
       return;
     }
     hadSelectedStop.current = true;
-    setSelectedPlacement(selectedStop.placement.kind);
-    setSelectedRemaining(
-      selectedStop.placement.kind === 'before-operation-end'
-        ? String(selectedStop.placement.remainingCutLengthMm)
-        : '1'
-    );
-    setSelectedReason(selectedStop.reason);
-    setSelectedNote(selectedStop.note ?? '');
-    setSelectedEnabled(selectedStop.enabled);
+    setSelectedPlacement(savedPlacement);
+    setSelectedRemaining(savedRemaining);
+    setSelectedReason(savedReason);
+    setSelectedNote(savedNote);
+    setSelectedEnabled(savedEnabled);
     selectedPlacementRef.current?.focus();
-  }, [selectedStop]);
+    // Editing another row clones every stop; only changes to this stop replace its draft.
+  }, [operation?.id, savedStopId, savedPlacement, savedRemaining, savedReason, savedNote, savedEnabled]);
 
   if (!operation) return <p className="text-[10px] text-muted-foreground">No operation selected.</p>;
   const remainingValue = Number(remaining);
   const selectedRemainingValue = Number(selectedRemaining);
-  const nextNumber = stops.reduce((maximum, stop) => {
-    const match = /^stop-(\d+)$/.exec(stop.id);
-    return Math.max(maximum, match ? Number(match[1]) : 0);
-  }, 0) + 1;
+  const usedStopIds = new Set(stops.map((stop) => stop.id));
+  let nextNumber = 1;
+  while (usedStopIds.has(`stop-${nextNumber}`)) nextNumber += 1;
   const addedStop: OperationProgramStop = {
     id: `stop-${nextNumber}`,
     enabled: true,
