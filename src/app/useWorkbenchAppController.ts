@@ -538,12 +538,12 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     }
   }
 
-  async function runProjectAction(action: () => Promise<void>) {
+  async function runProjectAction<T>(action: () => Promise<T>): Promise<T> {
     if (activeMutation.current || interactionLocked) throw new Error('Another workbench action is in progress. Try again when it finishes.');
     activeMutation.current = 'project-action';
     setProjectActionPending(true);
     try {
-      await action();
+      return await action();
     } finally {
       activeMutation.current = null;
       setProjectActionPending(false);
@@ -596,20 +596,28 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     });
   }
 
-  async function handleExportUpidProject(projectId: string) {
+  async function requestUpidProjectExport(projectId: string, options: {
+    readonly expectedProjectVersion?: string;
+    readonly signal?: AbortSignal;
+    readonly beforeDownload?: () => void;
+  } = {}) {
     const workbench = requireWorkbench();
-    if (!workbench) return;
+    if (!workbench) throw new ToolError('WORKBENCH_UNAVAILABLE', 'Wait for the workbench to open.');
+    options.signal?.throwIfAborted();
+    return runProjectAction(async () => {
+      const exported = await services.exportPortableUpidProject(workbench, projectId, { expectedProjectVersion: options.expectedProjectVersion });
+      if (!exported.ok) throw new ToolError(exported.error.code, exported.error.message);
+      options.signal?.throwIfAborted();
+      options.beforeDownload?.();
+      await services.downloadTextFile({ ...exported.file, mimeType: 'application/json;charset=utf-8' });
+      showStatusToast('UPID download requested. If no file appears, use Save UPID As.', 'success');
+      return { status: 'download-requested' as const, projectId, fileName: exported.file.fileName };
+    });
+  }
+
+  async function handleExportUpidProject(projectId: string) {
     try {
-      await runProjectAction(async () => {
-        const exported = await services.exportPortableUpidProject(workbench, projectId);
-        if (!exported.ok) throw new Error(exported.error.message);
-        await services.downloadTextFile({
-          fileName: exported.file.fileName,
-          text: exported.file.text,
-          mimeType: 'application/json;charset=utf-8'
-        });
-        showStatusToast('UPID download requested. If no file appears, use Save UPID As.', 'success');
-      });
+      await requestUpidProjectExport(projectId);
     } catch (error) {
       showStatusToast('Could not export UPID: ' + errorText(error) + ' Retry using Export UPID.', 'error');
     }
@@ -653,12 +661,15 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
   }
 
   function handleDownloadEditorFile(input: DownloadProgramFileInput) {
-    services.downloadTextFile(input);
+    return services.downloadTextFile(input);
   }
 
   async function handleGenerateControllerArtifact(input: {
     readonly machineId: string;
-  }): Promise<ControllerArtifactResult> {
+    readonly signal?: AbortSignal;
+    readonly beforeWrite?: () => void;
+  }): Promise<ControllerArtifactResult & { readonly savedRevisionId?: string }> {
+    input.signal?.throwIfAborted();
     const editor = getEditorState?.();
     if (editor?.dirty || (editor?.workflowOpen && editor.workflowCommand !== 'export.preview')) return artifactAppFailure('Save the draft and finish the editor workflow before generating controller output.');
     const workbench = requireWorkbench();
@@ -679,6 +690,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     }
     activeMutation.current = 'controller-artifact';
     setControllerArtifactGenerating(true);
+    let revisionWriteStarted = false;
+    let savedRevisionId: string | undefined;
     try {
       const candidate = await services.createSavedWireEdmJobRevision({
         revisionId: createSavedWireEdmJobRevisionId(globalThis.crypto.randomUUID()),
@@ -688,6 +701,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
         bindingId: machine.activeBindingId,
         postLibrary: workbench.posts
       });
+      input.signal?.throwIfAborted();
       if (!candidate.ok) {
         if (candidate.error.code === 'SAVED_REVISION_EXECUTION_PLAN_INVALID') {
           return {
@@ -701,17 +715,24 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
         }
         return artifactAppFailure(candidate.error.message);
       }
+      // Abort/version checks stop before the first durable write. After it, return
+      // the completed generation receipt even if the caller has cancelled.
+      input.signal?.throwIfAborted();
+      input.beforeWrite?.();
+      revisionWriteStarted = true;
       const saved = await services.saveStoredWireEdmJobRevision(workbench, candidate.candidate);
       if (!saved.ok) return artifactAppFailure(saved.error.message);
+      savedRevisionId = saved.revision.revisionId;
       setConnectedWorkbench(saved.workbench);
       setLoadedEditorProgram((current) => current === program
         ? { ...current, project: saved.project }
         : current);
       const artifact = await services.generateControllerArtifact(saved.revision);
       if (artifact.ok) showStatusToast(`Generated exact revision ${saved.revision.revisionId}.`, 'success');
-      return artifact;
+      return { ...artifact, savedRevisionId };
     } catch (error) {
-      return artifactAppFailure(errorText(error));
+      if (!revisionWriteStarted && (input.signal?.aborted || error instanceof ToolError)) throw error;
+      return { ...artifactAppFailure(errorText(error)), ...(savedRevisionId ? { savedRevisionId } : {}) };
     } finally {
       activeMutation.current = null;
       setControllerArtifactGenerating(false);
@@ -908,6 +929,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
     handleDxfReimportUnitCandidateChange,
     handleDownloadEditorFile,
     handleExportUpidProject,
+    requestUpidProjectExport,
     handleSaveUpidProjectAs,
     handleDeleteSavedRevisions,
     handleGenerateControllerArtifact,

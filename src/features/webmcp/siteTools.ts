@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Type, type Static, type TSchema } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 
@@ -13,7 +13,7 @@ export interface ModelContext {
   registerTool(tool: SiteTool, options: { signal: AbortSignal }): Promise<void> | void;
 }
 export class ToolError extends Error {
-  constructor(readonly code: string, message: string) { super(message); }
+  constructor(readonly code: string, message: string, readonly details?: Readonly<Record<string, unknown>>) { super(message); }
 }
 export const object = <T extends Record<string, TSchema>>(properties: T) => Type.Object(properties, { additionalProperties: false });
 export const pageFields = {
@@ -35,7 +35,14 @@ export function siteTool<S extends TSchema>(
       const signal = options?.signal ?? new AbortController().signal;
       try {
         signal.throwIfAborted();
-        if (!Value.Check(inputSchema, input)) throw new ToolError('INVALID_ARGUMENT', 'Arguments must match the tool schema.');
+        if (!Value.Check(inputSchema, input)) {
+          const issues = [];
+          for (const issue of Value.Errors(inputSchema, input)) {
+            issues.push({ path: (issue.path || '/').slice(0, 240), message: issue.message.slice(0, 240) });
+            if (issues.length === 5) break;
+          }
+          throw new ToolError('INVALID_ARGUMENT', 'Arguments must match the tool schema.', { issues });
+        }
         const data = await run(input, signal);
         // Once a mutation commits, return its receipt even if cancellation arrived during the write.
         if (readOnlyHint) signal.throwIfAborted();
@@ -46,7 +53,7 @@ export function siteTool<S extends TSchema>(
         return result;
       } catch (error) {
         return { ok: false, error: signal.aborted ? { code: 'CANCELLED', message: 'Operation cancelled.' }
-          : error instanceof ToolError ? { code: error.code, message: error.message }
+          : error instanceof ToolError ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
           : { code: 'OPERATION_FAILED', message: 'Operation failed. Review the page or retry with corrected inputs.' } };
       }
     }
@@ -54,9 +61,26 @@ export function siteTool<S extends TSchema>(
 }
 
 /** Registration lifetime and execution cancellation are separate in current WebMCP. */
-export function registerSiteTools(context: ModelContext, tools: readonly SiteTool[]) {
+export interface SiteToolActivity {
+  readonly id: number;
+  readonly toolName: string;
+  readonly phase: 'running' | 'succeeded' | 'failed' | 'cancelled';
+  readonly startedAt: number;
+  readonly completedAt?: number;
+  readonly errorCode?: string;
+  readonly message?: string;
+}
+
+export interface SiteToolActivityState {
+  readonly supported: boolean;
+  readonly registrationError: boolean;
+  readonly calls: readonly SiteToolActivity[];
+}
+
+export function registerSiteTools(context: ModelContext, tools: readonly SiteTool[], onActivity?: (activity: SiteToolActivity) => void) {
   const lifetime = new AbortController();
   const running = new Set<AbortController>();
+  let sequence = 0;
   const ready = (async () => {
     for (const tool of tools) {
       if (lifetime.signal.aborted) return;
@@ -66,7 +90,17 @@ export function registerSiteTools(context: ModelContext, tools: readonly SiteToo
         if (lifetime.signal.aborted || options?.signal?.aborted) call.abort();
         options?.signal?.addEventListener('abort', abort, { once: true });
         running.add(call);
-        try { return await tool.execute(input, { signal: call.signal }); }
+        const activity = { id: ++sequence, toolName: tool.name, startedAt: Date.now() };
+        onActivity?.({ ...activity, phase: 'running' });
+        try {
+          const result = await tool.execute(input, { signal: call.signal });
+          const outcome = activityOutcome(result);
+          onActivity?.({ ...activity, ...outcome, completedAt: Date.now() });
+          return result;
+        } catch (error) {
+          onActivity?.({ ...activity, phase: call.signal.aborted ? 'cancelled' : 'failed', completedAt: Date.now(), message: 'Tool execution failed.' });
+          throw error;
+        }
         finally { running.delete(call); options?.signal?.removeEventListener('abort', abort); }
       } }, { signal: lifetime.signal });
     }
@@ -78,17 +112,43 @@ export function registerSiteTools(context: ModelContext, tools: readonly SiteToo
 /** Stable registration; callbacks always see the most recently committed React state. */
 export function useSiteTools(tools: readonly SiteTool[]) {
   const latest = useRef(tools);
+  const [activity, setActivity] = useState<SiteToolActivityState>({ supported: false, registrationError: false, calls: [] });
   useLayoutEffect(() => { latest.current = tools; });
   useEffect(() => {
     const context = (document as Document & { modelContext?: ModelContext }).modelContext;
     if (typeof context?.registerTool !== 'function') return;
+    let mounted = true;
+    setActivity(current => ({ ...current, supported: true }));
     const registration = registerSiteTools(context, latest.current.map((tool) => ({ ...tool,
       execute: (input, options) => {
         const current = latest.current.find(({ name }) => name === tool.name);
         return current ? current.execute(input, options) : Promise.resolve({ ok: false, error: { code: 'UNAVAILABLE', message: 'Tool is no longer available.' } });
       }
-    })));
-    void registration.ready.catch(() => { console.warn('Site tools could not be registered; the normal interface remains available.'); });
-    return registration.dispose;
+    })), (call) => {
+      if (mounted) setActivity(current => {
+        const next = [call, ...current.calls.filter(previous => previous.id !== call.id)];
+        return { ...current, calls: [...next.filter(item => item.phase === 'running'), ...next.filter(item => item.phase !== 'running')].slice(0, 8) };
+      });
+    });
+    void registration.ready.catch(() => {
+      if (mounted) setActivity(current => ({ ...current, registrationError: true }));
+      console.warn('Site tools could not be registered; the normal interface remains available.');
+    });
+    return () => { mounted = false; registration.dispose(); };
   }, []);
+  return activity;
+}
+
+function activityOutcome(result: unknown): Pick<SiteToolActivity, 'phase' | 'errorCode' | 'message'> {
+  if (!result || typeof result !== 'object') return { phase: 'succeeded' };
+  const envelope = result as { ok?: boolean; error?: { code?: unknown; message?: unknown }; data?: { generated?: boolean; error?: { code?: unknown; message?: unknown }; status?: unknown } };
+  if (envelope.ok !== false && envelope.data?.status === 'generated-download-not-requested') return {
+    phase: 'succeeded', message: 'Controller artifact generated; download was not requested after cancellation.'
+  };
+  const error = envelope.ok === false ? envelope.error : envelope.data?.generated === false ||
+    envelope.data?.status === 'generated-download-failed' || envelope.data?.status === 'captured-download-failed' ? envelope.data.error : undefined;
+  if (envelope.ok !== false && !error) return { phase: 'succeeded' };
+  return { phase: error?.code === 'CANCELLED' ? 'cancelled' : 'failed',
+    ...(typeof error?.code === 'string' ? { errorCode: error.code.slice(0, 160) } : {}),
+    ...(typeof error?.message === 'string' ? { message: error.message.slice(0, 500) } : {}) };
 }

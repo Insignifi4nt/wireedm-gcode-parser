@@ -1,22 +1,24 @@
-import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Type, type Static, type TSchema } from '@sinclair/typebox';
 import type { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import { prepareDxfProjectImport, previewDxfProjectImport, type DxfImportPreparation } from '@/domain/dxf/prepareDxfProjectImport';
 import { commitDxfProjectImport } from '@/domain/dxf/importDxfProject';
-import { importPortableUpidProject, exportPortableUpidProject } from '@/domain/upid/portableUpidProject';
+import { importPortableUpidProject } from '@/domain/upid/portableUpidProject';
 import { loadEditorProgram } from '@/domain/editor/loadEditorProgram';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
 import type { PreparedMachinePackageInstallation } from '@/domain/machine-package';
 import type { ControllerProgramArtifact } from '@/domain/wire-edm-job/controllerArtifact';
 import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
-import { downloadProgramFile } from '@/domain/post/downloadProgramFile';
+import { workbenchProjectVersion } from '@/domain/workbench-catalog/workbenchProjectVersion';
 import { identifier, projectEdit } from './projectEdits';
 import { object, page, pageFields, siteTool, ToolError } from './siteTools';
 import type { DraftReadSnapshot } from './workbenchSiteTools';
+import { downloadPreviewCapture, preparePreviewCapture, type PreviewCaptureArtifact } from './previewCapture';
 
 type App = ReturnType<typeof useWorkbenchAppController>;
 const version = { expectedVersion: identifier };
 const draftVersion = { draftVersion: identifier };
+const controllerInput = object({ ...version, ...draftVersion, machineId: identifier, bindingId: identifier });
 const source = object({ fileName: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^/\\\\]+$' }), text: Type.String({ minLength: 1, maxLength: 1024 * 1024 }) });
 const activation = Type.Union([Type.Literal('package'), Type.Literal('keep-current')]);
 const resolution = Type.Union([
@@ -32,9 +34,13 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
   const preparedDxf = useRef<{ id: string; workbench: ConnectedWorkbenchCatalog; preparation: DxfImportPreparation } | null>(null);
   const preparedPackage = useRef<{ id: string; prepared: PreparedMachinePackageInstallation } | null>(null);
   const artifact = useRef<ControllerProgramArtifact | null>(null);
+  const [capture, setCapture] = useState<PreviewCaptureArtifact | null>(null);
   const workbenchVersion = useMemo(() => crypto.randomUUID(), [app.connectedWorkbench, file]);
   const latestVersion = useRef(workbenchVersion);
   useLayoutEffect(() => { latestVersion.current = workbenchVersion; });
+  useEffect(() => () => {
+    if (capture) window.setTimeout(() => URL.revokeObjectURL(capture.previewUrl), 60_000);
+  }, [capture]);
 
   function connected(expected?: string) {
     if (busy.current || app.workbenchInteractionLocked) throw new ToolError('BUSY', 'Another workbench operation is running.');
@@ -76,12 +82,30 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     const loaded = await loadEditorProgram(workbench, projectId);
     return { workbench, ...(loaded.ok ? { editorProgram: loaded.editorProgram } : {}), value: { projectId, imported: true, opened: loaded.ok, ...(!loaded.ok ? { error: loaded.error } : {}) } };
   }
+  async function generate(input: Static<typeof controllerInput>, signal: AbortSignal) {
+    const check = () => {
+      checkVersion(input.expectedVersion);
+      draft(input.draftVersion, true);
+      const machine = app.connectedWorkbench!.machines.machines.find(machine => machine.id === input.machineId);
+      if (!machine || machine.activeBindingId !== input.bindingId) throw new ToolError('STALE_STATE', 'The active setup changed. Read capabilities again.');
+    };
+    check();
+    const result = await app.handleGenerateControllerArtifact({ machineId: input.machineId, signal, beforeWrite: check });
+    if (result.ok) artifact.current = result.artifact;
+    return result;
+  }
   const tools = [
     siteTool('edm_workflow_context', 'Read mutation version, uploaded input file, prepared imports and the most recent generated artifact. Upload files using the Agent input file button; browser storage belongs to this browser.', object({}), () => ({
       version: workbenchVersion, busy: busy.current || app.workbenchInteractionLocked,
       inputFile: file ? { name: file.name, size: file.size } : null,
       dxfPreparationId: preparedDxf.current?.id ?? null, packagePreparationId: preparedPackage.current?.id ?? null,
-      artifact: artifact.current ? artifactSummary(artifact.current) : null
+      artifact: artifact.current ? artifactSummary(artifact.current) : null,
+      capture,
+      nextSteps: !draftRef.current ? ['edm_list_projects', 'edm_open_project', 'edm_prepare_dxf', 'edm_import_upid']
+        : !draftRef.current.document ? ['edm_capture_preview', 'Use the visible editor for external G-code changes.']
+        : draftRef.current.workflowOpen ? ['Finish or cancel the visible editor workflow.']
+        : draftRef.current.dirty ? ['edm_describe_edits', 'edm_edit_project', 'edm_review_execution', 'edm_save_project']
+        : ['edm_describe_edits', 'edm_review_execution', 'edm_get_capabilities', 'edm_export_controller', 'edm_export_upid', 'edm_capture_preview']
     })),
     mutation('edm_prepare_dxf', 'Preview uploaded DXF (or inline DXF text). Returns unit choices and millimeter bounds for explicit review before import. Does not save a project.', object({ ...version, source: Type.Optional(source) }), async (input, signal) => {
       checkVersion(input.expectedVersion);
@@ -180,15 +204,23 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
       if (!await app.handleActivateMachineSetup(input.machineId, input.bindingId)) throw new ToolError('ACTIVATION_FAILED', 'The setup could not be activated. Review the settings diagnostic.');
       return { activated: true, machineId: input.machineId, bindingId: input.bindingId };
     }),
-    mutation('edm_generate_controller', 'Generate audited controller output from the saved current project and exact active setup. Requires a clean draft. Persists an immutable revision. Does not download or run a machine. Reuse the returned artifact ID for reading/downloading; do not generate repeatedly.', object({ ...version, ...draftVersion, machineId: identifier, bindingId: identifier }), async input => {
-      checkVersion(input.expectedVersion);
-      draft(input.draftVersion, true);
-      const machine = app.connectedWorkbench!.machines.machines.find(machine => machine.id === input.machineId);
-      if (!machine || machine.activeBindingId !== input.bindingId) throw new ToolError('STALE_STATE', 'The active setup changed. Read capabilities again.');
-      const result = await app.handleGenerateControllerArtifact({ machineId: input.machineId });
-      if (!result.ok) return { generated: false, error: result.error };
-      artifact.current = result.artifact;
+    mutation('edm_generate_controller', 'Generate audited controller output from the saved current project and exact active setup. Requires a clean draft. Persists an immutable revision. Does not download or run a machine. Reuse the returned artifact ID for reading/downloading; do not generate repeatedly.', controllerInput, async (input, signal) => {
+      const result = await generate(input, signal);
+      if (!result.ok) return generationFailure(result);
       return { generated: true, ...artifactSummary(result.artifact) };
+    }),
+    mutation('edm_export_controller', 'Generate and request download of controller output in one action, using the same saved-draft, exact active-setup and audited-post checks as the export UI. Persists one immutable revision. On generated:true, reuse its artifactId for retries; do not generate another revision just to download.', controllerInput, async (input, signal) => {
+      const result = await generate(input, signal);
+      if (!result.ok) return generationFailure(result);
+      const summary = artifactSummary(result.artifact);
+      if (signal.aborted) return { generated: true, status: 'generated-download-not-requested', ...summary };
+      try {
+        await app.handleDownloadEditorFile({ fileName: result.artifact.fileName, text: result.artifact.text });
+        return { generated: true, status: 'download-requested', ...summary };
+      } catch {
+        return { generated: true, status: 'generated-download-failed', ...summary,
+          error: { code: 'DOWNLOAD_FAILED', message: 'The artifact was generated. Retry edm_download_artifact with its artifactId.' } };
+      }
     }),
     siteTool('edm_read_artifact', 'Read a bounded text chunk of the exact generated controller file. Offsets count JavaScript UTF-16 characters; chunks preserve original line endings. No regeneration.', object({ artifactId: identifier, offset: Type.Optional(Type.Integer({ minimum: 0 })), length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4000 })) }), input => {
       const current = requireArtifact(input.artifactId);
@@ -198,15 +230,41 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     }),
     mutation('edm_download_artifact', 'Request download of an exact generated artifact by ID, preserving its post-controlled name, encoding and line endings. Reports a browser download request, not an on-disk receipt.', object({ artifactId: identifier }), async input => {
       const current = requireArtifact(input.artifactId);
-      await downloadProgramFile({ fileName: current.fileName, text: current.text });
+      await app.handleDownloadEditorFile({ fileName: current.fileName, text: current.text });
       return { status: 'download-requested', ...artifactSummary(current) };
     }),
-    mutation('edm_export_upid', 'Download the saved current project as portable UPID JSON. Requires a clean draft; includes geometry and machining intent for another browser.', object(draftVersion), async input => {
+    mutation('edm_export_upid', 'Download the saved current project as portable UPID JSON. Requires a clean draft; includes geometry and machining intent for another browser. For a saved library project without opening it, use edm_export_saved_upid.', object(draftVersion), async (input, signal) => {
       const current = draft(input.draftVersion, true);
-      const result = await exportPortableUpidProject(app.connectedWorkbench!, current.projectId!);
-      if (!result.ok) throw new ToolError(result.error.code, result.error.message);
-      await downloadProgramFile({ ...result.file, mimeType: 'application/json;charset=utf-8' });
-      return { status: 'download-requested', fileName: result.file.fileName };
+      const savedProject = app.loadedEditorProgram?.project;
+      if (!savedProject || savedProject.id !== current.projectId) throw new ToolError('STALE_STATE', 'The editor changed. Read context again.');
+      const expectedProjectVersion = await workbenchProjectVersion(savedProject);
+      signal.throwIfAborted();
+      draft(input.draftVersion, true);
+      return app.requestUpidProjectExport(current.projectId!, { expectedProjectVersion, signal, beforeDownload: () => { draft(input.draftVersion, true); } });
+    }),
+    mutation('edm_export_saved_upid', 'Download an explicit saved library project as portable UPID JSON without opening it or replacing the editor draft. Pass savedProjectVersion from edm_get_project with a saved-project target; expectedVersion comes from edm_workflow_context. Unsaved edits are excluded.', object({ ...version, projectId: identifier, savedProjectVersion: identifier }), async (input, signal) => {
+      checkVersion(input.expectedVersion);
+      return app.requestUpidProjectExport(input.projectId, { expectedProjectVersion: input.savedProjectVersion, signal,
+        beforeDownload: () => checkVersion(input.expectedVersion) });
+    }),
+    mutation('edm_capture_preview', 'Capture the actual current 2D or 3D editor preview as a bounded PNG artifact. 2D shows the editor draft; 3D simulates the saved project and excludes unsaved edits. Excludes app panels and desktop contents. Returns contentSource, a local preview URL and image hash, not inline model image content. Set download:true to request the PNG download. Requires the current draftVersion; does not edit or save.', object({ ...draftVersion, download: Type.Optional(Type.Boolean()) }), async (input, signal) => {
+      const current = draftRef.current;
+      if (!current || current.version !== input.draftVersion) throw new ToolError('STALE_STATE', 'Read edm_get_context again; the editor changed.');
+      if (!current.capture) throw new ToolError('CAPTURE_UNAVAILABLE', 'Open a drawable 2D or 3D editor preview first.');
+      const image = await current.capture(signal);
+      const captured = await preparePreviewCapture(image, { projectId: current.projectId, draftVersion: current.version, dirty: current.dirty }, signal);
+      if (draftRef.current?.version !== input.draftVersion || signal.aborted) {
+        URL.revokeObjectURL(captured.previewUrl);
+        signal.throwIfAborted();
+        throw new ToolError('STALE_STATE', 'The draft changed while capturing. Read context and capture again.');
+      }
+      setCapture(captured);
+      if (input.download) {
+        try { downloadPreviewCapture(captured); }
+        catch { return { status: 'captured-download-failed', ...captured,
+          error: { code: 'DOWNLOAD_FAILED', message: 'The PNG was captured. Use the Preview PNG link to retry its download.' } }; }
+      }
+      return { status: input.download ? 'download-requested' : 'captured', ...captured };
     })
   ];
   function requireArtifact(id: string) {
@@ -217,10 +275,18 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
   const fileControl = <>
     <button type="button" className="h-7 border border-border px-2 text-xs text-muted-foreground" disabled={app.workbenchInteractionLocked} title={file ? `Agent input: ${file.name}` : 'Upload a DXF, UPID or machine package for agent tools'} onClick={() => inputRef.current?.click()}>Agent input file</button>
     <input ref={inputRef} type="file" aria-label="Agent input file" className="hidden" accept=".dxf,.json,.wireedm-package" onChange={event => { setFile(event.target.files?.[0] ?? null); event.target.value = ''; preparedDxf.current = null; preparedPackage.current = null; }} />
+    {capture && <a className="px-2 text-xs text-muted-foreground underline" href={capture.previewUrl} download={capture.fileName} title={`Download captured ${capture.source.toUpperCase()} preview (${capture.contentSource === 'saved-project' ? 'saved project' : capture.dirty ? 'unsaved draft' : 'saved draft'})`}>Preview PNG</a>}
   </>;
   return { tools, fileControl };
 }
 
 function artifactSummary(artifact: ControllerProgramArtifact) {
   return { artifactId: artifact.revisionId, fileName: artifact.fileName, sha256: artifact.sha256, post: artifact.post, output: artifact.output, characterCount: artifact.text.length };
+}
+
+function generationFailure(result: Extract<Awaited<ReturnType<App['handleGenerateControllerArtifact']>>, { ok: false }>) {
+  const error = result.error;
+  return { generated: false, error: { ...error, ...('diagnostics' in error ? {
+    diagnostics: error.diagnostics.slice(0, 20), omittedDiagnosticCount: Math.max(0, error.diagnostics.length - 20)
+  } : {}) }, ...(result.savedRevisionId ? { savedRevisionId: result.savedRevisionId } : {}) };
 }

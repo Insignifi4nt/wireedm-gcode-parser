@@ -44,7 +44,10 @@ export function applyProjectEdits(document: PathPlanningDocument, edits: readonl
   let next = document;
   for (const [index, edit] of edits.entries()) {
     const result = apply(next, edit);
-    if (!result) throw new ToolError('EDIT_REJECTED', `Edit ${index + 1} (${edit.kind}) is not applicable. No edits were applied.`);
+    if (!result) throw new ToolError('EDIT_REJECTED', `Edit ${index + 1} (${edit.kind}) is not applicable. No edits were applied.`, {
+      editIndex: index, editKind: edit.kind, ...('operationId' in edit ? { operationId: edit.operationId } : {}),
+      recovery: 'Read current geometry IDs and edm_describe_edits for this kind, then retry the complete batch with a fresh draftVersion.'
+    });
     next = result;
   }
   return next;

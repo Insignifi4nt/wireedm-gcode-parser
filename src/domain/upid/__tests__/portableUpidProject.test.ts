@@ -4,6 +4,7 @@ import { importDxfProject } from '@/domain/dxf/importDxfProject';
 import { importExternalProgram } from '@/domain/editor/importExternalProgram';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
+import { workbenchProjectVersion } from '@/domain/workbench-catalog/workbenchProjectVersion';
 import { validateUpidDocument } from '../validateUpidDocument';
 import { portableUpidIntentFixture } from './portableUpidIntentFixture';
 
@@ -15,6 +16,22 @@ import {
 } from '../portableUpidProject';
 
 describe('portable UPID project', () => {
+  it('exports only the exact reviewed saved record when a project version is supplied', async () => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const imported = await importPortableUpidProject(initialized.workbench, { fileName: 'reviewed.upid.json',
+      text: JSON.stringify({ format: 'upid', schemaVersion: 1, document: portableUpidIntentFixture() }) });
+    if (!imported.ok) throw new Error(imported.error.message);
+    const before = new Map(adapter.files);
+    const staleVersion = await workbenchProjectVersion({ ...imported.project, name: 'Old project name' });
+    expect(await exportPortableUpidProject(imported.workbench, imported.project.id, { expectedProjectVersion: staleVersion }))
+      .toMatchObject({ ok: false, error: { code: 'PORTABLE_UPID_PROJECT_CHANGED' } });
+    const version = await workbenchProjectVersion(imported.project);
+    expect(await exportPortableUpidProject(imported.workbench, imported.project.id, { expectedProjectVersion: version }))
+      .toMatchObject({ ok: true, file: { fileName: 'reviewed.upid.json' } });
+    expect(adapter.files).toEqual(before);
+  });
   it('keeps v1 vocabulary frozen and accepts extended stop intent only as v2', () => {
     const document = portableUpidIntentFixture();
     document.plan.operations[0].programStops = [{ id: 'thread-stop', enabled: true,

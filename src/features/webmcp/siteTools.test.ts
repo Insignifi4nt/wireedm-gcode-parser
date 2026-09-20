@@ -1,8 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Type } from '@sinclair/typebox';
-import { object, registerSiteTools, siteTool, type SiteTool } from './siteTools';
+import { object, registerSiteTools, siteTool, type SiteTool, type SiteToolActivity } from './siteTools';
 
 describe('site tool boundary', () => {
+  it('reports bounded argument paths without returning input values', async () => {
+    const tool = siteTool('read', 'Read', object({ count: Type.Integer({ minimum: 1 }) }), () => null);
+    expect(await tool.execute({ count: 0 })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT', details: { issues: [{ path: '/count', message: expect.any(String) }] } } });
+  });
+
+  it('publishes human-visible action outcomes including domain failures and durable late-cancellation success', async () => {
+    const registered: SiteTool[] = [];
+    const activity: SiteToolActivity[] = [];
+    const cancel = new AbortController();
+    const tools = [
+      siteTool('generate', 'Generate', object({}), () => ({ generated: false, error: { code: 'POST_FAILED', message: 'Post requires review.' } }), false),
+      siteTool('save', 'Save', object({}), () => { cancel.abort(); return { saved: true }; }, false)
+    ];
+    const registration = registerSiteTools({ registerTool: tool => { registered.push(tool); } }, tools, call => activity.push(call));
+    await registration.ready;
+    await registered[0].execute({});
+    await registered[1].execute({}, { signal: cancel.signal });
+    expect(activity).toMatchObject([
+      { id: 1, toolName: 'generate', phase: 'running' },
+      { id: 1, toolName: 'generate', phase: 'failed', errorCode: 'POST_FAILED', message: 'Post requires review.', completedAt: expect.any(Number) },
+      { id: 2, toolName: 'save', phase: 'running' },
+      { id: 2, toolName: 'save', phase: 'succeeded', completedAt: expect.any(Number) }
+    ]);
+    registration.dispose();
+  });
   it('returns a mutation receipt when cancellation arrives after commit', async () => {
     const controller = new AbortController();
     const tool = siteTool('save', 'Save', object({}), () => { controller.abort(); return { saved: true }; }, false);
