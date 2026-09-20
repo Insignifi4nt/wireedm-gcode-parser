@@ -47,7 +47,7 @@ export function compileSimulation(document: PathPlanningDocument, input: Simulat
     { code: 'SIMULATION_ESTIMATE', severity: 'info', operationId: null,
       message: 'Playback uses viewing speeds and illustrative stop/rethread holds, not machine feeds or cycle-time estimates.' },
     { code: 'SIMULATION_MATERIAL_ASSUMPTIONS', severity: 'warning', operationId: null,
-      message: 'Material uses constant-thickness extrusions and sampled boundaries. Released pieces move vertically under gravity or remain retained as selected; no tilt, fluid forces, clamps, stacking or rigid-body contacts are predicted. Obstruction findings are approximate and do not certify clearance.' },
+      message: 'Material uses constant-thickness extrusions and sampled nominal boundaries; wire kerf and spark gap are not subtracted from the solids. Released pieces move vertically under gravity or remain retained as selected; no tilt, fluid forces, clamps, stacking or rigid-body contacts are predicted. Obstruction findings are approximate and do not certify clearance.' },
     ...releases.diagnostics
   ];
   if (compiled.plan.requirements.controllerCompensation) diagnostics.push({ code: 'SIMULATION_NOMINAL_COMPENSATION', severity: 'warning', operationId: null,

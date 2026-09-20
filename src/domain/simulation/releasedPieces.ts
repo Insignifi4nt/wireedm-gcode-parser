@@ -2,6 +2,7 @@ import { approximatePath, segmentMap } from '@/domain/path-intel/segments';
 import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 
 import { distance, pointInPolygon, polygonArea } from './geometry';
+import { unsupportedMaterialPolygons } from './materialTopology';
 import type {
   ResolvedSimulationSettings, SimulationDiagnostic, SimulationPiece, SimulationPieceSnapshot, SimulationStep
 } from './types';
@@ -24,9 +25,21 @@ export function compileReleasedPieces(
     if (polygon.length < 3 || distance(polygon[0], polygon.at(-1)!) > Math.max(1e-8, document.options.coincidenceEpsilon)) continue;
     polygon.pop();
     if (polygonArea(polygon) <= 1e-12) continue;
-    if (polygon.some((point) => !insideStock(point, settings))) {
+    let stockClearance = Infinity;
+    for (const ref of operation.segmentRefs) {
+      const bounds = segments.get(ref.segmentId)!.bounds;
+      const stock = settings.stock;
+      stockClearance = Math.min(stockClearance, bounds.minX - stock.originX, stock.originX + stock.width - bounds.maxX,
+        bounds.minY - stock.originY, stock.originY + stock.depth - bounds.maxY);
+    }
+    if (stockClearance < -1e-8) {
       diagnostics.push({ code: 'SIMULATION_BOUNDARY_OUTSIDE_STOCK', severity: 'warning', operationId: operation.id,
         message: `${operation.displayName} extends outside the rough stock. Its released shape cannot be represented by this simulation.` });
+      continue;
+    }
+    if (stockClearance <= 1e-8) {
+      diagnostics.push({ code: 'SIMULATION_MATERIAL_TOPOLOGY_UNSUPPORTED', severity: 'warning', operationId: operation.id,
+        message: `${operation.displayName} touches the rough-stock edge. Edge-connected cutouts require a material boundary reconstruction that this preview does not support; its material removal and released piece are omitted. The wire path remains visible.` });
       continue;
     }
     polygons.set(operation.id, polygon);
@@ -59,7 +72,14 @@ export function compileReleasedPieces(
         releaseSeconds: step.endSeconds, releaseEventId: event.id, parentPieceId: null });
     }
   }
-  const nested = associateParents(pieces);
+  const topology = unsupportedMaterialPolygons(pieces);
+  if (topology.budgetExceeded) diagnostics.push({ code: 'SIMULATION_MATERIAL_TOPOLOGY_LIMIT', severity: 'warning', operationId: null,
+    message: 'Material boundary checking reached its geometry budget. Material removal and released pieces are omitted because their mesh topology could not be verified; wire playback remains available.' });
+  else for (const piece of pieces) if (topology.ids.has(piece.id)) diagnostics.push({
+    code: 'SIMULATION_MATERIAL_TOPOLOGY_UNSUPPORTED', severity: 'warning', operationId: piece.operationId,
+    message: 'Sampled material boundaries cross or touch at this preview resolution. Their material removal and released pieces are omitted to avoid overlapping polygons; the exact wire motion remains available.'
+  });
+  const nested = associateParents(pieces.filter(piece => !topology.ids.has(piece.id)));
   const accepted: SimulationPiece[] = [];
   const acceptedIds = new Set<string>();
   const byId = new Map(nested.map((piece) => [piece.id, piece]));
@@ -102,12 +122,6 @@ function completeCoverage(ranges: readonly { start: number; end: number }[]): bo
     coveredUntil = Math.max(coveredUntil, range.end);
   }
   return coveredUntil >= 1;
-}
-
-function insideStock(point: Point2, settings: ResolvedSimulationSettings): boolean {
-  const stock = settings.stock;
-  return point.x >= stock.originX && point.x <= stock.originX + stock.width
-    && point.y >= stock.originY && point.y <= stock.originY + stock.depth;
 }
 
 export function releasedPieceSnapshots(
