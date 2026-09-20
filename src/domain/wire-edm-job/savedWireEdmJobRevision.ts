@@ -581,7 +581,7 @@ export async function parseSavedWireEdmJobRevision(
   if (canonicalJson(candidate.executionPlan) !== canonicalJson(snapshot.executionPlan)) {
     return failure({
       code: 'SAVED_REVISION_EXECUTION_PLAN_MISMATCH',
-      message: 'Saved execution plan does not match a fresh compilation of the saved UPID.'
+      message: 'Saved execution plan does not match the current compilation of its UPID. The original saved revision and installed machine packages have not been changed. Review the project and save a new revision before generating controller output; do not rewrite the historical revision to match.'
     });
   }
   const hashes = await calculateHashes({

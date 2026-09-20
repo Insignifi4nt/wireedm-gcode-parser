@@ -43,7 +43,11 @@ These are reference documents for format authors, not machine-certified programs
 
 Segment, cluster, chain, contour, path-element, operation and diagnostic IDs are unique within their corresponding collections. Every reference must resolve; traversal and ownership must agree across the document. Derived metrics and geometry must remain consistent with their source.
 
+Contour bounds must equal the union of the bounds of their chain's source segments; path-element bounds must equal the union of their referenced source segments. Arc extrema count even when neither endpoint reaches them. Floating-point noise is tolerated, but a matching pair of stale contour/path-element bounds is still invalid. A bounds diagnostic leaves the original untouched: correct the derived bounds in the authoring document, import that as a new project and review it before saving a new revision.
+
 Store source segments and source operations together with `machiningParticipation`. Temporary clipped operations and their `machiningIntent` are execution views and must not be serialized as source operations. Partial-cut traces identify the saved source operation, source segment and exact source parameter interval. Reversal reverses the interval direction; stops subdivide it.
+
+IDs are opaque: source authors do not need to reserve an internal prefix. Temporary clipped-segment IDs are allocated without replacing any stored source segment. Exclusion ranges retain their exact parameter values; formatting an ID does not round the geometry. Reapplying the same participation choice preserves the existing span ID and any unchanged partial-entry/exit review.
 
 Geometry edits preserve unaffected identities. If splitting or joining a contour cannot preserve its explicit machining decisions unambiguously, the edit is refused without changing the document. Moving a complete contour remains supported. Mirroring circular geometry reflects its excluded parameter ranges so the same physical material stays excluded.
 
@@ -71,6 +75,10 @@ Freeze the published v1 vocabulary. An incompatible shape or semantic change req
 The `automatic-during-positioning` separation strategy and `after-positioning` stop placement are UPID v2 vocabulary. Current readers accept both versions; portable v1 files containing either value are rejected. Old local snapshots written while these values were mistakenly labeled v1 remain readable for recovery. Export promotes a detached copy of such a snapshot to v2 without rewriting the original project or saved revision bytes.
 
 Portable validation checks shape and structural integrity separately from executable readiness. Incomplete review decisions and geometry requiring attention remain portable. Machine limits and controller realization belong to the saved job and machine package, not this document.
+
+Current validation rejects inconsistent contour and path-element bounds that earlier readers could accept. Current partial-cut derivation also avoids collisions between temporary IDs and stored source IDs. Ordinary valid documents and their execution traces are unchanged. A historical saved revision affected by an ID collision can produce a different corrected execution plan and will fail its plan-integrity comparison. Its original bytes and installed packages remain unchanged: review the editable project and save a new revision. Do not modify a post or rewrite a historical snapshot merely to make the old comparison pass.
+
+Simulation stock, playback speeds, guide envelopes and part-retention assumptions are separate viewing settings. They are not UPID feeds, controller compensation, physical verification or additional v1 fields. Simulation uses the saved document's executable events; missing reviewed intent remains a compilation diagnostic.
 
 ## Possible later versions
 

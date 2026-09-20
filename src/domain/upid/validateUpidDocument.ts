@@ -187,7 +187,7 @@ export function validateUpidDocument(
     effectiveTolerance,
     context
   );
-  validateContours(contours, chainMap, contourMap, diagnosticMap, context);
+  validateContours(contours, chainMap, contourMap, segmentMap, diagnosticMap, context);
   validateOperations(
     operations,
     segmentMap,
@@ -1354,6 +1354,7 @@ function validateContours(
   contours: PathContour[],
   chainMap: Map<string, PathChain>,
   contourMap: Map<string, PathContour>,
+  segmentMap: Map<string, PathSegment>,
   diagnosticMap: Map<string, PathDiagnostic>,
   context: ValidationContext
 ) {
@@ -1377,6 +1378,7 @@ function validateContours(
     nullableFiniteNumber(contour.signedArea, `contour ${contour.id}.signedArea`, context);
     nullableFiniteNumber(contour.area, `contour ${contour.id}.area`, context, { nonNegative: true });
     finiteBounds(contour.bounds, `contour ${contour.id}.bounds`, context);
+    if (chain) validateDerivedBounds(contour.bounds, chain.segmentRefs, segmentMap, `Contour ${contour.id}`, context);
     finiteInteger(contour.containmentDepth, `contour ${contour.id}.containmentDepth`, context, 0);
     finiteNumber(contour.confidence, `contour ${contour.id}.confidence`, context, {
       nonNegative: true,
@@ -1590,6 +1592,7 @@ function validatePathElements(
     }
     finiteInteger(element.containmentDepth, `path element ${element.id}.containmentDepth`, context, 0);
     finiteBounds(element.bounds, `path element ${element.id}.bounds`, context);
+    validateDerivedBounds(element.bounds, element.segmentRefs, segmentMap, `Path element ${element.id}`, context);
     finiteNumber(element.confidence, `path element ${element.id}.confidence`, context, { nonNegative: true, maximum: 1 });
     if (!Array.isArray(element.points)) {
       context.add('upid-invalid-value', `Path element ${element.id}.points must be an array.`);
@@ -2838,6 +2841,34 @@ function uniqueDiagnostics(diagnostics: PathDiagnostic[]) {
     seen.add(diagnostic.id);
     return true;
   });
+}
+
+/** Derived containers must describe their owned geometry, even when both copies agree with each other. */
+function validateDerivedBounds(
+  value: unknown,
+  rawRefs: unknown,
+  segments: Map<string, PathSegment>,
+  path: string,
+  context: ValidationContext
+) {
+  const axes = ['minX', 'minY', 'maxX', 'maxY'] as const;
+  const bounds = record(value);
+  const refs = array(rawRefs);
+  if (!bounds || !axes.every((axis) => typeof bounds[axis] === 'number' && Number.isFinite(bounds[axis])) || refs.length === 0) return;
+  const expected: Bounds2 = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const rawRef of refs) {
+    const ref = validOrientedRef(rawRef);
+    const source = ref ? record(segments.get(ref.segmentId)?.bounds) : null;
+    if (!source || !axes.every((axis) => typeof source[axis] === 'number' && Number.isFinite(source[axis]))) return;
+    expected.minX = Math.min(expected.minX, source.minX);
+    expected.minY = Math.min(expected.minY, source.minY);
+    expected.maxX = Math.max(expected.maxX, source.maxX);
+    expected.maxY = Math.max(expected.maxY, source.maxY);
+  }
+  if (axes.some((axis) => Math.abs(bounds[axis] - expected[axis]) >
+    Math.max(1e-9, numericComparisonTolerance(bounds[axis], expected[axis])))) {
+    context.add('upid-identity-mismatch', `${path} bounds disagree with its owned source geometry. Correct the derived bounds in a new document; the original is preserved.`);
+  }
 }
 
 function finiteBounds(

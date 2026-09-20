@@ -148,6 +148,7 @@ export function setMachiningSpanParticipation(
     span.range.start === range.start &&
     span.range.end === range.end
   );
+  if (exactIndex >= 0 && spans[exactIndex].participation === input.participation) return structuredClone(document);
   if (input.participation === 'active-cut') {
     if (exactIndex < 0) return structuredClone(document);
     spans.splice(exactIndex, 1);
@@ -158,7 +159,9 @@ export function setMachiningSpanParticipation(
       rangesOverlap(span.range, range)
     )) return null;
     const nextSpan: MachiningSpan = {
-      id: machiningSpanId(input.sourceSegmentId, range),
+      id: exactIndex >= 0 ? spans[exactIndex].id : reserveUniqueIdentity(
+        machiningSpanId(input.sourceSegmentId, range), new Set(spans.map(({ id }) => id))
+      ),
       sourceSegmentId: input.sourceSegmentId,
       range,
       participation: input.participation
@@ -238,6 +241,8 @@ export function deriveActiveMachiningOperations(
   decisionsBySegment.forEach((spans) => spans.sort(compareSpans));
 
   const derivedSegments = new Map<string, PathSegment>();
+  const reservedSegmentIds = new Set(sourceSegments.keys());
+  const reservedActiveSpanIds = new Set<string>();
   const activeSpans: MachiningSpan[] = [];
   const operations: PathOperation[] = [];
   for (const sourceOperation of sourceOperations) {
@@ -246,11 +251,15 @@ export function deriveActiveMachiningOperations(
       if (!source) return [];
       const partitions = partitionSegment(ref.segmentId, decisionsBySegment.get(ref.segmentId) ?? []);
       const ordered = ref.reversed ? [...partitions].reverse() : partitions;
-      return ordered.map((span) => {
-        if (span.participation === 'inactive-reference') return { active: false as const };
+      return ordered.map((partition) => {
+        if (partition.participation === 'inactive-reference') return { active: false as const };
+        const span = { ...partition, id: reserveUniqueIdentity(partition.id, reservedActiveSpanIds) };
         activeSpans.push(span);
-        const segment = deriveSpanSegment(source, span);
-        if (segment.id !== source.id) derivedSegments.set(segment.id, segment);
+        const clipped = deriveSpanSegment(source, span);
+        const segment = clipped === source ? source : {
+          ...clipped, id: reserveUniqueIdentity(clipped.id, reservedSegmentIds)
+        };
+        if (segment !== source) derivedSegments.set(segment.id, segment);
         return {
           active: true as const,
           ref: { segmentId: segment.id, reversed: ref.reversed },
@@ -573,6 +582,15 @@ function activeSpan(segmentId: string, start: number, end: number): MachiningSpa
 
 function machiningSpanId(segmentId: string, range: { start: number; end: number }) {
   return `span_${segmentId}_${formatParameter(range.start)}_${formatParameter(range.end)}`;
+}
+
+/** Retain historic IDs when available, without reserving a prefix in the portable namespace. */
+function reserveUniqueIdentity(preferred: string, used: Set<string>): string {
+  let candidate = preferred;
+  let suffix = 2;
+  while (used.has(candidate)) candidate = `${preferred}__${suffix++}`;
+  used.add(candidate);
+  return candidate;
 }
 
 function formatParameter(value: number) {
