@@ -72,8 +72,7 @@ export interface SiteToolActivity {
 }
 
 export interface SiteToolActivityState {
-  readonly supported: boolean;
-  readonly registrationError: boolean;
+  readonly registration: 'unsupported' | 'pending' | 'ready' | 'failed';
   readonly calls: readonly SiteToolActivity[];
 }
 
@@ -112,13 +111,13 @@ export function registerSiteTools(context: ModelContext, tools: readonly SiteToo
 /** Stable registration; callbacks always see the most recently committed React state. */
 export function useSiteTools(tools: readonly SiteTool[]) {
   const latest = useRef(tools);
-  const [activity, setActivity] = useState<SiteToolActivityState>({ supported: false, registrationError: false, calls: [] });
+  const [activity, setActivity] = useState<SiteToolActivityState>({ registration: 'unsupported', calls: [] });
   useLayoutEffect(() => { latest.current = tools; });
   useEffect(() => {
     const context = (document as Document & { modelContext?: ModelContext }).modelContext;
     if (typeof context?.registerTool !== 'function') return;
     let mounted = true;
-    setActivity(current => ({ ...current, supported: true }));
+    setActivity({ registration: 'pending', calls: [] });
     const registration = registerSiteTools(context, latest.current.map((tool) => ({ ...tool,
       execute: (input, options) => {
         const current = latest.current.find(({ name }) => name === tool.name);
@@ -130,8 +129,12 @@ export function useSiteTools(tools: readonly SiteTool[]) {
         return { ...current, calls: [...next.filter(item => item.phase === 'running'), ...next.filter(item => item.phase !== 'running')].slice(0, 8) };
       });
     });
-    void registration.ready.catch(() => {
-      if (mounted) setActivity(current => ({ ...current, registrationError: true }));
+    void registration.ready.then(() => {
+      if (mounted) setActivity(current => ({ ...current, registration: 'ready' }));
+    }).catch(() => {
+      // StrictMode and navigation can dispose a pending registration normally.
+      if (!mounted) return;
+      setActivity(current => ({ ...current, registration: 'failed' }));
       console.warn('Site tools could not be registered; the normal interface remains available.');
     });
     return () => { mounted = false; registration.dispose(); };
