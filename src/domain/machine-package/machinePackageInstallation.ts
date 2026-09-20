@@ -548,7 +548,7 @@ async function rollbackCatalogs(
 
 async function readRequired(adapter: WorkbenchStorageAdapter, path: string) {
   try {
-    const text = await adapter.readText(path);
+    const text = await readExact(adapter, path);
     return text === null
       ? {
           ok: false as const,
@@ -572,12 +572,16 @@ async function readRequired(adapter: WorkbenchStorageAdapter, path: string) {
 async function restore(adapter: WorkbenchStorageAdapter, path: string, text: string) {
   try {
     await adapter.writeText(path, text);
-    return await adapter.readText(path) === text
+    return await readExact(adapter, path) === text
       ? { ok: true as const }
       : { ok: false as const };
   } catch {
     return { ok: false as const };
   }
+}
+
+function readExact(adapter: WorkbenchStorageAdapter, path: string) {
+  return adapter.readExactText?.(path) ?? adapter.readText(path);
 }
 
 function physicalMachineJson(machine: MachineDefinition) {

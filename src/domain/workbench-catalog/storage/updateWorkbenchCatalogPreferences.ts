@@ -54,7 +54,7 @@ type PreferenceRollbackError = {
   readonly code: 'WORKBENCH_CATALOG_PREFERENCES_ROLLBACK_FAILED';
   readonly message: string;
   readonly originalError: UpdateWorkbenchCatalogPreferencesError;
-  readonly rollbackError: PreferenceStorageAccessError;
+  readonly rollbackError: PreferenceStorageAccessError | PreferenceReadbackError;
 };
 
 export type UpdateWorkbenchCatalogPreferencesResult =
@@ -86,7 +86,7 @@ export function updateWorkbenchCatalogPreferences(
         path: WORKBENCH_CATALOG_PATH
       });
     }
-    const current = parseWorkbenchCatalogManifest(currentRead.rawText, workbench.machines);
+    const current = parseWorkbenchCatalogManifest(currentRead.rawText.replace(/^\uFEFF/, ''), workbench.machines);
     if (!current.ok) return current;
     if (JSON.stringify(current.manifest) !== JSON.stringify(workbench.manifest)) {
       return failure({
@@ -141,7 +141,8 @@ async function readManifest(workbench: ConnectedWorkbenchCatalog) {
   try {
     return {
       ok: true as const,
-      rawText: await workbench.adapter.readText(WORKBENCH_CATALOG_PATH)
+      rawText: await (workbench.adapter.readExactText?.(WORKBENCH_CATALOG_PATH)
+        ?? workbench.adapter.readText(WORKBENCH_CATALOG_PATH))
     };
   } catch (error) {
     return failure(storageAccessError('read', error));
@@ -163,14 +164,20 @@ async function rollbackManifest(
   originalError: UpdateWorkbenchCatalogPreferencesError
 ): Promise<Extract<UpdateWorkbenchCatalogPreferencesResult, { readonly ok: false }>> {
   const restored = await writeManifest(workbench, previousRawText);
-  if (restored.ok) return failure(originalError);
+  const readback = restored.ok ? await readManifest(workbench) : restored;
+  if (readback.ok && readback.rawText === previousRawText) return failure(originalError);
+  const rollbackError: PreferenceStorageAccessError | PreferenceReadbackError = readback.ok ? {
+    code: 'WORKBENCH_CATALOG_PREFERENCES_READBACK_MISMATCH',
+    message: `Workbench preference rollback did not restore the exact previous manifest at ${WORKBENCH_CATALOG_PATH}.`,
+    path: WORKBENCH_CATALOG_PATH
+  } : readback.error;
   return {
     ok: false,
     error: {
       code: 'WORKBENCH_CATALOG_PREFERENCES_ROLLBACK_FAILED',
       message: 'Workbench preference mutation failed and the exact previous manifest could not be restored.',
       originalError,
-      rollbackError: restored.error
+      rollbackError
     }
   };
 }
