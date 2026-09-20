@@ -2,6 +2,8 @@ import { applyProjectEdits } from '@/features/webmcp/projectEdits';
 import { ToolError } from '@/features/webmcp/siteTools';
 import { flushSync } from 'react-dom';
 import {
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -13,7 +15,9 @@ import {
   type ReactNode
 } from 'react';
 import { createPortal } from 'react-dom';
-import { PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Box, PenTool, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { captureSvgPreview } from './captureEditorPreview';
+import type { SimulationCapture } from '@/features/simulation/SimulationViewport';
 
 import { useAppRail } from '@/app/AppRailContext';
 import { RailResizeHandle } from '@/components/ui/RailResizeHandle';
@@ -228,6 +232,8 @@ import {
   readFloatingPanelViewport
 } from './workspace/editorFloatingPanelPlacement';
 
+const SimulationPanel = lazy(() => import('@/features/simulation/SimulationPanel'));
+
 interface EditorPageProps {
   onReadSnapshot?: (snapshot: import('@/features/webmcp/workbenchSiteTools').DraftReadSnapshot | null) => void;
   program: LoadedEditorProgram | null;
@@ -428,6 +434,12 @@ export function EditorPage({
   const interpreterProfile = draftState.model === 'gcode-text'
     ? draftState.interpreterProfile ?? 'neutral' : 'neutral';
   const pathDocumentDraft = editorDraftPathDocument(draftState);
+  const [workspaceView, setWorkspaceView] = useState<'editor' | 'simulation'>('editor');
+  const [simulationOpened, setSimulationOpened] = useState(false);
+  const editorRoot = useRef<HTMLDivElement>(null);
+  const simulationCapture = useRef<SimulationCapture | null>(null);
+  const savedSimulationDocument = program?.project.content.kind === 'upid-document'
+    ? program.project.content.document as PathPlanningDocument : null;
   const savedDraftSignature = useMemo(() => editorDraftSignature(program?.model === 'upid-document' &&
     program.project.content.kind === 'upid-document'
       ? { model: 'upid-document', pathDocument: program.project.content.document as PathPlanningDocument }
@@ -436,11 +448,20 @@ export function EditorPage({
   const lastProgramIdentityRef = useRef(programIdentity);
   const draftSignature = useMemo(() => editorDraftSignature(draftState), [draftState]);
   const hasUnsavedChanges = Boolean(program && draftSignature !== savedDraftSignature);
-  const readVersion = useMemo(() => crypto.randomUUID(), [draftState, program, hasUnsavedChanges, activeWorkflowSession]);
+  const readVersion = useMemo(() => crypto.randomUUID(), [draftState, program, hasUnsavedChanges, activeWorkflowSession, workspaceView]);
   useLayoutEffect(() => {
     onReadSnapshot?.({ projectId: program?.project.id ?? null, version: readVersion, document: pathDocumentDraft,
       dirty: hasUnsavedChanges, workflowOpen: activeWorkflowSession !== null,
       workflowCommand: activeWorkflowSession?.commandId,
+      capture: async (signal) => {
+        if (workspaceView === 'simulation') {
+          if (!simulationCapture.current) throw new ToolError('CAPTURE_UNAVAILABLE', 'Wait for the 3D preview to finish loading.');
+          return simulationCapture.current(signal);
+        }
+        const svg = editorRoot.current?.querySelector<SVGSVGElement>('svg[data-preview-model]');
+        if (!svg) throw new ToolError('CAPTURE_UNAVAILABLE', 'Open a drawable project preview first.');
+        return captureSvgPreview(svg, signal);
+      },
       edit: (edits) => {
         if (isEditorMutationLocked || activeWorkflowSession) throw new ToolError('BUSY', 'Finish the current editor workflow first.');
         if (!pathDocumentDraft) throw new ToolError('WRONG_MODEL', 'Open a path project first.');
@@ -872,9 +893,9 @@ export function EditorPage({
           clearTransientLineState();
         }}
         onOpenGuide={() => setGuideOpen(true)}
-        onRedo={handleRedoDraft}
-        onSave={handleSaveClick}
-        onUndo={handleUndoDraft}
+        onRedo={() => { setWorkspaceView('editor'); handleRedoDraft(); }}
+        onSave={() => { setWorkspaceView('editor'); return handleSaveClick(); }}
+        onUndo={() => { setWorkspaceView('editor'); handleUndoDraft(); }}
         redoAvailable={!activeMutatingWorkflow && redoStack.length > 0}
         saveErrorMessage={saveErrorMessage}
         saveDisabledReason={workflowProjectSaveBlockedReason}
@@ -946,6 +967,9 @@ export function EditorPage({
     }
 
     setSelectedPathOperationId(null);
+    setWorkspaceView('editor');
+    setSimulationOpened(false);
+    simulationCapture.current = null;
     setSelectedPathElement(null);
     setSelectedProgramExactTarget(null);
     setSelectedProgramTreeKey(null);
@@ -1089,9 +1113,9 @@ export function EditorPage({
   }, [workspacePanelPlacements]);
 
   useEffect(() => {
-    setRailContent(editorRailContent);
+    setRailContent(workspaceView === 'simulation' ? null : editorRailContent);
     return () => setRailContent(null);
-  }, [editorRailContent, setRailContent]);
+  }, [editorRailContent, setRailContent, workspaceView]);
 
   useEffect(() => {
     if (!activeWorkflowSession && compactDrawer === 'workflow') setCompactDrawer(null);
@@ -1136,7 +1160,7 @@ export function EditorPage({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || exportPreviewOpen || guideOpen) return;
+      if (event.defaultPrevented || workspaceView !== 'editor' || exportPreviewOpen || guideOpen) return;
       if (event.target instanceof HTMLElement && event.target.closest('[role="dialog"][aria-modal="true"]')) return;
 
       if (event.key === 'Escape') {
@@ -1220,7 +1244,7 @@ export function EditorPage({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeToolSession, activeWorkflowSession, canvasMouseMode, draftText, entryExitCanvasPick, exportPreviewOpen, guideOpen, isCompactViewport, isEditorMutationLocked, measurementPoints.length, pathClickMode, pathDocumentDraft, program, redoStack, selectedLines, undoStack]);
+  }, [activeToolSession, activeWorkflowSession, canvasMouseMode, draftText, entryExitCanvasPick, exportPreviewOpen, guideOpen, isCompactViewport, isEditorMutationLocked, measurementPoints.length, pathClickMode, pathDocumentDraft, program, redoStack, selectedLines, undoStack, workspaceView]);
 
   function handleBackToDashboard() {
     if (isEditorMutationLocked) return;
@@ -2645,6 +2669,7 @@ export function EditorPage({
     command: EditorCommandDefinition,
     action?: EditorProgramTreeAction
   ) {
+    setWorkspaceView('editor');
     if (!action && activeWorkflowSession?.commandId === command.id) {
       openActiveWorkflowInCompactDrawer();
       focusWorkspacePanel(command.toolWindowId as EditorWorkspacePanelId);
@@ -3040,6 +3065,7 @@ export function EditorPage({
             'Apply or correct the pending transform coordinates before saving or changing the target.'
           );
         }}
+        targetDraftPending={Boolean(activeWorkflowPendingReasons['transform-target'])}
         transformTargetChangeBlocked={workflowTargetChangeBlocked}
       />
     );
@@ -3411,6 +3437,7 @@ export function EditorPage({
 
   return (
     <div
+      ref={editorRoot}
       className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background"
       data-editor-layout="canvas-first"
     >
@@ -3589,8 +3616,30 @@ export function EditorPage({
           )}
         {isPathProject && renderInspectorPanelContent()}
       </div>
+      {isPathProject && <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-card/60 px-2">
+        <div role="tablist" aria-label="Project workspace" className="flex h-full items-stretch gap-1" onKeyDown={event => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const next = event.key === 'Home' ? 'editor' : event.key === 'End' ? 'simulation' : workspaceView === 'editor' ? 'simulation' : 'editor';
+          if (next === 'simulation' && (!savedSimulationDocument || activeWorkflowSession || isEditorMutationLocked)) return;
+          setWorkspaceView(next); if (next === 'simulation') setSimulationOpened(true);
+          editorRoot.current?.querySelector<HTMLButtonElement>(`#workspace-tab-${next}`)?.focus();
+        }}>
+          <button id="workspace-tab-editor" aria-controls="workspace-editor" role="tab" aria-selected={workspaceView === 'editor'} tabIndex={workspaceView === 'editor' ? 0 : -1} type="button" onClick={() => setWorkspaceView('editor')} className={`flex items-center gap-1.5 border-b-2 px-3 text-[11px] ${workspaceView === 'editor' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><PenTool size={12} />Editor</button>
+          <button id="workspace-tab-simulation" aria-controls="workspace-simulation" role="tab" aria-selected={workspaceView === 'simulation'} tabIndex={workspaceView === 'simulation' ? 0 : -1} type="button" disabled={!savedSimulationDocument || Boolean(activeWorkflowSession) || isEditorMutationLocked} title={activeWorkflowSession ? 'Finish the active editor workflow before simulating.' : !savedSimulationDocument ? 'Save a UPID path project before simulating.' : 'Simulate the saved UPID process'} onClick={() => { setSimulationOpened(true); setWorkspaceView('simulation'); }} className={`flex items-center gap-1.5 border-b-2 px-3 text-[11px] disabled:opacity-40 ${workspaceView === 'simulation' ? 'border-emerald-300 text-emerald-200' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><Box size={13} />Simulation</button>
+        </div>
+        {activeWorkflowSession && <span className="hidden text-[9px] text-muted-foreground sm:block">Finish the active tool to open simulation</span>}
+      </div>}
+      {simulationOpened && savedSimulationDocument && program && <div id="workspace-simulation" role="tabpanel" aria-labelledby="workspace-tab-simulation" className={`${workspaceView === 'simulation' ? 'flex' : 'hidden'} min-h-0 flex-1`}>
+        <Suspense fallback={<p className="p-4 text-xs text-muted-foreground" role="status">Loading simulation workspace…</p>}>
+          <SimulationPanel key={programIdentity} document={savedSimulationDocument} projectName={program.project.name} savedAt={program.project.updatedAt} dirty={hasUnsavedChanges} active={workspaceView === 'simulation'} onEdit={() => setWorkspaceView('editor')} onCaptureReady={capture => { simulationCapture.current = capture; }} />
+        </Suspense>
+      </div>}
       <section
-        className={`grid min-h-0 flex-1 grid-cols-1 gap-y-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)] ${
+        id="workspace-editor"
+        role={isPathProject ? 'tabpanel' : undefined}
+        aria-labelledby={isPathProject ? 'workspace-tab-editor' : undefined}
+        className={`${workspaceView === 'editor' ? 'grid' : 'hidden'} min-h-0 flex-1 grid-cols-1 gap-y-2 overflow-hidden p-2 lg:grid-rows-[minmax(0,1fr)] ${
           isPathProject
             ? 'grid-rows-[minmax(0,1fr)]'
             : 'grid-rows-[minmax(360px,1fr)_minmax(320px,45vh)]'
@@ -3728,7 +3777,7 @@ export function EditorPage({
           </>
         )}
       </section>
-      <EditorStatusBar
+      {workspaceView === 'editor' && <EditorStatusBar
         coordinateUnits={pathDocumentDraft ? 'mm' : draftParseResult?.coordinateUnits ?? null}
         diagnosticCount={diagnosticCount}
         hasUnsavedChanges={hasUnsavedChanges}
@@ -3738,7 +3787,7 @@ export function EditorPage({
         previewCursorPoint={previewCursorPoint}
         selectedPoint={selectedPoint}
         selectionSummary={editorSelectionSummary}
-      />
+      />}
       {exportPreviewOpen && pathDocumentDraft && (
         <EditorControllerArtifactDialog
           defaultMachineId={planningMachine?.id ?? null}

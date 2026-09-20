@@ -160,6 +160,7 @@ interface EditorPathNavigatorPanelProps {
   ) => void;
   onToggleHoverAssist: () => void;
   onTransformDraftChange?: (source: 'target' | 'translate') => void;
+  targetDraftPending?: boolean;
   transformTargetChangeBlocked?: boolean;
 }
 
@@ -204,6 +205,7 @@ export function EditorPathNavigatorPanel({
   pathTranslateXDraft,
   pathTranslateYDraft,
   presentation = 'workspace',
+  targetDraftPending = false,
   transformTargetChangeBlocked = false
 }: EditorPathNavigatorPanelProps) {
   const diagnosticsListRef = useRef<HTMLDivElement>(null);
@@ -370,8 +372,8 @@ export function EditorPathNavigatorPanel({
   const setTargetDraftsFromPoint = (point: Point2 | null) => {
     if (!point) return;
 
-    onPathTargetXDraftChange(formatNumber(point.x));
-    onPathTargetYDraftChange(formatNumber(point.y));
+    onPathTargetXDraftChange(formatCoordinateDraft(point.x));
+    onPathTargetYDraftChange(formatCoordinateDraft(point.y));
   };
   const isPathElementExpanded = (pathElementId: string) =>
     hoverRevealedPathElementIds.has(pathElementId) || (expandedPathElementIds[pathElementId] ?? true);
@@ -411,13 +413,15 @@ export function EditorPathNavigatorPanel({
   };
 
   useEffect(() => {
+    if (targetDraftPending) return;
     setTargetDraftsFromPoint(activeTargetReferencePoint);
   }, [
     activePathTransformTarget,
     activeTargetReferencePoint?.x,
     activeTargetReferencePoint?.y,
     documentReferenceMode,
-    documentReferenceMeasurementPointId
+    documentReferenceMeasurementPointId,
+    targetDraftPending
   ]);
 
   useEffect(() => {
@@ -1006,8 +1010,8 @@ export function EditorPathNavigatorPanel({
                 data-upid-transform-target-center-use-origin
                 disabled={!activeTargetReferencePoint || isSaving}
                 onClick={() => {
-                  setUserTargetX(formatNumber(0));
-                  setUserTargetY(formatNumber(0));
+                  setUserTargetX(formatCoordinateDraft(0));
+                  setUserTargetY(formatCoordinateDraft(0));
                 }}
                 type="button"
               >
@@ -1021,8 +1025,8 @@ export function EditorPathNavigatorPanel({
                 disabled={!activeTargetReferencePoint || !latestMeasurementPoint || isSaving}
                 onClick={() => {
                   if (!latestMeasurementPoint) return;
-                  setUserTargetX(formatNumber(latestMeasurementPoint.x));
-                  setUserTargetY(formatNumber(latestMeasurementPoint.y));
+                  setUserTargetX(formatCoordinateDraft(latestMeasurementPoint.x));
+                  setUserTargetY(formatCoordinateDraft(latestMeasurementPoint.y));
                 }}
                 type="button"
               >
@@ -1070,8 +1074,8 @@ export function EditorPathNavigatorPanel({
                       disabled={!activeTargetReferencePoint || isSaving}
                       key={point.id}
                       onClick={() => {
-                        setUserTargetX(formatNumber(point.x));
-                        setUserTargetY(formatNumber(point.y));
+                        setUserTargetX(formatCoordinateDraft(point.x));
+                        setUserTargetY(formatCoordinateDraft(point.y));
                       }}
                       title={`P${index + 1}: ${formatPoint(point)}`}
                       type="button"
@@ -1130,8 +1134,8 @@ export function EditorPathNavigatorPanel({
                 data-upid-transform-center-use-origin
                 disabled={!selectedSegmentCenter || isSaving}
                 onClick={() => {
-                  setUserTargetX(formatNumber(0));
-                  setUserTargetY(formatNumber(0));
+                  setUserTargetX(formatCoordinateDraft(0));
+                  setUserTargetY(formatCoordinateDraft(0));
                 }}
                 type="button"
               >
@@ -1144,8 +1148,8 @@ export function EditorPathNavigatorPanel({
                 disabled={!selectedSegmentCenter || !latestMeasurementPoint || isSaving}
                 onClick={() => {
                   if (!latestMeasurementPoint) return;
-                  setUserTargetX(formatNumber(latestMeasurementPoint.x));
-                  setUserTargetY(formatNumber(latestMeasurementPoint.y));
+                  setUserTargetX(formatCoordinateDraft(latestMeasurementPoint.x));
+                  setUserTargetY(formatCoordinateDraft(latestMeasurementPoint.y));
                 }}
                 type="button"
               >
@@ -1174,8 +1178,8 @@ export function EditorPathNavigatorPanel({
                       disabled={!selectedSegmentCenter || isSaving}
                       key={point.id}
                       onClick={() => {
-                        setUserTargetX(formatNumber(point.x));
-                        setUserTargetY(formatNumber(point.y));
+                        setUserTargetX(formatCoordinateDraft(point.x));
+                        setUserTargetY(formatCoordinateDraft(point.y));
                       }}
                       title={`P${index + 1}: ${formatPoint(point)}`}
                       type="button"
@@ -2981,6 +2985,11 @@ function formatBounds(bounds: Bounds2) {
 function formatDrawingExtents(extents: { min: { x: number; y: number }; max: { x: number; y: number } } | undefined) {
   if (!extents) return '-';
   return `X ${formatNumber(extents.min.x)}..${formatNumber(extents.max.x)} Y ${formatNumber(extents.min.y)}..${formatNumber(extents.max.y)}`;
+}
+
+function formatCoordinateDraft(value: number) {
+  const rounded = value.toFixed(3);
+  return Number(rounded) === value ? rounded : String(value);
 }
 
 function formatNumber(value: number) {
