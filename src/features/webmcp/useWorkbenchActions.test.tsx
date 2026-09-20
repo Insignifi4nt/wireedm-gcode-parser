@@ -215,6 +215,37 @@ describe('workbench agent actions', () => {
     expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([result.data.savedRevisionId]);
     expect(h.download).not.toHaveBeenCalled();
   });
+
+  it('preserves the persisted revision receipt when a post returns oversized diagnostics', async () => {
+    const message = 'Post could not resolve the requested machining sequence. 日本\u0000'.repeat(2_000);
+    const h = await harness({ generateControllerArtifact: async () => ({ ok: false, error: {
+      code: 'CONTROLLER_ARTIFACT_POST_FAILED', message: 'The saved post could not generate the program.',
+      diagnostics: Array.from({ length: 25 }, (_, index) => ({ code: 'POST_CUSTOM_RUNTIME_FAILED', message,
+        eventId: `event-${index}`, commandId: null }))
+    } }) });
+    const input = await prepareControllerJob(h);
+    const result = await h.call('edm_export_controller', input);
+    expect(result).toMatchObject({ ok: true, data: { generated: false, savedRevisionId: expect.any(String),
+      error: { code: 'CONTROLLER_ARTIFACT_POST_FAILED', omittedDiagnosticCount: 5 }
+    } });
+    expect(result.data.error.diagnostics).toHaveLength(20);
+    expect(result.data.error.diagnostics[0]).toMatchObject({ code: 'POST_CUSTOM_RUNTIME_FAILED', eventId: 'event-0', messageTruncated: true });
+    expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([result.data.savedRevisionId]);
+    expect(h.download).not.toHaveBeenCalled();
+    expect(new TextEncoder().encode(JSON.stringify(result)).length).toBeLessThanOrEqual(32 * 1024);
+  });
+
+  it('returns actionable execution diagnostics when one compiler message exceeds the response limit', async () => {
+    const h = await harness();
+    await importCircle(h, rectangleText);
+    const document = structuredClone(h.draft().current!.document!);
+    document.plan.operations[0].segmentRefs = Array.from({ length: 600 }, (_, index) => ({ segmentId: `missing-source-segment-${index}`, reversed: false }));
+    h.draft().current = { ...h.draft().current!, document, dirty: true };
+    const result = await h.call('edm_review_execution', { draftVersion: 'draft', limit: 1 });
+    expect(result).toMatchObject({ ok: true, data: { executablePlan: false,
+      items: [{ code: 'EXECUTION_PLAN_INVALID_UPID', messageTruncated: true }] } });
+    expect(new TextEncoder().encode(JSON.stringify(result)).length).toBeLessThanOrEqual(32 * 1024);
+  });
   it('previews then imports exact DXF units, consumes the preparation and blocks stale or destructive draft replacement', async () => {
     const h = await harness();
     const context = await h.call('edm_workflow_context', {});

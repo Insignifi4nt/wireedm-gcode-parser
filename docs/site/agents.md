@@ -38,7 +38,7 @@ For saved-library export, first call `edm_get_project` with `{ "target": { "kind
 
 ### Machining edits
 
-`edm_edit_project` accepts up to 50 `edits`, each with a `kind` and the fields advertised in its schema. A rejected edit cancels the entire batch. Obtain operation and segment IDs from geometry queries. Call `edm_describe_edits` with `{ "kind": "translate" }`, for example, to read its exact schema. Coordinates and lengths are millimeters; rotations use degrees. `EDIT_REJECTED` includes the zero-based `editIndex`, `editKind` and recovery guidance.
+`edm_edit_project` accepts up to 50 `edits`, each with a `kind` and the fields advertised in its schema. A rejected edit cancels the entire batch. Obtain operation and segment IDs from geometry queries and pass them unchanged, including long IDs from imported UPID. Call `edm_describe_edits` with `{ "kind": "translate" }`, for example, to read its exact schema. Coordinates and lengths are millimeters; rotations use degrees. `EDIT_REJECTED` includes the zero-based `editIndex`, `editKind` and recovery guidance.
 
 | Edit kinds | Meaning |
 | --- | --- |
@@ -97,6 +97,8 @@ Open the [main app](https://insignifi4nt.github.io/wireedm-gcode-parser/). These
 Use `{ "kind": "current-draft", "version": "<version from context>" }` to inspect unsaved work. Use `{ "kind": "saved-project", "projectId": "<listed ID>" }` to read a saved project, then include its returned `version` on dependent queries. A draft is never silently replaced by its saved counterpart. Retry `STALE_STATE` by reading fresh context or the saved project.
 
 List and geometry queries return at most 50 rows; use `nextOffset` with the same version for subsequent pages. Revision lists use `nextPage`. Inline UPID is limited to 512 KiB of UTF-8; use normal file import for larger projects. Replies are limited to 32 KiB; reduce the page size if a result is too large.
+
+Diagnostic prose may be shortened to fit a reply; `messageTruncated: true` marks that explicitly. Project and generation summaries return up to 20 diagnostics and report `omittedDiagnosticCount`, including entries omitted for size. Thrown tool errors mark oversized omitted detail with `omittedDetails: true`. Read the visible report for full details. These summaries preserve returned IDs and do not alter the saved project, controller file or revision receipt.
 
 ## Back up or restore a workbench
 

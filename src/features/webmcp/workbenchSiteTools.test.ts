@@ -27,4 +27,15 @@ describe('workbench site queries', () => {
     expect(await query.execute({ ...input, operationId: 'missing' })).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
     expect(await query.execute({ ...input, limit: 500 })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
   });
+
+  it('filters by the exact long operation ID returned from an imported document', async () => {
+    const document = portableUpidIntentFixture();
+    const operationId = `external-operation-${'assembly-component-'.repeat(12)}`;
+    document.plan.operations[0].id = operationId;
+    const tools = workbenchSiteTools(() => ({ workbench: null, busy: false, draft: { projectId: 'test', version: 'v1', document, dirty: false, workflowOpen: false } }));
+    const query = tools.find(({ name }) => name === 'edm_query_geometry')!;
+    const target = { kind: 'current-draft', version: 'v1' };
+    expect(await query.execute({ target, kind: 'operations' })).toMatchObject({ ok: true, data: { items: [{ id: operationId }] } });
+    expect(await query.execute({ target, kind: 'segments', operationId })).toMatchObject({ ok: true, data: { items: [{ id: document.segments[0].id }] } });
+  });
 });

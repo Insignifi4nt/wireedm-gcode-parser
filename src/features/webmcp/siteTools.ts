@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Type, type Static, type TSchema } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
+import { jsonByteLength, summarizeMessage } from './diagnosticSummaries';
 
 export interface SiteTool {
   name: string;
@@ -47,13 +48,14 @@ export function siteTool<S extends TSchema>(
         // Once a mutation commits, return its receipt even if cancellation arrived during the write.
         if (readOnlyHint) signal.throwIfAborted();
         const result = { ok: true, data };
-        if (new TextEncoder().encode(JSON.stringify(result)).byteLength > 32 * 1024) {
+        if (jsonByteLength(result) > 32 * 1024) {
           throw new ToolError('OUTPUT_TOO_LARGE', 'Request fewer rows or use the visible page report for full details.');
         }
         return result;
       } catch (error) {
         return { ok: false, error: signal.aborted ? { code: 'CANCELLED', message: 'Operation cancelled.' }
-          : error instanceof ToolError ? { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }
+          : error instanceof ToolError ? { code: error.code, ...summarizeMessage(error.message),
+            ...(error.details ? jsonByteLength(error.details) <= 24 * 1024 ? { details: error.details } : { omittedDetails: true } : {}) }
           : { code: 'OPERATION_FAILED', message: 'Operation failed. Review the page or retry with corrected inputs.' } };
       }
     }

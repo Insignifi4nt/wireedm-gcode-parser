@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Value } from '@sinclair/typebox/value';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
 import { applyProjectEdits, projectEdit } from './projectEdits';
 
@@ -11,6 +12,18 @@ function circles() {
   ]);
 }
 describe('agent machining batches', () => {
+  it('accepts exact imported UPID identities beyond the workbench handle length', () => {
+    const original = circles();
+    const originalId = original.plan.operations[0].id;
+    const operationId = `external-operation-${'assembly-component-'.repeat(12)}`;
+    const document = JSON.parse(JSON.stringify(original).split(JSON.stringify(originalId)).join(JSON.stringify(operationId))) as typeof original;
+    expect(validateUpidDocument(document).valid).toBe(true);
+    const edit = { kind: 'entry', operationId, from: null } as const;
+    expect(Value.Check(projectEdit, edit)).toBe(true);
+    const edited = applyProjectEdits(document, [edit]);
+    expect(edited.plan.operations.find(operation => operation.id === operationId)?.transitions?.entry).toEqual({ strategy: 'none', review: 'reviewed' });
+    expect(document.plan.operations[0].transitions?.entry).toBeUndefined();
+  });
   it('configures a real inner/outer contour plan including generated manual rethread and a separate stop', () => {
     const doc = circles();
     const hole = doc.plan.operations.find(op => op.classification === 'hole')!;

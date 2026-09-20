@@ -8,6 +8,8 @@ import { workbenchProjectVersion } from '@/domain/workbench-catalog/workbenchPro
 import { startPackageTool } from '@/features/package-tools/packageToolsClient';
 import { object, page, pageFields, siteTool, ToolError } from './siteTools';
 import { editCatalogTool } from './editCatalog';
+import { summarizeDiagnostics } from './diagnosticSummaries';
+import { sourceIdentifier } from './projectEdits';
 
 export interface DraftReadSnapshot {
   projectId: string | null;
@@ -81,10 +83,10 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
         units: 'mm', schemaVersion: document.schemaVersion, geometryBasis: document.geometryBasis,
         setup: document.setup ?? {}, options: document.options,
         counts: { operations: document.plan.operations.length, contours: document.contours.length, segments: document.segments.length },
-        diagnostics: document.diagnostics.slice(0, 20), omittedDiagnosticCount: Math.max(0, document.diagnostics.length - 20)
+        ...summarizeDiagnostics(document.diagnostics)
       } : {}) };
     }),
-    siteTool('edm_query_geometry', 'Read UPID operation/contour summaries or exact segments in millimeters from a versioned target. For segments, optionally filter by operationId to obtain cutting order and reversed flags.', object({ target, kind: Type.Union([Type.Literal('operations'), Type.Literal('contours'), Type.Literal('segments')]), operationId: Type.Optional(id), ...pageFields }), async (input) => {
+    siteTool('edm_query_geometry', 'Read UPID operation/contour summaries or exact segments in millimeters from a versioned target. For segments, optionally filter by operationId to obtain cutting order and reversed flags.', object({ target, kind: Type.Union([Type.Literal('operations'), Type.Literal('contours'), Type.Literal('segments')]), operationId: Type.Optional(sourceIdentifier), ...pageFields }), async (input) => {
       const snapshot = await resolve(input.target);
       const doc = snapshot.document;
       if (!doc) throw new ToolError('WRONG_MODEL', 'Geometry queries require a UPID project.');

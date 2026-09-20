@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Type } from '@sinclair/typebox';
-import { object, registerSiteTools, siteTool, type SiteTool, type SiteToolActivity } from './siteTools';
+import { object, registerSiteTools, siteTool, ToolError, type SiteTool, type SiteToolActivity } from './siteTools';
 
 describe('site tool boundary', () => {
   it('reports bounded argument paths without returning input values', async () => {
@@ -43,6 +43,19 @@ describe('site tool boundary', () => {
     expect(run).not.toHaveBeenCalled();
     expect(await tool.execute({ count: 1 })).toEqual({ ok: true, data: 'done' });
     expect(await siteTool('large', 'Test', object({}), () => 'x'.repeat(33000)).execute({})).toMatchObject({ ok: false, error: { code: 'OUTPUT_TOO_LARGE' } });
+  });
+
+  it('bounds thrown diagnostics while retaining the error code and marking omitted detail', async () => {
+    const message = 'Imported geometry requires review. 日本\u0000'.repeat(2_000);
+    const tool = siteTool('check', 'Check', object({}), () => {
+      throw new ToolError('IMPORT_REVIEW_REQUIRED', message, { report: message });
+    });
+    const result = await tool.execute({});
+    expect(result).toMatchObject({ ok: false, error: {
+      code: 'IMPORT_REVIEW_REQUIRED', message: expect.stringContaining('Imported geometry requires review.'),
+      messageTruncated: true, omittedDetails: true
+    } });
+    expect(new TextEncoder().encode(JSON.stringify(result)).length).toBeLessThanOrEqual(32 * 1024);
   });
 
   it('disposes registrations and cancels running calls independently', async () => {

@@ -14,6 +14,7 @@ import { identifier, projectEdit } from './projectEdits';
 import { object, page, pageFields, siteTool, ToolError } from './siteTools';
 import type { DraftReadSnapshot } from './workbenchSiteTools';
 import { downloadPreviewCapture, preparePreviewCapture, type PreviewCaptureArtifact } from './previewCapture';
+import { summarizeDiagnostic, summarizeDiagnostics, summarizeMessage } from './diagnosticSummaries';
 
 type App = ReturnType<typeof useWorkbenchAppController>;
 const version = { expectedVersion: identifier };
@@ -177,7 +178,7 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
       const current = draft(input.draftVersion);
       const result = compileWireEdmExecutionPlan(current.document!);
       return result.ok ? { executablePlan: true, version: current.version, dirty: current.dirty, requirements: result.plan.requirements, ...page(result.plan.events, input) }
-        : { executablePlan: false, version: current.version, ...page(result.diagnostics, input) };
+        : { executablePlan: false, version: current.version, ...page(result.diagnostics.map(summarizeDiagnostic), input) };
     }),
     mutation('edm_prepare_machine_package', 'Validate and preview the uploaded complete .wireedm-package. Returns machine identity, setup, post hashes, and collision choices before installation. Does not install.', object(version), async (input, signal) => {
       checkVersion(input.expectedVersion);
@@ -286,7 +287,7 @@ function artifactSummary(artifact: ControllerProgramArtifact) {
 
 function generationFailure(result: Extract<Awaited<ReturnType<App['handleGenerateControllerArtifact']>>, { ok: false }>) {
   const error = result.error;
-  return { generated: false, error: { ...error, ...('diagnostics' in error ? {
-    diagnostics: error.diagnostics.slice(0, 20), omittedDiagnosticCount: Math.max(0, error.diagnostics.length - 20)
-  } : {}) }, ...(result.savedRevisionId ? { savedRevisionId: result.savedRevisionId } : {}) };
+  return { generated: false, error: { ...error, ...summarizeMessage(error.message),
+    ...('diagnostics' in error ? summarizeDiagnostics<(typeof error.diagnostics)[number]>(error.diagnostics) : {})
+  }, ...(result.savedRevisionId ? { savedRevisionId: result.savedRevisionId } : {}) };
 }
