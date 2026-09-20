@@ -1,4 +1,6 @@
-# Build a postprocessor for your machine
+# Wire EDM Workbench guides
+
+Use the [saved-process simulation guide](simulation.md) to inspect a saved UPID job with rough stock, released pieces and optional STEP machine geometry. [Agent tools](agents.md) describe precise edits, exports and preview capture in a compatible browser.
 
 Wire EDM Workbench turns a saved UPID project into a controller-neutral execution plan. A post translates that plan into an exact controller program. The user installs one **complete `.wireedm-package`** containing the machine, post, setup, evidence and tests.
 

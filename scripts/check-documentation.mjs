@@ -14,9 +14,17 @@ async function walk(directory) {
 }
 async function exists(url) {
   if (!url.startsWith(base)) return;
-  const relative = new URL(url).pathname.slice(new URL(base).pathname.length);
+  const target = new URL(url);
+  const relative = target.pathname.slice(new URL(base).pathname.length);
   const file = path.join('dist', !relative || relative.endsWith('/') ? relative + 'index.html' : relative);
   assert.ok((await stat(file).catch(() => null))?.isFile(), `Broken published link: ${url}`);
+  if (target.hash && relative.startsWith('documentation/') && /\.(?:html|md)$/.test(file)) {
+    const htmlFile = file.endsWith('.md') ? file.replace(/\.md$/, '.html') : file;
+    const dom = new JSDOM(await readFile(htmlFile, 'utf8'));
+    try {
+      assert.ok(dom.window.document.getElementById(decodeURIComponent(target.hash.slice(1))), `Broken published section link: ${url}`);
+    } finally { dom.window.close(); }
+  }
 }
 const files = await walk('dist/documentation');
 for (const file of files.filter((file) => file.endsWith('.html'))) {
