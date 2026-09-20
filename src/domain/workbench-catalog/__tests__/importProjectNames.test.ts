@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { importDxfProject } from '@/domain/dxf/importDxfProject';
 import { importExternalProgram } from '@/domain/editor/importExternalProgram';
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
+import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
+import { createBrowserDirectoryAdapter } from '@/domain/storage/browserDirectoryAdapter';
+import { FakeDirectoryHandle } from '@/domain/storage/__tests__/fakeDirectoryHandle';
 import { importPortableUpidProject } from '@/domain/upid/portableUpidProject';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { initializeWorkbenchCatalog, type ConnectedWorkbenchCatalog } from '../workbenchCatalog';
@@ -25,6 +28,28 @@ const imports = [
 ];
 
 describe.each(imports)('$kind import names', ({ run }) => {
+  it.each(['cache', 'folder'] as const)('imports numeric and truncated filename identities into %s storage without changing the source name', async (kind) => {
+    const adapter = kind === 'cache'
+      ? createBrowserCacheAdapter(localStorage, { namespace: crypto.randomUUID() })
+      : createBrowserDirectoryAdapter(new FakeDirectoryHandle('import-identities') as unknown as FileSystemDirectoryHandle);
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    let workbench = initialized.workbench;
+    for (const name of ['12345', '日本 2026', `${'a'.repeat(59)}-tail`, '12345']) {
+      const result = await run(workbench, name);
+      if (!result.ok) throw new Error(`${name}: ${result.error.message}`);
+      expect(result.project.id).toMatch(/^[a-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)*$/);
+      expect(result.project.id.length).toBeLessThanOrEqual(80);
+      expect(workbench.manifest.projects.some(({ id }) => id === result.project.id)).toBe(false);
+      expect(result.project.name).toBe(name);
+      expect(result.project.source.files[0].name).toContain(name);
+      expect(await adapter.readText(result.project.source.files[0].path)).not.toBeNull();
+      workbench = result.workbench;
+    }
+    expect((await initializeWorkbenchCatalog(adapter)).ok).toBe(true);
+    expect(workbench.manifest.projects).toHaveLength(4);
+  });
+
   it.each(['part\nsecond', 'part\u0000', 'part\u0085', 'part\u2028second', 'x'.repeat(161)])(
     'rejects invalid names without changing any persisted files: %j', async (name) => {
       const adapter = new MemoryAdapter();
