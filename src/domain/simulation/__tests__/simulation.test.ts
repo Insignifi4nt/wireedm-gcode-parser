@@ -139,6 +139,65 @@ describe('UPID simulation playback', () => {
     expect(sampleSimulation(plan, (position.startSeconds + position.endSeconds) / 2).wire.threaded).toBe(false);
   });
 
+  it('consumes zero-duration event chains at exact motion and threading boundaries', () => {
+    const plan = compiled(document([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 20, y: 0 }, end: { x: 30, y: 0 } }
+    ]), { eventHoldSeconds: 0 });
+    const motions = plan.steps.filter(({ event }) => event.kind === 'motion');
+    const position = plan.steps.find(({ event }) => event.kind === 'position')!;
+    expect(plan.steps.filter(({ endSeconds }) => endSeconds === 0).length).toBeGreaterThan(1);
+    expect(sampleSimulation(plan, 0)).toMatchObject({
+      activeEventId: motions[0].event.id, activeStepIndex: plan.steps.indexOf(motions[0]),
+      completedStepCount: plan.steps.indexOf(motions[0]), activeStepFraction: 0,
+      phase: 'cutting', wire: { point: { x: 0, y: 0 }, threaded: true }
+    });
+    expect(sampleSimulation(plan, position.startSeconds)).toMatchObject({
+      activeEventId: position.event.id, completedStepCount: plan.steps.indexOf(position),
+      activeStepFraction: 0, phase: 'positioning', wire: { point: { x: 10, y: 0 }, threaded: false }
+    });
+    expect(sampleSimulation(plan, position.endSeconds)).toMatchObject({
+      activeEventId: motions[1].event.id, completedStepCount: plan.steps.indexOf(motions[1]),
+      activeStepFraction: 0, phase: 'cutting', wire: { point: { x: 20, y: 0 }, threaded: true }
+    });
+    expect(sampleSimulation(plan, plan.durationSeconds)).toMatchObject({
+      activeEventId: null, activeStepIndex: null, completedStepCount: plan.steps.length,
+      activeStepFraction: 1, phase: 'complete', wire: { point: { x: 30, y: 0 }, threaded: true }
+    });
+    // Seeking backwards must select the earlier event even after the terminal event chain.
+    expect(sampleSimulation(plan, position.startSeconds - 0.001).activeEventId).toBe(motions[0].event.id);
+  });
+
+  it('preserves held rethread boundaries and the material-settling tail after all events complete', () => {
+    const plan = compiled(document([...rectangle(), ...rectangle(20)]));
+    const separate = plan.steps.find(({ event }) => event.kind === 'wire-separate')!;
+    const position = plan.steps.find(({ event }) => event.kind === 'position')!;
+    const thread = plan.steps.find(({ event }) => event.kind === 'wire-thread')!;
+    expect(sampleSimulation(plan, separate.startSeconds)).toMatchObject({
+      activeEventId: separate.event.id, activeStepFraction: 0, phase: 'rethreading', wire: { threaded: false }
+    });
+    expect(sampleSimulation(plan, separate.endSeconds)).toMatchObject({
+      activeEventId: position.event.id, activeStepFraction: 0, phase: 'positioning', wire: { threaded: false }
+    });
+    expect(sampleSimulation(plan, position.endSeconds)).toMatchObject({
+      activeEventId: thread.event.id, activeStepFraction: 0, phase: 'rethreading', wire: { threaded: false }
+    });
+    expect(sampleSimulation(plan, thread.endSeconds)).toMatchObject({
+      activeStepFraction: 0, phase: 'cutting', wire: { threaded: true }
+    });
+    const machiningEnd = sampleSimulation(plan, plan.machiningDurationSeconds);
+    expect(plan.durationSeconds).toBeGreaterThan(plan.machiningDurationSeconds);
+    expect(machiningEnd).toMatchObject({ activeStepIndex: null, activeEventId: null,
+      completedStepCount: plan.steps.length, phase: 'idle' });
+    const settling = sampleSimulation(plan, plan.machiningDurationSeconds + 0.01);
+    expect(settling).toMatchObject({ activeStepIndex: null, completedStepCount: plan.steps.length, phase: 'idle' });
+    expect(settling.wire).toEqual(machiningEnd.wire);
+    expect(settling.pieces.at(-1)!.bottomZ).toBeLessThan(machiningEnd.pieces.at(-1)!.bottomZ);
+    expect(sampleSimulation(plan, Infinity)).toMatchObject({
+      phase: 'complete', activeStepIndex: null, completedStepCount: plan.steps.length
+    });
+  });
+
   it('rejects invalid settings and unresolved UPID instead of inventing setup intent', () => {
     const source = document(rectangle());
     expect(compileSimulation(source, { ...settings, cutSpeedMmPerSecond: 0 })).toMatchObject({ ok: false });
@@ -229,6 +288,20 @@ describe('released material', () => {
 });
 
 describe('approximate stock and released-piece obstructions', () => {
+  it('reports the bounded obstruction scan as incomplete while retaining the full playback plan', () => {
+    const plan = compiled(document(Array.from({ length: 16 }, (_, index) => ({
+      type: 'line', layer: 'CUT', start: { x: index * 2000, y: 0 }, end: { x: (index + 1) * 2000, y: 0 }
+    }))));
+    expect(plan.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'SIMULATION_OBSTRUCTION_SCAN_LIMIT', severity: 'warning'
+    }));
+    expect(plan.steps.filter(({ event }) => event.kind === 'motion')).toHaveLength(16);
+    expect(plan.durationSeconds).toBeCloseTo(3200);
+    expect(sampleSimulation(plan, Infinity)).toMatchObject({
+      phase: 'complete', completedStepCount: plan.steps.length, wire: { point: { x: 32000, y: 0 } }
+    });
+  });
+
   it('warns when the initially threaded wire positions through uncut rough stock', () => {
     const source = document(rectangle());
     source.setup!.initialWirePosition = { kind: 'manual', point: { x: -10, y: 5 }, review: 'reviewed' };
@@ -284,5 +357,17 @@ describe('approximate stock and released-piece obstructions', () => {
     const plan = compiled(source, { supportFloorZ: -25, guideClearanceMm: 20, guideRadiusMm: 2 });
     expect(plan.warnings).toContainEqual(expect.objectContaining({ code: 'SIMULATION_RELEASED_PIECE_OBSTRUCTION',
       pieceId: plan.pieces[0].id, envelope: 'guide' }));
+  });
+
+  it('retains guide contacts outside a released polygon when the guide radius reaches its edge', () => {
+    const source = document([...rectangle(),
+      { type: 'line', layer: 'CUT', start: { x: 11.5, y: 5 }, end: { x: 12.5, y: 5 } }
+    ]);
+    const plan = compiled(source, { supportFloorZ: -25, guideClearanceMm: 20, guideRadiusMm: 2 });
+    const laterMotion = plan.steps.find(({ event }) => event.kind === 'motion' && event.start.x === 11.5)!;
+    expect(plan.warnings).toContainEqual(expect.objectContaining({
+      eventId: laterMotion.event.id, envelope: 'guide', pieceId: plan.pieces[0].id
+    }));
+    expect(plan.warnings).not.toContainEqual(expect.objectContaining({ eventId: laterMotion.event.id, envelope: 'wire' }));
   });
 });

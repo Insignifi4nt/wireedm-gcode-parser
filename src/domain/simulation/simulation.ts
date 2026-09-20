@@ -10,7 +10,7 @@ import type {
 } from './types';
 
 export function compileSimulation(document: PathPlanningDocument, input: SimulationSettings): SimulationCompileResult {
-  const settings = resolveSettings(input);
+  const settings = resolveSimulationSettings(input);
   if (!settings) return { ok: false, diagnostics: [{ code: 'SIMULATION_INVALID_SETTINGS', severity: 'error', operationId: null,
     message: 'Simulation needs finite positive stock dimensions, wire diameter and viewing speeds; nonnegative hold/guide values; and a support floor at or below the stock bottom.' }] };
   const compiled = compileWireEdmExecutionPlan(document);
@@ -63,9 +63,10 @@ export function compileSimulation(document: PathPlanningDocument, input: Simulat
 
 export function sampleSimulation(plan: SimulationPlan, requestedSeconds: number): SimulationSnapshot {
   const elapsedSeconds = Number.isNaN(requestedSeconds) ? 0 : Math.max(0, Math.min(plan.durationSeconds, requestedSeconds));
-  const activeStepIndex = plan.steps.findIndex(({ startSeconds, endSeconds }) => startSeconds <= elapsedSeconds && endSeconds > elapsedSeconds);
-  const active = activeStepIndex >= 0 ? plan.steps[activeStepIndex] : null;
-  const completedStepCount = plan.steps.filter(({ endSeconds }) => endSeconds <= elapsedSeconds).length;
+  const completedStepCount = completedStepsAt(plan.steps, elapsedSeconds);
+  const next = plan.steps[completedStepCount];
+  const active = next && next.startSeconds <= elapsedSeconds ? next : null;
+  const activeStepIndex = active ? completedStepCount : null;
   const previous = plan.steps[completedStepCount - 1];
   const activeStepFraction = active ? (elapsedSeconds - active.startSeconds) / (active.endSeconds - active.startSeconds) : 1;
   const event = active?.event;
@@ -82,12 +83,24 @@ export function sampleSimulation(plan: SimulationPlan, requestedSeconds: number)
       topZ: plan.settings.stock.bottomZ + plan.settings.stock.thickness + plan.settings.guideClearanceMm,
       threaded: active?.wireThreaded ?? (previous?.event.kind === 'wire-thread' || previous?.wireThreaded === true),
       cutting: phase === 'cutting' },
-    completedStepCount, activeStepIndex: activeStepIndex < 0 ? null : activeStepIndex, activeStepFraction,
+    completedStepCount, activeStepIndex, activeStepFraction,
     ...releasedPieceSnapshots(plan.pieces, plan.settings, elapsedSeconds),
     warnings: plan.warnings.filter((warning) => warning.elapsedSeconds <= elapsedSeconds) };
 }
 
-function resolveSettings(input: SimulationSettings): ResolvedSimulationSettings | null {
+/** Compiled steps have monotonic end times; consume every instantaneous event at a boundary. */
+function completedStepsAt(steps: readonly SimulationStep[], elapsedSeconds: number): number {
+  let low = 0;
+  let high = steps.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (steps[middle].endSeconds <= elapsedSeconds) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+export function resolveSimulationSettings(input: SimulationSettings): ResolvedSimulationSettings | null {
   const settings: ResolvedSimulationSettings = { ...input, stock: { ...input.stock },
     eventHoldSeconds: input.eventHoldSeconds ?? 1, retention: input.retention ?? 'fall',
     supportFloorZ: input.supportFloorZ === undefined ? input.stock.bottomZ - 50 : input.supportFloorZ,

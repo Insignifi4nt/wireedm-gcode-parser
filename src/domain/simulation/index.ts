@@ -1,4 +1,4 @@
-export { compileSimulation, sampleSimulation } from './simulation';
+export { compileSimulation, sampleSimulation, resolveSimulationSettings } from './simulation';
 export type {
   ResolvedSimulationSettings, SimulationCompileResult, SimulationDiagnostic, SimulationPiece,
   SimulationPieceSnapshot, SimulationPlan, SimulationSettings, SimulationSnapshot,

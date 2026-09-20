@@ -8,6 +8,8 @@ import type { SimulationDiagnostic, SimulationPieceSnapshot, SimulationPlan, Sim
 
 const MAX_SCAN_SAMPLES = 100_000;
 const EPSILON = 1e-7;
+interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
+interface BoundedPolygon { polygon: readonly Point2[]; bounds: Bounds }
 
 /** Advisory geometric screening; it never changes the execution plan or machining decisions. */
 export function compileObstructions(plan: SimulationPlan): { warnings: SimulationWarning[]; diagnostics: SimulationDiagnostic[] } {
@@ -21,6 +23,10 @@ export function compileObstructions(plan: SimulationPlan): { warnings: Simulatio
   const wireBottom = stock.bottomZ - plan.settings.guideClearanceMm;
   const wireTop = stock.bottomZ + stock.thickness + plan.settings.guideClearanceMm;
   const radius = plan.settings.wireDiameter / 2;
+  const guideReach = Math.max(0, plan.settings.guideRadiusMm - radius);
+  const polygons: BoundedPolygon[] = [stockPolygon, ...plan.pieces.map(({ polygon }) => polygon)]
+    .map((polygon) => ({ polygon, bounds: polygonBounds(polygon) }));
+  const boundsByPolygon = new Map(polygons.map(({ polygon, bounds }) => [polygon, bounds]));
   const steps = [...plan.steps];
   const last = steps.at(-1);
   if (last && plan.durationSeconds > last.endSeconds) steps.push({ ...last,
@@ -28,7 +34,7 @@ export function compileObstructions(plan: SimulationPlan): { warnings: Simulatio
   let samples = 0;
   for (const step of steps) {
     if (step.endSeconds <= step.startSeconds) continue;
-    const fractions = sampleFractions(step, plan, stockPolygon);
+    const fractions = sampleFractions(step, plan, polygons);
     for (const fraction of fractions) {
       if (++samples > MAX_SCAN_SAMPLES) return { warnings: sorted(warnings), diagnostics: [{
         code: 'SIMULATION_OBSTRUCTION_SCAN_LIMIT', severity: 'warning', operationId: null,
@@ -57,6 +63,8 @@ export function compileObstructions(plan: SimulationPlan): { warnings: Simulatio
       if (plan.settings.guideRadiusMm > 0 && guideStockOverlap
         && intersectsMaterial(point, stockPolygon, released.stockHoles, plan.settings.guideRadiusMm)) add(null, 'guide');
       for (const piece of released.pieces) {
+        // Preserve the full wire/guide reach, including edge tolerances, before skipping detailed polygon work.
+        if (!pointWithinBounds(point, boundsByPolygon.get(piece.polygon)!, guideReach + EPSILON)) continue;
         // The nominal boundary represents a centerline cut. Half the wire diameter is
         // removed on either side, so normal contact along that same cut is not an obstruction.
         const insideMaterial = intersectsMaterial(point, piece.polygon, piece.holes, 0)
@@ -66,7 +74,7 @@ export function compileObstructions(plan: SimulationPlan): { warnings: Simulatio
         const guideOverlap = (piece.bottomZ - EPSILON <= wireBottom && piece.topZ + EPSILON >= wireBottom)
           || (piece.bottomZ - EPSILON <= wireTop && piece.topZ + EPSILON >= wireTop);
         if (plan.settings.guideRadiusMm > 0 && guideOverlap && intersectsMaterial(point, piece.polygon, piece.holes,
-          Math.max(0, plan.settings.guideRadiusMm - radius))) add(piece, 'guide');
+          guideReach)) add(piece, 'guide');
       }
     }
   }
@@ -84,14 +92,16 @@ function stepPoint(step: SimulationStep, fraction: number): Point2 {
       : step.path[0];
 }
 
-function sampleFractions(step: SimulationStep, plan: SimulationPlan, stockPolygon: readonly Point2[]): number[] {
+function sampleFractions(step: SimulationStep, plan: SimulationPlan, polygons: readonly BoundedPolygon[]): number[] {
   const fractions = new Set<number>([0, 1]);
   const count = Math.min(4096, Math.max(8, Math.ceil(step.lengthMm / Math.max(0.25, plan.settings.wireDiameter))));
   for (let i = 1; i < count; i++) fractions.add(i / count);
   // Edge crossings partition linear travel into inside/outside intervals. This retains
   // thin obstacles that a regular fixed-distance grid alone could skip.
   for (let i = 1; i < step.path.length; i++) {
-    for (const polygon of [stockPolygon, ...plan.pieces.map(({ polygon }) => polygon)]) {
+    const segmentBounds = polygonBounds([step.path[i - 1], step.path[i]]);
+    for (const { polygon, bounds } of polygons) {
+      if (!boundsOverlap(segmentBounds, bounds)) continue;
       for (const fraction of polygonCrossings(step.path[i - 1], step.path[i], polygon)) {
         fractions.add((i - 1 + fraction) / (step.path.length - 1));
       }
@@ -120,6 +130,27 @@ function sampleFractions(step: SimulationStep, plan: SimulationPlan, stockPolygo
   }
   const ordered = [...fractions].sort((a, b) => a - b);
   return [...new Set([...ordered, ...ordered.slice(1).map((value, i) => (ordered[i] + value) / 2)])].sort((a, b) => a - b);
+}
+
+function polygonBounds(polygon: readonly Point2[]): Bounds {
+  const bounds: Bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const point of polygon) {
+    bounds.minX = Math.min(bounds.minX, point.x);
+    bounds.minY = Math.min(bounds.minY, point.y);
+    bounds.maxX = Math.max(bounds.maxX, point.x);
+    bounds.maxY = Math.max(bounds.maxY, point.y);
+  }
+  return bounds;
+}
+
+function pointWithinBounds(point: Point2, bounds: Bounds, radius: number): boolean {
+  return point.x >= bounds.minX - radius && point.x <= bounds.maxX + radius
+    && point.y >= bounds.minY - radius && point.y <= bounds.maxY + radius;
+}
+
+function boundsOverlap(a: Bounds, b: Bounds): boolean {
+  return a.maxX + EPSILON >= b.minX && a.minX - EPSILON <= b.maxX
+    && a.maxY + EPSILON >= b.minY && a.minY - EPSILON <= b.maxY;
 }
 
 function sorted(warnings: SimulationWarning[]): SimulationWarning[] {
