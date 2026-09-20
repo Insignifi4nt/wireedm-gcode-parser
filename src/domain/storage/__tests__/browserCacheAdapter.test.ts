@@ -47,6 +47,17 @@ class QuotaStorage extends MemoryStorage {
 }
 
 describe('createBrowserCacheAdapter', () => {
+  it('preserves source text that begins with the cache compression marker', async () => {
+    const storage = new MemoryStorage();
+    const adapter = createBrowserCacheAdapter(storage, { namespace: 'wire-edm-test' });
+    const source = '\u0000wire-edm-cache-gzip-v1:original source text';
+
+    await adapter.writeText('imports/source.txt', source);
+
+    const reopened = createBrowserCacheAdapter(storage, { namespace: 'wire-edm-test' });
+    expect(await reopened.readText('imports/source.txt')).toBe(source);
+  });
+
   it.each(['{broken', 'null', '{}', '42', '["empty-folder",42]', null])(
     'rebuilds damaged or missing directory metadata %j from owned file paths', async (metadata) => {
       const storage = new MemoryStorage();

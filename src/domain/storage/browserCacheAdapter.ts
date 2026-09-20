@@ -69,9 +69,10 @@ export function createBrowserCacheAdapter(
 }
 
 async function encodeStoredText(contents: string): Promise<string> {
-  if (contents.length < MIN_COMPRESS_LENGTH) return contents;
+  const needsEnvelope = contents.startsWith(COMPRESSED_TEXT_PREFIX);
+  if (contents.length < MIN_COMPRESS_LENGTH && !needsEnvelope) return contents;
   const compressed = COMPRESSED_TEXT_PREFIX + btoa(strFromU8(await gzipAsync(strToU8(contents)), true));
-  return compressed.length < contents.length ? compressed : contents;
+  return needsEnvelope || compressed.length < contents.length ? compressed : contents;
 }
 
 async function decodeStoredText(stored: string | null): Promise<string | null> {
