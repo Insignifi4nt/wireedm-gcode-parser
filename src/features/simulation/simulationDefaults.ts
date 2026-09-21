@@ -10,6 +10,6 @@ export function defaultSimulationSettings(document: PathPlanningDocument): Simul
     stock: { originX: minX - margin, originY: minY - margin, width: maxX - minX + margin * 2,
       depth: maxY - minY + margin * 2, thickness: 20, bottomZ: 0 },
     wireDiameter: 0.25, cutSpeedMmPerSecond: 5, rapidSpeedMmPerSecond: 25,
-    retention: 'fall', supportFloorZ: -40, guideClearanceMm: 20, eventHoldSeconds: 1
+    retention: 'fall', wasteHandling: 'remove-before-next-operation', supportFloorZ: -20, guideClearanceMm: 20, eventHoldSeconds: 1
   };
 }

@@ -114,6 +114,7 @@ function sampleFractions(step: SimulationStep, plan: SimulationPlan, polygons: r
   };
   for (const piece of plan.pieces) {
     addTime(piece.releaseSeconds);
+    if (piece.removalSeconds !== null) addTime(piece.removalSeconds);
     if (plan.settings.retention !== 'fall') continue;
     let fallStart = piece.releaseSeconds;
     let ancestorId = piece.parentPieceId;

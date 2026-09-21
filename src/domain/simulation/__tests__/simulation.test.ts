@@ -243,7 +243,7 @@ describe('released material', () => {
   });
 
   it('keeps inner slugs as separate pieces and removes their holes from subsequently released outer material', () => {
-    const plan = compiled(document([...rectangle(3, 3, 4, 4), ...rectangle(0, 0, 10, 10)]));
+    const plan = compiled(document([...rectangle(3, 3, 4, 4), ...rectangle(0, 0, 10, 10)]), { wasteHandling: 'keep' });
     expect(plan.pieces).toHaveLength(2);
     const inner = plan.pieces.find(({ parentPieceId }) => parentPieceId !== null)!;
     const outer = plan.pieces.find(({ parentPieceId }) => parentPieceId === null)!;
@@ -258,7 +258,7 @@ describe('released material', () => {
   });
 
   it('partitions three levels of nested releases without duplicating material', () => {
-    const plan = compiled(document([...rectangle(4, 4, 2, 2), ...rectangle(2, 2, 6, 6), ...rectangle(0, 0, 10, 10)]), { retention: 'retain' });
+    const plan = compiled(document([...rectangle(4, 4, 2, 2), ...rectangle(2, 2, 6, 6), ...rectangle(0, 0, 10, 10)]), { retention: 'retain', wasteHandling: 'keep' });
     const [inner, middle, outer] = plan.pieces;
     expect(inner.parentPieceId).toBe(middle.id);
     expect(middle.parentPieceId).toBe(outer.id);

@@ -4,6 +4,8 @@ import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 import { distance, interpolateLine, interpolateMotion, motionLength, motionPolyline } from './geometry';
 import { compileReleasedPieces, releasedPieceSnapshots, settlingDuration } from './releasedPieces';
 import { compileObstructions } from './obstructions';
+import { compileMaterialRoles } from './materialRoles';
+import { compileFinalMaterial } from './finalMaterial';
 import type {
   ResolvedSimulationSettings, SimulationCompileResult, SimulationDiagnostic, SimulationPlan,
   SimulationSettings, SimulationSnapshot, SimulationStep
@@ -42,21 +44,31 @@ export function compileSimulation(document: PathPlanningDocument, input: Simulat
   });
   if (!Number.isFinite(elapsed)) return { ok: false, diagnostics: [{ code: 'SIMULATION_DURATION_OVERFLOW', severity: 'error', operationId: null,
     message: 'These geometry and speed values exceed the finite simulation timeline range.' }] };
-  const releases = compileReleasedPieces(document, steps, settings);
+  const releases = compileReleasedPieces(document, steps, settings, compiled.plan.source.operationIds);
+  const roles = compileMaterialRoles(document, compiled.plan.source.operationIds);
+  const finalMaterial = compileFinalMaterial(document, releases.pieces, settings, roles.remainingStockRole, compiled.plan.source.operationIds);
   const diagnostics: SimulationDiagnostic[] = [
     { code: 'SIMULATION_ESTIMATE', severity: 'info', operationId: null,
       message: 'Playback uses viewing speeds and illustrative stop/rethread holds, not machine feeds or cycle-time estimates.' },
     { code: 'SIMULATION_MATERIAL_ASSUMPTIONS', severity: 'warning', operationId: null,
       message: 'Material uses constant-thickness extrusions and sampled nominal boundaries; wire kerf and spark gap are not subtracted from the solids. Released pieces move vertically under gravity or remain retained as selected; no tilt, fluid forces, clamps, stacking or rigid-body contacts are predicted. Obstruction findings are approximate and do not certify clearance.' },
-    ...releases.diagnostics
+    { code: 'SIMULATION_WASTE_HANDLING', severity: 'info', operationId: null,
+      message: settings.wasteHandling === 'keep'
+        ? 'Released waste remains in the physical scenario to study interference. Final-part visibility does not change collisions or remove material.'
+        : 'This scenario assumes an operator removes released waste before the next operation, or after the final fall/retention preview at program end. Removal is not an authored machine event or a predicted automatic action. Finished parts and unclassified pieces remain; completed openings persist.' },
+    ...releases.diagnostics, ...roles.diagnostics, ...finalMaterial.diagnostics
   ];
+  if (settings.supportFloorZ === null || settings.supportFloorZ < settings.stock.bottomZ - settings.guideClearanceMm) {
+    diagnostics.push({ code: 'SIMULATION_SUPPORT_BELOW_WIRE', severity: 'warning', operationId: null,
+      message: 'This analysis scenario has no support within the lower wire envelope. Falling material can leave the wire before later cuts finish; the explicit support setting is preserved.' });
+  }
   if (compiled.plan.requirements.controllerCompensation) diagnostics.push({ code: 'SIMULATION_NOMINAL_COMPENSATION', severity: 'warning', operationId: null,
     message: 'Controller compensation is present. The simulation displays nominal UPID paths; controller offsets and spark gap are not solved.' });
   const lastRelease = releases.pieces.reduce((last, piece) => Math.max(last, piece.releaseSeconds), 0);
   const plan: SimulationPlan = { format: 'wire-edm-simulation', settings, executionPlan: compiled.plan,
     machiningDurationSeconds: elapsed,
     durationSeconds: Math.max(elapsed, releases.pieces.length ? lastRelease + settlingDuration(settings) : elapsed),
-    steps, pieces: releases.pieces, diagnostics, warnings: [] };
+    steps, pieces: releases.pieces, remainingStockRole: roles.remainingStockRole, finalMaterial, diagnostics, warnings: [] };
   const obstructions = compileObstructions(plan);
   return { ok: true, plan: deepFreeze({ ...plan, diagnostics: [...diagnostics, ...obstructions.diagnostics], warnings: obstructions.warnings }) };
 }
@@ -101,10 +113,12 @@ function completedStepsAt(steps: readonly SimulationStep[], elapsedSeconds: numb
 }
 
 export function resolveSimulationSettings(input: SimulationSettings): ResolvedSimulationSettings | null {
+  const guideClearanceMm = input.guideClearanceMm ?? 20;
   const settings: ResolvedSimulationSettings = { ...input, stock: { ...input.stock },
     eventHoldSeconds: input.eventHoldSeconds ?? 1, retention: input.retention ?? 'fall',
-    supportFloorZ: input.supportFloorZ === undefined ? input.stock.bottomZ - 50 : input.supportFloorZ,
-    guideClearanceMm: input.guideClearanceMm ?? 20, guideRadiusMm: input.guideRadiusMm ?? 2 };
+    wasteHandling: input.wasteHandling ?? 'remove-before-next-operation',
+    supportFloorZ: input.supportFloorZ === undefined ? input.stock.bottomZ - guideClearanceMm : input.supportFloorZ,
+    guideClearanceMm, guideRadiusMm: input.guideRadiusMm ?? 2 };
   const stock = settings.stock;
   const finite = [stock.originX, stock.originY, stock.bottomZ, stock.originX + stock.width, stock.originY + stock.depth,
     stock.bottomZ + stock.thickness + settings.guideClearanceMm, stock.bottomZ - settings.guideClearanceMm,
@@ -113,6 +127,7 @@ export function resolveSimulationSettings(input: SimulationSettings): ResolvedSi
     settings.rapidSpeedMmPerSecond].every((value) => Number.isFinite(value) && value > 0)
     || settings.eventHoldSeconds < 0 || settings.guideClearanceMm < 0 || settings.guideRadiusMm < 0
     || !['fall', 'retain'].includes(settings.retention)
+    || !['remove-before-next-operation', 'keep'].includes(settings.wasteHandling)
     || (settings.supportFloorZ !== null && (!Number.isFinite(settings.supportFloorZ) || settings.supportFloorZ > stock.bottomZ))) return null;
   return settings;
 }

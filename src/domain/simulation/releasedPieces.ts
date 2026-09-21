@@ -3,6 +3,7 @@ import type { PathPlanningDocument, Point2 } from '@/domain/path-intel/types';
 
 import { distance, pointInPolygon, polygonArea } from './geometry';
 import { unsupportedMaterialPolygons } from './materialTopology';
+import { operationMaterialRole } from './materialRoles';
 import type {
   ResolvedSimulationSettings, SimulationDiagnostic, SimulationPiece, SimulationPieceSnapshot, SimulationStep
 } from './types';
@@ -12,14 +13,16 @@ const GRAVITY_MM_PER_SECOND_SQUARED = 9810;
 export function compileReleasedPieces(
   document: PathPlanningDocument,
   steps: readonly SimulationStep[],
-  settings: ResolvedSimulationSettings
+  settings: ResolvedSimulationSettings,
+  activeOperationIds: readonly string[]
 ): { pieces: SimulationPiece[]; diagnostics: SimulationDiagnostic[] } {
   const segments = segmentMap(document.segments);
   const diagnostics: SimulationDiagnostic[] = [];
   const coverage = new Map<string, Array<{ start: number; end: number }>>();
   const released = new Set<string>();
   const polygons = new Map<string, Point2[]>();
-  const candidates = document.plan.operations.filter((operation) => operation.closed && operation.segmentRefs.length > 0);
+  const activeIds = new Set(activeOperationIds);
+  const candidates = document.plan.operations.filter((operation) => activeIds.has(operation.id) && operation.closed && operation.segmentRefs.length > 0);
   for (const operation of candidates) {
     const polygon = approximatePath(operation.segmentRefs, segments, Math.PI / 90).map((point) => ({ ...point }));
     if (polygon.length < 3 || distance(polygon[0], polygon.at(-1)!) > Math.max(1e-8, document.options.coincidenceEpsilon)) continue;
@@ -59,6 +62,14 @@ export function compileReleasedPieces(
     }
   }
   const pieces: SimulationPiece[] = [];
+  // Reverse indexing preserves event order when release and the next start share a timestamp.
+  const nextOperationStart = new Map<string, number>();
+  let nextStart: number | null = null;
+  for (let index = steps.length - 1; index >= 0; index--) {
+    const step = steps[index];
+    if (nextStart !== null) nextOperationStart.set(step.event.id, nextStart);
+    if (step.event.kind === 'operation-start') nextStart = step.startSeconds;
+  }
   for (const step of steps) {
     const event = step.event;
     if (event.kind !== 'motion' || event.role !== 'contour' || !event.sourceSegmentId || !event.sourceRange) continue;
@@ -68,7 +79,11 @@ export function compileReleasedPieces(
     for (const { operation, polygon, boundaryKey } of candidatesBySegment.get(event.sourceSegmentId) ?? []) {
       if (released.has(boundaryKey) || !operation.segmentRefs.every(({ segmentId }) => completeCoverage(coverage.get(segmentId) ?? []))) continue;
       released.add(boundaryKey);
-      pieces.push({ id: `piece:${operation.id}`, operationId: operation.id, polygon,
+      const role = operationMaterialRole(operation);
+      const removalSeconds = role === 'waste' && settings.wasteHandling === 'remove-before-next-operation'
+        ? nextOperationStart.get(event.id) ?? Math.max(steps.at(-1)?.endSeconds ?? 0, step.endSeconds + settlingDuration(settings))
+        : null;
+      pieces.push({ id: `piece:${operation.id}`, operationId: operation.id, polygon, role, removalSeconds,
         releaseSeconds: step.endSeconds, releaseEventId: event.id, parentPieceId: null });
     }
   }
@@ -85,16 +100,27 @@ export function compileReleasedPieces(
   const byId = new Map(nested.map((piece) => [piece.id, piece]));
   for (const piece of nested) {
     let enclosingRelease = Infinity;
+    let enclosingRemoval = Infinity;
+    let foundReleasedParent = false;
     let ancestor = piece.parentPieceId ? byId.get(piece.parentPieceId) : undefined;
     while (ancestor) {
-      if (acceptedIds.has(ancestor.id)) enclosingRelease = Math.min(enclosingRelease, ancestor.releaseSeconds);
+      if (acceptedIds.has(ancestor.id)) {
+        enclosingRelease = Math.min(enclosingRelease, ancestor.releaseSeconds);
+        // A previously separated parent is independent of later removal of material
+        // around it. Only its own removal carries this still-attached child away.
+        if (!foundReleasedParent) enclosingRemoval = ancestor.removalSeconds ?? Infinity;
+        foundReleasedParent = true;
+      }
       ancestor = ancestor.parentPieceId ? byId.get(ancestor.parentPieceId) : undefined;
     }
     const elapsed = Math.max(0, piece.releaseSeconds - enclosingRelease);
     const lowerWire = settings.stock.bottomZ - settings.guideClearanceMm;
     const bottomAtCompletion = Math.max(settings.supportFloorZ ?? -Infinity,
       settings.stock.bottomZ - 0.5 * GRAVITY_MM_PER_SECOND_SQUARED * elapsed * elapsed);
-    if (settings.retention === 'fall' && bottomAtCompletion < lowerWire - 1e-8) {
+    if (enclosingRemoval <= piece.releaseSeconds) {
+      diagnostics.push({ code: 'SIMULATION_CUT_AFTER_MATERIAL_REMOVAL', severity: 'warning', operationId: piece.operationId,
+        message: 'An enclosing waste piece was removed before this boundary finished. Its still-attached material is no longer present, so a new release is not predicted. Previously separated parts remain independent.' });
+    } else if (settings.retention === 'fall' && bottomAtCompletion < lowerWire - 1e-8) {
       diagnostics.push({ code: 'SIMULATION_CUT_BELOW_WIRE', severity: 'warning', operationId: piece.operationId,
         message: 'An enclosing piece has already fallen partly below the vertical wire before this boundary finishes. A new through-cut release is not predicted.' });
     } else {
@@ -126,7 +152,7 @@ function completeCoverage(ranges: readonly { start: number; end: number }[]): bo
 
 export function releasedPieceSnapshots(
   pieces: readonly SimulationPiece[], settings: ResolvedSimulationSettings, elapsedSeconds: number
-): { pieces: SimulationPieceSnapshot[]; stockHoles: (readonly Point2[])[] } {
+): { pieces: SimulationPieceSnapshot[]; stockHoles: (readonly Point2[])[]; removedPieceIds: string[] } {
   const released = pieces.filter(({ releaseSeconds }) => releaseSeconds <= elapsedSeconds);
   const byId = new Map(pieces.map((piece) => [piece.id, piece]));
   const releasedIds = new Set(released.map(({ id }) => id));
@@ -146,7 +172,8 @@ export function releasedPieceSnapshots(
   }
   return {
     stockHoles: released.filter(({ id }) => parents.get(id) === null).map(({ polygon }) => polygon),
-    pieces: released.map((piece) => {
+    removedPieceIds: released.filter(piece => piece.removalSeconds !== null && piece.removalSeconds <= elapsedSeconds).map(piece => piece.id),
+    pieces: released.filter(piece => piece.removalSeconds === null || piece.removalSeconds > elapsedSeconds).map((piece) => {
       // An earlier enclosing release carries still-attached inner material with it.
       let fallStart = piece.releaseSeconds;
       let ancestor = piece.parentPieceId ? byId.get(piece.parentPieceId) : undefined;
@@ -158,7 +185,7 @@ export function releasedPieceSnapshots(
       const freeBottom = settings.stock.bottomZ - 0.5 * GRAVITY_MM_PER_SECOND_SQUARED * elapsed * elapsed;
       const bottomZ = settings.retention === 'retain' ? settings.stock.bottomZ
         : Math.max(settings.supportFloorZ ?? -Infinity, freeBottom);
-      return { id: piece.id, operationId: piece.operationId, polygon: piece.polygon,
+      return { id: piece.id, operationId: piece.operationId, role: piece.role, polygon: piece.polygon,
         holes: holesByParent.get(piece.id) ?? [],
         bottomZ, topZ: bottomZ + settings.stock.thickness,
         state: settings.retention === 'retain' ? 'retained'

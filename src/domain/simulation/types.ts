@@ -18,6 +18,9 @@ export interface SimulationSettings {
   readonly rapidSpeedMmPerSecond: number;
   readonly eventHoldSeconds?: number;
   readonly retention?: 'fall' | 'retain';
+  /** Assumed operator removal, independent of gravity and rendering visibility. */
+  readonly wasteHandling?: 'remove-before-next-operation' | 'keep';
+  /** Defaults to the lower wire elevation. Null explicitly requests unsupported free fall. */
   readonly supportFloorZ?: number | null;
   readonly guideClearanceMm?: number;
   /** Approximate horizontal guide envelope at each end of the vertical wire. */
@@ -27,6 +30,7 @@ export interface SimulationSettings {
 export interface ResolvedSimulationSettings extends SimulationSettings {
   readonly eventHoldSeconds: number;
   readonly retention: 'fall' | 'retain';
+  readonly wasteHandling: 'remove-before-next-operation' | 'keep';
   readonly supportFloorZ: number | null;
   readonly guideClearanceMm: number;
   readonly guideRadiusMm: number;
@@ -49,6 +53,8 @@ export interface SimulationStep {
   readonly wireThreaded: boolean;
 }
 
+export type SimulationPieceRole = 'part' | 'waste' | 'unclassified';
+
 export interface SimulationPiece {
   readonly id: string;
   readonly operationId: string;
@@ -56,6 +62,26 @@ export interface SimulationPiece {
   readonly releaseSeconds: number;
   readonly releaseEventId: string;
   readonly parentPieceId: string | null;
+  readonly role: SimulationPieceRole;
+  /** Null means the piece remains in the physical scenario. */
+  readonly removalSeconds: number | null;
+}
+
+export interface SimulationMaterialSolid {
+  readonly id: string;
+  readonly operationId: string | null;
+  readonly kind: 'piece' | 'remaining-stock';
+  readonly polygon: readonly Point2[];
+  readonly holes: readonly (readonly Point2[])[];
+  readonly bottomZ: number;
+  readonly topZ: number;
+}
+
+export interface SimulationFinalMaterial {
+  readonly status: 'ready' | 'partial' | 'unavailable';
+  /** End-state kept material, displayed at authored stock elevation regardless of gravity. */
+  readonly solids: readonly SimulationMaterialSolid[];
+  readonly diagnostics: readonly SimulationDiagnostic[];
 }
 
 export interface SimulationWarning {
@@ -78,6 +104,8 @@ export interface SimulationPlan {
   readonly durationSeconds: number;
   readonly steps: readonly SimulationStep[];
   readonly pieces: readonly SimulationPiece[];
+  readonly remainingStockRole: SimulationPieceRole;
+  readonly finalMaterial: SimulationFinalMaterial;
   readonly diagnostics: readonly SimulationDiagnostic[];
   readonly warnings: readonly SimulationWarning[];
 }
@@ -89,6 +117,7 @@ export type SimulationCompileResult =
 export interface SimulationPieceSnapshot {
   readonly id: string;
   readonly operationId: string;
+  readonly role: SimulationPieceRole;
   readonly polygon: readonly Point2[];
   readonly holes: readonly (readonly Point2[])[];
   readonly bottomZ: number;
@@ -114,6 +143,7 @@ export interface SimulationSnapshot {
   readonly activeStepFraction: number;
   readonly stockHoles: readonly (readonly Point2[])[];
   readonly pieces: readonly SimulationPieceSnapshot[];
+  readonly removedPieceIds: readonly string[];
   /** Cumulative findings up to this seek position; not a safety certification. */
   readonly warnings: readonly SimulationWarning[];
 }
