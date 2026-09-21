@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import type { SimulationPlan, SimulationSnapshot } from '@/domain/simulation';
+import type { ScenePresentation } from '../SimulationScene';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import SimulationPanel from '../SimulationPanel';
 import * as collisionScan from '../useMachineCollisionScan';
@@ -19,7 +20,7 @@ vi.mock('../SimulationViewport', () => ({
 vi.mock('../MachineSetupPanel', () => ({ MachineSetupPanel: () => <div data-testid="machine-setup" /> }));
 
 type PanelProps = ComponentProps<typeof SimulationPanel>;
-type SceneState = { plan: SimulationPlan; snapshot: SimulationSnapshot };
+type SceneState = { plan: SimulationPlan; snapshot: SimulationSnapshot; presentation: ScenePresentation };
 
 function savedDocument(): PathPlanningDocument {
   const source = createUpidFromDxfEntities([
@@ -116,7 +117,7 @@ describe('SimulationPanel saved-process integration', () => {
     await changeInput('Stock width', '45');
     await changeInput('Stock thickness', '12');
     await changeInput('Stock originX', '-15');
-    await changeInput('Support floor Z', '-60');
+    await changeInput('Support floor Z', '-15');
     await changeSelect('Released piece behavior', 'retain');
     expect(scene().plan).toBe(initial);
     expect(scene().snapshot.elapsedSeconds).toBe(1);
@@ -124,7 +125,7 @@ describe('SimulationPanel saved-process integration', () => {
     await submitStock();
     expect(scene().plan).not.toBe(initial);
     expect(scene().plan.settings).toMatchObject({
-      stock: { width: 45, thickness: 12, originX: -15 }, supportFloorZ: -60, retention: 'retain'
+      stock: { width: 45, thickness: 12, originX: -15 }, supportFloorZ: -15, retention: 'retain'
     });
     expect(scene().snapshot.elapsedSeconds).toBe(0);
     expect(scene().plan.executionPlan).toEqual(initial.executionPlan);
@@ -266,6 +267,66 @@ describe('SimulationPanel saved-process integration', () => {
     await submitStock();
     expect(scene().plan.settings.stock.width).toBe(45);
     expect(container.querySelector<HTMLElement>('[role="dialog"]')?.hidden).toBe(true);
+  });
+
+  it('inspects final geometry without advancing playback or changing saved process settings', async () => {
+    await render();
+    const originalPlan = scene().plan;
+    await changeInput('Simulation timeline', '1');
+    await click('Play simulation');
+    await clickText('Final part');
+    expect(scene().presentation.finalPartOnly).toBe(true);
+    expect(scene().snapshot.elapsedSeconds).toBe(1);
+    expect(scene().plan).toBe(originalPlan);
+    expect(frames.size).toBe(0);
+    expect(container.querySelector('[aria-label="Simulation timeline"]')).toBeNull();
+    await clickText('Process');
+    expect(scene().presentation.finalPartOnly).toBe(false);
+    expect(input('Simulation timeline').value).toBe('1');
+    expect(button('Play simulation')).toBeDefined();
+  });
+
+  it('hides waste by default and separates visibility from the removal and collision scenario', async () => {
+    await render();
+    expect(scene().plan.settings.wasteHandling).toBe('remove-before-next-operation');
+    expect(scene().presentation).toEqual({ showStock: true, showWaste: false, finalPartOnly: false });
+    await click('Stock settings');
+    const originalPlan = scene().plan;
+    await act(async () => input('Show remaining stock').click());
+    await act(async () => input('Show waste material').click());
+    expect(scene().presentation).toEqual({ showStock: false, showWaste: true, finalPartOnly: false });
+    expect(scene().plan).toBe(originalPlan);
+    await changeSelect('Waste handling', 'keep');
+    expect(scene().plan).toBe(originalPlan);
+    await submitStock();
+    expect(scene().plan.settings.wasteHandling).toBe('keep');
+    expect(scene().plan).not.toBe(originalPlan);
+    expect(scene().plan.executionPlan).toEqual(originalPlan.executionPlan);
+  });
+
+  it('rejects a support table below the lower wire without silently moving material', async () => {
+    await render();
+    const originalPlan = scene().plan;
+    await click('Stock settings');
+    await changeInput('Support floor Z', '-21');
+    await submitStock();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('at or above the lower wire end (-20 mm)');
+    expect(scene().plan).toBe(originalPlan);
+    await changeInput('Support floor Z', '-20');
+    await submitStock();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(scene().plan.settings.supportFloorZ).toBe(-20);
+  });
+
+  it('returns from final inspection to the process when seeking a finding', async () => {
+    await render();
+    const warning = scene().plan.warnings[0];
+    expect(warning).toBeDefined();
+    await clickText('Final part');
+    await click('Simulation checks');
+    await clickText(warning.message);
+    expect(scene().presentation.finalPartOnly).toBe(false);
+    expect(scene().snapshot.elapsedSeconds).toBe(warning.elapsedSeconds);
   });
 
   it('lets a user inspect future material findings directly and dismiss setup with Escape', async () => {

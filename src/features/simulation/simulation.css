@@ -11,6 +11,10 @@
   min-width: 100px; max-width: 240px; background: transparent; color: #c4d6e2;
   border: 0; padding: 4px 18px 4px 0; font-size: 11px; text-overflow: ellipsis;
 }
+.sim-presentation-switch { display: flex; flex-shrink: 0; padding: 2px; border: 1px solid #344854; border-radius: 5px; background: #0f1a23; }
+.sim-presentation-switch button { padding: 3px 8px; border-radius: 3px; color: #91a9b8; font-size: 10px; }
+.sim-presentation-switch button[aria-pressed=true] { color: #d7eee5; background: #2b463f; }
+.sim-presentation-switch button:hover { color: #e4eff5; }
 .sim-tools { display: flex; align-items: center; gap: 5px; margin-left: auto; }
 .sim-tool {
   display: flex; align-items: center; gap: 7px; min-height: 29px; padding: 4px 9px;
@@ -70,6 +74,13 @@
 .sim-section-title { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 500; color: #b1c4d1; margin-bottom: 10px; }
 .sim-section-title > span + span { color: #738c9e; font-variant-numeric: tabular-nums; }
 .sim-section p { color: #8fa8ba; margin: 0 0 12px; font-size: 11px; }
+.sim-visibility { border-top: 1px solid #2d414f; }
+.sim-visibility label { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; color: #b8cbd8; }
+.sim-visibility input { accent-color: #82cdb7; }
+.sim-visibility p { margin: 12px 0 0; font-size: 10px; color: #809aac; }
+.sim-final-notice { position: absolute; left: 16px; bottom: 16px; max-width: min(430px,calc(100% - 32px)); display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: #25291fdc; border: 1px solid #665735; border-radius: 5px; color: #d7c298; }
+.sim-final-notice strong { font-size: 11px; font-weight: 500; }
+.sim-final-notice span { font-size: 10px; }
 .sim-dimensions { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px; }
 .sim-dimensions label, .sim-fields-grid label { display: flex; flex-direction: column; gap: 5px; color: #99b0c0; font-size: 10px; }
 .sim-workspace input[type=number], .sim-workspace input[inputmode=decimal] {
@@ -130,4 +141,10 @@
   .sim-tool > span { display: none; }
   .sim-operation-select { max-width: 165px; }
   .sim-playback { padding: 7px 10px; }
+}
+@media(max-width:620px) {
+  .sim-context-bar { flex-wrap: wrap; }
+  .sim-operation-select { order: 3; flex-basis: 100%; max-width: none; padding-top: 2px; padding-bottom: 2px; }
+  .sim-setup-popover { top: 76px; }
+  .sim-workspace[data-final-part=true] .sim-setup-popover { top: 47px; }
 }

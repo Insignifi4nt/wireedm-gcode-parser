@@ -3,7 +3,7 @@ import { AlertTriangle, Box, Eye, EyeOff, Maximize, Scan, ScanLine, View } from 
 import type { SimulationPlan, SimulationSnapshot } from '@/domain/simulation';
 import type { MachineModel } from '@/domain/simulation/machine-import';
 import type { EditorPreviewCapture } from '@/features/webmcp/previewCapture';
-import { createSimulationScene, type SceneMachinePlacement, type SimulationScene } from './SimulationScene';
+import { createSimulationScene, type SceneMachinePlacement, type ScenePresentation, type SimulationScene } from './SimulationScene';
 
 export type SimulationCapture = (signal: AbortSignal) => Promise<EditorPreviewCapture>;
 
@@ -12,6 +12,7 @@ interface Props {
   snapshot: SimulationSnapshot;
   machine: MachineModel | null;
   placement: SceneMachinePlacement;
+  presentation: ScenePresentation;
   onCaptureReady: (capture: SimulationCapture | null) => void;
 }
 
@@ -46,6 +47,7 @@ export function SimulationViewport(props: Props) {
       sceneRef.current = scene;
       scene.update(latest.current.snapshot);
       scene.setMachine(latest.current.machine, latest.current.placement);
+      scene.setPresentation(latest.current.presentation);
       latest.current.onCaptureReady(signal => scene.capture(signal));
       setStatus(scene.backend);
     }).catch(reason => {
@@ -59,15 +61,16 @@ export function SimulationViewport(props: Props) {
   }, [props.plan, retry, failScene]);
   useEffect(() => { withScene(scene => scene.update(props.snapshot)); }, [props.snapshot, withScene]);
   useEffect(() => { withScene(scene => scene.setMachine(props.machine, props.placement)); }, [props.machine, props.placement, withScene]);
+  useEffect(() => { withScene(scene => scene.setPresentation(props.presentation)); }, [props.presentation, withScene]);
   useEffect(() => { setMachineVisible(true); }, [props.machine]);
   useEffect(() => { withScene(scene => scene.setMachineVisible(machineVisible)); }, [machineVisible, status, withScene]);
   return <div className="sim-viewport" data-renderer={status}>
     <div ref={host} className="sim-render-host" />
     <div className="sim-view-controls" aria-label="Simulation camera">
-      <button type="button" title="Isometric view · fit stock" aria-label="Fit simulation stock" onClick={() => withScene(scene => scene.setView('isometric'))}><Maximize size={14} /></button>
+      <button type="button" title={props.presentation.finalPartOnly ? 'Fit final part' : 'Isometric view · fit stock'} aria-label={props.presentation.finalPartOnly ? 'Fit final part' : 'Fit simulation stock'} onClick={() => withScene(scene => props.presentation.finalPartOnly ? scene.fitPart() : scene.setView('isometric'))}><Maximize size={14} /></button>
       <button type="button" title="Top view" aria-label="Simulation top view" onClick={() => withScene(scene => scene.setView('top'))}><Scan size={14} /></button>
       <button type="button" title="Front view" aria-label="Simulation front view" onClick={() => withScene(scene => scene.setView('front'))}><View size={14} /></button>
-      {props.machine && <>
+      {props.machine && !props.presentation.finalPartOnly && <>
         <button type="button" title="Fit machine and stock" aria-label="Fit machine model" onClick={() => withScene(scene => scene.fitMachine())}><ScanLine size={14} /></button>
         <button type="button" title={machineVisible ? 'Hide machine model · collision checks stay active' : 'Show machine model'} aria-label={machineVisible ? 'Hide machine model' : 'Show machine model'} onClick={() => setMachineVisible(value => !value)}>{machineVisible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
       </>}

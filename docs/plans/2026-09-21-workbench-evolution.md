@@ -95,6 +95,19 @@ All agents have handed off their completed implementations and tests. Root compl
 - Three.js WebGPU renderer/fallback: https://threejs.org/docs/pages/WebGPURenderer.html
 - Local OCCT import/API/units: https://github.com/kovacsv/occt-import-js
 
+## Simulation visualization follow-up
+
+User requested a stable floor while orbiting/top-down, default removal/hiding of interior waste before later contours, stock hiding and final-part inspection, a support table no lower than the wire bottom, and improved lighting/reflections/shading. This continues locally on the same feature branch, without deployment.
+
+- Root owns compact Process/Final part controls, process visibility, scenario form validation, docs, native comparison and integration.
+- storage_bug_hunt owns typed part/waste roles, deterministic removal timing, remaining-stock roles and explicit final-material geometry.
+- editor_bug_hunt owns scene presentation, stable support surface, camera restoration, local studio reflections and rendering tests.
+- review_normalizer independently checks kept-side, nesting, partial contour and removal semantics; no overlapping edits without handoff.
+- Visibility is separate from material presence. Default waste removal affects later obstruction checks; hiding stock/waste affects pixels only. Final-part inspection never silently guesses a kept side or changes saved UPID/controller output.
+- Completed: typed material roles and final solids, default removal between operations, independent visibility switches, Process/Final part inspection, validated support height, one textured double-sided support surface, adaptive camera clipping, local studio environment and smooth curved walls. Wire and guide geometry now respect the configured dimensions even for very large stock; zero-radius guides stay hidden.
+- Verification: all 1,750 tests in 183 files pass; TypeScript, production build and documentation checks pass. Rebuilt preview on 3778 verified near-top orbit (the reported disappearing-grid angle), direct top view and underside visibility; default removed slug versus retained visible waste; final-part inspection and return to process. Evidence: ignored local screenshots `tmp/editor-audit/14-final-part.png` and `15-stable-near-top-grid.png`. Responsive CSS is present, but the browser viewport override did not change actual viewport dimensions, so this follow-up does not claim a fresh native mobile check.
+- Checkpoints are local only. No deployment, push, saved-document migration or installed-package change. Material removal is an explicit assumed operator action, not a generated controller stop; final-part geometry remains nominal rather than a kerf/rigid-body prediction.
+
 ## Outstanding risks and follow-up
 
 - Exact rigid-body collision/slug behavior depends on real clamps, support, gravity direction, wire tension, clearance and technology; do not claim physical certification from a visual approximation.

@@ -13,13 +13,21 @@ Open **Stock** to enter the rough material's width, depth and height in millimet
 - **Fall under gravity** moves a fully separated piece vertically downward until its bottom reaches Support Z.
 - **Retained in place** keeps separated pieces at the stock's original height, representing a retention assumption you supply.
 
-The app starts with rough stock around the drawing, a 20 mm height and a 0.25 mm wire. Adjust these to the scenario you want to inspect. Stock, wire, support and retention settings belong to this viewing session; they do not change the saved UPID, machine setup or controller output.
+The app starts with rough stock around the drawing, a 20 mm height and a 0.25 mm wire. The support surface starts at the lower wire end, 20 mm below the stock bottom. The Stock panel accepts a support height between that lower wire end and the stock bottom. Adjust these to the scenario you want to inspect. Stock, wire, support and retention settings belong to this viewing session; they do not change the saved UPID, machine setup or controller output.
+
+**Waste handling** defaults to **Remove between cuts**. Completed waste cutouts are assumed to be removed before the next operation, so they do not remain as obstructions during that operation. Waste from the last operation is removed after settling at program end. This is an operator-removal assumption, not a machine action or a generated program stop. Choose **Keep for interference** to inspect a process where those pieces remain. Kept parts are not automatically removed with waste.
+
+**Show remaining stock** and **Show waste material** control visibility immediately. Waste is hidden by default. Hiding geometry does not remove it from collision checks; Waste handling controls that assumption. A removed piece cannot be restored by making waste visible: select Keep for interference and Apply stock to compare that scenario.
 
 The preview uses constant-thickness material and sampled contour boundaries. Cut progress appears along the path; a separate piece and stock opening appear only after a closed boundary has been fully cut. Open cuts and retained bridges do not release a complete piece. Nested cutouts are tracked, but a later through-cut is not predicted when enclosing material has already fallen below the wire. These cases produce diagnostics.
 
 Gravity is vertical, with no tilting, bouncing, fluid forces, clamps, piece stacking or rigid-body contact solver. Support Z is a simple horizontal stopping plane, independent of any imported machine geometry. Controller compensation offsets, kerf removal and spark gap are not solved; the preview displays nominal UPID paths. A contour touching the stock edge or producing intersecting sampled boundaries cannot be represented as an interior stock hole. **Checks** reports these omitted material shapes; exact wire playback remains available. Increase the rough stock margin for edge contact. Very close curved boundaries may exceed the supported sampled topology.
 
 ## Inspect the sequence
+
+Choose **Final part** to inspect only the final kept material at its original stock height. The surrounding stock, waste, table, wire, paths and imported machine are hidden. This view includes retained islands and, for a job that only cuts holes, the remaining plate. It uses reviewed kept-side intent and completed boundaries; incomplete or ambiguous jobs display a partial-result or unavailable message instead of guessing a finished part. These are nominal surfaces without kerf or controller compensation.
+
+Return to **Process** to resume at the same paused timeline position and camera. Final-part inspection does not fast-forward the process or change the removal scenario. Camera fit, top and front controls also work in the final-part view.
 
 Use **Play**, **Pause**, **Restart**, or drag the timeline to inspect the wire and released material at a time. **Previous simulation event** and **Next simulation event** jump between operation starts, program stops and timeline endpoints. The scene reports cutting, positioning, wire transitions and piece settling. Leaving the Simulation tab pauses playback.
 

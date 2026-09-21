@@ -19,11 +19,11 @@ describe('simulation viewport lifecycle', () => {
     const plan = compiledInput().plan;
     scene = {
       backend: 'WebGPU', update: vi.fn(), setMachine: vi.fn(), setMachineVisible: vi.fn(),
-      fitMachine: vi.fn(), setView: vi.fn(), capture: vi.fn(), dispose: vi.fn()
+      fitMachine: vi.fn(), setView: vi.fn(), capture: vi.fn(), dispose: vi.fn(), setPresentation: vi.fn(), fitPart: vi.fn()
     };
     vi.mocked(createSimulationScene).mockResolvedValue(scene);
     props = { plan, snapshot: sampleSimulation(plan, 0), machine: null,
-      placement: { x: 0, y: 0, z: 0, rotation: 0 }, onCaptureReady: vi.fn() };
+      placement: { x: 0, y: 0, z: 0, rotation: 0 }, presentation: { showWaste: false, showStock: true, finalPartOnly: false }, onCaptureReady: vi.fn() };
     container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   });
   afterEach(() => { act(() => root.unmount()); container.remove(); vi.resetAllMocks(); });
@@ -66,6 +66,22 @@ describe('simulation viewport lifecycle', () => {
     expect(scene.dispose).toHaveBeenCalledOnce();
     expect(scene.update).not.toHaveBeenCalled();
     expect(props.onCaptureReady).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it('applies the latest visibility after asynchronous startup and updates it without recreating the renderer', async () => {
+    let finish!: (value: SimulationScene) => void;
+    vi.mocked(createSimulationScene).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    await render();
+    const inspection = { showWaste: true, showStock: false, finalPartOnly: true };
+    await render({ presentation: inspection });
+    await act(async () => finish(scene));
+    expect(scene.setPresentation).toHaveBeenLastCalledWith(inspection);
+    const fit = container.querySelector<HTMLButtonElement>('[aria-label="Fit final part"]')!;
+    await act(async () => fit.click());
+    expect(scene.fitPart).toHaveBeenCalledOnce();
+    await render({ presentation: { ...inspection, finalPartOnly: false } });
+    expect(scene.setPresentation).toHaveBeenLastCalledWith({ ...inspection, finalPartOnly: false });
+    expect(createSimulationScene).toHaveBeenCalledOnce();
   });
 
   async function render(changes: Partial<ComponentProps<typeof SimulationViewport>> = {}) {

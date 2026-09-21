@@ -3,6 +3,7 @@ import * as THREE from 'three/webgpu';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { compileSimulation, sampleSimulation } from '@/domain/simulation';
 import { polygonArea } from '@/domain/simulation/geometry';
+import { setPathOperationClassification } from '@/domain/path-editor/pathDocumentOperations';
 import { triangleModel } from '@/domain/simulation/machine-import/__tests__/machineTestModel';
 import { createSimulationScene } from '../SimulationScene';
 
@@ -32,7 +33,7 @@ vi.mock('three/webgpu', async (importOriginal) => {
   return { ...actual, WebGPURenderer: Renderer };
 });
 
-function plan() {
+function plan(stockWidth = 40, guideRadiusMm = 2) {
   const source = createUpidFromDxfEntities([
     { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
     { type: 'line', layer: 'CUT', start: { x: 20, y: 0 }, end: { x: 30, y: 0 } }
@@ -43,16 +44,17 @@ function plan() {
   for (const operation of source.plan.operations) operation.transitions = {
     entry: { strategy: 'none', review: 'reviewed' }, exit: { strategy: 'none', review: 'reviewed' }
   };
-  const result = compileSimulation(source, { stock: { originX: -5, originY: -5, width: 40, depth: 20, thickness: 10, bottomZ: 0 },
-    wireDiameter: 0.25, cutSpeedMmPerSecond: 10, rapidSpeedMmPerSecond: 20 });
+  const result = compileSimulation(source, { stock: { originX: -5, originY: -5, width: stockWidth, depth: 20, thickness: 10, bottomZ: 0 },
+    wireDiameter: 0.25, guideRadiusMm, cutSpeedMmPerSecond: 10, rapidSpeedMmPerSecond: 20 });
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   return result.plan;
 }
 
-function releasedPlan(supportFloorZ = -50, center = 0, radius = 5) {
-  const source = createUpidFromDxfEntities([
+function releasedPlan(supportFloorZ: number | null = -50, center = 0, radius = 5, hole = false) {
+  let source = createUpidFromDxfEntities([
     { type: 'circle', layer: 'CUT', center: { x: center, y: center }, radius }
   ], { operationOrderStrategy: 'source-order' });
+  if (hole) source = setPathOperationClassification(source, source.plan.operations[0].id, 'hole')!;
   source.geometryBasis = 'wire-centre';
   source.setup = { initialWirePosition: { kind: 'manual', point: { ...source.plan.operations[0].startPoint }, review: 'reviewed' },
     threadingDefault: { mode: 'manual', wireSeparation: 'manual-before-positioning' } };
@@ -218,11 +220,12 @@ describe('simulation scene resources', () => {
       entry: { strategy: 'none', review: 'reviewed' }, exit: { strategy: 'none', review: 'reviewed' }
     };
     const result = compileSimulation(source, { stock: { originX: -10, originY: -10, width: 20, depth: 20, thickness: 10, bottomZ: 0 },
-      wireDiameter: 0.25, cutSpeedMmPerSecond: 10, rapidSpeedMmPerSecond: 20, retention: 'retain' });
+      wireDiameter: 0.25, cutSpeedMmPerSecond: 10, rapidSpeedMmPerSecond: 20, retention: 'retain', wasteHandling: 'keep' });
     if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
     const end = sampleSimulation(result.plan, result.plan.durationSeconds);
     expect(end.pieces).toHaveLength(2);
     const scene = await createSimulationScene(host(), result.plan, new AbortController().signal);
+    scene.setPresentation({ showStock: true, showWaste: true, finalPartOnly: false });
     scene.update(end);
     const extrusions: THREE.Mesh<THREE.ExtrudeGeometry>[] = [];
     state.frames.at(-1)!.scene.traverse(object => {
@@ -285,6 +288,139 @@ describe('simulation scene resources', () => {
       expect(rims.get(10)).toBe(rimVertexCount);
       scene.update(initial);
       expect(outline.geometry.getAttribute('position').count).toBe(24);
+    }
+    scene.dispose();
+  });
+
+  it('uses one finite grid surface at the support elevation, with local disposable lighting and view-dependent clipping', async () => {
+    const compiled = releasedPlan(-20);
+    const scene = await createSimulationScene(host(1200, 650), compiled, new AbortController().signal);
+    scene.update(sampleSimulation(compiled, 0));
+    const frame = state.frames.at(-1)!;
+    const table = frame.scene.getObjectByName('table')!;
+    const grid = frame.scene.getObjectByName('grid') as THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
+    expect(table.children).toEqual([grid]);
+    expect(grid.position.z).toBe(-20);
+    expect(grid.geometry.parameters.width).toBe(40);
+    expect(grid.geometry.parameters.height).toBe(40);
+    expect(grid.material).toMatchObject({ depthWrite: false, side: THREE.DoubleSide });
+    expect(grid.material.opacity).toBeLessThan(1);
+    expect(grid.material.map!.generateMipmaps).toBe(true);
+    const environment = frame.scene.environment!;
+    const environmentDispose = vi.spyOn(environment, 'dispose');
+    const gridDispose = vi.spyOn(grid.material.map!, 'dispose');
+    for (const view of ['isometric', 'top', 'front'] as const) {
+      scene.setView(view);
+      expect(frame.camera.far / frame.camera.near).toBeLessThan(10_000);
+      expect(table.visible).toBe(true);
+    }
+    scene.dispose(); scene.dispose();
+    expect(environmentDispose).toHaveBeenCalledOnce(); expect(gridDispose).toHaveBeenCalledOnce();
+
+    const unsupported = await createSimulationScene(host(), releasedPlan(null), new AbortController().signal);
+    expect(state.frames.at(-1)!.scene.getObjectByName('table')!.visible).toBe(false);
+    unsupported.dispose();
+  });
+
+  it('inspects final material before playback at authored elevation and restores the process view and visibility', async () => {
+    const compiled = releasedPlan();
+    expect(compiled.finalMaterial).toMatchObject({ status: 'ready', solids: [{ kind: 'piece', bottomZ: 0 }] });
+    const scene = await createSimulationScene(host(800, 500), compiled, new AbortController().signal);
+    scene.setMachine(triangleModel(), { x: 0, y: 0, z: 0, rotation: 0 });
+    scene.update(sampleSimulation(compiled, 0));
+    const frame = state.frames.at(-1)!;
+    const processPosition = frame.camera.position.clone();
+    const processQuaternion = frame.camera.quaternion.clone();
+    scene.setPresentation({ showStock: false, showWaste: false, finalPartOnly: true });
+    const visibleMeshes = () => {
+      const meshes: THREE.Mesh[] = [];
+      frame.scene.traverseVisible(object => { if (object instanceof THREE.Mesh) meshes.push(object); });
+      return meshes;
+    };
+    expect(visibleMeshes().map(mesh => mesh.name)).toEqual(['finished-part']);
+    const finished = visibleMeshes()[0];
+    frame.scene.updateMatrixWorld(true);
+    expect(new THREE.Box3().setFromObject(finished).min.z).toBe(0);
+    for (const view of ['top', 'front', 'isometric'] as const) {
+      scene.setView(view); frame.camera.updateMatrixWorld(true);
+      for (const corner of boxCorners(new THREE.Box3().setFromObject(finished))) {
+        const projected = corner.project(frame.camera);
+        expect(Math.abs(projected.x)).toBeLessThan(0.94); expect(Math.abs(projected.y)).toBeLessThan(0.94);
+        expect(projected.z).toBeGreaterThan(-1); expect(projected.z).toBeLessThan(1);
+      }
+    }
+    scene.update(sampleSimulation(compiled, Infinity));
+    expect(visibleMeshes()).toEqual([finished]);
+    expect(finished.position.z).toBe(0);
+    scene.setPresentation({ showStock: false, showWaste: false, finalPartOnly: false });
+    expect(frame.camera.position.distanceTo(processPosition)).toBeLessThan(1e-9);
+    expect(frame.camera.quaternion.angleTo(processQuaternion)).toBeLessThan(1e-7);
+    expect(frame.scene.getObjectByName('stock')!.visible).toBe(false);
+    expect(frame.scene.getObjectByName('machine')!.visible).toBe(true);
+    expect(visibleMeshes().find(mesh => mesh.name === 'finished-part')!.position.z).toBe(-50);
+    scene.dispose();
+  });
+
+  it('shows final remaining plate for a hole-only job while hiding waste, and never fabricates material for an open contour', async () => {
+    const compiled = releasedPlan(-20, 0, 5, true);
+    expect(compiled.finalMaterial.solids[0].kind).toBe('remaining-stock');
+    const scene = await createSimulationScene(host(), compiled, new AbortController().signal);
+    scene.update(sampleSimulation(compiled, compiled.pieces[0].releaseSeconds + 0.01));
+    const frame = state.frames.at(-1)!;
+    const waste = frame.scene.getObjectByName('waste')!;
+    expect(waste.visible).toBe(false);
+    scene.setPresentation({ showStock: true, showWaste: true, finalPartOnly: false });
+    expect(waste.visible).toBe(true);
+    scene.setPresentation({ showStock: true, showWaste: false, finalPartOnly: true });
+    const final = frame.scene.getObjectByName('final-material')!.children[0] as THREE.Mesh<THREE.ExtrudeGeometry>;
+    frame.scene.updateMatrixWorld(true);
+    expect((final.geometry.parameters.shapes as THREE.Shape).holes).toHaveLength(1);
+    const ray = new THREE.Raycaster(new THREE.Vector3(0, 0, 100), new THREE.Vector3(0, 0, -1));
+    expect(ray.intersectObject(final)).toHaveLength(0);
+    ray.ray.origin.x = 8;
+    expect(ray.intersectObject(final)).toHaveLength(1);
+    scene.dispose();
+
+    const open = await createSimulationScene(host(), plan(), new AbortController().signal);
+    const openFrame = state.frames.at(-1)!;
+    const originalPosition = openFrame.camera.position.clone();
+    open.setPresentation({ showStock: true, showWaste: false, finalPartOnly: true }); open.fitPart();
+    expect(openFrame.scene.getObjectByName('final-material')!.children).toHaveLength(0);
+    expect(openFrame.camera.position).toEqual(originalPosition);
+    open.dispose();
+  });
+
+  it.each([40, 10_000])('keeps the physical wire and guide envelope independent of stock width %s', async stockWidth => {
+    const compiled = plan(stockWidth);
+    const scene = await createSimulationScene(host(), compiled, new AbortController().signal);
+    const snapshot = sampleSimulation(compiled, 0);
+    scene.update(snapshot);
+    const frame = state.frames.at(-1)!;
+    frame.scene.updateMatrixWorld(true);
+    const wire = frame.scene.getObjectByName('wire') as THREE.Mesh<THREE.CylinderGeometry>;
+    expect(wire.geometry.parameters.radiusTop).toBe(0.125);
+    expect(wire.geometry.parameters.radiusBottom).toBe(0.125);
+    const wireSize = new THREE.Box3().setFromObject(wire).getSize(new THREE.Vector3());
+    expect(wireSize.x).toBeCloseTo(0.25, 6); expect(wireSize.y).toBeCloseTo(0.25, 6);
+    expect(wireSize.z).toBeCloseTo(snapshot.wire.topZ - snapshot.wire.bottomZ, 6);
+    for (const name of ['upper-guide', 'lower-guide']) {
+      const guide = frame.scene.getObjectByName(name) as THREE.Mesh<THREE.CylinderGeometry>;
+      expect(Math.max(guide.geometry.parameters.radiusTop, guide.geometry.parameters.radiusBottom)).toBe(2);
+      const dimensions = new THREE.Box3().setFromObject(guide).getSize(new THREE.Vector3());
+      expect(dimensions.x).toBeCloseTo(4, 6); expect(dimensions.y).toBeCloseTo(4, 6); expect(dimensions.z).toBeCloseTo(4, 6);
+    }
+    scene.dispose();
+  });
+
+  it('hides disabled guide envelopes throughout process and final presentation changes', async () => {
+    const compiled = plan(10_000, 0);
+    const scene = await createSimulationScene(host(), compiled, new AbortController().signal);
+    scene.update(sampleSimulation(compiled, 0));
+    const frame = state.frames.at(-1)!;
+    for (const finalPartOnly of [false, true, false]) {
+      scene.setPresentation({ showStock: true, showWaste: true, finalPartOnly });
+      expect(frame.scene.getObjectByName('upper-guide')!.visible).toBe(false);
+      expect(frame.scene.getObjectByName('lower-guide')!.visible).toBe(false);
     }
     scene.dispose();
   });
