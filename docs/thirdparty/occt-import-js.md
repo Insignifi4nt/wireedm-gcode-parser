@@ -20,8 +20,9 @@ Files chosen by the user are not sent to these source locations or any server.
 
 Verbatim license texts from the installed package and the pinned OCCT exception
 are included in `src/features/simulation/machine-import/notices/`. The
-`MACHINE_IMPORT_THIRD_PARTY` export provides local license asset links and source
-links for the hosted import UI. No library changes have been made.
+`MACHINE_IMPORT_THIRD_PARTY` export provides local license assets, source archive
+downloads, checksums and rebuild instructions in the hosted import UI. No
+library changes have been made.
 
 Installed upstream artifact SHA-256 values (before bundling):
 
@@ -31,16 +32,46 @@ Installed upstream artifact SHA-256 values (before bundling):
 The authored tetrahedron fixture in the importer tests belongs to this project;
 it was not copied from the parser's upstream test files.
 
-## Distribution checkpoint
+## Source distribution
 
-This change does not deploy the app. Before distributing its JavaScript/WASM,
-retain the prominent library notice, full license texts and exception, and
-provide the complete corresponding library source and build scripts through an
-equivalent download location with the distribution. The importer source archive
-does not embed its OCCT Git submodule: the separate pinned OCCT source is also
-required. Preserve the unmodified binary provenance and include any future
-patches and rebuild instructions. Source links above are provenance references,
-not a substitute for completing that release distribution step.
+`npm run build` now runs `third-party:bundle` in its mandatory postbuild phase.
+It verifies the exact installed npm version and the JS/WASM hashes above,
+obtains both complete upstream source archives using the checked-in
+[`occt-import-js-sources.json`](occt-import-js-sources.json) manifest, and copies
+them unchanged to `dist/third-party/`. Their combined size is **52,618,541 bytes**
+(about 50.2 MiB); they are separate downloads, not app startup assets.
+
+The importer archive does not embed its OCCT Git submodule. Both archives are
+included, together with local license texts, the checksum/provenance manifest,
+an index page and [`rebuild/relink instructions`](occt-import-js-rebuild.md).
+The importer archive includes its CMake project and upstream build scripts.
+The pinned OCCT tree has no further Git submodules. The source archive's WASM
+matches the npm WASM exactly; its JS loader differs only in LF versus the npm
+artifact's CRLF line endings. No new library build or bit-for-bit reproducibility
+claim is made.
+
+Downloads occur only during builds, using exact commit URLs, a 180-second
+timeout, a streaming byte limit, and a checked-in SHA-256. A verified local cache
+in `.cache/third-party-sources/` avoids repeat downloads and supports offline
+builds after the first successful fetch. This cache and `dist/` are ignored by
+Git. Cached corruption, unavailable sources, unexpected bytes, changed installed
+library artifacts, or missing/changed distribution files fail the build.
+Incomplete downloads are removed; corrupt cache files are retained for diagnosis.
+Do not silently regenerate hashes when upstream bytes change: inspect the source
+and provenance before updating the manifest.
+
+`npm run third-party:check` rechecks the distributed files without network access.
+The existing Pages and pull-request workflows run `npm run build`, so the source
+bundle is part of the same checked `dist` artifact as the importer binary. The
+hosted UI downloads source from that app origin; upstream links above remain
+provenance references. STEP imports still make no requests to those source hosts
+and never upload users' model files. Local development links need a completed
+production build served by preview; the development server does not fetch or
+serve source archives on demand.
+
+Retain this source distribution alongside releases, preserve the prominent
+library notice, and include future library patches and changed rebuild steps.
+This implementation record is not a legal certification.
 
 Consumers must remain able to modify the LGPL libraries and rebuild/relink the
 application; do not add terms preventing reverse engineering for debugging such

@@ -1,6 +1,6 @@
 # Publication review — 2026-09-22
 
-Scope: all undeployed changes on `feat/upid-simulation-workbench`, plus the final direct-input, review and documentation changes. Release baseline: `87118ca816bdad202d8ff87586fe07cc0e28d3d9` (`origin/main`, app 0.0.686). The prior implementation checkpoint was `f912af8`; app 0.0.687 is prepared locally. No push, merge or deployment was performed.
+Scope: release 0.0.687 on `feat/upid-simulation-workbench`, including the final direct-input, review and documentation changes. Release baseline: `87118ca816bdad202d8ff87586fe07cc0e28d3d9` (`origin/main`, app 0.0.686). The prior implementation checkpoint was `f912af8`. This report records local preparation and review; the user subsequently authorized merging and automatic publication through [PR #2](https://github.com/Insignifi4nt/wireedm-gcode-parser/pull/2).
 
 ## Standards review
 
@@ -28,7 +28,8 @@ Controller generation for the corrected saved gear succeeded with that exact pos
 
 ## Verification
 
-- Full unit/integration suite: 1,788 tests across 185 files passed.
+- Full unit/integration suite before the final source-distribution addition, including the header follow-up: 1,794 tests across 187 files passed.
+- Source-distribution and machine-import notice checks: 25 focused tests passed, including 11 new distribution regressions. Final integrated execution is recorded in PR CI.
 - Production build and application TypeScript: passed.
 - Static documentation build: 17 pages; documentation checks cover 58 generated files.
 - UPID executable conformance: all three fixtures passed.
@@ -43,7 +44,7 @@ Simulation is a nominal sampled preview with illustrative timing, not a kerf/off
 
 The exact Robofil binding remains unverified on the physical machine. Its runtime rejection of unsupported already-separated manual repositioning remains in place. No new controller policy or automatic post upgrade is implied.
 
-The build retains known large-chunk and OCCT browser-externalization warnings. Forced WebGL fallback, full mobile coverage and the full browser CI suite were not rerun in this publication pass. The reviewed PR and its CI are still required before merging; this report does not claim a deployed or machine-verified release.
+The build retains known large-chunk and OCCT browser-externalization warnings. Forced WebGL fallback and full mobile coverage were not rerun in this publication pass. The first complete PR workflow passed 78 Chromium browser tests; one optional smoke test requiring a pre-seeded local project was skipped. Successful checks on the final commit are required before merging. The PR and its linked GitHub Actions runs record the merge and publication outcome; software checks do not imply machine verification.
 
 ## Header follow-up
 
@@ -52,3 +53,9 @@ The user's final UI feedback moved Editor/Simulation into the existing header, u
 Independent review found no substantive behavior or accessibility regression. Native verification covered 320, 520, 641, 1024 and the original 1355 pixel width, including keyboard workspace switching and a viewport-clamped mobile notification panel. The 520 pixel check caught overlapping header controls; the two-row compact header now applies through 640 pixels. Desktop remains one row. Both README screenshots were refreshed after the change, and the browser warning/error log remained empty.
 
 All 128 focused tab, notification, readiness and editor integration tests across five files passed, along with the production build/TypeScript/documentation checks. This follow-up changes presentation only; version 0.0.687 remains the single proposed release for the unmerged branch.
+
+## Source-distribution release review
+
+The final review caught an unfinished checkpoint in the STEP importer's third-party record: its corresponding library source needed to ship alongside the JavaScript/WASM distribution. Production builds now include both complete pinned upstream source archives, exact licenses, checksums and rebuild/relink instructions under `third-party/`. They total 52,618,541 bytes and are optional downloads, never app startup assets. The build verifies source and installed-library hashes and fails on unavailable, changed or incomplete files. User STEP files remain local.
+
+Independent review verified the importer release's exact source commit and OCCT submodule revision, the actual archive bytes, the matching upstream/npm WASM and the loader's line-ending-only difference. All 25 focused distribution/notice tests and the real bundle verification passed. The [third-party record](../thirdparty/occt-import-js.md) documents provenance, build behavior and modification/relinking. Full OCCT recompilation and bit-for-bit reproduction were not performed and are not claimed.
