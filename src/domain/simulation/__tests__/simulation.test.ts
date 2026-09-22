@@ -370,4 +370,19 @@ describe('approximate stock and released-piece obstructions', () => {
     }));
     expect(plan.warnings).not.toContainEqual(expect.objectContaining({ eventId: laterMotion.event.id, envelope: 'wire' }));
   });
+
+  it.each([-22, -26])('checks the full lower guide body against a thin part supported at Z=%s', (supportFloorZ) => {
+    const source = document([...rectangle(),
+      { type: 'line', layer: 'CUT', start: { x: 11.5, y: 5 }, end: { x: 12.5, y: 5 } }
+    ]);
+    const plan = compiled(source, { stock: { ...settings.stock, thickness: 1 }, supportFloorZ,
+      guideClearanceMm: 20, guideRadiusMm: 2 });
+    const laterMotion = plan.steps.find(({ event }) => event.kind === 'motion' && event.start.x === 11.5)!;
+    const landed = sampleSimulation(plan, laterMotion.startSeconds).pieces[0];
+    expect(landed).toMatchObject({ bottomZ: supportFloorZ, topZ: supportFloorZ + 1, state: 'supported' });
+    // The visible lower guide occupies Z=-24..-20; neither test part reaches the wire-end plane.
+    const contact = plan.warnings.find(({ eventId, envelope }) => eventId === laterMotion.event.id && envelope === 'guide');
+    expect(Boolean(contact)).toBe(supportFloorZ === -22);
+    expect(plan.warnings).not.toContainEqual(expect.objectContaining({ eventId: laterMotion.event.id, envelope: 'wire' }));
+  });
 });

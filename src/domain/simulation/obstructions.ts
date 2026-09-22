@@ -24,6 +24,12 @@ export function compileObstructions(plan: SimulationPlan): { warnings: Simulatio
   const wireTop = stock.bottomZ + stock.thickness + plan.settings.guideClearanceMm;
   const radius = plan.settings.wireDiameter / 2;
   const guideReach = Math.max(0, plan.settings.guideRadiusMm - radius);
+  // Match the rendered guide bodies beyond each wire end, using their maximum radius.
+  const guideHeight = plan.settings.guideRadiusMm * 2;
+  const overlapsGuide = (bottomZ: number, topZ: number) =>
+    bottomZ <= wireBottom + EPSILON && topZ >= wireBottom - guideHeight - EPSILON
+    || bottomZ <= wireTop + guideHeight + EPSILON && topZ >= wireTop - EPSILON;
+  const guideStockOverlap = overlapsGuide(stock.bottomZ, stock.bottomZ + stock.thickness);
   const polygons: BoundedPolygon[] = [stockPolygon, ...plan.pieces.map(({ polygon }) => polygon)]
     .map((polygon) => ({ polygon, bounds: polygonBounds(polygon) }));
   const boundsByPolygon = new Map(polygons.map(({ polygon, bounds }) => [polygon, bounds]));
@@ -58,8 +64,6 @@ export function compileObstructions(plan: SimulationPlan): { warnings: Simulatio
         && !released.stockHoles.some((hole) => pointInPolygon(point, hole))
         && !plan.steps.some((cut) => cut.endSeconds <= time && cut.event.kind === 'motion'
           && distanceToMotion(point, cut.event) <= radius + EPSILON)) add(null, 'wire');
-      const guideStockOverlap = (wireBottom >= stock.bottomZ && wireBottom <= stock.bottomZ + stock.thickness)
-        || (wireTop >= stock.bottomZ && wireTop <= stock.bottomZ + stock.thickness);
       if (plan.settings.guideRadiusMm > 0 && guideStockOverlap
         && intersectsMaterial(point, stockPolygon, released.stockHoles, plan.settings.guideRadiusMm)) add(null, 'guide');
       for (const piece of released.pieces) {
@@ -71,9 +75,7 @@ export function compileObstructions(plan: SimulationPlan): { warnings: Simulatio
           && distanceToPolygon(point, piece.polygon) > EPSILON
           && piece.holes.every((hole) => distanceToPolygon(point, hole) > EPSILON);
         if (step.wireThreaded && piece.topZ > wireBottom + EPSILON && piece.bottomZ < wireTop - EPSILON && insideMaterial) add(piece, 'wire');
-        const guideOverlap = (piece.bottomZ - EPSILON <= wireBottom && piece.topZ + EPSILON >= wireBottom)
-          || (piece.bottomZ - EPSILON <= wireTop && piece.topZ + EPSILON >= wireTop);
-        if (plan.settings.guideRadiusMm > 0 && guideOverlap && intersectsMaterial(point, piece.polygon, piece.holes,
+        if (plan.settings.guideRadiusMm > 0 && overlapsGuide(piece.bottomZ, piece.topZ) && intersectsMaterial(point, piece.polygon, piece.holes,
           guideReach)) add(piece, 'guide');
       }
     }
@@ -124,8 +126,10 @@ function sampleFractions(step: SimulationStep, plan: SimulationPlan, polygons: r
       fallStart = Math.min(fallStart, ancestor.releaseSeconds);
       ancestorId = ancestor.parentPieceId;
     }
-    // Times at which the falling extrusion first meets and then clears the lower guide/wire.
-    for (const drop of [plan.settings.guideClearanceMm, plan.settings.guideClearanceMm + plan.settings.stock.thickness]) {
+    // Partition contacts at both guide-body ends as well as the wire-end plane.
+    const guideHeight = plan.settings.guideRadiusMm * 2;
+    for (const drop of [plan.settings.guideClearanceMm, plan.settings.guideClearanceMm + plan.settings.stock.thickness,
+      plan.settings.guideClearanceMm + guideHeight, plan.settings.guideClearanceMm + guideHeight + plan.settings.stock.thickness]) {
       addTime(fallStart + Math.sqrt(2 * drop / 9810));
     }
   }

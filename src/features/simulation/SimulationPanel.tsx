@@ -146,7 +146,7 @@ export default function SimulationPanel({ document, projectName, savedAt, dirty,
           if (operation) { setPlaying(false); setElapsed(operation.time); }
         }}><option value="" disabled>Jump to operation</option>{operationStarts.map((operation, index) => <option key={operation.id} value={operation.id ?? ''}>{index + 1}. {operation.name}</option>)}</select>}
         <div className="sim-tools" ref={setupTools}>
-          {setupButton('stock', 'Stock settings', <><Box size={14} /><span>Stock</span><small>{settings.stock.width} × {settings.stock.depth} × {settings.stock.thickness}</small></>)}
+          {setupButton('stock', 'Stock settings', <><Box size={14} /><span>Stock</span><small>{[settings.stock.width, settings.stock.depth, settings.stock.thickness].map(value => Number(value.toFixed(3))).join(' × ')}</small></>)}
           {setupButton('machine', 'Machine model settings', <><FileBox size={14} /><span>Machine</span>{machine && <i aria-label="Model loaded" />}</>)}
           {setupButton('checks', 'Simulation checks', <><AlertTriangle size={14} /><span>Checks</span><b>{findingCount}</b></>)}
           <span id={checksDescriptionId} className="sr-only" aria-live="polite">{checksDescription}</span>
