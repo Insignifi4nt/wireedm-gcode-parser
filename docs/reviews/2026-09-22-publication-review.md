@@ -43,4 +43,12 @@ Simulation is a nominal sampled preview with illustrative timing, not a kerf/off
 
 The exact Robofil binding remains unverified on the physical machine. Its runtime rejection of unsupported already-separated manual repositioning remains in place. No new controller policy or automatic post upgrade is implied.
 
-The build retains known large-chunk and OCCT browser-externalization warnings. Forced WebGL fallback, mobile coverage and the full browser CI suite were not rerun in this publication pass. The reviewed PR and its CI are still required before merging; this report does not claim a deployed or machine-verified release.
+The build retains known large-chunk and OCCT browser-externalization warnings. Forced WebGL fallback, full mobile coverage and the full browser CI suite were not rerun in this publication pass. The reviewed PR and its CI are still required before merging; this report does not claim a deployed or machine-verified release.
+
+## Header follow-up
+
+The user's final UI feedback moved Editor/Simulation into the existing header, using a shared pill tab component with a sliding selection, reduced-motion support and roving keyboard navigation. The old workspace-wide tab row is removed. Agent readiness, action history and captured-preview access now live in an Agent tab within the notification popover. Every opening starts on Notifications; Escape restores trigger focus, and outside pointer/focus dismisses it.
+
+Independent review found no substantive behavior or accessibility regression. Native verification covered 320, 520, 641, 1024 and the original 1355 pixel width, including keyboard workspace switching and a viewport-clamped mobile notification panel. The 520 pixel check caught overlapping header controls; the two-row compact header now applies through 640 pixels. Desktop remains one row. Both README screenshots were refreshed after the change, and the browser warning/error log remained empty.
+
+All 128 focused tab, notification, readiness and editor integration tests across five files passed, along with the production build/TypeScript/documentation checks. This follow-up changes presentation only; version 0.0.687 remains the single proposed release for the unmerged branch.

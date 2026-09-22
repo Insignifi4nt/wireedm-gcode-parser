@@ -396,7 +396,7 @@ describe('Editor import, export, and parse feedback', () => {
         notificationsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       });
 
-      const historyItems = [...container.querySelectorAll('[data-status-notification-item]')];
+      const historyItems = [...document.querySelectorAll('[data-status-notification-item]')];
       expect(historyItems[0]?.textContent).toContain('toast-import-2.nc');
       expect(historyItems[1]?.textContent).toContain('toast-import.nc');
     } finally {

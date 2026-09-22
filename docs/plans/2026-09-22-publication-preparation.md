@@ -29,3 +29,10 @@ User requested direct agent file input without the dedicated header picker, a Ro
 - Final integrated suite: 1,788 tests across 185 files passed. Production build/TypeScript, documentation checks (17 pages, 58 files), UPID conformance, post documentation consistency and release 0.0.687 compatibility checks passed. Final browser warning/error log was empty.
 - Local checkpoints: `5805244` direct agent inputs and import safeguards; `df2bad5` guide-body collision checks and stock-label formatting; `0746ac2` Robofil compatibility assessment/regressions. README images, release metadata and this review are grouped in the final publication-preparation commit.
 - Preparation is complete. Nothing was pushed, merged or deployed. A reviewed PR and its browser CI remain the publication gate; no physical-machine verification is claimed.
+
+## Final UI feedback
+
+- Moved Editor/Simulation to an animated pill in the existing header, removing its separate row. Shared keyboard-accessible tabs respect reduced motion; simulation availability checks are unchanged.
+- Moved agent readiness, history and Preview PNG into the notification popover's Agent tab. Every opening defaults to Notifications.
+- Checked native header layouts at 320/520/641/1024/1355 pixels and fixed the intermediate-width overlap. Refreshed both README screenshots and the public agent/simulation guides.
+- Independent UI review found no substantive regressions. Focused integration checks and production build/documentation checks pass. This remains part of proposed release 0.0.687; no additional version bump or deployment.

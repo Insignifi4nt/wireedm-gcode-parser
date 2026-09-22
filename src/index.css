@@ -344,6 +344,46 @@ summary:focus-visible {
   }
 }
 
+@media (max-width: 640px) {
+  [data-app-header]:has([data-editor-workspace-switcher]) {
+    height: 72px;
+    flex-wrap: wrap;
+    align-content: center;
+    gap: 2px;
+    padding-inline: 4px;
+  }
+
+  [data-app-header]:has([data-editor-workspace-switcher]) [data-app-header-system-controls] {
+    order: 1;
+    margin-left: auto;
+    gap: 4px;
+  }
+
+  [data-editor-context][data-has-workspace-switcher="true"] {
+    display: contents;
+  }
+
+  [data-editor-context][data-has-workspace-switcher="true"] > [data-editor-back],
+  [data-editor-workspace-switcher] {
+    order: 1;
+  }
+
+  [data-editor-workspace-switcher] [role="tab"] {
+    height: 28px;
+    padding-inline: 8px;
+  }
+
+  [data-editor-workspace-switcher] svg {
+    display: none;
+  }
+
+  [data-editor-context][data-has-workspace-switcher="true"] > [data-editor-header-actions] {
+    order: 2;
+    flex-basis: 100%;
+    justify-content: space-between;
+  }
+}
+
 #root {
   width: 100vw;
   height: 100vh;

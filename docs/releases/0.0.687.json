@@ -24,7 +24,8 @@
     "changes": [
       "Simulation adds rough stock, wire playback, released material, default waste removal between cuts and a final-part view. STEP machine geometry loads locally for approximate interference checks.",
       "The simulation viewport has a stable support grid, studio lighting and reflections, compact settings, and explicit saved-project and incomplete-check states.",
-      "Agent tools accept DXF/UPID text and complete machine-package bytes directly. The dedicated Agent input file button is removed; readiness and recent action status remain.",
+      "Agent tools accept DXF/UPID text and complete machine-package bytes directly. The dedicated Agent input file button is removed; readiness, recent actions and captured previews are in the notification bell's Agent tab.",
+      "An animated pill in the app header switches between Editor and Simulation, leaving more room for the part. Notifications open on their own tab by default.",
       "Agents can discover exact edit schemas, export saved UPID/controller files and capture the visible editor or simulation preview through shared application checks.",
       "Editor fixes preserve pending stop/transform edits, discard stale controller previews and retain authored geometry identities. Inconsistent DXF vertex counts and stale UPID bounds produce diagnostics.",
       "Storage backups and recovery preserve exact original text and stop on conflicting catalog changes. Installed packages and saved revisions are retained unchanged."

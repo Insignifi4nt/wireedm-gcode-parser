@@ -21,6 +21,7 @@ import type { SimulationCapture } from '@/features/simulation/SimulationViewport
 
 import { useAppRail } from '@/app/AppRailContext';
 import { RailResizeHandle } from '@/components/ui/RailResizeHandle';
+import { SlidingTabs } from '@/components/ui/SlidingTabs';
 import { parseGCodeProgram } from '@/domain/editor/gcodeParser';
 import {
   deleteBodyGroup,
@@ -902,6 +903,17 @@ export function EditorPage({
         title={editorHeaderTitle}
         titleTooltip={editorHeaderTooltip}
         undoAvailable={!activeMutatingWorkflow && undoStack.length > 0}
+        workspaceSwitcher={isPathProject ? <SlidingTabs
+          label="Project workspace" value={workspaceView}
+          onValueChange={view => { setWorkspaceView(view); if (view === 'simulation') setSimulationOpened(true); }}
+          tabs={[
+            { value: 'editor', label: 'Editor', icon: <PenTool />, id: 'workspace-tab-editor', controls: 'workspace-editor' },
+            { value: 'simulation', label: 'Simulation', icon: <Box />, id: 'workspace-tab-simulation', controls: 'workspace-simulation',
+              disabled: !savedSimulationDocument || Boolean(activeWorkflowSession) || isEditorMutationLocked,
+              title: activeWorkflowSession ? 'Finish the active editor workflow before simulating.'
+                : !savedSimulationDocument ? 'Save a UPID path project before simulating.' : 'Simulate the saved UPID process' }
+          ]}
+        /> : undefined}
         workspaceControls={pathDocumentDraft ? (
           <EditorWorkflowMenuBar groups={editorWorkflowMenus} />
         ) : undefined}
@@ -909,6 +921,7 @@ export function EditorPage({
     ),
     [
       activeMutatingWorkflow,
+      activeWorkflowSession,
       editorHeaderTitle,
       editorHeaderTooltip,
       documentContext,
@@ -932,6 +945,8 @@ export function EditorPage({
       program?.filePath,
       redoStack,
       saveErrorMessage,
+      savedSimulationDocument,
+      workspaceView,
       workflowProjectSaveBlockedReason,
       selectedPathElement,
       selectedPathOperationId,
@@ -3616,20 +3631,6 @@ export function EditorPage({
           )}
         {isPathProject && renderInspectorPanelContent()}
       </div>
-      {isPathProject && <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-card/60 px-2">
-        <div role="tablist" aria-label="Project workspace" className="flex h-full items-stretch gap-1" onKeyDown={event => {
-          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-          event.preventDefault();
-          const next = event.key === 'Home' ? 'editor' : event.key === 'End' ? 'simulation' : workspaceView === 'editor' ? 'simulation' : 'editor';
-          if (next === 'simulation' && (!savedSimulationDocument || activeWorkflowSession || isEditorMutationLocked)) return;
-          setWorkspaceView(next); if (next === 'simulation') setSimulationOpened(true);
-          editorRoot.current?.querySelector<HTMLButtonElement>(`#workspace-tab-${next}`)?.focus();
-        }}>
-          <button id="workspace-tab-editor" aria-controls="workspace-editor" role="tab" aria-selected={workspaceView === 'editor'} tabIndex={workspaceView === 'editor' ? 0 : -1} type="button" onClick={() => setWorkspaceView('editor')} className={`flex items-center gap-1.5 border-b-2 px-3 text-[11px] ${workspaceView === 'editor' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><PenTool size={12} />Editor</button>
-          <button id="workspace-tab-simulation" aria-controls="workspace-simulation" role="tab" aria-selected={workspaceView === 'simulation'} tabIndex={workspaceView === 'simulation' ? 0 : -1} type="button" disabled={!savedSimulationDocument || Boolean(activeWorkflowSession) || isEditorMutationLocked} title={activeWorkflowSession ? 'Finish the active editor workflow before simulating.' : !savedSimulationDocument ? 'Save a UPID path project before simulating.' : 'Simulate the saved UPID process'} onClick={() => { setSimulationOpened(true); setWorkspaceView('simulation'); }} className={`flex items-center gap-1.5 border-b-2 px-3 text-[11px] disabled:opacity-40 ${workspaceView === 'simulation' ? 'border-emerald-300 text-emerald-200' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><Box size={13} />Simulation</button>
-        </div>
-        {activeWorkflowSession && <span className="hidden text-[9px] text-muted-foreground sm:block">Finish the active tool to open simulation</span>}
-      </div>}
       {simulationOpened && savedSimulationDocument && program && <div id="workspace-simulation" role="tabpanel" aria-labelledby="workspace-tab-simulation" className={`${workspaceView === 'simulation' ? 'flex' : 'hidden'} min-h-0 flex-1`}>
         <Suspense fallback={<p className="p-4 text-xs text-muted-foreground" role="status">Loading simulation workspace…</p>}>
           <SimulationPanel key={programIdentity} document={savedSimulationDocument} projectName={program.project.name} savedAt={program.project.updatedAt} dirty={hasUnsavedChanges} active={workspaceView === 'simulation'} onEdit={() => setWorkspaceView('editor')} onCaptureReady={capture => { simulationCapture.current = capture; }} />

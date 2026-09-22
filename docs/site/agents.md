@@ -2,7 +2,7 @@
 
 An agent in a browser with WebMCP support can discover tools on the open app page. The same pages remain usable through their ordinary controls. Open the relevant page before asking the agent to work; a cloud browser has its own files and project library.
 
-Start with `edm_get_context` and `edm_workflow_context`. They identify the current draft, available edit/capture callbacks, workbench version, recent generated artifact and useful next actions. The app's **Agent** indicator shows running, completed, failed and cancelled calls. Expand it to review recent actions and error messages; it does not store tool arguments or project contents.
+Start with `edm_get_context` and `edm_workflow_context`. They identify the current draft, available edit/capture callbacks, workbench version, recent generated artifact and useful next actions. Open the notification bell and select **Agent** to check tool readiness and review running, completed, failed and cancelled calls. This history does not store tool arguments or project contents.
 
 | Task | Tool |
 | --- | --- |
@@ -64,7 +64,7 @@ Exact geometry queries provide coordinates, bounds, lengths, arc centers and rad
 
 Call `edm_capture_preview` with the current `draftVersion`. It captures the active 2D or 3D preview as a PNG of at most 1600 pixels per dimension and 1 MiB. The 2D view includes the editor draft and its geometry overlays; the 3D simulation uses the saved project and excludes unsaved edits. The receipt's `contentSource` makes that distinction explicit. `dirty` describes the editor draft, even when capturing a saved-project simulation. The receipt also identifies the draft version, view source, image dimensions, byte count, SHA-256 and local `previewUrl`. Capture does not edit or save the job.
 
-The result is an image artifact receipt, not an inline image delivered to the model. An agent can use its browser's normal image capabilities to inspect the local preview URL. Supply `"download": true` to request the PNG download, or use **Preview PNG** in the app. The URL belongs to this page and is temporary; save the PNG before closing/reloading the page or replacing the capture. The tool captures the machining preview only, not app panels, another page or the desktop. It never requests screen-recording permission. A changing draft discards the capture and returns `STALE_STATE`; an unavailable preview returns `CAPTURE_UNAVAILABLE`.
+The result is an image artifact receipt, not an inline image delivered to the model. An agent can use its browser's normal image capabilities to inspect the local preview URL. Supply `"download": true` to request the PNG download, or open the notification bell, select **Agent** and use **Preview PNG**. The URL belongs to this page and is temporary; save the PNG before closing/reloading the page or replacing the capture. The tool captures the machining preview only, not app panels, another page or the desktop. It never requests screen-recording permission. A changing draft discards the capture and returns `STALE_STATE`; an unavailable preview returns `CAPTURE_UNAVAILABLE`.
 
 ## Create or repair a machine package
 

@@ -43,7 +43,7 @@ export default function App({ services }: AppProps = {}) {
 
   return (
     <AppShell
-      agentFileControl={<>{agentActions.previewControl}<AgentActivity activity={agentActivity} /></>}
+      agentPanelContent={<><AgentActivity activity={agentActivity} />{agentActions.previewControl && <div className="mt-3 border-t border-border pt-2">{agentActions.previewControl}</div>}</>}
       connectedWorkbench={app.connectedWorkbench}
       errorMessage={app.errorMessage}
       interactionLocked={app.workbenchInteractionLocked}

@@ -46,18 +46,18 @@ describe('visible agent activity', () => {
     await act(async () => root!.render(<Harness />));
     let pending!: Promise<unknown>;
     await act(async () => { pending = registered.get('edm_first')!.execute({}); });
-    expect(container.querySelector('summary')?.textContent).toContain('running · first');
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('running · first');
     if (completion === 'before') {
       await act(async () => registration.resolve());
-      expect(container.querySelector('summary')?.textContent).toContain('running · first');
+      expect(container.querySelector('[role="status"]')?.textContent).toContain('running · first');
     }
     await act(async () => { execution.resolve(); await pending; });
     expect(container.textContent).toContain('first · succeeded');
     if (completion === 'after') {
-      expect(container.querySelector('summary')?.textContent).toBe('Preparing agent tools');
+      expect(container.querySelector('[role="status"]')?.textContent).toBe('Preparing agent tools');
       await act(async () => registration.resolve());
     }
-    expect(container.querySelector('summary')?.textContent).toContain('done · first');
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('done · first');
   });
 
   it('ignores the disposed StrictMode registration while the replacement is preparing', async () => {
@@ -93,7 +93,7 @@ describe('visible agent activity', () => {
     container = document.createElement('div'); document.body.append(container); root = createRoot(container);
     await act(async () => root!.render(<Harness />));
     await act(async () => first.reject(new Error('Registration unavailable')));
-    expect(container.textContent).toBe('Agent tools unavailable');
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Agent tools unavailable');
     expect(warning).toHaveBeenCalledOnce();
     await act(async () => root!.render(null));
     await act(async () => root!.render(<Harness />));
@@ -124,20 +124,22 @@ describe('visible agent activity', () => {
     await act(async () => { generating = registered.get('edm_generate_controller')!.execute({}); });
     for (let index = 0; index < 10; index++) await act(async () => { await registered.get('edm_get_context')!.execute({}); });
     expect(state.calls).toHaveLength(8);
-    expect(container.querySelector('summary')?.textContent).toContain('running · generate controller');
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('running · generate controller');
     version = 2;
     await act(async () => root!.render(<Harness />));
     await act(async () => { expect(await registered.get('edm_get_context')!.execute({})).toEqual({ ok: true, data: { version: 2 } }); });
     await act(async () => { finish(); await generating; });
-    expect(container.querySelector('summary')?.textContent).toContain('failed · generate controller');
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('failed · generate controller');
     expect(container.textContent).toContain('Review the exact post.');
   });
 
-  it('keeps the ordinary interface uncluttered when the browser has no site tools', async () => {
+  it('explains unsupported browsers within the Agent panel', async () => {
     function Harness() { return <AgentActivity activity={useSiteTools([])} />; }
     container = document.createElement('div'); document.body.append(container); root = createRoot(container);
     await act(async () => root!.render(<Harness />));
-    expect(container.textContent).toBe('');
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Agent tools unavailable');
+    expect(container.textContent).toContain('This browser does not support WebMCP agent tools.');
+    expect(container.textContent).toContain('The ordinary app controls remain available.');
   });
 });
 
