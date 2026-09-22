@@ -24,6 +24,8 @@ The post emits `G92` for program setup. Compensation starts with `G41` or `G42`,
 
 For direct contour entry and exit, leave transition geometry absent or use the reviewed no-entry and no-exit choices. The package emits no geometric lead in that case. Generated programs remain candidates for controller graphics, simulation, and a supervised dry run; the setup is deliberately `unverified`.
 
+The [2026-09-22 compatibility assessment](../../../../docs/maintainers/2026-09-22-robofil-assessment.md) confirms that the simulation and UPID correctness work requires no package upgrade. Simulation waste removal is an assumed operator action and emits no controller stop. A distinct repositioning move using manual threading with an already-separated wire is also unsupported by this candidate: its runtime guard rejects the move while compensation is active, even though generic capability preflight accepts that precondition.
+
 To reproduce the package:
 
 ```text
