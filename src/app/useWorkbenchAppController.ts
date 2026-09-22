@@ -788,7 +788,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
 
   async function handleCommitMachinePackage(
     prepared: PreparedMachinePackageInstallation,
-    resolution: MachinePackageInstallationResolution
+    resolution: MachinePackageInstallationResolution,
+    options: { readonly beforeWrite?: () => void } = {}
   ) {
     const workbench = requireWorkbench();
     if (!workbench || prepared.workbench.adapter !== workbench.adapter) {
@@ -796,9 +797,9 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       return false;
     }
     return runSettingsMutation(async () => {
-      const result = await services.commitStoredMachinePackageInstallation(prepared, resolution);
+      const result = await services.commitStoredMachinePackageInstallation(prepared, resolution, options);
       return result.ok ? { ok: true as const, workbench: result.workbench } : result;
-    }, 'Machine package installed.');
+    }, 'Machine package installed.', error => error instanceof ToolError || error instanceof DOMException && error.name === 'AbortError');
   }
 
   async function handleActivateMachineSetup(machineId: string, setupId: string) {
@@ -826,7 +827,8 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       | { readonly ok: true; readonly workbench: ConnectedWorkbenchCatalog }
       | { readonly ok: false; readonly error: { readonly message: string } }
     >,
-    successMessage: string
+    successMessage: string,
+    shouldRethrow: (error: unknown) => boolean = () => false
   ) {
     if (activeMutation.current) return false;
     activeMutation.current = 'project-action';
@@ -843,6 +845,7 @@ export function useWorkbenchAppController(overrides: Partial<AppServices> = {}, 
       showStatusToast(successMessage, 'success');
       return true;
     } catch (error) {
+      if (shouldRethrow(error)) { setSettingsStatus('idle'); throw error; }
       settingsFailure(errorText(error));
       return false;
     } finally {

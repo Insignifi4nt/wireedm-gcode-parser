@@ -52,6 +52,39 @@ describe.each(['cache', 'folder'] as const)('%s machine-package installation exa
     expect(await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH)).toBeNull();
   });
 
+  it('checks cancellation after exact catalog reads without creating a journal or changing originals', async () => {
+    const { adapter, before, prepared } = await fixture();
+    const abort = new AbortController();
+    const read = adapter.readExactText!.bind(adapter);
+    vi.spyOn(adapter, 'readExactText').mockImplementation(async path => {
+      const text = await read(path);
+      if (path === MACHINE_LIBRARY_PATH) abort.abort();
+      return text;
+    });
+    const writes = vi.spyOn(adapter, 'writeText');
+    await expect(commitStoredMachinePackageInstallation(prepared, { kind: 'install-new' }, { beforeWrite: () => abort.signal.throwIfAborted() }))
+      .rejects.toMatchObject({ name: 'AbortError' });
+    expect(writes).not.toHaveBeenCalled();
+    for (const [path, original] of before) expect(await exact(adapter, path)).toBe(original);
+    expect(await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH)).toBeNull();
+  });
+
+  it('finishes a transaction after late cancellation instead of interrupting catalog recovery', async () => {
+    const { adapter, prepared } = await fixture();
+    const abort = new AbortController();
+    const write = adapter.writeText.bind(adapter);
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      await write(path, text);
+      if (path === CATALOG_PAIR_TRANSACTION_PATH) abort.abort();
+    });
+    expect(await commitStoredMachinePackageInstallation(prepared, { kind: 'install-new' }, { beforeWrite: () => abort.signal.throwIfAborted() }))
+      .toMatchObject({ ok: true });
+    expect(abort.signal.aborted).toBe(true);
+    expect(await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH)).toBeNull();
+    const reopened = await initializeWorkbenchCatalog(adapter);
+    expect(reopened).toMatchObject({ ok: true, workbench: { machines: { machines: [{ id: prepared.package.document.machine.id }] } } });
+  });
+
   it('recovers recorded unchanged catalogs after installation and rollback writes are interrupted', async () => {
     const { adapter, before, prepared } = await fixture();
     const write = adapter.writeText.bind(adapter);

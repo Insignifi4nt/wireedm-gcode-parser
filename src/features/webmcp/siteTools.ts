@@ -146,11 +146,11 @@ export function useSiteTools(tools: readonly SiteTool[]) {
 
 function activityOutcome(result: unknown): Pick<SiteToolActivity, 'phase' | 'errorCode' | 'message'> {
   if (!result || typeof result !== 'object') return { phase: 'succeeded' };
-  const envelope = result as { ok?: boolean; error?: { code?: unknown; message?: unknown }; data?: { generated?: boolean; error?: { code?: unknown; message?: unknown }; status?: unknown } };
+  const envelope = result as { ok?: boolean; error?: { code?: unknown; message?: unknown }; data?: { generated?: boolean; installed?: boolean; error?: { code?: unknown; message?: unknown }; status?: unknown } };
   if (envelope.ok !== false && envelope.data?.status === 'generated-download-not-requested') return {
     phase: 'succeeded', message: 'Controller artifact generated; download was not requested after cancellation.'
   };
-  const error = envelope.ok === false ? envelope.error : envelope.data?.generated === false ||
+  const error = envelope.ok === false ? envelope.error : envelope.data?.generated === false || envelope.data?.installed === false ||
     envelope.data?.status === 'generated-download-failed' || envelope.data?.status === 'captured-download-failed' ? envelope.data.error : undefined;
   if (envelope.ok !== false && !error) return { phase: 'succeeded' };
   return { phase: error?.code === 'CANCELLED' ? 'cancelled' : 'failed',

@@ -170,7 +170,8 @@ function formatMachinePackageDiagnostic(diagnostic: MachinePackageDiagnostic) {
 
 export async function commitStoredMachinePackageInstallation(
   prepared: PreparedMachinePackageInstallation,
-  resolution: MachinePackageInstallationResolution
+  resolution: MachinePackageInstallationResolution,
+  options: { readonly beforeWrite?: () => void } = {}
 ): Promise<CommitStoredMachinePackageInstallationResult> {
   return withWorkbenchMutationLock(prepared.workbench.adapter, async () => {
     const reopened = await initializeWorkbenchCatalogUnderMutationLock(prepared.workbench.adapter);
@@ -225,6 +226,7 @@ export async function commitStoredMachinePackageInstallation(
       canonicalJson(posts) === canonicalJson(reopened.workbench.posts) &&
       canonicalJson(machines.library) === canonicalJson(reopened.workbench.machines)
     ) {
+      options.beforeWrite?.();
       return {
         ok: true,
         workbench: Object.freeze({ ...reopened.workbench, posts, machines: machines.library })
@@ -234,7 +236,8 @@ export async function commitStoredMachinePackageInstallation(
     const persisted = await persistCatalogsAtomically(
       reopened.workbench.adapter,
       posts,
-      machines.library
+      machines.library,
+      options.beforeWrite
     );
     if (!persisted.ok) return persisted;
     return {
@@ -466,7 +469,8 @@ function validateMergedCatalogs(
 async function persistCatalogsAtomically(
   adapter: WorkbenchStorageAdapter,
   posts: PostLibrary,
-  machines: MachineLibrary
+  machines: MachineLibrary,
+  beforeWrite?: () => void
 ): Promise<
   | { readonly ok: true }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
@@ -486,6 +490,8 @@ async function persistCatalogsAtomically(
     schemaVersion: 1,
     machines: machines.machines
   }, null, 2);
+  // The transaction must finish or recover once its journal phase begins.
+  beforeWrite?.();
   const transaction = await beginCatalogPairTransaction(adapter, {
     previousPosts: beforePosts.text,
     previousMachines: beforeMachines.text,

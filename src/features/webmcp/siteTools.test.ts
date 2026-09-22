@@ -14,17 +14,21 @@ describe('site tool boundary', () => {
     const cancel = new AbortController();
     const tools = [
       siteTool('generate', 'Generate', object({}), () => ({ generated: false, error: { code: 'POST_FAILED', message: 'Post requires review.' } }), false),
-      siteTool('save', 'Save', object({}), () => { cancel.abort(); return { saved: true }; }, false)
+      siteTool('save', 'Save', object({}), () => { cancel.abort(); return { saved: true }; }, false),
+      siteTool('install', 'Install', object({}), () => ({ installed: false, status: 'installation-failed', error: { code: 'INSTALL_FAILED', message: 'Installation needs review.' } }), false)
     ];
     const registration = registerSiteTools({ registerTool: tool => { registered.push(tool); } }, tools, call => activity.push(call));
     await registration.ready;
     await registered[0].execute({});
     await registered[1].execute({}, { signal: cancel.signal });
+    await registered[2].execute({});
     expect(activity).toMatchObject([
       { id: 1, toolName: 'generate', phase: 'running' },
       { id: 1, toolName: 'generate', phase: 'failed', errorCode: 'POST_FAILED', message: 'Post requires review.', completedAt: expect.any(Number) },
       { id: 2, toolName: 'save', phase: 'running' },
-      { id: 2, toolName: 'save', phase: 'succeeded', completedAt: expect.any(Number) }
+      { id: 2, toolName: 'save', phase: 'succeeded', completedAt: expect.any(Number) },
+      { id: 3, toolName: 'install', phase: 'running' },
+      { id: 3, toolName: 'install', phase: 'failed', errorCode: 'INSTALL_FAILED', message: 'Installation needs review.', completedAt: expect.any(Number) }
     ]);
     registration.dispose();
   });

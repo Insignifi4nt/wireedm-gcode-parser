@@ -1,10 +1,13 @@
 import { act, useRef } from 'react';
+import { File as NodeFile } from 'node:buffer';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import { defaultAppServices, type AppServices } from '@/app/appServices';
 import { buildMachinePackageArchive, prepareStoredMachinePackageInstallation } from '@/domain/machine-package';
 import { machinePackageFixture } from '@/domain/machine-package/__tests__/machinePackageFixture';
+import { MACHINE_LIBRARY_PATH } from '@/domain/machine-definition/machineLibraryStorage';
+import { CATALOG_PAIR_TRANSACTION_PATH } from '@/domain/storage/catalogPairTransaction';
 import { workbenchSiteTools } from './workbenchSiteTools';
 import { applyProjectEdits } from './projectEdits';
 import { useWorkbenchActions } from './useWorkbenchActions';
@@ -16,7 +19,8 @@ const text = ['0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', '4', '0', '
 const rectangleText = ['0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES', '0', 'LWPOLYLINE', '8', '0', '90', '4', '70', '1', '10', '0', '20', '0', '10', '10', '20', '0', '10', '10', '20', '10', '10', '0', '20', '10', '0', 'ENDSEC', '0', 'EOF'].join('\n');
 let root: Root;
 let container: HTMLDivElement;
-afterEach(() => { act(() => root?.unmount()); container?.remove(); window.localStorage.clear(); vi.restoreAllMocks(); });
+beforeEach(() => vi.stubGlobal('File', NodeFile));
+afterEach(() => { act(() => root?.unmount()); container?.remove(); window.localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 async function harness(overrides: Partial<AppServices> = {}) {
   let tools: SiteTool[] = [];
@@ -29,7 +33,7 @@ async function harness(overrides: Partial<AppServices> = {}) {
     app = useWorkbenchAppController({ connectRememberedWorkbenchDirectory: async () => ({ status: 'missing' }), generateControllerArtifact: generate, downloadTextFile: download, ...overrides }, () => draft.current);
     const actions = useWorkbenchActions(app, draft);
     tools = [...workbenchSiteTools(() => ({ workbench: app.connectedWorkbench, draft: draft.current, busy: app.workbenchInteractionLocked })), ...actions.tools];
-    return actions.fileControl;
+    return actions.previewControl;
   }
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   await act(async () => root.render(<Harness />));
@@ -38,7 +42,14 @@ async function harness(overrides: Partial<AppServices> = {}) {
     await act(async () => { result = await tools.find(t => t.name === name)!.execute(input, { signal }); });
     return result as { ok: boolean; data: Record<string, any>; error?: { code: string } };
   }
-  return { call, app: () => app, draft: () => draft, generate, download };
+  const execute = (name: string, input: unknown, signal?: AbortSignal) => tools.find(tool => tool.name === name)!.execute(input, { signal });
+  return { call, execute, app: () => app, draft: () => draft, generate, download };
+}
+
+async function packageSource() {
+  const built = await buildMachinePackageArchive(await machinePackageFixture());
+  if (!built.ok) throw new Error(JSON.stringify(built.diagnostics));
+  return { bytes: built.archive, source: { fileName: 'machine.wireedm-package', base64: Buffer.from(built.archive).toString('base64') } };
 }
 
 async function importCircle(h: Awaited<ReturnType<typeof harness>>, sourceText = text) {
@@ -274,27 +285,125 @@ describe('workbench agent actions', () => {
     expect(await h.app().handleGenerateControllerArtifact({ machineId: 'unknown' })).toMatchObject({ ok: false, error: { message: 'Machine not found: unknown.' } });
   });
 
-  it('rejects overlapping writes and changed uploads while file reading is pending', async () => {
-    const h = await harness();
-    let finish!: (value: string) => void;
-    const file = new File([], 'delayed.dxf');
-    Object.defineProperty(file, 'text', { value: () => new Promise<string>(resolve => { finish = resolve; }) });
-    const input = container.querySelector('input')!;
-    await act(async () => {
-      Object.defineProperty(input, 'files', { configurable: true, value: [file] });
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+  it('passes direct package bytes through the ordinary validator and preserves explicit collision review', async () => {
+    const prepare = vi.fn(defaultAppServices.prepareStoredMachinePackageInstallation);
+    const h = await harness({ prepareStoredMachinePackageInstallation: prepare });
+    const { bytes, source } = await packageSource();
     const context = await h.call('edm_workflow_context', {});
-    let pending!: Promise<unknown>;
-    // Start directly to keep the asynchronous read open while exercising a second call.
-    pending = h.call('edm_prepare_dxf', { expectedVersion: context.data.version });
-    expect(await h.call('edm_import_upid', { expectedVersion: context.data.version, source: { fileName: 'x.json', text: '{}' } })).toMatchObject({ ok: false, error: { code: 'BUSY' } });
-    await act(async () => {
-      Object.defineProperty(input, 'files', { configurable: true, value: [new File([], 'replacement.dxf')] });
-      input.dispatchEvent(new Event('change', { bubbles: true }));
+    const prepared = await h.call('edm_prepare_machine_package', { expectedVersion: context.data.version, source });
+    expect(prepared).toMatchObject({ ok: true, data: { preview: { machine: { kind: 'new' } } } });
+    expect(prepare.mock.calls[0][1]).toEqual(bytes);
+    const validated = await prepare.mock.results[0].value;
+    if (!validated.ok) throw new Error(validated.error.message);
+    expect(prepared.data.preview).toEqual(validated.preview);
+    expect(h.app().connectedWorkbench!.machines.machines).toHaveLength(0);
+    expect(await h.call('edm_install_machine_package', { expectedVersion: context.data.version, preparationId: prepared.data.preparationId, resolution: { kind: 'install-new' } }))
+      .toMatchObject({ ok: true, data: { installed: true, packageHash: validated.preview.packageHash } });
+    expect((await h.call('edm_workflow_context', {})).data.packagePreparationId).toBeNull();
+    expect(h.app().connectedWorkbench!.machines.machines).toHaveLength(1);
+
+    const next = await h.call('edm_workflow_context', {});
+    expect(await h.call('edm_prepare_machine_package', { expectedVersion: context.data.version, source })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    const collision = await h.call('edm_prepare_machine_package', { expectedVersion: next.data.version, source });
+    expect(collision).toMatchObject({ ok: true, data: { preview: { machine: { kind: 'exact' } } } });
+    const input = { expectedVersion: next.data.version, preparationId: collision.data.preparationId };
+    expect(await h.call('edm_install_machine_package', { ...input, resolution: { kind: 'install-new' } })).toMatchObject({ ok: false, error: { code: 'INSTALL_FAILED' } });
+    expect(await h.call('edm_install_machine_package', { ...input, resolution: { kind: 'reuse-existing', machineId: collision.data.preview.machine.existing.id, activate: 'keep-current' } })).toMatchObject({ ok: true });
+    expect(h.app().connectedWorkbench!.machines.machines).toHaveLength(1);
+  });
+
+  it('rejects malformed direct package input and requires explicit text without a selected-file fallback', async () => {
+    const prepare = vi.fn(defaultAppServices.prepareStoredMachinePackageInstallation);
+    const h = await harness({ prepareStoredMachinePackageInstallation: prepare });
+    const { data: { version: expectedVersion } } = await h.call('edm_workflow_context', {});
+    expect(await h.call('edm_prepare_machine_package', { expectedVersion, source: { fileName: 'test.wireedm-package', base64: 'AB==' } })).toMatchObject({ ok: false, error: { code: 'INVALID_ENCODING' } });
+    expect(await h.call('edm_prepare_machine_package', { expectedVersion, source: { fileName: 'post.json', base64: 'e30=' } })).toMatchObject({ ok: false, error: { code: 'WRONG_FILE' } });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(await h.call('edm_prepare_machine_package', { expectedVersion, source: { fileName: 'test.wireedm-package', base64: 'e30=' } })).toMatchObject({ ok: false, error: { code: 'MACHINE_PACKAGE_INVALID' } });
+    expect(await h.call('edm_prepare_dxf', { expectedVersion })).toMatchObject({ ok: false, error: { code: 'FILE_REQUIRED' } });
+    expect(await h.call('edm_import_upid', { expectedVersion })).toMatchObject({ ok: false, error: { code: 'FILE_REQUIRED' } });
+    expect(await h.call('edm_prepare_dxf', { expectedVersion, source: { fileName: 'text.dxf', text: '界'.repeat(400_000) } })).toMatchObject({ ok: false, error: { code: 'INPUT_TOO_LARGE' } });
+  });
+
+  it('invalidates the previous package handle when a replacement preview fails', async () => {
+    const h = await harness();
+    const { source } = await packageSource();
+    const { data: { version: expectedVersion } } = await h.call('edm_workflow_context', {});
+    const prepared = await h.call('edm_prepare_machine_package', { expectedVersion, source });
+    expect(prepared.ok).toBe(true);
+    expect((await h.call('edm_workflow_context', {})).data.packagePreparationId).toBe(prepared.data.preparationId);
+
+    const replacement = await h.call('edm_prepare_machine_package', {
+      expectedVersion, source: { fileName: 'replacement.wireedm-package', base64: 'e30=' }
     });
-    await act(async () => finish(text));
-    expect(await pending).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
-    expect(h.app().connectedWorkbench?.manifest.projects).toHaveLength(0);
+    expect(replacement).toMatchObject({ ok: false, error: { code: 'MACHINE_PACKAGE_INVALID' } });
+    expect((await h.call('edm_workflow_context', {})).data.packagePreparationId).toBeNull();
+    expect(await h.call('edm_install_machine_package', {
+      expectedVersion, preparationId: prepared.data.preparationId, resolution: { kind: 'install-new' }
+    })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
+    expect(h.app().connectedWorkbench!.machines.machines).toHaveLength(0);
+  });
+
+  it.each(['cancel', 'workbench-change'] as const)('discards a pending package preparation after %s and blocks overlapping calls', async reason => {
+    let finish!: () => void; let entered!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const h = await harness({ prepareStoredMachinePackageInstallation: async (...args) => {
+      entered(); await gate; return defaultAppServices.prepareStoredMachinePackageInstallation(...args);
+    } });
+    const { source } = await packageSource();
+    const context = await h.call('edm_workflow_context', {});
+    const abort = new AbortController();
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = h.execute('edm_prepare_machine_package', { expectedVersion: context.data.version, source }, abort.signal); await started; });
+    expect(await h.call('edm_import_upid', { expectedVersion: context.data.version, source: { fileName: 'x.json', text: '{}' } })).toMatchObject({ ok: false, error: { code: 'BUSY' } });
+    if (reason === 'cancel') abort.abort();
+    else await act(async () => { await h.app().handleSaveCatalogPreferences(h.app().connectedWorkbench!.manifest.preferences); });
+    let result: unknown;
+    await act(async () => { finish(); result = await pending; });
+    expect(result).toMatchObject({ ok: false, error: { code: reason === 'cancel' ? 'CANCELLED' : 'STALE_STATE' } });
+    expect((await h.call('edm_workflow_context', {})).data.packagePreparationId).toBeNull();
+    expect(h.app().connectedWorkbench!.machines.machines).toHaveLength(0);
+  });
+
+  it('cancels after installation preflight reads before any package write and allows a reviewed retry', async () => {
+    const h = await harness();
+    const { source } = await packageSource();
+    const context = await h.call('edm_workflow_context', {});
+    const prepared = await h.call('edm_prepare_machine_package', { expectedVersion: context.data.version, source });
+    const adapter = h.app().connectedWorkbench!.adapter;
+    const read = adapter.readExactText!.bind(adapter);
+    const abort = new AbortController();
+    const interrupted = vi.spyOn(adapter, 'readExactText').mockImplementation(async path => {
+      const text = await read(path); if (path === MACHINE_LIBRARY_PATH) abort.abort(); return text;
+    });
+    const writes = vi.spyOn(adapter, 'writeText');
+    const input = { expectedVersion: context.data.version, preparationId: prepared.data.preparationId, resolution: { kind: 'install-new' } };
+    expect(await h.call('edm_install_machine_package', input, abort.signal)).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+    expect(writes).not.toHaveBeenCalled();
+    expect(h.app().workbenchInteractionLocked).toBe(false);
+    interrupted.mockRestore();
+    expect(await h.call('edm_install_machine_package', input)).toMatchObject({ ok: true, data: { installed: true } });
+  });
+
+  it.each([false, true])('preserves the installation outcome after late cancellation, write failure=%s', async writeFailure => {
+    const h = await harness();
+    const { source } = await packageSource();
+    const context = await h.call('edm_workflow_context', {});
+    const prepared = await h.call('edm_prepare_machine_package', { expectedVersion: context.data.version, source });
+    const adapter = h.app().connectedWorkbench!.adapter;
+    const write = adapter.writeText.bind(adapter);
+    const abort = new AbortController();
+    let failNextMachineWrite = writeFailure;
+    vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+      if (path === MACHINE_LIBRARY_PATH && failNextMachineWrite) { failNextMachineWrite = false; throw new Error('Machine catalog write failed'); }
+      await write(path, text); if (path === CATALOG_PAIR_TRANSACTION_PATH) abort.abort();
+    });
+    const result = await h.call('edm_install_machine_package', { expectedVersion: context.data.version, preparationId: prepared.data.preparationId, resolution: { kind: 'install-new' } }, abort.signal);
+    expect(result).toMatchObject(writeFailure
+      ? { ok: true, data: { installed: false, status: 'installation-failed', error: { code: 'INSTALL_FAILED' } } }
+      : { ok: true, data: { installed: true, packageHash: prepared.data.preview.packageHash } });
+    expect(h.app().connectedWorkbench!.machines.machines).toHaveLength(writeFailure ? 0 : 1);
+    expect(await adapter.readText(CATALOG_PAIR_TRANSACTION_PATH)).toBeNull();
   });
 });
