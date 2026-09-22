@@ -1,6 +1,6 @@
 # UPID correctness compatibility record, 2026-09-21
 
-This is an **unreleased branch record** for `feat/upid-simulation-workbench`, to carry into the reviewed PR and its eventual app release record. It does not advance the app release, UPID schema, post schema, execution-plan schema or engine API. Historical release JSON records remain unchanged.
+This records the UPID correctness changes included in [app release 0.0.687](../releases/0.0.687.json). UPID schema, post schema, execution-plan schema and engine API versions remain unchanged. Historical release JSON records remain unchanged.
 
 ## Confirmed corrections
 
@@ -24,6 +24,6 @@ This is an **unreleased branch record** for `feat/upid-simulation-workbench`, to
 - Regression-first evidence: four derived-bounds cases failed before the validation change; the identity suite reproduced the wrong second motion, duplicate exclusion IDs, and discarded review on an unchanged edit before their fixes.
 - 313 tests passed across 15 focused files after the behavioral changes: all UPID tests, machining participation/identity, execution plans, saved revisions, Robofil package/golden output and simulation.
 - The final diagnostic change passed the same 313-test selection. All three published portable UPID fixtures passed executable conformance; application TypeScript and whitespace checks passed.
-- Existing positive portable v1/v2, legacy engine snapshot and post-fixture coverage remains in those suites. Integration still requires the parent branch's complete build, documentation and broader workflow checks.
+- Existing positive portable v1/v2, legacy engine snapshot and post-fixture coverage remains in those suites. Complete build, documentation and broader workflow results are recorded in the [publication review](../reviews/2026-09-22-publication-review.md).
 
 No merge, deployment or physical machine verification is represented by these results.

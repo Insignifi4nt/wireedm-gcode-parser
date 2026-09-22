@@ -1,6 +1,6 @@
 # Saved-process simulation and agent integration
 
-This describes the current implementation boundaries on `feat/upid-simulation-workbench`. It is an unreleased architecture and compatibility note, not a release record. The hosted user guide is [Simulation](../site/simulation.md); the detailed browser-tool contract and evidence are in [WebMCP integration](webmcp.md).
+This describes the simulation architecture and compatibility boundaries introduced in [app release 0.0.687](../releases/0.0.687.json). The hosted user guide is [Simulation](../site/simulation.md); the detailed browser-tool contract and evidence are in [WebMCP integration](webmcp.md).
 
 ## Ownership and data flow
 
@@ -57,7 +57,7 @@ The receipt does not contain a full serialized simulation scenario, STEP source 
 
 | Area | Simulation and WebMCP impact |
 | --- | --- |
-| UPID | No new serialized simulation fields or UPID version bump. Stock/support/retention/waste-handling/model placement stay separate. The stricter validation and rare identity corrections on this branch have their own [UPID compatibility record](2026-09-21-upid-compatibility.md). |
+| UPID | No new serialized simulation fields or UPID version bump. Stock/support/retention/waste-handling/model placement stay separate. The stricter validation and rare identity corrections have their own [UPID compatibility record](2026-09-21-upid-compatibility.md). |
 | Post schemas and capabilities | Unchanged. No new post property, schema field or capability requirement is introduced by simulation or the new agent tools. |
 | Execution events and engine API | Unchanged vocabulary and payload contracts. Simulation consumes the existing compiler output. The separately documented UPID identity fixes can change previously colliding derived plans. |
 | Audit and controller output | Shared preflight and output audits remain mandatory; file bytes/rules come from the exact installed post. The direct agent export does not add feeds or rewrite output. Simulation times and findings do not authorize posting. |
@@ -65,7 +65,7 @@ The receipt does not contain a full serialized simulation scenario, STEP source 
 | Storage | No scenario/model schema, migration or automatic rewrite. Installed packages, saved revision bytes and original inputs remain intact. Controller generation can create a new immutable revision through the existing guarded operation; downloads alone do not. |
 | Browser tools | Adds narrow discovery/export/capture operations and artifact/error details. JSON replies remain bounded. The public agent guide defines cancellation, stale-version and durable-result behavior; ordinary UI controls remain usable without WebMCP. |
 
-The unreleased simulation API adds material roles, removal times, removed-piece IDs and final-material solids/status. Its default support changes from an arbitrary deep floor to the lower wire end, and default waste handling changes from retained debris to assumed operator removal between operations. These affect scenario rendering and obstruction findings only; existing post schemas, execution events, audits, package installations and controller bytes are unchanged. Nothing migrates or rewrites saved documents.
+The simulation API includes material roles, removal times, removed-piece IDs and final-material solids/status. Default support is at the lower wire end, and default waste handling assumes operator removal between operations. These affect scenario rendering and obstruction findings only; existing post schemas, execution events, audits, package installations and controller bytes are unchanged. Nothing migrates or rewrites saved documents.
 
 Rendered wire radius is exactly half the configured diameter. Guide meshes remain inside their configured radius, use a height derived from that radius and disappear when the radius is zero. Stock dimensions do not inflate these physical envelopes. Camera clipping and fitting include the actual geometry dimensions.
 
