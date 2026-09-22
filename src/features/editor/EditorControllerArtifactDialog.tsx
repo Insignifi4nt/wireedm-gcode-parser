@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AgentRepairPrompt } from '@/components/AgentRepairPrompt';
 import { postFailureGuidance, postRepairPrompt } from '@/domain/post-processor/postRepairPrompt';
 import { APP_VERSION } from '@/domain/release/appRelease';
@@ -70,6 +70,20 @@ export function EditorControllerArtifactDialog({
       )) ?? null
     : null;
   const canGenerate = !hasUnsavedChanges && activePost !== null && !generating;
+  const selectionKey = JSON.stringify({
+    machine: selectedMachine ? { ...selectedMachine, bindings: undefined } : null,
+    setup: activeSetup,
+    post: activePost?.ref ?? null
+  });
+  const selection = useRef({ key: selectionKey, revision: 0 });
+  useLayoutEffect(() => {
+    if (selection.current.key === selectionKey) return;
+    selection.current = { key: selectionKey, revision: selection.current.revision + 1 };
+    setArtifact(null);
+    setFailure(null);
+    setDownloadFailure(null);
+    onGenerationReset?.();
+  }, [selectionKey, onGenerationReset]);
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     // Editor shortcuts must not change the revision behind this modal.
@@ -99,6 +113,7 @@ export function EditorControllerArtifactDialog({
     if (!canGenerate) return;
     const generationMachine = selectedMachine;
     const generationPost = activePost;
+    const generationRevision = selection.current.revision;
     onGenerationReset?.();
     setGenerating(true);
     setArtifact(null);
@@ -106,12 +121,14 @@ export function EditorControllerArtifactDialog({
     setDownloadFailure(null);
     try {
       const result = await onGenerateControllerArtifact({ machineId });
+      if (selection.current.revision !== generationRevision) return;
       if (result.ok) {
         setArtifact(result.artifact);
         if (generationMachine && generationPost) onArtifactGenerated?.(result.artifact, generationMachine, generationPost);
       }
       else setFailure(result.error);
     } catch (error) {
+      if (selection.current.revision !== generationRevision) return;
       setFailure({
         code: 'CONTROLLER_ARTIFACT_POST_FAILED',
         message: error instanceof Error ? error.message : String(error),
@@ -157,11 +174,7 @@ export function EditorControllerArtifactDialog({
             className="h-8 border border-border bg-background px-2 text-foreground"
             disabled={generating}
             onChange={(event) => {
-              onGenerationReset?.();
               setMachineId(event.currentTarget.value);
-              setArtifact(null);
-              setFailure(null);
-              setDownloadFailure(null);
             }}
             value={machineId}
           >

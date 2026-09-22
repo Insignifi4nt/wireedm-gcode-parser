@@ -7,6 +7,7 @@ import {
   type ReadStoredWorkbenchProjectError
 } from '@/domain/workbench-catalog/workbenchCatalogMutations';
 import { importedProjectIdentity } from '@/domain/workbench-catalog/importedProjectIdentity';
+import { workbenchProjectVersion } from '@/domain/workbench-catalog/workbenchProjectVersion';
 import {
   createWorkbenchProjectDocument,
   type WorkbenchProjectDocument,
@@ -57,6 +58,7 @@ export type PortableUpidProjectError =
   | Extract<AddStoredWorkbenchProjectResult, { readonly ok: false }>['error']
   | ParsePortableUpidError
   | { readonly code: 'PORTABLE_UPID_PROJECT_REQUIRED'; readonly message: string }
+  | { readonly code: 'PORTABLE_UPID_PROJECT_CHANGED'; readonly message: string }
   | { readonly code: 'PORTABLE_UPID_TIMESTAMP_INVALID'; readonly message: string };
 
 export type ExportPortableUpidProjectResult =
@@ -74,10 +76,14 @@ export type ImportPortableUpidProjectResult =
 
 export async function exportPortableUpidProject(
   workbench: ConnectedWorkbenchCatalog,
-  projectId: string
+  projectId: string,
+  options: { readonly expectedProjectVersion?: string } = {}
 ): Promise<ExportPortableUpidProjectResult> {
   const read = await readStoredWorkbenchProject(workbench, projectId);
   if (!read.ok) return read;
+  if (options.expectedProjectVersion && await workbenchProjectVersion(read.project) !== options.expectedProjectVersion) {
+    return { ok: false, error: { code: 'PORTABLE_UPID_PROJECT_CHANGED', message: 'The saved project changed. Read the saved project again before exporting.' } };
+  }
   if (read.project.content.kind !== 'upid-document') {
     return ownFailure(
       'PORTABLE_UPID_PROJECT_REQUIRED',

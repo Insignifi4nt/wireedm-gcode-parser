@@ -4,8 +4,12 @@ import type { ConnectedWorkbenchCatalog } from '@/domain/workbench-catalog/workb
 import { readStoredWorkbenchProject } from '@/domain/workbench-catalog/workbenchCatalogMutations';
 import { readSavedRevisionSummaryPage } from '@/domain/wire-edm-job/revisionSummaries';
 import { APP_VERSION } from '@/domain/release/appRelease';
+import { workbenchProjectVersion } from '@/domain/workbench-catalog/workbenchProjectVersion';
 import { startPackageTool } from '@/features/package-tools/packageToolsClient';
 import { object, page, pageFields, siteTool, ToolError } from './siteTools';
+import { editCatalogTool } from './editCatalog';
+import { summarizeDiagnostics } from './diagnosticSummaries';
+import { sourceIdentifier } from './projectEdits';
 
 export interface DraftReadSnapshot {
   projectId: string | null;
@@ -16,6 +20,7 @@ export interface DraftReadSnapshot {
   workflowCommand?: string;
   edit?: (edits: readonly import('./projectEdits').ProjectEdit[]) => void;
   history?: (direction: 'undo' | 'redo') => boolean;
+  capture?: (signal: AbortSignal) => Promise<import('./previewCapture').EditorPreviewCapture>;
 }
 export interface WorkbenchToolState {
   workbench: ConnectedWorkbenchCatalog | null;
@@ -46,21 +51,24 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
     if (input.kind === 'current-draft') {
       const draft = getState().draft;
       if (!draft || draft.version !== input.version) throw new ToolError('STALE_STATE', 'Draft changed or closed. Read edm_get_context again.');
-      const { edit: _edit, history: _history, ...snapshot } = draft;
+      const { edit: _edit, history: _history, capture: _capture, ...snapshot } = draft;
       return { ...snapshot, kind: input.kind };
     }
     const project = await saved(input.projectId);
-    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(project)));
-    const version = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    const version = await workbenchProjectVersion(project);
     if (input.version && input.version !== version) throw new ToolError('STALE_STATE', 'Saved project changed. Read it again without a version.');
     return { kind: input.kind, projectId: project.id, version, dirty: false, workflowOpen: false,
       document: project.content.kind === 'upid-document' ? project.content.document as PathPlanningDocument : null };
   }
   return [
+    editCatalogTool(),
     siteTool('edm_get_context', 'Read app version, storage kind and the current editor draft identity/version. Does not open or change a project.', object({}), () => {
       const current = getState();
       return { appVersion: APP_VERSION, storage: current.workbench?.adapter.kind ?? null, busy: current.busy,
-        draft: current.draft ? { projectId: current.draft.projectId, version: current.draft.version, dirty: current.draft.dirty, workflowOpen: current.draft.workflowOpen, model: current.draft.document ? 'upid' : 'external-gcode' } : null,
+        draft: current.draft ? { projectId: current.draft.projectId, version: current.draft.version, dirty: current.draft.dirty, workflowOpen: current.draft.workflowOpen,
+          model: current.draft.document ? 'upid' : 'external-gcode', captureAvailable: Boolean(current.draft.capture),
+          editsAvailable: Boolean(current.draft.document && current.draft.edit && !current.draft.workflowOpen && !current.busy) } : null,
+        guide: `${import.meta.env.BASE_URL}documentation/agents/`,
         packageWorkbench: `${import.meta.env.BASE_URL}package-tools/` };
     }),
     siteTool('edm_list_projects', 'List active saved projects without opening them. Pin catalogVersion when requesting subsequent pages.', object({ ...pageFields, catalogVersion: Type.Optional(id) }), (input) => {
@@ -75,10 +83,10 @@ export function workbenchSiteTools(getState: () => WorkbenchToolState) {
         units: 'mm', schemaVersion: document.schemaVersion, geometryBasis: document.geometryBasis,
         setup: document.setup ?? {}, options: document.options,
         counts: { operations: document.plan.operations.length, contours: document.contours.length, segments: document.segments.length },
-        diagnostics: document.diagnostics.slice(0, 20), omittedDiagnosticCount: Math.max(0, document.diagnostics.length - 20)
+        ...summarizeDiagnostics(document.diagnostics)
       } : {}) };
     }),
-    siteTool('edm_query_geometry', 'Read UPID operation/contour summaries or exact segments in millimeters from a versioned target. For segments, optionally filter by operationId to obtain cutting order and reversed flags.', object({ target, kind: Type.Union([Type.Literal('operations'), Type.Literal('contours'), Type.Literal('segments')]), operationId: Type.Optional(id), ...pageFields }), async (input) => {
+    siteTool('edm_query_geometry', 'Read UPID operation/contour summaries or exact segments in millimeters from a versioned target. For segments, optionally filter by operationId to obtain cutting order and reversed flags.', object({ target, kind: Type.Union([Type.Literal('operations'), Type.Literal('contours'), Type.Literal('segments')]), operationId: Type.Optional(sourceIdentifier), ...pageFields }), async (input) => {
       const snapshot = await resolve(input.target);
       const doc = snapshot.document;
       if (!doc) throw new ToolError('WRONG_MODEL', 'Geometry queries require a UPID project.');

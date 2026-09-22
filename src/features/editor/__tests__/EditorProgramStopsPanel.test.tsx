@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { setPathOperationProgramStops } from '@/domain/path-editor/pathDocumentOperations';
 
 import { EditorProgramStopsPanel } from '../EditorProgramStopsPanel';
 
@@ -119,6 +120,68 @@ describe('EditorProgramStopsPanel', () => {
     expect(onSetStops).toHaveBeenCalledWith(operation.id, [operation.programStops[0], expect.objectContaining({
       id: 'stop-2', placement: { kind: 'before-operation-end', remainingCutLengthMm: 3 }
     })], true);
+  });
+
+  it('preserves the selected stop draft when another stop is toggled', async () => {
+    let source = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    const operationId = source.plan.operations[0].id;
+    source.plan.operations[0].programStops = [
+      { id: 'stop-1', enabled: true, reason: 'manual',
+        placement: { kind: 'before-operation-end', remainingCutLengthMm: 1 }, note: 'original' },
+      { id: 'stop-2', enabled: true, reason: 'operator-check', placement: { kind: 'after-exit' } }
+    ];
+    const onSetStops = vi.fn((id, stops) => {
+      source = setPathOperationProgramStops(source, id, stops)!;
+      render();
+    });
+    const render = () => root.render(<EditorProgramStopsPanel disabled={false} document={source}
+      selectedOperationId={operationId} selectedStopId="stop-1" targetChangeBlocked
+      onSetStops={onSetStops} />);
+    await act(async () => render());
+    await act(async () => setInput(
+      container.querySelector<HTMLInputElement>('[aria-label="Selected stop note"]')!, 'keep the part supported'));
+    await act(async () => setInput(
+      container.querySelector<HTMLInputElement>('[aria-label="Selected stop remaining cut millimeters"]')!, '2.75'));
+    const otherStop = container.querySelector<HTMLInputElement>('[aria-label="Enable stop-2"]')!;
+    otherStop.focus();
+    await act(async () => otherStop.click());
+
+    expect(source.plan.operations[0].programStops![1].enabled).toBe(false);
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Selected stop note"]')!.value)
+      .toBe('keep the part supported');
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Selected stop remaining cut millimeters"]')!.value)
+      .toBe('2.75');
+    expect(document.activeElement).toBe(otherStop);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Apply stop-1"]')!.click());
+    expect(source.plan.operations[0].programStops).toEqual([
+      { id: 'stop-1', enabled: true, reason: 'manual',
+        placement: { kind: 'before-operation-end', remainingCutLengthMm: 2.75 }, note: 'keep the part supported' },
+      { id: 'stop-2', enabled: false, reason: 'operator-check', placement: { kind: 'after-exit' } }
+    ]);
+    source = structuredClone(source);
+    source.plan.operations[0].programStops![0].note = 'updated saved stop';
+    await act(async () => render());
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Selected stop note"]')!.value)
+      .toBe('updated saved stop');
+  });
+
+  it('adds a distinct stop when an imported numeric stop id exceeds precise integer arithmetic', async () => {
+    const source = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    const operation = source.plan.operations[0];
+    operation.programStops = [{ id: 'stop-9007199254740992', enabled: true,
+      reason: 'manual', placement: { kind: 'after-exit' } }];
+    const onSetStops = vi.fn();
+    await act(async () => root.render(<EditorProgramStopsPanel disabled={false} document={source}
+      selectedOperationId={operation.id} onSetStops={onSetStops} />));
+    await act(async () => [...container.querySelectorAll('button')]
+      .find((button) => button.textContent?.trim() === 'Add program stop')!.click());
+    const [operationId, stops] = onSetStops.mock.calls[0];
+    expect(new Set(stops.map((stop: { id: string }) => stop.id)).size).toBe(2);
+    expect(setPathOperationProgramStops(source, operationId, stops)?.plan.operations[0].programStops).toHaveLength(2);
   });
 
   it('explains an invalid enable action without committing it', async () => {

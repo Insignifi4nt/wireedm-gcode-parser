@@ -603,9 +603,14 @@ function parseLwPolyline(pairs: DxfPair[]): DxfLwPolylineEntity | null {
 
   const vertices: DxfLwPolylineVertex[] = [];
   let current: Partial<DxfLwPolylineVertex> | null = null;
+  let declaredVertexCount: number | null = null;
 
   for (const pair of pairs) {
-    if (pair.code === 10) {
+    if (pair.code === 90) {
+      const count = finitePairValue(pair);
+      if (declaredVertexCount !== null || count === null || !Number.isSafeInteger(count) || count < 1) return null;
+      declaredVertexCount = count;
+    } else if (pair.code === 10) {
       if (current) {
         const vertex = completePolylineVertex(current);
         if (!vertex) return null;
@@ -633,7 +638,8 @@ function parseLwPolyline(pairs: DxfPair[]): DxfLwPolylineEntity | null {
     vertices.push(vertex);
   }
 
-  if (vertices.length === 0) return null;
+  // Keep accepting legacy count-omitted input, but never close an explicitly incomplete contour.
+  if (vertices.length === 0 || (declaredVertexCount !== null && vertices.length !== declaredVertexCount)) return null;
 
   return {
     type: 'lwpolyline',

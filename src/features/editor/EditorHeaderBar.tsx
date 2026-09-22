@@ -34,6 +34,7 @@ interface EditorHeaderBarProps {
   titleTooltip?: string;
   undoAvailable: boolean;
   workspaceControls?: ReactNode;
+  workspaceSwitcher?: ReactNode;
   onBackToDashboard: () => void;
   onExport: (() => void) | null;
   onImportProgramFile: (file: File) => void | Promise<void>;
@@ -63,6 +64,7 @@ export function EditorHeaderBar({
   titleTooltip,
   undoAvailable,
   workspaceControls,
+  workspaceSwitcher,
   onBackToDashboard,
   onExport,
   onImportProgramFile,
@@ -89,9 +91,11 @@ export function EditorHeaderBar({
     <div
       className="mr-2 flex min-w-0 flex-1 items-center gap-1.5"
       data-editor-context={documentContext}
+      data-has-workspace-switcher={Boolean(workspaceSwitcher)}
     >
       <Button
         aria-label="Back to Dashboard"
+        data-editor-back
         className="size-7 shrink-0 p-0"
         disabled={interactionLocked}
         onClick={onBackToDashboard}
@@ -112,6 +116,7 @@ export function EditorHeaderBar({
           {DOCUMENT_CONTEXT_LABELS[documentContext]}
         </span>
       </div>
+      {workspaceSwitcher && <div className="shrink-0" data-editor-workspace-switcher>{workspaceSwitcher}</div>}
       <div
         className="flex min-w-0 shrink-0 items-center justify-end gap-1.5"
         data-editor-header-actions

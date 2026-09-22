@@ -76,7 +76,7 @@ export function EditorCompactDrawerLaunchers({
 
   return (
     <>
-      <div className="hidden items-center gap-1 p-1" data-editor-compact-drawer-launchers>
+      {(hasUpidRail || hasActiveWorkflow) && <div className="hidden items-center gap-1 p-1" data-editor-compact-drawer-launchers>
         {hasUpidRail && (
           <button
             aria-label="Open UPID rail"
@@ -99,7 +99,7 @@ export function EditorCompactDrawerLaunchers({
             Workflow
           </button>
         )}
-      </div>
+      </div>}
       {drawer === 'upid' && (() => {
         const sheet = <EditorCompactDrawerSheet
           labelledBy={upidTitleId}

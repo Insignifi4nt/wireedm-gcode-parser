@@ -163,6 +163,62 @@ describe('EditorEntryExitPanel', () => {
     expect(container.querySelector<HTMLButtonElement>('[aria-label="Set straight entry"]')?.disabled).toBe(true);
   });
 
+  it.each([false, true])('uses the first active cut for initial rapid distance after excluding an earlier contour (partial %s)', async (partial) => {
+    let document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 20, y: 0 }, end: { x: 30, y: 0 } }
+    ]);
+    const [excluded, active] = document.plan.operations;
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: excluded.segmentRefs[0].segmentId, range: { start: 0, end: 1 }, participation: 'inactive-reference'
+    })!;
+    if (partial) document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: active.segmentRefs[0].segmentId, range: { start: 0, end: 0.25 }, participation: 'inactive-reference'
+    })!;
+    const onSetManualEntry = vi.fn();
+    const render = (selectedOperationId: string) => root.render(
+      <EditorEntryExitPanel canvasPickMode={null} disabled={false} document={document}
+        onCanvasPickModeChange={vi.fn()} onSelectOperation={vi.fn()} onSetCircleCenterEntry={vi.fn()}
+        onSetManualEntry={onSetManualEntry} onSetManualExit={vi.fn()} onSetNoEntry={vi.fn()}
+        onSetNoExit={vi.fn()} selectedOperationId={selectedOperationId} />
+    );
+    await act(async () => render(active.id));
+    expect(container.querySelector('option[value="rapid-length"]')?.textContent).toBe('Rapid from initial wire (mm)');
+    await selectMode('Entry input mode', 'rapid-length');
+    await setInput('Entry rapid distance (mm)', '5');
+    expect(container.textContent).toContain(`Lead-in ${partial ? '17.5' : '15'} mm · rapid 5 mm`);
+    await click('Set straight entry');
+    expect(onSetManualEntry).toHaveBeenCalledWith(active.id, { x: 5, y: 0 });
+
+    await act(async () => render(excluded.id));
+    expect(container.querySelector('option[value="rapid-length"]')).toBeNull();
+  });
+
+  it('keeps initial rapid authoring available while a later contour has an unresolved split', async () => {
+    let document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 10, y: 0 }, end: { x: 20, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 30, y: 0 }, end: { x: 40, y: 0 } }
+    ]);
+    const [first, second] = document.plan.operations;
+    document.setup = { initialWirePosition: { kind: 'manual', point: { x: 0, y: 0 }, review: 'reviewed' } };
+    document = setMachiningSpanParticipation(document, {
+      sourceSegmentId: second.segmentRefs[0].segmentId, range: { start: 0.2, end: 0.8 }, participation: 'inactive-reference'
+    })!;
+    const onSetManualEntry = vi.fn();
+    await act(async () => root.render(
+      <EditorEntryExitPanel canvasPickMode={null} disabled={false} document={document}
+        onCanvasPickModeChange={vi.fn()} onSelectOperation={vi.fn()} onSetCircleCenterEntry={vi.fn()}
+        onSetManualEntry={onSetManualEntry} onSetManualExit={vi.fn()} onSetNoEntry={vi.fn()}
+        onSetNoExit={vi.fn()} selectedOperationId={first.id} />
+    ));
+    expect(container.querySelector('option[value="rapid-length"]')).not.toBeNull();
+    await selectMode('Entry input mode', 'rapid-length');
+    await setInput('Entry rapid distance (mm)', '5');
+    await click('Set straight entry');
+    expect(onSetManualEntry).toHaveBeenCalledWith(first.id, { x: 5, y: 0 });
+  });
+
   it('resizes reviewed entry and exit leads by millimeters along their existing directions', async () => {
     const document = createUpidFromDxfEntities([{
       type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }

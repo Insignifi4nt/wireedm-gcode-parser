@@ -304,7 +304,10 @@ describe('saved Wire EDM job revision', () => {
 
     expect(await parseSavedWireEdmJobRevision(JSON.stringify(tamperedPlan))).toMatchObject({
       ok: false,
-      error: { code: 'SAVED_REVISION_EXECUTION_PLAN_MISMATCH' }
+      error: {
+        code: 'SAVED_REVISION_EXECUTION_PLAN_MISMATCH',
+        message: expect.stringContaining('Review the project and save a new revision')
+      }
     });
 
     const tamperedHash = JSON.parse(serializeSavedWireEdmJobRevision(fixture.revision));

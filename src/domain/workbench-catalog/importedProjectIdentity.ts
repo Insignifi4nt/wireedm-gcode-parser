@@ -14,9 +14,9 @@ export function importedProjectIdentity(input: {
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 60);
-  const baseId = `${slug || 'wire-edm-project'}-${input.timestamp.slice(0, 10)}`;
+    .replace(/^-|-$/g, '');
+  const identifierSlug = slug ? (/^[a-z]/.test(slug) ? slug : `part-${slug}`) : 'wire-edm-project';
+  const baseId = `${identifierSlug.slice(0, 60).replace(/-$/, '')}-${input.timestamp.slice(0, 10)}`;
   return {
     id: uniqueProjectId(baseId, [...input.existingIds]),
     name

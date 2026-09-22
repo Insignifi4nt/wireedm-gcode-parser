@@ -69,6 +69,74 @@ describe('EditorPage UPID draft boundary', () => {
     vi.restoreAllMocks();
   });
 
+  it('returns to the editor when a header command opens a workflow from simulation', async () => {
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={projectWithUpid(pathDocumentFromRectangle())} />));
+    await flushAsync();
+    await clickElement('#workspace-tab-simulation');
+    await flushAsync();
+    expect(container.querySelector('#workspace-tab-simulation')?.getAttribute('aria-selected')).toBe('true');
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    expect(container.querySelector('#workspace-tab-editor')?.getAttribute('aria-selected')).toBe('true');
+    expect(visibleWorkflowPanelIds()).toEqual(['path-transform']);
+    expect(container.querySelector('input[aria-label="Translate X"]')).not.toBeNull();
+  });
+
+  it('keeps simulation keyboard shortcuts from changing the hidden editor history', async () => {
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={vi.fn()} project={projectWithUpid(pathDocumentFromRectangle())} />));
+    await flushAsync();
+    const original = previewGeometrySignature();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await clickElement('button[aria-label="Hide Transform"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    const edited = previewGeometrySignature();
+    expect(edited).not.toBe(original);
+    await clickElement('#workspace-tab-simulation');
+    await flushAsync();
+    expect(container.querySelector('#workspace-tab-simulation')?.getAttribute('aria-selected')).toBe('true');
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'z' })));
+    expect(previewGeometrySignature()).toBe(edited);
+
+    await clickElement('#workspace-tab-editor');
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'z' })));
+    expect(previewGeometrySignature()).toBe(original);
+    await clickElement('#workspace-tab-simulation');
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'y' })));
+    expect(previewGeometrySignature()).toBe(original);
+    await clickElement('#workspace-tab-editor');
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'y' })));
+    expect(previewGeometrySignature()).toBe(edited);
+  });
+
+  it('shows the draft when explicit header Undo, Redo or Save is used from simulation', async () => {
+    const save = vi.fn();
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={save} project={projectWithUpid(pathDocumentFromRectangle())} />));
+    await flushAsync();
+    const original = previewGeometrySignature();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Translate X"]', '3');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    await clickElement('button[aria-label="Hide Transform"]');
+    await clickElement('[data-editor-workflow-transition-action="save"]');
+    const edited = previewGeometrySignature();
+    await clickElement('#workspace-tab-simulation');
+    await flushAsync();
+    await clickElement('button[aria-label="Undo active document change"]');
+    expect(container.querySelector('#workspace-tab-editor')?.getAttribute('aria-selected')).toBe('true');
+    expect(previewGeometrySignature()).toBe(original);
+    await clickElement('#workspace-tab-simulation');
+    await clickElement('button[aria-label="Redo active document change"]');
+    expect(container.querySelector('#workspace-tab-editor')?.getAttribute('aria-selected')).toBe('true');
+    expect(previewGeometrySignature()).toBe(edited);
+    await clickElement('#workspace-tab-simulation');
+    await clickElement('button[aria-label="Save active document"]');
+    expect(container.querySelector('#workspace-tab-editor')?.getAttribute('aria-selected')).toBe('true');
+    expect(save).toHaveBeenCalledOnce();
+    expect(save.mock.calls[0][0].model).toBe('upid-document');
+    expect(previewGeometrySignature()).toBe(edited);
+  });
+
   it('marks an upgraded legacy editable document unsaved until its v2 draft is saved', async () => {
     const oldDocument = pathDocumentFromRectangle();
     oldDocument.plan.operations[0].programStops = [{ id: 'legacy-stop', enabled: true,
@@ -947,6 +1015,77 @@ describe('EditorPage UPID draft boundary', () => {
     expect(container.textContent).toContain('Enter both target coordinates');
     await changeInput('input[aria-label="Document reference target X"]', '0');
     expect(container.querySelector<HTMLButtonElement>('button[aria-label="Move document reference to target"]')?.disabled).toBe(false);
+  });
+
+  it('preserves a pending absolute target when a relative translation is applied first', async () => {
+    const source = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 5, y: 3 }, radius: 2.5 }
+    ]);
+    const onSaveEditorDraft = vi.fn<(draft: EditorSaveDraft) => void>();
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={onSaveEditorDraft}
+      project={projectWithUpid(source)} />));
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Document reference target X"]', '20');
+    await changeInput('input[aria-label="Translate X"]', '2');
+    await clickElement('button[aria-label="Apply translation to document geometry"]');
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Document reference target X"]')!.value).toBe('20');
+    expect(container.querySelector<HTMLButtonElement>('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]')!.disabled).toBe(true);
+    await clickElement('button[aria-label="Move document reference to target"]');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('button[aria-label="Save active document"]');
+    const saved = onSaveEditorDraft.mock.calls[0]?.[0];
+    if (saved?.model !== 'upid-document' || saved.pathDocument.segments[0].kind !== 'circle') {
+      throw new Error('Expected a saved circle');
+    }
+    expect(saved.pathDocument.segments[0].center).toEqual({ x: 20, y: 3 });
+  });
+
+  it('preserves the untouched coordinate when moving a precise document reference', async () => {
+    const center = { x: 5.000244140625, y: 3.0001220703125 };
+    const source = createUpidFromDxfEntities([{ type: 'circle', layer: 'CUT', center, radius: 2.5 }]);
+    const onSaveEditorDraft = vi.fn<(draft: EditorSaveDraft) => void>();
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={onSaveEditorDraft}
+      project={projectWithUpid(source)} />));
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await changeInput('input[aria-label="Document reference target X"]', '10');
+    await clickElement('button[aria-label="Move document reference to target"]');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('button[aria-label="Save active document"]');
+    const saved = onSaveEditorDraft.mock.calls[0]?.[0];
+    if (saved?.model !== 'upid-document' || saved.pathDocument.segments[0].kind !== 'circle') {
+      throw new Error('Expected a saved circle');
+    }
+    expect(saved.pathDocument.segments[0].center).toEqual({ x: 10, y: center.y });
+  });
+
+  it.each(['latest measurement point', 'measurement point P1'])('preserves exact coordinates when using %s as a transform target', async (choice) => {
+    const point = { x: 10.000244140625, y: 8.0001220703125 };
+    const source = createUpidFromDxfEntities([
+      { type: 'circle', layer: 'CUT', center: { x: 5, y: 3 }, radius: 2.5 }
+    ]);
+    const onSaveEditorDraft = vi.fn<(draft: EditorSaveDraft) => void>();
+    await act(async () => root.render(<EditorPageHarness onSaveEditorDraft={onSaveEditorDraft}
+      project={projectWithUpid(source)} />));
+    await flushAsync();
+    await clickElement('[data-editor-workflow-command="construction.measurement"]');
+    await changeInput('input[aria-label="Measurement point X"]', String(point.x));
+    await changeInput('input[aria-label="Measurement point Y"]', String(point.y));
+    const addPoint = [...container.querySelectorAll<HTMLButtonElement>('[data-editor-workspace-panel="measurement"] button')]
+      .find((button) => button.textContent?.trim() === 'Add Point')!;
+    await act(async () => addPoint.click());
+    await clickElement('[data-editor-workflow-actions="construction.measurement"] button[aria-label^="Save "]');
+    await clickElement('[data-editor-workflow-command="geometry.transform"]');
+    await clickElement(`button[aria-label="Use ${choice} as document reference target"]`);
+    await clickElement('button[aria-label="Move document reference to target"]');
+    await clickElement('[data-editor-workflow-actions="geometry.transform"] button[aria-label^="Save "]');
+    await clickElement('button[aria-label="Save active document"]');
+    const saved = onSaveEditorDraft.mock.calls[0]?.[0];
+    if (saved?.model !== 'upid-document' || saved.pathDocument.segments[0].kind !== 'circle') {
+      throw new Error('Expected a saved circle');
+    }
+    expect(saved.pathDocument.segments[0].center).toEqual(point);
   });
 
   it('allows saving after moving the document reference to the origin', async () => {

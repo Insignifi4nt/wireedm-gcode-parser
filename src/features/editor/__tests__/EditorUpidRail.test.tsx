@@ -221,16 +221,38 @@ describe('EditorUpidRail', () => {
     expect(container.querySelector('[aria-label="Open UPID rail"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Open active workflow"]')).toBeNull();
   });
+
+  it('omits the mobile launcher grid row when a view has no launchers while preserving an open drawer', async () => {
+    await act(async () => root.render(<CompactDrawerHarness hasActiveWorkflow={false} hasUpidRail={false} />));
+    // An empty flex launcher bar becomes an implicit grid row in the mobile simulation layout.
+    expect(container.querySelector('[data-editor-compact-drawer-launchers]')).toBeNull();
+    expect(container.childElementCount).toBe(0);
+
+    await act(async () => root.render(<CompactDrawerHarness hasActiveWorkflow hasUpidRail={false} />));
+    const workflowLauncher = container.querySelector<HTMLButtonElement>('[aria-label="Open active workflow"]');
+    expect(workflowLauncher).not.toBeNull();
+    await act(async () => workflowLauncher?.click());
+    const draft = container.querySelector<HTMLInputElement>('[aria-label="Workflow draft"]');
+    draft!.value = 'Pending workflow changes';
+
+    await act(async () => root.render(<CompactDrawerHarness hasActiveWorkflow={false} hasUpidRail={false} />));
+    expect(container.querySelector('[data-editor-compact-drawer-launchers]')).toBeNull();
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Workflow draft"]')).toBe(draft);
+    expect(draft?.value).toBe('Pending workflow changes');
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' })));
+    expect(container.childElementCount).toBe(0);
+  });
 });
 
-function CompactDrawerHarness({ hasActiveWorkflow }: { hasActiveWorkflow: boolean }) {
+function CompactDrawerHarness({ hasActiveWorkflow, hasUpidRail = true }: { hasActiveWorkflow: boolean; hasUpidRail?: boolean }) {
   const [drawer, setDrawer] = useState<'upid' | 'workflow' | null>(null);
 
   return (
     <EditorCompactDrawerLaunchers
       drawer={drawer}
       hasActiveWorkflow={hasActiveWorkflow}
-      hasUpidRail
+      hasUpidRail={hasUpidRail}
       onDrawerChange={setDrawer}
       upidContent={<div>Program sequence</div>}
       workflowContent={<input aria-label="Workflow draft" defaultValue="Draft survives" />}

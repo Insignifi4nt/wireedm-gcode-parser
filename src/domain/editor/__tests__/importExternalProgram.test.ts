@@ -6,6 +6,27 @@ import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbench
 import { importExternalProgram } from '../importExternalProgram';
 
 describe('importExternalProgram', () => {
+  it.each([
+    'G1 X10 Y5 ; M02 follows this cut',
+    'G1 X10 Y5 (M02 follows this cut)',
+    'G1 X10 Y5 M02',
+    'G1X10Y5M02'
+  ])('preserves the final cutting move when importing %s', async (lastLine) => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const original = `G21 G90\nG0 X0 Y0\n${lastLine}`;
+    const imported = await importExternalProgram(initialized.workbench, {
+      fileName: 'final-cut.nc', text: original
+    });
+    if (!imported.ok) throw new Error(imported.error.message);
+
+    expect(adapter.files.get(imported.project.source.files[0].path)).toBe(original);
+    expect(imported.editorProgram.parseResult.path.at(-1)).toMatchObject({
+      type: 'cut', x: 10, y: 5
+    });
+  });
+
   it('preserves offset-control command arguments in both original and editable files', async () => {
     const adapter = new MemoryAdapter();
     const initialized = await initializeWorkbenchCatalog(adapter);

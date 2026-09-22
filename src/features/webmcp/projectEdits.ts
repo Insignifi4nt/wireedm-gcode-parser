@@ -7,6 +7,8 @@ import type { PathPlanningDocument } from '@/domain/path-intel/types';
 import { object, ToolError } from './siteTools';
 
 export const identifier = Type.String({ minLength: 1, maxLength: 160 });
+// Imported UPID identities have no fixed length; preserve IDs from geometry queries.
+export const sourceIdentifier = Type.String({ minLength: 1 });
 const number = Type.Number({ minimum: -1e9, maximum: 1e9 });
 const point = object({ x: number, y: number });
 const choices = <const T extends string[]>(...values: T) => Type.Union(values.map(value => Type.Literal<T[number]>(value)));
@@ -18,24 +20,24 @@ const placement = Type.Union([
 export const projectEdit = Type.Union([
   object({ kind: Type.Literal('initial-wire'), point }),
   object({ kind: Type.Literal('geometry-basis'), basis: choices('finished-contour', 'wire-centre') }),
-  object({ kind: Type.Literal('translate'), delta: point, operationId: Type.Optional(identifier) }),
+  object({ kind: Type.Literal('translate'), delta: point, operationId: Type.Optional(sourceIdentifier) }),
   object({ kind: Type.Literal('rotate'), degrees: number, origin: point }),
   object({ kind: Type.Literal('mirror'), axis: choices('x', 'y'), origin: point }),
   object({ kind: Type.Literal('order-strategy'), strategy: choices('inside-out-nearest', 'nearest', 'source-order') }),
-  object({ kind: Type.Literal('move-operation'), operationId: identifier, direction: Type.Union([Type.Literal(-1), Type.Literal(1)]) }),
-  object({ kind: Type.Literal('reverse'), operationId: identifier }),
-  object({ kind: Type.Literal('classification'), operationId: identifier, classification: choices('exterior', 'hole', 'island', 'ambiguous', 'open-chain') }),
-  object({ kind: Type.Literal('start-point'), operationId: identifier, point }),
-  object({ kind: Type.Literal('compensation'), operationId: identifier, selection: choices('automatic', 'inside', 'outside', 'centerline') }),
+  object({ kind: Type.Literal('move-operation'), operationId: sourceIdentifier, direction: Type.Union([Type.Literal(-1), Type.Literal(1)]) }),
+  object({ kind: Type.Literal('reverse'), operationId: sourceIdentifier }),
+  object({ kind: Type.Literal('classification'), operationId: sourceIdentifier, classification: choices('exterior', 'hole', 'island', 'ambiguous', 'open-chain') }),
+  object({ kind: Type.Literal('start-point'), operationId: sourceIdentifier, point }),
+  object({ kind: Type.Literal('compensation'), operationId: sourceIdentifier, selection: choices('automatic', 'inside', 'outside', 'centerline') }),
   object({ kind: Type.Literal('threading-default'), transition: threading }),
-  object({ kind: Type.Literal('threading'), operationId: identifier, transition: Type.Union([threading, Type.Null()]) }),
-  object({ kind: Type.Literal('circle-center-entry'), operationId: identifier }),
-  object({ kind: Type.Literal('entry'), operationId: identifier, from: Type.Union([point, Type.Null()]) }),
-  object({ kind: Type.Literal('exit'), operationId: identifier, to: Type.Union([point, Type.Null()]) }),
-  object({ kind: Type.Literal('program-stops'), operationId: identifier, stops: Type.Array(object({ id: identifier, enabled: Type.Boolean(), placement, reason: choices('operator-check', 'part-retention', 'manual'), note: Type.Optional(Type.String({ maxLength: 500 })) }), { maxItems: 50 }) }),
-  object({ kind: Type.Literal('participation'), sourceSegmentId: identifier, range: object({ start: Type.Number({ minimum: 0, maximum: 1 }), end: Type.Number({ minimum: 0, maximum: 1 }) }), participation: choices('active-cut', 'inactive-reference') }),
-  object({ kind: Type.Literal('partial-compensation'), operationId: identifier, side: Type.Union([choices('left', 'right'), Type.Null()]) }),
-  object({ kind: Type.Literal('partial-lead-review'), operationId: identifier, role: choices('entry', 'exit'), reviewed: Type.Boolean() })
+  object({ kind: Type.Literal('threading'), operationId: sourceIdentifier, transition: Type.Union([threading, Type.Null()]) }),
+  object({ kind: Type.Literal('circle-center-entry'), operationId: sourceIdentifier }),
+  object({ kind: Type.Literal('entry'), operationId: sourceIdentifier, from: Type.Union([point, Type.Null()]) }),
+  object({ kind: Type.Literal('exit'), operationId: sourceIdentifier, to: Type.Union([point, Type.Null()]) }),
+  object({ kind: Type.Literal('program-stops'), operationId: sourceIdentifier, stops: Type.Array(object({ id: sourceIdentifier, enabled: Type.Boolean(), placement, reason: choices('operator-check', 'part-retention', 'manual'), note: Type.Optional(Type.String({ maxLength: 500 })) }), { maxItems: 50 }) }),
+  object({ kind: Type.Literal('participation'), sourceSegmentId: sourceIdentifier, range: object({ start: Type.Number({ minimum: 0, maximum: 1 }), end: Type.Number({ minimum: 0, maximum: 1 }) }), participation: choices('active-cut', 'inactive-reference') }),
+  object({ kind: Type.Literal('partial-compensation'), operationId: sourceIdentifier, side: Type.Union([choices('left', 'right'), Type.Null()]) }),
+  object({ kind: Type.Literal('partial-lead-review'), operationId: sourceIdentifier, role: choices('entry', 'exit'), reviewed: Type.Boolean() })
 ]);
 export type ProjectEdit = Static<typeof projectEdit>;
 
@@ -44,7 +46,10 @@ export function applyProjectEdits(document: PathPlanningDocument, edits: readonl
   let next = document;
   for (const [index, edit] of edits.entries()) {
     const result = apply(next, edit);
-    if (!result) throw new ToolError('EDIT_REJECTED', `Edit ${index + 1} (${edit.kind}) is not applicable. No edits were applied.`);
+    if (!result) throw new ToolError('EDIT_REJECTED', `Edit ${index + 1} (${edit.kind}) is not applicable. No edits were applied.`, {
+      editIndex: index, editKind: edit.kind, ...('operationId' in edit ? { operationId: edit.operationId } : {}),
+      recovery: 'Read current geometry IDs and edm_describe_edits for this kind, then retry the complete batch with a fresh draftVersion.'
+    });
     next = result;
   }
   return next;

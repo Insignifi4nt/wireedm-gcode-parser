@@ -47,6 +47,31 @@ class QuotaStorage extends MemoryStorage {
 }
 
 describe('createBrowserCacheAdapter', () => {
+  it.each([8, 2000])('preserves a leading UTF-8 BOM in exact reads before and after compression (%s lines)', async (lines) => {
+    const storage = new MemoryStorage();
+    const namespace = 'wire-edm-exact';
+    const adapter = createBrowserCacheAdapter(storage, { namespace });
+    const source = `\uFEFF${'G1 X1.25 Y2.5 (Oțel ⚙)\r\n'.repeat(lines)}`;
+    const path = 'imports/original.nc';
+    await adapter.writeText(path, source);
+    const reopened = createBrowserCacheAdapter(storage, { namespace });
+
+    expect(await (reopened.readExactText?.(path) ?? reopened.readText(path))).toBe(source);
+    if (lines === 2000) expect(storage.getItem(`${namespace}:file:${path}`)!.length).toBeLessThan(source.length);
+    expect(await (reopened.readExactText?.('missing.nc') ?? reopened.readText('missing.nc'))).toBeNull();
+  });
+
+  it('preserves source text that begins with the cache compression marker', async () => {
+    const storage = new MemoryStorage();
+    const adapter = createBrowserCacheAdapter(storage, { namespace: 'wire-edm-test' });
+    const source = '\u0000wire-edm-cache-gzip-v1:original source text';
+
+    await adapter.writeText('imports/source.txt', source);
+
+    const reopened = createBrowserCacheAdapter(storage, { namespace: 'wire-edm-test' });
+    expect(await reopened.readText('imports/source.txt')).toBe(source);
+  });
+
   it.each(['{broken', 'null', '{}', '42', '["empty-folder",42]', null])(
     'rebuilds damaged or missing directory metadata %j from owned file paths', async (metadata) => {
       const storage = new MemoryStorage();

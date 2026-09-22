@@ -376,7 +376,9 @@ function compileOperation(input: {
   }
 
   const entryPoint = operationEntryPoint(operation);
-  const material = operationIndex > 0
+  // Material crossing only constrains a continuously threaded move. Separated
+  // travel and legacy integrity reads do not consume this potentially full-job scan.
+  const material = !input.legacySavedRevision && threading?.mode === 'continuous'
     ? classifyPositioningMaterial(document, input.currentPosition, entryPoint)
     : null;
   if (!input.legacySavedRevision && threading?.mode === 'continuous' && material?.status === 'crosses-finished-material') {

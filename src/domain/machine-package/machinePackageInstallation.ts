@@ -170,7 +170,8 @@ function formatMachinePackageDiagnostic(diagnostic: MachinePackageDiagnostic) {
 
 export async function commitStoredMachinePackageInstallation(
   prepared: PreparedMachinePackageInstallation,
-  resolution: MachinePackageInstallationResolution
+  resolution: MachinePackageInstallationResolution,
+  options: { readonly beforeWrite?: () => void } = {}
 ): Promise<CommitStoredMachinePackageInstallationResult> {
   return withWorkbenchMutationLock(prepared.workbench.adapter, async () => {
     const reopened = await initializeWorkbenchCatalogUnderMutationLock(prepared.workbench.adapter);
@@ -225,6 +226,7 @@ export async function commitStoredMachinePackageInstallation(
       canonicalJson(posts) === canonicalJson(reopened.workbench.posts) &&
       canonicalJson(machines.library) === canonicalJson(reopened.workbench.machines)
     ) {
+      options.beforeWrite?.();
       return {
         ok: true,
         workbench: Object.freeze({ ...reopened.workbench, posts, machines: machines.library })
@@ -234,7 +236,8 @@ export async function commitStoredMachinePackageInstallation(
     const persisted = await persistCatalogsAtomically(
       reopened.workbench.adapter,
       posts,
-      machines.library
+      machines.library,
+      options.beforeWrite
     );
     if (!persisted.ok) return persisted;
     return {
@@ -466,7 +469,8 @@ function validateMergedCatalogs(
 async function persistCatalogsAtomically(
   adapter: WorkbenchStorageAdapter,
   posts: PostLibrary,
-  machines: MachineLibrary
+  machines: MachineLibrary,
+  beforeWrite?: () => void
 ): Promise<
   | { readonly ok: true }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
@@ -486,6 +490,8 @@ async function persistCatalogsAtomically(
     schemaVersion: 1,
     machines: machines.machines
   }, null, 2);
+  // The transaction must finish or recover once its journal phase begins.
+  beforeWrite?.();
   const transaction = await beginCatalogPairTransaction(adapter, {
     previousPosts: beforePosts.text,
     previousMachines: beforeMachines.text,
@@ -548,7 +554,7 @@ async function rollbackCatalogs(
 
 async function readRequired(adapter: WorkbenchStorageAdapter, path: string) {
   try {
-    const text = await adapter.readText(path);
+    const text = await readExact(adapter, path);
     return text === null
       ? {
           ok: false as const,
@@ -572,12 +578,16 @@ async function readRequired(adapter: WorkbenchStorageAdapter, path: string) {
 async function restore(adapter: WorkbenchStorageAdapter, path: string, text: string) {
   try {
     await adapter.writeText(path, text);
-    return await adapter.readText(path) === text
+    return await readExact(adapter, path) === text
       ? { ok: true as const }
       : { ok: false as const };
   } catch {
     return { ok: false as const };
   }
+}
+
+function readExact(adapter: WorkbenchStorageAdapter, path: string) {
+  return adapter.readExactText?.(path) ?? adapter.readText(path);
 }
 
 function physicalMachineJson(machine: MachineDefinition) {

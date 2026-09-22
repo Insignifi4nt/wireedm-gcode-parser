@@ -147,3 +147,18 @@ it('preserves a UTF-8 BOM and rejects binary files instead of silently changing 
   const fakeBinaryRoot = { name: 'binary', getFileHandle: async () => ({ getFile: async () => ({ arrayBuffer: async () => new Uint8Array([0xff, 0xfe]).buffer }) }) } as unknown as FileSystemDirectoryHandle;
   await expect(createBrowserDirectoryAdapter(fakeBinaryRoot).readExactText!('binary.bin')).rejects.toThrow('exact UTF-8');
 });
+
+it.each(['cache', 'folder'] as const)('preserves a compressed-size BOM-prefixed original when backing up %s and restoring to the other adapter', async (kind) => {
+  const source = storage(kind);
+  const workbench = await empty(source);
+  const original = `\uFEFF${'G1 X1.25 Y2.5 (Oțel ⚙)\r\n'.repeat(2000)}`;
+  await source.writeText('imports/original.nc', original);
+  const backup = await createWorkbenchBackup(workbench);
+  expect(JSON.parse(backup.text).files.find((file: { path: string }) => file.path === 'imports/original.nc').text)
+    .toBe(original);
+  const target = storage(kind === 'cache' ? 'folder' : 'cache');
+  await empty(target);
+  await restoreWorkbenchBackup(target, await prepareWorkbenchBackup(backup.text));
+  expect(await target.readExactText!('imports/original.nc')).toBe(original);
+  expect((await createWorkbenchBackup(await empty(target))).contentHash).toBe(backup.contentHash);
+});

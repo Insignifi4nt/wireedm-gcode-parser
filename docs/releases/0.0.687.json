@@ -1,0 +1,36 @@
+{
+  "version": "0.0.687",
+  "previousVersion": "0.0.686",
+  "postCompatibility": "unchanged-contracts-with-correctness-fixes",
+  "summary": "Adds saved-UPID 3D simulation, local STEP import, direct agent file inputs and exports, and editor, geometry and storage-integrity fixes.",
+  "warning": "Malformed UPID with stale derived bounds is now rejected. Correcting rare geometry-identity collisions can change derived execution and controller output or block an old saved-plan comparison; review and save a new revision, never rewrite historical snapshots. Conflicting catalog recovery bytes now block recovery instead of overwriting unrelated changes. Installed post packages remain unchanged. Agent import calls must supply source contents; the dedicated file-picker fallback has been removed.",
+  "checklist": {
+    "schema": "No UPID, post, execution-plan, machine-package or storage schema version changes. Existing source-consistency rules are enforced more strictly for derived bounds. Simulation settings and STEP models are session-local, not new serialized UPID fields.",
+    "events": "Execution-event vocabulary and post engine API are unchanged. Partial-cut ID allocation preserves opaque authored IDs and prevents collisions. Corrected colliding inputs can produce different derived geometry/references; saved execution-plan comparisons stay strict.",
+    "capabilities": "No post capability is added or widened. Simulation consumes neutral saved execution without certifying a post or machine. Robofil 2.6.0 remains the same candidate package with its existing supported compensation/threading routes and runtime rejection of unsupported already-separated manual repositioning.",
+    "auditAndOutput": "Shared preflight, saved-draft checks and controller-output audits remain mandatory. Ordinary Robofil goldens, absolute-center arcs, spatial stops and file formatting remain unchanged. External program cleanup now preserves motion sharing an M02 block and does not mistake comments, named identifiers or distinct M2-prefixed commands for the end command. Rare corrected UPID identity collisions can change previously incorrect output; installed post hashes and saved revisions are not rewritten. Simulation removal, retention, support and timing never generate controller commands or feeds.",
+    "installationAndStorage": "Exact original UTF-8 text, including BOMs, is preserved for cache/folder backups and transactions. Catalog recovery rejects any state not equal to its journal before/after images and retains conflicting data. No migration or automatic cleanup. Direct machine-package input is bounded canonical base64 and reuses package validation, preview, explicit collision resolution and installation transactions; cancellation/freshness are rechecked before journal creation, with truthful outcomes once durable work begins.",
+    "verification": "Before publication, run release:check against current main, post:docs:check, all unit/integration tests, UPID executable conformance, Robofil conformance, package validation and production build/documentation checks. Native verification includes direct gear UPID import, precise edits/save, simulation and screenshots, and direct package preview with exact package identity. Record observed results in docs/reviews/2026-09-22-publication-review.md. Browser CI remains the final reviewed-PR gate. No physical-machine verification is implied."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Unchanged source/archive, golden output, spatial CW/CCW stops, reviewed partial arcs, simulation independence, conformance and package validation. Machine binding remains unverified."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Inspect saved Wire EDM jobs in 3D and work directly with files through browser agent tools.",
+    "changes": [
+      "Simulation adds rough stock, wire playback, released material, default waste removal between cuts and a final-part view. STEP machine geometry loads locally for approximate interference checks.",
+      "The simulation viewport has a stable support grid, studio lighting and reflections, compact settings, and explicit saved-project and incomplete-check states.",
+      "Agent tools accept DXF/UPID text and complete machine-package bytes directly. The dedicated Agent input file button is removed; readiness, recent actions and captured previews are in the notification bell's Agent tab.",
+      "An animated pill in the app header switches between Editor and Simulation, leaving more room for the part. Notifications open on their own tab by default.",
+      "Agents can discover exact edit schemas, export saved UPID/controller files and capture the visible editor or simulation preview through shared application checks.",
+      "Editor fixes preserve pending stop/transform edits, discard stale controller previews and retain authored geometry identities. Inconsistent DXF vertex counts and stale UPID bounds produce diagnostics.",
+      "Storage backups and recovery preserve exact original text and stop on conflicting catalog changes. Installed packages and saved revisions are retained unchanged."
+    ],
+    "compatibility": "No automatic postprocessor upgrade is required or performed. Robofil 2.6.0 retains its commands and supported limits. Some previously accepted malformed UPID or conflicting recovery states now require review. Simulation is nominal geometry with illustrative timing, not kerf, rigid-body or physical-machine verification.",
+    "action": "Save before simulation or controller export. If a saved-plan comparison fails after a geometry correction, review the original and save a new revision. Keep recovery-conflict files intact. Agents should read the current tool schemas and supply source contents directly; ordinary Import controls remain available."
+  }
+}

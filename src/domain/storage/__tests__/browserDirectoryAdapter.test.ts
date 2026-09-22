@@ -13,6 +13,17 @@ import { createBrowserDirectoryAdapter } from '../browserDirectoryAdapter';
 import { FakeDirectoryHandle } from './fakeDirectoryHandle';
 
 describe('createBrowserDirectoryAdapter', () => {
+  it('preserves source text that starts with the browser-cache compression marker', async () => {
+    const root = new FakeDirectoryHandle('jobs');
+    const adapter = createBrowserDirectoryAdapter(root as unknown as FileSystemDirectoryHandle);
+    const source = '\u0000wire-edm-cache-gzip-v1:original source text';
+
+    await adapter.writeText('imports/source.txt', source);
+
+    const reopened = createBrowserDirectoryAdapter(root as unknown as FileSystemDirectoryHandle);
+    expect(await reopened.readText('imports/source.txt')).toBe(source);
+  });
+
   it.each(['write', 'close'])('aborts a stream after %s fails so a rollback or retry can reopen the file', async (failure) => {
     let open = false;
     let stored = 'ORIGINAL';

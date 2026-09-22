@@ -109,15 +109,20 @@ export async function recoverCatalogPairTransaction(
   if (!parsed.ok) return parsed;
   const transaction = parsed.transaction;
   try {
-    const posts = await adapter.readText(POST_LIBRARY_PATH);
-    const machines = await adapter.readText(MACHINE_LIBRARY_PATH);
+    const posts = await readExact(adapter, POST_LIBRARY_PATH);
+    const machines = await readExact(adapter, MACHINE_LIBRARY_PATH);
+    if ((posts !== transaction.previousPosts && posts !== transaction.nextPosts) ||
+        (machines !== transaction.previousMachines && machines !== transaction.nextMachines)) {
+      return failure('CATALOG_PAIR_TRANSACTION_RECOVERY_MISMATCH',
+        'Installed post or machine catalogs changed outside the pending transaction. Both catalogs and the recovery journal were preserved; preserve this workbench for recovery before further edits.');
+    }
     const committed = posts === transaction.nextPosts && machines === transaction.nextMachines;
     if (!committed) {
       await adapter.writeText(POST_LIBRARY_PATH, transaction.previousPosts);
       await adapter.writeText(MACHINE_LIBRARY_PATH, transaction.previousMachines);
       if (
-        await adapter.readText(POST_LIBRARY_PATH) !== transaction.previousPosts ||
-        await adapter.readText(MACHINE_LIBRARY_PATH) !== transaction.previousMachines
+        await readExact(adapter, POST_LIBRARY_PATH) !== transaction.previousPosts ||
+        await readExact(adapter, MACHINE_LIBRARY_PATH) !== transaction.previousMachines
       ) {
         return failure('CATALOG_PAIR_TRANSACTION_RECOVERY_MISMATCH', 'Machine-package rollback did not restore both catalogs exactly.');
       }
@@ -126,6 +131,10 @@ export async function recoverCatalogPairTransaction(
   } catch (error) {
     return failure('CATALOG_PAIR_TRANSACTION_RECOVERY_FAILED', `Could not recover an interrupted machine-package installation: ${errorMessage(error)}.`);
   }
+}
+
+function readExact(adapter: WorkbenchStorageAdapter, path: string) {
+  return adapter.readExactText?.(path) ?? adapter.readText(path);
 }
 
 function parseTransaction(raw: string):

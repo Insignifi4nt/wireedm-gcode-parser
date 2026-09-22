@@ -105,6 +105,52 @@ describe('EditorControllerArtifactDialog', () => {
     expect(download).toHaveBeenCalledWith('project.iso', artifactText);
   });
 
+  it('clears a generated artifact when the machine active setup changes outside the dialog', async () => {
+    const generate = vi.fn().mockResolvedValue({
+      ok: true, artifact: { fileName: 'old-setup.iso', text: 'OLD POST OUTPUT' }
+    } as ControllerArtifactResult);
+    const reset = vi.fn();
+    await render({ onGenerateControllerArtifact: generate, onGenerationReset: reset });
+    await click('Generate controller artifact');
+    expect(container.querySelector('pre')?.textContent).toBe('OLD POST OUTPUT');
+    reset.mockClear();
+    machines = [{ ...machines[0], activeBindingId: 'setup-1' }];
+    await render({ onGenerateControllerArtifact: generate, onGenerationReset: reset });
+    expect(container.textContent).toContain('Setup: Setup 1');
+    expect(container.textContent).toContain('Post: Custom post');
+    expect(container.querySelector('pre')).toBeNull();
+    expect(reset).toHaveBeenCalledOnce();
+  });
+
+  it('discards a generation result that finishes after the exact selected setup changes', async () => {
+    let finish!: (result: ControllerArtifactResult) => void;
+    const generate = vi.fn().mockReturnValue(new Promise<ControllerArtifactResult>(resolve => { finish = resolve; }));
+    const generated = vi.fn();
+    await render({ onGenerateControllerArtifact: generate, onArtifactGenerated: generated });
+    await click('Generate controller artifact');
+    machines = [{ ...machines[0], activeBindingId: 'setup-1' }];
+    await render({ onGenerateControllerArtifact: generate, onArtifactGenerated: generated });
+    await act(async () => finish({ ok: true, artifact: { fileName: 'old-setup.iso', text: 'OLD POST OUTPUT' } } as ControllerArtifactResult));
+    expect(container.querySelector('pre')).toBeNull();
+    expect(generated).not.toHaveBeenCalled();
+    expect(button('Generate controller artifact').disabled).toBe(false);
+  });
+
+  it('keeps a generated artifact when a library refresh returns the same exact machine and post', async () => {
+    const generate = vi.fn().mockResolvedValue({
+      ok: true, artifact: { fileName: 'current.iso', text: 'CURRENT POST OUTPUT' }
+    } as ControllerArtifactResult);
+    const reset = vi.fn();
+    await render({ onGenerateControllerArtifact: generate, onGenerationReset: reset });
+    await click('Generate controller artifact');
+    reset.mockClear();
+    machines = JSON.parse(JSON.stringify(machines)) as readonly MachineDefinition[];
+    posts = JSON.parse(JSON.stringify(posts)) as PostLibrary;
+    await render({ onGenerateControllerArtifact: generate, onGenerationReset: reset });
+    expect(container.querySelector('pre')?.textContent).toBe('CURRENT POST OUTPUT');
+    expect(reset).not.toHaveBeenCalled();
+  });
+
   it('shows the exact post diagnostic when controller generation is rejected', async () => {
     const generate = vi.fn().mockResolvedValue({
       ok: false,

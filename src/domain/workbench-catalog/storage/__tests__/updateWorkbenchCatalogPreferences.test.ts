@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
+import { createBrowserCacheAdapter } from '@/domain/storage/browserCacheAdapter';
+import { createBrowserDirectoryAdapter } from '@/domain/storage/browserDirectoryAdapter';
+import { FakeDirectoryHandle } from '@/domain/storage/__tests__/fakeDirectoryHandle';
 import {
   initializeWorkbenchCatalog,
   WORKBENCH_CATALOG_PATH
@@ -176,6 +179,54 @@ describe('updateWorkbenchCatalogPreferences', () => {
       updatedAt: '2026-08-28T13:00:00.000Z',
       preferences: configuredPreferences
     });
+  });
+});
+
+describe.each(['cache', 'folder'] as const)('%s preference rollback integrity', (kind) => {
+  async function fixture() {
+    const adapter = kind === 'cache'
+      ? createBrowserCacheAdapter(localStorage, { namespace: crypto.randomUUID() })
+      : createBrowserDirectoryAdapter(new FakeDirectoryHandle('preference-rollback') as unknown as FileSystemDirectoryHandle);
+    const opened = await initializeWorkbenchCatalog(adapter);
+    if (!opened.ok) throw new Error(opened.error.message);
+    return { adapter, workbench: opened.workbench };
+  }
+
+  it('reports a failed rollback when its write succeeds but its bytes are still corrupted', async () => {
+    const { adapter, workbench } = await fixture();
+    const write = adapter.writeText.bind(adapter);
+    vi.spyOn(adapter, 'writeText').mockImplementation((path, contents) => write(path,
+      path === WORKBENCH_CATALOG_PATH ? `${contents}CORRUPTED` : contents));
+
+    const result = await updateWorkbenchCatalogPreferences(workbench, {
+      preferences: configuredPreferences, updatedAt: new Date('2026-08-28T13:00:00.000Z')
+    });
+    expect(result).toMatchObject({ ok: false, error: {
+      code: 'WORKBENCH_CATALOG_PREFERENCES_ROLLBACK_FAILED',
+      originalError: { code: 'WORKBENCH_CATALOG_PREFERENCES_READBACK_MISMATCH' },
+      rollbackError: { code: 'WORKBENCH_CATALOG_PREFERENCES_READBACK_MISMATCH' }
+    } });
+  });
+
+  it('restores the exact original manifest, including a folder UTF-8 BOM, after a rejected write', async () => {
+    const { adapter, workbench } = await fixture();
+    const original = `${kind === 'folder' ? '\uFEFF' : ''}${JSON.stringify(workbench.manifest, null, '\t')}\r\n`;
+    await adapter.writeText(WORKBENCH_CATALOG_PATH, original);
+    const write = adapter.writeText.bind(adapter);
+    let corrupted = false;
+    vi.spyOn(adapter, 'writeText').mockImplementation((path, contents) => {
+      if (path === WORKBENCH_CATALOG_PATH && !corrupted) {
+        corrupted = true;
+        return write(path, `${contents}CORRUPTED`);
+      }
+      return write(path, contents);
+    });
+
+    const result = await updateWorkbenchCatalogPreferences(workbench, {
+      preferences: configuredPreferences, updatedAt: new Date('2026-08-28T13:00:00.000Z')
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: 'WORKBENCH_CATALOG_PREFERENCES_READBACK_MISMATCH' } });
+    expect(await (adapter.readExactText?.(WORKBENCH_CATALOG_PATH) ?? adapter.readText(WORKBENCH_CATALOG_PATH))).toBe(original);
   });
 });
 

@@ -38,6 +38,7 @@ export function createBrowserCacheAdapter(
       }
     },
     readText: async (path: string) => decodeStoredText(storage.getItem(fileKey(namespace, path))),
+    readExactText: async (path: string) => decodeStoredText(storage.getItem(fileKey(namespace, path)), true),
     deleteText: async (path: string) => {
       storage.removeItem(fileKey(namespace, path));
     },
@@ -69,14 +70,16 @@ export function createBrowserCacheAdapter(
 }
 
 async function encodeStoredText(contents: string): Promise<string> {
-  if (contents.length < MIN_COMPRESS_LENGTH) return contents;
+  const needsEnvelope = contents.startsWith(COMPRESSED_TEXT_PREFIX);
+  if (contents.length < MIN_COMPRESS_LENGTH && !needsEnvelope) return contents;
   const compressed = COMPRESSED_TEXT_PREFIX + btoa(strFromU8(await gzipAsync(strToU8(contents)), true));
-  return compressed.length < contents.length ? compressed : contents;
+  return needsEnvelope || compressed.length < contents.length ? compressed : contents;
 }
 
-async function decodeStoredText(stored: string | null): Promise<string | null> {
+async function decodeStoredText(stored: string | null, preserveBom = false): Promise<string | null> {
   if (stored === null || !stored.startsWith(COMPRESSED_TEXT_PREFIX)) return stored;
-  return strFromU8(await gunzipAsync(strToU8(atob(stored.slice(COMPRESSED_TEXT_PREFIX.length)), true)));
+  const bytes = await gunzipAsync(strToU8(atob(stored.slice(COMPRESSED_TEXT_PREFIX.length)), true));
+  return preserveBom ? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) : strFromU8(bytes);
 }
 
 function gzipAsync(value: Uint8Array): Promise<Uint8Array> {
