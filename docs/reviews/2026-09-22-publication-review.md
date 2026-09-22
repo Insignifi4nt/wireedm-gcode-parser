@@ -1,0 +1,46 @@
+# Publication review — 2026-09-22
+
+Scope: all undeployed changes on `feat/upid-simulation-workbench`, plus the final direct-input, review and documentation changes. Release baseline: `87118ca816bdad202d8ff87586fe07cc0e28d3d9` (`origin/main`, app 0.0.686). The prior implementation checkpoint was `f912af8`; app 0.0.687 is prepared locally. No push, merge or deployment was performed.
+
+## Standards review
+
+Independent review found no remaining material standards violations. Agent tools reuse shared application validation and installation operations; draft edits remain distinct from saved-project simulation and controller export. Browser-cache and folder paths preserve exact originals and reject conflicting recovery states. Public authoring documentation remains usable without a checkout, while release procedures and assessment evidence stay in maintainer documents.
+
+The final direct-input implementation was reviewed separately after handoff. A failed package preparation invalidates the previous preparation handle, covered by a regression. Cancellation and version checks run immediately before the installation journal begins; once durable work starts, the tool reports the actual installation outcome. Existing package identity, explicit collision choices and transaction recovery remain mandatory.
+
+## Behavior and specification review
+
+The independent review covered simulation, UPID and execution identity, editor changes, normalization and storage. It found one additional defect: released-piece guide checks tested only the wire-end plane, although the rendered guide has a finite height. The scanner now uses the full guide-body vertical interval and samples its entry/exit boundaries. A regression distinguishes a one-millimeter piece intersecting the lower guide from a piece below it. The reviewer ran 243 tests across 26 files successfully.
+
+The dedicated agent file picker is removed. DXF and UPID tools accept supplied text, and machine-package preparation accepts the exact archive bytes as bounded canonical base64. The activity/readiness indicator remains. The public agent guide documents the changed input contract and limits; ordinary import controls remain available.
+
+No Robofil update is justified by the workbench changes. The existing 2.6.0 source, package and installed browser copy remain unchanged. Seven added current-contract regressions cover spatial CW/CCW stops, reviewed partial arcs, simulation independence and unsupported transitions. See the [Robofil assessment](../maintainers/2026-09-22-robofil-assessment.md) for exact identities, supported routes and physical verification limits.
+
+## Native browser verification and images
+
+Verification used the production preview on port 3778 in the native in-app browser. The supplied `Spur gear (45 teeth)-work.upid.json` was imported through the public UPID tool into `spur-gear-45-teeth-work-2026-09-22`. Its source SHA-256 is `cca54cd029d7b486c198fba8301223e10267ec3b4d701bcf036330a5dcd2ba39`. The original Downloads file was only read.
+
+The input had reversed kept-material choices. With the user's approval, the imported project's center-hole operation was changed to keep the outside, and its outer operation to keep the inside. The edits were saved through the shared tools. Both README screenshots show this corrected project: the editor and the simulator's final-part view. They are unedited viewport captures of the actual app, not generated renders. Simulation uses nominal geometry and the visible 20 mm stock thickness.
+
+Direct package preparation accepted the existing Robofil archive and reported an exact collision with the already-installed package. Archive hash: `48bcc0bdf14c197495fd0933b62173d22d598f4d71ae2ca861d0dd2245acde62`; post hash: `95b530e9a22abbf4ba1f8a80bbdaa1536abd6380ac9165348a82afb1d4c45a5f`. No installation or replacement was performed.
+
+Controller generation for the corrected saved gear succeeded with that exact post and setup. The 8,804-character ISO artifact has SHA-256 `b136b515e00ec7099671be344772bd63969c623cd52081b659d5d4894f60affa`, saved as revision `revision.4570dfae-45d6-4351-a5e4-f29e92e38aa8`. This verifies generation, not execution on a machine. No browser warnings or errors were recorded during the final editor/simulator verification.
+
+## Verification
+
+- Full unit/integration suite: 1,788 tests across 185 files passed.
+- Production build and application TypeScript: passed.
+- Static documentation build: 17 pages; documentation checks cover 58 generated files.
+- UPID executable conformance: all three fixtures passed.
+- Post authoring documentation consistency: passed.
+- Robofil post conformance: all three fixtures passed; source and archive validation returned matching unchanged identities.
+- Independent direct-input review: 55 focused tests and application TypeScript passed.
+- Release compatibility check against `origin/main` and `git diff --check`: passed.
+
+## Remaining limits and publication gate
+
+Simulation is a nominal sampled preview with illustrative timing, not a kerf/offset solver or rigid-body simulation. STEP checks detect sampled wire/surface interference; they do not certify guide, solid-containment or released-piece contact with the imported assembly. Assumed waste removal does not emit machine stops or prove material has been physically removed.
+
+The exact Robofil binding remains unverified on the physical machine. Its runtime rejection of unsupported already-separated manual repositioning remains in place. No new controller policy or automatic post upgrade is implied.
+
+The build retains known large-chunk and OCCT browser-externalization warnings. Forced WebGL fallback, mobile coverage and the full browser CI suite were not rerun in this publication pass. The reviewed PR and its CI are still required before merging; this report does not claim a deployed or machine-verified release.
