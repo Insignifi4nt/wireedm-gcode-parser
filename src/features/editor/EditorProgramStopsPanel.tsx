@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { programStopValidationError } from '@/domain/path-intel/programStops';
+import { resolveSourceAfterContourTravel } from '@/domain/path-intel/afterContourTravel';
 import { buildUpidEditorTree } from '@/domain/upid/upidEditorTree';
 import { deriveActiveMachiningOperations } from '@/domain/path-intel/machiningParticipation';
 
@@ -58,12 +59,15 @@ export function EditorProgramStopsPanel({
   const savedStopId = selectedStop?.id ?? null;
   const savedPlacement = selectedStop?.placement.kind ?? 'before-operation-end';
   const savedRemaining = selectedStop?.placement.kind === 'before-operation-end'
-    ? String(selectedStop.placement.remainingCutLengthMm) : '1';
+    ? String(selectedStop.placement.remainingCutLengthMm)
+    : selectedStop?.placement.kind === 'after-contour-distance' ? String(selectedStop.placement.travelLengthMm) : '1';
   const savedReason = selectedStop?.reason ?? 'part-retention';
   const savedNote = selectedStop?.note ?? '';
   const savedEnabled = selectedStop?.enabled ?? true;
   const executionTree = useMemo(() => buildUpidEditorTree(document), [document]);
   const effectiveOperations = useMemo(() => deriveActiveMachiningOperations(document), [document]);
+  const travel = useMemo(() => operation ? resolveSourceAfterContourTravel(document, operation.id) : null,
+    [document, operation]);
   const manualThreading = operation && (executionTree.status === 'ready'
     ? executionTree.spatialActions.some((action) => action.operationId === operation.id &&
         action.pause === 'generated-manual-thread')
@@ -101,6 +105,7 @@ export function EditorProgramStopsPanel({
     enabled: true,
     placement: placement === 'before-operation-end'
       ? { kind: placement, remainingCutLengthMm: remainingValue }
+      : placement === 'after-contour-distance' ? { kind: placement, travelLengthMm: remainingValue }
       : { kind: placement },
     reason,
     ...(note.trim() ? { note: note.trim() } : {})
@@ -110,6 +115,7 @@ export function EditorProgramStopsPanel({
     enabled: selectedEnabled,
     placement: selectedPlacement === 'before-operation-end'
       ? { kind: selectedPlacement, remainingCutLengthMm: selectedRemainingValue }
+      : selectedPlacement === 'after-contour-distance' ? { kind: selectedPlacement, travelLengthMm: selectedRemainingValue }
       : { kind: selectedPlacement },
     reason: selectedReason,
     ...(selectedNote.trim() ? { note: selectedNote.trim() } : {})
@@ -158,7 +164,7 @@ export function EditorProgramStopsPanel({
       <div>
         <div className="uppercase text-muted-foreground">{operation.displayName}</div>
         <p className="mt-1 text-muted-foreground">
-          Pause cutting for part retention or an operator check. Remaining cut excludes entry and exit moves.
+          Stops belong to {operation.displayName}. Choose a machining phase or an exact distance along the planned path.
         </p>
         {manualThreading && <p className="mt-1 text-amber-300">
           Manual rethreading already adds a pause after positioning. Another stop at that point creates a second pause.
@@ -176,7 +182,9 @@ export function EditorProgramStopsPanel({
         <legend className="px-1 uppercase text-muted-foreground">Add stop</legend>
         <ProgramStopFields labelPrefix="Program stop" placement={placement} remaining={remaining}
           reason={reason} note={note} onPlacementChange={setPlacement} onRemainingChange={setRemaining}
-          onReasonChange={setReason} onNoteChange={setNote} onDraftChange={onDraftChange} placementRef={addPlacementRef} />
+          onReasonChange={setReason} onNoteChange={setNote} onDraftChange={onDraftChange} placementRef={addPlacementRef}
+          hasExit={Boolean(operation.transitions?.exit && operation.transitions.exit.strategy !== 'none')}
+          travelLengthMm={travel?.status === 'ready' ? travel.path.totalLengthMm : null} />
         {addCompleted
           ? <p role="status" className="text-muted-foreground">Stop added. Change the placement to add another.</p>
           : addError && <p role="alert" className="text-red-300">{addError}</p>}
@@ -208,7 +216,9 @@ export function EditorProgramStopsPanel({
                   <ProgramStopFields labelPrefix="Selected stop" placement={selectedPlacement} remaining={selectedRemaining}
                     reason={selectedReason} note={selectedNote} onPlacementChange={setSelectedPlacement}
                     onRemainingChange={setSelectedRemaining} onReasonChange={setSelectedReason}
-                    onNoteChange={setSelectedNote} onDraftChange={onDraftChange} placementRef={selectedPlacementRef} />
+                    onNoteChange={setSelectedNote} onDraftChange={onDraftChange} placementRef={selectedPlacementRef}
+                    hasExit={Boolean(operation.transitions?.exit && operation.transitions.exit.strategy !== 'none')}
+                    travelLengthMm={travel?.status === 'ready' ? travel.path.totalLengthMm : null} />
                   <label className="flex items-center gap-2 text-muted-foreground">
                     <input
                       aria-label="Selected stop enabled"
@@ -256,7 +266,8 @@ export function EditorProgramStopsPanel({
                     type="checkbox"
                   />
                   <div>
-                    <div className="text-foreground">{placementLabel(stop.placement)}</div>
+                    <div className="text-foreground">{placementLabel(stop.placement,
+                      Boolean(operation.transitions?.exit && operation.transitions.exit.strategy !== 'none'))}</div>
                     <div className="text-muted-foreground">{stopReasonLabels[stop.reason]}{stop.note ? ` · ${stop.note}` : ''}</div>
                   </div>
                   <div className="col-start-2 flex gap-1">
@@ -296,13 +307,15 @@ function replaceStop(
   return stops.map((stop) => stop.id === stopId ? replacement : stop);
 }
 
-function placementLabel(placement: OperationProgramStopPlacement) {
+function placementLabel(placement: OperationProgramStopPlacement, hasExit: boolean) {
   if (placement.kind === 'before-entry') return 'Stop before positioning';
   if (placement.kind === 'after-positioning') return 'Stop after positioning';
   if (placement.kind === 'before-operation-end') {
     return `Stop with ${placement.remainingCutLengthMm.toFixed(3)} mm remaining`;
   }
-  return `Stop ${placement.kind.replaceAll('-', ' ')}`;
+  if (placement.kind === 'after-contour-distance') return `Stop ${placement.travelLengthMm.toFixed(3)} mm along travel after contour`;
+  if (placement.kind === 'after-contour') return hasExit ? 'Stop at contour end · before exit lead' : 'Stop at contour end';
+  if (placement.kind === 'after-exit') return hasExit ? 'Stop at exit-lead end · before next positioning' : 'Stop at contour end · no exit lead';
 }
 
 interface ProgramStopFieldsProps {
@@ -317,16 +330,36 @@ interface ProgramStopFieldsProps {
   onNoteChange: (value: string) => void;
   onDraftChange?: () => void;
   placementRef?: Ref<HTMLSelectElement>;
+  hasExit: boolean;
+  travelLengthMm: number | null;
+}
+
+function placementHelp(placement: OperationProgramStopPlacement['kind'], hasExit: boolean): string {
+  switch (placement) {
+    case 'before-entry': return 'Pause at the current wire position, before separation and positioning toward this contour’s entry start.';
+    case 'after-positioning': return 'Pause at this contour’s entry start, after positioning and before threading, compensation and the entry cut. Manual rethreading can already add a pause here.';
+    case 'before-operation-end': return 'Pause on the contour with the specified cut length still remaining. Distance follows the contour and excludes entry and exit leads.';
+    case 'after-contour': return hasExit
+      ? 'Pause at the contour endpoint before cutting the exit lead. Compensation has not ended.'
+      : 'Pause at the contour endpoint. There is no exit lead, so After exit pauses at the same point.';
+    case 'after-exit': return hasExit
+      ? 'Pause after cutting the exit lead, before compensation ends and before positioning to the next contour. This is the exit endpoint, not a distance along rapid travel.'
+      : 'There is no exit lead: this pauses at the contour endpoint, just like After contour. No rapid travel occurs between these two placements.';
+    case 'after-contour-distance': return 'Measure from the contour endpoint along the exit lead, then along positioning toward the next contour’s entry start. Stops use the existing planned XY path; they do not add an exit or travel move.';
+  }
 }
 
 function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
   onPlacementChange, onRemainingChange, onReasonChange, onNoteChange,
-  onDraftChange, placementRef }: ProgramStopFieldsProps) {
+  onDraftChange, placementRef, hasExit, travelLengthMm }: ProgramStopFieldsProps) {
+  const helpId = `${labelPrefix.replaceAll(' ', '-').toLowerCase()}-placement-help`;
   return <>
         <label className="grid gap-0.5 text-muted-foreground">
           Placement
           <select
             aria-label={`${labelPrefix} placement`}
+            aria-describedby={helpId}
+            title={placementHelp(placement, hasExit)}
             className="h-7 border border-border bg-background px-1 text-foreground"
             onChange={(event) => {
               onPlacementChange(event.currentTarget.value as OperationProgramStopPlacement['kind']);
@@ -335,18 +368,20 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
             ref={placementRef}
             value={placement}
           >
-            <option value="before-entry">Before positioning</option>
-            <option value="after-positioning">After positioning, before threading or cutting</option>
-            <option value="before-operation-end">Before contour end</option>
-            <option value="after-contour">After contour</option>
-            <option value="after-exit">After exit</option>
+            <option value="before-entry" title={placementHelp('before-entry', hasExit)}>Before positioning</option>
+            <option value="after-positioning" title={placementHelp('after-positioning', hasExit)}>After positioning · before threading or entry</option>
+            <option value="before-operation-end" title={placementHelp('before-operation-end', hasExit)}>On contour · remaining cut distance</option>
+            <option value="after-contour" title={placementHelp('after-contour', hasExit)}>After contour · before exit lead</option>
+            <option value="after-exit" title={placementHelp('after-exit', hasExit)}>After exit lead · before next positioning</option>
+            <option value="after-contour-distance" title={placementHelp('after-contour-distance', hasExit)}>After contour · travel distance</option>
           </select>
         </label>
-        {placement === 'before-operation-end' && (
+        <p id={helpId} className="text-muted-foreground">{placementHelp(placement, hasExit)}</p>
+        {(placement === 'before-operation-end' || placement === 'after-contour-distance') && (
           <label className="grid gap-0.5 text-muted-foreground">
-            Remaining cut (mm)
+            {placement === 'after-contour-distance' ? 'Travel from contour end (mm)' : 'Remaining contour cut (mm)'}
             <input
-              aria-label={`${labelPrefix} remaining cut millimeters`}
+              aria-label={`${labelPrefix} ${placement === 'after-contour-distance' ? 'travel distance' : 'remaining cut'} millimeters`}
               className="h-7 border border-border bg-background px-1.5 font-mono text-foreground"
               inputMode="decimal"
               onChange={(event) => {
@@ -357,6 +392,10 @@ function ProgramStopFields({ labelPrefix, placement, remaining, reason, note,
             />
           </label>
         )}
+        {placement === 'after-contour-distance' && <>
+          {travelLengthMm !== null && <p className="text-muted-foreground">Available path: {travelLengthMm.toFixed(3)} mm.</p>}
+          <p className="text-amber-300">Uses UPID v3 and split moves. Older apps and posts may reject this placement. Review generated controller output; installed posts stay unchanged.</p>
+        </>}
         <label className="grid gap-0.5 text-muted-foreground">
           Reason
           <select

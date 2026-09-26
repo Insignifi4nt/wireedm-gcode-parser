@@ -119,7 +119,7 @@ export function validateUpidDocument(
     context.add('upid-invalid-value', 'UPID diagnostics must be an array.');
   }
 
-  if (root.schemaVersion !== 1 && root.schemaVersion !== 2) {
+  if (root.schemaVersion !== 1 && root.schemaVersion !== 2 && root.schemaVersion !== 3) {
     context.add(
       'upid-invalid-value',
       `UPID schema version ${String(root.schemaVersion)} is unsupported.`
@@ -2246,6 +2246,9 @@ function validateProgramStops(
       context.add('upid-invalid-value', `Operation ${operation.id} program stop placement is invalid.`);
       continue;
     }
+    if (placement.travelLengthMm !== undefined && placement.kind !== 'after-contour-distance') {
+      context.add('upid-invalid-value', `Operation ${operation.id} travelLengthMm requires an after-contour-distance placement.`);
+    }
     if (placement.kind === 'before-operation-end') {
       finiteNumber(
         placement.remainingCutLengthMm,
@@ -2253,6 +2256,9 @@ function validateProgramStops(
         context,
         { positive: true }
       );
+    } else if (placement.kind === 'after-contour-distance') {
+      finiteNumber(placement.travelLengthMm, `operation ${operation.id} program stop travel length`, context, { positive: true });
+      if (context.schemaVersion !== 3) context.add('upid-invalid-value', `Operation ${operation.id} travel-distance stop requires UPID schema version 3.`);
     } else if (!['before-entry', 'after-positioning', 'after-contour', 'after-exit'].includes(String(placement.kind))) {
       context.add('upid-invalid-value', `Operation ${operation.id} program stop placement is unsupported.`);
     }

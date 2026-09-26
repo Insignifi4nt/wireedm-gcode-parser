@@ -296,7 +296,7 @@ function programStop(value: unknown, path: string) {
   assertKeys(value, ['id', 'enabled', 'placement', 'reason', 'note'], path);
   assertKeys(
     record(value)?.placement,
-    ['kind', 'remainingCutLengthMm'],
+    ['kind', 'remainingCutLengthMm', 'travelLengthMm'],
     `${path}.placement`
   );
 }

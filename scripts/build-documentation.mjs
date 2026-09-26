@@ -25,7 +25,7 @@ async function walk(directory) {
   }
   return result;
 }
-for (const directory of ['docs/post-authoring/v1', 'docs/upid/v1', 'docs/upid/v2']) {
+for (const directory of ['docs/post-authoring/v1', 'docs/upid/v1', 'docs/upid/v2', 'docs/upid/v3']) {
   for (const file of await walk(directory)) routes.set(file, `${docs}reference/${file}`);
 }
 async function output(url, content) {

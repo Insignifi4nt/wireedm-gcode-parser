@@ -6,7 +6,8 @@
   ],
   "upidSchemaVersions": [
     1,
-    2
+    2,
+    3
   ],
   "appProvenance": {
     "field": "manifest.authoredFor",

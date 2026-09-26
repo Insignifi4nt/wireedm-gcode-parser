@@ -24,6 +24,7 @@ import type {
   Point2
 } from '@/domain/path-intel/types';
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
+import { interleaveAfterContourTravelStops } from './afterContourTravelStops';
 
 export const EXECUTION_PLAN_SCHEMA_VERSION = 1 as const;
 
@@ -260,7 +261,9 @@ export function compileWireEdmExecutionPlan(
   }
 
   appendEvent(context, { kind: 'program-end', operationId: null });
-  const events = context.events;
+  const travelStops = interleaveAfterContourTravelStops(document, operations, context.events);
+  if (!travelStops.ok) return travelStops;
+  const events = travelStops.events;
   const threading = unique(events.flatMap((event) =>
     event.kind === 'wire-thread' ? [event.method] : []
   ));
@@ -688,6 +691,8 @@ function validateStopIdentity(stops: readonly OperationProgramStop[]) {
     ids.add(stop.id);
     const placement = stop.placement.kind === 'before-operation-end'
       ? `${stop.placement.kind}:${stop.placement.remainingCutLengthMm}`
+      : stop.placement.kind === 'after-contour-distance'
+        ? `${stop.placement.kind}:${stop.placement.travelLengthMm}`
       : stop.placement.kind;
     if (placements.has(placement)) return 'Enabled program stops cannot share an exact placement.';
     placements.add(placement);

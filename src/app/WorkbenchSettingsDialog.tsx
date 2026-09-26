@@ -71,6 +71,7 @@ export function WorkbenchSettingsDialog({
             <SectionButton active={activeSection === 'machine-output'} icon={<SlidersHorizontal className="size-4" />} label="Machines & setups" onClick={() => setActiveSection('machine-output')} />
           </nav>
           <p className="mt-4 text-[11px] text-muted-foreground">Wire EDM Workbench {APP_VERSION}</p>
+          <a className="mt-2 block text-[11px] underline" href={`${import.meta.env.BASE_URL}documentation/releases/${APP_VERSION}/`} target="_blank" rel="noreferrer">Release notes & compatibility</a>
           <a className="mt-2 block text-[11px] underline" href={`${import.meta.env.BASE_URL}documentation/`} target="_blank" rel="noreferrer">Postprocessor documentation</a>
         </aside>
         <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">

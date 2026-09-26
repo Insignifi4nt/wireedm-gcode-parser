@@ -19,7 +19,7 @@ const descriptions: Record<ProjectEdit['kind'], string> = {
   'circle-center-entry': 'Use the center of a circular operation as its reviewed straight entry lead.',
   entry: 'Set a straight entry lead from an explicit millimeter point. null explicitly reviews having no entry lead.',
   exit: 'Set a straight exit lead to an explicit millimeter point. null explicitly reviews having no exit lead.',
-  'program-stops': 'Replace the complete user-authored stop list for one operation; [] removes those stops. Generated threading pauses remain separate.',
+  'program-stops': 'Replace the complete user-authored stop list for one operation; [] removes those stops. after-contour is before its exit lead; after-exit is after the lead, before next positioning. after-contour-distance uses travelLengthMm measured from contour end along the exit lead then next positioning, requires one active run, cannot reach/past the next entry or split automatic separating positioning, and promotes to UPID v3. Generated threading pauses remain separate.',
   participation: 'Set a normalized [0,1] range on a source segment to active cut or inactive reference. Read geometry and partial-contour diagnostics again.',
   'partial-compensation': 'Review the compensation side for a partial contour. null clears that review.',
   'partial-lead-review': 'Set whether the specified partial-contour entry or exit lead has been reviewed.'
