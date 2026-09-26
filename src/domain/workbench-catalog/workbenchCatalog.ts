@@ -3,6 +3,7 @@ import { Value } from '@sinclair/typebox/value';
 
 import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageAdapter';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { commitWorkbenchFileTransaction } from '@/domain/storage/workbenchFileTransaction';
 import { recoverProjectTrashTransaction, type ProjectTrashTransactionError } from '@/domain/storage/projectTrashTransaction';
 import { recoverSavedRevisionTransaction, type SavedRevisionTransactionError } from '@/domain/storage/savedRevisionTransaction';
 import {
@@ -22,12 +23,14 @@ import {
   initializeMachineLibraryStorage,
   MACHINE_LIBRARY_PATH,
   readMachineLibraryStorage,
+  serializeMachineLibraryStorage,
   type MachineLibraryStorageError
 } from '@/domain/machine-definition/machineLibraryStorage';
 import { createEmptyMachineLibrary, type MachineLibrary } from '@/domain/machine-definition/machineLibrary';
 import { parseWorkbenchProjectDocument } from './workbenchProject';
 import {
   validateWorkbenchProjectPathOwnership,
+  workbenchProjectDocumentPath,
   type WorkbenchProjectIndexIntegrityError,
   type WorkbenchProjectStorageError
 } from './workbenchProjectStorage';
@@ -405,7 +408,7 @@ function parseCatalogJson(rawText: string, allowLegacyV2 = false) {
   }
   let value: unknown;
   try {
-    value = JSON.parse(rawText);
+    value = JSON.parse(rawText.replace(/^\uFEFF/, ''));
   } catch {
     return {
       ok: false as const,
@@ -461,7 +464,7 @@ async function migrateLegacyV1WorkbenchCatalog(
     };
   }
   const legacy = Value.Decode(LegacyV1WorkbenchManifestSchema, value);
-  const projectTexts = new Map<string, { readonly previous: string; readonly next: string }>();
+  const projectTexts = new Map<string, { readonly next: string }>();
   const backupTexts = new Map<string, { readonly existed: boolean; readonly text: string }>();
   const placeholderPaths = new Map<string, boolean>();
   const manifestBackup = await readStorageText(adapter, LEGACY_V1_MANIFEST_BACKUP_PATH);
@@ -483,7 +486,7 @@ async function migrateLegacyV1WorkbenchCatalog(
   for (const entry of legacy.projects) {
     let raw: string | null;
     try {
-      raw = await adapter.readText(entry.path);
+      raw = await (adapter.readExactText ? adapter.readExactText(entry.path) : adapter.readText(entry.path));
     } catch (error) {
       return storageAccessFailure('read', entry.path, error);
     }
@@ -504,6 +507,40 @@ async function migrateLegacyV1WorkbenchCatalog(
     const originalProject = backup.rawText ?? raw;
     const parsed = parseWorkbenchProjectDocument(originalProject);
     if (!parsed.ok) return parsed;
+    const next = JSON.stringify(parsed.project, null, 2);
+    if (backup.rawText !== null && raw !== originalProject && raw !== next) {
+      return {
+        ok: false, error: {
+          code: 'WORKBENCH_CATALOG_INCOMPLETE',
+          message: 'Legacy workbench migration found a project that conflicts with its exact backup. Preserve both files before recovery.',
+          existingPaths: [entry.path, backupPath]
+        }
+      };
+    }
+    const projectPath = workbenchProjectDocumentPath(entry.id);
+    if (entry.path !== projectPath) {
+      // Only the actual former layout can be upgraded; arbitrary index paths remain invalid.
+      if (entry.path !== `projects/${entry.id}/project.json`) {
+        return {
+          ok: false, error: {
+            code: 'WORKBENCH_CATALOG_INCOMPLETE',
+            message: 'Legacy project uses an unrecognized project document path. Preserve storage before recovery.',
+            existingPaths: [entry.path]
+          }
+        };
+      }
+      const destination = await readStorageText(adapter, projectPath);
+      if (!destination.ok) return destination;
+      if (destination.rawText !== null && destination.rawText !== next) {
+        return {
+          ok: false, error: {
+            code: 'WORKBENCH_CATALOG_INCOMPLETE',
+            message: 'Legacy workbench migration found conflicting content at the current project document path. Preserve both files before recovery.',
+            existingPaths: [entry.path, projectPath]
+          }
+        };
+      }
+    }
     backupTexts.set(backupPath, {
       existed: backup.rawText !== null,
       text: originalProject
@@ -526,7 +563,7 @@ async function migrateLegacyV1WorkbenchCatalog(
       }
       placeholderPaths.set(parsed.project.content.activeFilePath, placeholder.rawText !== null);
     }
-    projectTexts.set(entry.path, { previous: raw, next: JSON.stringify(parsed.project, null, 2) });
+    projectTexts.set(projectPath, { next });
   }
   const activeProfile = legacy.machineProfiles.find((candidate) => (
     candidate !== null && typeof candidate === 'object' && !Array.isArray(candidate) &&
@@ -547,7 +584,7 @@ async function migrateLegacyV1WorkbenchCatalog(
         : { mode: 'ask' },
       recentPlanningMachineId: null
     },
-    projects: legacy.projects
+    projects: legacy.projects.map((entry) => ({ ...entry, path: workbenchProjectDocumentPath(entry.id) }))
   };
   const validatedManifest = validateWorkbenchCatalogValue(manifest, createEmptyMachineLibrary());
   if (!validatedManifest.ok) return validatedManifest;
@@ -602,44 +639,20 @@ async function migrateLegacyV1WorkbenchCatalog(
     await adapter.ensureDirectory(`${LEGACY_V1_BACKUP_DIRECTORY}/projects`);
     for (const [path, backup] of backupTexts) {
       if (!backup.existed) await adapter.writeText(path, backup.text);
-      if (await adapter.readText(path) !== backup.text) {
+      if (await (adapter.readExactText ? adapter.readExactText(path) : adapter.readText(path)) !== backup.text) {
         throw new Error(`Legacy backup did not read back exactly: ${path}.`);
       }
     }
-    for (const [path, existed] of placeholderPaths) {
-      await adapter.ensureDirectory(path.slice(0, path.lastIndexOf('/')));
-      if (!existed) await adapter.writeText(path, '');
-    }
-    for (const [path, texts] of projectTexts) await adapter.writeText(path, texts.next);
-    const posts = await initializePostLibraryStorage(adapter);
-    if (!posts.ok) throw new Error(posts.error.message);
-    const machines = await initializeMachineLibraryStorage(adapter, posts.library);
-    if (!machines.ok) throw new Error(machines.error.message);
-    await adapter.writeText(WORKBENCH_CATALOG_PATH, JSON.stringify(manifest, null, 2));
+    await commitWorkbenchFileTransaction(adapter, [
+      ...[...placeholderPaths].filter(([, existed]) => !existed).map(([path]) => ({ path, contents: '' })),
+      ...[...projectTexts].map(([path, texts]) => ({ path, contents: texts.next })),
+      ...(existingPosts.rawText === null ? [{ path: POST_LIBRARY_PATH, contents: JSON.stringify({ format: 'wire-edm-post-library', schemaVersion: 1, installations: [] }, null, 2) }] : []),
+      ...(existingMachines.rawText === null ? [{ path: MACHINE_LIBRARY_PATH, contents: serializeMachineLibraryStorage(createEmptyMachineLibrary()) }] : []),
+      { path: WORKBENCH_CATALOG_PATH, contents: JSON.stringify(manifest, null, 2) }
+    ]);
     return { ok: true, migrated: true };
   } catch (error) {
-    try {
-      for (const [path, texts] of projectTexts) await adapter.writeText(path, texts.previous);
-      await adapter.writeText(WORKBENCH_CATALOG_PATH, originalManifest);
-      if (existingPosts.rawText === null) await adapter.deleteText(POST_LIBRARY_PATH);
-      if (existingMachines.rawText === null) await adapter.deleteText(MACHINE_LIBRARY_PATH);
-      for (const [path, backup] of backupTexts) {
-        if (!backup.existed) await adapter.deleteText(path);
-      }
-      for (const [path, existed] of placeholderPaths) {
-        if (!existed) await adapter.deleteText(path);
-      }
-    } catch (rollbackError) {
-      return {
-        ok: false,
-        error: {
-          code: 'WORKBENCH_CATALOG_ROLLBACK_FAILED',
-          message: `Legacy workbench migration failed and rollback also failed: ${errorMessage(rollbackError)}.`,
-          originalError: storageAccessFailure('write', WORKBENCH_CATALOG_PATH, error).error,
-          rollbackErrors: [storageAccessFailure('write', WORKBENCH_CATALOG_PATH, rollbackError).error]
-        }
-      };
-    }
+    // Exact legacy backups stay available after failed writes; the file journal owns rollback/recovery.
     return storageAccessFailure('write', WORKBENCH_CATALOG_PATH, error);
   }
 }
@@ -787,7 +800,7 @@ async function existingCompanionPaths(adapter: WorkbenchStorageAdapter) {
 
 async function readStorageText(adapter: WorkbenchStorageAdapter, path: string) {
   try {
-    return { ok: true as const, rawText: await adapter.readText(path) };
+    return { ok: true as const, rawText: await (adapter.readExactText ? adapter.readExactText(path) : adapter.readText(path)) };
   } catch (error) {
     return storageAccessFailure('read', path, error);
   }
@@ -836,10 +849,6 @@ function storageAccessFailure(
 function isCanonicalTimestamp(value: string) {
   const milliseconds = Date.parse(value);
   return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function deepFreeze<T>(value: T): T {

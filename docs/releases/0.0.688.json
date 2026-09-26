@@ -1,0 +1,32 @@
+{
+  "version": "0.0.688",
+  "previousVersion": "0.0.687",
+  "postCompatibility": "unchanged-contracts-with-storage-recovery-fixes",
+  "summary": "Clarifies kept material and wire offset, and repairs upgrades of older external-program workbenches that could block startup.",
+  "warning": "No breaking or potentially breaking change to installed postprocessors. Legacy workbench upgrades preserve exact originals and refuse conflicting backups or destination files; such conflicts still require recovery instead of overwriting data. Older app versions can reject upgraded legacy workbenches declaring editor/ ownership; use this release for recovery and retain the originals. Installed packages and saved revisions are unchanged.",
+  "checklist": {
+    "schema": "No UPID, post, execution-plan, engine API, machine-package or storage schema version changes. External-program source ownership recognizes the historical editor/ path; v1 workbench upgrades recognize the historical nested project document layout.",
+    "events": "Execution-event vocabulary, compensation resolution and saved-plan comparison are unchanged. Compensation text distinguishes material to keep, wire offset relative to the contour and side relative to travel.",
+    "capabilities": "No post capability is added or widened. Automatic compensation still follows the reviewed contour role; open partial cuts still require an explicit side relative to travel.",
+    "auditAndOutput": "Controller-output audits, post execution, controller commands, formatting and feed behavior are unchanged. Imported external programs retain their exact editable program and original input. No installed post or saved revision is rewritten.",
+    "installationAndStorage": "Legacy upgrades preserve and verify exact catalog/project backups, keep original nested project files and edited external-program files, validate proposed ownership before writes, and use durable file transactions for rollback and interrupted retry. Browser cache and folder adapters share the migration. Conflicting backups or destination files block recovery without overwrite; no automatic cleanup or package upgrade.",
+    "verification": "All 189 unit/integration test files pass (1,824 tests), including actual cache/folder migration, preservation, conflict and interruption cases. Three focused browser tests pass, including phone-size legacy startup, edited program loading and reload. Production build, documentation/schema parity and release checks pass. Unchanged Robofil 2.6.0 post conformance and complete package validation pass. Full browser CI is the reviewed-PR gate. No physical-machine verification is implied."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Unchanged post conformance fixtures and complete package validation. No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Clearer compensation wording and recovery for older workbenches that could not open.",
+    "changes": [
+      "Contour Setup names the material to keep separately from the wire offset. Inside/outside refers to the contour; left/right refers to travel.",
+      "Automatic compensation shows which material the contour role keeps. Closed-contour reversal changes left/right without changing the kept material or inside/outside wire position; open-cut settings explicitly name the travel side.",
+      "Older external-program workbenches with a separate editable program can open again after upgrading. Original input, edited program and legacy backups are retained."
+    ],
+    "compatibility": "Installed postprocessors, saved revisions and controller output rules are unchanged. Use this release to open upgraded legacy workbenches; older versions may reject their retained editable-program paths. Conflicting storage contents still produce a preserve-data diagnostic.",
+    "action": "Reload the app to receive the fix, then retry opening your existing workbench. Keep browser data and workbench files intact; do not clear storage to resolve an upgrade error."
+  }
+}

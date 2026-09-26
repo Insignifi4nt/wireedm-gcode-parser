@@ -25,6 +25,10 @@ function projectSourceSchema<const Kind extends 'dxf' | 'upid' | 'external-gcode
     kind: Type.Literal(kind),
     files: Type.Array(Type.Object({
       ...SourceFileCommon,
+      ...(kind === 'external-gcode' ? {
+        // Earlier imports kept the editable program separately from its original input.
+        path: Type.String({ minLength: 1, maxLength: 1_024, pattern: '^(imports|projects|editor)/[^\\u0000]+$' })
+      } : {}),
       kind: Type.Literal(kind)
     }, strictObject), { maxItems: 10_000 })
   }, strictObject);
@@ -178,7 +182,7 @@ export function parseWorkbenchProjectDocument(rawText: string): WorkbenchProject
   if (sizeError) return { ok: false, error: sizeError };
   let value: unknown;
   try {
-    value = JSON.parse(rawText);
+    value = JSON.parse(rawText.replace(/^\uFEFF/, ''));
   } catch {
     return {
       ok: false,
@@ -271,6 +275,15 @@ function migrateLegacyWorkbenchProjectValue(value: unknown): unknown {
           createdAt: project.createdAt
         }
       ];
+  const activeFilePath = editorRecord.activeFilePath;
+  const migratedSourceFiles = !pathProject && typeof activeFilePath === 'string' &&
+    /^editor\/[^/\\]+$/.test(activeFilePath) && Array.isArray(sourceFiles) &&
+    !sourceFiles.some((file) => file !== null && typeof file === 'object' && file.path === activeFilePath)
+    ? [...sourceFiles, {
+        name: activeFilePath.slice('editor/'.length), path: activeFilePath,
+        kind: 'external-gcode', createdAt: project.createdAt
+      }]
+    : sourceFiles;
   return {
     format: 'wire-edm-project',
     schemaVersion: WORKBENCH_PROJECT_SCHEMA_VERSION,
@@ -278,7 +291,7 @@ function migrateLegacyWorkbenchProjectValue(value: unknown): unknown {
     name: project.name,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
-    source: { ...sourceRecord, files: sourceFiles },
+    source: { ...sourceRecord, files: migratedSourceFiles },
     content,
     editor: { pinnedLineNumbers: editorRecord.pinnedLineNumbers },
     savedRevisionIds: []

@@ -52,7 +52,7 @@ Package preparation uses the same archive validation and collision preview as th
 | `translate`, `rotate`, `mirror` | Numeric transforms, without canvas dragging. Translation may target one operation. |
 | `order-strategy`, `move-operation`, `reverse`, `classification` | Cutting order, direction and contour role. |
 | `start-point` | Nearest point on a closed contour; may split a segment. Read back the resulting geometry. |
-| `compensation` | Automatic intent, kept material inside/outside, or centerline. |
+| `compensation` | Automatic intent, material to keep inside/outside the contour, or centerline. Wire offset is on the opposite side of the contour; left/right is relative to travel. Reversing a closed contour changes left/right while preserving the material to keep. |
 | `circle-center-entry`, `entry`, `exit` | Circle-center or explicit straight leads. A null entry/exit explicitly reviews having no lead. |
 | `threading-default`, `threading` | Project default or per-operation wire separation and threading. A null override restores inheritance. |
 | `program-stops` | Replace the operation's complete stop list; an empty list removes its user-authored stops. |

@@ -81,6 +81,18 @@ export function EditorContourSetupPanel({
   const compensationResolution = selected
     ? resolveControllerCompensation({ document, operation: selected })
     : null;
+  const automaticIntent = selected?.closed
+    ? suggestCompensationIntent({ document, operation: selected })
+    : undefined;
+  const keptMaterial = selected?.compensationIntent?.mode === 'controller' &&
+    'keptMaterial' in selected.compensationIntent
+    ? selected.compensationIntent.keptMaterial
+    : null;
+  const uncompensated = document.geometryBasis === 'wire-centre' ||
+    selected?.compensationIntent?.mode === 'centerline';
+  const wirePosition = compensationResolution?.status === 'ready' && compensationResolution.keptMaterial
+    ? compensationResolution.keptMaterial === 'inside' ? 'outside' : 'inside'
+    : null;
   const compensationSelection = selected?.compensationIntent?.source === 'automatic'
     ? 'automatic'
     : selected?.compensationIntent?.mode === 'controller'
@@ -158,11 +170,15 @@ export function EditorContourSetupPanel({
             value={compensationSelection}
           >
             {!compensationSelection && <option value="">Select compensation</option>}
-            {selected?.closed && <option value="automatic" disabled={!suggestCompensationIntent({ document, operation: selected })}>Automatic · follow contour role</option>}
+            {selected?.closed && <option value="automatic" disabled={!automaticIntent}>
+              {automaticIntent?.mode === 'controller' && 'keptMaterial' in automaticIntent
+                ? `Automatic · keep ${automaticIntent.keptMaterial} (${selected.classification})`
+                : 'Automatic · unavailable for this contour'}
+            </option>}
             {selected?.closed ? (
               <>
-                <option value="inside">Keep inside</option>
-                <option value="outside">Keep outside</option>
+                <option value="inside">Keep material inside contour</option>
+                <option value="outside">Keep material outside contour</option>
               </>
             ) : selected?.machiningIntent?.kind === 'partial-contour' ? (
               <>
@@ -175,23 +191,41 @@ export function EditorContourSetupPanel({
         </label>
         <details className="text-muted-foreground" data-upid-compensation-details>
           <summary className="cursor-pointer select-none">
-            {compensationResolution?.status === 'ready'
-              ? `Wire ${compensationResolution.wireSide}${compensationResolution.winding ? ` · ${compensationResolution.winding.toUpperCase()}` : ''}`
-              : 'Compensation details'}
+            {uncompensated
+              ? 'No compensation · wire follows drawn path'
+              : compensationResolution?.status === 'ready'
+                ? keptMaterial && wirePosition
+                  ? `Keep ${keptMaterial} · Wire ${wirePosition}`
+                  : `Wire ${compensationResolution.wireSide} of travel`
+                : 'Compensation details'}
           </summary>
           <dl className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 border-l border-border pl-2">
-            <dt>Saved intent</dt>
-            <dd data-testid="compensation-kept-material">{formatCompensationIntent(selected?.compensationIntent)}</dd>
-            <dt>Wire side</dt>
+            {selected?.closed && <>
+              <dt>Material to keep</dt>
+              <dd data-testid="compensation-kept-material">
+                {keptMaterial ? `${keptMaterial === 'inside' ? 'Inside' : 'Outside'} contour` : '—'}
+              </dd>
+            </>}
+            <dt>Wire offset</dt>
             <dd data-testid="compensation-wire-side">
-              {compensationResolution?.status === 'ready' ? compensationResolution.wireSide : '—'}
+              {uncompensated
+                ? 'None · follows drawn path'
+                : compensationResolution?.status === 'ready'
+                  ? `${wirePosition ? `${wirePosition === 'inside' ? 'Inside' : 'Outside'} contour · ` : ''}${compensationResolution.wireSide} of travel`
+                  : '—'}
             </dd>
-            <dt>Travel winding</dt>
+            <dt>Travel direction</dt>
             <dd data-testid="compensation-winding">
               {compensationResolution?.status === 'ready' && compensationResolution.winding
-                ? compensationResolution.winding.toUpperCase()
+                ? compensationResolution.winding === 'ccw' ? 'Counterclockwise (CCW)' : 'Clockwise (CW)'
                 : '—'}
             </dd>
+            <dt>Selection</dt>
+            <dd>{selected?.compensationIntent
+              ? selected.compensationIntent.source === 'automatic'
+                ? `Automatic · ${selected.classification}`
+                : 'Manual'
+              : 'Not selected'}</dd>
           </dl>
         </details>
         {document.geometryBasis === 'wire-centre' ? (
@@ -203,8 +237,8 @@ export function EditorContourSetupPanel({
             {compensationBlockerMessage(compensationResolution.reason)}
           </p>
         )}
-        {selected?.closed && document.geometryBasis === 'finished-contour' && (
-          <p className="text-muted-foreground">Reversing direction swaps the wire side.</p>
+        {selected?.closed && document.geometryBasis === 'finished-contour' && keptMaterial && (
+          <p className="text-muted-foreground">Reversing travel changes left/right; the kept material and inside/outside wire position stay the same.</p>
         )}
         {document.machiningParticipation?.partialContourCompensation?.some(
           (setting) => setting.sourceOperationId === selected?.id
@@ -301,14 +335,6 @@ export function EditorSetStartPanel({
       </button>
     </section>
   );
-}
-
-function formatCompensationIntent(
-  intent: PathPlanningDocument['plan']['operations'][number]['compensationIntent']
-) {
-  if (!intent) return 'not selected';
-  if (intent.mode === 'centerline') return `centreline · ${intent.source}`;
-  return `${'wireSide' in intent ? `wire ${intent.wireSide}` : intent.keptMaterial} · ${intent.source}`;
 }
 
 function compensationBlockerMessage(
