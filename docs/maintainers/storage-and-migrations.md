@@ -22,6 +22,7 @@ Browser storage belongs to its origin. Production GitHub Pages, local preview an
 | `workbench.json` | Active and trashed project index, workbench preferences |
 | `projects/<id>.json` | Saved editable project and revision IDs |
 | Project-declared source paths, often under `imports/` or `projects/` | Exact original input; use the project document's ownership list |
+| `editor/<id>.<extension>` | Editable external programs retained from schema-1 imports; current projects declare these paths as owned external-gcode files |
 | `projects/<id>/revisions/<revision-id>.wireedm-job.json` | Immutable job snapshot with exact machine/post state |
 | `posts/library.json` | Validated installed post snapshots and exact references |
 | `machines/library.json` | Physical machines, exact setups and active binding |
@@ -38,7 +39,7 @@ Trash retains project-owned files. A missing index reference is not authorizatio
 ## Current safeguards
 
 - All persistent mutations use Web Locks; in-process serialization also protects adapter operations. External programs writing a folder are not coordinated.
-- Both legacy migrations validate the proposed catalog and project ownership before replacing data. V1 preserves catalog/project originals and supports interrupted migration checkpoints. V2 verifies its exact catalog backup before its single manifest replacement; a matching backup allows retry, a conflicting backup blocks it. Backup/quota failures leave the original manifest intact.
+- Both legacy migrations validate the proposed catalog and project ownership before replacing data. V1 preserves exact catalog/project originals, including a UTF-8 BOM, and uses the file journal for interruption recovery. Its former `projects/<id>/project.json` layout is indexed as `projects/<id>.json` after upgrade; the old document stays unchanged. External programs retain both the original import and the independently edited `editor/<id>.<extension>` file. Matching backups and interrupted current project images allow retry; conflicting project backups or destination files block writes. V2 verifies its exact catalog backup before its single manifest replacement; a matching backup allows retry, a conflicting backup blocks it. Backup/quota failures leave the original manifest intact.
 - Opening a missing catalog checks known workbench directories before creating a new one. Existing data or an incomplete inventory blocks empty-workbench creation. Unknown future schemas are rejected with a preserve-data diagnostic.
 - Package installation, revisions and trash operations retain their existing durable journals. Ordinary project add/rename/save, backup restore and cleanup use a shared bounded file journal, verified before writing data. Each mutation acquires the workbench lock and first recovers a pending file transaction. Recovery retains all exact next images when every write completed; otherwise it restores prior images and removes newly created files. Unexpected external contents block recovery without overwriting them. Inventory and backup reads explicitly skip recovery and remain read-only.
 - Machine-package catalog-pair recovery also compares exact current bytes against both recorded states before changing either installed catalog. Unexpected contents, including a newly added BOM, block recovery and retain both catalogs and the journal. Recognized interrupted states still roll back; fully committed pairs still finalize. Preference rollback preserves exact manifest text, including a folder BOM, and verifies restoration before treating rollback as complete.
@@ -55,6 +56,8 @@ Trash retains project-owned files. A missing index reference is not authorizatio
 - An empty journal can be the new folder handle left before its first atomic write. Recovery removes that handle: no owned-file change starts before a complete journal reads back. Nonempty malformed journals still block opening and remain available for investigation.
 
 ## Separate maintenance
+
+Permanent project purge remains restricted to its existing import/project path rules. A migrated project owning an `editor/` path therefore stays in trash when purge is requested; do not widen deletion authorization or remove the editable copy as a cleanup shortcut. Legacy unindexed nested project documents are also retained. Invalid or missing project data still blocks workbench opening without resetting browser storage; the schema-1 upgrade handles recognized former layouts rather than guessing replacements for missing edits.
 
 Consolidate legacy UI preference keys only with lazy reads of old keys and a tested forward migration. These small preferences do not justify deleting unrelated origin storage. Streaming larger/binary backup archives and merging into nonempty destinations are not part of the current backup contract.
 

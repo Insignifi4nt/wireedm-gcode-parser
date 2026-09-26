@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
+import { reversePathRefs, segmentMap, signedAreaOfPath } from '@/domain/path-intel/segments';
 
 import {
   EditorContourSetupPanel,
@@ -78,6 +79,8 @@ describe('canonical workflow target fallbacks', () => {
     const select = container.querySelector<HTMLSelectElement>('[aria-label="Compensation kept material"]')!;
     expect(select.value).toBe('inside');
     expect(select.querySelector<HTMLOptionElement>('option[value="automatic"]')?.disabled).toBe(false);
+    expect(select.querySelector('option[value="automatic"]')?.textContent)
+      .toBe('Automatic · keep outside (hole)');
     await act(async () => setSelect(select, 'automatic'));
     expect(onSetCompensation).toHaveBeenCalledWith(operation.id, 'automatic');
   });
@@ -101,9 +104,67 @@ describe('canonical workflow target fallbacks', () => {
         ? 'Controller compensation is off for wire-centre geometry'
         : 'The wire follows the drawn contour without controller compensation');
       expect(container.querySelector('[data-testid="compensation-kept-material"]')?.textContent)
-        .toBe('centreline · manual');
+        .toBe('—');
+      expect(container.querySelector('[data-testid="compensation-wire-side"]')?.textContent)
+        .toBe('None · follows drawn path');
     }
   );
+
+  it.each([
+    ['outside', 'ccw', 'left', 'Inside', 'Counterclockwise (CCW)'],
+    ['outside', 'cw', 'right', 'Inside', 'Clockwise (CW)'],
+    ['inside', 'ccw', 'right', 'Outside', 'Counterclockwise (CCW)'],
+    ['inside', 'cw', 'left', 'Outside', 'Clockwise (CW)']
+  ] as const)(
+    'distinguishes kept material %s from wire offset for %s travel',
+    async (keptMaterial, winding, wireSide, wirePosition, direction) => {
+      const document = twoCircleDocument();
+      document.geometryBasis = 'finished-contour';
+      const operation = document.plan.operations[0];
+      operation.classification = keptMaterial === 'outside' ? 'hole' : 'exterior';
+      operation.compensationIntent = { mode: 'controller', keptMaterial, source: 'automatic' };
+      const ccw = signedAreaOfPath(operation.segmentRefs, segmentMap(document.segments)) > 0;
+      if (ccw !== (winding === 'ccw')) operation.segmentRefs = reversePathRefs(operation.segmentRefs);
+      await act(async () => root.render(<EditorContourSetupPanel
+        disabled={false} document={document} onReverse={vi.fn()} onSelectOperation={vi.fn()}
+        onSetClassification={vi.fn()} onSetCompensation={vi.fn()} selectedOperationId={operation.id}
+      />));
+
+      expect(container.querySelector('[data-upid-compensation-details] summary')?.textContent)
+        .toBe(`Keep ${keptMaterial} · Wire ${wirePosition.toLowerCase()}`);
+      expect(container.querySelector('[data-testid="compensation-kept-material"]')?.textContent)
+        .toBe(`${keptMaterial === 'inside' ? 'Inside' : 'Outside'} contour`);
+      expect(container.querySelector('[data-testid="compensation-wire-side"]')?.textContent)
+        .toBe(`${wirePosition} contour · ${wireSide} of travel`);
+      expect(container.querySelector('[data-testid="compensation-winding"]')?.textContent)
+        .toBe(direction);
+      expect(container.textContent).toContain(`Automatic · ${operation.classification}`);
+    }
+  );
+
+  it('describes an open partial cut by travel side without suggesting enclosed material', async () => {
+    const document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    document.geometryBasis = 'finished-contour';
+    const operation = document.plan.operations[0];
+    operation.machiningIntent = {
+      kind: 'partial-contour', sourceOperationId: operation.id, spanIds: ['partial-span']
+    };
+    operation.compensationIntent = { mode: 'controller', wireSide: 'left', source: 'manual' };
+    await act(async () => root.render(<EditorContourSetupPanel
+      disabled={false} document={document} onReverse={vi.fn()} onSelectOperation={vi.fn()}
+      onSetClassification={vi.fn()} onSetCompensation={vi.fn()} selectedOperationId={operation.id}
+    />));
+
+    expect(container.querySelector('[data-upid-compensation-details] summary')?.textContent)
+      .toBe('Wire left of travel');
+    expect(container.querySelector('[data-testid="compensation-wire-side"]')?.textContent)
+      .toBe('left of travel');
+    expect(container.querySelector('[data-testid="compensation-kept-material"]')).toBeNull();
+    expect(container.querySelector('option[value="inside"]')).toBeNull();
+    expect(container.querySelector('option[value="outside"]')).toBeNull();
+  });
 
   it('shows open-path role and explains partial compensation prerequisites', async () => {
     const document = createUpidFromDxfEntities([

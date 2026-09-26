@@ -3,7 +3,7 @@ import { Value } from '@sinclair/typebox/value';
 import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 import { validateUpidDocument } from '@/domain/upid/validateUpidDocument';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
-import { applyProjectEdits, projectEdit } from './projectEdits';
+import { applyProjectEdits, projectEdit, type ProjectEdit } from './projectEdits';
 
 function circles() {
   return createUpidFromDxfEntities([
@@ -53,6 +53,24 @@ describe('agent machining batches', () => {
     const before = JSON.stringify(doc);
     expect(() => applyProjectEdits(doc, [{ kind: 'translate', delta: { x: 5, y: 2 } }, { kind: 'reverse', operationId: 'missing' }])).toThrow('No edits were applied');
     expect(JSON.stringify(doc)).toBe(before);
+  });
+  it('authors validated travel distance through the agent edit schema without changing the original', () => {
+    const doc = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 30, y: 0 }, end: { x: 40, y: 0 } }
+    ]);
+    const edit: Extract<ProjectEdit, { kind: 'program-stops' }> = { kind: 'program-stops', operationId: doc.plan.operations[0].id,
+      stops: [{ id: 'travel', enabled: true, reason: 'operator-check',
+        placement: { kind: 'after-contour-distance', travelLengthMm: 5 } }] };
+    expect(Value.Check(projectEdit, edit)).toBe(true);
+    expect(applyProjectEdits(doc, [edit])).toMatchObject({ schemaVersion: 3,
+      plan: { operations: [expect.objectContaining({ programStops: edit.stops }), expect.anything()] } });
+    expect(doc.plan.operations[0].programStops).toBeUndefined();
+    expect(() => applyProjectEdits(doc, [{ ...edit, stops: [{ ...edit.stops[0],
+      placement: { kind: 'after-contour-distance', travelLengthMm: 20 } }] }])).toThrow('not applicable');
+    expect(Value.Check(projectEdit, { ...edit, stops: [{ ...edit.stops[0], placement: {
+      kind: 'after-contour-distance', travelLengthMm: 5, controllerCommand: 'M00'
+    } }] })).toBe(false);
   });
   it('rejects nonfinite coordinates, malformed threading, and extra replacement fields at the boundary', () => {
     for (const input of [

@@ -39,7 +39,7 @@ export type ParsePortableUpidError =
       readonly code: 'PORTABLE_UPID_VERSION_UNSUPPORTED';
       readonly message: string;
       readonly foundVersion: number;
-      readonly supportedVersion: 2;
+      readonly supportedVersion: 3;
     };
 
 export type ParsePortableUpidResult =
@@ -178,20 +178,20 @@ export function parsePortableUpid(text: string): ParsePortableUpidResult {
     return ownFailure('PORTABLE_UPID_SCHEMA_INVALID', 'Portable UPID must be an object.');
   }
   if (typeof value.schemaVersion === 'number' && Number.isSafeInteger(value.schemaVersion) && value.schemaVersion > 0 &&
-    value.schemaVersion !== 1 && value.schemaVersion !== 2) {
+    value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3) {
     return {
       ok: false,
       error: {
         code: 'PORTABLE_UPID_VERSION_UNSUPPORTED',
         message: `Portable UPID schema version ${value.schemaVersion} is unsupported.`,
         foundVersion: value.schemaVersion,
-        supportedVersion: 2
+        supportedVersion: 3
       }
     };
   }
   if (
     value.format !== 'upid' ||
-    (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
+    (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3) ||
     Object.keys(value).sort().join(',') !== 'document,format,schemaVersion'
   ) {
     return ownFailure('PORTABLE_UPID_SCHEMA_INVALID', 'Portable UPID must match the strict schema.');

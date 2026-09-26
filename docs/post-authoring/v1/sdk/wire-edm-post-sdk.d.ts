@@ -26,7 +26,7 @@ export type WireEdmPostEvent =
   | (EventBase & { readonly kind: 'position'; readonly from: Point2; readonly to: Point2; readonly separatesWire?: true })
   | (EventBase & { readonly kind: 'compensation-start'; readonly wireSide: 'left' | 'right'; readonly keptMaterial: 'inside' | 'outside' | null; readonly source: 'automatic' | 'manual' })
   | (EventBase & { readonly kind: 'motion'; readonly motion: 'linear' | 'circular'; readonly role: 'entry' | 'contour' | 'exit'; readonly start: Point2; readonly end: Point2; readonly center?: Point2; readonly clockwise?: boolean; readonly fullCircle?: boolean; readonly sourceSegmentId: string | null; readonly sourceRange?: { readonly start: number; readonly end: number } })
-  | (EventBase & { readonly kind: 'program-stop'; readonly stopId: string; readonly placement: 'before-entry' | 'after-positioning' | 'before-operation-end' | 'after-contour' | 'after-exit'; readonly reason: 'operator-check' | 'part-retention' | 'manual'; readonly note: string | null; readonly point: Point2 })
+  | (EventBase & { readonly kind: 'program-stop'; readonly stopId: string; readonly placement: 'before-entry' | 'after-positioning' | 'before-operation-end' | 'after-contour' | 'after-exit' | 'after-contour-distance'; readonly reason: 'operator-check' | 'part-retention' | 'manual'; readonly note: string | null; readonly point: Point2 })
   | (EventBase & { readonly kind: 'compensation-end' })
   | (EventBase & { readonly kind: 'pass-end'; readonly passId: string })
   | (EventBase & { readonly kind: 'operation-end' })

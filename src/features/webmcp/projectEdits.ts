@@ -15,7 +15,8 @@ const choices = <const T extends string[]>(...values: T) => Type.Union(values.ma
 const threading = object({ mode: choices('continuous', 'manual', 'automatic'), wireSeparation: choices('already-separated', 'manual-before-positioning', 'automatic-during-positioning', 'automatic-before-positioning') });
 const placement = Type.Union([
   object({ kind: choices('before-entry', 'after-positioning', 'after-contour', 'after-exit') }),
-  object({ kind: Type.Literal('before-operation-end'), remainingCutLengthMm: Type.Number({ exclusiveMinimum: 0, maximum: 1e9 }) })
+  object({ kind: Type.Literal('before-operation-end'), remainingCutLengthMm: Type.Number({ exclusiveMinimum: 0, maximum: 1e9 }) }),
+  object({ kind: Type.Literal('after-contour-distance'), travelLengthMm: Type.Number({ exclusiveMinimum: 0, maximum: 1e9 }) })
 ]);
 export const projectEdit = Type.Union([
   object({ kind: Type.Literal('initial-wire'), point }),

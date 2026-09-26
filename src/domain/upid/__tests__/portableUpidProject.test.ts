@@ -6,6 +6,7 @@ import type { WorkbenchStorageAdapter } from '@/domain/storage/workbenchStorageA
 import { initializeWorkbenchCatalog } from '@/domain/workbench-catalog/workbenchCatalog';
 import { workbenchProjectVersion } from '@/domain/workbench-catalog/workbenchProjectVersion';
 import { validateUpidDocument } from '../validateUpidDocument';
+import { createUpidFromDxfEntities } from '../upidDocument';
 import { portableUpidIntentFixture } from './portableUpidIntentFixture';
 
 import {
@@ -16,6 +17,28 @@ import {
 } from '../portableUpidProject';
 
 describe('portable UPID project', () => {
+  it('imports and exports v3 travel-distance intent without rewriting the supplied original', async () => {
+    const adapter = new MemoryAdapter();
+    const initialized = await initializeWorkbenchCatalog(adapter);
+    if (!initialized.ok) throw new Error(initialized.error.message);
+    const document = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 30, y: 0 }, end: { x: 40, y: 0 } }
+    ]);
+    document.schemaVersion = 3;
+    document.plan.operations[0].programStops = [{ id: 'travel', enabled: true, reason: 'operator-check',
+      placement: { kind: 'after-contour-distance', travelLengthMm: 5 } }];
+    const text = JSON.stringify({ format: 'upid', schemaVersion: 3, document });
+    const imported = await importPortableUpidProject(initialized.workbench, { fileName: 'travel.upid.json', text });
+    if (!imported.ok) throw new Error(imported.error.message);
+    const before = new Map(adapter.files);
+    const exported = await exportPortableUpidProject(imported.workbench, imported.project.id);
+    if (!exported.ok) throw new Error(exported.error.message);
+    expect(parsePortableUpid(exported.file.text)).toMatchObject({ ok: true, document: { schemaVersion: 3,
+      plan: { operations: [expect.objectContaining({ programStops: document.plan.operations[0].programStops }), expect.anything()] } } });
+    expect(adapter.files).toEqual(before);
+    expect(adapter.files.get(imported.project.source.files[0].path)).toBe(text);
+  });
   it('exports only the exact reviewed saved record when a project version is supplied', async () => {
     const adapter = new MemoryAdapter();
     const initialized = await initializeWorkbenchCatalog(adapter);
@@ -64,7 +87,7 @@ describe('portable UPID project', () => {
   it.each([
     ['not JSON', 'PORTABLE_UPID_JSON_INVALID'],
     ['null', 'PORTABLE_UPID_SCHEMA_INVALID'],
-    [JSON.stringify({ format: 'upid', schemaVersion: 3, document: {} }), 'PORTABLE_UPID_VERSION_UNSUPPORTED'],
+    [JSON.stringify({ format: 'upid', schemaVersion: 4, document: {} }), 'PORTABLE_UPID_VERSION_UNSUPPORTED'],
     [JSON.stringify({ format: 'upid', schemaVersion: 1.5, document: {} }), 'PORTABLE_UPID_SCHEMA_INVALID'],
     [JSON.stringify({ format: 'upid', schemaVersion: 0, document: {} }), 'PORTABLE_UPID_SCHEMA_INVALID'],
     [JSON.stringify({ format: 'upid', schemaVersion: '1', document: {} }), 'PORTABLE_UPID_SCHEMA_INVALID'],

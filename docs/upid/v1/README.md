@@ -72,7 +72,7 @@ Both envelope and document schema versions are 1. Readers reject unsupported ver
 
 Freeze the published v1 vocabulary. An incompatible shape or semantic change requires a new version and explicit, tested migration. Adding an optional field that an old strict reader rejects is still a compatibility change. Do not use arbitrary extra fields to smuggle unsupported operations into v1.
 
-The `automatic-during-positioning` separation strategy and `after-positioning` stop placement are UPID v2 vocabulary. Current readers accept both versions; portable v1 files containing either value are rejected. Old local snapshots written while these values were mistakenly labeled v1 remain readable for recovery. Export promotes a detached copy of such a snapshot to v2 without rewriting the original project or saved revision bytes.
+The `automatic-during-positioning` separation strategy and `after-positioning` stop placement are UPID v2 vocabulary. Current readers accept v1, v2 and [v3](../v3/README.md); portable v1 files containing either value are rejected. Old local snapshots written while these values were mistakenly labeled v1 remain readable for recovery. Export promotes a detached copy of such a snapshot to v2 without rewriting the original project or saved revision bytes. Travel-distance stops require v3.
 
 Portable validation checks shape and structural integrity separately from executable readiness. Incomplete review decisions and geometry requiring attention remain portable. Machine limits and controller realization belong to the saved job and machine package, not this document.
 

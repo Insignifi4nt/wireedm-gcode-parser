@@ -200,6 +200,21 @@ describe('standalone Robofil 100 V2 package', () => {
     expect(program.lines.filter((line) => line === 'G40' || line === 'G39')).toEqual(['G40', 'G39']);
   });
 
+  it('emits an exact travel-distance stop through the unchanged installed post', async () => {
+    const installation = await installRobofilV2();
+    const source = compensatedTwoRectangles();
+    source.schemaVersion = 3;
+    source.plan.operations[0].programStops = [{ id: 'travel-inspection', enabled: true, reason: 'operator-check',
+      placement: { kind: 'after-contour-distance', travelLengthMm: 5 } }];
+    const before = await hashPostPackage(installation.package);
+    const program = await post(installation, source);
+    const index = program.lines.indexOf('G0 X5.000 Y0.000');
+    expect(index).toBeGreaterThan(0);
+    expect(program.lines.slice(index, index + 3)).toEqual(['G0 X5.000 Y0.000', 'M00', 'G0 X20.000 Y0.000']);
+    expect(await hashPostPackage(installation.package)).toBe(before);
+    expect(program.lines.filter((line) => line === 'G40' || line === 'G39')).toEqual(['G40', 'G39']);
+  });
+
   it('blocks unverified wire separation and rethread transitions', async () => {
     const installation = await installRobofilV2();
     const document = compensatedTwoRectangles();

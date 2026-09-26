@@ -1,4 +1,5 @@
 import { deriveSourceMachiningOperations } from './machiningParticipation';
+import { resolveSourceAfterContourTravel, travelDistanceError } from './afterContourTravel';
 import {
   orientedCircleClockwise,
   orientedSegmentEnd,
@@ -27,7 +28,29 @@ export function programStopValidationError(
     (!Number.isFinite(placement.remainingCutLengthMm) || placement.remainingCutLengthMm <= 0)) {
     return 'Remaining cut must be a finite number greater than 0.';
   }
+  if (placement.kind === 'after-contour-distance' &&
+    (!Number.isFinite(placement.travelLengthMm) || placement.travelLengthMm <= 0)) {
+    return 'Travel distance must be a finite number greater than 0.';
+  }
   if (!stop.enabled) return null;
+  if (placement.kind === 'after-contour-distance') {
+    const route = resolveSourceAfterContourTravel(document, operation.id);
+    if (route.status === 'blocked') return route.message;
+    const error = travelDistanceError(route.path, placement.travelLengthMm);
+    if (error) return error;
+    if (placement.travelLengthMm === route.path.exitLengthMm &&
+      otherStops.some((other) => other.id !== stop.id && other.enabled && other.placement.kind === 'after-exit')) {
+      return 'The travel-distance stop coincides with an enabled After exit stop. Keep one pause at that boundary.';
+    }
+  }
+  if (placement.kind === 'after-exit' && otherStops.some((other) => other.id !== stop.id && other.enabled &&
+    other.placement.kind === 'after-contour-distance')) {
+    const route = resolveSourceAfterContourTravel(document, operation.id);
+    if (route.status === 'ready' && otherStops.some((other) => other.id !== stop.id && other.enabled &&
+      other.placement.kind === 'after-contour-distance' && other.placement.travelLengthMm === route.path.exitLengthMm)) {
+      return 'The After exit stop coincides with an enabled travel-distance stop. Keep one pause at that boundary.';
+    }
+  }
   if (placement.kind === 'before-operation-end') {
     const machining = deriveSourceMachiningOperations(document, operation.id);
     if (!machining || machining.status !== 'ready') {
@@ -44,7 +67,9 @@ export function programStopValidationError(
   }
   if (otherStops.some((other) => other.id !== stop.id && other.enabled &&
     other.placement.kind === placement.kind &&
-    (placement.kind !== 'before-operation-end' ||
+    (placement.kind === 'after-contour-distance'
+      ? other.placement.kind === 'after-contour-distance' && other.placement.travelLengthMm === placement.travelLengthMm
+      : placement.kind !== 'before-operation-end' ||
       (other.placement.kind === 'before-operation-end' &&
         other.placement.remainingCutLengthMm === placement.remainingCutLengthMm)))) {
     return 'Enabled program stops cannot share an exact placement.';

@@ -69,6 +69,62 @@ describe('EditorProgramStopsPanel', () => {
       [expect.objectContaining({ placement: { kind: 'after-positioning' } })], true);
   });
 
+  it('explains the same boundary when no exit lead exists, and distinguishes a configured exit', async () => {
+    const source = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }
+    ]);
+    const operation = source.plan.operations[0];
+    const onSetStops = vi.fn();
+    const render = () => root.render(<EditorProgramStopsPanel disabled={false} document={source}
+      selectedOperationId={operation.id} onSetStops={onSetStops} />);
+    await act(async () => render());
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="Program stop placement"]')!;
+    await act(async () => setSelect(select, 'after-exit'));
+    expect(container.textContent).toContain('There is no exit lead');
+    expect(select.title).toContain('No rapid travel occurs');
+    operation.transitions = { exit: { strategy: 'manual-straight', move: 'cut', from: { x: 10, y: 0 },
+      to: { x: 15, y: 0 }, review: 'reviewed' } };
+    await act(async () => render());
+    expect(container.textContent).toContain('Pause after cutting the exit lead');
+    await act(async () => setSelect(select, 'after-contour'));
+    expect(container.textContent).toContain('before cutting the exit lead');
+    expect(container.querySelector(`#${select.getAttribute('aria-describedby')}`)?.textContent)
+      .toContain('Compensation has not ended');
+  });
+
+  it('authors and edits travel-distance intent through the shared validated operation', async () => {
+    let source = createUpidFromDxfEntities([
+      { type: 'line', layer: 'CUT', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { type: 'line', layer: 'CUT', start: { x: 30, y: 0 }, end: { x: 40, y: 0 } }
+    ]);
+    const operationId = source.plan.operations[0].id;
+    let selectedStopId: string | null = null;
+    const onSetStops = vi.fn((id, stops) => {
+      source = setPathOperationProgramStops(source, id, stops)!;
+      render();
+    });
+    const render = () => root.render(<EditorProgramStopsPanel disabled={false} document={source}
+      selectedOperationId={operationId} selectedStopId={selectedStopId} onSetStops={onSetStops} />);
+    await act(async () => render());
+    await act(async () => setSelect(container.querySelector<HTMLSelectElement>('[aria-label="Program stop placement"]')!, 'after-contour-distance'));
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Program stop travel distance millimeters"]')!;
+    const add = [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Add program stop')!;
+    expect(container.textContent).toContain('Available path: 20.000 mm');
+    await act(async () => setInput(input, '20'));
+    expect(add.disabled).toBe(true);
+    await act(async () => setInput(input, '5'));
+    await act(async () => add.click());
+    expect(source.schemaVersion).toBe(3);
+    expect(source.plan.operations[0].programStops![0].placement).toEqual({ kind: 'after-contour-distance', travelLengthMm: 5 });
+    selectedStopId = 'stop-1';
+    await act(async () => render());
+    const selectedInput = container.querySelector<HTMLInputElement>('[aria-label="Selected stop travel distance millimeters"]')!;
+    expect(selectedInput.value).toBe('5');
+    await act(async () => setInput(selectedInput, '7.25'));
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Apply stop-1"]')!.click());
+    expect(source.plan.operations[0].programStops![0].placement).toEqual({ kind: 'after-contour-distance', travelLengthMm: 7.25 });
+  });
+
   it('blocks duplicate add and apply, but permits disabling a stored duplicate', async () => {
     const source = createUpidFromDxfEntities([
       { type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 5 }

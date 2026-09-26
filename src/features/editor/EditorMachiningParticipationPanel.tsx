@@ -179,7 +179,7 @@ export function EditorMachiningParticipationPanel({
       </fieldset>
 
       {partialOperation && <label className="grid gap-1 border border-border p-2 uppercase text-muted-foreground">
-        Partial-path controller side
+        Partial-path wire offset
         <select
           aria-label="Partial contour wire side"
           className="h-7 border border-border bg-background px-1 text-foreground"
@@ -193,7 +193,7 @@ export function EditorMachiningParticipationPanel({
           value={wireSide}
         >
           <option value="">{operation.compensationIntent?.mode === 'centerline' && operation.compensationIntent.source === 'manual'
-            ? 'Wire centerline · source setting' : 'Choose a controller side'}</option>
+            ? 'Wire centreline · source setting' : 'Choose wire side relative to travel'}</option>
           <option value="left">Wire left of travel</option>
           <option value="right">Wire right of travel</option>
         </select>

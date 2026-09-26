@@ -388,7 +388,7 @@
                   "path": {
                     "minLength": 1,
                     "maxLength": 1024,
-                    "pattern": "^(imports|projects)/[^\\u0000]+$",
+                    "pattern": "^(imports|projects|editor)/[^\\u0000]+$",
                     "type": "string"
                   },
                   "createdAt": {

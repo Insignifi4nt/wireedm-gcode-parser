@@ -1,0 +1,34 @@
+{
+  "version": "0.0.688",
+  "previousVersion": "0.0.687",
+  "postCompatibility": "potential-post-impact-for-new-travel-distance-stops",
+  "summary": "Clarifies compensation and program-stop placements, adds exact travel-distance stops, and repairs upgrades of older external-program workbenches that could block startup.",
+  "warning": "Potentially breaking for posts used with the new travel-distance placement: program-stop.placement adds after-contour-distance and existing exit/positioning moves can be split around a pause. Strict posts or posts assuming unsplit moves may reject new jobs or require a separately reviewed package update. New intent uses UPID v3, which older apps reject. Existing placement behavior, installed packages and saved revisions are unchanged. Legacy workbench upgrades preserve exact originals and refuse conflicting backups or destination files; such conflicts still require recovery instead of overwriting data. Older app versions can reject upgraded workbenches declaring editor/ ownership; use this release for recovery and retain originals.",
+  "checklist": {
+    "schema": "New after-contour-distance intent requires UPID v3 and promotes only the edited project; valid v1/v2 remain supported. Post, execution-plan, engine API, machine-package and storage schema versions are unchanged. External-program ownership recognizes the historical editor/ path; v1 workbench upgrades recognize historical nested project documents.",
+    "events": "Execution event kinds are unchanged; program-stop.placement adds after-contour-distance. The compiler splits an existing straight exit or next positioning move at the specified XY distance while preserving stop source ownership and threading/compensation boundaries. Existing stop placements and jobs without the new intent retain their events. Saved-plan integrity checks remain enforced.",
+    "capabilities": "No post capability is added or widened. Distance stops require finite positive distances within existing travel; unresolved participation and positioning that automatically separates wire are blocked. Automatic compensation still follows the reviewed contour role; open partial cuts require an explicit travel side.",
+    "auditAndOutput": "New placement output contains split moves and a pause and may expose strict placement or unsplit-move assumptions in installed posts. Existing controller-output audits, exact-post formatting and feed behavior remain enforced; no default feeds are added. Imported external programs retain their exact edited program and original input. Installed posts and saved revisions are never rewritten.",
+    "installationAndStorage": "Legacy upgrades preserve and verify exact catalog/project backups, keep original nested project files and edited external-program files, validate proposed ownership before writes, and use durable file transactions for rollback and interrupted retry. Browser cache and folder adapters share the migration. Conflicting backups or destination files block recovery without overwrite; no automatic cleanup or package upgrade.",
+    "verification": "The full unit/integration suite passes across 190 files (1,841 tests), including disconnected-run rejection and simulation pause positions. Tests cover exact split points, ordered stops, invalid bounds, seam duplicates, automatic separation guards, portable v3, shared agent edits, unchanged installed Robofil output and cache/folder recovery. Three focused browser tests pass for distance-stop authoring/preview/undo/save/reload, existing stops and phone-size legacy startup. Production build, documentation/schema parity and release checks pass. Unchanged Robofil 2.6.0 post conformance and complete package validation pass. Full browser CI is the reviewed-PR gate. No physical-machine verification is implied."
+  },
+  "testedPosts": [
+    {
+      "id": "cristian.robofil-100.v2-candidate",
+      "version": "2.6.0",
+      "scope": "Unchanged post conformance fixtures, complete package validation and exact continuous-positioning split output (G0, M00, remaining G0). No physical-machine verification."
+    }
+  ],
+  "publicNotes": {
+    "summary": "Clearer compensation and stop placement wording, distance-based travel stops and recovery for older workbenches that could not open.",
+    "changes": [
+      "Contour Setup names the material to keep separately from the wire offset. Inside/outside refers to the contour; left/right refers to travel.",
+      "Automatic compensation shows which material the contour role keeps. Closed-contour reversal changes left/right without changing the kept material or inside/outside wire position; open-cut settings explicitly name the travel side.",
+      "Older external-program workbenches with a separate editable program can open again after upgrading. Original input, edited program and legacy backups are retained.",
+      "Program-stop placements explain their machining phase. After contour precedes the exit lead; After exit follows it. With no exit lead, both pause at the contour endpoint.",
+      "After contour · travel distance accepts millimeters measured along the existing exit lead and onward positioning. The preview shows the exact pause point; invalid distances and automatic wire-separating positioning are blocked."
+    ],
+    "compatibility": "Travel-distance stops use UPID v3; older apps reject them. Some posts may reject the new placement or split moves. Installed packages, saved revisions and existing placement behavior stay intact. Older apps may also reject editable-program paths retained during legacy recovery. Conflicting storage contents produce a preserve-data diagnostic.",
+    "action": "Reload the app, then retry opening your workbench. Keep browser data and workbench files intact; do not clear storage to resolve an upgrade error. Before using a travel-distance stop on a machine, generate and inspect controller output with the exact installed setup."
+  }
+}

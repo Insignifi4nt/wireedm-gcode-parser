@@ -324,7 +324,7 @@ export function setProjectThreadingDefault(
     ...next.setup,
     threadingDefault: structuredClone(transition)
   };
-  if (transition.wireSeparation === 'automatic-during-positioning') next.schemaVersion = 2;
+  if (next.schemaVersion === 1 && transition.wireSeparation === 'automatic-during-positioning') next.schemaVersion = 2;
   return next;
 }
 
@@ -341,7 +341,7 @@ export function setPathOperationThreadingTransition(
       ...structuredClone(transition),
       source: 'operation-override'
     };
-    if (transition.wireSeparation === 'automatic-during-positioning') next.schemaVersion = 2;
+    if (next.schemaVersion === 1 && transition.wireSeparation === 'automatic-during-positioning') next.schemaVersion = 2;
   } else {
     delete operation.threadingTransition;
   }
@@ -368,7 +368,8 @@ export function setPathOperationProgramStops(
   const operation = next.plan.operations.find((candidate) => candidate.id === operationId);
   if (!operation) return null;
   operation.programStops = structuredClone(stops);
-  if (stops.some((stop) => stop.placement.kind === 'after-positioning')) next.schemaVersion = 2;
+  if (stops.some((stop) => stop.placement.kind === 'after-contour-distance')) next.schemaVersion = 3;
+  else if (next.schemaVersion === 1 && stops.some((stop) => stop.placement.kind === 'after-positioning')) next.schemaVersion = 2;
   return next;
 }
 

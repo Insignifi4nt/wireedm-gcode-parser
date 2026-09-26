@@ -396,6 +396,7 @@ export type OperationProgramStopPlacement =
   | { kind: 'before-entry' }
   | { kind: 'after-positioning' }
   | { kind: 'before-operation-end'; remainingCutLengthMm: number }
+  | { kind: 'after-contour-distance'; travelLengthMm: number }
   | { kind: 'after-contour' }
   | { kind: 'after-exit' };
 
@@ -527,7 +528,7 @@ export interface SegmentBuildResult {
 }
 
 export interface PathPlanningDocument {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   geometryBasis: PathGeometryBasis;
   setup?: PathProjectSetup;
   machiningParticipation?: MachiningParticipation;

@@ -242,7 +242,7 @@ const generatedFiles = [
     contents: `${JSON.stringify({
       authoringKitVersion: '1',
       postPackageSchemaVersions: WireEdmPostPackageSchema.properties.schemaVersion.anyOf.map((schema) => schema.const),
-      upidSchemaVersions: [1, 2],
+      upidSchemaVersions: [1, 2, 3],
       appProvenance: {
         field: 'manifest.authoredFor',
         requiredForNewAuthoring: true,
