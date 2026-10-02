@@ -8,6 +8,8 @@ import { buildMachinePackageArchive, prepareStoredMachinePackageInstallation } f
 import { machinePackageFixture } from '@/domain/machine-package/__tests__/machinePackageFixture';
 import { MACHINE_LIBRARY_PATH } from '@/domain/machine-definition/machineLibraryStorage';
 import { CATALOG_PAIR_TRANSACTION_PATH } from '@/domain/storage/catalogPairTransaction';
+import { SAVED_REVISION_TRANSACTION_PATH } from '@/domain/storage/savedRevisionTransaction';
+import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
 import { workbenchSiteTools } from './workbenchSiteTools';
 import { applyProjectEdits } from './projectEdits';
 import { useWorkbenchActions } from './useWorkbenchActions';
@@ -189,6 +191,117 @@ describe('workbench agent actions', () => {
     stop = () => { h.draft().current = { ...h.draft().current!, version: 'changed' }; };
     expect(await h.call('edm_generate_controller', input)).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it.each(['cancel', 'draft-change'] as const)('rejects %s while controller generation waits for the storage lock', async change => {
+    let entered!: () => void;
+    const queued = new Promise<void>(resolve => { entered = resolve; });
+    const h = await harness({ saveStoredWireEdmJobRevision: (...args) => {
+      entered();
+      return defaultAppServices.saveStoredWireEdmJobRevision(...args);
+    } });
+    const input = await prepareControllerJob(h);
+    const adapter = h.app().connectedWorkbench!.adapter;
+    let acquired!: () => void;
+    let release!: () => void;
+    const locked = new Promise<void>(resolve => { acquired = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const holder = withWorkbenchMutationLock(adapter, async () => { acquired(); await gate; });
+    await locked;
+    const write = vi.spyOn(adapter, 'writeText');
+    const abort = new AbortController();
+    let result: unknown;
+    await act(async () => {
+      const pending = h.execute('edm_export_controller', input, abort.signal);
+      await queued;
+      if (change === 'cancel') abort.abort();
+      else h.draft().current = { ...h.draft().current!, version: 'changed-while-queued' };
+      release();
+      await holder;
+      result = await pending;
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: change === 'cancel' ? 'CANCELLED' : 'STALE_STATE' } });
+    expect(write).not.toHaveBeenCalled();
+    expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([]);
+    expect(h.generate).not.toHaveBeenCalled();
+    expect(h.download).not.toHaveBeenCalled();
+  });
+
+  it.each(['before-journal', 'after-journal'] as const)('handles cancellation at %s with a truthful persistence receipt', async boundary => {
+    const h = await harness();
+    const input = await prepareControllerJob(h);
+    const adapter = h.app().connectedWorkbench!.adapter;
+    const abort = new AbortController();
+    if (boundary === 'before-journal') {
+      const ensure = adapter.ensureDirectory.bind(adapter);
+      vi.spyOn(adapter, 'ensureDirectory').mockImplementation(async path => {
+        await ensure(path);
+        if (path === 'transactions') abort.abort();
+      });
+    } else {
+      const write = adapter.writeText.bind(adapter);
+      vi.spyOn(adapter, 'writeText').mockImplementation(async (path, text) => {
+        await write(path, text);
+        if (path === SAVED_REVISION_TRANSACTION_PATH) abort.abort();
+      });
+    }
+    const result = await h.call('edm_export_controller', input, abort.signal);
+    if (boundary === 'before-journal') {
+      expect(result).toMatchObject({ ok: false, error: { code: 'CANCELLED' } });
+      expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([]);
+      expect(h.generate).not.toHaveBeenCalled();
+    } else {
+      expect(result).toMatchObject({ ok: true, data: { generated: true, status: 'generated-download-not-requested' } });
+      expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([result.data.artifactId]);
+      expect(h.generate).toHaveBeenCalledOnce();
+    }
+    expect(await adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).toBeNull();
+    expect(h.download).not.toHaveBeenCalled();
+  });
+
+  it('rejects an active setup changed in storage after controller revision preparation', async () => {
+    let update: (() => Promise<void>) | undefined;
+    const h = await harness({ createSavedWireEdmJobRevision: async input => {
+      const candidate = await defaultAppServices.createSavedWireEdmJobRevision(input);
+      await update?.();
+      return candidate;
+    } });
+    const input = await prepareControllerJob(h);
+    const adapter = h.app().connectedWorkbench!.adapter;
+    update = async () => {
+      const library = JSON.parse((await adapter.readText(MACHINE_LIBRARY_PATH))!);
+      library.machines[0].bindings.push({ ...library.machines[0].bindings[0], id: 'alternate', name: 'Alternate' });
+      library.machines[0].activeBindingId = 'alternate';
+      await adapter.writeText(MACHINE_LIBRARY_PATH, JSON.stringify(library));
+    };
+    const result = await h.call('edm_export_controller', input);
+    expect(result).toMatchObject({ ok: true, data: { generated: false, error: {
+      message: expect.stringContaining('active setup')
+    } } });
+    expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([]);
+    expect(await adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).toBeNull();
+    expect(h.generate).not.toHaveBeenCalled();
+    expect(h.download).not.toHaveBeenCalled();
+  });
+
+  it('returns the committed revision and artifact when only recovery cleanup fails', async () => {
+    const h = await harness();
+    const input = await prepareControllerJob(h);
+    const adapter = h.app().connectedWorkbench!.adapter;
+    const remove = adapter.deleteText.bind(adapter);
+    const deletion = vi.spyOn(adapter, 'deleteText').mockImplementation(async path => {
+      if (path === SAVED_REVISION_TRANSACTION_PATH) throw new Error('Injected journal cleanup failure');
+      return remove(path);
+    });
+    const result = await h.call('edm_export_controller', input);
+    expect(result).toMatchObject({ ok: true, data: { generated: true, artifactId: expect.any(String),
+      cleanupPending: { code: 'SAVED_REVISION_TRANSACTION_STORAGE_FAILED' } } });
+    expect(h.app().loadedEditorProgram?.project.savedRevisionIds).toEqual([result.data.artifactId]);
+    expect(await adapter.readText(SAVED_REVISION_TRANSACTION_PATH)).not.toBeNull();
+    expect(h.generate).toHaveBeenCalledOnce();
+    deletion.mockRestore();
+    expect(await h.call('edm_download_artifact', { artifactId: result.data.artifactId })).toMatchObject({ ok: true });
+    expect(h.generate).toHaveBeenCalledOnce();
   });
 
   it('returns the committed artifact after late cancellation without starting its download', async () => {

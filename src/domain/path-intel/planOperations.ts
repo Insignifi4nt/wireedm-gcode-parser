@@ -72,8 +72,7 @@ export function planOperations(input: PlanOperationsInput): OperationPlan {
       eligible = [...remaining.values()];
     }
 
-    const selected = chooseNextItem(eligible, currentPosition, segmentsById, resolved);
-    const arrangement = arrangeItem(selected, currentPosition, segmentsById, resolved);
+    const { item: selected, arrangement } = chooseNextItem(eligible, currentPosition, segmentsById, resolved);
     const rapidInLength = distance(currentPosition, arrangement.startPoint);
 
     operations.push({
@@ -174,7 +173,7 @@ function chooseNextItem(
       if (pointCompare !== 0) return pointCompare;
 
       return a.item.id.localeCompare(b.item.id);
-    })[0].item;
+    })[0];
 }
 
 function arrangeItem(
@@ -211,20 +210,38 @@ function arrangeClosedChain(
   segmentsById: Map<string, PathSegment>,
   options: ReturnType<typeof resolvePathPlanningOptions>
 ): Arrangement {
-  const candidates: Arrangement[] = [];
+  if (refs.length === 0) return buildArrangement([], 'forward', false, segmentsById);
 
-  for (let index = 0; index < Math.max(refs.length, 1); index++) {
-    candidates.push(buildArrangement(rotatePathRefs(refs, index), 'forward', false, segmentsById));
+  // Rank starts without copying the full chain for every possible rotation.
+  const candidates: Array<{
+    refs: OrientedSegmentRef[];
+    startIndex: number;
+    startPoint: Point2;
+    direction: PathOperation['direction'];
+  }> = [];
+
+  for (let index = 0; index < refs.length; index++) {
+    candidates.push({
+      refs, startIndex: index,
+      startPoint: pathStartPoint([refs[index]], segmentsById)!, direction: 'forward'
+    });
   }
 
   if (options.allowReverseClosedContours && refs.length > 0) {
     const reversed = reversePathRefs(refs);
     for (let index = 0; index < reversed.length; index++) {
-      candidates.push(buildArrangement(rotatePathRefs(reversed, index), 'reverse', true, segmentsById));
+      candidates.push({
+        refs: reversed, startIndex: index,
+        startPoint: pathStartPoint([reversed[index]], segmentsById)!, direction: 'reverse'
+      });
     }
   }
 
-  return bestArrangement(candidates, currentPosition, options.coincidenceEpsilon);
+  const best = candidates.sort((a, b) =>
+    compareArrangementStarts(a, b, currentPosition, options.coincidenceEpsilon) ||
+    a.refs[a.startIndex].segmentId.localeCompare(b.refs[b.startIndex].segmentId)
+  )[0];
+  return buildArrangement(rotatePathRefs(best.refs, best.startIndex), best.direction, best.direction === 'reverse', segmentsById);
 }
 
 function buildArrangement(
@@ -248,21 +265,26 @@ function bestArrangement(arrangements: Arrangement[], currentPosition: Point2, e
   return arrangements
     .filter((arrangement) => arrangement.refs.length > 0)
     .sort((a, b) => {
-      const rapidDelta = distance(currentPosition, a.startPoint) - distance(currentPosition, b.startPoint);
-      if (Math.abs(rapidDelta) > epsilon) return rapidDelta;
-
-      if (a.direction !== b.direction) return a.direction === 'forward' ? -1 : 1;
-
-      const pointCompare = comparePoint(a.startPoint, b.startPoint, epsilon);
-      if (pointCompare !== 0) return pointCompare;
-
-      return (a.refs[0]?.segmentId ?? '').localeCompare(b.refs[0]?.segmentId ?? '');
+      return compareArrangementStarts(a, b, currentPosition, epsilon) ||
+        (a.refs[0]?.segmentId ?? '').localeCompare(b.refs[0]?.segmentId ?? '');
     })[0] ?? {
     refs: [],
     startPoint: { x: 0, y: 0 },
     endPoint: { x: 0, y: 0 },
     direction: 'forward'
   };
+}
+
+function compareArrangementStarts(
+  a: Pick<Arrangement, 'startPoint' | 'direction'>,
+  b: Pick<Arrangement, 'startPoint' | 'direction'>,
+  currentPosition: Point2,
+  epsilon: number
+) {
+  const rapidDelta = distance(currentPosition, a.startPoint) - distance(currentPosition, b.startPoint);
+  if (Math.abs(rapidDelta) > epsilon) return rapidDelta;
+  if (a.direction !== b.direction) return a.direction === 'forward' ? -1 : 1;
+  return comparePoint(a.startPoint, b.startPoint, epsilon);
 }
 
 function classificationPriority(classification: ContourClassification) {

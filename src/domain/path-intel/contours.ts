@@ -4,10 +4,12 @@ import {
   distance,
   mergeBounds,
   pathBounds,
+  pathStartPoint,
   segmentMap,
   signedAreaOfPath
 } from './segments';
 import { findPathSegmentIntersectionDiagnostics } from './intersections';
+import { closedPathContainsPoint } from './pathContainment';
 import type {
   Bounds2,
   ContourAnalysisResult,
@@ -161,7 +163,7 @@ export function analyzeContours(
     };
   });
 
-  assignContainment(contours, resolved.coincidenceEpsilon);
+  assignContainment(contours, chains, segmentsById, resolved.coincidenceEpsilon);
 
   const contourIdByChainId = new Map(contours.map((contour) => [contour.chainId, contour.id]));
   for (const diagnostic of intersectionDiagnostics) {
@@ -241,15 +243,24 @@ function compareNullableText(first: string | null, second: string | null) {
   return first.localeCompare(second);
 }
 
-function assignContainment(contours: PathContour[], epsilon: number) {
+function assignContainment(
+  contours: PathContour[], chains: PathChain[], segmentsById: Map<string, PathSegment>, epsilon: number
+) {
+  const chainsById = new Map(chains.map((chain) => [chain.id, chain]));
   const closedSimple = contours.filter(
-    (contour) => contour.closed && contour.classification !== 'ambiguous' && contour.representativePoint
+    (contour) => contour.closed && contour.classification !== 'ambiguous'
   );
 
   for (const contour of closedSimple) {
+    // Disjoint simple boundaries lie entirely inside or outside each other. A point
+    // on this boundary is a valid witness; a concave polygon's centroid is not.
+    const witness = pathStartPoint(chainsById.get(contour.chainId)!.segmentRefs, segmentsById);
     const containers = closedSimple
       .filter((candidate) => candidate.id !== contour.id && (candidate.area ?? 0) > (contour.area ?? 0) + epsilon)
-      .filter((candidate) => pointInPolygon(contour.representativePoint!, candidate.approximatePolygon, epsilon))
+      .filter((candidate) => boundsContain(candidate.bounds, contour.bounds, epsilon))
+      .filter((candidate) => witness && closedPathContainsPoint(
+        chainsById.get(candidate.chainId)!.segmentRefs, witness, segmentsById
+      ))
       .sort((a, b) => (a.area ?? 0) - (b.area ?? 0));
 
     contour.containmentDepth = containers.length;
@@ -267,6 +278,11 @@ function assignContainment(contours: PathContour[], epsilon: number) {
     const parent = contours.find((candidate) => candidate.id === contour.parentId);
     parent?.childIds.push(contour.id);
   }
+}
+
+function boundsContain(outer: Bounds2, inner: Bounds2, epsilon: number) {
+  return outer.minX <= inner.minX + epsilon && outer.minY <= inner.minY + epsilon &&
+    outer.maxX >= inner.maxX - epsilon && outer.maxY >= inner.maxY - epsilon;
 }
 
 function classificationFromDepth(depth: number): ContourClassification {
@@ -326,24 +342,6 @@ function averagePoint(points: Point2[]): Point2 {
     y: 0
   });
   return { x: sum.x / points.length, y: sum.y / points.length };
-}
-
-function pointInPolygon(point: Point2, polygon: Point2[], epsilon = 1e-9) {
-  const clean = stripClosingDuplicate(polygon, epsilon);
-  let inside = false;
-
-  for (let index = 0, previousIndex = clean.length - 1; index < clean.length; previousIndex = index++) {
-    const current = clean[index];
-    const previous = clean[previousIndex];
-
-    const intersects =
-      current.y > point.y !== previous.y > point.y &&
-      point.x < ((previous.x - current.x) * (point.y - current.y)) / (previous.y - current.y) + current.x;
-
-    if (intersects) inside = !inside;
-  }
-
-  return inside;
 }
 
 function stripClosingDuplicate(points: Point2[], epsilon = 1e-9) {

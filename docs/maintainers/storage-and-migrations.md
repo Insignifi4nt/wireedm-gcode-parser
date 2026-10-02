@@ -57,6 +57,12 @@ Trash retains project-owned files. A missing index reference is not authorizatio
 
 ## Separate maintenance
 
+Release 0.0.689 extends exact-state conflict checks to saved-revision and trash recovery and immediate revision rollback. Recovery accepts only recorded before/after images; unexpected external bytes and unrecognized partial JSON retain all files and the journal. An empty newly created revision is a first-write state only while both indexes still equal their before-images. Once a revision and both indexes have read back, a journal-cleanup failure is a committed result with `cleanupPending`, not permission to create a duplicate revision on retry.
+
+Revision-deletion and project-purge journals now use schema 2 with exact UTF-8 SHA-256 fingerprints (including BOMs) for each owned path. Validate every target before deleting any; completed-index recovery allows already missing files for interrupted retries, while uncommitted index recovery requires the original fingerprints. Legacy v1 committed deletions have no content identities: remaining files block recovery, and an already empty deletion set can finalize. Complete all pending v2 recovery with this release before downgrading; older releases reject these records. Installed package and saved-revision schemas are unchanged. No automatic journal or orphan cleanup is authorized by this format change.
+
+Backup semantic reads may strip one leading UTF-8 BOM for JSON parsing, but exact strings, hashes and restored originals preserve it. External G-code editor saves compare the loaded editable text under the mutation lock; folder writers outside the app still do not participate in Web Locks.
+
 Permanent project purge remains restricted to its existing import/project path rules. A migrated project owning an `editor/` path therefore stays in trash when purge is requested; do not widen deletion authorization or remove the editable copy as a cleanup shortcut. Legacy unindexed nested project documents are also retained. Invalid or missing project data still blocks workbench opening without resetting browser storage; the schema-1 upgrade handles recognized former layouts rather than guessing replacements for missing edits.
 
 Consolidate legacy UI preference keys only with lazy reads of old keys and a tested forward migration. These small preferences do not justify deleting unrelated origin storage. Streaming larger/binary backup archives and merging into nonempty destinations are not part of the current backup contract.

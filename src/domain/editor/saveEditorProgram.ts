@@ -32,6 +32,8 @@ export interface SaveEditorProgramInput {
   readonly projectId: string;
   readonly draft: EditorSaveDraft;
   readonly expectedContent?: WorkbenchProjectDocument['content'];
+  /** Loaded editable program text, checked again under the workbench mutation lock. */
+  readonly expectedText?: string;
   readonly now?: Date;
 }
 
@@ -114,7 +116,8 @@ export async function saveEditorProgram(
     ? [{
         kind: 'write' as const,
         path: parsed.project.content.activeFilePath,
-        contents: input.draft.text
+        contents: input.draft.text,
+        ...(input.expectedText !== undefined ? { expectedContents: input.expectedText } : {})
       }]
     : [];
   const replaced = await replaceStoredWorkbenchProject(workbench, {

@@ -340,10 +340,9 @@ describe('workbench controller asynchronous operations', () => {
 
   it('preserves the saved program after a rejected save and persists a later retry', async () => {
     const seeded = await seedProgram();
-    const read = await mount({
-      saveEditorProgram: vi.fn(defaultAppServices.saveEditorProgram)
-        .mockRejectedValueOnce(new Error('Save interrupted'))
-    });
+    const save = vi.fn(defaultAppServices.saveEditorProgram)
+      .mockRejectedValueOnce(new Error('Save interrupted'));
+    const read = await mount({ saveEditorProgram: save });
     await act(async () => { await read().handleOpenWorkbenchProject(seeded.project.id); });
     const draft = { model: 'gcode-text', text: 'G0 X0 Y0\nG1 X20 Y10' } as const;
     await act(async () => { expect(await read().handleSaveEditorDraft(draft)).toBeNull(); });
@@ -351,6 +350,9 @@ describe('workbench controller asynchronous operations', () => {
     expect(read().editorSaveStatus).toBe('error');
     expect(read().loadedEditorProgram?.text).toBe(seeded.editorProgram.text);
     await act(async () => { await read().handleSaveEditorDraft(draft); });
+    expect(save).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      expectedText: seeded.editorProgram.text
+    }));
     expect(read().editorSaveStatus).toBe('idle');
     expect(read().loadedEditorProgram?.text).toBe(draft.text);
     expect(await seeded.workbench.adapter.readText(seeded.editorProgram.filePath)).toBe(draft.text);

@@ -34,7 +34,8 @@ const fileHash = (files: Backup['files']) => hash(JSON.stringify(files.map(({ pa
 function memoryStorage(files: Backup['files']): WorkbenchStorageAdapter {
   const data = new Map(files.map(({ path, text }) => [path, text]));
   return { kind: 'memory', name: 'Backup validation', ensureDirectory: async () => {},
-    readText: async (path) => data.get(path) ?? null, writeText: async (path, text) => { data.set(path, text); },
+    readText: async (path) => data.get(path)?.replace(/^\uFEFF/, '') ?? null,
+    readExactText: async (path) => data.get(path) ?? null, writeText: async (path, text) => { data.set(path, text); },
     deleteText: async (path) => { data.delete(path); }, listFiles: async () => ({ paths: [...data.keys()].sort(), truncated: false }) };
 }
 
@@ -57,7 +58,7 @@ export async function prepareWorkbenchBackup(text: string): Promise<PreparedWork
   }
   if (await fileHash(files) !== value.contentHash) throw new Error('Backup inventory checksum mismatch.');
   if (!catalogPaths.every((path) => files.some((file) => file.path === path))) throw new Error('Backup is missing required catalogs.');
-  const catalog = JSON.parse(files.find(({ path }) => path === 'workbench.json')!.text);
+  const catalog = JSON.parse(files.find(({ path }) => path === 'workbench.json')!.text.replace(/^\uFEFF/, ''));
   if (catalog.schemaVersion !== 3) throw new Error('Open and migrate this workbench in a compatible app before backing it up.');
   const adapter = memoryStorage(files);
   const opened = await initializeWorkbenchCatalog(adapter);

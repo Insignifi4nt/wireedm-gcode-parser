@@ -27,6 +27,8 @@ import {
   Sha256Schema
 } from '@/domain/post-processor/postFormatPrimitives';
 import type { PostInstallation, PostLibrary } from '@/domain/post-processor/postLibrary';
+import { readPostLibraryStorage } from '@/domain/post-processor/postLibraryStorage';
+import { readMachineLibraryStorage } from '@/domain/machine-definition/machineLibraryStorage';
 import {
   validateWireEdmPostPackageValue,
   type PostPackageDiagnostic
@@ -276,6 +278,7 @@ export type LoadSavedWireEdmJobRevisionResult =
     };
 
 type SavedRevisionCatalogMutationError =
+  | { readonly code: 'SAVED_REVISION_ACTIVE_SETUP_STALE'; readonly message: string }
   | ProjectTrashTransactionError
   | SavedRevisionTransactionError
   | SavedWireEdmJobRevisionStorageError
@@ -335,6 +338,7 @@ export type SaveStoredWireEdmJobRevisionResult =
       readonly revision: SavedWireEdmJobRevision;
       readonly project: WorkbenchProjectDocument;
       readonly workbench: ConnectedWorkbenchCatalog;
+      readonly cleanupPending?: SavedRevisionTransactionError;
     }
   | {
       readonly ok: false;
@@ -628,7 +632,13 @@ export function persistSavedWireEdmJobRevision(
 
 export function saveStoredWireEdmJobRevision(
   workbench: ConnectedWorkbenchCatalog,
-  candidate: SavedWireEdmJobRevisionCandidate
+  candidate: SavedWireEdmJobRevisionCandidate,
+  options: {
+    /** Controller operations require the candidate's exact setup to remain active. */
+    readonly requireCurrentActiveSetup?: boolean;
+    /** Runs under the mutation lock immediately before the first journal write. */
+    readonly beforeWrite?: () => void;
+  } = {}
 ): Promise<SaveStoredWireEdmJobRevisionResult> {
   return withWorkbenchMutationLock(workbench.adapter, async () => {
     if (!isSavedWireEdmJobRevisionCandidate(candidate)) {
@@ -707,7 +717,7 @@ export function saveStoredWireEdmJobRevision(
       [path, documentPath, WORKBENCH_CATALOG_PATH]
     );
     if (!snapshots.ok) return snapshots;
-    const applied: CatalogStorageSnapshot[] = [];
+    const applied: AppliedCatalogSnapshot[] = [];
     const revisionSnapshot = snapshots.snapshots.find((snapshot) => snapshot.path === path);
     if (revisionSnapshot?.contents !== null) {
       return catalogMutationFailure(revisionCatalogConflict(project.id, candidate.revisionId, path));
@@ -723,10 +733,21 @@ export function saveStoredWireEdmJobRevision(
     const serializedRevision = serializeSavedWireEdmJobRevision(candidate);
     const serializedProject = serializedProjectResult.text;
     const serializedManifest = `${JSON.stringify(nextManifest, null, 2)}\n`;
+    const transactionSnapshots = snapshots.snapshots.map((snapshot) => ({
+      ...snapshot,
+      writtenContents: snapshot.path === path ? serializedRevision
+        : snapshot.path === documentPath ? serializedProject : serializedManifest
+    }));
+    const rollback = (error: SavedRevisionCatalogMutationError) =>
+      rollbackCatalogRevision(workbench, applied, transactionSnapshots, error);
     const previousProject = snapshots.snapshots.find((snapshot) => snapshot.path === documentPath)?.contents;
     const previousManifest = snapshots.snapshots.find((snapshot) => snapshot.path === WORKBENCH_CATALOG_PATH)?.contents;
     if (previousProject == null || previousManifest == null) {
       return catalogMutationFailure(savedRevisionStorageError('SAVED_REVISION_STORAGE_CONFLICT', 'Project or manifest disappeared before saving the revision.'));
+    }
+    if (options.requireCurrentActiveSetup) {
+      const current = await verifyCurrentActiveSetup(workbench.adapter, candidate);
+      if (!current.ok) return current;
     }
     const begun = await beginSavedRevisionTransaction(workbench.adapter, {
       projectId: project.id,
@@ -736,65 +757,88 @@ export function saveStoredWireEdmJobRevision(
       nextRevision: serializedRevision,
       nextProject: serializedProject,
       nextManifest: serializedManifest
-    });
+    }, { beforeWrite: options.beforeWrite });
     if (!begun.ok) return begun;
-    journalCatalogSnapshot(applied, snapshots.snapshots, path);
+    journalCatalogSnapshot(applied, snapshots.snapshots, path, serializedRevision);
     const revisionWrite = await writeCatalogTransactionText(workbench, path, serializedRevision);
     if (!revisionWrite.ok) {
-      return rollbackCatalogRevision(workbench, applied, revisionWrite.error);
+      return rollback(revisionWrite.error);
     }
     const revisionReadback = await readCatalogTransactionText(workbench, path);
     if (!revisionReadback.ok) {
-      return rollbackCatalogRevision(workbench, applied, revisionReadback.error);
+      return rollback(revisionReadback.error);
     }
     if (revisionReadback.contents !== serializedRevision) {
-      return rollbackCatalogRevision(workbench, applied, savedRevisionStorageError(
+      return rollback(savedRevisionStorageError(
         'SAVED_REVISION_STORAGE_READBACK_MISMATCH',
         `Saved revision at ${path} did not read back byte-for-byte.`
       ));
     }
-    journalCatalogSnapshot(applied, snapshots.snapshots, documentPath);
+    journalCatalogSnapshot(applied, snapshots.snapshots, documentPath, serializedProject);
     const projectWrite = await writeCatalogTransactionText(workbench, documentPath, serializedProject);
     if (!projectWrite.ok) {
-      return rollbackCatalogRevision(workbench, applied, projectWrite.error);
+      return rollback(projectWrite.error);
     }
     const projectReadback = await readCatalogTransactionText(workbench, documentPath);
     if (!projectReadback.ok) {
-      return rollbackCatalogRevision(workbench, applied, projectReadback.error);
+      return rollback(projectReadback.error);
     }
     if (projectReadback.contents !== serializedProject) {
-      return rollbackCatalogRevision(workbench, applied, {
+      return rollback({
         code: 'SAVED_REVISION_CATALOG_PROJECT_READBACK_MISMATCH',
         message: `Updated project at ${documentPath} did not read back byte-for-byte.`,
         path: documentPath
       });
     }
-    journalCatalogSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH);
+    journalCatalogSnapshot(applied, snapshots.snapshots, WORKBENCH_CATALOG_PATH, serializedManifest);
     const manifestWrite = await writeCatalogManifest(workbench, nextManifest);
     if (!manifestWrite.ok) {
-      return rollbackCatalogRevision(workbench, applied, manifestWrite.error);
+      return rollback(manifestWrite.error);
     }
     const manifestReadback = await readCatalogTransactionText(workbench, WORKBENCH_CATALOG_PATH);
     if (!manifestReadback.ok) {
-      return rollbackCatalogRevision(workbench, applied, manifestReadback.error);
+      return rollback(manifestReadback.error);
     }
     if (manifestReadback.contents !== serializedManifest) {
-      return rollbackCatalogRevision(workbench, applied, {
+      return rollback({
         code: 'SAVED_REVISION_CATALOG_MANIFEST_READBACK_MISMATCH',
         message: `Updated manifest at ${WORKBENCH_CATALOG_PATH} did not read back byte-for-byte.`,
         path: WORKBENCH_CATALOG_PATH
       });
     }
     const finished = await finishSavedRevisionTransaction(workbench.adapter);
-    if (!finished.ok) return finished;
     return {
       ok: true,
       path,
       revision: persistedSuccess(candidate),
       project: nextProject.project,
-      workbench: Object.freeze({ ...workbench, manifest: nextManifest })
+      workbench: Object.freeze({ ...workbench, manifest: nextManifest }),
+      ...(!finished.ok ? { cleanupPending: finished.error } : {})
     };
   });
+}
+
+async function verifyCurrentActiveSetup(
+  adapter: WorkbenchStorageAdapter,
+  candidate: SavedWireEdmJobRevisionCandidate
+) {
+  const stale = () => catalogMutationFailure({
+    code: 'SAVED_REVISION_ACTIVE_SETUP_STALE',
+    message: 'The selected machine, active setup, or exact installed post changed before the revision could be saved. Reload the workbench, review the active setup, and generate again. No installed package or saved revision was changed.'
+  });
+  const posts = await readPostLibraryStorage(adapter);
+  if (!posts.ok) return stale();
+  const machines = await readMachineLibraryStorage(adapter, posts.library);
+  if (!machines.ok) return stale();
+  const machine = machines.library.machines.find(({ id }) => id === candidate.machine.id);
+  if (!machine || machine.activeBindingId !== candidate.post.binding.id) return stale();
+  const resolved = await resolveMachinePostBinding(machine, posts.library, machine.activeBindingId);
+  if (!resolved.ok) return stale();
+  if (canonicalJson(physicalMachineSnapshot(machine)) !== canonicalJson(candidate.machine)
+    || canonicalJson(resolved.binding) !== canonicalJson(candidate.post.binding)
+    || canonicalJson(resolved.installation) !== canonicalJson(candidate.post.installation)
+    || canonicalJson(resolved.properties) !== canonicalJson(candidate.post.properties)) return stale();
+  return { ok: true as const };
 }
 
 async function persistSavedWireEdmJobRevisionUnlocked(
@@ -1064,6 +1108,10 @@ interface CatalogStorageSnapshot {
   readonly contents: string | null;
 }
 
+interface AppliedCatalogSnapshot extends CatalogStorageSnapshot {
+  readonly writtenContents: string;
+}
+
 async function verifyCatalogManifestCurrent(workbench: ConnectedWorkbenchCatalog) {
   const read = await readCatalogTransactionText(workbench, WORKBENCH_CATALOG_PATH);
   if (!read.ok) return read;
@@ -1076,7 +1124,7 @@ async function verifyCatalogManifestCurrent(workbench: ConnectedWorkbenchCatalog
   }
   let stored: unknown;
   try {
-    stored = JSON.parse(read.contents);
+    stored = JSON.parse(read.contents.replace(/^\uFEFF/, ''));
   } catch {
     return catalogMutationFailure({
       code: 'SAVED_REVISION_CATALOG_MANIFEST_STALE',
@@ -1112,7 +1160,8 @@ async function readCatalogTransactionText(
   path: string
 ) {
   try {
-    return { ok: true as const, contents: await workbench.adapter.readText(path) };
+    const adapter = workbench.adapter;
+    return { ok: true as const, contents: await (adapter.readExactText?.(path) ?? adapter.readText(path)) };
   } catch (error) {
     return { ok: false as const, error: catalogStorageAccessFailure('read', path, error) };
   }
@@ -1166,22 +1215,33 @@ async function writeCatalogManifest(
 }
 
 function journalCatalogSnapshot(
-  applied: CatalogStorageSnapshot[],
+  applied: AppliedCatalogSnapshot[],
   snapshots: readonly CatalogStorageSnapshot[],
-  path: string
+  path: string,
+  writtenContents: string
 ) {
   const snapshot = snapshots.find((entry) => entry.path === path);
   if (!snapshot) throw new Error(`Missing captured catalog snapshot for ${path}.`);
-  applied.push(snapshot);
+  applied.push({ ...snapshot, writtenContents });
 }
 
 async function rollbackCatalogRevision(
   workbench: ConnectedWorkbenchCatalog,
-  snapshots: readonly CatalogStorageSnapshot[],
+  snapshots: readonly AppliedCatalogSnapshot[],
+  transactionSnapshots: readonly AppliedCatalogSnapshot[],
   originalError: SavedRevisionCatalogMutationError
 ): Promise<Extract<SaveStoredWireEdmJobRevisionResult, { readonly ok: false }>> {
   const rollbackErrors: WorkbenchProjectStorageError[] = [];
-  for (const snapshot of [...snapshots].reverse()) {
+  // Validate every journal target before touching any of them. An external edit
+  // or unrecognized partial write must retain both its bytes and recovery journal.
+  for (const snapshot of transactionSnapshots) {
+    const current = await readCatalogTransactionText(workbench, snapshot.path);
+    if (!current.ok) rollbackErrors.push(current.error);
+    else if (current.contents !== snapshot.contents && current.contents !== snapshot.writtenContents) {
+      rollbackErrors.push(catalogStorageAccessFailure('write', snapshot.path, 'Rollback target has unknown bytes; original and recovery data were preserved'));
+    }
+  }
+  for (const snapshot of rollbackErrors.length === 0 ? [...snapshots].reverse() : []) {
     const restored = snapshot.contents === null
       ? await deleteCatalogTransactionText(workbench, snapshot.path)
       : await writeCatalogTransactionText(workbench, snapshot.path, snapshot.contents);

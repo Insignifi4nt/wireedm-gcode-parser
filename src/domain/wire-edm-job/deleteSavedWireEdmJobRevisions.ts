@@ -1,10 +1,10 @@
 import {
   beginRevisionDeletionTransaction,
-  finishSavedRevisionTransaction,
   recoverSavedRevisionTransaction
 } from '@/domain/storage/savedRevisionTransaction';
 import { recoverProjectTrashTransaction } from '@/domain/storage/projectTrashTransaction';
 import { withWorkbenchMutationLock } from '@/domain/storage/workbenchMutationLock';
+import { readExactTransactionText as readExact } from '@/domain/storage/transactionFileState';
 import {
   WORKBENCH_CATALOG_PATH,
   type ConnectedWorkbenchCatalog,
@@ -40,8 +40,8 @@ export function deleteStoredWireEdmJobRevisions(
     if (!Number.isFinite(input.deletedAt.getTime())) return failure('Invalid deletion time.');
 
     try {
-      const previousManifest = await adapter.readText(WORKBENCH_CATALOG_PATH);
-      if (previousManifest === null || JSON.stringify(JSON.parse(previousManifest)) !== JSON.stringify(workbench.manifest)) {
+      const previousManifest = await readExact(adapter, WORKBENCH_CATALOG_PATH);
+      if (previousManifest === null || JSON.stringify(JSON.parse(previousManifest.replace(/^\uFEFF/, ''))) !== JSON.stringify(workbench.manifest)) {
         return failure('The workbench changed. Reopen the revision list before deleting.');
       }
       const allowedMissing = new Set([...selection].map((revisionId) =>
@@ -55,7 +55,7 @@ export function deleteStoredWireEdmJobRevisions(
       }
 
       const documentPath = workbenchProjectDocumentPath(project.id);
-      const previousProject = await adapter.readText(documentPath);
+      const previousProject = await readExact(adapter, documentPath);
       if (previousProject === null) return failure('The project file is missing.');
       const deletedAt = input.deletedAt.toISOString();
       const parsedProject = parseWorkbenchProjectDocument(JSON.stringify({
@@ -86,15 +86,10 @@ export function deleteStoredWireEdmJobRevisions(
 
       try {
         await adapter.writeText(documentPath, serializedProject.text);
-        if (await adapter.readText(documentPath) !== serializedProject.text) throw new Error('Project index did not read back exactly.');
+        if (await readExact(adapter, documentPath) !== serializedProject.text) throw new Error('Project index did not read back exactly.');
         await adapter.writeText(WORKBENCH_CATALOG_PATH, nextManifestText);
-        if (await adapter.readText(WORKBENCH_CATALOG_PATH) !== nextManifestText) throw new Error('Workbench manifest did not read back exactly.');
-        for (const revisionId of selection) {
-          const path = workbenchProjectRevisionPath(project.id, revisionId);
-          await adapter.deleteText(path);
-          if (await adapter.readText(path) !== null) throw new Error(`Could not remove ${revisionId}.`);
-        }
-        const finished = await finishSavedRevisionTransaction(adapter);
+        if (await readExact(adapter, WORKBENCH_CATALOG_PATH) !== nextManifestText) throw new Error('Workbench manifest did not read back exactly.');
+        const finished = await recoverSavedRevisionTransaction(adapter);
         if (!finished.ok) throw new Error(finished.error.message);
         return {
           ok: true,
@@ -105,8 +100,8 @@ export function deleteStoredWireEdmJobRevisions(
       } catch (error) {
         const recovered = await recoverSavedRevisionTransaction(adapter);
         if (!recovered.ok) return failure(`${message(error)}; recovery failed: ${recovered.error.message}`);
-        if (await adapter.readText(documentPath) === serializedProject.text &&
-            await adapter.readText(WORKBENCH_CATALOG_PATH) === nextManifestText) {
+        if (await readExact(adapter, documentPath) === serializedProject.text &&
+            await readExact(adapter, WORKBENCH_CATALOG_PATH) === nextManifestText) {
           return {
             ok: true,
             workbench: Object.freeze({ ...workbench, manifest: Object.freeze(nextManifest) }),

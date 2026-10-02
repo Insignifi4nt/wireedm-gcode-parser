@@ -214,12 +214,12 @@ export function useWorkbenchActions(app: App, draftRef: RefObject<DraftReadSnaps
     mutation('edm_generate_controller', 'Generate audited controller output from the saved current project and exact active setup. Requires a clean draft. Persists an immutable revision. Does not download or run a machine. Reuse the returned artifact ID for reading/downloading; do not generate repeatedly.', controllerInput, async (input, signal) => {
       const result = await generate(input, signal);
       if (!result.ok) return generationFailure(result);
-      return { generated: true, ...artifactSummary(result.artifact) };
+      return { generated: true, ...artifactSummary(result.artifact), ...generationCleanup(result) };
     }),
     mutation('edm_export_controller', 'Generate and request download of controller output in one action, using the same saved-draft, exact active-setup and audited-post checks as the export UI. Persists one immutable revision. On generated:true, reuse its artifactId for retries; do not generate another revision just to download.', controllerInput, async (input, signal) => {
       const result = await generate(input, signal);
       if (!result.ok) return generationFailure(result);
-      const summary = artifactSummary(result.artifact);
+      const summary = { ...artifactSummary(result.artifact), ...generationCleanup(result) };
       if (signal.aborted) return { generated: true, status: 'generated-download-not-requested', ...summary };
       try {
         await app.handleDownloadEditorFile({ fileName: result.artifact.fileName, text: result.artifact.text });
@@ -291,5 +291,12 @@ function generationFailure(result: Extract<Awaited<ReturnType<App['handleGenerat
   const error = result.error;
   return { generated: false, error: { ...error, ...summarizeMessage(error.message),
     ...('diagnostics' in error ? summarizeDiagnostics<(typeof error.diagnostics)[number]>(error.diagnostics) : {})
-  }, ...(result.savedRevisionId ? { savedRevisionId: result.savedRevisionId } : {}) };
+  }, ...(result.savedRevisionId ? { savedRevisionId: result.savedRevisionId } : {}), ...generationCleanup(result) };
+}
+
+function generationCleanup(result: Awaited<ReturnType<App['handleGenerateControllerArtifact']>>) {
+  return result.cleanupPending ? { cleanupPending: {
+    code: result.cleanupPending.code,
+    message: 'The revision is saved. Recovery cleanup is pending; reopen the workbench to retry cleanup. Reuse the saved revision or artifact instead of generating again.'
+  } } : {};
 }

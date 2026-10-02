@@ -229,14 +229,14 @@ export function EditorPathNavigatorPanel({
     onPathTranslateYDraftChange(value);
     onTransformDraftChange?.('translate');
   }
-  const segmentsById = segmentMap(pathDocument.segments);
-  const projectRail = createUpidProjectRail(pathDocument);
+  const segmentsById = useMemo(() => segmentMap(pathDocument.segments), [pathDocument]);
+  const projectRail = useMemo(() => createUpidProjectRail(pathDocument), [pathDocument]);
   const { contourTree, cutSequenceElements, manualOrderActive } = projectRail;
   const sequenceMetrics = useMemo(() => deriveCutSequenceMetrics(pathDocument), [pathDocument]);
   const unavailableSequenceMetrics = [...sequenceMetrics.values()].find((metrics) => metrics.status === 'unavailable');
-  const endpointTopologyRows = readUpidEndpointTopologyRows(pathDocument);
-  const endpointTopologyPanel = summarizeEndpointTopologyPanel(pathDocument);
-  const pathDiagnostics = readUpidPathDiagnostics(pathDocument);
+  const endpointTopologyRows = useMemo(() => readUpidEndpointTopologyRows(pathDocument), [pathDocument]);
+  const endpointTopologyPanel = useMemo(() => summarizeEndpointTopologyPanel(pathDocument), [pathDocument]);
+  const pathDiagnostics = useMemo(() => readUpidPathDiagnostics(pathDocument), [pathDocument]);
   useEffect(() => {
     if (!selectedDiagnosticId) return;
     const selectedRow = [...(
